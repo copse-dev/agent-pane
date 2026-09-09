@@ -66,6 +66,11 @@ import type {
   WorktreeSizeResult,
 } from '@shared/types/worktree.ts'
 import type { GuardedYoloState } from '@shared/types/guarded-yolo.ts'
+import type {
+  ContainerModelVerdict,
+  ContainerRunProgress,
+  ContainerRunRequest,
+} from '@shared/types/container-run.ts'
 import type { PluginBrowserTabRequest } from '@shared/types/plugin-browser.ts'
 import type { BrowserImageShare, BrowserTextShare } from '@shared/types/browser-share.ts'
 import type {
@@ -154,6 +159,25 @@ export interface ApiClient {
     enableGuardedYolo: (threadId: string) => Promise<GuardedYoloState>
     disableGuardedYolo: (threadId: string) => Promise<GuardedYoloState>
     onGuardedYoloChanged: (handler: (state: GuardedYoloState) => void) => () => void
+  }
+  container: {
+    runThread: (request: ContainerRunRequest) => Promise<ContainerRunProgress>
+    getRun: (threadId: string) => Promise<ContainerRunProgress | null>
+    /** Stop a live run; closing the dialog does not. Resolves to the run's snapshot. */
+    stopRun: (threadId: string) => Promise<ContainerRunProgress | null>
+    /**
+     * Cherry-pick a finished run's commits onto the thread's checkout, so the
+     * thread continues from them (decision A13). Resolves to what was applied
+     * and how many of the run's commits the checkout already had.
+     */
+    adoptRun: (
+      projectId: string,
+      threadId: string,
+      runtimeId: string,
+    ) => Promise<{ applied: string[]; alreadyApplied: number }>
+    /** Per model: why it cannot run in a container, or null when it can. */
+    modelAvailability: (models: string[]) => Promise<Record<string, ContainerModelVerdict>>
+    onRunChanged: (handler: (progress: ContainerRunProgress) => void) => () => void
   }
   fs: {
     readFile: (projectId: string, threadId: string, path: string) => Promise<string>

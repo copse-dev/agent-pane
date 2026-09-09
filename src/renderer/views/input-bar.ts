@@ -102,6 +102,7 @@ import { createComposerDraftAutosave } from './composer-draft-autosave.ts'
 import { mountPanelModeControls } from './panel-mode-controls.ts'
 import type { ThreadWorktreeChoice } from '@shared/types/worktree.ts'
 import { mountGuardedYoloControl } from './guarded-yolo-control.ts'
+import { mountContainerRunControl } from './container-run-control.ts'
 import { getActiveThreadOwner } from '../controller/active-thread-owner.ts'
 import { expectString } from '@shared/unknown-value.ts'
 import { isAcpModel } from '@shared/acp.ts'
@@ -191,7 +192,18 @@ export function mountInputBar(
   // Stop and Send/Queue sit together in a flex row so the Send/Queue button's
   // width (it grows for "Queue") pushes Stop along with it instead of the two
   // overlapping at a hardcoded offset.
-  const submitRow = el('div', { class: 'submit-row' }, stopBtn, submitBtn)
+  // Where a message goes when the thread has a container run (A14): on to
+  // the container, continuing that run, or to the thread's own agent. Hidden
+  // on a thread with no run; the container is the default right after one.
+  const targetSelect = el('select', {
+    class: 'composer-target',
+    'aria-label': 'Send this message to',
+    hidden: '',
+  })
+  const targetContainer = el('option', { value: 'container' }, 'To container')
+  const targetThread = el('option', { value: 'thread' }, 'To thread')
+  targetSelect.append(targetContainer, targetThread)
+  const submitRow = el('div', { class: 'submit-row' }, targetSelect, stopBtn, submitBtn)
   // The Send button is positioned relative to this row (not the whole input
   // bar), so it sits inside the textarea box and never overlaps the footer.
   const inputRow = el('div', { class: 'input-row' }, composer.el, attachBtn, fileInput, submitRow)
@@ -271,6 +283,45 @@ export function mountInputBar(
   const guardedYolo = mountGuardedYoloControl(api, getActiveThreadId, () => {
     footerOverflow?.update()
   })
+  // The control's own mount reports state before the const below is assigned;
+  // the picker reads the control, so it waits for the mount to finish. The
+  // thread the picker last chose a default for lives here too: the picker
+  // runs from this mount, so its state has to exist before it.
+  let containerRunMounted = false
+  // Experimental and off by default (Settings › Experimental): the menu entry
+  // and the composer's target picker exist only once the user turned it on.
+  let containerRunsEnabled = false
+  const refreshContainerRunsSetting = async (): Promise<void> => {
+    const enabled = await api.settings.get('containerRunsEnabled').catch(() => undefined)
+    const next = enabled === true
+    if (next === containerRunsEnabled) return
+    containerRunsEnabled = next
+    footerOverflow?.update()
+    updateTargetPicker()
+  }
+  // The thread and run the picker last chose a default for: a run that
+  // settles is a new default (the container), not a choice the user made.
+  let targetDefaultKey: string | null = null
+  const containerRun = mountContainerRunControl(
+    api,
+    {
+      store,
+      getActiveThreadId,
+      getActiveProjectId: () => store.getState().activeProjectId,
+      getModel: footerChatModel,
+      getDraft: () => composer.value,
+      clearDraft: () => {
+        composer.clear()
+      },
+    },
+    () => {
+      footerOverflow?.update()
+      updateTargetPicker()
+    },
+  )
+  containerRunMounted = true
+  updateTargetPicker()
+  void refreshContainerRunsSetting()
   const footer = el('div', { class: 'input-footer' })
   const modelHost = el('div', { class: 'footer-model-host' })
   const checkoutHost = el('div', { class: 'footer-checkout-host' })
@@ -315,6 +366,11 @@ export function mountInputBar(
       label: guardedYolo.menuLabel,
       hidden: (): boolean => !getActiveThreadId(),
       onClick: guardedYolo.toggle,
+    },
+    {
+      label: containerRun.menuLabel,
+      hidden: (): boolean => !containerRunsEnabled || !getActiveThreadId(),
+      onClick: containerRun.open,
     },
     {
       label: 'Copy thread ID',
@@ -567,6 +623,7 @@ export function mountInputBar(
   // which has to wait for the follow-up row to be mounted first.
   root.append(
     guardedYolo.element,
+    containerRun.element,
     branchWarning,
     checkoutError,
     imageCompatibilityWarning,
@@ -1100,9 +1157,34 @@ export function mountInputBar(
     stopBtn.classList.remove('stop-pending')
   }
 
+  /**
+   * The target picker follows the thread's container run: shown when there
+   * is one, defaulting to the container when the run is the last turn, and
+   * held on the thread while the run is still busy.
+   */
+  function updateTargetPicker(): void {
+    if (!containerRunMounted) return
+    if (!containerRunsEnabled) {
+      targetSelect.hidden = true
+      return
+    }
+    const target = containerRun.followUpTarget()
+    targetSelect.hidden = !target.available
+    if (!target.available) return
+    targetContainer.disabled = target.live
+    targetContainer.textContent = target.live ? 'To container (busy)' : 'To container'
+    const key = `${getActiveThreadId() ?? ''}\u0000${target.runtimeId ?? ''}\u0000${target.live ? 'live' : 'settled'}`
+    if (key !== targetDefaultKey) {
+      targetDefaultKey = key
+      targetSelect.value = target.defaultToContainer ? 'container' : 'thread'
+    }
+    if (target.live && targetSelect.value === 'container') targetSelect.value = 'thread'
+  }
+
   function updateState(): void {
     const running = isRunning()
     stopBtn.hidden = !running
+    updateTargetPicker()
     submitBtn.textContent = running ? 'Queue' : 'Send'
     submitBtn.setAttribute('aria-label', running ? 'Queue message' : 'Send message')
     // Not styling — the demo autoplay driver and the e2e specs read this class
@@ -1535,6 +1617,14 @@ export function mountInputBar(
 
     const projectId = store.getState().activeProjectId
     if (!projectId) return
+    // A follow-up to the container (A14): a continuation run, not a turn of
+    // the thread's own agent. Prose only — the guest gets no attachments.
+    if (!targetSelect.hidden && targetSelect.value === 'container') {
+      if (!rawText) return
+      const started = await containerRun.followUp(rawText)
+      if (started) updateState()
+      return
+    }
     if (attachedImages.length > 0) {
       const incompatibility = await incompatibleImageModel()
       if (incompatibility) {
@@ -2201,6 +2291,7 @@ export function mountInputBar(
     store.on('threads_changed', () => {
       syncComposerThread()
       guardedYolo.refresh()
+      containerRun.refresh()
       hideBranchMismatch()
       updateState()
       updateFooter()
@@ -2213,6 +2304,7 @@ export function mountInputBar(
       if (tid === getActiveThreadId()) updateFooter()
     }),
     store.on('settings_changed', () => {
+      void refreshContainerRunsSetting()
       modelPicker.refresh()
       // An added/edited provider (e.g. a freshly fetched HF list) changes pricing.
       refreshModelPricing()
@@ -2297,6 +2389,7 @@ export function mountInputBar(
       modelPicker.destroy()
       footerOverflow.destroy()
       guardedYolo.destroy()
+      containerRun.destroy()
       footerCompact.destroy()
       portraitPanelControls.destroy()
       branchControl.destroy()

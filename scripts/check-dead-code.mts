@@ -26,7 +26,10 @@ const SHARED = resolve(ROOT, 'src/shared')
 
 // Files that are deliberately not imported anywhere. Each needs a reason so the
 // next person knows it is intentional rather than forgotten dead code.
-const ALLOWED_UNLINKED: Record<string, string> = {}
+const ALLOWED_UNLINKED: Record<string, string> = {
+  'src/main/services/container-runtime/cli.ts':
+    'esbuild entry that scripts/run-thread-container.mts bundles by path (pnpm run thread:container)',
+}
 
 const abs = (p: string): string => resolve(ROOT, p)
 const isModuleTs = (p: string): boolean => /\.(mts|cts|tsx|ts)$/.test(p) && !p.endsWith('.d.ts')

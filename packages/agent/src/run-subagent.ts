@@ -1,3 +1,4 @@
+import { TranscriptReducer } from './transcript-reducer.ts'
 import { errorMessage } from '@copse/std/errors.ts'
 import { runAgentLoop } from './run-agent-loop.ts'
 import { defaultMaxLlmCallsForSteps } from './agent-loop-limits.ts'
@@ -140,6 +141,7 @@ const NO_SUMMARY_FALLBACK: Record<SubagentSession['kind'], string> = {
   investigate_ci: 'Investigation completed with no findings report.',
   delegate: 'Worker finished with no report.',
   custom: 'The agent finished without reporting anything back.',
+  container: 'The container run ended without a result.',
 }
 
 function buildUserTask(prompt: string, parentGoal: string, paths?: string[]): string {
@@ -213,23 +215,24 @@ export async function runSubagent(opts: RunSubagentOptions): Promise<RunSubagent
 
   onSubagentChunk({ type: 'subagent_start', parentToolCallId, session: { ...session } })
 
-  let currentMsgId: string | null = null
+  let currentMessage: SubagentMessage | null = null
+  const transcript = new TranscriptReducer()
   let toolSinceText = false
 
-  const ensureAssistantMessage = (): string => {
-    if (!currentMsgId || toolSinceText) {
-      currentMsgId = randomUUID()
+  const ensureAssistantMessage = (): SubagentMessage => {
+    if (!currentMessage || toolSinceText) {
       const msg: SubagentMessage = {
-        id: currentMsgId,
+        id: randomUUID(),
         role: 'assistant',
         content: '',
         toolCalls: [],
         createdAt: Date.now(),
       }
+      currentMessage = msg
       session.messages.push(msg)
       toolSinceText = false
     }
-    return currentMsgId
+    return currentMessage
   }
 
   const basePrompt = systemPrompt ?? SUBAGENT_SYSTEM_PROMPT
@@ -278,62 +281,36 @@ export async function runSubagent(opts: RunSubagentOptions): Promise<RunSubagent
       executeTool: (name: string, args: unknown, signal: AbortSignal, _toolCallId: string) =>
         executeTool(name, args, signal),
       onChunk: (chunk: AgentStreamChunk) => {
+        const message = transcript.reduce(chunk, ensureAssistantMessage)
         if (chunk.type === 'usage') {
           recordUsage(chunk)
         }
-        if (chunk.type === 'reasoning') {
-          const msgId = ensureAssistantMessage()
-          const msg = session.messages.find((m) => m.id === msgId)
-          if (!msg) throw new Error(`subagent message ${msgId} not found`)
-          msg.reasoning = (msg.reasoning ?? '') + chunk.text
+        if (chunk.type === 'reasoning' && message) {
           onSubagentChunk({
             type: 'subagent_reasoning',
             parentToolCallId,
-            messageId: msgId,
+            messageId: message.id,
             text: chunk.text,
           })
         }
-        if (chunk.type === 'text') {
-          const msgId = ensureAssistantMessage()
-          const msg = session.messages.find((m) => m.id === msgId)
-          if (!msg) throw new Error(`subagent message ${msgId} not found`)
-          msg.content += chunk.text
+        if (chunk.type === 'text' && message) {
           onSubagentChunk({
             type: 'subagent_text',
             parentToolCallId,
-            messageId: msgId,
+            messageId: message.id,
             text: chunk.text,
           })
         }
-        if (chunk.type === 'tool_call') {
-          const msgId = ensureAssistantMessage()
-          const msg = session.messages.find((m) => m.id === msgId)
-          if (!msg) throw new Error(`subagent message ${msgId} not found`)
-          msg.toolCalls.push({
-            id: chunk.toolCall.id,
-            name: chunk.toolCall.name,
-            args: chunk.toolCall.args,
-            status: 'running',
-            result: null,
-          })
+        if (chunk.type === 'tool_call' && message) {
           toolSinceText = true
           onSubagentChunk({
             type: 'subagent_tool_call',
             parentToolCallId,
-            messageId: msgId,
+            messageId: message.id,
             toolCall: chunk.toolCall,
           })
         }
         if (chunk.type === 'tool_result') {
-          for (const msg of session.messages) {
-            const tc = msg.toolCalls.find((t) => t.id === chunk.toolCallId)
-            if (tc) {
-              tc.status = chunk.isError ? 'error' : 'done'
-              tc.result = chunk.result
-              if (chunk.editStats) tc.editStats = chunk.editStats
-              break
-            }
-          }
           onSubagentChunk({
             type: 'subagent_tool_result',
             parentToolCallId,

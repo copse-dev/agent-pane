@@ -158,6 +158,30 @@ const api: ApiClient = {
       }
     },
   },
+  container: {
+    runThread: (request: import('@shared/types/container-run.ts').ContainerRunRequest) =>
+      ipcRenderer.invoke('container:run-thread', request),
+    getRun: (threadId: string) => ipcRenderer.invoke('container:get-run', threadId),
+    stopRun: (threadId: string) => ipcRenderer.invoke('container:stop-run', threadId),
+    adoptRun: (projectId: string, threadId: string, runtimeId: string) =>
+      ipcRenderer.invoke('container:adopt-run', projectId, threadId, runtimeId),
+    modelAvailability: (models: string[]) =>
+      ipcRenderer.invoke('container:model-availability', models),
+    onRunChanged: (
+      handler: (progress: import('@shared/types/container-run.ts').ContainerRunProgress) => void,
+    ) => {
+      const listener = (
+        _e: Electron.IpcRendererEvent,
+        progress: import('@shared/types/container-run.ts').ContainerRunProgress,
+      ): void => {
+        handler(progress)
+      }
+      ipcRenderer.on('container:run-changed', listener)
+      return (): void => {
+        ipcRenderer.off('container:run-changed', listener)
+      }
+    },
+  },
   fs: {
     readFile: (projectId: string, threadId: string, path: string) =>
       ipcRenderer.invoke('fs:read-file', projectId, threadId, path),

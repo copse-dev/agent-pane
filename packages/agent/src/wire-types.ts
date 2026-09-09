@@ -161,7 +161,12 @@ export interface SubagentMessage {
 
 export interface SubagentSession {
   id: string
-  kind: 'explore' | 'investigate_ci' | 'delegate' | 'custom'
+  /**
+   * `container`: not a subagent of the loop at all but an unattended container
+   * run the thread launched (`docs/plans/thread-in-container.md`, A13). The
+   * guest's transcript is the timeline, the run's review record is the result.
+   */
+  kind: 'explore' | 'investigate_ci' | 'delegate' | 'custom' | 'container'
   status: 'running' | 'done' | 'error'
   prompt: string
   summary: string | null
@@ -263,3 +268,14 @@ export type AgentStreamChunk =
    * live in `plugins/plugin-panel.ts` (`PanelData`).
    */
   | { type: 'panel_update'; pluginId: string; contributionId: string; data: PanelData }
+
+/** An external agent's incremental update to an existing tool call. */
+export interface ToolCallUpdateChunk {
+  type: 'tool_call_update'
+  toolCallId: string
+  name?: string
+  args?: unknown
+  status?: 'running' | 'done' | 'error'
+  result?: string
+  resultFormat?: 'markdown'
+}

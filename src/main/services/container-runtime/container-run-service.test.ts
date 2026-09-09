@@ -1,0 +1,1284 @@
+import type { ContainerRunRequest } from '@shared/types/container-run.ts'
+import type { SupervisedTaskMeta } from '@shared/supervisor/task-schema.ts'
+import { TaskSupervisor } from '../supervisor/task-supervisor.ts'
+import { FileSupervisedTaskStore } from '../supervisor/task-store.ts'
+import { describe, it, beforeEach } from 'node:test'
+import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import type { ContainerRunProgress } from '@shared/types/container-run.ts'
+import type { ThreadExecutionContext } from '../thread-execution-context.ts'
+import { deleteApiKey, setApiKey, setSetting } from '../storage/settings.test-shim.ts'
+import { storageSet } from '../storage/storage.ts'
+import { ContainerRunService, judgeRun } from './container-run-service.ts'
+import type { loadRunForContinuation } from './thread-container.ts'
+import type { OrphanSweep } from './thread-container.ts'
+import type { ThreadContainerRecord, ThreadContainerRequest } from './thread-container.ts'
+
+const PROJECT = 'container-run-project'
+const THREAD = 'container-run-thread'
+
+function fakeRecord(threadId: string): ThreadContainerRecord {
+  return {
+    runtimeId: 'run-fake',
+    threadId,
+    startedAt: 1,
+    finishedAt: 2,
+    image: 'copse-worker:test',
+    imageDigest: null,
+    attestation: {
+      runtimeId: 'run-fake',
+      image: 'copse-worker:test',
+      user: 1001,
+      readOnlyRootfs: true,
+      capDropAll: true,
+      noNewPrivileges: true,
+      pidsLimit: 512,
+      memoryLimit: '4g',
+      network: 'brokered',
+      egressAllowlist: ['api.anthropic.com:443'],
+      hostMounts: ['/run/copse'],
+    },
+    egress: [{ at: 1, origin: 'api.anthropic.com:443', event: 'connect' }],
+    result: {
+      threadId,
+      stopReason: 'completed',
+      usage: { inputTokens: 10, outputTokens: 5 },
+      harness: 'copse',
+      promptsAttempted: 0,
+      deferrals: [],
+      denials: [],
+      commits: ['abc agent: did it'],
+      containment: { declared: true, declineReason: null, projectSandbox: false },
+      toolNames: [],
+      finalText: 'Done.',
+    },
+    transcript: [],
+    carryIn: { sha: 'base', dirty: false },
+    carryOut: { expected: true, ref: 'refs/copse/runs/run-fake', error: null },
+    containerExit: 0,
+    credential: 'key',
+    teardown: 'removed',
+    cleanupError: null,
+    secretCanary: { present: false, detail: 'absent' },
+  }
+}
+
+/** A resolver that answers with one checkout, like the supervisor's injection. */
+function checkoutAt(
+  root: string,
+  mode: 'shared' | 'worktree' = 'shared',
+  branch = 'main',
+): (projectId: string, threadId: string) => Promise<ThreadExecutionContext> {
+  return (projectId: string, threadId: string): Promise<ThreadExecutionContext> =>
+    Promise.resolve({
+      projectId,
+      threadId,
+      projectRoot: root,
+      root,
+      checkoutMode: mode,
+      branch,
+    })
+}
+
+function git(cwd: string, args: string[]): string {
+  return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
+}
+
+function initRepo(dir: string): void {
+  git(dir, ['init', '--quiet', '--initial-branch=main'])
+  git(dir, ['config', 'user.name', 'test'])
+  git(dir, ['config', 'user.email', 'test@copse.invalid'])
+  writeFileSync(join(dir, 'README.md'), 'project\n')
+  git(dir, ['add', '-A'])
+  git(dir, ['commit', '--quiet', '-m', 'project commit'])
+}
+
+let root = ''
+
+beforeEach(async () => {
+  root = mkdtempSync(join(tmpdir(), 'copse-run-service-'))
+  // A real checkout: a container run carries the work in as a git snapshot, so
+  // the service refuses a root git cannot snapshot.
+  initRepo(root)
+  process.env['COPSE_WORKSPACE_DIR'] = join(root, 'store')
+  storageSet('projects', [{ id: PROJECT, path: root }])
+  storageSet('activeProjectId', PROJECT)
+  setApiKey('anthropic', 'sk-ant-test')
+  await setSetting('localServerUrl', '')
+  await setSetting('containerRunsEnabled', true)
+})
+
+process.on('exit', () => {
+  rmSync(root, { recursive: true, force: true })
+})
+
+const noSweep = (): Promise<OrphanSweep> =>
+  Promise.resolve({ removed: [], skipped: [], failed: [] })
+/** The adoption seam: no git; records what it was asked to apply. */
+function adoptSpy(): {
+  calls: Array<[string, string, string]>
+  adopt: (
+    workspace: string,
+    ref: string,
+    base: string,
+  ) => Promise<{ applied: string[]; alreadyApplied: number }>
+} {
+  const calls: Array<[string, string, string]> = []
+  return {
+    calls,
+    adopt: (workspace, ref, base): Promise<{ applied: string[]; alreadyApplied: number }> => {
+      calls.push([workspace, ref, base])
+      return Promise.resolve({ applied: ['abc agent: did it'], alreadyApplied: 0 })
+    },
+  }
+}
+const noRecordOnDisk = (): null => null
+const noContinuationOnDisk = (): null => null
+
+describe('ContainerRunService', () => {
+  it('starts nothing while the experimental setting is off', async () => {
+    await setSetting('containerRunsEnabled', false)
+    let runs = 0
+    const service = new ContainerRunService({
+      sweep: noSweep,
+      adopt: adoptSpy().adopt,
+      loadCarryOut: noRecordOnDisk,
+      loadContinuation: noContinuationOnDisk,
+      resolveContext: checkoutAt(root),
+      ensureImage: (): Promise<void> => Promise.resolve(),
+      stop: (): Promise<'removed'> => Promise.resolve('removed'),
+      run: (request): Promise<ThreadContainerRecord> => {
+        runs += 1
+        return Promise.resolve(fakeRecord(request.prompt))
+      },
+    })
+    await assert.rejects(
+      service.start({
+        projectId: PROJECT,
+        threadId: THREAD,
+        prompt: 'work',
+        model: 'claude-sonnet-4-6',
+        budgets: { wallClockMs: 60_000, tokenCeiling: 10_000 },
+      }),
+      /Settings › Experimental/,
+    )
+    assert.equal(runs, 0)
+    assert.equal(service.get(THREAD), null)
+  })
+
+  it('resolves the provider, hides the key behind an env var, and publishes progress to the record', async () => {
+    const seen: ThreadContainerRequest[] = []
+    const keyValues: string[] = []
+    const service = new ContainerRunService({
+      sweep: noSweep,
+      adopt: adoptSpy().adopt,
+      loadCarryOut: noRecordOnDisk,
+      loadContinuation: noContinuationOnDisk,
+      resolveContext: checkoutAt(root),
+      ensureImage: (): Promise<void> => Promise.resolve(),
+      stop: (): Promise<'removed'> => Promise.resolve('removed'),
+      run: (request, options): Promise<ThreadContainerRecord> => {
+        seen.push(request)
+        keyValues.push(request.apiKeyEnv ? (process.env[request.apiKeyEnv] ?? '') : '')
+        options?.onLog?.('Starting with arbitrary diagnostic wording')
+        options?.onPhase?.('running')
+        options?.onStarted?.()
+        keyValues.push(request.apiKeyEnv ? (process.env[request.apiKeyEnv] ?? '') : '')
+        options?.onPhase?.('collecting')
+        return Promise.resolve(fakeRecord(request.prompt))
+      },
+    })
+    const phases: string[] = []
+    service.onChanged((progress) => phases.push(progress.phase))
+    const first = await service.start({
+      projectId: PROJECT,
+      threadId: THREAD,
+      prompt: ' Fix the lint backlog ',
+      model: 'claude-sonnet-4-6',
+      budgets: { wallClockMs: 60_000, tokenCeiling: 10_000 },
+    })
+    assert.equal(first.phase, 'preparing')
+    assert.deepEqual(first.egressAllowlist, ['api.anthropic.com:443'])
+
+    const finished = await waitFor(service, THREAD, (p) => p.phase === 'finished')
+    assert.equal(seen.length, 1)
+    const request = seen[0]
+    assert.ok(request)
+    assert.equal(request.workspace, root)
+    assert.equal(request.threadId, THREAD, 'the record names the desktop thread, for follow-ups')
+    assert.equal(request.prompt, 'Fix the lint backlog')
+    assert.equal(request.provider?.kind, 'anthropic')
+    assert.equal(request.provider.model, 'claude-sonnet-4-6')
+    assert.equal(request.contextWindow, 1_000_000)
+    // The key was present for `docker run` and blanked once the guest held it.
+    assert.deepEqual(keyValues, ['sk-ant-test', ''])
+    assert.ok(request.apiKeyEnv && !request.apiKeyEnv.includes('sk-ant'))
+    assert.ok(finished.record)
+    assert.equal(finished.record.carryOut.ref, 'refs/copse/runs/run-fake')
+    // Repeats are ordinary — the checkout lands while the run is still
+    // preparing — so compare the order the phases first appear in.
+    const ordered = phases.filter((phase, index) => phase !== phases[index - 1])
+    assert.deepEqual(ordered, [
+      'preparing',
+      'building-image',
+      'starting',
+      'running',
+      'collecting',
+      'finished',
+    ])
+    assert.equal(finished.error, null)
+    assert.equal(service.isActive(THREAD), false)
+  })
+
+  it('sweeps orphans through its dependency at start, and treats no Docker as nothing to sweep', async () => {
+    const swept = new ContainerRunService({
+      sweep: (): Promise<OrphanSweep> =>
+        Promise.resolve({ removed: ['run-old'], skipped: ['run-live'], failed: [] }),
+      adopt: adoptSpy().adopt,
+      loadCarryOut: noRecordOnDisk,
+      loadContinuation: noContinuationOnDisk,
+      resolveContext: checkoutAt(root),
+      ensureImage: (): Promise<void> => Promise.resolve(),
+      stop: (): Promise<'removed'> => Promise.resolve('removed'),
+      run: (request): Promise<ThreadContainerRecord> => Promise.resolve(fakeRecord(request.prompt)),
+    })
+    assert.deepEqual(await swept.sweepOrphans(), {
+      removed: ['run-old'],
+      skipped: ['run-live'],
+      failed: [],
+    })
+    const noDocker = new ContainerRunService({
+      sweep: (): Promise<OrphanSweep> => Promise.reject(new Error('docker: command not found')),
+      adopt: adoptSpy().adopt,
+      loadCarryOut: noRecordOnDisk,
+      loadContinuation: noContinuationOnDisk,
+      resolveContext: checkoutAt(root),
+      ensureImage: (): Promise<void> => Promise.resolve(),
+      stop: (): Promise<'removed'> => Promise.resolve('removed'),
+      run: (request): Promise<ThreadContainerRecord> => Promise.resolve(fakeRecord(request.prompt)),
+    })
+    assert.equal(await noDocker.sweepOrphans(), null)
+  })
+
+  it('admits the package registry, and asks the runner to install, only when the run opts in', async () => {
+    const seen: ThreadContainerRequest[] = []
+    const service = new ContainerRunService({
+      sweep: noSweep,
+      adopt: adoptSpy().adopt,
+      loadCarryOut: noRecordOnDisk,
+      loadContinuation: noContinuationOnDisk,
+      resolveContext: checkoutAt(root),
+      ensureImage: (): Promise<void> => Promise.resolve(),
+      stop: (): Promise<'removed'> => Promise.resolve('removed'),
+      run: (request): Promise<ThreadContainerRecord> => {
+        seen.push(request)
+        return Promise.resolve(fakeRecord(request.prompt))
+      },
+    })
+    await service.start({
+      projectId: PROJECT,
+      threadId: 'install-on',
+      prompt: 'install-on',
+      model: 'claude-sonnet-4-6',
+      budgets: { wallClockMs: 60_000, tokenCeiling: 10_000 },
+      installDependencies: true,
+    })
+    await waitFor(service, 'install-on', (p) => p.phase === 'finished')
+    await service.start({
+      projectId: PROJECT,
+      threadId: 'install-off',
+      prompt: 'install-off',
+      model: 'claude-sonnet-4-6',
+      budgets: { wallClockMs: 60_000, tokenCeiling: 10_000 },
+    })
+    await waitFor(service, 'install-off', (p) => p.phase === 'finished')
+    const [withInstall, without] = seen
+    assert.ok(withInstall && without)
+    assert.equal(withInstall.installDependencies, true)
+    assert.ok(withInstall.egressAllowlist.includes('registry.npmjs.org:443'))
+    assert.ok(withInstall.egressAllowlist.includes('github.com:443'))
+    assert.equal(without.installDependencies, undefined)
+    assert.ok(!without.egressAllowlist.includes('registry.npmjs.org:443'))
+    assert.ok(!without.egressAllowlist.some((origin) => origin.includes('github')))
+  })
+
+  it('runs an ACP agent under its vendor key on its own domains, with no provider', async () => {
+    await setSetting('registeredAcpAgents', [
+      { id: 'claude-acp', title: 'Claude', command: 'claude-agent-acp', enabled: true },
+    ])
+    const seen: ThreadContainerRequest[] = []
+    const service = new ContainerRunService({
+      sweep: noSweep,
+      adopt: adoptSpy().adopt,
+      loadCarryOut: noRecordOnDisk,
+      loadContinuation: noContinuationOnDisk,
+      resolveContext: checkoutAt(root),
+      ensureImage: (): Promise<void> => Promise.resolve(),
+      stop: (): Promise<'removed'> => Promise.resolve('removed'),
+      run: (request, options): Promise<ThreadContainerRecord> => {
+        seen.push(request)
+        assert.equal(request.apiKeyEnv && process.env[request.apiKeyEnv], 'sk-ant-test')
+        options?.onStarted?.()
+        return Promise.resolve(fakeRecord(request.prompt))
+      },
+    })
+    const first = await service.start({
+      projectId: PROJECT,
+      threadId: THREAD,
+      prompt: 'Tidy the README',
+      model: 'acp:claude-acp#claude-opus-5',
+      budgets: { wallClockMs: 60_000, tokenCeiling: 10_000 },
+    })
+    assert.ok(first.egressAllowlist.includes('*.anthropic.com:443'))
+    await waitFor(service, THREAD, (p) => p.phase === 'finished')
+    const request = seen[0]
+    assert.ok(request)
+    assert.equal(request.model, 'acp:claude-acp#claude-opus-5')
+    assert.equal(request.provider, undefined)
+    assert.ok(request.acp)
+    assert.equal(request.acp.agent.id, 'claude-acp')
+    assert.equal(request.acp.keyEnvName, 'ANTHROPIC_API_KEY')
+    await setSetting('registeredAcpAgents', [])
+  })
+
+  it('carries the sign-in in, and no key, when the user opts in for a keyless Codex', async () => {
+    await setSetting('registeredAcpAgents', [
+      { id: 'codex-acp', title: 'Codex', command: 'codex-acp', enabled: true },
+    ])
+    const seen: ThreadContainerRequest[] = []
+    const service = new ContainerRunService({
+      sweep: noSweep,
+      adopt: adoptSpy().adopt,
+      loadCarryOut: noRecordOnDisk,
+      loadContinuation: noContinuationOnDisk,
+      resolveContext: checkoutAt(root),
+      ensureImage: (): Promise<void> => Promise.resolve(),
+      stop: (): Promise<'removed'> => Promise.resolve('removed'),
+      run: (request, options): Promise<ThreadContainerRecord> => {
+        seen.push(request)
+        options?.onStarted?.()
+        return Promise.resolve({ ...fakeRecord(request.prompt), credential: { login: ['.codex'] } })
+      },
+    })
+    const base = {
+      projectId: PROJECT,
+      threadId: THREAD,
+      prompt: 'Tidy the README',
+      model: 'acp:codex-acp',
+      budgets: { wallClockMs: 60_000, tokenCeiling: 10_000 },
+    }
+    // Without the opt-in the start is refused, and the refusal names both ways in.
+    await assert.rejects(service.start(base), /OpenAI API key in Settings, or your Codex sign-in/)
+    const first = await service.start({ ...base, useAgentLogin: true })
+    assert.equal(first.credential, 'login')
+    await waitFor(service, THREAD, (p) => p.phase === 'finished')
+    const request = seen[0]
+    assert.ok(request)
+    assert.equal(request.apiKeyEnv, undefined)
+    assert.deepEqual(request.acp?.login, { files: ['.codex/auth.json'] })
+    await setSetting('registeredAcpAgents', [])
+  })
+
+  it('stops a live run on request, force-removing its container, and says who stopped it', async () => {
+    const stopped: string[] = []
+    const pending: { release: (() => void) | null } = { release: null }
+    const service = new ContainerRunService({
+      sweep: noSweep,
+      adopt: adoptSpy().adopt,
+      loadCarryOut: noRecordOnDisk,
+      loadContinuation: noContinuationOnDisk,
+      resolveContext: checkoutAt(root),
+      ensureImage: (): Promise<void> => Promise.resolve(),
+      stop: (runtimeId): Promise<'removed'> => {
+        stopped.push(runtimeId)
+        // The runner's wait settles once the container is gone: no result.
+        pending.release?.()
+        return Promise.resolve('removed')
+      },
+      run: (request, options): Promise<ThreadContainerRecord> =>
+        new Promise((resolve) => {
+          options?.onLog?.('Starting with arbitrary diagnostic wording')
+          options?.onPhase?.('running')
+          options?.onStarted?.()
+          pending.release = (): void => {
+            resolve({ ...fakeRecord(request.prompt), result: null, teardown: 'already-gone' })
+          }
+        }),
+    })
+    await service.start({
+      projectId: PROJECT,
+      threadId: THREAD,
+      prompt: 'work',
+      model: 'claude-sonnet-4-6',
+      budgets: { wallClockMs: 60_000, tokenCeiling: 10_000 },
+    })
+    const running = await waitFor(service, THREAD, (p) => p.phase === 'running')
+    assert.ok(running.runtimeId)
+    const snapshot = await service.stop(THREAD)
+    assert.deepEqual(stopped, [running.runtimeId])
+    assert.ok(snapshot?.log.some((line) => line.includes('stop requested by the user')))
+    const done = await waitFor(service, THREAD, (p) => p.phase === 'failed')
+    assert.equal(done.error, 'Stopped by you before the guest finished')
+    assert.equal(service.isActive(THREAD), false)
+    // Stopping a run that is not live is a no-op that reports the state.
+    assert.equal((await service.stop(THREAD))?.phase, 'failed')
+  })
+
+  it("hands the runner the guest-facing name for a server on the desktop's loopback", async () => {
+    await setSetting('localServerUrl', 'http://127.0.0.1:1234/v1')
+    const seen: ThreadContainerRequest[] = []
+    const service = new ContainerRunService({
+      sweep: noSweep,
+      adopt: adoptSpy().adopt,
+      loadCarryOut: noRecordOnDisk,
+      loadContinuation: noContinuationOnDisk,
+      resolveContext: checkoutAt(root),
+      ensureImage: (): Promise<void> => Promise.resolve(),
+      stop: (): Promise<'removed'> => Promise.resolve('removed'),
+      run: (request): Promise<ThreadContainerRecord> => {
+        seen.push(request)
+        return Promise.resolve(fakeRecord(request.prompt))
+      },
+    })
+    const started = await service.start({
+      projectId: PROJECT,
+      threadId: 'loopback',
+      prompt: 'loopback',
+      model: 'lmstudio:qwen3',
+      budgets: { wallClockMs: 60_000, tokenCeiling: 10_000 },
+    })
+    assert.deepEqual(started.egressAllowlist, ['model.copse.internal:1234'])
+    await waitFor(service, 'loopback', (p) => p.phase === 'finished')
+    const request = seen[0]
+    assert.ok(request)
+    assert.equal(request.provider?.kind, 'openai-compatible')
+    assert.equal(request.provider.url, 'http://model.copse.internal:1234/v1')
+    assert.deepEqual(request.egressResolve, { 'model.copse.internal': '127.0.0.1' })
+  })
+
+  it('honours a stop asked for before the container exists', async () => {
+    // The snapshot and bundle of a large checkout take a while; a stop in that
+    // window has no container to remove, so the runner is told through its
+    // signal and refuses to create one.
+    const pending: { release: (() => void) | null } = { release: null }
+    const stopped: string[] = []
+    const service = new ContainerRunService({
+      sweep: noSweep,
+      adopt: adoptSpy().adopt,
+      loadCarryOut: noRecordOnDisk,
+      loadContinuation: noContinuationOnDisk,
+      resolveContext: checkoutAt(root),
+      ensureImage: (): Promise<void> => Promise.resolve(),
+      stop: (runtimeId): Promise<'already-gone'> => {
+        stopped.push(runtimeId)
+        return Promise.resolve('already-gone')
+      },
+      run: (request, options): Promise<ThreadContainerRecord> =>
+        new Promise((resolve, reject) => {
+          options?.onLog?.('[thread-container] carry-in abc123 as refs/copse/carry-in/x')
+          pending.release = (): void => {
+            if (options?.signal?.aborted) {
+              reject(new Error('Stopped by you before the container started'))
+              return
+            }
+            resolve(fakeRecord(request.threadId ?? 'none'))
+          }
+        }),
+    })
+    await service.start({
+      projectId: PROJECT,
+      threadId: THREAD,
+      prompt: 'work',
+      model: 'claude-sonnet-4-6',
+      budgets: { wallClockMs: 60_000, tokenCeiling: 10_000 },
+    })
+    const starting = await waitFor(service, THREAD, (p) => p.phase === 'starting')
+    assert.ok(starting.runtimeId)
+    await service.stop(THREAD)
+    assert.deepEqual(stopped, [starting.runtimeId], 'the force-remove is still tried')
+    pending.release?.()
+    const done = await waitFor(service, THREAD, (p) => p.phase === 'failed')
+    assert.equal(done.error, 'Stopped by you before the container started')
+    assert.equal(service.isActive(THREAD), false)
+  })
+
+  it('refuses a second run while one is live, and reports a failed run', async () => {
+    const pending: { release: (() => void) | null } = { release: null }
+    const service = new ContainerRunService({
+      sweep: noSweep,
+      adopt: adoptSpy().adopt,
+      loadCarryOut: noRecordOnDisk,
+      loadContinuation: noContinuationOnDisk,
+      resolveContext: checkoutAt(root),
+      ensureImage: (): Promise<void> => Promise.resolve(),
+      stop: (): Promise<'removed'> => Promise.resolve('removed'),
+      run: (): Promise<ThreadContainerRecord> =>
+        new Promise((_resolve, reject) => {
+          pending.release = (): void => {
+            reject(new Error('docker exploded'))
+          }
+        }),
+    })
+    await service.start({
+      projectId: PROJECT,
+      threadId: THREAD,
+      prompt: 'work',
+      model: 'claude-sonnet-4-6',
+      budgets: { wallClockMs: 60_000, tokenCeiling: 10_000 },
+    })
+    await waitFor(service, THREAD, (p) => p.phase === 'starting')
+    await assert.rejects(
+      service.start({
+        projectId: PROJECT,
+        threadId: THREAD,
+        prompt: 'again',
+        model: 'claude-sonnet-4-6',
+        budgets: { wallClockMs: 60_000, tokenCeiling: 10_000 },
+      }),
+      /already has a container run/,
+    )
+    assert.ok(pending.release)
+    pending.release()
+    const failed = await waitFor(service, THREAD, (p) => p.phase === 'failed')
+    assert.equal(failed.error, 'docker exploded')
+  })
+
+  it('refuses a remote project and an unresolvable model before touching Docker', async () => {
+    storageSet('projects', [{ id: PROJECT, path: root, sshHost: 'box' }])
+    const service = new ContainerRunService({
+      sweep: noSweep,
+      adopt: adoptSpy().adopt,
+      loadCarryOut: noRecordOnDisk,
+      loadContinuation: noContinuationOnDisk,
+      stop: (): Promise<'removed'> => Promise.resolve('removed'),
+      resolveContext: checkoutAt(root),
+      ensureImage: (): Promise<void> => Promise.reject(new Error('must not be called')),
+      run: (): Promise<ThreadContainerRecord> => Promise.reject(new Error('must not be called')),
+    })
+    const base = {
+      projectId: PROJECT,
+      threadId: THREAD,
+      prompt: 'work',
+      budgets: { wallClockMs: 60_000, tokenCeiling: 10_000 },
+    }
+    await assert.rejects(service.start({ ...base, model: 'claude-sonnet-4-6' }), /SSH host/)
+    storageSet('projects', [{ id: PROJECT, path: root }])
+    // An id no provider claims goes wherever a key exists, as it does on the
+    // desktop; without one there is nowhere for it to go.
+    deleteApiKey('anthropic')
+    deleteApiKey('openai')
+    await assert.rejects(service.start({ ...base, model: 'mystery' }), /cannot resolve a provider/)
+    assert.equal(service.get(THREAD), null)
+  })
+})
+
+describe('ContainerRunService checkout resolution', () => {
+  it("carries in the thread's worktree, not the project checkout", async () => {
+    // A project checkout and a thread worktree holding different commits and
+    // different uncommitted edits: snapshotting the project root would run the
+    // wrong branch and lose the thread's work.
+    const worktree = join(root, '..', `${PROJECT}-worktree`)
+    // A fixed path beside the temp root: a run that died mid-test leaves it
+    // behind, and `worktree add` refuses a directory that exists.
+    rmSync(worktree, { recursive: true, force: true })
+    git(root, ['worktree', 'add', '--quiet', '-b', 'thread/work', worktree])
+    writeFileSync(join(worktree, 'thread.txt'), 'thread commit\n')
+    git(worktree, ['add', '-A'])
+    git(worktree, ['commit', '--quiet', '-m', 'thread commit'])
+    writeFileSync(join(worktree, 'wip.txt'), 'uncommitted in the worktree\n')
+    const projectHead = git(root, ['rev-parse', 'HEAD'])
+    const worktreeHead = git(worktree, ['rev-parse', 'HEAD'])
+    assert.notEqual(projectHead, worktreeHead)
+
+    const seen: ThreadContainerRequest[] = []
+    const service = new ContainerRunService({
+      sweep: noSweep,
+      adopt: adoptSpy().adopt,
+      loadCarryOut: noRecordOnDisk,
+      loadContinuation: noContinuationOnDisk,
+      stop: (): Promise<'removed'> => Promise.resolve('removed'),
+      resolveContext: checkoutAt(worktree, 'worktree', 'thread/work'),
+      ensureImage: (): Promise<void> => Promise.resolve(),
+      run: (request): Promise<ThreadContainerRecord> => {
+        seen.push(request)
+        return Promise.resolve(fakeRecord(request.prompt))
+      },
+    })
+    const progress = await service.start({
+      projectId: PROJECT,
+      threadId: THREAD,
+      prompt: 'work',
+      model: 'claude-sonnet-4-6',
+      budgets: { wallClockMs: 60_000, tokenCeiling: 10_000 },
+    })
+    await waitFor(service, THREAD, (p) => p.phase === 'finished')
+    assert.equal(seen[0]?.workspace, worktree)
+    assert.deepEqual(progress.checkout, {
+      root: worktree,
+      mode: 'worktree',
+      branch: 'thread/work',
+    })
+    rmSync(worktree, { recursive: true, force: true })
+  })
+
+  it('refuses a checkout git cannot snapshot, and frees the thread to try again', async () => {
+    // A directory with no git repository in it: no snapshot is possible.
+    const notARepo = mkdtempSync(join(tmpdir(), 'copse-not-a-repo-'))
+    const service = new ContainerRunService({
+      sweep: noSweep,
+      adopt: adoptSpy().adopt,
+      loadCarryOut: noRecordOnDisk,
+      loadContinuation: noContinuationOnDisk,
+      stop: (): Promise<'removed'> => Promise.resolve('removed'),
+      resolveContext: checkoutAt(notARepo),
+      ensureImage: (): Promise<void> => Promise.reject(new Error('must not be called')),
+      run: (): Promise<ThreadContainerRecord> => Promise.reject(new Error('must not be called')),
+    })
+    await assert.rejects(
+      service.start({
+        projectId: PROJECT,
+        threadId: THREAD,
+        prompt: 'work',
+        model: 'claude-sonnet-4-6',
+        budgets: { wallClockMs: 60_000, tokenCeiling: 10_000 },
+      }),
+      /not a git checkout/,
+    )
+    // The slot the start claimed is released, so the thread is not wedged.
+    assert.equal(service.get(THREAD), null)
+    assert.equal(service.isActive(THREAD), false)
+    rmSync(notARepo, { recursive: true, force: true })
+  })
+
+  it('propagates a broken worktree instead of falling back to the project root', async () => {
+    const service = new ContainerRunService({
+      sweep: noSweep,
+      adopt: adoptSpy().adopt,
+      loadCarryOut: noRecordOnDisk,
+      loadContinuation: noContinuationOnDisk,
+      stop: (): Promise<'removed'> => Promise.resolve('removed'),
+      resolveContext: (): Promise<ThreadExecutionContext> =>
+        Promise.reject(new Error('worktree is not registered with git')),
+      ensureImage: (): Promise<void> => Promise.reject(new Error('must not be called')),
+      run: (): Promise<ThreadContainerRecord> => Promise.reject(new Error('must not be called')),
+    })
+    await assert.rejects(
+      service.start({
+        projectId: PROJECT,
+        threadId: THREAD,
+        prompt: 'work',
+        model: 'claude-sonnet-4-6',
+        budgets: { wallClockMs: 60_000, tokenCeiling: 10_000 },
+      }),
+      /not registered with git/,
+    )
+    assert.equal(service.get(THREAD), null)
+  })
+})
+
+describe('judgeRun', () => {
+  it('calls a clean run finished', () => {
+    assert.deepEqual(judgeRun(fakeRecord(THREAD)), { failure: null, warnings: [] })
+  })
+
+  it('warns, without failing, when the guest asked for a destination the allowlist refused', () => {
+    const record = fakeRecord(THREAD)
+    const verdict = judgeRun({
+      ...record,
+      egress: [
+        { at: 1, origin: 'api.openai.com:443', event: 'connect' },
+        { at: 2, origin: 'sentry.io:443', event: 'refused', detail: 'not in the allowlist' },
+        { at: 3, origin: 'sentry.io:443', event: 'refused', detail: 'not in the allowlist' },
+      ],
+    })
+    assert.equal(verdict.failure, null)
+    assert.match(
+      verdict.warnings.join(' '),
+      /2 connections refused by the egress allowlist: sentry\.io:443/,
+    )
+  })
+
+  it('warns when brokered egress saw no connection at all, and fails when there is no result either', () => {
+    const record = fakeRecord(THREAD)
+    const completed = judgeRun({ ...record, egress: [] })
+    assert.equal(completed.failure, null)
+    assert.match(completed.warnings.join(' '), /No connection reached the egress broker/)
+
+    const noResult = judgeRun({ ...record, egress: [], result: null })
+    assert.match(noResult.failure ?? '', /No connection reached the egress broker/)
+
+    const offline = judgeRun({
+      ...record,
+      egress: [],
+      attestation: { ...record.attestation, network: 'none', egressAllowlist: [] },
+    })
+    assert.deepEqual(offline, { failure: null, warnings: [] })
+  })
+
+  it('never reports success when the commits could not be fetched', () => {
+    const record = fakeRecord(THREAD)
+    const verdict = judgeRun({
+      ...record,
+      carryOut: { expected: true, ref: null, error: 'refusing to fetch into a checked-out branch' },
+    })
+    assert.match(verdict.failure ?? '', /could not be fetched/)
+  })
+
+  it('never reports success when the container could not be reaped', () => {
+    const record = fakeRecord(THREAD)
+    const failedTeardown = judgeRun({ ...record, teardown: 'failed' })
+    assert.match(failedTeardown.failure ?? '', /could not be removed/)
+    assert.equal(failedTeardown.warnings.length, 1)
+
+    const hungStop = judgeRun({ ...record, cleanupError: 'the container did not exit' })
+    assert.match(hungStop.failure ?? '', /did not exit/)
+  })
+
+  it('reports a leaked secret canary even on an otherwise clean run', () => {
+    const verdict = judgeRun({
+      ...fakeRecord(THREAD),
+      secretCanary: { present: true, detail: 'canary found in out/result.json' },
+    })
+    assert.match(verdict.warnings.join(' '), /canary/i)
+    assert.match(verdict.failure ?? '', /canary/i)
+  })
+
+  it('leads with the leaked canary even when the container also could not be reaped', () => {
+    // A secret that escaped outranks a container left behind: the teardown
+    // problem is still reported, but as a warning beside it, not as the
+    // headline the user reads first.
+    const verdict = judgeRun({
+      ...fakeRecord(THREAD),
+      teardown: 'failed',
+      secretCanary: { present: true, detail: 'canary found in out/result.json' },
+    })
+    assert.match(verdict.failure ?? '', /canary/i)
+    assert.match(verdict.warnings.join(' '), /could not be removed/)
+  })
+
+  it('fails when the guest reports commits but its bundle is missing', () => {
+    const verdict = judgeRun({
+      ...fakeRecord(THREAD),
+      carryOut: { expected: false, ref: null, error: null },
+    })
+    assert.match(verdict.failure ?? '', /could not be fetched/)
+  })
+
+  it('rejects nonzero and unknown container exit status despite a completed result', () => {
+    for (const containerExit of [1, 137, null]) {
+      const verdict = judgeRun({ ...fakeRecord(THREAD), containerExit })
+      assert.match(verdict.failure ?? '', /exit status/)
+    }
+  })
+
+  it("carries the guest's own error through", () => {
+    const record = fakeRecord(THREAD)
+    assert.equal(judgeRun({ ...record, result: null }).failure, 'The guest wrote no result')
+    const result = record.result
+    assert.ok(result)
+    assert.match(
+      judgeRun({
+        ...record,
+        result: { ...result, stopReason: 'error', error: 'provider refused' },
+      }).failure ?? '',
+      /provider refused/,
+    )
+  })
+})
+
+describe('ContainerRunService.adopt', () => {
+  it("applies a finished run's commits to the thread's checkout, from memory or from disk", async () => {
+    const spy = adoptSpy()
+    const loaded: string[] = []
+    const service = new ContainerRunService({
+      sweep: noSweep,
+      adopt: spy.adopt,
+      loadCarryOut: (runtimeId): { threadId: string; ref: string; base: string } | null => {
+        loaded.push(runtimeId)
+        return runtimeId === 'run-old'
+          ? { threadId: THREAD, ref: 'refs/copse/runs/run-old', base: 'old-base' }
+          : runtimeId === 'run-theirs'
+            ? { threadId: 'another-thread', ref: 'refs/copse/runs/run-theirs', base: 'b' }
+            : null
+      },
+      loadContinuation: noContinuationOnDisk,
+      resolveContext: checkoutAt(root),
+      ensureImage: (): Promise<void> => Promise.resolve(),
+      stop: (): Promise<'removed'> => Promise.resolve('removed'),
+      run: (request): Promise<ThreadContainerRecord> => Promise.resolve(fakeRecord(request.prompt)),
+    })
+    await service.start({
+      projectId: PROJECT,
+      threadId: THREAD,
+      prompt: 'Fix it',
+      model: 'claude-sonnet-4-6',
+      budgets: { wallClockMs: 60_000, tokenCeiling: 10_000 },
+    })
+    await waitFor(service, THREAD, (p) => p.phase === 'finished')
+    // The run in memory: its record names the ref and the carry-in base.
+    const adoption = await service.adopt(PROJECT, THREAD, 'run-fake')
+    assert.deepEqual(adoption, { applied: ['abc agent: did it'], alreadyApplied: 0 })
+    assert.deepEqual(spy.calls, [[root, 'refs/copse/runs/run-fake', 'base']])
+    assert.deepEqual(loaded, [], 'a run in memory is not read from disk')
+    assert.ok(
+      service
+        .get(THREAD)
+        ?.log.some((line) => line.includes('1 commit(s) from refs/copse/runs/run-fake applied')),
+    )
+    // A run from an earlier session: the record on disk.
+    await service.adopt(PROJECT, THREAD, 'run-old')
+    assert.deepEqual(spy.calls[1], [root, 'refs/copse/runs/run-old', 'old-base'])
+    // Another thread's run, and a run with no record, are refused.
+    await assert.rejects(service.adopt(PROJECT, THREAD, 'run-theirs'), /belongs to another thread/)
+    await assert.rejects(service.adopt(PROJECT, THREAD, 'run-none'), /record is gone/)
+    assert.equal(spy.calls.length, 2)
+  })
+})
+
+describe('ContainerRunService continuation (A14)', () => {
+  it("continues from the thread's card when the run is in neither memory nor its record on disk", async () => {
+    const seen: ThreadContainerRequest[] = []
+    const service = new ContainerRunService({
+      sweep: noSweep,
+      adopt: adoptSpy().adopt,
+      loadCarryOut: noRecordOnDisk,
+      loadContinuation: noContinuationOnDisk,
+      resolveContext: checkoutAt(root),
+      ensureImage: (): Promise<void> => Promise.resolve(),
+      stop: (): Promise<'removed'> => Promise.resolve('removed'),
+      run: (request): Promise<ThreadContainerRecord> => {
+        seen.push(request)
+        return Promise.resolve(fakeRecord(request.prompt))
+      },
+    })
+    const budgets = { wallClockMs: 60_000, tokenCeiling: 10_000 }
+    await assert.rejects(
+      service.start({
+        projectId: PROJECT,
+        threadId: THREAD,
+        prompt: 'Try again',
+        model: 'claude-sonnet-4-6',
+        budgets,
+        continueFrom: 'run-swept',
+      }),
+      /record is gone/,
+    )
+    await service.start({
+      projectId: PROJECT,
+      threadId: THREAD,
+      prompt: 'Try again',
+      model: 'claude-sonnet-4-6',
+      budgets,
+      continueFrom: 'run-swept',
+      continueContext: { prompt: 'Run the e2e tests', report: 'Nothing to change.', ref: null },
+    })
+    await waitFor(service, THREAD, (p) => p.phase === 'finished')
+    const request = seen[0]
+    assert.ok(request)
+    assert.equal(request.carryInRef, undefined)
+    assert.match(request.prompt, /Earlier you were asked:\nRun the e2e tests/)
+    assert.match(request.prompt, /You reported:\nNothing to change\./)
+    assert.match(request.prompt, /Follow-up:\nTry again$/)
+  })
+
+  it('continues a run that made no commits from a fresh snapshot, with the prompt as the continuity', async () => {
+    const seen: ThreadContainerRequest[] = []
+    const settled: string[] = []
+    const service = new ContainerRunService({
+      sweep: noSweep,
+      adopt: adoptSpy().adopt,
+      loadCarryOut: noRecordOnDisk,
+      loadContinuation: noContinuationOnDisk,
+      resolveContext: checkoutAt(root),
+      ensureImage: (): Promise<void> => Promise.resolve(),
+      stop: (): Promise<'removed'> => Promise.resolve('removed'),
+      run: (request): Promise<ThreadContainerRecord> => {
+        seen.push(request)
+        const record = fakeRecord(request.prompt)
+        return Promise.resolve({
+          ...record,
+          result: record.result
+            ? { ...record.result, commits: [], finalText: 'Nothing to change.' }
+            : null,
+          carryOut: { expected: false, ref: null, error: null },
+        })
+      },
+    })
+    service.onSettled((projectId, progress) => {
+      settled.push(`${projectId}:${progress.threadId}:${progress.phase}`)
+    })
+    const budgets = { wallClockMs: 60_000, tokenCeiling: 10_000 }
+    await service.start({
+      projectId: PROJECT,
+      threadId: THREAD,
+      prompt: 'Run the e2e tests',
+      model: 'claude-sonnet-4-6',
+      budgets,
+    })
+    await waitFor(service, THREAD, (p) => p.phase === 'finished')
+    assert.deepEqual(settled, [`${PROJECT}:${THREAD}:finished`])
+    await service.start({
+      projectId: PROJECT,
+      threadId: THREAD,
+      prompt: 'Try again',
+      model: 'claude-sonnet-4-6',
+      budgets,
+      continueFrom: 'run-fake',
+    })
+    await waitFor(service, THREAD, (p) => p.phase === 'finished' && p.continuedFrom === 'run-fake')
+    const second = seen[1]
+    assert.ok(second)
+    assert.equal(
+      second.carryInRef,
+      undefined,
+      'nothing to carry in: the checkout is snapshotted afresh',
+    )
+    assert.match(second.prompt, /That run made no commits, so the checkout is as it was\./)
+    assert.match(second.prompt, /Earlier you were asked:\nRun the e2e tests/)
+    assert.match(second.prompt, /You reported:\nNothing to change\./)
+    assert.match(second.prompt, /Follow-up:\nTry again$/)
+    assert.equal(settled.length, 2)
+  })
+
+  it("carries in the earlier run's ref and prefixes its exchange to the follow-up prompt", async () => {
+    const seen: ThreadContainerRequest[] = []
+    const service = new ContainerRunService({
+      sweep: noSweep,
+      adopt: adoptSpy().adopt,
+      loadCarryOut: noRecordOnDisk,
+      loadContinuation: (runtimeId): ReturnType<typeof loadRunForContinuation> =>
+        runtimeId === 'run-old'
+          ? {
+              threadId: THREAD,
+              ref: 'refs/copse/runs/run-old',
+              prompt: 'Old task',
+              finalText: 'Old report',
+            }
+          : runtimeId === 'run-theirs'
+            ? { threadId: 'other', ref: 'refs/copse/runs/run-theirs', prompt: '', finalText: '' }
+            : null,
+      resolveContext: checkoutAt(root),
+      ensureImage: (): Promise<void> => Promise.resolve(),
+      stop: (): Promise<'removed'> => Promise.resolve('removed'),
+      run: (request): Promise<ThreadContainerRecord> => {
+        seen.push(request)
+        return Promise.resolve(fakeRecord(request.prompt))
+      },
+    })
+    const budgets = { wallClockMs: 60_000, tokenCeiling: 10_000 }
+    await service.start({
+      projectId: PROJECT,
+      threadId: THREAD,
+      prompt: 'Fix the lint backlog',
+      model: 'claude-sonnet-4-6',
+      budgets,
+    })
+    await waitFor(service, THREAD, (p) => p.phase === 'finished')
+    // From memory: the run this session made.
+    const first = await service.start({
+      projectId: PROJECT,
+      threadId: THREAD,
+      prompt: 'Now add tests',
+      model: 'claude-sonnet-4-6',
+      budgets,
+      continueFrom: 'run-fake',
+    })
+    assert.equal(first.continuedFrom, 'run-fake')
+    assert.equal(first.prompt, 'Now add tests', 'the card shows the follow-up, not the preamble')
+    await waitFor(service, THREAD, (p) => p.phase === 'finished' && p.continuedFrom === 'run-fake')
+    const second = seen[1]
+    assert.ok(second)
+    assert.equal(second.carryInRef, 'refs/copse/runs/run-fake')
+    assert.match(second.prompt, /^This continues an earlier run/)
+    assert.match(second.prompt, /Earlier you were asked:\nFix the lint backlog/)
+    assert.match(second.prompt, /You reported:\nDone\./)
+    assert.match(second.prompt, /Follow-up:\nNow add tests$/)
+    assert.equal(seen[0]?.carryInRef, undefined, 'a fresh run snapshots the checkout')
+    // From disk: a run an earlier session made.
+    await service.start({
+      projectId: PROJECT,
+      threadId: THREAD,
+      prompt: 'Again',
+      model: 'claude-sonnet-4-6',
+      budgets,
+      continueFrom: 'run-old',
+    })
+    await waitFor(service, THREAD, (p) => p.phase === 'finished' && p.continuedFrom === 'run-old')
+    const third = seen[2]
+    assert.ok(third)
+    assert.equal(third.carryInRef, 'refs/copse/runs/run-old')
+    assert.match(third.prompt, /Earlier you were asked:\nOld task/)
+    // Another thread's run, and a run without a record, are refused before anything starts.
+    await assert.rejects(
+      service.start({
+        projectId: PROJECT,
+        threadId: THREAD,
+        prompt: 'x',
+        model: 'claude-sonnet-4-6',
+        budgets,
+        continueFrom: 'run-theirs',
+      }),
+      /belongs to another thread/,
+    )
+    await assert.rejects(
+      service.start({
+        projectId: PROJECT,
+        threadId: THREAD,
+        prompt: 'x',
+        model: 'claude-sonnet-4-6',
+        budgets,
+        continueFrom: 'run-none',
+      }),
+      /record is gone/,
+    )
+    assert.equal(service.isActive(THREAD), false, 'a refused continuation claims no slot')
+  })
+})
+
+function waitFor(
+  service: ContainerRunService,
+  threadId: string,
+  predicate: (progress: ContainerRunProgress) => boolean,
+): Promise<ContainerRunProgress> {
+  return new Promise((resolve, reject) => {
+    const current = service.get(threadId)
+    if (current && predicate(current)) {
+      resolve(current)
+      return
+    }
+    const timer = setTimeout(() => {
+      unsubscribe()
+      reject(new Error(`timed out waiting for ${threadId}`))
+    }, 5_000)
+    const unsubscribe = service.onChanged((progress) => {
+      if (progress.threadId === threadId && predicate(progress)) {
+        clearTimeout(timer)
+        unsubscribe()
+        resolve(progress)
+      }
+    })
+  })
+}
+
+describe('container task supervision', () => {
+  it('persists completion and its result reference without storing the prompt or key', async (t) => {
+    const root = mkdtempSync(join(tmpdir(), 'container-supervisor-'))
+    t.after(() => {
+      rmSync(root, { recursive: true, force: true })
+    })
+    initRepo(root)
+    const store = new FileSupervisedTaskStore({ COPSE_WORKSPACE_DIR: join(root, 'tasks') })
+    const supervisor = new TaskSupervisor({ store })
+    t.after(() => supervisor.shutdown())
+    const service = supervisedService(root)
+    t.after(service.installSupervisor(supervisor))
+    await service.start(supervisedRequest())
+    const task = await waitForTask(supervisor, 'completed')
+    assert.equal(task.handler, 'container_run')
+    assert.equal(task.maxAttempts, 1)
+    assert.equal(task.reapproveOnWake, true)
+    assert.equal(task.resultRef?.ref, task.processHandleId)
+    assert.deepEqual((await store.loadAll()).tasks, [task])
+    assert.equal(JSON.stringify(task).includes('private prompt'), false)
+    assert.equal(JSON.stringify(task).includes('sk-ant-test'), false)
+  })
+
+  it('does not clear a newer run stop controller while saving the previous outcome', async (t) => {
+    const root = mkdtempSync(join(tmpdir(), 'container-supervisor-'))
+    t.after(() => {
+      rmSync(root, { recursive: true, force: true })
+    })
+    initRepo(root)
+    let releaseSave = (): void => {}
+    const saving = new Promise<void>((resolve) => {
+      releaseSave = resolve
+    })
+    let releaseImage = (): void => {}
+    const image = new Promise<void>((resolve) => {
+      releaseImage = resolve
+    })
+    t.after(() => {
+      releaseSave()
+      releaseImage()
+    })
+    const store = new FileSupervisedTaskStore({ COPSE_WORKSPACE_DIR: join(root, 'tasks') })
+    const save = store.saveTransition.bind(store)
+    store.saveTransition = async (task, audit): Promise<void> => {
+      if (task.state === 'completed') await saving
+      await save(task, audit)
+    }
+    const supervisor = new TaskSupervisor({ store })
+    t.after(() => supervisor.shutdown())
+    let builds = 0,
+      runs = 0
+    const service = supervisedService(
+      root,
+      () => {
+        builds += 1
+        return builds === 1 ? Promise.resolve() : image
+      },
+      () => {
+        runs += 1
+        return Promise.resolve(fakeRecord(THREAD))
+      },
+    )
+    t.after(service.installSupervisor(supervisor))
+    await service.start(supervisedRequest())
+    await waitFor(service, THREAD, (p) => p.phase === 'finished')
+    await service.start(supervisedRequest())
+    await waitFor(service, THREAD, (p) => p.phase === 'building-image')
+    releaseSave()
+    await waitForTask(supervisor, 'completed')
+    // Allow the old drive's finally block to finish after its durable transition.
+    await new Promise((resolve) => setImmediate(resolve))
+    await service.stop(THREAD)
+    releaseImage()
+    await waitFor(service, THREAD, (p) => p.phase === 'failed')
+    assert.equal(runs, 1, 'the second run must remain cancelled before Docker starts')
+  })
+
+  it('records image preparation failure on the same durable task', async (t) => {
+    const root = mkdtempSync(join(tmpdir(), 'container-supervisor-'))
+    t.after(() => {
+      rmSync(root, { recursive: true, force: true })
+    })
+    initRepo(root)
+    const supervisor = new TaskSupervisor({
+      store: new FileSupervisedTaskStore({ COPSE_WORKSPACE_DIR: join(root, 'tasks') }),
+    })
+    t.after(() => supervisor.shutdown())
+    const service = supervisedService(root, async () => {
+      throw new Error('image unavailable')
+    })
+    t.after(service.installSupervisor(supervisor))
+    await service.start(supervisedRequest())
+    const task = await waitForTask(supervisor, 'failed')
+    assert.equal(task.lastError, 'image unavailable')
+  })
+
+  it('a supervisor cancellation during preparation prevents Docker execution', async (t) => {
+    const root = mkdtempSync(join(tmpdir(), 'container-supervisor-'))
+    t.after(() => {
+      rmSync(root, { recursive: true, force: true })
+    })
+    initRepo(root)
+    let release = (): void => {}
+    const preparing = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    t.after(release)
+    const supervisor = new TaskSupervisor({
+      store: new FileSupervisedTaskStore({ COPSE_WORKSPACE_DIR: join(root, 'tasks') }),
+    })
+    t.after(() => supervisor.shutdown())
+    const service = supervisedService(
+      root,
+      () => preparing,
+      () => {
+        throw new Error('must not start Docker')
+      },
+    )
+    t.after(service.installSupervisor(supervisor))
+    await service.start(supervisedRequest())
+    const task = await waitForTask(supervisor, 'running')
+    await supervisor.cancel(task.projectId, task.taskId)
+    release()
+    const result = await waitFor(service, THREAD, (p) => p.phase === 'failed')
+    assert.match(result.error ?? '', /Stopped by you/)
+    assert.equal(supervisor.get(task.projectId, task.taskId)?.state, 'cancelled')
+  })
+
+  it('stops all live runs through the installed supervisor', async (t) => {
+    const root = mkdtempSync(join(tmpdir(), 'container-supervisor-'))
+    t.after(() => {
+      rmSync(root, { recursive: true, force: true })
+    })
+    initRepo(root)
+    let release = (): void => {}
+    const preparing = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    t.after(release)
+    const supervisor = new TaskSupervisor({
+      store: new FileSupervisedTaskStore({ COPSE_WORKSPACE_DIR: join(root, 'tasks') }),
+    })
+    t.after(() => supervisor.shutdown())
+    const service = supervisedService(root, () => preparing)
+    t.after(service.installSupervisor(supervisor))
+    await service.start(supervisedRequest())
+    await waitForTask(supervisor, 'running')
+    await service.stopAll()
+    release()
+    await waitFor(service, THREAD, (p) => p.phase === 'failed')
+    assert.equal(supervisor.list()[0]?.state, 'cancelled')
+  })
+
+  it('reconciles a lost runtime as failed on restart without replaying it', async (t) => {
+    const root = mkdtempSync(join(tmpdir(), 'container-supervisor-'))
+    t.after(() => {
+      rmSync(root, { recursive: true, force: true })
+    })
+    initRepo(root)
+    let release = (): void => {}
+    const preparing = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    t.after(release)
+    const env = { COPSE_WORKSPACE_DIR: join(root, 'tasks') }
+    const supervisor = new TaskSupervisor({ store: new FileSupervisedTaskStore(env) })
+    t.after(() => supervisor.shutdown())
+    const service = supervisedService(root, () => preparing)
+    t.after(service.installSupervisor(supervisor))
+    await service.start(supervisedRequest())
+    const task = await waitForTask(supervisor, 'running')
+    const restarted = new TaskSupervisor({ store: new FileSupervisedTaskStore(env) })
+    t.after(() => restarted.shutdown())
+    await restarted.start()
+    const restored = restarted.get(task.projectId, task.taskId)
+    assert.equal(restored?.state, 'failed')
+    assert.match(restored.lastError ?? '', /process handle lost/)
+    await service.stopAll()
+    release()
+    await waitFor(service, THREAD, (p) => p.phase === 'failed')
+  })
+})
+
+function supervisedService(
+  root: string,
+  ensureImage: () => Promise<void> = () => Promise.resolve(),
+  run: () => Promise<ThreadContainerRecord> = () => Promise.resolve(fakeRecord(THREAD)),
+): ContainerRunService {
+  return new ContainerRunService({
+    resolveContext: checkoutAt(root),
+    ensureImage,
+    run,
+    stop: () => Promise.resolve('removed'),
+    sweep: () => Promise.resolve({ removed: [], failed: [], skipped: [] }),
+    adopt: () => Promise.resolve({ applied: [], alreadyApplied: 0 }),
+    loadCarryOut: () => null,
+    loadContinuation: () => null,
+  })
+}
+
+function supervisedRequest(): ContainerRunRequest {
+  return {
+    projectId: PROJECT,
+    threadId: THREAD,
+    prompt: 'private prompt',
+    model: 'claude-sonnet-4-6',
+    budgets: { wallClockMs: 60_000, tokenCeiling: 10_000 },
+  }
+}
+
+async function waitForTask(supervisor: TaskSupervisor, state: string): Promise<SupervisedTaskMeta> {
+  const deadline = Date.now() + 3_000
+  while (Date.now() < deadline) {
+    const task = supervisor.list().find((candidate) => candidate.state === state)
+    if (task) return task
+    await new Promise((resolve) => setTimeout(resolve, 5))
+  }
+  throw new Error(`No supervised task reached ${state}`)
+}

@@ -303,6 +303,49 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         resolved({ threadId, phase: 'off', containment: 'unsandboxed', expiresAt: null }),
       onGuardedYoloChanged: subscribe,
     },
+    container: {
+      runThread: (request) =>
+        resolved({
+          threadId: request.threadId,
+          runtimeId: 'run-demo',
+          phase: 'running' as const,
+          startedAt: Date.now(),
+          finishedAt: null,
+          prompt: request.prompt,
+          model: request.model,
+          egressAllowlist: ['api.anthropic.com:443'],
+          credential: 'key' as const,
+          log: ['[thread-container] starting copse-run-demo from copse-worker:local'],
+          warnings: [],
+          checkout: { root: '/repo', mode: 'shared' as const, branch: 'main' },
+          record: null,
+          error: null,
+          continuedFrom: request.continueFrom ?? null,
+        }),
+      stopRun: () => resolved(null),
+      adoptRun: () =>
+        resolved({
+          applied: [
+            'a1b2c3d fix(lint): remove unused imports across src/main',
+            'b2c3d4e fix(lint): prefer nullish coalescing in providers',
+            'c3d4e5f chore: rerun formatter',
+          ],
+          alreadyApplied: 0,
+        }),
+      getRun: (threadId) =>
+        resolved(
+          scenario.containerRun && scenario.containerRun.threadId === threadId
+            ? scenario.containerRun
+            : null,
+        ),
+      modelAvailability: (models) =>
+        resolved(
+          Object.fromEntries(
+            models.map((model) => [model, { reason: 'not available in the demo' }] as const),
+          ),
+        ),
+      onRunChanged: subscribe,
+    },
     fs: {
       readFile: (_projectId: string, _threadId: string, path: string) =>
         resolved(writtenFiles.get(path) ?? ''),

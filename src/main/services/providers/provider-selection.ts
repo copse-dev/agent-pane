@@ -1,9 +1,5 @@
-import {
-  createProvider,
-  createLMStudioProvider,
-  createOpenRouterProvider,
-  createExtraCloudProvider,
-} from '@copse/llm/create-provider.ts'
+import { createProvider } from '@copse/llm/create-provider.ts'
+import { buildProviderFromDescription, type ProviderDescription } from './provider-description.ts'
 import { isOpenRouterModel, openRouterModelId } from '@copse/llm/openrouter.ts'
 import { isDynamicModel } from '@copse/llm/dynamic-model.ts'
 import { hostRoutedNamespace, type HostRoutedNamespace } from '@copse/llm/model-selection.ts'
@@ -274,6 +270,36 @@ export async function buildProvider(
   opts: BuildProviderOptions = {},
 ): Promise<LLMProvider> {
   if (process.env['COPSE_PANEL_MOCK_LLM'] === '1') return createProvider(model)
+  const description = await describeProvider(model, opts)
+  const provider = buildProviderFromDescription(description, {
+    apiKey: apiKeyForDescription(description),
+    ...(promptCacheKey !== undefined ? { promptCacheKey } : {}),
+    approvedHosts: getApprovedProviderHosts(),
+  })
+  const local =
+    description.kind === 'lm-studio' ||
+    (description.kind === 'openai-compatible' && description.local)
+  return local ? provider : redactedRemoteProvider(provider)
+}
+
+/** The stored key a description is used with, or null when there is none. */
+export function apiKeyForDescription(description: ProviderDescription): string | null {
+  if (description.kind === 'lm-studio') return getLmStudioApiKey() || null
+  return storedOrEnvApiKey(description.apiKeySlug)
+}
+
+/**
+ * Resolve a model selection into a provider description: every branch of
+ * {@link buildProvider} without the client at the end, so a container run can
+ * carry the same resolution — parameters, OpenRouter's privacy routing, the
+ * OpenAI transport choices — into a guest that has no settings of its own.
+ * Throws for a route-shaped selection and for a keyed provider whose key is
+ * missing where the description alone would not say so.
+ */
+export async function describeProvider(
+  model: string,
+  opts: BuildProviderOptions = {},
+): Promise<ProviderDescription> {
   const hostRouted = hostRoutedNamespace(model)
   if (hostRouted) throw new Error(HOST_ROUTED_MESSAGE[hostRouted](model))
   const params = resolveTurnParameters(model, opts)
@@ -293,71 +319,76 @@ export async function buildProvider(
         'No local model available. Open Settings → Local models, check the server URL/API key, and pick a model.',
       )
     }
-    return createLMStudioProvider(url, id, getLmStudioApiKey(), params)
+    return { kind: 'lm-studio', model: id, apiKeySlug: 'lmstudio', url, params }
   }
   if (isOpenRouterModel(model)) {
-    const apiKey = storedOrEnvApiKey('openrouter')
-    if (!apiKey) {
+    if (!storedOrEnvApiKey('openrouter')) {
       throw new Error(
         'OpenRouter is not configured. Add an OpenRouter API key in Settings or choose another model.',
       )
     }
-    return redactedRemoteProvider(
-      createOpenRouterProvider(openRouterModelId(model), apiKey, promptCacheKey, {
-        // Privacy routing, toggled in Settings → Providers → OpenRouter:
-        // ZDR-only endpoints by default, and providers that train on inputs
-        // stay excluded unless explicitly allowed.
-        zdrOnly: getSetting<boolean>('openRouterZdrOnly', true),
-        allowTraining: getSetting<boolean>('openRouterAllowTraining', false),
-        params,
-      }),
-    )
+    return {
+      kind: 'openrouter',
+      model: openRouterModelId(model),
+      apiKeySlug: 'openrouter',
+      // Privacy routing, toggled in Settings → Providers → OpenRouter:
+      // ZDR-only endpoints by default, and providers that train on inputs
+      // stay excluded unless explicitly allowed.
+      zdrOnly: getSetting<boolean>('openRouterZdrOnly', true),
+      allowTraining: getSetting<boolean>('openRouterAllowTraining', false),
+      params,
+    }
   }
   const extra = extraProviderForModel(getResolvedExtraProviders(), model)
   if (extra) {
-    const apiKey = storedOrEnvApiKey(extra.id)
     // Local servers (Ollama, llama.cpp, …) typically run without auth, so a
     // missing key is fine; createExtraCloudProvider supplies a placeholder.
-    if (!apiKey && !extra.local) {
+    if (!storedOrEnvApiKey(extra.id) && !extra.local) {
       throw new Error(
         `${extra.label} is not configured. Add a ${extra.label} API key in Settings or choose another model.`,
       )
     }
-    const provider = createExtraCloudProvider(
-      extra,
-      extraProviderModelId(model),
-      apiKey ?? '',
-      getApprovedProviderHosts(),
+    return {
+      kind: 'openai-compatible',
+      model: extraProviderModelId(model),
+      apiKeySlug: extra.id,
+      url: extra.baseUrl,
+      label: extra.label,
+      local: extra.local,
+      includeUsage: extra.includeUsage ?? !extra.local,
+      apiStyle: extra.apiStyle ?? null,
+      extraBody: extra.extraBody ?? null,
       params,
-    )
-    return extra.local ? provider : redactedRemoteProvider(provider)
+    }
   }
-  if (model.startsWith('claude')) {
-    return redactedRemoteProvider(
-      createProvider(model, { anthropicApiKey: storedOrEnvApiKey('anthropic') }, undefined, {
-        params,
-      }),
-    )
-  }
+  if (model.startsWith('claude'))
+    return { kind: 'anthropic', model, apiKeySlug: 'anthropic', params }
   if (model.startsWith('gpt')) {
-    return redactedRemoteProvider(
-      createProvider(model, { openAiApiKey: storedOrEnvApiKey('openai') }, promptCacheKey, {
-        ...openAiRequestOptions(),
-        params,
-      }),
-    )
+    return { kind: 'openai', model, apiKeySlug: 'openai', params, ...openAiTransport() }
   }
-  return redactedRemoteProvider(
-    createProvider(
-      model,
-      {
-        anthropicApiKey: storedOrEnvApiKey('anthropic'),
-        openAiApiKey: storedOrEnvApiKey('openai'),
-      },
-      promptCacheKey,
-      { ...openAiRequestOptions(), params },
-    ),
+  // An id neither prefix claims goes to whichever cloud provider has a key,
+  // Anthropic first — the order `createProvider` has always used.
+  if (storedOrEnvApiKey('anthropic')) {
+    return { kind: 'anthropic', model, apiKeySlug: 'anthropic', params }
+  }
+  if (storedOrEnvApiKey('openai')) {
+    return { kind: 'openai', model, apiKeySlug: 'openai', params, ...openAiTransport() }
+  }
+  throw new Error(
+    'No LLM provider configured. Set ANTHROPIC_API_KEY or OPENAI_API_KEY in Settings, pick an LM Studio model, or set COPSE_PANEL_MOCK_LLM=1 for development.',
   )
+}
+
+/** The OpenAI transport choices as description fields. */
+function openAiTransport(): Pick<
+  Extract<ProviderDescription, { kind: 'openai' }>,
+  'serviceTier' | 'forceChatCompletions'
+> {
+  const options = openAiRequestOptions()
+  return {
+    forceChatCompletions: options.forceChatCompletions === true,
+    serviceTier: options.serviceTier ?? null,
+  }
 }
 
 /**

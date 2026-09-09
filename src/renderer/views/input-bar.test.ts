@@ -4,6 +4,8 @@ import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
 import { addMessage, getThreadById, setThreadDraftPrompt } from '@shared/store/thread-helpers.ts'
 import type { Thread } from '@shared/types'
+import type { ContainerRunProgress } from '@shared/types/container-run.ts'
+import { containerRunToolCall } from '@shared/store/container-run-card.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountInputBar } from './input-bar.ts'
 import { mountProjectsPane } from './projects-pane.ts'
@@ -68,6 +70,8 @@ function createApi(options: {
   >
   openRouterModels?: () => Promise<Awaited<ReturnType<ApiClient['openRouter']['models']>>>
   lmStudioModelInfo?: () => Promise<Awaited<ReturnType<ApiClient['lmStudio']['modelInfo']>>>
+  /** Turn the experimental container-run setting on for the mounted bar. */
+  containerRunsEnabled?: boolean
   onDescribeImages?: ApiClient['agent']['describeImages']
   estimateContext?: ApiClient['agent']['estimateContext']
   promptState?: { startingCommit: string | null; dirty: boolean }
@@ -168,7 +172,10 @@ function createApi(options: {
             openai: true,
           })),
         extraProviders: async () => [],
-        get: async () => undefined,
+        get: async (key: string): Promise<unknown> =>
+          key === 'containerRunsEnabled' && options.containerRunsEnabled === true
+            ? true
+            : undefined,
         set: async (): Promise<void> => {},
       },
       plugins: {
@@ -937,8 +944,8 @@ describe('input bar developer diagnostics', () => {
     })
     const host = document.createElement('div')
     document.body.append(host)
-    mountInputBar(host, store, createApi({ currentBranch: 'main' }))
-    await settle()
+    mountInputBar(host, store, createApi({ currentBranch: 'main', containerRunsEnabled: true }))
+    await flush()
 
     const overflow = host.querySelector<HTMLElement>('.footer-overflow')
     const trigger = host.querySelector<HTMLButtonElement>('.footer-overflow-trigger')
@@ -952,7 +959,7 @@ describe('input bar developer diagnostics', () => {
       Array.from(host.querySelectorAll('.footer-overflow-item')).map((item) =>
         item.textContent.trim(),
       ),
-      ['Enable Guarded YOLO', 'Debug trace', 'Share trace'],
+      ['Enable Guarded YOLO', 'Run unattended in a container…', 'Debug trace', 'Share trace'],
     )
 
     store.setState({ developerMode: true })
@@ -965,6 +972,7 @@ describe('input bar developer diagnostics', () => {
       ),
       [
         'Enable Guarded YOLO',
+        'Run unattended in a container…',
         'Copy thread ID',
         'Export conversation (JSONL)',
         'Export thread folder (ZIP)',
@@ -981,7 +989,7 @@ describe('input bar developer diagnostics', () => {
       Array.from(host.querySelectorAll('.footer-overflow-item')).map((item) =>
         item.textContent.trim(),
       ),
-      ['Enable Guarded YOLO', 'Debug trace', 'Share trace'],
+      ['Enable Guarded YOLO', 'Run unattended in a container…', 'Debug trace', 'Share trace'],
     )
   })
 })
@@ -2043,8 +2051,8 @@ describe('input bar footer overflow menu', () => {
     })
     const host = document.createElement('div')
     document.body.append(host)
-    mountInputBar(host, store, createApi({ currentBranch: 'main' }))
-    await settle()
+    mountInputBar(host, store, createApi({ currentBranch: 'main', containerRunsEnabled: true }))
+    await flush()
 
     const trigger = host.querySelector<HTMLButtonElement>('.footer-overflow-trigger')
     assert.ok(trigger)
@@ -2055,8 +2063,8 @@ describe('input bar footer overflow menu', () => {
       (item) => item.textContent,
     )
     // Developer diagnostics are disabled for this fixture, so only the ordinary
-    // thread action remains visible.
-    assert.deepEqual(labels, ['Enable Guarded YOLO'])
+    // thread actions remain visible, Guarded YOLO leading.
+    assert.deepEqual(labels, ['Enable Guarded YOLO', 'Run unattended in a container…'])
   })
 })
 
@@ -2334,10 +2342,11 @@ describe('input bar stacking order', () => {
     // bar, the mention pickers) are overlays parked on the same host.
     const order = Array.from(host.children)
       .map((child) => child.className.split(' ')[0])
-      .slice(0, 9)
+      .slice(0, 10)
 
     assert.deepEqual(order, [
       'guarded-yolo-banner',
+      'container-run-banner',
       'composer-branch-warning',
       'composer-checkout-error',
       'composer-image-warning',
@@ -2374,5 +2383,83 @@ describe('input bar stacking order', () => {
     banner.hidden = true
     await settle()
     assert.equal(branchWarning.classList.contains('is-composer-top'), true)
+  })
+})
+
+describe('input bar container target', () => {
+  it('mounts on a restored thread whose last turn is a container run, offering the container', async () => {
+    // The picker reads the run back from the thread's card, so the composer
+    // offers the container after a restart too; its first update runs from
+    // the control's own mount, before the rest of the bar exists.
+    const progress: ContainerRunProgress = {
+      threadId: 'thread-1',
+      runtimeId: 'run-1',
+      phase: 'finished',
+      startedAt: 1_000,
+      finishedAt: 2_000,
+      prompt: 'Fix the lint backlog',
+      model: 'claude-sonnet-4-6',
+      egressAllowlist: ['api.anthropic.com:443'],
+      credential: 'key',
+      log: [],
+      warnings: [],
+      checkout: null,
+      record: null,
+      error: null,
+      continuedFrom: null,
+    }
+    const restored: Thread = {
+      ...thread(),
+      messages: [
+        { id: 'u1', role: 'user', content: 'Fix the lint backlog', toolCalls: [], createdAt: 1 },
+        {
+          id: 'a1',
+          role: 'assistant',
+          content: '',
+          toolCalls: [containerRunToolCall(progress)],
+          createdAt: 2,
+        },
+      ],
+    }
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [restored],
+    })
+    const host = document.createElement('div')
+    host.id = 'input-bar'
+    document.body.append(host)
+    mountInputBar(host, store, createApi({ currentBranch: 'main', containerRunsEnabled: true }))
+    await flush()
+    const picker = host.querySelector<HTMLSelectElement>('.composer-target')
+    assert.ok(picker)
+    assert.equal(picker.hidden, false)
+    assert.equal(picker.value, 'container')
+  })
+
+  it('offers neither the menu entry nor the picker while the experimental setting is off', async () => {
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    host.id = 'input-bar'
+    document.body.append(host)
+    mountInputBar(host, store, createApi({ currentBranch: 'main' }))
+    await flush()
+    const trigger = host.querySelector<HTMLButtonElement>('.footer-overflow-trigger')
+    assert.ok(trigger)
+    trigger.click()
+    await settle()
+    const labels = [...host.querySelectorAll('.footer-overflow-item')].map((item) =>
+      item.textContent.trim(),
+    )
+    assert.ok(!labels.includes('Run unattended in a container…'), labels.join(', '))
+    assert.equal(host.querySelector<HTMLSelectElement>('.composer-target')?.hidden, true)
   })
 })

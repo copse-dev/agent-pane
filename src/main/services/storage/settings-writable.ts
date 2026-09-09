@@ -347,6 +347,10 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // offer one obvious next step as composer placeholder text the user accepts
   // with Tab. See next-step-service.ts.
   nextStepSuggestionEnabled: z.boolean(),
+  // Experimental unattended container runs: a thread's turn in a hardened
+  // Docker container, started from the composer. Off by default; needs Docker.
+  // See docs/plans/thread-in-container.md and container-run-service.ts.
+  containerRunsEnabled: z.boolean(),
   advisorModel: z.string().max(256),
   // Experimental orchestration strategy: the chat model orchestrates and a
   // cheaper worker model implements delegated steps. See orchestration-strategy.ts.

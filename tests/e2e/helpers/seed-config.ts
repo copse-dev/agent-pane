@@ -505,6 +505,8 @@ export function seedEmptyProject(
     subagentsEnabled?: boolean
     mockFollowUps?: boolean
     nextStepSuggestionEnabled?: boolean
+    /** Opt into the experimental unattended container runs (off by default). */
+    containerRunsEnabled?: boolean
     model?: string
     advisorModel?: string
     localServerUrl?: string
@@ -632,6 +634,9 @@ export function seedEmptyProject(
   }
   if (options?.nextStepSuggestionEnabled !== undefined) {
     settings.nextStepSuggestionEnabled = options.nextStepSuggestionEnabled
+  }
+  if (options?.containerRunsEnabled !== undefined) {
+    settings.containerRunsEnabled = options.containerRunsEnabled
   }
   if (options?.model) {
     settings.model = options.model
@@ -2219,12 +2224,19 @@ export function seedContextWheelFixture(workspaceRoot: string): void {
  * pinned appearance defaults as {@link resetUserData}, so call it *after* that
  * reset — not before, or the reset overwrites it.
  */
-export function seedDeveloperModeSetting(developerMode: boolean): void {
-  writeSettings({ developerMode })
+export function seedDeveloperModeSetting(
+  developerMode: boolean,
+  settings: Record<string, unknown> = {},
+): void {
+  writeSettings({ ...settings, developerMode })
 }
 
 /** Populated conversation used to validate Developer mode's diagnostic surfaces. */
-export function seedDeveloperModeFixture(workspaceRoot: string, developerMode: boolean): void {
+export function seedDeveloperModeFixture(
+  workspaceRoot: string,
+  developerMode: boolean,
+  settings: Record<string, unknown> = {},
+): void {
   const projectId = 'e2e-developer-mode-project'
   const threadId = 'e2e-developer-mode-thread'
   const now = Date.now()
@@ -2253,7 +2265,7 @@ export function seedDeveloperModeFixture(workspaceRoot: string, developerMode: b
       },
     ],
   })
-  writeSettings({ developerMode })
+  writeSettings({ ...settings, developerMode })
 }
 
 /** ACP thread whose context snapshot represents a `usage_update` from the agent. */
