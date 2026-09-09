@@ -22,6 +22,7 @@ export const automationsPlugin: RegisteredPlugin = definePlugin(
         slot: 'settings-plugin-detail',
         title: 'Automation schedules',
       },
+      { id: 'automation-manager', level: 3, slot: 'app-dialog', title: 'Automations' },
     ],
     storage: { namespace: AUTOMATIONS_PLUGIN_ID },
   },
@@ -33,6 +34,7 @@ export const automationsPlugin: RegisteredPlugin = definePlugin(
         slot: 'settings-plugin-detail',
         title: 'Automation schedules',
       },
+      { id: 'automation-manager', level: 3, slot: 'app-dialog', title: 'Automations' },
     ],
   },
 )

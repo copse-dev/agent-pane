@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
-import { AUTOMATIONS_PLUGIN_ID } from '../../packages/agent/src/plugins/automations-plugin.ts'
 import {
   E2E_SCREENSHOT_DIR,
   prepareE2eScreenshot,
@@ -16,7 +15,7 @@ const SCHEDULE_ID = 'schedule-docs-freshness'
  * The seam between the two halves of automations: the sidebar owns run history,
  * the schedule editor owns the configuration, and an automation heading links
  * from one to the other. This spec drives that link end to end — sidebar
- * heading → Settings → Packs → the automations detail with that schedule open.
+ * heading → Automations modal → the shared editor with that schedule open.
  */
 describe('automation setup links', function () {
   this.timeout(60_000)
@@ -115,26 +114,22 @@ describe('automation setup links', function () {
     await scheduleGroup.waitForExist({ timeout: 5_000 })
     const header = scheduleGroup.$('.automation-schedule-header')
     const setup = header.$('.automation-setup-btn')
-    // Quiet until the heading is hovered, like the row actions beside it. Pin
-    // the shell before hovering so the capture below cannot move the pointer
-    // off the heading it is meant to show.
+    // Reveal the quiet action by keyboard focus, which is deterministic even
+    // when this test's native window is not beneath the OS pointer.
     await prepareE2eScreenshot()
-    await header.moveTo()
+    await browser.execute(() => {
+      document.querySelector<HTMLButtonElement>('.automation-schedule-toggle')?.focus()
+    })
+    await browser.keys('Tab')
     await expect(setup).toBeDisplayed()
     assert.equal(await setup.getAttribute('aria-label'), 'Docs freshness setup')
     await saveElementScreenshot('.automation-threads-group', 'automation-setup-link.png')
 
     await setup.click()
-    const dialog = $('#settings-dialog')
+    const dialog = $('#automation-dialog')
     await expect(dialog).toBeDisplayed()
-    await expect(dialog.$('.settings-nav-btn[data-section="customise"]')).toHaveElementClass(
-      'active',
-    )
-
-    // The detail sits inside a fold that is closed by default; the link opens it
-    // and the schedule it named.
-    const row = dialog.$(`.plugin-row[data-plugin-id="${AUTOMATIONS_PLUGIN_ID}"]`)
-    await row.waitForExist({ timeout: 15_000 })
+    await expect($('#settings-dialog')).not.toBeDisplayed()
+    const row = dialog.$('.automation-plugin-settings')
     const form = row.$('.automation-form')
     await expect(form).toBeDisplayed()
     await expect(row.$('.automation-name-input')).toHaveValue('Docs freshness')
@@ -143,7 +138,7 @@ describe('automation setup links', function () {
     await saveElementScreenshot('.automation-form', 'automation-setup-link-form.png')
 
     // Linking out is not expanding: the run list stays as the user left it.
-    await dialog.$('#settings-close').click()
+    await dialog.$('[aria-label="Close automations"]').click()
     await expect(dialog).not.toBeDisplayed()
     assert.equal(
       await scheduleGroup.$('.automation-schedule-toggle').getAttribute('aria-expanded'),

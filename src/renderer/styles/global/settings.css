@@ -2352,11 +2352,19 @@ dialog.settings-overlay::backdrop {
   padding: var(--spacing-md);
   background: var(--bg-base);
 }
-.automation-form[hidden] {
+.automation-form[hidden],
+.automation-list[hidden],
+.automation-plugin-heading[hidden] {
   display: none;
+}
+.automation-form-title {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: var(--font-size-md);
 }
 .automation-label {
   display: flex;
+  margin-bottom: 0;
   min-width: 0;
   flex-direction: column;
   gap: var(--spacing-xs);
@@ -2396,4 +2404,66 @@ dialog.settings-overlay::backdrop {
 }
 .automation-form-actions {
   justify-content: flex-end;
+}
+
+/* The plugin's project editor also mounts outside the full Settings surface. */
+#automation-dialog {
+  width: min(760px, calc(100vw - 32px));
+  max-height: calc(100dvh - 48px);
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  overflow: hidden;
+}
+#automation-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+#automation-dialog::backdrop {
+  background: rgb(0 0 0 / 45%);
+}
+.automation-dialog-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-shrink: 0;
+  padding: var(--spacing-md) var(--spacing-lg);
+  border-bottom: 1px solid var(--border);
+}
+.automation-dialog-header h2 {
+  margin: 0;
+  font-size: var(--font-size-lg);
+}
+.automation-dialog-body {
+  padding: var(--spacing-lg);
+  overflow: auto;
+  min-height: 0;
+}
+.automation-dialog-plugin {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+.automation-dialog-plugin > span {
+  flex: 1;
+}
+.automation-dialog-body > [role='status']:empty {
+  display: none;
+}
+@media (max-width: 600px) {
+  #automation-dialog .automation-form {
+    grid-template-columns: 1fr;
+  }
+  #automation-dialog .automation-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  #automation-dialog .automation-row-actions {
+    flex-wrap: wrap;
+  }
 }

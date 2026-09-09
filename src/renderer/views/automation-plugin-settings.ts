@@ -32,6 +32,10 @@ function liveWorktreeLimit(value: string): AutomationLiveWorktreeLimit {
   return 1
 }
 
+export interface AutomationEditor extends HTMLElement {
+  setPluginEnabled: (enabled: boolean) => void
+}
+
 /**
  * First-party level-3 `settings-plugin-detail` view for copse.automations.
  * The plugin declares the slot; this shipped renderer supplies the executable UI
@@ -46,7 +50,8 @@ export function createAutomationPluginSettings(
   api: ModelOptionsApi & Pick<ApiClient, 'automations'>,
   pluginEnabled: boolean,
   revealScheduleId?: string,
-): HTMLElement {
+  createNew = false,
+): AutomationEditor {
   const root = el('section', {
     class: 'automation-plugin-settings',
     'data-plugin-detail': AUTOMATIONS_PLUGIN_ID,
@@ -77,17 +82,16 @@ export function createAutomationPluginSettings(
       ? `Project: ${project.name} · local time · Copse must be running`
       : 'Open a project to configure its schedules.',
   )
-  const notice = el(
-    'p',
-    { class: 'automation-notice' },
+  const pluginNotice = (): string =>
     pluginEnabled
       ? 'Each run starts a fresh isolated task. Runs group under the schedule name. One live worktree is the safe default; schedules can explicitly allow up to three. Normal tool permission prompts still apply.'
-      : 'Enable this plugin to arm schedules. Existing schedules remain editable while disabled.',
-  )
-  const status = el('div', { class: 'automation-status', hidden: true })
+      : 'Enable this plugin to arm schedules. Existing schedules remain editable while disabled.'
+  const notice = el('p', { class: 'automation-notice' }, pluginNotice())
+  const status = el('div', { class: 'automation-status', role: 'status', hidden: true })
   const list = el('div', { class: 'automation-list' })
 
   const form = el('form', { class: 'automation-form', hidden: true })
+  const formTitle = el('h3', { class: 'automation-form-title' }, 'New automation')
   const nameInput = el('input', {
     type: 'text',
     class: 'automation-input automation-name-input',
@@ -124,6 +128,7 @@ export function createAutomationPluginSettings(
   const saveButton = el('button', { type: 'submit', class: 'automation-save-btn' }, 'Save schedule')
   const cancelButton = el('button', { type: 'button', class: 'automation-cancel-btn' }, 'Cancel')
   form.append(
+    formTitle,
     el('label', { class: 'automation-label' }, 'Name', nameInput),
     el(
       'label',
@@ -164,6 +169,7 @@ export function createAutomationPluginSettings(
   // Consumed by the first successful load; later refreshes (a save, a delete)
   // must not re-open the editor behind the user.
   let pendingReveal = revealScheduleId
+  let pendingCreate = createNew
 
   function showStatus(message: string, error = false): void {
     status.hidden = false
@@ -180,11 +186,16 @@ export function createAutomationPluginSettings(
   function closeForm(): void {
     editingId = null
     form.hidden = true
+    list.hidden = false
+    heading.hidden = false
   }
 
   async function openForm(schedule?: AutomationSchedule): Promise<void> {
     hideStatus()
     editingId = schedule?.id ?? null
+    formTitle.textContent = schedule ? 'Edit automation' : 'New automation'
+    list.hidden = true
+    heading.hidden = true
     nameInput.value = schedule?.name ?? ''
     cronInput.value = schedule?.cron ?? '0 9 * * 1-5'
     promptInput.value = schedule?.prompt ?? ''
@@ -196,14 +207,14 @@ export function createAutomationPluginSettings(
     // chat model, since the chat model is a choice about right now.
     const configuredModel = schedule?.model.trim() ?? ''
     const defaultModel = configuredModel || BEST_VALUE_CHAT_MODEL
+    form.hidden = false
+    nameInput.focus()
     const options = await fetchDynamicModelOptions(defaultModel)
     const selectedModel =
       options.find((option) => option.value === defaultModel && !option.disabled)?.value ??
       options.find((option) => option.value && !option.disabled)?.value ??
       ''
     await modelPicker.refresh(selectedModel)
-    form.hidden = false
-    nameInput.focus()
   }
 
   function renderList(): void {
@@ -278,12 +289,16 @@ export function createAutomationPluginSettings(
           detail: 'Already-created tasks are not deleted.',
           confirmLabel: 'Delete schedule',
           danger: true,
-        }).then(async (confirmed) => {
-          if (!confirmed) return
-          await api.automations.remove(projectId, schedule.id)
-          if (editingId === schedule.id) closeForm()
-          await refresh()
         })
+          .then(async (confirmed) => {
+            if (!confirmed) return
+            await api.automations.remove(projectId, schedule.id)
+            if (editingId === schedule.id) closeForm()
+            await refresh()
+          })
+          .catch((error: unknown) => {
+            showStatus(cleanIpcError(error), true)
+          })
       })
       actions.append(edit, run, remove)
       row.append(copy, actions)
@@ -316,6 +331,10 @@ export function createAutomationPluginSettings(
       schedules = await api.automations.list(projectId)
       renderList()
       revealLinkedSchedule()
+      if (pendingCreate) {
+        pendingCreate = false
+        await openForm()
+      }
     } catch (error) {
       showStatus(cleanIpcError(error), true)
     }
@@ -354,5 +373,11 @@ export function createAutomationPluginSettings(
   })
 
   void refresh()
-  return root
+  return Object.assign(root, {
+    setPluginEnabled(enabled: boolean): void {
+      pluginEnabled = enabled
+      notice.textContent = pluginNotice()
+      renderList()
+    },
+  })
 }

@@ -964,6 +964,13 @@ destination. Schedules are project-scoped, so a heading under a project that
 isn't open lands on the project first rather than editing another project's
 automations. Spec: [`tests/e2e/automation-settings-link.e2e.ts`](../tests/e2e/automation-settings-link.e2e.ts).
 
+Setup now opens the plugin's standalone Automations modal. The side cog exposes
+the same list and a direct **New automation…** action; its adjacent Settings label
+stays a direct shortcut. Keep the modal header outside its scroll body, retain
+the project scope above the form, and use the identical editor inside Settings.
+Do not recreate the editor when plugin enablement changes: it may contain a draft.
+Spec: [`tests/e2e/automation-dialog.e2e.ts`](../tests/e2e/automation-dialog.e2e.ts).
+
 ## Settings → Usage worth-it card
 
 The plan worth-it block sits between subscription bars and the local ledger: one short verdict, one
