@@ -38689,6 +38689,16 @@ var init_model_intellect_generated = __esm({
         anchorMin: 60,
         anchorMax: 61,
         fittedAsOf: "2026-07-18"
+      },
+      {
+        from: "v4.3",
+        to: "v4.1",
+        a: 1.150330927332256,
+        b: 3.9086247898859163,
+        anchorCount: 611,
+        anchorMin: 1,
+        anchorMax: 54.1,
+        fittedAsOf: "2026-09-09"
       }
     ];
   }
@@ -249125,8 +249135,8 @@ var init_build_text_with_attachments = __esm({
     ATTACHMENT_MAX_CHARS = 16e3;
     HEAD_FRACTION = 0.7;
     THREAD_STEERING_PREAMBLE = "The past conversation(s) referenced below are available read-only through your file tools. Each is a directory: `events.jsonl` is the linear history (one JSON line per finalized message, oldest first); message prose is under `messages/*.md`; tool results and images under `blobs/`; nested subagent runs under `subagents/`. Read a file with read_file, grep with search_code, or summarize a whole thread with explore. The paths are absolute; do not try to write to them.";
-    VIDEO_STEERING_PREAMBLE = "The user attached the video(s) below. The video itself is NOT in your context \u2014 only these paths are. Use the `video_frames` tool to read one as still images: it samples the recording and returns only the frames that are visually different from each other, so a whole screen recording usually costs a handful of images. Call it with just the path to survey the whole video, then again with `start`/`end` around a moment you need to see more closely. There is no audio track available.";
-    ARCHIVE_STEERING_PREAMBLE = "The user attached the archive(s) below. The archive itself is NOT in your context \u2014 only these paths are. If you have a `read_archive` tool, use it to unpack one: it extracts the archive into this conversation's own directory and returns a listing of everything inside. After that the contents are ordinary files \u2014 read them with read_file, grep them with search_code, or summarize the tree with explore, using the paths under the extraction root it gives you. Unpack once, then work with the files. If no such tool is offered to you, say so and ask how to proceed \u2014 do not silently ignore the archive, and do not unpack it yourself with shell commands.";
+    VIDEO_STEERING_PREAMBLE = "The user attached the video(s) below. The video itself is NOT in your context \u2014 only these paths are. Use the `video_frames` tool to read one as still images: it samples the recording and returns only the frames that are visually different from each other, so a whole screen recording usually costs a handful of images. Call it with just the path to survey the whole video, then again with `start`/`end` around a moment you need to see more closely. There is no audio track available. Your client may offer that tool under a namespaced name, so look for one whose name ends in `video_frames` \u2014 for example `mcp__copse__video_frames`. If no such tool is offered to you, say so and ask how to proceed \u2014 do not try to read the video with shell commands.";
+    ARCHIVE_STEERING_PREAMBLE = "The user attached the archive(s) below. The archive itself is NOT in your context \u2014 only these paths are. If you have a `read_archive` tool, use it to unpack one: it extracts the archive into this conversation's own directory and returns a listing of everything inside. After that the contents are ordinary files \u2014 read them with read_file, grep them with search_code, or summarize the tree with explore, using the paths under the extraction root it gives you. Unpack once, then work with the files. Your client may offer that tool under a namespaced name, so look for one whose name ends in `read_archive` \u2014 for example `mcp__copse__read_archive`. If no such tool is offered to you, say so and ask how to proceed \u2014 do not silently ignore the archive, and do not unpack it yourself with shell commands.";
   }
 });
 
