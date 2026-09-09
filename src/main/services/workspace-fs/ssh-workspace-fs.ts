@@ -97,9 +97,7 @@ export class SshWorkspaceFs implements WorkspaceFsPathProbe {
   }
 
   async readFileBytes(path: string): Promise<Buffer> {
-    const result = await this.exec(
-      `base64 -w0 ${this.quote(path)} 2>/dev/null || base64 ${this.quote(path)}`,
-    )
+    const result = await this.exec(`base64 < ${this.quote(path)}`)
     if (result.code !== 0) {
       const err = remoteFsError(path, result)
       err.code = 'ENOENT'
