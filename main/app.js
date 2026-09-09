@@ -280370,6 +280370,115 @@ var init_pr_pane_thread = __esm({
   }
 });
 
+// src/renderer/views/pr-pane-activity.ts
+function readableState(state4) {
+  return state4.toLowerCase().replaceAll("_", " ");
+}
+function checkTone(state4) {
+  if (["SUCCESS", "NEUTRAL"].includes(state4)) return "success";
+  if (["FAILURE", "ERROR", "TIMED_OUT", "ACTION_REQUIRED"].includes(state4)) return "failure";
+  if (["QUEUED", "IN_PROGRESS", "PENDING", "WAITING", "REQUESTED"].includes(state4)) return "pending";
+  return "unknown";
+}
+function externalButton(label, url2, open3) {
+  if (!url2 || !/^https?:\/\//i.test(url2)) return el("span", {}, label);
+  const button = el("button", { type: "button", class: "pr-activity-link" }, label);
+  button.addEventListener("click", () => {
+    open3(url2);
+  });
+  return button;
+}
+function renderPrActivity(host, section, activity, open3) {
+  clear(host);
+  if (!activity || activity.error) {
+    host.append(
+      el(
+        "p",
+        { class: "pr-activity-notice", role: "status" },
+        activity?.error ?? "Comments and checks are unavailable. Refresh to retry or open on GitHub."
+      )
+    );
+    return;
+  }
+  if (section === "comments") {
+    host.append(
+      el(
+        "p",
+        { class: "pr-activity-notice" },
+        "Conversation comments and submitted reviews. Inline code discussions are available on GitHub."
+      )
+    );
+    if (activity.commentsTruncated)
+      host.append(
+        el(
+          "p",
+          { class: "pr-activity-notice" },
+          "Showing the latest 50 comments and 50 reviews. Open on GitHub for the full conversation."
+        )
+      );
+    if (!activity.comments.length)
+      host.append(el("p", {}, "No conversation comments or submitted reviews yet."));
+    for (const comment2 of activity.comments) {
+      const date6 = new Date(comment2.createdAt);
+      const time6 = el(
+        "time",
+        { datetime: comment2.createdAt },
+        Number.isNaN(date6.getTime()) ? comment2.createdAt : date6.toLocaleString()
+      );
+      const heading = el(
+        "div",
+        { class: "pr-comment-meta" },
+        el("strong", {}, `@${comment2.author}`),
+        el("span", {}, comment2.reviewState ? readableState(comment2.reviewState) : "commented"),
+        time6
+      );
+      const body = el("div", { class: "message-text streaming-markdown pr-comment-body" });
+      body.innerHTML = renderMarkdown(comment2.body);
+      host.append(
+        el("article", { class: "pr-comment", "data-comment-id": comment2.id }, heading, body)
+      );
+    }
+    return;
+  }
+  host.append(
+    el(
+      "p",
+      { class: "pr-activity-notice" },
+      `Checks for head commit ${activity.headSha.slice(0, 7)}`
+    )
+  );
+  if (activity.checksTruncated)
+    host.append(
+      el(
+        "p",
+        { class: "pr-activity-notice" },
+        "Showing the first 100 checks. Open on GitHub for all results."
+      )
+    );
+  if (!activity.checks.length) host.append(el("p", {}, "No checks reported for this commit."));
+  for (const check2 of activity.checks) {
+    host.append(
+      el(
+        "div",
+        { class: "pr-check-row" },
+        el(
+          "span",
+          { class: `pr-check-state pr-check-state-${checkTone(check2.state)}` },
+          readableState(check2.state)
+        ),
+        el("span", { class: "pr-check-name" }, check2.name),
+        externalButton("Details", check2.url, open3)
+      )
+    );
+  }
+}
+var init_pr_pane_activity = __esm({
+  "src/renderer/views/pr-pane-activity.ts"() {
+    init_dist();
+    init_helpers();
+  }
+});
+
 // src/renderer/views/pr-pane.ts
 function agentProviderLabel(provider) {
   return AGENT_PROVIDER_LABEL[provider] ?? provider;
@@ -280422,6 +280531,11 @@ function mountPrPane(listRoot, viewerRoot, store3, api3, monaco) {
   const listBody = el("div", { class: "git-changes-list pr-list-body" });
   listRoot.append(listHeader, listBody);
   const metaHost = el("div", { class: "pr-viewer-meta" });
+  const sectionsHost = el("nav", {
+    class: "pr-detail-sections",
+    "aria-label": "Pull request sections"
+  });
+  const activityHost = el("div", { class: "pr-activity", hidden: true });
   const descriptionHost = el("div", {
     class: "pr-viewer-description message-text streaming-markdown"
   });
@@ -280430,7 +280544,18 @@ function mountPrPane(listRoot, viewerRoot, store3, api3, monaco) {
   const imageWrap = el("div", { class: "git-image-diff-wrap" });
   imageWrap.hidden = true;
   const emptyState = el("div", { class: "panel-empty" }, "Select a pull request");
-  viewerRoot.append(metaHost, descriptionHost, filesHost, diffWrap, imageWrap, emptyState);
+  viewerRoot.append(
+    metaHost,
+    sectionsHost,
+    activityHost,
+    descriptionHost,
+    filesHost,
+    diffWrap,
+    imageWrap,
+    emptyState
+  );
+  let activeSection = "overview";
+  let detailsRequestId = 0;
   let ghStatus = null;
   let agentLinks = /* @__PURE__ */ new Map();
   let agentLinksGen = 0;
@@ -280516,6 +280641,8 @@ function mountPrPane(listRoot, viewerRoot, store3, api3, monaco) {
     const message2 = ghStatus?.message ?? (ghStatus?.installed ? "Sign in with `gh auth login` to browse pull requests here." : "Install GitHub CLI (`gh`) to browse pull requests in Copse.");
     listBody.append(el("div", { class: "git-changes-empty pr-empty-state" }, message2));
     clear(metaHost);
+    clear(sectionsHost);
+    activityHost.hidden = true;
     clear(descriptionHost);
     descriptionHost.classList.remove("pr-viewer-description-fill");
     clear(filesHost);
@@ -280676,6 +280803,7 @@ function mountPrPane(listRoot, viewerRoot, store3, api3, monaco) {
     if (!isStillSelected(ref)) return;
     if (fresh) prDetails = fresh;
     renderMeta();
+    renderSections();
   }
   function actionButton(label, confirmMessage, run6) {
     const btn = el("button", { type: "button", class: "pr-action-btn" }, label);
@@ -280865,6 +280993,46 @@ function mountPrPane(listRoot, viewerRoot, store3, api3, monaco) {
     descriptionHost.hidden = false;
     descriptionHost.innerHTML = renderMarkdown(prDetails.body);
   }
+  function renderSections() {
+    clear(sectionsHost);
+    activityHost.hidden = true;
+    if (!prDetails) return;
+    const sections6 = [
+      { key: "overview", label: "Overview" },
+      { key: "comments", label: "Comments" },
+      { key: "checks", label: "Checks" }
+    ];
+    for (const section of sections6) {
+      const button = el(
+        "button",
+        {
+          type: "button",
+          class: "pr-detail-section",
+          "data-section": section.key,
+          "aria-pressed": String(activeSection === section.key)
+        },
+        section.label
+      );
+      button.addEventListener("click", () => {
+        activeSection = section.key;
+        clearDiff();
+        renderDescription();
+        renderFiles();
+        renderSections();
+      });
+      sectionsHost.append(button);
+    }
+    if (activeSection !== "overview") {
+      descriptionHost.hidden = true;
+      filesHost.hidden = true;
+      diffWrap.hidden = true;
+      emptyState.hidden = true;
+      activityHost.hidden = false;
+      renderPrActivity(activityHost, activeSection, prDetails.activity, (url2) => {
+        void api3.shell.openExternal(url2);
+      });
+    }
+  }
   function renderFiles() {
     clear(filesHost);
     if (!prDetails) {
@@ -280975,13 +281143,16 @@ function mountPrPane(listRoot, viewerRoot, store3, api3, monaco) {
     await diffLoadQueue;
   }
   async function selectPr(ref) {
+    const requestId = ++detailsRequestId;
     const sameAsCurrent = selectedPr?.owner === ref.owner && selectedPr.repo === ref.repo && selectedPr.number === ref.number;
     if (!sameAsCurrent) {
       lastActionMessage = null;
       filesExpanded = false;
+      activeSection = "overview";
     }
     selectedPr = { owner: ref.owner, repo: ref.repo, number: ref.number };
     prDetails = null;
+    renderSections();
     selectedFile = null;
     renderList();
     if (!ghStatus?.installed || !ghStatus.authenticated) {
@@ -281012,8 +281183,11 @@ function mountPrPane(listRoot, viewerRoot, store3, api3, monaco) {
     emptyState.hidden = false;
     emptyState.textContent = "Loading pull request\u2026";
     try {
-      prDetails = await api3.gh.prDetails(ref.owner, ref.repo, ref.number);
+      const details = await api3.gh.prDetails(ref.owner, ref.repo, ref.number);
+      if (requestId !== detailsRequestId) return;
+      prDetails = details;
     } catch (err2) {
+      if (requestId !== detailsRequestId) return;
       emptyState.hidden = false;
       emptyState.textContent = err2 instanceof Error ? err2.message : "Could not load pull request";
       return;
@@ -281027,6 +281201,7 @@ function mountPrPane(listRoot, viewerRoot, store3, api3, monaco) {
     renderDescription();
     renderFiles();
     clearDiff();
+    renderSections();
   }
   function resetOther() {
     ciGen++;
@@ -281130,6 +281305,8 @@ function mountPrPane(listRoot, viewerRoot, store3, api3, monaco) {
   refreshBtn.addEventListener("click", () => void refresh({ reason: "manual" }));
   const unbindWorkspaceLinks = bindWorkspaceLinkClicks(descriptionHost, store3, api3);
   const unbindBrowserLinks = bindBrowserLinkClicks(descriptionHost, store3, api3);
+  const unbindActivityWorkspaceLinks = bindWorkspaceLinkClicks(activityHost, store3, api3);
+  const unbindActivityBrowserLinks = bindBrowserLinkClicks(activityHost, store3, api3);
   const stopObservingLayout = observeDiffHostLayout(viewerRoot, () => diffEditor);
   const unsubs = [
     store3.on("right_panel_mode_changed", () => {
@@ -281141,8 +281318,14 @@ function mountPrPane(listRoot, viewerRoot, store3, api3, monaco) {
       if (prsModeActive(store3)) void refresh();
     }),
     store3.on("workspace_changed", () => {
+      detailsRequestId++;
       selectedPr = null;
       prDetails = null;
+      renderMeta();
+      renderDescription();
+      renderFiles();
+      renderSections();
+      clearDiff();
       workspacePrs = [];
       prList = [];
       agentLinks = /* @__PURE__ */ new Map();
@@ -281196,9 +281379,12 @@ function mountPrPane(listRoot, viewerRoot, store3, api3, monaco) {
   return () => {
     void api3.gh.setListWatch(false, false);
     unregisterPopoutSeed();
+    detailsRequestId++;
     stopObservingLayout();
     unbindWorkspaceLinks();
     unbindBrowserLinks();
+    unbindActivityWorkspaceLinks();
+    unbindActivityBrowserLinks();
     unsubs.forEach((u2) => {
       u2();
     });
@@ -281231,6 +281417,7 @@ var init_pr_pane = __esm({
     init_git_diff_viewer();
     init_ui_scale();
     init_git_image_diff();
+    init_pr_pane_activity();
     STATUS_LABEL2 = {
       added: "A",
       modified: "M",
