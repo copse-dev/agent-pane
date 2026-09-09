@@ -121,6 +121,21 @@ describe('extractArchiveForThread', () => {
     assert.equal(readFileSync(join(second.root, 'a.txt'), 'utf8'), 'two')
   })
 
+  it('serializes concurrent extractions of the same archive without losing files', async () => {
+    const bytes = await zip({ 'a.txt': 'one', 'nested/b.txt': 'two' })
+    const results = await Promise.allSettled([extract(bytes), extract(bytes), extract(bytes)])
+    const fulfilled = results.map((result) => {
+      assert.equal(result.status, 'fulfilled')
+      return result.value
+    })
+    assert.equal(fulfilled.filter((result) => !result.reused).length, 1)
+    for (const result of fulfilled) {
+      assert.equal(readFileSync(join(result.root, 'a.txt'), 'utf8'), 'one')
+      assert.equal(readFileSync(join(result.root, 'nested/b.txt'), 'utf8'), 'two')
+      assert.equal(existsSync(`${result.root}.partial`), false)
+    }
+  })
+
   it('refuses entries that try to escape the extraction root', async () => {
     const result = await extract(
       await hostileZip(['../escape.txt', 'nested/../../escape.txt', '/etc/passwd', 'safe.txt']),
