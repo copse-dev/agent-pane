@@ -89,8 +89,9 @@ describe('footer overflow menu bounds', () => {
     // Three of the six overflow items are gated behind Developer mode. Without
     // this the menu holds only Guarded YOLO and the two trace exits, which is
     // both too short to give the bounds assertions below anything to measure
-    // and not the menu this spec was written against.
-    seedDeveloperModeSetting(true)
+    // and not the menu this spec was written against. The container entry is
+    // behind the experimental setting, so seed that on too.
+    seedDeveloperModeSetting(true, { containerRunsEnabled: true })
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
   })

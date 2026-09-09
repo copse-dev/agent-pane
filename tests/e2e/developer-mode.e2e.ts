@@ -12,7 +12,7 @@ describe('Developer mode surfaces', function () {
 
   it('hides diagnostics and Hooks by default, keeping the trace exits', async () => {
     resetUserData()
-    seedDeveloperModeFixture(process.cwd(), false)
+    seedDeveloperModeFixture(process.cwd(), false, { containerRunsEnabled: true })
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
@@ -42,7 +42,7 @@ describe('Developer mode surfaces', function () {
 
   it('reveals the footer diagnostics menu and Hooks settings when enabled', async () => {
     resetUserData()
-    seedDeveloperModeFixture(process.cwd(), true)
+    seedDeveloperModeFixture(process.cwd(), true, { containerRunsEnabled: true })
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
