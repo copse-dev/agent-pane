@@ -208,8 +208,8 @@ loop uses — so a disabled plugin removes them from new work without touching l
 code.
 
 The default-off `copse.automations` plugin also exercises the first-party level-3
-boundary: its manifest declares a `settings-plugin-detail` view and namespaced
-storage, while the Electron host supplies the local clock/thread-store service
+boundary: its manifest declares `settings-plugin-detail` and `app-dialog` views
+that share the same project editor, plus namespaced storage, while the Electron host supplies the local clock/thread-store service
 and the shipped renderer submits due prompts through the interactive agent controller.
 See [`docs/plans/automations.md`](plans/automations.md) for the deliberately narrow
 desktop-online cron prototype and its durable-supervisor boundary.

@@ -1,10 +1,35 @@
 /* ---- projects pane settings button ---- */
+.projects-settings-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  height: var(--chrome-action-band-height);
+  border-top: 1px solid var(--border);
+}
+.projects-menu-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--chrome-action-band-height);
+  height: 100%;
+  padding: 0;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+.projects-menu-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
 .projects-settings-btn {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  width: 100%;
+  width: auto;
   box-sizing: border-box;
   height: var(--chrome-action-band-height);
   min-height: var(--chrome-action-band-height);
@@ -14,7 +39,6 @@
   color: var(--text-muted);
   background: transparent;
   border: none;
-  border-top: 1px solid var(--border);
   cursor: pointer;
   -webkit-app-region: no-drag;
   flex-shrink: 0;
