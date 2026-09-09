@@ -295,6 +295,15 @@ html.mark-external-links
   /* Decorative: the title word beside it already names the kind. */
   pointer-events: none;
 }
+@media (forced-colors: active) {
+  .streaming-markdown blockquote.markdown-alert .markdown-alert-title::before {
+    /* A mask is painted with a background, which forced colors otherwise
+       replaces with Canvas and makes invisible against the callout. Preserve
+       only this glyph's system foreground; the plate and text still adapt. */
+    forced-color-adjust: none;
+    background-color: CanvasText;
+  }
+}
 .streaming-markdown blockquote.markdown-alert-note .markdown-alert-title::before {
   -webkit-mask: var(--callout-icon-note);
   mask: var(--callout-icon-note);
