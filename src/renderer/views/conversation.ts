@@ -2145,15 +2145,16 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     summary.addEventListener('click', (event) => {
       const target = event.target
       if (target instanceof Element && target.closest('button')) return
-      // Read after the native details action. The browser and component-test DOM
-      // toggle at different points during dispatch; the microtask sees the result.
-      queueMicrotask(() => {
-        disclosurePreferences.set(key, details.open)
-        details.dataset['userToggled'] = '1'
-        autoOpenedDisclosures.delete(key)
-        autoOpenedAt.delete(key)
-        cancelReveal(key)
-      })
+      // Chromium can run microtasks before the summary's default action. Own
+      // the toggle so the stored preference always matches the visible state.
+      event.preventDefault()
+      details.open = !details.open
+      disclosurePreferences.set(key, details.open)
+      details.dataset['userToggled'] = '1'
+      autoOpenedDisclosures.delete(key)
+      autoOpenedAt.delete(key)
+      cancelReveal(key)
+      if (details.open) ensureToolCardBodyRendered(details)
     })
   }
 
