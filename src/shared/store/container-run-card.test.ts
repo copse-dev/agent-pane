@@ -116,6 +116,7 @@ describe('containerRunToolCall', () => {
       ref: null,
       credential: 'key',
       continuedFrom: null,
+      report: null,
     })
     assert.ok(tc.subagent)
     assert.equal(tc.subagent.kind, 'container')
@@ -238,6 +239,8 @@ describe('latestContainerRun', () => {
     const latest = latestContainerRun(first)
     assert.ok(latest)
     assert.equal(latest.runtimeId, 'run-1')
+    assert.equal(latest.task, 'Fix the lint backlog')
+    assert.equal(latest.report, 'Done.')
     assert.equal(latest.model, 'claude-sonnet-4-6')
     assert.equal(latest.credential, 'login')
     assert.equal(latest.ref, 'refs/copse/runs/run-1')

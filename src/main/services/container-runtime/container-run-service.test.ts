@@ -833,6 +833,51 @@ describe('ContainerRunService.adopt', () => {
 })
 
 describe('ContainerRunService continuation (A14)', () => {
+  it("continues from the thread's card when the run is in neither memory nor its record on disk", async () => {
+    const seen: ThreadContainerRequest[] = []
+    const service = new ContainerRunService({
+      sweep: noSweep,
+      adopt: adoptSpy().adopt,
+      loadCarryOut: noRecordOnDisk,
+      loadContinuation: noContinuationOnDisk,
+      resolveContext: checkoutAt(root),
+      ensureImage: (): Promise<void> => Promise.resolve(),
+      stop: (): Promise<'removed'> => Promise.resolve('removed'),
+      run: (request): Promise<ThreadContainerRecord> => {
+        seen.push(request)
+        return Promise.resolve(fakeRecord(request.prompt))
+      },
+    })
+    const budgets = { wallClockMs: 60_000, tokenCeiling: 10_000 }
+    await assert.rejects(
+      service.start({
+        projectId: PROJECT,
+        threadId: THREAD,
+        prompt: 'Try again',
+        model: 'claude-sonnet-4-6',
+        budgets,
+        continueFrom: 'run-swept',
+      }),
+      /record is gone/,
+    )
+    await service.start({
+      projectId: PROJECT,
+      threadId: THREAD,
+      prompt: 'Try again',
+      model: 'claude-sonnet-4-6',
+      budgets,
+      continueFrom: 'run-swept',
+      continueContext: { prompt: 'Run the e2e tests', report: 'Nothing to change.', ref: null },
+    })
+    await waitFor(service, THREAD, (p) => p.phase === 'finished')
+    const request = seen[0]
+    assert.ok(request)
+    assert.equal(request.carryInRef, undefined)
+    assert.match(request.prompt, /Earlier you were asked:\nRun the e2e tests/)
+    assert.match(request.prompt, /You reported:\nNothing to change\./)
+    assert.match(request.prompt, /Follow-up:\nTry again$/)
+  })
+
   it('continues a run that made no commits from a fresh snapshot, with the prompt as the continuity', async () => {
     const seen: ThreadContainerRequest[] = []
     const settled: string[] = []

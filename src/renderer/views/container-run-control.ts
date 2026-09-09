@@ -996,6 +996,7 @@ export function mountContainerRunControl(
       ...(latest.credential === 'login' ? { useAgentLogin: true } : {}),
       installDependencies: true,
       continueFrom: latest.runtimeId,
+      continueContext: { prompt: latest.task, report: latest.report ?? '', ref: latest.ref },
     })
   }
 

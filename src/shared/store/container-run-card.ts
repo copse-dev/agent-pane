@@ -42,6 +42,8 @@ export interface ContainerRunToolArgs {
   credential: ContainerRunCredential
   /** The earlier run this one continued, when it did. */
   continuedFrom: string | null
+  /** The agent's last words, so a follow-up can quote them without the record. */
+  report: string | null
 }
 
 /** The most recent container run on a thread, read back from its card. */
@@ -49,6 +51,9 @@ export interface LatestContainerRun {
   messageId: string
   toolCallId: string
   runtimeId: string | null
+  /** What the run was asked, and what it reported, from the card. */
+  task: string
+  report: string | null
   model: string
   credential: ContainerRunCredential
   ref: string | null
@@ -67,6 +72,7 @@ function argsOf(toolCall: ToolCall): ContainerRunToolArgs | null {
   const ref = record['ref']
   const credential = record['credential']
   const continuedFrom = record['continuedFrom']
+  const report = record['report']
   return {
     task,
     model,
@@ -74,6 +80,7 @@ function argsOf(toolCall: ToolCall): ContainerRunToolArgs | null {
     ref: typeof ref === 'string' ? ref : null,
     credential: credential === 'key' || credential === 'login' ? credential : 'none',
     continuedFrom: typeof continuedFrom === 'string' ? continuedFrom : null,
+    report: typeof report === 'string' ? report : null,
   }
 }
 
@@ -94,6 +101,8 @@ export function latestContainerRun(thread: Pick<Thread, 'messages'>): LatestCont
       messageId: message.id,
       toolCallId: toolCall.id,
       runtimeId: args.runtimeId,
+      task: args.task,
+      report: args.report,
       model: args.model,
       credential: args.credential,
       ref: args.ref,
@@ -216,6 +225,7 @@ export function containerRunToolCall(progress: ContainerRunProgress): ToolCall {
     ref: progress.record?.carryOut.ref ?? null,
     credential: progress.credential,
     continuedFrom: progress.continuedFrom,
+    report: progress.record?.result?.finalText ?? null,
   }
   const transcript = progress.record?.transcript ?? []
   const log = logMessage(progress)

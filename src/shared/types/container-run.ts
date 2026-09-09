@@ -130,6 +130,13 @@ export interface ContainerRunRequest {
    * from the run it holds or its record on disk.
    */
   continueFrom?: string
+  /**
+   * What the thread's own card says about that run, for when neither the
+   * main process nor the run's record on disk can answer (the record swept,
+   * or written by an earlier build under another thread id): what it was
+   * asked and reported, and where its commits are, if anywhere.
+   */
+  continueContext?: { prompt: string; report: string; ref: string | null }
 }
 
 /**

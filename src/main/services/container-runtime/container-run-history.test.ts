@@ -116,15 +116,28 @@ describe('recordContainerRunTurn', () => {
     const d = deps(earlier, [])
     const history = await recordContainerRunTurn('p', finished(), d.deps)
     assert.ok(history)
-    assert.deepEqual(roles(history), ['user', 'assistant', 'user', 'assistant', 'tool'])
+    assert.deepEqual(roles(history), [
+      'user',
+      'assistant',
+      'user',
+      'assistant',
+      'assistant',
+      'tool',
+    ])
     const promptTurn = history[2]
     assert.ok(promptTurn?.role === 'user')
     assert.equal(promptTurn.content, finished().prompt)
-    const callTurn = history[3]
+    // The record in the assistant's own words first: an ACP agent's next
+    // turn is replayed the thread as text and never sees the tool call.
+    const said = history[3]
+    assert.ok(said?.role === 'assistant' && typeof said.content === 'string')
+    assert.match(said.content, /^\*\*Finished: no commits/)
+    assert.match(said.content, /The smoke spec reproduces/)
+    const callTurn = history[4]
     assert.ok(callTurn?.role === 'assistant')
     const call = callTurn.content
     assert.ok(Array.isArray(call) && call[0]?.name === 'container_run')
-    const result = history[4]
+    const result = history[5]
     assert.ok(result?.role === 'tool')
     assert.match(result.toolResults[0]?.result ?? '', /The smoke spec reproduces/)
     assert.deepEqual(d.saved, [history])
@@ -141,12 +154,12 @@ describe('recordContainerRunTurn', () => {
     const d = deps([], transcript)
     const history = await recordContainerRunTurn('p', progress, d.deps)
     assert.ok(history)
-    assert.deepEqual(roles(history), ['user', 'assistant', 'tool'])
+    assert.deepEqual(roles(history), ['user', 'assistant', 'assistant', 'tool'])
     // The same when the renderer has not persisted the card yet.
     const notYet = deps([], transcript.slice(0, 1))
     const rebuilt = await recordContainerRunTurn('p', progress, notYet.deps)
     assert.ok(rebuilt)
-    assert.deepEqual(roles(rebuilt), ['user', 'assistant', 'tool'])
+    assert.deepEqual(roles(rebuilt), ['user', 'assistant', 'assistant', 'tool'])
   })
 
   it('never throws: a thread that cannot be read is logged, not fatal', async () => {

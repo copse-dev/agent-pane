@@ -1613,6 +1613,16 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       .string()
       .regex(/^[a-z0-9-]{1,128}$/i)
       .optional(),
+    continueContext: z
+      .object({
+        prompt: z.string().max(200_000),
+        report: z.string().max(200_000),
+        ref: z
+          .string()
+          .regex(/^refs\/copse\/runs\/[a-z0-9-]{1,128}$/i)
+          .nullable(),
+      })
+      .optional(),
   })
   ipcMain.handle('container:run-thread', (event, request: unknown) => {
     assertMainFrameSender(event, win)
@@ -1629,6 +1639,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
         ? { installDependencies: parsed.installDependencies }
         : {}),
       ...(parsed.continueFrom !== undefined ? { continueFrom: parsed.continueFrom } : {}),
+      ...(parsed.continueContext !== undefined ? { continueContext: parsed.continueContext } : {}),
     })
   })
   // Why each model could not run in a container, or null when it could — the

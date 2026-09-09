@@ -271,7 +271,7 @@ export class ContainerRunService {
     if (!prompt) throw new Error('The run needs a prompt')
     const continuation =
       request.continueFrom !== undefined
-        ? this.continuationOf(request.threadId, request.continueFrom)
+        ? this.continuationOf(request.threadId, request.continueFrom, request.continueContext)
         : null
     const model = request.model
     const plan = await resolveContainerProvider(model, {
@@ -375,7 +375,11 @@ export class ContainerRunService {
    * left off. From memory when this session ran it, from disk otherwise, and
    * only ever a run of the same thread.
    */
-  private continuationOf(threadId: string, runtimeId: string): RunContinuation {
+  private continuationOf(
+    threadId: string,
+    runtimeId: string,
+    fromCard: ContainerRunRequest['continueContext'],
+  ): RunContinuation {
     const live = this.runs.get(threadId)
     const fromMemory =
       live?.record && live.record.runtimeId === runtimeId
@@ -388,11 +392,20 @@ export class ContainerRunService {
         : null
     if (fromMemory) return fromMemory
     const stored = this.deps.loadContinuation(runtimeId)
-    if (stored === null) {
-      throw new Error("The earlier run's record is gone, so there is nothing to continue from")
+    if (stored !== null && stored.threadId === threadId) {
+      return { runtimeId, ref: stored.ref, prompt: stored.prompt, finalText: stored.finalText }
     }
-    if (stored.threadId !== threadId) throw new Error('That run belongs to another thread')
-    return { runtimeId, ref: stored.ref, prompt: stored.prompt, finalText: stored.finalText }
+    // No usable record — swept, or written by an earlier build under the
+    // guest's own thread id — but the thread's card says what the run was
+    // asked and reported and where its commits are, which is all this needs.
+    if (fromCard) {
+      return { runtimeId, ref: fromCard.ref, prompt: fromCard.prompt, finalText: fromCard.report }
+    }
+    throw new Error(
+      stored === null
+        ? "The earlier run's record is gone, so there is nothing to continue from"
+        : 'That run belongs to another thread',
+    )
   }
 
   private async drive(

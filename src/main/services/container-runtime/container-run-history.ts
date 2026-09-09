@@ -18,7 +18,11 @@
  */
 import type { ContainerRunProgress } from '@shared/types/container-run.ts'
 import type { LLMMessage, Message, Thread } from '@shared/types'
-import { CONTAINER_RUN_TOOL, containerRunToolCall } from '@shared/store/container-run-card.ts'
+import {
+  CONTAINER_RUN_TOOL,
+  containerRunResultMarkdown,
+  containerRunToolCall,
+} from '@shared/store/container-run-card.ts'
 import { rebuildAgentHistory } from '../thread-fork.ts'
 
 export interface ContainerRunHistoryDeps {
@@ -40,10 +44,13 @@ function turnMessages(progress: ContainerRunProgress): Message[] {
       toolCalls: [],
       createdAt: progress.startedAt,
     },
+    // The review record as the assistant's own words as well as the tool
+    // result: an ACP agent's next turn replays the thread as text and never
+    // sees tool calls, so without this Codex asked what "try again" meant.
     {
       id: `${toolCall.id}:card`,
       role: 'assistant',
-      content: '',
+      content: containerRunResultMarkdown(progress) ?? '',
       toolCalls: [toolCall],
       createdAt: progress.finishedAt ?? progress.startedAt,
     },
