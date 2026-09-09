@@ -1,4 +1,5 @@
 import { canonicalAcpAgentId } from '@shared/acp-known-agents.ts'
+import { AGENT_EXECUTION_GUIDANCE } from '../agent-execution-guidance.ts'
 import * as fsp from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import type {
@@ -1081,12 +1082,15 @@ export const ACP_TURN_PROMPT_NOTE =
   'live as they complete, even while no turn is running. The session IS ' +
   'reaped after ~10 idle minutes or on app ' +
   'shutdown, so keep background work bounded rather than open-ended. Keep ' +
-  'exploration lean: prefer targeted searches (specific paths, rg with globs) ' +
-  'over broad find/ls directory dumps. Prefer the "copse" MCP tools when ' +
+  'exploration lean: prefer targeted searches and bounded file ranges ' +
+  'over broad directory dumps. Prefer the "copse" MCP tools when ' +
   "available: they reuse Copse's native workspace, Git, command, GitHub, and " +
-  'web implementations. In particular, use copse run_shell/run_background for ' +
+  'web implementations. Use copse read_file/search_code/find_files for inspection ' +
+  'instead of your own shell. Use copse run_shell/run_background for ' +
   'commands and copse write/replace/file-operation tools for edits so the same ' +
-  'sandbox, approval, and diff-queue rules as a built-in Copse model apply.'
+  'sandbox, approval, and diff-queue rules as a built-in Copse model apply.' +
+  '\n\n' +
+  AGENT_EXECUTION_GUIDANCE
 
 /**
  * Steering prepended to the prompt when the agent process runs under the
