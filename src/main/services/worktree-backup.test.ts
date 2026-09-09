@@ -1,6 +1,6 @@
 import { describe, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, writeFile, rm, readFile } from 'node:fs/promises'
+import { mkdtemp, writeFile, rm, readFile, readdir } from 'node:fs/promises'
 import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -78,6 +78,50 @@ describe('createWorktreeBackup', () => {
   ownedIt('returns null when git is unavailable', async () => {
     setGitAvailableForTest(false)
     assert.equal(await createWorktreeBackup('x'), null)
+  })
+
+  ownedIt('reports Git failure without leaking stderr or leaving scratch', async () => {
+    await writeFile(join(root, 'dirty.txt'), 'work\n', 'utf-8')
+    await writeFile(join(root, '.gitattributes'), 'dirty.txt filter=copse-test\n', 'utf-8')
+    git(root, ['add', '.gitattributes'])
+    git(root, ['commit', '-m', 'attributes'])
+    git(root, ['config', 'filter.copse-test.clean', "sh -c 'echo SECRET_SENTINEL >&2; exit 1'"])
+    git(root, ['config', 'filter.copse-test.required', 'true'])
+    const previousTmpDir = process.env['TMPDIR']
+    const previousTmp = process.env['TMP']
+    const previousTemp = process.env['TEMP']
+    const indexScratch = await mkdtemp(join(tmpdir(), 'agent-pane-backup-index-'))
+    process.env['TMPDIR'] = indexScratch
+    process.env['TMP'] = indexScratch
+    process.env['TEMP'] = indexScratch
+    const warnings: string[] = []
+    const originalWarn = console.warn
+    console.warn = (...values: unknown[]): void => {
+      warnings.push(values.map((value) => String(value)).join(' '))
+    }
+    try {
+      assert.equal(await createWorktreeBackup('SECRET_SENTINEL', root), null)
+      const after = await readdir(indexScratch)
+      assert.equal(
+        after.some((entry) => entry.startsWith('copse-backup-')),
+        false,
+        'temporary index directory should be cleaned up',
+      )
+      assert.equal(
+        warnings.some((warning) => warning.includes('SECRET_SENTINEL')),
+        false,
+      )
+      assert.match(warnings[0] ?? '', /\[git-backup\] checkpoint failed at add \(\d+\)/)
+    } finally {
+      console.warn = originalWarn
+      if (previousTmpDir === undefined) delete process.env['TMPDIR']
+      else process.env['TMPDIR'] = previousTmpDir
+      if (previousTmp === undefined) delete process.env['TMP']
+      else process.env['TMP'] = previousTmp
+      if (previousTemp === undefined) delete process.env['TEMP']
+      else process.env['TEMP'] = previousTemp
+      await rm(indexScratch, { recursive: true, force: true })
+    }
   })
 })
 

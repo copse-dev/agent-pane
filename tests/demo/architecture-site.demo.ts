@@ -222,11 +222,14 @@ describe('architecture site diagrams', () => {
   })
 
   it('opens a linked view directly from its fragment', async () => {
+    // The preceding test already selected this fragment. Leave the document
+    // first so this exercises a fresh linked load, not same-document navigation.
+    await browser.url('about:blank')
     await browser.setWindowSize(1280, 900)
     await browser.url('/marketing/architecture.html#tools-safety')
     await $('.arch-map').waitForDisplayed()
     await expect($('.arch-tab[aria-current="page"]')).toHaveText('Tools & safety')
     await expect($('#sandbox-coverage')).toBeDisplayed()
-    await expect($('.arch-inspector h3')).toHaveText('Shell')
+    await expect($('.arch-inspector h3')).toHaveText('Offered toolset')
   })
 })

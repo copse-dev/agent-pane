@@ -6,6 +6,7 @@ import { requireAgentExecutionRoot } from '../services/execution-root.ts'
 import { getActiveWorkspaceFs } from '../services/workspace-fs/get-workspace-fs.ts'
 import { applyOrStageFileOp } from '../services/diff-queue.ts'
 import { detectLanguage } from '../services/language.ts'
+import { readWorkspaceFileContent } from '../services/workspace-fs/file-content.ts'
 
 export const deleteFileTool = defineTool({
   name: 'delete_file',
@@ -19,7 +20,7 @@ export const deleteFileTool = defineTool({
     const absPath = await resolvePathWithinRoot(path, root)
     let before: string
     try {
-      before = await getActiveWorkspaceFs().readFile(absPath, 'utf-8')
+      before = await readWorkspaceFileContent(getActiveWorkspaceFs(), absPath, path)
     } catch {
       return `File not found: ${path}`
     }
@@ -53,7 +54,7 @@ export const renameFileTool = defineTool({
     await resolvePathWithinRoot(to, root)
     let before: string
     try {
-      before = await getActiveWorkspaceFs().readFile(fromAbs, 'utf-8')
+      before = await readWorkspaceFileContent(getActiveWorkspaceFs(), fromAbs, from)
     } catch {
       return `File not found: ${from}`
     }

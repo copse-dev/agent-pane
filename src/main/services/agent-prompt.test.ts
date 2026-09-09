@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { AGENT_EXECUTION_GUIDANCE } from './agent-execution-guidance.ts'
 import {
   BASE_SYSTEM_PROMPT,
   BASE_SYSTEM_PROMPT_DIRECT_READS,
@@ -10,6 +11,15 @@ import {
 import { BROWSER_TOOLS_DEFAULT_ENABLED } from './browser/browser-origin-policy.ts'
 
 describe('agent-prompt', () => {
+  it('ships the same execution discipline in both native modes', () => {
+    for (const prompt of [BASE_SYSTEM_PROMPT, BASE_SYSTEM_PROMPT_DIRECT_READS]) {
+      assert.equal(prompt.split(AGENT_EXECUTION_GUIDANCE).length, 2)
+      assert.match(prompt, /stop that retry and report the diagnosis/)
+      assert.doesNotMatch(prompt, /present your diagnosis via ask_user/)
+      assert.doesNotMatch(prompt, /use at ambiguous or branching points/)
+    }
+  })
+
   it('includes shared placeholders and tool tail in both modes', () => {
     for (const prompt of [BASE_SYSTEM_PROMPT, BASE_SYSTEM_PROMPT_DIRECT_READS]) {
       assert.match(prompt, /\{SKILLS_TOOLS_LINE\}/)

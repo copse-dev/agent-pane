@@ -9,7 +9,11 @@ import { snapshotWorkingTree } from '../git-snapshot.ts'
 import { envForRendererChildProcess } from '../exec/child-process-env.ts'
 import { afterSandboxedCommand, spawnInProjectSandbox } from '../../project-sandbox/spawn.ts'
 import { isSpawnableWorkingDirectory } from '../../project-sandbox/spawn-cwd.ts'
-import { readOnlyWorkspaceSandboxOverlay } from '../../project-sandbox/config.ts'
+import { isProjectSandboxEnabled } from '../../project-sandbox/enabled.ts'
+import {
+  ensureWorkspaceTmpDir,
+  readOnlyWorkspaceSandboxOverlay,
+} from '../../project-sandbox/config.ts'
 import {
   gitCommitSigningSandboxOverlay,
   resolveInlineSshPublicSigningKey,
@@ -384,6 +388,68 @@ interface TemporaryGitIndex {
   cleanup(): Promise<void>
 }
 
+type BackupFailureStage =
+  | 'allocate-index'
+  | 'inspect'
+  | 'read-tree'
+  | 'add'
+  | 'write-tree'
+  | 'commit-tree'
+  | 'update-ref'
+  | 'unknown'
+
+class WorktreeBackupFailure extends Error {
+  readonly stage: BackupFailureStage
+  readonly code: number | string | undefined
+
+  constructor(stage: BackupFailureStage, code?: number | string) {
+    super('worktree backup failed')
+    this.name = 'WorktreeBackupFailure'
+    this.stage = stage
+    this.code = code
+  }
+}
+
+function failureCode(error: unknown): string | undefined {
+  if (typeof error !== 'object' || error === null || !Object.hasOwn(error, 'code')) return undefined
+  const code: unknown = Object.getOwnPropertyDescriptor(error, 'code')?.value
+  if (typeof code === 'number' && Number.isSafeInteger(code)) return String(code)
+  if (
+    code === 'EACCES' ||
+    code === 'EPERM' ||
+    code === 'ENOSPC' ||
+    code === 'ENOENT' ||
+    code === 'EEXIST'
+  )
+    return code
+  return undefined
+}
+
+function backupStage(args: string[]): BackupFailureStage {
+  switch (args[0]) {
+    case 'read-tree':
+      return 'read-tree'
+    case 'add':
+      return 'add'
+    case 'write-tree':
+      return 'write-tree'
+    case 'rev-parse':
+      return 'inspect'
+    default:
+      if (args.includes('commit-tree')) return 'commit-tree'
+      return 'unknown'
+  }
+}
+
+function reportBackupFailure(error: unknown): void {
+  if (error instanceof WorktreeBackupFailure) {
+    const code = error.code === undefined ? '' : ` (${String(error.code)})`
+    console.warn(`[git-backup] checkpoint failed at ${error.stage}${code}`)
+    return
+  }
+  console.warn('[git-backup] checkpoint failed at unknown stage')
+}
+
 /**
  * Allocate the throwaway Git index on the filesystem where Git will run. A
  * remote command cannot use a client-local tmpdir path, and must never fall
@@ -391,7 +457,19 @@ interface TemporaryGitIndex {
  */
 async function createTemporaryGitIndex(root: string): Promise<TemporaryGitIndex> {
   if (!isActiveSshWorkspace()) {
-    const dir = await fsp.mkdtemp(join(tmpdir(), 'copse-backup-'))
+    // Sandboxed Git can only write to the workspace and the shared Copse
+    // scratch directory. `os.tmpdir()` is outside that allow-list on macOS and
+    // Linux, so an index there makes the first dirty-worktree checkpoint fail
+    // before it can protect the user's edits. Use the same helper that spawn
+    // uses for TMPDIR and the sandbox overlay.
+    // Unsandboxed hosts can use the ordinary OS temp dir.
+    let dir: string
+    try {
+      const scratchRoot = isProjectSandboxEnabled() ? ensureWorkspaceTmpDir() : tmpdir()
+      dir = await fsp.mkdtemp(join(scratchRoot, 'copse-backup-'))
+    } catch (error) {
+      throw new WorktreeBackupFailure('allocate-index', failureCode(error))
+    }
     const path = join(dir, 'index')
     return {
       path,
@@ -401,11 +479,17 @@ async function createTemporaryGitIndex(root: string): Promise<TemporaryGitIndex>
     }
   }
 
-  const { stdout, code } = await runCommand('mktemp', ['-d', '-t', 'copse-backup.XXXXXX'], {
-    cwd: root,
-  })
+  let result: Awaited<ReturnType<typeof runCommand>>
+  try {
+    result = await runCommand('mktemp', ['-d', '-t', 'copse-backup.XXXXXX'], {
+      cwd: root,
+    })
+  } catch (error) {
+    throw new WorktreeBackupFailure('allocate-index', failureCode(error))
+  }
+  const { stdout, code } = result
   const dir = stdout.trim()
-  if (code !== 0 || !dir) throw new Error('Could not create remote temporary Git index')
+  if (code !== 0 || !dir) throw new WorktreeBackupFailure('allocate-index', code)
   return {
     path: `${dir}/index`,
     cleanup: async (): Promise<void> => {
@@ -577,8 +661,13 @@ export async function createWorktreeBackup(
     // cannot use a client-local path), then the shared snapshot does the rest.
     tempIndex = await createTemporaryGitIndex(root)
     const run = async (args: string[], env?: Record<string, string>): Promise<string> => {
-      const result = await runCommand('git', args, { cwd: root, env: { ...env } })
-      if (result.code !== 0) throw new Error(`git ${args[0] ?? ''} failed (${String(result.code)})`)
+      let result: Awaited<ReturnType<typeof runCommand>>
+      try {
+        result = await runCommand('git', args, { cwd: root, env: { ...env } })
+      } catch (error) {
+        throw new WorktreeBackupFailure(backupStage(args), failureCode(error))
+      }
+      if (result.code !== 0) throw new WorktreeBackupFailure(backupStage(args), result.code)
       return result.stdout.trim()
     }
     const snapshot = await snapshotWorkingTree(run, {
@@ -587,9 +676,20 @@ export async function createWorktreeBackup(
       indexPath: tempIndex.path,
     })
     const ref = `refs/copse/backups/${String(Date.now())}`
-    if ((await runGit(['update-ref', ref, snapshot.sha], root)).code !== 0) return null
+    let updateRef: Awaited<ReturnType<typeof runGit>>
+    try {
+      updateRef = await runGit(['update-ref', ref, snapshot.sha], root)
+    } catch (error) {
+      reportBackupFailure(new WorktreeBackupFailure('update-ref', failureCode(error)))
+      return null
+    }
+    if (updateRef.code !== 0) {
+      reportBackupFailure(new WorktreeBackupFailure('update-ref', updateRef.code))
+      return null
+    }
     return ref
-  } catch {
+  } catch (error) {
+    reportBackupFailure(error)
     return null
   } finally {
     await tempIndex?.cleanup()
