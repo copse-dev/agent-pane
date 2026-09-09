@@ -23582,6 +23582,16 @@ function warningIcon(className = DEFAULT) {
     className
   );
 }
+function lockIcon(className = DEFAULT) {
+  return outlineIcon(
+    "lock",
+    [
+      "M5 11h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2Z",
+      "M7 11V7a5 5 0 0 1 10 0v4"
+    ],
+    className
+  );
+}
 function searchIcon(className = DEFAULT) {
   return outlineIcon(
     "search",
@@ -51822,7 +51832,8 @@ var init_automations_plugin = __esm({
             level: 3,
             slot: "settings-plugin-detail",
             title: "Automation schedules"
-          }
+          },
+          { id: "automation-manager", level: 3, slot: "app-dialog", title: "Automations" }
         ],
         storage: { namespace: AUTOMATIONS_PLUGIN_ID }
       },
@@ -51833,7 +51844,8 @@ var init_automations_plugin = __esm({
             level: 3,
             slot: "settings-plugin-detail",
             title: "Automation schedules"
-          }
+          },
+          { id: "automation-manager", level: 3, slot: "app-dialog", title: "Automations" }
         ]
       }
     );
@@ -51854,7 +51866,7 @@ function liveWorktreeLimit(value2) {
   if (value2 === "3") return 3;
   return 1;
 }
-function createAutomationPluginSettings(store3, api3, pluginEnabled, revealScheduleId) {
+function createAutomationPluginSettings(store3, api3, pluginEnabled, revealScheduleId, createNew = false) {
   const root4 = el("section", {
     class: "automation-plugin-settings",
     "data-plugin-detail": AUTOMATIONS_PLUGIN_ID
@@ -51881,14 +51893,12 @@ function createAutomationPluginSettings(store3, api3, pluginEnabled, revealSched
     { class: "automation-scope" },
     project2 ? `Project: ${project2.name} \xB7 local time \xB7 Copse must be running` : "Open a project to configure its schedules."
   );
-  const notice = el(
-    "p",
-    { class: "automation-notice" },
-    pluginEnabled ? "Each run starts a fresh isolated task. Runs group under the schedule name. One live worktree is the safe default; schedules can explicitly allow up to three. Normal tool permission prompts still apply." : "Enable this plugin to arm schedules. Existing schedules remain editable while disabled."
-  );
-  const status = el("div", { class: "automation-status", hidden: true });
+  const pluginNotice = () => pluginEnabled ? "Each run starts a fresh isolated task. Runs group under the schedule name. One live worktree is the safe default; schedules can explicitly allow up to three. Normal tool permission prompts still apply." : "Enable this plugin to arm schedules. Existing schedules remain editable while disabled.";
+  const notice = el("p", { class: "automation-notice" }, pluginNotice());
+  const status = el("div", { class: "automation-status", role: "status", hidden: true });
   const list = el("div", { class: "automation-list" });
   const form = el("form", { class: "automation-form", hidden: true });
+  const formTitle = el("h3", { class: "automation-form-title" }, "New automation");
   const nameInput = el("input", {
     type: "text",
     class: "automation-input automation-name-input",
@@ -51925,6 +51935,7 @@ function createAutomationPluginSettings(store3, api3, pluginEnabled, revealSched
   const saveButton = el("button", { type: "submit", class: "automation-save-btn" }, "Save schedule");
   const cancelButton = el("button", { type: "button", class: "automation-cancel-btn" }, "Cancel");
   form.append(
+    formTitle,
     el("label", { class: "automation-label" }, "Name", nameInput),
     el(
       "label",
@@ -51958,6 +51969,7 @@ function createAutomationPluginSettings(store3, api3, pluginEnabled, revealSched
   let schedules = [];
   let editingId = null;
   let pendingReveal = revealScheduleId;
+  let pendingCreate = createNew;
   function showStatus(message2, error63 = false) {
     status.hidden = false;
     status.textContent = message2;
@@ -51971,10 +51983,15 @@ function createAutomationPluginSettings(store3, api3, pluginEnabled, revealSched
   function closeForm() {
     editingId = null;
     form.hidden = true;
+    list.hidden = false;
+    heading.hidden = false;
   }
   async function openForm(schedule) {
     hideStatus();
     editingId = schedule?.id ?? null;
+    formTitle.textContent = schedule ? "Edit automation" : "New automation";
+    list.hidden = true;
+    heading.hidden = true;
     nameInput.value = schedule?.name ?? "";
     cronInput.value = schedule?.cron ?? "0 9 * * 1-5";
     promptInput.value = schedule?.prompt ?? "";
@@ -51982,11 +51999,11 @@ function createAutomationPluginSettings(store3, api3, pluginEnabled, revealSched
     worktreeLimitSelect.value = String(schedule?.maxLiveWorktrees ?? 1);
     const configuredModel = schedule?.model.trim() ?? "";
     const defaultModel = configuredModel || BEST_VALUE_CHAT_MODEL;
+    form.hidden = false;
+    nameInput.focus();
     const options2 = await fetchDynamicModelOptions(defaultModel);
     const selectedModel = options2.find((option2) => option2.value === defaultModel && !option2.disabled)?.value ?? options2.find((option2) => option2.value && !option2.disabled)?.value ?? "";
     await modelPicker.refresh(selectedModel);
-    form.hidden = false;
-    nameInput.focus();
   }
   function renderList() {
     clear(list);
@@ -52061,6 +52078,8 @@ function createAutomationPluginSettings(store3, api3, pluginEnabled, revealSched
           await api3.automations.remove(projectId, schedule.id);
           if (editingId === schedule.id) closeForm();
           await refresh();
+        }).catch((error63) => {
+          showStatus(cleanIpcError(error63), true);
         });
       });
       actions.append(edit, run6, remove3);
@@ -52087,6 +52106,10 @@ function createAutomationPluginSettings(store3, api3, pluginEnabled, revealSched
       schedules = await api3.automations.list(projectId);
       renderList();
       revealLinkedSchedule();
+      if (pendingCreate) {
+        pendingCreate = false;
+        await openForm();
+      }
     } catch (error63) {
       showStatus(cleanIpcError(error63), true);
     }
@@ -52120,7 +52143,13 @@ function createAutomationPluginSettings(store3, api3, pluginEnabled, revealSched
     });
   });
   void refresh();
-  return root4;
+  return Object.assign(root4, {
+    setPluginEnabled(enabled) {
+      pluginEnabled = enabled;
+      notice.textContent = pluginNotice();
+      renderList();
+    }
+  });
 }
 var init_automation_plugin_settings = __esm({
   "src/renderer/views/automation-plugin-settings.ts"() {
@@ -55720,6 +55749,124 @@ var init_settings_dialog = __esm({
   }
 });
 
+// src/renderer/views/automation-dialog.ts
+function hasAutomationDialog(plugin27) {
+  return plugin27.id === AUTOMATIONS_PLUGIN_ID && plugin27.trust === "first-party" && plugin27.contributions.ui.some(
+    (ui2) => ui2.id === "automation-manager" && ui2.level === 3 && ui2.slot === "app-dialog"
+  );
+}
+function openAutomationDialog(store3, api3, options2 = {}) {
+  if (document.querySelector("#automation-dialog[open]")) return;
+  const projectId = store3.getState().activeProjectId;
+  const { dialog: dialog2, open: open3, close: close2 } = createOverlayDialog({ id: "automation-dialog" });
+  dialog2.setAttribute("aria-labelledby", "automation-dialog-title");
+  const closeButton = el(
+    "button",
+    {
+      type: "button",
+      class: "ui-btn ui-btn-ghost",
+      "aria-label": "Close automations"
+    },
+    closeIcon()
+  );
+  closeButton.addEventListener("click", close2);
+  const header = el(
+    "header",
+    { class: "automation-dialog-header" },
+    el("h2", { id: "automation-dialog-title" }, "Automations"),
+    closeButton
+  );
+  const body = el("div", { class: "automation-dialog-body" });
+  const status = el("p", { class: "automation-notice", role: "status" }, "Loading automations\u2026");
+  body.append(status);
+  dialog2.append(header, body);
+  const unsubscribe = store3.on("workspace_changed", () => {
+    if (store3.getState().activeProjectId !== projectId) close2();
+  });
+  dialog2.addEventListener(
+    "close",
+    () => {
+      unsubscribe();
+      dialog2.remove();
+    },
+    { once: true }
+  );
+  open3();
+  function render8(plugin27) {
+    if (!dialog2.open) return;
+    let enabled = plugin27.enabled;
+    const editor = createAutomationPluginSettings(
+      store3,
+      api3,
+      enabled,
+      options2.scheduleId,
+      options2.createNew
+    );
+    const toggle = el(
+      "button",
+      {
+        type: "button",
+        class: "ui-btn ui-btn-secondary automation-plugin-toggle"
+      },
+      plugin27.enabled ? "Disable plugin" : "Enable automations"
+    );
+    const label = el(
+      "span",
+      {},
+      enabled ? "Automations plugin enabled" : "Automations plugin disabled"
+    );
+    const settings = el(
+      "button",
+      { type: "button", class: "ui-btn ui-btn-ghost" },
+      "Plugin settings"
+    );
+    settings.addEventListener("click", () => {
+      close2();
+      openAutomationSettings();
+    });
+    const state4 = el("div", { class: "automation-dialog-plugin" }, label, settings, toggle);
+    toggle.addEventListener("click", () => {
+      toggle.disabled = true;
+      void api3.plugins.setEnabled(plugin27.id, !enabled).then((result) => {
+        const updated = result.plugins.find(hasAutomationDialog);
+        if (!updated) throw new Error("The automations plugin is no longer available.");
+        enabled = updated.enabled;
+        editor.setPluginEnabled(enabled);
+        store3.emit("settings_changed");
+        label.textContent = enabled ? "Automations plugin enabled" : "Automations plugin disabled";
+        toggle.textContent = enabled ? "Disable plugin" : "Enable automations";
+        toggle.disabled = false;
+      }).catch((error63) => {
+        status.textContent = error63 instanceof Error ? error63.message : "Could not update the plugin.";
+        toggle.disabled = false;
+      });
+    });
+    status.textContent = "";
+    body.replaceChildren(state4, status, editor);
+  }
+  void api3.plugins.list().then((result) => {
+    if (!dialog2.open) return;
+    const plugin27 = result.plugins.find(hasAutomationDialog);
+    if (!plugin27) {
+      status.textContent = "The automations plugin is not available.";
+      return;
+    }
+    render8(plugin27);
+  }).catch((error63) => {
+    status.textContent = error63 instanceof Error ? error63.message : "Could not load automations.";
+  });
+}
+var init_automation_dialog = __esm({
+  "src/renderer/views/automation-dialog.ts"() {
+    init_automations_plugin();
+    init_helpers();
+    init_icons();
+    init_automation_plugin_settings();
+    init_dialog_shell();
+    init_settings_dialog();
+  }
+});
+
 // packages/thread-store/src/fork-thread.ts
 function forkThreadTitle(title2) {
   const base = title2.trim() || "New Thread";
@@ -56311,13 +56458,62 @@ function mountProjectsPane(root4, store3, api3) {
   const settingsBtn = el(
     "button",
     { class: "projects-settings-btn", "aria-label": "Settings", "data-tooltip": "Open settings" },
-    settingsIcon(),
     "Settings"
   );
   settingsBtn.addEventListener("click", () => {
     openSettingsDialog();
   });
-  root4.append(header, searchRow, list, settingsBtn);
+  const menuButton = el(
+    "button",
+    {
+      type: "button",
+      class: "projects-menu-btn",
+      "aria-label": "Project menu",
+      "aria-haspopup": "menu",
+      "data-tooltip": "Settings and automations"
+    },
+    settingsIcon()
+  );
+  menuButton.addEventListener("click", () => {
+    menuButton.disabled = true;
+    void api3.plugins.list().then((result) => {
+      const rect2 = menuButton.getBoundingClientRect();
+      const plugin27 = result.plugins.find(hasAutomationDialog);
+      showContextMenu(rect2.left, rect2.top, [
+        {
+          label: "Settings",
+          onSelect: () => {
+            openSettingsDialog();
+          }
+        },
+        ...plugin27 ? [
+          {
+            label: "Automations",
+            onSelect: () => {
+              openAutomationDialog(store3, api3);
+            }
+          },
+          {
+            label: "New automation\u2026",
+            disabled: !store3.getState().activeProjectId,
+            onSelect: () => {
+              openAutomationDialog(store3, api3, { createNew: true });
+            }
+          }
+        ] : []
+      ]);
+    }).catch((error63) => {
+      showErrorToast("Could not load project menu", error63);
+    }).finally(() => {
+      menuButton.disabled = false;
+    });
+  });
+  root4.append(
+    header,
+    searchRow,
+    list,
+    el("div", { class: "projects-settings-actions" }, menuButton, settingsBtn)
+  );
   let sshWorkspaceEnabled = false;
   addBtn.addEventListener("click", () => {
     const rect2 = addBtn.getBoundingClientRect();
@@ -56860,7 +57056,7 @@ function mountProjectsPane(root4, store3, api3) {
           switchProject(store3, api3, project2.id);
           return;
         }
-        openAutomationSettings(scheduleId);
+        openAutomationDialog(store3, api3, scheduleId ? { scheduleId } : {});
       }
       function renderThreadRow(thread, options2 = {}) {
         const displayTitle = (options2.displayTitle ?? thread.title) || "New Thread";
@@ -57214,6 +57410,7 @@ var init_projects_pane = __esm({
     init_thread_pr_status2();
     init_projects();
     init_settings_dialog();
+    init_automation_dialog();
     init_toast();
     init_fork_thread3();
     init_sidebar_thread();
@@ -295892,6 +296089,9 @@ function mountVncSession(controlsRoot, viewerRoot, store3, api3, options2) {
   const authPanel = el(
     "div",
     { class: "vnc-auth-panel", "aria-label": "Screen Sharing authentication", hidden: true },
+    // Gutter marker. The panel used to be edged with an accent rail; the icon
+    // column replaces it, so the title and the body start at the same inset.
+    lockIcon("ui-icon vnc-auth-icon"),
     el("div", { class: "vnc-auth-title" }, "Authentication required"),
     authDescription,
     usernameField,
@@ -295942,6 +296142,9 @@ function mountVncSession(controlsRoot, viewerRoot, store3, api3, options2) {
   const status = el(
     "div",
     { class: "vnc-status", role: "status", hidden: true },
+    // Decorative: the status text says the same thing, and data-kind drives
+    // both this dot's hue and the text colour beside it.
+    el("span", { class: "vnc-status-dot", "aria-hidden": "true" }),
     statusTitle,
     statusDetail
   );
