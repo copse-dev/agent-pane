@@ -407,7 +407,7 @@ describe('createIntellectFrontierPanel', () => {
       undefined,
       async () => ({
         ok: true,
-        models: [...verifiedLiveAnchors(), { id: 'live-unpriced-model', intellect: 41 }],
+        models: [...verifiedLiveAnchors(), { id: 'live-unpriced-model', intellect: 100 }],
       }),
     )
     await panel.refresh()
@@ -427,10 +427,7 @@ describe('createIntellectFrontierPanel', () => {
     assert.ok(svg)
     assert.match(svg.textContent, /no price yet/)
     assert.ok(svg.querySelector('circle.gutter-unpriced'))
-    assert.ok(
-      svg.textContent.includes(`kimi-k3 · ${String(currentIntellect('kimi-k3'))}`),
-      svg.textContent,
-    )
+    assert.ok(svg.textContent.includes('live-unpriced-model'), svg.textContent)
   })
 
   it('puts priced-but-unscored models in the bottom gutter at their true price', async () => {

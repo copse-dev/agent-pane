@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import type { LLMMessage } from '@shared/types'
-import { modelIntellect } from '@copse/llm/model-intellect.ts'
+import { BAND_REPRESENTATIVE_MODEL, modelIntellect } from '@copse/llm/model-intellect.ts'
 import {
   DEFAULT_ADVISOR_MAX_TOKENS,
   advisorAddsLift,
@@ -127,10 +127,9 @@ describe('validateAdvisorPair', () => {
   })
 
   it('recommends a local executor with a frontier cloud advisor (the flagship pairing)', () => {
-    // Fable is no longer the top-band flagship now that Opus 5 tops the scale;
-    // the pairing check uses the band representative, so Opus 5 is what earns
-    // the 'frontier advisor' recommendation. Fable is now a mid advisor.
-    const a = validateAdvisorPair('lmstudio:qwen/qwen2.5-coder-32b', 'claude-opus-5')
+    // Exercise the top-band role without freezing a model that a later
+    // measurement can legitimately demote.
+    const a = validateAdvisorPair('lmstudio:qwen/qwen2.5-coder-32b', BAND_REPRESENTATIVE_MODEL.top)
     assert.equal(a.ok, true)
     assert.equal(a.native, false)
     assert.equal(a.level, 'good')
