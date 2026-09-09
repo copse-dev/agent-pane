@@ -23582,6 +23582,16 @@ function warningIcon(className = DEFAULT) {
     className
   );
 }
+function lockIcon(className = DEFAULT) {
+  return outlineIcon(
+    "lock",
+    [
+      "M5 11h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2Z",
+      "M7 11V7a5 5 0 0 1 10 0v4"
+    ],
+    className
+  );
+}
 function searchIcon(className = DEFAULT) {
   return outlineIcon(
     "search",
@@ -24423,7 +24433,12 @@ async function quarantineAndRestoreNext(store3, api3, id39) {
   await markProjectMissing(store3, api3, id39);
   const next3 = store3.getState().projects.find((p3) => p3.id !== id39 && !p3.missing);
   if (next3) {
-    store3.setState({ activeProjectId: next3.id, expandedProjectId: next3.id });
+    store3.setState({
+      activeProjectId: next3.id,
+      expandedProjectId: next3.id,
+      threads: [],
+      activeThreadId: null
+    });
     await restoreProject(store3, api3, next3.id);
     return;
   }
@@ -25329,7 +25344,7 @@ url: http://localhost:61025/index.html
 function demoScenarioPrompt(scenario) {
   return scenario.trace?.prompt ?? "";
 }
-var FIXED_TIME, FOOTER_INPUT_TOKENS, FOOTER_OUTPUT_TOKENS, DEMO_CODEX_ACP_AGENT, FOOTER_COMPACT_EXPECTATIONS, markdownContent, project, semanticSearchSummary, PROPOSED_INDEX_HTML, PROPOSED_STYLES_CSS, PROPOSED_DIFF_TRACE, DEMO_SCENARIOS;
+var FIXED_TIME, FOOTER_INPUT_TOKENS, FOOTER_OUTPUT_TOKENS, DEMO_CODEX_ACP_AGENT, FOOTER_COMPACT_EXPECTATIONS, markdownContent, syntaxContrastContent, project, semanticSearchSummary, PROPOSED_INDEX_HTML, PROPOSED_STYLES_CSS, PROPOSED_DIFF_TRACE, DEMO_SCENARIOS;
 var init_demo_scenarios = __esm({
   "src/shared/demo-scenarios.ts"() {
     init_landing();
@@ -25361,6 +25376,27 @@ var init_demo_scenarios = __esm({
       "- Mock LLM \u2014 `COPSE-PANEL-MOCK-LLM=1` enables full e2e testing without API keys",
       "- MCP host \u2014 Per-server enable toggles in Settings",
       "- Persistence \u2014 filesystem-native threads and project settings"
+    ].join("\n");
+    syntaxContrastContent = [
+      "Here is the resolved model configuration:",
+      "",
+      "```json",
+      "{",
+      '  "model": "claude-opus-4",',
+      '  "temperature": 0.2,',
+      '  "maxTokens": 8192,',
+      '  "stream": true',
+      "}",
+      "```",
+      "",
+      "and the loop that reads it:",
+      "",
+      "```ts",
+      "// Resolve the model for this turn.",
+      "function resolveModel(settings: Settings): string {",
+      "  return settings.model ?? 'claude-opus-4'",
+      "}",
+      "```"
     ].join("\n");
     project = (id39, name = "copse-demo", path4 = "/demo/copse") => ({
       id: id39,
@@ -25848,6 +25884,42 @@ var init_demo_scenarios = __esm({
             bodyAdvice: "The project sandbox would block this command:\n\u2022 Installs or updates packages, which downloads and runs code from the internet",
             bodyFooter: "Allow running it once outside the sandbox?",
             type: "shell"
+          }
+        ]
+      },
+      {
+        // Companion to `approval-light-accent`: same bright accent, same light theme,
+        // but aimed at the surfaces issue #2486/#2488/#2483 reported rather than the
+        // approval dialog. The accent matters — light derives `--accent` as 30% of it
+        // mixed with black, so a bright one makes the derived tier unmistakably dark
+        // and any control that fills with it instead of `--accent-fill` shows up.
+        id: "light-contrast-surfaces",
+        label: "Light-theme syntax, fills, and selection",
+        project: project("demo-light-contrast-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "light",
+          uiAccentColor: "#20FD85",
+          uiTintColor: "#244C25",
+          uiTintStrength: "subtle"
+        },
+        threads: [
+          {
+            id: "demo-light-contrast-thread",
+            title: "Light-theme contrast",
+            status: "idle",
+            messages: [
+              {
+                id: "demo-light-contrast-assistant",
+                role: "assistant",
+                content: syntaxContrastContent,
+                toolCalls: [],
+                createdAt: FIXED_TIME
+              }
+            ],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
           }
         ]
       },
@@ -28708,6 +28780,9 @@ function createOverlayDialog(opts) {
     },
     isOpen: () => dialog2.open
   };
+}
+function isAnyDialogOpen() {
+  return document.querySelector("dialog[open]") !== null;
 }
 var init_dialog_shell = __esm({
   "src/renderer/views/dialog-shell.ts"() {
@@ -37070,6 +37145,7 @@ async function fetchModelOptions(api3, current, opts = {}) {
   }
   for (const model of models) {
     const { id: id39 } = model;
+    if (model.embedding === true) continue;
     const hint = [localModelRoleHint(id39), localModelIntellectHint(id39)].filter(isNonNull).join(" \xB7 ");
     const label = getLocalModelCapability(id39)?.label ?? modelDisplayName(id39);
     options2.push({
@@ -37219,6 +37295,10 @@ var init_model_options = __esm({
 });
 
 // src/renderer/views/model-picker.ts
+function fieldMenuSurfacePlacement(menu, surface, trigger, gap) {
+  if (menu.top >= surface.top - 1 && menu.bottom <= surface.bottom + 1) return "natural";
+  return trigger.top - gap - menu.height >= surface.top ? "flipped" : "contained";
+}
 function mountModelPicker(root4, getCurrent, onSelect, loadOptions, pickerOpts = {}) {
   const variant = pickerOpts.variant ?? "compact";
   const recentMode = pickerOpts.getRecentValues !== void 0;
@@ -37348,6 +37428,22 @@ function mountModelPicker(root4, getCurrent, onSelect, loadOptions, pickerOpts =
     activeValue = activeGroup()?.currentValue ?? null;
     setView("group");
   }
+  function placeFieldMenuInsideSurface() {
+    menu.classList.remove("is-surface-flipped", "is-surface-contained");
+    if (!open3 || variant !== "field") return;
+    const surface = menu.offsetParent;
+    if (!(surface instanceof HTMLElement)) return;
+    const menuRect = menu.getBoundingClientRect();
+    const surfaceRect = surface.getBoundingClientRect();
+    const triggerRect = trigger.getBoundingClientRect();
+    const gap = Number.parseFloat(getComputedStyle(menu).getPropertyValue("--spacing-xs")) || 4;
+    const placement = fieldMenuSurfacePlacement(menuRect, surfaceRect, triggerRect, gap);
+    if (placement === "flipped") {
+      menu.classList.add("is-surface-flipped");
+    } else if (placement === "contained") {
+      menu.classList.add("is-surface-contained");
+    }
+  }
   function setOpen(next3) {
     open3 = next3;
     trigger.setAttribute("aria-expanded", String(next3));
@@ -37357,6 +37453,7 @@ function mountModelPicker(root4, getCurrent, onSelect, loadOptions, pickerOpts =
       if (loadState === "error") void refresh();
     } else {
       menu.setAttribute("hidden", "");
+      menu.classList.remove("is-surface-flipped", "is-surface-contained");
       filter8.value = "";
       setView(homeView, false);
       pickerOpts.onClose?.();
@@ -37518,6 +37615,7 @@ function mountModelPicker(root4, getCurrent, onSelect, loadOptions, pickerOpts =
       );
     }
     scrollActiveOptionIntoView();
+    placeFieldMenuInsideSurface();
   }
   function selectOption(value2) {
     if (value2 === null) return;
@@ -51734,7 +51832,8 @@ var init_automations_plugin = __esm({
             level: 3,
             slot: "settings-plugin-detail",
             title: "Automation schedules"
-          }
+          },
+          { id: "automation-manager", level: 3, slot: "app-dialog", title: "Automations" }
         ],
         storage: { namespace: AUTOMATIONS_PLUGIN_ID }
       },
@@ -51745,7 +51844,8 @@ var init_automations_plugin = __esm({
             level: 3,
             slot: "settings-plugin-detail",
             title: "Automation schedules"
-          }
+          },
+          { id: "automation-manager", level: 3, slot: "app-dialog", title: "Automations" }
         ]
       }
     );
@@ -51766,7 +51866,7 @@ function liveWorktreeLimit(value2) {
   if (value2 === "3") return 3;
   return 1;
 }
-function createAutomationPluginSettings(store3, api3, pluginEnabled, revealScheduleId) {
+function createAutomationPluginSettings(store3, api3, pluginEnabled, revealScheduleId, createNew = false) {
   const root4 = el("section", {
     class: "automation-plugin-settings",
     "data-plugin-detail": AUTOMATIONS_PLUGIN_ID
@@ -51793,14 +51893,12 @@ function createAutomationPluginSettings(store3, api3, pluginEnabled, revealSched
     { class: "automation-scope" },
     project2 ? `Project: ${project2.name} \xB7 local time \xB7 Copse must be running` : "Open a project to configure its schedules."
   );
-  const notice = el(
-    "p",
-    { class: "automation-notice" },
-    pluginEnabled ? "Each run starts a fresh isolated task. Runs group under the schedule name. One live worktree is the safe default; schedules can explicitly allow up to three. Normal tool permission prompts still apply." : "Enable this plugin to arm schedules. Existing schedules remain editable while disabled."
-  );
-  const status = el("div", { class: "automation-status", hidden: true });
+  const pluginNotice = () => pluginEnabled ? "Each run starts a fresh isolated task. Runs group under the schedule name. One live worktree is the safe default; schedules can explicitly allow up to three. Normal tool permission prompts still apply." : "Enable this plugin to arm schedules. Existing schedules remain editable while disabled.";
+  const notice = el("p", { class: "automation-notice" }, pluginNotice());
+  const status = el("div", { class: "automation-status", role: "status", hidden: true });
   const list = el("div", { class: "automation-list" });
   const form = el("form", { class: "automation-form", hidden: true });
+  const formTitle = el("h3", { class: "automation-form-title" }, "New automation");
   const nameInput = el("input", {
     type: "text",
     class: "automation-input automation-name-input",
@@ -51837,6 +51935,7 @@ function createAutomationPluginSettings(store3, api3, pluginEnabled, revealSched
   const saveButton = el("button", { type: "submit", class: "automation-save-btn" }, "Save schedule");
   const cancelButton = el("button", { type: "button", class: "automation-cancel-btn" }, "Cancel");
   form.append(
+    formTitle,
     el("label", { class: "automation-label" }, "Name", nameInput),
     el(
       "label",
@@ -51870,6 +51969,7 @@ function createAutomationPluginSettings(store3, api3, pluginEnabled, revealSched
   let schedules = [];
   let editingId = null;
   let pendingReveal = revealScheduleId;
+  let pendingCreate = createNew;
   function showStatus(message2, error63 = false) {
     status.hidden = false;
     status.textContent = message2;
@@ -51883,10 +51983,15 @@ function createAutomationPluginSettings(store3, api3, pluginEnabled, revealSched
   function closeForm() {
     editingId = null;
     form.hidden = true;
+    list.hidden = false;
+    heading.hidden = false;
   }
   async function openForm(schedule) {
     hideStatus();
     editingId = schedule?.id ?? null;
+    formTitle.textContent = schedule ? "Edit automation" : "New automation";
+    list.hidden = true;
+    heading.hidden = true;
     nameInput.value = schedule?.name ?? "";
     cronInput.value = schedule?.cron ?? "0 9 * * 1-5";
     promptInput.value = schedule?.prompt ?? "";
@@ -51894,11 +51999,11 @@ function createAutomationPluginSettings(store3, api3, pluginEnabled, revealSched
     worktreeLimitSelect.value = String(schedule?.maxLiveWorktrees ?? 1);
     const configuredModel = schedule?.model.trim() ?? "";
     const defaultModel = configuredModel || BEST_VALUE_CHAT_MODEL;
+    form.hidden = false;
+    nameInput.focus();
     const options2 = await fetchDynamicModelOptions(defaultModel);
     const selectedModel = options2.find((option2) => option2.value === defaultModel && !option2.disabled)?.value ?? options2.find((option2) => option2.value && !option2.disabled)?.value ?? "";
     await modelPicker.refresh(selectedModel);
-    form.hidden = false;
-    nameInput.focus();
   }
   function renderList() {
     clear(list);
@@ -51973,6 +52078,8 @@ function createAutomationPluginSettings(store3, api3, pluginEnabled, revealSched
           await api3.automations.remove(projectId, schedule.id);
           if (editingId === schedule.id) closeForm();
           await refresh();
+        }).catch((error63) => {
+          showStatus(cleanIpcError(error63), true);
         });
       });
       actions.append(edit, run6, remove3);
@@ -51999,6 +52106,10 @@ function createAutomationPluginSettings(store3, api3, pluginEnabled, revealSched
       schedules = await api3.automations.list(projectId);
       renderList();
       revealLinkedSchedule();
+      if (pendingCreate) {
+        pendingCreate = false;
+        await openForm();
+      }
     } catch (error63) {
       showStatus(cleanIpcError(error63), true);
     }
@@ -52032,7 +52143,13 @@ function createAutomationPluginSettings(store3, api3, pluginEnabled, revealSched
     });
   });
   void refresh();
-  return root4;
+  return Object.assign(root4, {
+    setPluginEnabled(enabled) {
+      pluginEnabled = enabled;
+      notice.textContent = pluginNotice();
+      renderList();
+    }
+  });
 }
 var init_automation_plugin_settings = __esm({
   "src/renderer/views/automation-plugin-settings.ts"() {
@@ -52824,6 +52941,22 @@ function mountSettingsDialog(store3, api3) {
                   you to approve its address while this is on.
                 </span>
               </label>
+            </fieldset>
+
+            <fieldset>
+              <legend>Commit signing</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="gitCommitSshAgentSocketAccess" />
+                Let Copse's git commit tool use your ssh-agent (macOS)
+              </label>
+              <p class="field-hint">
+                Off by default. Turn this on when Git uses a passphrase-protected SSH key and signed
+                commits fail inside Copse's sandbox. The grant applies only to Copse's native
+                <code>git_commit</code> subprocess, but Git hooks run inside that process and can
+                also ask ssh-agent to use <strong>any key it holds</strong>. The private key remains
+                unreadable. Pair this with <code>ssh-add -c</code> to confirm each use. macOS only:
+                Linux cannot admit one socket without admitting every Unix socket.
+              </p>
             </fieldset>
           </section>
 
@@ -55567,6 +55700,7 @@ var init_settings_dialog = __esm({
       { name: "remoteAgentAutoCreatePR", kind: "checkbox", default: true, save: true },
       { name: "remoteAgentWorkOnCurrentBranch", kind: "checkbox", default: false, save: true },
       { name: "preferAcpOverCloudAgent", kind: "checkbox", default: true, save: true },
+      { name: "gitCommitSshAgentSocketAccess", kind: "checkbox", default: false, save: true },
       { name: "localSubagentsEnabled", kind: "checkbox", default: true, save: true },
       {
         name: "subagentsEnabled",
@@ -55624,6 +55758,124 @@ var init_settings_dialog = __esm({
     overlayEl = null;
     pendingSection = null;
     pendingPluginDetail = null;
+  }
+});
+
+// src/renderer/views/automation-dialog.ts
+function hasAutomationDialog(plugin27) {
+  return plugin27.id === AUTOMATIONS_PLUGIN_ID && plugin27.trust === "first-party" && plugin27.contributions.ui.some(
+    (ui2) => ui2.id === "automation-manager" && ui2.level === 3 && ui2.slot === "app-dialog"
+  );
+}
+function openAutomationDialog(store3, api3, options2 = {}) {
+  if (document.querySelector("#automation-dialog[open]")) return;
+  const projectId = store3.getState().activeProjectId;
+  const { dialog: dialog2, open: open3, close: close2 } = createOverlayDialog({ id: "automation-dialog" });
+  dialog2.setAttribute("aria-labelledby", "automation-dialog-title");
+  const closeButton = el(
+    "button",
+    {
+      type: "button",
+      class: "ui-btn ui-btn-ghost",
+      "aria-label": "Close automations"
+    },
+    closeIcon()
+  );
+  closeButton.addEventListener("click", close2);
+  const header = el(
+    "header",
+    { class: "automation-dialog-header" },
+    el("h2", { id: "automation-dialog-title" }, "Automations"),
+    closeButton
+  );
+  const body = el("div", { class: "automation-dialog-body" });
+  const status = el("p", { class: "automation-notice", role: "status" }, "Loading automations\u2026");
+  body.append(status);
+  dialog2.append(header, body);
+  const unsubscribe = store3.on("workspace_changed", () => {
+    if (store3.getState().activeProjectId !== projectId) close2();
+  });
+  dialog2.addEventListener(
+    "close",
+    () => {
+      unsubscribe();
+      dialog2.remove();
+    },
+    { once: true }
+  );
+  open3();
+  function render8(plugin27) {
+    if (!dialog2.open) return;
+    let enabled = plugin27.enabled;
+    const editor = createAutomationPluginSettings(
+      store3,
+      api3,
+      enabled,
+      options2.scheduleId,
+      options2.createNew
+    );
+    const toggle = el(
+      "button",
+      {
+        type: "button",
+        class: "ui-btn ui-btn-secondary automation-plugin-toggle"
+      },
+      plugin27.enabled ? "Disable plugin" : "Enable automations"
+    );
+    const label = el(
+      "span",
+      {},
+      enabled ? "Automations plugin enabled" : "Automations plugin disabled"
+    );
+    const settings = el(
+      "button",
+      { type: "button", class: "ui-btn ui-btn-ghost" },
+      "Plugin settings"
+    );
+    settings.addEventListener("click", () => {
+      close2();
+      openAutomationSettings();
+    });
+    const state4 = el("div", { class: "automation-dialog-plugin" }, label, settings, toggle);
+    toggle.addEventListener("click", () => {
+      toggle.disabled = true;
+      void api3.plugins.setEnabled(plugin27.id, !enabled).then((result) => {
+        const updated = result.plugins.find(hasAutomationDialog);
+        if (!updated) throw new Error("The automations plugin is no longer available.");
+        enabled = updated.enabled;
+        editor.setPluginEnabled(enabled);
+        store3.emit("settings_changed");
+        label.textContent = enabled ? "Automations plugin enabled" : "Automations plugin disabled";
+        toggle.textContent = enabled ? "Disable plugin" : "Enable automations";
+        toggle.disabled = false;
+      }).catch((error63) => {
+        status.textContent = error63 instanceof Error ? error63.message : "Could not update the plugin.";
+        toggle.disabled = false;
+      });
+    });
+    status.textContent = "";
+    body.replaceChildren(state4, status, editor);
+  }
+  void api3.plugins.list().then((result) => {
+    if (!dialog2.open) return;
+    const plugin27 = result.plugins.find(hasAutomationDialog);
+    if (!plugin27) {
+      status.textContent = "The automations plugin is not available.";
+      return;
+    }
+    render8(plugin27);
+  }).catch((error63) => {
+    status.textContent = error63 instanceof Error ? error63.message : "Could not load automations.";
+  });
+}
+var init_automation_dialog = __esm({
+  "src/renderer/views/automation-dialog.ts"() {
+    init_automations_plugin();
+    init_helpers();
+    init_icons();
+    init_automation_plugin_settings();
+    init_dialog_shell();
+    init_settings_dialog();
   }
 });
 
@@ -56218,13 +56470,62 @@ function mountProjectsPane(root4, store3, api3) {
   const settingsBtn = el(
     "button",
     { class: "projects-settings-btn", "aria-label": "Settings", "data-tooltip": "Open settings" },
-    settingsIcon(),
     "Settings"
   );
   settingsBtn.addEventListener("click", () => {
     openSettingsDialog();
   });
-  root4.append(header, searchRow, list, settingsBtn);
+  const menuButton = el(
+    "button",
+    {
+      type: "button",
+      class: "projects-menu-btn",
+      "aria-label": "Project menu",
+      "aria-haspopup": "menu",
+      "data-tooltip": "Settings and automations"
+    },
+    settingsIcon()
+  );
+  menuButton.addEventListener("click", () => {
+    menuButton.disabled = true;
+    void api3.plugins.list().then((result) => {
+      const rect2 = menuButton.getBoundingClientRect();
+      const plugin27 = result.plugins.find(hasAutomationDialog);
+      showContextMenu(rect2.left, rect2.top, [
+        {
+          label: "Settings",
+          onSelect: () => {
+            openSettingsDialog();
+          }
+        },
+        ...plugin27 ? [
+          {
+            label: "Automations",
+            onSelect: () => {
+              openAutomationDialog(store3, api3);
+            }
+          },
+          {
+            label: "New automation\u2026",
+            disabled: !store3.getState().activeProjectId,
+            onSelect: () => {
+              openAutomationDialog(store3, api3, { createNew: true });
+            }
+          }
+        ] : []
+      ]);
+    }).catch((error63) => {
+      showErrorToast("Could not load project menu", error63);
+    }).finally(() => {
+      menuButton.disabled = false;
+    });
+  });
+  root4.append(
+    header,
+    searchRow,
+    list,
+    el("div", { class: "projects-settings-actions" }, menuButton, settingsBtn)
+  );
   let sshWorkspaceEnabled = false;
   addBtn.addEventListener("click", () => {
     const rect2 = addBtn.getBoundingClientRect();
@@ -56767,7 +57068,7 @@ function mountProjectsPane(root4, store3, api3) {
           switchProject(store3, api3, project2.id);
           return;
         }
-        openAutomationSettings(scheduleId);
+        openAutomationDialog(store3, api3, scheduleId ? { scheduleId } : {});
       }
       function renderThreadRow(thread, options2 = {}) {
         const displayTitle = (options2.displayTitle ?? thread.title) || "New Thread";
@@ -57121,6 +57422,7 @@ var init_projects_pane = __esm({
     init_thread_pr_status2();
     init_projects();
     init_settings_dialog();
+    init_automation_dialog();
     init_toast();
     init_fork_thread3();
     init_sidebar_thread();
@@ -245214,8 +245516,8 @@ var init_build_text_with_attachments = __esm({
     ATTACHMENT_MAX_CHARS = 16e3;
     HEAD_FRACTION = 0.7;
     THREAD_STEERING_PREAMBLE = "The past conversation(s) referenced below are available read-only through your file tools. Each is a directory: `events.jsonl` is the linear history (one JSON line per finalized message, oldest first); message prose is under `messages/*.md`; tool results and images under `blobs/`; nested subagent runs under `subagents/`. Read a file with read_file, grep with search_code, or summarize a whole thread with explore. The paths are absolute; do not try to write to them.";
-    VIDEO_STEERING_PREAMBLE = "The user attached the video(s) below. The video itself is NOT in your context \u2014 only these paths are. Use the `video_frames` tool to read one as still images: it samples the recording and returns only the frames that are visually different from each other, so a whole screen recording usually costs a handful of images. Call it with just the path to survey the whole video, then again with `start`/`end` around a moment you need to see more closely. There is no audio track available.";
-    ARCHIVE_STEERING_PREAMBLE = "The user attached the archive(s) below. The archive itself is NOT in your context \u2014 only these paths are. If you have a `read_archive` tool, use it to unpack one: it extracts the archive into this conversation's own directory and returns a listing of everything inside. After that the contents are ordinary files \u2014 read them with read_file, grep them with search_code, or summarize the tree with explore, using the paths under the extraction root it gives you. Unpack once, then work with the files. If no such tool is offered to you, say so and ask how to proceed \u2014 do not silently ignore the archive, and do not unpack it yourself with shell commands.";
+    VIDEO_STEERING_PREAMBLE = "The user attached the video(s) below. The video itself is NOT in your context \u2014 only these paths are. Use the `video_frames` tool to read one as still images: it samples the recording and returns only the frames that are visually different from each other, so a whole screen recording usually costs a handful of images. Call it with just the path to survey the whole video, then again with `start`/`end` around a moment you need to see more closely. There is no audio track available. Your client may offer that tool under a namespaced name, so look for one whose name ends in `video_frames` \u2014 for example `mcp__copse__video_frames`. If no such tool is offered to you, say so and ask how to proceed \u2014 do not try to read the video with shell commands.";
+    ARCHIVE_STEERING_PREAMBLE = "The user attached the archive(s) below. The archive itself is NOT in your context \u2014 only these paths are. If you have a `read_archive` tool, use it to unpack one: it extracts the archive into this conversation's own directory and returns a listing of everything inside. After that the contents are ordinary files \u2014 read them with read_file, grep them with search_code, or summarize the tree with explore, using the paths under the extraction root it gives you. Unpack once, then work with the files. Your client may offer that tool under a namespaced name, so look for one whose name ends in `read_archive` \u2014 for example `mcp__copse__read_archive`. If no such tool is offered to you, say so and ask how to proceed \u2014 do not silently ignore the archive, and do not unpack it yourself with shell commands.";
   }
 });
 
@@ -261754,6 +262056,23 @@ var init_last_exchange = __esm({
 });
 
 // src/renderer/views/approval-comparison-pickers.ts
+async function reviewerOptions(api3, current) {
+  const options2 = await fetchModelOptions(api3, current, REVIEWER_OPTIONS);
+  return options2.map(
+    (option2) => option2.value === current && UNRUNNABLE_CURRENT_SUFFIX.test(option2.label) ? { ...option2, disabled: true } : option2
+  );
+}
+async function refreshReviewer(picker, select, current) {
+  await picker.refresh(current);
+  const selected = select.selectedOptions[0];
+  if (selected?.disabled !== true) return;
+  const replacement = [...select.options].find(
+    (option2) => !option2.disabled && option2.value.length > 0
+  );
+  if (!replacement) return;
+  select.value = replacement.value;
+  select.dispatchEvent(new Event("change", { bubbles: true }));
+}
 function modelRow(label, select) {
   return el(
     "label",
@@ -261778,27 +262097,27 @@ function createComparisonModelPickers(api3, models, intro) {
     modelRow("Judge", selectJudge)
   );
   const pickerA = mountModelSelectPicker(selectA, {
-    loadOptions: (current) => fetchModelOptions(api3, current),
+    loadOptions: (current) => reviewerOptions(api3, current),
     className: "approval-model-picker",
     ariaLabel: "Reviewer A model",
     loadOnMount: false
   });
   const pickerB = mountModelSelectPicker(selectB, {
-    loadOptions: (current) => fetchModelOptions(api3, current),
+    loadOptions: (current) => reviewerOptions(api3, current),
     className: "approval-model-picker",
     ariaLabel: "Reviewer B model",
     loadOnMount: false
   });
   const pickerJudge = mountModelSelectPicker(selectJudge, {
-    loadOptions: (current) => fetchModelOptions(api3, current),
+    loadOptions: (current) => reviewerOptions(api3, current),
     className: "approval-model-picker",
     ariaLabel: "Judge model",
     loadOnMount: false
   });
   void Promise.all([
-    pickerA.refresh(models.a),
-    pickerB.refresh(models.b),
-    pickerJudge.refresh(models.judge)
+    refreshReviewer(pickerA, selectA, models.a),
+    refreshReviewer(pickerB, selectB, models.b),
+    refreshReviewer(pickerJudge, selectJudge, models.judge)
   ]);
   return {
     root: root4,
@@ -261809,11 +262128,14 @@ function createComparisonModelPickers(api3, models, intro) {
     })
   };
 }
+var REVIEWER_OPTIONS, UNRUNNABLE_CURRENT_SUFFIX;
 var init_approval_comparison_pickers = __esm({
   "src/renderer/views/approval-comparison-pickers.ts"() {
     init_helpers();
     init_model_options();
     init_model_picker();
+    REVIEWER_OPTIONS = { includeAgentModels: false };
+    UNRUNNABLE_CURRENT_SUFFIX = / \((?:no key|not available|offline)\)$/i;
   }
 });
 
@@ -274196,6 +274518,47 @@ var init_create_after_persist = __esm({
   }
 });
 
+// src/renderer/terminal/start-failure-message.ts
+function unwrapIpcError(raw) {
+  let message2 = raw;
+  for (; ; ) {
+    const next3 = message2.replace(/^Error:\s*/, "").replace(/^Error invoking remote method '[^']*':\s*/, "");
+    if (next3 === message2) return message2.trim();
+    message2 = next3;
+  }
+}
+function terminalStartFailureMessage(err2) {
+  const detail = unwrapIpcError(errorMessage(err2));
+  if (CROSS_PROJECT.test(detail)) {
+    return "This terminal was opened against a thread from another project. Close the tab and open a new one.";
+  }
+  return detail || "The shell could not be started.";
+}
+var CROSS_PROJECT;
+var init_start_failure_message = __esm({
+  "src/renderer/terminal/start-failure-message.ts"() {
+    init_errors4();
+    CROSS_PROJECT = /^Thread "[^"]*" does not belong to project "[^"]*"$/;
+  }
+});
+
+// src/renderer/terminal/tab-scope.ts
+function resolveTerminalTabScope(state4, options2) {
+  if (options2?.scopeProjectId !== void 0 || options2?.scopeId !== void 0) {
+    return {
+      scopeProjectId: options2.scopeProjectId ?? null,
+      scopeId: options2.scopeId ?? null
+    };
+  }
+  const { activeProjectId, activeThreadId, threads } = state4;
+  const belongs = activeThreadId !== null && threads.some((thread) => thread.id === activeThreadId);
+  return { scopeProjectId: activeProjectId, scopeId: belongs ? activeThreadId : null };
+}
+var init_tab_scope = __esm({
+  "src/renderer/terminal/tab-scope.ts"() {
+  }
+});
+
 // src/renderer/views/terminals-pane.ts
 function applyXtermBg(container2, theme) {
   container2.style.setProperty("--xterm-bg", XTERM_THEME[theme].background);
@@ -274400,7 +274763,10 @@ function mountTerminalsPane(listRoot, viewerRoot, store3, api3) {
         preserveSharedShell(tab, worktreePath);
       }
     } catch (err2) {
-      tab.term.writeln(`\x1B[31mFailed to start terminal: ${String(err2)}\x1B[0m`);
+      console.error("[terminals] could not start a shell:", err2);
+      tab.term.writeln(
+        `\x1B[31mFailed to start terminal: ${terminalStartFailureMessage(err2)}\x1B[0m`
+      );
     } finally {
       tab.creating = false;
     }
@@ -274520,8 +274886,7 @@ function mountTerminalsPane(listRoot, viewerRoot, store3, api3) {
     panel.append(container2);
     const { term, fitAddon } = createXterm();
     const fileLinks = installTerminalFileLinks(term, store3, api3);
-    const scopeProjectId = options2?.scopeProjectId ?? store3.getState().activeProjectId;
-    const scopeId = options2?.scopeId ?? currentThreadId();
+    const { scopeProjectId, scopeId } = resolveTerminalTabScope(store3.getState(), options2);
     const tab = {
       id: id39,
       scopeProjectId,
@@ -274793,6 +275158,8 @@ var init_terminals_pane = __esm({
     init_read_terminal();
     init_ui_scale();
     init_create_after_persist();
+    init_start_failure_message();
+    init_tab_scope();
     XTERM_THEME = {
       dark: {
         background: "#1e1e1e",
@@ -276187,6 +276554,115 @@ var init_pr_pane_thread = __esm({
   }
 });
 
+// src/renderer/views/pr-pane-activity.ts
+function readableState(state4) {
+  return state4.toLowerCase().replaceAll("_", " ");
+}
+function checkTone(state4) {
+  if (["SUCCESS", "NEUTRAL"].includes(state4)) return "success";
+  if (["FAILURE", "ERROR", "TIMED_OUT", "ACTION_REQUIRED"].includes(state4)) return "failure";
+  if (["QUEUED", "IN_PROGRESS", "PENDING", "WAITING", "REQUESTED"].includes(state4)) return "pending";
+  return "unknown";
+}
+function externalButton(label, url2, open3) {
+  if (!url2 || !/^https?:\/\//i.test(url2)) return el("span", {}, label);
+  const button = el("button", { type: "button", class: "pr-activity-link" }, label);
+  button.addEventListener("click", () => {
+    open3(url2);
+  });
+  return button;
+}
+function renderPrActivity(host, section, activity, open3) {
+  clear(host);
+  if (!activity || activity.error) {
+    host.append(
+      el(
+        "p",
+        { class: "pr-activity-notice", role: "status" },
+        activity?.error ?? "Comments and checks are unavailable. Refresh to retry or open on GitHub."
+      )
+    );
+    return;
+  }
+  if (section === "comments") {
+    host.append(
+      el(
+        "p",
+        { class: "pr-activity-notice" },
+        "Conversation comments and submitted reviews. Inline code discussions are available on GitHub."
+      )
+    );
+    if (activity.commentsTruncated)
+      host.append(
+        el(
+          "p",
+          { class: "pr-activity-notice" },
+          "Showing the latest 50 comments and 50 reviews. Open on GitHub for the full conversation."
+        )
+      );
+    if (!activity.comments.length)
+      host.append(el("p", {}, "No conversation comments or submitted reviews yet."));
+    for (const comment2 of activity.comments) {
+      const date6 = new Date(comment2.createdAt);
+      const time6 = el(
+        "time",
+        { datetime: comment2.createdAt },
+        Number.isNaN(date6.getTime()) ? comment2.createdAt : date6.toLocaleString()
+      );
+      const heading = el(
+        "div",
+        { class: "pr-comment-meta" },
+        el("strong", {}, `@${comment2.author}`),
+        el("span", {}, comment2.reviewState ? readableState(comment2.reviewState) : "commented"),
+        time6
+      );
+      const body = el("div", { class: "message-text streaming-markdown pr-comment-body" });
+      body.innerHTML = renderMarkdown(comment2.body);
+      host.append(
+        el("article", { class: "pr-comment", "data-comment-id": comment2.id }, heading, body)
+      );
+    }
+    return;
+  }
+  host.append(
+    el(
+      "p",
+      { class: "pr-activity-notice" },
+      `Checks for head commit ${activity.headSha.slice(0, 7)}`
+    )
+  );
+  if (activity.checksTruncated)
+    host.append(
+      el(
+        "p",
+        { class: "pr-activity-notice" },
+        "Showing the first 100 checks. Open on GitHub for all results."
+      )
+    );
+  if (!activity.checks.length) host.append(el("p", {}, "No checks reported for this commit."));
+  for (const check2 of activity.checks) {
+    host.append(
+      el(
+        "div",
+        { class: "pr-check-row" },
+        el(
+          "span",
+          { class: `pr-check-state pr-check-state-${checkTone(check2.state)}` },
+          readableState(check2.state)
+        ),
+        el("span", { class: "pr-check-name" }, check2.name),
+        externalButton("Details", check2.url, open3)
+      )
+    );
+  }
+}
+var init_pr_pane_activity = __esm({
+  "src/renderer/views/pr-pane-activity.ts"() {
+    init_dist();
+    init_helpers();
+  }
+});
+
 // src/renderer/views/pr-pane.ts
 function agentProviderLabel(provider) {
   return AGENT_PROVIDER_LABEL[provider] ?? provider;
@@ -276239,6 +276715,11 @@ function mountPrPane(listRoot, viewerRoot, store3, api3, monaco) {
   const listBody = el("div", { class: "git-changes-list pr-list-body" });
   listRoot.append(listHeader, listBody);
   const metaHost = el("div", { class: "pr-viewer-meta" });
+  const sectionsHost = el("nav", {
+    class: "pr-detail-sections",
+    "aria-label": "Pull request sections"
+  });
+  const activityHost = el("div", { class: "pr-activity", hidden: true });
   const descriptionHost = el("div", {
     class: "pr-viewer-description message-text streaming-markdown"
   });
@@ -276247,7 +276728,18 @@ function mountPrPane(listRoot, viewerRoot, store3, api3, monaco) {
   const imageWrap = el("div", { class: "git-image-diff-wrap" });
   imageWrap.hidden = true;
   const emptyState = el("div", { class: "panel-empty" }, "Select a pull request");
-  viewerRoot.append(metaHost, descriptionHost, filesHost, diffWrap, imageWrap, emptyState);
+  viewerRoot.append(
+    metaHost,
+    sectionsHost,
+    activityHost,
+    descriptionHost,
+    filesHost,
+    diffWrap,
+    imageWrap,
+    emptyState
+  );
+  let activeSection = "overview";
+  let detailsRequestId = 0;
   let ghStatus = null;
   let agentLinks = /* @__PURE__ */ new Map();
   let agentLinksGen = 0;
@@ -276333,6 +276825,8 @@ function mountPrPane(listRoot, viewerRoot, store3, api3, monaco) {
     const message2 = ghStatus?.message ?? (ghStatus?.installed ? "Sign in with `gh auth login` to browse pull requests here." : "Install GitHub CLI (`gh`) to browse pull requests in Copse.");
     listBody.append(el("div", { class: "git-changes-empty pr-empty-state" }, message2));
     clear(metaHost);
+    clear(sectionsHost);
+    activityHost.hidden = true;
     clear(descriptionHost);
     descriptionHost.classList.remove("pr-viewer-description-fill");
     clear(filesHost);
@@ -276493,6 +276987,7 @@ function mountPrPane(listRoot, viewerRoot, store3, api3, monaco) {
     if (!isStillSelected(ref)) return;
     if (fresh) prDetails = fresh;
     renderMeta();
+    renderSections();
   }
   function actionButton(label, confirmMessage, run6) {
     const btn = el("button", { type: "button", class: "pr-action-btn" }, label);
@@ -276682,6 +277177,46 @@ function mountPrPane(listRoot, viewerRoot, store3, api3, monaco) {
     descriptionHost.hidden = false;
     descriptionHost.innerHTML = renderMarkdown(prDetails.body);
   }
+  function renderSections() {
+    clear(sectionsHost);
+    activityHost.hidden = true;
+    if (!prDetails) return;
+    const sections6 = [
+      { key: "overview", label: "Overview" },
+      { key: "comments", label: "Comments" },
+      { key: "checks", label: "Checks" }
+    ];
+    for (const section of sections6) {
+      const button = el(
+        "button",
+        {
+          type: "button",
+          class: "pr-detail-section",
+          "data-section": section.key,
+          "aria-pressed": String(activeSection === section.key)
+        },
+        section.label
+      );
+      button.addEventListener("click", () => {
+        activeSection = section.key;
+        clearDiff();
+        renderDescription();
+        renderFiles();
+        renderSections();
+      });
+      sectionsHost.append(button);
+    }
+    if (activeSection !== "overview") {
+      descriptionHost.hidden = true;
+      filesHost.hidden = true;
+      diffWrap.hidden = true;
+      emptyState.hidden = true;
+      activityHost.hidden = false;
+      renderPrActivity(activityHost, activeSection, prDetails.activity, (url2) => {
+        void api3.shell.openExternal(url2);
+      });
+    }
+  }
   function renderFiles() {
     clear(filesHost);
     if (!prDetails) {
@@ -276792,13 +277327,16 @@ function mountPrPane(listRoot, viewerRoot, store3, api3, monaco) {
     await diffLoadQueue;
   }
   async function selectPr(ref) {
+    const requestId = ++detailsRequestId;
     const sameAsCurrent = selectedPr?.owner === ref.owner && selectedPr.repo === ref.repo && selectedPr.number === ref.number;
     if (!sameAsCurrent) {
       lastActionMessage = null;
       filesExpanded = false;
+      activeSection = "overview";
     }
     selectedPr = { owner: ref.owner, repo: ref.repo, number: ref.number };
     prDetails = null;
+    renderSections();
     selectedFile = null;
     renderList();
     if (!ghStatus?.installed || !ghStatus.authenticated) {
@@ -276829,8 +277367,11 @@ function mountPrPane(listRoot, viewerRoot, store3, api3, monaco) {
     emptyState.hidden = false;
     emptyState.textContent = "Loading pull request\u2026";
     try {
-      prDetails = await api3.gh.prDetails(ref.owner, ref.repo, ref.number);
+      const details = await api3.gh.prDetails(ref.owner, ref.repo, ref.number);
+      if (requestId !== detailsRequestId) return;
+      prDetails = details;
     } catch (err2) {
+      if (requestId !== detailsRequestId) return;
       emptyState.hidden = false;
       emptyState.textContent = err2 instanceof Error ? err2.message : "Could not load pull request";
       return;
@@ -276844,6 +277385,7 @@ function mountPrPane(listRoot, viewerRoot, store3, api3, monaco) {
     renderDescription();
     renderFiles();
     clearDiff();
+    renderSections();
   }
   function resetOther() {
     ciGen++;
@@ -276947,6 +277489,8 @@ function mountPrPane(listRoot, viewerRoot, store3, api3, monaco) {
   refreshBtn.addEventListener("click", () => void refresh({ reason: "manual" }));
   const unbindWorkspaceLinks = bindWorkspaceLinkClicks(descriptionHost, store3, api3);
   const unbindBrowserLinks = bindBrowserLinkClicks(descriptionHost, store3, api3);
+  const unbindActivityWorkspaceLinks = bindWorkspaceLinkClicks(activityHost, store3, api3);
+  const unbindActivityBrowserLinks = bindBrowserLinkClicks(activityHost, store3, api3);
   const stopObservingLayout = observeDiffHostLayout(viewerRoot, () => diffEditor);
   const unsubs = [
     store3.on("right_panel_mode_changed", () => {
@@ -276958,8 +277502,14 @@ function mountPrPane(listRoot, viewerRoot, store3, api3, monaco) {
       if (prsModeActive(store3)) void refresh();
     }),
     store3.on("workspace_changed", () => {
+      detailsRequestId++;
       selectedPr = null;
       prDetails = null;
+      renderMeta();
+      renderDescription();
+      renderFiles();
+      renderSections();
+      clearDiff();
       workspacePrs = [];
       prList = [];
       agentLinks = /* @__PURE__ */ new Map();
@@ -277013,9 +277563,12 @@ function mountPrPane(listRoot, viewerRoot, store3, api3, monaco) {
   return () => {
     void api3.gh.setListWatch(false, false);
     unregisterPopoutSeed();
+    detailsRequestId++;
     stopObservingLayout();
     unbindWorkspaceLinks();
     unbindBrowserLinks();
+    unbindActivityWorkspaceLinks();
+    unbindActivityBrowserLinks();
     unsubs.forEach((u2) => {
       u2();
     });
@@ -277048,6 +277601,7 @@ var init_pr_pane = __esm({
     init_git_diff_viewer();
     init_ui_scale();
     init_git_image_diff();
+    init_pr_pane_activity();
     STATUS_LABEL2 = {
       added: "A",
       modified: "M",
@@ -295734,6 +296288,9 @@ function mountVncSession(controlsRoot, viewerRoot, store3, api3, options2) {
   const authPanel = el(
     "div",
     { class: "vnc-auth-panel", "aria-label": "Screen Sharing authentication", hidden: true },
+    // Gutter marker. The panel used to be edged with an accent rail; the icon
+    // column replaces it, so the title and the body start at the same inset.
+    lockIcon("ui-icon vnc-auth-icon"),
     el("div", { class: "vnc-auth-title" }, "Authentication required"),
     authDescription,
     usernameField,
@@ -295784,6 +296341,9 @@ function mountVncSession(controlsRoot, viewerRoot, store3, api3, options2) {
   const status = el(
     "div",
     { class: "vnc-status", role: "status", hidden: true },
+    // Decorative: the status text says the same thing, and data-kind drives
+    // both this dot's hue and the text colour beside it.
+    el("span", { class: "vnc-status-dot", "aria-hidden": "true" }),
     statusTitle,
     statusDetail
   );
@@ -308580,8 +309140,7 @@ function registerKeyboardShortcuts() {
       openCommandPalette();
     }
     if (matchFindInChatShortcut(e4)) {
-      if (isFileSearchDialogOpen() || isCommandPaletteOpen() || isSettingsDialogOpen() || isKeyboardShortcutsDialogOpen())
-        return;
+      if (isAnyDialogOpen()) return;
       e4.preventDefault();
       openConversationSearch();
     }
@@ -308601,7 +309160,7 @@ function registerKeyboardShortcuts() {
     }
     if (meta5 && e4.key === "w") {
       e4.preventDefault();
-      void confirmDeleteThread();
+      if (!isAnyDialogOpen()) void confirmDeleteThread();
     }
     if (e4.key === "Escape") {
       if (isCommandPaletteOpen()) {
@@ -308697,6 +309256,7 @@ var init_main2 = __esm({
     init_roadmap_pane();
     init_browser_pane();
     await init_vnc_pane();
+    init_dialog_shell();
     init_settings_dialog();
     init_theme2();
     init_ui_scale2();
