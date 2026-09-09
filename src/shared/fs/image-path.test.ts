@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { imageMimeType, isImagePath } from './image-path.ts'
+import { imageMimeType, isImagePath, isRasterImagePath } from './image-path.ts'
 
 describe('image-path', () => {
   it('detects common raster image extensions', () => {
@@ -18,5 +18,12 @@ describe('image-path', () => {
   it('returns null for non-image paths', () => {
     assert.equal(imageMimeType('src/index.ts'), null)
     assert.equal(isImagePath('README.md'), false)
+  })
+
+  it('distinguishes byte-oriented raster images from textual SVG images', () => {
+    assert.equal(isRasterImagePath('shot.png'), true)
+    assert.equal(isRasterImagePath('photo.avif'), true)
+    assert.equal(isRasterImagePath('icon.svg'), false)
+    assert.equal(isRasterImagePath('README.md'), false)
   })
 })

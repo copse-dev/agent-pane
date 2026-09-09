@@ -53,6 +53,10 @@ export const localWorkspaceFs: WorkspaceFsPathProbe = {
     await fsp.writeFile(path, content, encoding)
   },
 
+  async writeFileBytes(path: string, content: Buffer): Promise<void> {
+    await fsp.writeFile(path, content)
+  },
+
   mkdir(path: string, options?: { recursive?: boolean }): Promise<void> {
     return fsp.mkdir(path, options).then(() => undefined)
   },

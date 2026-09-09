@@ -72,7 +72,7 @@ ${v.toolTail}
 5. When you make an edit, use str_replace or write_file rather than pasting the file's new contents into the chat
 6. Read the tool result carefully: if it says applied directly, run_shell, git, and read_file can validate immediately. If it says staged/pending, those tools still see only on-disk content; use staged_diffs/read_staged_diff to inspect proposed content and ask the user to approve before shell validation.
 7. If staged_diffs reports existing git changes, avoid direct overwrites and preserve the user's dirty tree.
-8. If a retry would not be informed by new information, stop and present your diagnosis via ask_user instead of trying the same fix again`,
+8. If a retry would not be informed by new information, stop that retry and report the diagnosis. Continue independent work; ask the user only for information or a decision needed to unblock the remaining work`,
     toolChoice: `Tool choice:
 ${v.toolChoice}`,
     workingStyle: v.workingStyle,

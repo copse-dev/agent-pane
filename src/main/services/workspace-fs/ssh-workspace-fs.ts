@@ -116,6 +116,17 @@ export class SshWorkspaceFs implements WorkspaceFsPathProbe {
     if (writeResult.code !== 0) throw remoteFsError(path, writeResult)
   }
 
+  async writeFileBytes(path: string, content: Buffer): Promise<void> {
+    const dir = dirname(path)
+    const mkdirResult = await this.exec(`mkdir -p ${this.quote(dir)}`)
+    if (mkdirResult.code !== 0) throw remoteFsError(path, mkdirResult)
+    const writeResult = await this.exec(
+      `base64 -d > ${this.quote(path)}`,
+      content.toString('base64'),
+    )
+    if (writeResult.code !== 0) throw remoteFsError(path, writeResult)
+  }
+
   async mkdir(path: string, options?: { recursive?: boolean }): Promise<void> {
     const flag = options?.recursive ? '-p' : ''
     const result = await this.exec(`mkdir ${flag} ${this.quote(path)}`.trim())

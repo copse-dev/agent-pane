@@ -403,6 +403,18 @@ describe('AcpTurnFailure', () => {
 })
 
 describe('buildAcpPrompt', () => {
+  it('delivers execution guidance once on fresh sessions and preserves the user payload', () => {
+    const user = 'Please implement the complete feature, then show it working.'
+    const fresh = buildAcpPrompt(user, [])
+    assert.match(fresh, /Execution discipline:/)
+    assert.match(fresh, /copse read_file\/search_code\/find_files for inspection/)
+    assert.match(fresh, /Existing approval covers only its stated action, target, and scope/)
+    assert.match(fresh, /A denial is not permission to retry/)
+    assert.ok(fresh.endsWith(user))
+    assert.equal(fresh.split('Execution discipline:').length, 2)
+    assert.equal(buildAcpPrompt(user, [], { includeNotes: false }), user)
+  })
+
   it('always leads with the session notes', () => {
     const prompt = buildAcpPrompt('hello', [])
     assert.match(prompt, /^Session notes: this session persists across turns/)

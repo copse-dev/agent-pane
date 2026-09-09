@@ -149,6 +149,22 @@ describe('applyDiffEntry (stale-overwrite TOCTOU guard)', () => {
     },
   )
 
+  ownedIt('writes proposed raster-image content without UTF-8 corruption', async () => {
+    const before = Buffer.from('89504e470d0a1a0a00010280ff', 'hex')
+    const after = Buffer.from('89504e470d0a1a0a00020390fe', 'hex')
+    await writeFile(join(tempRoot, 'image.png'), before)
+
+    const result = await applyDiffEntry({
+      path: 'image.png',
+      before: before.toString('latin1'),
+      after: after.toString('latin1'),
+      language: 'plaintext',
+    })
+
+    assert.deepEqual(result, { status: 'written' })
+    assert.deepEqual(await readFile(join(tempRoot, 'image.png')), after)
+  })
+
   ownedIt('reports a conflict when a file was created between staging and approval', async () => {
     // Staged as a new file (before ''), but another writer created it first.
     await writeFile(join(tempRoot, 'new.txt'), 'someone else\n', 'utf-8')
