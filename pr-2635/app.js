@@ -29829,6 +29829,11 @@ function launchesAcpCatalogEntry(agent, entry) {
 function isClaudeAcpAgent(agent) {
   return isKnownAcpAgent(agent, CLAUDE_ADAPTERS);
 }
+function acpPlanProvider(agent) {
+  if (isClaudeAcpAgent(agent)) return "claude";
+  if (isKnownAcpAgent(agent, CODEX_ADAPTERS)) return "codex";
+  return null;
+}
 function enabledClaudeAcpAgent(agents) {
   return agents.find((agent) => agent.enabled && isClaudeAcpAgent(agent));
 }
@@ -39896,8 +39901,8 @@ function frontierForKnownModels(extra = [], adjust3, keepRoute) {
     });
   }
   const candidates = keepRoute ? [...cloud2, ...extra].filter(keepRoute) : [...cloud2, ...extra];
-  const grouped = groupByModelIdentity(candidates);
-  return computeParetoFrontier(adjust3 ? grouped.map(adjust3) : grouped);
+  const adjusted = adjust3 ? candidates.map(adjust3) : candidates;
+  return computeParetoFrontier(groupByModelIdentity(adjusted));
 }
 var init_pareto_frontier = __esm({
   "packages/llm/src/pareto-frontier.ts"() {
@@ -53180,6 +53185,50 @@ var init_plan_inclusion = __esm({
   }
 });
 
+// src/shared/plan-frontier-candidates.ts
+function planAcpFrontierCandidates(agents) {
+  const candidates = [];
+  for (const agent of agents) {
+    if (!agent.enabled) continue;
+    const provider = acpPlanProvider(agent);
+    if (!provider) continue;
+    const advertised = agent.availableModels ?? [];
+    const selected = agent.model;
+    const selectedChoice = selected ? advertised.find((choice2) => choice2.value === selected) : void 0;
+    const choices = /* @__PURE__ */ new Map();
+    if (selected) choices.set(selected, selectedChoice ?? { value: selected, label: selected });
+    for (const choice2 of advertised) choices.set(choice2.value, choice2);
+    for (const choice2 of choices.values()) {
+      const resolved3 = resolveAgentModelIdentity(
+        choice2.value,
+        acpModelVersionName(choice2.description),
+        choice2.label,
+        acpModelChoiceLabel(choice2)
+      );
+      if (!resolved3) continue;
+      const score = getIntellectScore(resolved3);
+      const info2 = getModelInfo(resolved3);
+      if (!score || !info2) continue;
+      candidates.push({
+        id: acpModelValue(agent.id, choice2.value),
+        intellect: score.value,
+        costPerMTok: blendedPricePerMTok(info2),
+        planAccess: { provider, modelId: resolved3 }
+      });
+    }
+  }
+  return candidates;
+}
+var init_plan_frontier_candidates = __esm({
+  "src/shared/plan-frontier-candidates.ts"() {
+    init_pareto_frontier();
+    init_model_catalog();
+    init_model_intellect();
+    init_agent_model_identity();
+    init_acp();
+  }
+});
+
 // src/renderer/views/intellect-frontier-panel.ts
 function displayModelLabel2(id39) {
   const resolved3 = resolveIntellectModelId(id39);
@@ -53606,7 +53655,12 @@ function renderFrontierSvg(points, size4 = {}, gutters = {}, tooltip, costAxis =
     const rowEnds = [];
     for (const u2 of [...unscored].sort((a3, b5) => a3.costPerMTok - b5.costPerMTok)) {
       if (dense) {
-        unscoredRows.push({ id: u2.id, costPerMTok: u2.costPerMTok, row: 0, text: "" });
+        unscoredRows.push({
+          id: u2.id,
+          costPerMTok: u2.costPerMTok,
+          row: 0,
+          text: ""
+        });
         continue;
       }
       const text4 = displayModelLabel2(u2.id);
@@ -54122,7 +54176,11 @@ function unpricedCanonicalModels(plottedIds, liveHintOnly) {
     if (plottedIds.has(id39)) continue;
     const score = getIntellectScore(id39);
     if (!score) continue;
-    out.push({ id: id39, intellect: score.value, estimated: score.estimated === true });
+    out.push({
+      id: id39,
+      intellect: score.value,
+      estimated: score.estimated === true
+    });
   }
   for (const live of liveHintOnly) {
     out.push({ id: live.id, intellect: live.intellect, estimated: true });
@@ -54242,7 +54300,11 @@ function buildAuxLists(unpricedList, unscoredList) {
         { class: "field-hint frontier-unpriced-list" },
         el("summary", {}, `${String(unpricedList.length)} scored models with no price data yet`),
         renderBandedModelList(
-          unpricedList.map((u2) => ({ id: u2.id, intellect: u2.intellect, estimated: u2.estimated }))
+          unpricedList.map((u2) => ({
+            id: u2.id,
+            intellect: u2.intellect,
+            estimated: u2.estimated
+          }))
         )
       )
     );
@@ -54263,7 +54325,7 @@ function buildAuxLists(unpricedList, unscoredList) {
   }
   return out;
 }
-function createIntellectFrontierPanel(loadLocalModels, loadExtraProviders, loadLiveModels, loadPlanUsage, loadOpenRouter, loadRoutableModelSelections) {
+function createIntellectFrontierPanel(loadLocalModels, loadExtraProviders, loadLiveModels, loadPlanUsage, loadOpenRouter, loadRoutableModelSelections, loadAcpAgents) {
   const chartHost = el("div", { class: "frontier-chart" });
   const liveNotes = el("div", { class: "field-hint frontier-live-notes" });
   const compositeHost = el("div", { class: "frontier-composite-strip" });
@@ -54484,7 +54546,9 @@ function createIntellectFrontierPanel(loadLocalModels, loadExtraProviders, loadL
     expandNoTrainingBtn.addEventListener("click", toggleNoTrainingOnly);
     expandCostAxisGroup = makeCostAxisGroup();
     expandPlanCoverageGroup = makePlanCoverageGroup();
-    const bigChart = el("div", { class: "frontier-chart frontier-expand-chart" });
+    const bigChart = el("div", {
+      class: "frontier-chart frontier-expand-chart"
+    });
     expandChartHost = bigChart;
     expandTooltip = createTooltipLayer(dialog2);
     const closeDialog = () => {
@@ -54585,6 +54649,11 @@ function createIntellectFrontierPanel(loadLocalModels, loadExtraProviders, loadL
         routableSelections = [];
       }
     }
+    let acpAgents = [];
+    try {
+      acpAgents = await loadAcpAgents?.() ?? [];
+    } catch {
+    }
     const live = liveIntellectCandidates(liveFetch.models, liveFetch.indexVersion);
     state4 = {
       localIds,
@@ -54593,7 +54662,8 @@ function createIntellectFrontierPanel(loadLocalModels, loadExtraProviders, loadL
       liveFetch,
       planUsage,
       openRouter,
-      routableSelections
+      routableSelections,
+      acpAgents
     };
     render8();
   }
@@ -54631,7 +54701,16 @@ function createIntellectFrontierPanel(loadLocalModels, loadExtraProviders, loadL
   }
   function render8() {
     if (!state4) return;
-    const { localIds, extraProviders, live, liveFetch, planUsage, openRouter, routableSelections } = state4;
+    const {
+      localIds,
+      extraProviders,
+      live,
+      liveFetch,
+      planUsage,
+      openRouter,
+      routableSelections,
+      acpAgents
+    } = state4;
     const liveNoteParts = [];
     if (liveFetch.models.length > 0 && live.verification.verified) {
       const stale = live.verification.mismatches;
@@ -54690,7 +54769,8 @@ function createIntellectFrontierPanel(loadLocalModels, loadExtraProviders, loadL
     const baseCandidates = [
       ...localFrontierCandidates(localIds),
       ...extraProviderFrontierCandidates(extraProviders),
-      ...openRouterFrontierCandidates(openRouter.models)
+      ...openRouterFrontierCandidates(openRouter.models),
+      ...planAcpFrontierCandidates(acpAgents)
     ];
     const exactRoutes = routableSelections === null ? null : new Set(routableSelections);
     const delegatedModelIds = /* @__PURE__ */ new Set();
@@ -54727,7 +54807,10 @@ function createIntellectFrontierPanel(loadLocalModels, loadExtraProviders, loadL
     );
     const liveDiscoverableCandidates = [
       ...live.candidates,
-      ...livePricedCurated.map((candidate) => ({ ...candidate, discovery: true }))
+      ...livePricedCurated.map((candidate) => ({
+        ...candidate,
+        discovery: true
+      }))
     ];
     const trackedDiscoverableCandidates = [];
     if (exactRoutes !== null) {
@@ -55005,6 +55088,7 @@ var init_intellect_frontier_panel = __esm({
     init_local_model_catalog();
     init_data_policies();
     init_plan_inclusion();
+    init_plan_frontier_candidates();
     init_helpers();
     SVG_NS2 = "http://www.w3.org/2000/svg";
     WIDTH = 460;
@@ -55416,7 +55500,8 @@ function createUsageSection(api3, store3, onRequestClose) {
     () => api3.intellect.liveModels(),
     () => api3.usage.getPlanUsage(),
     loadOpenRouter,
-    async () => (await fetchModelOptions(api3, "")).filter((option2) => option2.value !== "" && option2.disabled !== true).map((option2) => option2.value)
+    async () => (await fetchModelOptions(api3, "")).filter((option2) => option2.value !== "" && option2.disabled !== true).map((option2) => option2.value),
+    async () => parseAcpAgentConfigs(await api3.settings.get("registeredAcpAgents"))
   );
   root4.append(frontierPanel.root);
   const planEl = qsRequired(root4, "#usage-plan-section");
@@ -55456,7 +55541,10 @@ function createUsageSection(api3, store3, onRequestClose) {
       },
       onShowInference: () => {
         frontierPanel.setPlanCoverageMode("inference");
-        frontierPanel.root.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        frontierPanel.root.scrollIntoView({
+          block: "nearest",
+          behavior: "smooth"
+        });
       }
     });
   }
@@ -55564,6 +55652,7 @@ var init_usage_section = __esm({
     init_dist();
     init_intellect_frontier_panel();
     init_model_options();
+    init_acp();
     PERIOD_LABELS = {
       day: "Last 24 hours",
       month: "Last 30 days",
@@ -280982,7 +281071,70 @@ var init_git_image_diff = __esm({
   }
 });
 
+// src/shared/fs/image-path.ts
+function imageMimeType(path4) {
+  const name = path4.split("/").pop()?.toLowerCase() ?? "";
+  const ext = name.split(".").pop() ?? "";
+  return IMAGE_MIME_BY_EXT[ext] ?? null;
+}
+function isRasterImagePath(path4) {
+  const mime = imageMimeType(path4);
+  return mime !== null && mime !== "image/svg+xml";
+}
+var IMAGE_MIME_BY_EXT;
+var init_image_path = __esm({
+  "src/shared/fs/image-path.ts"() {
+    IMAGE_MIME_BY_EXT = {
+      avif: "image/avif",
+      bmp: "image/bmp",
+      gif: "image/gif",
+      ico: "image/x-icon",
+      jpeg: "image/jpeg",
+      jpg: "image/jpeg",
+      png: "image/png",
+      svg: "image/svg+xml",
+      webp: "image/webp"
+    };
+  }
+});
+
 // src/renderer/views/git-changes-pane.ts
+function bytesToBase64(bytes) {
+  const chunks = [];
+  const chunkSize = 32768;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    chunks.push(String.fromCharCode(...bytes.subarray(offset, offset + chunkSize)));
+  }
+  return btoa(chunks.join(""));
+}
+function proposedImageDataUrl(path4, content) {
+  if (!content) return null;
+  const mime = imageMimeType(path4);
+  if (!mime) return null;
+  const dataUrlPrefix = `data:${mime};base64,`;
+  if (content.startsWith(dataUrlPrefix)) return content;
+  if (isRasterImagePath(path4)) {
+    const bytes = new Uint8Array(content.length);
+    for (let i4 = 0; i4 < content.length; i4++) {
+      const codeUnit = content.charCodeAt(i4);
+      if (codeUnit > 255) return null;
+      bytes[i4] = codeUnit;
+    }
+    return `${dataUrlPrefix}${bytesToBase64(bytes)}`;
+  }
+  return `${dataUrlPrefix}${bytesToBase64(new TextEncoder().encode(content))}`;
+}
+function proposedImageDiff(view) {
+  if (!imageMimeType(view.path)) return null;
+  return {
+    path: view.path,
+    before: "",
+    after: "",
+    language: view.language,
+    beforeImage: proposedImageDataUrl(view.path, view.before),
+    afterImage: proposedImageDataUrl(view.path, view.after)
+  };
+}
 function isChangeSelection(seed) {
   if (!seed || typeof seed !== "object") return false;
   if (!("kind" in seed) || !("path" in seed) || typeof seed.path !== "string") return false;
@@ -281056,7 +281208,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store3, api3, monaco) {
   const dirWrap = el("div", { class: "git-dir-view" });
   dirWrap.hidden = true;
   const emptyState = el("div", { class: "panel-empty" }, "Select a changed file");
-  viewerRoot.append(conflictBanner, diffWrap, approvalBar, imageWrap, dirWrap, emptyState);
+  viewerRoot.append(conflictBanner, diffWrap, imageWrap, dirWrap, emptyState, approvalBar);
   let diffEditor = null;
   let pendingSelect = null;
   let selectRequestId = 0;
@@ -281330,9 +281482,20 @@ function mountGitChangesPane(listRoot, viewerRoot, store3, api3, monaco) {
       const owner = activeOwner();
       if (owner) void api3.diff.reject(owner.projectId, owner.threadId, view.path);
     };
+    const imageDiff = proposedImageDiff(view);
+    if (imageDiff) {
+      emptyState.hidden = true;
+      diffWrap.hidden = true;
+      imageWrap.hidden = false;
+      dirWrap.hidden = true;
+      if (diffEditor) disposeDiffModels(diffEditor);
+      renderImageDiff(imageWrap, imageDiff);
+      return;
+    }
     emptyState.hidden = true;
     imageWrap.hidden = true;
     dirWrap.hidden = true;
+    clear(imageWrap);
     diffWrap.hidden = false;
     const proposed = {
       path: view.path,
@@ -281819,6 +281982,7 @@ var init_git_changes_pane = __esm({
     init_ui_scale();
     init_git_image_diff();
     init_material_file_icons();
+    init_image_path();
     STATUS_LABEL = {
       modified: "M",
       added: "A",
