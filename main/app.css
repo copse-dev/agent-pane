@@ -3661,7 +3661,7 @@ label {
   border-radius: var(--radius);
 }
 .message-reasoning[open] {
-  padding: var(--spacing-sm) var(--spacing-md);
+  padding: var(--spacing-md) var(--spacing-lg);
   background:
     repeating-linear-gradient(
       135deg,
@@ -4576,10 +4576,8 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
 }
 .tool-rollup-body > .message-reasoning {
   margin: 0 0 var(--spacing-xs);
-  border-left: 0;
-  padding-left: 0;
 }
-.tool-rollup-body > .message-reasoning > .message-reasoning-summary {
+.tool-rollup-body > .message-reasoning:not([open]) > .message-reasoning-summary {
   margin-inline: calc(-1 * var(--spacing-xs));
 }
 .tool-rollup-body .reasoning-activity-icon {
