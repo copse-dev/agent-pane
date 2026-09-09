@@ -70,6 +70,18 @@ describe('runCommand truncation reporting', () => {
 })
 
 describe('runCommand timeouts', () => {
+  for (const signal of ['SIGTERM', 'SIGKILL']) {
+    it(`does not report a command killed by ${signal} as successful`, async () => {
+      const result = await runCommand(
+        process.execPath,
+        ['-e', `process.kill(process.pid, '${signal}')`],
+        { unsandboxed: true },
+      )
+      assert.notEqual(result.code, 0)
+      assert.equal(result.stdout, '')
+    })
+  }
+
   it('rejects with a recognisable timeout error rather than a bare Error', async () => {
     // The semantic indexer deliberately budgets less time than a cold index can
     // take, so it must tell "we stopped waiting" apart from "the command broke"
