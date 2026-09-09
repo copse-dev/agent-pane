@@ -3,7 +3,7 @@
 // cross-version equating maps. Source of truth: scripts/data/intellect-scores.json.
 // Absent models mean "no sourced measurement yet", not zero.
 // Intelligence Index data from Artificial Analysis (https://artificialanalysis.ai)
-// Last synced: 2026-09-08
+// Last synced: 2026-09-09
 
 import type { EquatingMap } from './intellect-equating.ts'
 
@@ -9431,5 +9431,15 @@ export const INTELLECT_EQUATING_MAPS: readonly EquatingMap[] = [
     anchorMin: 60,
     anchorMax: 61,
     fittedAsOf: '2026-07-18',
+  },
+  {
+    from: 'v4.3',
+    to: 'v4.1',
+    a: 1.150330927332256,
+    b: 3.9086247898859163,
+    anchorCount: 611,
+    anchorMin: 1,
+    anchorMax: 54.1,
+    fittedAsOf: '2026-09-09',
   },
 ]

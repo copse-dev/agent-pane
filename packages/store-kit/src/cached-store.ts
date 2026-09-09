@@ -63,9 +63,10 @@ export function createCachedStore(backing: BackingStore): CachedStore {
       return cloneValue(cache.get(key))
     },
     set(key: string, value: unknown): void {
-      cache.set(key, cloneValue(value))
+      const snapshot = cloneValue(value)
       writes += 1
       backing.set(key, value)
+      cache.set(key, snapshot)
     },
     delete(key: string): void {
       cache.delete(key)

@@ -273,11 +273,11 @@ export function intellectBand(
  * each entry's intellect still falls in its band, so extending the scale with
  * a stronger model (which demotes yesterday's top band) forces these picks to
  * be revisited rather than silently going stale. Tracking the current-generation
- * flagships (Fable 5 top, Sonnet 5 mid) is exactly that revision: Opus 4.8 and
+ * flagships (Fable 5.1 top, Sonnet 5 mid) is exactly that revision: Opus 4.8 and
  * Sonnet 4.6 dropped a band once the newer models extended the scale.
  */
 export const BAND_REPRESENTATIVE_MODEL: Record<IntellectBand, TrackedModel> = {
   low: 'claude-haiku-4-5',
   mid: 'claude-sonnet-5',
-  top: 'claude-opus-5',
+  top: 'claude-fable-5-1',
 }
