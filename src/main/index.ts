@@ -525,6 +525,7 @@ app
     disposeLongTaskWake = installLongTaskWakeConsumer(taskSupervisor, agentDispatcher)
     disposeCiWatchConsumer = installCiWatchConsumer(taskSupervisor, agentDispatcher)
     disposeBackgroundProcessSupervisor = installBackgroundProcessSupervisor(taskSupervisor)
+    disposeContainerRunSupervisor = getContainerRunService().installSupervisor(taskSupervisor)
     disposeDarkFactorySensor = installDarkFactorySensor(taskSupervisor)
     disposeTaskSupervisorEvents = taskSupervisor.subscribe((task) => {
       if (!win.isDestroyed()) win.webContents.send('supervisor:changed', task.projectId)
@@ -988,6 +989,7 @@ let disposeVnc: (() => Promise<void>) | undefined
 let disposeLongTaskWake: (() => void) | undefined
 let disposeCiWatchConsumer: (() => void) | undefined
 let disposeBackgroundProcessSupervisor: (() => void) | undefined
+let disposeContainerRunSupervisor: (() => void) | undefined
 let disposeDarkFactorySensor: (() => void) | undefined
 let disposeTaskSupervisorEvents: (() => void) | undefined
 
@@ -1001,8 +1003,11 @@ async function cleanupBeforeQuit(): Promise<void> {
   disposeDarkFactorySensor = undefined
   disposeTaskSupervisorEvents?.()
   disposeTaskSupervisorEvents = undefined
+  await getContainerRunService().stopAll()
   await cancelAllSupervisedBackgroundProcesses()
   await taskSupervisor.shutdown()
+  disposeContainerRunSupervisor?.()
+  disposeContainerRunSupervisor = undefined
   disposeBackgroundProcessSupervisor?.()
   disposeBackgroundProcessSupervisor = undefined
   disposeLongTaskWake?.()

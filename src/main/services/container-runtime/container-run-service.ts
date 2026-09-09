@@ -1,3 +1,4 @@
+import type { TaskSupervisor } from '../supervisor/task-supervisor.ts'
 import { randomBytes } from 'node:crypto'
 import type { ContainerRunProgress, ContainerRunRequest } from '@shared/types/container-run.ts'
 import { isRecord } from '@shared/unknown-value.ts'
@@ -40,6 +41,8 @@ import type { ThreadContainerRecord } from '@shared/types/container-run.ts'
  * the record on disk under the profile is the durable artefact, this map is
  * just what the window is looking at.
  */
+
+export const CONTAINER_RUN_HANDLER = 'container_run'
 
 const LOG_TAIL = 60
 
@@ -112,14 +115,38 @@ export class ContainerRunService {
   private readonly settledListeners = new Set<
     (projectId: string, progress: ContainerRunProgress) => void
   >()
-  /** Threads whose live run the user asked to stop, until the run settles. */
-  private readonly stopRequested = new Set<string>()
   /** One per live run: aborted on stop, so the runner can refuse to create the container. */
   private readonly stopSignals = new Map<string, AbortController>()
+  private supervisor: TaskSupervisor | null = null
   private readonly deps: RunDependencies
 
   constructor(deps: RunDependencies = productionDependencies) {
     this.deps = deps
+  }
+
+  /** Track Docker as an external task; the supervisor never replays a container run. */
+  installSupervisor(supervisor: TaskSupervisor): () => void {
+    if (this.supervisor !== null) throw new Error('Container run supervisor is already installed')
+    const dispose = supervisor.registerExternalCanceller(CONTAINER_RUN_HANDLER, async (task) => {
+      const progress = this.runs.get(task.threadId)
+      if (progress?.runtimeId === task.processHandleId) {
+        await this.stopRuntime(task.threadId)
+      } else if (task.processHandleId) {
+        await this.deps.stop(task.processHandleId)
+      }
+    })
+    this.supervisor = supervisor
+    return () => {
+      dispose()
+      if (this.supervisor === supervisor) this.supervisor = null
+    }
+  }
+
+  /** Called before the supervisor shuts down, while its cancellers are still installed. */
+  async stopAll(): Promise<void> {
+    await Promise.all(
+      [...this.runs.keys()].filter((id) => this.isActive(id)).map((id) => this.stop(id)),
+    )
   }
 
   /**
@@ -182,7 +209,24 @@ export class ContainerRunService {
   async stop(threadId: string): Promise<ContainerRunProgress | null> {
     const progress = this.runs.get(threadId)
     if (!progress || !this.isActive(threadId)) return progress ? snapshot(progress) : null
-    this.stopRequested.add(threadId)
+    this.stopSignals.get(threadId)?.abort()
+    const task = this.supervisor
+      ?.list()
+      .find(
+        (candidate) =>
+          candidate.handler === CONTAINER_RUN_HANDLER &&
+          candidate.processHandleId === progress.runtimeId,
+      )
+    if (task && this.supervisor) {
+      await this.supervisor.cancel(task.projectId, task.taskId)
+      return this.get(threadId)
+    }
+    return this.stopRuntime(threadId)
+  }
+
+  private async stopRuntime(threadId: string): Promise<ContainerRunProgress | null> {
+    const progress = this.runs.get(threadId)
+    if (!progress || !this.isActive(threadId)) return progress ? snapshot(progress) : null
     this.stopSignals.get(threadId)?.abort()
     this.update(progress, {
       log: [...progress.log, '[thread-container] stop requested by the user'].slice(-LOG_TAIL),
@@ -314,6 +358,8 @@ export class ContainerRunService {
     // Claim the thread's slot before the first await, so two clicks cannot both
     // pass the live-run check and start two containers on one checkout.
     this.runs.set(request.threadId, progress)
+    const stopSignal = new AbortController()
+    this.stopSignals.set(request.threadId, stopSignal)
 
     let checkout: ThreadExecutionContext
     try {
@@ -329,6 +375,7 @@ export class ContainerRunService {
       )
     } catch (error) {
       this.runs.delete(request.threadId)
+      this.stopSignals.delete(request.threadId)
       throw error
     }
     this.update(progress, {
@@ -368,7 +415,7 @@ export class ContainerRunService {
     // A copy taken before the drive starts: the run mutates its own object as
     // it advances, and the caller wants the state it asked for.
     const first = snapshot(progress)
-    void this.drive(request, plan, checkout.root, progress, continuation)
+    void this.drive(request, plan, checkout.root, progress, continuation, stopSignal)
     return first
   }
 
@@ -418,6 +465,7 @@ export class ContainerRunService {
     workspace: string,
     progress: ContainerRunProgress,
     continuation: RunContinuation | null,
+    stopSignal: AbortController,
   ): Promise<void> {
     const runtimeId = newRuntimeId()
     // The key travels as an environment variable the runner names on the
@@ -429,13 +477,43 @@ export class ContainerRunService {
     const log = (line: string): void => {
       this.update(progress, { log: [...progress.log, line].slice(-LOG_TAIL) })
     }
-    const stopSignal = new AbortController()
-    this.stopSignals.set(request.threadId, stopSignal)
-    if (this.stopRequested.has(request.threadId)) stopSignal.abort()
+    const supervisor = this.supervisor
+    const stoppedByUser = (): boolean => stopSignal.signal.aborted
+    let taskId: string | null = null
     try {
       this.update(progress, { phase: 'building-image', runtimeId })
+      if (supervisor) {
+        const task = await supervisor.adoptRunning(
+          {
+            projectId: request.projectId,
+            threadId: request.threadId,
+            handler: CONTAINER_RUN_HANDLER,
+            provenance: 'user',
+            trigger: { kind: 'immediate' },
+            permissionSnapshot: {
+              capturedAt: Date.now(),
+              autoRunSandboxCommands: false,
+              projectSandboxEnabled: false,
+              executionRoot: workspace,
+              workspaceTargetKind: 'local',
+              extra: {
+                runtime: 'container',
+                egressAllowlist: progress.egressAllowlist,
+                tokenCeiling: request.budgets.tokenCeiling,
+              },
+            },
+            reapproveOnWake: true,
+            concurrencyClass: CONTAINER_RUN_HANDLER,
+            resourceBudget: { maxDurationMs: request.budgets.wallClockMs },
+            maxAttempts: 1,
+          },
+          runtimeId,
+        )
+        taskId = task.taskId
+      }
+      if (stoppedByUser()) throw new Error('Stopped by you before the container started')
       await this.deps.ensureImage()
-      if (this.stopRequested.has(request.threadId)) {
+      if (stoppedByUser()) {
         throw new Error('Stopped by you before the container started')
       }
       this.update(progress, { phase: 'starting' })
@@ -479,7 +557,7 @@ export class ContainerRunService {
       })
       const outcome = judgeRun(record)
       // A run the user stopped is not a guest failure; say what happened.
-      const stopped = this.stopRequested.has(request.threadId)
+      const stopped = stoppedByUser()
       this.update(progress, {
         phase: outcome.failure === null && !stopped ? 'finished' : 'failed',
         record,
@@ -495,8 +573,29 @@ export class ContainerRunService {
       })
     } finally {
       process.env[keyEnv] = ''
-      this.stopRequested.delete(request.threadId)
-      this.stopSignals.delete(request.threadId)
+      if (supervisor && taskId) {
+        try {
+          if (stoppedByUser()) await supervisor.cancel(request.projectId, taskId)
+          else if (progress.phase === 'finished') {
+            await supervisor.completeExternal(request.projectId, taskId, {
+              kind: 'handler',
+              ref: runtimeId,
+            })
+          } else {
+            await supervisor.failExternal(
+              request.projectId,
+              taskId,
+              progress.error ?? 'Container run failed',
+            )
+          }
+        } catch (error) {
+          // Preserve the container record even if saving operational metadata fails.
+          console.error('[container-run] Could not settle supervised task:', error)
+        }
+      }
+      if (this.stopSignals.get(request.threadId) === stopSignal) {
+        this.stopSignals.delete(request.threadId)
+      }
       for (const listener of this.settledListeners) listener(request.projectId, snapshot(progress))
     }
   }

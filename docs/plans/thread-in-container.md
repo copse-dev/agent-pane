@@ -825,3 +825,20 @@ already in the list, one group up, and it keeps the deferral guarantee.
 - [`acp-session-continuity.md`](acp-session-continuity.md) owns the resume and lease
   semantics T2 depends on.
 - [`long-horizon-tasks.md`](long-horizon-tasks.md) supplies the grind corpus for T1.
+
+### Container task supervision
+
+The desktop registers container runs as externally managed `container_run` tasks
+with the existing task supervisor before preparing the image. The task records
+ownership, the runtime handle, limits, and terminal outcome; prompts and credentials
+remain outside task metadata. Docker startup, attestation, egress, carry-out, and
+cleanup remain owned by the container runner.
+
+Cancellation through either the container UI or the supervisor aborts preparation
+and removes a started runtime. App shutdown cancels runs before removing the
+supervisor's external cancellers. A process handle lost on restart becomes a failed
+task through the supervisor's existing reconciliation. No handler replays the
+run: `maxAttempts: 1` and explicit user continuation remain the contract. The
+supervisor records the wall-clock limit; the runner still enforces it and the guest
+still enforces its token limit. Adoption of an external task does not impose the
+supervisor's queued-handler concurrency limits.
