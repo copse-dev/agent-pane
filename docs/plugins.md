@@ -46,6 +46,13 @@ the runtime `RegisteredPlugin.contributions`, not in the serializable manifest.
 The one user-code exception is an explicitly selected plugin's isolated
 shared `runtime`; it never imports code into Electron main.
 
+The isolated runtime also supports declared `runtime.hooks` registrations through
+`registerHook` and explicit host invocation. Hook-only runtimes are accepted. This
+is the SDK/protocol stage: the agent's canonical event fire sites do not invoke
+these external functions yet, and their results cannot alter agent behavior.
+See the [SDK contract](../packages/plugin-sdk/README.md#external-function-hook-registration)
+for declaration matching, cancellation, and the deliberately narrow handler context.
+
 `pluginManifestFromCursorJson()` maps a Cursor-shaped `plugin.json` into a
 `PluginManifest` (a user plugin): the existing top-level `skills` / `mcpServers`
 fields fold into the plugin slots (`mcpServers` → `tools.mcpServers`). The

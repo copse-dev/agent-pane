@@ -174,7 +174,8 @@ async function dispatch(line: string): Promise<void> {
       }
       return
     }
-    case 'invoke': {
+    case 'invoke':
+    case 'invoke-hook': {
       if (!activated) {
         writeResponse(request.id, false, undefined, 'Plugin tools are not initialized.')
         return
@@ -183,15 +184,22 @@ async function dispatch(line: string): Promise<void> {
       activeInvocations.set(request.id, controller)
       try {
         const result =
-          request.kind === 'tool'
-            ? await activated.invokeTool(request.registrationId, request.input, controller.signal)
-            : await activated.invokeModel(
+          request.op === 'invoke-hook'
+            ? await activated.invokeHook(
                 request.registrationId,
+                request.event,
                 request.input,
                 controller.signal,
-                sessionApi(request.id),
-                browserApi(request.id),
               )
+            : request.kind === 'tool'
+              ? await activated.invokeTool(request.registrationId, request.input, controller.signal)
+              : await activated.invokeModel(
+                  request.registrationId,
+                  request.input,
+                  controller.signal,
+                  sessionApi(request.id),
+                  browserApi(request.id),
+                )
         writeResponse(request.id, true, result)
       } catch (err) {
         writeResponse(request.id, false, undefined, errorMessage(err))
