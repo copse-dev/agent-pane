@@ -11,6 +11,8 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { analyzeShellCommand } from './shell-scope.ts'
 import { setSetting } from '../storage/settings.ts'
+import { runWithActiveRunIdentity } from '../thread-models.ts'
+import { clearThreadReadRoots, grantThreadReadRoot } from './thread-read-roots.ts'
 
 describe('analyzeShellCommand (app environment)', () => {
   const root = '/Users/me/project'
@@ -77,6 +79,69 @@ describe('analyzeShellCommand (app environment)', () => {
       const r = analyzeShellCommand(`cat ${threadFile} /etc/passwd`, root)
       assert.equal(r.verdict, 'external')
     })
+  })
+})
+
+describe('thread read roots (invoked skill directories)', () => {
+  const root = '/Users/me/project'
+  const skillDir = join(homedir(), '.codex', 'skills', 'reconcile-worktrees')
+  const canonical = join(homedir(), 'dev', 'skills', 'reconcile-worktrees')
+  const inThread = <T>(fn: () => T): T => runWithActiveRunIdentity('skill-thread', fn)
+
+  beforeEach(() => {
+    grantThreadReadRoot('skill-thread', {
+      path: skillDir,
+      canonical,
+      isDirectory: true,
+      label: 'test skill',
+    })
+  })
+
+  after(() => {
+    clearThreadReadRoots()
+  })
+
+  it('contains a read-only command naming the skill directory, in either spelling', () => {
+    // The post-mortem's exact shape: `sed -n '1,320p' ~/.codex/skills/…/SKILL.md`
+    // asked "Run outside sandbox?" although the read would succeed in place.
+    for (const cmd of [
+      `sed -n '1,320p' ~/.codex/skills/reconcile-worktrees/SKILL.md`,
+      `cat ${skillDir}/scripts/audit.mjs`,
+      `ls ${canonical}/scripts`,
+      `grep -n worktree ${skillDir}/SKILL.md ${canonical}/references/notes.md`,
+    ]) {
+      const r = inThread(() => analyzeShellCommand(cmd, root))
+      assert.equal(r.verdict, 'sandbox', `${cmd}: ${r.reasons.join('; ')}`)
+    }
+  })
+
+  it('still prompts for the same paths outside the granted thread', () => {
+    const cmd = `cat ${skillDir}/scripts/audit.mjs`
+    assert.equal(analyzeShellCommand(cmd, root).verdict, 'external')
+    assert.equal(
+      runWithActiveRunIdentity('other-thread', () => analyzeShellCommand(cmd, root)).verdict,
+      'external',
+    )
+  })
+
+  it('still prompts for a write-shaped command naming the skill directory', () => {
+    for (const cmd of [
+      `echo x > ${skillDir}/notes.md`,
+      `rm -rf ${skillDir}/scripts`,
+      `touch ~/.codex/skills/reconcile-worktrees/x`,
+    ]) {
+      assert.equal(inThread(() => analyzeShellCommand(cmd, root)).verdict, 'external', cmd)
+    }
+  })
+
+  it('still prompts when the command also reads something ungranted', () => {
+    const r = inThread(() => analyzeShellCommand(`cat ${skillDir}/SKILL.md ~/.ssh/id_rsa`, root))
+    assert.equal(r.verdict, 'external')
+  })
+
+  it('does not waive a sibling directory sharing the name prefix', () => {
+    const r = inThread(() => analyzeShellCommand(`cat ${skillDir}-evil/SKILL.md`, root))
+    assert.equal(r.verdict, 'external')
   })
 })
 

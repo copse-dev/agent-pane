@@ -28,7 +28,28 @@ import { isRecord } from '@shared/unknown-value.ts'
 /** Max bytes read from a skill file (auto-approved, outside workspace). */
 export const SKILL_READ_MAX_BYTES = READ_FILE_LIMITS_CEILING.maxChars * 4
 
-const SKILL_CONTAINER_DIRS = new Set(['.cursor', '.agents', '.claude'])
+/**
+ * Container directories a skills tree can live under, at both scopes:
+ * `~/<container>/skills/<name>/SKILL.md` (user) and
+ * `<workspace>/<container>/skills/<name>/SKILL.md` (project).
+ *
+ * Precedence within a scope follows this order, and first-writer-wins in
+ * {@link loadSkillFromFile} makes it matter only for a name installed twice:
+ *
+ * 1. `.cursor` — the Cursor layout Copse has always read.
+ * 2. `.agents` — the tool-neutral Agent Skills convention.
+ * 3. `.claude` — Claude Code's layout.
+ * 4. `.codex` — Codex CLI's layout (`~/.codex/skills`). Added last so a
+ *    skill the user keeps in one of the earlier trees is unaffected by a
+ *    Codex-installed copy of the same name; a Codex-only skill is found either
+ *    way. Before this entry a skill invoked from a Codex-backed thread could
+ *    not be discovered at all (reconcile-worktrees post-mortem, 2026-09-09).
+ *
+ * Across scopes, {@link collectDiscoveryRoots} orders user roots before project
+ * roots, so a user-installed skill always beats a same-named workspace one.
+ */
+export const SKILL_CONTAINER_DIRS: readonly string[] = ['.cursor', '.agents', '.claude', '.codex']
+const SKILL_CONTAINER_DIR_SET: ReadonlySet<string> = new Set(SKILL_CONTAINER_DIRS)
 
 let cachedSkills: SkillMetadata[] = []
 let refreshPromise: Promise<void> | null = null
@@ -42,9 +63,40 @@ function skillsEnabled(): boolean {
   return getSetting<boolean>('skillsEnabled', true)
 }
 
-function userSkillRoots(): string[] {
-  const home = homedir()
-  return ['.cursor', '.agents', '.claude'].map((dir) => join(home, dir, 'skills'))
+/**
+ * User-scope skills trees, in precedence order (see {@link SKILL_CONTAINER_DIRS}).
+ * `home` is a parameter so tests can assert the list without depending on the
+ * developer's real home directory.
+ */
+export function userSkillRoots(home: string = userSkillsHome()): string[] {
+  return SKILL_CONTAINER_DIRS.map((dir) => join(home, dir, 'skills'))
+}
+
+let userSkillsHomeOverride: string | null = null
+
+function userSkillsHome(): string {
+  return userSkillsHomeOverride ?? homedir()
+}
+
+/**
+ * Test helper — point user-scope discovery at a directory other than the real
+ * home, so a developer's own `~/.codex/skills` (which legitimately overrides a
+ * same-named built-in) cannot leak into a suite's expectations.
+ */
+export function setUserSkillsHomeForTest(home: string | null): void {
+  userSkillsHomeOverride = home
+}
+
+/** Stable sort of `<dir>/<container>/skills` roots by {@link SKILL_CONTAINER_DIRS} order. */
+function sortByContainerPrecedence(skillRoots: readonly string[]): string[] {
+  const rank = (root: string): number => {
+    const index = SKILL_CONTAINER_DIRS.indexOf(basename(dirname(root)))
+    return index === -1 ? SKILL_CONTAINER_DIRS.length : index
+  }
+  return skillRoots
+    .map((root, order) => ({ root, order, rank: rank(root) }))
+    .sort((a, b) => a.rank - b.rank || a.order - b.order)
+    .map(({ root }) => root)
 }
 
 async function loadSkillFromFile(
@@ -111,10 +163,15 @@ async function collectDiscoveryRoots(): Promise<Array<{ root: string; source: Sk
     const projectRoots = new Set<string>()
     await walkForContainerRoots(
       workspace,
-      { containerDirs: SKILL_CONTAINER_DIRS, leafName: 'skills' },
+      { containerDirs: SKILL_CONTAINER_DIR_SET, leafName: 'skills' },
       projectRoots,
     )
-    for (const root of projectRoots) roots.push({ root, source: 'project' })
+    // The walk yields roots in directory order (`.claude` before `.cursor`);
+    // sort them so first-writer-wins follows the documented container
+    // precedence, with the walk order as the tiebreak between subdirectories.
+    for (const root of sortByContainerPrecedence([...projectRoots])) {
+      roots.push({ root, source: 'project' })
+    }
   }
 
   for (const pluginRoot of await discoverCursorPluginRoots()) {

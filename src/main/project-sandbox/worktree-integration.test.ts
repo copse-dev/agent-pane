@@ -2,7 +2,7 @@ import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -98,7 +98,12 @@ describe('linked-worktree sandbox integration', () => {
     git(repo, ['commit', '-q', '-m', 'initial'])
     git(repo, ['worktree', 'add', '-q', '-b', 'thread-a', worktree])
     git(repo, ['worktree', 'add', '-q', '-b', 'thread-b', sibling])
+    // A sibling nested INSIDE the primary checkout (the `.claude/worktrees/`
+    // layout): the primary is readable, this must not be.
+    const nestedSibling = join(repo, '.worktrees', 'thread-c')
+    git(repo, ['worktree', 'add', '-q', '-b', 'thread-c', nestedSibling])
     await writeFile(join(sibling, 'sibling-only.txt'), 'secret\n')
+    await writeFile(join(nestedSibling, 'nested-sibling-only.txt'), 'secret\n')
 
     const registration = await registerInternalWorkspaceRoot(worktree, nested)
     setGitAvailableForTest(true)
@@ -145,11 +150,11 @@ describe('linked-worktree sandbox integration', () => {
     assert.notEqual(readSibling.code, 0)
     assert.equal(readSibling.stdout, '')
 
-    // Bug fix: the sandbox must also deny reads of the shared primary
-    // checkout. Before the fix, `denyRead` only listed `[homedir(), ...siblings]`
-    // and the primary tree — living under `/tmp` in this test — was
-    // ASRT-default-allowed, so a worktree agent could read the whole main
-    // project through this exact path.
+    // The shared primary checkout is readable from a linked worktree — the
+    // reconcile-worktrees post-mortem found `git -C <primary> …` dying with
+    // "Unable to read current working directory" and `git worktree list`
+    // reporting no linked entries — but never writable, and a sibling
+    // worktree nested inside it stays unreadable.
     await writeFile(join(repo, 'primary-only.txt'), 'primary secret\n')
     const readPrimary = await runSandboxed(
       process.execPath,
@@ -160,8 +165,69 @@ describe('linked-worktree sandbox integration', () => {
       ],
       nested,
     )
-    assert.notEqual(readPrimary.code, 0)
-    assert.equal(readPrimary.stdout, '')
+    assert.equal(readPrimary.code, 0, readPrimary.stderr)
+    assert.equal(readPrimary.stdout, 'primary secret\n')
+
+    const writePrimary = await runSandboxed(
+      process.execPath,
+      [
+        '-e',
+        'require("node:fs").writeFileSync(process.argv[1], "tampered")',
+        join(repo, 'new.txt'),
+      ],
+      nested,
+    )
+    assert.notEqual(writePrimary.code, 0)
+    assert.equal(existsSync(join(repo, 'new.txt')), false)
+    const overwritePrimary = await runSandboxed(
+      process.execPath,
+      [
+        '-e',
+        'require("node:fs").writeFileSync(process.argv[1], "tampered")',
+        join(repo, 'primary-only.txt'),
+      ],
+      nested,
+    )
+    assert.notEqual(overwritePrimary.code, 0)
+    assert.equal(await readFile(join(repo, 'primary-only.txt'), 'utf8'), 'primary secret\n')
+
+    const primaryHead = await runSandboxed('git', ['-C', repo, 'rev-parse', 'HEAD'], nested)
+    assert.equal(primaryHead.code, 0, primaryHead.stderr)
+    assert.match(primaryHead.stdout, /^[0-9a-f]{40}\n$/)
+    const primaryStatus = await runSandboxed('git', ['-C', repo, 'status', '--short'], nested)
+    assert.equal(primaryStatus.code, 0, primaryStatus.stderr)
+    assert.match(primaryStatus.stdout, /primary-only\.txt/)
+
+    // Git prints canonical paths (the tmpdir is symlinked on macOS). Every
+    // worktree is listed with a real HEAD — the primary's used to read as
+    // 0000000 and the linked ones were missing entirely. Sibling working trees
+    // stay unreadable, which git reports as "prunable"; that is the honest
+    // answer, not a broken one.
+    const worktreeList = await runSandboxed('git', ['worktree', 'list', '--porcelain'], nested)
+    assert.equal(worktreeList.code, 0, worktreeList.stderr)
+    const listed = worktreeList.stdout
+      .split('\n')
+      .filter((line) => line.startsWith('worktree '))
+      .map((line) => line.slice('worktree '.length))
+    assert.deepEqual(
+      new Set(listed),
+      new Set(
+        await Promise.all([repo, worktree, sibling, nestedSibling].map((path) => realpath(path))),
+      ),
+    )
+    assert.doesNotMatch(worktreeList.stdout, /HEAD 0{40}/)
+
+    const readNestedSibling = await runSandboxed(
+      process.execPath,
+      [
+        '-e',
+        'process.stdout.write(require("node:fs").readFileSync(process.argv[1], "utf8"))',
+        join(nestedSibling, 'nested-sibling-only.txt'),
+      ],
+      nested,
+    )
+    assert.notEqual(readNestedSibling.code, 0)
+    assert.equal(readNestedSibling.stdout, '')
 
     // Sibling packages under the same worktree checkout must also be denied
     // when the execution root is nested (packages/app), while the agent's

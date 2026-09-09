@@ -10,6 +10,9 @@ import {
   readSkill,
   getSkill,
   setSkillsForTest,
+  setUserSkillsHomeForTest,
+  userSkillRoots,
+  SKILL_CONTAINER_DIRS,
   SKILL_READ_MAX_BYTES,
 } from './skills-registry.ts'
 import { setSetting } from '../storage/settings.test-shim.ts'
@@ -35,6 +38,8 @@ describe('skills-registry', () => {
     setBuiltinSkillsRootForTest(null)
     tempRoot = await mkdtemp(join(tmpdir(), 'copse-panel-skills-'))
     restoreWorkspace = setWorkspaceRootForTest(tempRoot)
+    // Isolate user-scope discovery from the developer's real `~/.*/skills`.
+    setUserSkillsHomeForTest(join(tempRoot, 'home'))
     await mkdir(join(tempRoot, '.cursor', 'skills', 'demo-skill'), { recursive: true })
     await writeFile(
       join(tempRoot, '.cursor', 'skills', 'demo-skill', 'SKILL.md'),
@@ -52,6 +57,7 @@ description: Demo skill for tests
     restoreWorkspace?.()
     restoreWorkspace = undefined
     setSkillsForTest([])
+    setUserSkillsHomeForTest(null)
     resetBundledCursorSkillsRootForTest()
     resetBuiltinSkillsRootForTest()
     if (tempRoot) await rm(tempRoot, { recursive: true, force: true })
@@ -63,6 +69,76 @@ description: Demo skill for tests
     const demo = skills.find((skill) => skill.name === 'demo-skill' && skill.source === 'project')
     assert.ok(demo, 'expected demo-skill from project .cursor/skills')
     assert.deepEqual(demo.externalLinks, [], 'link-free skill reports no external links')
+  })
+
+  it('discovers project skills under .codex/skills (Codex CLI layout)', async () => {
+    // Regression for the reconcile-worktrees post-mortem: a skill kept in the
+    // Codex CLI tree was invisible to discovery, so a Codex-backed thread could
+    // not invoke it at all.
+    await mkdir(join(tempRoot, '.codex', 'skills', 'codex-only'), { recursive: true })
+    await writeFile(
+      join(tempRoot, '.codex', 'skills', 'codex-only', 'SKILL.md'),
+      `---
+name: codex-only
+description: Lives only in the Codex tree
+---
+
+# Codex`,
+      'utf-8',
+    )
+    await refreshSkillsRegistry()
+    const found = listSkills().find((skill) => skill.name === 'codex-only')
+    assert.ok(found, 'expected codex-only from project .codex/skills')
+    assert.equal(found.source, 'project')
+  })
+
+  it('prefers an earlier container over .codex for a duplicated skill name', async () => {
+    // Precedence is first-writer-wins in container order, so a Codex copy of a
+    // skill the user also keeps under `.cursor` must not shadow the original.
+    await mkdir(join(tempRoot, '.codex', 'skills', 'demo-skill'), { recursive: true })
+    await writeFile(
+      join(tempRoot, '.codex', 'skills', 'demo-skill', 'SKILL.md'),
+      `---
+name: demo-skill
+description: Codex copy that must lose
+---
+
+# Codex copy`,
+      'utf-8',
+    )
+    await refreshSkillsRegistry()
+    const demo = getSkill('demo-skill')
+    assert.ok(demo)
+    assert.equal(demo.skillRoot, join(tempRoot, '.cursor', 'skills', 'demo-skill'))
+  })
+
+  it('discovers user skills under ~/.codex/skills as trusted user skills', async () => {
+    const home = join(tempRoot, 'home')
+    await mkdir(join(home, '.codex', 'skills', 'home-codex'), { recursive: true })
+    await writeFile(
+      join(home, '.codex', 'skills', 'home-codex', 'SKILL.md'),
+      `---
+name: home-codex
+description: Installed by the Codex CLI
+---
+
+# Home`,
+      'utf-8',
+    )
+    await refreshSkillsRegistry()
+    const found = listSkills().find((skill) => skill.name === 'home-codex')
+    assert.ok(found)
+    assert.equal(found.source, 'user')
+  })
+
+  it('lists user skill roots in container precedence order, including ~/.codex', () => {
+    assert.deepEqual(SKILL_CONTAINER_DIRS, ['.cursor', '.agents', '.claude', '.codex'])
+    assert.deepEqual(userSkillRoots('/home/copse'), [
+      '/home/copse/.cursor/skills',
+      '/home/copse/.agents/skills',
+      '/home/copse/.claude/skills',
+      '/home/copse/.codex/skills',
+    ])
   })
 
   it('does not descend into a nested repository (git worktree or clone)', async () => {
@@ -358,9 +434,8 @@ description: Bundled skill for tests
         await seedSkillAt(join(tempRoot, dir), `skill-in-${dir.replace(/^\./, '')}`)
       }
       await refreshSkillsRegistry()
-      // Asserted by name rather than against the whole list: `userSkillRoots()`
-      // reads the real `~/.cursor|.agents|.claude/skills`, so the developer's own
-      // skills legitimately show up here too.
+      // Asserted by name rather than against the whole list, so the test
+      // says only what it means: the seeded skills are absent.
       const found = new Set(listSkills().map((s) => s.name))
       for (const dir of skipped) {
         assert.ok(!found.has(`skill-in-${dir.replace(/^\./, '')}`), `should skip ${dir}/`)

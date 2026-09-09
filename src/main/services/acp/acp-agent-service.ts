@@ -504,6 +504,10 @@ export async function runAcpAgentFromSettings(
   // (not gated on session freshness): the agent does not retain it across turns.
   const skillsBlock = await buildInvokedSkillsBlock(options.invokedSkills ?? [], {
     sandboxActive: sandboxed,
+    // Also grants this thread read-only run_shell access to the skill's
+    // directory: bridged run_shell is the ACP agent's only route into Copse's
+    // tools, and read_skill is not bridged.
+    threadId: options.threadId,
   })
 
   // One attempt = acquire (reuse the thread's live session, or open a fresh

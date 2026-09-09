@@ -168,7 +168,10 @@ export async function buildSystemPromptWithMetadata(
     (okfMemoriesEnabled ? MEMORY_TOOLS_BLOCK : '') +
     (piiRedactionEnabled ? PII_REDACTION_BLOCK : '') +
     buildSkillsCatalogBlock() +
-    (await buildInvokedSkillsBlock(invokedSkills, { sandboxActive: isProjectSandboxActive() })) +
+    (await buildInvokedSkillsBlock(invokedSkills, {
+      sandboxActive: isProjectSandboxActive(),
+      ...(threadId ? { threadId } : {}),
+    })) +
     agentRulesCatalog +
     buildSemanticSearchPromptBlock() +
     (opus5 ? OPUS_5_TONE_REMINDER : '') +

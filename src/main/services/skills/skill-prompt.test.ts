@@ -9,7 +9,12 @@ import {
   buildInvokedSkillsBlock,
   buildSkillsToolsPromptLine,
 } from './skill-prompt.ts'
-import { refreshSkillsRegistry, setSkillsForTest } from './skills-registry.ts'
+import {
+  refreshSkillsRegistry,
+  setSkillsForTest,
+  setUserSkillsHomeForTest,
+} from './skills-registry.ts'
+import { clearThreadReadRoots, threadReadRoots } from '../security/thread-read-roots.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import { setSetting } from '../storage/settings.test-shim.ts'
 import {
@@ -105,6 +110,7 @@ describe('buildInvokedSkillsBlock', () => {
     setBundledCursorSkillsRootForTest(null)
     tempRoot = await mkdtemp(join(tmpdir(), 'copse-panel-skill-prompt-'))
     restoreWorkspace = setWorkspaceRootForTest(tempRoot)
+    setUserSkillsHomeForTest(join(tempRoot, 'home'))
     await mkdir(join(tempRoot, '.cursor', 'skills', 'demo-skill'), { recursive: true })
     await writeFile(
       join(tempRoot, '.cursor', 'skills', 'demo-skill', 'SKILL.md'),
@@ -122,8 +128,59 @@ description: Demo skill for tests
   afterEach(async () => {
     restoreWorkspace?.()
     setSkillsForTest([])
+    setUserSkillsHomeForTest(null)
     resetBundledCursorSkillsRootForTest()
+    clearThreadReadRoots()
     if (tempRoot) await rm(tempRoot, { recursive: true, force: true })
+  })
+
+  it('tells the model the skill directory is readable by run_shell, not only read_skill', async () => {
+    const block = await buildInvokedSkillsBlock(['demo-skill'], { sandboxActive: true })
+    assert.match(block, /readable — never writable — by run_shell for the rest of this thread/)
+    assert.match(block, /read-only access to each invoked skill's directory/)
+    assert.doesNotMatch(block, /read_skill \(not read_file or run_shell\)/)
+  })
+
+  it('grants the invoking thread read-only run_shell access to the skill directory', async () => {
+    const skillRoot = join(tempRoot, '.cursor', 'skills', 'demo-skill')
+    const block = await buildInvokedSkillsBlock(['demo-skill'], { threadId: 'thread-1' })
+    assert.match(block, /Readable by run_shell for the rest of this thread \(read-only\): /)
+    assert.ok(block.includes(skillRoot))
+    const roots = threadReadRoots('thread-1')
+    assert.equal(roots.length, 1)
+    assert.equal(roots[0]?.path, skillRoot)
+    assert.deepEqual(threadReadRoots('thread-2'), [])
+  })
+
+  it('grants nothing without a thread, so composer previews widen no sandbox', async () => {
+    await buildInvokedSkillsBlock(['demo-skill'])
+    assert.deepEqual(threadReadRoots('thread-1'), [])
+  })
+
+  it('reports declared paths it refused so the model does not rely on them', async () => {
+    await mkdir(join(tempRoot, '.cursor', 'skills', 'pathy', 'scripts'), { recursive: true })
+    await writeFile(
+      join(tempRoot, '.cursor', 'skills', 'pathy', 'SKILL.md'),
+      `---
+name: pathy
+description: Declares paths
+paths:
+  - scripts
+  - ../demo-skill
+  - /etc
+---
+
+# Pathy`,
+      'utf-8',
+    )
+    await refreshSkillsRegistry()
+    const block = await buildInvokedSkillsBlock(['pathy'], { threadId: 'thread-1' })
+    assert.match(block, /Declared `paths` entries NOT granted \(invalid or unsafe\): /)
+    assert.match(block, /\.\.\/demo-skill: must not contain "\.\."/)
+    assert.match(block, /\/etc: must be relative to the skill directory/)
+    // `scripts` sits inside the directory grant, so it is neither extra nor refused.
+    assert.doesNotMatch(block, /scripts: /)
+    assert.equal(threadReadRoots('thread-1').length, 1)
   })
 
   it('returns empty string when no skills were invoked', async () => {

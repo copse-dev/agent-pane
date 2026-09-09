@@ -40,13 +40,20 @@ export interface InternalWorkspaceRootRegistration {
    * Main-repository working tree derived from `commonGitDir` when its basename
    * is `.git` (the standard non-bare layout). `null` for bare repositories or
    * unusual `commondir` values where no primary checkout can be inferred. The
-   * sandbox denies reads under this path so a linked-worktree agent cannot
-   * read the shared project tree of an outside-$HOME layout (tmpdir,
-   * `COPSE_WORKTREES_DIR`, …) where ASRT's default home-deny does not apply.
+   * sandbox exposes this tree READ-ONLY to a linked-worktree agent (see
+   * `primaryCheckoutReadPaths` in `project-sandbox/config.ts` for the
+   * trade-off); writes stay denied, and sibling worktrees inside it stay
+   * unreadable.
    */
   readonly primaryCheckoutRoot: string | null
   /** Other linked checkouts in the same repository, explicitly denied by the sandbox. */
   readonly siblingRoots: readonly string[]
+  /**
+   * Per-worktree admin directories (`<common>/worktrees/<name>`) of those
+   * siblings. Exposed read-only so `git worktree list` from a linked worktree
+   * can enumerate the repository; a sibling's working tree stays denied.
+   */
+  readonly siblingGitDirs: readonly string[]
 }
 
 const internalWorkspaceRoots = new Map<string, InternalWorkspaceRootRegistration>()
@@ -266,6 +273,7 @@ export async function registerInternalWorkspaceRoot(
   }
 
   const siblingRoots: string[] = []
+  const siblingGitDirs: string[] = []
   for (const entry of await readdir(dirname(gitDir), { withFileTypes: true })) {
     if (!entry.isDirectory() || entry.name === basename(gitDir)) continue
     try {
@@ -282,6 +290,7 @@ export async function registerInternalWorkspaceRoot(
           : resolve(dirname(gitDir), entry.name, siblingGitFile),
       )
       siblingRoots.push(dirname(siblingDotGit))
+      siblingGitDirs.push(join(dirname(gitDir), entry.name))
     } catch {
       signal?.throwIfAborted()
       // A stale/prunable sibling cannot grant authority; it needs no extra deny path.
@@ -301,6 +310,7 @@ export async function registerInternalWorkspaceRoot(
     commonGitDir,
     primaryCheckoutRoot,
     siblingRoots: Object.freeze([...new Set(siblingRoots)]),
+    siblingGitDirs: Object.freeze([...new Set(siblingGitDirs)]),
   })
   // Cancellation can arrive after the last read or while enumerating siblings.
   // Never publish a partial deny list after optional discovery has timed out.
