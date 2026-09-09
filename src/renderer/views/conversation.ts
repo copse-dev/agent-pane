@@ -871,6 +871,7 @@ function createGroupToolCard(
       'data-status': tc.status,
     })
     appendStandardToolSections(entry, tc, getToolCallLabel(tc), 'tool-group-item-header')
+    toolGroupItemSignatures.set(entry, renderSignature(tc))
     groupItems.append(entry)
   }
 
@@ -900,7 +901,10 @@ function createRollupToolCard(
       : undefined
   const body = el('div', { class: 'tool-rollup-body' })
   for (const child of item.children) {
-    body.append(createToolCard(child, api, threadId, store))
+    const childCard = createToolCard(child, api, threadId, store)
+    toolCardKeys.set(childCard, toolCardKey(child))
+    toolCardSignatures.set(childCard, toolCardSignature(child))
+    body.append(childCard)
   }
   card.append(createToolHeader(item.label, status, 'tool-card-header', count), body)
   return card
@@ -930,7 +934,10 @@ function createStepToolCard(
   // a rule of their own, so depth stops consuming horizontal space here.
   const body = el('div', { class: 'tool-rollup-body' })
   for (const child of item.children) {
-    body.append(createToolCard(child, api, threadId))
+    const childCard = createToolCard(child, api, threadId)
+    toolCardKeys.set(childCard, toolCardKey(child))
+    toolCardSignatures.set(childCard, toolCardSignature(child))
+    body.append(childCard)
   }
   card.append(createToolHeader(item.label, status, 'tool-card-header'), body)
   return card
@@ -953,6 +960,7 @@ function createToolCard(
 // WeakMaps (rather than DOM attributes) so large signatures don't bloat the DOM.
 const toolCardKeys = new WeakMap<HTMLElement, string>()
 const toolCardSignatures = new WeakMap<HTMLElement, string>()
+const toolGroupItemSignatures = new WeakMap<HTMLElement, string>()
 
 function toolCardKey(item: ToolCallDisplayItem): string {
   if (item.type === 'rollup') return `r:${item.key}`
@@ -970,6 +978,167 @@ function toolCardKey(item: ToolCallDisplayItem): string {
 function toolCardSignature(item: ToolCallDisplayItem, extra?: string): string {
   const base = renderSignature(item)
   return extra === undefined ? base : `${base}|${extra}`
+}
+
+function replaceDirectToolHeader(card: HTMLElement, header: HTMLElement): void {
+  const current = Array.from(card.children).find((node) =>
+    node.classList.contains('tool-card-header'),
+  )
+  if (current) current.replaceWith(header)
+  else card.prepend(header)
+}
+
+function populateRegularToolCard(
+  card: HTMLDetailsElement,
+  tc: ToolCall,
+  label: string,
+  threadId: string,
+): void {
+  const wasOpen = card.open
+  lazyToolCardBodies.delete(card)
+  card.dataset['status'] = tc.status
+  card.replaceChildren()
+  card.open = wasOpen
+  appendStandardToolSections(card, tc, label, 'tool-card-header')
+  onToolCardBodyBuilt(card, () => {
+    const preview = createCanvasPreviewSection(tc, threadId)
+    if (preview) card.append(preview)
+  })
+  if (wasOpen) ensureToolCardBodyRendered(card)
+}
+
+function populateGroupItem(entry: HTMLDetailsElement, tc: ToolCall): void {
+  const wasOpen = entry.open
+  lazyToolCardBodies.delete(entry)
+  entry.dataset['status'] = tc.status
+  entry.replaceChildren()
+  entry.open = wasOpen
+  appendStandardToolSections(entry, tc, getToolCallLabel(tc), 'tool-group-item-header')
+  if (wasOpen) ensureToolCardBodyRendered(entry)
+  toolGroupItemSignatures.set(entry, renderSignature(tc))
+}
+
+function reconcileGroupCard(
+  card: HTMLDetailsElement,
+  item: Extract<ToolCallDisplayItem, { type: 'group' }>,
+): void {
+  const status = aggregateToolStatus(item.toolCalls)
+  card.dataset['status'] = status
+  replaceDirectToolHeader(
+    card,
+    createToolHeader(item.label, status, 'tool-card-header', item.toolCalls.length),
+  )
+  let host = Array.from(card.children).find(
+    (node): node is HTMLElement =>
+      node instanceof HTMLElement && node.classList.contains('tool-group-items'),
+  )
+  if (!host) {
+    host = el('div', { class: 'tool-group-items' })
+    card.append(host)
+  }
+  const existing = new Map<string, HTMLDetailsElement>()
+  host
+    .querySelectorAll<HTMLDetailsElement>(':scope > .tool-group-item[data-tool-id]')
+    .forEach((entry) => {
+      const id = entry.dataset['toolId']
+      if (id) existing.set(id, entry)
+    })
+  const desired: HTMLDetailsElement[] = []
+  for (const tc of item.toolCalls) {
+    let entry = existing.get(tc.id)
+    existing.delete(tc.id)
+    if (!entry) {
+      entry = el('details', {
+        class: 'tool-group-item',
+        'data-tool-id': tc.id,
+        'data-status': tc.status,
+      })
+      populateGroupItem(entry, tc)
+    } else if (toolGroupItemSignatures.get(entry) !== renderSignature(tc)) {
+      populateGroupItem(entry, tc)
+    }
+    desired.push(entry)
+  }
+  existing.forEach((entry) => {
+    entry.remove()
+  })
+  desired.forEach((entry, index) => {
+    if (host.children[index] !== entry) host.insertBefore(entry, host.children[index] ?? null)
+  })
+}
+
+function reconcileNestedToolCards(
+  host: HTMLElement,
+  items: ToolCallDisplayItem[],
+  api: ApiClient,
+  threadId: string,
+  store?: AppStore,
+): void {
+  const existing = new Map<string, HTMLDetailsElement>()
+  host.querySelectorAll<HTMLDetailsElement>(':scope > .tool-card').forEach((card) => {
+    const key = toolCardKeys.get(card)
+    if (key) existing.set(key, card)
+  })
+  const desired: HTMLDetailsElement[] = []
+  for (const item of items) {
+    const key = toolCardKey(item)
+    const sig = toolCardSignature(item)
+    let card = existing.get(key)
+    existing.delete(key)
+    if (!card) {
+      card = createToolCard(item, api, threadId, store)
+      toolCardKeys.set(card, key)
+      toolCardSignatures.set(card, sig)
+    } else if (toolCardSignatures.get(card) !== sig) {
+      reconcileToolCard(card, item, api, threadId, store)
+    }
+    desired.push(card)
+  }
+  existing.forEach((card) => {
+    card.remove()
+  })
+  desired.forEach((card, index) => {
+    const current = host.querySelectorAll(':scope > .tool-card')
+    if (current[index] !== card) host.insertBefore(card, current[index] ?? null)
+  })
+}
+
+function reconcileToolCard(
+  card: HTMLDetailsElement,
+  item: ToolCallDisplayItem,
+  api: ApiClient,
+  threadId: string,
+  store?: AppStore,
+): void {
+  if (item.type === 'rollup' || item.type === 'step') {
+    const status = aggregateToolStatus(item.toolCalls)
+    card.dataset['status'] = status
+    card.dataset['toolCount'] = String(item.toolCalls.length)
+    if (item.type === 'step') {
+      card.dataset['stepMessageId'] = item.messageId
+    }
+    const count =
+      item.type === 'rollup' && item.children.length === 1 && item.children[0]?.type === 'group'
+        ? item.toolCalls.length
+        : undefined
+    replaceDirectToolHeader(card, createToolHeader(item.label, status, 'tool-card-header', count))
+    let body = Array.from(card.children).find(
+      (node): node is HTMLElement =>
+        node instanceof HTMLElement && node.classList.contains('tool-rollup-body'),
+    )
+    if (!body) {
+      body = el('div', { class: 'tool-rollup-body' })
+      card.append(body)
+    }
+    reconcileNestedToolCards(body, item.children, api, threadId, store)
+  } else if (item.type === 'group') {
+    reconcileGroupCard(card, item)
+  } else if (item.toolCall.subagent && card.classList.contains('tool-card-subagent')) {
+    populateSubagentCard(card, item.toolCall, item.label, api)
+  } else {
+    populateRegularToolCard(card, item.toolCall, item.label, threadId)
+  }
+  toolCardSignatures.set(card, toolCardSignature(item))
 }
 
 function createMessageImages(images: string[]): HTMLElement {
@@ -1639,6 +1808,12 @@ function hydrationFailureEl(): HTMLElement {
 const SCROLL_PIN_THRESHOLD_PX = 48
 /** Ignore auto-scroll briefly after the user scrolls up during streaming. */
 const USER_SCROLL_UP_DEBOUNCE_MS = 150
+/** Fast operations should finish without flashing their detail open. */
+const TOOL_AUTO_REVEAL_DELAY_MS = 300
+/** Once shown, live detail remains visible long enough to be read. */
+const TOOL_AUTO_REVEAL_MIN_DWELL_MS = 1_000
+/** Compact auto-opened work once, after the completed run has gone quiet. */
+const TOOL_AUTO_COMPACT_DELAY_MS = 750
 
 // Newest-first thread load (see rebuildForThread): render this many of the
 // most recent messages up front — enough to fill and slightly overfill a
@@ -1678,6 +1853,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     if (!details) return
     details.dataset['userToggled'] = '1'
     details.open = true
+    const key = details.dataset['disclosureKey']
+    if (key) disclosurePreferences.set(key, true)
     details.scrollIntoView({ block: 'nearest' })
   })
   // Queued follow-ups live in a pinned panel below the scroll area so they stay
@@ -1939,6 +2116,131 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   // instead of touching a list that has since been cleared/rebuilt again.
   let backfillGeneration = 0
 
+  // Disclosure presentation is deliberately independent from execution status.
+  // A brief done -> running gap must not close and reopen the same rollup, and a
+  // user's explicit choice must survive status updates and mounted thread switches.
+  const disclosurePreferences = new Map<string, boolean>()
+  // Once a live message starts as a rollup, keep that wrapper shape for this
+  // mounted session so a one-tool update cannot turn into a different card type.
+  const liveRollupMessages = new Set<string>()
+  const autoOpenedDisclosures = new Set<string>()
+  const autoOpenedAt = new Map<string, number>()
+  const runningDisclosures = new Set<string>()
+  const disclosureElements = new Map<string, HTMLDetailsElement>()
+  const wiredDisclosureSummaries = new WeakSet<HTMLElement>()
+  const revealTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  const compactTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  const deferredCompactions = new Set<string>()
+
+  function cancelReveal(key: string): void {
+    const timer = revealTimers.get(key)
+    if (timer !== undefined) clearTimeout(timer)
+    revealTimers.delete(key)
+  }
+
+  function wireDisclosurePreference(details: HTMLDetailsElement, key: string): void {
+    const summary = details.querySelector<HTMLElement>(':scope > summary')
+    if (!summary || wiredDisclosureSummaries.has(summary)) return
+    wiredDisclosureSummaries.add(summary)
+    summary.addEventListener('click', (event) => {
+      const target = event.target
+      if (target instanceof Element && target.closest('button')) return
+      // Read after the native details action. The browser and component-test DOM
+      // toggle at different points during dispatch; the microtask sees the result.
+      queueMicrotask(() => {
+        disclosurePreferences.set(key, details.open)
+        details.dataset['userToggled'] = '1'
+        autoOpenedDisclosures.delete(key)
+        autoOpenedAt.delete(key)
+        cancelReveal(key)
+      })
+    })
+  }
+
+  function registerReasoningDisclosures(msgEl: HTMLElement): void {
+    const threadId = getActiveThread(store)?.id
+    const fallbackMessageId = msgEl.dataset['messageId']
+    if (!threadId || !fallbackMessageId) return
+    msgEl.querySelectorAll<HTMLDetailsElement>('.message-reasoning').forEach((details) => {
+      const step = details.closest<HTMLElement>('.tool-card-step[data-step-message-id]')
+      const messageId = step?.dataset['stepMessageId'] ?? fallbackMessageId
+      const key = `${threadId}:${messageId}:reasoning`
+      details.dataset['disclosureKey'] = key
+      disclosureElements.set(key, details)
+      wireDisclosurePreference(details, key)
+      const preference = disclosurePreferences.get(key)
+      if (preference !== undefined) {
+        details.dataset['userToggled'] = '1'
+        details.open = preference
+      }
+    })
+  }
+
+  function cancelThreadCompaction(threadId: string): void {
+    const timer = compactTimers.get(threadId)
+    if (timer !== undefined) clearTimeout(timer)
+    compactTimers.delete(threadId)
+  }
+
+  function revealAfterDelay(key: string): void {
+    if (revealTimers.has(key) || autoOpenedDisclosures.has(key)) return
+    const timer = setTimeout(() => {
+      revealTimers.delete(key)
+      if (!runningDisclosures.has(key) || disclosurePreferences.has(key) || !pinnedToBottom) return
+      const details = disclosureElements.get(key)
+      if (!details?.isConnected) return
+      autoOpenedDisclosures.add(key)
+      autoOpenedAt.set(key, Date.now())
+      details.open = true
+      ensureToolCardBodyRendered(details)
+      scrollToBottom()
+    }, TOOL_AUTO_REVEAL_DELAY_MS)
+    revealTimers.set(key, timer)
+  }
+
+  function compactThreadDisclosures(threadId: string): void {
+    compactTimers.delete(threadId)
+    if (threadId === store.getState().activeThreadId && !pinnedToBottom) {
+      deferredCompactions.add(threadId)
+      return
+    }
+    deferredCompactions.delete(threadId)
+    const prefix = `${threadId}:`
+    const now = Date.now()
+    let dwellRemaining = 0
+    for (const key of autoOpenedDisclosures) {
+      if (!key.startsWith(prefix)) continue
+      const details = disclosureElements.get(key)
+      if (details?.dataset['status'] === 'error') continue
+      const openedAt = autoOpenedAt.get(key) ?? 0
+      dwellRemaining = Math.max(dwellRemaining, TOOL_AUTO_REVEAL_MIN_DWELL_MS - (now - openedAt))
+    }
+    if (dwellRemaining > 0) {
+      const timer = setTimeout(() => {
+        compactThreadDisclosures(threadId)
+      }, Math.ceil(dwellRemaining))
+      compactTimers.set(threadId, timer)
+      return
+    }
+    for (const key of [...autoOpenedDisclosures]) {
+      if (!key.startsWith(prefix)) continue
+      const details = disclosureElements.get(key)
+      if (details?.dataset['status'] === 'error') continue
+      autoOpenedDisclosures.delete(key)
+      autoOpenedAt.delete(key)
+      if (!disclosurePreferences.has(key) && details?.isConnected) details.open = false
+    }
+    if (threadId === store.getState().activeThreadId) scrollToBottom()
+  }
+
+  function scheduleThreadCompaction(threadId: string): void {
+    cancelThreadCompaction(threadId)
+    const timer = setTimeout(() => {
+      compactThreadDisclosures(threadId)
+    }, TOOL_AUTO_COMPACT_DELAY_MS)
+    compactTimers.set(threadId, timer)
+  }
+
   function isNearBottom(): boolean {
     const distance = list.scrollHeight - list.scrollTop - list.clientHeight
     return distance <= SCROLL_PIN_THRESHOLD_PX
@@ -1970,6 +2272,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       pinnedToBottom = false
     } else if (isNearBottom()) {
       pinnedToBottom = true
+      const threadId = store.getState().activeThreadId
+      if (threadId && deferredCompactions.delete(threadId)) scheduleThreadCompaction(threadId)
     }
     lastScrollTop = scrollTop
     updateScrollButton()
@@ -2069,6 +2373,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     if (force) {
       userScrolledUpAt = 0
       pinnedToBottom = true
+      const threadId = store.getState().activeThreadId
+      if (threadId && deferredCompactions.delete(threadId)) scheduleThreadCompaction(threadId)
     }
     updateScrollButton()
   }
@@ -2120,58 +2426,64 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   function applyToolCardOpenState(
     card: HTMLDetailsElement,
     item: ToolCallDisplayItem,
-    userExpandedRollups: Set<string>,
-    userExpandedGroups: Set<string>,
-    userExpandedTools: Set<string>,
+    threadId: string,
+    messageId: string,
+    autoRevealEligible: boolean,
   ): void {
-    // Steps share the rollup's disclosure contract (auto-open while running,
-    // otherwise the user's own choice) and the same nested body.
+    // Proposal cards derive their open state from the pending user decision.
+    if (card.classList.contains('thread-proposal')) return
+    const key = `${threadId}:${messageId}:${toolCardKey(item)}`
+    card.dataset['disclosureKey'] = key
+    disclosureElements.set(key, card)
+    wireDisclosurePreference(card, key)
+    const preference = disclosurePreferences.get(key)
+    const running =
+      item.type === 'individual'
+        ? item.toolCall.status === 'running' || item.toolCall.subagent?.status === 'running'
+        : aggregateToolStatus(item.toolCalls) === 'running'
+
+    if (running) runningDisclosures.add(key)
+    else {
+      runningDisclosures.delete(key)
+      cancelReveal(key)
+    }
+
+    if (preference !== undefined) {
+      card.open = preference
+    } else if (autoOpenedDisclosures.has(key)) {
+      card.open = true
+    } else {
+      card.open = false
+      if (running && autoRevealEligible) revealAfterDelay(key)
+    }
+    if (card.open) ensureToolCardBodyRendered(card)
+
     if (item.type === 'rollup' || item.type === 'step') {
-      const status = aggregateToolStatus(item.toolCalls)
-      card.open = status === 'running' || userExpandedRollups.has(item.key)
       const nestedCards = card.querySelectorAll<HTMLDetailsElement>(
         ':scope > .tool-rollup-body > .tool-card',
       )
       item.children.forEach((child, index) => {
         const nested = nestedCards[index]
         if (nested) {
-          applyToolCardOpenState(
-            nested,
-            child,
-            userExpandedRollups,
-            userExpandedGroups,
-            userExpandedTools,
-          )
+          applyToolCardOpenState(nested, child, threadId, messageId, false)
         }
       })
       return
     }
     if (item.type === 'group') {
-      const status = aggregateToolStatus(item.toolCalls)
-      card.open = status === 'running' || userExpandedGroups.has(item.key)
-      // A changed group card is rebuilt from scratch with every item collapsed;
-      // reapply the per-item expansion captured above so an item the user
-      // opened (or an expanded individual card absorbed into this group)
-      // survives the per-step rebuild.
       card
         .querySelectorAll<HTMLDetailsElement>('.tool-group-item[data-tool-id]')
         .forEach((entry) => {
           const id = entry.dataset['toolId']
-          if (id && userExpandedTools.has(id)) {
-            entry.open = true
-            ensureToolCardBodyRendered(entry)
-          }
+          if (!id) return
+          const itemKey = `${threadId}:${messageId}:t:${id}`
+          entry.dataset['disclosureKey'] = itemKey
+          disclosureElements.set(itemKey, entry)
+          wireDisclosurePreference(entry, itemKey)
+          entry.open = disclosurePreferences.get(itemKey) ?? false
+          if (entry.open) ensureToolCardBodyRendered(entry)
         })
-      return
     }
-    const tc = item.toolCall
-    // A proposal card decides its own disclosure from the user's answer (open
-    // while the offer stands, one quiet line once it is settled), so the
-    // running/expanded rule for work-record cards does not apply to it.
-    if (card.classList.contains('thread-proposal')) return
-    const running = tc.status === 'running' || tc.subagent?.status === 'running'
-    card.open = running || userExpandedTools.has(tc.id)
-    if (card.open) ensureToolCardBodyRendered(card)
   }
 
   function renderToolCards(
@@ -2193,44 +2505,16 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     } = {},
   ): void {
     const threadId = store.getState().activeThreadId ?? ''
-    const userExpandedRollups = new Set<string>()
-    msgEl
-      .querySelectorAll<HTMLElement>('.tool-card-rollup[open], .tool-card-step[open]')
-      .forEach((node) => {
-        // Step keys (`step:<messageId>`) never collide with rollup keys, so one
-        // set covers both levels of disclosure.
-        const key = node.dataset['rollupKey'] ?? node.dataset['stepKey']
-        // Running rollups are auto-expanded; don't treat that as a user preference.
-        if (key && node.dataset['status'] !== 'running') userExpandedRollups.add(key)
-      })
-
-    const userExpandedGroups = new Set<string>()
-    msgEl.querySelectorAll<HTMLElement>('.tool-card-group[open]').forEach((node) => {
-      const key = node.dataset['groupKey']
-      // Running groups are auto-expanded; don't treat that as a user preference.
-      if (key && node.dataset['status'] !== 'running') userExpandedGroups.add(key)
-    })
-
-    const userExpandedTools = new Set<string>()
-    msgEl
-      .querySelectorAll<HTMLElement>(
-        '.tool-card[data-tool-id][open], .tool-group-item[open], .tool-card-subagent[open]',
-      )
-      .forEach((node) => {
-        const id = node.dataset['toolId']
-        // A proposal card's open state is derived from the answer, not chosen —
-        // capturing it here would pin a dismissed card open on the next tick.
-        if (node.classList.contains('thread-proposal')) return
-        // Running tools are auto-expanded so their work is visible as it
-        // streams; that is not a user preference. Without this guard the
-        // auto-expansion was read back as one on the very next tick and
-        // pinned the card open forever — an explore subagent that had just
-        // dumped a wall of file text never contracted once it finished (the
-        // same guard rollups and groups above already apply).
-        if (id && node.dataset['status'] !== 'running') userExpandedTools.add(id)
-      })
-
     const msgId = msgEl.dataset['messageId'] ?? ''
+    const messageKey = threadId && msgId ? `${threadId}:${msgId}` : null
+    const activeThread = getActiveThread(store)
+    if (
+      messageKey &&
+      activeThread?.status === 'running' &&
+      toolCalls.some((tool) => !tool.subagent)
+    ) {
+      liveRollupMessages.add(messageKey)
+    }
     // A run only renders as one when its anchor is actually on screen. During
     // the newest-first backfill a member can be rendered before its anchor is;
     // it falls back to its own rollup and is repainted once the anchor lands
@@ -2255,7 +2539,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         ? buildSubagentDisplayItems(toolCalls)
         : [...buildToolRunDisplayItems(run), ...buildSubagentDisplayItems(toolCalls)]
       : buildToolCallDisplayItems(toolCalls, {
-          ...(nestReasoning ? { forceRollup: true } : {}),
+          ...(nestReasoning || (messageKey !== null && liveRollupMessages.has(messageKey))
+            ? { forceRollup: true }
+            : {}),
         })
     // Run rollups carry their own composed label (polish + counts + steps), so
     // the per-message summary only applies on the single-message path.
@@ -2291,14 +2577,12 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         // streaming renderers / copy buttons) exactly as they are.
       } else if (
         card &&
-        item.type === 'individual' &&
-        item.toolCall.subagent &&
-        card.classList.contains('tool-card-subagent')
+        !card.classList.contains('thread-proposal') &&
+        !(item.type === 'individual' && isThreadProposalCall(item.toolCall))
       ) {
-        // Running subagent: update in place so the timeline's streaming message
-        // keeps the same element (and renderer) across ticks.
-        populateSubagentCard(card, item.toolCall, item.label, api)
-        toolCardSignatures.set(card, sig)
+        // Patch the existing disclosure shell so status/result changes preserve
+        // focus, open state, and the browser's scroll anchor.
+        reconcileToolCard(card, item, api, threadId, store)
       } else {
         // The stale node was already claimed out of `existing`, so the cleanup
         // below won't drop it — remove it here or the rebuilt card duplicates.
@@ -2308,7 +2592,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         toolCardSignatures.set(card, sig)
       }
 
-      applyToolCardOpenState(card, item, userExpandedRollups, userExpandedGroups, userExpandedTools)
+      applyToolCardOpenState(card, item, threadId, msgId, true)
       if (item.type === 'rollup' && nestReasoning) {
         syncNestedRollupReasoning(card, msgEl, opts.reasoning, opts.reasoningLive === true)
       }
@@ -2353,6 +2637,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         msgEl.insertBefore(node, msgEl.children[base + i] ?? null)
       }
     }
+    registerReasoningDisclosures(msgEl)
     syncToolRunMemberVisibility(msgEl)
   }
 
@@ -2892,6 +3177,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       userScrolledUpAt = 0
       lastScrollTop = 0
     }
+    disclosureElements.clear()
     clear(list)
     backfillGeneration++
     renderedThreadId = thread?.id ?? null
@@ -2936,6 +3222,10 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       setScrollTopProgrammatically(preservedScrollTop)
     }
     finishThreadChrome(thread)
+    if (thread.status === 'running') cancelThreadCompaction(thread.id)
+    else if ([...autoOpenedDisclosures].some((key) => key.startsWith(`${thread.id}:`))) {
+      scheduleThreadCompaction(thread.id)
+    }
     if (initialStart > 0) {
       const generation = backfillGeneration
       requestAnimationFrame(() => {
@@ -2944,17 +3234,44 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     }
   }
 
+  function captureReadingAnchor(): {
+    element: HTMLElement
+    viewportTop: number
+  } | null {
+    const listRect = list.getBoundingClientRect()
+    const candidates = list.querySelectorAll<HTMLElement>(
+      ':scope > .msg, :scope > [data-review-card], :scope > [data-comparison-card]',
+    )
+    for (const element of candidates) {
+      const rect = element.getBoundingClientRect()
+      if (rect.bottom > listRect.top) return { element, viewportTop: rect.top }
+    }
+    return null
+  }
+
+  function restoreReadingAnchor(
+    anchor: { element: HTMLElement; viewportTop: number } | null,
+    fallbackScrollTop: number,
+  ): void {
+    if (anchor?.element.isConnected) {
+      const delta = anchor.element.getBoundingClientRect().top - anchor.viewportTop
+      if (Math.abs(delta) > 0.5) setScrollTopProgrammatically(list.scrollTop + delta)
+      return
+    }
+    if (list.scrollTop !== fallbackScrollTop) setScrollTopProgrammatically(fallbackScrollTop)
+  }
+
   function refreshToolCards(msgId: string): void {
     const thread = store.getState().threads.find((t) => t.messages.some((m) => m.id === msgId))
     const msg = thread?.messages.find((m) => m.id === msgId)
     const msgEl = list.querySelector<HTMLElement>(`[data-message-id="${msgId}"]`)
     if (!msg || !msgEl) return
-    // renderToolCards tears down and rebuilds every tool card, which destroys the
-    // browser's scroll anchor and can jump a user who has scrolled up to read.
-    // Preserve their position across the rebuild; only autoscroll when the view
-    // is still pinned to the bottom (#468).
+    // Preserve the first visible transcript item's viewport offset. Numeric
+    // scrollTop alone cannot protect what the reader is looking at when a
+    // disclosure above that item changes height (#468).
     const prevScrollTop = list.scrollTop
     const wasPinned = pinnedToBottom
+    const readingAnchor = wasPinned ? null : captureReadingAnchor()
     const run = multiStepRunFor(thread, msgId)
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
     renderToolCards(msgEl, msg.toolCalls ?? [], {
@@ -2966,12 +3283,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     if (run) syncRunLayout(thread, run, msgId)
     if (wasPinned) {
       scrollToBottom()
-    } else if (list.scrollTop !== prevScrollTop) {
-      // Restore the user's position; setScrollTopProgrammatically reads back the
-      // actual landed value (the rebuild may have shrunk scrollHeight and the
-      // browser clamps the requested scrollTop) so the echo matches reality.
-      setScrollTopProgrammatically(prevScrollTop)
-    }
+    } else restoreReadingAnchor(readingAnchor, prevScrollTop)
   }
 
   const unsubs = [
@@ -3027,6 +3339,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         const run = multiStepRunFor(thread, mid)
         if (run) syncRunStepTrail(thread, run)
         else syncReasoningEl(msgEl, msg, isReasoningDisclosureLive(thread, msg))
+        registerReasoningDisclosures(msgEl)
         activityBar.classList.add('agent-activity-clickable')
         setActivity(activityLabel.textContent)
         scrollToBottom()
@@ -3106,8 +3419,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       }
     }),
     store.on('thread_status_changed', (tid, status) => {
-      if (tid !== store.getState().activeThreadId) return
-      if (status !== 'running') setActivity(null)
+      if (status === 'running') cancelThreadCompaction(tid)
+      else scheduleThreadCompaction(tid)
+      if (tid === store.getState().activeThreadId && status !== 'running') setActivity(null)
     }),
     store.on('agent_activity', (tid, label) => {
       if (tid !== store.getState().activeThreadId) return
@@ -3132,6 +3446,14 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // requestAnimationFrame so it no-ops instead of touching a torn-down list.
     backfillGeneration++
     showAcpTransportNoiseDisclosure = (): boolean => false
+    revealTimers.forEach((timer) => {
+      clearTimeout(timer)
+    })
+    compactTimers.forEach((timer) => {
+      clearTimeout(timer)
+    })
+    revealTimers.clear()
+    compactTimers.clear()
     unbindFileLinks()
     unbindWorkspaceLinks()
     unbindBrowserLinks()
