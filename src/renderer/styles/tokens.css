@@ -86,6 +86,14 @@
   --danger: #f14c4c;
   --success: #4ec9b0;
   --warning: #cca700;
+  /* Callout severities. --info backs GitHub-alert Note; --important backs the
+     fifth alert kind, which GitHub renders in purple. --important is pushed
+     bluer than a true violet on purpose: a magenta-leaning purple reads as
+     --accent at 16px, next to the pink Thinking and Comparison labels that sit
+     in the same transcript. A user whose custom accent IS purple collapses that
+     distinction — see docs/ui-taste.md -> "Callout severities". */
+  --info: #6fb3d9;
+  --important: #9d7cf4;
   /* Shared elevation scale. sm lifts content off the chat gradient (user
      replies, chips); md floats popovers/menus/toasts; lg floats dialogs and
      the centered composer; composer casts the docked input bar's soft glow up

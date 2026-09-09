@@ -157,6 +157,17 @@ export function warningIcon(className = DEFAULT): SVGSVGElement {
   )
 }
 
+export function lockIcon(className = DEFAULT): SVGSVGElement {
+  return outlineIcon(
+    'lock',
+    [
+      'M5 11h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2Z',
+      'M7 11V7a5 5 0 0 1 10 0v4',
+    ],
+    className,
+  )
+}
+
 export function searchIcon(className = DEFAULT): SVGSVGElement {
   return outlineIcon(
     'search',

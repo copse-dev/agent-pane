@@ -15,13 +15,14 @@ describe('copse.automations plugin', () => {
         slot: 'settings-plugin-detail',
         title: 'Automation schedules',
       },
+      { id: 'automation-manager', level: 3, slot: 'app-dialog', title: 'Automations' },
     ])
   })
 
   it('drops the live UI contribution atomically while retaining the manifest storage declaration', () => {
     const registry = new PluginRegistry()
     registry.register(automationsPlugin)
-    assert.equal(registry.activeUiContributions().length, 1)
+    assert.equal(registry.activeUiContributions().length, 2)
     registry.disable(AUTOMATIONS_PLUGIN_ID)
     assert.equal(registry.activeUiContributions().length, 0)
     const registered = registry.get(AUTOMATIONS_PLUGIN_ID)

@@ -1,10 +1,35 @@
 /* ---- projects pane settings button ---- */
+.projects-settings-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  height: var(--chrome-action-band-height);
+  border-top: 1px solid var(--border);
+}
+.projects-menu-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--chrome-action-band-height);
+  height: 100%;
+  padding: 0;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+.projects-menu-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
 .projects-settings-btn {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  width: 100%;
+  width: auto;
   box-sizing: border-box;
   height: var(--chrome-action-band-height);
   min-height: var(--chrome-action-band-height);
@@ -14,7 +39,6 @@
   color: var(--text-muted);
   background: transparent;
   border: none;
-  border-top: 1px solid var(--border);
   cursor: pointer;
   -webkit-app-region: no-drag;
   flex-shrink: 0;
@@ -451,11 +475,14 @@
   background: var(--bg-hover);
 }
 .chat-row.selected {
+  /* The fill alone. --bg-selected is full-bleed across a continuous list, which
+     already says "this one is current"; the accent rail that used to sit on the
+     trailing edge was redundant with it, and one visual device doing selection,
+     containment and nesting at once is what made the rail read as noise. Weight
+     carries the rest — see docs/ui-taste.md -> "Sidebar selections". */
   background: var(--bg-selected);
   color: var(--text-primary);
-  /* Trailing-edge accent rail — selection fill is full-bleed, so the marker
-     sits on the sidebar's right edge rather than inset on the left. */
-  box-shadow: inset -2px 0 0 color-mix(in srgb, var(--accent) 70%, transparent);
+  font-weight: 600;
 }
 .chat-title {
   flex: 1 1 auto;

@@ -1,5 +1,11 @@
 # Beyond the side highlight
 
+Status: **Shipped.** M — the mix is the design the app now draws; see
+[`docs/ui-taste.md`](../../docs/ui-taste.md) -> "A rail means nesting, and nothing else" for the
+rule as it stands, and `src/renderer/styles/accent-rails.test.ts` for the guard that keeps the list
+of remaining rails closed. This page stays as the workshop behind that decision — the rejected
+treatments, the measurements, and the open questions, of which two are still open (see below).
+
 A design prototype for replacing Copse's accent rail — the slim bar on one inline edge of a block,
 drawn either as `border-left` or as an inset shadow with a horizontal offset.
 
@@ -81,19 +87,28 @@ output, and today nothing in the visual language says so — they just get a dif
 like everything else. A texture rather than another hue is what marks them without spending a
 fourth colour or a fourth shape.
 
-Open questions before this ships:
+Open questions before this ships — how each was answered:
 
-- **Moiré.** The hatch is a 1px line on an 8px pitch. That is exactly the pattern that aliases at
-  fractional device pixel ratios, and Copse ships on mixed-DPI Windows. Test at 1.25×/1.5× before
-  committing to the pitch; a coarser pitch or a `device-pixel-ratio` media query may be needed.
-- **Accent load.** `.message-reasoning` and `.comparison-panel` both key off `--accent`, so a turn
-  with thinking _and_ a comparison shows two pink hatches. Not a regression — both already use the
-  accent today — but the texture makes the hue more present than a 2px bar did.
-- **Reduced transparency / high contrast.** A decorative texture needs a degradation path; the
-  hatch should fall back to B's flat plate rather than disappearing into the page.
-- **Where the work actually is.** Alerts and blockquotes are styled by `@copse/streaming-markdown`,
-  not this repo, so B's plate for those is an upstream change or an override of its default
-  stylesheet — the largest single chunk, and the one with a dependency outside our control.
+- **Moiré.** ~~The hatch is a 1px line on an 8px pitch. That is exactly the pattern that aliases at
+  fractional device pixel ratios, and Copse ships on mixed-DPI Windows.~~ **Settled by the number.**
+  A repeating gradient beats against the pixel grid when its period lands _near_ an integer count of
+  device pixels. 8 is a multiple of 4, so at every quarter-step scale Windows offers — 1.25×, 1.5×,
+  1.75×, 2× — the period is a whole number of device pixels and there is no beat frequency. The 1px
+  line itself softens at fractional scales, but identically in every cycle. The pitch is now load
+  bearing: an odd number loses the guarantee, which is why `base.css` says so where it is declared.
+- **Accent load.** Still true, and now written down in `docs/ui-taste.md` -> "Callout severities"
+  along with the custom-accent case (a user whose accent is purple collapses `--important`). Not
+  fixed: the fix is to derive `--important` away from `--accent`, which is a change to how accents
+  work rather than a hex.
+- **Reduced transparency / high contrast.** **Done.** `--callout-hatch` falls back to
+  `--callout-plate` under `prefers-reduced-transparency: reduce` or `prefers-contrast: more`, so
+  commentary keeps a surface and loses only its distinction from content.
+- **Where the work actually is.** ~~Alerts and blockquotes are styled by
+  `@copse/streaming-markdown`, not this repo.~~ **Overridden locally**, in
+  `styles/global/markdown.css`: `renderer/main.ts` imports the package's default.css before
+  `global.css`, so rules at the package's own specificity win on source order. The package's
+  `--sm-alert-*` knobs are mapped onto Copse's tokens in `conversation.css`. No upstream change was
+  needed; if the package ever restyles alerts, that override is where the collision lands.
 
 ## Callout icons
 
@@ -103,6 +118,12 @@ the severity hue across the whole height of the block, and now a 15px glyph carr
 block alone. The workshop (second specimen) compares four fixes across all four severities.
 
 Findings, in order of how much they buy:
+
+**Shipped:** solid, distinct silhouettes, no disc. The disc was the optional fourth column and is
+not needed — solid alone carries at 16px in the real app. The two-warning-triangle collision below
+is resolved by scope rather than by retiring a glyph: `docs/ui-taste.md` now states the rule
+outright, that a filled mark is transcript status and an outline is chrome, so the callout's solid
+triangle and `triangle-alert` in `dom/icons.ts` are two different jobs rather than two styles of one.
 
 1. **Solid beats heavier outline — chosen.** Going 1.4 → 1.9 helps but the glyph is still a wire
    drawing; a filled glyph is what actually balances the bold title. Thin strokes also lose
@@ -332,6 +353,19 @@ pane the column eats measure, and it is the only option that introduces a left-e
 callout bodies sit at 94px while ordinary prose sits at 0.
 
 ## Known gaps
+
+Of the list below, the two that were blocking are closed: `accent-rails.test.ts` and `ui-taste.md`
+were rewritten with the design (the test now also holds the list of remaining rails closed), and
+light theme is covered — the plate and the hatch are `color-mix` over theme tokens, and `--info` /
+`--important` have derived light values. The gaps that remain are about the treatments that were
+**not** chosen (D, E, J were dark-only) and about the strong-tint setting, which nothing in M
+depends on: M spends no shadow alphas and no `--bg-elevated` percentage that a shifted `--bg-base`
+would invalidate.
+
+One thing arrived after this inventory was taken: `.thread-proposal` (#2334) draws its own accent
+rail on a standing offer. It is allowlisted rather than converted — a proposal card is an _ask_,
+which is a fourth job the rail was never doing when this was written, and it has its own rationale
+in `docs/proposed-threads.md`. Worth revisiting together, not silently.
 
 - Blockquotes and GitHub alerts are styled by `@copse/streaming-markdown`, not by this repo. Either
   the package changes upstream or Copse overrides its default stylesheet.

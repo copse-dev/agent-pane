@@ -104,6 +104,7 @@ describe('importIssuesAsRoadmapItems', () => {
       [ISSUE],
       () => Promise.resolve(templateRoadmapPrompt(ISSUE)),
       stubClassify,
+      stubClassifyCategory,
     )
     assert.match(created[0]?.body ?? '', /^Resolve GitHub issue #41/)
   })

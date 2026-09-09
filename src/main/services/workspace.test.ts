@@ -1,4 +1,4 @@
-import { describe, it, beforeEach, afterEach } from 'node:test'
+import { describe, it, beforeEach, afterEach, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   existsSync,
@@ -7,6 +7,7 @@ import {
   realpathSync,
   symlinkSync,
   writeFileSync,
+  type PathLike,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -23,9 +24,11 @@ import {
   getProjectRoot,
   isResolvedPathInsideWorkspace,
   registerAllowedWorkspaceRoot,
+  registerInternalWorkspaceRoot,
   resolveReadablePath,
   resolveSshHostForWorkspaceRoot,
   resolveWorkspacePath,
+  runOptionalLinkedWorktreeRegistration,
   scheduleAllowedWorkspaceRootsBootstrap,
   seedAllowedWorkspaceRoots,
   setWorkspaceRootForTest,
@@ -346,6 +349,66 @@ describe('allowed workspace roots', () => {
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
+  })
+
+  it('does not publish sandbox metadata after cancellation during sibling discovery', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'copse-cancel-linked-worktree-'))
+    const repo = join(root, 'repo')
+    const worktree = join(root, 'worktree')
+    const sibling = join(root, 'sibling')
+    mkdirSync(repo)
+    execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: repo })
+    execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: repo })
+    execFileSync('git', ['config', 'user.name', 'Test'], { cwd: repo })
+    execFileSync('git', ['commit', '--allow-empty', '-m', 'initial'], { cwd: repo })
+    execFileSync('git', ['worktree', 'add', '-q', '-b', 'feature', worktree], { cwd: repo })
+    execFileSync('git', ['worktree', 'add', '-q', '-b', 'sibling', sibling], { cwd: repo })
+    const controller = new AbortController()
+    const originalRealpath = realpathSync.native
+    const siblingGitFile = originalRealpath(join(sibling, '.git'))
+    const probe = mock.method(realpathSync, 'native', (path: PathLike) => {
+      const resolved = originalRealpath(path)
+      if (resolved === siblingGitFile) {
+        controller.abort(new Error('discovery deadline expired'))
+        throw controller.signal.reason
+      }
+      return resolved
+    })
+    try {
+      await assert.rejects(
+        registerInternalWorkspaceRoot(worktree, worktree, controller.signal),
+        /discovery deadline expired/,
+      )
+      assert.equal(controller.signal.aborted, true)
+      assert.equal(getInternalWorkspaceRootRegistration(worktree), null)
+    } finally {
+      probe.mock.restore()
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('does not let optional linked-worktree metadata block opening a project', async () => {
+    const controller = new AbortController()
+    let aborted = false
+    const registration = runOptionalLinkedWorktreeRegistration(
+      (signal) =>
+        new Promise<void>((_resolve, reject) => {
+          signal.addEventListener(
+            'abort',
+            () => {
+              aborted = true
+              reject(new Error('linked-worktree registration aborted'))
+            },
+            { once: true },
+          )
+        }),
+      controller.signal,
+    )
+    await Promise.resolve()
+    controller.abort()
+    await registration
+
+    assert.equal(aborted, true)
   })
 
   it('tracks SSH project roots by host id and path', async () => {

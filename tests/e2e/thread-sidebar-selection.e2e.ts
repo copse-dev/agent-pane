@@ -60,7 +60,7 @@ describe('sidebar thread selection styling', () => {
     resetUserData()
   })
 
-  it('uses a trailing accent rail, full-bleed fill, and roomier padding', async () => {
+  it('marks the selected row with the full-bleed fill alone, and roomier padding', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await expect($('.chat-row.selected .chat-title')).toHaveText(SELECTED_TITLE)
 
@@ -95,6 +95,7 @@ describe('sidebar thread selection styling', () => {
         rowPadding,
         headerPaddingRight: getComputedStyle(header).paddingRight,
         boxShadow: style.boxShadow,
+        fontWeight: style.fontWeight,
         borderRadius: style.borderRadius,
       }
     })
@@ -107,7 +108,10 @@ describe('sidebar thread selection styling', () => {
     // Full-bleed against the projects pane (not just the list box).
     expect(Math.abs(geometry!.rowLeft - geometry!.paneLeft)).toBeLessThanOrEqual(0.5)
     expect(Math.abs(geometry!.rowRight - geometry!.paneRight)).toBeLessThanOrEqual(1)
-    expect(geometry!.boxShadow).toMatch(/-2px/)
+    // The full-bleed wash is the whole marker: an accent rail on the trailing
+    // edge was redundant with it. Weight carries the rest.
+    expect(geometry!.boxShadow).toBe('none')
+    expect(geometry!.fontWeight).toBe('600')
     expect(geometry!.borderRadius).toBe('0px')
     // Follow the shared row rhythm, with the trailing edge aligned to the
     // projects action column.

@@ -1566,6 +1566,7 @@ export async function getGitShowText(
   }
   const { stdout, stderr, code } = await runGit(args, root)
   if (code !== 0) return stderr.trim() || `git exited with code ${String(code)}`
+  if (path !== undefined) return stdout
   return stdout.trim() || '(no output)'
 }
 

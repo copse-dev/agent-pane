@@ -996,6 +996,9 @@ describe('getGitShowText', { skip: !gitOk && 'git not installed' }, () => {
     git('config', 'user.email', 'test@example.com')
     git('config', 'user.name', 'Test')
     await writeFile(join(repo, 'file.txt'), 'first version\n')
+    await writeFile(join(repo, 'indented.py'), '    return 1\n\n')
+    await writeFile(join(repo, 'whitespace.txt'), '\t \n')
+    await writeFile(join(repo, 'empty.txt'), '')
     git('add', '.')
     git('commit', '-qm', 'add file')
     await writeFile(join(repo, 'file.txt'), 'second version\n')
@@ -1012,9 +1015,15 @@ describe('getGitShowText', { skip: !gitOk && 'git not installed' }, () => {
 
   it('shows a file at a specific ref via ref:path', async () => {
     const atParent = await getGitShowText('HEAD~1', 'file.txt')
-    assert.equal(atParent, 'first version')
+    assert.equal(atParent, 'first version\n')
     const atHead = await getGitShowText('HEAD', 'file.txt')
-    assert.equal(atHead, 'second version')
+    assert.equal(atHead, 'second version\n')
+  })
+
+  it('preserves indentation, trailing blank lines, whitespace-only and empty files', async () => {
+    assert.equal(await getGitShowText('HEAD', 'indented.py'), '    return 1\n\n')
+    assert.equal(await getGitShowText('HEAD', 'whitespace.txt'), '\t \n')
+    assert.equal(await getGitShowText('HEAD', 'empty.txt'), '')
   })
 
   it('shows a commit (message + diff) when no path is given', async () => {
@@ -1078,7 +1087,7 @@ describe('getGitShowText subdirectory workspace', { skip: !gitOk && 'git not ins
 
   it('resolves ref:path relative to the workspace subdirectory', async () => {
     const out = await getGitShowText('HEAD', 'file.txt')
-    assert.equal(out, 'inside workspace')
+    assert.equal(out, 'inside workspace\n')
   })
 
   it('limits the commit view to the workspace subtree', async () => {
