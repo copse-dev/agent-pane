@@ -36,6 +36,7 @@ import {
 } from '../monaco/git-diff-viewer.ts'
 import { scaledEditorFontSize } from '@shared/ui-scale.ts'
 import { isImageDiff, renderImageDiff } from './git-image-diff.ts'
+import { renderPrActivity, type PrDetailSection } from './pr-pane-activity.ts'
 
 const STATUS_LABEL: Record<string, string> = {
   added: 'A',
@@ -115,6 +116,11 @@ export function mountPrPane(
   listRoot.append(listHeader, listBody)
 
   const metaHost = el('div', { class: 'pr-viewer-meta' })
+  const sectionsHost = el('nav', {
+    class: 'pr-detail-sections',
+    'aria-label': 'Pull request sections',
+  })
+  const activityHost = el('div', { class: 'pr-activity', hidden: true })
   const descriptionHost = el('div', {
     class: 'pr-viewer-description message-text streaming-markdown',
   })
@@ -123,7 +129,18 @@ export function mountPrPane(
   const imageWrap = el('div', { class: 'git-image-diff-wrap' })
   imageWrap.hidden = true
   const emptyState = el('div', { class: 'panel-empty' }, 'Select a pull request')
-  viewerRoot.append(metaHost, descriptionHost, filesHost, diffWrap, imageWrap, emptyState)
+  viewerRoot.append(
+    metaHost,
+    sectionsHost,
+    activityHost,
+    descriptionHost,
+    filesHost,
+    diffWrap,
+    imageWrap,
+    emptyState,
+  )
+  let activeSection: PrDetailSection = 'overview'
+  let detailsRequestId = 0
 
   let ghStatus: GhCliStatus | null = null
   // Agent-owned PRs in this project (issue #690), keyed by `owner/repo#number`.
@@ -247,6 +264,8 @@ export function mountPrPane(
         : 'Install GitHub CLI (`gh`) to browse pull requests in Copse.')
     listBody.append(el('div', { class: 'git-changes-empty pr-empty-state' }, message))
     clear(metaHost)
+    clear(sectionsHost)
+    activityHost.hidden = true
     clear(descriptionHost)
     descriptionHost.classList.remove('pr-viewer-description-fill')
     clear(filesHost)
@@ -446,6 +465,7 @@ export function mountPrPane(
     if (!isStillSelected(ref)) return
     if (fresh) prDetails = fresh
     renderMeta()
+    renderSections()
   }
 
   /** A PR lifecycle action button: confirm → invoke → show outcome → refresh. */
@@ -654,6 +674,47 @@ export function mountPrPane(
     descriptionHost.innerHTML = renderMarkdown(prDetails.body)
   }
 
+  function renderSections(): void {
+    clear(sectionsHost)
+    activityHost.hidden = true
+    if (!prDetails) return
+    const sections: Array<{ key: PrDetailSection; label: string }> = [
+      { key: 'overview', label: 'Overview' },
+      { key: 'comments', label: 'Comments' },
+      { key: 'checks', label: 'Checks' },
+    ]
+    for (const section of sections) {
+      const button = el(
+        'button',
+        {
+          type: 'button',
+          class: 'pr-detail-section',
+          'data-section': section.key,
+          'aria-pressed': String(activeSection === section.key),
+        },
+        section.label,
+      )
+      button.addEventListener('click', () => {
+        activeSection = section.key
+        clearDiff()
+        renderDescription()
+        renderFiles()
+        renderSections()
+      })
+      sectionsHost.append(button)
+    }
+    if (activeSection !== 'overview') {
+      descriptionHost.hidden = true
+      filesHost.hidden = true
+      diffWrap.hidden = true
+      emptyState.hidden = true
+      activityHost.hidden = false
+      renderPrActivity(activityHost, activeSection, prDetails.activity, (url) => {
+        void api.shell.openExternal(url)
+      })
+    }
+  }
+
   function renderFiles(): void {
     clear(filesHost)
     if (!prDetails) {
@@ -773,6 +834,7 @@ export function mountPrPane(
   }
 
   async function selectPr(ref: PrRef | GhPrSummary): Promise<void> {
+    const requestId = ++detailsRequestId
     const sameAsCurrent =
       selectedPr?.owner === ref.owner &&
       selectedPr.repo === ref.repo &&
@@ -782,9 +844,11 @@ export function mountPrPane(
     if (!sameAsCurrent) {
       lastActionMessage = null
       filesExpanded = false
+      activeSection = 'overview'
     }
     selectedPr = { owner: ref.owner, repo: ref.repo, number: ref.number }
     prDetails = null
+    renderSections()
     selectedFile = null
     renderList()
 
@@ -820,8 +884,11 @@ export function mountPrPane(
     emptyState.textContent = 'Loading pull request…'
 
     try {
-      prDetails = await api.gh.prDetails(ref.owner, ref.repo, ref.number)
+      const details = await api.gh.prDetails(ref.owner, ref.repo, ref.number)
+      if (requestId !== detailsRequestId) return
+      prDetails = details
     } catch (err) {
+      if (requestId !== detailsRequestId) return
       emptyState.hidden = false
       emptyState.textContent = err instanceof Error ? err.message : 'Could not load pull request'
       return
@@ -837,6 +904,7 @@ export function mountPrPane(
     renderDescription()
     renderFiles()
     clearDiff()
+    renderSections()
   }
 
   function resetOther(): void {
@@ -962,6 +1030,8 @@ export function mountPrPane(
 
   const unbindWorkspaceLinks = bindWorkspaceLinkClicks(descriptionHost, store, api)
   const unbindBrowserLinks = bindBrowserLinkClicks(descriptionHost, store, api)
+  const unbindActivityWorkspaceLinks = bindWorkspaceLinkClicks(activityHost, store, api)
+  const unbindActivityBrowserLinks = bindBrowserLinkClicks(activityHost, store, api)
   const stopObservingLayout = observeDiffHostLayout(viewerRoot, () => diffEditor)
 
   const unsubs = [
@@ -974,8 +1044,14 @@ export function mountPrPane(
       if (prsModeActive(store)) void refresh()
     }),
     store.on('workspace_changed', () => {
+      detailsRequestId++
       selectedPr = null
       prDetails = null
+      renderMeta()
+      renderDescription()
+      renderFiles()
+      renderSections()
+      clearDiff()
       // Everything below belongs to the previous workspace; drop it so a stale
       // repo section, CI dot, or agent badge can't flash before the refresh completes.
       workspacePrs = []
@@ -1044,9 +1120,12 @@ export function mountPrPane(
   return () => {
     void api.gh.setListWatch(false, false)
     unregisterPopoutSeed()
+    detailsRequestId++
     stopObservingLayout()
     unbindWorkspaceLinks()
     unbindBrowserLinks()
+    unbindActivityWorkspaceLinks()
+    unbindActivityBrowserLinks()
     unsubs.forEach((u) => {
       u()
     })

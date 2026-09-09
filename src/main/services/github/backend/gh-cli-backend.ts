@@ -32,6 +32,7 @@ import {
   type GitHubFileContent,
 } from '../pr-file-content.ts'
 import { isNonNull } from '@shared/nullish.ts'
+import { PR_ACTIVITY_QUERY, parsePrActivity, unavailablePrActivity } from './pr-activity.ts'
 
 interface GhPrViewJson {
   state?: string | undefined
@@ -531,7 +532,34 @@ export const ghCliBackend: GitHubBackend = {
     const pr = safeJsonParse(stdout.trim(), decodeWithSchema(ghPrViewSchema))
     if (!pr || typeof pr.number !== 'number' || !pr.url) return null
     const files = await listPrFiles(ref, pr)
-    return toGhPrDetails(ref, { ...pr, number: pr.number, url: pr.url }, files)
+    const details = toGhPrDetails(ref, { ...pr, number: pr.number, url: pr.url }, files)
+    try {
+      const activity = await runGh([
+        'api',
+        'graphql',
+        '-f',
+        `query=${PR_ACTIVITY_QUERY}`,
+        '-f',
+        `owner=${ref.owner}`,
+        '-f',
+        `repo=${ref.repo}`,
+        '-F',
+        `number=${String(ref.number)}`,
+      ])
+      const response = safeJsonParse(
+        activity.stdout,
+        decodeWithSchema(
+          z.object({ data: z.unknown().optional(), errors: z.unknown().optional() }),
+        ),
+      )
+      details.activity =
+        activity.code === 0 && !response?.errors
+          ? parsePrActivity(response?.data)
+          : unavailablePrActivity()
+    } catch {
+      details.activity = unavailablePrActivity()
+    }
+    return details
   },
 
   async getPrFileDiff(ref: PrRef, path: string): Promise<GhPrFileDiff | null> {

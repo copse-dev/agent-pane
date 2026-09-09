@@ -82,6 +82,40 @@ const MOCK_PR_DETAILS: GhPrDetails = {
     '- Uses the existing Changes diff viewer',
   ].join('\n'),
   baseRefName: 'main',
+  activity: {
+    headSha: '7ba912ec78436f43cc47cbd44a0bcfe1dcba9208',
+    commentsTruncated: false,
+    checksTruncated: false,
+    comments: [
+      {
+        id: 'comment-1',
+        author: 'octo-dev',
+        createdAt: '2026-09-09T09:00:00Z',
+        url: `${MOCK_GH_PR_URL}#issuecomment-1`,
+        body: 'The **PRs** tab is useful. Can we also see individual CI checks and reviewer feedback here?',
+      },
+      {
+        id: 'review-1',
+        author: 'reviewer',
+        createdAt: '2026-09-09T09:15:00Z',
+        url: `${MOCK_GH_PR_URL}#pullrequestreview-1`,
+        reviewState: 'CHANGES_REQUESTED',
+        body: 'Please keep failed checks visible while other jobs are still running.\n\n- Show the check name and status\n- Link to the full log on GitHub',
+      },
+      {
+        id: 'comment-2',
+        author: 'mock-user',
+        createdAt: '2026-09-09T09:30:00Z',
+        url: `${MOCK_GH_PR_URL}#issuecomment-2`,
+        body: 'Added separate **Comments** and **Checks** views. The existing file diff stays in Overview.',
+      },
+    ],
+    checks: [
+      { name: 'Typecheck and lint', state: 'SUCCESS', url: `${MOCK_GH_PR_URL}/checks` },
+      { name: 'Unit tests', state: 'SUCCESS', url: `${MOCK_GH_PR_URL}/checks` },
+      { name: 'Electron visual eval', state: 'SUCCESS', url: `${MOCK_GH_PR_URL}/checks` },
+    ],
+  },
   mergeable: 'MERGEABLE',
   mergeStateStatus: 'CLEAN',
   additions: 12,
@@ -228,6 +262,23 @@ export function mockGetGhPrDetails(ref: {
   ) {
     return {
       ...MOCK_WORKSPACE_PR,
+      activity: {
+        headSha: 'b3219fceb1aa4c0f7472312ac3c4ee6f876320aa',
+        commentsTruncated: false,
+        checksTruncated: false,
+        comments: [],
+        checks: [
+          { name: 'Typecheck and lint', state: 'SUCCESS', url: `${MOCK_WORKSPACE_PR.url}/checks` },
+          {
+            name: 'Electron e2e / Linux',
+            state: 'FAILURE',
+            url: `${MOCK_WORKSPACE_PR.url}/checks`,
+          },
+          { name: 'Build / macOS', state: 'IN_PROGRESS', url: `${MOCK_WORKSPACE_PR.url}/checks` },
+          { name: 'Release preview', state: 'SKIPPED', url: null },
+          { name: 'Previous build', state: 'CANCELLED', url: null },
+        ],
+      },
       body: 'Refreshes PR badges when the active workspace changes.',
       baseRefName: 'main',
       additions: 9,
