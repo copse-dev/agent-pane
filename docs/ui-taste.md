@@ -888,6 +888,11 @@ tokens in `styles/global/base.css`: `--callout-plate-fill`, `--callout-hatch-lin
   `prefers-reduced-transparency` or `prefers-contrast: more` it degrades to the flat plate:
   commentary keeps a surface and loses only the distinction.
 
+Expanded reasoning uses the hatch both while live and after completion, including inside a tool
+rollup. Give it `--spacing-md` vertical and `--spacing-lg` horizontal padding; nesting must not
+remove the surface's inset or pull its summary into the padding. Only the closed, untextured
+disclosure label aligns flush with neighboring tool rows.
+
 The VNC pane takes a **gutter**: a 24px icon column in the authentication panel and a compact 6px
 status-dot column in status rows. It is a separate pane with its own chrome, and its status hue
 has to survive on a single line where a plate would just box three of them. These columns do not
