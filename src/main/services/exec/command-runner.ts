@@ -1,4 +1,5 @@
 import { setPriority } from 'node:os'
+import { StringDecoder } from 'node:string_decoder'
 import { getWorkspaceRoot } from '../workspace.ts'
 import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
 import { afterSandboxedCommand, spawnInProjectSandbox } from '../../project-sandbox/index.ts'
@@ -138,6 +139,8 @@ export function runCommand(
 
       let stdout = ''
       let stderr = ''
+      const stdoutDecoder = new StringDecoder('utf8')
+      const stderrDecoder = new StringDecoder('utf8')
       let settled = false
       let cancelKill: (() => void) | undefined
 
@@ -182,13 +185,13 @@ export function runCommand(
       proc.stdout?.on('data', (d: Buffer) => {
         rawStdoutBytes += d.length
         if (stdoutCapped) return
-        stdout = appendFlatCapped(stdout, d.toString(), stdoutMaxBytes)
+        stdout = appendFlatCapped(stdout, stdoutDecoder.write(d), stdoutMaxBytes)
         if (rawStdoutBytes >= stdoutMaxBytes) stdoutCapped = true
       })
       proc.stderr?.on('data', (d: Buffer) => {
         rawStderrBytes += d.length
         if (stderrCapped) return
-        stderr = appendFlatCapped(stderr, d.toString(), COMMAND_OUTPUT_MAX_BYTES)
+        stderr = appendFlatCapped(stderr, stderrDecoder.write(d), COMMAND_OUTPUT_MAX_BYTES)
         if (rawStderrBytes >= COMMAND_OUTPUT_MAX_BYTES) stderrCapped = true
       })
 
@@ -196,6 +199,9 @@ export function runCommand(
         if (settled) return
         settled = true
         finish(() => {
+          if (!stdoutCapped) stdout = appendFlatCapped(stdout, stdoutDecoder.end(), stdoutMaxBytes)
+          if (!stderrCapped)
+            stderr = appendFlatCapped(stderr, stderrDecoder.end(), COMMAND_OUTPUT_MAX_BYTES)
           resolve({
             stdout,
             stderr,

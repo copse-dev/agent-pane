@@ -35,6 +35,39 @@ describe('runCommand stdoutMaxBytes', () => {
   })
 })
 
+describe('runCommand UTF-8 output', () => {
+  it('preserves multibyte characters when stdout and stderr span pipe chunks', async () => {
+    const expected = '猫🙂'.repeat(12_000)
+    const { stdout, stderr, code, stdoutTruncated } = await runCommand(
+      process.execPath,
+      [
+        '-e',
+        "const text = '猫🙂'.repeat(12000); process.stdout.write(text); process.stderr.write(text)",
+      ],
+      { unsandboxed: true },
+    )
+    assert.equal(code, 0)
+    assert.equal(stdout.includes('\ufffd'), false, 'stdout must not split a UTF-8 character')
+    assert.equal(stderr.includes('\ufffd'), false, 'stderr must not split a UTF-8 character')
+    assert.equal(stdout, expected)
+    assert.equal(stderr, expected)
+    assert.equal(stdoutTruncated, false)
+  })
+
+  it('flushes incomplete final sequences just like a complete Buffer decode', async () => {
+    const { stdout, stderr } = await runCommand(
+      process.execPath,
+      [
+        '-e',
+        'process.stdout.write(Buffer.from([0xe2, 0x82])); process.stderr.write(Buffer.from([0xf0, 0x9f]))',
+      ],
+      { unsandboxed: true },
+    )
+    assert.equal(stdout, '\ufffd')
+    assert.equal(stderr, '\ufffd')
+  })
+})
+
 describe('runCommand truncation reporting', () => {
   it('flags stdout that overflowed its cap', async () => {
     const size = COMMAND_OUTPUT_MAX_BYTES + 4096
