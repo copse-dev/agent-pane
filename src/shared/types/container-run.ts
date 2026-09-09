@@ -1,9 +1,14 @@
+import type { z } from 'zod'
+import type {
+  threadContainerResultSchema,
+  containerRunRequestSchema,
+} from '../container-run-schema.ts'
 /**
  * Unattended container runs as the renderer sees them
  * (`docs/plans/thread-in-container.md`). Everything here is plain JSON: the
  * main process owns the run and pushes these snapshots over IPC.
  */
-import type { ContainerRuntimeAttestation, UnattendedRunBudgets } from './unattended-run.ts'
+import type { ContainerRuntimeAttestation } from './unattended-run.ts'
 import type { SubagentMessage } from '@copse/agent/wire-types.ts'
 
 export interface EgressLogEntry {
@@ -17,36 +22,7 @@ export interface EgressLogEntry {
 }
 
 /** What the guest writes to `out/result.json`. */
-export interface ThreadContainerResult {
-  threadId: string
-  stopReason: 'completed' | 'budget:wall-clock' | 'budget:tokens' | 'aborted' | 'error'
-  error?: string
-  usage: { inputTokens: number; outputTokens: number }
-  /**
-   * Who ran the loop: Copse's own harness, or an external ACP agent by id
-   * (`docs/plans/thread-in-container.md`, decision A3). The record has to say
-   * so, because the deferral guarantee below is a property of Copse's harness:
-   * under an agent, outward effects are denied rather than queued for replay.
-   */
-  harness: 'copse' | { acp: string }
-  /** Approval prompts the worker's fail-closed handler saw. Must be zero. */
-  promptsAttempted: number
-  deferrals: Array<{ id: string; title: string; subject: string; reasons?: string[] }>
-  /**
-   * Effects the contained policy refused outright: host escapes always, and
-   * under an ACP harness the outward effects Copse could not replay. Read back
-   * from the run's own decision log, so nothing refused goes unreported.
-   */
-  denials: Array<{ subject: string; reasons: string[] }>
-  commits: string[]
-  containment: {
-    declared: boolean
-    declineReason: string | null
-    projectSandbox: boolean
-  }
-  toolNames: string[]
-  finalText: string
-}
+export type ThreadContainerResult = z.infer<typeof threadContainerResultSchema>
 
 /** The host-written review record (`unattended-runs.md` Decision 8). */
 export interface ThreadContainerRecord {
@@ -101,43 +77,7 @@ export type ContainerRunPhase =
   | 'failed'
 
 /** What the renderer asks for. Everything else the main process resolves itself. */
-export interface ContainerRunRequest {
-  projectId: string
-  threadId: string
-  prompt: string
-  /** Product model id the thread runs on; the main process resolves its provider. */
-  model: string
-  budgets: UnattendedRunBudgets
-  /** Extra `host:port` origins the broker may forward to, beyond the model's. */
-  extraEgress?: string[]
-  /**
-   * Run an ACP agent on the user's desktop sign-in, copied into the guest's
-   * throwaway home for the run, instead of a vendor key (decision A1′). Only
-   * honoured for agents that keep their sign-in in files; never the default.
-   */
-  useAgentLogin?: boolean
-  /**
-   * Install the checkout's dependencies in the guest before the agent starts
-   * (decision A9): the lockfile's install runs once with the run's proxy, and
-   * the package registry joins the run's reachable origins for it.
-   */
-  installDependencies?: boolean
-  /**
-   * Continue an earlier run of this thread (decision A14): the guest starts
-   * from that run's carry-out ref rather than a snapshot of the checkout, and
-   * its prompt is prefixed with what that run was asked and reported. The
-   * value is the earlier run's runtime id; the main process resolves the rest
-   * from the run it holds or its record on disk.
-   */
-  continueFrom?: string
-  /**
-   * What the thread's own card says about that run, for when neither the
-   * main process nor the run's record on disk can answer (the record swept,
-   * or written by an earlier build under another thread id): what it was
-   * asked and reported, and where its commits are, if anywhere.
-   */
-  continueContext?: { prompt: string; report: string; ref: string | null }
-}
+export type ContainerRunRequest = z.infer<typeof containerRunRequestSchema>
 
 /**
  * The resolver's verdict on one picker row (`container:model-availability`).

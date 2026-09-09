@@ -14,12 +14,10 @@ import { execFileSync, spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { z } from 'zod'
+import { threadContainerRunSpecSchema, type ThreadContainerRunSpec as Spec } from './run-spec.ts'
 import {
   buildProviderFromDescription,
-  decodeProviderDescription,
   providerEndpointUrl,
-  type ProviderDescription,
 } from '../providers/provider-description.ts'
 import { runHeadlessAgent } from '../headless-agent-host.ts'
 import {
@@ -30,7 +28,6 @@ import { armUnattendedRun, disarmUnattendedRun } from '../security/unattended-ru
 import { readPendingDeferrals } from '../security/deferred-approval-store.ts'
 import { readDecisionLog } from '../security/decision-log-store.ts'
 import { disposeAllAcpSessions } from '../acp/acp-session-pool.ts'
-import { acpAgentConfigSchema } from '../storage/settings-writable.ts'
 import { storageSet } from '../storage/storage.ts'
 import { guestAcpAgentConfig } from './guest-acp-agent.ts'
 import type { ThreadContainerAcpHarness } from './thread-container.ts'
@@ -100,44 +97,6 @@ function claimStdioLink(onHostGone: (error: Error | undefined) => void): EgressL
   return link
 }
 
-const specSchema = z.object({
-  runtimeId: z.string().min(1),
-  threadId: z.string().min(1),
-  projectId: z.string().min(1),
-  prompt: z.string().min(1),
-  model: z.string().min(1),
-  provider: z
-    .unknown()
-    .transform((value, context): ProviderDescription => {
-      const description = decodeProviderDescription(value)
-      if (description !== null) return description
-      context.addIssue({ code: 'custom', message: 'not a provider description' })
-      return z.NEVER
-    })
-    .nullable(),
-  contextWindow: z.number().int().positive().nullable(),
-  apiKeyEnv: z.string().min(1).nullable(),
-  acp: z
-    .object({
-      agent: acpAgentConfigSchema,
-      keyEnvName: z.string(),
-      login: z.object({ files: z.array(z.string().min(1)) }).optional(),
-    })
-    .nullable(),
-  installDependencies: z.boolean().default(false),
-  budgets: z.object({
-    wallClockMs: z.number().positive(),
-    tokenCeiling: z.number().positive(),
-  }),
-  workspace: z.string().min(1),
-  carryInRef: z.string().min(1),
-  carryInBase: z.string().min(1),
-  originUrl: z.string().nullable().default(null),
-  maxSteps: z.number().int().positive().nullable(),
-})
-
-type Spec = z.infer<typeof specSchema>
-
 /**
  * The parsed harness as the shared type: zod leaves every optional field
  * `| undefined`, and the config type (under exact optional properties) does
@@ -177,7 +136,7 @@ function git(cwd: string, args: string[]): string {
 function readSpec(): Spec {
   const spec = safeJsonParse(
     readFileSync(join(RUN_DIR, 'run.json'), 'utf8'),
-    decodeWithSchema(specSchema),
+    decodeWithSchema(threadContainerRunSpecSchema),
   )
   if (spec === null) throw new Error('run.json is not a valid run spec')
   return spec

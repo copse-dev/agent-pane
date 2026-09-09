@@ -144,6 +144,21 @@ describe('runtime containment declaration', () => {
     }
   })
 
+  it('round-trips the host security profile and per-command network attestation', () => {
+    const record: ContainerRuntimeAttestation = {
+      ...attestation(),
+      securityProfiles: 'unconfined',
+      perCommandNetwork: 'token-gated',
+    }
+    assert.deepEqual(parseContainerRuntimeAttestation(JSON.stringify(record)), record)
+    assert.equal(
+      parseContainerRuntimeAttestation(
+        JSON.stringify({ ...record, perCommandNetwork: 'unrestricted' }),
+      ),
+      null,
+    )
+  })
+
   it('parses only a complete host-written record', () => {
     assert.deepEqual(parseContainerRuntimeAttestation(JSON.stringify(attestation())), attestation())
     assert.equal(parseContainerRuntimeAttestation('{"runtimeId":"x"}'), null)

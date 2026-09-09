@@ -1,3 +1,4 @@
+import { containerRunRequestSchema } from '@shared/container-run-schema.ts'
 import { app, BrowserWindow, dialog, ipcMain, shell, webContents, type WebContents } from 'electron'
 import { mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
@@ -1590,43 +1591,9 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   // Unattended container runs (docs/plans/thread-in-container.md). The
   // renderer sends the prompt, the model and the budgets; the main process
   // resolves the checkout, the provider and its key, and owns the run.
-  const zContainerRunRequest = z.object({
-    projectId: zNonEmptyString.max(256),
-    threadId: zGuardedYoloThreadId,
-    prompt: z.string().min(1).max(200_000),
-    model: zNonEmptyString.max(256),
-    budgets: z.object({
-      wallClockMs: z
-        .number()
-        .int()
-        .min(60_000)
-        .max(24 * 60 * 60_000),
-      tokenCeiling: z.number().int().min(1_000).max(100_000_000),
-    }),
-    extraEgress: z
-      .array(z.string().regex(/^(?:\*\.)?[a-z0-9.-]+:\d{1,5}$/i))
-      .max(16)
-      .optional(),
-    useAgentLogin: z.boolean().optional(),
-    installDependencies: z.boolean().optional(),
-    continueFrom: z
-      .string()
-      .regex(/^[a-z0-9-]{1,128}$/i)
-      .optional(),
-    continueContext: z
-      .object({
-        prompt: z.string().max(200_000),
-        report: z.string().max(200_000),
-        ref: z
-          .string()
-          .regex(/^refs\/copse\/runs\/[a-z0-9-]{1,128}$/i)
-          .nullable(),
-      })
-      .optional(),
-  })
   ipcMain.handle('container:run-thread', (event, request: unknown) => {
     assertMainFrameSender(event, win)
-    const parsed = parseIpcArgs(zContainerRunRequest, [request])
+    const parsed = parseIpcArgs(containerRunRequestSchema, [request])
     return getContainerRunService().start({
       projectId: parsed.projectId,
       threadId: parsed.threadId,
