@@ -1,9 +1,5 @@
 import { randomBytes } from 'node:crypto'
-import type {
-  ContainerRunPhase,
-  ContainerRunProgress,
-  ContainerRunRequest,
-} from '@shared/types/container-run.ts'
+import type { ContainerRunProgress, ContainerRunRequest } from '@shared/types/container-run.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { execFileSync } from 'node:child_process'
 import { storageGet } from '../storage/storage.ts'
@@ -432,7 +428,6 @@ export class ContainerRunService {
     const apiKey = plan.apiKey
     const log = (line: string): void => {
       this.update(progress, { log: [...progress.log, line].slice(-LOG_TAIL) })
-      this.update(progress, { phase: phaseFromLog(line, progress.phase) })
     }
     const stopSignal = new AbortController()
     this.stopSignals.set(request.threadId, stopSignal)
@@ -471,6 +466,11 @@ export class ContainerRunService {
       const record = await this.deps.run(runRequest, {
         runtimeId,
         onLog: log,
+        onPhase: (phase) => {
+          if (progress.phase !== 'finished' && progress.phase !== 'failed') {
+            this.update(progress, { phase })
+          }
+        },
         signal: stopSignal.signal,
         onStarted: () => {
           // The container has the key now; the host process no longer needs it.
@@ -626,24 +626,6 @@ export function judgeRun(record: ThreadContainerRecord): {
     }
   }
   return { failure: null, warnings }
-}
-
-/** Phase transitions the runner's log lines imply, without a second event channel. */
-export function phaseFromLog(line: string, current: ContainerRunPhase): ContainerRunPhase {
-  if (current === 'finished' || current === 'failed') return current
-  if (line.includes('[thread-container] starting ')) return 'running'
-  if (line.includes('[worker] installing dependencies')) return 'installing'
-  if (
-    current === 'installing' &&
-    (line.includes('[worker] dependencies installed') ||
-      line.includes('[worker] dependency install '))
-  ) {
-    return 'running'
-  }
-  if (line.includes('wall-clock budget reached') || line.includes('[worker] done:')) {
-    return 'collecting'
-  }
-  return current
 }
 
 let service: ContainerRunService | null = null

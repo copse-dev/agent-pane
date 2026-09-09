@@ -8,7 +8,7 @@ import type { ContainerRunProgress } from '@shared/types/container-run.ts'
 import type { ThreadExecutionContext } from '../thread-execution-context.ts'
 import { deleteApiKey, setApiKey, setSetting } from '../storage/settings.test-shim.ts'
 import { storageSet } from '../storage/storage.ts'
-import { ContainerRunService, judgeRun, phaseFromLog } from './container-run-service.ts'
+import { ContainerRunService, judgeRun } from './container-run-service.ts'
 import type { loadRunForContinuation } from './thread-container.ts'
 import type { OrphanSweep } from './thread-container.ts'
 import type { ThreadContainerRecord, ThreadContainerRequest } from './thread-container.ts'
@@ -179,10 +179,11 @@ describe('ContainerRunService', () => {
       run: (request, options): Promise<ThreadContainerRecord> => {
         seen.push(request)
         keyValues.push(request.apiKeyEnv ? (process.env[request.apiKeyEnv] ?? '') : '')
-        options?.onLog?.('[thread-container] starting copse-run-fake from copse-worker:test')
+        options?.onLog?.('Starting with arbitrary diagnostic wording')
+        options?.onPhase?.('running')
         options?.onStarted?.()
         keyValues.push(request.apiKeyEnv ? (process.env[request.apiKeyEnv] ?? '') : '')
-        options?.onLog?.('[guest] [worker] done: completed; prompts=0 deferrals=0 commits=1')
+        options?.onPhase?.('collecting')
         return Promise.resolve(fakeRecord(request.prompt))
       },
     })
@@ -395,7 +396,8 @@ describe('ContainerRunService', () => {
       },
       run: (request, options): Promise<ThreadContainerRecord> =>
         new Promise((resolve) => {
-          options?.onLog?.('[thread-container] starting copse-run-fake from copse-worker:test')
+          options?.onLog?.('Starting with arbitrary diagnostic wording')
+          options?.onPhase?.('running')
           options?.onStarted?.()
           pending.release = (): void => {
             resolve({ ...fakeRecord(request.prompt), result: null, teardown: 'already-gone' })
@@ -779,37 +781,6 @@ describe('judgeRun', () => {
         result: { ...result, stopReason: 'error', error: 'provider refused' },
       }).failure ?? '',
       /provider refused/,
-    )
-  })
-})
-
-describe('phaseFromLog', () => {
-  it('advances on the runner lines and never leaves a terminal phase', () => {
-    assert.equal(phaseFromLog('[thread-container] starting x from y', 'starting'), 'running')
-    assert.equal(phaseFromLog('[guest] [worker] done: completed', 'running'), 'collecting')
-    assert.equal(phaseFromLog('[thread-container] starting x', 'finished'), 'finished')
-    assert.equal(phaseFromLog('[guest] chatter', 'running'), 'running')
-    // The install step (A9) is its own phase between starting and running.
-    assert.equal(
-      phaseFromLog('[guest] [worker] installing dependencies from pnpm-lock.yaml', 'running'),
-      'installing',
-    )
-    assert.equal(phaseFromLog('[install] Progress: resolved 100', 'installing'), 'installing')
-    assert.equal(
-      phaseFromLog('[guest] [worker] dependencies installed in 90s', 'installing'),
-      'running',
-    )
-    assert.equal(
-      phaseFromLog(
-        '[guest] [worker] dependency install FAILED at "fetch and link" (exit 1) after 9s',
-        'installing',
-      ),
-      'running',
-    )
-    assert.equal(
-      phaseFromLog('[guest] [worker] dependency step "build native modules" failed', 'installing'),
-      'installing',
-      'a best-effort step failing is not the end of the install',
     )
   })
 })

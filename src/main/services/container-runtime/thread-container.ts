@@ -39,6 +39,7 @@ import type {
 } from '@shared/types/unattended-run.ts'
 import type { ThreadContainerRecord } from '@shared/types/container-run.ts'
 import { isRecord } from '@shared/unknown-value.ts'
+import { decodeWorkerPhase, type WorkerPhase } from './worker-events.ts'
 import { EgressBroker } from './egress-broker.ts'
 import {
   findEgressRule,
@@ -941,7 +942,11 @@ export interface ContainerWaitOutcome {
  */
 function attachContainer(
   name: string,
-  options: { broker: EgressBroker | null; onLog: (line: string) => void },
+  options: {
+    broker: EgressBroker | null
+    onLog: (line: string) => void
+    onPhase?: ((phase: WorkerPhase) => void) | undefined
+  },
 ): ChildProcess {
   const child = spawn('docker', ['start', '--attach', '--interactive', name], {
     stdio: ['pipe', 'pipe', 'pipe'],
@@ -952,6 +957,11 @@ function attachContainer(
     // EPIPE once the container is gone; the link's own close handles it.
   })
   createInterface({ input: child.stderr }).on('line', (line) => {
+    const phase = decodeWorkerPhase(line)
+    if (phase !== null) {
+      options.onPhase?.(phase)
+      return
+    }
     options.onLog(line)
   })
   child.on('error', (error) => {
@@ -1140,6 +1150,7 @@ export interface RunThreadOptions {
   /** Injected for tests; defaults to a fresh value. */
   runtimeId?: string
   onLog?: (line: string) => void
+  onPhase?: (phase: WorkerPhase) => void
   /** Called once the container is running, i.e. the guest holds its environment. */
   onStarted?: () => void
   /**
@@ -1264,6 +1275,7 @@ export async function runThreadInContainer(
   let attached: ChildProcess | null = null
   try {
     if (options.signal?.aborted) throw new Error(STOPPED_BEFORE_START)
+    options.onPhase?.('running')
     log(`[thread-container] starting ${containerName(runtimeId)} from ${image}`)
     await runDocker([
       'volume',
@@ -1281,6 +1293,7 @@ export async function runThreadInContainer(
     if (options.signal?.aborted) throw new Error(STOPPED_BEFORE_START)
     attached = attachContainer(containerName(runtimeId), {
       broker: egress.length > 0 ? broker : null,
+      onPhase: options.onPhase,
       onLog: (line) => {
         log(`[guest] ${line}`)
       },
@@ -1293,6 +1306,7 @@ export async function runThreadInContainer(
     if (waited.timedOut) log('[thread-container] wall-clock budget reached; container stopped')
     if (cleanupError !== null) log(`[thread-container] cleanup problem: ${cleanupError}`)
   } finally {
+    options.onPhase?.('collecting')
     teardown = await teardownRuntime(runtimeId)
     if (teardown === 'failed') {
       const failure = `the container ${containerName(runtimeId)} could not be removed`

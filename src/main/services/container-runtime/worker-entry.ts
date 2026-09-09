@@ -1,3 +1,4 @@
+import { encodeWorkerPhase } from './worker-events.ts'
 /**
  * The guest side of a container run (`docs/plans/thread-in-container.md`).
  *
@@ -242,6 +243,7 @@ async function installDependencies(
   const startedAt = Date.now()
   const deadline = startedAt + INSTALL_TIMEOUT_MS
   const failed: string[] = []
+  process.stderr.write(encodeWorkerPhase('installing'))
   say(`[worker] installing dependencies from ${install.lockfile}\n`)
   for (const step of install.steps) {
     if (step.when !== undefined && !step.when()) continue
@@ -454,6 +456,7 @@ async function main(): Promise<void> {
   // agent pauses to act (A14).
   const progress = new GuestProgress(say)
   try {
+    process.stderr.write(encodeWorkerPhase('running'))
     const result = await runHeadlessAgent(
       {
         workspaceRoot: spec.workspace,
@@ -574,6 +577,7 @@ async function main(): Promise<void> {
   // What the contained policy refused, from the run's own decision log: host
   // escapes, and under an ACP harness the outward effects that could not be
   // queued for replay. The log is the source so a refusal cannot go unreported.
+  process.stderr.write(encodeWorkerPhase('collecting'))
   const denials = (await readDecisionLog(spec.projectId).catch(() => []))
     .filter(
       (event) =>
