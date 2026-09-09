@@ -249356,7 +249356,8 @@ function bindWorkspaceLinkClicks(root4, store3, api3) {
     if (!parsed2) return;
     event3.preventDefault();
     event3.stopPropagation();
-    void api3.index.resolveFileReferences([parsed2.candidate]).then((resolved3) => {
+    const owner = getActiveThreadOwner(store3);
+    void api3.index.resolveFileReferences([parsed2.candidate], owner ?? void 0).then((resolved3) => {
       const match3 = resolved3.find((entry) => entry.candidate === parsed2.candidate);
       if (!match3) {
         showErrorToast(`Could not find ${parsed2.candidate} in the workspace`, "not in index");
@@ -249379,6 +249380,7 @@ function bindWorkspaceLinkClicks(root4, store3, api3) {
 var init_workspace_links = __esm({
   "src/renderer/markdown/workspace-links.ts"() {
     init_host_workspace();
+    init_active_thread_owner();
     init_files();
     init_toast();
   }
