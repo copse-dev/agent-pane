@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { defineTool } from '@shared/types'
 import { computeLineDiffStats } from '@shared/diff/line-stats.ts'
+import { isRecord } from '@shared/unknown-value.ts'
 import { resolvePathWithinRoot } from '../services/workspace.ts'
 import { requireAgentExecutionRoot } from '../services/execution-root.ts'
 import { getActiveWorkspaceFs } from '../services/workspace-fs/get-workspace-fs.ts'
@@ -20,7 +21,8 @@ export const writeFileTool = defineTool({
     let before = ''
     try {
       before = await getActiveWorkspaceFs().readFile(absPath, 'utf-8')
-    } catch {
+    } catch (err) {
+      if (!isRecord(err) || err['code'] !== 'ENOENT') throw err
       /* new file */
     }
 

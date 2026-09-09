@@ -48,6 +48,8 @@ import type {
 } from './dialect-adapter.ts'
 import { type HookSpawnResult } from './hook-spawn.ts'
 import { expectRecord, expectStringArray, isRecord } from '@copse/std/unknown-value.ts'
+import { memberOf } from '@copse/std/member-of.ts'
+import { isNonBlankString } from '@copse/std/nullish.ts'
 
 /**
  * Copse's per-hook timeout default (decision 13; H4). Copse-native hooks are our
@@ -156,9 +158,7 @@ export function projectCopseHooksConfigPath(workspaceRoot: string): string {
   return join(workspaceRoot, '.copse', 'hooks.json')
 }
 
-function isCanonicalEvent(value: string): value is HookEventName {
-  return (HOOK_EVENT_NAMES as readonly string[]).includes(value)
-}
+const isCanonicalEvent = memberOf(HOOK_EVENT_NAMES)
 
 /**
  * Normalize an entry's `glob` matcher field to a clean string[] or undefined.
@@ -167,7 +167,7 @@ function isCanonicalEvent(value: string): value is HookEventName {
  */
 function normalizeGlobField(value: unknown): string[] | undefined {
   const raw = typeof value === 'string' ? [value] : Array.isArray(value) ? value : []
-  const globs = raw.filter((g): g is string => typeof g === 'string' && g.trim().length > 0)
+  const globs = raw.filter(isNonBlankString)
   return globs.length > 0 ? globs : undefined
 }
 
@@ -772,9 +772,8 @@ function copseEnvelope(
   return base
 }
 
-function isHookDecision(value: unknown): value is HookDecision {
-  return value === 'allow' || value === 'deny' || value === 'ask'
-}
+const isHookDecision: (value: unknown) => value is HookDecision = (value) =>
+  value === 'allow' || value === 'deny' || value === 'ask'
 
 function firstString(...values: unknown[]): string | undefined {
   for (const value of values) {

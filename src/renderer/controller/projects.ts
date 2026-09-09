@@ -715,7 +715,20 @@ async function quarantineAndRestoreNext(
   await markProjectMissing(store, api, id)
   const next = store.getState().projects.find((p) => p.id !== id && !p.missing)
   if (next) {
-    store.setState({ activeProjectId: next.id, expandedProjectId: next.id })
+    // The thread list still belongs to the project just quarantined, and
+    // `restoreProject` only replaces it several awaits later — a workspace open
+    // and a thread-store read away, or never at all when it returns early on a
+    // down SSH host. Leaving those threads paired with the incoming project id
+    // is what produced `Thread "…" does not belong to project "…"`: anything
+    // that reads the two together in that window gets a pair from two different
+    // projects (#2484). Clear them here so the state is merely empty rather
+    // than wrong; `restoreProject` fills all three in together.
+    store.setState({
+      activeProjectId: next.id,
+      expandedProjectId: next.id,
+      threads: [],
+      activeThreadId: null,
+    })
     await restoreProject(store, api, next.id)
     return
   }

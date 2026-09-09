@@ -13,13 +13,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parseSpineEntries } from '@shared/threads/spine-schema.ts'
 import { recordDecision, readDecisionLog, exportDecisionLog } from './decision-log-store.ts'
+import { isRecord } from '@shared/unknown-value.ts'
 
 const PROJECT = 'proj-1'
 const THREAD = 't-42'
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
 
 function threadEventsPath(root: string, threadId = THREAD): string {
   return join(root, PROJECT, threadId, 'events.jsonl')

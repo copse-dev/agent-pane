@@ -34,6 +34,7 @@ import { mountTerminalRailResizers } from './views/terminal-rail-resizer.ts'
 import { mountRoadmapPane } from './views/roadmap-pane.ts'
 import { mountBrowserPane } from './views/browser-pane.ts'
 import { mountVncPane } from './views/vnc-pane.ts'
+import { isAnyDialogOpen } from './views/dialog-shell.ts'
 import {
   mountSettingsDialog,
   openSettingsDialog,
@@ -143,6 +144,7 @@ import { installArtifactImagePolicy } from './markdown/artifact-image-policy.ts'
 import { installSanitizerBackend } from './markdown/sanitizer-backend.ts'
 import { installHighlighterBackend } from './markdown/highlighter-backend.ts'
 import { installAppLinkDecorator } from './markdown/link-decorator.ts'
+import { memberOf } from '@shared/member-of.ts'
 
 // Inject host markdown policies into @copse/streaming-markdown before any view
 // renders: turn remote-agent artifact <img> tags into inert placeholders that
@@ -167,7 +169,7 @@ const api = window.api
 // mode we boot the app normally (so the pane gets the real workspace/threads),
 // but force the pane open and let popout.css hide the projects sidebar, chat,
 // and titlebar so the detached window shows only that pane.
-const POPOUT_MODES = new Set<RightPanelMode>([
+const POPOUT_MODES = [
   'explorer',
   'terminal',
   'changes',
@@ -176,10 +178,8 @@ const POPOUT_MODES = new Set<RightPanelMode>([
   'memories',
   'roadmap',
   'vnc',
-])
-function isPopoutMode(value: string | null): value is RightPanelMode {
-  return value !== null && [...POPOUT_MODES].some((mode) => mode === value)
-}
+] as const satisfies readonly RightPanelMode[]
+const isPopoutMode = memberOf(POPOUT_MODES)
 function getPopoutMode(): RightPanelMode | null {
   const raw = new URLSearchParams(window.location.search).get('popout')
   return isPopoutMode(raw) ? raw : null
@@ -540,7 +540,7 @@ async function activatePopoutPane(mode: RightPanelMode): Promise<void> {
 
 if (popoutMode) {
   api.panes.onSwitchMode((mode) => {
-    if (!POPOUT_MODES.has(mode)) return
+    if (!isPopoutMode(mode)) return
     void activatePopoutPane(mode)
   })
 }
@@ -654,15 +654,12 @@ function registerKeyboardShortcuts(): void {
       openCommandPalette()
     }
     // Cmd/Ctrl+F opens the in-conversation find bar (find-in-page for the chat).
-    // Skipped while a modal dialog owns the screen so it can't open behind it.
+    // Skipped while a dialog owns the screen so it can't open behind it. This
+    // named four dialogs of the seventeen the renderer has; asking the DOM
+    // covers the rest — an approval, an SSH passphrase, a confirm — each of
+    // which is a question the find bar should not open underneath.
     if (matchFindInChatShortcut(e)) {
-      if (
-        isFileSearchDialogOpen() ||
-        isCommandPaletteOpen() ||
-        isSettingsDialogOpen() ||
-        isKeyboardShortcutsDialogOpen()
-      )
-        return
+      if (isAnyDialogOpen()) return
       e.preventDefault()
       openConversationSearch()
     }
@@ -685,9 +682,16 @@ function registerKeyboardShortcuts(): void {
       if (uiScaleAction === 'reset') void resetUiScale(store, api)
       else void bumpUiScale(store, api, uiScaleAction === 'in' ? 1 : -1)
     }
+    // Cmd/Ctrl+W deletes the active thread. `preventDefault` stays
+    // unconditional — it is what keeps the keystroke from also reaching the
+    // File ▸ Close accelerator — but with a dialog on screen the delete does
+    // not run: a user closing Settings with Cmd+W meant "close this", not
+    // "destroy this conversation" (#2474). Doing nothing is the right answer
+    // rather than closing the dialog for them; Esc already does that, right
+    // below, and every dialog handles it.
     if (meta && e.key === 'w') {
       e.preventDefault()
-      void confirmDeleteThread()
+      if (!isAnyDialogOpen()) void confirmDeleteThread()
     }
     if (e.key === 'Escape') {
       if (isCommandPaletteOpen()) {

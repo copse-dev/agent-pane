@@ -49,7 +49,13 @@ describe('agent-service public surface', () => {
 describe('runAgent AgentHost decoupling', () => {
   it('streams a fallback notice when a remote agent is selected without a valid key', async () => {
     const priorCursorKey = process.env['CURSOR_API_KEY']
+    const priorLmStudioUrl = process.env['COPSE_EVAL_LM_STUDIO_URL']
     delete process.env['CURSOR_API_KEY']
+    // The fallback route probes the configured local model. Keep a developer's
+    // running LM Studio server out of this unit test: it may accept the request
+    // and leave the test waiting on a real generation instead of exercising the
+    // unavailable-provider fallback deterministically.
+    process.env['COPSE_EVAL_LM_STUDIO_URL'] = 'http://127.0.0.1:1/v1'
     await setSetting('model', 'remote-agent:cursor')
 
     const received: Array<{ threadId: string; chunk: StreamChunk }> = []
@@ -90,6 +96,8 @@ describe('runAgent AgentHost decoupling', () => {
       )
     } finally {
       if (priorCursorKey !== undefined) process.env['CURSOR_API_KEY'] = priorCursorKey
+      if (priorLmStudioUrl === undefined) delete process.env['COPSE_EVAL_LM_STUDIO_URL']
+      else process.env['COPSE_EVAL_LM_STUDIO_URL'] = priorLmStudioUrl
     }
   })
 

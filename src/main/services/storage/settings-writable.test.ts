@@ -17,6 +17,25 @@ describe('settings-writable', () => {
     assert.equal(isRendererWritableSettingKey('defaultReadonlyMode'), false)
   })
 
+  it('rejects the keys every object literal inherits', () => {
+    // `settings:set` takes this key straight off the renderer, and the previous
+    // `key in RENDERER_WRITABLE_SETTING_SCHEMAS` body answered true for all
+    // eight — the gate said "writable" and `parseRendererWritableSetting` then
+    // threw an internal TypeError reaching for an inherited function's `.parse`.
+    for (const key of [
+      'toString',
+      'constructor',
+      'valueOf',
+      'hasOwnProperty',
+      '__proto__',
+      'isPrototypeOf',
+      'propertyIsEnumerable',
+      'toLocaleString',
+    ]) {
+      assert.equal(isRendererWritableSettingKey(key), false, `accepted inherited key ${key}`)
+    }
+  })
+
   it('allows benign UI keys', () => {
     assert.equal(isRendererWritableSettingKey('model'), true)
     assert.equal(isRendererWritableSettingKey('appIconVariant'), true)

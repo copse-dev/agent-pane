@@ -92,6 +92,7 @@ export {
   isUiTintStrength,
   type UiTintStrength,
 } from '@shared/appearance.ts'
+import { isNonEmptyString } from '@shared/nullish.ts'
 
 export type SettingsSection =
   | 'general'
@@ -105,20 +106,17 @@ export type SettingsSection =
   | 'ssh'
   | 'experimental'
 
-function isSettingsSection(value: unknown): value is SettingsSection {
-  return (
-    value === 'general' ||
-    value === 'usage' ||
-    value === 'agent' ||
-    value === 'permissions' ||
-    value === 'mcp' ||
-    value === 'customise' ||
-    value === 'storage' ||
-    value === 'appearance' ||
-    value === 'ssh' ||
-    value === 'experimental'
-  )
-}
+const isSettingsSection: (value: unknown) => value is SettingsSection = (value) =>
+  value === 'general' ||
+  value === 'usage' ||
+  value === 'agent' ||
+  value === 'permissions' ||
+  value === 'mcp' ||
+  value === 'customise' ||
+  value === 'storage' ||
+  value === 'appearance' ||
+  value === 'ssh' ||
+  value === 'experimental'
 
 /**
  * Segments of a plugin id that are acronyms, and must stay uppercase rather than
@@ -261,6 +259,7 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'remoteAgentAutoCreatePR', kind: 'checkbox', default: true, save: true },
   { name: 'remoteAgentWorkOnCurrentBranch', kind: 'checkbox', default: false, save: true },
   { name: 'preferAcpOverCloudAgent', kind: 'checkbox', default: true, save: true },
+  { name: 'gitCommitSshAgentSocketAccess', kind: 'checkbox', default: false, save: true },
   { name: 'localSubagentsEnabled', kind: 'checkbox', default: true, save: true },
   {
     name: 'subagentsEnabled',
@@ -922,6 +921,22 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                   you to approve its address while this is on.
                 </span>
               </label>
+            </fieldset>
+
+            <fieldset>
+              <legend>Commit signing</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="gitCommitSshAgentSocketAccess" />
+                Let Copse's git commit tool use your ssh-agent (macOS)
+              </label>
+              <p class="field-hint">
+                Off by default. Turn this on when Git uses a passphrase-protected SSH key and signed
+                commits fail inside Copse's sandbox. The grant applies only to Copse's native
+                <code>git_commit</code> subprocess, but Git hooks run inside that process and can
+                also ask ssh-agent to use <strong>any key it holds</strong>. The private key remains
+                unreadable. Pair this with <code>ssh-add -c</code> to confirm each use. macOS only:
+                Linux cannot admit one socket without admitting every Unix socket.
+              </p>
             </fieldset>
           </section>
 
@@ -1920,7 +1935,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         agent.description,
         ...agent.unsupportedFields.map((f) => `${f.field}: ${f.reason}`),
       ]
-        .filter((part): part is string => Boolean(part))
+        .filter(isNonEmptyString)
         .join(' · ')
       rows.push(
         makeSourceRow(agent.name, agent.source, detail || null, {

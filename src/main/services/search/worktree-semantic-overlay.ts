@@ -4,6 +4,7 @@ import { runCommand } from '../exec/command-runner.ts'
 import { localWorkspaceFs } from '../workspace-fs/local-workspace-fs.ts'
 import { resolvePathWithinRoot } from '../workspace.ts'
 import type { SemanticSearchHit } from './semantic-index.ts'
+import { isNonNull } from '@shared/nullish.ts'
 
 const MAX_DELTA_FILES_TO_SCORE = 200
 const MAX_DELTA_FILE_BYTES = 256 * 1024
@@ -205,7 +206,7 @@ export async function overlayWorktreeSemanticResults(
         .map((path) => scoreDeltaPath(path, options.worktreeRoot, terms)),
     )
   )
-    .filter((result): result is RankedDeltaHit => result !== null)
+    .filter(isNonNull)
     .sort((a, b) => b.score - a.score || a.hit.path.localeCompare(b.hit.path))
 
   const baseline = options.baselineHits.filter(

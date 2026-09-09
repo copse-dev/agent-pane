@@ -6,13 +6,13 @@
  * renderer's badge and result display.
  */
 
+import { memberOf } from '@shared/member-of.ts'
+
 export const ROADMAP_FITS = ['likely', 'partial', 'unlikely'] as const
 
 export type RoadmapFit = (typeof ROADMAP_FITS)[number]
 
-export function isRoadmapFit(value: unknown): value is RoadmapFit {
-  return typeof value === 'string' && ROADMAP_FITS.some((entry) => entry === value)
-}
+export const isRoadmapFit = memberOf(ROADMAP_FITS)
 
 /**
  * Extract the verdict from model output: the first fit word in the first

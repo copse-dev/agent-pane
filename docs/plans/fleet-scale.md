@@ -260,7 +260,7 @@ how you tell every future contributor, human or not, at the moment it matters.
 
 - **Merge queue.** The `ci.yml` header correctly notes `merge_group` needs Enterprise
   Cloud for private repos. The promotion flow is a good stand-in. Worth re-checking the
-  moment the repo goes public — the code is already Apache-2.0 and the site links it — as
+  moment the repo goes public — the code is already AGPL-3.0-only and the site links it — as
   it is free on public repos and would replace the promotion batch with real bisection.
 - **Annotations over log-diving.** Seven `::error`/`::warning` calls in `ci.yml`. Failures
   that carry a file and line (typecheck, lint, failed assertions) can surface as inline

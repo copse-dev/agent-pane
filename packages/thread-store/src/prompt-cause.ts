@@ -18,6 +18,7 @@
  * Pure and Node-free so the renderer, the report script, and unit tests can all
  * use it.
  */
+import { memberOf } from '@copse/std/member-of.ts'
 
 /**
  * The enumerated reasons a gate interrupts. Stable slugs: they are persisted in
@@ -91,11 +92,7 @@ export const PROMPT_CAUSES = [
 
 export type PromptCause = (typeof PROMPT_CAUSES)[number]
 
-const PROMPT_CAUSE_SET: ReadonlySet<string> = new Set<string>(PROMPT_CAUSES)
-
-export function isPromptCause(value: unknown): value is PromptCause {
-  return typeof value === 'string' && PROMPT_CAUSE_SET.has(value)
-}
+export const isPromptCause = memberOf(PROMPT_CAUSES)
 
 /**
  * Whether running the same work inside a Copse-provisioned container would have

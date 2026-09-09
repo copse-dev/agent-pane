@@ -26,6 +26,14 @@ updates:
         patterns:
           - 'electron'
           - 'electron-chromedriver'
+      # @napi-rs/keyring's JS loader requires the platform binary package of
+      # the same version. package.json pins the darwin arm64/x64 binaries
+      # directly for cross-packaging (see pnpm-workspace.yaml), so a split bump
+      # ships a mismatched native module. Group the whole family.
+      napi-rs-keyring:
+        patterns:
+          - '@napi-rs/keyring'
+          - '@napi-rs/keyring-*'
       npm-minor-patch:
         patterns:
           - '*'

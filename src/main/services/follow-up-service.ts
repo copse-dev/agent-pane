@@ -40,7 +40,7 @@ export function parseModelFollowUpIds(raw: string): string[] {
   const parsed = safeJsonParse(jsonMatch[0])
   if (!Array.isArray(parsed)) return []
   return parsed
-    .filter((id): id is string => typeof id === 'string')
+    .filter((id) => typeof id === 'string')
     .map((id) => id.trim())
     .filter(Boolean)
 }

@@ -1,5 +1,7 @@
 /** Runtime helpers for turning untyped boundary values into honest TypeScript values. */
 
+import { isNonEmptyString } from './nullish.ts'
+
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
@@ -101,9 +103,7 @@ export function matchesFallbackType<T>(value: unknown, fallback: T): value is T 
 export function firstNonEmptyString(
   ...values: readonly (string | null | undefined)[]
 ): string | undefined {
-  return values.find(
-    (value): value is string => value !== undefined && value !== null && value !== '',
-  )
+  return values.find(isNonEmptyString)
 }
 
 export function nonEmptyStringOr(value: string | null | undefined, fallback: string): string {

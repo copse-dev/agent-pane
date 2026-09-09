@@ -66,6 +66,7 @@ import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
 import { z } from 'zod'
 import { resolveProjectDir, threadStoreEnvironment } from './environment.ts'
 import { runSerialized } from './write-queue.ts'
+import { isNonNull } from '@copse/std/nullish.ts'
 
 /**
  * Filesystem-native thread store (issue #644). Each thread is a self-contained
@@ -747,7 +748,7 @@ async function readProjectThreads(
       const loaded = await mapConcurrent(threadIds, (threadId) =>
         readThread(projectId, threadId, options),
       )
-      return sortThreadsNewestFirst(loaded.filter((t): t is Thread => t !== null))
+      return sortThreadsNewestFirst(loaded.filter(isNonNull))
     },
     (threads) => ({
       dirs: threadIds.length,
@@ -778,7 +779,7 @@ async function readProjectThreadMetas(
       const loaded = await mapConcurrent(threadIds, (threadId) =>
         readThreadMetaOnly(projectId, threadId, options),
       )
-      return sortThreadsNewestFirst(loaded.filter((t): t is Thread => t !== null))
+      return sortThreadsNewestFirst(loaded.filter(isNonNull))
     },
     (threads) => ({
       dirs: threadIds.length,

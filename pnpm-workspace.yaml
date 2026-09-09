@@ -28,15 +28,16 @@ supportedArchitectures:
 
 overrides:
   '@hono/node-server': 2.0.11
+  '@xmldom/xmldom@0.8': 0.8.15
   adm-zip: ^0.6.0
   brace-expansion: 5.0.9
   minimatch: 10.2.5
   deepmerge-ts: 8.0.0
   dompurify: ^3.4.13
-  js-yaml@4: 4.3.1
+  js-yaml@4: 4.3.2
   serialize-javascript: ^7.0.7
   tar: ^7.5.22
-  sharp: 0.35.3
+  sharp: 0.35.4
   fast-xml-parser: 5.10.1
   fast-uri: 3.1.6
   hono: 4.12.34
@@ -56,6 +57,7 @@ overrides:
 # (scripts/pnpm-workspace-invariants.test.ts enforces it).
 minimumReleaseAgeExclude:
   - '@hono/node-server'
+  - '@xmldom/xmldom'
   - adm-zip
   - brace-expansion
   - minimatch
@@ -70,3 +72,31 @@ minimumReleaseAgeExclude:
   - hono
   - ip-address
   - undici
+
+# Three patches to @anthropic-ai/sandbox-runtime, all in one patch file. Drop
+# each once upstream does the same; the named test fails loudly if a version
+# bump silently drops the patch.
+#
+# 1. `whichSync` forks `/usr/bin/which` via spawnSync on every sandboxed command
+#    to locate the shell binary. That is free under Bun (`Bun.which`) but a
+#    synchronous child process under Node, and Copse runs it on the Electron
+#    main thread ~10 times a second during an agent turn (measured at 6.35ms per
+#    call — 72% of the whole sandbox-wrap cost). The patch memoizes the Node
+#    fallback on (binary, PATH), caching successes only so a transient `which`
+#    timeout cannot become permanent. Guarded by `sandbox-which-cache.test.ts`.
+#
+# 2. `normalizePathForSandbox` runs a blocking `realpathSync` per path entry, and
+#    a workspace overlay feeds it ~49 entries per sandboxed command — ~35% of
+#    which re-resolve a directory another entry already resolved (`<dir>` and
+#    `<dir>/**` name one directory). The patch memoizes those lookups for the
+#    duration of one synchronous profile build and clears on the next microtask,
+#    so no resolution is ever reused by a later command. Guarded by
+#    `sandbox-normalize-path-memo.test.ts`.
+#
+# 3. `wrapWithSandbox` read `allowUnixSockets` only from the global getter, so a
+#    caller could not widen it for one command. Native SSH commit signing needs
+#    the ssh-agent socket and nothing else, so the patch lets `customConfig`
+#    supply the list and falls back to the getter. Guarded by
+#    `git-commit-signing.test.ts`.
+patchedDependencies:
+  '@anthropic-ai/sandbox-runtime@0.0.74': patches/@anthropic-ai__sandbox-runtime@0.0.74.patch

@@ -5,6 +5,7 @@ import {
   parseContextFromModelRecord,
   effectiveContextFromNativeModelRecord,
   fetchLmStudioModels,
+  looksLikeEmbeddingModelId,
 } from './lm-studio-models.ts'
 import { jsonResponse } from './test-response.ts'
 
@@ -65,6 +66,114 @@ describe('LM Studio model capabilities', () => {
       ])
     } finally {
       globalThis.fetch = originalFetch
+    }
+  })
+})
+
+// #2487. `text-embedding-nomic-embed-text-v1.5` was offered in the chat and
+// comparison-reviewer pickers alongside models that can hold a conversation. It
+// has no chat completion, so choosing it produces a run that cannot start.
+describe('embedding models are identified', () => {
+  it('reads the type LM Studio declares, rather than guessing from the name', async () => {
+    const originalFetch = globalThis.fetch
+    const fetchMock = mock.fn<typeof fetch>(async (url) =>
+      (typeof url === 'string' ? url : url instanceof URL ? url.href : url.url).endsWith(
+        '/api/v1/models',
+      )
+        ? jsonResponse({
+            models: [
+              { key: 'nomic-embed-text-v1.5', type: 'embeddings' },
+              { key: 'qwen3-coder-30b', type: 'llm' },
+            ],
+          })
+        : jsonResponse({ data: [{ id: 'nomic-embed-text-v1.5' }, { id: 'qwen3-coder-30b' }] }),
+    )
+    globalThis.fetch = fetchMock
+    try {
+      const result = await fetchLmStudioModels('http://127.0.0.1:1234/v1')
+      assert.deepEqual(result.models, [
+        { id: 'nomic-embed-text-v1.5', contextLength: null, embedding: true },
+        { id: 'qwen3-coder-30b', contextLength: null },
+      ])
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  it('falls back to the id when only the OpenAI-compatible endpoint answers', async () => {
+    // That endpoint declares no type, so the name is the only signal left.
+    const originalFetch = globalThis.fetch
+    const fetchMock = mock.fn<typeof fetch>(async (url) =>
+      (typeof url === 'string' ? url : url instanceof URL ? url.href : url.url).endsWith(
+        '/api/v1/models',
+      )
+        ? jsonResponse({}, 404)
+        : jsonResponse({
+            data: [{ id: 'text-embedding-nomic-embed-text-v1.5' }, { id: 'qwen3-coder-30b' }],
+          }),
+    )
+    globalThis.fetch = fetchMock
+    try {
+      const result = await fetchLmStudioModels('http://127.0.0.1:1234/v1')
+      assert.deepEqual(result.models, [
+        { id: 'text-embedding-nomic-embed-text-v1.5', contextLength: null, embedding: true },
+        { id: 'qwen3-coder-30b', contextLength: null },
+      ])
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  it('lets a declared type overrule the name', async () => {
+    // A model whose id reads like an embedding but which the server says is an
+    // LLM stays in the picker. The declaration is evidence; the name is a guess.
+    const originalFetch = globalThis.fetch
+    const fetchMock = mock.fn<typeof fetch>(async (url) =>
+      (typeof url === 'string' ? url : url instanceof URL ? url.href : url.url).endsWith(
+        '/api/v1/models',
+      )
+        ? jsonResponse({ models: [{ key: 'text-embedding-oddly-named-chat', type: 'llm' }] })
+        : jsonResponse({ data: [{ id: 'text-embedding-oddly-named-chat' }] }),
+    )
+    globalThis.fetch = fetchMock
+    try {
+      const result = await fetchLmStudioModels('http://127.0.0.1:1234/v1')
+      assert.deepEqual(result.models, [
+        { id: 'text-embedding-oddly-named-chat', contextLength: null },
+      ])
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+})
+
+describe('looksLikeEmbeddingModelId', () => {
+  it('recognises the ids that announce themselves', () => {
+    for (const id of [
+      'text-embedding-nomic-embed-text-v1.5',
+      'text-embedding-3-large',
+      'nomic-ai/nomic-embed-text-v1.5',
+      'qwen3-embedding-8b',
+      'bge-m3-embedding',
+      'EmbeddingGemma/embedding',
+    ]) {
+      assert.equal(looksLikeEmbeddingModelId(id), true, id)
+    }
+  })
+
+  it('leaves a chat model alone, including ones that merely contain the letters', () => {
+    // A wrong `true` hides a usable model from the picker with nothing on screen
+    // to say why, so the pattern only matches a standalone token.
+    for (const id of [
+      'qwen3-coder-30b',
+      'llama-3.3-70b-instruct',
+      'mistral-small-latest',
+      'gpt-oss-120b',
+      'embedded-systems-assistant',
+      'my-embedder-chat',
+      'deepseek-r1-distill-qwen-32b',
+    ]) {
+      assert.equal(looksLikeEmbeddingModelId(id), false, id)
     }
   })
 })

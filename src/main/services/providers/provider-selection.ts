@@ -6,6 +6,7 @@ import {
 } from '@copse/llm/create-provider.ts'
 import { isOpenRouterModel, openRouterModelId } from '@copse/llm/openrouter.ts'
 import { isDynamicModel } from '@copse/llm/dynamic-model.ts'
+import { hostRoutedNamespace, type HostRoutedNamespace } from '@copse/llm/model-selection.ts'
 import { SERVICE_TIERS, isServiceTier, type ServiceTier } from '@copse/llm/service-tier.ts'
 import { extraProviderForModel, extraProviderModelId } from '@copse/llm/extra-providers.ts'
 import { getApprovedProviderHosts } from './approved-provider-hosts.ts'
@@ -212,12 +213,69 @@ export function resolveTurnParameters(
   return { ...saved, ...(reasoning === undefined ? {} : { reasoning }) }
 }
 
+/**
+ * Why a route-shaped selection has no provider to build, in the words the
+ * surface that asked for one will show.
+ *
+ * The sentence has to say *which* kind of route it was handed, because the fix
+ * differs: three of them are a model the user picked for somewhere it cannot
+ * run, and `auto:` is a rule a caller forgot to expand.
+ */
+const HOST_ROUTED_MESSAGE: Readonly<Record<HostRoutedNamespace, (model: string) => string>> = {
+  acp: (model) =>
+    `${model} names a device agent, which runs as its own process against your own sign-in — ` +
+    'not a model this feature can call. Pick a cloud or local model for it. (Sending the agent ' +
+    "id to a cloud provider bills that provider's API for a turn the agent bills to your " +
+    'subscription.)',
+  'remote-agent': (model) =>
+    `${model} names a cloud agent, which runs on its provider's own infrastructure — not a ` +
+    'model this feature can call. Pick a cloud or local model for it.',
+  'plugin-model': (model) =>
+    `${model} names a plugin-provided model route, which only that plugin can run. Pick a cloud ` +
+    'or local model for it.',
+  auto: (model) =>
+    `${model} is an unexpanded model rule. Resolve it with resolveDynamicModelId() before ` +
+    'building a provider.',
+}
+
+/**
+ * Build the LLM provider for a model selection.
+ *
+ * Every branch below maps a selection onto something callable, and the last one
+ * is a fallback that hands whatever it was given to Anthropic (or OpenAI). That
+ * fallback is why the guard comes first: `acp:`, `remote-agent:`,
+ * `plugin-model:` and `auto:` name a route the *host* takes, not a model, and
+ * before this they fell all the way through — so a turn the user had pointed at
+ * their own device agent went out to api.anthropic.com, on their stored
+ * Anthropic key, carrying `acp:claude-agent-acp#opus[1m]` as the model id
+ * (issue #2478).
+ *
+ * Anthropic rejects an id like that, so the request buys nothing; what it cost
+ * was the diagnosis. The rejection is an account-level `400
+ * invalid_request_error` — on an account kept at zero API credit because the
+ * user works off a subscription, "Your credit balance is too low to access the
+ * Anthropic API" — which reads as *Copse is billing the API for this*, and
+ * three separate reports concluded exactly that. The quieter defect is the real
+ * one: the agent the user picked never ran.
+ *
+ * Failing here is the fix rather than the symptom: the same fallback sits under
+ * every one of this function's callers — thread titles, the safety classifier,
+ * comparison reviewers, custom agents — so guarding the one place covers routes
+ * that do not exist yet as well as the four that do.
+ *
+ * Deliberately *after* the mock-mode escape hatch, which is documented to take
+ * precedence over routing: demo traces and e2e fixtures carry `acp:` model ids
+ * (`demo-traces/landing.ts`), and mock mode never reaches the network, so there
+ * is no spend to prevent there and nothing gained by breaking them.
+ */
 export async function buildProvider(
   model: string,
   promptCacheKey?: string,
   opts: BuildProviderOptions = {},
 ): Promise<LLMProvider> {
   if (process.env['COPSE_PANEL_MOCK_LLM'] === '1') return createProvider(model)
+  const hostRouted = hostRoutedNamespace(model)
+  if (hostRouted) throw new Error(HOST_ROUTED_MESSAGE[hostRouted](model))
   const params = resolveTurnParameters(model, opts)
   if (model === 'lm-studio' || model.startsWith('lmstudio:')) {
     const url = localServerUrl()

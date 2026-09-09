@@ -46,6 +46,27 @@ wrong. Prefer the typed alternative:
 > `satisfies`, or a schema at the boundary — see
 > [Boundary parsing](#boundary-parsing-decoders-not-type-arguments).
 
+### Never use a dynamic key with `in`
+
+`in` walks the prototype chain, so `key in RECORD` — where `key` did not come from a literal —
+answers **true** for the eight members every object literal inherits: `toString`, `constructor`,
+`valueOf`, `hasOwnProperty`, `__proto__`, `isPrototypeOf`, `propertyIsEnumerable`,
+`toLocaleString`. A gate written that way says "yes, that key is allowed" for all eight.
+
+That is not a hypothetical. It was the body of both key allowlists the renderer can reach:
+`settings:set`'s writability gate, and `plugins:setSetting`, which took its key straight off the
+renderer and then wrote it into the pack's settings bag — defeating a check whose own comment said
+it existed to stop exactly that.
+
+`no-restricted-syntax` bans it (`eslint.config.mjs`). Use **`Object.hasOwn(record, key)`**, or
+**`keyOf(record)`** from `@copse/std` when you want a type predicate.
+
+A **literal** key is not restricted, and shouldn't be: `'filePath' in payload` is the ordinary way
+to discriminate an object union, and the tree has 248 of those against the ten dynamic ones this
+rule turned up outside tests. Tests are exempt too — several of the nine remaining use `in`
+deliberately to demonstrate the behaviour the rule forbids, and a test that cannot state the wrong
+answer cannot pin the right one.
+
 ### Never cast object literals
 
 `{ ... } as T` is banned in production code (`@typescript-eslint/consistent-type-assertions` with
@@ -72,7 +93,7 @@ Keep the inventory small and justified.
 the code (parse/validate untyped input — storage reads, `JSON.parse`, network responses) rather than
 letting `any` propagate inward.
 
-### Exported type predicates must be tested
+### Prefer a predicate the compiler checks
 
 A type predicate is the one assertion TypeScript never checks. Nothing verifies that `x is T` follows
 from the body, so this compiles and every caller is silently lied to:
@@ -84,8 +105,89 @@ function isUser(x: unknown): x is User {
 ```
 
 `no-unsafe-type-assertion` does **not** flag predicates, so with the baseline empty they are the
-widest unverified claims left in the codebase. **An exported predicate without a test is an
-unaudited `as`.** Add one in the same PR.
+widest unverified claims left in the codebase (#1330). Reach for one of the three forms below before
+writing one by hand — none of them costs a lint exemption, and none of them appears in the
+[inventory](#the-hand-written-predicate-inventory-is-shrink-only).
+
+**Membership — `memberOf(TUPLE)`.** `.includes()`, `.some()` and `.has()` do not narrow, so a
+membership predicate can never be checked or inferred; the annotation and the list are free to drift
+apart. `memberOf` in `packages/std/src/member-of.ts` (`@copse/std`, re-exported as
+`@shared/member-of.ts`) makes the tuple the single source of truth, and holds the codebase's one
+membership assertion, property-tested against `Array.prototype.includes`:
+
+```ts
+export const THEME_PREFERENCES = ['light', 'dark', 'system'] as const
+export type ThemePreference = (typeof THEME_PREFERENCES)[number]
+export const isThemePreference = memberOf(THEME_PREFERENCES)
+```
+
+**Narrowing — annotate the binding, not the return.** Moving the annotation left turns the assertion
+into a claim the compiler verifies against the arrow's own inferred predicate:
+
+```ts
+// asserted — nothing checks the body
+function isCommandTimeout(e: unknown): e is CommandTimeoutError {
+  return e instanceof CommandTimeoutError
+}
+
+// checked — a body that stops proving this is TS2677
+const isCommandTimeout: (e: unknown) => e is CommandTimeoutError = (e) =>
+  e instanceof CommandTimeoutError
+```
+
+`explicit-function-return-type` is fine with this: `allowTypedFunctionExpressions` (on by default)
+covers a function expression whose binding is annotated, so the signature stays written down and no
+rule has to be relaxed. Deleting the annotation from a `function` declaration to obtain inference
+does violate the rule — that is the route not to take.
+
+**Inline — write no annotation at all.** Inside `.filter()` / `.find()` / `.every()` the compiler
+infers the predicate, and the same lint option means an unannotated arrow in argument position is
+already legal:
+
+```ts
+const paths = entries.filter((entry) => typeof entry === 'string') // string[]
+```
+
+Two things to know before converting one:
+
+- Inference is **silent when it fails**. A body it cannot derive a predicate from yields plain
+  `boolean`, and the call site quietly gets a wider type instead of an error — so check the resulting
+  type, don't assume. `Boolean(x)` narrows nothing at all; `x !== undefined` does.
+- The annotation is **load-bearing over `any`**. Where the input array is `any[]` (a `storageGet`
+  read, say), the annotation is the only thing pinning the element type, and removing it trips the
+  `no-unsafe-*` rules. That site wants a decoder, not a predicate.
+
+#### What TypeScript can actually infer from
+
+Measured across every predicate in this repo, not guessed. Inference needs a **single** return of an
+expression that narrows the parameter — a preceding `const` is fine, an early `return false` is not:
+
+| Body                                                            | Inferred?                                          |
+| --------------------------------------------------------------- | -------------------------------------------------- |
+| `typeof v === 'string'`, `v instanceof Err`, `Array.isArray(v)` | yes                                                |
+| `v === 'a' \|\| v === 'b'`, `v.kind === 'ssh'`                  | yes                                                |
+| `'heading' in entry`, where `entry` is already an object union  | yes                                                |
+| `Array.isArray(v) && v.every((e) => typeof e === 'string')`     | yes                                                |
+| `v !== null && v !== undefined` (including generic `T \| null`) | yes                                                |
+| `LIST.includes(v)`, `SET.has(v)`, `LIST.some((e) => e === v)`   | **no** — use `memberOf`                            |
+| `isRecord(v) && typeof v['x'] === 'string'`                     | **no** — indexed access does not narrow the object |
+| `typeof v === 'object' && v !== null && 'x' in v`               | **no** — proves the key exists, not its type       |
+| `typeof v === 'object' && v !== null && !Array.isArray(v)`      | **no** — twice over, see below                     |
+| `Boolean(v)`, `cond ? true : false`, an early `return false`    | **no**                                             |
+
+`isRecord` is the instructive one: the negated `Array.isArray` stops inference producing a predicate
+at all, and even without it the most the compiler will conclude is `v is object`, which has no index
+signature and so is not `Record<string, unknown>`. There is no way to write it that the compiler
+checks.
+
+Those structural rows are why the inventory is still long: most predicates here are boundary parsers
+over `unknown`, and no annotation gymnastics will make them checkable. The honest fix for those is a
+schema at the boundary (see [Boundary parsing](#boundary-parsing-decoders-not-type-arguments)); until
+then they need a test.
+
+### An asserted predicate needs a test
+
+**An exported predicate without a test is an unaudited `as`.** Add one in the same PR.
 
 Two acceptable shapes — pick by whether the domain is finite:
 
@@ -116,11 +218,70 @@ Either way the **rejection** corpus is where the bugs hide. Include:
 - near-misses derived from each member — case, leading/trailing whitespace, truncation, trailing
   newline
 
-Worked example: `src/shared/type-predicates.test.ts`.
+Worked examples: `src/shared/type-predicates.test.ts` and `packages/std/src/member-of.test.ts`.
 
 Finally, **check the test can fail**. Mutate the predicate body to `return true` and confirm the
 suite goes red before you trust it — a predicate test that passes against a broken predicate is
 worse than none, because it reads like coverage.
+
+### Reach for the shared predicate before writing another one
+
+The cheapest predicate to keep honest is the one you don't write. These cover most of what boundary
+code needs, all in `@copse/std` (re-exported as `@shared/…` for app code) and all tested there:
+
+- **`isRecord`** (`unknown-value.ts`) — `unknown` → `Record<string, unknown>`, rejecting arrays and
+  `null`. It had accumulated 22 local copies across `src/` and `packages/` before #1332.
+- **`isDefined` / `isNonNull`** (`nullish.ts`) — for `.filter(isNonNull)` instead of
+  `.filter((x): x is T => x !== null)`. An inline predicate is an unchecked claim that nothing can
+  test; a named one is checked once.
+- **`memberOf`** (`member-of.ts`) — builds a membership predicate from the tuple that defines the
+  type, as [above](#prefer-a-predicate-the-compiler-checks). It replaced 28 hand-written membership
+  predicates in #1330.
+- **`keyOf`** (`member-of.ts`) — the same idea for a record's keys. It uses `Object.hasOwn`, not
+  `in`, which matters: `in` walks the prototype chain, so a gate written with it answers **true**
+  for `toString`, `constructor`, `valueOf`, `hasOwnProperty`, `__proto__`, `isPrototypeOf`,
+  `propertyIsEnumerable` and `toLocaleString`. That is not hypothetical — it was the body of the
+  `settings:set` writability gate.
+- **`isNonEmptyString` / `isNonBlankString`** (`nullish.ts`) — a string with at least one character,
+  and a string with at least one _non-whitespace_ character. `isNonEmptyString` is what
+  `.filter((p): p is string => Boolean(p))` meant over a `(string | null | undefined)[]`, said out
+  loud. Pick deliberately: `'  '` passes one and fails the other, and getting it wrong is a silent
+  behaviour change, which is why neither is named as the default.
+
+A local copy is only justified where the import cannot reach — and `@copse/std` is dependency-free
+precisely so that it always can, including from an extracted package.
+
+### The hand-written predicate inventory is shrink-only
+
+`scripts/type-predicate-inventory.test.ts` lists every asserted predicate in the tracked source and
+fails in both directions: a predicate that is not on the list fails, and a list entry whose predicate
+is gone fails. So adding one is a visible, deliberate line in the diff, and converting one forces its
+entry out in the same change. It exists because counting by hand did not hold — #1330 measured 161,
+then 212 four months later.
+
+Only the asserted form is counted. The checked forms above are absent from it by construction, which
+is the point: the cheapest predicate to add is also the honest one.
+
+If a change legitimately needs a new asserted predicate — a structural boundary parser usually does —
+add its line and its contract test together.
+
+### What stays asserted, and why
+
+The list is shrink-only, not a countdown to zero. Two categories on it are finished work:
+
+- **The shared helpers themselves.** `isRecord`, `memberOf`, `keyOf`, `isDefined`, `isNonNull`,
+  `isNonEmptyString`, `isNonBlankString`, `matchesFallbackType`. Each is one audited assertion with
+  a real test, standing in for the dozens it replaced. Removing them from the list would hide the
+  assertions the codebase actually relies on.
+- **Provenance guards over a callable.** `isToolFactory`, `isRawExecute`, `isDynamicImport`,
+  `isCreateGuard` narrow `unknown` to a specific function _signature_ from `typeof v === 'function'`,
+  which proves only that it is callable. No check can do better — the values come from user-authored
+  modules and an optional dependency — so the contract is enforced where the function is called
+  (a `try`/`catch` that isolates the failure to one file), not where it is narrowed. A generic
+  `isCallable<T>()` helper would only make the unchecked half convenient.
+
+The remainder — structural parsers over `unknown` — is the part still worth paying down, and the
+answer there is a decoder, not a better predicate.
 
 ## The suppression baseline is empty — keep it that way
 

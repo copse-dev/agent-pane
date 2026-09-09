@@ -43,6 +43,8 @@ import type {
 } from './dialect-adapter.ts'
 import { type HookSpawnResult } from './hook-spawn.ts'
 import { expectRecord, expectStringArray, isRecord } from '@copse/std/unknown-value.ts'
+import { memberOf } from '@copse/std/member-of.ts'
+import { isNonBlankString } from '@copse/std/nullish.ts'
 
 /**
  * Cursor's per-hook timeout default (decision 13; H4). Cursor's own docs give a
@@ -118,9 +120,7 @@ export function projectHooksConfigPath(workspaceRoot: string): string {
   return join(workspaceRoot, '.cursor', 'hooks.json')
 }
 
-function isHookEvent(value: string): value is CursorHookEvent {
-  return (CURSOR_HOOK_EVENTS as readonly string[]).includes(value)
-}
+const isHookEvent = memberOf(CURSOR_HOOK_EVENTS)
 
 /**
  * Normalize an entry's `glob` matcher field (B2) to a clean string[] or
@@ -129,7 +129,7 @@ function isHookEvent(value: string): value is CursorHookEvent {
  */
 function normalizeGlobField(value: unknown): string[] | undefined {
   const raw = typeof value === 'string' ? [value] : Array.isArray(value) ? value : []
-  const globs = raw.filter((g): g is string => typeof g === 'string' && g.trim().length > 0)
+  const globs = raw.filter(isNonBlankString)
   return globs.length > 0 ? globs : undefined
 }
 
@@ -399,13 +399,9 @@ export function cursorGenericToolName(toolName: string): string {
   }
 }
 
-function isCursorAfterToolHookEvent(value: string | undefined): value is CursorAfterToolHookEvent {
-  return value !== undefined && (CURSOR_AFTER_TOOL_HOOK_EVENTS as readonly string[]).includes(value)
-}
+const isCursorAfterToolHookEvent = memberOf(CURSOR_AFTER_TOOL_HOOK_EVENTS)
 
-function isCursorToolGateHookEvent(value: string | undefined): value is CursorToolGateHookEvent {
-  return value !== undefined && (CURSOR_TOOL_GATE_HOOK_EVENTS as readonly string[]).includes(value)
-}
+const isCursorToolGateHookEvent = memberOf(CURSOR_TOOL_GATE_HOOK_EVENTS)
 
 /**
  * Resolve the dialect event carried by a registered canonical `toolGate` hook —
@@ -975,9 +971,8 @@ function firstString(...values: unknown[]): string | undefined {
   return undefined
 }
 
-function isHookDecision(value: unknown): value is HookDecision {
-  return value === 'allow' || value === 'deny' || value === 'ask'
-}
+const isHookDecision: (value: unknown) => value is HookDecision = (value) =>
+  value === 'allow' || value === 'deny' || value === 'ask'
 
 function outcomeFromResponse(parsed: unknown): {
   outcome: BlockingHookOutcome | null

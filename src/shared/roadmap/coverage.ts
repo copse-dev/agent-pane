@@ -6,15 +6,13 @@
  * this module holds the pure vocabulary and parser shared with the renderer.
  */
 
+import { memberOf } from '@shared/member-of.ts'
+
 export const ROADMAP_COVERAGE_VERDICTS = ['likely', 'partial'] as const
 
 export type RoadmapCoverageVerdict = (typeof ROADMAP_COVERAGE_VERDICTS)[number]
 
-export function isRoadmapCoverageVerdict(value: unknown): value is RoadmapCoverageVerdict {
-  return (
-    typeof value === 'string' && (ROADMAP_COVERAGE_VERDICTS as readonly string[]).includes(value)
-  )
-}
+export const isRoadmapCoverageVerdict = memberOf(ROADMAP_COVERAGE_VERDICTS)
 
 /** One model-judged match: open issue → existing roadmap item. */
 export interface RoadmapIssueCoverageMatch {

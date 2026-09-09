@@ -1,6 +1,7 @@
 import { renderTextBlock, textBlockLabel } from '@copse/agent/build-text-with-attachments.ts'
 import { attachTextExpand } from '../attachments/text-expand.ts'
 import { closeIcon } from '../dom/icons.ts'
+import { isDefined } from '@shared/nullish.ts'
 
 /**
  * The composer's rich input: a `contenteditable` that renders pasted text
@@ -256,7 +257,7 @@ export function mountComposerEditor(): ComposerEditor {
     getBlocks(): InlinePasteBlock[] {
       return chipElements()
         .map((c) => blocks.get(c.dataset['blockId'] ?? ''))
-        .filter((b): b is InlinePasteBlock => b !== undefined)
+        .filter(isDefined)
     },
 
     insertPasteChip(content: string, label?: string): void {

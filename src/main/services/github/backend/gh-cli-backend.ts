@@ -31,6 +31,7 @@ import {
   emptyGitHubFileContent,
   type GitHubFileContent,
 } from '../pr-file-content.ts'
+import { isNonNull } from '@shared/nullish.ts'
 
 interface GhPrViewJson {
   state?: string | undefined
@@ -233,7 +234,7 @@ async function listPrFiles(ref: PrRef, prView?: GhPrViewJson): Promise<GhPrChang
         deletions: file.deletions ?? 0,
       } satisfies GhPrChangedFile
     })
-    .filter((entry): entry is GhPrChangedFile => entry != null)
+    .filter(isNonNull)
   if (fromView.length > 0) return fromView
 
   const { stdout, code } = await runGh([
@@ -254,7 +255,7 @@ async function listPrFiles(ref: PrRef, prView?: GhPrViewJson): Promise<GhPrChang
         deletions: file.deletions ?? 0,
       } satisfies GhPrChangedFile
     })
-    .filter((entry): entry is GhPrChangedFile => entry != null)
+    .filter(isNonNull)
 }
 
 async function fetchRepoFileAtRef(
@@ -355,7 +356,7 @@ export const ghCliBackend: GitHubBackend = {
         if (!owner || !repo || typeof entry.number !== 'number' || !entry.url) return null
         return toGhPrSummary({ owner, repo, number: entry.number }, { ...entry, url: entry.url })
       })
-      .filter((entry): entry is GhPrSummary => entry != null)
+      .filter(isNonNull)
   },
 
   async listWorkspaceOpenPrs(limit: number): Promise<GhPrSummary[]> {
@@ -383,7 +384,7 @@ export const ghCliBackend: GitHubBackend = {
         if (typeof entry.number !== 'number' || !entry.url) return null
         return toGhPrSummary({ owner, repo, number: entry.number }, { ...entry, url: entry.url })
       })
-      .filter((entry): entry is GhPrSummary => entry != null)
+      .filter(isNonNull)
   },
 
   async listWorkspaceOpenIssues(page: number, pageSize: number) {
@@ -430,13 +431,13 @@ export const ghCliBackend: GitHubBackend = {
             title: entry.title,
             url: entry.url,
             body: (entry.body ?? '').slice(0, 4000),
-            labels: (entry.labels ?? []).filter((name): name is string => typeof name === 'string'),
+            labels: (entry.labels ?? []).filter((name) => typeof name === 'string'),
             state: 'open',
           }
           if (entry.updatedAt) summary.updatedAt = entry.updatedAt
           return summary
         })
-        .filter((entry): entry is GhIssueSummary => entry != null),
+        .filter(isNonNull),
       hasMore: result.rawCount === pageSize,
     }
   },
@@ -466,9 +467,7 @@ export const ghCliBackend: GitHubBackend = {
       title: entry.title,
       url: entry.url,
       body: (entry.body ?? '').slice(0, 8000),
-      labels: (entry.labels ?? [])
-        .map((l) => l.name)
-        .filter((name): name is string => typeof name === 'string'),
+      labels: (entry.labels ?? []).map((l) => l.name).filter((name) => typeof name === 'string'),
     }
     if (entry.state === 'OPEN' || entry.state === 'open') summary.state = 'open'
     else if (entry.state === 'CLOSED' || entry.state === 'closed') summary.state = 'closed'
@@ -509,14 +508,14 @@ export const ghCliBackend: GitHubBackend = {
           body: (entry.body ?? '').slice(0, 4000),
           labels: (entry.labels ?? [])
             .map((l) => l.name)
-            .filter((name): name is string => typeof name === 'string'),
+            .filter((name) => typeof name === 'string'),
         }
         if (entry.state === 'OPEN' || entry.state === 'open') summary.state = 'open'
         else if (entry.state === 'CLOSED' || entry.state === 'closed') summary.state = 'closed'
         if (entry.updatedAt) summary.updatedAt = entry.updatedAt
         return summary
       })
-      .filter((entry): entry is GhIssueSummary => entry != null)
+      .filter(isNonNull)
   },
 
   async getPrDetails(ref: PrRef): Promise<GhPrDetails | null> {

@@ -101,6 +101,13 @@ function decodePerfRecord(raw: unknown): PerfRecord | null {
   }
 }
 
+/**
+ * Not an `isRecord` clone, despite the identical body: it claims the values are
+ * `string | number | boolean | undefined` and only checks that the container is
+ * an object. Deliberately left that way — this is the debug perf branch, and
+ * rejecting a detail whose value is an object would drop diagnostics rather
+ * than fix anything. Recorded so the claim is visible rather than implied.
+ */
 function isDetail(value: unknown): value is NonNullable<PerfRecord['detail']> {
   return typeof value === 'object' && value !== null
 }

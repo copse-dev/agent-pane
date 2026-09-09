@@ -109,7 +109,7 @@ beside them. Candidate listeners are reported only after a loopback connection
    protocol implementation to save a window we already know how to run.
 
    **License:** noVNC is MPL-2.0 — file-level copyleft, satisfied by vendoring it
-   unmodified and saying so. It does not change Copse's Apache-2.0 license.
+   unmodified and saying so. It does not change Copse's AGPL-3.0-only license.
    `THIRD_PARTY_NOTICES.md` gains a section in the shape of the existing Rampart
    entry (project, source, license, what uses it, "modifications: none"). If we
    ever patch a vendored file, that note must change with it.

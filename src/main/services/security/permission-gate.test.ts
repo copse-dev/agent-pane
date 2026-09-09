@@ -900,6 +900,99 @@ describe('ensureTerminalPermitted', () => {
     }
   })
 
+  // #2507. Both prompts describe an unconfined shell, but only one of them is a
+  // permanent fact about the machine; saying "on this platform" for the other
+  // hides a reason the user could act on.
+  it('says the platform has no sandbox when that is the actual reason', async () => {
+    const restore = setWorkspaceRootForTest('/tmp/project')
+    let approvalBody = ''
+    setApprovalHandler(async (request) => {
+      approvalBody = request.body
+      return { approved: true, remember: false }
+    })
+    try {
+      await ensureTerminalPermitted({
+        sandboxEnabled: false,
+        remoteTarget: false,
+        sandboxPlatform: false,
+        sandboxFailure: 'bubblewrap not found',
+      })
+      assert.match(approvalBody, /on this platform/i)
+      // The recorded failure belongs to a platform that has a sandbox; quoting
+      // it here would explain a limitation this machine does not have.
+      assert.doesNotMatch(approvalBody, /bubblewrap/i)
+    } finally {
+      setApprovalHandler(null)
+      restore()
+    }
+  })
+
+  it('quotes why the sandbox did not start on a platform that has one', async () => {
+    const restore = setWorkspaceRootForTest('/tmp/project')
+    let approvalBody = ''
+    setApprovalHandler(async (request) => {
+      approvalBody = request.body
+      return { approved: true, remember: false }
+    })
+    try {
+      await ensureTerminalPermitted({
+        sandboxEnabled: false,
+        remoteTarget: false,
+        sandboxPlatform: true,
+        sandboxFailure: 'bubblewrap not found on PATH',
+      })
+      assert.match(approvalBody, /did not start this session/i)
+      assert.match(approvalBody, /bubblewrap not found on PATH/)
+      assert.doesNotMatch(approvalBody, /on this platform/i)
+    } finally {
+      setApprovalHandler(null)
+      restore()
+    }
+  })
+
+  it('keeps a multi-line failure to its first line, so the question stays readable', async () => {
+    const restore = setWorkspaceRootForTest('/tmp/project')
+    let approvalBody = ''
+    setApprovalHandler(async (request) => {
+      approvalBody = request.body
+      return { approved: true, remember: false }
+    })
+    try {
+      await ensureTerminalPermitted({
+        sandboxEnabled: false,
+        remoteTarget: false,
+        sandboxPlatform: true,
+        sandboxFailure: 'user namespaces unavailable\n    at initialize (asrt.js:1:1)',
+      })
+      assert.match(approvalBody, /user namespaces unavailable/)
+      assert.doesNotMatch(approvalBody, /asrt\.js/)
+    } finally {
+      setApprovalHandler(null)
+      restore()
+    }
+  })
+
+  it('still states the consequence when no failure reason was recorded', async () => {
+    const restore = setWorkspaceRootForTest('/tmp/project')
+    let approvalBody = ''
+    setApprovalHandler(async (request) => {
+      approvalBody = request.body
+      return { approved: true, remember: false }
+    })
+    try {
+      await ensureTerminalPermitted({
+        sandboxEnabled: false,
+        remoteTarget: false,
+        sandboxPlatform: true,
+      })
+      assert.match(approvalBody, /did not start this session/i)
+      assert.match(approvalBody, /full user account, filesystem, and network/i)
+    } finally {
+      setApprovalHandler(null)
+      restore()
+    }
+  })
+
   it('blocks terminal creation when the unsandboxed-terminal prompt is declined', async () => {
     const restore = setWorkspaceRootForTest('/tmp/project')
     setApprovalHandler(async () => ({ approved: false, remember: false }))

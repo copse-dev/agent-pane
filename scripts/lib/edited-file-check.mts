@@ -9,6 +9,9 @@
  * Everything here is I/O-free and unit-tested; `hook-file-check.mts` supplies
  * stdin, the linters, and the filesystem.
  */
+import { memberOf } from '@copse/std/member-of.ts'
+import { isRecord } from '../../src/shared/unknown-value.mts'
+import { isDefined } from '@copse/std/nullish.ts'
 
 /**
  * Which agent is running the hook. It decides only how a finding is *reported*,
@@ -31,9 +34,7 @@ export type HookDialect = 'claude' | 'copse' | 'cursor' | 'cli'
 
 export const HOOK_DIALECTS: readonly HookDialect[] = ['claude', 'copse', 'cursor', 'cli']
 
-export function isHookDialect(value: string): value is HookDialect {
-  return (HOOK_DIALECTS as readonly string[]).includes(value)
-}
+export const isHookDialect: (value: string) => value is HookDialect = memberOf(HOOK_DIALECTS)
 
 /** One tool's complaint about the edited file. */
 export type Finding = {
@@ -63,11 +64,6 @@ export function checkPlanFor(path: string): CheckPlan | null {
   return lint || format ? { lint, format } : null
 }
 
-/** Narrows an unknown payload to something indexable, without an assertion. */
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null
-}
-
 /** Value at `key` if it is a non-empty string, else undefined. */
 function stringField(source: unknown, key: string): string | undefined {
   if (!isRecord(source)) return undefined
@@ -95,7 +91,7 @@ export function editedPathsFromPayload(payload: unknown): string[] {
     stringField(toolInput, 'notebook_path'),
     stringField(toolResponse, 'filePath'),
   ]
-  return [...new Set(candidates.filter((c): c is string => c !== undefined))]
+  return [...new Set(candidates.filter(isDefined))]
 }
 
 /**

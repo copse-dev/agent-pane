@@ -43,7 +43,7 @@ make run
 
 `make run` checks your Node version, installs dependencies, builds `dist/`, and launches the app. It is idempotent and cheap to repeat: dependency inputs, build inputs, and the complete build output tree are content-addressed, so running it again after a branch switch or `git pull` does the minimum work needed without trusting filesystem timestamps. Run `make` on its own for the full target list.
 
-`make run` builds once and starts. While actively editing the app, `pnpm run dev` is still the loop you want — it rebuilds and relaunches Electron on save:
+`make run` builds once and starts. While actively editing the app, `pnpm run dev` (or `make run-dev`) is still the loop you want — it rebuilds and relaunches Electron on save, against its own persistent `~/.copse-dev` profile so it never shares threads or settings with the app `make run` launches:
 
 ```bash
 corepack enable
@@ -169,4 +169,18 @@ If `make run` returns straight away without opening a window, another Copse inst
 
 ## License
 
-Copse is available under the [Apache License 2.0](LICENSE).
+Copyright © 2026 Jonathan Kingston.
+
+Copse is free software, available under the [GNU Affero General Public License
+version 3](LICENSE). You may use, study, modify, and redistribute it. If you
+distribute a modified version, or make one available to users over a network,
+you must make the complete corresponding source available under the same
+license.
+
+Copse relicensed from Apache-2.0 to AGPL-3.0-only on 6 September 2026. Releases
+up to and including `0.1.0-beta.8` were published under the Apache License 2.0,
+and that grant remains in force for those versions. Everything from the
+relicensing commit onward is AGPL-3.0-only.
+
+Third-party components keep their own licenses; see
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

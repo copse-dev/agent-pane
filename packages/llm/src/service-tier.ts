@@ -1,3 +1,5 @@
+import { memberOf } from '@copse/std/member-of.ts'
+
 /**
  * OpenAI's `service_tier` request field.
  *
@@ -17,9 +19,7 @@ export const SERVICE_TIERS = ['auto', 'default', 'flex', 'priority', 'scale'] as
 export type ServiceTier = (typeof SERVICE_TIERS)[number]
 
 /** Narrow an arbitrary stored string to a tier the API will accept. */
-export function isServiceTier(value: string): value is ServiceTier {
-  return (SERVICE_TIERS as readonly string[]).includes(value)
-}
+export const isServiceTier: (value: string) => value is ServiceTier = memberOf(SERVICE_TIERS)
 
 /** One offerable tier: the stored value, plus how to describe it to a user. */
 export interface ServiceTierChoice {

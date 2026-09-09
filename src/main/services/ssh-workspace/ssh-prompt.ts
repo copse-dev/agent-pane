@@ -8,6 +8,7 @@ import {
   sshPromptRespondSchema,
 } from '../../ipc/ipc-guards.ts'
 import { canStoreSshCredentials } from './ssh-credential-store.ts'
+import { resolveRendererPromptTarget } from '../renderer-prompt-target.ts'
 
 export type SshPromptKind = 'confirm' | 'secret'
 
@@ -84,7 +85,18 @@ export function initSshPrompt(win: BrowserWindow, ipcMain: IpcMain): void {
     (req) =>
       new Promise<SshPromptResponse>((resolve) => {
         const id = randomUUID()
-        win.webContents.send('ssh:prompt-request', {
+        // The window that asked for the connection, falling back to the main
+        // one. A pop-out pane opening an SSH terminal used to get its passphrase
+        // and host-key questions on the main window, where nothing said which
+        // connection they belonged to — and, unanswered, they timed out under a
+        // pop-out still showing a blank shell (#2507). A host key is exactly the
+        // question you cannot answer without seeing what asked it.
+        const dest = resolveRendererPromptTarget(win.webContents)
+        if (dest.isDestroyed()) {
+          resolve({ value: '' })
+          return
+        }
+        dest.send('ssh:prompt-request', {
           id,
           prompt: req.prompt,
           kind: req.kind,

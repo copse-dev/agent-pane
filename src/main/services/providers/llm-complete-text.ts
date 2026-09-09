@@ -1,15 +1,8 @@
 import type { LLMProvider, LLMMessage, ModelUsage } from '@shared/types'
 import type { StreamChunk } from '@shared/types/stream.ts'
+import { hasLastUsage } from '@copse/llm/provider-usage.ts'
 
 const EMPTY_USAGE: ModelUsage = { inputTokens: 0, outputTokens: 0 }
-
-interface ProviderWithUsage {
-  lastUsage: ModelUsage | null
-}
-
-function hasLastUsage(p: unknown): p is ProviderWithUsage {
-  return typeof p === 'object' && p !== null && 'lastUsage' in p
-}
 
 function mergeUsage(prev: ModelUsage, delta: ModelUsage): ModelUsage {
   const next: ModelUsage = {

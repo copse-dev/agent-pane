@@ -7,6 +7,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { parseToolArgs } from './parse-tool-args.ts'
+import { isRecord } from '@copse/std/unknown-value.ts'
 
 interface ArgsCase {
   id: string
@@ -15,10 +16,6 @@ interface ArgsCase {
 }
 
 const corpusPath = join(process.cwd(), 'tests/fixtures/tool-args-json-corpus.json')
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
 function parseCorpus(value: unknown): { cases: ArgsCase[] } {
   assert.ok(isRecord(value) && Array.isArray(value['cases']))
   const cases: ArgsCase[] = value['cases'].map((entry: unknown) => {
