@@ -58652,13 +58652,15 @@ function argsOf(toolCall) {
   const ref = record2["ref"];
   const credential = record2["credential"];
   const continuedFrom = record2["continuedFrom"];
+  const report = record2["report"];
   return {
     task,
     model,
     runtimeId: typeof runtimeId === "string" ? runtimeId : null,
     ref: typeof ref === "string" ? ref : null,
     credential: credential === "key" || credential === "login" ? credential : "none",
-    continuedFrom: typeof continuedFrom === "string" ? continuedFrom : null
+    continuedFrom: typeof continuedFrom === "string" ? continuedFrom : null,
+    report: typeof report === "string" ? report : null
   };
 }
 function latestContainerRun(thread) {
@@ -58673,6 +58675,8 @@ function latestContainerRun(thread) {
       messageId: message2.id,
       toolCallId: toolCall.id,
       runtimeId: args.runtimeId,
+      task: args.task,
+      report: args.report,
       model: args.model,
       credential: args.credential,
       ref: args.ref,
@@ -58776,7 +58780,8 @@ function containerRunToolCall(progress2) {
     runtimeId: progress2.runtimeId,
     ref: progress2.record?.carryOut.ref ?? null,
     credential: progress2.credential,
-    continuedFrom: progress2.continuedFrom
+    continuedFrom: progress2.continuedFrom,
+    report: progress2.record?.result?.finalText ?? null
   };
   const transcript = progress2.record?.transcript ?? [];
   const log3 = logMessage(progress2);
@@ -263657,7 +263662,8 @@ function mountContainerRunControl(api3, context, onStateChanged) {
       budgets: DEFAULT_BUDGETS,
       ...latest.credential === "login" ? { useAgentLogin: true } : {},
       installDependencies: true,
-      continueFrom: latest.runtimeId
+      continueFrom: latest.runtimeId,
+      continueContext: { prompt: latest.task, report: latest.report ?? "", ref: latest.ref }
     });
   }
   const usageFolded = /* @__PURE__ */ new Set();
