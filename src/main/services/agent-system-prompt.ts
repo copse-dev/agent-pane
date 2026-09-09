@@ -1,4 +1,9 @@
-import { loadAgentRequestedRulesCatalog, loadInstructionLayers } from './project-instructions.ts'
+import {
+  loadAgentRequestedRulesCatalog,
+  loadInstructionLayersWithMetadata,
+  type InstructionLayerMetadata,
+  type NestedInstructionTurn,
+} from './project-instructions.ts'
 import { getSetting, getSettingTrimmed } from './storage/settings.ts'
 import { getAgentExecutionRoot } from './execution-root.ts'
 import { getThreadExecutionContext } from './thread-execution-context.ts'
@@ -75,8 +80,7 @@ async function buildRepositoryContext(): Promise<string> {
   return `\nGit repository root: ${repositoryRoot}${subdirNote}`
 }
 
-/** Assemble the system prompt for a run from base prompt + skills + instructions. */
-export async function buildSystemPrompt(opts: {
+export interface BuildSystemPromptOptions {
   subagentsEnabled: boolean
   invokedSkills: string[]
   threadId?: string
@@ -88,15 +92,40 @@ export async function buildSystemPrompt(opts: {
    * and the prompt stays model-agnostic.
    */
   model?: string
-}): Promise<string> {
+  /** Persist nested-source activation for Settings; real local turns set this. */
+  trackInstructionActivation?: boolean
+  /**
+   * The turn's nested-discovery memo. The build walks the tree once into it so
+   * the turn's tool calls reuse that walk; estimates omit it and share a cache.
+   */
+  nestedInstructionTurn?: NestedInstructionTurn
+}
+
+export interface SystemPromptBuildResult {
+  prompt: string
+  instructionMetadata: InstructionLayerMetadata
+}
+
+/** Assemble the system prompt and retain nested-instruction runtime metadata. */
+export async function buildSystemPromptWithMetadata(
+  opts: BuildSystemPromptOptions,
+): Promise<SystemPromptBuildResult> {
   const { subagentsEnabled, invokedSkills, threadId } = opts
   const skillsToolsLine = buildSkillsToolsPromptLine()
   const userText = opts.userPrompt != null ? userContentToText(opts.userPrompt) : ''
+  const contextPaths = extractContextPathsFromText(userText)
   const cursorRuleContext: CursorRuleContext = {
-    contextPaths: extractContextPathsFromText(userText),
+    contextPaths,
     userText,
   }
-  const instructionLayers = await loadInstructionLayers({ cursorRuleContext })
+  const instructionLayers = await loadInstructionLayersWithMetadata(
+    {
+      cursorRuleContext,
+      nestedContextPaths: contextPaths,
+      ...(opts.nestedInstructionTurn ? { nestedInstructionTurn: opts.nestedInstructionTurn } : {}),
+    },
+    opts.trackInstructionActivation ?? false,
+  )
   const agentRulesCatalog = await loadAgentRequestedRulesCatalog()
 
   const basePrompt = subagentsEnabled ? BASE_SYSTEM_PROMPT : BASE_SYSTEM_PROMPT_DIRECT_READS
@@ -118,7 +147,7 @@ export async function buildSystemPrompt(opts: {
     (threadId ? hasTerminalSessions(threadId) : hasTerminalSessions())
   const customInstructions = getSettingTrimmed('customInstructions')
   const opus5 = opts.model != null && isOpus5Model(opts.model)
-  return (
+  const prompt =
     basePrompt
       .replace('{SKILLS_TOOLS_LINE}', skillsToolsLine)
       // Must be the agent execution root, not the renderer workspace root: the
@@ -147,5 +176,10 @@ export async function buildSystemPrompt(opts: {
     (instructionLayers.global
       ? `\n\n---\n\n## User instructions\n\n${instructionLayers.global}`
       : '')
-  )
+  return { prompt, instructionMetadata: instructionLayers.metadata }
+}
+
+/** Prompt-only compatibility wrapper for estimates, tests, and other callers. */
+export async function buildSystemPrompt(opts: BuildSystemPromptOptions): Promise<string> {
+  return (await buildSystemPromptWithMetadata(opts)).prompt
 }

@@ -57,6 +57,7 @@ export async function estimateContextBreakdown(
     subagentsEnabled,
     invokedSkills: input.invokedSkills,
     model,
+    userPrompt: input.draftText,
   })
   // Skill blocks are part of the system prompt string; measure them separately so
   // they can be attributed to "Skills" instead of inflating "System prompt".

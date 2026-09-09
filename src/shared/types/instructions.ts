@@ -11,6 +11,14 @@ export interface ProjectInstructionSummary {
   scope: InstructionScope
   /** Byte length of the trimmed content fed to the prompt. */
   bytes: number
-  /** False when discovered but inert (project file in an untrusted workspace). */
+  /** Whether the source was loaded into the current or most recently assembled prompt. */
   active: boolean
+  /** Project trust gate, separate from conditional nested activation. */
+  trusted: boolean
+  /** Workspace-relative directory governed by a nested AGENTS.md. */
+  scopePath?: string
+  /** Name of the listed source this nested file repeats; its text is loaded once, via that one. */
+  duplicateOf?: string
+  /** Nested discovery stopped at a cap, so nested files may be missing from the list. */
+  discoveryTruncated?: boolean
 }

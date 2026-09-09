@@ -28,6 +28,6 @@
  * doing on its own; until then a bump is the safe side of the disagreement,
  * since it can only refuse peers that would otherwise have been allowed.
  */
-// v4 adds bounded PR activity results. The whole-shape compatibility gate
-// conservatively requires a bump for the optional activity payload.
-export const API_PROTOCOL_VERSION = 4 as const
+// v4 adds bounded PR activity results; v5 adds nested-instruction metadata.
+// Both conservatively version optional result fields for the whole-shape gate.
+export const API_PROTOCOL_VERSION = 5 as const
