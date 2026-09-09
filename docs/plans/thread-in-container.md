@@ -613,6 +613,10 @@ guarantee, and the record must say so.
   the continuity; and the composer's target re-applies its default when the run it
   follows settles, so the container is offered once the run is done rather than the
   thread it was held to while the run was live.
+  And from a run whose volume went away under it (Docker's VM disk full, or the mount
+  lost): the install died with EROFS and the sign-in restore with ENOENT, neither naming
+  the cause. The worker probes the checkout's volume after a failed install and in its
+  fatal handler, and says when it no longer takes writes and why that tends to be.
 - **A15 — one resolution of the model for desktop and guest.** From the review of A14:
   the container resolved providers on its own (`container-provider.ts`), a narrower copy
   of the desktop's `buildProvider` that lost the user's tuned parameters, OpenRouter's

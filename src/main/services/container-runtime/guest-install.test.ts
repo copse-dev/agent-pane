@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { volumeTrouble } from './guest-install.ts'
 import {
   DEPENDENCY_INSTALL_ORIGINS,
   electronBinaryStep,
@@ -102,6 +103,19 @@ describe('dependencyInstallFor', () => {
       'node headers come from the image',
     )
     assert.equal(DEPENDENCY_INSTALL_ORIGINS.length, 6)
+  })
+})
+
+describe('volumeTrouble', () => {
+  it('is silent for a directory that takes writes and names the failure for one that does not', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'copse-volume-'))
+    try {
+      assert.equal(volumeTrouble(dir), null)
+      assert.match(volumeTrouble(join(dir, 'gone')) ?? '', /no longer takes writes \(ENOENT\)/)
+      assert.match(volumeTrouble(join(dir, 'gone')) ?? '', /no longer mounted, or the disk/)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })
 

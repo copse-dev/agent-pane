@@ -43,6 +43,7 @@ import {
   guestEnvironmentNote,
   type DependencyInstallStep,
   type DependencyInstallSummary,
+  volumeTrouble,
 } from './guest-install.ts'
 import { GUEST_EXCLUDED_TOOLS } from './guest-tools.ts'
 import { EgressLink } from './egress-link.ts'
@@ -165,6 +166,9 @@ type StopReason = 'completed' | 'budget:wall-clock' | 'budget:tokens' | 'aborted
 
 /** When the spec carries no window: the broad cloud floor the desktop falls back to. */
 const DEFAULT_GUEST_CONTEXT_WINDOW = 128_000
+
+/** The checkout's path once the spec is read, for the fatal handler's volume probe. */
+let workspaceForDiagnosis: string | null = null
 
 function git(cwd: string, args: string[]): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }).trim()
@@ -406,6 +410,7 @@ async function main(): Promise<void> {
   }
 
   say(`[worker] run ${spec.runtimeId} thread ${spec.threadId}\n`)
+  workspaceForDiagnosis = spec.workspace
   carryIn(spec)
   say(`[worker] carried in ${spec.carryInBase.slice(0, 12)}\n`)
   let installSummary: DependencyInstallSummary | null = null
@@ -414,6 +419,13 @@ async function main(): Promise<void> {
       spec.workspace,
       agentProxyUrl ? { url: agentProxyUrl, noProxy: GUEST_NO_PROXY } : null,
     )
+    // An install that failed because the volume stopped taking writes is
+    // not a run to go on with: the agent would find a checkout it cannot
+    // change, and the next thing to fail would blame itself.
+    if (installSummary.aborted) {
+      const trouble = volumeTrouble(spec.workspace)
+      if (trouble !== null) throw new Error(trouble)
+    }
   }
   // The agent is told what it has and what it cannot do, before the task.
   const prompt = `${guestEnvironmentNote(installSummary)}\n\nTask:\n${spec.prompt}`
@@ -669,6 +681,12 @@ main().then(
   },
   (error: unknown) => {
     console.error('[worker] fatal:', error)
+    // A filesystem error under the checkout usually means the volume, not
+    // the file; say so beside the stack that blamed the file.
+    if (workspaceForDiagnosis !== null) {
+      const trouble = volumeTrouble(workspaceForDiagnosis)
+      if (trouble !== null) console.error(`[worker] ${trouble}`)
+    }
     leave(1)
   },
 )

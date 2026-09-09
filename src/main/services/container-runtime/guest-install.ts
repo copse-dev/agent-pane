@@ -17,7 +17,7 @@
  * showed one such script failing the whole install with `node_modules`
  * already complete.
  */
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 /** The registry pnpm and npm both fetch from. */
@@ -277,4 +277,29 @@ export function guestEnvironmentNote(install: DependencyInstallSummary | null): 
     )
   }
   return lines.join('\n')
+}
+
+/**
+ * Whether the run's volume still takes writes, in a sentence when it does
+ * not. A real run failed halfway through its install with EROFS, then died
+ * on a mkdir under the home with ENOENT: the volume had gone away under the
+ * container (Docker's VM disk full, or the mount lost), and every path under
+ * it fell through to the read-only rootfs. Neither error said so. The probe
+ * writes and removes one file where the checkout lives; the message names
+ * the two causes worth checking rather than the syscall that happened to
+ * notice first.
+ */
+export function volumeTrouble(dir: string): string | null {
+  const probe = join(dir, '.copse-write-probe')
+  try {
+    writeFileSync(probe, '')
+    unlinkSync(probe)
+    return null
+  } catch (error) {
+    const code =
+      typeof error === 'object' && error !== null && 'code' in error
+        ? String(error.code)
+        : 'unknown error'
+    return `the run's volume at ${dir} no longer takes writes (${code}): it is no longer mounted, or the disk Docker keeps its volumes on is full`
+  }
 }
