@@ -1,3 +1,7 @@
+import type { ContainerRunRequest } from '@shared/types/container-run.ts'
+import type { SupervisedTaskMeta } from '@shared/supervisor/task-schema.ts'
+import { TaskSupervisor } from '../supervisor/task-supervisor.ts'
+import { FileSupervisedTaskStore } from '../supervisor/task-store.ts'
 import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
@@ -1055,4 +1059,170 @@ function waitFor(
       }
     })
   })
+}
+
+describe('container task supervision', () => {
+  it('persists completion and its result reference without storing the prompt or key', async (t) => {
+    const root = mkdtempSync(join(tmpdir(), 'container-supervisor-'))
+    t.after(() => {
+      rmSync(root, { recursive: true, force: true })
+    })
+    initRepo(root)
+    const store = new FileSupervisedTaskStore({ COPSE_WORKSPACE_DIR: join(root, 'tasks') })
+    const supervisor = new TaskSupervisor({ store })
+    t.after(() => supervisor.shutdown())
+    const service = supervisedService(root)
+    t.after(service.installSupervisor(supervisor))
+    await service.start(supervisedRequest())
+    const task = await waitForTask(supervisor, 'completed')
+    assert.equal(task.handler, 'container_run')
+    assert.equal(task.maxAttempts, 1)
+    assert.equal(task.reapproveOnWake, true)
+    assert.equal(task.resultRef?.ref, task.processHandleId)
+    assert.deepEqual((await store.loadAll()).tasks, [task])
+    assert.equal(JSON.stringify(task).includes('private prompt'), false)
+    assert.equal(JSON.stringify(task).includes('sk-ant-test'), false)
+  })
+
+  it('records image preparation failure on the same durable task', async (t) => {
+    const root = mkdtempSync(join(tmpdir(), 'container-supervisor-'))
+    t.after(() => {
+      rmSync(root, { recursive: true, force: true })
+    })
+    initRepo(root)
+    const supervisor = new TaskSupervisor({
+      store: new FileSupervisedTaskStore({ COPSE_WORKSPACE_DIR: join(root, 'tasks') }),
+    })
+    t.after(() => supervisor.shutdown())
+    const service = supervisedService(root, async () => {
+      throw new Error('image unavailable')
+    })
+    t.after(service.installSupervisor(supervisor))
+    await service.start(supervisedRequest())
+    const task = await waitForTask(supervisor, 'failed')
+    assert.equal(task.lastError, 'image unavailable')
+  })
+
+  it('a supervisor cancellation during preparation prevents Docker execution', async (t) => {
+    const root = mkdtempSync(join(tmpdir(), 'container-supervisor-'))
+    t.after(() => {
+      rmSync(root, { recursive: true, force: true })
+    })
+    initRepo(root)
+    let release = (): void => {}
+    const preparing = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    t.after(release)
+    const supervisor = new TaskSupervisor({
+      store: new FileSupervisedTaskStore({ COPSE_WORKSPACE_DIR: join(root, 'tasks') }),
+    })
+    t.after(() => supervisor.shutdown())
+    const service = supervisedService(
+      root,
+      () => preparing,
+      () => {
+        throw new Error('must not start Docker')
+      },
+    )
+    t.after(service.installSupervisor(supervisor))
+    await service.start(supervisedRequest())
+    const task = await waitForTask(supervisor, 'running')
+    await supervisor.cancel(task.projectId, task.taskId)
+    release()
+    const result = await waitFor(service, THREAD, (p) => p.phase === 'failed')
+    assert.match(result.error ?? '', /Stopped by you/)
+    assert.equal(supervisor.get(task.projectId, task.taskId)?.state, 'cancelled')
+  })
+
+  it('stops all live runs through the installed supervisor', async (t) => {
+    const root = mkdtempSync(join(tmpdir(), 'container-supervisor-'))
+    t.after(() => {
+      rmSync(root, { recursive: true, force: true })
+    })
+    initRepo(root)
+    let release = (): void => {}
+    const preparing = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    t.after(release)
+    const supervisor = new TaskSupervisor({
+      store: new FileSupervisedTaskStore({ COPSE_WORKSPACE_DIR: join(root, 'tasks') }),
+    })
+    t.after(() => supervisor.shutdown())
+    const service = supervisedService(root, () => preparing)
+    t.after(service.installSupervisor(supervisor))
+    await service.start(supervisedRequest())
+    await waitForTask(supervisor, 'running')
+    await service.stopAll()
+    release()
+    await waitFor(service, THREAD, (p) => p.phase === 'failed')
+    assert.equal(supervisor.list()[0]?.state, 'cancelled')
+  })
+
+  it('reconciles a lost runtime as failed on restart without replaying it', async (t) => {
+    const root = mkdtempSync(join(tmpdir(), 'container-supervisor-'))
+    t.after(() => {
+      rmSync(root, { recursive: true, force: true })
+    })
+    initRepo(root)
+    let release = (): void => {}
+    const preparing = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    t.after(release)
+    const env = { COPSE_WORKSPACE_DIR: join(root, 'tasks') }
+    const supervisor = new TaskSupervisor({ store: new FileSupervisedTaskStore(env) })
+    t.after(() => supervisor.shutdown())
+    const service = supervisedService(root, () => preparing)
+    t.after(service.installSupervisor(supervisor))
+    await service.start(supervisedRequest())
+    const task = await waitForTask(supervisor, 'running')
+    const restarted = new TaskSupervisor({ store: new FileSupervisedTaskStore(env) })
+    t.after(() => restarted.shutdown())
+    await restarted.start()
+    const restored = restarted.get(task.projectId, task.taskId)
+    assert.equal(restored?.state, 'failed')
+    assert.match(restored.lastError ?? '', /process handle lost/)
+    await service.stopAll()
+    release()
+    await waitFor(service, THREAD, (p) => p.phase === 'failed')
+  })
+})
+
+function supervisedService(
+  root: string,
+  ensureImage: () => Promise<void> = () => Promise.resolve(),
+  run: () => Promise<ThreadContainerRecord> = () => Promise.resolve(fakeRecord(THREAD)),
+): ContainerRunService {
+  return new ContainerRunService({
+    resolveContext: checkoutAt(root),
+    ensureImage,
+    run,
+    stop: () => Promise.resolve('removed'),
+    sweep: () => Promise.resolve({ removed: [], failed: [], skipped: [] }),
+    adopt: () => Promise.resolve({ applied: [], alreadyApplied: 0 }),
+    loadCarryOut: () => null,
+    loadContinuation: () => null,
+  })
+}
+
+function supervisedRequest(): ContainerRunRequest {
+  return {
+    projectId: PROJECT,
+    threadId: THREAD,
+    prompt: 'private prompt',
+    model: 'claude-sonnet-4-6',
+    budgets: { wallClockMs: 60_000, tokenCeiling: 10_000 },
+  }
+}
+
+async function waitForTask(supervisor: TaskSupervisor, state: string): Promise<SupervisedTaskMeta> {
+  const deadline = Date.now() + 3_000
+  while (Date.now() < deadline) {
+    const task = supervisor.list().find((candidate) => candidate.state === state)
+    if (task) return task
+    await new Promise((resolve) => setTimeout(resolve, 5))
+  }
+  throw new Error(`No supervised task reached ${state}`)
 }
