@@ -1,6 +1,7 @@
+import { matchesWebOriginAllowlist, parseFetchUrl } from '../security/web-origin-policy.ts'
 /**
  * Pure navigation policy for the built-in browser tools. Mirrors the shell/MCP
- * permission split: loopback (localhost) targets auto-run, public origins prompt
+ * permission split: allowlisted targets auto-run, new public origins prompt
  * once, and private / link-local / metadata targets are denied outright to block
  * SSRF-style pivots from an agent-controlled URL.
  *
@@ -42,7 +43,7 @@ export const BROWSER_ALLOW_USER_APPROVAL_SETTING = 'browserAllowUserApproval'
 // On by default: the built-in browser (Electron's bundled Chromium) is how the
 // agent loads and screenshots local web UIs without downloading a separate
 // browser stack (e.g. Playwright). Navigation is still gated by the origin
-// policy below — loopback auto-runs, public origins prompt, private is denied.
+// policy below — allowlisted origins auto-run, new origins prompt, private is denied.
 export const BROWSER_TOOLS_DEFAULT_ENABLED = true
 
 export interface ParsedBrowserUrl {
@@ -75,7 +76,7 @@ export function parseBrowserUrl(raw: string): ParsedBrowserUrl | null {
 
 /**
  * Scheme allowlist for the in-app browser guest's own navigations (`will-navigate`
- * / `will-redirect`). The guest may browse the public web freely, but must never be
+ * / `will-redirect`). The request boundary enforces the network allowlist; the guest must never be
  * driven to local or privileged schemes (`file:`, `chrome:`, `data:`, …) by a
  * hostile page or redirect, which would render local files inside the guest.
  */
@@ -189,10 +190,12 @@ export function decideBrowserNavigation(input: BrowserNavInput): BrowserNavDecis
       reasons: [`${hostname} is a private/link-local address and cannot be reached`],
     }
   }
-  if (isLoopbackHost(hostname)) {
-    return { action: 'allow', origin, reasons: ['loopback (localhost) target'] }
+  try {
+    parseFetchUrl(input.url)
+  } catch {
+    return { action: 'deny', origin, reasons: ['private or local network target'] }
   }
-  if (input.allowedOrigins.includes(origin)) {
+  if (matchesWebOriginAllowlist(new URL(input.url), input.allowedOrigins)) {
     return { action: 'allow', origin, reasons: ['origin previously allowed'] }
   }
   if (!input.allowUserApproval) {

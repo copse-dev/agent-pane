@@ -4,6 +4,8 @@
  * the mime so future kinds (e.g. `text/uri-list`) can branch on it.
  */
 export interface CanvasArtefact {
+  /** Trusted task owner; background previews must not inherit the selected task. */
+  owner?: { projectId: string; threadId: string }
   /** Friendly title shown on the canvas tab (falls back to the resource URI). */
   title: string
   mimeType: string

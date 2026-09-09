@@ -1,3 +1,4 @@
+import { browserPartitionForContents } from './browser-web-contents.ts'
 import {
   BrowserWindow,
   Menu,
@@ -252,7 +253,11 @@ export function attachBrowserGuestContextMenu(contents: WebContents): void {
         void clipboard.writeText(text).catch(() => {})
       },
       openTab: (url) => {
-        getMainWindow()?.webContents.send('browser:open-tab', url)
+        getMainWindow()?.webContents.send(
+          'browser:open-tab',
+          url,
+          browserPartitionForContents(contents),
+        )
       },
       shareSelection: (text, pageUrl) => {
         const win = getMainWindow()

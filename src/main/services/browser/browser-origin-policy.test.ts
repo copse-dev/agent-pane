@@ -142,7 +142,11 @@ describe('decideBrowserNavigation', () => {
   const base = { allowedOrigins: [] as string[], allowUserApproval: true }
 
   it('allows loopback dev servers without prompting', () => {
-    const d = decideBrowserNavigation({ url: 'http://localhost:3000', ...base })
+    const d = decideBrowserNavigation({
+      ...base,
+      url: 'http://localhost:3000',
+      allowedOrigins: ['http://localhost:*'],
+    })
     assert.equal(d.action, 'allow')
   })
 

@@ -717,6 +717,12 @@ describe('browser pane requested URLs', () => {
   })
 
   it('renders an HTML artefact in a sandboxed tab via a data: URL', () => {
+    const getUrlDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'getURL')
+    Object.defineProperty(HTMLElement.prototype, 'getURL', {
+      configurable: true,
+      writable: true,
+      value: () => '',
+    })
     const raf = globalThis.requestAnimationFrame
     globalThis.requestAnimationFrame = (cb: FrameRequestCallback): number => {
       cb(0)
@@ -737,6 +743,7 @@ describe('browser pane requested URLs', () => {
     try {
       openCanvasArtefact(store, {
         title: 'Sales Dashboard',
+        owner: { projectId: 'background-project', threadId: 'background-thread' },
         mimeType: 'text/html',
         body: '<!doctype html><h1>Sales</h1>',
       })
@@ -751,8 +758,17 @@ describe('browser pane requested URLs', () => {
 
       // Loaded as an opaque data: URL (sandboxed, no origin/network grant).
       assert.match(webview.src, /^data:text\/html/)
+      assert.ok(
+        webview
+          .getAttribute('partition')
+          ?.includes(
+            encodeURIComponent(JSON.stringify(['background-project', 'background-thread'])),
+          ),
+      )
       const decoded = Buffer.from(webview.src.split('base64,')[1] ?? '', 'base64').toString('utf8')
       assert.match(decoded, /<h1>Sales<\/h1>/)
+      assert.ok(decoded.startsWith('<!doctype html><meta http-equiv="Content-Security-Policy"'))
+      assert.match(decoded, /connect-src 'self'/)
 
       // Friendly title on the tab; the (large) data URL is hidden from the bar.
       const activeLabel = list.querySelector('.browser-tabs-tab.is-active .browser-tabs-tab-label')
@@ -763,6 +779,8 @@ describe('browser pane requested URLs', () => {
       // Opening an artefact switches the right panel to the browser canvas.
       assert.equal(store.getState().rightPanelMode, 'browser')
     } finally {
+      if (getUrlDescriptor) Object.defineProperty(HTMLElement.prototype, 'getURL', getUrlDescriptor)
+      else Reflect.deleteProperty(HTMLElement.prototype, 'getURL')
       globalThis.requestAnimationFrame = raf
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- the global may be undefined in the test DOM, so restore only when it existed
       if (ResizeObserverCtor) globalThis.ResizeObserver = ResizeObserverCtor

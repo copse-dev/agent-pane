@@ -10,5 +10,18 @@ export const BROWSER_AGENT_SESSION_PARTITION = 'persist:copse-browser-agent'
 
 /** True for either of the isolated in-app browser partitions (pane or agent). */
 export function isBrowserSessionPartition(partition: string): boolean {
-  return partition === BROWSER_SESSION_PARTITION || partition === BROWSER_AGENT_SESSION_PARTITION
+  return [BROWSER_SESSION_PARTITION, BROWSER_AGENT_SESSION_PARTITION].some(
+    (base) => partition === base || partition.startsWith(`${base}:thread:`),
+  )
+}
+
+/** Stable ownership shared by the pane and automation, with separate cookie jars. */
+export function browserThreadScope(projectId: string | null, threadId: string | null): string {
+  return projectId && threadId
+    ? `thread:${encodeURIComponent(JSON.stringify([projectId, threadId]))}`
+    : ''
+}
+
+export function browserSessionPartition(base: string, scope: string): string {
+  return scope ? `${base}:${scope}` : base
 }

@@ -1824,7 +1824,7 @@
         "api": "browser.onOpenTab",
         "args": [
           1,
-          1
+          2
         ]
       },
       "browser:preview-stale": {
@@ -1852,7 +1852,7 @@
         "api": "browser.onShowTab",
         "args": [
           1,
-          1
+          2
         ]
       },
       "canvas:artefact": {

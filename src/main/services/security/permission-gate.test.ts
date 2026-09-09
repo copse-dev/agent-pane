@@ -2139,3 +2139,52 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
     })
   })
 })
+
+// Browser one-time grants belong to the running task, never to a global browser profile.
+describe('browser network approvals', () => {
+  it('uses the network allowlist and scopes one-time navigation approval to its task', async () => {
+    const { runWithThreadExecutionContext } = await import('../thread-execution-context.ts')
+    const { setSetting } = await import('../storage/settings.ts')
+    const { browserAllowedOrigins, currentBrowserScope } =
+      await import('../browser/browser-network-grants.ts')
+    await setSetting('webAllowedOrigins', [])
+    let prompts = 0
+    setApprovalHandler(async () => {
+      prompts += 1
+      return { approved: true, remember: false }
+    })
+    const context = {
+      projectId: 'browser-project',
+      threadId: 'first',
+      projectRoot: '/tmp',
+      root: '/tmp',
+      checkoutMode: 'shared' as const,
+      branch: null,
+    }
+    try {
+      await runWithThreadExecutionContext(context, async () => {
+        assert.equal(
+          await ensureToolPermitted({
+            toolName: 'browser_navigate',
+            args: { url: 'https://example.com' },
+          }),
+          true,
+        )
+        assert.equal(
+          await ensureToolPermitted({
+            toolName: 'browser_navigate',
+            args: { url: 'https://example.com/next' },
+          }),
+          true,
+        )
+        assert.deepEqual(browserAllowedOrigins(currentBrowserScope()), ['https://example.com:443'])
+      })
+      assert.equal(prompts, 1)
+      runWithThreadExecutionContext({ ...context, threadId: 'second' }, () => {
+        assert.deepEqual(browserAllowedOrigins(currentBrowserScope()), [])
+      })
+    } finally {
+      setApprovalHandler(null)
+    }
+  })
+})

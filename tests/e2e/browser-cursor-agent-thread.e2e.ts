@@ -1,12 +1,7 @@
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
-import {
-  resetUserData,
-  seedBrowserCursorAgentThreadFixture,
-  seedE2eThreePaneLayout,
-  seedE2eViewport,
-} from './helpers/seed-config.ts'
+import { resetUserData, seedBrowserCursorAgentThreadFixture } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 
 async function navigateActiveTab(url: string): Promise<void> {
@@ -35,8 +30,6 @@ describe('browser Cursor agent URL navigation', () => {
     })
     resetUserData()
     seedBrowserCursorAgentThreadFixture(process.cwd())
-    seedE2eViewport()
-    seedE2eThreePaneLayout()
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 60_000 })
   })

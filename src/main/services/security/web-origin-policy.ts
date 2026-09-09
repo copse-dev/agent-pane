@@ -144,10 +144,15 @@ function hostnameMatches(pattern: string, hostname: string): boolean {
 }
 
 export function isWebOriginAllowed(url: URL, allowedOrigins: readonly string[]): boolean {
+  return (
+    temporaryAllowedOrigins.has(webOriginKey(url)) || matchesWebOriginAllowlist(url, allowedOrigins)
+  )
+}
+
+/** Pure matcher: browser sessions must never inherit a concurrent fetch's temporary grant. */
+export function matchesWebOriginAllowlist(url: URL, allowedOrigins: readonly string[]): boolean {
   const hostname = normalizeHostname(url.hostname)
   const urlPort = normalizePort(url)
-  const originKey = webOriginKey(url)
-  if (temporaryAllowedOrigins.has(originKey)) return true
 
   return allowedOrigins.some((entry) => {
     const pattern = parseOriginPattern(entry)

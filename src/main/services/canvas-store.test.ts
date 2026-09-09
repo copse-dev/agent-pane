@@ -59,6 +59,7 @@ describe('canvas store', () => {
     assert.equal(restored.body, '<!doctype html><h1>v1</h1>')
     assert.equal(restored.mimeType, 'text/html')
     assert.equal(restored.threadId, 'thread-1')
+    assert.deepEqual(restored.owner, { projectId: 'project-1', threadId: 'thread-1' })
   })
 
   it('keeps one record per title, holding the newest render', async () => {

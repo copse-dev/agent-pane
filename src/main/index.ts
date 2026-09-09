@@ -23,7 +23,7 @@ import { attachWebContentsLockdown } from './windows/web-contents-lockdown.ts'
 import {
   attachBrowserGuestWindowOpen,
   getAgentBrowserSession,
-  getInAppBrowserSession,
+  getBrowserSessionForPartition,
   isBrowserWebContents,
 } from './windows/browser-web-contents.ts'
 import { attachBrowserGuestContextMenu } from './windows/browser-context-menu.ts'
@@ -256,11 +256,11 @@ installProcessFaultHandlers({
 
 setBrowserSessionPlatform({
   createWindow: (options) => new BrowserWindow(options),
-  getAgentSession: () => getAgentBrowserSession(),
-  showUrl: (url) => {
+  getAgentSession: (scope) => getAgentBrowserSession(scope),
+  showUrl: (url, partition) => {
     const win = getMainWindow()
     if (!win || win.isDestroyed()) return
-    win.webContents.send('browser:show-tab', url)
+    win.webContents.send('browser:show-tab', url, partition)
   },
   showArtefact: (identity) => {
     const win = getMainWindow()
@@ -322,12 +322,15 @@ app.on('web-contents-created', (_event, contents) => {
     attachBrowserGuestWindowOpen(contents)
     // Native right-click menu only on the visible in-app browser pane — not on
     // headless agent automation windows (same session lockdown, no UI surface).
-    if (contents.session === getInAppBrowserSession()) {
+    if (contents.getType() === 'webview') {
       attachBrowserGuestContextMenu(contents)
     }
     return
   }
   attachWebContentsLockdown(contents)
+  contents.on('will-attach-webview', (event, _preferences, params) => {
+    if (!getBrowserSessionForPartition(params['partition'] ?? '')) event.preventDefault()
+  })
 })
 
 const agentEval = process.env['COPSE_AGENT_EVAL'] === '1'
