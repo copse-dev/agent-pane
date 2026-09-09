@@ -22,7 +22,12 @@ export interface EgressLogEntry {
 }
 
 /** What the guest writes to `out/result.json`. */
-export type ThreadContainerResult = z.infer<typeof threadContainerResultSchema>
+// A named mapped type retains the existing API schema reference while deriving every field.
+export type ThreadContainerResult = {
+  [Key in keyof z.infer<typeof threadContainerResultSchema>]: z.infer<
+    typeof threadContainerResultSchema
+  >[Key]
+}
 
 /** The host-written review record (`unattended-runs.md` Decision 8). */
 export interface ThreadContainerRecord {
@@ -77,7 +82,11 @@ export type ContainerRunPhase =
   | 'failed'
 
 /** What the renderer asks for. Everything else the main process resolves itself. */
-export type ContainerRunRequest = z.infer<typeof containerRunRequestSchema>
+export type ContainerRunRequest = {
+  [Key in keyof z.infer<typeof containerRunRequestSchema>]: z.infer<
+    typeof containerRunRequestSchema
+  >[Key]
+}
 
 /**
  * The resolver's verdict on one picker row (`container:model-availability`).
