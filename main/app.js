@@ -56872,13 +56872,16 @@ function mountSettingsDialog(store3, api3) {
             <fieldset>
               <legend>Instruction files</legend>
               <p class="settings-fieldset-desc">
-                Files appended to the system prompt, in precedence order. Global steering
+                Files available to the system prompt, in precedence order. Global steering
                 (<code>~/AGENTS.md</code>, <code>~/.claude/CLAUDE.md</code>) loads first, then
                 project <code>AGENT.md</code>/<code>AGENTS.md</code> (cross-tool),
-                <code>CLAUDE.md</code> (Claude Code), and always-applied Cursor rules
+                <code>CLAUDE.md</code> (Claude Code), directory-scoped nested
+                <code>AGENTS.md</code>, and always-applied Cursor rules
                 (<code>.cursor/rules/*.mdc</code> with <code>alwaysApply: true</code>, plus
                 <code>.cursorrules</code>). Auto-attached and manually <code>@</code>-mentioned
-                rules also join this list for the turn that activates them.
+                rules also join this list for the turn that activates them. Nested
+                <code>AGENT.md</code> and <code>CLAUDE.md</code> remain root-only compatibility
+                formats.
               </p>
               <div id="sources-instructions-list" class="sources-group">
                 <span class="sources-empty">Loading\u2026</span>
@@ -58356,9 +58359,11 @@ function mountSettingsDialog(store3, api3) {
     else statusEl.textContent = errorMessage(result.error);
   }
   function makeInstructionRow(file2) {
-    const detail = `${file2.path} \xB7 ${formatByteSize(file2.bytes)}` + (file2.active ? "" : " \xB7 inert until you trust this workspace \u2014 click the badge to trust it");
-    const row2 = makeSourceRow(file2.name, file2.active ? file2.scope : "not loaded", detail, {
-      badgeClass: !file2.active ? "sources-badge-untrusted" : file2.scope === "project" ? "sources-badge-project" : void 0,
+    const nestedStatus = file2.scopePath === void 0 ? "" : file2.duplicateOf !== void 0 ? ` \xB7 scope: ${file2.scopePath}/ \xB7 identical to ${file2.duplicateOf}, loaded once through it` : file2.active ? ` \xB7 scope: ${file2.scopePath}/ \xB7 active this turn` : ` \xB7 scope: ${file2.scopePath}/ \xB7 activates when a path under this directory enters context`;
+    const detail = `${file2.path} \xB7 ${formatByteSize(file2.bytes)}` + (file2.trusted ? nestedStatus : " \xB7 inert until you trust this workspace \u2014 click the badge to trust it");
+    const badge = !file2.trusted ? "not loaded" : file2.duplicateOf !== void 0 ? "duplicate" : file2.scopePath !== void 0 ? file2.active ? "active" : "scoped" : file2.scope;
+    const row2 = makeSourceRow(file2.name, badge, detail, {
+      badgeClass: !file2.trusted ? "sources-badge-untrusted" : file2.scopePath !== void 0 ? file2.active && file2.duplicateOf === void 0 ? "sources-badge-auto" : void 0 : file2.scope === "project" ? "sources-badge-project" : void 0,
       titleAction: {
         label: `Open ${file2.name}`,
         run: () => {
@@ -58366,7 +58371,7 @@ function mountSettingsDialog(store3, api3) {
         }
       }
     });
-    if (file2.active) return row2;
+    if (file2.trusted) return row2;
     const badgeEl = row2.querySelector(".sources-badge");
     if (badgeEl) {
       const trustBtn = document.createElement("button");
@@ -58396,8 +58401,15 @@ function mountSettingsDialog(store3, api3) {
       fillSourceList(
         "#sources-instructions-list",
         instructions.map((f3) => makeInstructionRow(f3)),
-        "No instruction files (add AGENT.md, AGENTS.md, or CLAUDE.md to the workspace root, or ~/AGENTS.md globally)."
+        "No instruction files (add AGENT.md, AGENTS.md, or CLAUDE.md to the workspace root; nested directories may add AGENTS.md; or add ~/AGENTS.md globally)."
       );
+      if (instructions.some((f3) => f3.discoveryTruncated)) {
+        const note2 = document.createElement("span");
+        note2.className = "sources-empty";
+        note2.id = "sources-instructions-truncated";
+        note2.textContent = "Nested AGENTS.md discovery stopped at its directory limit, so this list may be incomplete. Deeper files are not loaded.";
+        qsRequired(overlay, "#sources-instructions-list").append(note2);
+      }
       const kindLabel = {
         always: "always",
         auto: "auto",
