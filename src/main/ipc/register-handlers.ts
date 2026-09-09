@@ -216,6 +216,7 @@ import {
   syncPiiTools,
   syncReadTerminalTools,
   syncRoadmapPlanTools,
+  syncAppleDevelopmentTools,
 } from '../services/registry-bootstrap.ts'
 import { MODEL_COMPARISON_PLUGIN_ID } from '@copse/agent/plugins/model-comparison-plugin.ts'
 import { LONG_HORIZON_TASKS_PLUGIN_ID } from '@copse/agent/plugins/long-horizon-tasks-plugin.ts'
@@ -229,9 +230,18 @@ import { BACKGROUND_TASKS_PLUGIN_ID } from '@copse/agent/plugins/background-task
 import { PARALLEL_SEARCH_PLUGIN_ID } from '@copse/agent/plugins/parallel-search-plugin.ts'
 import { DARK_FACTORY_PLUGIN_ID } from '@copse/agent/plugins/dark-factory-plugin.ts'
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
+import { APPLE_DEVELOPMENT_PLUGIN_ID } from '@copse/agent/plugins/apple-development-plugin.ts'
 import { getAutomationService } from '../services/automations/automation-service.ts'
 import { syncDarkFactorySensor } from '../services/supervisor/dark-factory-sensor.ts'
 import { getTaskSupervisor } from '../services/supervisor/task-supervisor.ts'
+import { getAppleDevelopmentService } from '../services/apple-development/apple-development-service.ts'
+import {
+  appleConfigureInputSchema,
+  appleExecuteInputSchema,
+  appleOperationInputSchema,
+} from '@shared/types/apple-development.ts'
+import { ensureToolPermitted } from '../services/security/permission-gate.ts'
+
 import type { SupervisedTaskSummary } from '@shared/types/supervised-task.ts'
 import { READ_TERMINAL_ENABLED_SETTING } from '@shared/terminal/read-terminal.ts'
 import { EXTERNAL_CONTEXT_FIELD, MEMORY_TYPE } from '../tools/memory-tools.ts'
@@ -2152,6 +2162,13 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       getTaskSupervisor().syncCronTasks()
       await getAutomationService().sync()
     }
+    if (id === APPLE_DEVELOPMENT_PLUGIN_ID) {
+      syncAppleDevelopmentTools(registry)
+      if (!enabled) {
+        const activeProjectId = getActiveProjectId()
+        if (activeProjectId) await getAppleDevelopmentService().cancelProject(activeProjectId)
+      }
+    }
     return { plugins: getPluginService().list() }
   })
   ipcMain.handle(
@@ -2213,6 +2230,144 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
         [rawProjectId, rawScheduleId],
       )
       return getAutomationService().runNow(projectId, scheduleId)
+    },
+  )
+
+  // Apple Development first-party pack. Renderer requests carry only project/thread
+  // identities; main resolves and validates the checkout before every operation.
+  const appleInvocation = (
+    projectId: string,
+    threadId: string,
+    signal: AbortSignal,
+  ): { owner: { projectId: string; threadId: string }; source: 'user'; signal: AbortSignal } => ({
+    owner: { projectId, threadId },
+    source: 'user' as const,
+    signal,
+  })
+
+  ipcMain.handle(
+    'apple-development:state',
+    async (event, rawProjectId: unknown, rawThreadId: unknown) => {
+      assertMainFrameSender(event, win)
+      const [projectId, threadId] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [
+        rawProjectId,
+        rawThreadId,
+      ])
+      await resolveThreadExecutionContext(projectId, threadId)
+      return getAppleDevelopmentService().getState({ projectId, threadId })
+    },
+  )
+  ipcMain.handle(
+    'apple-development:set-enrolled',
+    async (event, rawProjectId: unknown, rawThreadId: unknown, rawEnrolled: unknown) => {
+      assertMainFrameSender(event, win)
+      const [projectId, threadId, enrolled] = parseIpcArgs(
+        z.tuple([zProjectId, zThreadId, z.boolean()]),
+        [rawProjectId, rawThreadId, rawEnrolled],
+      )
+      const controller = new AbortController()
+      return getAppleDevelopmentService().setEnrolled(
+        appleInvocation(projectId, threadId, controller.signal),
+        enrolled,
+      )
+    },
+  )
+  ipcMain.handle(
+    'apple-development:discover',
+    async (event, rawProjectId: unknown, rawThreadId: unknown, rawIncludeMetadata: unknown) => {
+      assertMainFrameSender(event, win)
+      const [projectId, threadId, includeMetadata] = parseIpcArgs(
+        z.tuple([zProjectId, zThreadId, z.boolean()]),
+        [rawProjectId, rawThreadId, rawIncludeMetadata],
+      )
+      const controller = new AbortController()
+      if (
+        includeMetadata &&
+        !(await ensureToolPermitted(
+          { toolName: 'apple_discover', args: { refresh: true } },
+          controller.signal,
+        ))
+      ) {
+        throw new Error('Apple metadata discovery was not approved.')
+      }
+      return getAppleDevelopmentService().discover(
+        appleInvocation(projectId, threadId, controller.signal),
+        includeMetadata,
+      )
+    },
+  )
+  ipcMain.handle(
+    'apple-development:configure',
+    async (event, rawProjectId: unknown, rawThreadId: unknown, rawInput: unknown) => {
+      assertMainFrameSender(event, win)
+      const [projectId, threadId, input] = parseIpcArgs(
+        z.tuple([zProjectId, zThreadId, appleConfigureInputSchema]),
+        [rawProjectId, rawThreadId, rawInput],
+      )
+      const controller = new AbortController()
+      return getAppleDevelopmentService().configure(
+        appleInvocation(projectId, threadId, controller.signal),
+        input,
+      )
+    },
+  )
+  ipcMain.handle(
+    'apple-development:execute',
+    async (event, rawProjectId: unknown, rawThreadId: unknown, rawInput: unknown) => {
+      assertMainFrameSender(event, win)
+      const [projectId, threadId, input] = parseIpcArgs(
+        z.tuple([zProjectId, zThreadId, appleExecuteInputSchema]),
+        [rawProjectId, rawThreadId, rawInput],
+      )
+      const controller = new AbortController()
+      if (
+        !(await ensureToolPermitted({ toolName: 'apple_execute', args: input }, controller.signal))
+      ) {
+        throw new Error('Apple operation was not approved.')
+      }
+      return getAppleDevelopmentService().execute(
+        appleInvocation(projectId, threadId, controller.signal),
+        input,
+      )
+    },
+  )
+  ipcMain.handle(
+    'apple-development:operation',
+    async (event, rawProjectId: unknown, rawThreadId: unknown, rawInput: unknown) => {
+      assertMainFrameSender(event, win)
+      const [projectId, threadId, input] = parseIpcArgs(
+        z.tuple([zProjectId, zThreadId, appleOperationInputSchema]),
+        [rawProjectId, rawThreadId, rawInput],
+      )
+      const controller = new AbortController()
+      const call = appleInvocation(projectId, threadId, controller.signal)
+      if (input.action === 'cancel') {
+        return getAppleDevelopmentService().cancel(call, input.operationId)
+      }
+      return getAppleDevelopmentService().operation(call, input.operationId, input.logCursor)
+    },
+  )
+  ipcMain.handle(
+    'apple-development:stop-app',
+    async (event, rawProjectId: unknown, rawThreadId: unknown, rawAppSessionId: unknown) => {
+      assertMainFrameSender(event, win)
+      const [projectId, threadId, appSessionId] = parseIpcArgs(
+        z.tuple([zProjectId, zThreadId, zNonEmptyString.max(256)]),
+        [rawProjectId, rawThreadId, rawAppSessionId],
+      )
+      const controller = new AbortController()
+      if (
+        !(await ensureToolPermitted(
+          { toolName: 'apple_app_stop', args: { appSessionId } },
+          controller.signal,
+        ))
+      ) {
+        throw new Error('Stopping the Apple app was not approved.')
+      }
+      return getAppleDevelopmentService().stopApp(
+        appleInvocation(projectId, threadId, controller.signal),
+        appSessionId,
+      )
     },
   )
 

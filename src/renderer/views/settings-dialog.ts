@@ -59,6 +59,8 @@ import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.t
 import { createAutomationPluginSettings } from './automation-plugin-settings.ts'
 import { PARALLEL_SEARCH_PLUGIN_ID } from '@copse/agent/plugins/parallel-search-plugin.ts'
 import { createParallelSearchPluginSettings } from './parallel-search-plugin-settings.ts'
+import { APPLE_DEVELOPMENT_PLUGIN_ID } from '@copse/agent/plugins/apple-development-plugin.ts'
+import { createAppleDevelopmentPanel } from './apple-development-panel.ts'
 import {
   DEFAULT_WEB_ALLOWED_ORIGINS,
   WEB_ALLOWED_ORIGINS_SETTING,
@@ -3377,6 +3379,20 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           plugin.enabled,
           pluginDetail?.pluginId === plugin.id ? pluginDetail.detailId : undefined,
         ),
+      )
+    }
+    if (
+      plugin.id === APPLE_DEVELOPMENT_PLUGIN_ID &&
+      plugin.contributions.ui.some(
+        (contribution) =>
+          contribution.level === 3 && contribution.slot === 'settings-plugin-detail',
+      )
+    ) {
+      settingsFold.append(
+        createAppleDevelopmentPanel(store, api, {
+          allowEnrollment: true,
+          pluginEnabled: plugin.enabled,
+        }),
       )
     }
     if (

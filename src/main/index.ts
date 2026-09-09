@@ -708,6 +708,7 @@ app
         const { draftText = '', invokedSkills = [], imageCount = 0, model } = parsed.data
         const priorMessages = await agentDispatcher.history(projectId, threadId)
         return estimateContextBreakdown(registry, {
+          projectId,
           draftText,
           invokedSkills,
           imageCount,

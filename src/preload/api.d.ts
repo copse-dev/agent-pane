@@ -16,6 +16,15 @@ import type {
   AutomationScheduleInput,
   AutomationTriggerEvent,
 } from '@shared/types/automations.ts'
+import type {
+  AppleConfigureInput,
+  AppleExecuteInput,
+  AppleOperation,
+  AppleOperationInput,
+  AppleOperationLogPage,
+  AppleProjectState,
+  AppleSelection,
+} from '@shared/types/apple-development.ts'
 import type { ProjectInstructionSummary } from '@shared/types/instructions.ts'
 import type { SupervisedTaskSummary } from '@shared/types/supervised-task.ts'
 import type { CursorRuleSummary } from '@shared/types/cursor-rules.ts'
@@ -963,6 +972,35 @@ export interface ApiClient {
     remove: (projectId: string, scheduleId: string) => Promise<void>
     runNow: (projectId: string, scheduleId: string) => Promise<AutomationTriggerEvent>
     onTriggered: (handler: (event: AutomationTriggerEvent) => void) => () => void
+  }
+  appleDevelopment: {
+    state: (projectId: string, threadId: string) => Promise<AppleProjectState>
+    setEnrolled: (
+      projectId: string,
+      threadId: string,
+      enrolled: boolean,
+    ) => Promise<AppleProjectState>
+    discover: (
+      projectId: string,
+      threadId: string,
+      includeMetadata: boolean,
+    ) => Promise<AppleProjectState>
+    configure: (
+      projectId: string,
+      threadId: string,
+      input: AppleConfigureInput,
+    ) => Promise<AppleSelection>
+    execute: (
+      projectId: string,
+      threadId: string,
+      input: AppleExecuteInput,
+    ) => Promise<AppleOperation>
+    operation: (
+      projectId: string,
+      threadId: string,
+      input: AppleOperationInput,
+    ) => Promise<AppleOperation | AppleOperationLogPage>
+    stopApp: (projectId: string, threadId: string, appSessionId: string) => Promise<boolean>
   }
   instructions: {
     list: () => Promise<ProjectInstructionSummary[]>

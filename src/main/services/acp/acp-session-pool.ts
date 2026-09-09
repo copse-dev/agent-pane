@@ -48,6 +48,7 @@ export interface PooledAcpSession {
 }
 
 export interface AcquireAcpSessionOptions {
+  projectId?: string
   threadId: string
   /** Spawn config WITHOUT `nativeBridge` — the pool starts/owns the bridge. */
   config: AcpAgentSpawnConfig
@@ -226,6 +227,7 @@ export async function acquireAcpSession(
   const bridge = opts.registry
     ? await startAcpNativeBridge(opts.registry, bridgeAbort.signal, {
         networkScopeAlreadyApplies: shareNetworkScope,
+        ...(opts.projectId ? { projectId: opts.projectId } : {}),
         threadId: opts.threadId,
       }).catch((err: unknown) => {
         console.error(

@@ -1,5 +1,6 @@
 import type { ActiveDiff, StreamChunk, Thread } from '@shared/types'
 import type { PluginContributionsSummary, PluginSummary } from '@shared/types/plugins.ts'
+import type { AppleProjectState } from '@shared/types/apple-development.ts'
 import { parseAgentRunPayload } from '@copse/agent/parse-agent-run-payload.ts'
 import { workingBriefFromUserContent } from '@copse/agent/working-brief.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -67,6 +68,40 @@ const DEMO_PLUGINS: readonly PluginSummary[] = [
         value: 2,
       },
     ],
+  },
+  {
+    id: 'copse.apple-development',
+    trust: 'first-party',
+    stability: 'experimental',
+    name: 'Apple Development',
+    version: '1.0.0',
+    description: 'Build, test, and run enrolled local Apple projects with an installed Xcode.',
+    enabled: false,
+    contributions: {
+      ...DEMO_PLUGIN_CONTRIBUTIONS,
+      toolNames: [
+        'apple_discover',
+        'apple_configure',
+        'apple_execute',
+        'apple_operation',
+        'apple_app_stop',
+      ],
+      ui: [
+        {
+          id: 'apple-development',
+          level: 3,
+          slot: 'thread-plugin-panel',
+          title: 'Apple Development',
+        },
+        {
+          id: 'apple-development-setup',
+          level: 3,
+          slot: 'settings-plugin-detail',
+          title: 'Apple Development setup',
+        },
+      ],
+    },
+    settings: [],
   },
   {
     id: 'personal.reference-tools',
@@ -194,6 +229,29 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
   // when a window is opened for the first time.
   let browserSession: import('@shared/types/main-window.ts').BrowserPaneSession | null = null
   let currentBranch = threads[0]?.gitBranch ?? 'demo/browser-renderer'
+  const emptyAppleDevelopmentState = (pluginEnabled: boolean): AppleProjectState => ({
+    pluginEnabled,
+    enrolled: false,
+    supportedHost: false,
+    toolchain: null,
+    candidates: [],
+    destinations: [],
+    metadataRequiresExecution: false,
+    selection: null,
+    operations: [],
+    setupMessage: pluginEnabled
+      ? 'Enroll this project to use Apple Development.'
+      : 'Enable Apple Development in Settings \u2192 Plugins.',
+  })
+  const initialAppleDevelopmentState = structuredClone(
+    scenario.appleDevelopmentState ?? emptyAppleDevelopmentState(false),
+  )
+  const appleDevelopmentStates = new Map<string, AppleProjectState>([
+    [scenario.project.id, initialAppleDevelopmentState],
+  ])
+  const appleDevelopmentStateFor = (projectId: string): AppleProjectState =>
+    appleDevelopmentStates.get(projectId) ??
+    emptyAppleDevelopmentState(initialAppleDevelopmentState.pluginEnabled)
   const chunkHandlers = new Set<(threadId: string, chunk: StreamChunk) => void>()
   const showDiffHandlers = new Set<ShowDiffHandler>()
   const queuedHandlers = new Set<QueuedHandler>()
@@ -876,7 +934,14 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       runDetail: () => resolved({ found: false }),
     },
     plugins: {
-      list: () => resolved({ plugins: DEMO_PLUGINS }),
+      list: () =>
+        resolved({
+          plugins: DEMO_PLUGINS.map((plugin) =>
+            plugin.id === 'copse.apple-development'
+              ? { ...plugin, enabled: initialAppleDevelopmentState.pluginEnabled }
+              : plugin,
+          ),
+        }),
       setEnabled: () => resolved({ plugins: [] }),
       setSetting: () => resolved({ plugins: [] }),
       addSource: () => resolved({ plugins: [] }),
@@ -891,6 +956,28 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       remove: unsupported,
       runNow: unsupported,
       onTriggered: subscribe,
+    },
+    appleDevelopment: {
+      state: (projectId) => resolved(structuredClone(appleDevelopmentStateFor(projectId))),
+      setEnrolled: (projectId, _threadId, enrolled) => {
+        const current = appleDevelopmentStateFor(projectId)
+        const state: AppleProjectState = {
+          ...current,
+          enrolled,
+          setupMessage: enrolled
+            ? projectId === scenario.project.id
+              ? null
+              : 'No Xcode workspace or project was found within the project directory.'
+            : 'Enroll this project to use Apple Development.',
+        }
+        appleDevelopmentStates.set(projectId, state)
+        return resolved(structuredClone(state))
+      },
+      discover: unsupported,
+      configure: unsupported,
+      execute: unsupported,
+      operation: unsupported,
+      stopApp: unsupported,
     },
     instructions: { list: emptyArray, read: () => resolved('') },
     cursorRules: { list: emptyArray },

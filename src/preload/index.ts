@@ -1203,6 +1203,22 @@ const api: ApiClient = {
       }
     },
   },
+  appleDevelopment: {
+    state: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('apple-development:state', projectId, threadId),
+    setEnrolled: (projectId: string, threadId: string, enrolled: boolean) =>
+      ipcRenderer.invoke('apple-development:set-enrolled', projectId, threadId, enrolled),
+    discover: (projectId: string, threadId: string, includeMetadata: boolean) =>
+      ipcRenderer.invoke('apple-development:discover', projectId, threadId, includeMetadata),
+    configure: (projectId: string, threadId: string, input: unknown) =>
+      ipcRenderer.invoke('apple-development:configure', projectId, threadId, input),
+    execute: (projectId: string, threadId: string, input: unknown) =>
+      ipcRenderer.invoke('apple-development:execute', projectId, threadId, input),
+    operation: (projectId: string, threadId: string, input: unknown) =>
+      ipcRenderer.invoke('apple-development:operation', projectId, threadId, input),
+    stopApp: (projectId: string, threadId: string, appSessionId: string) =>
+      ipcRenderer.invoke('apple-development:stop-app', projectId, threadId, appSessionId),
+  },
   instructions: {
     list: () => ipcRenderer.invoke('instructions:list'),
     read: (path: string) => ipcRenderer.invoke('instructions:read', path),

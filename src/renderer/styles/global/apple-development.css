@@ -1,0 +1,138 @@
+.apple-development-host {
+  margin: 8px 16px 0;
+}
+
+.apple-development-host[hidden] {
+  display: none;
+}
+
+.apple-development-panel {
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-secondary) 88%, var(--accent) 12%);
+  padding: 10px 12px;
+  display: grid;
+  gap: 9px;
+}
+
+.apple-development-heading,
+.apple-development-actions,
+.apple-development-operation-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.apple-development-heading {
+  justify-content: space-between;
+}
+
+.apple-development-title {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.045em;
+  text-transform: uppercase;
+}
+
+.apple-development-status,
+.apple-development-operation-status {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.apple-development-message,
+.apple-development-error {
+  margin: 0;
+  font-size: 12px;
+  line-height: var(--line-height-base);
+}
+
+.apple-development-error {
+  color: var(--error);
+}
+
+.apple-development-selection {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(100px, 1fr) auto minmax(150px, 1fr) auto;
+  gap: 6px;
+}
+
+.apple-development-selection select {
+  min-width: 0;
+}
+
+.apple-development-scheme-status {
+  grid-column: 2 / -1;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: var(--line-height-base);
+}
+
+.apple-development-target {
+  display: grid;
+  grid-template-columns: minmax(90px, auto) minmax(120px, 1fr) auto;
+  align-items: center;
+  gap: 3px 10px;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--bg-primary) 76%, transparent);
+  font-size: 11px;
+}
+
+.apple-development-target span:last-child {
+  grid-column: 1 / -1;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.apple-development-operations {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.apple-development-operation {
+  display: grid;
+  gap: 2px;
+  font-size: 12px;
+}
+
+.apple-development-operation-detail {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: var(--line-height-base);
+}
+
+.apple-development-operation-action {
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.apple-development-operation .btn {
+  margin-left: auto;
+}
+
+.apple-development-operation-succeeded .apple-development-operation-status {
+  color: var(--success);
+}
+
+.apple-development-operation-failed .apple-development-operation-status,
+.apple-development-operation-cancelled .apple-development-operation-status {
+  color: var(--error);
+}
+
+.plugin-settings .apple-development-host {
+  margin: 0;
+}
+
+@media (max-width: 760px) {
+  .apple-development-selection {
+    grid-template-columns: 1fr 1fr;
+  }
+}

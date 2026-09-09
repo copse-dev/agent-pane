@@ -58,6 +58,8 @@ import {
   setActiveRunTurnTreeId,
 } from './thread-models.ts'
 import { getThreadExecutionContext } from './thread-execution-context.ts'
+import { APPLE_DEVELOPMENT_TOOL_NAMES } from '@copse/agent/plugins/apple-development-plugin.ts'
+import { isAppleDevelopmentProjectEnrolled } from './apple-development/apple-development-service.ts'
 import { dispatchInlineVisualization } from './inline-visualization.ts'
 import { updateMeta } from './thread-store.ts'
 import { createAgentChunkSink } from './agent-chunk-sink.ts'
@@ -339,6 +341,11 @@ function parentTools(
   threadArchives: readonly ArchiveAttachmentRef[],
 ): LLMTool[] {
   let tools = registry.toLLMTools()
+  const executionContext = getThreadExecutionContext()
+  if (!executionContext || !isAppleDevelopmentProjectEnrolled(executionContext.projectId)) {
+    const appleToolNames = new Set<string>(APPLE_DEVELOPMENT_TOOL_NAMES)
+    tools = tools.filter((tool) => !appleToolNames.has(tool.name))
+  }
   // Hide the advisor tool when the configured advisor is not more capable than
   // the executor (same model, or a confidently weaker annotated pairing) — it
   // would only spend tokens for no lift. Conservative: cross-scale/unannotated

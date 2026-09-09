@@ -1,0 +1,63 @@
+import assert from 'node:assert/strict'
+import { mkdirSync } from 'node:fs'
+import { $, browser, expect } from '@wdio/globals'
+import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
+import { resetUserData, seedAppleDevelopmentFixture } from './helpers/seed-config.ts'
+
+describe('Apple Development thread panel', function () {
+  this.timeout(60_000)
+
+  before(async () => {
+    mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
+    resetUserData()
+    seedAppleDevelopmentFixture(process.cwd())
+    await browser.reloadSession()
+  })
+
+  after(() => {
+    resetUserData()
+  })
+
+  it('renders an enrolled target and retained operation outcomes in an isolated profile', async () => {
+    const panel = $('.apple-development-panel[data-plugin-id="copse.apple-development"]')
+    await panel.waitForDisplayed({ timeout: 30_000 })
+    await expect(panel.$('.apple-development-title')).toHaveText('APPLE DEVELOPMENT')
+    await expect(panel.$('.apple-development-status')).toHaveText('Target saved')
+    await expect(panel.$('[aria-label="Selected Apple target"]')).toHaveText(
+      expect.stringContaining('ios/DemoApp.xcworkspace'),
+    )
+    assert.doesNotMatch(await panel.getText(), /Xcode targets are revalidated/)
+
+    const operations = panel.$$('.apple-development-operation')
+    await expect(operations).toBeElementsArrayOfSize(3)
+    assert.deepEqual(
+      await Promise.all(
+        operations.map((item) => item.$('.apple-development-operation-status').getText()),
+      ),
+      ['cancelled', 'failed', 'succeeded'],
+    )
+    await expect(panel.$('[data-operation-id="test-demo"]')).toHaveText(
+      expect.stringContaining(
+        'xcodebuild: error: Could not write the package cache: Operation not permitted.',
+      ),
+    )
+    await expect(panel.$('[data-operation-id="run-demo"]')).toHaveText(
+      expect.stringContaining('waiting for the selected Simulator'),
+    )
+
+    await saveAppScreenshot('apple-development-test-profile.png')
+
+    await $('[aria-label="Settings"]').click()
+    const dialog = $('#settings-dialog')
+    await expect(dialog).toBeDisplayed()
+    await dialog.$('button[data-section="customise"]').click()
+    const pluginRow = dialog.$('.plugin-row[data-plugin-id="copse.apple-development"]')
+    await pluginRow.waitForDisplayed({ timeout: 15_000 })
+    await expect(pluginRow.$('.plugin-name')).toHaveText('Apple Development')
+    const settingsFold = pluginRow.$('.plugin-settings-fold')
+    await settingsFold.$('summary').click()
+    await expect(pluginRow.$('.apple-development-panel')).toBeDisplayed()
+    await expect(pluginRow.$('button=Remove project')).toBeDisplayed()
+    await saveAppScreenshot('apple-development-enrollment-settings.png')
+  })
+})

@@ -521,6 +521,7 @@ export async function runAcpAgentFromSettings(
   let lastPrompt = ''
   const attempt = async (): Promise<{ stopReason: StopReason; usage?: Usage | null }> => {
     const { entry, fresh } = await acquireAcpSession({
+      ...(executionContext ? { projectId: executionContext.projectId } : {}),
       threadId: options.threadId,
       config: spawnConfig,
       registry: options.registry,

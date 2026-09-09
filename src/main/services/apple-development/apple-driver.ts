@@ -1,0 +1,684 @@
+import { basename, extname, isAbsolute, relative, resolve, sep } from 'node:path'
+import { createHash, randomUUID } from 'node:crypto'
+import { readdir, realpath } from 'node:fs/promises'
+import { z } from 'zod'
+import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
+import type {
+  AppleAction,
+  AppleCandidate,
+  AppleDestination,
+  AppleDiagnostic,
+  AppleSelection,
+  AppleTestSummary,
+} from '@shared/types/apple-development.ts'
+import { ensureWorkspaceTmpDir } from '../../project-sandbox/config.ts'
+import { spawnInProjectSandbox } from '../../project-sandbox/spawn.ts'
+import { terminateProcessTree } from '../exec/subprocess-kill.ts'
+
+const MAX_OUTPUT_BYTES = 2 * 1024 * 1024
+const MAX_CANDIDATES = 100
+const MAX_DISCOVERY_DEPTH = 6
+const MAX_DISCOVERY_DIRECTORIES = 2_000
+const MAX_SCHEMES = 200
+const MAX_DESTINATIONS = 200
+const IGNORED_DISCOVERY_DIRECTORIES = new Set([
+  '.build',
+  '.git',
+  '.swiftpm',
+  'build',
+  'Carthage',
+  'DerivedData',
+  'node_modules',
+  'Pods',
+])
+
+const listOutputSchema = z.object({
+  workspace: z.object({ schemes: z.array(z.string()) }).optional(),
+  project: z.object({ schemes: z.array(z.string()) }).optional(),
+})
+
+const simulatorOutputSchema = z.object({
+  devices: z.record(
+    z.string(),
+    z.array(
+      z.object({
+        name: z.string(),
+        udid: z.string(),
+        isAvailable: z.boolean().optional(),
+      }),
+    ),
+  ),
+})
+const buildSettingsOutputSchema = z.array(
+  z.object({
+    buildSettings: z.record(z.string(), z.string()),
+  }),
+)
+
+export interface AppleDriverDiscovery {
+  toolchain: { developerDir: string; version: string } | null
+  candidates: AppleCandidate[]
+  destinations: AppleDestination[]
+  metadataRequiresExecution: boolean
+  setupMessage: string | null
+}
+
+export interface AppleDriverPlan {
+  operationId: string
+  root: string
+  target: AppleSelection
+  action: AppleAction
+  testFilter?: string
+}
+
+export interface AppleDriverResult {
+  exitCode: number | null
+  failureReason?: string
+  logs: string
+  outputTruncated: boolean
+  diagnostics: AppleDiagnostic[]
+  testSummary: AppleTestSummary | null
+  resultBundlePath?: string
+  appSession?: { id: string; simulatorId: string; bundleId: string }
+}
+
+interface ProcessResult {
+  exitCode: number | null
+  output: string
+  stdout: string
+  stderr: string
+  truncated: boolean
+}
+
+export interface AppleOperationPaths {
+  outputRoot: string
+  derivedDataPath: string
+  clonedSourcePackagesPath: string
+  packageCachePath: string
+}
+
+export function appleOperationPaths(root: string, operationId: string): AppleOperationPaths {
+  const scratchRoot = resolve(ensureWorkspaceTmpDir(), 'apple-development')
+  const checkoutKey = createHash('sha256').update(resolve(root)).digest('hex').slice(0, 32)
+  const operationKey = createHash('sha256').update(operationId).digest('hex').slice(0, 32)
+  const checkoutRoot = resolve(scratchRoot, checkoutKey)
+  return {
+    outputRoot: resolve(checkoutRoot, 'operations', operationKey),
+    derivedDataPath: resolve(checkoutRoot, 'operations', operationKey, 'DerivedData'),
+    clonedSourcePackagesPath: resolve(checkoutRoot, 'SourcePackages'),
+    packageCachePath: resolve(checkoutRoot, 'PackageCache'),
+  }
+}
+
+export function appleBuildPathArguments(paths: AppleOperationPaths): string[] {
+  return [
+    '-derivedDataPath',
+    paths.derivedDataPath,
+    '-clonedSourcePackagesDirPath',
+    paths.clonedSourcePackagesPath,
+    '-packageCachePath',
+    paths.packageCachePath,
+  ]
+}
+
+function withinRoot(root: string, candidate: string): boolean {
+  const normalizedRoot = resolve(root)
+  const normalizedCandidate = resolve(candidate)
+  return (
+    normalizedCandidate === normalizedRoot ||
+    normalizedCandidate.startsWith(`${normalizedRoot}${sep}`)
+  )
+}
+
+async function runProcess(
+  executable: string,
+  args: string[],
+  cwd: string,
+  signal: AbortSignal,
+  env?: NodeJS.ProcessEnv,
+): Promise<ProcessResult> {
+  const tmpDir = ensureWorkspaceTmpDir()
+  const child = await spawnInProjectSandbox(executable, args, {
+    cwd,
+    env: { ...env, TMPDIR: tmpDir, TMP: tmpDir, TEMP: tmpDir },
+    signal,
+    stdio: 'pipe',
+  })
+  let output = ''
+  let stdout = ''
+  let stderr = ''
+  let bytes = 0
+  let stdoutBytes = 0
+  let stderrBytes = 0
+  let truncated = false
+  const appendOutput = (chunk: Buffer): void => {
+    if (bytes >= MAX_OUTPUT_BYTES) {
+      truncated = true
+      return
+    }
+    const remaining = MAX_OUTPUT_BYTES - bytes
+    const accepted = chunk.subarray(0, remaining)
+    output += accepted.toString('utf8')
+    bytes += accepted.byteLength
+    if (accepted.byteLength < chunk.byteLength) truncated = true
+  }
+  const appendStdout = (chunk: Buffer): void => {
+    if (stdoutBytes >= MAX_OUTPUT_BYTES) {
+      truncated = true
+      return
+    }
+    const remaining = MAX_OUTPUT_BYTES - stdoutBytes
+    const accepted = chunk.subarray(0, remaining)
+    stdout += accepted.toString('utf8')
+    stdoutBytes += accepted.byteLength
+    if (accepted.byteLength < chunk.byteLength) truncated = true
+  }
+  const appendStderr = (chunk: Buffer): void => {
+    if (stderrBytes >= MAX_OUTPUT_BYTES) {
+      truncated = true
+      return
+    }
+    const remaining = MAX_OUTPUT_BYTES - stderrBytes
+    const accepted = chunk.subarray(0, remaining)
+    stderr += accepted.toString('utf8')
+    stderrBytes += accepted.byteLength
+    if (accepted.byteLength < chunk.byteLength) truncated = true
+  }
+  child.stdout?.on('data', (chunk: Buffer) => {
+    appendOutput(chunk)
+    appendStdout(chunk)
+  })
+  child.stderr?.on('data', (chunk: Buffer) => {
+    appendOutput(chunk)
+    appendStderr(chunk)
+  })
+  const cancelKill: { value: (() => void) | null } = { value: null }
+  const abort = (): void => {
+    cancelKill.value = terminateProcessTree(child)
+  }
+  signal.addEventListener('abort', abort, { once: true })
+  try {
+    return await new Promise((resolveResult, reject) => {
+      child.once('error', reject)
+      child.once('close', (code) => {
+        resolveResult({ exitCode: code, output, stdout, stderr, truncated })
+      })
+    })
+  } finally {
+    signal.removeEventListener('abort', abort)
+    cancelKill.value?.()
+  }
+}
+
+function candidateArg(candidate: AppleCandidate): ['-workspace' | '-project', string] {
+  return candidate.kind === 'workspace' ? ['-workspace', candidate.id] : ['-project', candidate.id]
+}
+
+export async function discoverSharedSchemes(
+  root: string,
+  candidate: AppleCandidate,
+): Promise<string[]> {
+  const canonicalRoot = await realpath(root).catch(() => null)
+  if (!canonicalRoot) return []
+  const candidatePath = await realpath(resolve(canonicalRoot, candidate.id)).catch(() => null)
+  if (!candidatePath || !withinRoot(canonicalRoot, candidatePath)) return []
+  const schemeDirectory = await realpath(resolve(candidatePath, 'xcshareddata', 'xcschemes')).catch(
+    () => null,
+  )
+  if (!schemeDirectory || !withinRoot(canonicalRoot, schemeDirectory)) return []
+  const entries = await readdir(schemeDirectory, { withFileTypes: true }).catch(() => [])
+  return entries
+    .filter((entry) => entry.isFile() && extname(entry.name) === '.xcscheme')
+    .map((entry) => basename(entry.name, '.xcscheme'))
+    .filter((scheme) => scheme.length > 0 && scheme.length <= 256)
+    .sort((left, right) => left.localeCompare(right))
+    .slice(0, MAX_SCHEMES)
+}
+
+function processFailureDetail(result: ProcessResult): string | null {
+  const lines = result.stderr
+    .replaceAll(/\u001b\[[0-9;]*m/g, '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line !== '')
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index]
+    if (line && /error:|failed|could not|operation not permitted|permission denied/i.test(line)) {
+      return line.slice(0, 1_500)
+    }
+  }
+  return lines.at(-1)?.slice(0, 1_500) ?? null
+}
+
+function optionalFailureReason(result: ProcessResult): { failureReason?: string } {
+  const reason = processFailureDetail(result)
+  return reason ? { failureReason: reason } : {}
+}
+
+function parseDiagnostics(output: string, root: string): AppleDiagnostic[] {
+  const diagnostics: AppleDiagnostic[] = []
+  const pattern = /^(.*?):(\d+):(\d+):\s+(error|warning|note):\s+(.+)$/gm
+  for (const match of output.matchAll(pattern)) {
+    if (diagnostics.length >= 500) break
+    const file = match[1]
+    const line = Number(match[2])
+    const column = Number(match[3])
+    const severity = match[4]
+    const message = match[5]
+    if (!file || !severity || !message || !Number.isInteger(line) || !Number.isInteger(column)) {
+      continue
+    }
+    const resolvedFile = resolve(root, file)
+    diagnostics.push({
+      severity: severity === 'error' || severity === 'warning' ? severity : 'note',
+      message: message.slice(0, 8_192),
+      ...(withinRoot(root, resolvedFile) ? { file: resolvedFile, line, column } : {}),
+    })
+  }
+  return diagnostics
+}
+
+function parseTestSummary(output: string): AppleTestSummary | null {
+  const match = /Executed (\d+) tests?, with (\d+) failures?(?: \((\d+) unexpected\))?/i.exec(
+    output,
+  )
+  if (!match) return null
+  const total = Number(match[1])
+  const failed = Number(match[2])
+  if (!Number.isInteger(total) || !Number.isInteger(failed)) return null
+  return { passed: Math.max(0, total - failed), failed, skipped: null }
+}
+
+function boundedOutput(parts: readonly ProcessResult[]): {
+  logs: string
+  outputTruncated: boolean
+} {
+  let logs = ''
+  let bytes = 0
+  let outputTruncated = parts.some((part) => part.truncated)
+  for (const part of parts) {
+    const separator = logs === '' ? '' : '\n'
+    const chunk = Buffer.from(`${separator}${part.output}`, 'utf8')
+    const remaining = MAX_OUTPUT_BYTES - bytes
+    if (remaining <= 0) {
+      outputTruncated = true
+      break
+    }
+    const accepted = chunk.subarray(0, remaining)
+    logs += accepted.toString('utf8')
+    bytes += accepted.byteLength
+    if (accepted.byteLength < chunk.byteLength) outputTruncated = true
+  }
+  return { logs, outputTruncated }
+}
+
+export async function discoverAppleCandidates(root: string): Promise<AppleCandidate[]> {
+  const canonicalRoot = await realpath(root)
+  const candidates: AppleCandidate[] = []
+  const pending: Array<{ directory: string; depth: number }> = [
+    { directory: canonicalRoot, depth: 0 },
+  ]
+  let scannedDirectories = 0
+  while (
+    pending.length > 0 &&
+    scannedDirectories < MAX_DISCOVERY_DIRECTORIES &&
+    candidates.length < MAX_CANDIDATES
+  ) {
+    const current = pending.shift()
+    if (!current) break
+    scannedDirectories += 1
+    const entries = await readdir(current.directory, { withFileTypes: true }).catch(() => [])
+    entries.sort((left, right) => left.name.localeCompare(right.name))
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue
+      const extension = extname(entry.name)
+      const path = resolve(current.directory, entry.name)
+      if (extension === '.xcworkspace' || extension === '.xcodeproj') {
+        const canonical = await realpath(path).catch(() => null)
+        if (!canonical || !withinRoot(canonicalRoot, canonical)) continue
+        const candidateId = relative(canonicalRoot, canonical).split(sep).join('/')
+        if (candidateId.length === 0 || candidateId.length > 512) continue
+        candidates.push({
+          id: candidateId,
+          name: candidateId.slice(0, -extension.length),
+          kind: extension === '.xcworkspace' ? 'workspace' : 'project',
+          schemes: [],
+        })
+        if (candidates.length >= MAX_CANDIDATES) break
+        continue
+      }
+      if (
+        current.depth >= MAX_DISCOVERY_DEPTH ||
+        entry.name.startsWith('.') ||
+        IGNORED_DISCOVERY_DIRECTORIES.has(entry.name)
+      ) {
+        continue
+      }
+      pending.push({ directory: path, depth: current.depth + 1 })
+    }
+  }
+  return candidates.sort((left, right) => {
+    if (left.kind !== right.kind) return left.kind === 'workspace' ? -1 : 1
+    return left.name.localeCompare(right.name)
+  })
+}
+
+async function installedDeveloperTool(developerDir: string, tool: string): Promise<string> {
+  if (!isAbsolute(developerDir)) throw new Error('The selected developer directory is invalid.')
+  const canonicalDeveloperDir = await realpath(developerDir)
+  const executable = await realpath(resolve(canonicalDeveloperDir, 'usr', 'bin', tool))
+  if (!withinRoot(canonicalDeveloperDir, executable)) {
+    throw new Error(`The selected ${tool} executable escapes the developer directory.`)
+  }
+  return executable
+}
+
+export class InstalledXcodeDriver {
+  private readonly appSessions = new Map<
+    string,
+    { simulatorId: string; bundleId: string; developerDir: string }
+  >()
+
+  async discover(
+    root: string,
+    includeMetadata: boolean,
+    signal: AbortSignal,
+  ): Promise<AppleDriverDiscovery> {
+    if (process.platform !== 'darwin') {
+      return {
+        toolchain: null,
+        candidates: [],
+        destinations: [],
+        metadataRequiresExecution: false,
+        setupMessage: 'Apple Development requires a local macOS host.',
+      }
+    }
+
+    const developerDirResult = await runProcess('/usr/bin/xcode-select', ['-p'], root, signal)
+    if (developerDirResult.exitCode !== 0 || !developerDirResult.output.trim()) {
+      return {
+        toolchain: null,
+        candidates: await discoverAppleCandidates(root),
+        destinations: [],
+        metadataRequiresExecution: false,
+        setupMessage: 'Install Xcode and select its developer directory to continue.',
+      }
+    }
+    const developerDir = developerDirResult.output.trim()
+    const env = { DEVELOPER_DIR: developerDir }
+    const candidates = await discoverAppleCandidates(root)
+    const xcodebuild = await installedDeveloperTool(developerDir, 'xcodebuild').catch(() => null)
+    if (!xcodebuild) {
+      return {
+        toolchain: null,
+        candidates,
+        destinations: [],
+        metadataRequiresExecution: false,
+        setupMessage: 'The selected developer directory does not contain a complete Xcode.',
+      }
+    }
+    const versionResult = await runProcess(xcodebuild, ['-version'], root, signal, env)
+    if (!includeMetadata) {
+      return {
+        toolchain: {
+          developerDir,
+          version:
+            versionResult.exitCode === 0
+              ? versionResult.output.trim().slice(0, 512) || 'Unknown Xcode version'
+              : 'Unknown Xcode version',
+        },
+        candidates,
+        destinations: [],
+        metadataRequiresExecution: candidates.length > 0,
+        setupMessage:
+          candidates.length === 0
+            ? 'No Xcode workspace or project was found within the project directory.'
+            : versionResult.exitCode === 0
+              ? null
+              : 'Copse could not inspect the selected Xcode installation.',
+      }
+    }
+
+    for (const candidate of candidates) {
+      const sharedSchemes = await discoverSharedSchemes(root, candidate)
+      if (sharedSchemes.length > 0) {
+        candidate.schemes = sharedSchemes
+        continue
+      }
+
+      const [flag, value] = candidateArg(candidate)
+      const listed = await runProcess(
+        xcodebuild,
+        ['-list', '-json', flag, value],
+        root,
+        signal,
+        env,
+      )
+      const parsed = safeJsonParse(listed.stdout, decodeWithSchema(listOutputSchema))
+      candidate.schemes = [...new Set(parsed?.workspace?.schemes ?? parsed?.project?.schemes ?? [])]
+        .filter((scheme) => scheme.trim() !== '')
+        .slice(0, MAX_SCHEMES)
+      if (candidate.schemes.length === 0) {
+        const detail = processFailureDetail(listed)
+        const summary =
+          listed.exitCode === 0
+            ? 'Xcode returned no shared schemes for this target.'
+            : `Xcode could not load schemes for this target (exit ${String(listed.exitCode ?? 'unknown')})${detail ? `: ${detail}` : '.'}`
+        candidate.metadataError = summary.slice(0, 2_048)
+      }
+    }
+
+    const simctl = await installedDeveloperTool(developerDir, 'simctl').catch(() => null)
+    const simulators = simctl
+      ? await runProcess(simctl, ['list', 'devices', 'available', '--json'], root, signal, env)
+      : { exitCode: null, output: '', stdout: '', stderr: '', truncated: false }
+    const parsedSimulators = safeJsonParse(
+      simulators.stdout,
+      decodeWithSchema(simulatorOutputSchema),
+    )
+    const destinations: AppleDestination[] = [
+      { id: 'platform=macOS', name: 'This Mac', platform: 'macOS', supported: true },
+    ]
+    for (const [runtime, devices] of Object.entries(parsedSimulators?.devices ?? {})) {
+      if (!runtime.includes('iOS')) continue
+      for (const device of devices) {
+        if (destinations.length >= MAX_DESTINATIONS) break
+        if (device.isAvailable === false) continue
+        destinations.push({
+          id: `platform=iOS Simulator,id=${device.udid}`,
+          name: device.name,
+          platform: 'iOS Simulator',
+          supported: true,
+        })
+      }
+    }
+    return {
+      toolchain: {
+        developerDir,
+        version:
+          versionResult.exitCode === 0
+            ? versionResult.output.trim().slice(0, 512) || 'Unknown Xcode version'
+            : 'Unknown Xcode version',
+      },
+      candidates,
+      destinations,
+      metadataRequiresExecution: false,
+      setupMessage:
+        candidates.length === 0
+          ? 'No Xcode workspace or project was found within the project directory.'
+          : versionResult.exitCode === 0
+            ? null
+            : 'Copse could not inspect the selected Xcode installation.',
+    }
+  }
+
+  async execute(
+    plan: AppleDriverPlan,
+    developerDir: string,
+    signal: AbortSignal,
+  ): Promise<AppleDriverResult> {
+    const candidatePath = resolve(plan.root, plan.target.candidateId)
+    const canonical = await realpath(candidatePath)
+    if (!withinRoot(plan.root, canonical))
+      throw new Error('Selected Xcode project escapes the execution root.')
+    const kind = extname(candidatePath) === '.xcworkspace' ? 'workspace' : 'project'
+    const [candidateFlag, candidateValue] = candidateArg({
+      id: plan.target.candidateId,
+      name: basename(plan.target.candidateId),
+      kind,
+      schemes: [],
+    })
+    const paths = appleOperationPaths(plan.root, plan.operationId)
+    const xcodebuild = await installedDeveloperTool(developerDir, 'xcodebuild')
+    const resultBundlePath = resolve(paths.outputRoot, 'TestResults.xcresult')
+    const args = [
+      candidateFlag,
+      candidateValue,
+      '-scheme',
+      plan.target.schemeId,
+      '-configuration',
+      plan.target.configuration,
+      '-destination',
+      plan.target.destinationId,
+      ...appleBuildPathArguments(paths),
+    ]
+    if (plan.action === 'test') {
+      args.push('-resultBundlePath', resultBundlePath)
+      if (plan.testFilter) args.push(`-only-testing:${plan.testFilter}`)
+      args.push('test')
+    } else {
+      args.push('build')
+    }
+    const result = await runProcess(xcodebuild, args, plan.root, signal, {
+      DEVELOPER_DIR: developerDir,
+    })
+    if (plan.action !== 'run' || result.exitCode !== 0) {
+      return {
+        exitCode: result.exitCode,
+        ...(result.exitCode === 0 ? {} : optionalFailureReason(result)),
+        logs: result.output,
+        outputTruncated: result.truncated,
+        diagnostics: parseDiagnostics(result.output, plan.root),
+        testSummary: plan.action === 'test' ? parseTestSummary(result.output) : null,
+        ...(plan.action === 'test' ? { resultBundlePath } : {}),
+      }
+    }
+
+    const simulatorId = /(?:^|,)id=([^,]+)/.exec(plan.target.destinationId)?.[1]
+    if (!plan.target.destinationId.startsWith('platform=iOS Simulator') || !simulatorId) {
+      return {
+        exitCode: 1,
+        logs: `${result.output}\nRun requires an explicitly selected iOS Simulator destination.`,
+        outputTruncated: result.truncated,
+        diagnostics: parseDiagnostics(result.output, plan.root),
+        testSummary: null,
+      }
+    }
+
+    const settings = await runProcess(
+      xcodebuild,
+      [
+        candidateFlag,
+        candidateValue,
+        '-scheme',
+        plan.target.schemeId,
+        '-configuration',
+        plan.target.configuration,
+        '-destination',
+        plan.target.destinationId,
+        ...appleBuildPathArguments(paths),
+        '-showBuildSettings',
+        '-json',
+      ],
+      plan.root,
+      signal,
+      { DEVELOPER_DIR: developerDir },
+    )
+    const parsedSettings = safeJsonParse(
+      settings.stdout,
+      decodeWithSchema(buildSettingsOutputSchema),
+    )
+    const application = parsedSettings?.find(
+      (entry) => entry.buildSettings['WRAPPER_EXTENSION'] === 'app',
+    )
+    const targetBuildDir = application?.buildSettings['TARGET_BUILD_DIR']
+    const productName = application?.buildSettings['FULL_PRODUCT_NAME']
+    const bundleId = application?.buildSettings['PRODUCT_BUNDLE_IDENTIFIER']
+    if (settings.exitCode !== 0 || !targetBuildDir || !productName || !bundleId) {
+      const output = boundedOutput([result, settings])
+      return {
+        exitCode: settings.exitCode === 0 ? 1 : settings.exitCode,
+        failureReason:
+          processFailureDetail(settings) ??
+          'The built app path or bundle identifier was unavailable.',
+        logs: `${output.logs}\nThe built app path or bundle identifier was unavailable.`,
+        outputTruncated: output.outputTruncated,
+        diagnostics: parseDiagnostics(output.logs, plan.root),
+        testSummary: null,
+      }
+    }
+    const appPath = await realpath(resolve(targetBuildDir, productName))
+    const canonicalOutputRoot = await realpath(paths.outputRoot)
+    if (!withinRoot(canonicalOutputRoot, appPath)) {
+      throw new Error('The built app resolved outside this operation output directory.')
+    }
+
+    const env = { DEVELOPER_DIR: developerDir }
+    const simctl = await installedDeveloperTool(developerDir, 'simctl')
+    const boot = await runProcess(simctl, ['bootstatus', simulatorId, '-b'], plan.root, signal, env)
+    const install =
+      boot.exitCode === 0
+        ? await runProcess(simctl, ['install', simulatorId, appPath], plan.root, signal, env)
+        : null
+    const launch =
+      install?.exitCode === 0
+        ? await runProcess(simctl, ['launch', simulatorId, bundleId], plan.root, signal, env)
+        : null
+    const stages = [
+      result,
+      settings,
+      boot,
+      ...(install ? [install] : []),
+      ...(launch ? [launch] : []),
+    ]
+    const output = boundedOutput(stages)
+    const finalStage = launch ?? install ?? boot
+    if (finalStage.exitCode !== 0 || !launch) {
+      return {
+        exitCode: finalStage.exitCode === 0 ? 1 : finalStage.exitCode,
+        ...(finalStage.exitCode === 0
+          ? { failureReason: 'The Simulator app did not launch.' }
+          : optionalFailureReason(finalStage)),
+        logs: output.logs,
+        outputTruncated: output.outputTruncated,
+        diagnostics: parseDiagnostics(output.logs, plan.root),
+        testSummary: null,
+      }
+    }
+    const appSession = { id: randomUUID(), simulatorId, bundleId }
+    this.appSessions.set(appSession.id, { simulatorId, bundleId, developerDir })
+    return {
+      exitCode: 0,
+      logs: output.logs,
+      outputTruncated: output.outputTruncated,
+      diagnostics: parseDiagnostics(output.logs, plan.root),
+      testSummary: null,
+      appSession,
+    }
+  }
+
+  async stopAppSession(sessionId: string, root: string, signal: AbortSignal): Promise<boolean> {
+    const session = this.appSessions.get(sessionId)
+    if (!session) return false
+    const simctl = await installedDeveloperTool(session.developerDir, 'simctl')
+    const result = await runProcess(
+      simctl,
+      ['terminate', session.simulatorId, session.bundleId],
+      root,
+      signal,
+      { DEVELOPER_DIR: session.developerDir },
+    )
+    if (result.exitCode === 0) this.appSessions.delete(sessionId)
+    return result.exitCode === 0
+  }
+}

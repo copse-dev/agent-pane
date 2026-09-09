@@ -43,6 +43,7 @@ const E2E_UNREACHABLE_LM_STUDIO_URL = 'http://127.0.0.1:1/v1'
  * Seeding the list explicitly means a fixture never depends on that default.
  */
 const DEFAULT_DISABLED_PLUGIN_IDS = [
+  'copse.apple-development',
   'copse.advisor-strategy',
   'copse.artifact-checkpoint',
   'copse.automations',
@@ -4626,4 +4627,114 @@ export function seedThreadProposalFixture(workspaceRoot: string): {
     ],
   })
   return { projectId, threadId }
+}
+
+/** Isolated Apple Development profile with retained operation history for visual evaluation. */
+export function seedAppleDevelopmentFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-apple-development-project'
+  const threadId = 'e2e-apple-development-thread'
+  const createdAt = Date.UTC(2026, 8, 9, 9, 30)
+  const selection = {
+    candidateId: 'ios/DemoApp.xcworkspace',
+    schemeId: 'DemoApp',
+    configuration: 'Debug',
+    destinationId: 'platform=iOS Simulator,id=E2E-IP17-PRO',
+    revision: 1,
+  }
+  const operation = (
+    id: string,
+    action: 'build' | 'test' | 'run',
+    status: 'succeeded' | 'failed' | 'cancelled',
+    offset: number,
+    outcome: Record<string, unknown>,
+  ) => ({
+    operation: {
+      id,
+      action,
+      status,
+      target: selection,
+      createdAt: createdAt + offset,
+      updatedAt: createdAt + offset + 1_000,
+      outcome: {
+        operationId: id,
+        status,
+        exitCode: status === 'succeeded' ? 0 : status === 'failed' ? 65 : null,
+        diagnostics: [],
+        testSummary: null,
+        logArtifactId: `apple-log:${id}`,
+        outputTruncated: false,
+        ...outcome,
+      },
+    },
+    logs: '',
+    requestId: `request-${id}`,
+    payloadHash: `fixture-${id}`,
+  })
+
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'DemoApp' }],
+    activeProjectId: projectId,
+    expandedProjectId: projectId,
+    activeThreadId: threadId,
+    pluginDisabled: pluginDisabledSeed(['copse.apple-development']),
+    pluginMigration: { appleDevelopmentEnablement: true },
+    plugin: {
+      copse: {
+        'apple-development': {
+          state: {
+            version: 1,
+            projects: {
+              [projectId]: {
+                enrolled: true,
+                threads: {
+                  [threadId]: {
+                    selection,
+                    operations: [
+                      operation('build-demo', 'build', 'succeeded', 1_000, {}),
+                      operation('test-demo', 'test', 'failed', 2_000, {
+                        reason:
+                          'xcodebuild: error: Could not write the package cache: Operation not permitted.',
+                        testSummary: { passed: 42, failed: 1, skipped: 2 },
+                      }),
+                      operation('run-demo', 'run', 'cancelled', 3_000, {
+                        reason: 'Cancelled while waiting for the selected Simulator.',
+                      }),
+                    ],
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Apple Development demo',
+        status: 'idle',
+        messages: [
+          {
+            id: 'apple-demo-user',
+            role: 'user',
+            content: 'Build and test DemoApp on the selected iPhone Simulator.',
+            toolCalls: [],
+            createdAt,
+          },
+          {
+            id: 'apple-demo-assistant',
+            role: 'assistant',
+            content: 'The latest Apple Development operations are retained with this thread.',
+            toolCalls: [],
+            createdAt: createdAt + 1,
+          },
+        ],
+        todos: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt,
+        updatedAt: createdAt + 4_000,
+      },
+    ],
+  })
+  seedE2eViewport({ width: 1280, height: 800 }, { theme: 'dark' })
 }
