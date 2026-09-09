@@ -10966,8 +10966,8 @@ var init_pt = __esm({
           case "not_multiple_of":
             return `N\xFAmero inv\xE1lido: deve ser m\xFAltiplo de ${issue2.divisor}`;
           case "unrecognized_keys": {
-            const plural = issue2.keys.length > 1 ? "s" : "";
-            return `Chave${plural} inv\xE1lida${plural}: ${joinValues(issue2.keys, ", ")}`;
+            const plural2 = issue2.keys.length > 1 ? "s" : "";
+            return `Chave${plural2} inv\xE1lida${plural2}: ${joinValues(issue2.keys, ", ")}`;
           }
           case "invalid_key":
             return `Entrada inv\xE1lida n${translateOriginWithArticle(issue2.origin, "definite")}`;
@@ -11115,8 +11115,8 @@ var init_pt_BR = __esm({
           case "not_multiple_of":
             return `N\xFAmero inv\xE1lido: deve ser m\xFAltiplo de ${issue2.divisor}`;
           case "unrecognized_keys": {
-            const plural = issue2.keys.length > 1 ? "s" : "";
-            return `Chave${plural} inv\xE1lida${plural}: ${joinValues(issue2.keys, ", ")}`;
+            const plural2 = issue2.keys.length > 1 ? "s" : "";
+            return `Chave${plural2} inv\xE1lida${plural2}: ${joinValues(issue2.keys, ", ")}`;
           }
           case "invalid_key":
             return `Entrada inv\xE1lida n${translateOriginWithArticle(issue2.origin, "definite")}`;
@@ -20391,6 +20391,24 @@ var init_zod = __esm({
   }
 });
 
+// packages/std/src/nullish.ts
+function isDefined(value2) {
+  return value2 !== void 0;
+}
+function isNonNull(value2) {
+  return value2 !== null;
+}
+function isNonEmptyString(value2) {
+  return typeof value2 === "string" && value2.length > 0;
+}
+function isNonBlankString(value2) {
+  return typeof value2 === "string" && value2.trim().length > 0;
+}
+var init_nullish = __esm({
+  "packages/std/src/nullish.ts"() {
+  }
+});
+
 // packages/std/src/unknown-value.ts
 function isRecord(value2) {
   return typeof value2 === "object" && value2 !== null && !Array.isArray(value2);
@@ -20445,15 +20463,14 @@ function optionalStringArray(value2, label = "value") {
   return expectStringArray(value2, label);
 }
 function firstNonEmptyString(...values3) {
-  return values3.find(
-    (value2) => value2 !== void 0 && value2 !== null && value2 !== ""
-  );
+  return values3.find(isNonEmptyString);
 }
 function nonEmptyStringOr(value2, fallback) {
   return firstNonEmptyString(value2, fallback) ?? fallback;
 }
 var init_unknown_value = __esm({
   "packages/std/src/unknown-value.ts"() {
+    init_nullish();
   }
 });
 
@@ -20663,7 +20680,7 @@ function stringField(args, key) {
 function stringListField(args, key) {
   const value2 = args[key];
   if (!Array.isArray(value2)) return [];
-  return value2.filter((entry) => typeof entry === "string" && entry.trim() !== "").map((entry) => entry.trim());
+  return value2.filter(isNonBlankString).map((entry) => entry.trim());
 }
 function parseThreadProposal(id39, args) {
   if (id39 === "" || !isRecord(args)) return null;
@@ -20705,6 +20722,7 @@ var THREAD_PROPOSAL_TOOL, THREAD_PROPOSAL_TITLE_MAX, THREAD_PROPOSAL_SUMMARY_MAX
 var init_thread_proposal = __esm({
   "packages/thread-store/src/thread-proposal.ts"() {
     init_unknown_value();
+    init_nullish();
     THREAD_PROPOSAL_TOOL = "propose_thread";
     THREAD_PROPOSAL_TITLE_MAX = 80;
     THREAD_PROPOSAL_SUMMARY_MAX = 400;
@@ -21477,7 +21495,7 @@ function metaSig(meta5) {
 function metaPatch(prev2, next3) {
   const patch = { ...next3 };
   for (const key of Object.keys(prev2)) {
-    if (!(key in next3)) patch[key] = void 0;
+    if (!Object.hasOwn(next3, key)) patch[key] = void 0;
   }
   return patch;
 }
@@ -22068,7 +22086,11 @@ var init_tool_display = __esm({
       ask_user: { running: "Asking user", done: "Asked user" },
       propose_thread: { running: "Proposing a thread", done: "Proposed a thread" },
       update_todos: { running: "Updating plan", done: "Updated plan" },
-      run_checkup: { running: "Running checkup", done: "Ran checkup" }
+      run_checkup: { running: "Running checkup", done: "Ran checkup" },
+      container_run: {
+        running: "Running unattended in a container",
+        done: "Ran unattended in a container"
+      }
     };
     TOOL_GROUPS = {
       reading: {
@@ -23564,6 +23586,16 @@ function warningIcon(className = DEFAULT) {
     className
   );
 }
+function lockIcon(className = DEFAULT) {
+  return outlineIcon(
+    "lock",
+    [
+      "M5 11h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2Z",
+      "M7 11V7a5 5 0 0 1 10 0v4"
+    ],
+    className
+  );
+}
 function searchIcon(className = DEFAULT) {
   return outlineIcon(
     "search",
@@ -24405,7 +24437,12 @@ async function quarantineAndRestoreNext(store3, api3, id39) {
   await markProjectMissing(store3, api3, id39);
   const next3 = store3.getState().projects.find((p3) => p3.id !== id39 && !p3.missing);
   if (next3) {
-    store3.setState({ activeProjectId: next3.id, expandedProjectId: next3.id });
+    store3.setState({
+      activeProjectId: next3.id,
+      expandedProjectId: next3.id,
+      threads: [],
+      activeThreadId: null
+    });
     await restoreProject(store3, api3, next3.id);
     return;
   }
@@ -25311,7 +25348,7 @@ url: http://localhost:61025/index.html
 function demoScenarioPrompt(scenario) {
   return scenario.trace?.prompt ?? "";
 }
-var FIXED_TIME, FOOTER_INPUT_TOKENS, FOOTER_OUTPUT_TOKENS, DEMO_CODEX_ACP_AGENT, FOOTER_COMPACT_EXPECTATIONS, markdownContent, project, semanticSearchSummary, PROPOSED_INDEX_HTML, PROPOSED_STYLES_CSS, PROPOSED_DIFF_TRACE, DEMO_SCENARIOS;
+var FIXED_TIME, FOOTER_INPUT_TOKENS, FOOTER_OUTPUT_TOKENS, DEMO_CODEX_ACP_AGENT, FOOTER_COMPACT_EXPECTATIONS, markdownContent, syntaxContrastContent, project, semanticSearchSummary, PROPOSED_INDEX_HTML, PROPOSED_STYLES_CSS, PROPOSED_DIFF_TRACE, DEMO_SCENARIOS;
 var init_demo_scenarios = __esm({
   "src/shared/demo-scenarios.ts"() {
     init_landing();
@@ -25343,6 +25380,27 @@ var init_demo_scenarios = __esm({
       "- Mock LLM \u2014 `COPSE-PANEL-MOCK-LLM=1` enables full e2e testing without API keys",
       "- MCP host \u2014 Per-server enable toggles in Settings",
       "- Persistence \u2014 filesystem-native threads and project settings"
+    ].join("\n");
+    syntaxContrastContent = [
+      "Here is the resolved model configuration:",
+      "",
+      "```json",
+      "{",
+      '  "model": "claude-opus-4",',
+      '  "temperature": 0.2,',
+      '  "maxTokens": 8192,',
+      '  "stream": true',
+      "}",
+      "```",
+      "",
+      "and the loop that reads it:",
+      "",
+      "```ts",
+      "// Resolve the model for this turn.",
+      "function resolveModel(settings: Settings): string {",
+      "  return settings.model ?? 'claude-opus-4'",
+      "}",
+      "```"
     ].join("\n");
     project = (id39, name = "copse-demo", path4 = "/demo/copse") => ({
       id: id39,
@@ -25546,6 +25604,150 @@ var init_demo_scenarios = __esm({
         ]
       },
       {
+        id: "container-run",
+        label: "Unattended container run",
+        project: project("demo-container-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          model: "claude-sonnet-4-6",
+          containerRunsEnabled: true
+        },
+        threads: [
+          {
+            id: "demo-container-thread",
+            title: "Clear the lint backlog",
+            status: "idle",
+            gitBranch: "demo/lint-backlog",
+            messages: [
+              {
+                id: "demo-container-user",
+                role: "user",
+                content: "Clear the lint backlog and open a PR.",
+                toolCalls: [],
+                createdAt: FIXED_TIME
+              }
+            ],
+            usage: { inputTokens: 412310, outputTokens: 38902 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ],
+        containerRun: {
+          threadId: "demo-container-thread",
+          runtimeId: "run-demo-1",
+          phase: "finished",
+          startedAt: FIXED_TIME,
+          finishedAt: FIXED_TIME + 23 * 6e4,
+          prompt: "Clear the lint suppression backlog in the renderer views",
+          model: "claude-sonnet-4-6",
+          egressAllowlist: ["api.anthropic.com:443"],
+          credential: "key",
+          warnings: [],
+          checkout: {
+            root: "/Users/dev/projects/demo/.copse/worktrees/demo-container-thread",
+            mode: "worktree",
+            branch: "demo/lint-backlog"
+          },
+          log: [
+            "[thread-container] carry-in 9b1b901683b9 as refs/copse/carry-in/run-demo-1",
+            "[thread-container] starting copse-run-demo-1 from copse-worker:local",
+            "[guest] [worker] egress proxy on 127.0.0.1:3128, token-gated",
+            "[guest] [worker] project sandbox: none; the container is the sandbox",
+            "[guest] [worker] done: completed; prompts=0 deferrals=1 commits=3",
+            "[thread-container] carry-out fetched to refs/copse/runs/run-demo-1"
+          ],
+          record: {
+            runtimeId: "run-demo-1",
+            threadId: "demo-container-thread",
+            startedAt: FIXED_TIME,
+            finishedAt: FIXED_TIME + 23 * 6e4,
+            image: "copse-worker:local",
+            imageDigest: "sha256:0c1f2e3d4c5b6a798877665544332211aabbccddeeff00112233445566778899",
+            attestation: {
+              runtimeId: "run-demo-1",
+              image: "copse-worker:local",
+              user: 1001,
+              readOnlyRootfs: true,
+              capDropAll: true,
+              noNewPrivileges: true,
+              pidsLimit: 512,
+              memoryLimit: "4g",
+              network: "brokered",
+              egressAllowlist: ["api.anthropic.com:443"],
+              hostMounts: ["/run/copse", "/run/copse/state", "/run/copse/out"]
+            },
+            egress: [{ at: FIXED_TIME, origin: "api.anthropic.com:443", event: "connect" }],
+            result: {
+              threadId: "demo-container-thread",
+              stopReason: "completed",
+              usage: { inputTokens: 412310, outputTokens: 38902 },
+              harness: "copse",
+              promptsAttempted: 0,
+              denials: [],
+              deferrals: [
+                {
+                  id: "d1",
+                  title: "Outward effect needs review",
+                  subject: "shell command (arguments omitted)",
+                  reasons: ["git push publishes commits to a remote"]
+                }
+              ],
+              commits: [
+                "a1b2c3d fix(lint): remove unused imports across src/main",
+                "b2c3d4e fix(lint): prefer nullish coalescing in providers",
+                "c3d4e5f chore: rerun formatter"
+              ],
+              containment: { declared: true, declineReason: null, projectSandbox: false },
+              toolNames: ["run_shell", "read_file", "write_file"],
+              finalText: "Cleared the lint backlog in three commits. The push is waiting for your review."
+            },
+            transcript: [
+              {
+                id: "guest-1",
+                role: "assistant",
+                content: "Reading the lint report to see which suppressions are still needed.",
+                toolCalls: [
+                  {
+                    id: "guest-t1",
+                    name: "run_shell",
+                    args: { command: "pnpm run lint -- --format json" },
+                    status: "done",
+                    result: "14 suppressions, 11 of them for rules that no longer fire"
+                  },
+                  {
+                    id: "guest-t2",
+                    name: "str_replace",
+                    args: { path: "src/main/providers/openai.ts" },
+                    status: "done",
+                    result: "Replaced 1 occurrence",
+                    editStats: { additions: 1, deletions: 3 }
+                  }
+                ],
+                createdAt: FIXED_TIME + 6e4
+              },
+              {
+                id: "guest-2",
+                role: "assistant",
+                content: "Cleared the lint backlog in three commits. The push is waiting for your review.",
+                toolCalls: [],
+                createdAt: FIXED_TIME + 22 * 6e4
+              }
+            ],
+            carryIn: { sha: "9b1b901683b9f0e5b2a3c4d5e6f708192a3b4c5d", dirty: false },
+            carryOut: { expected: true, ref: "refs/copse/runs/run-demo-1", error: null },
+            containerExit: 0,
+            credential: "key",
+            teardown: "removed",
+            cleanupError: null,
+            secretCanary: { present: false, detail: "canary absent from every surface" }
+          },
+          error: null,
+          continuedFrom: null
+        }
+      },
+      {
         id: "footer-compact",
         label: "Responsive composer footer",
         project: project("demo-footer-project"),
@@ -25556,7 +25758,8 @@ var init_demo_scenarios = __esm({
           model: "lmstudio:qwen/qwen3.6-35b-a3b",
           // Copy/export overflow actions are developer-mode gated; the geometry
           // demo needs them visible to exercise `.footer-overflow`.
-          developerMode: true
+          developerMode: true,
+          containerRunsEnabled: true
         },
         threads: [
           {
@@ -25830,6 +26033,42 @@ var init_demo_scenarios = __esm({
             bodyAdvice: "The project sandbox would block this command:\n\u2022 Installs or updates packages, which downloads and runs code from the internet",
             bodyFooter: "Allow running it once outside the sandbox?",
             type: "shell"
+          }
+        ]
+      },
+      {
+        // Companion to `approval-light-accent`: same bright accent, same light theme,
+        // but aimed at the surfaces issue #2486/#2488/#2483 reported rather than the
+        // approval dialog. The accent matters — light derives `--accent` as 30% of it
+        // mixed with black, so a bright one makes the derived tier unmistakably dark
+        // and any control that fills with it instead of `--accent-fill` shows up.
+        id: "light-contrast-surfaces",
+        label: "Light-theme syntax, fills, and selection",
+        project: project("demo-light-contrast-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "light",
+          uiAccentColor: "#20FD85",
+          uiTintColor: "#244C25",
+          uiTintStrength: "subtle"
+        },
+        threads: [
+          {
+            id: "demo-light-contrast-thread",
+            title: "Light-theme contrast",
+            status: "idle",
+            messages: [
+              {
+                id: "demo-light-contrast-assistant",
+                role: "assistant",
+                content: syntaxContrastContent,
+                toolCalls: [],
+                createdAt: FIXED_TIME
+              }
+            ],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
           }
         ]
       },
@@ -26194,6 +26433,43 @@ function createDemoApi(scenario, options2 = {}) {
       enableGuardedYolo: (threadId) => resolved({ threadId, phase: "off", containment: "unsandboxed", expiresAt: null }),
       disableGuardedYolo: (threadId) => resolved({ threadId, phase: "off", containment: "unsandboxed", expiresAt: null }),
       onGuardedYoloChanged: subscribe
+    },
+    container: {
+      runThread: (request) => resolved({
+        threadId: request.threadId,
+        runtimeId: "run-demo",
+        phase: "running",
+        startedAt: Date.now(),
+        finishedAt: null,
+        prompt: request.prompt,
+        model: request.model,
+        egressAllowlist: ["api.anthropic.com:443"],
+        credential: "key",
+        log: ["[thread-container] starting copse-run-demo from copse-worker:local"],
+        warnings: [],
+        checkout: { root: "/repo", mode: "shared", branch: "main" },
+        record: null,
+        error: null,
+        continuedFrom: request.continueFrom ?? null
+      }),
+      stopRun: () => resolved(null),
+      adoptRun: () => resolved({
+        applied: [
+          "a1b2c3d fix(lint): remove unused imports across src/main",
+          "b2c3d4e fix(lint): prefer nullish coalescing in providers",
+          "c3d4e5f chore: rerun formatter"
+        ],
+        alreadyApplied: 0
+      }),
+      getRun: (threadId) => resolved(
+        scenario.containerRun && scenario.containerRun.threadId === threadId ? scenario.containerRun : null
+      ),
+      modelAvailability: (models) => resolved(
+        Object.fromEntries(
+          models.map((model) => [model, { reason: "not available in the demo" }])
+        )
+      ),
+      onRunChanged: subscribe
     },
     fs: {
       readFile: (_projectId, _threadId, path4) => resolved(writtenFiles.get(path4) ?? ""),
@@ -28691,6 +28967,9 @@ function createOverlayDialog(opts) {
     isOpen: () => dialog2.open
   };
 }
+function isAnyDialogOpen() {
+  return document.querySelector("dialog[open]") !== null;
+}
 var init_dialog_shell = __esm({
   "src/renderer/views/dialog-shell.ts"() {
   }
@@ -29354,7 +29633,16 @@ var init_acp_known_agents = __esm({
           // OpenAI-owned infra wholesale: the API lives on api.openai.com, but the
           // ChatGPT-login flow talks to chatgpt.com / auth.openai.com and these move
           // between subdomains — pinning individual hosts breaks auth when they do.
-          allowedDomains: ["openai.com", "*.openai.com", "chatgpt.com", "*.chatgpt.com"],
+          // oaiusercontent.com is OpenAI's user-content store; under a ChatGPT
+          // sign-in the CLI fetches from it (seen refused in a container run).
+          allowedDomains: [
+            "openai.com",
+            "*.openai.com",
+            "chatgpt.com",
+            "*.chatgpt.com",
+            "oaiusercontent.com",
+            "*.oaiusercontent.com"
+          ],
           homeDirs: [".codex", ".config/codex"]
         },
         setup: "codex login",
@@ -29763,6 +30051,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'minimax-m3', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 35.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'minimax-m3', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "QwQ-32B-Preview": [
@@ -29771,6 +30065,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'QwQ-32B-Preview', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 3.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'QwQ-32B-Preview', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "a-x-k2": [
@@ -29779,6 +30079,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'a-x-k2', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 26.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'a-x-k2', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "agnes-2-5-pro-alpha": [
@@ -29787,6 +30093,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'agnes-2-5-pro-alpha', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 31.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'agnes-2-5-pro-alpha', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "agnes-2-5-pro-beta": [
@@ -29795,6 +30107,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'agnes-2-5-pro-beta', fetched 2026-09-01",
           asOf: "2026-09-01"
+        },
+        {
+          value: 39.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'agnes-2-5-pro-beta', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "apertus-70b-instruct": [
@@ -29803,6 +30121,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'apertus-70b-instruct', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'apertus-70b-instruct', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "apertus-8b-instruct": [
@@ -29811,6 +30135,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'apertus-8b-instruct', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'apertus-8b-instruct', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "apodex-1-1": [
@@ -29819,6 +30149,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'apodex-1-1', fetched 2026-09-01",
           asOf: "2026-09-01"
+        },
+        {
+          value: 34.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'apodex-1-1', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "apriel-v1-5-15b-thinker": [
@@ -29827,6 +30163,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'apriel-v1-5-15b-thinker', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 15,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'apriel-v1-5-15b-thinker', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "apriel-v1-6-15b-thinker": [
@@ -29835,6 +30177,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'apriel-v1-6-15b-thinker', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 14.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'apriel-v1-6-15b-thinker', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "arctic-instruct": [
@@ -29843,6 +30191,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'arctic-instruct', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'arctic-instruct', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "celeris-1": [
@@ -29851,6 +30205,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'celeris-1', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 7.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'celeris-1', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "claude-2": [
@@ -29859,6 +30219,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'claude-2', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-2', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "claude-21": [
@@ -29867,6 +30233,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'claude-21', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-21', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "claude-3-5-haiku": [
@@ -29875,6 +30247,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'claude-3-5-haiku', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 6.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-3-5-haiku', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "claude-3-7-sonnet": [
@@ -29883,6 +30261,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'claude-3-7-sonnet', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 17.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-3-7-sonnet', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "claude-3-7-sonnet-thinking": [
@@ -29891,6 +30275,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'claude-3-7-sonnet-thinking', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 20.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-3-7-sonnet-thinking', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "claude-3-haiku": [
@@ -29899,6 +30289,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'claude-3-haiku', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-3-haiku', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "claude-3-opus": [
@@ -29907,6 +30303,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'claude-3-opus', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-3-opus', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "claude-3-sonnet": [
@@ -29915,6 +30317,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'claude-3-sonnet', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-3-sonnet', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "claude-35-sonnet": [
@@ -29923,6 +30331,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'claude-35-sonnet', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 4.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-35-sonnet', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "claude-35-sonnet-june-24": [
@@ -29931,6 +30345,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'claude-35-sonnet-june-24', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 2.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-35-sonnet-june-24', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "claude-4-1-opus": [
@@ -29939,6 +30359,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'claude-4-1-opus', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 21.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-4-1-opus', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "claude-4-1-opus-thinking": [
@@ -29947,6 +30373,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'claude-4-1-opus-thinking', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 26.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-4-1-opus-thinking', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "claude-4-5-haiku": [
@@ -29955,6 +30387,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'claude-4-5-haiku', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 17.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-4-5-haiku', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "claude-4-5-haiku-reasoning": [
@@ -29963,6 +30401,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'claude-4-5-haiku-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 22.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-4-5-haiku-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "claude-4-5-sonnet": [
@@ -29971,6 +30415,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'claude-4-5-sonnet', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 22.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-4-5-sonnet', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "claude-4-5-sonnet-thinking": [
@@ -29979,6 +30429,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'claude-4-5-sonnet-thinking', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 27.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-4-5-sonnet-thinking', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "claude-4-opus": [
@@ -29987,6 +30443,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'claude-4-opus', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 19.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-4-opus', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "claude-4-opus-thinking": [
@@ -29995,6 +30457,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'claude-4-opus-thinking', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 24.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-4-opus-thinking', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "claude-4-sonnet": [
@@ -30003,6 +30471,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'claude-4-sonnet', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 19.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-4-sonnet', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "claude-4-sonnet-thinking": [
@@ -30011,6 +30485,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'claude-4-sonnet-thinking', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 22.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-4-sonnet-thinking', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "claude-fable-5": [
@@ -30019,6 +30499,52 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'claude-fable-5', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 53.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-fable-5', fetched 2026-09-08",
+          asOf: "2026-09-08"
+        }
+      ],
+      "claude-fable-5-1": [
+        {
+          value: 56.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-fable-5-1', fetched 2026-09-08",
+          asOf: "2026-09-08"
+        }
+      ],
+      "claude-fable-5-1-high": [
+        {
+          value: 54.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-fable-5-1-high', fetched 2026-09-08",
+          asOf: "2026-09-08"
+        }
+      ],
+      "claude-fable-5-1-low": [
+        {
+          value: 50.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-fable-5-1-low', fetched 2026-09-08",
+          asOf: "2026-09-08"
+        }
+      ],
+      "claude-fable-5-1-medium": [
+        {
+          value: 52.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-fable-5-1-medium', fetched 2026-09-08",
+          asOf: "2026-09-08"
+        }
+      ],
+      "claude-fable-5-1-xhigh": [
+        {
+          value: 56.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-fable-5-1-xhigh', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "claude-haiku-4-5": [
@@ -30035,6 +30561,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'claude-instant', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-instant', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "claude-opus-4-5": [
@@ -30043,6 +30575,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'claude-opus-4-5', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 27.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-opus-4-5', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "claude-opus-4-5-thinking": [
@@ -30051,6 +30589,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'claude-opus-4-5-thinking', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 33.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-opus-4-5-thinking', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "claude-opus-4-6": [
@@ -30059,6 +30603,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'claude-opus-4-6', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 30.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-opus-4-6', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "claude-opus-4-6-adaptive": [
@@ -30067,6 +30617,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'claude-opus-4-6-adaptive', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 36.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-opus-4-6-adaptive', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "claude-opus-4-7": [
@@ -30075,6 +30631,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'claude-opus-4-7', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 44.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-opus-4-7', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "claude-opus-4-7-non-reasoning": [
@@ -30083,6 +30645,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'claude-opus-4-7-non-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 35.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-opus-4-7-non-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "claude-opus-4-8": [
@@ -30097,6 +30665,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'claude-opus-4-8', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 47.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-opus-4-8', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "claude-opus-5": [
@@ -30105,6 +30679,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'claude-opus-5', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 54.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-opus-5', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "claude-opus-5-high": [
@@ -30113,6 +30693,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'claude-opus-5-high', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 52,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-opus-5-high', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "claude-opus-5-low": [
@@ -30121,6 +30707,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'claude-opus-5-low', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 43.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-opus-5-low', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "claude-opus-5-medium": [
@@ -30129,6 +30721,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'claude-opus-5-medium', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 49.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-opus-5-medium', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "claude-opus-5-xhigh": [
@@ -30137,6 +30735,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'claude-opus-5-xhigh', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 53.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-opus-5-xhigh', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "claude-sonnet-4-6": [
@@ -30145,6 +30749,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'claude-sonnet-4-6', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 29,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-sonnet-4-6', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "claude-sonnet-4-6-adaptive": [
@@ -30153,6 +30763,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'claude-sonnet-4-6-adaptive', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 38.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-sonnet-4-6-adaptive', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "claude-sonnet-4-6-non-reasoning-low-effort": [
@@ -30161,6 +30777,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'claude-sonnet-4-6-non-reasoning-low-effort', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 27.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-sonnet-4-6-non-reasoning-low-effort', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "claude-sonnet-5": [
@@ -30169,6 +30791,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'claude-sonnet-5', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 45.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-sonnet-5', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "claude-sonnet-5-non-reasoning": [
@@ -30177,6 +30805,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'claude-sonnet-5-non-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 33.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-sonnet-5-non-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "command-a": [
@@ -30185,6 +30819,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'command-a', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 2.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'command-a', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "command-a-plus": [
@@ -30193,6 +30833,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'command-a-plus', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 15.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'command-a-plus', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "command-r-03-2024": [
@@ -30201,6 +30847,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'command-r-03-2024', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'command-r-03-2024', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "command-r-plus-04-2024": [
@@ -30209,6 +30861,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'command-r-plus-04-2024', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'command-r-plus-04-2024', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       dbrx: [
@@ -30217,6 +30875,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'dbrx', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'dbrx', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "deephermes-3-llama-3-1-8b-preview": [
@@ -30225,6 +30889,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'deephermes-3-llama-3-1-8b-preview', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'deephermes-3-llama-3-1-8b-preview', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "deephermes-3-mistral-24b-preview": [
@@ -30233,6 +30903,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'deephermes-3-mistral-24b-preview', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'deephermes-3-mistral-24b-preview', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "deepseek-coder-v2": [
@@ -30241,6 +30917,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'deepseek-coder-v2', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-coder-v2', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "deepseek-llm-67b-chat": [
@@ -30249,6 +30931,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'deepseek-llm-67b-chat', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-llm-67b-chat', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "deepseek-r1": [
@@ -30257,6 +30945,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'deepseek-r1', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 13.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-r1', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "deepseek-r1-0120": [
@@ -30265,6 +30959,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'deepseek-r1-0120', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 12,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-r1-0120', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "deepseek-r1-distill-llama-70b": [
@@ -30273,6 +30973,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'deepseek-r1-distill-llama-70b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 4.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-r1-distill-llama-70b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "deepseek-r1-distill-llama-8b": [
@@ -30281,6 +30987,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'deepseek-r1-distill-llama-8b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-r1-distill-llama-8b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "deepseek-r1-distill-qwen-1-5b": [
@@ -30289,6 +31001,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'deepseek-r1-distill-qwen-1-5b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-r1-distill-qwen-1-5b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "deepseek-r1-distill-qwen-14b": [
@@ -30297,6 +31015,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'deepseek-r1-distill-qwen-14b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 4.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-r1-distill-qwen-14b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "deepseek-r1-distill-qwen-32b": [
@@ -30305,6 +31029,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'deepseek-r1-distill-qwen-32b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 5.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-r1-distill-qwen-32b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "deepseek-r1-qwen3-8b": [
@@ -30313,6 +31043,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'deepseek-r1-qwen3-8b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 4.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-r1-qwen3-8b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "deepseek-v2": [
@@ -30321,6 +31057,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'deepseek-v2', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v2', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "deepseek-v2-5": [
@@ -30329,6 +31071,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'deepseek-v2-5', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v2-5', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "deepseek-v2-5-sep-2024": [
@@ -30337,6 +31085,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'deepseek-v2-5-sep-2024', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v2-5-sep-2024', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "deepseek-v3": [
@@ -30345,6 +31099,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'deepseek-v3', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 10.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v3', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "deepseek-v3-0324": [
@@ -30353,6 +31113,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'deepseek-v3-0324', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 9.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v3-0324', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "deepseek-v3-1": [
@@ -30361,6 +31127,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'deepseek-v3-1', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 14.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v3-1', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "deepseek-v3-1-reasoning": [
@@ -30369,6 +31141,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'deepseek-v3-1-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 14.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v3-1-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "deepseek-v3-1-terminus": [
@@ -30377,6 +31155,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'deepseek-v3-1-terminus', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 15.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v3-1-terminus', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "deepseek-v3-1-terminus-reasoning": [
@@ -30385,6 +31169,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'deepseek-v3-1-terminus-reasoning', fetched 2026-08-25",
           asOf: "2026-08-25"
+        },
+        {
+          value: 23.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v3-1-terminus-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "deepseek-v3-2": [
@@ -30393,6 +31183,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'deepseek-v3-2', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 18.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v3-2', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "deepseek-v3-2-0925": [
@@ -30401,6 +31197,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'deepseek-v3-2-0925', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 15.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v3-2-0925', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "deepseek-v3-2-reasoning": [
@@ -30409,6 +31211,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'deepseek-v3-2-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 25.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v3-2-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "deepseek-v3-2-reasoning-0925": [
@@ -30417,6 +31225,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'deepseek-v3-2-reasoning-0925', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 19,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v3-2-reasoning-0925', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "deepseek-v3-2-speciale": [
@@ -30425,6 +31239,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'deepseek-v3-2-speciale', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 16,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v3-2-speciale', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "deepseek-v4-flash": [
@@ -30433,6 +31253,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'deepseek-v4-flash', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 40.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-flash', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "deepseek-v4-flash-0420": [
@@ -30441,6 +31267,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'deepseek-v4-flash-0420', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 30.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-flash-0420', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "deepseek-v4-flash-0420-high": [
@@ -30449,6 +31281,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'deepseek-v4-flash-0420-high', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 30.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-flash-0420-high', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "deepseek-v4-flash-non-reasoning": [
@@ -30457,6 +31295,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'deepseek-v4-flash-non-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 22.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-flash-non-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "deepseek-v4-flash-vision": [
@@ -30465,6 +31309,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'deepseek-v4-flash-vision', fetched 2026-09-01",
           asOf: "2026-09-01"
+        },
+        {
+          value: 40.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-flash-vision', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "deepseek-v4-pro": [
@@ -30473,6 +31323,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'deepseek-v4-pro', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 42.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-pro', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "deepseek-v4-pro-0424": [
@@ -30481,6 +31337,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'deepseek-v4-pro-0424', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 34.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-pro-0424', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "deepseek-v4-pro-0424-high": [
@@ -30489,6 +31351,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'deepseek-v4-pro-0424-high', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 34.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-pro-0424-high', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "deepseek-v4-pro-0424-non-reasoning": [
@@ -30497,6 +31365,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'deepseek-v4-pro-0424-non-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 24.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-pro-0424-non-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "deepseek/deepseek-coder-v2-lite": [
@@ -30505,6 +31379,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'deepseek-coder-v2-lite', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-coder-v2-lite', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "devstral-2": [
@@ -30513,6 +31393,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'devstral-2', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 12.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'devstral-2', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "devstral-medium": [
@@ -30521,6 +31407,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'devstral-medium', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 6.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'devstral-medium', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "devstral-small": [
@@ -30529,6 +31421,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'devstral-small', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 3.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'devstral-small', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "devstral-small-2": [
@@ -30537,6 +31435,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'devstral-small-2', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 11.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'devstral-small-2', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "devstral-small-2505": [
@@ -30545,6 +31449,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'devstral-small-2505', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'devstral-small-2505', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "diffusiongemma-26b-a4b": [
@@ -30553,6 +31463,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'diffusiongemma-26b-a4b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 7.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'diffusiongemma-26b-a4b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "doubao-seed-code": [
@@ -30561,6 +31477,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'doubao-seed-code', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 19.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'doubao-seed-code', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "ernie-4-5-300b-a47b": [
@@ -30569,6 +31491,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'ernie-4-5-300b-a47b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 3.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'ernie-4-5-300b-a47b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "ernie-5-0-thinking-preview": [
@@ -30577,6 +31505,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'ernie-5-0-thinking-preview', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 15.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'ernie-5-0-thinking-preview', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "exaone-4-0-1-2b": [
@@ -30585,6 +31519,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'exaone-4-0-1-2b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'exaone-4-0-1-2b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "exaone-4-0-1-2b-reasoning": [
@@ -30593,6 +31533,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'exaone-4-0-1-2b-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'exaone-4-0-1-2b-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "exaone-4-0-32b": [
@@ -30601,6 +31547,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'exaone-4-0-32b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'exaone-4-0-32b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "exaone-4-0-32b-reasoning": [
@@ -30609,6 +31561,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'exaone-4-0-32b-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 4.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'exaone-4-0-32b-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "exaone-4-5-33b": [
@@ -30617,6 +31575,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'exaone-4-5-33b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 14,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'exaone-4-5-33b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "falcon-h1r-7b": [
@@ -30625,6 +31589,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'falcon-h1r-7b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 4.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'falcon-h1r-7b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "g9v3-39a5b": [
@@ -30633,6 +31603,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'g9v3-39a5b', fetched 2026-08-25",
           asOf: "2026-08-25"
+        },
+        {
+          value: 25.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'g9v3-39a5b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "g9v3-3b": [
@@ -30641,6 +31617,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'g9v3-3b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 10.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'g9v3-3b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemini-1-0-pro": [
@@ -30649,6 +31631,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemini-1-0-pro', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemini-1-0-pro', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemini-1-0-ultra": [
@@ -30657,6 +31645,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemini-1-0-ultra', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemini-1-0-ultra', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemini-1-5-flash": [
@@ -30665,6 +31659,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemini-1-5-flash', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 2.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemini-1-5-flash', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemini-1-5-flash-8b": [
@@ -30673,6 +31673,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemini-1-5-flash-8b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemini-1-5-flash-8b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemini-1-5-flash-may-2024": [
@@ -30681,6 +31687,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemini-1-5-flash-may-2024', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemini-1-5-flash-may-2024', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemini-1-5-pro": [
@@ -30689,6 +31701,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemini-1-5-pro', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 4.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemini-1-5-pro', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemini-1-5-pro-may-2024": [
@@ -30697,6 +31715,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemini-1-5-pro-may-2024', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemini-1-5-pro-may-2024', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemini-2-0-flash": [
@@ -30705,6 +31729,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemini-2-0-flash', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 6.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemini-2-0-flash', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemini-2-0-flash-experimental": [
@@ -30713,6 +31743,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemini-2-0-flash-experimental', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemini-2-0-flash-experimental', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemini-2-0-flash-lite-001": [
@@ -30721,6 +31757,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemini-2-0-flash-lite-001', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 3.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemini-2-0-flash-lite-001', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemini-2-0-flash-lite-preview": [
@@ -30729,6 +31771,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemini-2-0-flash-lite-preview', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemini-2-0-flash-lite-preview', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemini-2-0-flash-thinking-exp-0121": [
@@ -30737,6 +31785,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemini-2-0-flash-thinking-exp-0121', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 7.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemini-2-0-flash-thinking-exp-0121', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemini-2-0-flash-thinking-exp-1219": [
@@ -30745,6 +31799,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemini-2-0-flash-thinking-exp-1219', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemini-2-0-flash-thinking-exp-1219', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemini-2-0-pro-experimental-02-05": [
@@ -30753,6 +31813,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemini-2-0-pro-experimental-02-05', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 6.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemini-2-0-pro-experimental-02-05', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemini-2-5-flash": [
@@ -30761,6 +31827,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemini-2-5-flash', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 8.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemini-2-5-flash', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemini-2-5-flash-04-2025": [
@@ -30769,6 +31841,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemini-2-5-flash-04-2025', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 5.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemini-2-5-flash-04-2025', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemini-2-5-flash-lite": [
@@ -30777,6 +31855,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemini-2-5-flash-lite', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemini-2-5-flash-lite', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemini-2-5-flash-lite-preview-09-2025": [
@@ -30785,6 +31869,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemini-2-5-flash-lite-preview-09-2025', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 7.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemini-2-5-flash-lite-preview-09-2025', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemini-2-5-flash-lite-preview-09-2025-reasoning": [
@@ -30793,6 +31883,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemini-2-5-flash-lite-preview-09-2025-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 9.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemini-2-5-flash-lite-preview-09-2025-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemini-2-5-flash-lite-reasoning": [
@@ -30801,6 +31897,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemini-2-5-flash-lite-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 5.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemini-2-5-flash-lite-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemini-2-5-flash-preview-09-2025": [
@@ -30809,6 +31911,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemini-2-5-flash-preview-09-2025', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 12.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemini-2-5-flash-preview-09-2025', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemini-2-5-flash-preview-09-2025-reasoning": [
@@ -30817,6 +31925,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemini-2-5-flash-preview-09-2025-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 17.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemini-2-5-flash-preview-09-2025-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemini-2-5-flash-reasoning": [
@@ -30825,6 +31939,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemini-2-5-flash-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 13.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemini-2-5-flash-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemini-2-5-flash-reasoning-04-2025": [
@@ -30833,6 +31953,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemini-2-5-flash-reasoning-04-2025', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 11.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemini-2-5-flash-reasoning-04-2025', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemini-2-5-pro": [
@@ -30841,6 +31967,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemini-2-5-pro', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 19,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemini-2-5-pro', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemini-2-5-pro-03-25": [
@@ -30849,6 +31981,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemini-2-5-pro-03-25', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 16.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemini-2-5-pro-03-25', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemini-2-5-pro-05-06": [
@@ -30857,6 +31995,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemini-2-5-pro-05-06', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 16.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemini-2-5-pro-05-06', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemini-3-1-flash-lite-preview": [
@@ -30865,6 +32009,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemini-3-1-flash-lite-preview', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 19.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemini-3-1-flash-lite-preview', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemini-3-1-pro-preview": [
@@ -30873,6 +32023,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemini-3-1-pro-preview', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 36.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemini-3-1-pro-preview', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemini-3-5-flash": [
@@ -30881,6 +32037,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemini-3-5-flash', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 39.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemini-3-5-flash', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemini-3-5-flash-lite": [
@@ -30889,6 +32051,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemini-3-5-flash-lite', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 27.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemini-3-5-flash-lite', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemini-3-5-flash-medium": [
@@ -30897,6 +32065,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemini-3-5-flash-medium', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 38,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemini-3-5-flash-medium', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemini-3-5-flash-minimal": [
@@ -30905,6 +32079,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemini-3-5-flash-minimal', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 28,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemini-3-5-flash-minimal', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemini-3-6-flash": [
@@ -30913,6 +32093,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemini-3-6-flash', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 40.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemini-3-6-flash', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemini-3-7-flash": [
@@ -30921,6 +32107,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemini-3-7-flash', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 45.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemini-3-7-flash', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemini-3-7-flash-low": [
@@ -30929,6 +32121,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemini-3-7-flash-low', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 41.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemini-3-7-flash-low', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemini-3-7-flash-medium": [
@@ -30937,6 +32135,36 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemini-3-7-flash-medium', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 43.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemini-3-7-flash-medium', fetched 2026-09-08",
+          asOf: "2026-09-08"
+        }
+      ],
+      "gemini-3-8-flash": [
+        {
+          value: 47.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemini-3-8-flash', fetched 2026-09-08",
+          asOf: "2026-09-08"
+        }
+      ],
+      "gemini-3-8-flash-low": [
+        {
+          value: 41,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemini-3-8-flash-low', fetched 2026-09-08",
+          asOf: "2026-09-08"
+        }
+      ],
+      "gemini-3-8-flash-medium": [
+        {
+          value: 46.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemini-3-8-flash-medium', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemini-3-flash": [
@@ -30945,6 +32173,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemini-3-flash', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 20.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemini-3-flash', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemini-3-flash-reasoning": [
@@ -30953,6 +32187,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemini-3-flash-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 30.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemini-3-flash-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemini-3-pro": [
@@ -30961,6 +32201,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemini-3-pro', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 32.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemini-3-pro', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemini-3-pro-low": [
@@ -30969,6 +32215,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemini-3-pro-low', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 26.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemini-3-pro-low', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemma-3-1b": [
@@ -30977,6 +32229,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemma-3-1b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemma-3-1b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemma-3-270m": [
@@ -30985,6 +32243,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemma-3-270m', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemma-3-270m', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemma-3-27b": [
@@ -30993,6 +32257,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemma-3-27b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemma-3-27b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemma-3-4b": [
@@ -31001,6 +32271,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemma-3-4b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemma-3-4b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemma-3n-e2b": [
@@ -31009,6 +32285,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemma-3n-e2b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemma-3n-e2b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemma-3n-e4b": [
@@ -31017,6 +32299,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemma-3n-e4b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemma-3n-e4b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemma-3n-e4b-preview-0520": [
@@ -31025,6 +32313,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemma-3n-e4b-preview-0520', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemma-3n-e4b-preview-0520', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemma-4-12b": [
@@ -31033,6 +32327,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemma-4-12b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 15.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemma-4-12b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemma-4-12b-non-reasoning": [
@@ -31041,6 +32341,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemma-4-12b-non-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 7.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemma-4-12b-non-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemma-4-26b-a4b": [
@@ -31049,6 +32355,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemma-4-26b-a4b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 19.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemma-4-26b-a4b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemma-4-26b-a4b-non-reasoning": [
@@ -31057,6 +32369,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemma-4-26b-a4b-non-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 13.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemma-4-26b-a4b-non-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemma-4-31b": [
@@ -31065,6 +32383,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemma-4-31b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 22.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemma-4-31b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemma-4-31b-non-reasoning": [
@@ -31073,6 +32397,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemma-4-31b-non-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 15.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemma-4-31b-non-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemma-4-e2b": [
@@ -31081,6 +32411,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemma-4-e2b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemma-4-e2b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemma-4-e2b-non-reasoning": [
@@ -31089,6 +32425,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemma-4-e2b-non-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemma-4-e2b-non-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gemma-4-e4b-non-reasoning": [
@@ -31097,6 +32439,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemma-4-e4b-non-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 3.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemma-4-e4b-non-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "glm-4-5-air": [
@@ -31105,6 +32453,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'glm-4-5-air', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 10.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'glm-4-5-air', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "glm-4-5v": [
@@ -31113,6 +32467,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'glm-4-5v', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'glm-4-5v', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "glm-4-5v-reasoning": [
@@ -31121,6 +32481,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'glm-4-5v-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 3.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'glm-4-5v-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "glm-4-6": [
@@ -31129,6 +32495,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'glm-4-6', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 16.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'glm-4-6', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "glm-4-6-reasoning": [
@@ -31137,6 +32509,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'glm-4-6-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 21.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'glm-4-6-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "glm-4-6v": [
@@ -31145,6 +32523,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'glm-4-6v', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 5.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'glm-4-6v', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "glm-4-6v-reasoning": [
@@ -31153,6 +32537,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'glm-4-6v-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 10.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'glm-4-6v-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "glm-4-7": [
@@ -31161,6 +32551,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'glm-4-7', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 26.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'glm-4-7', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "glm-4-7-flash": [
@@ -31169,6 +32565,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'glm-4-7-flash', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 16.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'glm-4-7-flash', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "glm-4-7-flash-non-reasoning": [
@@ -31177,6 +32579,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'glm-4-7-flash-non-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 9.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'glm-4-7-flash-non-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "glm-4-7-non-reasoning": [
@@ -31185,6 +32593,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'glm-4-7-non-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 20.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'glm-4-7-non-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "glm-4.5": [
@@ -31193,6 +32607,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'glm-4.5', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 13.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'glm-4.5', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "glm-5": [
@@ -31201,6 +32621,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'glm-5', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 32.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'glm-5', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "glm-5-1": [
@@ -31209,6 +32635,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'glm-5-1', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 31.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'glm-5-1', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "glm-5-1-non-reasoning": [
@@ -31217,6 +32649,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'glm-5-1-non-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 28.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'glm-5-1-non-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "glm-5-2-non-reasoning": [
@@ -31225,6 +32663,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'glm-5-2-non-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 26.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'glm-5-2-non-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "glm-5-3": [
@@ -31233,6 +32677,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'glm-5-3', fetched 2026-08-25",
           asOf: "2026-08-25"
+        },
+        {
+          value: 48.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'glm-5-3', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "glm-5-3-flash": [
@@ -31241,6 +32691,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'glm-5-3-flash', fetched 2026-09-01",
           asOf: "2026-09-01"
+        },
+        {
+          value: 46.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'glm-5-3-flash', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "glm-5-non-reasoning": [
@@ -31249,6 +32705,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'glm-5-non-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 25.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'glm-5-non-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "glm-5-turbo": [
@@ -31257,6 +32719,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'glm-5-turbo', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 31,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'glm-5-turbo', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "glm-5v-turbo": [
@@ -31265,6 +32733,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'glm-5v-turbo', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 27.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'glm-5v-turbo', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "google/gemma-3-12b": [
@@ -31273,6 +32747,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemma-3-12b', fetched 2026-07-19",
           asOf: "2026-07-19"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemma-3-12b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "google/gemma-4-e4b": [
@@ -31281,6 +32761,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gemma-4-e4b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 6.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gemma-4-e4b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-35-turbo": [
@@ -31289,6 +32775,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-35-turbo', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-35-turbo', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-4": [
@@ -31297,6 +32789,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-4', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-4', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-4-1": [
@@ -31305,6 +32803,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-4-1', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 13.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-4-1', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-4-1-mini": [
@@ -31313,6 +32817,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-4-1-mini', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 8.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-4-1-mini', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-4-1-nano": [
@@ -31321,6 +32831,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-4-1-nano', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 4.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-4-1-nano', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-4-5": [
@@ -31329,6 +32845,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-4-5', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 7.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-4-5', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-4-turbo": [
@@ -31337,6 +32859,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-4-turbo', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 2.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-4-turbo', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-4o": [
@@ -31345,6 +32873,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-4o', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 5.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-4o', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-4o-2024-05-13": [
@@ -31353,6 +32887,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-4o-2024-05-13', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-4o-2024-05-13', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-4o-2024-08-06": [
@@ -31361,6 +32901,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-4o-2024-08-06', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 3.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-4o-2024-08-06', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-4o-chatgpt": [
@@ -31369,6 +32915,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-4o-chatgpt', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 2.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-4o-chatgpt', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-4o-chatgpt-03-25": [
@@ -31377,6 +32929,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-4o-chatgpt-03-25', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 6.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-4o-chatgpt-03-25', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-4o-mini": [
@@ -31385,6 +32943,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-4o-mini', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-4o-mini', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5": [
@@ -31393,6 +32957,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 27.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5-1": [
@@ -31401,6 +32971,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5-1', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 29.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-1', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5-1-codex": [
@@ -31409,6 +32985,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5-1-codex', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 27.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-1-codex', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5-1-codex-mini": [
@@ -31417,6 +32999,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5-1-codex-mini', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 24,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-1-codex-mini', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5-1-non-reasoning": [
@@ -31425,6 +33013,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5-1-non-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 14.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-1-non-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5-2": [
@@ -31433,6 +33027,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5-2', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 35,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-2', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5-2-codex": [
@@ -31441,6 +33041,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5-2-codex', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 33,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-2-codex', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5-2-medium": [
@@ -31449,6 +33055,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5-2-medium', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 30.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-2-medium', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5-2-non-reasoning": [
@@ -31457,6 +33069,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5-2-non-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 19.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-2-non-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5-3-codex": [
@@ -31465,6 +33083,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5-3-codex', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 36.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-3-codex', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5-4": [
@@ -31473,6 +33097,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5-4', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 42.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-4', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5-4-low": [
@@ -31481,6 +33111,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5-4-low', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 32.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-4-low', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5-4-mini": [
@@ -31489,6 +33125,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5-4-mini', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 31.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-4-mini', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5-4-mini-medium": [
@@ -31497,6 +33139,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5-4-mini-medium', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 23.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-4-mini-medium', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5-4-mini-non-reasoning": [
@@ -31505,6 +33153,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5-4-mini-non-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 10.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-4-mini-non-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5-4-nano": [
@@ -31513,6 +33167,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5-4-nano', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 30.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-4-nano', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5-4-nano-medium": [
@@ -31521,6 +33181,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5-4-nano-medium', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 23.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-4-nano-medium', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5-4-nano-non-reasoning": [
@@ -31529,6 +33195,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5-4-nano-non-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 11.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-4-nano-non-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5-4-non-reasoning": [
@@ -31537,6 +33209,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5-4-non-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 21.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-4-non-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5-5": [
@@ -31545,6 +33223,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5-5', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 45.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-5', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5-5-high": [
@@ -31553,6 +33237,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5-5-high', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 44.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-5-high', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5-5-instant-05-26": [
@@ -31561,6 +33251,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5-5-instant-05-26', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 26.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-5-instant-05-26', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5-5-instant-06-26": [
@@ -31569,6 +33265,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5-5-instant-06-26', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 21.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-5-instant-06-26', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5-5-low": [
@@ -31577,6 +33279,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5-5-low', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 35.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-5-low', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5-5-medium": [
@@ -31585,6 +33293,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5-5-medium', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 41.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-5-medium', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5-5-non-reasoning": [
@@ -31593,6 +33307,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5-5-non-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 27.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-5-non-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5-6-luna-high": [
@@ -31601,6 +33321,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5-6-luna-high', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 37.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-luna-high', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5-6-luna-low": [
@@ -31609,6 +33335,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5-6-luna-low', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 25.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-luna-low', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5-6-luna-medium": [
@@ -31617,6 +33349,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5-6-luna-medium', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 30.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-luna-medium', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5-6-luna-non-reasoning": [
@@ -31625,6 +33363,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5-6-luna-non-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 19.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-luna-non-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5-6-luna-xhigh": [
@@ -31633,6 +33377,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5-6-luna-xhigh', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 41.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-luna-xhigh', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5-6-sol": [
@@ -31641,6 +33391,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5-6-sol', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 51.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-sol', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5-6-sol-high": [
@@ -31649,6 +33405,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5-6-sol-high', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 48.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-sol-high', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5-6-sol-low": [
@@ -31657,6 +33419,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5-6-sol-low', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 40.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-sol-low', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5-6-sol-medium": [
@@ -31665,6 +33433,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5-6-sol-medium', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 46,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-sol-medium', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5-6-sol-non-reasoning": [
@@ -31673,6 +33447,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5-6-sol-non-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 32.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-sol-non-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5-6-sol-xhigh": [
@@ -31681,6 +33461,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5-6-sol-xhigh', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 49.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-sol-xhigh', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5-6-terra": [
@@ -31689,6 +33475,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5-6-terra', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 46.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-terra', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5-6-terra-high": [
@@ -31697,6 +33489,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5-6-terra-high', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 41.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-terra-high', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5-6-terra-low": [
@@ -31705,6 +33503,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5-6-terra-low', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 32.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-terra-low', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5-6-terra-medium": [
@@ -31713,6 +33517,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5-6-terra-medium', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 37.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-terra-medium', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5-6-terra-non-reasoning": [
@@ -31721,6 +33531,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5-6-terra-non-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 26.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-terra-non-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5-6-terra-xhigh": [
@@ -31729,6 +33545,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5-6-terra-xhigh', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 44.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-terra-xhigh', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5-chatgpt": [
@@ -31737,6 +33559,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5-chatgpt', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 9.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-chatgpt', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5-codex": [
@@ -31745,6 +33573,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5-codex', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 29.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-codex', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5-low": [
@@ -31753,6 +33587,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5-low', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 24.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-low', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5-medium": [
@@ -31761,6 +33601,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5-medium', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 26.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-medium', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5-mini": [
@@ -31769,6 +33615,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5-mini', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 18.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-mini', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5-mini-medium": [
@@ -31777,6 +33629,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5-mini-medium', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 24.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-mini-medium', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5-mini-minimal": [
@@ -31785,6 +33643,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5-mini-minimal', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 8.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-mini-minimal', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5-minimal": [
@@ -31793,6 +33657,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5-minimal', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 11.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-minimal', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5-nano": [
@@ -31801,6 +33671,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5-nano', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 13.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-nano', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5-nano-medium": [
@@ -31809,6 +33685,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5-nano-medium', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 12.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-nano-medium', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5-nano-minimal": [
@@ -31817,6 +33699,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5-nano-minimal', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 2.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-nano-minimal', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5.5": [
@@ -31839,6 +33727,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-5-6-luna', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 43.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-luna', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-5.6-sol": [
@@ -31857,12 +33751,66 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-07-18"
         }
       ],
+      "gpt-6-astra": [
+        {
+          value: 54.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-6-astra', fetched 2026-09-08",
+          asOf: "2026-09-08"
+        }
+      ],
+      "gpt-6-astra-high": [
+        {
+          value: 53.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-6-astra-high', fetched 2026-09-08",
+          asOf: "2026-09-08"
+        }
+      ],
+      "gpt-6-astra-low": [
+        {
+          value: 49.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-6-astra-low', fetched 2026-09-08",
+          asOf: "2026-09-08"
+        }
+      ],
+      "gpt-6-astra-medium": [
+        {
+          value: 52.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-6-astra-medium', fetched 2026-09-08",
+          asOf: "2026-09-08"
+        }
+      ],
+      "gpt-6-astra-non-reasoning": [
+        {
+          value: 47.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-6-astra-non-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
+        }
+      ],
+      "gpt-6-astra-xhigh": [
+        {
+          value: 54.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-6-astra-xhigh', fetched 2026-09-08",
+          asOf: "2026-09-08"
+        }
+      ],
       "gpt-oss-120b": [
         {
           value: 24.1,
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-oss-120b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 15.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-oss-120b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-oss-120b-low": [
@@ -31871,6 +33819,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-oss-120b-low', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 8.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-oss-120b-low', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-oss-20b": [
@@ -31879,6 +33833,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-oss-20b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 10.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-oss-20b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "gpt-oss-20b-low": [
@@ -31887,6 +33847,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'gpt-oss-20b-low', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 8.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-oss-20b-low', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "granite-3-3-8b-instruct": [
@@ -31895,6 +33861,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'granite-3-3-8b-instruct', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'granite-3-3-8b-instruct', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "granite-4-0-350m": [
@@ -31903,6 +33875,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'granite-4-0-350m', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'granite-4-0-350m', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "granite-4-0-h-350m": [
@@ -31911,6 +33889,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'granite-4-0-h-350m', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'granite-4-0-h-350m', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "granite-4-0-h-nano-1b": [
@@ -31919,6 +33903,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'granite-4-0-h-nano-1b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'granite-4-0-h-nano-1b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "granite-4-0-h-small": [
@@ -31927,6 +33917,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'granite-4-0-h-small', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'granite-4-0-h-small', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "granite-4-0-micro": [
@@ -31935,6 +33931,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'granite-4-0-micro', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'granite-4-0-micro', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "granite-4-0-nano-1b": [
@@ -31943,6 +33945,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'granite-4-0-nano-1b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'granite-4-0-nano-1b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "granite-4-1-30b": [
@@ -31951,6 +33959,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'granite-4-1-30b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 3.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'granite-4-1-30b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "granite-4-1-3b": [
@@ -31959,6 +33973,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'granite-4-1-3b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'granite-4-1-3b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "granite-4-1-8b": [
@@ -31967,6 +33987,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'granite-4-1-8b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'granite-4-1-8b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "granite-4-2-30b": [
@@ -31975,6 +34001,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'granite-4-2-30b', fetched 2026-09-01",
           asOf: "2026-09-01"
+        },
+        {
+          value: 16.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'granite-4-2-30b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "granite-4-2-3b": [
@@ -31983,6 +34015,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'granite-4-2-3b', fetched 2026-09-01",
           asOf: "2026-09-01"
+        },
+        {
+          value: 10.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'granite-4-2-3b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "granite-4-2-8b": [
@@ -31991,6 +34029,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'granite-4-2-8b', fetched 2026-09-01",
           asOf: "2026-09-01"
+        },
+        {
+          value: 13.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'granite-4-2-8b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "grok-1": [
@@ -31999,6 +34043,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'grok-1', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'grok-1', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "grok-2-1212": [
@@ -32007,6 +34057,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'grok-2-1212', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 2.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'grok-2-1212', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "grok-3": [
@@ -32015,6 +34071,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'grok-3', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 12.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'grok-3', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "grok-3-mini-reasoning": [
@@ -32023,6 +34085,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'grok-3-mini-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 16.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'grok-3-mini-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "grok-3-reasoning": [
@@ -32031,6 +34099,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'grok-3-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 9.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'grok-3-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "grok-4": [
@@ -32039,6 +34113,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'grok-4', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 26.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'grok-4', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "grok-4-1-fast": [
@@ -32047,6 +34127,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'grok-4-1-fast', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 10.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'grok-4-1-fast', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "grok-4-1-fast-reasoning": [
@@ -32055,6 +34141,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'grok-4-1-fast-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 23.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'grok-4-1-fast-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "grok-4-20": [
@@ -32063,6 +34155,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'grok-4-20', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 30,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'grok-4-20', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "grok-4-20-0309": [
@@ -32071,6 +34169,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'grok-4-20-0309', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 29.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'grok-4-20-0309', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "grok-4-20-0309-non-reasoning": [
@@ -32079,6 +34183,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'grok-4-20-0309-non-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 16.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'grok-4-20-0309-non-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "grok-4-20-non-reasoning": [
@@ -32087,6 +34197,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'grok-4-20-non-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 15.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'grok-4-20-non-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "grok-4-3": [
@@ -32095,6 +34211,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'grok-4-3', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 29.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'grok-4-3', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "grok-4-3-low": [
@@ -32103,6 +34225,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'grok-4-3-low', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 28.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'grok-4-3-low', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "grok-4-3-medium": [
@@ -32111,6 +34239,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'grok-4-3-medium', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 29.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'grok-4-3-medium', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "grok-4-3-non-reasoning": [
@@ -32119,6 +34253,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'grok-4-3-non-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 17.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'grok-4-3-non-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "grok-4-6": [
@@ -32127,6 +34267,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'grok-4-6', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 50.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'grok-4-6', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "grok-4-6-low": [
@@ -32135,6 +34281,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'grok-4-6-low', fetched 2026-08-25",
           asOf: "2026-08-25"
+        },
+        {
+          value: 41.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'grok-4-6-low', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "grok-4-6-medium": [
@@ -32143,6 +34295,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'grok-4-6-medium', fetched 2026-08-25",
           asOf: "2026-08-25"
+        },
+        {
+          value: 48.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'grok-4-6-medium', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "grok-4-6-xhigh": [
@@ -32151,6 +34309,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'grok-4-6-xhigh', fetched 2026-08-25",
           asOf: "2026-08-25"
+        },
+        {
+          value: 49.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'grok-4-6-xhigh', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "grok-4-fast": [
@@ -32159,6 +34323,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'grok-4-fast', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 10.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'grok-4-fast', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "grok-4-fast-reasoning": [
@@ -32167,6 +34337,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'grok-4-fast-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 20.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'grok-4-fast-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "grok-4.5": [
@@ -32175,6 +34351,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'grok-4-5', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 45.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'grok-4-5', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "grok-beta": [
@@ -32183,6 +34365,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'grok-beta', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'grok-beta', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "grok-build-0-1-06-16": [
@@ -32191,6 +34379,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'grok-build-0-1-06-16', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 31.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'grok-build-0-1-06-16', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "grok-code-fast-1": [
@@ -32199,6 +34393,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'grok-code-fast-1', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 15.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'grok-code-fast-1', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "hermes-3-llama-3-1-70b": [
@@ -32207,6 +34407,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'hermes-3-llama-3-1-70b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'hermes-3-llama-3-1-70b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "hermes-4-llama-3-1-405b": [
@@ -32215,6 +34421,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'hermes-4-llama-3-1-405b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 3.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'hermes-4-llama-3-1-405b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "hermes-4-llama-3-1-405b-reasoning": [
@@ -32223,6 +34435,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'hermes-4-llama-3-1-405b-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 3.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'hermes-4-llama-3-1-405b-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "hermes-4-llama-3-1-70b": [
@@ -32231,6 +34449,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'hermes-4-llama-3-1-70b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'hermes-4-llama-3-1-70b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "hermes-4-llama-3-1-70b-reasoning": [
@@ -32239,6 +34463,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'hermes-4-llama-3-1-70b-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 4.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'hermes-4-llama-3-1-70b-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       hy3: [
@@ -32247,6 +34477,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'hy3', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 32.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'hy3', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "hy3-non-reasoning": [
@@ -32255,6 +34491,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'hy3-non-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 19.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'hy3-non-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "hy3-preview": [
@@ -32263,6 +34505,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'hy3-preview', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 26.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'hy3-preview', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "hyperclova-x-seed-think-32b": [
@@ -32271,6 +34519,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'hyperclova-x-seed-think-32b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 11,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'hyperclova-x-seed-think-32b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "hypernova-60b": [
@@ -32279,6 +34533,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'hypernova-60b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 11.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'hypernova-60b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       inkling: [
@@ -32287,6 +34547,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'inkling', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 32.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'inkling', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "inkling-small": [
@@ -32295,6 +34561,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'inkling-small', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 32.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'inkling-small', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "intellect-3": [
@@ -32303,6 +34575,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'intellect-3', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 9.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'intellect-3', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "jamba-1-5-large": [
@@ -32311,6 +34589,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'jamba-1-5-large', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'jamba-1-5-large', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "jamba-1-5-mini": [
@@ -32319,6 +34603,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'jamba-1-5-mini', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'jamba-1-5-mini', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "jamba-1-6-large": [
@@ -32327,6 +34617,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'jamba-1-6-large', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'jamba-1-6-large', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "jamba-1-6-mini": [
@@ -32335,6 +34631,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'jamba-1-6-mini', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'jamba-1-6-mini', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "jamba-1-7-large": [
@@ -32343,6 +34645,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'jamba-1-7-large', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'jamba-1-7-large', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "jamba-1-7-mini": [
@@ -32351,6 +34659,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'jamba-1-7-mini', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'jamba-1-7-mini', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "jamba-reasoning-3b": [
@@ -32359,6 +34673,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'jamba-reasoning-3b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'jamba-reasoning-3b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "jt-35b-flash": [
@@ -32367,6 +34687,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'jt-35b-flash', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 21.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'jt-35b-flash', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "jt-4-1-flash-236b-a21b": [
@@ -32375,6 +34701,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'jt-4-1-flash-236b-a21b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 31.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'jt-4-1-flash-236b-a21b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "jt-mini": [
@@ -32383,6 +34715,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'jt-mini', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 12.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'jt-mini', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "k-exaone": [
@@ -32391,6 +34729,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'k-exaone', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 15.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'k-exaone', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "k-exaone-2-0-0803": [
@@ -32399,6 +34743,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'k-exaone-2-0-0803', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 23.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'k-exaone-2-0-0803', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "k-exaone-non-reasoning": [
@@ -32407,6 +34757,20 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'k-exaone-non-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 10.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'k-exaone-non-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
+        }
+      ],
+      "k2-horizon-375b-a23b": [
+        {
+          value: 37.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'k2-horizon-375b-a23b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "k2-think-v2": [
@@ -32415,6 +34779,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'k2-think-v2', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 11.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'k2-think-v2', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "k2-v2": [
@@ -32423,6 +34793,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'k2-v2', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 8.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'k2-v2', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "k2-v2-low": [
@@ -32431,6 +34807,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'k2-v2-low', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 2.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'k2-v2-low', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "k2-v2-medium": [
@@ -32439,6 +34821,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'k2-v2-medium', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 6.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'k2-v2-medium', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "kat-coder-pro-v1": [
@@ -32447,6 +34835,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'kat-coder-pro-v1', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 21.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'kat-coder-pro-v1', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "kat-coder-pro-v2": [
@@ -32455,6 +34849,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'kat-coder-pro-v2', fetched 2026-08-18",
           asOf: "2026-08-18"
+        },
+        {
+          value: 25.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'kat-coder-pro-v2', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "kimi-k2": [
@@ -32463,6 +34863,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'kimi-k2', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 13.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'kimi-k2', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "kimi-k2-0905": [
@@ -32471,6 +34877,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'kimi-k2-0905', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 17.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'kimi-k2-0905', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "kimi-k2-5": [
@@ -32479,6 +34891,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'kimi-k2-5', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 27.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'kimi-k2-5', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "kimi-k2-5-non-reasoning": [
@@ -32487,6 +34905,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'kimi-k2-5-non-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 22.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'kimi-k2-5-non-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "kimi-k2-6-non-reasoning": [
@@ -32495,6 +34919,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'kimi-k2-6-non-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 27.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'kimi-k2-6-non-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "kimi-k2-7-code": [
@@ -32503,6 +34933,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'kimi-k2-7-code', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 32.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'kimi-k2-7-code', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "kimi-k2-thinking": [
@@ -32511,6 +34947,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'kimi-k2-thinking', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 25.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'kimi-k2-thinking', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "kimi-k3-low": [
@@ -32519,6 +34961,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'kimi-k3-low', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 37.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'kimi-k3-low', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "kimi-linear-48b-a3b-instruct": [
@@ -32527,6 +34975,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'kimi-linear-48b-a3b-instruct', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 2.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'kimi-linear-48b-a3b-instruct', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "lfm-40b": [
@@ -32535,6 +34989,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'lfm-40b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'lfm-40b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "lfm2-1-2b": [
@@ -32543,6 +35003,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'lfm2-1-2b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'lfm2-1-2b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "lfm2-2-6b": [
@@ -32551,6 +35017,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'lfm2-2-6b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'lfm2-2-6b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "lfm2-24b-a2b": [
@@ -32559,6 +35031,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'lfm2-24b-a2b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'lfm2-24b-a2b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "lfm2-5-1-2b-instruct": [
@@ -32567,6 +35045,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'lfm2-5-1-2b-instruct', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'lfm2-5-1-2b-instruct', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "lfm2-5-1-2b-thinking": [
@@ -32575,6 +35059,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'lfm2-5-1-2b-thinking', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'lfm2-5-1-2b-thinking', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "lfm2-5-2-6b": [
@@ -32583,6 +35073,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'lfm2-5-2-6b', fetched 2026-08-25",
           asOf: "2026-08-25"
+        },
+        {
+          value: 5.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'lfm2-5-2-6b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "lfm2-5-8b-a1b": [
@@ -32591,6 +35087,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'lfm2-5-8b-a1b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 2.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'lfm2-5-8b-a1b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "lfm2-5-vl-1-6b": [
@@ -32599,6 +35101,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'lfm2-5-vl-1-6b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'lfm2-5-vl-1-6b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "lfm2-8b-a1b": [
@@ -32607,6 +35115,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'lfm2-8b-a1b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'lfm2-8b-a1b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "ling-1t": [
@@ -32615,6 +35129,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'ling-1t', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 6.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'ling-1t', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "ling-2-6-1t": [
@@ -32623,6 +35143,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'ling-2-6-1t', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 19.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'ling-2-6-1t', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "ling-2-6-flash": [
@@ -32631,6 +35157,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'ling-2-6-flash', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 7.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'ling-2-6-flash', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "ling-3-0-flash": [
@@ -32639,6 +35171,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'ling-3-0-flash', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 27.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'ling-3-0-flash', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "ling-3-0-tiny": [
@@ -32647,6 +35185,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'ling-3-0-tiny', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 15.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'ling-3-0-tiny', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "ling-flash-2-0": [
@@ -32655,6 +35199,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'ling-flash-2-0', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 4.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'ling-flash-2-0', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "ling-mini-2-0": [
@@ -32663,6 +35213,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'ling-mini-2-0', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'ling-mini-2-0', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "llama-2-chat-13b": [
@@ -32671,6 +35227,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'llama-2-chat-13b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'llama-2-chat-13b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "llama-2-chat-70b": [
@@ -32679,6 +35241,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'llama-2-chat-70b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'llama-2-chat-70b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "llama-2-chat-7b": [
@@ -32687,6 +35255,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'llama-2-chat-7b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'llama-2-chat-7b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "llama-3-1-instruct-405b": [
@@ -32695,6 +35269,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'llama-3-1-instruct-405b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 2.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'llama-3-1-instruct-405b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "llama-3-1-instruct-70b": [
@@ -32703,6 +35283,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'llama-3-1-instruct-70b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'llama-3-1-instruct-70b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "llama-3-1-instruct-8b": [
@@ -32711,6 +35297,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'llama-3-1-instruct-8b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'llama-3-1-instruct-8b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "llama-3-1-nemotron-instruct-70b": [
@@ -32719,6 +35311,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'llama-3-1-nemotron-instruct-70b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 2.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'llama-3-1-nemotron-instruct-70b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "llama-3-1-nemotron-nano-4b-reasoning": [
@@ -32727,6 +35325,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'llama-3-1-nemotron-nano-4b-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 2.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'llama-3-1-nemotron-nano-4b-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "llama-3-1-nemotron-ultra-253b-v1-reasoning": [
@@ -32735,6 +35339,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'llama-3-1-nemotron-ultra-253b-v1-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 3.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'llama-3-1-nemotron-ultra-253b-v1-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "llama-3-2-instruct-11b-vision": [
@@ -32743,6 +35353,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'llama-3-2-instruct-11b-vision', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'llama-3-2-instruct-11b-vision', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "llama-3-2-instruct-1b": [
@@ -32751,6 +35367,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'llama-3-2-instruct-1b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'llama-3-2-instruct-1b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "llama-3-2-instruct-3b": [
@@ -32759,6 +35381,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'llama-3-2-instruct-3b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'llama-3-2-instruct-3b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "llama-3-2-instruct-90b-vision": [
@@ -32767,6 +35395,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'llama-3-2-instruct-90b-vision', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'llama-3-2-instruct-90b-vision', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "llama-3-3-instruct-70b": [
@@ -32775,6 +35409,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'llama-3-3-instruct-70b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 3.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'llama-3-3-instruct-70b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "llama-3-3-nemotron-super-49b": [
@@ -32783,6 +35423,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'llama-3-3-nemotron-super-49b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 2.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'llama-3-3-nemotron-super-49b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "llama-3-3-nemotron-super-49b-reasoning": [
@@ -32791,6 +35437,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'llama-3-3-nemotron-super-49b-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 6.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'llama-3-3-nemotron-super-49b-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "llama-3-instruct-70b": [
@@ -32799,6 +35451,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'llama-3-instruct-70b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'llama-3-instruct-70b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "llama-3-instruct-8b": [
@@ -32807,6 +35465,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'llama-3-instruct-8b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'llama-3-instruct-8b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "llama-4-maverick": [
@@ -32815,6 +35479,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'llama-4-maverick', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 10.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'llama-4-maverick', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "llama-4-scout": [
@@ -32823,6 +35493,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'llama-4-scout', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 4.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'llama-4-scout', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "llama-65b": [
@@ -32831,6 +35507,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'llama-65b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'llama-65b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "llama-nemotron-super-49b-v1-5": [
@@ -32839,6 +35521,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'llama-nemotron-super-49b-v1-5', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'llama-nemotron-super-49b-v1-5', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "llama-nemotron-super-49b-v1-5-reasoning": [
@@ -32847,6 +35535,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'llama-nemotron-super-49b-v1-5-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 6.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'llama-nemotron-super-49b-v1-5-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "longcat-2-0": [
@@ -32855,6 +35549,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'longcat-2-0', fetched 2026-08-18",
           asOf: "2026-08-18"
+        },
+        {
+          value: 25.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'longcat-2-0', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "longcat-flash-lite": [
@@ -32863,6 +35563,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'longcat-flash-lite', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 11.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'longcat-flash-lite', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "magistral-medium": [
@@ -32871,6 +35577,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'magistral-medium', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 6.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'magistral-medium', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "magistral-medium-2509": [
@@ -32879,6 +35591,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'magistral-medium-2509', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 11.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'magistral-medium-2509', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "magistral-small": [
@@ -32887,6 +35605,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'magistral-small', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'magistral-small', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "magistral-small-2509": [
@@ -32895,6 +35619,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'magistral-small-2509', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 5.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'magistral-small-2509', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "mercury-2": [
@@ -32903,6 +35633,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'mercury-2', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 14.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'mercury-2', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "mi-dm-k-2-5-pro-dec28": [
@@ -32911,6 +35647,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'mi-dm-k-2-5-pro-dec28', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 10.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'mi-dm-k-2-5-pro-dec28', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "microsoft/phi-4": [
@@ -32919,6 +35661,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'phi-4', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'phi-4', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "mimo-v2-0206": [
@@ -32927,6 +35675,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'mimo-v2-0206', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 26.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'mimo-v2-0206', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "mimo-v2-5-0424": [
@@ -32935,6 +35689,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'mimo-v2-5-0424', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 28.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'mimo-v2-5-0424', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "mimo-v2-5-pro": [
@@ -32943,6 +35703,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'mimo-v2-5-pro', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 32.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'mimo-v2-5-pro', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "mimo-v2-5-pro-non-reasoning": [
@@ -32951,6 +35717,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'mimo-v2-5-pro-non-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 21.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'mimo-v2-5-pro-non-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "mimo-v2-flash": [
@@ -32959,6 +35731,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'mimo-v2-flash', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 18.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'mimo-v2-flash', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "mimo-v2-flash-reasoning": [
@@ -32967,6 +35745,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'mimo-v2-flash-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 24.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'mimo-v2-flash-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "mimo-v2-omni": [
@@ -32975,6 +35759,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'mimo-v2-omni', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 28.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'mimo-v2-omni', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "mimo-v2-omni-0327": [
@@ -32983,6 +35773,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'mimo-v2-omni-0327', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 29.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'mimo-v2-omni-0327', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "mimo-v2-pro": [
@@ -32991,6 +35787,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'mimo-v2-pro', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 33.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'mimo-v2-pro', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "minicpm-v4-6-1-3b": [
@@ -32999,6 +35801,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'minicpm-v4-6-1-3b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'minicpm-v4-6-1-3b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "minicpm5-1b": [
@@ -33007,6 +35815,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'minicpm5-1b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 6.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'minicpm5-1b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "minicpm5-1b-non-reasoning": [
@@ -33015,6 +35829,20 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'minicpm5-1b-non-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'minicpm5-1b-non-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
+        }
+      ],
+      "minicpm5-2b": [
+        {
+          value: 15,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'minicpm5-2b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "minimax-m1-40k": [
@@ -33023,6 +35851,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'minimax-m1-40k', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 8.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'minimax-m1-40k', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "minimax-m1-80k": [
@@ -33031,6 +35865,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'minimax-m1-80k', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 11.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'minimax-m1-80k', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "minimax-m2": [
@@ -33039,6 +35879,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'minimax-m2', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 21.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'minimax-m2', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "minimax-m2-1": [
@@ -33047,6 +35893,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'minimax-m2-1', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 24.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'minimax-m2-1', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "minimax-m2-5": [
@@ -33055,6 +35907,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'minimax-m2-5', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 26.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'minimax-m2-5', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "minimax-m2-7": [
@@ -33063,6 +35921,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'minimax-m2-7', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 30.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'minimax-m2-7', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "ministral-3-14b": [
@@ -33071,6 +35935,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'ministral-3-14b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 5.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'ministral-3-14b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "ministral-3-3b": [
@@ -33079,6 +35949,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'ministral-3-3b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'ministral-3-3b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "ministral-3-8b": [
@@ -33087,6 +35963,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'ministral-3-8b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 3.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'ministral-3-8b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "mistral-7b-instruct": [
@@ -33095,6 +35977,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'mistral-7b-instruct', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'mistral-7b-instruct', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "mistral-8x22b-instruct": [
@@ -33103,6 +35991,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'mistral-8x22b-instruct', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'mistral-8x22b-instruct', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "mistral-large": [
@@ -33111,6 +36005,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'mistral-large', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'mistral-large', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "mistral-large-2": [
@@ -33119,6 +36019,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'mistral-large-2', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 3.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'mistral-large-2', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "mistral-large-2407": [
@@ -33127,6 +36033,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'mistral-large-2407', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'mistral-large-2407', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "mistral-large-3": [
@@ -33135,6 +36047,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'mistral-large-3', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 11.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'mistral-large-3', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "mistral-medium": [
@@ -33143,6 +36061,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'mistral-medium', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'mistral-medium', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "mistral-medium-3": [
@@ -33151,6 +36075,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'mistral-medium-3', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 6.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'mistral-medium-3', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "mistral-medium-3-1": [
@@ -33159,6 +36089,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'mistral-medium-3-1', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 8.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'mistral-medium-3-1', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "mistral-medium-3-5": [
@@ -33167,6 +36103,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'mistral-medium-3-5', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 22.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'mistral-medium-3-5', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "mistral-saba": [
@@ -33175,6 +36117,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'mistral-saba', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'mistral-saba', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "mistral-small": [
@@ -33183,6 +36131,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'mistral-small', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'mistral-small', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "mistral-small-2402": [
@@ -33191,6 +36145,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'mistral-small-2402', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'mistral-small-2402', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "mistral-small-3-2": [
@@ -33199,6 +36159,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'mistral-small-3-2', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'mistral-small-3-2', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "mistral-small-4": [
@@ -33207,6 +36173,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'mistral-small-4', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 12.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'mistral-small-4', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "mistral-small-4-non-reasoning": [
@@ -33215,6 +36187,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'mistral-small-4-non-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 6.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'mistral-small-4-non-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "mistralai/mistral-small-24b": [
@@ -33223,6 +36201,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'mistral-small-3', fetched 2026-09-01",
           asOf: "2026-09-01"
+        },
+        {
+          value: 1.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'mistral-small-3', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "mixtral-8x7b-instruct": [
@@ -33231,6 +36215,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'mixtral-8x7b-instruct', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'mixtral-8x7b-instruct', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "molmo-7b-d": [
@@ -33239,6 +36229,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'molmo-7b-d', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'molmo-7b-d', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "molmo2-8b": [
@@ -33247,6 +36243,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'molmo2-8b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'molmo2-8b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "moonshotai/kimi-k2.6": [
@@ -33261,6 +36263,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'kimi-k2-6', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 35.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'kimi-k2-6', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "moonshotai/kimi-k3": [
@@ -33269,6 +36277,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'kimi-k3', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 50.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'kimi-k3', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "motif-0714": [
@@ -33277,6 +36291,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'motif-0714', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 36.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'motif-0714', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "motif-2-12-7b": [
@@ -33285,6 +36305,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'motif-2-12-7b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'motif-2-12-7b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "motif-3": [
@@ -33293,6 +36319,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'motif-3', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 38,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'motif-3', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "muse-glimmer": [
@@ -33301,6 +36333,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'muse-glimmer', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 24.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'muse-glimmer', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "muse-spark": [
@@ -33309,6 +36347,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'muse-spark', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 35.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'muse-spark', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "muse-spark-1-1": [
@@ -33317,6 +36361,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'muse-spark-1-1', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 41.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'muse-spark-1-1', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "muse-spark-1-2": [
@@ -33325,6 +36375,28 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'muse-spark-1-2', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 46.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'muse-spark-1-2', fetched 2026-09-08",
+          asOf: "2026-09-08"
+        }
+      ],
+      "muse-spark-1-3": [
+        {
+          value: 53,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'muse-spark-1-3', fetched 2026-09-08",
+          asOf: "2026-09-08"
+        }
+      ],
+      "muse-spark-1-3-xhigh": [
+        {
+          value: 51.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'muse-spark-1-3-xhigh', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "nanbeige4-1-3b": [
@@ -33333,6 +36405,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'nanbeige4-1-3b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 5.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'nanbeige4-1-3b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "nemotron-3-5-lightning": [
@@ -33341,6 +36419,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'nemotron-3-5-lightning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 16.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'nemotron-3-5-lightning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "nemotron-3-nano-omni-30b-a3b": [
@@ -33349,6 +36433,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'nemotron-3-nano-omni-30b-a3b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'nemotron-3-nano-omni-30b-a3b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "nemotron-cascade-2-30b-a3b": [
@@ -33357,6 +36447,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'nemotron-cascade-2-30b-a3b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 11.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'nemotron-cascade-2-30b-a3b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "nex-n2-pro": [
@@ -33365,6 +36461,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'nex-n2-pro', fetched 2026-08-18",
           asOf: "2026-08-18"
+        },
+        {
+          value: 32.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'nex-n2-pro', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "north-mini-code": [
@@ -33373,6 +36475,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'north-mini-code', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 13.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'north-mini-code', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "nova-2-0-lite": [
@@ -33381,6 +36489,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'nova-2-0-lite', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'nova-2-0-lite', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "nova-2-0-lite-reasoning": [
@@ -33389,6 +36503,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'nova-2-0-lite-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 14.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'nova-2-0-lite-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "nova-2-0-lite-reasoning-low": [
@@ -33397,6 +36517,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'nova-2-0-lite-reasoning-low', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 11.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'nova-2-0-lite-reasoning-low', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "nova-2-0-lite-reasoning-medium": [
@@ -33405,6 +36531,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'nova-2-0-lite-reasoning-medium', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 12.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'nova-2-0-lite-reasoning-medium', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "nova-2-0-omni": [
@@ -33413,6 +36545,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'nova-2-0-omni', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 4.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'nova-2-0-omni', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "nova-2-0-omni-reasoning-low": [
@@ -33421,6 +36559,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'nova-2-0-omni-reasoning-low', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 10.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'nova-2-0-omni-reasoning-low', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "nova-2-0-omni-reasoning-medium": [
@@ -33429,6 +36573,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'nova-2-0-omni-reasoning-medium', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 14.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'nova-2-0-omni-reasoning-medium', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "nova-2-0-pro": [
@@ -33437,6 +36587,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'nova-2-0-pro', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 8.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'nova-2-0-pro', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "nova-2-0-pro-reasoning-low": [
@@ -33445,6 +36601,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'nova-2-0-pro-reasoning-low', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 13.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'nova-2-0-pro-reasoning-low', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "nova-2-0-pro-reasoning-medium": [
@@ -33453,6 +36615,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'nova-2-0-pro-reasoning-medium', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 15.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'nova-2-0-pro-reasoning-medium', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "nova-lite": [
@@ -33461,6 +36629,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'nova-lite', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'nova-lite', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "nova-micro": [
@@ -33469,6 +36643,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'nova-micro', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'nova-micro', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "nova-premier": [
@@ -33477,6 +36657,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'nova-premier', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 6.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'nova-premier', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "nova-pro": [
@@ -33485,6 +36671,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'nova-pro', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 2.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'nova-pro', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "nvidia-nemotron-3-nano-30b-a3b": [
@@ -33493,6 +36685,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'nvidia-nemotron-3-nano-30b-a3b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'nvidia-nemotron-3-nano-30b-a3b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "nvidia-nemotron-3-nano-30b-a3b-reasoning": [
@@ -33501,6 +36699,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'nvidia-nemotron-3-nano-30b-a3b-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 8.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'nvidia-nemotron-3-nano-30b-a3b-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "nvidia-nemotron-3-nano-4b": [
@@ -33509,6 +36713,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'nvidia-nemotron-3-nano-4b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 3.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'nvidia-nemotron-3-nano-4b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "nvidia-nemotron-3-super-120b-a12b": [
@@ -33517,6 +36727,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'nvidia-nemotron-3-super-120b-a12b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 18.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'nvidia-nemotron-3-super-120b-a12b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "nvidia-nemotron-3-ultra-550b-a55b": [
@@ -33525,6 +36741,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'nvidia-nemotron-3-ultra-550b-a55b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 29.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'nvidia-nemotron-3-ultra-550b-a55b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "nvidia-nemotron-nano-12b-v2-vl": [
@@ -33533,6 +36755,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'nvidia-nemotron-nano-12b-v2-vl', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'nvidia-nemotron-nano-12b-v2-vl', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "nvidia-nemotron-nano-12b-v2-vl-reasoning": [
@@ -33541,6 +36769,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'nvidia-nemotron-nano-12b-v2-vl-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 3.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'nvidia-nemotron-nano-12b-v2-vl-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "nvidia-nemotron-nano-9b-v2": [
@@ -33549,6 +36783,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'nvidia-nemotron-nano-9b-v2', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'nvidia-nemotron-nano-9b-v2', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "nvidia-nemotron-nano-9b-v2-reasoning": [
@@ -33557,6 +36797,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'nvidia-nemotron-nano-9b-v2-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 3.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'nvidia-nemotron-nano-9b-v2-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       o1: [
@@ -33565,6 +36811,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'o1', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 17.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'o1', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "o1-mini": [
@@ -33573,6 +36825,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'o1-mini', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 8.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'o1-mini', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "o1-preview": [
@@ -33581,6 +36839,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'o1-preview', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 11,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'o1-preview', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "o1-pro": [
@@ -33589,6 +36853,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'o1-pro', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 12.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'o1-pro', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       o3: [
@@ -33597,6 +36867,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'o3', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 23.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'o3', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "o3-mini": [
@@ -33605,6 +36881,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'o3-mini', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 12.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'o3-mini', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "o3-mini-high": [
@@ -33613,6 +36895,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'o3-mini-high', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 9.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'o3-mini-high', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "o3-pro": [
@@ -33621,6 +36909,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'o3-pro', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 25.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'o3-pro', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "o4-mini": [
@@ -33629,6 +36923,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'o4-mini', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 19.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'o4-mini', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "olmo-2-32b": [
@@ -33637,6 +36937,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'olmo-2-32b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'olmo-2-32b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "olmo-2-7b": [
@@ -33645,6 +36951,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'olmo-2-7b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'olmo-2-7b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "olmo-3-1-32b-instruct": [
@@ -33653,6 +36965,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'olmo-3-1-32b-instruct', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'olmo-3-1-32b-instruct', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "olmo-3-1-32b-think": [
@@ -33661,6 +36979,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'olmo-3-1-32b-think', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 2.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'olmo-3-1-32b-think', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "olmo-3-32b-think": [
@@ -33669,6 +36993,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'olmo-3-32b-think', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'olmo-3-32b-think', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "olmo-3-7b-instruct": [
@@ -33677,6 +37007,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'olmo-3-7b-instruct', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'olmo-3-7b-instruct', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "olmo-3-7b-think": [
@@ -33685,6 +37021,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'olmo-3-7b-think', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'olmo-3-7b-think', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "openchat-35": [
@@ -33693,6 +37035,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'openchat-35', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'openchat-35', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "palm-2": [
@@ -33701,6 +37049,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'palm-2', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'palm-2', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "phi-3-mini": [
@@ -33709,6 +37063,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'phi-3-mini', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'phi-3-mini', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "phi-4-mini": [
@@ -33717,6 +37077,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'phi-4-mini', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'phi-4-mini', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "phi-4-multimodal": [
@@ -33725,6 +37091,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'phi-4-multimodal', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'phi-4-multimodal', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "pixtral-large-2411": [
@@ -33733,6 +37105,20 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'pixtral-large-2411', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 2.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'pixtral-large-2411', fetched 2026-09-08",
+          asOf: "2026-09-08"
+        }
+      ],
+      "quasar-438b": [
+        {
+          value: 34.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'quasar-438b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen-2-5-max": [
@@ -33741,6 +37127,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen-2-5-max', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 4.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen-2-5-max', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen-chat-14b": [
@@ -33749,6 +37141,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen-chat-14b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen-chat-14b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen-chat-72b": [
@@ -33757,6 +37155,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen-chat-72b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen-chat-72b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen-turbo": [
@@ -33765,6 +37169,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen-turbo', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen-turbo', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen/qwen2.5-coder-32b": [
@@ -33773,6 +37183,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen2-5-coder-32b-instruct', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen2-5-coder-32b-instruct', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen/qwen3.6-35b-a3b": [
@@ -33781,6 +37197,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-6-35b-a3b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 26.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-6-35b-a3b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen1.5-110b-chat": [
@@ -33789,6 +37211,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen1.5-110b-chat', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen1.5-110b-chat', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen2-5-72b-instruct": [
@@ -33797,6 +37225,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen2-5-72b-instruct', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 3.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen2-5-72b-instruct', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen2-5-coder-7b-instruct": [
@@ -33805,6 +37239,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen2-5-coder-7b-instruct', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen2-5-coder-7b-instruct', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen2-72b-instruct": [
@@ -33813,6 +37253,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen2-72b-instruct', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen2-72b-instruct', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen2.5-32b-instruct": [
@@ -33821,6 +37267,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen2.5-32b-instruct', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen2.5-32b-instruct', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-0.6b-instruct": [
@@ -33829,6 +37281,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-0.6b-instruct', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-0.6b-instruct', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-0.6b-instruct-reasoning": [
@@ -33837,6 +37295,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-0.6b-instruct-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-0.6b-instruct-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-1.7b-instruct": [
@@ -33845,6 +37309,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-1.7b-instruct', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-1.7b-instruct', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-1.7b-instruct-reasoning": [
@@ -33853,6 +37323,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-1.7b-instruct-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-1.7b-instruct-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-14b-instruct": [
@@ -33861,6 +37337,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-14b-instruct', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-14b-instruct', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-14b-instruct-reasoning": [
@@ -33869,6 +37351,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-14b-instruct-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 7.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-14b-instruct-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-235b-a22b-instruct": [
@@ -33877,6 +37365,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-235b-a22b-instruct', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 5.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-235b-a22b-instruct', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-235b-a22b-instruct-2507": [
@@ -33885,6 +37379,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-235b-a22b-instruct-2507', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 12.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-235b-a22b-instruct-2507', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-235b-a22b-instruct-2507-reasoning": [
@@ -33893,6 +37393,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-235b-a22b-instruct-2507-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 13.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-235b-a22b-instruct-2507-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-235b-a22b-instruct-reasoning": [
@@ -33901,6 +37407,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-235b-a22b-instruct-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 7.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-235b-a22b-instruct-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-30b-a3b-2507": [
@@ -33909,6 +37421,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-30b-a3b-2507', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 3.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-30b-a3b-2507', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-30b-a3b-2507-reasoning": [
@@ -33917,6 +37435,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-30b-a3b-2507-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 8.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-30b-a3b-2507-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-30b-a3b-instruct": [
@@ -33925,6 +37449,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-30b-a3b-instruct', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-30b-a3b-instruct', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-30b-a3b-instruct-reasoning": [
@@ -33933,6 +37463,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-30b-a3b-instruct-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 3.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-30b-a3b-instruct-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-32b-instruct": [
@@ -33941,6 +37477,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-32b-instruct', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-32b-instruct', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-32b-instruct-reasoning": [
@@ -33949,6 +37491,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-32b-instruct-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-32b-instruct-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-4b-2507-instruct": [
@@ -33957,6 +37505,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-4b-2507-instruct', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-4b-2507-instruct', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-4b-2507-instruct-reasoning": [
@@ -33965,6 +37519,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-4b-2507-instruct-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 6.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-4b-2507-instruct-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-4b-instruct": [
@@ -33973,6 +37533,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-4b-instruct', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-4b-instruct', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-4b-instruct-reasoning": [
@@ -33981,6 +37547,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-4b-instruct-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 2.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-4b-instruct-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-5-0-8b": [
@@ -33989,6 +37561,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-5-0-8b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-0-8b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-5-0-8b-non-reasoning": [
@@ -33997,6 +37575,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-5-0-8b-non-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-0-8b-non-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-5-122b-a10b": [
@@ -34005,6 +37589,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-5-122b-a10b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 24.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-122b-a10b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-5-122b-a10b-non-reasoning": [
@@ -34013,6 +37603,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-5-122b-a10b-non-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 20.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-122b-a10b-non-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-5-27b": [
@@ -34021,6 +37617,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-5-27b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 26.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-27b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-5-27b-non-reasoning": [
@@ -34029,6 +37631,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-5-27b-non-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 22.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-27b-non-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-5-2b": [
@@ -34037,6 +37645,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-5-2b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 2.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-2b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-5-2b-non-reasoning": [
@@ -34045,6 +37659,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-5-2b-non-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-2b-non-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-5-35b-a3b": [
@@ -34053,6 +37673,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-5-35b-a3b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 22.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-35b-a3b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-5-35b-a3b-non-reasoning": [
@@ -34061,6 +37687,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-5-35b-a3b-non-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 17,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-35b-a3b-non-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-5-397b-a17b": [
@@ -34069,6 +37701,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-5-397b-a17b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 26.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-397b-a17b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-5-397b-a17b-non-reasoning": [
@@ -34077,6 +37715,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-5-397b-a17b-non-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 25.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-397b-a17b-non-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-5-4b": [
@@ -34085,6 +37729,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-5-4b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 13.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-4b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-5-4b-non-reasoning": [
@@ -34093,6 +37743,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-5-4b-non-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 10,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-4b-non-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-5-9b": [
@@ -34101,6 +37757,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-5-9b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 14.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-9b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-5-9b-non-reasoning": [
@@ -34109,6 +37771,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-5-9b-non-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 14.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-9b-non-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-5-omni-flash": [
@@ -34117,6 +37785,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-5-omni-flash', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 12.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-omni-flash', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-5-omni-plus": [
@@ -34125,6 +37799,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-5-omni-plus', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 24,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-omni-plus', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-6-27b": [
@@ -34133,6 +37813,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-6-27b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 29,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-6-27b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-6-27b-non-reasoning": [
@@ -34141,6 +37827,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-6-27b-non-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 23.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-6-27b-non-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-6-35b-a3b-non-reasoning": [
@@ -34149,6 +37841,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-6-35b-a3b-non-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 17.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-6-35b-a3b-non-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-6-max": [
@@ -34157,6 +37855,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-6-max', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 32.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-6-max', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-6-plus": [
@@ -34165,6 +37869,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-6-plus', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 31.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-6-plus', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-7-max": [
@@ -34173,6 +37883,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-7-max', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 36.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-7-max', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-7-plus": [
@@ -34181,6 +37897,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-7-plus', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 31.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-7-plus', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-8-2-4t-a95b": [
@@ -34189,6 +37911,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-8-2-4t-a95b', fetched 2026-08-18",
           asOf: "2026-08-18"
+        },
+        {
+          value: 46.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-8-2-4t-a95b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-8-27b": [
@@ -34197,6 +37925,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-8-27b', fetched 2026-08-25",
           asOf: "2026-08-25"
+        },
+        {
+          value: 41.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-8-27b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-8-27b-low": [
@@ -34205,6 +37939,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-8-27b-low', fetched 2026-08-25",
           asOf: "2026-08-25"
+        },
+        {
+          value: 33.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-8-27b-low', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-8-27b-medium": [
@@ -34213,6 +37953,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-8-27b-medium', fetched 2026-08-25",
           asOf: "2026-08-25"
+        },
+        {
+          value: 35.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-8-27b-medium', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-8-27b-non-reasoning": [
@@ -34221,6 +37967,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-8-27b-non-reasoning', fetched 2026-09-01",
           asOf: "2026-09-01"
+        },
+        {
+          value: 26.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-8-27b-non-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-8-flash-next": [
@@ -34229,6 +37981,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-8-flash-next', fetched 2026-09-01",
           asOf: "2026-09-01"
+        },
+        {
+          value: 45.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-8-flash-next', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-8-max": [
@@ -34237,6 +37995,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-8-max', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 46.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-8-max', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-8b-instruct": [
@@ -34245,6 +38009,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-8b-instruct', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-8b-instruct', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-8b-instruct-reasoning": [
@@ -34253,6 +38023,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-8b-instruct-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 2.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-8b-instruct-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-coder-30b-a3b-instruct": [
@@ -34261,6 +38037,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-coder-30b-a3b-instruct', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 7.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-coder-30b-a3b-instruct', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-coder-480b-a35b-instruct": [
@@ -34269,6 +38051,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-coder-480b-a35b-instruct', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 11.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-coder-480b-a35b-instruct', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-coder-next": [
@@ -34277,6 +38065,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-coder-next', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 14.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-coder-next', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-max": [
@@ -34285,6 +38079,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-max', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 17.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-max', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-max-preview": [
@@ -34293,6 +38093,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-max-preview', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 13,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-max-preview', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-max-thinking": [
@@ -34301,6 +38107,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-max-thinking', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 25,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-max-thinking', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-max-thinking-preview": [
@@ -34309,6 +38121,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-max-thinking-preview', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 18.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-max-thinking-preview', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-next-80b-a3b-instruct": [
@@ -34317,6 +38135,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-next-80b-a3b-instruct', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 7.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-next-80b-a3b-instruct', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-next-80b-a3b-reasoning": [
@@ -34325,6 +38149,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-next-80b-a3b-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 10.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-next-80b-a3b-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-omni-30b-a3b-instruct": [
@@ -34333,6 +38163,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-omni-30b-a3b-instruct', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-omni-30b-a3b-instruct', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-omni-30b-a3b-reasoning": [
@@ -34341,6 +38177,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-omni-30b-a3b-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-omni-30b-a3b-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-vl-235b-a22b-instruct": [
@@ -34349,6 +38191,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-vl-235b-a22b-instruct', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 8.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-vl-235b-a22b-instruct', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-vl-235b-a22b-reasoning": [
@@ -34357,6 +38205,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-vl-235b-a22b-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 14.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-vl-235b-a22b-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-vl-30b-a3b-instruct": [
@@ -34365,6 +38219,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-vl-30b-a3b-instruct', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 4.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-vl-30b-a3b-instruct', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-vl-30b-a3b-reasoning": [
@@ -34373,6 +38233,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-vl-30b-a3b-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 7.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-vl-30b-a3b-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-vl-32b-instruct": [
@@ -34381,6 +38247,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-vl-32b-instruct', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 5.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-vl-32b-instruct', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-vl-32b-reasoning": [
@@ -34389,6 +38261,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-vl-32b-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 11.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-vl-32b-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-vl-4b-instruct": [
@@ -34397,6 +38275,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-vl-4b-instruct', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-vl-4b-instruct', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-vl-4b-reasoning": [
@@ -34405,6 +38289,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-vl-4b-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 2.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-vl-4b-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-vl-8b-instruct": [
@@ -34413,6 +38303,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-vl-8b-instruct', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 2.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-vl-8b-instruct', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwen3-vl-8b-reasoning": [
@@ -34421,6 +38317,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-vl-8b-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 4.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-vl-8b-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "qwq-32b": [
@@ -34429,6 +38331,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwq-32b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 7.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwq-32b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "r1-1776": [
@@ -34437,6 +38345,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'r1-1776', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'r1-1776', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "reka-flash": [
@@ -34445,6 +38359,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'reka-flash', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'reka-flash', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "reka-flash-3": [
@@ -34453,6 +38373,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'reka-flash-3', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'reka-flash-3', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "ring-1t": [
@@ -34461,6 +38387,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'ring-1t', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 10.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'ring-1t', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "ring-2-6-1t": [
@@ -34469,6 +38401,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'ring-2-6-1t', fetched 2026-08-18",
           asOf: "2026-08-18"
+        },
+        {
+          value: 23.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'ring-2-6-1t', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "ring-flash-2-0": [
@@ -34477,6 +38415,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'ring-flash-2-0', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 2.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'ring-flash-2-0', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "sarvam-105b": [
@@ -34485,6 +38429,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'sarvam-105b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 6.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'sarvam-105b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "sarvam-30b": [
@@ -34493,6 +38443,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'sarvam-30b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'sarvam-30b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "sarvam-m-reasoning": [
@@ -34501,6 +38457,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'sarvam-m-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'sarvam-m-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "seed-oss-36b-instruct": [
@@ -34509,6 +38471,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'seed-oss-36b-instruct', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 12.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'seed-oss-36b-instruct', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "solar-mini": [
@@ -34517,6 +38485,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'solar-mini', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'solar-mini', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "solar-open-100b-reasoning": [
@@ -34525,6 +38499,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'solar-open-100b-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 9.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'solar-open-100b-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "solar-open2-250b": [
@@ -34533,6 +38513,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'solar-open2-250b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 29,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'solar-open2-250b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "solar-pro-2": [
@@ -34541,6 +38527,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'solar-pro-2', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 2.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'solar-pro-2', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "solar-pro-2-preview": [
@@ -34549,6 +38541,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'solar-pro-2-preview', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 4.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'solar-pro-2-preview', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "solar-pro-2-preview-reasoning": [
@@ -34557,6 +38555,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'solar-pro-2-preview-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 6.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'solar-pro-2-preview-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "solar-pro-2-reasoning": [
@@ -34565,6 +38569,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'solar-pro-2-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 3.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'solar-pro-2-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "solar-pro-3": [
@@ -34573,6 +38583,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'solar-pro-3', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 9.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'solar-pro-3', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "solar-pro4": [
@@ -34581,6 +38597,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'solar-pro4', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 32.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'solar-pro4', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       sonar: [
@@ -34589,6 +38611,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'sonar', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 3.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'sonar', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "sonar-pro": [
@@ -34597,6 +38625,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'sonar-pro', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 3.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'sonar-pro', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "sonar-reasoning": [
@@ -34605,6 +38639,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'sonar-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 5.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'sonar-reasoning', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "sonar-reasoning-pro": [
@@ -34613,6 +38653,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'sonar-reasoning-pro', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 11.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'sonar-reasoning-pro', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "step-3-5-flash": [
@@ -34621,6 +38667,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'step-3-5-flash', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 19.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'step-3-5-flash', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "step-3-5-flash-0202": [
@@ -34629,6 +38681,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'step-3-5-flash-0202', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 19.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'step-3-5-flash-0202', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "step-3-7-flash": [
@@ -34637,6 +38695,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'step-3-7-flash', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 22.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'step-3-7-flash', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "step-3-vl-10b": [
@@ -34645,6 +38709,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'step-3-vl-10b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 3.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'step-3-vl-10b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "tiny-aya-global": [
@@ -34653,6 +38723,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'tiny-aya-global', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'tiny-aya-global', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "tri-21b-think-preview": [
@@ -34661,6 +38737,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'tri-21b-think-preview', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 7.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'tri-21b-think-preview', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "tri-21b-think-v0-5": [
@@ -34669,6 +38751,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'tri-21b-think-v0-5', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 6.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'tri-21b-think-v0-5', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "trinity-large-thinking": [
@@ -34677,6 +38765,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'trinity-large-thinking', fetched 2026-08-18",
           asOf: "2026-08-18"
+        },
+        {
+          value: 13.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'trinity-large-thinking', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "tulu3-405b": [
@@ -34685,6 +38779,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'tulu3-405b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 2.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'tulu3-405b', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ],
       "zai-org/GLM-5.2": [
@@ -34693,6 +38793,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'glm-5-2', fetched 2026-08-13",
           asOf: "2026-08-13"
+        },
+        {
+          value: 42.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'glm-5-2', fetched 2026-09-08",
+          asOf: "2026-09-08"
         }
       ]
     };
@@ -34788,6 +38894,16 @@ var init_model_intellect_generated = __esm({
         anchorMin: 60,
         anchorMax: 61,
         fittedAsOf: "2026-07-18"
+      },
+      {
+        from: "v4.3",
+        to: "v4.1",
+        a: 1.150330927332256,
+        b: 3.9086247898859163,
+        anchorCount: 611,
+        anchorMin: 1,
+        anchorMax: 54.1,
+        fittedAsOf: "2026-09-09"
       }
     ];
   }
@@ -34836,7 +38952,7 @@ function listIntellectScoredModelIds() {
 function resolveIntellectModelId(id39) {
   return resolveModelIdForm(
     id39,
-    (candidate) => candidate in MODEL_INTELLECT_RAW ? candidate : INTELLECT_ALIASES[candidate] ?? null
+    (candidate) => Object.hasOwn(MODEL_INTELLECT_RAW, candidate) ? candidate : INTELLECT_ALIASES[candidate] ?? null
   );
 }
 function pickMeasurement(modelId) {
@@ -36237,12 +40353,20 @@ var init_attachment_preview = __esm({
   }
 });
 
+// src/shared/nullish.ts
+var init_nullish2 = __esm({
+  "src/shared/nullish.ts"() {
+    init_nullish();
+  }
+});
+
 // src/renderer/ui/cx.ts
 function cx(...parts) {
-  return parts.filter((part) => typeof part === "string" && part.length > 0).join(" ");
+  return parts.filter(isNonEmptyString).join(" ");
 }
 var init_cx = __esm({
   "src/renderer/ui/cx.ts"() {
+    init_nullish2();
   }
 });
 
@@ -36747,7 +40871,7 @@ var init_data_policies = __esm({
 
 // packages/llm/src/agent-model-identity.ts
 function resolveAgentModelIdentity(...forms) {
-  const named2 = forms.filter((form) => Boolean(form));
+  const named2 = forms.filter(isNonEmptyString);
   for (const form of named2) {
     const id39 = resolveIntellectModelId(form);
     if (id39 !== null && getIntellectScore(id39)) return id39;
@@ -36763,24 +40887,6 @@ var init_agent_model_identity = __esm({
   "packages/llm/src/agent-model-identity.ts"() {
     init_model_intellect();
     init_model_label();
-  }
-});
-
-// packages/std/src/nullish.ts
-function isDefined(value2) {
-  return value2 !== void 0;
-}
-function isNonNull(value2) {
-  return value2 !== null;
-}
-var init_nullish = __esm({
-  "packages/std/src/nullish.ts"() {
-  }
-});
-
-// src/shared/nullish.ts
-var init_nullish2 = __esm({
-  "src/shared/nullish.ts"() {
     init_nullish();
   }
 });
@@ -37062,6 +41168,7 @@ async function fetchModelOptions(api3, current, opts = {}) {
   }
   for (const model of models) {
     const { id: id39 } = model;
+    if (model.embedding === true) continue;
     const hint = [localModelRoleHint(id39), localModelIntellectHint(id39)].filter(isNonNull).join(" \xB7 ");
     const label = getLocalModelCapability(id39)?.label ?? modelDisplayName(id39);
     options2.push({
@@ -37211,6 +41318,10 @@ var init_model_options = __esm({
 });
 
 // src/renderer/views/model-picker.ts
+function fieldMenuSurfacePlacement(menu, surface, trigger, gap) {
+  if (menu.top >= surface.top - 1 && menu.bottom <= surface.bottom + 1) return "natural";
+  return trigger.top - gap - menu.height >= surface.top ? "flipped" : "contained";
+}
 function mountModelPicker(root4, getCurrent, onSelect, loadOptions, pickerOpts = {}) {
   const variant = pickerOpts.variant ?? "compact";
   const recentMode = pickerOpts.getRecentValues !== void 0;
@@ -37220,7 +41331,7 @@ function mountModelPicker(root4, getCurrent, onSelect, loadOptions, pickerOpts =
       `model-picker-${variant}`,
       recentMode ? "model-picker-recent-mode" : void 0,
       pickerOpts.className
-    ].filter((part) => Boolean(part)).join(" ")
+    ].filter(isNonEmptyString).join(" ")
   });
   wrap3.style.setProperty("--model-picker-anchor", `--model-picker-${String(++pickerAnchorId)}`);
   const triggerAttrs = {
@@ -37340,6 +41451,22 @@ function mountModelPicker(root4, getCurrent, onSelect, loadOptions, pickerOpts =
     activeValue = activeGroup()?.currentValue ?? null;
     setView("group");
   }
+  function placeFieldMenuInsideSurface() {
+    menu.classList.remove("is-surface-flipped", "is-surface-contained");
+    if (!open3 || variant !== "field") return;
+    const surface = menu.offsetParent;
+    if (!(surface instanceof HTMLElement)) return;
+    const menuRect = menu.getBoundingClientRect();
+    const surfaceRect = surface.getBoundingClientRect();
+    const triggerRect = trigger.getBoundingClientRect();
+    const gap = Number.parseFloat(getComputedStyle(menu).getPropertyValue("--spacing-xs")) || 4;
+    const placement = fieldMenuSurfacePlacement(menuRect, surfaceRect, triggerRect, gap);
+    if (placement === "flipped") {
+      menu.classList.add("is-surface-flipped");
+    } else if (placement === "contained") {
+      menu.classList.add("is-surface-contained");
+    }
+  }
   function setOpen(next3) {
     open3 = next3;
     trigger.setAttribute("aria-expanded", String(next3));
@@ -37349,6 +41476,7 @@ function mountModelPicker(root4, getCurrent, onSelect, loadOptions, pickerOpts =
       if (loadState === "error") void refresh();
     } else {
       menu.setAttribute("hidden", "");
+      menu.classList.remove("is-surface-flipped", "is-surface-contained");
       filter8.value = "";
       setView(homeView, false);
       pickerOpts.onClose?.();
@@ -37510,6 +41638,7 @@ function mountModelPicker(root4, getCurrent, onSelect, loadOptions, pickerOpts =
       );
     }
     scrollActiveOptionIntoView();
+    placeFieldMenuInsideSurface();
   }
   function selectOption(value2) {
     if (value2 === null) return;
@@ -37797,6 +41926,7 @@ var init_model_picker = __esm({
     init_helpers();
     init_icons();
     init_model_options();
+    init_nullish2();
     RECENT_MODEL_LIMIT = 5;
     pickerAnchorId = 0;
     fieldPickerId = 0;
@@ -51725,7 +55855,8 @@ var init_automations_plugin = __esm({
             level: 3,
             slot: "settings-plugin-detail",
             title: "Automation schedules"
-          }
+          },
+          { id: "automation-manager", level: 3, slot: "app-dialog", title: "Automations" }
         ],
         storage: { namespace: AUTOMATIONS_PLUGIN_ID }
       },
@@ -51736,7 +55867,8 @@ var init_automations_plugin = __esm({
             level: 3,
             slot: "settings-plugin-detail",
             title: "Automation schedules"
-          }
+          },
+          { id: "automation-manager", level: 3, slot: "app-dialog", title: "Automations" }
         ]
       }
     );
@@ -51757,7 +55889,7 @@ function liveWorktreeLimit(value2) {
   if (value2 === "3") return 3;
   return 1;
 }
-function createAutomationPluginSettings(store3, api3, pluginEnabled, revealScheduleId) {
+function createAutomationPluginSettings(store3, api3, pluginEnabled, revealScheduleId, createNew = false) {
   const root4 = el("section", {
     class: "automation-plugin-settings",
     "data-plugin-detail": AUTOMATIONS_PLUGIN_ID
@@ -51784,14 +55916,12 @@ function createAutomationPluginSettings(store3, api3, pluginEnabled, revealSched
     { class: "automation-scope" },
     project2 ? `Project: ${project2.name} \xB7 local time \xB7 Copse must be running` : "Open a project to configure its schedules."
   );
-  const notice = el(
-    "p",
-    { class: "automation-notice" },
-    pluginEnabled ? "Each run starts a fresh isolated task. Runs group under the schedule name. One live worktree is the safe default; schedules can explicitly allow up to three. Normal tool permission prompts still apply." : "Enable this plugin to arm schedules. Existing schedules remain editable while disabled."
-  );
-  const status = el("div", { class: "automation-status", hidden: true });
+  const pluginNotice = () => pluginEnabled ? "Each run starts a fresh isolated task. Runs group under the schedule name. One live worktree is the safe default; schedules can explicitly allow up to three. Normal tool permission prompts still apply." : "Enable this plugin to arm schedules. Existing schedules remain editable while disabled.";
+  const notice = el("p", { class: "automation-notice" }, pluginNotice());
+  const status = el("div", { class: "automation-status", role: "status", hidden: true });
   const list = el("div", { class: "automation-list" });
   const form = el("form", { class: "automation-form", hidden: true });
+  const formTitle = el("h3", { class: "automation-form-title" }, "New automation");
   const nameInput = el("input", {
     type: "text",
     class: "automation-input automation-name-input",
@@ -51828,6 +55958,7 @@ function createAutomationPluginSettings(store3, api3, pluginEnabled, revealSched
   const saveButton = el("button", { type: "submit", class: "automation-save-btn" }, "Save schedule");
   const cancelButton = el("button", { type: "button", class: "automation-cancel-btn" }, "Cancel");
   form.append(
+    formTitle,
     el("label", { class: "automation-label" }, "Name", nameInput),
     el(
       "label",
@@ -51861,6 +55992,7 @@ function createAutomationPluginSettings(store3, api3, pluginEnabled, revealSched
   let schedules = [];
   let editingId = null;
   let pendingReveal = revealScheduleId;
+  let pendingCreate = createNew;
   function showStatus(message2, error63 = false) {
     status.hidden = false;
     status.textContent = message2;
@@ -51874,10 +56006,15 @@ function createAutomationPluginSettings(store3, api3, pluginEnabled, revealSched
   function closeForm() {
     editingId = null;
     form.hidden = true;
+    list.hidden = false;
+    heading.hidden = false;
   }
   async function openForm(schedule) {
     hideStatus();
     editingId = schedule?.id ?? null;
+    formTitle.textContent = schedule ? "Edit automation" : "New automation";
+    list.hidden = true;
+    heading.hidden = true;
     nameInput.value = schedule?.name ?? "";
     cronInput.value = schedule?.cron ?? "0 9 * * 1-5";
     promptInput.value = schedule?.prompt ?? "";
@@ -51885,11 +56022,11 @@ function createAutomationPluginSettings(store3, api3, pluginEnabled, revealSched
     worktreeLimitSelect.value = String(schedule?.maxLiveWorktrees ?? 1);
     const configuredModel = schedule?.model.trim() ?? "";
     const defaultModel = configuredModel || BEST_VALUE_CHAT_MODEL;
+    form.hidden = false;
+    nameInput.focus();
     const options2 = await fetchDynamicModelOptions(defaultModel);
     const selectedModel = options2.find((option2) => option2.value === defaultModel && !option2.disabled)?.value ?? options2.find((option2) => option2.value && !option2.disabled)?.value ?? "";
     await modelPicker.refresh(selectedModel);
-    form.hidden = false;
-    nameInput.focus();
   }
   function renderList() {
     clear(list);
@@ -51964,6 +56101,8 @@ function createAutomationPluginSettings(store3, api3, pluginEnabled, revealSched
           await api3.automations.remove(projectId, schedule.id);
           if (editingId === schedule.id) closeForm();
           await refresh();
+        }).catch((error63) => {
+          showStatus(cleanIpcError(error63), true);
         });
       });
       actions.append(edit, run6, remove3);
@@ -51990,6 +56129,10 @@ function createAutomationPluginSettings(store3, api3, pluginEnabled, revealSched
       schedules = await api3.automations.list(projectId);
       renderList();
       revealLinkedSchedule();
+      if (pendingCreate) {
+        pendingCreate = false;
+        await openForm();
+      }
     } catch (error63) {
       showStatus(cleanIpcError(error63), true);
     }
@@ -52023,7 +56166,13 @@ function createAutomationPluginSettings(store3, api3, pluginEnabled, revealSched
     });
   });
   void refresh();
-  return root4;
+  return Object.assign(root4, {
+    setPluginEnabled(enabled) {
+      pluginEnabled = enabled;
+      notice.textContent = pluginNotice();
+      renderList();
+    }
+  });
 }
 var init_automation_plugin_settings = __esm({
   "src/renderer/views/automation-plugin-settings.ts"() {
@@ -52816,6 +56965,22 @@ function mountSettingsDialog(store3, api3) {
                 </span>
               </label>
             </fieldset>
+
+            <fieldset>
+              <legend>Commit signing</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="gitCommitSshAgentSocketAccess" />
+                Let Copse's git commit tool use your ssh-agent (macOS)
+              </label>
+              <p class="field-hint">
+                Off by default. Turn this on when Git uses a passphrase-protected SSH key and signed
+                commits fail inside Copse's sandbox. The grant applies only to Copse's native
+                <code>git_commit</code> subprocess, but Git hooks run inside that process and can
+                also ask ssh-agent to use <strong>any key it holds</strong>. The private key remains
+                unreadable. Pair this with <code>ssh-add -c</code> to confirm each use. macOS only:
+                Linux cannot admit one socket without admitting every Unix socket.
+              </p>
+            </fieldset>
           </section>
 
           <section class="settings-section" data-section="mcp">
@@ -52902,13 +57067,16 @@ function mountSettingsDialog(store3, api3) {
             <fieldset>
               <legend>Instruction files</legend>
               <p class="settings-fieldset-desc">
-                Files appended to the system prompt, in precedence order. Global steering
+                Files available to the system prompt, in precedence order. Global steering
                 (<code>~/AGENTS.md</code>, <code>~/.claude/CLAUDE.md</code>) loads first, then
                 project <code>AGENT.md</code>/<code>AGENTS.md</code> (cross-tool),
-                <code>CLAUDE.md</code> (Claude Code), and always-applied Cursor rules
+                <code>CLAUDE.md</code> (Claude Code), directory-scoped nested
+                <code>AGENTS.md</code>, and always-applied Cursor rules
                 (<code>.cursor/rules/*.mdc</code> with <code>alwaysApply: true</code>, plus
                 <code>.cursorrules</code>). Auto-attached and manually <code>@</code>-mentioned
-                rules also join this list for the turn that activates them.
+                rules also join this list for the turn that activates them. Nested
+                <code>AGENT.md</code> and <code>CLAUDE.md</code> remain root-only compatibility
+                formats.
               </p>
               <div id="sources-instructions-list" class="sources-group">
                 <span class="sources-empty">Loading\u2026</span>
@@ -53020,7 +57188,7 @@ function mountSettingsDialog(store3, api3) {
             </label>
             <p class="field-hint storage-project-path" id="storage-project-path"></p>
 
-            <fieldset>
+            <fieldset class="sources-worktrees-fieldset">
               <legend>Worktrees</legend>
               <p class="settings-fieldset-desc">
                 Linked Git checkouts of this project. Copse creates one per isolated thread so
@@ -53029,6 +57197,14 @@ function mountSettingsDialog(store3, api3) {
                 terminal there, remove ignored package-manager directories, or delete the whole
                 checkout. Deleting one also removes its branch when the branch is fully merged.
               </p>
+              <div id="sources-worktrees-selection" class="sources-worktrees-selection" hidden>
+                <label><input id="sources-worktrees-select-all" type="checkbox"> Select all</label>
+                <span id="sources-worktrees-selected-count" aria-live="polite"></span>
+                <div id="sources-worktrees-bulk-actions" hidden>
+                  <button type="button" id="sources-worktrees-cleanup" class="sources-worktree-action-btn">Clean up\u2026</button>
+                  <button type="button" id="sources-worktrees-delete" class="sources-worktree-action-btn sources-worktree-delete-btn">Delete</button>
+                </div>
+              </div>
               <div id="sources-worktrees-list" class="sources-group">
                 <span class="sources-empty">Loading\u2026</span>
               </div>
@@ -53243,6 +57419,21 @@ function mountSettingsDialog(store3, api3) {
                 When a turn ends with one clearly valuable next move, it appears as placeholder
                 text in the message box \u2014 press Tab to accept it, or just type to ignore it.
                 Uses the small-tasks model; most turns show nothing.
+              </p>
+            </fieldset>
+
+            <fieldset>
+              <legend>Unattended container runs</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="containerRunsEnabled" />
+                Let a thread run unattended inside a disposable Docker container
+              </label>
+              <p class="field-hint">
+                Adds "Run unattended in a container" to the message box menu. The run works on a
+                snapshot of the thread's checkout with no prompts, reaching only its model's
+                origin, and brings its commits back for you to apply. Needs Docker; the first run
+                builds the worker image. A run carries one credential: the model's API key, or,
+                if you opt in per run, your Codex or Gemini sign-in copied into the container.
               </p>
             </fieldset>
 
@@ -53677,7 +57868,7 @@ function mountSettingsDialog(store3, api3) {
       const detail = [
         agent.description,
         ...agent.unsupportedFields.map((f3) => `${f3.field}: ${f3.reason}`)
-      ].filter((part) => Boolean(part)).join(" \xB7 ");
+      ].filter(isNonEmptyString).join(" \xB7 ");
       rows.push(
         makeSourceRow(agent.name, agent.source, detail || null, {
           badgeClass: agent.source === "project" ? "sources-badge-project" : void 0,
@@ -53930,7 +58121,7 @@ function mountSettingsDialog(store3, api3) {
     if (entry.changedCount !== null && entry.changedCount > 0) {
       extraBadges.push({
         text: `${String(entry.changedCount)} uncommitted`,
-        className: "sources-badge-warning"
+        className: "sources-badge-warning sources-worktree-changes"
       });
     }
     if (entry.merged === false) {
@@ -53949,6 +58140,17 @@ function mountSettingsDialog(store3, api3) {
       hoverDetail: entry.path
     });
     row2.dataset["worktreePath"] = entry.path;
+    const select = document.createElement("input");
+    select.type = "checkbox";
+    select.className = "sources-worktree-select";
+    select.setAttribute("aria-label", `Select worktree ${entry.branch ?? entry.path}`);
+    select.disabled = Boolean(entry.usage?.running);
+    select.addEventListener("change", () => {
+      if (select.checked) selectedWorktrees.add(entry.path);
+      else selectedWorktrees.delete(entry.path);
+      syncWorktreeSelection();
+    });
+    row2.querySelector(".sources-row-header")?.prepend(select);
     if (entry.usage) {
       const usage = entry.usage;
       const badgeEl = row2.querySelector(".sources-badge");
@@ -53990,7 +58192,7 @@ function mountSettingsDialog(store3, api3) {
       cleanupBtn.title = "Remove ignored package-manager directories from this checkout";
     }
     cleanupBtn.addEventListener("click", () => {
-      void cleanupWorktreePackages(projectId, entry, cleanupBtn);
+      void runWorktreeAction(() => cleanupWorktreePackages(projectId, [entry]));
     });
     const removeBtn = document.createElement("button");
     removeBtn.type = "button";
@@ -54003,7 +58205,7 @@ function mountSettingsDialog(store3, api3) {
       removeBtn.title = "Remove this linked checkout from disk";
     }
     removeBtn.addEventListener("click", () => {
-      void removeWorktree(projectId, entry, removeBtn);
+      void runWorktreeAction(() => removeWorktree(projectId, entry));
     });
     row2.querySelector(".sources-row-header")?.append(terminalBtn, cleanupBtn, removeBtn);
     return { row: row2, size: size4 };
@@ -54021,66 +58223,106 @@ function mountSettingsDialog(store3, api3) {
       button.disabled = false;
     }
   }
-  async function cleanupWorktreePackages(projectId, entry, button) {
+  async function cleanupWorktreePackages(projectId, entries2) {
     const statusEl = qsRequired(overlay, "#sources-worktrees-status");
-    button.disabled = true;
+    const previews2 = [];
+    const problems = [];
     statusEl.textContent = "Looking for package directories\u2026";
-    try {
-      const preview = await api3.worktrees.cleanupPackages(projectId, entry.path, false);
-      if (preview.status === "blocked-running") {
-        statusEl.textContent = "That worktree has an agent turn running in it.";
-        return;
+    for (const entry of entries2) {
+      try {
+        const preview = await api3.worktrees.cleanupPackages(projectId, entry.path, false);
+        if (preview.status === "blocked-running") {
+          problems.push(`${entry.branch ?? entry.path}: an agent turn is running.`);
+        } else if (preview.directories.length > 0) {
+          previews2.push({ entry, preview });
+        }
+      } catch (error63) {
+        problems.push(`${entry.branch ?? entry.path}: ${errorMessage(error63)}`);
       }
-      if (preview.directories.length === 0) {
-        statusEl.textContent = "No ignored package-manager directories found.";
-        return;
-      }
-      const size4 = preview.truncated ? `at least ${formatByteSize(preview.bytes)}` : formatByteSize(preview.bytes);
-      const shown = preview.directories.slice(0, 12);
-      const remaining = preview.directories.length - shown.length;
-      const confirmed = await showConfirmDialog({
-        message: `Remove ${String(preview.directories.length)} package director${preview.directories.length === 1 ? "y" : "ies"}?`,
-        detail: [
-          ...shown.map((directory) => directory.path),
-          ...remaining > 0 ? [`\u2026and ${String(remaining)} more`] : [],
-          "",
-          `This will reclaim ${size4}. Your package manager can recreate these directories.`
-        ].join("\n"),
-        confirmLabel: "Clean up",
-        danger: true
-      });
-      if (!confirmed) {
-        statusEl.textContent = "Kept.";
-        return;
-      }
-      statusEl.textContent = "Cleaning up package directories\u2026";
-      const result = await api3.worktrees.cleanupPackages(projectId, entry.path, true);
-      if (result.status === "blocked-running") {
-        statusEl.textContent = "That worktree has an agent turn running in it.";
-        return;
-      }
-      const reclaimed = result.truncated ? `at least ${formatByteSize(result.bytes)}` : formatByteSize(result.bytes);
-      await refreshWorktrees(
-        `Cleaned up ${String(result.directories.length)} directories (${reclaimed}).`
-      );
-    } catch (error63) {
-      statusEl.textContent = errorMessage(error63);
-    } finally {
-      if (button.isConnected) button.disabled = false;
     }
+    if (previews2.length === 0) {
+      statusEl.textContent = problems.join("\n") || "No ignored package-manager directories found.";
+      return;
+    }
+    const directories = previews2.flatMap(
+      ({ entry, preview }) => preview.directories.map(
+        (directory) => entries2.length === 1 ? directory.path : `${entry.branch ?? entry.path}: ${directory.path}`
+      )
+    );
+    const bytes = previews2.reduce((total, { preview }) => total + preview.bytes, 0);
+    const size4 = `${previews2.some(({ preview }) => preview.truncated) ? "at least " : ""}${formatByteSize(bytes)}`;
+    const shown = directories.slice(0, 12);
+    const confirmed = await showConfirmDialog({
+      message: `Remove ${String(directories.length)} package director${directories.length === 1 ? "y" : "ies"}${entries2.length > 1 ? ` from ${String(previews2.length)} worktree${previews2.length === 1 ? "" : "s"}` : ""}?`,
+      detail: [
+        ...shown,
+        ...directories.length > shown.length ? [`\u2026and ${String(directories.length - shown.length)} more`] : [],
+        "",
+        `This will reclaim ${size4}. Your package manager can recreate these directories.`,
+        ...problems
+      ].join("\n"),
+      confirmLabel: "Clean up",
+      danger: true
+    });
+    if (!confirmed) {
+      statusEl.textContent = "Kept.";
+      return;
+    }
+    let cleaned = 0;
+    let reclaimed = 0;
+    let truncated = false;
+    for (const { entry } of previews2) {
+      statusEl.textContent = `Cleaning up ${entry.branch ?? entry.path}\u2026`;
+      try {
+        const result = await api3.worktrees.cleanupPackages(projectId, entry.path, true);
+        if (result.status === "blocked-running") {
+          problems.push(`${entry.branch ?? entry.path}: an agent turn is running.`);
+          continue;
+        }
+        cleaned += result.directories.length;
+        reclaimed += result.bytes;
+        truncated ||= result.truncated;
+        selectedWorktrees.delete(entry.path);
+        const target = worktreeRows.get(entry.path);
+        if (target) {
+          if (result.changedCount !== void 0) {
+            entry.changedCount = result.changedCount;
+            target.row.querySelector(".sources-worktree-changes")?.remove();
+            if (result.changedCount !== null && result.changedCount > 0) {
+              const badge = document.createElement("span");
+              badge.className = "sources-badge sources-badge-warning sources-worktree-changes";
+              badge.textContent = `${String(result.changedCount)} uncommitted`;
+              target.row.querySelector(".sources-worktree-terminal-btn")?.before(badge);
+            }
+          }
+          await fillWorktreeSizes(projectId, [target]);
+        }
+      } catch (error63) {
+        problems.push(`${entry.branch ?? entry.path}: ${errorMessage(error63)}`);
+      }
+    }
+    statusEl.textContent = [
+      `Cleaned up ${String(cleaned)} directories (${truncated ? "at least " : ""}${formatByteSize(reclaimed)}).`,
+      ...problems
+    ].join("\n");
   }
+  const worktreeSizeRequests = /* @__PURE__ */ new WeakMap();
   async function fillWorktreeSizes(projectId, targets) {
     for (const target of targets) {
       if (!target.size.isConnected) continue;
+      const request = (worktreeSizeRequests.get(target.size) ?? 0) + 1;
+      worktreeSizeRequests.set(target.size, request);
       try {
         const size4 = await api3.worktrees.size(projectId, target.entry.path);
+        if (worktreeSizeRequests.get(target.size) !== request) continue;
         target.size.textContent = size4.truncated ? `over ${formatByteSize(size4.bytes)}` : formatByteSize(size4.bytes);
       } catch {
+        if (worktreeSizeRequests.get(target.size) !== request) continue;
         target.size.textContent = "size unavailable";
       }
     }
   }
-  async function removeWorktree(projectId, entry, button) {
+  async function removeWorktree(projectId, entry, alreadyConfirmed = false) {
     const statusEl = qsRequired(overlay, "#sources-worktrees-status");
     const name = entry.branch ?? entry.path;
     const consequences = [entry.path];
@@ -54090,14 +58332,13 @@ function mountSettingsDialog(store3, api3) {
     if (entry.merged === false && entry.branch) {
       consequences.push(`Branch ${entry.branch} has unmerged commits and will be kept.`);
     }
-    const confirmed = await showConfirmDialog({
+    const confirmed = alreadyConfirmed || await showConfirmDialog({
       message: `Delete worktree ${name}?`,
       detail: consequences.join("\n"),
       confirmLabel: "Delete",
       danger: true
     });
     if (!confirmed) return;
-    button.disabled = true;
     statusEl.textContent = "Deleting\u2026";
     try {
       let result = await api3.worktrees.remove(projectId, entry.path, false);
@@ -54106,35 +58347,126 @@ function mountSettingsDialog(store3, api3) {
         const rest = result.changed.length - shown.length;
         const forced = await showConfirmDialog({
           message: `Discard ${String(result.changed.length)} uncommitted file${result.changed.length === 1 ? "" : "s"}?`,
-          detail: [...shown, ...rest > 0 ? [`\u2026and ${String(rest)} more`] : []].join("\n"),
+          detail: [name, ...shown, ...rest > 0 ? [`\u2026and ${String(rest)} more`] : []].join("\n"),
           confirmLabel: "Delete anyway",
           danger: true
         });
         if (!forced) {
           statusEl.textContent = "Kept.";
-          button.disabled = false;
           return;
         }
         result = await api3.worktrees.remove(projectId, entry.path, true);
       }
       if (result.status === "blocked-running") {
         statusEl.textContent = "That worktree has an agent turn running in it.";
-        button.disabled = false;
         return;
       }
       if (result.status === "blocked-dirty") {
         statusEl.textContent = "Git still reports uncommitted work in that worktree.";
-        button.disabled = false;
         return;
       }
-      await refreshWorktrees(
-        result.branchDeleted ? `Deleted ${name} and its branch.` : `Deleted ${name}.`
-      );
+      worktreeRows.get(entry.path)?.row.remove();
+      worktreeRows.delete(entry.path);
+      selectedWorktrees.delete(entry.path);
+      if (worktreeRows.size === 0) {
+        fillSourceList(
+          "#sources-worktrees-list",
+          [],
+          "No worktrees. Copse creates one when a thread runs in its own checkout."
+        );
+      }
+      statusEl.textContent = result.branchDeleted ? `Deleted ${name} and its branch.` : `Deleted ${name}.`;
     } catch (error63) {
       statusEl.textContent = errorMessage(error63);
-      button.disabled = false;
     }
   }
+  const worktreeRows = /* @__PURE__ */ new Map();
+  const selectedWorktrees = /* @__PURE__ */ new Set();
+  let worktreeActionRunning = false;
+  function syncWorktreeSelection() {
+    const eligible = [...worktreeRows.values()].filter(({ entry }) => !entry.usage?.running);
+    qsRequired(overlay, "#sources-worktrees-selection").hidden = worktreeRows.size === 0;
+    const all = qsRequired(overlay, "#sources-worktrees-select-all");
+    all.checked = eligible.length > 0 && selectedWorktrees.size === eligible.length;
+    all.indeterminate = selectedWorktrees.size > 0 && !all.checked;
+    all.disabled = worktreeActionRunning || eligible.length === 0;
+    qsRequired(overlay, "#sources-worktrees-selected-count").textContent = selectedWorktrees.size > 0 ? `${String(selectedWorktrees.size)} selected` : "";
+    qsRequired(overlay, "#sources-worktrees-bulk-actions").hidden = selectedWorktrees.size === 0;
+    for (const { entry, row: row2 } of worktreeRows.values()) {
+      const checkbox = qsRequired(row2, ".sources-worktree-select");
+      checkbox.checked = selectedWorktrees.has(entry.path);
+      checkbox.disabled = worktreeActionRunning || Boolean(entry.usage?.running);
+      for (const button of row2.querySelectorAll(
+        ".sources-worktree-cleanup-btn, .sources-worktree-delete-btn"
+      )) {
+        button.disabled = checkbox.disabled;
+      }
+    }
+    for (const id39 of ["#sources-worktrees-cleanup", "#sources-worktrees-delete"]) {
+      qsRequired(overlay, id39).disabled = worktreeActionRunning;
+    }
+    qsRequired(overlay, "#storage-project-select").disabled = worktreeActionRunning || storageProjectId === null;
+  }
+  async function runWorktreeAction(action) {
+    if (worktreeActionRunning) return;
+    worktreeActionRunning = true;
+    syncWorktreeSelection();
+    try {
+      await action();
+    } finally {
+      worktreeActionRunning = false;
+      syncWorktreeSelection();
+    }
+  }
+  qsRequired(overlay, "#sources-worktrees-select-all").addEventListener(
+    "change",
+    (event3) => {
+      if (!(event3.target instanceof HTMLInputElement)) return;
+      selectedWorktrees.clear();
+      if (event3.target.checked) {
+        for (const { entry } of worktreeRows.values()) {
+          if (!entry.usage?.running) selectedWorktrees.add(entry.path);
+        }
+      }
+      syncWorktreeSelection();
+    }
+  );
+  qsRequired(overlay, "#sources-worktrees-cleanup").addEventListener("click", () => {
+    const projectId = storageProjectId;
+    if (!projectId) return;
+    const entries2 = [...worktreeRows.values()].filter(({ entry }) => selectedWorktrees.has(entry.path)).map(({ entry }) => entry);
+    if (entries2.length > 0)
+      void runWorktreeAction(() => cleanupWorktreePackages(projectId, entries2));
+  });
+  qsRequired(overlay, "#sources-worktrees-delete").addEventListener("click", () => {
+    const projectId = storageProjectId;
+    if (!projectId) return;
+    const targets = [...worktreeRows.values()].filter(
+      ({ entry }) => selectedWorktrees.has(entry.path)
+    );
+    if (targets.length === 0) return;
+    void runWorktreeAction(async () => {
+      const confirmed = await showConfirmDialog({
+        message: `Delete ${String(targets.length)} worktree${targets.length === 1 ? "" : "s"}?`,
+        detail: [
+          ...targets.map(({ entry }) => entry.path),
+          "",
+          "Linked threads will continue in the project checkout. Fully merged branches will be deleted; unmerged branches will be kept.",
+          "Worktrees with uncommitted files require a separate confirmation."
+        ].join("\n"),
+        confirmLabel: "Delete",
+        danger: true
+      });
+      if (!confirmed) return;
+      const outcomes = [];
+      const statusEl = qsRequired(overlay, "#sources-worktrees-status");
+      for (const { entry } of targets) {
+        await removeWorktree(projectId, entry, true);
+        outcomes.push(`${entry.branch ?? entry.path}: ${statusEl.textContent}`);
+      }
+      statusEl.textContent = outcomes.join("\n");
+    });
+  });
   let storageProjectId = null;
   let worktreeRefreshGeneration = 0;
   function syncStorageProjectSelect(preferActiveProject = false) {
@@ -54160,8 +58492,13 @@ function mountSettingsDialog(store3, api3) {
     return storageProjectId;
   }
   async function refreshWorktrees(status = "", preferActiveProject = false) {
+    if (worktreeActionRunning) return;
     const statusEl = qsRequired(overlay, "#sources-worktrees-status");
     const projectId = syncStorageProjectSelect(preferActiveProject);
+    worktreeRows.clear();
+    selectedWorktrees.clear();
+    fillSourceList("#sources-worktrees-list", [], "Loading\u2026");
+    syncWorktreeSelection();
     const generation = ++worktreeRefreshGeneration;
     if (!projectId) {
       fillSourceList("#sources-worktrees-list", [], "Open a project to see its worktrees.");
@@ -54177,6 +58514,8 @@ function mountSettingsDialog(store3, api3) {
         rendered.map((item) => item.row),
         "No worktrees. Copse creates one when a thread runs in its own checkout."
       );
+      for (const target of rendered) worktreeRows.set(target.entry.path, target);
+      syncWorktreeSelection();
       statusEl.textContent = status;
       await fillWorktreeSizes(projectId, rendered);
     } catch (error63) {
@@ -54230,9 +58569,11 @@ function mountSettingsDialog(store3, api3) {
     else statusEl.textContent = errorMessage(result.error);
   }
   function makeInstructionRow(file2) {
-    const detail = `${file2.path} \xB7 ${formatByteSize(file2.bytes)}` + (file2.active ? "" : " \xB7 inert until you trust this workspace \u2014 click the badge to trust it");
-    const row2 = makeSourceRow(file2.name, file2.active ? file2.scope : "not loaded", detail, {
-      badgeClass: !file2.active ? "sources-badge-untrusted" : file2.scope === "project" ? "sources-badge-project" : void 0,
+    const nestedStatus = file2.scopePath === void 0 ? "" : file2.duplicateOf !== void 0 ? ` \xB7 scope: ${file2.scopePath}/ \xB7 identical to ${file2.duplicateOf}, loaded once through it` : file2.active ? ` \xB7 scope: ${file2.scopePath}/ \xB7 active this turn` : ` \xB7 scope: ${file2.scopePath}/ \xB7 activates when a path under this directory enters context`;
+    const detail = `${file2.path} \xB7 ${formatByteSize(file2.bytes)}` + (file2.trusted ? nestedStatus : " \xB7 inert until you trust this workspace \u2014 click the badge to trust it");
+    const badge = !file2.trusted ? "not loaded" : file2.duplicateOf !== void 0 ? "duplicate" : file2.scopePath !== void 0 ? file2.active ? "active" : "scoped" : file2.scope;
+    const row2 = makeSourceRow(file2.name, badge, detail, {
+      badgeClass: !file2.trusted ? "sources-badge-untrusted" : file2.scopePath !== void 0 ? file2.active && file2.duplicateOf === void 0 ? "sources-badge-auto" : void 0 : file2.scope === "project" ? "sources-badge-project" : void 0,
       titleAction: {
         label: `Open ${file2.name}`,
         run: () => {
@@ -54240,7 +58581,7 @@ function mountSettingsDialog(store3, api3) {
         }
       }
     });
-    if (file2.active) return row2;
+    if (file2.trusted) return row2;
     const badgeEl = row2.querySelector(".sources-badge");
     if (badgeEl) {
       const trustBtn = document.createElement("button");
@@ -54270,8 +58611,15 @@ function mountSettingsDialog(store3, api3) {
       fillSourceList(
         "#sources-instructions-list",
         instructions.map((f3) => makeInstructionRow(f3)),
-        "No instruction files (add AGENT.md, AGENTS.md, or CLAUDE.md to the workspace root, or ~/AGENTS.md globally)."
+        "No instruction files (add AGENT.md, AGENTS.md, or CLAUDE.md to the workspace root; nested directories may add AGENTS.md; or add ~/AGENTS.md globally)."
       );
+      if (instructions.some((f3) => f3.discoveryTruncated)) {
+        const note2 = document.createElement("span");
+        note2.className = "sources-empty";
+        note2.id = "sources-instructions-truncated";
+        note2.textContent = "Nested AGENTS.md discovery stopped at its directory limit, so this list may be incomplete. Deeper files are not loaded.";
+        qsRequired(overlay, "#sources-instructions-list").append(note2);
+      }
       const kindLabel = {
         always: "always",
         auto: "auto",
@@ -54916,8 +59264,8 @@ function mountSettingsDialog(store3, api3) {
         const warn3 = document.createElement("div");
         warn3.className = "mcp-trust-banner trust-unsandboxed-hooks-warning";
         const label = document.createElement("span");
-        const plural = unsandboxed.length === 1 ? "hook" : "hooks";
-        label.textContent = `This workspace declares ${String(unsandboxed.length)} ${plural} with "sandbox": false in .copse/hooks.json. Trusting this workspace allows ${unsandboxed.length === 1 ? "it" : "them"} to run OUTSIDE the project sandbox:`;
+        const plural2 = unsandboxed.length === 1 ? "hook" : "hooks";
+        label.textContent = `This workspace declares ${String(unsandboxed.length)} ${plural2} with "sandbox": false in .copse/hooks.json. Trusting this workspace allows ${unsandboxed.length === 1 ? "it" : "them"} to run OUTSIDE the project sandbox:`;
         const list = document.createElement("ul");
         for (const h3 of unsandboxed) {
           const li2 = document.createElement("li");
@@ -55522,6 +59870,7 @@ var init_settings_dialog = __esm({
     init_appearance();
     init_projects();
     init_appearance();
+    init_nullish2();
     isSettingsSection = (value2) => value2 === "general" || value2 === "usage" || value2 === "agent" || value2 === "permissions" || value2 === "mcp" || value2 === "customise" || value2 === "storage" || value2 === "appearance" || value2 === "ssh" || value2 === "experimental";
     PLUGIN_NAME_ACRONYMS = /* @__PURE__ */ new Set(["acp", "api", "ci", "llm", "mcp", "okf", "pii", "ui"]);
     COPSE_SITE_TINT_COLOR = "#002E2B";
@@ -55545,6 +59894,7 @@ var init_settings_dialog = __esm({
       { name: "remoteAgentAutoCreatePR", kind: "checkbox", default: true, save: true },
       { name: "remoteAgentWorkOnCurrentBranch", kind: "checkbox", default: false, save: true },
       { name: "preferAcpOverCloudAgent", kind: "checkbox", default: true, save: true },
+      { name: "gitCommitSshAgentSocketAccess", kind: "checkbox", default: false, save: true },
       { name: "localSubagentsEnabled", kind: "checkbox", default: true, save: true },
       {
         name: "subagentsEnabled",
@@ -55581,6 +59931,7 @@ var init_settings_dialog = __esm({
       // (canvas) toggle moved to Settings > Plugins (`copse.mcp-ui-canvas`).
       { name: "modelClassifierEnabled", kind: "checkbox", default: false, save: true },
       { name: "nextStepSuggestionEnabled", kind: "checkbox", default: false, save: true },
+      { name: "containerRunsEnabled", kind: "checkbox", default: false, save: true },
       { name: "orchestrationStrategyEnabled", kind: "checkbox", default: false, save: true },
       // P5: the master model-comparison toggle moved to Settings > Plugins
       // (`copse.model-comparison`); the auto-on-review sub-toggle stays here.
@@ -55602,6 +59953,124 @@ var init_settings_dialog = __esm({
     overlayEl = null;
     pendingSection = null;
     pendingPluginDetail = null;
+  }
+});
+
+// src/renderer/views/automation-dialog.ts
+function hasAutomationDialog(plugin27) {
+  return plugin27.id === AUTOMATIONS_PLUGIN_ID && plugin27.trust === "first-party" && plugin27.contributions.ui.some(
+    (ui2) => ui2.id === "automation-manager" && ui2.level === 3 && ui2.slot === "app-dialog"
+  );
+}
+function openAutomationDialog(store3, api3, options2 = {}) {
+  if (document.querySelector("#automation-dialog[open]")) return;
+  const projectId = store3.getState().activeProjectId;
+  const { dialog: dialog2, open: open3, close: close2 } = createOverlayDialog({ id: "automation-dialog" });
+  dialog2.setAttribute("aria-labelledby", "automation-dialog-title");
+  const closeButton = el(
+    "button",
+    {
+      type: "button",
+      class: "ui-btn ui-btn-ghost",
+      "aria-label": "Close automations"
+    },
+    closeIcon()
+  );
+  closeButton.addEventListener("click", close2);
+  const header = el(
+    "header",
+    { class: "automation-dialog-header" },
+    el("h2", { id: "automation-dialog-title" }, "Automations"),
+    closeButton
+  );
+  const body = el("div", { class: "automation-dialog-body" });
+  const status = el("p", { class: "automation-notice", role: "status" }, "Loading automations\u2026");
+  body.append(status);
+  dialog2.append(header, body);
+  const unsubscribe = store3.on("workspace_changed", () => {
+    if (store3.getState().activeProjectId !== projectId) close2();
+  });
+  dialog2.addEventListener(
+    "close",
+    () => {
+      unsubscribe();
+      dialog2.remove();
+    },
+    { once: true }
+  );
+  open3();
+  function render8(plugin27) {
+    if (!dialog2.open) return;
+    let enabled = plugin27.enabled;
+    const editor = createAutomationPluginSettings(
+      store3,
+      api3,
+      enabled,
+      options2.scheduleId,
+      options2.createNew
+    );
+    const toggle = el(
+      "button",
+      {
+        type: "button",
+        class: "ui-btn ui-btn-secondary automation-plugin-toggle"
+      },
+      plugin27.enabled ? "Disable plugin" : "Enable automations"
+    );
+    const label = el(
+      "span",
+      {},
+      enabled ? "Automations plugin enabled" : "Automations plugin disabled"
+    );
+    const settings = el(
+      "button",
+      { type: "button", class: "ui-btn ui-btn-ghost" },
+      "Plugin settings"
+    );
+    settings.addEventListener("click", () => {
+      close2();
+      openAutomationSettings();
+    });
+    const state4 = el("div", { class: "automation-dialog-plugin" }, label, settings, toggle);
+    toggle.addEventListener("click", () => {
+      toggle.disabled = true;
+      void api3.plugins.setEnabled(plugin27.id, !enabled).then((result) => {
+        const updated = result.plugins.find(hasAutomationDialog);
+        if (!updated) throw new Error("The automations plugin is no longer available.");
+        enabled = updated.enabled;
+        editor.setPluginEnabled(enabled);
+        store3.emit("settings_changed");
+        label.textContent = enabled ? "Automations plugin enabled" : "Automations plugin disabled";
+        toggle.textContent = enabled ? "Disable plugin" : "Enable automations";
+        toggle.disabled = false;
+      }).catch((error63) => {
+        status.textContent = error63 instanceof Error ? error63.message : "Could not update the plugin.";
+        toggle.disabled = false;
+      });
+    });
+    status.textContent = "";
+    body.replaceChildren(state4, status, editor);
+  }
+  void api3.plugins.list().then((result) => {
+    if (!dialog2.open) return;
+    const plugin27 = result.plugins.find(hasAutomationDialog);
+    if (!plugin27) {
+      status.textContent = "The automations plugin is not available.";
+      return;
+    }
+    render8(plugin27);
+  }).catch((error63) => {
+    status.textContent = error63 instanceof Error ? error63.message : "Could not load automations.";
+  });
+}
+var init_automation_dialog = __esm({
+  "src/renderer/views/automation-dialog.ts"() {
+    init_automations_plugin();
+    init_helpers();
+    init_icons();
+    init_automation_plugin_settings();
+    init_dialog_shell();
+    init_settings_dialog();
   }
 });
 
@@ -56196,13 +60665,62 @@ function mountProjectsPane(root4, store3, api3) {
   const settingsBtn = el(
     "button",
     { class: "projects-settings-btn", "aria-label": "Settings", "data-tooltip": "Open settings" },
-    settingsIcon(),
     "Settings"
   );
   settingsBtn.addEventListener("click", () => {
     openSettingsDialog();
   });
-  root4.append(header, searchRow, list, settingsBtn);
+  const menuButton = el(
+    "button",
+    {
+      type: "button",
+      class: "projects-menu-btn",
+      "aria-label": "Project menu",
+      "aria-haspopup": "menu",
+      "data-tooltip": "Settings and automations"
+    },
+    settingsIcon()
+  );
+  menuButton.addEventListener("click", () => {
+    menuButton.disabled = true;
+    void api3.plugins.list().then((result) => {
+      const rect2 = menuButton.getBoundingClientRect();
+      const plugin27 = result.plugins.find(hasAutomationDialog);
+      showContextMenu(rect2.left, rect2.top, [
+        {
+          label: "Settings",
+          onSelect: () => {
+            openSettingsDialog();
+          }
+        },
+        ...plugin27 ? [
+          {
+            label: "Automations",
+            onSelect: () => {
+              openAutomationDialog(store3, api3);
+            }
+          },
+          {
+            label: "New automation\u2026",
+            disabled: !store3.getState().activeProjectId,
+            onSelect: () => {
+              openAutomationDialog(store3, api3, { createNew: true });
+            }
+          }
+        ] : []
+      ]);
+    }).catch((error63) => {
+      showErrorToast("Could not load project menu", error63);
+    }).finally(() => {
+      menuButton.disabled = false;
+    });
+  });
+  root4.append(
+    header,
+    searchRow,
+    list,
+    el("div", { class: "projects-settings-actions" }, menuButton, settingsBtn)
+  );
   let sshWorkspaceEnabled = false;
   addBtn.addEventListener("click", () => {
     const rect2 = addBtn.getBoundingClientRect();
@@ -56745,7 +61263,7 @@ function mountProjectsPane(root4, store3, api3) {
           switchProject(store3, api3, project2.id);
           return;
         }
-        openAutomationSettings(scheduleId);
+        openAutomationDialog(store3, api3, scheduleId ? { scheduleId } : {});
       }
       function renderThreadRow(thread, options2 = {}) {
         const displayTitle = (options2.displayTitle ?? thread.title) || "New Thread";
@@ -57099,6 +61617,7 @@ var init_projects_pane = __esm({
     init_thread_pr_status2();
     init_projects();
     init_settings_dialog();
+    init_automation_dialog();
     init_toast();
     init_fork_thread3();
     init_sidebar_thread();
@@ -58330,6 +62849,210 @@ function artefactTitleFromUri(uri) {
 var init_artefact = __esm({
   "src/shared/canvas/artefact.ts"() {
     init_browser_url();
+  }
+});
+
+// src/shared/store/container-run-card.ts
+function argsOf(toolCall) {
+  const record2 = toolCall.args;
+  if (!isRecord(record2)) return null;
+  const task = record2["task"];
+  const model = record2["model"];
+  if (typeof task !== "string" || typeof model !== "string") return null;
+  const runtimeId = record2["runtimeId"];
+  const ref = record2["ref"];
+  const credential = record2["credential"];
+  const continuedFrom = record2["continuedFrom"];
+  const report = record2["report"];
+  return {
+    task,
+    model,
+    runtimeId: typeof runtimeId === "string" ? runtimeId : null,
+    ref: typeof ref === "string" ? ref : null,
+    credential: credential === "key" || credential === "login" ? credential : "none",
+    continuedFrom: typeof continuedFrom === "string" ? continuedFrom : null,
+    report: typeof report === "string" ? report : null
+  };
+}
+function latestContainerRun(thread) {
+  for (let index = thread.messages.length - 1; index >= 0; index -= 1) {
+    const message2 = thread.messages[index];
+    if (!message2) continue;
+    const toolCall = message2.toolCalls.find((candidate) => candidate.name === CONTAINER_RUN_TOOL);
+    if (!toolCall) continue;
+    const args = argsOf(toolCall);
+    if (!args) continue;
+    return {
+      messageId: message2.id,
+      toolCallId: toolCall.id,
+      runtimeId: args.runtimeId,
+      task: args.task,
+      report: args.report,
+      model: args.model,
+      credential: args.credential,
+      ref: args.ref,
+      status: toolCall.status,
+      isLastTurn: index === thread.messages.length - 1
+    };
+  }
+  return null;
+}
+function containerRunToolCallId(progress2) {
+  return `container-run:${progress2.threadId}:${String(progress2.startedAt)}`;
+}
+function isLive(progress2) {
+  return progress2.phase !== "finished" && progress2.phase !== "failed";
+}
+function cardStatus(progress2) {
+  if (isLive(progress2)) return "running";
+  return progress2.phase === "finished" ? "done" : "error";
+}
+function plural(count2, noun) {
+  return `${String(count2)} ${noun}${count2 === 1 ? "" : "s"}`;
+}
+function minutes(from2, to) {
+  const seconds2 = Math.max(0, Math.round((to - from2) / 1e3));
+  return seconds2 < 90 ? `${String(seconds2)}s` : `${String(Math.round(seconds2 / 60))} min`;
+}
+function containerRunSummary(progress2) {
+  if (isLive(progress2)) return null;
+  const result = progress2.record?.result ?? null;
+  const ref = progress2.record?.carryOut.ref ?? null;
+  if (progress2.phase === "failed") return `Failed: ${progress2.error ?? "the run did not complete"}`;
+  if (!result) return "Finished without a result";
+  const commits = result.commits.length === 0 ? "no commits" : `${plural(result.commits.length, "commit")} ${ref ? `on ${ref}` : "made but not fetched"}`;
+  return `Finished: ${commits}, ${plural(result.deferrals.length, "effect")} waiting for review, ${plural(result.denials.length, "effect")} refused.`;
+}
+function containerRunResultMarkdown(progress2) {
+  if (isLive(progress2)) return null;
+  const record2 = progress2.record;
+  const result = record2?.result ?? null;
+  const lines = [];
+  const summary = containerRunSummary(progress2);
+  if (summary) lines.push(`**${summary}**`);
+  const facts = [`model ${progress2.model}`];
+  if (result) {
+    facts.push(
+      result.harness === "copse" ? "Copse harness" : `${result.harness.acp} agent`,
+      `${String(result.usage.inputTokens)} in / ${String(result.usage.outputTokens)} out`
+    );
+  }
+  if (progress2.finishedAt !== null) facts.push(minutes(progress2.startedAt, progress2.finishedAt));
+  lines.push(facts.join(" \xB7 "));
+  if (result && result.commits.length > 0) {
+    lines.push("", ...result.commits.map((line2) => `- \`${line2}\``));
+  }
+  if (progress2.warnings.length > 0) {
+    lines.push(
+      "",
+      "**Needs your attention**",
+      ...progress2.warnings.map((warning) => `- ${warning}`)
+    );
+  }
+  if (result && result.deferrals.length > 0) {
+    lines.push(
+      "",
+      "**Waiting for your review**",
+      ...result.deferrals.map(
+        (entry) => `- ${entry.title}${entry.reasons?.length ? ` \u2014 ${entry.reasons.join("; ")}` : ""}`
+      )
+    );
+  }
+  if (result && result.denials.length > 0) {
+    lines.push(
+      "",
+      "**Refused by the container policy**",
+      ...result.denials.map(
+        (entry) => `- ${entry.subject}${entry.reasons.length > 0 ? ` \u2014 ${entry.reasons.join("; ")}` : ""}`
+      )
+    );
+  }
+  if (result?.finalText) lines.push("", result.finalText);
+  return lines.join("\n");
+}
+function logMessage(progress2) {
+  if (progress2.log.length === 0) return null;
+  return {
+    id: "run-log",
+    role: "assistant",
+    content: `\`\`\`text
+${progress2.log.join("\n")}
+\`\`\``,
+    toolCalls: [],
+    createdAt: progress2.startedAt
+  };
+}
+function containerRunToolCall(progress2) {
+  const id39 = containerRunToolCallId(progress2);
+  const status = cardStatus(progress2);
+  const args = {
+    task: progress2.prompt,
+    model: progress2.model,
+    runtimeId: progress2.runtimeId,
+    ref: progress2.record?.carryOut.ref ?? null,
+    credential: progress2.credential,
+    continuedFrom: progress2.continuedFrom,
+    report: progress2.record?.result?.finalText ?? null
+  };
+  const transcript = progress2.record?.transcript ?? [];
+  const log3 = logMessage(progress2);
+  const session = {
+    id: progress2.runtimeId ?? id39,
+    kind: "container",
+    status,
+    prompt: progress2.prompt,
+    summary: containerRunSummary(progress2),
+    messages: log3 ? [...transcript, log3] : transcript,
+    model: progress2.model
+  };
+  if (progress2.record?.result) {
+    session.usage = {
+      inputTokens: progress2.record.result.usage.inputTokens,
+      outputTokens: progress2.record.result.usage.outputTokens
+    };
+  }
+  return {
+    id: id39,
+    name: CONTAINER_RUN_TOOL,
+    args,
+    status,
+    result: containerRunResultMarkdown(progress2),
+    resultFormat: "markdown",
+    subagent: session
+  };
+}
+function syncContainerRunCard(store3, progress2) {
+  const thread = getThreadById(store3, progress2.threadId);
+  if (!thread || thread.messagesLoaded === false) return "skipped";
+  const toolCall = containerRunToolCall(progress2);
+  const owner = findToolCallOwner(store3, progress2.threadId, toolCall.id);
+  if (owner !== void 0) {
+    updateToolCall(store3, owner, toolCall.id, toolCall);
+    return "updated";
+  }
+  const messageId = addMessage(store3, progress2.threadId, "assistant", "");
+  addToolCall(store3, messageId, toolCall);
+  return "added";
+}
+function noteAdoptionOnCard(store3, threadId, toolCallId, adoption) {
+  const owner = findToolCallOwner(store3, threadId, toolCallId);
+  if (owner === void 0) return;
+  const thread = getThreadById(store3, threadId);
+  const existing = thread?.messages.find((message2) => message2.id === owner)?.toolCalls.find((toolCall) => toolCall.id === toolCallId)?.result ?? "";
+  const note2 = adoption.applied.length === 0 ? `**Already in this checkout** (${plural(adoption.alreadyApplied, "commit")}).` : `**Applied to this checkout:** ${plural(adoption.applied.length, "commit")}${adoption.alreadyApplied > 0 ? ` (${String(adoption.alreadyApplied)} already present)` : ""}`;
+  updateToolCall(store3, owner, toolCallId, {
+    result: existing.length > 0 ? `${existing}
+
+${note2}` : note2
+  });
+}
+var CONTAINER_RUN_TOOL, CONTAINER_RUN_ADOPT_EVENT;
+var init_container_run_card = __esm({
+  "src/shared/store/container-run-card.ts"() {
+    init_unknown_value3();
+    init_thread_helpers();
+    CONTAINER_RUN_TOOL = "container_run";
+    CONTAINER_RUN_ADOPT_EVENT = "container-run-adopt";
   }
 });
 
@@ -245192,8 +249915,8 @@ var init_build_text_with_attachments = __esm({
     ATTACHMENT_MAX_CHARS = 16e3;
     HEAD_FRACTION = 0.7;
     THREAD_STEERING_PREAMBLE = "The past conversation(s) referenced below are available read-only through your file tools. Each is a directory: `events.jsonl` is the linear history (one JSON line per finalized message, oldest first); message prose is under `messages/*.md`; tool results and images under `blobs/`; nested subagent runs under `subagents/`. Read a file with read_file, grep with search_code, or summarize a whole thread with explore. The paths are absolute; do not try to write to them.";
-    VIDEO_STEERING_PREAMBLE = "The user attached the video(s) below. The video itself is NOT in your context \u2014 only these paths are. Use the `video_frames` tool to read one as still images: it samples the recording and returns only the frames that are visually different from each other, so a whole screen recording usually costs a handful of images. Call it with just the path to survey the whole video, then again with `start`/`end` around a moment you need to see more closely. There is no audio track available.";
-    ARCHIVE_STEERING_PREAMBLE = "The user attached the archive(s) below. The archive itself is NOT in your context \u2014 only these paths are. If you have a `read_archive` tool, use it to unpack one: it extracts the archive into this conversation's own directory and returns a listing of everything inside. After that the contents are ordinary files \u2014 read them with read_file, grep them with search_code, or summarize the tree with explore, using the paths under the extraction root it gives you. Unpack once, then work with the files. If no such tool is offered to you, say so and ask how to proceed \u2014 do not silently ignore the archive, and do not unpack it yourself with shell commands.";
+    VIDEO_STEERING_PREAMBLE = "The user attached the video(s) below. The video itself is NOT in your context \u2014 only these paths are. Use the `video_frames` tool to read one as still images: it samples the recording and returns only the frames that are visually different from each other, so a whole screen recording usually costs a handful of images. Call it with just the path to survey the whole video, then again with `start`/`end` around a moment you need to see more closely. There is no audio track available. Your client may offer that tool under a namespaced name, so look for one whose name ends in `video_frames` \u2014 for example `mcp__copse__video_frames`. If no such tool is offered to you, say so and ask how to proceed \u2014 do not try to read the video with shell commands.";
+    ARCHIVE_STEERING_PREAMBLE = "The user attached the archive(s) below. The archive itself is NOT in your context \u2014 only these paths are. If you have a `read_archive` tool, use it to unpack one: it extracts the archive into this conversation's own directory and returns a listing of everything inside. After that the contents are ordinary files \u2014 read them with read_file, grep them with search_code, or summarize the tree with explore, using the paths under the extraction root it gives you. Unpack once, then work with the files. Your client may offer that tool under a namespaced name, so look for one whose name ends in `read_archive` \u2014 for example `mcp__copse__read_archive`. If no such tool is offered to you, say so and ask how to proceed \u2014 do not silently ignore the archive, and do not unpack it yourself with shell commands.";
   }
 });
 
@@ -247066,7 +251789,31 @@ function populateSubagentCard(card2, tc2, label, api3) {
     card2.append(resultEl);
     setAssistantMarkdown(resultEl, parentResult, false, api3);
   }
+  const followUp = containerRunFollowUp(tc2, session, status);
+  if (followUp) card2.append(followUp);
   subagentCardChromeSig.set(card2, chromeSig);
+}
+function containerRunFollowUp(tc2, session, status) {
+  if (session.kind !== "container" || status === "running") return null;
+  const args = tc2.args;
+  if (!isRecord(args)) return null;
+  const runtimeId = args["runtimeId"];
+  const ref = args["ref"];
+  if (typeof runtimeId !== "string" || typeof ref !== "string") return null;
+  const button = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary subagent-container-apply" },
+    "Apply the run\u2019s commits to this checkout"
+  );
+  button.addEventListener("click", () => {
+    button.dispatchEvent(
+      new CustomEvent(CONTAINER_RUN_ADOPT_EVENT, {
+        bubbles: true,
+        detail: { runtimeId, toolCallId: tc2.id }
+      })
+    );
+  });
+  return el("div", { class: "subagent-actions" }, button);
 }
 function createSubagentToolCard(tc2, label, api3) {
   const card2 = el("details", {
@@ -248639,6 +253386,8 @@ var init_conversation = __esm({
     init_artefact_previews();
     init_artefact();
     init_thread_helpers();
+    init_container_run_card();
+    init_unknown_value3();
     init_code_block_copy();
     init_table_copy();
     init_dist();
@@ -260004,9 +264753,9 @@ var init_skill_picker = __esm({
 // src/renderer/views/footer-index-status.ts
 function formatElapsed(ms4) {
   const totalSeconds = Math.max(0, Math.floor(ms4 / 1e3));
-  const minutes = Math.floor(totalSeconds / 60);
+  const minutes2 = Math.floor(totalSeconds / 60);
   const seconds2 = totalSeconds % 60;
-  return minutes > 0 ? `${String(minutes)}m ${String(seconds2)}s` : `${String(seconds2)}s`;
+  return minutes2 > 0 ? `${String(minutes2)}m ${String(seconds2)}s` : `${String(seconds2)}s`;
 }
 function componentLabel(component2) {
   return component2 === "fileIndex" ? "file index" : "semantic code index";
@@ -260023,11 +264772,11 @@ function describe3(status) {
   });
   return `Workspace index \u2014 ${parts.join(", ")}`;
 }
-function buildingChipText(status, elapsedLabel) {
+function buildingChipText(status, elapsedLabel2) {
   const fileBuilding = status.fileIndex.phase === "building";
   const semanticBuilding = status.semantic.phase === "building";
-  if (fileBuilding && !semanticBuilding) return `Building file index\u2026 ${elapsedLabel}`;
-  return `Indexing\u2026 ${elapsedLabel}`;
+  if (fileBuilding && !semanticBuilding) return `Building file index\u2026 ${elapsedLabel2}`;
+  return `Indexing\u2026 ${elapsedLabel2}`;
 }
 function oldestBuildStart(status) {
   const starts = [status.fileIndex, status.semantic].filter((c4) => c4.phase === "building").map((c4) => c4.startedAt).filter((n2) => typeof n2 === "number");
@@ -261732,6 +266481,23 @@ var init_last_exchange = __esm({
 });
 
 // src/renderer/views/approval-comparison-pickers.ts
+async function reviewerOptions(api3, current) {
+  const options2 = await fetchModelOptions(api3, current, REVIEWER_OPTIONS);
+  return options2.map(
+    (option2) => option2.value === current && UNRUNNABLE_CURRENT_SUFFIX.test(option2.label) ? { ...option2, disabled: true } : option2
+  );
+}
+async function refreshReviewer(picker, select, current) {
+  await picker.refresh(current);
+  const selected = select.selectedOptions[0];
+  if (selected?.disabled !== true) return;
+  const replacement = [...select.options].find(
+    (option2) => !option2.disabled && option2.value.length > 0
+  );
+  if (!replacement) return;
+  select.value = replacement.value;
+  select.dispatchEvent(new Event("change", { bubbles: true }));
+}
 function modelRow(label, select) {
   return el(
     "label",
@@ -261756,27 +266522,27 @@ function createComparisonModelPickers(api3, models, intro) {
     modelRow("Judge", selectJudge)
   );
   const pickerA = mountModelSelectPicker(selectA, {
-    loadOptions: (current) => fetchModelOptions(api3, current),
+    loadOptions: (current) => reviewerOptions(api3, current),
     className: "approval-model-picker",
     ariaLabel: "Reviewer A model",
     loadOnMount: false
   });
   const pickerB = mountModelSelectPicker(selectB, {
-    loadOptions: (current) => fetchModelOptions(api3, current),
+    loadOptions: (current) => reviewerOptions(api3, current),
     className: "approval-model-picker",
     ariaLabel: "Reviewer B model",
     loadOnMount: false
   });
   const pickerJudge = mountModelSelectPicker(selectJudge, {
-    loadOptions: (current) => fetchModelOptions(api3, current),
+    loadOptions: (current) => reviewerOptions(api3, current),
     className: "approval-model-picker",
     ariaLabel: "Judge model",
     loadOnMount: false
   });
   void Promise.all([
-    pickerA.refresh(models.a),
-    pickerB.refresh(models.b),
-    pickerJudge.refresh(models.judge)
+    refreshReviewer(pickerA, selectA, models.a),
+    refreshReviewer(pickerB, selectB, models.b),
+    refreshReviewer(pickerJudge, selectJudge, models.judge)
   ]);
   return {
     root: root4,
@@ -261787,11 +266553,14 @@ function createComparisonModelPickers(api3, models, intro) {
     })
   };
 }
+var REVIEWER_OPTIONS, UNRUNNABLE_CURRENT_SUFFIX;
 var init_approval_comparison_pickers = __esm({
   "src/renderer/views/approval-comparison-pickers.ts"() {
     init_helpers();
     init_model_options();
     init_model_picker();
+    REVIEWER_OPTIONS = { includeAgentModels: false };
+    UNRUNNABLE_CURRENT_SUFFIX = / \((?:no key|not available|offline)\)$/i;
   }
 });
 
@@ -262391,6 +267160,867 @@ var init_guarded_yolo_control = __esm({
   }
 });
 
+// src/shared/container-acp-agents.ts
+function containerAcpAgentTitles() {
+  return CONTAINER_ACP_AGENTS.map((agent) => findAcpCatalogEntry(agent.id)?.title ?? agent.id);
+}
+var CONTAINER_ACP_AGENTS;
+var init_container_acp_agents = __esm({
+  "src/shared/container-acp-agents.ts"() {
+    init_acp_known_agents();
+    CONTAINER_ACP_AGENTS = [
+      {
+        id: "claude-acp",
+        // Zed's adapter was renamed upstream to this package; a config that still
+        // names it runs under the current binary.
+        aliases: ["claude-code-acp"],
+        npmPackage: "@agentclientprotocol/claude-agent-acp",
+        version: "0.75.1",
+        keyEnv: "ANTHROPIC_API_KEY",
+        keySlug: "anthropic",
+        keyLabel: "Anthropic"
+      },
+      {
+        id: "codex-acp",
+        npmPackage: "@agentclientprotocol/codex-acp",
+        version: "1.10.0",
+        // Codex accepts a platform key under this name; the OpenAI key in Settings
+        // is that key. OPENAI_API_KEY is scrubbed from every agent env by design.
+        keyEnv: "CODEX_API_KEY",
+        keySlug: "openai",
+        keyLabel: "OpenAI",
+        // `codex login` writes the token here and nothing else is needed.
+        loginFiles: [".codex/auth.json"]
+      },
+      {
+        id: "gemini",
+        npmPackage: "@google/gemini-cli",
+        version: "0.58.0",
+        keyEnv: "GEMINI_API_KEY",
+        keySlug: "gemini",
+        keyLabel: "Gemini",
+        // Google sign-in writes the token and the account; settings.json carries
+        // `selectedAuthType`, without which a headless CLI asks how to sign in.
+        loginFiles: [
+          ".gemini/oauth_creds.json",
+          ".gemini/google_accounts.json",
+          ".gemini/settings.json"
+        ]
+      }
+    ];
+  }
+});
+
+// src/renderer/views/container-run-control.ts
+function isLive2(progress2) {
+  return progress2 !== null && progress2.phase !== "finished" && progress2.phase !== "failed";
+}
+function elapsedLabel(run6) {
+  return formatDuration(run6.startedAt, run6.finishedAt ?? Date.now()) + (run6.finishedAt === null ? " so far" : "");
+}
+function formatDuration(from2, to) {
+  const seconds2 = Math.max(0, Math.round((to - from2) / 1e3));
+  if (seconds2 < 90) return `${String(seconds2)}s`;
+  return `${String(Math.round(seconds2 / 60))} min`;
+}
+async function loadRunModelOptions(fetch, availability) {
+  const [all, runnable] = await Promise.all([fetch(), fetch({ includeAgentModels: false })]);
+  const canRun = new Set(
+    runnable.filter((option2) => parseAcpModel(option2.value) === null).map((option2) => option2.value)
+  );
+  const agentRows = all.filter((option2) => !canRun.has(option2.value));
+  const verdicts = agentRows.length > 0 ? await availability(agentRows.map((o3) => o3.value)) : {};
+  return all.map((option2) => {
+    if (canRun.has(option2.value)) return option2;
+    const verdict = Object.hasOwn(verdicts, option2.value) ? verdicts[option2.value] ?? { reason: "not available in a container" } : { reason: "not available in a container" };
+    if (verdict.reason !== null) {
+      return { ...option2, disabled: true, label: `${option2.label} \u2014 ${verdict.reason}` };
+    }
+    return verdict.loginOffered ? {
+      ...option2,
+      label: `${option2.label} \u2014 on your ${verdict.loginOffered.agentTitle} sign-in (opt in)`
+    } : option2;
+  });
+}
+function startBlocker(state4) {
+  if (state4.task.trim().length === 0) return "Describe the task first";
+  if (parseAcpModel(state4.model) === null) return null;
+  if (state4.verdict === void 0) {
+    return state4.rosterLoaded ? `${modelDisplayLabel(state4.model)} is not available in a container` : "Checking whether this agent can run in a container\u2026";
+  }
+  if (state4.verdict.reason !== null) {
+    return `${modelDisplayLabel(state4.model)}: ${state4.verdict.reason}`;
+  }
+  if (state4.verdict.loginOffered && !state4.loginChecked) {
+    return `Tick "Use my ${state4.verdict.loginOffered.agentTitle} sign-in for this run" to start`;
+  }
+  return null;
+}
+function agentModelsNote() {
+  const titles = containerAcpAgentTitles();
+  const named2 = titles.length > 1 ? `${titles.slice(0, -1).join(", ")} and ${titles[titles.length - 1] ?? ""}` : titles[0] ?? "";
+  return `Agent models run as their own process. ${named2} can run unattended with an API key from Settings, scoped to the run. Codex and Gemini CLI can also run on your desktop sign-in if you opt in per run; an agent that only signs in through a browser cannot.`;
+}
+function mountContainerRunControl(api3, context, onStateChanged) {
+  const runs = /* @__PURE__ */ new Map();
+  let refreshSequence = 0;
+  let overlay = null;
+  let lastPrompt = "";
+  let modelPicker = null;
+  const text4 = el("span", { class: "container-run-text" });
+  const details = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary container-run-details" },
+    "Details"
+  );
+  const dismiss = el(
+    "button",
+    {
+      type: "button",
+      class: "ui-btn ui-btn-ghost container-run-dismiss",
+      "aria-label": "Dismiss this container run notice",
+      title: "Dismiss"
+    },
+    "\xD7"
+  );
+  const element3 = el(
+    "div",
+    { class: "container-run-banner", role: "status", "aria-live": "polite", hidden: "" },
+    el("span", { class: "container-run-icon", "aria-hidden": "true" }, "\u25A3"),
+    text4,
+    details,
+    dismiss
+  );
+  const dismissed = /* @__PURE__ */ new Map();
+  dismiss.addEventListener("click", () => {
+    const threadId = context.getActiveThreadId();
+    const run6 = activeRun();
+    if (!threadId || !run6 || isLive2(run6)) return;
+    dismissed.set(threadId, run6.runtimeId);
+    renderBanner();
+  });
+  function activeRun() {
+    const threadId = context.getActiveThreadId();
+    return threadId ? runs.get(threadId) ?? null : null;
+  }
+  function renderBanner() {
+    const run6 = activeRun();
+    const threadId = context.getActiveThreadId();
+    const wavedAway = run6 !== null && threadId !== null && !isLive2(run6) && dismissed.has(threadId) && dismissed.get(threadId) === run6.runtimeId;
+    element3.hidden = run6 === null || wavedAway;
+    dismiss.hidden = run6 === null || isLive2(run6);
+    if (!run6) {
+      text4.textContent = "";
+      delete element3.dataset["phase"];
+      onStateChanged();
+      return;
+    }
+    element3.dataset["phase"] = run6.phase;
+    const result = run6.record?.result;
+    const fetched = run6.record?.carryOut.ref !== null && run6.record?.carryOut.ref !== void 0;
+    const commits = result === void 0 || result === null ? "" : result.commits.length === 0 ? "no commits" : `${String(result.commits.length)} commit${result.commits.length === 1 ? "" : "s"} ${fetched ? "back" : "made but NOT fetched"}`;
+    const summary = run6.phase === "finished" && result ? `${commits}, ${String(result.deferrals.length)} waiting for review.` : run6.phase === "failed" ? run6.error ?? "The run did not complete." : `${run6.model} \xB7 limited to the egress allowlist.`;
+    text4.textContent = `Container run: ${PHASE_LABEL[run6.phase].toLowerCase()}. ${summary}`;
+    onStateChanged();
+  }
+  function ensureDialog6() {
+    if (!overlay) {
+      overlay = createOverlayDialog({
+        id: "container-run-dialog",
+        className: "container-run-dialog"
+      });
+      overlay.dialog.addEventListener("close", stopElapsedClock);
+    }
+    return overlay;
+  }
+  let elapsedTimer = null;
+  function stopElapsedClock() {
+    if (elapsedTimer !== null) clearInterval(elapsedTimer);
+    elapsedTimer = null;
+  }
+  function startElapsedClock(run6) {
+    stopElapsedClock();
+    if (!isLive2(run6)) return;
+    elapsedTimer = setInterval(() => {
+      const cell = overlay?.dialog.querySelector(".container-run-elapsed");
+      if (!cell || !overlay?.isOpen()) {
+        stopElapsedClock();
+        return;
+      }
+      cell.textContent = elapsedLabel(run6);
+    }, 1e3);
+  }
+  function renderDialog() {
+    if (!overlay?.isOpen()) return;
+    const run6 = activeRun();
+    modelPicker?.destroy();
+    modelPicker = null;
+    clear(overlay.dialog);
+    overlay.dialog.append(run6 ? statusView(run6) : armForm());
+    if (run6) startElapsedClock(run6);
+    else stopElapsedClock();
+  }
+  function armForm() {
+    const draft = context.getDraft().trim();
+    const quotesDraft = draft.length > 0;
+    const task = el("textarea", {
+      class: "container-run-prompt",
+      rows: "6",
+      "aria-label": quotesDraft ? "Task the unattended run will carry out" : "Task for the unattended run"
+    });
+    task.value = quotesDraft ? draft : lastPrompt;
+    if (quotesDraft) {
+      task.readOnly = true;
+      task.classList.add("is-readonly");
+    }
+    const modelSelect = el("select", {
+      class: "container-run-model",
+      name: "containerRunModel"
+    });
+    let chosenModel = context.getModel();
+    modelSelect.append(el("option", { value: chosenModel }, modelDisplayLabel(chosenModel)));
+    modelSelect.value = chosenModel;
+    modelSelect.addEventListener("change", () => {
+      chosenModel = modelSelect.value;
+      renderEgressHint();
+      renderLoginOptIn();
+    });
+    const verdicts = /* @__PURE__ */ new Map();
+    const modelField = uiField({ label: "Model", control: modelSelect });
+    const agentNote = el("p", { class: "field-hint container-run-agent-note", hidden: "" });
+    agentNote.textContent = agentModelsNote();
+    modelPicker = mountModelSelectPicker(modelSelect, {
+      loadOptions: async (current) => {
+        const options2 = await loadRunModelOptions(
+          (opts) => fetchModelOptions(api3, current, opts),
+          async (models) => {
+            const answered = await api3.container.modelAvailability(models);
+            for (const [model, verdict] of Object.entries(answered)) verdicts.set(model, verdict);
+            return answered;
+          }
+        );
+        agentNote.hidden = !options2.some(
+          (option2) => option2.disabled === true || parseAcpModel(option2.value) !== null
+        );
+        renderLoginOptIn();
+        return options2;
+      },
+      ariaLabel: "Model for the unattended run",
+      loadOnMount: false
+    });
+    let rosterLoaded = false;
+    void modelPicker.refresh(chosenModel).catch(async (error63) => {
+      console.error("[container-run] could not list models:", error63);
+      if (parseAcpModel(chosenModel) !== null) {
+        const answered = await api3.container.modelAvailability([chosenModel]).catch(() => ({}));
+        for (const [model, verdict] of Object.entries(answered)) verdicts.set(model, verdict);
+      }
+    }).finally(() => {
+      rosterLoaded = true;
+      renderLoginOptIn();
+    });
+    const minutes2 = el("input", {
+      type: "number",
+      class: "container-run-minutes",
+      min: "1",
+      max: "1440",
+      step: "1"
+    });
+    minutes2.value = String(DEFAULT_WALL_CLOCK_MINUTES);
+    const tokens2 = el("input", {
+      type: "number",
+      class: "container-run-tokens",
+      min: "1000",
+      step: "1000"
+    });
+    tokens2.value = String(DEFAULT_TOKEN_CEILING);
+    const egressHint = el("p", { class: "field-hint container-run-model-hint" });
+    function renderEgressHint() {
+      egressHint.textContent = `The container can reach only ${modelDisplayLabel(chosenModel)}'s endpoint; the key is scoped to the run and blanked once the guest holds it.`;
+    }
+    renderEgressHint();
+    const loginOptIn = el("input", {
+      type: "checkbox",
+      class: "container-run-agent-login",
+      name: "containerRunAgentLogin"
+    });
+    const loginLabel = el(
+      "label",
+      { class: "container-run-agent-login-label" },
+      loginOptIn,
+      el("span", { class: "container-run-agent-login-text" })
+    );
+    const loginHint = el("p", { class: "field-hint container-run-agent-login-hint" });
+    const loginField = el(
+      "div",
+      { class: "container-run-agent-login-field", hidden: "" },
+      loginLabel,
+      loginHint
+    );
+    function loginOffer() {
+      return verdicts.get(chosenModel)?.loginOffered ?? null;
+    }
+    function renderLoginOptIn() {
+      const offer = loginOffer();
+      loginField.hidden = offer === null;
+      if (offer === null) {
+        loginOptIn.checked = false;
+      } else {
+        const text5 = loginLabel.querySelector(".container-run-agent-login-text");
+        if (text5) text5.textContent = `Use my ${offer.agentTitle} sign-in for this run`;
+        loginHint.textContent = `${offer.agentTitle} has no API key in Settings. Ticking this copies its sign-in files (only those: no transcripts, no history) into the container's throwaway home for this run and discards them with it. That is your whole account, not a scoped key, and a token refresh inside the run may sign the desktop out. Adding an API key in Settings avoids both.`;
+      }
+      renderStartState();
+    }
+    loginOptIn.addEventListener("change", renderStartState);
+    const installOptIn = el("input", {
+      type: "checkbox",
+      class: "container-run-install",
+      name: "containerRunInstall",
+      checked: ""
+    });
+    const installField = el(
+      "div",
+      { class: "container-run-install-field" },
+      el(
+        "label",
+        { class: "container-run-install-label" },
+        installOptIn,
+        el("span", {}, "Install dependencies before the run")
+      ),
+      el(
+        "p",
+        { class: "field-hint container-run-install-hint" },
+        "Runs the checkout's lockfile install (pnpm or npm) once, before the agent starts, so tests and builds can run. The container can then also reach registry.npmjs.org and GitHub, anonymously \u2014 it holds no GitHub credential. The agent\u2019s own commands stay off the network."
+      )
+    );
+    const start2 = el(
+      "button",
+      { type: "button", class: "ui-btn ui-btn-primary container-run-start" },
+      "Start unattended run"
+    );
+    const cancel = el(
+      "button",
+      { type: "button", class: "ui-btn ui-btn-secondary container-run-cancel" },
+      "Cancel"
+    );
+    cancel.addEventListener("click", () => overlay?.close());
+    function renderStartState() {
+      const blocker = startBlocker({
+        task: task.value,
+        model: chosenModel,
+        verdict: verdicts.get(chosenModel),
+        rosterLoaded,
+        loginChecked: loginOptIn.checked
+      });
+      start2.disabled = blocker !== null;
+      start2.title = blocker ?? "";
+    }
+    renderStartState();
+    task.addEventListener("input", renderStartState);
+    start2.addEventListener("click", () => {
+      const threadId = context.getActiveThreadId();
+      const projectId = context.getActiveProjectId();
+      if (!threadId || !projectId) return;
+      const prompt = task.value.trim();
+      if (!prompt) return;
+      lastPrompt = prompt;
+      const wallClockMs = Math.max(1, Number(minutes2.value) || DEFAULT_WALL_CLOCK_MINUTES) * 6e4;
+      const tokenCeiling = Math.max(1e3, Number(tokens2.value) || DEFAULT_TOKEN_CEILING);
+      start2.disabled = true;
+      void startRun({
+        projectId,
+        threadId,
+        prompt,
+        model: chosenModel,
+        budgets: { wallClockMs, tokenCeiling },
+        ...loginOffer() !== null && loginOptIn.checked ? { useAgentLogin: true } : {},
+        installDependencies: installOptIn.checked
+      }).then((started) => {
+        if (!started) start2.disabled = false;
+      });
+    });
+    return el(
+      "div",
+      { class: "container-run-form" },
+      el("h2", { class: "container-run-title" }, "Run this thread unattended in a container"),
+      el(
+        "p",
+        { class: "container-run-intro" },
+        "A disposable container gets a snapshot of the checkout and runs the task with no prompts: anything that stays inside the container runs on its own, anything that would leave it (a push, a publish, a GitHub write) is queued for your review, and the result comes back as commits you can inspect before merging."
+      ),
+      uiField({
+        label: quotesDraft ? "Task (from the composer)" : "Task",
+        control: task,
+        ...quotesDraft ? {} : { hint: "Nothing in the composer to run \u2014 describe the task here." }
+      }),
+      modelField,
+      agentNote,
+      el(
+        "div",
+        { class: "container-run-budgets" },
+        uiField({ label: "Stop after (minutes)", control: minutes2 }),
+        uiField({ label: "Token ceiling", control: tokens2 })
+      ),
+      egressHint,
+      loginField,
+      installField,
+      uiActions(cancel, start2, { className: "container-run-actions" })
+    );
+  }
+  function statusView(run6) {
+    const result = run6.record?.result ?? null;
+    const rows = [];
+    const row2 = (label, value2) => el("div", { class: "container-run-row" }, el("dt", {}, label), el("dd", {}, value2));
+    rows.push(row2("Phase", PHASE_LABEL[run6.phase]));
+    if (run6.prompt) rows.push(row2("Task", run6.prompt));
+    rows.push(row2("Model", run6.model));
+    if (run6.checkout) {
+      rows.push(
+        row2(
+          "Checkout",
+          (run6.checkout.mode === "worktree" ? "thread worktree" : "project checkout") + (run6.checkout.branch ? ` (${run6.checkout.branch})` : "")
+        )
+      );
+    }
+    rows.push(row2("Reachable origins", run6.egressAllowlist.join(", ") || "none"));
+    const held = run6.record?.credential ?? run6.credential;
+    rows.push(
+      row2(
+        "Credential",
+        typeof held === "object" ? `your desktop sign-in, copied in for the run (${held.login.map((d4) => `~/${d4}`).join(", ")})` : held === "key" ? "one API key, scoped to the run" : held === "login" ? "your desktop sign-in, copied in for the run" : "none"
+      )
+    );
+    const elapsedRow = row2("Elapsed", elapsedLabel(run6));
+    elapsedRow.querySelector("dd")?.classList.add("container-run-elapsed");
+    rows.push(elapsedRow);
+    if (run6.record) {
+      rows.push(row2("Image", run6.record.imageDigest?.slice(0, 19) ?? run6.record.image));
+      rows.push(
+        row2(
+          "Containment",
+          [
+            "read-only rootfs, no capabilities",
+            run6.record.attestation.securityProfiles === "default" ? "default seccomp and AppArmor" : null,
+            run6.record.attestation.network === "brokered" ? "brokered egress" : "no network",
+            run6.record.attestation.perCommandNetwork === "token-gated" ? "shell commands off the network" : null
+          ].filter((part) => part !== null).join(", ")
+        )
+      );
+      rows.push(row2("Secret canary", run6.record.secretCanary.present ? "PRESENT" : "absent"));
+      rows.push(row2("Teardown", run6.record.teardown));
+    }
+    if (result) {
+      rows.push(row2("Outcome", result.stopReason));
+      rows.push(
+        row2(
+          "Harness",
+          result.harness === "copse" ? "Copse" : `${findAcpCatalogEntry(result.harness.acp)?.title ?? result.harness.acp} (ACP agent)`
+        )
+      );
+      rows.push(row2("Prompts reached a handler", String(result.promptsAttempted)));
+      rows.push(row2("Effects refused", String(result.denials.length)));
+      rows.push(
+        row2(
+          "Tokens",
+          `${String(result.usage.inputTokens)} in / ${String(result.usage.outputTokens)} out`
+        )
+      );
+      rows.push(
+        row2(
+          "Commits",
+          run6.record?.carryOut.ref ?? (run6.record?.carryOut.expected === true ? `NOT FETCHED \u2014 ${run6.record.carryOut.error ?? "unknown error"}` : "none")
+        )
+      );
+    }
+    if (run6.error) rows.push(row2("Error", run6.error));
+    const sections6 = [
+      el("h2", { class: "container-run-title" }, "Unattended container run"),
+      el("dl", { class: "container-run-summary" }, ...rows)
+    ];
+    if (run6.warnings.length > 0) {
+      sections6.push(
+        el(
+          "section",
+          { class: "container-run-section container-run-warnings" },
+          el("h3", {}, "Needs your attention"),
+          el("ul", {}, ...run6.warnings.map((warning) => el("li", {}, warning)))
+        )
+      );
+    }
+    if (run6.record && run6.record.egress.length > 0) {
+      const connects = /* @__PURE__ */ new Map();
+      const refusals = [];
+      for (const entry of run6.record.egress) {
+        if (entry.event === "connect")
+          connects.set(entry.origin, (connects.get(entry.origin) ?? 0) + 1);
+        if (entry.event === "refused" || entry.event === "error") {
+          refusals.push(
+            `${entry.origin}: ${entry.event}${entry.detail ? ` \u2014 ${entry.detail}` : ""}`
+          );
+        }
+      }
+      sections6.push(
+        el(
+          "section",
+          { class: "container-run-section container-run-egress" },
+          el("h3", {}, "Egress"),
+          el(
+            "ul",
+            {},
+            ...[...connects].map(
+              ([origin, count2]) => el(
+                "li",
+                { class: "mono" },
+                `${origin} \u2014 ${String(count2)} connection${count2 === 1 ? "" : "s"}`
+              )
+            ),
+            ...[...new Set(refusals)].map(
+              (line2) => el("li", { class: "mono container-run-egress-refused" }, line2)
+            )
+          )
+        )
+      );
+    }
+    if (result && result.deferrals.length > 0) {
+      sections6.push(
+        el(
+          "section",
+          { class: "container-run-section container-run-deferrals" },
+          el("h3", {}, `Waiting for your review (${String(result.deferrals.length)})`),
+          el(
+            "ul",
+            {},
+            ...result.deferrals.map(
+              (entry) => el(
+                "li",
+                {},
+                el("strong", {}, entry.title),
+                entry.reasons?.length ? ` \u2014 ${entry.reasons.join("; ")}` : ""
+              )
+            )
+          )
+        )
+      );
+    }
+    if (result && result.denials.length > 0) {
+      sections6.push(
+        el(
+          "section",
+          { class: "container-run-section container-run-denials" },
+          el("h3", {}, `Refused by the container policy (${String(result.denials.length)})`),
+          el(
+            "ul",
+            {},
+            ...result.denials.map(
+              (entry) => el(
+                "li",
+                {},
+                el("strong", {}, entry.subject),
+                entry.reasons.length > 0 ? ` \u2014 ${entry.reasons.join("; ")}` : ""
+              )
+            )
+          )
+        )
+      );
+    }
+    if (result && result.commits.length > 0) {
+      sections6.push(
+        el(
+          "section",
+          { class: "container-run-section container-run-commits" },
+          el(
+            "h3",
+            {},
+            run6.record?.carryOut.ref === null || run6.record?.carryOut.ref === void 0 ? "Commits the guest made (not fetched)" : `Commits on ${run6.record.carryOut.ref}`
+          ),
+          el("ul", {}, ...result.commits.map((line2) => el("li", { class: "mono" }, line2)))
+        )
+      );
+    }
+    if (result?.finalText) {
+      sections6.push(
+        el(
+          "section",
+          { class: "container-run-section" },
+          el("h3", {}, "The agent said"),
+          el("p", {}, result.finalText)
+        )
+      );
+    }
+    const log3 = el("pre", { class: "container-run-log" }, run6.log.join("\n"));
+    sections6.push(el("section", { class: "container-run-section" }, el("h3", {}, "Log"), log3));
+    const close2 = el(
+      "button",
+      { type: "button", class: "ui-btn ui-btn-secondary container-run-close" },
+      "Close"
+    );
+    close2.addEventListener("click", () => overlay?.close());
+    const actions = [close2];
+    if (isLive2(run6)) {
+      const stop5 = el(
+        "button",
+        { type: "button", class: "ui-btn ui-btn-danger container-run-stop" },
+        "Stop run"
+      );
+      stop5.addEventListener("click", () => {
+        stop5.disabled = true;
+        void api3.container.stopRun(run6.threadId).then((progress2) => {
+          if (progress2) update2(progress2);
+        }).catch((error63) => {
+          stop5.disabled = false;
+          showErrorToast("Could not stop the container run", error63);
+        });
+      });
+      actions.push(stop5);
+      sections6.push(
+        el(
+          "p",
+          { class: "field-hint container-run-close-hint" },
+          "Closing this window does not stop the run; it keeps going until it finishes, hits its budget, or you stop it."
+        )
+      );
+    }
+    if (!isLive2(run6) && run6.record?.carryOut.ref && (result?.commits.length ?? 0) > 0) {
+      const apply5 = el(
+        "button",
+        { type: "button", class: "ui-btn ui-btn-secondary container-run-apply" },
+        `Apply ${String(result?.commits.length ?? 0)} commit${result?.commits.length === 1 ? "" : "s"} to this checkout`
+      );
+      apply5.addEventListener("click", () => {
+        apply5.disabled = true;
+        void adopt(run6.record?.runtimeId ?? "", null).finally(() => {
+          apply5.disabled = false;
+        });
+      });
+      actions.push(apply5);
+    }
+    if (!isLive2(run6)) {
+      const again = el(
+        "button",
+        { type: "button", class: "ui-btn ui-btn-primary container-run-again" },
+        "Start another run"
+      );
+      again.addEventListener("click", () => {
+        lastPrompt = run6.prompt;
+        const threadId = context.getActiveThreadId();
+        if (threadId) runs.delete(threadId);
+        renderBanner();
+        renderDialog();
+      });
+      actions.push(again);
+    }
+    sections6.push(uiActions(...actions, { className: "container-run-actions" }));
+    const view = el("div", { class: "container-run-status" }, ...sections6);
+    view.dataset["phase"] = run6.phase;
+    return view;
+  }
+  async function startRun(request) {
+    addMessage(context.store, request.threadId, "user", request.prompt);
+    context.clearDraft();
+    try {
+      const progress2 = await api3.container.runThread(request);
+      update2(progress2);
+      overlay?.close();
+      return true;
+    } catch (error63) {
+      showErrorToast("Could not start the container run", error63);
+      return false;
+    }
+  }
+  const DEFAULT_BUDGETS = {
+    wallClockMs: DEFAULT_WALL_CLOCK_MINUTES * 6e4,
+    tokenCeiling: DEFAULT_TOKEN_CEILING
+  };
+  function latestOnActiveThread() {
+    const threadId = context.getActiveThreadId();
+    const thread = threadId ? getThreadById(context.store, threadId) : void 0;
+    return thread ? latestContainerRun(thread) : null;
+  }
+  function followUpTarget() {
+    const latest = latestOnActiveThread();
+    const live = isLive2(activeRun());
+    if (!latest && !live) {
+      return { available: false, live: false, defaultToContainer: false, runtimeId: null };
+    }
+    return {
+      available: true,
+      live,
+      defaultToContainer: !live && latest !== null && latest.isLastTurn && latest.runtimeId !== null,
+      runtimeId: latest?.runtimeId ?? activeRun()?.runtimeId ?? null
+    };
+  }
+  async function followUp(prompt) {
+    const threadId = context.getActiveThreadId();
+    const projectId = context.getActiveProjectId();
+    if (!threadId || !projectId) return false;
+    if (isLive2(activeRun())) {
+      showToast("The container is still busy with the previous run; wait for it or stop it.", {
+        variant: "error"
+      });
+      return false;
+    }
+    const latest = latestOnActiveThread();
+    if (!latest || latest.runtimeId === null) {
+      showToast("This thread has no container run to continue.", { variant: "error" });
+      return false;
+    }
+    return startRun({
+      projectId,
+      threadId,
+      prompt,
+      model: latest.model,
+      budgets: DEFAULT_BUDGETS,
+      ...latest.credential === "login" ? { useAgentLogin: true } : {},
+      installDependencies: true,
+      continueFrom: latest.runtimeId,
+      continueContext: { prompt: latest.task, report: latest.report ?? "", ref: latest.ref }
+    });
+  }
+  const usageFolded = /* @__PURE__ */ new Set();
+  function settle(progress2) {
+    const thread = getThreadById(context.store, progress2.threadId);
+    const usage = progress2.record?.result?.usage;
+    if (usage && progress2.runtimeId !== null && !usageFolded.has(progress2.runtimeId)) {
+      usageFolded.add(progress2.runtimeId);
+      addUsageDelta(context.store, progress2.threadId, {
+        model: progress2.model,
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens
+      });
+    }
+    markThreadUnread(context.store, progress2.threadId);
+    void api3.alerts.threadFinished(progress2.threadId, thread?.title ?? "Container run").catch((error63) => {
+      console.error("[container-run] could not signal the finished run:", error63);
+    });
+  }
+  async function adopt(runtimeId, toolCallId) {
+    const threadId = context.getActiveThreadId();
+    const projectId = context.getActiveProjectId();
+    if (!threadId || !projectId || runtimeId.length === 0) return;
+    try {
+      const adoption = await api3.container.adoptRun(projectId, threadId, runtimeId);
+      const run6 = runs.get(threadId);
+      const cardId = toolCallId ?? (run6 && run6.runtimeId === runtimeId ? containerRunToolCallId(run6) : null);
+      if (cardId !== null) noteAdoptionOnCard(context.store, threadId, cardId, adoption);
+      showToast(
+        adoption.applied.length === 0 ? `All ${String(adoption.alreadyApplied)} commit(s) from the run are already in this checkout.` : `Applied ${String(adoption.applied.length)} commit(s) from the run to this checkout.`,
+        { variant: "info", durationMs: 8e3 }
+      );
+    } catch (error63) {
+      showErrorToast("Could not apply the run's commits", error63);
+    }
+  }
+  const onCardAdopt = (event3) => {
+    if (!(event3 instanceof CustomEvent)) return;
+    const detail = event3.detail;
+    if (!isRecord(detail)) return;
+    const runtimeId = detail["runtimeId"];
+    const toolCallId = detail["toolCallId"];
+    if (typeof runtimeId !== "string" || typeof toolCallId !== "string") return;
+    void adopt(runtimeId, toolCallId);
+  };
+  document.addEventListener(CONTAINER_RUN_ADOPT_EVENT, onCardAdopt);
+  function update2(progress2) {
+    const previous = runs.get(progress2.threadId);
+    runs.set(progress2.threadId, progress2);
+    syncContainerRunCard(context.store, progress2);
+    if (previous && isLive2(previous) && !isLive2(progress2)) {
+      settle(progress2);
+      const result = progress2.record?.result;
+      if (progress2.phase === "finished" && result) {
+        showToast(
+          `Container run finished: ${String(result.commits.length)} commit(s) back, ${String(result.deferrals.length)} waiting for review.`,
+          { variant: "info", durationMs: 1e4 }
+        );
+      } else {
+        showToast(`Container run failed: ${progress2.error ?? "no result"}`, {
+          variant: "error",
+          durationMs: 1e4
+        });
+      }
+    }
+    if (progress2.threadId === context.getActiveThreadId()) {
+      renderBanner();
+      renderDialog();
+    }
+  }
+  function refresh() {
+    const threadId = context.getActiveThreadId();
+    const sequence = ++refreshSequence;
+    if (!threadId) {
+      renderBanner();
+      return;
+    }
+    void api3.container.getRun(threadId).then((progress2) => {
+      if (sequence !== refreshSequence) return;
+      if (progress2) {
+        runs.set(threadId, progress2);
+        syncContainerRunCard(context.store, progress2);
+      }
+      renderBanner();
+      renderDialog();
+    }).catch((error63) => {
+      showErrorToast("Could not read the container run", error63);
+    });
+  }
+  function open3() {
+    if (!context.getActiveThreadId()) return;
+    const dialog2 = ensureDialog6();
+    dialog2.open();
+    renderDialog();
+  }
+  details.addEventListener("click", open3);
+  const unsubscribe = api3.container.onRunChanged(update2);
+  refresh();
+  return {
+    element: element3,
+    menuLabel: () => isLive2(activeRun()) ? "Show container run" : "Run unattended in a container\u2026",
+    open: open3,
+    refresh,
+    followUpTarget,
+    followUp,
+    destroy: () => {
+      unsubscribe();
+      document.removeEventListener(CONTAINER_RUN_ADOPT_EVENT, onCardAdopt);
+      stopElapsedClock();
+      modelPicker?.destroy();
+      modelPicker = null;
+      overlay?.dialog.remove();
+      overlay = null;
+    }
+  };
+}
+var DEFAULT_WALL_CLOCK_MINUTES, DEFAULT_TOKEN_CEILING, PHASE_LABEL;
+var init_container_run_control = __esm({
+  "src/renderer/views/container-run-control.ts"() {
+    init_unknown_value3();
+    init_container_run_card();
+    init_thread_helpers();
+    init_acp();
+    init_acp_known_agents();
+    init_container_acp_agents();
+    init_helpers();
+    init_ui();
+    init_model_options();
+    init_model_picker();
+    init_dialog_shell();
+    init_toast();
+    DEFAULT_WALL_CLOCK_MINUTES = 120;
+    DEFAULT_TOKEN_CEILING = 2e6;
+    PHASE_LABEL = {
+      preparing: "Preparing",
+      "building-image": "Building the worker image",
+      starting: "Starting the container",
+      installing: "Installing dependencies",
+      running: "Running unattended",
+      collecting: "Collecting the result",
+      finished: "Finished",
+      failed: "Failed"
+    };
+  }
+});
+
 // src/renderer/controller/model-selection.ts
 function commitThreadModelSelection(store3, api3, threadId, by, from2, to) {
   if (from2 === to) return;
@@ -262468,7 +268098,15 @@ function mountInputBar(root4, store3, api3, opts = {}) {
       "attach-btn-icon"
     )
   );
-  const submitRow = el("div", { class: "submit-row" }, stopBtn, submitBtn);
+  const targetSelect = el("select", {
+    class: "composer-target",
+    "aria-label": "Send this message to",
+    hidden: ""
+  });
+  const targetContainer = el("option", { value: "container" }, "To container");
+  const targetThread = el("option", { value: "thread" }, "To thread");
+  targetSelect.append(targetContainer, targetThread);
+  const submitRow = el("div", { class: "submit-row" }, targetSelect, stopBtn, submitBtn);
   const inputRow = el("div", { class: "input-row" }, composer.el, attachBtn, fileInput, submitRow);
   const branchWarningText = el("span", { class: "composer-branch-warning-text" });
   const checkoutBranchBtn = el(
@@ -262541,6 +268179,37 @@ function mountInputBar(root4, store3, api3, opts = {}) {
   const guardedYolo = mountGuardedYoloControl(api3, getActiveThreadId, () => {
     footerOverflow?.update();
   });
+  let containerRunMounted = false;
+  let containerRunsEnabled = false;
+  const refreshContainerRunsSetting = async () => {
+    const enabled = await api3.settings.get("containerRunsEnabled").catch(() => void 0);
+    const next3 = enabled === true;
+    if (next3 === containerRunsEnabled) return;
+    containerRunsEnabled = next3;
+    footerOverflow?.update();
+    updateTargetPicker();
+  };
+  let targetDefaultKey = null;
+  const containerRun = mountContainerRunControl(
+    api3,
+    {
+      store: store3,
+      getActiveThreadId,
+      getActiveProjectId: () => store3.getState().activeProjectId,
+      getModel: footerChatModel,
+      getDraft: () => composer.value,
+      clearDraft: () => {
+        composer.clear();
+      }
+    },
+    () => {
+      footerOverflow?.update();
+      updateTargetPicker();
+    }
+  );
+  containerRunMounted = true;
+  updateTargetPicker();
+  void refreshContainerRunsSetting();
   const footer = el("div", { class: "input-footer" });
   const modelHost = el("div", { class: "footer-model-host" });
   const checkoutHost = el("div", { class: "footer-checkout-host" });
@@ -262582,6 +268251,11 @@ function mountInputBar(root4, store3, api3, opts = {}) {
       label: guardedYolo.menuLabel,
       hidden: () => !getActiveThreadId(),
       onClick: guardedYolo.toggle
+    },
+    {
+      label: containerRun.menuLabel,
+      hidden: () => !containerRunsEnabled || !getActiveThreadId(),
+      onClick: containerRun.open
     },
     {
       label: "Copy thread ID",
@@ -262759,6 +268433,7 @@ function mountInputBar(root4, store3, api3, opts = {}) {
   );
   root4.append(
     guardedYolo.element,
+    containerRun.element,
     branchWarning,
     checkoutError,
     imageCompatibilityWarning,
@@ -263148,9 +268823,28 @@ ${description}
     stopPendingThreadId = null;
     stopBtn.classList.remove("stop-pending");
   }
+  function updateTargetPicker() {
+    if (!containerRunMounted) return;
+    if (!containerRunsEnabled) {
+      targetSelect.hidden = true;
+      return;
+    }
+    const target = containerRun.followUpTarget();
+    targetSelect.hidden = !target.available;
+    if (!target.available) return;
+    targetContainer.disabled = target.live;
+    targetContainer.textContent = target.live ? "To container (busy)" : "To container";
+    const key = `${getActiveThreadId() ?? ""}\0${target.runtimeId ?? ""}\0${target.live ? "live" : "settled"}`;
+    if (key !== targetDefaultKey) {
+      targetDefaultKey = key;
+      targetSelect.value = target.defaultToContainer ? "container" : "thread";
+    }
+    if (target.live && targetSelect.value === "container") targetSelect.value = "thread";
+  }
   function updateState() {
     const running = isRunning();
     stopBtn.hidden = !running;
+    updateTargetPicker();
     submitBtn.textContent = running ? "Queue" : "Send";
     submitBtn.setAttribute("aria-label", running ? "Queue message" : "Send message");
     submitBtn.classList.toggle("with-stop", running);
@@ -263468,6 +269162,12 @@ ${description}
     if (!id39) return;
     const projectId = store3.getState().activeProjectId;
     if (!projectId) return;
+    if (!targetSelect.hidden && targetSelect.value === "container") {
+      if (!rawText) return;
+      const started = await containerRun.followUp(rawText);
+      if (started) updateState();
+      return;
+    }
     if (attachedImages.length > 0) {
       const incompatibility = await incompatibleImageModel();
       if (incompatibility) {
@@ -264011,6 +269711,7 @@ ${description}
     store3.on("threads_changed", () => {
       syncComposerThread();
       guardedYolo.refresh();
+      containerRun.refresh();
       hideBranchMismatch();
       updateState();
       updateFooter();
@@ -264023,6 +269724,7 @@ ${description}
       if (tid === getActiveThreadId()) updateFooter();
     }),
     store3.on("settings_changed", () => {
+      void refreshContainerRunsSetting();
       modelPicker.refresh();
       refreshModelPricing();
       updateFooter();
@@ -264090,6 +269792,7 @@ ${description}
       modelPicker.destroy();
       footerOverflow.destroy();
       guardedYolo.destroy();
+      containerRun.destroy();
       footerCompact.destroy();
       portraitPanelControls.destroy();
       branchControl.destroy();
@@ -264144,6 +269847,7 @@ var init_input_bar = __esm({
     init_composer_draft_autosave();
     init_panel_mode_controls();
     init_guarded_yolo_control();
+    init_container_run_control();
     init_active_thread_owner();
     init_unknown_value3();
     init_acp();
@@ -274174,6 +279878,47 @@ var init_create_after_persist = __esm({
   }
 });
 
+// src/renderer/terminal/start-failure-message.ts
+function unwrapIpcError(raw) {
+  let message2 = raw;
+  for (; ; ) {
+    const next3 = message2.replace(/^Error:\s*/, "").replace(/^Error invoking remote method '[^']*':\s*/, "");
+    if (next3 === message2) return message2.trim();
+    message2 = next3;
+  }
+}
+function terminalStartFailureMessage(err2) {
+  const detail = unwrapIpcError(errorMessage(err2));
+  if (CROSS_PROJECT.test(detail)) {
+    return "This terminal was opened against a thread from another project. Close the tab and open a new one.";
+  }
+  return detail || "The shell could not be started.";
+}
+var CROSS_PROJECT;
+var init_start_failure_message = __esm({
+  "src/renderer/terminal/start-failure-message.ts"() {
+    init_errors4();
+    CROSS_PROJECT = /^Thread "[^"]*" does not belong to project "[^"]*"$/;
+  }
+});
+
+// src/renderer/terminal/tab-scope.ts
+function resolveTerminalTabScope(state4, options2) {
+  if (options2?.scopeProjectId !== void 0 || options2?.scopeId !== void 0) {
+    return {
+      scopeProjectId: options2.scopeProjectId ?? null,
+      scopeId: options2.scopeId ?? null
+    };
+  }
+  const { activeProjectId, activeThreadId, threads } = state4;
+  const belongs = activeThreadId !== null && threads.some((thread) => thread.id === activeThreadId);
+  return { scopeProjectId: activeProjectId, scopeId: belongs ? activeThreadId : null };
+}
+var init_tab_scope = __esm({
+  "src/renderer/terminal/tab-scope.ts"() {
+  }
+});
+
 // src/renderer/views/terminals-pane.ts
 function applyXtermBg(container2, theme) {
   container2.style.setProperty("--xterm-bg", XTERM_THEME[theme].background);
@@ -274378,7 +280123,10 @@ function mountTerminalsPane(listRoot, viewerRoot, store3, api3) {
         preserveSharedShell(tab, worktreePath);
       }
     } catch (err2) {
-      tab.term.writeln(`\x1B[31mFailed to start terminal: ${String(err2)}\x1B[0m`);
+      console.error("[terminals] could not start a shell:", err2);
+      tab.term.writeln(
+        `\x1B[31mFailed to start terminal: ${terminalStartFailureMessage(err2)}\x1B[0m`
+      );
     } finally {
       tab.creating = false;
     }
@@ -274498,8 +280246,7 @@ function mountTerminalsPane(listRoot, viewerRoot, store3, api3) {
     panel.append(container2);
     const { term, fitAddon } = createXterm();
     const fileLinks = installTerminalFileLinks(term, store3, api3);
-    const scopeProjectId = options2?.scopeProjectId ?? store3.getState().activeProjectId;
-    const scopeId = options2?.scopeId ?? currentThreadId();
+    const { scopeProjectId, scopeId } = resolveTerminalTabScope(store3.getState(), options2);
     const tab = {
       id: id39,
       scopeProjectId,
@@ -274771,6 +280518,8 @@ var init_terminals_pane = __esm({
     init_read_terminal();
     init_ui_scale();
     init_create_after_persist();
+    init_start_failure_message();
+    init_tab_scope();
     XTERM_THEME = {
       dark: {
         background: "#1e1e1e",
@@ -276165,6 +281914,115 @@ var init_pr_pane_thread = __esm({
   }
 });
 
+// src/renderer/views/pr-pane-activity.ts
+function readableState(state4) {
+  return state4.toLowerCase().replaceAll("_", " ");
+}
+function checkTone(state4) {
+  if (["SUCCESS", "NEUTRAL"].includes(state4)) return "success";
+  if (["FAILURE", "ERROR", "TIMED_OUT", "ACTION_REQUIRED"].includes(state4)) return "failure";
+  if (["QUEUED", "IN_PROGRESS", "PENDING", "WAITING", "REQUESTED"].includes(state4)) return "pending";
+  return "unknown";
+}
+function externalButton(label, url2, open3) {
+  if (!url2 || !/^https?:\/\//i.test(url2)) return el("span", {}, label);
+  const button = el("button", { type: "button", class: "pr-activity-link" }, label);
+  button.addEventListener("click", () => {
+    open3(url2);
+  });
+  return button;
+}
+function renderPrActivity(host, section, activity, open3) {
+  clear(host);
+  if (!activity || activity.error) {
+    host.append(
+      el(
+        "p",
+        { class: "pr-activity-notice", role: "status" },
+        activity?.error ?? "Comments and checks are unavailable. Refresh to retry or open on GitHub."
+      )
+    );
+    return;
+  }
+  if (section === "comments") {
+    host.append(
+      el(
+        "p",
+        { class: "pr-activity-notice" },
+        "Conversation comments and submitted reviews. Inline code discussions are available on GitHub."
+      )
+    );
+    if (activity.commentsTruncated)
+      host.append(
+        el(
+          "p",
+          { class: "pr-activity-notice" },
+          "Showing the latest 50 comments and 50 reviews. Open on GitHub for the full conversation."
+        )
+      );
+    if (!activity.comments.length)
+      host.append(el("p", {}, "No conversation comments or submitted reviews yet."));
+    for (const comment2 of activity.comments) {
+      const date6 = new Date(comment2.createdAt);
+      const time6 = el(
+        "time",
+        { datetime: comment2.createdAt },
+        Number.isNaN(date6.getTime()) ? comment2.createdAt : date6.toLocaleString()
+      );
+      const heading = el(
+        "div",
+        { class: "pr-comment-meta" },
+        el("strong", {}, `@${comment2.author}`),
+        el("span", {}, comment2.reviewState ? readableState(comment2.reviewState) : "commented"),
+        time6
+      );
+      const body = el("div", { class: "message-text streaming-markdown pr-comment-body" });
+      body.innerHTML = renderMarkdown(comment2.body);
+      host.append(
+        el("article", { class: "pr-comment", "data-comment-id": comment2.id }, heading, body)
+      );
+    }
+    return;
+  }
+  host.append(
+    el(
+      "p",
+      { class: "pr-activity-notice" },
+      `Checks for head commit ${activity.headSha.slice(0, 7)}`
+    )
+  );
+  if (activity.checksTruncated)
+    host.append(
+      el(
+        "p",
+        { class: "pr-activity-notice" },
+        "Showing the first 100 checks. Open on GitHub for all results."
+      )
+    );
+  if (!activity.checks.length) host.append(el("p", {}, "No checks reported for this commit."));
+  for (const check2 of activity.checks) {
+    host.append(
+      el(
+        "div",
+        { class: "pr-check-row" },
+        el(
+          "span",
+          { class: `pr-check-state pr-check-state-${checkTone(check2.state)}` },
+          readableState(check2.state)
+        ),
+        el("span", { class: "pr-check-name" }, check2.name),
+        externalButton("Details", check2.url, open3)
+      )
+    );
+  }
+}
+var init_pr_pane_activity = __esm({
+  "src/renderer/views/pr-pane-activity.ts"() {
+    init_dist();
+    init_helpers();
+  }
+});
+
 // src/renderer/views/pr-pane.ts
 function agentProviderLabel(provider) {
   return AGENT_PROVIDER_LABEL[provider] ?? provider;
@@ -276217,6 +282075,11 @@ function mountPrPane(listRoot, viewerRoot, store3, api3, monaco) {
   const listBody = el("div", { class: "git-changes-list pr-list-body" });
   listRoot.append(listHeader, listBody);
   const metaHost = el("div", { class: "pr-viewer-meta" });
+  const sectionsHost = el("nav", {
+    class: "pr-detail-sections",
+    "aria-label": "Pull request sections"
+  });
+  const activityHost = el("div", { class: "pr-activity", hidden: true });
   const descriptionHost = el("div", {
     class: "pr-viewer-description message-text streaming-markdown"
   });
@@ -276225,7 +282088,18 @@ function mountPrPane(listRoot, viewerRoot, store3, api3, monaco) {
   const imageWrap = el("div", { class: "git-image-diff-wrap" });
   imageWrap.hidden = true;
   const emptyState = el("div", { class: "panel-empty" }, "Select a pull request");
-  viewerRoot.append(metaHost, descriptionHost, filesHost, diffWrap, imageWrap, emptyState);
+  viewerRoot.append(
+    metaHost,
+    sectionsHost,
+    activityHost,
+    descriptionHost,
+    filesHost,
+    diffWrap,
+    imageWrap,
+    emptyState
+  );
+  let activeSection = "overview";
+  let detailsRequestId = 0;
   let ghStatus = null;
   let agentLinks = /* @__PURE__ */ new Map();
   let agentLinksGen = 0;
@@ -276311,6 +282185,8 @@ function mountPrPane(listRoot, viewerRoot, store3, api3, monaco) {
     const message2 = ghStatus?.message ?? (ghStatus?.installed ? "Sign in with `gh auth login` to browse pull requests here." : "Install GitHub CLI (`gh`) to browse pull requests in Copse.");
     listBody.append(el("div", { class: "git-changes-empty pr-empty-state" }, message2));
     clear(metaHost);
+    clear(sectionsHost);
+    activityHost.hidden = true;
     clear(descriptionHost);
     descriptionHost.classList.remove("pr-viewer-description-fill");
     clear(filesHost);
@@ -276471,6 +282347,7 @@ function mountPrPane(listRoot, viewerRoot, store3, api3, monaco) {
     if (!isStillSelected(ref)) return;
     if (fresh) prDetails = fresh;
     renderMeta();
+    renderSections();
   }
   function actionButton(label, confirmMessage, run6) {
     const btn = el("button", { type: "button", class: "pr-action-btn" }, label);
@@ -276660,6 +282537,46 @@ function mountPrPane(listRoot, viewerRoot, store3, api3, monaco) {
     descriptionHost.hidden = false;
     descriptionHost.innerHTML = renderMarkdown(prDetails.body);
   }
+  function renderSections() {
+    clear(sectionsHost);
+    activityHost.hidden = true;
+    if (!prDetails) return;
+    const sections6 = [
+      { key: "overview", label: "Overview" },
+      { key: "comments", label: "Comments" },
+      { key: "checks", label: "Checks" }
+    ];
+    for (const section of sections6) {
+      const button = el(
+        "button",
+        {
+          type: "button",
+          class: "pr-detail-section",
+          "data-section": section.key,
+          "aria-pressed": String(activeSection === section.key)
+        },
+        section.label
+      );
+      button.addEventListener("click", () => {
+        activeSection = section.key;
+        clearDiff();
+        renderDescription();
+        renderFiles();
+        renderSections();
+      });
+      sectionsHost.append(button);
+    }
+    if (activeSection !== "overview") {
+      descriptionHost.hidden = true;
+      filesHost.hidden = true;
+      diffWrap.hidden = true;
+      emptyState.hidden = true;
+      activityHost.hidden = false;
+      renderPrActivity(activityHost, activeSection, prDetails.activity, (url2) => {
+        void api3.shell.openExternal(url2);
+      });
+    }
+  }
   function renderFiles() {
     clear(filesHost);
     if (!prDetails) {
@@ -276770,13 +282687,16 @@ function mountPrPane(listRoot, viewerRoot, store3, api3, monaco) {
     await diffLoadQueue;
   }
   async function selectPr(ref) {
+    const requestId = ++detailsRequestId;
     const sameAsCurrent = selectedPr?.owner === ref.owner && selectedPr.repo === ref.repo && selectedPr.number === ref.number;
     if (!sameAsCurrent) {
       lastActionMessage = null;
       filesExpanded = false;
+      activeSection = "overview";
     }
     selectedPr = { owner: ref.owner, repo: ref.repo, number: ref.number };
     prDetails = null;
+    renderSections();
     selectedFile = null;
     renderList();
     if (!ghStatus?.installed || !ghStatus.authenticated) {
@@ -276807,8 +282727,11 @@ function mountPrPane(listRoot, viewerRoot, store3, api3, monaco) {
     emptyState.hidden = false;
     emptyState.textContent = "Loading pull request\u2026";
     try {
-      prDetails = await api3.gh.prDetails(ref.owner, ref.repo, ref.number);
+      const details = await api3.gh.prDetails(ref.owner, ref.repo, ref.number);
+      if (requestId !== detailsRequestId) return;
+      prDetails = details;
     } catch (err2) {
+      if (requestId !== detailsRequestId) return;
       emptyState.hidden = false;
       emptyState.textContent = err2 instanceof Error ? err2.message : "Could not load pull request";
       return;
@@ -276822,6 +282745,7 @@ function mountPrPane(listRoot, viewerRoot, store3, api3, monaco) {
     renderDescription();
     renderFiles();
     clearDiff();
+    renderSections();
   }
   function resetOther() {
     ciGen++;
@@ -276925,6 +282849,8 @@ function mountPrPane(listRoot, viewerRoot, store3, api3, monaco) {
   refreshBtn.addEventListener("click", () => void refresh({ reason: "manual" }));
   const unbindWorkspaceLinks = bindWorkspaceLinkClicks(descriptionHost, store3, api3);
   const unbindBrowserLinks = bindBrowserLinkClicks(descriptionHost, store3, api3);
+  const unbindActivityWorkspaceLinks = bindWorkspaceLinkClicks(activityHost, store3, api3);
+  const unbindActivityBrowserLinks = bindBrowserLinkClicks(activityHost, store3, api3);
   const stopObservingLayout = observeDiffHostLayout(viewerRoot, () => diffEditor);
   const unsubs = [
     store3.on("right_panel_mode_changed", () => {
@@ -276936,8 +282862,14 @@ function mountPrPane(listRoot, viewerRoot, store3, api3, monaco) {
       if (prsModeActive(store3)) void refresh();
     }),
     store3.on("workspace_changed", () => {
+      detailsRequestId++;
       selectedPr = null;
       prDetails = null;
+      renderMeta();
+      renderDescription();
+      renderFiles();
+      renderSections();
+      clearDiff();
       workspacePrs = [];
       prList = [];
       agentLinks = /* @__PURE__ */ new Map();
@@ -276991,9 +282923,12 @@ function mountPrPane(listRoot, viewerRoot, store3, api3, monaco) {
   return () => {
     void api3.gh.setListWatch(false, false);
     unregisterPopoutSeed();
+    detailsRequestId++;
     stopObservingLayout();
     unbindWorkspaceLinks();
     unbindBrowserLinks();
+    unbindActivityWorkspaceLinks();
+    unbindActivityBrowserLinks();
     unsubs.forEach((u2) => {
       u2();
     });
@@ -277026,6 +282961,7 @@ var init_pr_pane = __esm({
     init_git_diff_viewer();
     init_ui_scale();
     init_git_image_diff();
+    init_pr_pane_activity();
     STATUS_LABEL2 = {
       added: "A",
       modified: "M",
@@ -295712,6 +301648,9 @@ function mountVncSession(controlsRoot, viewerRoot, store3, api3, options2) {
   const authPanel = el(
     "div",
     { class: "vnc-auth-panel", "aria-label": "Screen Sharing authentication", hidden: true },
+    // Gutter marker. The panel used to be edged with an accent rail; the icon
+    // column replaces it, so the title and the body start at the same inset.
+    lockIcon("ui-icon vnc-auth-icon"),
     el("div", { class: "vnc-auth-title" }, "Authentication required"),
     authDescription,
     usernameField,
@@ -295762,6 +301701,9 @@ function mountVncSession(controlsRoot, viewerRoot, store3, api3, options2) {
   const status = el(
     "div",
     { class: "vnc-status", role: "status", hidden: true },
+    // Decorative: the status text says the same thing, and data-kind drives
+    // both this dot's hue and the text colour beside it.
+    el("span", { class: "vnc-status-dot", "aria-hidden": "true" }),
     statusTitle,
     statusDetail
   );
@@ -308558,8 +314500,7 @@ function registerKeyboardShortcuts() {
       openCommandPalette();
     }
     if (matchFindInChatShortcut(e4)) {
-      if (isFileSearchDialogOpen() || isCommandPaletteOpen() || isSettingsDialogOpen() || isKeyboardShortcutsDialogOpen())
-        return;
+      if (isAnyDialogOpen()) return;
       e4.preventDefault();
       openConversationSearch();
     }
@@ -308579,7 +314520,7 @@ function registerKeyboardShortcuts() {
     }
     if (meta5 && e4.key === "w") {
       e4.preventDefault();
-      void confirmDeleteThread();
+      if (!isAnyDialogOpen()) void confirmDeleteThread();
     }
     if (e4.key === "Escape") {
       if (isCommandPaletteOpen()) {
@@ -308675,6 +314616,7 @@ var init_main2 = __esm({
     init_roadmap_pane();
     init_browser_pane();
     await init_vnc_pane();
+    init_dialog_shell();
     init_settings_dialog();
     init_theme2();
     init_ui_scale2();

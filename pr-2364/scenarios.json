@@ -12,6 +12,10 @@
     "label": "Markdown list indentation"
   },
   {
+    "id": "container-run",
+    "label": "Unattended container run"
+  },
+  {
     "id": "footer-compact",
     "label": "Responsive composer footer"
   },
@@ -30,6 +34,10 @@
   {
     "id": "approval-light-accent",
     "label": "Light-theme approval with a bright accent"
+  },
+  {
+    "id": "light-contrast-surfaces",
+    "label": "Light-theme syntax, fills, and selection"
   },
   {
     "id": "approval-grouped-shell-commands",
