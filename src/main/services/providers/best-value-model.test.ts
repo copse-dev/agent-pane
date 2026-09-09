@@ -1,16 +1,24 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { planAcpFrontierCandidates, resolveBestValueFromFrontier } from './best-value-model.ts'
+import { resolveBestValueFromFrontier } from './best-value-model.ts'
 import type { PlanUsageSnapshot } from '@copse/plan-usage'
 import { getIntellectScore } from '@copse/llm/model-intellect.ts'
 import { frontierForKnownModels } from '@copse/llm/pareto-frontier.ts'
 import { pickDynamicModel } from '@copse/llm/dynamic-model-pick.ts'
 import { applyPlanCoverage } from '@shared/plan-inclusion.ts'
+import { planAcpFrontierCandidates } from '@shared/plan-frontier-candidates.ts'
 
 describe('resolveBestValueFromFrontier', () => {
   it('routes a local winner with the lmstudio: prefix', () => {
     const picked = resolveBestValueFromFrontier(
-      [{ id: 'qwen/qwen2.5-coder-32b', intellect: 40, costPerMTok: 0, local: true }],
+      [
+        {
+          id: 'qwen/qwen2.5-coder-32b',
+          intellect: 40,
+          costPerMTok: 0,
+          local: true,
+        },
+      ],
       null,
     )
     assert.equal(picked, 'lmstudio:qwen/qwen2.5-coder-32b')
@@ -62,7 +70,11 @@ describe('resolveBestValueFromFrontier', () => {
   it('excludes a batch-only OpenRouter route from the interactive pool', () => {
     const picked = resolveBestValueFromFrontier(
       [
-        { id: 'openrouter:minimax/minimax-m3:batch', intellect: 60, costPerMTok: 1 },
+        {
+          id: 'openrouter:minimax/minimax-m3:batch',
+          intellect: 60,
+          costPerMTok: 1,
+        },
         { id: 'openrouter:openai/gpt-4o', intellect: 48, costPerMTok: 6 },
       ],
       null,
@@ -95,8 +107,18 @@ describe('resolveBestValueFromFrontier', () => {
             plan: 'Max',
             checkedAt: '2026-07-22T00:00:00Z',
             windows: [
-              { id: 'seven_day_opus', label: 'Weekly Opus', usedPercent: 10, resetsAt: null },
-              { id: 'seven_day', label: 'Weekly', usedPercent: 5, resetsAt: null },
+              {
+                id: 'seven_day_opus',
+                label: 'Weekly Opus',
+                usedPercent: 10,
+                resetsAt: null,
+              },
+              {
+                id: 'seven_day',
+                label: 'Weekly',
+                usedPercent: 5,
+                resetsAt: null,
+              },
               { id: 'five_hour', label: '5h', usedPercent: 0, resetsAt: null },
             ],
           },
@@ -106,7 +128,11 @@ describe('resolveBestValueFromFrontier', () => {
     // ACP agent running Opus 5 (plan-covered) vs the same model via OpenRouter.
     const picked = resolveBestValueFromFrontier(
       [
-        { id: 'openrouter:anthropic/claude-opus-5', intellect: 61, costPerMTok: 9 },
+        {
+          id: 'openrouter:anthropic/claude-opus-5',
+          intellect: 61,
+          costPerMTok: 9,
+        },
         {
           id: 'acp:claude-agent-acp#claude-opus-5',
           intellect: 61,
@@ -193,7 +219,10 @@ describe('planAcpFrontierCandidates', () => {
       },
     ])
     assert.deepEqual(
-      candidates.map((candidate) => ({ id: candidate.id, planAccess: candidate.planAccess })),
+      candidates.map((candidate) => ({
+        id: candidate.id,
+        planAccess: candidate.planAccess,
+      })),
       [
         {
           id: 'acp:claude-acp#opus',
@@ -269,8 +298,18 @@ describe('planAcpFrontierCandidates', () => {
             plan: 'Max',
             checkedAt: '2026-09-03T00:00:00Z',
             windows: [
-              { id: 'seven_day_opus', label: 'Weekly Opus', usedPercent: 12, resetsAt: null },
-              { id: 'seven_day', label: 'Weekly', usedPercent: 8, resetsAt: null },
+              {
+                id: 'seven_day_opus',
+                label: 'Weekly Opus',
+                usedPercent: 12,
+                resetsAt: null,
+              },
+              {
+                id: 'seven_day',
+                label: 'Weekly',
+                usedPercent: 8,
+                resetsAt: null,
+              },
               { id: 'five_hour', label: '5h', usedPercent: 3, resetsAt: null },
             ],
           },
@@ -297,6 +336,35 @@ describe('planAcpFrontierCandidates', () => {
     assert.equal(picked.costPerMTok, 0)
   })
 
+  it('includes Astra when a recognized Codex ACP agent advertises it', () => {
+    const astraScore = getIntellectScore('gpt-6-astra')
+    assert.ok(astraScore)
+    const candidates = planAcpFrontierCandidates([
+      {
+        id: 'codex-acp',
+        title: 'Codex',
+        command: 'codex-acp',
+        enabled: true,
+        availableModels: [{ value: 'gpt-6-astra', label: 'GPT-6 Astra' }],
+      },
+    ])
+
+    assert.deepEqual(
+      candidates.map((candidate) => ({
+        id: candidate.id,
+        intellect: candidate.intellect,
+        planAccess: candidate.planAccess,
+      })),
+      [
+        {
+          id: 'acp:codex-acp#gpt-6-astra',
+          intellect: astraScore.value,
+          planAccess: { provider: 'codex', modelId: 'gpt-6-astra' },
+        },
+      ],
+    )
+  })
+
   it('makes balanced choose Codex ACP over the exact GPT-5.6 Sol OpenRouter route', () => {
     const solScore = getIntellectScore('gpt-5.6-sol')
     assert.ok(solScore)
@@ -321,8 +389,18 @@ describe('planAcpFrontierCandidates', () => {
             plan: 'plus',
             checkedAt: '2026-08-26T00:00:00Z',
             windows: [
-              { id: 'primary', label: '5-hour', usedPercent: 15, resetsAt: null },
-              { id: 'secondary', label: 'Weekly', usedPercent: 5, resetsAt: null },
+              {
+                id: 'primary',
+                label: '5-hour',
+                usedPercent: 15,
+                resetsAt: null,
+              },
+              {
+                id: 'secondary',
+                label: 'Weekly',
+                usedPercent: 5,
+                resetsAt: null,
+              },
             ],
           },
         },
