@@ -369,4 +369,58 @@ describe('ToolRegistry', () => {
     assert.ok(properties && typeof properties === 'object' && 'name' in properties)
     setPermissionGateForTests(null)
   })
+
+  it('reports bad arguments as a sentence, not the ZodError JSON dump', async () => {
+    setPermissionGateForTests(async () => true)
+    let executed = false
+    const reg = new ToolRegistry()
+    reg.register({
+      name: 'update_todos',
+      description: 'update the plan',
+      parameters: z.object({
+        todos: z.array(z.object({ content: z.string(), status: z.enum(['pending']) })).min(1),
+      }),
+      execute: async () => {
+        executed = true
+        return 'ok'
+      },
+    })
+
+    // The reported shape: a todo whose `content` never made it into the call.
+    await assert.rejects(
+      () =>
+        reg.execute(
+          'update_todos',
+          { todos: [{ status: 'pending' }] },
+          new AbortController().signal,
+        ),
+      (err: Error) => {
+        assert.match(err.message, /todos\[0\]\.content/)
+        assert.match(err.message, /expected string, received undefined/)
+        // What the agent loop used to splice into the transcript.
+        assert.doesNotMatch(err.message, /"code"|"expected"|invalid_type/)
+        return true
+      },
+    )
+    assert.equal(executed, false, 'the tool must not run on arguments that failed validation')
+    setPermissionGateForTests(null)
+  })
+
+  it('leaves an error thrown from inside a tool untouched', async () => {
+    setPermissionGateForTests(async () => true)
+    const reg = new ToolRegistry()
+    reg.register({
+      name: 'boom',
+      description: 'always fails',
+      parameters: z.object({ msg: z.string() }),
+      execute: async () => {
+        throw new Error('command not found: frobnicate')
+      },
+    })
+    await assert.rejects(
+      () => reg.execute('boom', { msg: 'x' }, new AbortController().signal),
+      /command not found: frobnicate/,
+    )
+    setPermissionGateForTests(null)
+  })
 })
