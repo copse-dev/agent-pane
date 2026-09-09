@@ -775,7 +775,8 @@ async function applyWrite(entry: QueueEntry, root: string): Promise<ApplyResult>
   let current = ''
   try {
     current = await fs.readFile(absPath, 'utf-8')
-  } catch {
+  } catch (err) {
+    if (!isNotFoundError(err)) return { status: 'error', error: errorMessage(err) }
     /* file absent on disk — treated as empty, matching staging snapshot for new files */
   }
   if (current !== entry.before) {

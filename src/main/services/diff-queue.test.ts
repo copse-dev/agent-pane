@@ -1,4 +1,4 @@
-import { describe, beforeEach, afterEach, it } from 'node:test'
+import { describe, beforeEach, afterEach, it, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { at } from '@shared/array-utils.ts'
 import { lstat, mkdtemp, readFile, writeFile, rm, mkdir } from 'node:fs/promises'
@@ -34,6 +34,8 @@ import {
 } from './thread-execution-context.ts'
 import { ownedIt, worktreeIt, TEST_THREAD_OWNER } from './thread-execution-context.test-support.ts'
 import { setSetting } from './storage/settings.ts'
+import { localWorkspaceFs } from './workspace-fs/local-workspace-fs.ts'
+import { writeFileTool } from '../tools/write-file-tool.ts'
 
 function git(cwd: string, args: string[]): void {
   execFileSync('git', args, {
@@ -64,6 +66,7 @@ describe('applyDiffEntry (stale-overwrite TOCTOU guard)', () => {
   })
 
   afterEach(async () => {
+    mock.restoreAll()
     restoreWorkspace?.()
     if (tempRoot) await rm(tempRoot, { recursive: true, force: true })
   })
@@ -110,6 +113,41 @@ describe('applyDiffEntry (stale-overwrite TOCTOU guard)', () => {
     assert.deepEqual(result, { status: 'written' })
     assert.equal(await readFile(join(tempRoot, 'new.txt'), 'utf-8'), 'hello\n')
   })
+
+  ownedIt('does not overwrite an existing file when its approval-time read fails', async () => {
+    await writeFile(join(tempRoot, 'a.txt'), 'valuable work\n')
+    mock.method(localWorkspaceFs, 'readFile', async () => {
+      throw Object.assign(new Error('read failed'), { code: 'EIO' })
+    })
+    const result = await applyDiffEntry({
+      path: 'a.txt',
+      before: '',
+      after: 'replacement\n',
+      language: 'plaintext',
+    })
+    assert.equal(result.status, 'error')
+    assert.equal(await readFile(join(tempRoot, 'a.txt'), 'utf-8'), 'valuable work\n')
+  })
+
+  ownedIt(
+    'write_file propagates read failures instead of proposing an empty-file overwrite',
+    async () => {
+      await writeFile(join(tempRoot, 'a.txt'), 'valuable work\n')
+      const failure = Object.assign(new Error('permission denied'), { code: 'EACCES' })
+      mock.method(localWorkspaceFs, 'readFile', async () => {
+        throw failure
+      })
+      await assert.rejects(
+        async () =>
+          writeFileTool.execute(
+            { path: 'a.txt', content: 'replacement\n' },
+            new AbortController().signal,
+          ),
+        failure,
+      )
+      assert.equal(await readFile(join(tempRoot, 'a.txt'), 'utf-8'), 'valuable work\n')
+    },
+  )
 
   ownedIt('reports a conflict when a file was created between staging and approval', async () => {
     // Staged as a new file (before ''), but another writer created it first.

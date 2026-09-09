@@ -104,6 +104,33 @@ const markdownContent = [
   '- Persistence — filesystem-native threads and project settings',
 ].join('\n')
 
+// A fenced JSON block is the shape issue #2486 reported: highlight.js tags object
+// keys `.hljs-attr` and their values `.hljs-string`, which the vendored Dark+
+// palette painted light blue and salmon onto a near-white light-theme surface.
+// Comments and numbers come along because they are the other three token classes
+// the palette colours, so one block exercises the whole thing.
+const syntaxContrastContent = [
+  'Here is the resolved model configuration:',
+  '',
+  '```json',
+  '{',
+  '  "model": "claude-opus-4",',
+  '  "temperature": 0.2,',
+  '  "maxTokens": 8192,',
+  '  "stream": true',
+  '}',
+  '```',
+  '',
+  'and the loop that reads it:',
+  '',
+  '```ts',
+  '// Resolve the model for this turn.',
+  'function resolveModel(settings: Settings): string {',
+  "  return settings.model ?? 'claude-opus-4'",
+  '}',
+  '```',
+].join('\n')
+
 const project = (id: string, name = 'copse-demo', path = '/demo/copse'): Project => ({
   id,
   path,
@@ -601,6 +628,42 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
           'The project sandbox would block this command:\n• Installs or updates packages, which downloads and runs code from the internet',
         bodyFooter: 'Allow running it once outside the sandbox?',
         type: 'shell',
+      },
+    ],
+  },
+  {
+    // Companion to `approval-light-accent`: same bright accent, same light theme,
+    // but aimed at the surfaces issue #2486/#2488/#2483 reported rather than the
+    // approval dialog. The accent matters — light derives `--accent` as 30% of it
+    // mixed with black, so a bright one makes the derived tier unmistakably dark
+    // and any control that fills with it instead of `--accent-fill` shows up.
+    id: 'light-contrast-surfaces',
+    label: 'Light-theme syntax, fills, and selection',
+    project: project('demo-light-contrast-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'light',
+      uiAccentColor: '#20FD85',
+      uiTintColor: '#244C25',
+      uiTintStrength: 'subtle',
+    },
+    threads: [
+      {
+        id: 'demo-light-contrast-thread',
+        title: 'Light-theme contrast',
+        status: 'idle',
+        messages: [
+          {
+            id: 'demo-light-contrast-assistant',
+            role: 'assistant',
+            content: syntaxContrastContent,
+            toolCalls: [],
+            createdAt: FIXED_TIME,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
       },
     ],
   },
