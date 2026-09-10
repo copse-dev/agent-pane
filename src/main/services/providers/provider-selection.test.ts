@@ -178,7 +178,9 @@ async function captureLocalRequest(provider: LLMProvider): Promise<Record<string
     value: { chat: { completions: { create } } },
     configurable: true,
   })
-  for await (const _ of provider.stream([{ role: 'user', content: 'hi' }], [])) void _
+  for await (const _ of provider.stream([{ role: 'user', content: 'hi' }], [])) {
+    // Drain the stream so the provider sends and captures the request.
+  }
   return captured.request ?? {}
 }
 

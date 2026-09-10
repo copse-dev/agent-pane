@@ -20,7 +20,7 @@ export function clampPercent(value: number): number {
 }
 
 /** Prefer ISO string; accept unix seconds/ms (number or digit string). */
-export function toIsoTimestamp(value: unknown, nowMs: number): string | null {
+export function toIsoTimestamp(value: unknown, _nowMs: number): string | null {
   if (typeof value === 'string' && value.trim()) {
     const trimmed = value.trim()
     if (/^\d{10,}$/.test(trimmed)) {
@@ -38,7 +38,6 @@ export function toIsoTimestamp(value: unknown, nowMs: number): string | null {
     const ms = value > 1e12 ? value : value * 1000
     return new Date(ms).toISOString()
   }
-  void nowMs
   return null
 }
 

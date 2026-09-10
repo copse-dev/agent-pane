@@ -40,7 +40,7 @@ overrides:
   sharp: 0.35.4
   fast-xml-parser: 5.10.1
   fast-uri: 3.1.6
-  hono: 4.12.34
+  hono: 4.13.5
   ip-address: 10.3.1
   extract-zip: file:packages/extract-zip
   undici@6: 6.28.0
@@ -73,6 +73,12 @@ minimumReleaseAgeExclude:
   - ip-address
   - undici
 
+# adm-zip has no non-vulnerable published release: 0.6.0 fixes the 4 GB memory
+# allocation advisory, but it and every release back to 0.5.9 follow destination
+# symlinks during extraction. Keep the upstream-compatible symlink guard locally
+# until a release newer than 0.6.0 includes cthackers/adm-zip#575. The regression
+# test in scripts/adm-zip-symlink-patch.test.ts fails if this patch is dropped.
+
 # Three patches to @anthropic-ai/sandbox-runtime, all in one patch file. Drop
 # each once upstream does the same; the named test fails loudly if a version
 # bump silently drops the patch.
@@ -100,3 +106,4 @@ minimumReleaseAgeExclude:
 #    `git-commit-signing.test.ts`.
 patchedDependencies:
   '@anthropic-ai/sandbox-runtime@0.0.74': patches/@anthropic-ai__sandbox-runtime@0.0.74.patch
+  adm-zip@0.6.0: patches/adm-zip@0.6.0.patch

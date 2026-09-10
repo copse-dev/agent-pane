@@ -28,8 +28,18 @@ import type { PluginSummary, PluginsListResult } from '@shared/types/plugins.ts'
 function shimModal(dialog: HTMLDialogElement): void {
   let open = false
   Object.defineProperties(dialog, {
-    showModal: { configurable: true, value: () => void (open = true) },
-    close: { configurable: true, value: () => void (open = false) },
+    showModal: {
+      configurable: true,
+      value: () => {
+        open = true
+      },
+    },
+    close: {
+      configurable: true,
+      value: () => {
+        open = false
+      },
+    },
     open: { configurable: true, get: () => open },
   })
 }

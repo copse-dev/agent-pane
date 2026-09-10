@@ -11,7 +11,7 @@ describe('titlebar compact layout', () => {
 
     class TestResizeObserver {
       constructor(callback: ResizeObserverCallback) {
-        void callback
+        assert.equal(typeof callback, 'function')
       }
       observe(): void {}
       unobserve(): void {}

@@ -31,9 +31,9 @@ function functionHookUsesFirstPartyCapabilities(ctx: FunctionHookContext): numbe
 const capabilityFreeRunner: CommandHookRunner = {
   run(_hook, _payload, context) {
     // @ts-expect-error command hooks cannot emit typed feature chunks (decision 15)
-    void context.emitChunk
+    assert.equal(context.emitChunk, undefined)
     // @ts-expect-error command hooks cannot read live loop state (decision 15)
-    void context.loopState
+    assert.equal(context.loopState, undefined)
     return Promise.resolve({ outcome: null, failed: false })
   },
 }

@@ -200,7 +200,7 @@ describe('OpenAIProvider request options', () => {
       ],
       [],
     )) {
-      void _
+      // Drain the stream so the provider sends and captures the request.
     }
 
     assert.deepEqual(captured.request?.messages, [

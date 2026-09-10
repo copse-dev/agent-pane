@@ -89,8 +89,7 @@ describe('renderMermaidIn', () => {
     // A line-start [label] yields a distinct aggressive candidate to retry with.
     const seen = new Set<HTMLElement>()
     const fake = fakeMermaid((node) => {
-      if (seen.has(node))
-        node.innerHTML = '<svg></svg>' // succeed on retry
+      if (seen.has(node)) node.innerHTML = '<svg></svg>' // succeed on retry
       else seen.add(node) // first pass fails
     })
     const root = diagramRoot('flowchart LR\nA[Start] --> B[End]')

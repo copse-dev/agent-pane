@@ -127,7 +127,9 @@ async function captureRequest(provider: OpenAIProvider): Promise<CapturedRequest
     value: { chat: { completions: { create } } },
     configurable: true,
   })
-  for await (const _ of provider.stream([{ role: 'user', content: 'hi' }], [])) void _
+  for await (const _ of provider.stream([{ role: 'user', content: 'hi' }], [])) {
+    // Drain the stream so the provider sends and captures the request.
+  }
   return captured.request ?? {}
 }
 
@@ -273,7 +275,9 @@ describe('createProvider service tier', () => {
       },
       configurable: true,
     })
-    for await (const _ of provider.stream([{ role: 'user', content: 'hi' }], [])) void _
+    for await (const _ of provider.stream([{ role: 'user', content: 'hi' }], [])) {
+      // Drain the stream so the provider sends and captures the request.
+    }
     assert.equal(captured.request?.service_tier, 'flex')
   })
 
@@ -730,7 +734,9 @@ describe('createProvider OpenAI transport routing', () => {
       },
       configurable: true,
     })
-    for await (const _ of provider.stream([{ role: 'user', content: 'hi' }], [])) void _
+    for await (const _ of provider.stream([{ role: 'user', content: 'hi' }], [])) {
+      // Drain the stream so the provider sends and captures the request.
+    }
 
     const { request } = captured
     assert.ok(request, 'the provider should have issued a request')

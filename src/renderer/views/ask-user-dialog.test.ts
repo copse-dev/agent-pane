@@ -76,8 +76,18 @@ function stubApi(): { api: ApiClient; harness: Harness } {
 function shimModal(el: HTMLDialogElement): void {
   let open = false
   Object.defineProperties(el, {
-    showModal: { configurable: true, value: () => void (open = true) },
-    close: { configurable: true, value: () => void (open = false) },
+    showModal: {
+      configurable: true,
+      value: () => {
+        open = true
+      },
+    },
+    close: {
+      configurable: true,
+      value: () => {
+        open = false
+      },
+    },
     open: { configurable: true, get: () => open },
   })
 }
