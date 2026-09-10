@@ -130,7 +130,9 @@ describe('LMStudioProvider tuned parameters', () => {
       },
     })
     const messages: LLMMessage[] = [{ role: 'user', content: 'hello' }]
-    for await (const _ of provider.stream(messages, [])) void _
+    for await (const _ of provider.stream(messages, [])) {
+      // Drain the stream so the provider sends and captures the request.
+    }
     const opts = client.modelHandle.opts
     assert.ok(opts)
     assert.equal(opts['temperature'], 1)
@@ -145,7 +147,9 @@ describe('LMStudioProvider tuned parameters', () => {
     const client = new FakeClient()
     const provider = new LMStudioProvider('some-uncatalogued-model', { client })
     const messages: LLMMessage[] = [{ role: 'user', content: 'hello' }]
-    for await (const _ of provider.stream(messages, [])) void _
+    for await (const _ of provider.stream(messages, [])) {
+      // Drain the stream so the provider sends and captures the request.
+    }
     const opts = client.modelHandle.opts
     assert.ok(opts)
     assert.equal(opts['maxTokens'], undefined)
@@ -258,7 +262,9 @@ describe('LMStudioProvider', () => {
 
     await assert.rejects(
       async () => {
-        for await (const _ of provider.stream([{ role: 'user', content: 'hello' }], [])) void _
+        for await (const _ of provider.stream([{ role: 'user', content: 'hello' }], [])) {
+          // Drain the stream so the provider reaches the expected failure.
+        }
       },
       // The parse failure surfaces to the caller rather than being retried:
       // replaying the same prompt would produce the same broken tool call.

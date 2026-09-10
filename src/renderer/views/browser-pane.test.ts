@@ -1113,7 +1113,9 @@ describe('browser pane requested URLs', () => {
       webview.canGoBack = (): boolean => false
       webview.canGoForward = (): boolean => false
       webview.reload = (): void => {}
-      webview.openDevTools = (): void => void (devToolsOpens += 1)
+      webview.openDevTools = (): void => {
+        devToolsOpens += 1
+      }
       webview.getWebContentsId = (): number => 42
       webview.dispatchEvent(new Event('dom-ready'))
 

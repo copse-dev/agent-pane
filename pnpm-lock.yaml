@@ -18,7 +18,7 @@ overrides:
   sharp: 0.35.4
   fast-xml-parser: 5.10.1
   fast-uri: 3.1.6
-  hono: 4.12.34
+  hono: 4.13.5
   ip-address: 10.3.1
   extract-zip: file:packages/extract-zip
   undici@6: 6.28.0
@@ -28,6 +28,9 @@ patchedDependencies:
   '@anthropic-ai/sandbox-runtime@0.0.74':
     hash: 65062e3ebee83cd5cdd07fb3da05641e5854927d4ce8c016be5ca8be19cbb02e
     path: patches/@anthropic-ai__sandbox-runtime@0.0.74.patch
+  adm-zip@0.6.0:
+    hash: b7a4d985cd2a95694e3292c0ee538dd780db7ef714b42bb7d3eab8eb4c9ff43f
+    path: patches/adm-zip@0.6.0.patch
 
 importers:
 
@@ -763,7 +766,7 @@ packages:
     resolution: {integrity: sha512-bjD221KPLoJTWUwso1J6fGKiTXEUFedG/s0visavY4zakFPkeGURMRNly+FhBHs7T8Dz4qHaZIMX9ZoJHSJtKA==}
     engines: {node: '>=20'}
     peerDependencies:
-      hono: 4.12.34
+      hono: 4.13.5
 
   '@huggingface/jinja@0.5.9':
     resolution: {integrity: sha512-uWTG+l3VJRsl7EXxYizuL3P+cCPoc3cRqbWWRcQN0FhejRfbdq0RNhCmbY/YDtnTcz9icdLYuLDjsnz4d8JMuw==}
@@ -1714,9 +1717,6 @@ packages:
 
   '@types/node@24.13.4':
     resolution: {integrity: sha512-YJ7EqCstVTzIr0fMr7qul/977en+pQHrfmuKIo6Zr9i75Be21dr3MovcfvGtyvi2HAUrRerWps5sMO9I7WaxDw==}
-
-  '@types/node@26.4.1':
-    resolution: {integrity: sha512-k97ENvZWtvA6yqz5/FS6a7duDgOPEeOQOc2iKS/nY6mX6qJUKtLnWzQS+Xj6tXweyj6ZcTAK2Qecetnvi9nCLA==}
 
   '@types/node@26.4.1':
     resolution: {integrity: sha512-k97ENvZWtvA6yqz5/FS6a7duDgOPEeOQOc2iKS/nY6mX6qJUKtLnWzQS+Xj6tXweyj6ZcTAK2Qecetnvi9nCLA==}
@@ -3207,8 +3207,8 @@ packages:
     resolution: {integrity: sha512-nbfWpyRMcMrPMmDwJB+dhX/eiaPKtc2RB+0QZskqJ3WjRA/FDS0e9hZrx8EC/lbEv8gXy98FcDbNa/dspAaJMg==}
     engines: {node: '>=12.0.0'}
 
-  hono@4.12.34:
-    resolution: {integrity: sha512-GqXJqY/xJkJmuloTrnV1ZEXG3fqte+VjkUqoRNZXcrUidiUOP4fMSIHHY4tsqZBK++kVyWmt/AAfSUuy57/eSA==}
+  hono@4.13.5:
+    resolution: {integrity: sha512-O6+/eCYRkzzzy0rPWwKLiGBR1nFuUPZynnwjxN1MBA62NNqbT0wQEzQyK2gSO5yDIDB336sXQleAhOHrzlYyKw==}
     engines: {node: '>=16.9.0'}
 
   hosted-git-info@4.1.0:
@@ -5235,9 +5235,9 @@ snapshots:
     optionalDependencies:
       '@noble/hashes': 2.3.0
 
-  '@hono/node-server@2.0.11(hono@4.12.34)':
+  '@hono/node-server@2.0.11(hono@4.13.5)':
     dependencies:
-      hono: 4.12.34
+      hono: 4.13.5
 
   '@huggingface/jinja@0.5.9':
     optional: true
@@ -5604,7 +5604,7 @@ snapshots:
 
   '@modelcontextprotocol/sdk@1.30.0(zod@4.5.4)':
     dependencies:
-      '@hono/node-server': 2.0.11(hono@4.12.34)
+      '@hono/node-server': 2.0.11(hono@4.13.5)
       ajv: 8.20.0
       ajv-formats: 3.0.1(ajv@8.20.0)
       content-type: 1.0.5
@@ -5614,7 +5614,7 @@ snapshots:
       eventsource-parser: 3.1.1
       express: 5.2.1
       express-rate-limit: 8.6.2(express@5.2.1)
-      hono: 4.12.34
+      hono: 4.13.5
       jose: 6.2.8
       json-schema-typed: 8.0.2
       pkce-challenge: 5.0.1
@@ -6074,11 +6074,6 @@ snapshots:
     dependencies:
       undici-types: 8.3.0
 
-  '@types/node@26.4.1':
-    dependencies:
-      undici-types: 8.3.0
-    optional: true
-
   '@types/normalize-package-data@2.4.4': {}
 
   '@types/pngjs@6.0.5':
@@ -6440,7 +6435,7 @@ snapshots:
 
   acorn@8.18.0: {}
 
-  adm-zip@0.6.0:
+  adm-zip@0.6.0(patch_hash=b7a4d985cd2a95694e3292c0ee538dd780db7ef714b42bb7d3eab8eb4c9ff43f):
     optional: true
 
   agent-base@7.1.4: {}
@@ -7991,7 +7986,7 @@ snapshots:
 
   highlight.js@11.12.0: {}
 
-  hono@4.12.34: {}
+  hono@4.13.5: {}
 
   hosted-git-info@4.1.0:
     dependencies:
@@ -8601,7 +8596,7 @@ snapshots:
 
   onnxruntime-node@1.24.3:
     dependencies:
-      adm-zip: 0.6.0
+      adm-zip: 0.6.0(patch_hash=b7a4d985cd2a95694e3292c0ee538dd780db7ef714b42bb7d3eab8eb4c9ff43f)
       global-agent: 3.0.0
       onnxruntime-common: 1.24.3
     optional: true

@@ -202,9 +202,8 @@ describe('stale halts record against the fire-site snapshot (decisions 3/6/16)',
     // against the snapshot captured at the fire site — recording against the
     // live context would drop it or attribute it to a newer turn.
     const snapshots: unknown[] = []
-    setHaltRunRecorderForTesting((input, snapshot) => {
+    setHaltRunRecorderForTesting((_input, snapshot) => {
       snapshots.push(snapshot)
-      void input
     })
     const fireSiteSnapshot: HookRunRecordingSnapshot = {
       projectId: 'p',
@@ -223,9 +222,8 @@ describe('stale halts record against the fire-site snapshot (decisions 3/6/16)',
 
   it('leaves the snapshot undefined for blocking halts (live context by construction)', () => {
     const snapshots: unknown[] = []
-    setHaltRunRecorderForTesting((input, snapshot) => {
+    setHaltRunRecorderForTesting((_input, snapshot) => {
       snapshots.push(snapshot)
-      void input
     })
 
     haltRunFromBlockingHook({

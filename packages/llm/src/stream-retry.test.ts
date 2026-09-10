@@ -235,7 +235,9 @@ describe('yieldStreamWithRetry', () => {
       throw httpError(400)
     })
     await assert.rejects(async () => {
-      for await (const _ of yieldStreamWithRetry(run, { maxAttempts: 3 })) void _
+      for await (const _ of yieldStreamWithRetry(run, { maxAttempts: 3 })) {
+        // Drain until the stream raises the expected error.
+      }
     })
     assert.equal(attempts, 1)
   })
@@ -247,7 +249,9 @@ describe('yieldStreamWithRetry', () => {
       throw httpError(503)
     })
     await assert.rejects(async () => {
-      for await (const _ of yieldStreamWithRetry(run, { maxAttempts: 2 })) void _
+      for await (const _ of yieldStreamWithRetry(run, { maxAttempts: 2 })) {
+        // Drain until the stream raises the expected error.
+      }
     })
     assert.equal(attempts, 2)
   })
@@ -261,7 +265,9 @@ describe('yieldStreamWithRetry', () => {
       throw httpError(503)
     })
     await assert.rejects(async () => {
-      for await (const _ of yieldStreamWithRetry(run, { maxAttempts: 5, signal: ac.signal })) void _
+      for await (const _ of yieldStreamWithRetry(run, { maxAttempts: 5, signal: ac.signal })) {
+        // Drain until the stream raises the expected error.
+      }
     })
     assert.equal(attempts, 1)
   })

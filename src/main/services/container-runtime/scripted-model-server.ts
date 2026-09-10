@@ -39,9 +39,9 @@ export function startScriptedModelServer(
   let index = 0
   let requests = 0
   const server: Server = createServer((req, res) => {
-    let body = ''
+    let _body = ''
     req.on('data', (part: Buffer) => {
-      body += part.toString()
+      _body += part.toString()
     })
     req.on('end', () => {
       requests += 1
@@ -84,7 +84,6 @@ export function startScriptedModelServer(
       }
       res.write('data: [DONE]\n\n')
       res.end()
-      void body
     })
   })
   return new Promise((resolveStart) => {

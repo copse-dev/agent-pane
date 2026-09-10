@@ -13,9 +13,9 @@
 //
 // One object literal per property: excess-property checking only reports the
 // first offender in a single literal, so each forbidden field needs its own.
-// `void` keeps each value used under `noUnusedLocals`. There is no runtime
-// assertion — the compiler *is* the assertion — but a trivial runtime `it` keeps
-// the node test runner from reporting an empty suite.
+// The runtime assertions keep each value used under `noUnusedLocals`. The
+// compiler is still the contract assertion; the test body also keeps the node
+// test runner from reporting an empty suite.
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import type { AsyncHookOutcome } from './hook-outcome.ts'
@@ -43,14 +43,13 @@ const asyncLegitimate: AsyncHookOutcome = {
   sessionEnv: { FOO: 'bar' },
 }
 
-void asyncCannotDecide
-void asyncCannotRewriteInput
-void asyncCannotInjectContext
-
 describe('async-outcome-type-excludes-decisions (decision 11)', () => {
   it('compiles only because async outcomes exclude decision/updatedInput/injectContext', () => {
     // The real assertions are the three `@ts-expect-error`s above; this keeps
-    // the legitimate-channel object referenced and the suite non-empty.
+    // the contract objects referenced and the suite non-empty.
+    assert.ok(asyncCannotDecide)
+    assert.ok(asyncCannotRewriteInput)
+    assert.ok(asyncCannotInjectContext)
     assert.equal(asyncLegitimate.queueMessage?.sendNow, false)
   })
 })
