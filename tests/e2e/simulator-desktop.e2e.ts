@@ -1,4 +1,3 @@
-import assert from 'node:assert/strict'
 import { $, browser } from '@wdio/globals'
 import { PNG } from 'pngjs'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
@@ -60,6 +59,7 @@ describe('Simulator desktop preview', function () {
             __copseE2e?: {
               openWorkspace(root: string): Promise<string>
               setSimulatorDesktop(value: unknown): Promise<void>
+              showSimulatorDesktop(udid: string): Promise<void>
             }
           }
         ).__copseE2e
@@ -88,16 +88,17 @@ describe('Simulator desktop preview', function () {
   })
 
   it('shows and controls a booted Simulator in the Desktop pane', async () => {
-    await $('.titlebar-btn[aria-label="Open remote desktop"]').click()
+    await browser.execute(async (udid) => {
+      const e2e = (
+        window as unknown as {
+          __copseE2e?: { showSimulatorDesktop(udid: string): Promise<void> }
+        }
+      ).__copseE2e
+      if (!e2e) throw new Error('__copseE2e unavailable')
+      await e2e.showSimulatorDesktop(udid)
+    }, DEVICE_UDID)
     const simulator = $(`.vnc-device-header[data-machine="simulator:${DEVICE_UDID}"]`)
     await simulator.waitForDisplayed({ timeout: 20_000 })
-    await simulator.click()
-
-    await expect($('.vnc-simulator-hint')).toHaveText(
-      'Streams the booted Simulator framebuffer directly. Simulator.app can stay closed.',
-    )
-    assert.equal(await $('.vnc-advanced').isDisplayed(), false)
-    await $('.vnc-connect-btn').click()
 
     const canvas = $('.simulator-desktop-canvas')
     await canvas.waitForDisplayed({ timeout: 20_000 })

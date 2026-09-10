@@ -2,6 +2,7 @@ import { definePlugin, type RegisteredPlugin } from './plugin-manifest.ts'
 
 export const APPLE_DEVELOPMENT_PLUGIN_ID = 'copse.apple-development'
 export const APPLE_DEVELOPMENT_PANEL_ID = 'apple-development'
+export const APPLE_DEVELOPMENT_TOOL_NAMES = ['open_simulator_desktop'] as const
 
 /**
  * Apple Development is a first-party pack because its typed host driver and
@@ -18,6 +19,10 @@ export const appleDevelopmentPlugin: RegisteredPlugin = definePlugin(
       'Build, test, and run enrolled local Apple projects with an installed Xcode. Adds thread-scoped target selection, supervised operations, diagnostics, and Simulator controls.',
     trust: 'first-party',
     stability: 'experimental',
+    tools: {
+      native: [...APPLE_DEVELOPMENT_TOOL_NAMES],
+      acpTools: [...APPLE_DEVELOPMENT_TOOL_NAMES],
+    },
     ui: [
       {
         id: APPLE_DEVELOPMENT_PANEL_ID,
@@ -35,6 +40,7 @@ export const appleDevelopmentPlugin: RegisteredPlugin = definePlugin(
     storage: { namespace: APPLE_DEVELOPMENT_PLUGIN_ID },
   },
   {
+    toolNames: [...APPLE_DEVELOPMENT_TOOL_NAMES],
     uiContributions: [
       {
         id: APPLE_DEVELOPMENT_PANEL_ID,

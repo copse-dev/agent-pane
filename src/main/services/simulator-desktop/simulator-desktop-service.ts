@@ -18,6 +18,8 @@ export const SIMULATOR_DESKTOP_STATUS_CHANNEL = 'simulator-desktop:status'
 
 const MAX_FRAME_BYTES = 20 * 1024 * 1024
 const MAX_DIAGNOSTIC_CHARS = 8_192
+const NATIVE_HELPER_TIMEOUT_MS = 60_000
+const FIRST_FRAME_TIMEOUT_MS = 20_000
 
 export interface SimulatorDesktopOwner {
   id: number
@@ -41,6 +43,7 @@ interface ManagedSimulatorConnection {
   pixelWidth: number
   pixelHeight: number
   stderr: string
+  firstFrameTimer: NodeJS.Timeout | null
 }
 
 interface SimctlDevice {
@@ -96,11 +99,26 @@ function runToString(
   file: string,
   args: readonly string[],
   environment: NodeJS.ProcessEnv = process.env,
+  timeoutMs = NATIVE_HELPER_TIMEOUT_MS,
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn(file, args, { env: environment, stdio: ['ignore', 'pipe', 'pipe'] })
     let stdout = ''
     let stderr = ''
+    let settled = false
+    const finish = (outcome: () => void): void => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      outcome()
+    }
+    const timer = setTimeout(() => {
+      child.kill('SIGTERM')
+      finish(() => {
+        reject(new Error(`${file} timed out after ${String(timeoutMs / 1_000)}s`))
+      })
+    }, timeoutMs)
+    timer.unref()
     child.stdout.setEncoding('utf8')
     child.stderr.setEncoding('utf8')
     child.stdout.on('data', (chunk: string) => {
@@ -109,10 +127,19 @@ function runToString(
     child.stderr.on('data', (chunk: string) => {
       stderr = (stderr + chunk).slice(-MAX_DIAGNOSTIC_CHARS)
     })
-    child.once('error', reject)
+    child.once('error', (error) => {
+      finish(() => {
+        reject(error)
+      })
+    })
     child.once('close', (code) => {
-      if (code === 0) resolve(stdout)
-      else reject(new Error(stderr.trim() || `${file} exited with code ${String(code)}`))
+      finish(() => {
+        if (code === 0) {
+          resolve(stdout)
+        } else {
+          reject(new Error(stderr.trim() || `${file} exited with code ${String(code)}`))
+        }
+      })
     })
   })
 }
@@ -197,14 +224,37 @@ async function compileHelpers(): Promise<NativeHelpers> {
       { env: environment, stdio: ['ignore', 'ignore', 'pipe'] },
     )
     let stderr = ''
+    let settled = false
+    const finish = (outcome: () => void): void => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      outcome()
+    }
+    const timer = setTimeout(() => {
+      child.kill('SIGTERM')
+      finish(() => {
+        reject(new Error('clang timed out after 60s'))
+      })
+    }, NATIVE_HELPER_TIMEOUT_MS)
+    timer.unref()
     child.stderr.setEncoding('utf8')
     child.stderr.on('data', (chunk: string) => {
       stderr = (stderr + chunk).slice(-MAX_DIAGNOSTIC_CHARS)
     })
-    child.once('error', reject)
+    child.once('error', (error) => {
+      finish(() => {
+        reject(error)
+      })
+    })
     child.once('close', (code) => {
-      if (code === 0) resolve()
-      else reject(new Error(stderr.trim() || `clang exited with code ${String(code)}`))
+      finish(() => {
+        if (code === 0) {
+          resolve()
+        } else {
+          reject(new Error(stderr.trim() || `clang exited with code ${String(code)}`))
+        }
+      })
     })
   }).catch((error: unknown) => {
     throw new Error(`Could not compile the Simulator input helper: ${String(error)}`)
@@ -230,6 +280,13 @@ export class SimulatorDesktopService {
   }
 
   async open(udid: string, owner: SimulatorDesktopOwner): Promise<SimulatorDesktopConnection> {
+    if (
+      [...this.connections.values()].some(
+        (connection) => connection.public.device.udid === udid && !connection.closing,
+      )
+    ) {
+      throw new Error('That Simulator is already open in another Desktop tab')
+    }
     const device = (await this.listDevices()).find((candidate) => candidate.udid === udid)
     if (!device) throw new Error('That Simulator is no longer booted')
     const id = randomUUID()
@@ -249,6 +306,7 @@ export class SimulatorDesktopService {
       pixelWidth: 0,
       pixelHeight: 0,
       stderr: '',
+      firstFrameTimer: null,
     }
     this.connections.set(id, managed)
 
@@ -277,6 +335,14 @@ export class SimulatorDesktopService {
     if (!connection.helpers) throw new Error('Simulator helpers are not ready')
     if (connection.capture || connection.input) return
     this.startNativeHelpers(connection, connection.helpers)
+    connection.firstFrameTimer = setTimeout(() => {
+      this.closeManaged(
+        connection,
+        'error',
+        `No Simulator frame arrived within ${String(FIRST_FRAME_TIMEOUT_MS / 1_000)} seconds`,
+      )
+    }, FIRST_FRAME_TIMEOUT_MS)
+    connection.firstFrameTimer.unref()
   }
 
   sendInput(id: string, ownerId: number, input: SimulatorDesktopInput): void {
@@ -321,7 +387,11 @@ export class SimulatorDesktopService {
         if (frameBuffer.length < length + 4) return
         const bytes = Uint8Array.from(frameBuffer.subarray(4, length + 4))
         frameBuffer = frameBuffer.subarray(length + 4)
-        if (!connection.connected) this.emitStatus(connection, 'connected')
+        if (!connection.connected) {
+          if (connection.firstFrameTimer) clearTimeout(connection.firstFrameTimer)
+          connection.firstFrameTimer = null
+          this.emitStatus(connection, 'connected')
+        }
         this.emitFrame(connection, {
           bytes,
           mimeType: 'image/jpeg',
@@ -420,6 +490,8 @@ export class SimulatorDesktopService {
   ): void {
     if (connection.closing) return
     connection.closing = true
+    if (connection.firstFrameTimer) clearTimeout(connection.firstFrameTimer)
+    connection.firstFrameTimer = null
     connection.capture?.kill('SIGTERM')
     connection.input?.stdin.end()
     connection.input?.kill('SIGTERM')

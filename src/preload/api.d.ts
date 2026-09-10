@@ -833,6 +833,7 @@ export interface ApiClient {
     close: (connectionId: string) => Promise<void>
     onFrame: (handler: (frame: SimulatorDesktopFrame) => void) => () => void
     onStatus: (handler: (event: SimulatorDesktopStatusEvent) => void) => () => void
+    onShow: (handler: (udid: string) => void) => () => void
   }
   memories: {
     list: () => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote[]>

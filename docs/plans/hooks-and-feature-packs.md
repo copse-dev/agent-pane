@@ -363,6 +363,12 @@ revisiting this document, not silently diverging in an implementation PR.
     Test, and Build-and-Run calls receive `-allowProvisioningUpdates`; unrelated tools do not.
     XcodeBuildMCP image blocks are bounded before being attached to tool results.
 
+    The pack also declares one host-native presentation tool, `open_simulator_desktop`. It does not
+    duplicate any XcodeBuildMCP build, boot, launch, or automation operation: after those operations
+    boot a Simulator, it asks Copse's existing Desktop pane to connect to that validated booted UDID.
+    The pane opens view-only and mouse/keyboard control remains an explicit user toggle. This small
+    host bridge is necessary because an external MCP server cannot address Copse renderer state.
+
     Operation authority for the Copse panel remains process-lifetime scoped: recovery after a host
     restart blocks before relaunch because the prior Xcode process may still be alive.
 

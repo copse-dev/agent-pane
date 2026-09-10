@@ -1101,6 +1101,15 @@ const api: ApiClient = {
         ipcRenderer.off('simulator-desktop:status', listener)
       }
     },
+    onShow: (handler: (udid: string) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, udid: string): void => {
+        handler(udid)
+      }
+      ipcRenderer.on('simulator-desktop:show', listener)
+      return (): void => {
+        ipcRenderer.off('simulator-desktop:show', listener)
+      }
+    },
   },
   memories: {
     list: () => ipcRenderer.invoke('memories:list'),
@@ -1471,6 +1480,9 @@ if (process.env['COPSE_E2E'] === '1') {
     },
     setSimulatorDesktop(value: unknown) {
       return ipcRenderer.invoke('test:setSimulatorDesktop', value)
+    },
+    showSimulatorDesktop(udid: string) {
+      return ipcRenderer.invoke('test:showSimulatorDesktop', udid)
     },
   })
 }

@@ -176,6 +176,7 @@ import { requestSshPrompt } from '../services/ssh-workspace/ssh-prompt.ts'
 import { requestCloseConfirmation } from '../services/close-confirm.ts'
 import { setSeededVncNearbyServersForTests } from '../services/vnc/vnc-service.ts'
 import { setSeededSimulatorDesktopForTests } from '../services/simulator-desktop/simulator-desktop-service.ts'
+import { showSimulatorDesktop } from '../services/simulator-desktop/simulator-desktop-panel.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
 import {
   listSkills,
@@ -207,6 +208,7 @@ import { discoverCursorRules, toCursorRuleSummaries } from '../services/skills/c
 import { loadProjectInstructionSources } from '../services/project-instructions.ts'
 import {
   registerSkillTools,
+  syncAppleDevelopmentTools,
   syncAdvisorStrategyTools,
   syncCiInvestigatorTools,
   syncLongHorizonTasksTools,
@@ -2174,6 +2176,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       await getAutomationService().sync()
     }
     if (id === APPLE_DEVELOPMENT_PLUGIN_ID) {
+      syncAppleDevelopmentTools(registry)
       const statuses = await reloadMcpServers(registry)
       win.webContents.send('mcp:status-changed', statuses)
       if (!enabled) {
@@ -3032,6 +3035,11 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
             }
           : null,
       )
+    })
+    ipcMain.handle('test:showSimulatorDesktop', (event, raw: unknown) => {
+      assertMainFrameSender(event, win)
+      const udid = parseIpcArgs(z.uuid(), [raw])
+      showSimulatorDesktop(udid)
     })
     ipcMain.handle('test:setSemanticIndexScaleGuard', (event, phase: unknown, reason: unknown) => {
       assertMainFrameSender(event, win)

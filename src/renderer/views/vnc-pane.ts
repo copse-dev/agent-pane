@@ -20,6 +20,7 @@ import { showConfirmDialog } from './confirm-dialog.ts'
 import { dedupeNearbyVncServers, parseVncEndpoint, preferredVncUsername } from './vnc-machines.ts'
 import { showToast } from './toast.ts'
 import { createSimulatorDesktopView, type SimulatorDesktopView } from './simulator-desktop-view.ts'
+import { openRightPanel } from '../controller/panels.ts'
 
 function vncModeActive(store: AppStore): boolean {
   const { filesPaneOpen, rightPanelMode } = store.getState()
@@ -74,6 +75,7 @@ interface PendingStatus {
 interface VncSessionController {
   cleanup(): void
   focus(): void
+  showSimulator(udid: string): void
 }
 
 interface VncSessionOptions {
@@ -483,7 +485,7 @@ function mountVncSession(
     if (simulator) {
       savedLoginDetails.hidden = true
       setupCredentials.hidden = true
-      connectButton.textContent = 'Open simulator'
+      connectButton.textContent = 'Connect'
       return
     }
     savedLoginDetails.hidden = !selectedHasSavedPassword
@@ -658,7 +660,7 @@ function mountVncSession(
     targetInput.value = ''
   }
 
-  function clearViewer(title: string, kind: 'idle' | 'error' = 'idle', detail = ''): void {
+  function clearViewer(title: string, kind: VncStatusKind = 'idle', detail = ''): void {
     rfb = null
     channel = null
     activeTarget = null
@@ -1191,6 +1193,32 @@ function mountVncSession(
     }
   }
 
+  async function showSimulatorFromAgent(udid: string): Promise<void> {
+    openRightPanel(store, 'vnc')
+    const machine = `${SIMULATOR_MACHINE_PREFIX}${udid}`
+    if (simulatorSessionId && machineSelect.value === machine) return
+
+    await loadMachines()
+    const device = simulatorDevices.find((candidate) => candidate.udid === udid)
+    if (!device) {
+      setStatus(
+        'Couldn’t open the Simulator',
+        'error',
+        'The Simulator selected by the agent is no longer booted.',
+      )
+      return
+    }
+
+    if (simulatorSessionId) {
+      const previousId = simulatorSessionId
+      clearViewer('Switching Simulator…', 'working')
+      await api.simulatorDesktop.close(previousId).catch(() => {})
+    }
+    machineSelect.value = machine
+    updateMachineUi()
+    await connectSimulator(device)
+  }
+
   async function connect(): Promise<void> {
     const simulator = selectedSimulator()
     if (simulator) {
@@ -1584,6 +1612,9 @@ function mountVncSession(
       if (rfb) rfb.focus()
       else simulatorView?.focus()
     },
+    showSimulator: (udid): void => {
+      void showSimulatorFromAgent(udid)
+    },
     cleanup: (): void => {
       connectGeneration++
       discoveryGeneration++
@@ -1801,8 +1832,13 @@ export function mountVncPane(
 
   newButton.addEventListener('click', addTab)
   addTab()
+  const stopSimulatorShow = api.simulatorDesktop.onShow((udid) => {
+    const tabId = activeTabId ?? addTab()
+    tabs.get(tabId)?.session.showSimulator(udid)
+  })
 
   return () => {
+    stopSimulatorShow()
     for (const tab of tabs.values()) tab.session.cleanup()
     tabs.clear()
   }

@@ -2128,6 +2128,13 @@
           1
         ]
       },
+      "simulator-desktop:show": {
+        "api": "simulatorDesktop.onShow",
+        "args": [
+          1,
+          1
+        ]
+      },
       "simulator-desktop:status": {
         "api": "simulatorDesktop.onStatus",
         "args": [

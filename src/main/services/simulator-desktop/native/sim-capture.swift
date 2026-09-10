@@ -153,6 +153,8 @@ final class Stream {
     var width: Int = 0
     var height: Int = 0
     var encoding = false  // drop-frame guard
+    var lastEncodeTime = Date.distantPast
+    let minimumFrameInterval: TimeInterval = 1.0 / 30.0
 
     init(descriptor: NSObject, device: NSObject) {
         self.descriptor = descriptor
@@ -258,10 +260,17 @@ final class Stream {
     }
 
     func handle(surface: IOSurface) {
-        // Drop frames if encoder is busy (stay near real-time).
+        // Keep the stream near real-time without spending a full CPU core
+        // encoding display callbacks that arrive at 60–120Hz. The UI does not
+        // need more than 30fps, and always paints the newest pending frame.
+        let now = Date()
         objc_sync_enter(self)
-        if encoding { objc_sync_exit(self); return }
+        if encoding || now.timeIntervalSince(lastEncodeTime) < minimumFrameInterval {
+            objc_sync_exit(self)
+            return
+        }
         encoding = true
+        lastEncodeTime = now
         objc_sync_exit(self)
         defer {
             objc_sync_enter(self); encoding = false; objc_sync_exit(self)
@@ -287,12 +296,12 @@ final class Stream {
             exit(0)
         }
         frameCount += 1
-        let now = Date()
-        let dt = now.timeIntervalSince(lastReportTime)
+        let reportTime = Date()
+        let dt = reportTime.timeIntervalSince(lastReportTime)
         if dt >= 5 {
             eprint("[sim-capture] fps≈\(Int(Double(frameCount) / dt))")
             frameCount = 0
-            lastReportTime = now
+            lastReportTime = reportTime
         }
     }
 }

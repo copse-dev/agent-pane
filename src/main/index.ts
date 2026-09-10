@@ -66,6 +66,10 @@ import {
 import { loadCustomTools } from './services/mcp/custom-tools-registry.ts'
 import { disposeAllAcpSessions } from './services/acp/acp-session-pool.ts'
 import { initApproval } from './services/approval.ts'
+import {
+  setSimulatorDesktopPanelPresenter,
+  SIMULATOR_DESKTOP_SHOW_CHANNEL,
+} from './services/simulator-desktop/simulator-desktop-panel.ts'
 import { initAskUser } from './services/ask-user.ts'
 import { createElectronUserAlertSender } from './services/user-alerts-electron.ts'
 import { setTerminalCommandLauncher } from './services/exec/terminal-launch.ts'
@@ -268,6 +272,12 @@ setBrowserSessionPlatform({
     if (!win || win.isDestroyed()) return
     win.webContents.send(CANVAS_ARTEFACT_SHOW_CHANNEL, identity)
   },
+})
+
+setSimulatorDesktopPanelPresenter((udid) => {
+  const win = getMainWindow()
+  if (!win || win.isDestroyed()) return
+  win.webContents.send(SIMULATOR_DESKTOP_SHOW_CHANNEL, udid)
 })
 
 setVideoDecoderPlatform({

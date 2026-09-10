@@ -871,6 +871,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       close: resolvedVoid,
       onFrame: subscribe,
       onStatus: subscribe,
+      onShow: subscribe,
     },
     memories: {
       list: emptyArray,
