@@ -8,6 +8,8 @@
   border-top: 1px solid var(--border);
 }
 .projects-settings-btn {
+  position: relative;
+  z-index: 3;
   display: flex;
   align-items: center;
   justify-content: center;
