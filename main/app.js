@@ -251927,6 +251927,7 @@ function createGroupToolCard(item) {
       "data-status": tc2.status
     });
     appendStandardToolSections(entry, tc2, getToolCallLabel(tc2), "tool-group-item-header");
+    toolGroupItemSignatures.set(entry, renderSignature(tc2));
     groupItems.append(entry);
   }
   return card2;
@@ -251942,7 +251943,10 @@ function createRollupToolCard(item, api3, threadId, store3) {
   const count2 = item.children.length === 1 && item.children[0]?.type === "group" ? item.toolCalls.length : void 0;
   const body = el("div", { class: "tool-rollup-body" });
   for (const child of item.children) {
-    body.append(createToolCard(child, api3, threadId, store3));
+    const childCard = createToolCard(child, api3, threadId, store3);
+    toolCardKeys.set(childCard, toolCardKey(child));
+    toolCardSignatures.set(childCard, toolCardSignature(child));
+    body.append(childCard);
   }
   card2.append(createToolHeader(item.label, status, "tool-card-header", count2), body);
   return card2;
@@ -251958,7 +251962,10 @@ function createStepToolCard(item, api3, threadId) {
   });
   const body = el("div", { class: "tool-rollup-body" });
   for (const child of item.children) {
-    body.append(createToolCard(child, api3, threadId));
+    const childCard = createToolCard(child, api3, threadId);
+    toolCardKeys.set(childCard, toolCardKey(child));
+    toolCardSignatures.set(childCard, toolCardSignature(child));
+    body.append(childCard);
   }
   card2.append(createToolHeader(item.label, status, "tool-card-header"), body);
   return card2;
@@ -251978,6 +251985,134 @@ function toolCardKey(item) {
 function toolCardSignature(item, extra) {
   const base = renderSignature(item);
   return extra === void 0 ? base : `${base}|${extra}`;
+}
+function replaceDirectToolHeader(card2, header) {
+  const current = Array.from(card2.children).find(
+    (node3) => node3.classList.contains("tool-card-header")
+  );
+  if (current) current.replaceWith(header);
+  else card2.prepend(header);
+}
+function populateRegularToolCard(card2, tc2, label, threadId) {
+  const wasOpen = card2.open;
+  lazyToolCardBodies.delete(card2);
+  card2.dataset["status"] = tc2.status;
+  card2.replaceChildren();
+  card2.open = wasOpen;
+  appendStandardToolSections(card2, tc2, label, "tool-card-header");
+  onToolCardBodyBuilt(card2, () => {
+    const preview = createCanvasPreviewSection(tc2, threadId);
+    if (preview) card2.append(preview);
+  });
+  if (wasOpen) ensureToolCardBodyRendered(card2);
+}
+function populateGroupItem(entry, tc2) {
+  const wasOpen = entry.open;
+  lazyToolCardBodies.delete(entry);
+  entry.dataset["status"] = tc2.status;
+  entry.replaceChildren();
+  entry.open = wasOpen;
+  appendStandardToolSections(entry, tc2, getToolCallLabel(tc2), "tool-group-item-header");
+  if (wasOpen) ensureToolCardBodyRendered(entry);
+  toolGroupItemSignatures.set(entry, renderSignature(tc2));
+}
+function reconcileGroupCard(card2, item) {
+  const status = aggregateToolStatus(item.toolCalls);
+  card2.dataset["status"] = status;
+  replaceDirectToolHeader(
+    card2,
+    createToolHeader(item.label, status, "tool-card-header", item.toolCalls.length)
+  );
+  let host = Array.from(card2.children).find(
+    (node3) => node3 instanceof HTMLElement && node3.classList.contains("tool-group-items")
+  );
+  if (!host) {
+    host = el("div", { class: "tool-group-items" });
+    card2.append(host);
+  }
+  const existing = /* @__PURE__ */ new Map();
+  host.querySelectorAll(":scope > .tool-group-item[data-tool-id]").forEach((entry) => {
+    const id39 = entry.dataset["toolId"];
+    if (id39) existing.set(id39, entry);
+  });
+  const desired = [];
+  for (const tc2 of item.toolCalls) {
+    let entry = existing.get(tc2.id);
+    existing.delete(tc2.id);
+    if (!entry) {
+      entry = el("details", {
+        class: "tool-group-item",
+        "data-tool-id": tc2.id,
+        "data-status": tc2.status
+      });
+      populateGroupItem(entry, tc2);
+    } else if (toolGroupItemSignatures.get(entry) !== renderSignature(tc2)) {
+      populateGroupItem(entry, tc2);
+    }
+    desired.push(entry);
+  }
+  existing.forEach((entry) => {
+    entry.remove();
+  });
+  desired.forEach((entry, index) => {
+    if (host.children[index] !== entry) host.insertBefore(entry, host.children[index] ?? null);
+  });
+}
+function reconcileNestedToolCards(host, items, api3, threadId, store3) {
+  const existing = /* @__PURE__ */ new Map();
+  host.querySelectorAll(":scope > .tool-card").forEach((card2) => {
+    const key = toolCardKeys.get(card2);
+    if (key) existing.set(key, card2);
+  });
+  const desired = [];
+  for (const item of items) {
+    const key = toolCardKey(item);
+    const sig = toolCardSignature(item);
+    let card2 = existing.get(key);
+    existing.delete(key);
+    if (!card2) {
+      card2 = createToolCard(item, api3, threadId, store3);
+      toolCardKeys.set(card2, key);
+      toolCardSignatures.set(card2, sig);
+    } else if (toolCardSignatures.get(card2) !== sig) {
+      reconcileToolCard(card2, item, api3, threadId, store3);
+    }
+    desired.push(card2);
+  }
+  existing.forEach((card2) => {
+    card2.remove();
+  });
+  desired.forEach((card2, index) => {
+    const current = host.querySelectorAll(":scope > .tool-card");
+    if (current[index] !== card2) host.insertBefore(card2, current[index] ?? null);
+  });
+}
+function reconcileToolCard(card2, item, api3, threadId, store3) {
+  if (item.type === "rollup" || item.type === "step") {
+    const status = aggregateToolStatus(item.toolCalls);
+    card2.dataset["status"] = status;
+    card2.dataset["toolCount"] = String(item.toolCalls.length);
+    if (item.type === "step") {
+      card2.dataset["stepMessageId"] = item.messageId;
+    }
+    const count2 = item.type === "rollup" && item.children.length === 1 && item.children[0]?.type === "group" ? item.toolCalls.length : void 0;
+    replaceDirectToolHeader(card2, createToolHeader(item.label, status, "tool-card-header", count2));
+    let body = Array.from(card2.children).find(
+      (node3) => node3 instanceof HTMLElement && node3.classList.contains("tool-rollup-body")
+    );
+    if (!body) {
+      body = el("div", { class: "tool-rollup-body" });
+      card2.append(body);
+    }
+    reconcileNestedToolCards(body, item.children, api3, threadId, store3);
+  } else if (item.type === "group") {
+    reconcileGroupCard(card2, item);
+  } else if (item.toolCall.subagent && card2.classList.contains("tool-card-subagent")) {
+    populateSubagentCard(card2, item.toolCall, item.label, api3);
+  } else {
+    populateRegularToolCard(card2, item.toolCall, item.label, threadId);
+  }
+  toolCardSignatures.set(card2, toolCardSignature(item));
 }
 function createMessageImages(images) {
   const wrap3 = el("div", { class: "message-images" });
@@ -252457,6 +252592,8 @@ function mountConversation(root4, store3, api3) {
     if (!details) return;
     details.dataset["userToggled"] = "1";
     details.open = true;
+    const key = details.dataset["disclosureKey"];
+    if (key) disclosurePreferences.set(key, true);
     details.scrollIntoView({ block: "nearest" });
   });
   const queuedHost = el("div", { class: "conversation-queued", hidden: true });
@@ -252683,6 +252820,117 @@ function mountConversation(root4, store3, api3) {
   let userScrolledUpAt = 0;
   let renderedThreadId = null;
   let backfillGeneration = 0;
+  const disclosurePreferences = /* @__PURE__ */ new Map();
+  const liveRollupMessages = /* @__PURE__ */ new Set();
+  const autoOpenedDisclosures = /* @__PURE__ */ new Set();
+  const autoOpenedAt = /* @__PURE__ */ new Map();
+  const runningDisclosures = /* @__PURE__ */ new Set();
+  const disclosureElements = /* @__PURE__ */ new Map();
+  const wiredDisclosureSummaries = /* @__PURE__ */ new WeakSet();
+  const revealTimers = /* @__PURE__ */ new Map();
+  const compactTimers = /* @__PURE__ */ new Map();
+  const deferredCompactions = /* @__PURE__ */ new Set();
+  function cancelReveal(key) {
+    const timer3 = revealTimers.get(key);
+    if (timer3 !== void 0) clearTimeout(timer3);
+    revealTimers.delete(key);
+  }
+  function wireDisclosurePreference(details, key) {
+    const summary = details.querySelector(":scope > summary");
+    if (!summary || wiredDisclosureSummaries.has(summary)) return;
+    wiredDisclosureSummaries.add(summary);
+    summary.addEventListener("click", (event3) => {
+      const target = event3.target;
+      if (target instanceof Element && target.closest("button")) return;
+      event3.preventDefault();
+      details.open = !details.open;
+      disclosurePreferences.set(key, details.open);
+      details.dataset["userToggled"] = "1";
+      autoOpenedDisclosures.delete(key);
+      autoOpenedAt.delete(key);
+      cancelReveal(key);
+      if (details.open) ensureToolCardBodyRendered(details);
+    });
+  }
+  function registerReasoningDisclosures(msgEl) {
+    const threadId = getActiveThread(store3)?.id;
+    const fallbackMessageId = msgEl.dataset["messageId"];
+    if (!threadId || !fallbackMessageId) return;
+    msgEl.querySelectorAll(".message-reasoning").forEach((details) => {
+      const step3 = details.closest(".tool-card-step[data-step-message-id]");
+      const messageId = step3?.dataset["stepMessageId"] ?? fallbackMessageId;
+      const key = `${threadId}:${messageId}:reasoning`;
+      details.dataset["disclosureKey"] = key;
+      disclosureElements.set(key, details);
+      wireDisclosurePreference(details, key);
+      const preference = disclosurePreferences.get(key);
+      if (preference !== void 0) {
+        details.dataset["userToggled"] = "1";
+        details.open = preference;
+      }
+    });
+  }
+  function cancelThreadCompaction(threadId) {
+    const timer3 = compactTimers.get(threadId);
+    if (timer3 !== void 0) clearTimeout(timer3);
+    compactTimers.delete(threadId);
+  }
+  function revealAfterDelay(key) {
+    if (revealTimers.has(key) || autoOpenedDisclosures.has(key)) return;
+    const timer3 = setTimeout(() => {
+      revealTimers.delete(key);
+      if (!runningDisclosures.has(key) || disclosurePreferences.has(key) || !pinnedToBottom) return;
+      const details = disclosureElements.get(key);
+      if (!details?.isConnected) return;
+      autoOpenedDisclosures.add(key);
+      autoOpenedAt.set(key, Date.now());
+      details.open = true;
+      ensureToolCardBodyRendered(details);
+      scrollToBottom();
+    }, TOOL_AUTO_REVEAL_DELAY_MS);
+    revealTimers.set(key, timer3);
+  }
+  function compactThreadDisclosures(threadId) {
+    compactTimers.delete(threadId);
+    if (threadId === store3.getState().activeThreadId && !pinnedToBottom) {
+      deferredCompactions.add(threadId);
+      return;
+    }
+    deferredCompactions.delete(threadId);
+    const prefix = `${threadId}:`;
+    const now4 = Date.now();
+    let dwellRemaining = 0;
+    for (const key of autoOpenedDisclosures) {
+      if (!key.startsWith(prefix)) continue;
+      const details = disclosureElements.get(key);
+      if (details?.dataset["status"] === "error") continue;
+      const openedAt = autoOpenedAt.get(key) ?? 0;
+      dwellRemaining = Math.max(dwellRemaining, TOOL_AUTO_REVEAL_MIN_DWELL_MS - (now4 - openedAt));
+    }
+    if (dwellRemaining > 0) {
+      const timer3 = setTimeout(() => {
+        compactThreadDisclosures(threadId);
+      }, Math.ceil(dwellRemaining));
+      compactTimers.set(threadId, timer3);
+      return;
+    }
+    for (const key of [...autoOpenedDisclosures]) {
+      if (!key.startsWith(prefix)) continue;
+      const details = disclosureElements.get(key);
+      if (details?.dataset["status"] === "error") continue;
+      autoOpenedDisclosures.delete(key);
+      autoOpenedAt.delete(key);
+      if (!disclosurePreferences.has(key) && details?.isConnected) details.open = false;
+    }
+    if (threadId === store3.getState().activeThreadId) scrollToBottom();
+  }
+  function scheduleThreadCompaction(threadId) {
+    cancelThreadCompaction(threadId);
+    const timer3 = setTimeout(() => {
+      compactThreadDisclosures(threadId);
+    }, TOOL_AUTO_COMPACT_DELAY_MS);
+    compactTimers.set(threadId, timer3);
+  }
   function isNearBottom() {
     const distance3 = list.scrollHeight - list.scrollTop - list.clientHeight;
     return distance3 <= SCROLL_PIN_THRESHOLD_PX;
@@ -252705,6 +252953,8 @@ function mountConversation(root4, store3, api3) {
       pinnedToBottom = false;
     } else if (isNearBottom()) {
       pinnedToBottom = true;
+      const threadId = store3.getState().activeThreadId;
+      if (threadId && deferredCompactions.delete(threadId)) scheduleThreadCompaction(threadId);
     }
     lastScrollTop = scrollTop;
     updateScrollButton();
@@ -252771,6 +253021,8 @@ function mountConversation(root4, store3, api3) {
     if (force) {
       userScrolledUpAt = 0;
       pinnedToBottom = true;
+      const threadId = store3.getState().activeThreadId;
+      if (threadId && deferredCompactions.delete(threadId)) scheduleThreadCompaction(threadId);
     }
     updateScrollButton();
   }
@@ -252794,72 +253046,67 @@ function mountConversation(root4, store3, api3) {
       item.label = commandSummary;
     }
   }
-  function applyToolCardOpenState(card2, item, userExpandedRollups, userExpandedGroups, userExpandedTools) {
+  function applyToolCardOpenState(card2, item, threadId, messageId, autoRevealEligible) {
+    if (card2.classList.contains("thread-proposal")) return;
+    const key = `${threadId}:${messageId}:${toolCardKey(item)}`;
+    card2.dataset["disclosureKey"] = key;
+    disclosureElements.set(key, card2);
+    wireDisclosurePreference(card2, key);
+    const preference = disclosurePreferences.get(key);
+    const running = item.type === "individual" ? item.toolCall.status === "running" || item.toolCall.subagent?.status === "running" : aggregateToolStatus(item.toolCalls) === "running";
+    if (running) runningDisclosures.add(key);
+    else {
+      runningDisclosures.delete(key);
+      cancelReveal(key);
+    }
+    if (preference !== void 0) {
+      card2.open = preference;
+    } else if (autoOpenedDisclosures.has(key)) {
+      card2.open = true;
+    } else {
+      card2.open = false;
+      if (running && autoRevealEligible) revealAfterDelay(key);
+    }
+    if (card2.open) ensureToolCardBodyRendered(card2);
     if (item.type === "rollup" || item.type === "step") {
-      const status = aggregateToolStatus(item.toolCalls);
-      card2.open = status === "running" || userExpandedRollups.has(item.key);
       const nestedCards = card2.querySelectorAll(
         ":scope > .tool-rollup-body > .tool-card"
       );
       item.children.forEach((child, index) => {
         const nested = nestedCards[index];
         if (nested) {
-          applyToolCardOpenState(
-            nested,
-            child,
-            userExpandedRollups,
-            userExpandedGroups,
-            userExpandedTools
-          );
+          applyToolCardOpenState(nested, child, threadId, messageId, false);
         }
       });
       return;
     }
     if (item.type === "group") {
-      const status = aggregateToolStatus(item.toolCalls);
-      card2.open = status === "running" || userExpandedGroups.has(item.key);
       card2.querySelectorAll(".tool-group-item[data-tool-id]").forEach((entry) => {
         const id39 = entry.dataset["toolId"];
-        if (id39 && userExpandedTools.has(id39)) {
-          entry.open = true;
-          ensureToolCardBodyRendered(entry);
-        }
+        if (!id39) return;
+        const itemKey = `${threadId}:${messageId}:t:${id39}`;
+        entry.dataset["disclosureKey"] = itemKey;
+        disclosureElements.set(itemKey, entry);
+        wireDisclosurePreference(entry, itemKey);
+        entry.open = disclosurePreferences.get(itemKey) ?? false;
+        if (entry.open) ensureToolCardBodyRendered(entry);
       });
-      return;
     }
-    const tc2 = item.toolCall;
-    if (card2.classList.contains("thread-proposal")) return;
-    const running = tc2.status === "running" || tc2.subagent?.status === "running";
-    card2.open = running || userExpandedTools.has(tc2.id);
-    if (card2.open) ensureToolCardBodyRendered(card2);
   }
   function renderToolCards(msgEl, toolCalls, opts = {}) {
     const threadId = store3.getState().activeThreadId ?? "";
-    const userExpandedRollups = /* @__PURE__ */ new Set();
-    msgEl.querySelectorAll(".tool-card-rollup[open], .tool-card-step[open]").forEach((node3) => {
-      const key = node3.dataset["rollupKey"] ?? node3.dataset["stepKey"];
-      if (key && node3.dataset["status"] !== "running") userExpandedRollups.add(key);
-    });
-    const userExpandedGroups = /* @__PURE__ */ new Set();
-    msgEl.querySelectorAll(".tool-card-group[open]").forEach((node3) => {
-      const key = node3.dataset["groupKey"];
-      if (key && node3.dataset["status"] !== "running") userExpandedGroups.add(key);
-    });
-    const userExpandedTools = /* @__PURE__ */ new Set();
-    msgEl.querySelectorAll(
-      ".tool-card[data-tool-id][open], .tool-group-item[open], .tool-card-subagent[open]"
-    ).forEach((node3) => {
-      const id39 = node3.dataset["toolId"];
-      if (node3.classList.contains("thread-proposal")) return;
-      if (id39 && node3.dataset["status"] !== "running") userExpandedTools.add(id39);
-    });
     const msgId = msgEl.dataset["messageId"] ?? "";
+    const messageKey = threadId && msgId ? `${threadId}:${msgId}` : null;
+    const activeThread = getActiveThread(store3);
+    if (messageKey && activeThread?.status === "running" && toolCalls.some((tool) => !tool.subagent)) {
+      liveRollupMessages.add(messageKey);
+    }
     const run6 = opts.run && (opts.run.anchorId === msgId || list.querySelector(`[data-message-id="${opts.run.anchorId}"]`) !== null) ? opts.run : void 0;
     const isRunMember = run6 !== void 0 && run6.anchorId !== msgId;
     msgEl.classList.toggle("msg-tool-run-member", isRunMember);
     const nestReasoning = run6 === void 0 && Boolean(opts.reasoning?.trim()) && shouldNestReasoningInTools(toolCalls);
     const items = run6 ? isRunMember ? buildSubagentDisplayItems(toolCalls) : [...buildToolRunDisplayItems(run6), ...buildSubagentDisplayItems(toolCalls)] : buildToolCallDisplayItems(toolCalls, {
-      ...nestReasoning ? { forceRollup: true } : {}
+      ...nestReasoning || messageKey !== null && liveRollupMessages.has(messageKey) ? { forceRollup: true } : {}
     });
     if (!run6) for (const item of items) applyRollupSummaries(item, opts);
     const existing = /* @__PURE__ */ new Map();
@@ -252877,16 +253124,15 @@ function mountConversation(root4, store3, api3) {
       let card2 = existing.get(key) ?? null;
       if (card2) existing.delete(key);
       if (card2 && toolCardSignatures.get(card2) === sig) {
-      } else if (card2 && item.type === "individual" && item.toolCall.subagent && card2.classList.contains("tool-card-subagent")) {
-        populateSubagentCard(card2, item.toolCall, item.label, api3);
-        toolCardSignatures.set(card2, sig);
+      } else if (card2 && !card2.classList.contains("thread-proposal") && !(item.type === "individual" && isThreadProposalCall(item.toolCall))) {
+        reconcileToolCard(card2, item, api3, threadId, store3);
       } else {
         card2?.remove();
         card2 = createToolCard(item, api3, threadId, store3);
         toolCardKeys.set(card2, key);
         toolCardSignatures.set(card2, sig);
       }
-      applyToolCardOpenState(card2, item, userExpandedRollups, userExpandedGroups, userExpandedTools);
+      applyToolCardOpenState(card2, item, threadId, msgId, true);
       if (item.type === "rollup" && nestReasoning) {
         syncNestedRollupReasoning(card2, msgEl, opts.reasoning, opts.reasoningLive === true);
       }
@@ -252918,6 +253164,7 @@ function mountConversation(root4, store3, api3) {
         msgEl.insertBefore(node3, msgEl.children[base + i4] ?? null);
       }
     }
+    registerReasoningDisclosures(msgEl);
     syncToolRunMemberVisibility(msgEl);
   }
   function renderRunAnchor(thread, run6) {
@@ -253255,6 +253502,7 @@ function mountConversation(root4, store3, api3) {
       userScrolledUpAt = 0;
       lastScrollTop = 0;
     }
+    disclosureElements.clear();
     clear(list);
     backfillGeneration++;
     renderedThreadId = thread?.id ?? null;
@@ -253283,12 +253531,35 @@ function mountConversation(root4, store3, api3) {
       setScrollTopProgrammatically(preservedScrollTop);
     }
     finishThreadChrome(thread);
+    if (thread.status === "running") cancelThreadCompaction(thread.id);
+    else if ([...autoOpenedDisclosures].some((key) => key.startsWith(`${thread.id}:`))) {
+      scheduleThreadCompaction(thread.id);
+    }
     if (initialStart > 0) {
       const generation = backfillGeneration;
       requestAnimationFrame(() => {
         backfillOlderMessages(thread, initialStart, generation);
       });
     }
+  }
+  function captureReadingAnchor() {
+    const listRect = list.getBoundingClientRect();
+    const candidates = list.querySelectorAll(
+      ":scope > .msg, :scope > [data-review-card], :scope > [data-comparison-card]"
+    );
+    for (const element3 of candidates) {
+      const rect2 = element3.getBoundingClientRect();
+      if (rect2.bottom > listRect.top) return { element: element3, viewportTop: rect2.top };
+    }
+    return null;
+  }
+  function restoreReadingAnchor(anchor3, fallbackScrollTop) {
+    if (anchor3?.element.isConnected) {
+      const delta = anchor3.element.getBoundingClientRect().top - anchor3.viewportTop;
+      if (Math.abs(delta) > 0.5) setScrollTopProgrammatically(list.scrollTop + delta);
+      return;
+    }
+    if (list.scrollTop !== fallbackScrollTop) setScrollTopProgrammatically(fallbackScrollTop);
   }
   function refreshToolCards(msgId) {
     const thread = store3.getState().threads.find((t4) => t4.messages.some((m3) => m3.id === msgId));
@@ -253297,6 +253568,7 @@ function mountConversation(root4, store3, api3) {
     if (!msg || !msgEl) return;
     const prevScrollTop = list.scrollTop;
     const wasPinned = pinnedToBottom;
+    const readingAnchor = wasPinned ? null : captureReadingAnchor();
     const run6 = multiStepRunFor(thread, msgId);
     renderToolCards(msgEl, msg.toolCalls ?? [], {
       ...messageToolCardOpts(msg),
@@ -253306,9 +253578,7 @@ function mountConversation(root4, store3, api3) {
     if (run6) syncRunLayout(thread, run6, msgId);
     if (wasPinned) {
       scrollToBottom();
-    } else if (list.scrollTop !== prevScrollTop) {
-      setScrollTopProgrammatically(prevScrollTop);
-    }
+    } else restoreReadingAnchor(readingAnchor, prevScrollTop);
   }
   const unsubs = [
     store3.on("message_added", (tid, mid) => {
@@ -253352,6 +253622,7 @@ function mountConversation(root4, store3, api3) {
         const run6 = multiStepRunFor(thread, mid);
         if (run6) syncRunStepTrail(thread, run6);
         else syncReasoningEl(msgEl, msg, isReasoningDisclosureLive(thread, msg));
+        registerReasoningDisclosures(msgEl);
         activityBar.classList.add("agent-activity-clickable");
         setActivity(activityLabel.textContent);
         scrollToBottom();
@@ -253424,8 +253695,9 @@ function mountConversation(root4, store3, api3) {
       }
     }),
     store3.on("thread_status_changed", (tid, status) => {
-      if (tid !== store3.getState().activeThreadId) return;
-      if (status !== "running") setActivity(null);
+      if (status === "running") cancelThreadCompaction(tid);
+      else scheduleThreadCompaction(tid);
+      if (tid === store3.getState().activeThreadId && status !== "running") setActivity(null);
     }),
     store3.on("agent_activity", (tid, label) => {
       if (tid !== store3.getState().activeThreadId) return;
@@ -253442,6 +253714,14 @@ function mountConversation(root4, store3, api3) {
   return () => {
     backfillGeneration++;
     showAcpTransportNoiseDisclosure = () => false;
+    revealTimers.forEach((timer3) => {
+      clearTimeout(timer3);
+    });
+    compactTimers.forEach((timer3) => {
+      clearTimeout(timer3);
+    });
+    revealTimers.clear();
+    compactTimers.clear();
     unbindFileLinks();
     unbindWorkspaceLinks();
     unbindBrowserLinks();
@@ -253461,7 +253741,7 @@ function attachCopyButton(body, msgId, store3) {
   });
   body.append(copyBtn);
 }
-var lazyToolCardBodies, streamingRenderers, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolCardKeys, toolCardSignatures, SCROLL_PIN_THRESHOLD_PX, USER_SCROLL_UP_DEBOUNCE_MS, INITIAL_RENDER_WINDOW, BACKFILL_CHUNK_SIZE;
+var lazyToolCardBodies, streamingRenderers, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolCardKeys, toolCardSignatures, toolGroupItemSignatures, SCROLL_PIN_THRESHOLD_PX, USER_SCROLL_UP_DEBOUNCE_MS, TOOL_AUTO_REVEAL_DELAY_MS, TOOL_AUTO_REVEAL_MIN_DWELL_MS, TOOL_AUTO_COMPACT_DELAY_MS, INITIAL_RENDER_WINDOW, BACKFILL_CHUNK_SIZE;
 var init_conversation = __esm({
   "src/renderer/views/conversation.ts"() {
     init_helpers();
@@ -253521,8 +253801,12 @@ var init_conversation = __esm({
     subagentCardChromeSig = /* @__PURE__ */ new WeakMap();
     toolCardKeys = /* @__PURE__ */ new WeakMap();
     toolCardSignatures = /* @__PURE__ */ new WeakMap();
+    toolGroupItemSignatures = /* @__PURE__ */ new WeakMap();
     SCROLL_PIN_THRESHOLD_PX = 48;
     USER_SCROLL_UP_DEBOUNCE_MS = 150;
+    TOOL_AUTO_REVEAL_DELAY_MS = 300;
+    TOOL_AUTO_REVEAL_MIN_DWELL_MS = 1e3;
+    TOOL_AUTO_COMPACT_DELAY_MS = 750;
     INITIAL_RENDER_WINDOW = 40;
     BACKFILL_CHUNK_SIZE = 30;
   }
