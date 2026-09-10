@@ -62023,6 +62023,30 @@ var init_hook_run_detail2 = __esm({
   }
 });
 
+// src/shared/preview-csp.ts
+function securePreviewHtml(html2) {
+  return `<!doctype html><meta http-equiv="Content-Security-Policy" content="${PREVIEW_CSP}">${html2}`;
+}
+var PREVIEW_CSP;
+var init_preview_csp = __esm({
+  "src/shared/preview-csp.ts"() {
+    PREVIEW_CSP = [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline'",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data: blob:",
+      "font-src 'self' data:",
+      "media-src 'self' data: blob:",
+      "connect-src 'self'",
+      "frame-src 'none'",
+      "worker-src 'none'",
+      "object-src 'none'",
+      "base-uri 'none'",
+      "form-action 'self'"
+    ].join("; ");
+  }
+});
+
 // node_modules/.pnpm/tldts-core@7.4.11/node_modules/tldts-core/dist/es6/src/domain.js
 function shareSameDomainSuffix(hostname3, vhost) {
   if (hostname3.endsWith(vhost)) {
@@ -62914,7 +62938,7 @@ var init_browser_url = __esm({
 
 // src/shared/canvas/artefact.ts
 function htmlDataUrl(html2) {
-  const bytes = new TextEncoder().encode(html2);
+  const bytes = new TextEncoder().encode(securePreviewHtml(html2));
   let binary2 = "";
   const CHUNK = 32768;
   for (let i4 = 0; i4 < bytes.length; i4 += CHUNK) {
@@ -62933,6 +62957,7 @@ function artefactTitleFromUri(uri) {
 }
 var init_artefact = __esm({
   "src/shared/canvas/artefact.ts"() {
+    init_preview_csp();
     init_browser_url();
   }
 });
@@ -286113,6 +286138,12 @@ var init_roadmap_pane = __esm({
 });
 
 // src/shared/browser-session.ts
+function browserThreadScope(projectId, threadId) {
+  return projectId && threadId ? `thread:${encodeURIComponent(JSON.stringify([projectId, threadId]))}` : "";
+}
+function browserSessionPartition(base, scope) {
+  return scope ? `${base}:${scope}` : base;
+}
 var BROWSER_SESSION_PARTITION;
 var init_browser_session = __esm({
   "src/shared/browser-session.ts"() {
@@ -286144,6 +286175,7 @@ function toStoredTab(tab) {
     if (tab.artefactTitle.length > 200) return null;
     return {
       url: "",
+      ...tab.partition ? { partition: tab.partition } : {},
       ...label ? { label } : {},
       artefactTitle: tab.artefactTitle,
       artefactThreadId: tab.artefactThreadId,
@@ -286151,7 +286183,11 @@ function toStoredTab(tab) {
     };
   }
   if (!isStorableUrl(tab.url)) return null;
-  return { url: tab.url, ...label ? { label } : {} };
+  return {
+    url: tab.url,
+    ...label ? { label } : {},
+    ...tab.partition ? { partition: tab.partition } : {}
+  };
 }
 function toBrowserPaneSession(tabs, activeTabIndex, paneOpen) {
   const kept = [];
@@ -286441,11 +286477,11 @@ function createIframeWebview(resolveWorkspacePreview) {
     }
   });
 }
-function createWebview(resolveWorkspacePreview) {
+function createWebview(partition2, resolveWorkspacePreview) {
   const webview = document.createElement("webview");
   if (!supportsElectronWebview(webview)) return createIframeWebview(resolveWorkspacePreview);
   const guest = webview;
-  guest.setAttribute("partition", BROWSER_SESSION_PARTITION);
+  guest.setAttribute("partition", partition2);
   guest.setAttribute("webpreferences", WEBVIEW_PREFS);
   guest.setAttribute("allowpopups", "false");
   guest.className = "browser-webview";
@@ -286592,7 +286628,7 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
   }
   function ensureWebview(tab) {
     if (tab.webview) return tab.webview;
-    const webview = createWebview(resolveWorkspacePreview);
+    const webview = createWebview(tab.partition, resolveWorkspacePreview);
     tab.webviewHost.append(webview);
     tab.webview = webview;
     const onNavigate = () => {
@@ -286687,14 +286723,18 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
   }
   function openRequestedBrowserUrl(rawUrl) {
     const url2 = normalizeBrowserUrl(rawUrl);
-    const existing = urlTabFor(url2);
+    const scopePartition = browserSessionPartition(
+      BROWSER_SESSION_PARTITION,
+      browserThreadScope(store3.getState().activeProjectId, store3.getState().activeThreadId)
+    );
+    const existing = urlTabFor(url2, scopePartition);
     if (existing) {
       setActiveTab(existing.id);
       navigateTab(existing, url2);
       return;
     }
     let tab = activeTabId ? tabs.get(activeTabId) : void 0;
-    if (!tab || !isIdleBrowserTab(tab)) {
+    if (!tab || tab.partition !== scopePartition || !isIdleBrowserTab(tab)) {
       addTab({ activate: true });
       tab = activeTabId ? tabs.get(activeTabId) : void 0;
     }
@@ -286715,9 +286755,10 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
       urlInput.select();
     });
   }
-  function artefactTabFor(title2, threadId) {
+  function artefactTabFor(title2, threadId, projectId) {
     for (const tab of tabs.values()) {
-      if (tab.artefactTitle === title2 && tab.artefactThreadId === (threadId ?? null)) return tab;
+      if (tab.artefactTitle === title2 && tab.artefactThreadId === (threadId ?? null) && (!projectId || tab.artefactProjectId === projectId))
+        return tab;
     }
     return void 0;
   }
@@ -286735,19 +286776,23 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
     const reopened = await api3.canvas.reopenArtefact(projectId, threadId, title2).catch(() => false);
     if (!reopened) showToast(`"${title2}" is no longer available`);
   }
-  function urlTabFor(url2) {
+  function urlTabFor(url2, partition2) {
     for (const tab of tabs.values()) {
       if (tab.artefactTitle) continue;
-      if (displayUrl(tab) === url2) return tab;
+      if (displayUrl(tab) === url2 && tab.partition === partition2) return tab;
     }
     return void 0;
   }
-  function showTabForUrl(rawUrl) {
+  function showTabForUrl(rawUrl, partition2) {
     const url2 = normalizeBrowserUrl(rawUrl);
     openRightPanel(store3, "browser");
-    const existing = urlTabFor(url2);
+    const scopePartition = partition2 ?? browserSessionPartition(
+      BROWSER_SESSION_PARTITION,
+      browserThreadScope(store3.getState().activeProjectId, store3.getState().activeThreadId)
+    );
+    const existing = urlTabFor(url2, scopePartition);
     if (!existing) {
-      addTab({ url: url2, activate: true });
+      addTab({ url: url2, activate: true, partition: partition2 });
       return;
     }
     setActiveTab(existing.id);
@@ -286762,16 +286807,31 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
   }
   function openArtefact(artefact) {
     const target = artefactUrl(artefact);
-    const existing = artefactTabFor(artefact.title, artefact.threadId);
+    const existing = artefactTabFor(
+      artefact.title,
+      artefact.owner?.threadId ?? artefact.threadId,
+      artefact.owner?.projectId
+    );
     if (existing) {
       existing.pendingUrl = null;
     }
     if (!existing) openRightPanel(store3, "browser");
-    const tab = existing ?? tabs.get(addTab({ activate: true }));
+    const tab = existing ?? tabs.get(
+      addTab({
+        activate: true,
+        partition: browserSessionPartition(
+          BROWSER_SESSION_PARTITION,
+          browserThreadScope(
+            artefact.owner?.projectId ?? store3.getState().activeProjectId,
+            artefact.owner?.threadId ?? artefact.threadId ?? store3.getState().activeThreadId
+          )
+        )
+      })
+    );
     if (!tab) return;
     tab.artefactTitle = artefact.title;
-    tab.artefactThreadId = artefact.threadId ?? null;
-    tab.artefactProjectId = store3.getState().activeProjectId;
+    tab.artefactThreadId = artefact.owner?.threadId ?? artefact.threadId ?? null;
+    tab.artefactProjectId = artefact.owner?.projectId ?? store3.getState().activeProjectId;
     tab.urlInput.value = "";
     tab.urlInput.placeholder = artefact.title;
     syncTabLabel(tab);
@@ -286913,6 +286973,10 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
     const panel = el("div", { class: "browser-tab-panel", "data-tab-id": id39 }, toolbar, webviewHost);
     const tab = {
       id: id39,
+      partition: options2?.partition ?? browserSessionPartition(
+        BROWSER_SESSION_PARTITION,
+        browserThreadScope(store3.getState().activeProjectId, store3.getState().activeThreadId)
+      ),
       label,
       panel,
       webviewHost,
@@ -287090,6 +287154,7 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
       // (#508) rejects `||`, but `??` alone would change behaviour — these
       // fall back on EMPTY strings, not just null/undefined.
       url: [tab.urlInput.value, webviewUrl(tab), tab.pendingUrl].find((value2) => value2) ?? "about:blank",
+      partition: tab.partition,
       label: tab.label,
       artefactTitle: tab.artefactTitle,
       artefactThreadId: tab.artefactThreadId,
@@ -287113,9 +287178,11 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
         const snapshot = tabSnapshot(tab);
         return {
           url: snapshot.url,
+          partition: tab.partition,
           ...snapshot.label !== void 0 ? { label: snapshot.label } : {},
           artefactTitle: tab.artefactTitle,
-          artefactThreadId: tab.artefactThreadId
+          artefactThreadId: tab.artefactThreadId,
+          artefactProjectId: tab.artefactProjectId
         };
       }),
       activeTabIndex: activeIndexOf(ordered)
@@ -287134,13 +287201,17 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
     purgeAllTabs();
     const createdIds = [];
     for (const entry of raw.tabs) {
-      const id39 = addTab({ activate: false });
+      const id39 = addTab({
+        activate: false,
+        partition: entry.partition ?? BROWSER_SESSION_PARTITION
+      });
       createdIds.push(id39);
       const tab = tabs.get(id39);
       if (!tab) continue;
       if (entry.artefactTitle) {
         tab.artefactTitle = entry.artefactTitle;
         tab.artefactThreadId = entry.artefactThreadId ?? null;
+        tab.artefactProjectId = entry.artefactProjectId ?? null;
         tab.urlInput.placeholder = entry.artefactTitle;
       }
       if (entry.url && entry.url !== "about:blank") {
@@ -287197,7 +287268,10 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
     purgeAllTabs();
     const restored = [];
     for (const entry of session.tabs) {
-      const id39 = addTab({ activate: false });
+      const id39 = addTab({
+        activate: false,
+        partition: entry.partition ?? BROWSER_SESSION_PARTITION
+      });
       const tab = tabs.get(id39);
       if (!tab) continue;
       if (entry.artefactTitle) {
@@ -287269,7 +287343,7 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
     }),
     // cmd/ctrl click and target=_blank links inside a guide open as a new
     // background tab (main blocks the popup window and forwards the URL here).
-    api3?.browser.onOpenTab((url2) => addTab({ url: url2, activate: false })),
+    api3?.browser.onOpenTab((url2, partition2) => addTab({ url: url2, partition: partition2, activate: false })),
     api3?.browser.onShowTab?.(showTabForUrl),
     api3?.browser.onPreviewStale?.(refreshStalePreviews),
     api3?.browser.onShareText(attachSharedText),
