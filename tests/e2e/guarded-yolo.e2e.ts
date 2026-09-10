@@ -6,17 +6,10 @@ import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { setComposerValue } from './helpers/composer.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 import { describeSkipInCi } from './helpers/ci-gate.ts'
+import { waitForAgentIdle } from './helpers.ts'
 
 const PROJECT_ID = 'e2e-guarded-yolo-project'
 let workspaceRoot = ''
-
-async function waitForAgentIdle(timeoutMs = 60_000): Promise<void> {
-  await browser.waitUntil(async () => (await $('.submit-btn').getText()) === 'Send', {
-    timeout: timeoutMs,
-    interval: 250,
-    timeoutMsg: 'Agent did not return to idle (submit button Send)',
-  })
-}
 
 async function enableGuardedYolo(captureWarning = false): Promise<void> {
   await $('.footer-overflow-trigger').click()
@@ -111,7 +104,9 @@ describeSkipInCi('Guarded YOLO shell mode', function () {
     const dialog = await $('#approval-dialog')
     await dialog.waitForDisplayed({ timeout: 30_000 })
     await expect(dialog.$('.approval-heading')).toHaveText('Guarded YOLO safety check')
-    expect(await dialog.$('.approval-advice').getText()).toContain('recursive/forced delete')
+    expect(await dialog.$('.approval-advice').getText()).toContain(
+      'Deletes files and folders recursively (rm -rf)',
+    )
     expect(await dialog.$('.approval-body').getText()).toContain(
       'rm -rf tests/e2e/.bounded-delete-missing',
     )
@@ -129,17 +124,29 @@ describeSkipInCi('Guarded YOLO shell mode', function () {
     await expect($('.guarded-yolo-banner')).toHaveAttribute('data-phase', 'active')
     await setComposerValue('[[mcp:run_shell {"command":"rm -rf /"}]]')
     await $('.submit-btn').click()
+    // Idle can still describe the previous turn until the new tool is rendered.
+    await browser.waitUntil(
+      async () => {
+        const latest = (await $$('.tool-card-rollup')).at(-1)
+        return latest !== undefined && (await latest.getText()).includes('rm -rf /')
+      },
+      { timeout: 30_000, timeoutMsg: 'The catastrophic command was never rendered' },
+    )
     await waitForAgentIdle()
 
     await expect($('#approval-dialog')).not.toBeDisplayed()
-    const failedTool = await $('.tool-card[data-status="error"]')
+    const rollups = await $$('.tool-card-rollup[data-status="error"]')
+    const rollup = rollups.at(-1)
+    if (rollup && !(await rollup.getProperty('open'))) {
+      await rollup.$('summary.tool-card-header').click()
+    }
+    const failures = await $$('.tool-card[data-tool-id][data-status="error"]')
+    const failedTool = failures.at(-1)
+    if (!failedTool) throw new Error('Expected the catastrophic command to be denied')
     await failedTool.waitForDisplayed({ timeout: 30_000 })
-    // Tool cards are collapsed <details> whose body is built lazily
-    // (`lazyToolCardBodies` in conversation.ts). Until the card opens, the
-    // denial reason is not in the DOM at all and `getText()` returns only the
-    // summary — i.e. the `rm -rf /` label, never the harm-gate reason. Open it
-    // first, then wait for the deferred body to build.
-    await failedTool.$('summary.tool-card-header').click()
+    if (!(await failedTool.getProperty('open'))) {
+      await failedTool.$('summary.tool-card-header').click()
+    }
     await browser.waitUntil(
       async () => (await failedTool.getText()).includes('Guarded YOLO harm gate'),
       {
@@ -149,6 +156,9 @@ describeSkipInCi('Guarded YOLO shell mode', function () {
       },
     )
     expect(await failedTool.getText()).toContain('Guarded YOLO harm gate')
-    await saveElementScreenshot('.tool-card[data-status="error"]', 'guarded-yolo-hard-deny.png')
+    await saveElementScreenshot(
+      `.tool-card[data-tool-id="${await failedTool.getAttribute('data-tool-id')}"]`,
+      'guarded-yolo-hard-deny.png',
+    )
   })
 })
