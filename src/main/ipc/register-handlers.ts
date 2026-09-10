@@ -216,7 +216,6 @@ import {
   syncPiiTools,
   syncReadTerminalTools,
   syncRoadmapPlanTools,
-  syncAppleDevelopmentTools,
 } from '../services/registry-bootstrap.ts'
 import { MODEL_COMPARISON_PLUGIN_ID } from '@copse/agent/plugins/model-comparison-plugin.ts'
 import { LONG_HORIZON_TASKS_PLUGIN_ID } from '@copse/agent/plugins/long-horizon-tasks-plugin.ts'
@@ -441,6 +440,16 @@ you want the coding agent to follow on every turn.
 `
 
 export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry): void {
+  const reloadMcpForWorkspace = (): void => {
+    void reloadMcpServers(registry)
+      .then((statuses) => {
+        if (!win.isDestroyed()) win.webContents.send('mcp:status-changed', statuses)
+      })
+      .catch((err: unknown) => {
+        console.error('[mcp] workspace reload failed:', err)
+      })
+  }
+
   setGitHubListWatchBroadcast(() => {
     broadcastToAppWindows('gh:lists-tick')
   })
@@ -512,6 +521,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     if (result.canceled || !result.filePaths[0]) return null
     const root = await registerAllowedWorkspaceRoot(result.filePaths[0])
     setWorkspaceRoot(root)
+    reloadMcpForWorkspace()
     // Scheduled, not awaited — index builds must not block the renderer's
     // swap to the full layout; the footer indicator reports progress.
     startWorkspaceIndexing(root)
@@ -669,6 +679,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const sshHost = resolveSshHostForWorkspaceRoot(parsedRoot, explicitSshHost)
     const canonical = await assertAllowedWorkspaceRoot(parsedRoot, sshHost)
     setWorkspaceRoot(canonical)
+    reloadMcpForWorkspace()
     startWorkspaceIndexing(canonical)
     // Do NOT block the IPC response (and therefore the renderer's boot / first
     // paint) on the skills scan. It re-scans user + bundled + workspace skill
@@ -2162,7 +2173,8 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       await getAutomationService().sync()
     }
     if (id === APPLE_DEVELOPMENT_PLUGIN_ID) {
-      syncAppleDevelopmentTools(registry)
+      const statuses = await reloadMcpServers(registry)
+      win.webContents.send('mcp:status-changed', statuses)
       if (!enabled) {
         const activeProjectId = getActiveProjectId()
         if (activeProjectId) await getAppleDevelopmentService().cancelProject(activeProjectId)
@@ -2265,10 +2277,13 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
         [rawProjectId, rawThreadId, rawEnrolled],
       )
       const controller = new AbortController()
-      return getAppleDevelopmentService().setEnrolled(
+      const state = await getAppleDevelopmentService().setEnrolled(
         appleInvocation(projectId, threadId, controller.signal),
         enrolled,
       )
+      const statuses = await reloadMcpServers(registry)
+      win.webContents.send('mcp:status-changed', statuses)
+      return state
     },
   )
   ipcMain.handle(

@@ -25,7 +25,7 @@ import type { HookDecision } from '@copse/agent/hooks/hook-outcome.ts'
 import type { ShellPermissionDecision, ShellPromptParts } from './permission-policy.ts'
 import { errorMessage } from '@shared/errors.ts'
 import type { PromptCause } from '@shared/threads/prompt-cause.ts'
-import { isRecord, nonEmptyStringOr } from '@shared/unknown-value.ts'
+import { nonEmptyStringOr } from '@shared/unknown-value.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
 import { isProjectSandboxPlatform, projectSandboxInitFailure } from '../../project-sandbox/state.ts'
 import {
@@ -1503,41 +1503,6 @@ async function applyToolGateHooks(
 
   return { ok: true, ...rewrite, ...inject }
 }
-async function checkAppleOperationPermission(
-  toolName: 'apple_discover' | 'apple_execute' | 'apple_app_stop',
-  args: unknown,
-  signal?: AbortSignal,
-): Promise<boolean> {
-  const values = isRecord(args) ? args : {}
-  const action = typeof values['action'] === 'string' ? values['action'] : 'operation'
-  const target =
-    typeof values['destinationId'] === 'string' ? ` for ${values['destinationId']}` : ''
-  const title =
-    toolName === 'apple_discover'
-      ? 'Inspect Xcode project metadata?'
-      : toolName === 'apple_app_stop'
-        ? 'Stop the Simulator app?'
-        : `Run Apple ${action}?`
-  const body =
-    toolName === 'apple_discover'
-      ? 'The agent wants Xcode to inspect schemes and destinations. Xcode may resolve packages and will run with normal host access.'
-      : toolName === 'apple_app_stop'
-        ? 'The agent wants to terminate the Simulator app session launched by this thread.'
-        : `The agent wants to invoke the installed Xcode toolchain${target} inside this thread’s captured checkout. Xcode may execute project build phases and will run with normal host access.`
-  const { approved } = await requestApproval(
-    {
-      title,
-      body,
-      type: 'shell',
-      cause: 'shell-sandbox-escalation',
-      subject: toolName,
-      scope: 'external',
-    },
-    signal,
-  )
-  return approved
-}
-
 /**
  * Returns true when the tool call may proceed, false when the user rejected.
  *
@@ -1611,15 +1576,6 @@ export async function ensureToolPermitted(
   if (toolName === 'parallel_search') {
     return checkParallelSearchPermission(signal)
   }
-  if (toolName === 'apple_discover') {
-    if (!isRecord(args) || args['refresh'] !== true) return true
-    return checkAppleOperationPermission(toolName, args, signal)
-  }
-
-  if (toolName === 'apple_execute' || toolName === 'apple_app_stop') {
-    return checkAppleOperationPermission(toolName, args, signal)
-  }
-
   // GitHub CI tools never mutate remote state. Status/log reads are ephemeral;
   // wait also persists one bounded local task under the active turn tree.
   if (GITHUB_NONMUTATING_CI_TOOLS.has(toolName)) {

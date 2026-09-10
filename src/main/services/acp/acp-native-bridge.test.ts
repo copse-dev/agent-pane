@@ -31,8 +31,6 @@ import {
   type ThreadExecutionOwner,
 } from '../thread-execution-context.ts'
 import { getAgentExecutionRoot } from '../execution-root.ts'
-import { storageDelete, storageSet } from '../storage/storage.ts'
-import { APPLE_DEVELOPMENT_TOOL_NAMES } from '@copse/agent/plugins/apple-development-plugin.ts'
 
 /**
  * The native-tool MCP bridge (issue #602, tier 2) exposes a curated slice of
@@ -151,29 +149,6 @@ function initialized(): unknown[] {
     },
   ]
 }
-
-describe('Apple Development ACP tool scope', () => {
-  afterEach(() => {
-    storageDelete('plugin.copse.apple-development.state')
-    setDefaultPluginRegistry(null)
-  })
-
-  it('offers Apple schemas only to enrolled projects', () => {
-    storageSet('plugin.copse.apple-development.state', {
-      version: 1,
-      projects: {
-        enrolled: { enrolled: true, threads: {} },
-        ordinary: { enrolled: false, threads: {} },
-      },
-    })
-
-    for (const toolName of APPLE_DEVELOPMENT_TOOL_NAMES) {
-      assert.equal(activeBridgeToolNames().includes(toolName), false)
-      assert.equal(activeBridgeToolNames('ordinary').includes(toolName), false)
-      assert.equal(activeBridgeToolNames('enrolled').includes(toolName), true)
-    }
-  })
-})
 
 describe('startAcpNativeBridge', () => {
   let bridge: AcpNativeBridge | null = null

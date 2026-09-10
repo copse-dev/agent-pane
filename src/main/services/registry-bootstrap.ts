@@ -78,15 +78,6 @@ import {
 } from '@copse/agent/plugins/parallel-search-plugin.ts'
 import { parallelSearchTool } from '../tools/parallel-search-tool.ts'
 import { PARALLEL_SEARCH_PROVIDER_ID } from './parallel-search.ts'
-import { APPLE_DEVELOPMENT_PLUGIN_ID } from '@copse/agent/plugins/apple-development-plugin.ts'
-import {
-  appleAppStopTool,
-  appleConfigureTool,
-  appleDiscoverTool,
-  appleDevelopmentTools,
-  appleExecuteTool,
-  appleOperationTool,
-} from '../tools/apple-development-tools.ts'
 
 export function createRegistry(): ToolRegistry {
   const registry = new ToolRegistry()
@@ -185,7 +176,6 @@ export function createRegistry(): ToolRegistry {
   // Optional hosted web search. The pack and a configured key are both needed,
   // so the model never sees a tool that can only answer with setup guidance.
   syncParallelSearchTools(registry)
-  syncAppleDevelopmentTools(registry)
   // Reading a video as stills. Registered unconditionally because a video can
   // be attached to any thread at any time, but withheld per turn from threads
   // that have never had one (see `parentTools`) — most threads never will, and
@@ -436,19 +426,6 @@ export function syncParallelSearchTools(registry: ToolRegistry): void {
   } else {
     registry.unregister(PARALLEL_SEARCH_TOOL_NAME)
   }
-}
-
-/** Keep Apple tools aligned with the pack lifecycle; owner checks happen in the service. */
-export function syncAppleDevelopmentTools(registry: ToolRegistry): void {
-  if (getDefaultPluginRegistry().isEnabled(APPLE_DEVELOPMENT_PLUGIN_ID)) {
-    if (!registry.has(appleDiscoverTool.name)) registry.register(appleDiscoverTool)
-    if (!registry.has(appleConfigureTool.name)) registry.register(appleConfigureTool)
-    if (!registry.has(appleExecuteTool.name)) registry.register(appleExecuteTool)
-    if (!registry.has(appleOperationTool.name)) registry.register(appleOperationTool)
-    if (!registry.has(appleAppStopTool.name)) registry.register(appleAppStopTool)
-    return
-  }
-  for (const tool of appleDevelopmentTools) registry.unregister(tool.name)
 }
 
 /** Register skill tools after the skills registry has been populated. */

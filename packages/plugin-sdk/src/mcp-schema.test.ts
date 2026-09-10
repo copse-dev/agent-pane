@@ -5,6 +5,7 @@ import {
   sanitizeMcpInputSchema,
   flattenMcpContent,
   extractUiResources,
+  extractMcpImages,
   UI_RESOURCE_SOURCE_PATH_META,
 } from './mcp-schema.ts'
 
@@ -125,6 +126,35 @@ describe('flattenMcpContent', () => {
       { summarizeUiResources: true },
     )
     assert.equal(out, 'plain')
+  })
+})
+
+describe('extractMcpImages', () => {
+  it('converts valid MCP image blocks to named data URLs', () => {
+    assert.deepEqual(
+      extractMcpImages([
+        { type: 'text', text: 'before' },
+        { type: 'image', mimeType: 'image/png', data: 'aGVsbG8=' },
+      ]),
+      [{ dataUrl: 'data:image/png;base64,aGVsbG8=', name: 'mcp-image-1.png' }],
+    )
+    assert.match(
+      flattenMcpContent([{ type: 'image', mimeType: 'image/png', data: 'aGVsbG8=' }], {
+        imagesAttached: true,
+      }),
+      /attached/,
+    )
+  })
+
+  it('rejects malformed blocks and caps the number of images', () => {
+    const valid = { type: 'image', mimeType: 'image/jpeg', data: 'YQ==' }
+    const images = extractMcpImages([
+      { type: 'image', mimeType: 'text/plain', data: 'YQ==' },
+      { type: 'image', mimeType: 'image/png', data: '' },
+      ...Array.from({ length: 12 }, () => valid),
+    ])
+    assert.equal(images.length, 8)
+    assert.equal(images[0]?.name, 'mcp-image-1.jpg')
   })
 })
 

@@ -109,6 +109,14 @@ function isRemoteProject(projectId: string): boolean {
   return isRecord(project) && typeof project['sshHost'] === 'string' && project['sshHost'] !== ''
 }
 
+/** True when this project can host the local Apple toolchain and its bundled MCP server. */
+export function isAppleDevelopmentProjectSupported(
+  projectId: string,
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  return platform === 'darwin' && !isRemoteProject(projectId)
+}
+
 function setupMessage(
   pluginEnabled: boolean,
   enrolled: boolean,
@@ -311,7 +319,7 @@ export class AppleDevelopmentService {
   ): Promise<AppleSelection> {
     this.requireEligible(invocation.owner)
     const discovery = this.discovery(invocation.owner)
-    if (!discovery) throw new Error('Run apple_discover before configuring a target.')
+    if (!discovery) throw new Error('Load targets before configuring an Apple Development target.')
     const store = readStore()
     const current = threadState(store, invocation.owner).selection
     if ((current?.revision ?? 0) !== input.expectedRevision) {

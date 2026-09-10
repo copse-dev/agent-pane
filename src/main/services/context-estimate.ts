@@ -11,7 +11,7 @@ import { CHARS_PER_TOKEN } from '@copse/agent/token-estimate.ts'
 import { composeContextBreakdown } from '@copse/agent/context-breakdown.ts'
 import { PARENT_DELEGATED_TOOLS } from './agent-service.ts'
 import { SUBAGENTS_ENABLED_DEFAULT, SUBAGENTS_ENABLED_SETTING } from './subagents-setting.ts'
-import { APPLE_DEVELOPMENT_TOOL_NAMES } from '@copse/agent/plugins/apple-development-plugin.ts'
+import { isXcodeBuildMcpToolName } from './apple-development/xcodebuildmcp.ts'
 import { isAppleDevelopmentProjectEnrolled } from './apple-development/apple-development-service.ts'
 
 /** MCP tools are registered with a `[MCP:<server>]` description prefix (mcp-registry.ts). */
@@ -70,12 +70,11 @@ export async function estimateContextBreakdown(
   const systemTokens = Math.max(0, systemPrompt.length / CHARS_PER_TOKEN - skillsTokens)
 
   const delegated = new Set<string>(PARENT_DELEGATED_TOOLS)
-  const appleToolNames = new Set<string>(APPLE_DEVELOPMENT_TOOL_NAMES)
   const tools = registry
     .toLLMTools()
     .filter(
       (tool) =>
-        !appleToolNames.has(tool.name) ||
+        !isXcodeBuildMcpToolName(tool.name) ||
         (input.projectId !== undefined && isAppleDevelopmentProjectEnrolled(input.projectId)),
     )
     .filter((t) => (subagentsEnabled ? !delegated.has(t.name) : t.name !== 'explore'))

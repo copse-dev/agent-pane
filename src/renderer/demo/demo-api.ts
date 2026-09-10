@@ -79,13 +79,7 @@ const DEMO_PLUGINS: readonly PluginSummary[] = [
     enabled: false,
     contributions: {
       ...DEMO_PLUGIN_CONTRIBUTIONS,
-      toolNames: [
-        'apple_discover',
-        'apple_configure',
-        'apple_execute',
-        'apple_operation',
-        'apple_app_stop',
-      ],
+      toolNames: [],
       ui: [
         {
           id: 'apple-development',

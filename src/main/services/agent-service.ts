@@ -58,7 +58,7 @@ import {
   setActiveRunTurnTreeId,
 } from './thread-models.ts'
 import { getThreadExecutionContext } from './thread-execution-context.ts'
-import { APPLE_DEVELOPMENT_TOOL_NAMES } from '@copse/agent/plugins/apple-development-plugin.ts'
+import { isXcodeBuildMcpToolName } from './apple-development/xcodebuildmcp.ts'
 import { isAppleDevelopmentProjectEnrolled } from './apple-development/apple-development-service.ts'
 import { dispatchInlineVisualization } from './inline-visualization.ts'
 import { updateMeta } from './thread-store.ts'
@@ -343,8 +343,7 @@ function parentTools(
   let tools = registry.toLLMTools()
   const executionContext = getThreadExecutionContext()
   if (!executionContext || !isAppleDevelopmentProjectEnrolled(executionContext.projectId)) {
-    const appleToolNames = new Set<string>(APPLE_DEVELOPMENT_TOOL_NAMES)
-    tools = tools.filter((tool) => !appleToolNames.has(tool.name))
+    tools = tools.filter((tool) => !isXcodeBuildMcpToolName(tool.name))
   }
   // Hide the advisor tool when the configured advisor is not more capable than
   // the executor (same model, or a confidently weaker annotated pairing) — it

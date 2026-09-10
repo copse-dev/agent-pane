@@ -17,8 +17,6 @@ import type { AdvisorRunnerContext } from '../advisor-runner-context.ts'
 import { runWithAdvisorContext } from '../advisor-runner-context.ts'
 import { runWithActiveRunIdentity } from '../thread-models.ts'
 import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
-import { APPLE_DEVELOPMENT_TOOL_NAMES } from '@copse/agent/plugins/apple-development-plugin.ts'
-import { isAppleDevelopmentProjectEnrolled } from '../apple-development/apple-development-service.ts'
 import { runWithAcpBridgePermissionContext } from './acp-bridge-permission-context.ts'
 import {
   getThreadExecutionContext,
@@ -134,13 +132,8 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
 ]
 
 /** Core tools plus ACP-safe tools declared by currently enabled first-party plugins. */
-export function activeBridgeToolNames(projectId?: string): readonly string[] {
-  const names = [
-    ...new Set([...BRIDGE_TOOL_NAMES, ...getDefaultPluginRegistry().activeAcpToolNames()]),
-  ]
-  if (projectId && isAppleDevelopmentProjectEnrolled(projectId)) return names
-  const appleToolNames = new Set<string>(APPLE_DEVELOPMENT_TOOL_NAMES)
-  return names.filter((name) => !appleToolNames.has(name))
+export function activeBridgeToolNames(_projectId?: string): readonly string[] {
+  return [...new Set([...BRIDGE_TOOL_NAMES, ...getDefaultPluginRegistry().activeAcpToolNames()])]
 }
 
 /**

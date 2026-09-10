@@ -118,6 +118,7 @@
       "**/node_modules/node-pty/**/*",
       "**/node_modules/@napi-rs/**/*",
       "**/node_modules/@anthropic-ai/sandbox-runtime/**/*",
+      "**/node_modules/xcodebuildmcp/**/*",
       "dist/resources/gortex/**"
     ],
     "afterPack": "scripts/after-pack.cjs",
@@ -173,7 +174,8 @@
     "jsdom": "^30.0.1",
     "node-pty": "^1.1.0",
     "shell-quote": "^1.10.0",
-    "turndown": "^7.2.0"
+    "turndown": "^7.2.0",
+    "xcodebuildmcp": "2.7.0"
   },
   "optionalDependencies": {
     "@napi-rs/keyring-darwin-arm64": "2.0.0",
@@ -192,8 +194,8 @@
     "@copse/shell-guard": "workspace:*",
     "@copse/std": "workspace:*",
     "@copse/store-kit": "workspace:*",
-    "@copse/thread-store": "workspace:*",
     "@copse/streaming-markdown": "^1.1.0",
+    "@copse/thread-store": "workspace:*",
     "@electron/rebuild": "^4.2.0",
     "@eslint/js": "^10.0.1",
     "@lmstudio/sdk": "^1.5.0",
@@ -217,10 +219,10 @@
     "c8": "^12.0.0",
     "ddg-search": "^2026.2.16",
     "dompurify": "^3.4.14",
-    "electron-store": "^11.0.2",
     "electron": "^44.1.1",
     "electron-builder": "^26.15.3",
     "electron-chromedriver": "^44.1.1",
+    "electron-store": "^11.0.2",
     "esbuild": "^0.28.1",
     "eslint": "^10.9.1",
     "eslint-config-prettier": "^10.1.5",

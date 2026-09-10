@@ -103,51 +103,25 @@ describe('ensureToolPermitted', () => {
     )
   })
 
-  it('allows read-only Apple discovery without prompting', async () => {
-    setPermissionGateForTests(null)
-    let prompted = false
-    setApprovalHandler(async () => {
-      prompted = true
-      return { approved: false, remember: false }
-    })
-    try {
-      assert.equal(
-        await ensureToolPermitted({ toolName: 'apple_discover', args: { refresh: false } }),
-        true,
-      )
-      assert.equal(prompted, false)
-    } finally {
-      setApprovalHandler(null)
-    }
-  })
-
-  it('requires per-call approval for agent-triggered Apple execution', async () => {
+  it('routes XcodeBuildMCP execution through the MCP approval gate', async () => {
     setPermissionGateForTests(null)
     let title = ''
-    let body = ''
-    let cause: string | undefined
-    let scope: string | undefined
+    let type = ''
     setApprovalHandler(async (request) => {
       title = request.title
-      body = request.body
-      cause = request.cause
-      scope = request.scope
+      type = request.type
       return { approved: false, remember: false }
     })
     try {
       assert.equal(
         await ensureToolPermitted({
-          toolName: 'apple_execute',
-          args: { action: 'build', destinationId: 'platform=iOS Simulator,id=device-1' },
+          toolName: 'mcp__xcodebuildmcp__build_run_macos',
+          args: { scheme: 'Example' },
         }),
         false,
       )
-      assert.equal(title, 'Run Apple build?')
-      assert.match(body, /agent wants/i)
-      assert.match(body, /project build phases/i)
-      assert.match(body, /normal host access/i)
-      assert.equal(cause, 'shell-sandbox-escalation')
-      assert.equal(scope, 'external')
+      assert.equal(title, 'MCP tool: xcodebuildmcp/build_run_macos')
+      assert.equal(type, 'mcp')
     } finally {
       setApprovalHandler(null)
     }
