@@ -203,25 +203,23 @@ describe('tool card reconciliation on tool_call_updated (#728)', () => {
     )
   })
 
-  it('replaces a rebuilt card instead of leaving the stale one behind', () => {
+  it('patches a changed regular card without replacing its disclosure shell', () => {
     const { store, messageId, host } = mountWithCards()
 
     const editBefore = host.querySelector('[data-tool-id="tc-edit-1"]')
     assert.ok(editBefore, 'expected the sibling edit card to render')
 
-    // The edit call changes, so its card is rebuilt (signature mismatch). The
-    // reconciler claims the old node out of its `existing` index before the
-    // rebuild, so the trailing cleanup never saw it — the stale card used to
-    // stay in the DOM next to the fresh one.
+    // Results change often during a run. Preserve the disclosure element itself
+    // so open state, focus, and the browser's scroll anchor remain stable.
     updateToolCall(store, messageId, 'tc-edit-1', { result: 'wrote 2 lines' })
 
     const editCards = host.querySelectorAll('[data-tool-id="tc-edit-1"]')
     assert.equal(editCards.length, 1, 'rebuilt card must replace the stale node')
-    assert.notStrictEqual(editCards[0], editBefore, 'changed card should be rebuilt')
+    assert.strictEqual(editCards[0], editBefore, 'changed card disclosure should be preserved')
     // The card starts collapsed, so its body (including .tool-result) isn't
     // built until it opens — opening it is what triggers the deferred render.
-    editCards[0]?.querySelector('.tool-card-header')?.dispatchEvent(new MouseEvent('click'))
-    assert.match(editCards[0]?.querySelector('.tool-result')?.textContent ?? '', /wrote 2 lines/)
+    editCards[0].querySelector('.tool-card-header')?.dispatchEvent(new MouseEvent('click'))
+    assert.match(editCards[0].querySelector('.tool-result')?.textContent ?? '', /wrote 2 lines/)
   })
 
   it('re-renders a card whose tool call actually changed', () => {
@@ -235,7 +233,12 @@ describe('tool card reconciliation on tool_call_updated (#728)', () => {
       prompt: 'Find README',
       summary: 'README describes Copse setup.',
       messages: [
-        { id: 'sub-msg-1', role: 'assistant', content: 'Analyzing the code', toolCalls: [] },
+        {
+          id: 'sub-msg-1',
+          role: 'assistant',
+          content: 'Analyzing the code',
+          toolCalls: [],
+        },
       ],
     }
     updateToolCall(store, messageId, 'tc-sub-1', {

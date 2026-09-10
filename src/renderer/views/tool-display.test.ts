@@ -1,12 +1,14 @@
 import '../../../tests/setup-dom.ts'
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { setTimeout as delay } from 'node:timers/promises'
 import { createStore } from '@shared/store/store.ts'
 import {
   addMessage,
   addToolCall,
   createThread,
   setMessageToolSummary,
+  setThreadStatus,
   updateToolCall,
 } from '@shared/store/thread-helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -85,6 +87,128 @@ afterEach(() => {
 })
 
 describe('tool call display (component)', () => {
+  it('keeps fast tools compact instead of flashing their details open', async () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    const messageId = addMessage(store, threadId, 'assistant', '')
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+    setThreadStatus(store, threadId, 'running')
+
+    addToolCall(store, messageId, {
+      id: 'tc-fast',
+      name: 'read_file',
+      args: { path: 'README.md' },
+      status: 'running',
+      result: null,
+    })
+    const rollup = document.querySelector<HTMLDetailsElement>('.tool-card-rollup')
+    assert.ok(rollup, 'live work should use a stable rollup from the first tool')
+    assert.equal(rollup.open, false)
+
+    updateToolCall(store, messageId, 'tc-fast', {
+      status: 'done',
+      result: '# Copse',
+    })
+    await delay(350)
+    assert.equal(rollup.open, false, 'a tool that finished inside the reveal delay flashed open')
+  })
+
+  it('holds revealed work open across tool gaps and compacts once the run settles', async () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    const messageId = addMessage(store, threadId, 'assistant', '')
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+    setThreadStatus(store, threadId, 'running')
+
+    addToolCall(store, messageId, {
+      id: 'tc-long',
+      name: 'run_shell',
+      args: { command: 'npm test' },
+      status: 'running',
+      result: null,
+    })
+    const rollup = document.querySelector<HTMLDetailsElement>('.tool-card-rollup')
+    assert.ok(rollup)
+    await delay(350)
+    assert.equal(rollup.open, true, 'long-running work should reveal after the delay')
+
+    updateToolCall(store, messageId, 'tc-long', {
+      status: 'done',
+      result: 'passed',
+    })
+    assert.equal(rollup.open, true, 'the completed-tool gap collapsed the live rollup')
+    addToolCall(store, messageId, {
+      id: 'tc-next',
+      name: 'read_file',
+      args: { path: 'package.json' },
+      status: 'running',
+      result: null,
+    })
+    assert.strictEqual(
+      document.querySelector('.tool-card-rollup'),
+      rollup,
+      'adding a second tool replaced the live rollup shell',
+    )
+    assert.equal(rollup.open, true)
+
+    updateToolCall(store, messageId, 'tc-next', {
+      status: 'done',
+      result: '{}',
+    })
+    setThreadStatus(store, threadId, 'idle')
+    await delay(1_100)
+    assert.equal(rollup.open, false, 'settled work did not compact after its minimum dwell')
+  })
+
+  it('retains an explicit user-close while more tools arrive', async () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    const messageId = addMessage(store, threadId, 'assistant', '')
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+    setThreadStatus(store, threadId, 'running')
+    addToolCall(store, messageId, {
+      id: 'tc-running',
+      name: 'run_shell',
+      args: { command: 'npm test' },
+      status: 'running',
+      result: null,
+    })
+    const rollup = document.querySelector<HTMLDetailsElement>('.tool-card-rollup')
+    assert.ok(rollup)
+    await delay(350)
+    assert.equal(rollup.open, true)
+    rollup.querySelector<HTMLElement>(':scope > summary')?.click()
+    assert.equal(rollup.open, false)
+    await delay(0)
+
+    updateToolCall(store, messageId, 'tc-running', {
+      status: 'done',
+      result: 'passed',
+    })
+    addToolCall(store, messageId, {
+      id: 'tc-later',
+      name: 'read_file',
+      args: { path: 'package.json' },
+      status: 'running',
+      result: null,
+    })
+    await delay(350)
+    assert.equal(rollup.open, false, 'status updates overrode the user-closed state')
+
+    createThread(store)
+    store.setState({ activeThreadId: threadId })
+    store.emit('threads_changed')
+    const restored = document.querySelector<HTMLDetailsElement>('.tool-card-rollup')
+    assert.ok(restored)
+    assert.equal(restored.open, false, 'thread switching lost the user-closed state')
+  })
+
   it('reserves the activity icon slot when a running tool settles', () => {
     const store = createStore()
     const threadId = createThread(store)
@@ -105,7 +229,10 @@ describe('tool call display (component)', () => {
     assert.equal(runningCard.querySelector('.tool-name')?.textContent, 'Running command')
     assert.ok(runningSlot.querySelector('[data-icon="reasoning-activity"]'))
 
-    updateToolCall(store, messageId, 'tc-shell', { status: 'done', result: 'passed' })
+    updateToolCall(store, messageId, 'tc-shell', {
+      status: 'done',
+      result: 'passed',
+    })
 
     const settledCard = qsRequired(host, '[data-tool-id="tc-shell"]')
     const settledSlot = qsRequired(settledCard, '.tool-activity-icon-slot')
@@ -154,20 +281,22 @@ describe('tool call display (component)', () => {
     assert.equal(document.querySelector('.tool-card-group [data-tool-id="tc-read-2"]'), null)
   })
 
-  it('keeps a user-expanded group item open across a tool update rebuild', () => {
+  it('keeps a user-expanded group item open across a tool update rebuild', async () => {
     const { store, messageId } = mountWithTools()
 
     const rollup = qsRequired<HTMLDetailsElement>(document, '.tool-card-rollup')
     const group = qsRequired<HTMLDetailsElement>(rollup, '.tool-card-group')
     const item = qsRequired<HTMLDetailsElement>(group, '[data-tool-id="tc-read-1"]')
-    rollup.open = true
-    group.open = true
-    item.open = true
+    rollup.querySelector<HTMLElement>(':scope > summary')?.click()
+    group.querySelector<HTMLElement>(':scope > summary')?.click()
+    item.querySelector<HTMLElement>(':scope > summary')?.click()
+    await delay(0)
 
-    // A group member changing rebuilds the whole group card from scratch (its
-    // signature covers every member); the expanded item must survive — it used
-    // to snap shut on every agent step.
-    updateToolCall(store, messageId, 'tc-list-1', { result: 'd main\nf index.ts\nf util.ts' })
+    // A group member changing patches the existing disclosure shells; every
+    // explicit user choice must survive the status/result update.
+    updateToolCall(store, messageId, 'tc-list-1', {
+      result: 'd main\nf index.ts\nf util.ts',
+    })
 
     const rollups = document.querySelectorAll('.tool-card-rollup')
     assert.equal(rollups.length, 1, 'rebuild must replace the rollup, not duplicate it')

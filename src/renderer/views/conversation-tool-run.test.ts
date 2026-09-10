@@ -134,17 +134,18 @@ describe('cross-message tool runs (component)', () => {
     assert.equal(group.querySelector('.tool-count')?.textContent, '×2')
   })
 
-  it('keeps a user-expanded step open when a later member ticks', () => {
+  it('keeps a user-expanded step open when a later member ticks', async () => {
     const { store, ids } = seedRun()
     const host = mount(store)
 
     const run = qsRequired<HTMLDetailsElement>(host, '.tool-card-rollup')
-    run.open = true
+    run.querySelector<HTMLElement>(':scope > summary')?.click()
     const first = qsRequired<HTMLDetailsElement>(
       run,
       `.tool-card-step[data-step-message-id="${String(ids[0])}"]`,
     )
-    first.open = true
+    first.querySelector<HTMLElement>(':scope > summary')?.click()
+    await Promise.resolve()
 
     // A tool settling on the *last* member repaints the anchor's whole run.
     updateToolCall(store, ids.at(-1) ?? '', `${String(ids.at(-1))}-0`, { result: 'changed' })

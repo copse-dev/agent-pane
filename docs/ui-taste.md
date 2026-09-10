@@ -820,6 +820,21 @@ surface quiet. A longer review still occupies more space; the texture does not m
 weight independent of height. See
 `prototypes/side-highlight` for the alternatives that were tried and rejected.
 
+## Live thread disclosure stability
+
+Tool execution status and disclosure state are separate concerns. A fast tool stays
+compact; a longer operation may reveal its details after a short delay. Once the app
+reveals a live rollup, keep it open through gaps between tools and compact the run in
+one quiet pass after completion. Never derive `open` directly from whether a child is
+currently running: that makes the same content disappear and reappear at every tool
+boundary.
+
+An explicit user open or close always wins and must survive result updates, grouping
+changes, and thread switches during the mounted session. Preserve disclosure shells
+and patch their contents in place where possible. When automatic layout changes occur
+above a reader who has scrolled up, retain the first visible transcript item's viewport
+offset rather than restoring only its old numeric `scrollTop`.
+
 ## Conditional split panes
 
 Do not permanently reserve space for a secondary viewer that has no content yet. When a pane has a

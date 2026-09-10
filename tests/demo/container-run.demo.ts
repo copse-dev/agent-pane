@@ -149,9 +149,14 @@ describe('unattended container run (browser-hosted)', () => {
     )
     // The follow-up: the demo backend applies the three commits; the card says so.
     await card.$('.subagent-container-apply').click()
+    await expect(card).toHaveAttribute('open')
     await browser.waitUntil(
       async () => (await card.getText()).includes('Applied to this checkout: 3 commits'),
       { timeout: 5_000, timeoutMsg: 'the card never noted the applied commits' },
+    )
+    await saveElementScreenshot(
+      '.tool-card-subagent[data-tool-id^="container-run:"] .subagent-parent-result',
+      'container-run-card-applied.png',
     )
     await browser.execute(() => {
       const cards = document.querySelectorAll('.tool-card-subagent[data-tool-id^="container-run:"]')
