@@ -1,3 +1,4 @@
+import type { ChildProcess } from 'node:child_process'
 import { basename, dirname, extname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, open, readdir, realpath } from 'node:fs/promises'
@@ -80,7 +81,7 @@ export interface AppleDriverResult {
   diagnostics: AppleDiagnostic[]
   testSummary: AppleTestSummary | null
   resultBundlePath?: string
-  appSession?: { id: string; simulatorId: string; bundleId: string }
+  appSession?: { id: string }
 }
 
 interface ProcessResult {
@@ -363,8 +364,14 @@ export function xcodeFailureDetail(stderr: string): string | null {
   }
   for (let index = lines.length - 1; index >= 0; index -= 1) {
     const line = lines[index]
+    if (line && /:\s*error:\s+\S/i.test(line)) return line.slice(0, 1_500)
+  }
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index]
     if (
       line &&
+      !/^The following build commands failed:$/i.test(line) &&
+      !/^\*{0,2}\s*BUILD FAILED\s*\*{0,2}$/i.test(line) &&
       !/^(?:error:\s*)?permissionDenied$/i.test(line) &&
       /error:|failed|could not|cannot|does(?:n't|n’t) exist|permission denied|authorization denied/i.test(
         line,
@@ -377,7 +384,7 @@ export function xcodeFailureDetail(stderr: string): string | null {
 }
 
 function optionalFailureReason(result: ProcessResult): { failureReason?: string } {
-  const reason = xcodeFailureDetail(result.stderr)
+  const reason = xcodeFailureDetail(result.output)
   return reason ? { failureReason: reason } : {}
 }
 
@@ -499,11 +506,20 @@ async function installedDeveloperTool(developerDir: string, tool: string): Promi
   return executable
 }
 
+type AppleAppSession =
+  | {
+      kind: 'simulator'
+      simulatorId: string
+      bundleId: string
+      developerDir: string
+    }
+  | {
+      kind: 'macos'
+      child: ChildProcess
+    }
+
 export class InstalledXcodeDriver {
-  private readonly appSessions = new Map<
-    string,
-    { simulatorId: string; bundleId: string; developerDir: string }
-  >()
+  private readonly appSessions = new Map<string, AppleAppSession>()
 
   async discover(
     root: string,
@@ -705,17 +721,6 @@ export class InstalledXcodeDriver {
       }
     }
 
-    const simulatorId = /(?:^|,)id=([^,]+)/.exec(plan.target.destinationId)?.[1]
-    if (!plan.target.destinationId.startsWith('platform=iOS Simulator') || !simulatorId) {
-      return {
-        exitCode: 1,
-        logs: `${result.output}\nRun requires an explicitly selected iOS Simulator destination.`,
-        outputTruncated: result.truncated,
-        diagnostics: parseDiagnostics(result.output, plan.root),
-        testSummary: null,
-      }
-    }
-
     const settings = await runProcess(
       xcodebuild,
       [
@@ -744,13 +749,20 @@ export class InstalledXcodeDriver {
     )
     const targetBuildDir = application?.buildSettings['TARGET_BUILD_DIR']
     const productName = application?.buildSettings['FULL_PRODUCT_NAME']
+    const executablePath = application?.buildSettings['EXECUTABLE_PATH']
     const bundleId = application?.buildSettings['PRODUCT_BUNDLE_IDENTIFIER']
-    if (settings.exitCode !== 0 || !targetBuildDir || !productName || !bundleId) {
+    if (
+      settings.exitCode !== 0 ||
+      !targetBuildDir ||
+      !productName ||
+      !executablePath ||
+      !bundleId
+    ) {
       const output = boundedOutput([result, settings])
       return {
         exitCode: settings.exitCode === 0 ? 1 : settings.exitCode,
         failureReason:
-          xcodeFailureDetail(settings.stderr) ??
+          xcodeFailureDetail(settings.output) ??
           'The built app path or bundle identifier was unavailable.',
         logs: `${output.logs}\nThe built app path or bundle identifier was unavailable.`,
         outputTruncated: output.outputTruncated,
@@ -762,6 +774,55 @@ export class InstalledXcodeDriver {
     const canonicalOutputRoot = await realpath(paths.outputRoot)
     if (!withinRoot(canonicalOutputRoot, appPath)) {
       throw new Error('The built app resolved outside this operation output directory.')
+    }
+
+    if (plan.target.destinationId === 'platform=macOS') {
+      const executable = await realpath(resolve(targetBuildDir, executablePath))
+      if (!withinRoot(appPath, executable)) {
+        throw new Error('The built executable resolved outside the selected app bundle.')
+      }
+      const child = await spawnInProjectSandbox(executable, [], {
+        cwd: dirname(appPath),
+        env,
+        stdio: 'pipe',
+        unsandboxed: true,
+      })
+      if (child.pid === undefined) {
+        await new Promise<void>((resolveLaunch, rejectLaunch) => {
+          child.once('spawn', resolveLaunch)
+          child.once('error', rejectLaunch)
+        })
+      }
+      const appSession = { id: randomUUID() }
+      this.appSessions.set(appSession.id, { kind: 'macos', child })
+      child.stdout?.resume()
+      child.stderr?.resume()
+      child.once('exit', () => this.appSessions.delete(appSession.id))
+      child.once('error', () => this.appSessions.delete(appSession.id))
+      child.unref()
+      const output = boundedOutput([result, settings])
+      return {
+        exitCode: 0,
+        logs: output.logs,
+        outputTruncated: output.outputTruncated,
+        diagnostics: parseDiagnostics(output.logs, plan.root),
+        testSummary: null,
+        appSession,
+      }
+    }
+
+    const simulatorId = /(?:^|,)id=([^,]+)/.exec(plan.target.destinationId)?.[1]
+    if (!plan.target.destinationId.startsWith('platform=iOS Simulator') || !simulatorId) {
+      const failureReason = 'Run requires a macOS or explicitly selected iOS Simulator destination.'
+      const output = boundedOutput([result, settings])
+      return {
+        exitCode: 1,
+        failureReason,
+        logs: `${output.logs}\n${failureReason}`,
+        outputTruncated: output.outputTruncated,
+        diagnostics: parseDiagnostics(output.logs, plan.root),
+        testSummary: null,
+      }
     }
 
     const simctl = await installedDeveloperTool(developerDir, 'simctl')
@@ -795,8 +856,13 @@ export class InstalledXcodeDriver {
         testSummary: null,
       }
     }
-    const appSession = { id: randomUUID(), simulatorId, bundleId }
-    this.appSessions.set(appSession.id, { simulatorId, bundleId, developerDir })
+    const appSession = { id: randomUUID() }
+    this.appSessions.set(appSession.id, {
+      kind: 'simulator',
+      simulatorId,
+      bundleId,
+      developerDir,
+    })
     return {
       exitCode: 0,
       logs: output.logs,
@@ -810,6 +876,13 @@ export class InstalledXcodeDriver {
   async stopAppSession(sessionId: string, root: string, signal: AbortSignal): Promise<boolean> {
     const session = this.appSessions.get(sessionId)
     if (!session) return false
+    if (session.kind === 'macos') {
+      this.appSessions.delete(sessionId)
+      if (session.child.exitCode !== null || session.child.signalCode !== null) return false
+      const cancelKill = terminateProcessTree(session.child)
+      session.child.once('close', cancelKill)
+      return true
+    }
     const simctl = await installedDeveloperTool(session.developerDir, 'simctl')
     const result = await runProcess(
       simctl,

@@ -41,6 +41,13 @@ class EmptyTaskStore implements SupervisedTaskStore {
     return Promise.resolve(null)
   }
 
+  findPersisted(projectId: string, taskId: string): Promise<SupervisedTaskMeta | null> {
+    return Promise.resolve(
+      this.initialTasks.find((task) => task.projectId === projectId && task.taskId === taskId) ??
+        null,
+    )
+  }
+
   saveTransition(meta: SupervisedTaskMeta, audit: SupervisedTaskAuditEvent): Promise<void> {
     this.transitions.push({ meta, audit })
     return Promise.resolve()
@@ -101,7 +108,13 @@ describe('AppleDevelopmentService enrollment', () => {
         outputTruncated: false,
         diagnostics: [],
         testSummary: null,
+        appSession: { id: 'app-session-1' },
       })
+    let stoppedSession: string | null = null
+    driver.stopAppSession = (sessionId): Promise<boolean> => {
+      stoppedSession = sessionId
+      return Promise.resolve(true)
+    }
     const taskStore = new EmptyTaskStore()
     const supervisor = new TaskSupervisor({
       store: taskStore,
@@ -129,9 +142,9 @@ describe('AppleDevelopmentService enrollment', () => {
       expectedRevision: 0,
     })
     const queued = await service.execute(invocation, {
-      action: 'build',
+      action: 'run',
       expectedRevision: selection.revision,
-      requestId: 'build-1',
+      requestId: 'run-1',
     })
     await supervisor.waitForIdle()
 
@@ -146,6 +159,16 @@ describe('AppleDevelopmentService enrollment', () => {
     assert.equal(typeof authority['authorityEpoch'], 'string')
     assert.equal(enqueued.meta.reapproveOnWake, true)
     assert.equal(service.operation(invocation, queued.id).operation.status, 'succeeded')
+    assert.equal(
+      service.operation(invocation, queued.id).operation.outcome?.appSessionId,
+      'app-session-1',
+    )
+
+    assert.equal(await service.stopApp(invocation, 'app-session-1'), true)
+    assert.equal(stoppedSession, 'app-session-1')
+    const stopped = service.operation(invocation, queued.id).operation
+    assert.equal(stopped.outcome?.appSessionId, undefined)
+    assert.equal(stopped.outcome?.reason, 'App stopped.')
   })
 
   it('keeps discovered targets scoped to each thread checkout', async () => {

@@ -1,7 +1,12 @@
 import type { AppStore } from '@shared/store/store.ts'
-import type { AppleAction, AppleProjectState } from '@shared/types/apple-development.ts'
+import type {
+  AppleAction,
+  AppleOperation,
+  AppleProjectState,
+} from '@shared/types/apple-development.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { el } from '../dom/helpers.ts'
+import { refreshIcon } from '../dom/icons.ts'
 
 interface ApplePanelOptions {
   allowEnrollment: boolean
@@ -13,6 +18,54 @@ function activeOwner(store: AppStore): { projectId: string; threadId: string } |
   return state.activeProjectId && state.activeThreadId
     ? { projectId: state.activeProjectId, threadId: state.activeThreadId }
     : null
+}
+
+function operationDuration(operation: AppleOperation): string {
+  const end =
+    operation.status === 'queued' || operation.status === 'running'
+      ? Date.now()
+      : operation.updatedAt
+  const seconds = Math.max(0, Math.round((end - operation.createdAt) / 1_000))
+  if (seconds < 60) return `${String(seconds)}s`
+  const minutes = Math.floor(seconds / 60)
+  return `${String(minutes)}m`
+}
+
+function operationStatusLabel(operation: AppleOperation): string {
+  const elapsed = operationDuration(operation)
+  switch (operation.status) {
+    case 'queued':
+      return 'Queued'
+    case 'running':
+      return `Running · ${elapsed}`
+    case 'succeeded':
+      return `Succeeded · ${elapsed}`
+    case 'failed':
+      return `Failed · ${elapsed}`
+    case 'cancelled':
+      return `Cancelled · ${elapsed}`
+  }
+}
+
+function operationDetail(operation: AppleOperation): string | null {
+  if (operation.outcome?.reason) return operation.outcome.reason
+  const summary = operation.outcome?.testSummary
+  if (summary) {
+    return `${String(summary.passed ?? '?')} passed · ${String(summary.failed ?? '?')} failed · ${String(summary.skipped ?? '?')} skipped`
+  }
+  if (operation.status === 'queued') return 'Waiting for the current Apple operation to finish.'
+  if (operation.status === 'running') {
+    if (operation.action === 'test') return 'Xcode is building and running the selected tests.'
+    if (operation.action === 'run') return 'Xcode is building the app before launch.'
+    return 'Xcode is building the selected scheme.'
+  }
+  if (operation.status === 'succeeded' && operation.action === 'run') {
+    return operation.outcome?.appSessionId
+      ? 'App launched and is still tracked by Copse.'
+      : 'App launched.'
+  }
+  if (operation.status === 'succeeded' && operation.action === 'build') return 'Build completed.'
+  return null
 }
 
 export function createAppleDevelopmentPanel(
@@ -35,10 +88,16 @@ export function createAppleDevelopmentPanel(
     action: () => Promise<void>,
     pendingLabel?: string,
   ): Promise<void> => {
-    const label = button.textContent
+    const pendingLabelNode = button.querySelector<HTMLElement>('[data-pending-label]')
+    const label = pendingLabelNode?.textContent ?? button.textContent
     button.disabled = true
     button.setAttribute('aria-busy', 'true')
-    if (pendingLabel) button.textContent = pendingLabel
+    if (pendingLabel) {
+      if (pendingLabelNode) pendingLabelNode.textContent = pendingLabel
+      else button.textContent = pendingLabel
+      button.setAttribute('aria-label', pendingLabel)
+      button.setAttribute('data-tooltip', pendingLabel)
+    }
     try {
       await action()
       await refresh()
@@ -49,7 +108,12 @@ export function createAppleDevelopmentPanel(
     } finally {
       button.disabled = false
       button.removeAttribute('aria-busy')
-      if (pendingLabel) button.textContent = label
+      if (pendingLabel) {
+        if (pendingLabelNode) pendingLabelNode.textContent = label
+        else button.textContent = label
+        button.setAttribute('aria-label', label)
+        button.setAttribute('data-tooltip', label)
+      }
     }
   }
 
@@ -60,7 +124,11 @@ export function createAppleDevelopmentPanel(
     state: AppleProjectState,
   ): HTMLButtonElement => {
     const button = el('button', { type: 'button', class: 'btn btn-secondary' }, label)
-    button.disabled = state.selection === null
+    button.disabled =
+      state.selection === null ||
+      state.operations.some(
+        (operation) => operation.status === 'queued' || operation.status === 'running',
+      )
     button.addEventListener('click', () => {
       const { selection } = state
       if (!selection) return
@@ -93,7 +161,7 @@ export function createAppleDevelopmentPanel(
       'data-plugin-id': 'copse.apple-development',
       'aria-label': 'Apple Development',
     })
-    const title = el('h3', { class: 'apple-development-title' }, 'Apple Development')
+    const title = el('h3', { class: 'apple-development-title' }, 'Apple development')
     const status = el(
       'span',
       { class: 'apple-development-status' },
@@ -104,7 +172,8 @@ export function createAppleDevelopmentPanel(
             ? 'Setup needed'
             : 'Unsupported host'),
     )
-    panel.append(el('div', { class: 'apple-development-heading' }, title, status))
+    const headingActions = el('div', { class: 'apple-development-heading-actions' })
+    panel.append(el('div', { class: 'apple-development-heading' }, title, status, headingActions))
 
     if (options.allowEnrollment && options.pluginEnabled !== false) {
       const enrollment = el(
@@ -125,10 +194,19 @@ export function createAppleDevelopmentPanel(
     }
 
     if (state.pluginEnabled && state.enrolled && state.supportedHost) {
+      const discoverLabel = state.metadataRequiresExecution
+        ? 'Load schemes and destinations'
+        : 'Refresh targets'
       const discover = el(
         'button',
-        { type: 'button', class: 'btn btn-secondary apple-development-discover' },
-        state.metadataRequiresExecution ? 'Load schemes and destinations' : 'Refresh targets',
+        {
+          type: 'button',
+          class: 'git-changes-refresh-btn apple-development-discover',
+          'aria-label': discoverLabel,
+          'data-tooltip': discoverLabel,
+        },
+        refreshIcon('ui-icon ui-icon-sm'),
+        el('span', { class: 'sr-only', 'data-pending-label': '' }, discoverLabel),
       )
       discover.addEventListener('click', () => {
         void run(
@@ -139,7 +217,7 @@ export function createAppleDevelopmentPanel(
           'Loading targets…',
         )
       })
-      panel.append(discover)
+      headingActions.append(discover)
 
       if (state.candidates.length > 0 && state.destinations.length > 0) {
         const candidate = el('select', { 'aria-label': 'Xcode project' })
@@ -228,61 +306,86 @@ export function createAppleDevelopmentPanel(
         })
         panel.append(
           el(
-            'div',
-            { class: 'apple-development-selection' },
-            candidate,
-            scheme,
-            configuration,
-            destination,
-            save,
-            schemeStatus,
+            'details',
+            {
+              class: 'apple-development-target-picker',
+              open: state.selection ? undefined : true,
+            },
+            el('summary', {}, state.selection ? 'Change target' : 'Choose target'),
+            el(
+              'div',
+              { class: 'apple-development-selection' },
+              candidate,
+              scheme,
+              configuration,
+              destination,
+              save,
+              schemeStatus,
+            ),
           ),
         )
       }
 
       if (state.selection) {
+        const selectedDestination = state.destinations.find(
+          (destination) => destination.id === state.selection?.destinationId,
+        )
         panel.append(
           el(
             'div',
             { class: 'apple-development-target', 'aria-label': 'Selected Apple target' },
-            el('strong', {}, state.selection.schemeId),
-            el('span', {}, state.selection.candidateId),
-            el('span', {}, state.selection.configuration),
-            el('span', {}, state.selection.destinationId),
+            el(
+              'div',
+              { class: 'apple-development-target-name' },
+              el('strong', {}, state.selection.schemeId),
+              el('span', {}, state.selection.candidateId),
+            ),
+            el(
+              'div',
+              { class: 'apple-development-target-meta' },
+              el('span', {}, state.selection.configuration),
+              el('span', {}, selectedDestination?.name ?? state.selection.destinationId),
+            ),
+            el(
+              'div',
+              { class: 'apple-development-actions' },
+              actionButton('Build', 'build', owner, state),
+              actionButton('Test', 'test', owner, state),
+              actionButton('Run', 'run', owner, state),
+            ),
           ),
         )
       }
-
-      panel.append(
-        el(
-          'div',
-          { class: 'apple-development-actions' },
-          actionButton('Build', 'build', owner, state),
-          actionButton('Test', 'test', owner, state),
-          actionButton('Run', 'run', owner, state),
-        ),
-      )
     }
 
     if (latestOperation) {
       const history = el('ul', { class: 'apple-development-operations', role: 'list' })
       for (const operation of [latestOperation]) {
-        const cancel = el('button', { type: 'button', class: 'btn btn-ghost' }, 'Cancel')
-        cancel.hidden = operation.status !== 'queued' && operation.status !== 'running'
-        cancel.addEventListener('click', () => {
-          void run(cancel, async () => {
-            await api.appleDevelopment.operation(owner.projectId, owner.threadId, {
-              operationId: operation.id,
-              action: 'cancel',
+        const controls = el('div', { class: 'apple-development-operation-controls' })
+        if (operation.status === 'queued' || operation.status === 'running') {
+          const cancel = el('button', { type: 'button', class: 'btn btn-ghost' }, 'Cancel')
+          cancel.addEventListener('click', () => {
+            void run(cancel, async () => {
+              await api.appleDevelopment.operation(owner.projectId, owner.threadId, {
+                operationId: operation.id,
+                action: 'cancel',
+              })
             })
           })
-        })
-        const summary = operation.outcome?.testSummary
-        const detail =
-          operation.outcome?.reason ??
-          (summary
-            ? `${String(summary.passed ?? '?')} passed · ${String(summary.failed ?? '?')} failed · ${String(summary.skipped ?? '?')} skipped`
-            : null)
+          controls.append(cancel)
+        }
+        if (operation.outcome?.appSessionId) {
+          const stop = el('button', { type: 'button', class: 'btn btn-ghost' }, 'Stop app')
+          stop.addEventListener('click', () => {
+            const appSessionId = operation.outcome?.appSessionId
+            if (!appSessionId) return
+            void run(stop, async () => {
+              await api.appleDevelopment.stopApp(owner.projectId, owner.threadId, appSessionId)
+            })
+          })
+          controls.append(stop)
+        }
+        const detail = operationDetail(operation)
         history.append(
           el(
             'li',
@@ -293,9 +396,14 @@ export function createAppleDevelopmentPanel(
             el(
               'div',
               { class: 'apple-development-operation-line' },
+              el('span', { class: 'apple-development-operation-indicator', 'aria-hidden': 'true' }),
               el('span', { class: 'apple-development-operation-action' }, operation.action),
-              el('span', { class: 'apple-development-operation-status' }, operation.status),
-              cancel,
+              el(
+                'span',
+                { class: 'apple-development-operation-status' },
+                operationStatusLabel(operation),
+              ),
+              controls,
             ),
             ...(detail
               ? [el('span', { class: 'apple-development-operation-detail' }, detail)]

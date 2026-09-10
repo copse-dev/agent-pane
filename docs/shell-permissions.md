@@ -33,8 +33,8 @@ per-call approval. Passive discovery that only probes the selected developer dir
 the checkout does not prompt.
 
 After that direct action or approval, main resolves the enrolled project and thread, validates the
-selected target, constructs fixed `xcodebuild` or `simctl` argument arrays, and runs the process with
-normal host access. Xcode needs package resolution, caches, Keychain and signing services,
+selected target, constructs fixed `xcodebuild` or `simctl` argument arrays, or resolves a macOS
+executable inside the validated built app bundle, and runs the process with normal host access. Xcode needs package resolution, caches, Keychain and signing services,
 CoreSimulator, and project-controlled build phases; the generic project sandbox is not a functional
 or honest boundary for it. Operation products remain in Copse-owned per-operation scratch
 directories, and ownership, cancellation, duration, and log bounds remain enforced. Enrollment

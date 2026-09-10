@@ -635,12 +635,30 @@ export class AppleDevelopmentService {
   }
 
   async stopApp(invocation: AppleInvocation, appSessionId: string): Promise<boolean> {
-    const owned = threadState(readStore(), invocation.owner).operations.some(
-      (entry) => entry.operation.outcome?.appSessionId === appSessionId,
+    const entry = threadState(readStore(), invocation.owner).operations.find(
+      (candidate) => candidate.operation.outcome?.appSessionId === appSessionId,
     )
-    if (!owned) throw new Error('No app session with that ID belongs to this thread.')
+    if (!entry) throw new Error('No app session with that ID belongs to this thread.')
     const context = await this.resolveContext(invocation.owner.projectId, invocation.owner.threadId)
-    return this.driver.stopAppSession(appSessionId, context.root, invocation.signal)
+    const stopped = await this.driver.stopAppSession(appSessionId, context.root, invocation.signal)
+    await this.updateOperation(
+      invocation.owner.projectId,
+      invocation.owner.threadId,
+      entry.operation.id,
+      (operation) => {
+        if (!operation.outcome) return operation
+        const { appSessionId: _stoppedSession, ...outcome } = operation.outcome
+        return {
+          ...operation,
+          updatedAt: Date.now(),
+          outcome: {
+            ...outcome,
+            reason: stopped ? 'App stopped.' : 'App session is no longer active.',
+          },
+        }
+      },
+    )
+    return stopped
   }
 
   async cancelProject(projectId: string): Promise<void> {

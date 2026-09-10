@@ -44,6 +44,60 @@ function stateWithUnavailableScheme(): AppleProjectState {
   }
 }
 
+function stateWithRunningBuild(): AppleProjectState {
+  return {
+    pluginEnabled: true,
+    enrolled: true,
+    supportedHost: true,
+    toolchain: {
+      developerDir: '/Applications/Xcode.app/Contents/Developer',
+      version: 'Xcode 26.6',
+    },
+    candidates: [
+      {
+        id: 'apple-browsers/DuckDuckGo.xcodeproj',
+        name: 'apple-browsers/DuckDuckGo',
+        kind: 'project',
+        schemes: ['macOS Browser Alpha'],
+      },
+    ],
+    destinations: [
+      {
+        id: 'platform=macOS',
+        name: 'This Mac',
+        platform: 'macOS',
+        supported: true,
+      },
+    ],
+    metadataRequiresExecution: false,
+    selection: {
+      candidateId: 'apple-browsers/DuckDuckGo.xcodeproj',
+      schemeId: 'macOS Browser Alpha',
+      configuration: 'Debug',
+      destinationId: 'platform=macOS',
+      revision: 4,
+    },
+    operations: [
+      {
+        id: 'run-active',
+        action: 'run',
+        status: 'running',
+        target: {
+          candidateId: 'apple-browsers/DuckDuckGo.xcodeproj',
+          schemeId: 'macOS Browser Alpha',
+          configuration: 'Debug',
+          destinationId: 'platform=macOS',
+          revision: 4,
+        },
+        createdAt: Date.now() - 65_000,
+        updatedAt: Date.now(),
+        outcome: null,
+      },
+    ],
+    setupMessage: null,
+  }
+}
+
 afterEach(() => {
   document.body.replaceChildren()
 })
@@ -112,5 +166,44 @@ describe('Apple Development target selection', () => {
 
     finishDiscovery?.(state)
     await tick()
+  })
+
+  it('uses compact controls and explains an active run', async () => {
+    const base = createFakeApi()
+    const state = stateWithRunningBuild()
+    let active = true
+    const api = {
+      ...base,
+      appleDevelopment: {
+        ...base.appleDevelopment,
+        state: async (): Promise<AppleProjectState> =>
+          active ? state : { ...state, operations: [] },
+      },
+    } satisfies ApiClient
+    const store = createStore({ activeProjectId: 'project', activeThreadId: 'thread' })
+    const panel = createAppleDevelopmentPanel(store, api, { allowEnrollment: false })
+    document.body.append(panel)
+    await tick()
+
+    const refresh = panel.querySelector<HTMLButtonElement>('.apple-development-discover')
+    const picker = panel.querySelector<HTMLDetailsElement>('.apple-development-target-picker')
+    const operation = panel.querySelector<HTMLElement>('[data-operation-id="run-active"]')
+    assert.ok(refresh)
+    assert.ok(picker)
+    assert.ok(operation)
+    assert.equal(refresh.getAttribute('aria-label'), 'Refresh targets')
+    assert.ok(refresh.querySelector('svg'))
+    assert.equal(picker.open, false)
+    assert.match(operation.textContent, /Running · 1m/)
+    assert.match(operation.textContent, /Xcode is building the app before launch/)
+    assert.equal(operation.querySelector('button')?.textContent, 'Cancel')
+    assert.ok(
+      Array.from(
+        panel.querySelectorAll<HTMLButtonElement>('.apple-development-actions button'),
+      ).every((button) => button.disabled),
+    )
+
+    active = false
+    await new Promise((resolve) => setTimeout(resolve, 1_600))
   })
 })

@@ -61,6 +61,19 @@ describe('xcodeFailureDetail', () => {
       'Xcode could not access /Users/me/.copse/workspace/tmp/apple-development/DerivedData/Logs/Build/LogStoreManifest.plist: Operation not permitted.',
     )
   })
+
+  it('surfaces a concrete signing error instead of the generic build footer', () => {
+    assert.equal(
+      xcodeFailureDetail(
+        [
+          '/checkout/Browser.xcodeproj: error: No profiles for com.example.browser.debug were found: Xcode could not find any macOS App Development provisioning profiles matching com.example.browser.debug.',
+          '** BUILD FAILED **',
+          'The following build commands failed:',
+        ].join('\n'),
+      ),
+      '/checkout/Browser.xcodeproj: error: No profiles for com.example.browser.debug were found: Xcode could not find any macOS App Development provisioning profiles matching com.example.browser.debug.',
+    )
+  })
 })
 
 describe('discoverAppleCandidates', () => {

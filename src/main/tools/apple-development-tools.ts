@@ -50,7 +50,7 @@ export const appleConfigureTool = defineTool({
 export const appleExecuteTool = defineTool({
   name: 'apple_execute',
   description:
-    'Queue a supervised build, test, or Simulator run for this thread’s captured Apple target. Agent calls require per-call user approval. Requires the current selection revision and a request ID; exact retries deduplicate.',
+    'Queue a supervised build, test, or app run for this thread’s captured Apple target. Run launches a macOS app directly or installs and launches an iOS app in the selected Simulator. Agent calls require per-call user approval. Requires the current selection revision and a request ID; exact retries deduplicate.',
   parameters: appleExecuteInputSchema,
   async execute(input, signal) {
     const operation = await getAppleDevelopmentService().execute(invocation(signal), input)
@@ -81,7 +81,7 @@ export const appleOperationTool = defineTool({
 export const appleAppStopTool = defineTool({
   name: 'apple_app_stop',
   description:
-    'Stop an iOS Simulator app session launched by this thread. Agent calls require per-call user approval. It never terminates unrelated simulator apps.',
+    'Stop a macOS or iOS Simulator app session launched by this thread. Agent calls require per-call user approval. It never terminates unrelated apps.',
   parameters: z.object({ appSessionId: z.string().min(1).max(256) }),
   async execute({ appSessionId }, signal) {
     const stopped = await getAppleDevelopmentService().stopApp(invocation(signal), appSessionId)
