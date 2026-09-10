@@ -20,7 +20,11 @@ import type { CanvasArtefact } from '@shared/types/canvas.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { browserTabLabel, normalizeBrowserUrl } from '@shared/browser-url.ts'
 import { artefactUrl } from '@shared/canvas/artefact.ts'
-import { BROWSER_SESSION_PARTITION } from '@shared/browser-session.ts'
+import {
+  BROWSER_SESSION_PARTITION,
+  browserSessionPartition,
+  browserThreadScope,
+} from '@shared/browser-session.ts'
 import { firstNonEmptyString, nonEmptyStringOr } from '@shared/unknown-value.ts'
 import type { PluginBrowserTabRequest } from '@shared/types/plugin-browser.ts'
 import { openRightPanel } from '../controller/panels.ts'
@@ -53,6 +57,7 @@ interface BrowserWebviewElement extends HTMLElement {
 
 interface BrowserTab {
   id: string
+  partition: string
   label: string
   panel: HTMLElement
   webviewHost: HTMLElement
@@ -120,9 +125,11 @@ const WEBVIEW_PREFS = 'contextIsolation=true'
 interface BrowserPopoutSeed {
   tabs: Array<{
     url: string
+    partition?: string
     label?: string
     artefactTitle?: string | null
     artefactThreadId?: string | null
+    artefactProjectId?: string | null
   }>
   activeTabIndex: number
 }
@@ -369,12 +376,13 @@ function createIframeWebview(
 }
 
 function createWebview(
+  partition: string,
   resolveWorkspacePreview?: (url: string) => Promise<WorkspacePreview | null>,
 ): BrowserWebviewElement {
   const webview = document.createElement('webview')
   if (!supportsElectronWebview(webview)) return createIframeWebview(resolveWorkspacePreview)
   const guest = webview as BrowserWebviewElement
-  guest.setAttribute('partition', BROWSER_SESSION_PARTITION)
+  guest.setAttribute('partition', partition)
   guest.setAttribute('webpreferences', WEBVIEW_PREFS)
   guest.setAttribute('allowpopups', 'false')
   guest.className = 'browser-webview'
@@ -573,7 +581,7 @@ export function mountBrowserPane(
   function ensureWebview(tab: BrowserTab): BrowserWebviewElement {
     if (tab.webview) return tab.webview
 
-    const webview = createWebview(resolveWorkspacePreview)
+    const webview = createWebview(tab.partition, resolveWorkspacePreview)
     tab.webviewHost.append(webview)
     tab.webview = webview
 
@@ -696,14 +704,18 @@ export function mountBrowserPane(
     // means the thing behind it has moved on — the file was just edited, the
     // server restarted — so promote the tab already showing it and reload,
     // rather than leaving a stale copy behind a fresh duplicate.
-    const existing = urlTabFor(url)
+    const scopePartition = browserSessionPartition(
+      BROWSER_SESSION_PARTITION,
+      browserThreadScope(store.getState().activeProjectId, store.getState().activeThreadId),
+    )
+    const existing = urlTabFor(url, scopePartition)
     if (existing) {
       setActiveTab(existing.id)
       navigateTab(existing, url)
       return
     }
     let tab = activeTabId ? tabs.get(activeTabId) : undefined
-    if (!tab || !isIdleBrowserTab(tab)) {
+    if (!tab || tab.partition !== scopePartition || !isIdleBrowserTab(tab)) {
       addTab({ activate: true })
       tab = activeTabId ? tabs.get(activeTabId) : undefined
     }
@@ -739,9 +751,18 @@ export function mountBrowserPane(
    * enormous) data: URL — so re-rendering the same title means "here is a new
    * version of that", not "here is a second thing".
    */
-  function artefactTabFor(title: string, threadId: string | undefined): BrowserTab | undefined {
+  function artefactTabFor(
+    title: string,
+    threadId: string | undefined,
+    projectId?: string,
+  ): BrowserTab | undefined {
     for (const tab of tabs.values()) {
-      if (tab.artefactTitle === title && tab.artefactThreadId === (threadId ?? null)) return tab
+      if (
+        tab.artefactTitle === title &&
+        tab.artefactThreadId === (threadId ?? null) &&
+        (!projectId || tab.artefactProjectId === projectId)
+      )
+        return tab
     }
     return undefined
   }
@@ -780,10 +801,10 @@ export function mountBrowserPane(
    * skipped: their identity is the title, and their data: URL changes with
    * every render.
    */
-  function urlTabFor(url: string): BrowserTab | undefined {
+  function urlTabFor(url: string, partition: string): BrowserTab | undefined {
     for (const tab of tabs.values()) {
       if (tab.artefactTitle) continue
-      if (displayUrl(tab) === url) return tab
+      if (displayUrl(tab) === url && tab.partition === partition) return tab
     }
     return undefined
   }
@@ -798,12 +819,18 @@ export function mountBrowserPane(
    * per iteration that they then have to close. Same reasoning as
    * {@link artefactTabFor}, keyed on the URL because that is this tab's identity.
    */
-  function showTabForUrl(rawUrl: string): void {
+  function showTabForUrl(rawUrl: string, partition?: string): void {
     const url = normalizeBrowserUrl(rawUrl)
     openRightPanel(store, 'browser')
-    const existing = urlTabFor(url)
+    const scopePartition =
+      partition ??
+      browserSessionPartition(
+        BROWSER_SESSION_PARTITION,
+        browserThreadScope(store.getState().activeProjectId, store.getState().activeThreadId),
+      )
+    const existing = urlTabFor(url, scopePartition)
     if (!existing) {
-      addTab({ url, activate: true })
+      addTab({ url, activate: true, partition })
       return
     }
     setActiveTab(existing.id)
@@ -841,7 +868,11 @@ export function mountBrowserPane(
     // user has to close: the canvas they are looking at becomes the new version
     // in place. `navigateWebview` reloads when the URL is unchanged, so a
     // re-render of byte-identical HTML still repaints.
-    const existing = artefactTabFor(artefact.title, artefact.threadId)
+    const existing = artefactTabFor(
+      artefact.title,
+      artefact.owner?.threadId ?? artefact.threadId,
+      artefact.owner?.projectId,
+    )
     if (existing) {
       // A re-render refreshes in place and stays where it is: the first render
       // earned the user's attention, later ones are the agent iterating and
@@ -857,15 +888,28 @@ export function mountBrowserPane(
     // including opening the Browser pane, which is why the pane focus lives
     // here rather than in `openCanvasArtefact`, which cannot see the tabs.
     if (!existing) openRightPanel(store, 'browser')
-    const tab = existing ?? tabs.get(addTab({ activate: true }))
+    const tab =
+      existing ??
+      tabs.get(
+        addTab({
+          activate: true,
+          partition: browserSessionPartition(
+            BROWSER_SESSION_PARTITION,
+            browserThreadScope(
+              artefact.owner?.projectId ?? store.getState().activeProjectId,
+              artefact.owner?.threadId ?? artefact.threadId ?? store.getState().activeThreadId,
+            ),
+          ),
+        }),
+      )
     if (!tab) return
     tab.artefactTitle = artefact.title
-    tab.artefactThreadId = artefact.threadId ?? null
+    tab.artefactThreadId = artefact.owner?.threadId ?? artefact.threadId ?? null
     // The canvas store is keyed by project, and a tab outlives a project
     // switch — so the tab remembers which one rendered it (see
     // `browser-pane-session.ts`), rather than assuming whatever is active when
     // the window is next opened.
-    tab.artefactProjectId = store.getState().activeProjectId
+    tab.artefactProjectId = artefact.owner?.projectId ?? store.getState().activeProjectId
     tab.urlInput.value = ''
     tab.urlInput.placeholder = artefact.title
     syncTabLabel(tab)
@@ -878,7 +922,11 @@ export function mountBrowserPane(
     }
   }
 
-  function addTab(options?: { url?: string; activate?: boolean }): string {
+  function addTab(options?: {
+    partition?: string | undefined
+    url?: string
+    activate?: boolean
+  }): string {
     const id = crypto.randomUUID()
     const label = browserTabLabel(options?.url ? normalizeBrowserUrl(options.url) : 'about:blank')
 
@@ -1013,6 +1061,12 @@ export function mountBrowserPane(
 
     const tab: BrowserTab = {
       id,
+      partition:
+        options?.partition ??
+        browserSessionPartition(
+          BROWSER_SESSION_PARTITION,
+          browserThreadScope(store.getState().activeProjectId, store.getState().activeThreadId),
+        ),
       label,
       panel,
       webviewHost,
@@ -1229,6 +1283,7 @@ export function mountBrowserPane(
       url:
         [tab.urlInput.value, webviewUrl(tab), tab.pendingUrl].find((value) => value) ??
         'about:blank',
+      partition: tab.partition,
       label: tab.label,
       artefactTitle: tab.artefactTitle,
       artefactThreadId: tab.artefactThreadId,
@@ -1255,9 +1310,11 @@ export function mountBrowserPane(
         const snapshot = tabSnapshot(tab)
         return {
           url: snapshot.url,
+          partition: tab.partition,
           ...(snapshot.label !== undefined ? { label: snapshot.label } : {}),
           artefactTitle: tab.artefactTitle,
           artefactThreadId: tab.artefactThreadId,
+          artefactProjectId: tab.artefactProjectId,
         }
       }),
       activeTabIndex: activeIndexOf(ordered),
@@ -1279,13 +1336,17 @@ export function mountBrowserPane(
     purgeAllTabs()
     const createdIds: string[] = []
     for (const entry of raw.tabs) {
-      const id = addTab({ activate: false })
+      const id = addTab({
+        activate: false,
+        partition: entry.partition ?? BROWSER_SESSION_PARTITION,
+      })
       createdIds.push(id)
       const tab = tabs.get(id)
       if (!tab) continue
       if (entry.artefactTitle) {
         tab.artefactTitle = entry.artefactTitle
         tab.artefactThreadId = entry.artefactThreadId ?? null
+        tab.artefactProjectId = entry.artefactProjectId ?? null
         tab.urlInput.placeholder = entry.artefactTitle
       }
       if (entry.url && entry.url !== 'about:blank') {
@@ -1380,7 +1441,10 @@ export function mountBrowserPane(
     purgeAllTabs()
     const restored: Array<{ id: string; entry: BrowserPaneSessionTab }> = []
     for (const entry of session.tabs) {
-      const id = addTab({ activate: false })
+      const id = addTab({
+        activate: false,
+        partition: entry.partition ?? BROWSER_SESSION_PARTITION,
+      })
       const tab = tabs.get(id)
       if (!tab) continue
       if (entry.artefactTitle) {
@@ -1468,7 +1532,7 @@ export function mountBrowserPane(
     }),
     // cmd/ctrl click and target=_blank links inside a guide open as a new
     // background tab (main blocks the popup window and forwards the URL here).
-    api?.browser.onOpenTab((url) => addTab({ url, activate: false })),
+    api?.browser.onOpenTab((url, partition) => addTab({ url, partition, activate: false })),
     api?.browser.onShowTab?.(showTabForUrl),
     api?.browser.onPreviewStale?.(refreshStalePreviews),
     api?.browser.onShareText(attachSharedText),

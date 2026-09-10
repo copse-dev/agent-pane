@@ -232,6 +232,7 @@ export async function readStoredCanvasArtefact(
     mimeType: record.mimeType,
     body,
     threadId,
+    owner: { projectId, threadId },
     ...(preview ? { preview } : {}),
     ...(record.sourcePath ? { sourcePath: record.sourcePath } : {}),
   }

@@ -23,10 +23,11 @@ export function hasAutomationDialog(plugin: PluginSummary): boolean {
 export function openAutomationDialog(
   store: AppStore,
   api: ApiClient,
-  options: { scheduleId?: string; createNew?: boolean } = {},
+  options: { projectId?: string; scheduleId?: string; createNew?: boolean } = {},
 ): void {
   if (document.querySelector('#automation-dialog[open]')) return
-  const projectId = store.getState().activeProjectId
+  const activeProjectId = store.getState().activeProjectId
+  const projectId = options.projectId ?? activeProjectId
   const { dialog, open, close } = createOverlayDialog({ id: 'automation-dialog' })
   dialog.setAttribute('aria-labelledby', 'automation-dialog-title')
   const closeButton = el(
@@ -51,7 +52,7 @@ export function openAutomationDialog(
   dialog.append(header, body)
   // Do not let a project change behind the modal redirect an in-progress edit.
   const unsubscribe = store.on('workspace_changed', () => {
-    if (store.getState().activeProjectId !== projectId) close()
+    if (store.getState().activeProjectId !== activeProjectId) close()
   })
   dialog.addEventListener(
     'close',
@@ -72,6 +73,7 @@ export function openAutomationDialog(
       enabled,
       options.scheduleId,
       options.createNew,
+      projectId,
     )
     const toggle = el(
       'button',

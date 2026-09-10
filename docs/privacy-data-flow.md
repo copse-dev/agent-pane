@@ -12,6 +12,15 @@ supported model provider retains and trains on by default, and the
 request-level protections Copse enables (ZDR-only OpenRouter routing,
 OpenAI `store: false`).
 
+Experimental local container runs (`containerRunsEnabled`, off by default) add a
+separate execution path: the headless host and workspace snapshot run inside a
+hardened Docker guest, with a selected provider credential and host-brokered egress.
+Host GitHub credentials and the rest of the host environment are not copied into
+the guest. Result transcripts, review records and carry-out Git bundles persist
+under the profile's `runtimes/` directory; adoption into the checkout is explicit.
+The guest/provider and dependency-download flows can leave the device through the
+configured egress rules. See [the container contract and its credential limits](plans/thread-in-container.md).
+
 ## Data-flow summary
 
 | Feature                        | Destination                                                                                                                | Data that can leave the device                                                                                                                                                                                                                                                                                                                              | Local record and control                                                                                                                                                                                                                                                                                                                                  |
@@ -29,7 +38,7 @@ OpenAI `store: false`).
 
 Personal pack directories are selected explicitly and remain ordinary user
 packs. The P1–P4 runtime executes a revalidated Copse-owned snapshot in the
-macOS sandbox with direct network and filesystem writes denied; only tool names
+active macOS/Linux OS sandbox with direct network and filesystem writes denied; only tool names
 and model ids declared by the manifest are available. Model input and session
 flow is bounded as above. A declared browser behavior grants only the named P4
 operations for exact origins in visible tabs. Because those tabs use the

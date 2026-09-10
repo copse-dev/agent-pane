@@ -1,11 +1,13 @@
 import '../../../tests/setup-dom.ts'
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { setTimeout as delay } from 'node:timers/promises'
 import { createStore } from '@shared/store/store.ts'
 import {
   addMessage,
   addToolCall,
   createThread,
+  setThreadStatus,
   updateToolCall,
 } from '@shared/store/thread-helpers.ts'
 import type { ToolCall } from '@shared/types'
@@ -46,7 +48,11 @@ function fakeApi(): ApiClient {
 }
 
 function apiWithFiles(
-  resolutions: { candidate: string; path: string; kind?: 'file' | 'directory' }[],
+  resolutions: {
+    candidate: string
+    path: string
+    kind?: 'file' | 'directory'
+  }[],
 ): ApiClient {
   return ((): ApiClient => {
     const base = createFakeApi()
@@ -60,7 +66,12 @@ function apiWithFiles(
       index: {
         ...base['index'],
         resolveFileReferences: () =>
-          Promise.resolve(resolutions.map((r) => ({ ...r, kind: r.kind ?? ('file' as const) }))),
+          Promise.resolve(
+            resolutions.map((r) => ({
+              ...r,
+              kind: r.kind ?? ('file' as const),
+            })),
+          ),
       },
       fs: {
         ...base['fs'],
@@ -235,7 +246,7 @@ describe('subagent display (component)', () => {
     assert.equal(summary.textContent.includes('##'), false)
   })
 
-  it('keeps a user-expanded inner tool open when the timeline rebuilds', () => {
+  it('keeps a user-expanded inner tool open when the timeline rebuilds', async () => {
     const store = createStore()
     const threadId = createThread(store)
     const messageId = addMessage(store, threadId, 'assistant', 'Here is what the subagent found.')
@@ -246,8 +257,9 @@ describe('subagent display (component)', () => {
 
     const card = qsRequired<HTMLDetailsElement>(document, '.tool-card-subagent')
     const inner = qsRequired<HTMLDetailsElement>(card, '[data-tool-id="inner-read-1"]')
-    card.open = true
-    inner.setAttribute('open', '')
+    card.querySelector<HTMLElement>(':scope > summary')?.click()
+    inner.querySelector<HTMLElement>(':scope > summary')?.click()
+    await Promise.resolve()
 
     // A changed inner tool call changes the timeline wrapper's signature, which
     // rebuilds every inner card from scratch; the user's expansion must survive.
@@ -361,7 +373,7 @@ describe('subagent display (component)', () => {
     assert.match(result.textContent, /Exploration completed with no summary\./)
   })
 
-  it('auto-contracts an explore card once the subagent finishes', () => {
+  it('auto-contracts an explore card once the run settles', async () => {
     const store = createStore()
     const threadId = createThread(store)
     const messageId = addMessage(store, threadId, 'assistant', 'Working…')
@@ -373,11 +385,13 @@ describe('subagent display (component)', () => {
     runningSession.status = 'running'
     runningSession.summary = ''
     addToolCall(store, messageId, running)
+    setThreadStatus(store, threadId, 'running')
     const host = document.createElement('div')
     document.body.append(host)
     mountConversation(host, store, fakeApi())
 
     const card = qsRequired<HTMLDetailsElement>(host, '.tool-card-subagent')
+    await delay(350)
     assert.equal(card.open, true, 'a running explore card auto-expands')
 
     // The turn settles. The auto-expansion was never a user preference, so the
@@ -389,12 +403,15 @@ describe('subagent display (component)', () => {
       result: settledCall.result,
       subagent: settledCall.subagent,
     })
+    assert.equal(card.open, true, 'a tool boundary should not collapse revealed work')
+    setThreadStatus(store, threadId, 'idle')
+    await delay(1_100)
 
     const settled = qsRequired<HTMLDetailsElement>(host, '.tool-card-subagent')
     assert.equal(settled.open, false, 'a finished explore card contracts')
   })
 
-  it('keeps a card the user expanded after it settled open across later ticks', () => {
+  it('keeps a card the user expanded after it settled open across later ticks', async () => {
     const store = createStore()
     const threadId = createThread(store)
     const messageId = addMessage(store, threadId, 'assistant', 'Here is what the subagent found.')
@@ -404,7 +421,8 @@ describe('subagent display (component)', () => {
     mountConversation(host, store, fakeApi())
 
     const card = qsRequired<HTMLDetailsElement>(host, '.tool-card-subagent')
-    card.open = true
+    card.querySelector<HTMLElement>(':scope > summary')?.click()
+    await delay(0)
 
     const session = structuredClone(exploreCall.subagent)
     assert.ok(session)

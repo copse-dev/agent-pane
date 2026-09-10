@@ -820,6 +820,21 @@ surface quiet. A longer review still occupies more space; the texture does not m
 weight independent of height. See
 `prototypes/side-highlight` for the alternatives that were tried and rejected.
 
+## Live thread disclosure stability
+
+Tool execution status and disclosure state are separate concerns. A fast tool stays
+compact; a longer operation may reveal its details after a short delay. Once the app
+reveals a live rollup, keep it open through gaps between tools and compact the run in
+one quiet pass after completion. Never derive `open` directly from whether a child is
+currently running: that makes the same content disappear and reappear at every tool
+boundary.
+
+An explicit user open or close always wins and must survive result updates, grouping
+changes, and thread switches during the mounted session. Preserve disclosure shells
+and patch their contents in place where possible. When automatic layout changes occur
+above a reader who has scrolled up, retain the first visible transcript item's viewport
+offset rather than restoring only its old numeric `scrollTop`.
+
 ## Conditional split panes
 
 Do not permanently reserve space for a secondary viewer that has no content yet. When a pane has a
@@ -887,6 +902,11 @@ tokens in `styles/global/base.css`: `--callout-plate-fill`, `--callout-hatch-lin
   answer, and a texture is what says so without spending a fourth hue or a fourth shape. Under
   `prefers-reduced-transparency` or `prefers-contrast: more` it degrades to the flat plate:
   commentary keeps a surface and loses only the distinction.
+
+Expanded reasoning uses the hatch both while live and after completion, including inside a tool
+rollup. Give it `--spacing-md` vertical and `--spacing-lg` horizontal padding; nesting must not
+remove the surface's inset or pull its summary into the padding. Only the closed, untextured
+disclosure label aligns flush with neighboring tool rows.
 
 The VNC pane takes a **gutter**: a 24px icon column in the authentication panel and a compact 6px
 status-dot column in status rows. It is a separate pane with its own chrome, and its status hue
@@ -984,9 +1004,10 @@ destination. Schedules are project-scoped, so a heading under a project that
 isn't open lands on the project first rather than editing another project's
 automations. Spec: [`tests/e2e/automation-settings-link.e2e.ts`](../tests/e2e/automation-settings-link.e2e.ts).
 
-Setup now opens the plugin's standalone Automations modal. The side cog exposes
-the same list and a direct **New automation…** action; its adjacent Settings label
-stays a direct shortcut. Keep the modal header outside its scroll body, retain
+Setup now opens the plugin's standalone Automations modal. Each project row's
+ellipsis menu exposes **Automations** and **New automation…**, scoped to that row's
+project even when another project is active. The sidebar footer keeps only the
+direct Settings shortcut. Keep the modal header outside its scroll body, retain
 the project scope above the form, and use the identical editor inside Settings.
 Do not recreate the editor when plugin enablement changes: it may contain a draft.
 Spec: [`tests/e2e/automation-dialog.e2e.ts`](../tests/e2e/automation-dialog.e2e.ts).
@@ -1022,3 +1043,11 @@ Keep selection controls inline and reveal bulk actions only when checkouts are s
 worktree fieldset needs `min-inline-size: 0`: its native min-content width otherwise overrides row
 truncation and pushes actions outside Settings. Explicitly use a row direction for the Select all
 label; the default form label stacks its control above its text.
+
+## Local browser previews
+
+Keep HTML artefacts self-contained and serve local preview assets from the page's own
+origin. Browser sessions enforce the network allowlist, and the preview CSP blocks
+external fonts, scripts, images and API endpoints even when their origin is approved
+for browsing. Data URL previews have no network access. Bundle assets locally;
+see [browser network policy](browser-network-policy.md) for the boundary and tests.

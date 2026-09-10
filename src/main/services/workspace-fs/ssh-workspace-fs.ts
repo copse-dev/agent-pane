@@ -85,14 +85,13 @@ export class SshWorkspaceFs implements WorkspaceFsPathProbe {
     return result.stdout.trimEnd()
   }
 
-  async readFile(path: string, encoding: 'utf-8'): Promise<string> {
+  async readFile(path: string, _encoding: 'utf-8'): Promise<string> {
     const result = await this.exec(`cat ${this.quote(path)}`)
     if (result.code !== 0) {
       const err = remoteFsError(path, result)
       err.code = 'ENOENT'
       throw err
     }
-    void encoding
     return result.stdout
   }
 
@@ -106,13 +105,23 @@ export class SshWorkspaceFs implements WorkspaceFsPathProbe {
     return Buffer.from(result.stdout.replace(/\s/g, ''), 'base64')
   }
 
-  async writeFile(path: string, content: string, encoding: 'utf-8'): Promise<void> {
-    void encoding
+  async writeFile(path: string, content: string, _encoding: 'utf-8'): Promise<void> {
     const dir = dirname(path)
     const mkdirResult = await this.exec(`mkdir -p ${this.quote(dir)}`)
     if (mkdirResult.code !== 0) throw remoteFsError(path, mkdirResult)
     const payload = Buffer.from(content, 'utf-8').toString('base64')
     const writeResult = await this.exec(`base64 -d > ${this.quote(path)}`, payload)
+    if (writeResult.code !== 0) throw remoteFsError(path, writeResult)
+  }
+
+  async writeFileBytes(path: string, content: Buffer): Promise<void> {
+    const dir = dirname(path)
+    const mkdirResult = await this.exec(`mkdir -p ${this.quote(dir)}`)
+    if (mkdirResult.code !== 0) throw remoteFsError(path, mkdirResult)
+    const writeResult = await this.exec(
+      `base64 -d > ${this.quote(path)}`,
+      content.toString('base64'),
+    )
     if (writeResult.code !== 0) throw remoteFsError(path, writeResult)
   }
 

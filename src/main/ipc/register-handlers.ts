@@ -12,7 +12,8 @@ import micromatch from 'micromatch'
 import { nonEmptyStringOr, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import { createPanePopoutWindow } from '../windows/create-popout-window.ts'
 import { broadcastToAppWindows } from '../windows/app-window-broadcast.ts'
-import { getInAppBrowserSession } from '../windows/browser-web-contents.ts'
+import { browserPartitionForContents } from '../windows/browser-web-contents.ts'
+import { isVisibleBrowserSessionPartition } from '@shared/browser-session.ts'
 import {
   captureBrowserPageText,
   captureBrowserScreenshot,
@@ -609,7 +610,14 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(z.number().int().positive(), [rawId])
     const contents = webContents.fromId(id)
-    if (!contents || contents.isDestroyed() || contents.session !== getInAppBrowserSession()) {
+    const partition = contents ? browserPartitionForContents(contents) : undefined
+    if (
+      !contents ||
+      contents.isDestroyed() ||
+      contents.hostWebContents !== win.webContents ||
+      !partition ||
+      !isVisibleBrowserSessionPartition(partition)
+    ) {
       throw new IpcValidationError('Browser sharing rejected: unknown interactive browser tab')
     }
     return contents
@@ -748,13 +756,24 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     if (!win.isDestroyed()) win.webContents.send('index:status-changed', status)
   })
 
-  ipcMain.handle('index:resolve-file-references', async (event, rawCandidates: unknown) => {
-    assertMainFrameSender(event, win)
-    const candidates = parseIpcArgs(z.array(z.string().min(1).max(4096)).max(200), [rawCandidates])
-    const root = getWorkspaceRoot()
-    if (root) await whenFileIndexReady(root)
-    return await resolveFileReferences(candidates)
-  })
+  ipcMain.handle(
+    'index:resolve-file-references',
+    async (event, rawCandidates: unknown, rawOwner: unknown) => {
+      assertMainFrameSender(event, win)
+      const [candidates, owner] = parseIpcArgs(
+        z.tuple([
+          z.array(z.string().min(1).max(4096)).max(200),
+          z.object({ projectId: zProjectId, threadId: zThreadId }).strict().optional(),
+        ]),
+        [rawCandidates, rawOwner],
+      )
+      const root = owner
+        ? (await resolveThreadExecutionContext(owner.projectId, owner.threadId)).root
+        : getWorkspaceRoot()
+      if (root) await whenFileIndexReady(root)
+      return await resolveFileReferences(candidates, root)
+    },
+  )
 
   // Ports panel. Listening ports are discovered by scanning the host, not by
   // tracking what Copse spawned, so the list includes the user's other apps and

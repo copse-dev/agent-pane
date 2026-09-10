@@ -33,7 +33,9 @@ describe('withSecretRedaction', () => {
     const messages: LLMMessage[] = [
       { role: 'user', content: `here is ${token} and my-configured-key-123456` },
     ]
-    for await (const _ of wrapped.stream(messages, [])) void _
+    for await (const _ of wrapped.stream(messages, [])) {
+      // Drain the stream so the wrapper forwards and captures the request.
+    }
 
     assert.ok(seen.messages, 'inner provider should have been called')
     const sent = JSON.stringify(seen.messages)

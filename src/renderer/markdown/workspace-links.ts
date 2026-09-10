@@ -1,6 +1,7 @@
 import type { AppStore } from '@shared/store/store.ts'
 import { workspaceLinkTargetFromHref } from '@copse/streaming-markdown/host/workspace'
 import type { ApiClient } from '../../preload/api.d.ts'
+import { getActiveThreadOwner } from '../controller/active-thread-owner.ts'
 import { activateWorkspaceReference } from '../controller/files.ts'
 import { showErrorToast } from '../views/toast.ts'
 
@@ -30,8 +31,9 @@ export function bindWorkspaceLinkClicks(
     event.preventDefault()
     event.stopPropagation()
 
+    const owner = getActiveThreadOwner(store)
     void api.index
-      .resolveFileReferences([parsed.candidate])
+      .resolveFileReferences([parsed.candidate], owner ?? undefined)
       .then((resolved) => {
         const match = resolved.find((entry) => entry.candidate === parsed.candidate)
         if (!match) {

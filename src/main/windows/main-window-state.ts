@@ -1,3 +1,4 @@
+import { isBrowserSessionPartition } from '@shared/browser-session.ts'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { MAX_RESTORED_BROWSER_TABS } from '@shared/types/main-window.ts'
@@ -29,6 +30,7 @@ const nullableIdSchema = z.string().min(1).max(128).nullable()
  * the scheme keeps config.json from becoming an accidental blob store.
  */
 const browserTabSchema = z.object({
+  partition: z.string().max(2048).refine(isBrowserSessionPartition).optional(),
   url: z
     .string()
     .max(4096)
@@ -99,6 +101,7 @@ export function decodeBrowserPaneSession(
   return {
     tabs: parsed.tabs.map((tab) => ({
       url: tab.url,
+      ...(tab.partition !== undefined ? { partition: tab.partition } : {}),
       ...(tab.label !== undefined ? { label: tab.label } : {}),
       ...(tab.artefactTitle !== undefined ? { artefactTitle: tab.artefactTitle } : {}),
       ...(tab.artefactThreadId !== undefined ? { artefactThreadId: tab.artefactThreadId } : {}),

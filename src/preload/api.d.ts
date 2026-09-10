@@ -138,8 +138,8 @@ export interface ApiClient {
   }
   browser: {
     workspaceFileUrl: (projectId: string, threadId: string, path: string) => Promise<string>
-    onOpenTab: (handler: (url: string) => void) => () => void
-    onShowTab?: (handler: (url: string) => void) => () => void
+    onOpenTab: (handler: (url: string, partition?: string) => void) => () => void
+    onShowTab?: (handler: (url: string, partition?: string) => void) => () => void
     /** A preview server served a file that just changed on disk. */
     onPreviewStale?: (handler: (origin: string) => void) => () => void
     sharePageText: (webContentsId: number) => Promise<void>
@@ -777,6 +777,7 @@ export interface ApiClient {
     query: (pattern: string) => Promise<string[]>
     resolveFileReferences: (
       candidates: string[],
+      owner?: { projectId: string; threadId: string },
     ) => Promise<{ candidate: string; path: string; kind: 'file' | 'directory' }[]>
     status: () => Promise<import('@shared/types/index-status.ts').WorkspaceIndexStatus>
     onStatusChanged: (

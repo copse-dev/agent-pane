@@ -1,6 +1,7 @@
 import '../../../tests/setup-dom.ts'
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { setTimeout as delay } from 'node:timers/promises'
 import { createStore } from '@shared/store/store.ts'
 import { addMessage, addToolCall, updateToolCall } from '@shared/store/thread-helpers.ts'
 import { createThread } from '@shared/store/thread-helpers.ts'
@@ -82,7 +83,7 @@ describe('collapsed tool card bodies render lazily', () => {
     assert.match(resultEl.textContent, /# Copse/)
   })
 
-  it('builds the body up front for a running (auto-expanded) card', () => {
+  it('builds the body when a running card reveals after the delay', async () => {
     const store = createStore()
     const threadId = createThread(store)
     const messageId = addMessage(store, threadId, 'assistant', 'Working…')
@@ -93,11 +94,13 @@ describe('collapsed tool card bodies render lazily', () => {
 
     const card = host.querySelector<HTMLDetailsElement>('[data-tool-id="tc-running-1"]')
     assert.ok(card)
+    assert.equal(card.open, false, 'a fast tool should remain compact initially')
+    await delay(350)
     assert.equal(card.open, true, 'a running tool card auto-expands')
     assert.ok(card.querySelector('.tool-args'), 'expected the args body to already be built')
   })
 
-  it('does not claim a no-argument tool has no details while it is still running', () => {
+  it('does not claim a no-argument tool has no details while it is still running', async () => {
     const store = createStore()
     const threadId = createThread(store)
     const messageId = addMessage(store, threadId, 'assistant', 'Working…')
@@ -115,11 +118,12 @@ describe('collapsed tool card bodies render lazily', () => {
 
     const card = host.querySelector<HTMLDetailsElement>('[data-tool-id="tc-running-empty"]')
     assert.ok(card)
+    await delay(350)
     assert.equal(card.open, true)
     assert.equal(Boolean(card.querySelector('.tool-result-empty')), false)
   })
 
-  it('shows an empty state when an MCP card has no arguments or result', () => {
+  it('shows an empty state when an MCP card has no arguments or result', async () => {
     const store = createStore()
     const threadId = createThread(store)
     const messageId = addMessage(store, threadId, 'assistant', 'Working…')
@@ -151,6 +155,7 @@ describe('collapsed tool card bodies render lazily', () => {
     assert.ok(card)
     card.querySelector('.tool-card-header')?.dispatchEvent(new MouseEvent('click'))
     card.open = true
+    await Promise.resolve()
 
     const emptyState = card.querySelector('.tool-result-empty')
     assert.ok(emptyState, 'an open card with no payload should visibly reveal a body')
@@ -166,7 +171,7 @@ describe('collapsed tool card bodies render lazily', () => {
     )
   })
 
-  it('builds the body for a card restored open across a reconcile tick', () => {
+  it('builds the body for a card kept open across a reconcile tick', async () => {
     const store = createStore()
     const threadId = createThread(store)
     const messageId = addMessage(store, threadId, 'assistant', 'Working…')
@@ -182,19 +187,18 @@ describe('collapsed tool card bodies render lazily', () => {
     // action, so flip the open state ourselves — a real browser click on the
     // summary would do both this and fire the listener dispatched above.
     card.open = true
+    await Promise.resolve()
     assert.ok(card.querySelector('.tool-result'), 'sanity: body built after opening')
 
-    // Changing the tool call's own result changes its signature, so the next
-    // tool_call_updated tick rebuilds the card from scratch (freshly
-    // collapsed) and then restores the user's expansion from the DOM state it
-    // captured beforehand.
+    // Changing the tool call's own result patches the existing disclosure shell
+    // and preserves the user's expansion while refreshing its lazy body.
     updateToolCall(store, messageId, 'tc-done-1', { result: '# Copse (updated)' })
 
-    const rebuilt = host.querySelector<HTMLDetailsElement>('[data-tool-id="tc-done-1"]')
-    assert.ok(rebuilt)
-    assert.notStrictEqual(rebuilt, card, 'sanity: the card was actually rebuilt')
-    assert.equal(rebuilt.open, true, 'expansion survives the reconcile')
-    const resultAfter = rebuilt.querySelector('.tool-result')
+    const reconciled = host.querySelector<HTMLDetailsElement>('[data-tool-id="tc-done-1"]')
+    assert.ok(reconciled)
+    assert.strictEqual(reconciled, card, 'the disclosure shell should be reused')
+    assert.equal(reconciled.open, true, 'expansion survives the reconcile')
+    const resultAfter = reconciled.querySelector('.tool-result')
     assert.ok(
       resultAfter,
       'a card restored open must have its body rendered, not just the flag flipped',

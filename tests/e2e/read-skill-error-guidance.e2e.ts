@@ -27,9 +27,17 @@ describe('read_skill error guidance', () => {
     await $('.submit-btn').click()
     await waitForAgentIdle(30_000)
 
-    const failedTool = $('.tool-card[data-status="error"]')
+    // Live tools retain their turn wrapper even when only one tool ran.
+    const rollup = $('.tool-card-rollup[data-status="error"]')
+    await rollup.waitForDisplayed({ timeout: 10_000 })
+    if (!(await rollup.getProperty('open'))) {
+      await rollup.$('summary.tool-card-header').click()
+    }
+    const failedTool = $('.tool-card[data-tool-id][data-status="error"]')
     await failedTool.waitForDisplayed({ timeout: 10_000 })
-    await failedTool.$('summary.tool-card-header').click()
+    if (!(await failedTool.getProperty('open'))) {
+      await failedTool.$('summary.tool-card-header').click()
+    }
     await expect(failedTool).toHaveText('Unknown skill "pstack"', {
       containing: true,
       wait: 10_000,
@@ -37,7 +45,7 @@ describe('read_skill error guidance', () => {
     await expect(failedTool).toHaveText('Available skills:', { containing: true })
     await expect(failedTool).toHaveText('checkup', { containing: true })
     await saveElementScreenshot(
-      '.tool-card[data-status="error"]',
+      '.tool-card[data-tool-id][data-status="error"]',
       'read-skill-unknown-guidance.png',
     )
   })

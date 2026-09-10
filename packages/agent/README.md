@@ -13,7 +13,8 @@ option schemas). The package imports **nothing** from the host app.
 
 ## What's in it
 
-~2,700 LOC:
+The package owns the following components (see source and package exports for the
+current inventory):
 
 - **The loop** — `run-agent-loop` (streaming tool-call orchestration, finalize
   nudges, duplicate-call guards, context-pressure signals, todo gating),

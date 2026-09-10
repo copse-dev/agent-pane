@@ -53,6 +53,12 @@ describe('capturing the Browser pane session', () => {
     })
   })
 
+  it('preserves the owning task partition across persistence', () => {
+    const partition = 'persist:copse-browser:thread:project-and-task'
+    const session = toBrowserPaneSession([{ url: 'https://example.com', partition }], 0, true)
+    assert.equal(restorableBrowserPaneSession(session)?.tabs[0]?.partition, partition)
+  })
+
   it('reports nothing to restore for a pane holding only blank tabs', () => {
     assert.equal(toBrowserPaneSession([], 0, false), null)
     assert.equal(toBrowserPaneSession([blankTab, { url: '' }], 0, true), null)

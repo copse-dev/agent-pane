@@ -146,7 +146,7 @@ describe('AnthropicProvider prompt caching (#582)', () => {
       ],
       tools,
     )) {
-      void _
+      // Drain the stream so the provider sends and captures the request.
     }
 
     assert.ok(capture.params)
@@ -183,7 +183,7 @@ describe('AnthropicProvider prompt caching (#582)', () => {
       ],
       [],
     )) {
-      void _
+      // Drain the stream so the provider sends and captures the request.
     }
 
     assert.ok(capture.params)
@@ -231,7 +231,9 @@ describe('AnthropicProvider mid-conversation system messages (#1286)', () => {
   ): Promise<Record<string, unknown>> {
     const provider = new AnthropicProvider(model, { apiKey: 'test' })
     const capture = withFakeStream(provider, doneEvents)
-    for await (const _ of provider.stream(messages, [])) void _
+    for await (const _ of provider.stream(messages, [])) {
+      // Drain the stream so the provider sends and captures the request.
+    }
     assert.ok(capture.params)
     return capture.params
   }

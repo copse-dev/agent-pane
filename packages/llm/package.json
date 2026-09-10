@@ -11,10 +11,10 @@
     "./*": "./src/*.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.122.0",
+    "@anthropic-ai/sdk": "^0.123.0",
     "@copse/std": "workspace:*",
     "@lmstudio/sdk": "^1.5.0",
-    "openai": "^7.8.0",
+    "openai": "^7.9.0",
     "zod": "^4.5.4"
   }
 }

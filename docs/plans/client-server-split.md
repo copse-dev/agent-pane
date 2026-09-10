@@ -10,6 +10,12 @@ repo, gated on [#1079](https://github.com/copse-dev/agent-pane/issues/1079)),
 [`ui-kit.md`](ui-kit.md), decision 3 of
 [`codex-oss-architecture-comparison.md`](codex-oss-architecture-comparison.md).
 
+Implementation status reviewed at `main` `a2880354f` (2026-09-09): the versioned
+protocol is implemented; `ShellHost`, a supported browser transport and repository
+separation remain planned. Counts below are measurements from the original plan,
+not a current inventory. Use the generated manifest and [architecture map](../../site/architecture.html)
+for current ownership.
+
 ## Why it is smaller than it sounds
 
 - Only 30 of 474 main-process files import Electron, through a short symbol list

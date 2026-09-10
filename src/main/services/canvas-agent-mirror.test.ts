@@ -57,6 +57,14 @@ describe('mirrorArtefactToAgent', () => {
     assert.notEqual(v1.url, v2.url)
   })
 
+  it('keeps tab identities isolated between task sessions', async () => {
+    const first = session()
+    const second = session()
+    await mirrorArtefactToAgent(artefact(), first)
+    await mirrorArtefactToAgent(artefact(), second)
+    assert.deepEqual(second.calls[0]?.opts, { newTab: true })
+  })
+
   it('gives a different title its own tab', async () => {
     const s = session()
     await mirrorArtefactToAgent(artefact(), s)

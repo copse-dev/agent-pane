@@ -6,8 +6,10 @@ staging step `@copse/llm`, `@copse/agent`, and `@copse/plan-usage` took. About
 4,500 LOC plus tests; one runtime dependency (`shell-quote`); no host-app imports.
 
 Everything here is a heuristic **for permission prompts**, not a security boundary.
-On macOS the project seatbelt is the real confinement; elsewhere the verdicts decide
-what the user is asked. The safety model, platform matrix, and the rules for
+The host's macOS seatbelt or Linux bubblewrap sandbox supplies confinement;
+without an active sandbox, shell commands prompt. Experimental unattended Docker
+runs use a separately attested container boundary and `container-effects.ts` to
+classify contained, outward and forbidden effects. The safety model, platform matrix, and the rules for
 changing any of this are in `docs/shell-permissions.md`, which remains the binding
 contract.
 

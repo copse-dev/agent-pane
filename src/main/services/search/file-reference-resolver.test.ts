@@ -80,6 +80,18 @@ describe('file-reference-resolver', () => {
     ])
   })
 
+  it('resolves unindexed files from an explicit thread execution root', async () => {
+    const threadRoot = await mkdtemp(join(tmpdir(), 'copse-panel-file-ref-thread-'))
+    await writeFile(join(threadRoot, 'thread-only.md'), '# thread checkout\n', 'utf-8')
+    try {
+      assert.deepEqual(await resolveFileReferences(['thread-only.md'], threadRoot), [
+        { candidate: 'thread-only.md', path: 'thread-only.md', kind: 'file' },
+      ])
+    } finally {
+      await rm(threadRoot, { recursive: true, force: true })
+    }
+  })
+
   it('resolves workspace directories that are not in the file index', async () => {
     await mkdir(join(tempRoot, 'src', 'renderer', 'views'), { recursive: true })
     assert.deepEqual(await resolveFileReferences(['src/renderer/views']), [

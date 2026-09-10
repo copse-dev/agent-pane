@@ -65,7 +65,7 @@ describe('browser panel display', () => {
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    seedEmptyProject(process.cwd(), PROJECT_ID)
+    seedEmptyProject(process.cwd(), PROJECT_ID, { webAllowedOrigins: ['https://example.com'] })
     await browser.reloadSession()
     await waitForComposer()
   })

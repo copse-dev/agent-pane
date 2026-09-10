@@ -1,9 +1,10 @@
 # Hooks platform & feature packs
 
-Status: **Active** — design settled (July 2026). The major hook-platform foundations
-and feature-pack phases P1–P10 are on `main`; the next extraction
-(`copse.pii-redaction`) is open in
-[#1092](https://github.com/copse-dev/agent-pane/pull/1092). This document is the
+Status: **Active** — design settled (July 2026), with current architecture reviewed
+at `main` `a2880354f` (2026-09-09). The hook platform and first-party plugin
+extractions, including `copse.pii-redaction`, are implemented. Current membership
+is defined by `packages/agent/src/plugins/first-party-plugins.ts`; the phase tables
+below preserve the original delivery sequence. This document is the
 source of truth for the phased breakdown below. It extends
 [`docs/cursor-hooks.md`](../cursor-hooks.md) (current Cursor-hooks support) and folds in
 PR #879 (Claude `PreToolUse` hooks) and the direction of PR #840 (permission-decision
@@ -28,7 +29,12 @@ Two motivations, one architecture:
    set of tools + hooks + prompt blocks + UI contributions that enables/disables as one
    unit, like a browser extension.
 
-## Current state (audit)
+## Original design snapshot
+
+This table records the starting point for the phases below, not the current
+implementation inventory. For landed ownership and behavior use [hooks](../hooks.md),
+[plugins](../plugins.md) and [the architecture map](../../site/architecture.html). The decisions
+log remains binding; later amendments supersede historical phase descriptions.
 
 | Piece                      | Where                                                                                                                                                                                                                                                                                                                                  | Status                                                                                                                                                                                                       |
 | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -119,8 +125,11 @@ revisiting this document, not silently diverging in an implementation PR.
    hook payloads (the user/workspace-trust gate is the consent). But hook processes run
    **inside the project sandbox by default** (reversing today's outside-sandbox spawn),
    with a per-hook `sandbox: false` escape in the Copse dialect surfaced in the trust
-   prompt. macOS-only enforcement (seatbelt); best-effort elsewhere — a default, not a
-   guarantee. Sandbox-blocked hooks surface via the spine + Sources, never silent
+   prompt. Enforcement uses macOS seatbelt or Linux bubblewrap when the project
+   sandbox is active. Windows and sandbox-init failures retain the trusted-command
+   fallback documented in `docs/hooks.md`; do not confuse it with the fail-closed
+   shell-command approval contract. Historical F3/G2/G5 landing notes below predate
+   Linux support; this decision and `docs/shell-permissions.md` describe current behavior. Sandbox-blocked hooks surface via the spine + Sources, never silent
    fail-open.
 8. **Dialect by source path, not prefixes or sniffing.** `.cursor/hooks.json` → Cursor
    adapter, `.claude/settings.json` → Claude adapter, `.copse/hooks.json` → Copse
@@ -783,12 +792,14 @@ Collected from design review — each of these was _almost_ a bug in the plan it
 - **Cursor `failClosed` is tri-state at the host boundary.** Copse intentionally
   defaults an omitted/invalid value to closed; preserve explicit `false` or imported
   compatibility hooks silently become blocking.
-- **The OS sandbox is macOS-only.** `isProjectSandboxEnabled()` is hard-false elsewhere;
-  every "sandboxed by default" statement is a _default_, not a guarantee — write code
-  and docs accordingly.
-- **Hook stdout is the response channel and stderr is currently discarded.** A script's
-  debug print corrupts its own response into fail-open `allow`; the spine's `parse_ok`
-  exists to make that visible. Capture stderr.
+- **Sandbox availability is a runtime fact.** macOS seatbelt and Linux bubblewrap
+  are supported, but `isProjectSandboxEnabled()` can still be false (including on
+  Windows or after initialization failure). Shell commands then prompt; command
+  hooks follow their trusted-code fallback. A default is not a containment guarantee.
+- **Hook stdout is the response channel.** Debug text can corrupt the wire response;
+  stderr is captured separately in hook-run blobs. Parse failures follow the dialect's
+  configured failure policy (blocking hooks default closed), and the spine records
+  `parse_ok` plus captured bytes. Never treat malformed stdout as an unconditional allow.
 - **In-loop nudges are not continuations.** They live inside one `runAgentLoop` call
   under `maxSteps`/LLM caps; only machine-initiated _new turns_ touch the budget.
   Conflating the two either starves the loop or unbounds it.

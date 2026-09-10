@@ -1,3 +1,4 @@
+import { securePreviewHtml } from '../preview-csp.ts'
 /**
  * Canvas artefact identity and addressing.
  *
@@ -15,7 +16,7 @@ import type { CanvasArtefact } from '../types/canvas.ts'
 
 /** Encode an HTML document as a base64 `data:` URL (opaque origin, no network). */
 export function htmlDataUrl(html: string): string {
-  const bytes = new TextEncoder().encode(html)
+  const bytes = new TextEncoder().encode(securePreviewHtml(html))
   let binary = ''
   // Chunked so a large document cannot blow the argument limit of `apply`.
   const CHUNK = 0x8000

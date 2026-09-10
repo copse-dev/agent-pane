@@ -244,15 +244,13 @@ export function frontierForKnownModels(
       costPerMTok: blendedPricePerMTok(info),
     })
   }
-  // Group first (best price per identity), then let the caller re-price each
-  // representative — e.g. drop a plan-covered model's cost to $0. Adjusting the
-  // grouped candidate (not each raw offering) applies coverage once per model.
-  // Route-sensitive filters (ZDR / no-training) must run before identity
-  // grouping. Otherwise a direct API route can become the representative and
-  // hide an eligible OpenRouter route to the exact same model weights.
+  // Route-sensitive filters (ZDR / no-training) and adjustments (subscription
+  // billing) must run before identity grouping. Otherwise a cheaper paid API
+  // route can become the representative and hide an ACP route that is free on
+  // the user's plan for the exact same model weights.
   const candidates = keepRoute ? [...cloud, ...extra].filter(keepRoute) : [...cloud, ...extra]
-  const grouped = groupByModelIdentity(candidates)
-  return computeParetoFrontier(adjust ? grouped.map(adjust) : grouped)
+  const adjusted = adjust ? candidates.map(adjust) : candidates
+  return computeParetoFrontier(groupByModelIdentity(adjusted))
 }
 
 /**

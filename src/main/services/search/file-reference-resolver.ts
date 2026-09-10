@@ -1,6 +1,6 @@
 import { existsSync, statSync } from 'node:fs'
 import { getIndex } from './file-index.ts'
-import { getWorkspaceRoot, resolveWorkspacePath, toRelativePath } from '../workspace.ts'
+import { getWorkspaceRoot, resolvePathWithinRoot, toRelativePathWithinRoot } from '../workspace.ts'
 
 export interface FileReferenceResolution {
   candidate: string
@@ -28,13 +28,13 @@ function basename(path: string): string {
 async function resolveOnFilesystem(
   candidate: string,
   normalized: string,
+  root: string,
 ): Promise<FileReferenceResolution | null> {
-  if (!getWorkspaceRoot()) return null
   try {
-    const abs = await resolveWorkspacePath(normalized)
+    const abs = await resolvePathWithinRoot(normalized, root)
     if (!existsSync(abs)) return null
     const stat = statSync(abs)
-    const path = await toRelativePath(abs)
+    const path = await toRelativePathWithinRoot(abs, root)
     if (stat.isDirectory()) return { candidate, path, kind: 'directory' }
     if (stat.isFile()) return { candidate, path, kind: 'file' }
     return null
@@ -45,13 +45,10 @@ async function resolveOnFilesystem(
 
 export async function resolveFileReferences(
   candidates: string[],
+  root: string | null = getWorkspaceRoot(),
 ): Promise<FileReferenceResolution[]> {
-  // Renderer-global feature (markdown/terminal `@file` links) with no thread
-  // context of its own — stays scoped to the renderer-selected workspace root
-  // rather than any one thread's execution root.
-  const workspaceRoot = getWorkspaceRoot()
-  if (!workspaceRoot) return []
-  const paths = getIndex(workspaceRoot)?.paths ?? []
+  if (!root) return []
+  const paths = getIndex(root)?.paths ?? []
 
   const exactPaths = new Set(paths)
   const pathsByBasename = new Map<string, string[]>()
@@ -76,7 +73,7 @@ export async function resolveFileReferences(
       continue
     }
 
-    const onDisk = await resolveOnFilesystem(candidate, normalized)
+    const onDisk = await resolveOnFilesystem(candidate, normalized, root)
     if (onDisk) {
       resolutions.push(onDisk)
       continue

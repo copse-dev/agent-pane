@@ -182,10 +182,10 @@
    separate transcript block above it. */
 .tool-rollup-body > .message-reasoning {
   margin: 0 0 var(--spacing-xs);
-  border-left: 0;
-  padding-left: 0;
 }
-.tool-rollup-body > .message-reasoning > .message-reasoning-summary {
+/* Only the bare, closed label aligns with the tool rows. Expanded reasoning
+   keeps the same inset around its surface as a standalone disclosure. */
+.tool-rollup-body > .message-reasoning:not([open]) > .message-reasoning-summary {
   margin-inline: calc(-1 * var(--spacing-xs));
 }
 .tool-rollup-body .reasoning-activity-icon {

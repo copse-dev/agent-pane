@@ -20,6 +20,8 @@ export interface MainWindowBounds {
  * therefore re-reads the saved artefact instead of replaying a URL.
  */
 export interface BrowserPaneSessionTab {
+  /** Network-policy scope of the task that opened the tab. */
+  partition?: string
   /** Address the tab was pointed at; empty for a tab that never navigated. */
   url: string
   /** Label as it was shown, so a restored tab reads right before it loads. */

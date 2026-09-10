@@ -46,9 +46,23 @@ describe('markdown workspace links', () => {
       filesPaneOpen: false,
       rightPanelMode: 'terminal',
     })
-    const api = apiWithFileReferences([
+    const baseApi = apiWithFileReferences([
       { candidate: 'docs/experiments/v2.md', path: 'docs/experiments/v2.md' },
     ])
+    let resolvedOwner: { projectId: string; threadId: string } | undefined
+    const api = {
+      ...baseApi,
+      index: {
+        ...baseApi.index,
+        resolveFileReferences: async (
+          candidates: string[],
+          owner?: { projectId: string; threadId: string },
+        ): Promise<{ candidate: string; path: string; kind: 'file' | 'directory' }[]> => {
+          resolvedOwner = owner
+          return baseApi.index.resolveFileReferences(candidates, owner)
+        },
+      },
+    } satisfies ApiClient
     const unbind = bindWorkspaceLinkClicks(root, store, api)
 
     const anchor = root.querySelector('a')
@@ -59,6 +73,7 @@ describe('markdown workspace links', () => {
 
     unbind()
     assert.equal(event.defaultPrevented, true)
+    assert.deepEqual(resolvedOwner, { projectId: 'project-1', threadId: 'thread-1' })
     assert.equal(store.getState().filesPaneOpen, true)
     assert.equal(store.getState().rightPanelMode, 'explorer')
     assert.equal(store.getState().openFile?.path, 'docs/experiments/v2.md')

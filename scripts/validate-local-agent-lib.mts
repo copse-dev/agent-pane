@@ -132,8 +132,7 @@ export async function validateLocalAgentFinalAnswer(): Promise<void> {
       provider,
       messages,
       tools,
-      executeTool: (name, args, signal, _toolCallId) => {
-        void signal
+      executeTool: (name, args, _signal, _toolCallId) => {
         return executeTool(workspace, name, args)
       },
       signal: controller.signal,

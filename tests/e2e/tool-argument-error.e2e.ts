@@ -26,9 +26,16 @@ describe('tool argument error guidance', () => {
     await $('.submit-btn').click()
     await waitForAgentIdle(30_000)
 
-    const failedTool = $('.tool-card[data-status="error"]')
+    const rollup = $('.tool-card-rollup[data-status="error"]')
+    await rollup.waitForDisplayed({ timeout: 10_000 })
+    if (!(await rollup.getProperty('open'))) {
+      await rollup.$('summary.tool-card-header').click()
+    }
+    const failedTool = $('.tool-card[data-tool-id][data-status="error"]')
     await failedTool.waitForDisplayed({ timeout: 10_000 })
-    await failedTool.$('summary.tool-card-header').click()
+    if (!(await failedTool.getProperty('open'))) {
+      await failedTool.$('summary.tool-card-header').click()
+    }
     await expect(failedTool).toHaveText('todos[0].content', { containing: true })
     await expect(failedTool).toHaveText('expected string, received undefined', {
       containing: true,
@@ -40,7 +47,7 @@ describe('tool argument error guidance', () => {
     expect(text).not.toContain('invalid_type')
     expect(text).not.toContain('"expected"')
     await saveElementScreenshot(
-      '.tool-card[data-status="error"]',
+      '.tool-card[data-tool-id][data-status="error"]',
       'tool-argument-error-guidance.png',
     )
   })

@@ -13,7 +13,7 @@ export const browserNavigateTool = defineTool({
   name: 'browser_navigate',
   provenance: 'external',
   description:
-    'Open a URL in the built-in headless browser. Loopback (localhost) targets run automatically; other origins prompt for approval. Returns the resolved title and URL.',
+    'Open a URL in the built-in headless browser. Allowlisted origins (localhost by default) run automatically; new origins prompt for approval. All requests obey the network allowlist. Local previews only load same-origin resources; bundle assets locally. Returns the resolved title and URL.',
   parameters: z.object({
     url: z.url().describe('http/https URL to open'),
     newTab: z.boolean().optional().describe('Open in a new tab instead of reusing the active one'),

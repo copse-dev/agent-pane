@@ -2,7 +2,7 @@ import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -16,8 +16,9 @@ import {
   clearAllowedWorkspaceRootsForTest,
   registerInternalWorkspaceRoot,
 } from '../services/workspace.ts'
-import { getGitStatus } from '../services/github/git-service.ts'
+import { createWorktreeBackup, getGitStatus } from '../services/github/git-service.ts'
 import { setGitAvailableForTest } from '../services/tool-availability.ts'
+import { workspaceTmpDir } from './config.ts'
 
 interface CommandResult {
   stdout: string
@@ -245,5 +246,74 @@ describe('linked-worktree sandbox integration', () => {
     )
     assert.notEqual(readSiblingPkg.code, 0)
     assert.equal(readSiblingPkg.stdout, '')
+  })
+
+  it('creates a dirty-worktree backup with its temporary index in sandbox scratch', async (t) => {
+    if (process.platform === 'win32') {
+      t.skip('project sandbox integration is not enabled on Windows')
+      return
+    }
+
+    const root = await mkdtemp(join(tmpdir(), 'copse-backup-sandbox-'))
+    cleanups.push(root)
+    const repo = join(root, 'repo')
+    const worktree = join(root, 'thread')
+    const nested = join(worktree, 'packages', 'app')
+    await mkdir(join(repo, 'packages', 'app'), { recursive: true })
+    git(repo, ['init', '-q', '-b', 'main'])
+    await writeFile(join(repo, 'packages', 'app', 'tracked.txt'), 'base\n')
+    git(repo, ['add', '.'])
+    git(repo, ['commit', '-q', '-m', 'initial'])
+    git(repo, ['worktree', 'add', '-q', '-b', 'thread-a', worktree])
+    const registration = await registerInternalWorkspaceRoot(worktree, nested)
+
+    const previousCopseDir = process.env['COPSE_DIR']
+    process.env['COPSE_DIR'] = join(root, 'copse-profile')
+    try {
+      setGitAvailableForTest(true)
+      await initProjectSandbox()
+      if (!isProjectSandboxEnabled()) {
+        t.skip('ASRT sandbox unavailable')
+        return
+      }
+
+      const tracked = join(nested, 'tracked.txt')
+      const untracked = join(nested, 'untracked.txt')
+      await writeFile(tracked, 'staged\n')
+      git(worktree, ['add', 'packages/app/tracked.txt'])
+      await writeFile(tracked, 'staged and unstaged\n')
+      await writeFile(untracked, 'new user file\n')
+
+      const headBefore = git(worktree, ['rev-parse', 'HEAD'])
+      const indexBefore = git(worktree, ['ls-files', '--stage'])
+      const indexBytesBefore = await readFile(join(registration.gitDir, 'index'))
+      const statusBefore = git(worktree, ['status', '--porcelain=v1'])
+      const backup = await createWorktreeBackup('sandbox checkpoint', nested)
+      assert.ok(backup, 'expected a backup ref')
+
+      assert.equal(git(worktree, ['rev-parse', 'HEAD']), headBefore)
+      assert.equal(git(worktree, ['ls-files', '--stage']), indexBefore)
+      assert.deepEqual(await readFile(join(registration.gitDir, 'index')), indexBytesBefore)
+      assert.equal(git(worktree, ['status', '--porcelain=v1']), statusBefore)
+      assert.equal(
+        git(worktree, ['show', `${backup}:packages/app/tracked.txt`]),
+        'staged and unstaged\n',
+      )
+      assert.equal(
+        git(worktree, ['show', `${backup}:packages/app/untracked.txt`]),
+        'new user file\n',
+      )
+      assert.doesNotMatch(git(worktree, ['ls-tree', '-r', '--name-only', backup]), /copse-backup-/)
+
+      const scratchEntries = await readdir(workspaceTmpDir())
+      assert.equal(
+        scratchEntries.some((entry) => entry.startsWith('copse-backup-')),
+        false,
+        'temporary index directory should be cleaned up',
+      )
+    } finally {
+      if (previousCopseDir === undefined) delete process.env['COPSE_DIR']
+      else process.env['COPSE_DIR'] = previousCopseDir
+    }
   })
 })
