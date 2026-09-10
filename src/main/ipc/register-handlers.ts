@@ -12,7 +12,8 @@ import micromatch from 'micromatch'
 import { nonEmptyStringOr, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import { createPanePopoutWindow } from '../windows/create-popout-window.ts'
 import { broadcastToAppWindows } from '../windows/app-window-broadcast.ts'
-import { getInAppBrowserSession } from '../windows/browser-web-contents.ts'
+import { browserPartitionForContents } from '../windows/browser-web-contents.ts'
+import { isVisibleBrowserSessionPartition } from '@shared/browser-session.ts'
 import {
   captureBrowserPageText,
   captureBrowserScreenshot,
@@ -609,7 +610,14 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(z.number().int().positive(), [rawId])
     const contents = webContents.fromId(id)
-    if (!contents || contents.isDestroyed() || contents.session !== getInAppBrowserSession()) {
+    const partition = contents ? browserPartitionForContents(contents) : undefined
+    if (
+      !contents ||
+      contents.isDestroyed() ||
+      contents.hostWebContents !== win.webContents ||
+      !partition ||
+      !isVisibleBrowserSessionPartition(partition)
+    ) {
       throw new IpcValidationError('Browser sharing rejected: unknown interactive browser tab')
     }
     return contents

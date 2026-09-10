@@ -1,3 +1,8 @@
+import {
+  browserAllowedOrigins,
+  currentBrowserScope,
+  grantBrowserOrigin,
+} from '../browser/browser-network-grants.ts'
 import { readFileSync, realpathSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { resolve } from 'node:path'
@@ -1182,12 +1187,6 @@ function browserUrlFromArgs(args: unknown): string | null {
   return typeof url === 'string' ? url : null
 }
 
-async function rememberBrowserOrigin(origin: string): Promise<void> {
-  await updateSetting<string[]>('browserAllowedOrigins', [], (saved) =>
-    saved.includes(origin) ? saved : [...saved, origin],
-  )
-}
-
 async function checkBrowserNavigatePermission(
   args: unknown,
   signal?: AbortSignal,
@@ -1197,8 +1196,10 @@ async function checkBrowserNavigatePermission(
 
   const decision = decideBrowserNavigation({
     url,
-    allowedOrigins: getSetting<string[]>('browserAllowedOrigins', []),
-    allowUserApproval: getSetting<boolean>(BROWSER_ALLOW_USER_APPROVAL_SETTING, true),
+    allowedOrigins: browserAllowedOrigins(currentBrowserScope()),
+    allowUserApproval:
+      getSetting<boolean>(BROWSER_ALLOW_USER_APPROVAL_SETTING, true) &&
+      getSetting<boolean>(WEB_ALLOW_USER_APPROVAL_SETTING, true),
   })
   if (decision.action === 'allow') return true
   if (decision.action === 'deny') {
@@ -1217,7 +1218,11 @@ async function checkBrowserNavigatePermission(
     },
     signal,
   )
-  if (approved && remember) await rememberBrowserOrigin(decision.origin)
+  if (approved) {
+    if (remember) {
+      await rememberWebOrigin(decision.origin)
+    } else grantBrowserOrigin(currentBrowserScope(), decision.origin)
+  }
   return approved
 }
 

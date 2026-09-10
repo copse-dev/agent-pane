@@ -3,7 +3,8 @@ import { z } from 'zod'
 import { errorMessage } from '@shared/errors.ts'
 import type { PluginBrowserTab, PluginBrowserUploadFile } from './plugin-tool-protocol.ts'
 import type { PluginBrowserTabRequest } from '@shared/types/plugin-browser.ts'
-import { getInAppBrowserSession } from '../../windows/browser-web-contents.ts'
+import { browserPartitionForContents } from '../../windows/browser-web-contents.ts'
+import { isVisibleBrowserSessionForThread } from '@shared/browser-session.ts'
 import {
   DOM_SNAPSHOT_SCRIPT,
   parsePageSnapshot,
@@ -36,7 +37,7 @@ export interface PluginBrowserContents {
 
 export interface PluginBrowserPanelDependencies {
   ensureTab(preferredTabId?: string): Promise<{ tabId: string; webContentsId: number }>
-  contentsFromId(id: number): PluginBrowserContents | null
+  contentsFromId(id: number, owner: PluginBrowserOwner): PluginBrowserContents | null
   dispose?(): void
 }
 
@@ -108,7 +109,7 @@ export class PluginBrowserPanelService implements PluginBrowserService {
   private contents(owner: PluginBrowserOwner, tabId: string): PluginBrowserContents {
     const tabs = this.tabsFor(owner)
     const id = tabs.webContentsByTab.get(tabId)
-    const contents = id === undefined ? null : this.dependencies.contentsFromId(id)
+    const contents = id === undefined ? null : this.dependencies.contentsFromId(id, owner)
     if (!contents || contents.isDestroyed()) {
       tabs.webContentsByTab.delete(tabId)
       if (tabs.activeTabId === tabId) tabs.activeTabId = null
@@ -383,9 +384,11 @@ export function createPluginBrowserPanelService(win: BrowserWindow): PluginBrows
         win.webContents.send('plugins:browser-tab-request', request)
       })
     },
-    contentsFromId(id): PluginBrowserContents | null {
+    contentsFromId(id, owner): PluginBrowserContents | null {
       const contents = webContents.fromId(id)
-      if (!contents || contents.session !== getInAppBrowserSession()) return null
+      if (!contents || contents.hostWebContents !== win.webContents) return null
+      const partition = browserPartitionForContents(contents)
+      if (!partition || !isVisibleBrowserSessionForThread(partition, owner.threadId)) return null
       return browserContents(contents)
     },
     dispose,

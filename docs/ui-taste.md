@@ -1043,3 +1043,11 @@ Keep selection controls inline and reveal bulk actions only when checkouts are s
 worktree fieldset needs `min-inline-size: 0`: its native min-content width otherwise overrides row
 truncation and pushes actions outside Settings. Explicitly use a row direction for the Select all
 label; the default form label stacks its control above its text.
+
+## Local browser previews
+
+Keep HTML artefacts self-contained and serve local preview assets from the page's own
+origin. Browser sessions enforce the network allowlist, and the preview CSP blocks
+external fonts, scripts, images and API endpoints even when their origin is approved
+for browsing. Data URL previews have no network access. Bundle assets locally;
+see [browser network policy](browser-network-policy.md) for the boundary and tests.

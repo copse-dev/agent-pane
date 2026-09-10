@@ -25,6 +25,7 @@ import { ownsWindowSession } from './persistence.ts'
  * missing key, when it is showing an ordinary page.
  */
 export interface BrowserTabSnapshot {
+  partition?: string | undefined
   url: string
   label?: string | undefined
   artefactTitle?: string | null | undefined
@@ -67,6 +68,7 @@ function toStoredTab(tab: BrowserTabSnapshot): BrowserPaneSessionTab | null {
     if (tab.artefactTitle.length > 200) return null
     return {
       url: '',
+      ...(tab.partition ? { partition: tab.partition } : {}),
       ...(label ? { label } : {}),
       artefactTitle: tab.artefactTitle,
       artefactThreadId: tab.artefactThreadId,
@@ -74,7 +76,11 @@ function toStoredTab(tab: BrowserTabSnapshot): BrowserPaneSessionTab | null {
     }
   }
   if (!isStorableUrl(tab.url)) return null
-  return { url: tab.url, ...(label ? { label } : {}) }
+  return {
+    url: tab.url,
+    ...(label ? { label } : {}),
+    ...(tab.partition ? { partition: tab.partition } : {}),
+  }
 }
 
 /**

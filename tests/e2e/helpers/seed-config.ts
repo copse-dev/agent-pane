@@ -519,6 +519,7 @@ export function seedEmptyProject(
     /** Per-model generation parameters, keyed by model selection. */
     modelParameters?: Record<string, { reasoning?: string; temperature?: number; topP?: number }>
     localSubagentsEnabled?: boolean
+    webAllowedOrigins?: string[]
     autoPortraitRightPanel?: boolean
     rightPanelPosition?: 'auto' | 'side' | 'bottom'
     theme?: 'system' | 'light' | 'dark'
@@ -626,6 +627,9 @@ export function seedEmptyProject(
   }
   writeSeedConfig(seedConfig)
   const settings: Record<string, unknown> = {}
+  if (options?.webAllowedOrigins !== undefined) {
+    settings.webAllowedOrigins = options.webAllowedOrigins
+  }
   if (options?.subagentsEnabled !== undefined) {
     settings.subagentsEnabled = options.subagentsEnabled
   }
@@ -1231,6 +1235,7 @@ export function seedMarkdownConformanceFixture(workspaceRoot: string): void {
 }
 
 export function seedBrowserLinkChatFixture(workspaceRoot: string): void {
+  writeSettings({ webAllowedOrigins: ['https://example.com'] })
   const projectId = 'e2e-browser-link-chat-project'
   const threadId = 'e2e-browser-link-chat-thread'
   mkdirSync(USER_DATA, { recursive: true })
@@ -1264,6 +1269,17 @@ export function seedBrowserLinkChatFixture(workspaceRoot: string): void {
  * the active thread (thread handoff stays on the PR pane button).
  */
 export function seedBrowserCursorAgentThreadFixture(workspaceRoot: string): void {
+  writeSettings({
+    windowBounds: { width: 1280, height: 800 },
+    layout: { projectsPaneWidth: 260, filesPaneWidth: 480, fileTreeWidth: 200 },
+    webAllowedOrigins: [
+      'https://cursor.com',
+      'https://*.cursor.com',
+      'https://api.workos.com',
+      'https://authenticate.cursor.sh',
+      'https://authenticator.cursor.sh',
+    ],
+  })
   const projectId = 'e2e-browser-cursor-agent-project'
   const linkedThreadId = 'e2e-browser-cursor-agent-linked-thread'
   const now = Date.now()

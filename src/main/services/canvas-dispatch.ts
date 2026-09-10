@@ -1,3 +1,4 @@
+import { getThreadExecutionContext } from './thread-execution-context.ts'
 /**
  * Push MCP-UI resources extracted from a tool result to the renderer so they can
  * be rendered in the canvas (Browser pane). Kept separate from the MCP registry
@@ -35,6 +36,9 @@ export function setCanvasArtefactMirror(next: CanvasArtefactMirror | null): void
 
 /** Mirror and publish one already-resolved canvas artefact. */
 export async function dispatchCanvasArtefact(artefact: CanvasArtefact): Promise<void> {
+  const context = getThreadExecutionContext()
+  if (context)
+    artefact = { ...artefact, owner: { projectId: context.projectId, threadId: context.threadId } }
   let preview: string | null = null
   if (mirror) {
     try {

@@ -50,18 +50,18 @@ const api: ApiClient = {
     shareScreenshot: (webContentsId: number) =>
       ipcRenderer.invoke('browser:share-screenshot', webContentsId),
     exportPdf: (webContentsId: number) => ipcRenderer.invoke('browser:export-pdf', webContentsId),
-    onOpenTab: (handler: (url: string) => void) => {
-      const listener = (_e: Electron.IpcRendererEvent, url: string): void => {
-        handler(url)
+    onOpenTab: (handler: (url: string, partition?: string) => void) => {
+      const listener = (_e: Electron.IpcRendererEvent, url: string, partition?: string): void => {
+        handler(url, partition)
       }
       ipcRenderer.on('browser:open-tab', listener)
       return (): void => {
         ipcRenderer.off('browser:open-tab', listener)
       }
     },
-    onShowTab: (handler: (url: string) => void) => {
-      const listener = (_e: Electron.IpcRendererEvent, url: string): void => {
-        handler(url)
+    onShowTab: (handler: (url: string, partition?: string) => void) => {
+      const listener = (_e: Electron.IpcRendererEvent, url: string, partition?: string): void => {
+        handler(url, partition)
       }
       ipcRenderer.on('browser:show-tab', listener)
       return (): void => {

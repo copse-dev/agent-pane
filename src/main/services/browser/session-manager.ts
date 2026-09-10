@@ -1,3 +1,5 @@
+import { BROWSER_SESSION_PARTITION, browserSessionPartition } from '@shared/browser-session.ts'
+import { currentBrowserScope } from './browser-network-grants.ts'
 import { errorMessage } from '@shared/errors.ts'
 import type { BrowserWindow, BrowserWindowConstructorOptions, Session } from 'electron'
 import { mkdir, writeFile } from 'node:fs/promises'
@@ -22,8 +24,8 @@ interface Tab {
 
 export interface BrowserSessionPlatform {
   createWindow(options: BrowserWindowConstructorOptions): BrowserWindow
-  getAgentSession(): Session
-  showUrl(url: string): void
+  getAgentSession(scope?: string): Session
+  showUrl(url: string, partition: string): void
   /** Promote an already-rendered canvas artefact tab to the front. */
   showArtefact(identity: CanvasArtefactIdentity): void
 }
@@ -57,6 +59,12 @@ export interface TabInfo {
  * Pages render in their own Chromium sandbox, isolated from the Copse renderer.
  */
 export class BrowserSessionManager {
+  private readonly scope: string
+
+  constructor(scope = '') {
+    this.scope = scope
+  }
+
   private tabs: Tab[] = []
   private lastActiveId: string | null = null
   private counter = 0
@@ -77,7 +85,7 @@ export class BrowserSessionManager {
         // cookies/storage and the user never browses under the agent (#467).
         // Still recognized by isBrowserWebContents, so guest lockdown — not the
         // renderer lockdown meant for app pages — applies to these tabs.
-        session: browserPlatform.getAgentSession(),
+        session: browserPlatform.getAgentSession(this.scope),
         sandbox: true,
         contextIsolation: true,
         nodeIntegration: false,
@@ -133,7 +141,7 @@ export class BrowserSessionManager {
   }
 
   showUrl(url: string): void {
-    requirePlatform().showUrl(url)
+    requirePlatform().showUrl(url, browserSessionPartition(BROWSER_SESSION_PARTITION, this.scope))
   }
 
   showArtefact(identity: CanvasArtefactIdentity): void {
@@ -244,14 +252,19 @@ export class BrowserSessionManager {
   }
 }
 
-let singleton: BrowserSessionManager | null = null
+const managers = new Map<string, BrowserSessionManager>()
 
 export function getBrowserSession(): BrowserSessionManager {
-  singleton ??= new BrowserSessionManager()
-  return singleton
+  const scope = currentBrowserScope()
+  let manager = managers.get(scope)
+  if (!manager) {
+    manager = new BrowserSessionManager(scope)
+    managers.set(scope, manager)
+  }
+  return manager
 }
 
 export function shutdownBrowserSession(): void {
-  singleton?.destroyAll()
-  singleton = null
+  for (const manager of managers.values()) manager.destroyAll()
+  managers.clear()
 }
