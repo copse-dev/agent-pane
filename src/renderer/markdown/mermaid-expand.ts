@@ -1,5 +1,6 @@
 import { el } from '../dom/helpers.ts'
 import { minusIcon, plusIcon } from '../dom/icons.ts'
+import { recreateMermaidFrame, type DiagramFrame } from './mermaid-frame.ts'
 
 const MIN_SCALE = 0.25
 const MAX_SCALE = 4
@@ -182,33 +183,43 @@ function ensureExpandDialog(): HTMLDialogElement {
   })
   expandDialog.addEventListener('close', () => {
     resetTransform()
+    stageEl?.replaceChildren()
   })
 
   return expandDialog
 }
 
-function openMermaidExpand(source: HTMLElement): void {
-  const svg = source.querySelector('svg')
-  if (!svg) return
-
+function openMermaidExpand(
+  source: HTMLElement,
+  recreate: (frame: HTMLIFrameElement) => DiagramFrame | null,
+): void {
+  const sourceFrame = source.querySelector<HTMLIFrameElement>('iframe.mermaid-frame')
+  if (!sourceFrame) return
+  const frame = recreate(sourceFrame)
+  if (!frame) return
   const dialog = ensureExpandDialog()
   if (!stageEl) return
-  stageEl.replaceChildren(svg.cloneNode(true))
+  stageEl.replaceChildren(frame.element)
   dialog.showModal()
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      fitToViewport()
+  void frame.ready
+    .then(() => {
+      if (dialog.open && frame.element.isConnected) fitToViewport()
     })
-  })
+    .catch(() => {
+      if (frame.element.isConnected)
+        frame.element.replaceWith(el('p', {}, 'Unable to render diagram.'))
+    })
 }
 
 /** Fold in-thread diagrams and wire click-to-expand (lightbox dialog). */
-export function attachMermaidExpand(root: ParentNode): void {
+export function attachMermaidExpand(
+  root: ParentNode,
+  recreate: (frame: HTMLIFrameElement) => DiagramFrame | null = recreateMermaidFrame,
+): void {
   const diagrams = root.querySelectorAll<HTMLElement>('.mermaid-diagram')
   for (const diagram of diagrams) {
     if (diagram.dataset['mermaidUi'] === 'true') continue
-    if (diagram.querySelector('.error-icon')) continue
-    if (!diagram.querySelector('svg')) continue
+    if (!diagram.querySelector('iframe.mermaid-frame[data-rendered="true"]')) continue
 
     diagram.dataset['mermaidUi'] = 'true'
     diagram.classList.remove('mermaid-diagram--pending')
@@ -218,12 +229,12 @@ export function attachMermaidExpand(root: ParentNode): void {
     diagram.setAttribute('aria-label', 'Expand diagram')
 
     diagram.addEventListener('click', () => {
-      openMermaidExpand(diagram)
+      openMermaidExpand(diagram, recreate)
     })
     diagram.addEventListener('keydown', (event) => {
       if (event.key !== 'Enter' && event.key !== ' ') return
       event.preventDefault()
-      openMermaidExpand(diagram)
+      openMermaidExpand(diagram, recreate)
     })
   }
 }

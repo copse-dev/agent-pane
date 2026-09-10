@@ -1,7 +1,15 @@
 import '../../../tests/setup-dom.ts'
 import { describe, it, before } from 'node:test'
 import assert from 'node:assert/strict'
-import { attachMermaidExpand } from './mermaid-expand.ts'
+import { attachMermaidExpand as attach } from './mermaid-expand.ts'
+
+function attachMermaidExpand(root: ParentNode): void {
+  attach(root, () => {
+    const element = document.createElement('iframe')
+    element.className = 'mermaid-frame'
+    return { element, ready: Promise.resolve({ width: 400, height: 300 }) }
+  })
+}
 import { qs, qsRequired } from '../dom/helpers.ts'
 
 // happy-dom doesn't implement <dialog> modality or pointer capture; stub the
@@ -25,9 +33,9 @@ function patchEnv(): void {
   })
 }
 
-function diagram(withSvg = true): HTMLElement {
+function diagram(withFrame = true): HTMLElement {
   const root = document.createElement('div')
-  root.innerHTML = `<div class="mermaid-diagram">${withSvg ? '<svg><g></g></svg>' : '<pre>x</pre>'}</div>`
+  root.innerHTML = `<div class="mermaid-diagram">${withFrame ? '<iframe class="mermaid-frame" data-rendered="true"></iframe>' : '<pre>x</pre>'}</div>`
   return root
 }
 
@@ -51,7 +59,7 @@ describe('attachMermaidExpand', () => {
     assert.equal(el.getAttribute('aria-label'), 'Expand diagram')
   })
 
-  it('skips diagrams already wired, errored, or without an svg', () => {
+  it('skips diagrams already wired, errored, or without a rendered frame', () => {
     const already = diagram()
     qsRequired(already, '.mermaid-diagram').setAttribute('data-mermaid-ui', 'true')
     attachMermaidExpand(already)
@@ -68,14 +76,14 @@ describe('attachMermaidExpand', () => {
     assert.equal(qsRequired(errored, '.mermaid-diagram').getAttribute('role'), null)
   })
 
-  it('opens the lightbox on click and clones the svg into the stage', () => {
+  it('opens the lightbox on click and creates a fresh frame in the stage', () => {
     const root = diagram()
     document.body.append(root)
     attachMermaidExpand(root)
     mouseClick(qsRequired(root, '.mermaid-diagram'))
 
     const dialog = qsRequired(document, '.mermaid-expand-dialog')
-    assert.ok(qs(dialog, '.mermaid-expand-stage svg'), 'svg cloned into stage')
+    assert.ok(qs(dialog, '.mermaid-expand-stage iframe'), 'fresh frame inserted into stage')
     assert.ok(qs(dialog, '.mermaid-expand-toolbar'))
     assert.ok(qs(dialog, '.mermaid-expand-tool svg[data-icon="minus"]'))
     assert.ok(qs(dialog, '.mermaid-expand-tool svg[data-icon="plus"]'))
