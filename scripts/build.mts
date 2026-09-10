@@ -282,6 +282,7 @@ await esbuild.build({
   ...browserOpts,
   entryPoints: ['src/renderer/markdown/mermaid-frame-entry.ts'],
   outfile: `${rendererOutDir}/mermaid-frame.js`,
+  loader: { ...browserOpts.loader, '.ttf': 'base64' },
 })
 writeMermaidFrameHtml(rendererOutDir)
 

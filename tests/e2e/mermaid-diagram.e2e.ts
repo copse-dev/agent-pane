@@ -70,6 +70,9 @@ describe('isolated mermaid diagram rendering', () => {
         ownApi: 'api' in window,
         svg: Boolean(document.querySelector('svg')),
         text: document.body.textContent,
+        pliant: Array.from(document.fonts).filter(
+          (font) => font.family === 'Pliant' && font.status === 'loaded',
+        ).length,
       }
     })
     expect(isolation.parentBlocked).toBe(true)
@@ -77,6 +80,7 @@ describe('isolated mermaid diagram rendering', () => {
     expect(isolation.ownApi).toBe(false)
     expect(isolation.svg).toBe(true)
     expect(isolation.text).toContain('Agent')
+    expect(isolation.pliant).toBe(2)
     await browser.switchToParentFrame()
 
     await saveAppScreenshot('mermaid-isolated-inline.png')
@@ -84,8 +88,19 @@ describe('isolated mermaid diagram rendering', () => {
     await $('dialog.mermaid-expand-dialog[open]').waitForExist()
     await $('dialog .mermaid-frame[data-rendered="true"]').waitForExist({ timeout: 40_000 })
     expect(await $('dialog .mermaid-expand-stage svg').isExisting()).toBe(false)
+    await browser.switchFrame(await $('dialog .mermaid-frame'))
+    const expandedFont = await browser.execute(() => ({
+      family: getComputedStyle(document.querySelector('svg')!).fontFamily,
+      loaded: Array.from(document.fonts).filter(
+        (font) => font.family === 'Pliant' && font.status === 'loaded',
+      ).length,
+    }))
+    expect(expandedFont.family).toContain('Pliant')
+    expect(expandedFont.loaded).toBe(2)
+    await browser.switchToParentFrame()
     await saveAppScreenshot('mermaid-diagram-agent-loop.png')
     await $('.mermaid-expand-close').click()
+    await $('dialog .mermaid-frame').waitForExist({ reverse: true })
     expect(await $('dialog.mermaid-expand-dialog').isDisplayed()).toBe(false)
     expect(await $('dialog .mermaid-frame').isExisting()).toBe(false)
   })

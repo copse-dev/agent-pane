@@ -35,6 +35,8 @@ function initMermaid(mermaid: MermaidModule): void {
   mermaid.initialize({
     startOnLoad: false,
     theme: 'dark',
+    fontFamily: 'Pliant',
+    themeVariables: { fontFamily: 'Pliant' },
     // Keep sanitization inside the boundary as defense in depth. The opaque
     // frame, CSP and native navigation guard are independently enforced.
     securityLevel: 'strict',

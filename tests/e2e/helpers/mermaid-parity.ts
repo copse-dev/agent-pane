@@ -5,12 +5,13 @@ import { renderMermaidIn } from '../../../src/renderer/markdown/mermaid.ts'
 import { renderMarkdown, StreamingMarkdownRenderer } from '@copse/streaming-markdown'
 
 function mount(): HTMLElement {
-  document.querySelector('dialog[open]')?.remove()
+  document.querySelector('#parity')?.remove()
   const app = document.getElementById('app')!
   const root = document.createElement('div')
   root.id = 'parity'
-  root.style.cssText = 'padding:16px;overflow:auto;width:100%;height:100%;box-sizing:border-box;'
-  app.replaceChildren(root)
+  root.style.cssText =
+    'position:absolute;inset:0;z-index:100;padding:16px;overflow:auto;background:var(--bg-base);box-sizing:border-box;'
+  app.append(root)
   return root
 }
 
@@ -29,6 +30,11 @@ function column(root: HTMLElement, id: string, title: string): HTMLElement {
 
 Reflect.set(window, 'mermaidParity', {
   async pair(source: string, title: string) {
+    await Promise.all([
+      document.fonts.load('400 16px Pliant'),
+      document.fonts.load('700 16px Pliant'),
+      document.fonts.load('italic 16px Pliant'),
+    ])
     const root = mount()
     root.style.display = 'flex'
     root.style.gap = '20px'

@@ -40,6 +40,7 @@ const cases = [
     'unicode',
     'graph LR\nA["Hello 👋 世界"] --> B["A long label that should wrap consistently across rendering boundaries"]',
   ],
+  ['styled-labels', 'graph LR\nA["`**Bold** and *italic*`"] --> B["Regular text"]'],
   ['invalid', 'this is not a diagram'],
 ] as const
 
@@ -60,6 +61,24 @@ function measure(selector: string) {
     .map((e) => e.textContent?.trim())
     .filter(Boolean)
   const rect = svg.getBoundingClientRect()
+  const fontRuns = []
+  const walker = document.createTreeWalker(svg, NodeFilter.SHOW_TEXT)
+  while (walker.nextNode()) {
+    const node = walker.currentNode
+    const parent = node.parentElement
+    const text = node.textContent?.trim()
+    // Math has its own typeface, and SVG styles/metadata are not visible text.
+    if (!text || !parent || parent.closest('style, script, title, desc, .katex, math')) continue
+    const font = getComputedStyle(parent)
+    fontRuns.push({
+      text,
+      family: font.fontFamily,
+      size: font.fontSize,
+      weight: font.fontWeight,
+      style: font.fontStyle,
+      lineHeight: font.lineHeight,
+    })
+  }
   return {
     svg: true,
     box: [box.x, box.y, box.width, box.height],
@@ -72,6 +91,15 @@ function measure(selector: string) {
     },
     rect: [rect.width, rect.height],
     math: svg.querySelectorAll('.katex').length,
+    fontRuns,
+    loadedPliant: Array.from(document.fonts)
+      .filter(
+        (font) =>
+          font.family.replaceAll('"', '').replaceAll("'", '') === 'Pliant' &&
+          font.status === 'loaded',
+      )
+      .map((font) => font.style)
+      .sort(),
   }
 }
 
@@ -133,6 +161,10 @@ describe('Mermaid same-environment rendering parity', () => {
         expect(isolated.texts).toEqual(baseline.texts)
         expect(isolated.box).toEqual(baseline.box)
         expect(isolated.font).toEqual(baseline.font)
+        expect(isolated.fontRuns).toEqual(baseline.fontRuns)
+        expect(isolated.loadedPliant).toEqual(['italic', 'normal'])
+        expect(baseline.loadedPliant).toEqual(['italic', 'normal'])
+        for (const run of isolated.fontRuns!) expect(run.family).toContain('Pliant')
         expect(isolated.math).toBe(baseline.math)
         // Chromium rounds the opaque frame's viewport to whole CSS pixels.
         for (let i = 0; i < 2; i++) {
@@ -160,6 +192,7 @@ describe('Mermaid same-environment rendering parity', () => {
       await $('[aria-label="Fit diagram to panel"]').click()
       expect(await $('.mermaid-expand-zoom-label').getText()).toBe(initialZoom)
       await $('.mermaid-expand-close').click()
+      await $('dialog iframe').waitForExist({ reverse: true })
       expect(await $$('dialog iframe')).toHaveLength(0)
       expect(await $$('#isolated iframe')).toHaveLength(1)
     }

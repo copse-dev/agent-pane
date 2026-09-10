@@ -42,6 +42,14 @@ That is an observation of the integration boundary, not an XSS finding.
 7. Failures and timeouts show the existing inert source fallback. The timeout
    limits how long the host waits; it cannot interrupt a synchronous CPU loop.
 
+The diagram now explicitly uses chat's Pliant family. The same regular and italic
+variable font bytes are embedded in the hashed bootstrap and installed using
+binary `FontFace` sources before Mermaid measures labels. This needs no font URL
+allowance: `font-src 'none'` remains intact. Bold labels match chat's weight 600.
+This intentionally replaces Mermaid's former Trebuchet default; the parity test
+compares Pliant in both documents, rather than claiming unchanged legacy pixels.
+Math retains its own typography and unsupported glyphs use browser fallback.
+
 ## Enforcement belongs in several layers
 
 | Layer                    | Responsibility                                                                                                                               |
@@ -51,7 +59,7 @@ That is an observation of the integration boundary, not an XSS finding.
 | Host application         | Load the bundled frame, configure CSP/resource access, deny native APIs, authorize any future actions, implement expanded view.              |
 | Electron main process    | Reject subframe IPC and block subframe navigation to anything except the exact packaged frame document. Never open rejected URLs externally. |
 
-The frame's CSP denies network fetches, images, fonts, workers, nested frames,
+The frame's CSP denies network fetches, images, font URLs, workers, nested frames,
 objects, forms, and base-URL changes. Only the hash-pinned bootstrap and inline
 styles are permitted. Inline styles are confined to the frame. Camera, microphone,
 geolocation, and clipboard features are explicitly denied on the element.
@@ -80,7 +88,7 @@ formatting, dead-code, oracle, and e2e syntax checks pass. A full unit run with
 local socket/process access passes all 9,144 tests. The first sandboxed gate run
 encountered socket-permission failures in unrelated suites.
 
-All 17 focused Mermaid Electron tests pass with Mermaid 11.17.2 / Electron 44.1.1
+All 18 focused Mermaid Electron tests pass with Mermaid 11.17.2 / Electron 44.1.1
 (Chromium 152.0.7977.65) on macOS. The shared WDIO pre-reload window-close hook
 stalled on this machine; the local run used the same configuration with only
 `beforeCommand` omitted, leaving ChromeDriver to tear down its session. The
@@ -110,10 +118,10 @@ ratio so a narrowed thumbnail also shrinks vertically. Expansion preserves the
 original layout width. Finite fractional sizes are retained within the existing
 4096px limit instead of being rounded up.
 
-All 13 cases now pass: ordinary/wide/tall flowcharts, sequence, class, state, ER,
-Gantt, pie, mindmap, math, Unicode/wrapped labels, and invalid-source fallback.
-Assertions compare label text, SVG viewBox geometry, font family/size/weight and
-line-height, math-node counts, and displayed dimensions (less than one CSS pixel
+All 14 cases now pass: ordinary/wide/tall flowcharts, sequence, class, state, ER,
+Gantt, pie, mindmap, math, Unicode/wrapped labels, bold/italic labels, and invalid-source fallback.
+Assertions compare label text, SVG viewBox geometry, every non-math text run’s
+font family/size/weight/style and line-height, loaded regular/italic Pliant faces, math-node counts, and displayed dimensions (less than one CSS pixel
 of difference is allowed for iframe viewport rounding). The flowchart, wide,
 sequence, class, and math comparison screenshots were visually inspected.
 
@@ -127,7 +135,7 @@ large-conversation benchmark. The original two security tests still pass.
 ## Before adopting broadly
 
 - Measure many-diagram conversations. The unminified development bootstrap is
-  approximately 7.5 MiB, and each live frame instantiates its own runtime. Consider
+  approximately 8.4 MiB, and each live frame instantiates its own runtime. Consider
   lazy mounting, eviction, concurrency limits, and minification. Reusing one
   execution realm across diagrams would weaken per-diagram separation.
 - Add explicit cancellation/disposal when a message is removed while loading.

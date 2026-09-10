@@ -258,6 +258,7 @@ buildContexts.push(rendererCtx)
 const diagramCtx = await esbuild.context({
   entryPoints: ['src/renderer/markdown/mermaid-frame-entry.ts'],
   outfile: 'dist/renderer/mermaid-frame.js',
+  loader: { '.ttf': 'base64' },
   plugins: [
     onEndPlugin(() => {
       writeMermaidFrameHtml('dist/renderer')
