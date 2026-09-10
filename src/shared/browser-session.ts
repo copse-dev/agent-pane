@@ -26,20 +26,30 @@ export function browserSessionPartition(base: string, scope: string): string {
   return scope ? `${base}:${scope}` : base
 }
 
+/** Interactive UI routes can share visible profiles, including saved legacy panes. */
+export function isVisibleBrowserSessionPartition(partition: string): boolean {
+  return partition === BROWSER_SESSION_PARTITION || visibleBrowserThread(partition) !== null
+}
+
 /** Task plugin routes may only operate the visible cookie jar owned by that task. */
 export function isVisibleBrowserSessionForThread(partition: string, threadId: string): boolean {
+  return threadId.length > 0 && visibleBrowserThread(partition) === threadId
+}
+
+function visibleBrowserThread(partition: string): string | null {
   const prefix = `${BROWSER_SESSION_PARTITION}:thread:`
-  if (!threadId || !partition.startsWith(prefix)) return false
+  if (!partition.startsWith(prefix)) return null
   try {
     const owner: unknown = JSON.parse(decodeURIComponent(partition.slice(prefix.length)))
-    return (
-      Array.isArray(owner) &&
+    return Array.isArray(owner) &&
       owner.length === 2 &&
       typeof owner[0] === 'string' &&
       owner[0].length > 0 &&
-      owner[1] === threadId
-    )
+      typeof owner[1] === 'string' &&
+      owner[1].length > 0
+      ? owner[1]
+      : null
   } catch {
-    return false
+    return null
   }
 }
