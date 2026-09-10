@@ -84,6 +84,42 @@
         font-size: 1.15rem;
       }
 
+      .architecture-boundaries {
+        display: none;
+        margin-top: var(--spacing-lg);
+        scroll-margin-top: 100px;
+      }
+
+      .architecture-boundaries.is-visible {
+        display: block;
+      }
+
+      .architecture-boundaries h2 {
+        margin-bottom: var(--spacing-sm);
+      }
+
+      .architecture-boundaries table {
+        width: 100%;
+        margin-top: var(--spacing-md);
+        border-collapse: collapse;
+        table-layout: fixed;
+        font-size: 0.95rem;
+        line-height: 1.5;
+        overflow-wrap: anywhere;
+      }
+
+      .architecture-boundaries th,
+      .architecture-boundaries td {
+        padding: 12px;
+        text-align: left;
+        vertical-align: top;
+        border-bottom: 1px solid rgba(30, 42, 34, 0.14);
+      }
+
+      .architecture-boundaries th:first-child {
+        width: 28%;
+      }
+
       /* ---- Interactive systems map ---- */
       .arch-map {
         /* Node-kind palette — distinguishable, Copse-aligned hues */
@@ -122,6 +158,7 @@
         border: 1px solid rgba(30, 42, 34, 0.12);
         background: rgba(255, 255, 255, 0.7);
         color: var(--color-text-light);
+        text-decoration: none;
         transition:
           background 0.18s ease,
           border-color 0.18s ease,
@@ -503,14 +540,13 @@
           <h1>How Copse fits together</h1>
           <p>
             Explore the desktop runtime, agent turn, safety gates, persistent data, UI bridge,
-            auxiliary agents, workspace services, build pipeline, and the latest audited changes on
-            main. Choose a view, then select any component to see its responsibilities and source
-            files.
+            auxiliary agents, workspace services, and build pipeline. Choose a view, then select any
+            component to see its current responsibilities and source files.
           </p>
         </header>
 
         <div class="arch-map">
-          <div class="arch-tabs" id="arch-tabs" role="group" aria-label="System view"></div>
+          <nav class="arch-tabs" id="arch-tabs" aria-label="System view"></nav>
           <div class="arch-board">
             <div class="arch-canvas" id="arch-canvas" aria-live="polite"></div>
             <div class="arch-picker" id="arch-picker" aria-label="Components"></div>
@@ -520,12 +556,81 @@
           <section class="arch-inspector" id="arch-inspector" aria-live="polite"></section>
         </div>
 
-        <p class="architecture-note">
-          Verified against <code class="inline-code">origin/main</code> at
-          <code class="inline-code">abe5fa352</code>. Every cited source path exists at that
-          revision; the Recent changes view summarizes the 297 commits since the previous
-          architecture refresh.
-        </p>
+        <section
+          class="architecture-boundaries"
+          id="sandbox-coverage"
+          aria-labelledby="sandbox-heading"
+        >
+          <h2 id="sandbox-heading">Where the project sandbox applies</h2>
+          <p>
+            Permission to call a tool and OS containment are separate checks. Electron main is the
+            trusted host; the project sandbox restricts the local subprocesses and filesystem
+            workers routed through it, not every operation performed by the app.
+          </p>
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Execution path</th>
+                <th scope="col">Boundary and exceptions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th scope="row">Local commands and file workers</th>
+                <td>
+                  macOS seatbelt or Linux bubblewrap applies while the project sandbox is active.
+                  Windows and sandbox initialization failures have no project OS containment; shell
+                  commands then require approval. A thread execution root alone is not an OS
+                  sandbox.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Commands outside the sandbox</th>
+                <td>
+                  Approved external commands and verified-block retries run outside it. Eligible
+                  deterministic auto-approval can skip the prompt only while the project sandbox is
+                  active; Guarded YOLO can also allow some external commands through its harm gate.
+                  Approval does not make these executions contained.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Trusted host services</th>
+                <td>
+                  Provider requests, web fetches, and GitHub API tools use the host network path.
+                  The GitHub service explicitly runs gh outside the project sandbox. Dedicated
+                  GitHub writes still require approval; web calls have their own origin policy.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Configured MCP and custom tools</th>
+                <td>
+                  Configured stdio MCP servers launch without the project sandbox wrapper; HTTP MCP
+                  runs at the configured server. Trust, annotations and approval policy govern
+                  calls. User-installed custom JavaScript runs in the main process with Node
+                  privileges, outside project containment.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">ACP and remote agents</th>
+                <td>
+                  A local ACP process is contained only with a sandbox configuration and an active
+                  project sandbox. SSH and managed agents execute remotely under the remote
+                  environment's controls. Calls back through Copse's native bridge use each tool's
+                  own host policy and execution path.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Hooks and container runs</th>
+                <td>
+                  Command hooks use the project sandbox by default when active; sandbox: false and
+                  the trusted-code fallback run outside it. First-party function hooks run
+                  in-process. Optional Docker runs use guest containment and brokered egress, a
+                  separate boundary from the host project sandbox.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
       </main>
 
       <footer class="site-footer">
@@ -555,7 +660,9 @@
         const flow = byId('arch-flow')
         const inspector = byId('arch-inspector')
         const legend = byId('arch-legend')
-        if (!tabs || !canvas || !picker || !flow || !inspector || !legend) return
+        const sandboxCoverage = byId('sandbox-coverage')
+        if (!tabs || !canvas || !picker || !flow || !inspector || !legend || !sandboxCoverage)
+          return
         const kinds = {
           person: { label: 'User surface', color: 'var(--viz-series-1)' },
           runtime: { label: 'Runtime', color: 'var(--viz-series-2)' },
@@ -568,6 +675,7 @@
         const views = [
           {
             id: 'overview',
+            anchor: 'overview',
             label: 'Overview',
             height: 610,
             lanes: [
@@ -628,7 +736,7 @@
                 h: 58,
                 kind: 'runtime',
                 title: 'Main process',
-                sub: 'trusted multi-window host',
+                sub: 'trusted host',
                 summary:
                   'The Electron main process owns startup, persistent main-window identities, pop-outs, IPC validation, native modules, subprocesses, providers, storage, and coordinated shutdown.',
                 files: [
@@ -728,7 +836,7 @@
                 title: 'Safety plane',
                 sub: 'policy + provenance',
                 summary:
-                  'Tool-specific policy, provenance/taint tracking, hooks, diff review, workspace trust, Guarded YOLO, and the macOS project sandbox constrain model-authored actions.',
+                  'Tool-specific policy, provenance/taint tracking, hooks, diff review, workspace trust, Guarded YOLO, and the macOS/Linux project sandbox constrain model-authored actions.',
                 files: [
                   'src/main/services/security/permission-policy.ts',
                   'src/main/services/security/turn-taint.ts',
@@ -762,7 +870,7 @@
                 title: 'Child processes',
                 sub: 'PTY / MCP / ACP / index / VNC',
                 summary:
-                  'The main process supervises terminal PTYs, command runners, durable background tasks, stdio MCP servers, ACP agents, SSH processes, gortex, VNC tunnels, and sandbox workers.',
+                  'Main owns PTYs, commands, supervised tasks, MCP/ACP, SSH, gortex, VNC and sandbox workers. Opt-in Docker runs execute the headless loop in a disposable guest, report phases through the supervisor, and return reviewable commits rather than editing the host checkout.',
                 files: [
                   'src/main/services/exec/terminal-service.ts',
                   'src/main/services/supervisor/task-supervisor.ts',
@@ -781,8 +889,8 @@
                 summary:
                   'The ~/.copse profile holds thread spines, provider sidecars, worktrees, settings, browser state, usage, and indexes. Secret ciphertext lives in settings.json while its AES data key stays in the OS keyring; Git refs hold short-lived backups.',
                 files: [
-                  'src/main/services/thread-store.ts',
-                  'src/main/services/storage/keyring-cipher.ts',
+                  'packages/thread-store/src/thread-store.ts',
+                  'packages/store-kit/src/keyring-cipher.ts',
                   'docs/agent-development.md',
                 ],
               },
@@ -806,6 +914,7 @@
           },
           {
             id: 'turn',
+            anchor: 'agent-turn',
             label: 'Agent turn',
             height: 660,
             lanes: [
@@ -1028,7 +1137,7 @@
                   'Finalized messages append to the integrity-checked spine; model history, decisions, hook runs, plans, and large tool arguments use owned sidecars while debounced metadata writes stay serialized per thread.',
                 files: [
                   'src/renderer/controller/persistence.ts',
-                  'src/shared/threads/spine-schema.ts',
+                  'packages/thread-store/src/spine-schema.ts',
                   'docs/thread-store-format.md',
                 ],
               },
@@ -1071,6 +1180,7 @@
           },
           {
             id: 'harness',
+            anchor: 'harness',
             label: 'Harness',
             height: 600,
             lanes: [
@@ -1273,7 +1383,7 @@
                   'toolGate hooks run through the dialect adapters and can only tighten the call — deny, ask, or rewrite input — with sequential rewrites re-running policy host-side.',
                 files: [
                   'src/main/services/hooks/tool-gate.ts',
-                  'src/main/services/hooks/copse-adapter.ts',
+                  'packages/hooks-dialects/src/copse-adapter.ts',
                 ],
               },
               {
@@ -1284,11 +1394,11 @@
                 h: 58,
                 kind: 'safety',
                 title: 'Sandbox',
-                sub: 'ASRT + scoped reads',
+                sub: 'OS sandbox + reads',
                 summary:
-                  'On macOS, tool and hook processes run inside the project sandbox with narrow thread-scoped external-read grants; violations surface explicitly and other platforms prompt before host execution.',
+                  'macOS seatbelt and Linux bubblewrap contain tool processes and default command hooks, with scoped external reads. Without an active sandbox, shell commands prompt; command hooks retain their documented trusted-code fallback.',
                 files: [
-                  'src/main/services/hooks/hook-spawn.ts',
+                  'packages/hooks-dialects/src/hook-spawn.ts',
                   'src/main/project-sandbox/spawn.ts',
                   'src/main/services/security/sandbox-failure.ts',
                 ],
@@ -1330,6 +1440,7 @@
           },
           {
             id: 'safety',
+            anchor: 'tools-safety',
             label: 'Tools & safety',
             height: 670,
             lanes: [
@@ -1442,7 +1553,7 @@
                 title: 'File edits',
                 sub: 'worktree diff queue',
                 summary:
-                  'Write and replacement tools resolve against the trusted execution root and create proposed diffs; only isolated Git worktrees can use the safe new-file fast path, while other changes wait for explicit acceptance.',
+                  'Writes resolve against the trusted execution root. With no pending diffs, Git-backed new files can apply directly; existing changes use ownership snapshots and a session backup for unowned work. Failed safety checks stage a proposal, and application checks for stale content.',
                 files: [
                   'src/main/tools/write-file-tool.ts',
                   'src/main/services/diff-queue.ts',
@@ -1459,10 +1570,10 @@
                 title: 'Shell',
                 sub: 'Guarded YOLO',
                 summary:
-                  'Shell analysis classifies every segment and masks heredoc bodies. Standard mode auto-runs only ASRT-contained work; Guarded YOLO widens non-credential paths inside containment but never makes its optional classifier the authority.',
+                  'Local shell commands use macOS seatbelt or Linux bubblewrap while the project sandbox is active. Windows and initialization failures have no OS containment, so shell commands prompt. Approved external commands and retries run outside it; auto-approval and Guarded YOLO can also permit eligible external execution.',
                 files: [
                   'src/main/tools/shell-tool.ts',
-                  'src/main/services/security/shell-scope.ts',
+                  'packages/shell-guard/src/shell-scope.ts',
                   'docs/shell-permissions.md',
                 ],
               },
@@ -1476,7 +1587,7 @@
                 title: 'MCP tools',
                 sub: 'trust + annotations',
                 summary:
-                  'Namespaced MCP calls use server provenance, tool annotations, workspace trust, plugin privilege, remembered grants, and first-party bundled status to choose approval and external-content framing.',
+                  'Configured stdio MCP servers launch without the project sandbox wrapper; HTTP MCP executes at its server. Calls use trust, annotations, remembered grants and approval policy, not universal OS containment. First-party bundled tools have their own host-controlled implementation.',
                 files: [
                   'src/main/services/mcp/mcp-registry.ts',
                   'src/main/services/security/permission-policy.ts',
@@ -1492,7 +1603,7 @@
                 title: 'Custom tools',
                 sub: 'full Node privilege',
                 summary:
-                  'User-installed JavaScript tools load only from the trusted user-data tools directory and always prompt before their in-process Node execution.',
+                  'User-installed JavaScript tools load from the trusted user-data tools directory and execute in the main process with full Node privileges, outside the project sandbox. Custom-tool approval policy governs calls; the workspace cannot supply these modules.',
                 files: ['src/main/services/mcp/custom-tools-registry.ts', 'docs/custom-tools.md'],
               },
               {
@@ -1538,7 +1649,7 @@
                 title: 'Workspace trust',
                 sub: 'instruction gate',
                 summary:
-                  'Workspace instruction files are read before trust is granted but remain provenance-framed; project MCP configs and hooks stay disabled until explicit trust, while user/global definitions retain priority.',
+                  'Nested AGENTS.md activates for referenced ancestor scopes through bounded reads and a per-turn cache. File-tool instruction edits invalidate discovery; external edits refresh next turn. AGENT.md and CLAUDE.md remain root-only. Project MCP and hooks require workspace trust.',
                 files: [
                   'src/main/services/security/workspace-trust.ts',
                   'src/main/services/project-instructions.ts',
@@ -1569,9 +1680,9 @@
                 h: 58,
                 kind: 'runtime',
                 title: 'Contained exec',
-                sub: 'thread execution boundary',
+                sub: 'local OS boundary',
                 summary:
-                  'Trusted thread contexts, local/SSH filesystem facades, path resolvers, and the macOS sandbox bind approved operations to the shared checkout or exact worktree that owns the run.',
+                  'With the project sandbox active, local subprocesses and filesystem workers enforce the workspace boundary using macOS seatbelt or Linux bubblewrap. Thread identity and path resolution choose the execution root; they do not contain SSH or remote execution.',
                 files: [
                   'src/main/services/thread-execution-context.ts',
                   'src/main/services/execution-root.ts',
@@ -1586,9 +1697,9 @@
                 h: 58,
                 kind: 'external',
                 title: 'External exec',
-                sub: 'explicit approval',
+                sub: 'outside sandbox',
                 summary:
-                  'Network access, out-of-workspace paths, GitHub mutations, package downloads, and sandbox retry run outside containment only after the relevant approval path.',
+                  'External shell execution runs outside the project sandbox after approval or an eligible auto-approval / Guarded YOLO decision. Trusted host services also use separate paths: GitHub gh calls explicitly bypass it, while provider and web requests run in main. Dedicated GitHub writes still prompt.',
                 files: [
                   'src/main/services/security/permission-gate.ts',
                   'src/main/services/exec/command-runner.ts',
@@ -1608,7 +1719,7 @@
                 files: [
                   'src/main/services/tool-registry.ts',
                   'packages/agent/src/external-content.ts',
-                  'src/shared/threads/spine-schema.ts',
+                  'packages/thread-store/src/spine-schema.ts',
                 ],
               },
             ],
@@ -1641,6 +1752,7 @@
           },
           {
             id: 'storage',
+            anchor: 'data-storage',
             label: 'Data & storage',
             height: 650,
             lanes: [
@@ -1705,7 +1817,7 @@
                   'Renderer-side chains and the main-process write queue prevent stale in-flight writes or read-modify-write races from clobbering newer state.',
                 files: [
                   'src/renderer/controller/persistence.ts',
-                  'src/main/services/storage/write-queue.ts',
+                  'packages/thread-store/src/write-queue.ts',
                 ],
               },
               {
@@ -1719,7 +1831,7 @@
                 sub: 'sidecar',
                 summary:
                   'Provider-format history is cached per thread in main memory and atomically mirrored to agent-history.json beside that thread, so restart recovery never depends on config.json.',
-                files: ['src/main/index.ts', 'src/main/services/thread-store.ts'],
+                files: ['src/main/index.ts', 'packages/thread-store/src/thread-store.ts'],
               },
               {
                 id: 'threadstore',
@@ -1733,8 +1845,8 @@
                 summary:
                   'Each project/thread directory contains meta.json, append-only messages, decisions, hook runs, plans and machine continuations, OKF prose, provider/ACP sidecars, integrity-hashed blobs, and recursive subagent sessions.',
                 files: [
-                  'src/main/services/thread-store.ts',
-                  'src/shared/threads/spine-schema.ts',
+                  'packages/thread-store/src/thread-store.ts',
+                  'packages/thread-store/src/spine-schema.ts',
                   'docs/thread-store-format.md',
                 ],
               },
@@ -1749,7 +1861,7 @@
                 sub: 'lazy + rebuildable JSONL',
                 summary:
                   'Per-project catalog.jsonl and cached thread metadata make large projects open lazily; thread-reference and remote-PR indexes can rebuild from authoritative thread directories.',
-                files: ['src/main/services/thread-store.ts'],
+                files: ['packages/thread-store/src/thread-store.ts'],
               },
               {
                 id: 'config',
@@ -1780,8 +1892,8 @@
                   'Validated application settings and provider ciphertext live in a separate store. AES-256-GCM uses a random data key held by the OS keyring; legacy safeStorage blobs migrate on read and unavailable keyrings fail closed.',
                 files: [
                   'src/main/services/storage/settings.ts',
-                  'src/main/services/storage/keyring-cipher.ts',
-                  'src/main/services/storage/secret-migration.ts',
+                  'packages/store-kit/src/keyring-cipher.ts',
+                  'packages/store-kit/src/secret-migration.ts',
                 ],
               },
               {
@@ -1828,10 +1940,13 @@
                 title: 'Long tasks',
                 sub: 'tasks + automations',
                 summary:
-                  'Long-horizon state and scheduled runs persist outside message bodies; supervised tasks keep mutable metadata plus an append-only audit trail and machine turns are recorded on the owning thread.',
+                  'Supervised tasks retain metadata and append-only audit records; cron runs while the app is open. The event inbox implements admission, deterministic identity, enqueueOnce and recovery. Authenticated adapters, startup wiring and model dispatch remain future work. Container review records and result refs are retained separately.',
                 files: [
                   'src/main/services/supervisor/task-store.ts',
                   'src/main/services/automations/automation-service.ts',
+                  'src/main/services/supervisor/event-inbox.ts',
+                  'docs/plans/event-automation-inbox.md',
+                  'docs/plans/event-driven-automations.md',
                   'docs/thread-store-format.md',
                 ],
               },
@@ -1903,6 +2018,7 @@
           },
           {
             id: 'ui',
+            anchor: 'ui-ipc',
             label: 'UI & IPC',
             height: 640,
             lanes: [
@@ -1981,7 +2097,7 @@
                 title: 'Markdown',
                 sub: 'stream + sanitize',
                 summary:
-                  'Streaming Markdown injects host sanitization, highlighting, link decoration, artifact-image policy, code blocks, tables, and Mermaid rendering.',
+                  'The external @copse/streaming-markdown package owns parsing and streaming. App glue injects sanitization, highlighting, link and artifact-image policy, code-block actions, and lazy Mermaid rendering.',
                 files: [
                   'src/renderer/markdown/sanitizer-backend.ts',
                   'src/renderer/markdown/highlighter-backend.ts',
@@ -2049,8 +2165,8 @@
                 title: 'window.api',
                 sub: 'typed contextBridge',
                 summary:
-                  'The context-isolated preload exposes typed clients for workspace, agent, storage, threads, windows, files, Git/GitHub, terminal, plugins, SSH, browser/canvas, VNC, automations, and usage.',
-                files: ['src/preload/index.ts', 'src/preload/api.d.ts'],
+                  'ApiClient and typed preload bindings generate a committed manifest and build-time JSON Schema. CI compares the PR base and requires a version bump for breaking changes. Electron uses contextBridge/IPC; the experimental sidecar checks the protocol version in both handshake directions.',
+                files: ['src/preload/index.ts', 'src/preload/api.d.ts', 'docs/api-protocol.md'],
               },
               {
                 id: 'channels',
@@ -2149,6 +2265,7 @@
           },
           {
             id: 'agents',
+            anchor: 'agents-hooks',
             label: 'Agents & hooks',
             height: 680,
             lanes: [
@@ -2184,7 +2301,7 @@
                 title: 'ACP client',
                 sub: 'local or SSH process',
                 summary:
-                  'Copse hosts configured ACP agents locally or over SSH, binds their cwd to the thread root, persists resumable session identity, owns approvals, forwards eligible MCP servers, and adapts v1/v2 updates to StreamChunk.',
+                  'Copse hosts ACP locally or over SSH, binds the thread root, persists session identity and adapts v1/v2 updates. Local process containment requires an agent sandbox configuration and an active project sandbox; SSH execution uses remote controls. Bridged native calls follow each Copse tool’s host policy.',
                 files: [
                   'src/main/services/acp/acp-client.ts',
                   'src/main/services/acp/acp-session-pool.ts',
@@ -2198,13 +2315,17 @@
                 w: 124,
                 h: 58,
                 kind: 'external',
-                title: 'ACP server',
-                sub: 'headless Copse host',
+                title: 'Headless host',
+                sub: 'ACP / Docker guest',
                 summary:
-                  'Headless server mode exposes Copse’s native loop and supported lifecycle over ACP stdio without opening an Electron window, using the same provider/tool/hook contracts.',
+                  'The headless host exposes the native loop over ACP stdio and powers optional Docker runs, off by default. The guest uses attested containment and brokered egress; the supervisor tracks progress and cancellation without replaying runs. Review records and Git refs require explicit adoption.',
                 files: [
                   'src/main/services/acp/acp-app-entry.ts',
                   'src/main/services/acp/acp-agent-server.ts',
+                  'src/main/services/headless-agent-host.ts',
+                  'src/main/services/container-runtime/container-run-service.ts',
+                  'src/main/services/container-runtime/thread-container.ts',
+                  'docs/plans/thread-in-container.md',
                 ],
               },
               {
@@ -2217,7 +2338,7 @@
                 title: 'Remote agents',
                 sub: 'managed services',
                 summary:
-                  'Cursor or Anthropic managed-agent clients start or resume remote sessions, normalize streamed events, link repository/branch/PR state, and download artifacts.',
+                  'Cursor or Anthropic managed-agent clients start or resume remote sessions, normalize events and download artifacts. Execution takes place in the provider environment, outside the local project sandbox and under the remote service’s controls.',
                 files: [
                   'src/main/services/remote/remote-agent-client.ts',
                   'src/main/services/remote/managed-agents-client.ts',
@@ -2335,7 +2456,7 @@
                 title: 'Plugin registry',
                 sub: 'first + user',
                 summary:
-                  'One registry combines built-in plugins with discovered Agent Plugins packages and explicitly selected personal plugins. Manifests atomically gate tools/MCP, command hooks, untrusted prompts, host-rendered UI, settings, and namespaced storage.',
+                  'The registry combines built-in, discovered and selected personal plugins. Manifests gate tools/MCP, command hooks, prompts, UI, settings and storage. Isolated SDK function-hook registration exists, but canonical fire sites do not automatically invoke it yet.',
                 files: [
                   'packages/agent/src/plugins/plugin-registry.ts',
                   'packages/agent/src/plugins/agent-plugin-manifest.ts',
@@ -2354,9 +2475,9 @@
                 summary:
                   'A dialect registry merges Copse in-process hooks with Cursor and Claude command-hook adapters behind canonical event and decision types.',
                 files: [
-                  'src/main/services/hooks/dialect-registry.ts',
-                  'src/main/services/hooks/copse-adapter.ts',
-                  'src/main/services/hooks/cursor-adapter.ts',
+                  'packages/hooks-dialects/src/dialect-registry.ts',
+                  'packages/hooks-dialects/src/copse-adapter.ts',
+                  'packages/hooks-dialects/src/cursor-adapter.ts',
                 ],
               },
               {
@@ -2386,10 +2507,10 @@
                 title: 'Executors',
                 sub: 'function / command',
                 summary:
-                  'First-party function hooks run in-process; command hooks receive scrubbed environments, deadlines, depth limits, stdout parsing, provenance framing, project trust, and the same sandbox/read-grant boundary as tools.',
+                  'First-party function hooks run in-process, outside the project sandbox. Command hooks default to the active project sandbox with scrubbed environments, deadlines, trust and provenance checks. sandbox: false and the trusted-code fallback when no sandbox is active run uncontained.',
                 files: [
                   'src/main/services/hooks/command-hook-runner.ts',
-                  'src/main/services/hooks/hook-spawn.ts',
+                  'packages/hooks-dialects/src/hook-spawn.ts',
                   'src/main/services/hooks/run-deadline.ts',
                 ],
               },
@@ -2423,7 +2544,7 @@
                   'Every hook execution records a hook_run line with timing, parse status, decision, integrity-hashed payload/output blobs, and toolset fingerprint; live runs emit cards without consulting current plugin registration.',
                 files: [
                   'src/main/services/hook-run-recorder.ts',
-                  'src/main/services/thread-store.ts',
+                  'packages/thread-store/src/thread-store.ts',
                   'src/shared/hooks/hook-card.ts',
                 ],
               },
@@ -2451,6 +2572,7 @@
           },
           {
             id: 'workspace',
+            anchor: 'workspace-search',
             label: 'Workspace & search',
             height: 660,
             lanes: [
@@ -2712,6 +2834,7 @@
           },
           {
             id: 'build',
+            anchor: 'build-ci',
             label: 'Build & CI',
             height: 670,
             lanes: [
@@ -2730,12 +2853,11 @@
                 title: 'TypeScript',
                 sub: 'src + packages + sidecars',
                 summary:
-                  'Application code lives under src with reusable agent, LLM, and plan-usage packages, shared protocol aliases, and isolated websocket/electron-shim sidecars used by the experimental Servo shell.',
+                  'The app lives under src. Host-independent workspace packages own the loop, providers, shell classification, thread format, hook dialects, plugin SDK, profile storage and process diagnostics. Streaming Markdown is an external dependency; Servo uses an experimental sidecar.',
                 files: [
                   'src',
-                  'packages/agent',
-                  'packages/llm',
-                  'packages/plan-usage',
+                  'packages',
+                  'scripts/workspace-package-invariants.test.ts',
                   'src/sidecar',
                 ],
               },
@@ -2805,7 +2927,7 @@
                 title: 'pnpm run check',
                 sub: 'pre-commit gate',
                 summary:
-                  'The standard gate runs node/web typecheck, type-aware ESLint, Prettier, generated-site drift, dead-code and oracle validation, e2e syntax checks, and bundled unit/component tests.',
+                  'The standard gate runs node/web typecheck, type-aware ESLint, oxfmt, generated-site drift, dead-code and oracle validation, e2e syntax checks, and bundled unit/component tests.',
                 files: ['package.json', 'scripts/check-dead-code.mts', 'scripts/run-tests.mts'],
               },
               {
@@ -2945,208 +3067,17 @@
               ['ci', 'security', 'parallel gates'],
             ],
           },
-          {
-            id: 'recent-changes',
-            label: 'Recent changes',
-            initialNodeId: 'knowledge',
-            height: 670,
-            lanes: [
-              { y: 40, label: 'Audit baseline' },
-              { y: 208, label: 'Runtime and policy changes' },
-              { y: 444, label: 'User experience and delivery changes' },
-            ],
-            nodes: [
-              {
-                id: 'baseline',
-                x: 274,
-                y: 72,
-                w: 180,
-                h: 62,
-                kind: 'data',
-                title: 'main @ abe5fa352',
-                sub: '297 commits / 1,410 files',
-                summary:
-                  'This refresh compares the previous architecture-page tip 4bf32a0b0 with origin/main at abe5fa352: 297 commits changed 1,410 files with 93,966 insertions and 24,665 deletions.',
-                files: ['CHANGELOG.md', 'AGENTS.md', '.github/workflows/ci.yml'],
-              },
-              {
-                id: 'hooks',
-                x: 18,
-                y: 244,
-                w: 122,
-                h: 62,
-                kind: 'core',
-                title: 'Execution roots',
-                sub: 'thread worktrees',
-                summary:
-                  'Thread identity now resolves to a trusted shared checkout or Copse-managed worktree, based on the selected branch. File, Git, diff, search, terminal, ACP, backup, and watcher paths follow that context.',
-                files: [
-                  'src/main/services/thread-execution-context.ts',
-                  'src/main/services/worktree-manager.ts',
-                  'docs/plans/thread-worktrees.md',
-                ],
-              },
-              {
-                id: 'plugins',
-                x: 158,
-                y: 244,
-                w: 122,
-                h: 62,
-                kind: 'core',
-                title: 'Plugins & tasks',
-                sub: 'discovery + machine turns',
-                summary:
-                  'Agent Plugins packages and explicitly selected personal plugins now feed the shared registry. Automations, supervised tasks, durable CI watches, and follow-up bubbles use explicit machine-turn and ownership contracts.',
-                files: [
-                  'src/main/services/plugins/discover-user-plugins.ts',
-                  'src/main/services/automations/automation-service.ts',
-                  'src/main/services/supervisor/task-supervisor.ts',
-                ],
-              },
-              {
-                id: 'providers',
-                x: 298,
-                y: 244,
-                w: 122,
-                h: 62,
-                kind: 'safety',
-                title: 'Trust & provenance',
-                sub: 'taint + fail-closed shell',
-                summary:
-                  'Workspace instructions, attachments, external tools, and remembered memories carry provenance. Shell policy now requires an active OS sandbox for auto-run, scopes external reads per thread, and keeps Guarded YOLO inside containment.',
-                files: [
-                  'packages/agent/src/external-content.ts',
-                  'src/main/services/security/turn-taint.ts',
-                  'docs/shell-permissions.md',
-                ],
-              },
-              {
-                id: 'terminal',
-                x: 438,
-                y: 244,
-                w: 122,
-                h: 62,
-                kind: 'safety',
-                title: 'Agents & models',
-                sub: 'ACP + adaptive loop',
-                summary:
-                  'ACP gained SSH execution, resumable session identity, protocol-v2 adaptation, stronger recovery, and permissioned native tools. The direct loop gained reasoning/artifact checkpoints, adaptive call budgets, and a generated model catalog.',
-                files: [
-                  'src/main/services/acp/acp-session-pool.ts',
-                  'packages/agent/src/agent-loop-limits.ts',
-                  'packages/llm/src/model-catalog.generated.ts',
-                ],
-              },
-              {
-                id: 'advisor',
-                x: 578,
-                y: 244,
-                w: 126,
-                h: 62,
-                kind: 'core',
-                title: 'Secrets & profile',
-                sub: 'OS keyring + one data root',
-                summary:
-                  'All product state converged under ~/.copse. Stored secrets are now AES-GCM ciphertext backed by one OS-keyring data key, with lazy safeStorage migration and fail-closed behavior when the keyring is unavailable.',
-                files: [
-                  'src/main/services/storage/keyring-cipher.ts',
-                  'src/main/services/storage/secret-migration.ts',
-                  'docs/agent-development.md',
-                ],
-              },
-              {
-                id: 'ui',
-                x: 18,
-                y: 480,
-                w: 150,
-                h: 62,
-                kind: 'person',
-                title: 'Windows & panes',
-                sub: 'multi-window + VNC + canvas',
-                summary:
-                  'Multiple main windows persist independent navigation while pop-outs receive owner-scoped terminal/diff state. The right pane added integrated VNC, an agent-visible MCP-UI canvas, responsive stacking, and richer file/attachment previews.',
-                files: [
-                  'src/main/windows/main-window-state.ts',
-                  'src/renderer/views/vnc-pane.ts',
-                  'src/main/services/canvas-agent-mirror.ts',
-                ],
-              },
-              {
-                id: 'knowledge',
-                x: 196,
-                y: 480,
-                w: 150,
-                h: 62,
-                kind: 'data',
-                title: 'Thread durability',
-                sub: 'history + decisions + attribution',
-                summary:
-                  'Provider history moved from config.json to per-thread sidecars; the append-only spine gained decisions, machine continuations, plans, oversized argument blobs, starting commits, and model/turn attribution.',
-                files: [
-                  'src/main/services/thread-store.ts',
-                  'src/shared/threads/spine-schema.ts',
-                  'docs/thread-store-format.md',
-                ],
-              },
-              {
-                id: 'delivery',
-                x: 374,
-                y: 480,
-                w: 150,
-                h: 62,
-                kind: 'external',
-                title: 'Build & delivery',
-                sub: 'pnpm + oracle + exact artifacts',
-                summary:
-                  'The repository migrated to pnpm and shared worktree caches; the test oracle selects unit/browser/Electron tiers; remote runs detach against pre-baked images; and release publication now manually promotes the exact reviewed, signed, notarized, smoke-tested artifact after checksums and provenance checks pass.',
-                files: [
-                  'package.json',
-                  'scripts/remote-e2e.mts',
-                  '.github/workflows/release-publish.yml',
-                  'docs/release-checklist.md',
-                ],
-              },
-              {
-                id: 'runtime',
-                x: 552,
-                y: 480,
-                w: 152,
-                h: 62,
-                kind: 'runtime',
-                title: 'Runtime evolution',
-                sub: 'performance + Servo experiment',
-                summary:
-                  'Lazy thread hydration, indexed stream updates, cached Git/index reads, bounded gortex state, and startup probes reduce Electron cost. A patched Tauri/Servo shell now exercises the same renderer as an explicit experiment, not the shipped runtime.',
-                files: [
-                  'src/main/services/search/semantic-index.ts',
-                  'src/shared/store/store.ts',
-                  'docs/servo-mode.md',
-                ],
-              },
-            ],
-            edges: [
-              ['baseline', 'hooks', 'execution roots'],
-              ['baseline', 'plugins', 'plugins + tasks'],
-              ['baseline', 'providers', 'trust'],
-              ['baseline', 'terminal', 'agent loops'],
-              ['baseline', 'advisor', 'secrets'],
-              ['hooks', 'ui', 'worktree views'],
-              ['plugins', 'ui', 'surfaces'],
-              ['providers', 'ui', 'provenance'],
-              ['terminal', 'ui', 'streams'],
-              ['advisor', 'knowledge', 'owned state'],
-              ['baseline', 'delivery', 'delivery'],
-              ['baseline', 'runtime', 'runtime'],
-              ['knowledge', 'ui', 'hydrate'],
-            ],
-          },
         ]
 
         const initialNodeId = (view) =>
           view.nodes.some((node) => node.id === view.initialNodeId)
             ? view.initialNodeId
             : view.nodes[0].id
-        let activeView = views[0]
+        const viewFromHash = () => {
+          const anchor = window.location.hash.slice(1)
+          return views.find((view) => view.anchor === anchor)
+        }
+        let activeView = viewFromHash() ?? views[0]
         let selectedNodeId = initialNodeId(activeView)
         const ns = 'http://www.w3.org/2000/svg'
 
@@ -3236,16 +3167,11 @@
         function renderTabs() {
           tabs.replaceChildren()
           views.forEach((view) => {
-            const button = el('button', `arch-tab${view.id === activeView.id ? ' is-active' : ''}`)
-            button.type = 'button'
-            button.textContent = view.label
-            button.setAttribute('aria-pressed', String(view.id === activeView.id))
-            button.addEventListener('click', () => {
-              activeView = view
-              selectedNodeId = initialNodeId(view)
-              renderAll()
-            })
-            tabs.appendChild(button)
+            const link = el('a', `arch-tab${view.id === activeView.id ? ' is-active' : ''}`)
+            link.href = `#${view.anchor}`
+            link.textContent = view.label
+            if (view.id === activeView.id) link.setAttribute('aria-current', 'page')
+            tabs.appendChild(link)
           })
         }
 
@@ -3411,10 +3337,12 @@
 
           // With the SVG laid out, shrink any node label that overflows its box.
           const shrink = (textEl, maxWidth) => {
+            // Leave one pixel for font-size rounding and optical font metrics.
+            const targetWidth = maxWidth - 1
             const length = textEl.getComputedTextLength()
-            if (length > maxWidth) {
+            if (length > targetWidth) {
               const current = parseFloat(getComputedStyle(textEl).fontSize) || 12
-              textEl.style.fontSize = `${Math.max(8, (current * maxWidth) / length)}px`
+              textEl.style.fontSize = `${Math.max(8, (current * targetWidth) / length)}px`
             }
           }
           labelFits.forEach(({ node, titleText, subText }) => {
@@ -3525,6 +3453,7 @@
         }
 
         function renderAll() {
+          sandboxCoverage.classList.toggle('is-visible', activeView.id === 'safety')
           renderTabs()
           renderDiagram()
           renderPicker()
@@ -3532,8 +3461,19 @@
           renderDetail()
         }
 
+        window.addEventListener('hashchange', () => {
+          const view = viewFromHash() ?? views[0]
+          if (view.id === activeView.id) return
+          activeView = view
+          selectedNodeId = initialNodeId(view)
+          renderAll()
+        })
+
         renderLegend()
         renderAll()
+        // Initial layout may use fallback metrics. Refit the diagram once the
+        // webfont settles, preserving the currently selected view and node.
+        document.fonts.ready.then(() => renderDiagram())
       })()
     </script>
   </body>
