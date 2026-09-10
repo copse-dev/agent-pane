@@ -90,6 +90,13 @@ import type {
   VncStatusEvent,
   VncTarget,
 } from '@shared/types/vnc.ts'
+import type {
+  SimulatorDesktopConnection,
+  SimulatorDesktopDevice,
+  SimulatorDesktopFrame,
+  SimulatorDesktopInput,
+  SimulatorDesktopStatusEvent,
+} from '@shared/types/simulator-desktop.ts'
 
 export type { DetectedAcpAgent }
 
@@ -817,6 +824,15 @@ export interface ApiClient {
     close: (connectionId: string) => Promise<void>
     onData: (handler: (connectionId: string, bytes: Uint8Array) => void) => () => void
     onStatus: (handler: (event: VncStatusEvent) => void) => () => void
+  }
+  simulatorDesktop: {
+    list: () => Promise<SimulatorDesktopDevice[]>
+    open: (udid: string) => Promise<SimulatorDesktopConnection>
+    start: (connectionId: string) => Promise<void>
+    input: (connectionId: string, input: SimulatorDesktopInput) => Promise<void>
+    close: (connectionId: string) => Promise<void>
+    onFrame: (handler: (frame: SimulatorDesktopFrame) => void) => () => void
+    onStatus: (handler: (event: SimulatorDesktopStatusEvent) => void) => () => void
   }
   memories: {
     list: () => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote[]>

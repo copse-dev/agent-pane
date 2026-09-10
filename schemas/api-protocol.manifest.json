@@ -1305,6 +1305,41 @@
           3
         ]
       },
+      "simulator-desktop:close": {
+        "api": "simulatorDesktop.close",
+        "args": [
+          1,
+          1
+        ]
+      },
+      "simulator-desktop:input": {
+        "api": "simulatorDesktop.input",
+        "args": [
+          2,
+          2
+        ]
+      },
+      "simulator-desktop:list": {
+        "api": "simulatorDesktop.list",
+        "args": [
+          0,
+          0
+        ]
+      },
+      "simulator-desktop:open": {
+        "api": "simulatorDesktop.open",
+        "args": [
+          1,
+          1
+        ]
+      },
+      "simulator-desktop:start": {
+        "api": "simulatorDesktop.start",
+        "args": [
+          1,
+          1
+        ]
+      },
       "skills:list": {
         "api": "skills.list",
         "args": [
@@ -2081,6 +2116,20 @@
       },
       "security:guarded-yolo-changed": {
         "api": "security.onGuardedYoloChanged",
+        "args": [
+          1,
+          1
+        ]
+      },
+      "simulator-desktop:frame": {
+        "api": "simulatorDesktop.onFrame",
+        "args": [
+          1,
+          1
+        ]
+      },
+      "simulator-desktop:status": {
+        "api": "simulatorDesktop.onStatus",
         "args": [
           1,
           1

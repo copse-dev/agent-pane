@@ -175,6 +175,7 @@ import {
 import { requestSshPrompt } from '../services/ssh-workspace/ssh-prompt.ts'
 import { requestCloseConfirmation } from '../services/close-confirm.ts'
 import { setSeededVncNearbyServersForTests } from '../services/vnc/vnc-service.ts'
+import { setSeededSimulatorDesktopForTests } from '../services/simulator-desktop/simulator-desktop-service.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
 import {
   listSkills,
@@ -2995,6 +2996,42 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
         [raw],
       )
       setSeededVncNearbyServersForTests(servers)
+    })
+    ipcMain.handle('test:setSimulatorDesktop', (event, raw: unknown) => {
+      assertMainFrameSender(event, win)
+      const value = parseIpcArgs(
+        z.object({
+          devices: z
+            .array(
+              z.object({
+                udid: z.uuid(),
+                name: z.string().min(1).max(256),
+                runtime: z.string().min(1).max(128),
+              }),
+            )
+            .max(8),
+          frame: z
+            .object({
+              base64: z.string().max(2_000_000),
+              mimeType: z.enum(['image/jpeg', 'image/png', 'image/svg+xml']),
+              pixelWidth: z.number().int().positive().max(10_000),
+              pixelHeight: z.number().int().positive().max(10_000),
+            })
+            .nullable(),
+        }),
+        [raw],
+      )
+      setSeededSimulatorDesktopForTests(
+        value.devices,
+        value.frame
+          ? {
+              bytes: Uint8Array.from(Buffer.from(value.frame.base64, 'base64')),
+              mimeType: value.frame.mimeType,
+              pixelWidth: value.frame.pixelWidth,
+              pixelHeight: value.frame.pixelHeight,
+            }
+          : null,
+      )
     })
     ipcMain.handle('test:setSemanticIndexScaleGuard', (event, phase: unknown, reason: unknown) => {
       assertMainFrameSender(event, win)

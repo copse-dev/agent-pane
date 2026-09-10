@@ -64,7 +64,7 @@ export function prepareXcodeBuildMcpArguments(toolName: string, args: unknown): 
   if (!PROVISIONING_TOOL_NAMES.has(toolName) || !isRecord(args)) return args
   const rawExtraArgs = args['extraArgs']
   const extraArgs = Array.isArray(rawExtraArgs)
-    ? rawExtraArgs.filter((value): value is string => typeof value === 'string')
+    ? rawExtraArgs.filter((value) => typeof value === 'string')
     : []
   if (extraArgs.includes(ALLOW_PROVISIONING_UPDATES)) return args
   return { ...args, extraArgs: [...extraArgs, ALLOW_PROVISIONING_UPDATES] }

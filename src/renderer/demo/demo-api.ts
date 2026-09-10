@@ -863,6 +863,15 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       onData: subscribe,
       onStatus: subscribe,
     },
+    simulatorDesktop: {
+      list: emptyArray,
+      open: unsupported,
+      start: resolvedVoid,
+      input: resolvedVoid,
+      close: resolvedVoid,
+      onFrame: subscribe,
+      onStatus: subscribe,
+    },
     memories: {
       list: emptyArray,
       create: unsupported,

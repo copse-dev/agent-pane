@@ -83,6 +83,7 @@ import {
 } from './services/search/semantic-index.ts'
 import { initTerminal } from './ipc/terminal.ts'
 import { initVnc } from './ipc/vnc.ts'
+import { initSimulatorDesktop } from './ipc/simulator-desktop.ts'
 import { registerAllHandlers } from './ipc/register-handlers.ts'
 import { initSkillsRegistry } from './services/skills/skills-registry.ts'
 import { initAgentsRegistry } from './services/agents/agents-registry.ts'
@@ -505,6 +506,7 @@ app
     initFsWatcher(win)
     const disposeTerminalHandlers = initTerminal(win)
     const disposeVncHandlers = initVnc(win)
+    const disposeSimulatorDesktopHandlers = initSimulatorDesktop(win)
     recordStartupPhase('register-handlers')
     perfMark('main:register-handlers')
     registerAllHandlers(win, registry)
@@ -966,6 +968,7 @@ app
       })
     disposeTerminal = disposeTerminalHandlers
     disposeVnc = disposeVncHandlers
+    disposeSimulatorDesktop = disposeSimulatorDesktopHandlers
   })
   .catch(console.error)
 
@@ -990,6 +993,7 @@ let quitCleanupFinished = false
 const QUIT_CLEANUP_DEADLINE_MS = 30_000
 let disposeTerminal: (() => void) | undefined
 let disposeVnc: (() => Promise<void>) | undefined
+let disposeSimulatorDesktop: (() => Promise<void>) | undefined
 let disposeLongTaskWake: (() => void) | undefined
 let disposeCiWatchConsumer: (() => void) | undefined
 let disposeBackgroundProcessSupervisor: (() => void) | undefined
@@ -1025,6 +1029,8 @@ async function cleanupBeforeQuit(): Promise<void> {
   disposeTerminal = undefined
   await disposeVnc?.()
   disposeVnc = undefined
+  await disposeSimulatorDesktop?.()
+  disposeSimulatorDesktop = undefined
   closeAllWatchers()
   stopWorkspaceIndexWatcher()
   shutdownBrowserSession()

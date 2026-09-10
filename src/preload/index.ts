@@ -1062,6 +1062,46 @@ const api: ApiClient = {
       }
     },
   },
+  simulatorDesktop: {
+    list: () => ipcRenderer.invoke('simulator-desktop:list'),
+    open: (udid: string) => ipcRenderer.invoke('simulator-desktop:open', udid),
+    start: (connectionId: string) => ipcRenderer.invoke('simulator-desktop:start', connectionId),
+    input: (
+      connectionId: string,
+      input: import('@shared/types/simulator-desktop.ts').SimulatorDesktopInput,
+    ) => ipcRenderer.invoke('simulator-desktop:input', connectionId, input),
+    close: (connectionId: string) => ipcRenderer.invoke('simulator-desktop:close', connectionId),
+    onFrame: (
+      handler: (frame: import('@shared/types/simulator-desktop.ts').SimulatorDesktopFrame) => void,
+    ) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        frame: import('@shared/types/simulator-desktop.ts').SimulatorDesktopFrame,
+      ): void => {
+        handler(frame)
+      }
+      ipcRenderer.on('simulator-desktop:frame', listener)
+      return (): void => {
+        ipcRenderer.off('simulator-desktop:frame', listener)
+      }
+    },
+    onStatus: (
+      handler: (
+        event: import('@shared/types/simulator-desktop.ts').SimulatorDesktopStatusEvent,
+      ) => void,
+    ) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        status: import('@shared/types/simulator-desktop.ts').SimulatorDesktopStatusEvent,
+      ): void => {
+        handler(status)
+      }
+      ipcRenderer.on('simulator-desktop:status', listener)
+      return (): void => {
+        ipcRenderer.off('simulator-desktop:status', listener)
+      }
+    },
+  },
   memories: {
     list: () => ipcRenderer.invoke('memories:list'),
     create: (title: string, body: string, tags?: string[]) =>
@@ -1428,6 +1468,9 @@ if (process.env['COPSE_E2E'] === '1') {
     },
     setVncNearbyServers(servers: unknown) {
       return ipcRenderer.invoke('test:setVncNearbyServers', servers)
+    },
+    setSimulatorDesktop(value: unknown) {
+      return ipcRenderer.invoke('test:setSimulatorDesktop', value)
     },
   })
 }
