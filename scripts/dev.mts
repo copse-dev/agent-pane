@@ -8,6 +8,7 @@ import { copyMonacoWorkers } from './copy-monaco-workers.mts'
 import { STANDALONE_MAIN_BUNDLES } from './main-bundles.mts'
 import { MAIN_EXTERNALS, MAIN_LOG_OVERRIDE } from './main-externals.mts'
 import { expectString } from '../src/shared/unknown-value.mts'
+import { writeMermaidFrameHtml } from './write-mermaid-frame.mts'
 
 const require = createRequire(import.meta.url)
 const electronPath = expectString(require('electron'))
@@ -254,6 +255,20 @@ const rendererCtx = await esbuild.context({
 })
 buildContexts.push(rendererCtx)
 
+const diagramCtx = await esbuild.context({
+  entryPoints: ['src/renderer/markdown/mermaid-frame-entry.ts'],
+  outfile: 'dist/renderer/mermaid-frame.js',
+  loader: { '.ttf': 'base64' },
+  plugins: [
+    onEndPlugin(() => {
+      writeMermaidFrameHtml('dist/renderer')
+    }),
+  ],
+  bundle: true,
+  platform: 'browser',
+  sourcemap: true,
+})
+buildContexts.push(diagramCtx)
 // Every context is built before the first launch — Electron must not start
 // against a `dist/` that is missing a bundle it spawns by path (the missing
 // `sandbox-fs-worker.js` broke every sandboxed `fs:*` call, see main-bundles.mts).
@@ -262,11 +277,13 @@ await Promise.all([
   preloadCtx.rebuild(),
   videoPreloadCtx.rebuild(),
   rendererCtx.rebuild(),
+  diagramCtx.rebuild(),
   videoDecoderCtx.rebuild(),
   ...standaloneCtxs.map((ctx) => ctx.rebuild()),
 ])
 copyFileSync('src/renderer/video/decoder.html', 'dist/renderer/video/decoder.html')
 console.log(`[dev] profile: ${devProfileRoot}`)
+writeMermaidFrameHtml('dist/renderer')
 startElectron()
 restartOnBuild = true
 
@@ -277,6 +294,7 @@ await videoPreloadCtx.watch()
 await rendererCtx.watch()
 await videoDecoderCtx.watch()
 for (const ctx of standaloneCtxs) await ctx.watch()
+await diagramCtx.watch()
 
 process.on('SIGINT', () => void shutdown('SIGINT'))
 process.on('SIGTERM', () => void shutdown('SIGTERM'))

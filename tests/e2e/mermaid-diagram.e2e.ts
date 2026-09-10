@@ -1,109 +1,162 @@
 import { mkdirSync } from 'node:fs'
+import { createServer } from 'node:http'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedMermaidDiagramFixture } from './helpers/seed-config.ts'
+import { saveAppScreenshot } from './helpers/screenshot.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
+let requests = 0
+let probeUrl = ''
+const server = createServer((_request, response) => {
+  requests++
+  response.end('unexpected request')
+})
 
-describe('mermaid diagram rendering', () => {
+describe('isolated mermaid diagram rendering', () => {
   before(async () => {
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const address = server.address()
+    if (!address || typeof address === 'string') throw new Error('No probe server port')
+    probeUrl = `http://127.0.0.1:${String(address.port)}`
+    const { resetUserData, seedMermaidDiagramFixture } = await import('./helpers/seed-config.ts')
     resetUserData()
     seedMermaidDiagramFixture(process.cwd())
     await browser.reloadSession()
   })
 
-  after(() => {
+  after(async () => {
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+    const { resetUserData } = await import('./helpers/seed-config.ts')
     resetUserData()
   })
 
-  it('renders mermaid fenced blocks as SVG diagrams', async () => {
-    await $('.message-text .mermaid-diagram').waitForExist({ timeout: 30_000 })
-
-    // The diagram SVG is produced by lazy-loading the (large) `mermaid` bundle and
-    // then rendering it through DOMPurify (securityLevel 'strict', see
-    // src/renderer/markdown/mermaid.ts). That import-plus-sanitize cost is the
-    // heaviest single step in the CI gate and occasionally overran the old 20s
-    // budget on the 2-core GitHub runner (fail-then-pass-on-retry). Give it real
-    // headroom so the spec passes on the first attempt instead of leaning on the
-    // shard-level retry.
-    await browser.waitUntil(
-      async () => {
-        const svg = await $('.message-text .mermaid-diagram svg')
-        return svg.isExisting()
-      },
-      {
-        timeout: 40_000,
-        timeoutMsg: 'expected mermaid diagram SVG to render',
-      },
-    )
-
-    const layout = await browser.execute(() => {
-      const root = document.querySelector('.message-text')
-      const diagram = root?.querySelector('.mermaid-diagram')
-      const pre = diagram?.querySelector('pre.mermaid')
+  it('renders and expands in opaque frames without inserting SVG into the app', async () => {
+    const selector = '.message-text iframe.mermaid-frame[data-rendered="true"]'
+    await $(selector).waitForExist({ timeout: 40_000 })
+    const frame = await $(selector)
+    expect(await frame.getAttribute('sandbox')).toBe('allow-scripts')
+    const hostState = await browser.execute(() => {
+      const frame = document.querySelector<HTMLIFrameElement>('iframe.mermaid-frame')
       return {
-        hasDiagramContainer: Boolean(diagram),
-        hasSvg: Boolean(diagram?.querySelector('svg')),
-        preProcessed: pre?.getAttribute('data-processed') === 'true',
-        listsInsideParagraphs: root?.querySelectorAll('p .mermaid-diagram').length ?? 0,
+        svgCount: document.querySelectorAll('.mermaid-diagram svg').length,
+        inaccessibleDocument: frame?.contentDocument === null,
+        width: frame?.getBoundingClientRect().width ?? 0,
+        height: frame?.getBoundingClientRect().height ?? 0,
       }
     })
+    expect(hostState.svgCount).toBe(0)
+    expect(hostState.inaccessibleDocument).toBe(true)
+    expect(hostState.width).toBeGreaterThan(50)
+    expect(hostState.height).toBeGreaterThan(50)
 
-    expect(layout.hasDiagramContainer).toBe(true)
-    expect(layout.hasSvg).toBe(true)
-    expect(layout.preProcessed).toBe(true)
-    expect(layout.listsInsideParagraphs).toBe(0)
-
-    const chrome = await browser.execute(() => {
-      const input = document.querySelector('.prompt-input')
-      const composer = document.getElementById('input-bar')
-      const pane = document.getElementById('pane-chat')
-      const inputRect = input?.getBoundingClientRect()
-      const composerRect = composer?.getBoundingClientRect()
-      const paneRect = pane?.getBoundingClientRect()
-      const composerHeight = pane
-        ? Number.parseFloat(getComputedStyle(pane).getPropertyValue('--chat-composer-height'))
-        : 0
+    await browser.switchFrame(frame)
+    const isolation = await browser.execute(() => {
+      let parentBlocked = false
+      let parentApiBlocked = false
+      try {
+        void window.parent.document.body
+      } catch {
+        parentBlocked = true
+      }
+      try {
+        Reflect.get(window.parent, 'api')
+      } catch {
+        parentApiBlocked = true
+      }
       return {
-        inputExists: Boolean(input),
-        inputInViewport:
-          inputRect != null &&
-          inputRect.height > 0 &&
-          inputRect.bottom <= window.innerHeight &&
-          inputRect.top >= 0,
-        composerBottomGap:
-          composerRect != null && paneRect != null ? paneRect.bottom - composerRect.bottom : -1,
-        composerHeight,
+        parentBlocked,
+        parentApiBlocked,
+        ownApi: 'api' in window,
+        svg: Boolean(document.querySelector('svg')),
+        text: document.body.textContent,
+        pliant: Array.from(document.fonts).filter(
+          (font) => font.family === 'Pliant' && font.status === 'loaded',
+        ).length,
       }
     })
-    expect(chrome.inputExists).toBe(true)
-    expect(chrome.inputInViewport).toBe(true)
-    expect(chrome.composerBottomGap).toBeGreaterThanOrEqual(11)
-    expect(chrome.composerBottomGap).toBeLessThanOrEqual(13)
-    expect(chrome.composerHeight).toBeGreaterThan(72)
+    expect(isolation.parentBlocked).toBe(true)
+    expect(isolation.parentApiBlocked).toBe(true)
+    expect(isolation.ownApi).toBe(false)
+    expect(isolation.svg).toBe(true)
+    expect(isolation.text).toContain('Agent')
+    expect(isolation.pliant).toBe(2)
+    await browser.switchToParentFrame()
 
-    await $('.mermaid-diagram--folded').waitForExist({ timeout: 10_000 })
+    await saveAppScreenshot('mermaid-isolated-inline.png')
     await $('.mermaid-diagram--folded').click()
-    await $('dialog.mermaid-expand-dialog[open]').waitForExist({ timeout: 10_000 })
-    await expect($('dialog.mermaid-expand-dialog svg')).toExist()
-    await expect($('.mermaid-expand-viewport')).toExist()
-    await expect($('.mermaid-expand-toolbar')).toExist()
-    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'mermaid-diagram-agent-loop.png'))
-
+    await $('dialog.mermaid-expand-dialog[open]').waitForExist()
+    await $('dialog .mermaid-frame[data-rendered="true"]').waitForExist({ timeout: 40_000 })
+    expect(await $('dialog .mermaid-expand-stage svg').isExisting()).toBe(false)
+    await browser.switchFrame(await $('dialog .mermaid-frame'))
+    const expandedFont = await browser.execute(() => ({
+      family: getComputedStyle(document.querySelector('svg')!).fontFamily,
+      loaded: Array.from(document.fonts).filter(
+        (font) => font.family === 'Pliant' && font.status === 'loaded',
+      ).length,
+    }))
+    expect(expandedFont.family).toContain('Pliant')
+    expect(expandedFont.loaded).toBe(2)
+    await browser.switchToParentFrame()
+    await saveAppScreenshot('mermaid-diagram-agent-loop.png')
     await $('.mermaid-expand-close').click()
-    const closed = $('dialog.mermaid-expand-dialog')
-    await browser.waitUntil(
-      async () => {
-        if (!(await closed.isExisting())) return true
-        if ((await closed.getAttribute('open')) != null) return false
-        return !(await closed.isDisplayed())
-      },
-      {
-        timeout: 5_000,
-        timeoutMsg: 'expected mermaid expand dialog to close and leave the page',
-      },
-    )
-    await expect(closed).not.toBeDisplayed()
+    await $('dialog .mermaid-frame').waitForExist({ reverse: true })
+    expect(await $('dialog.mermaid-expand-dialog').isDisplayed()).toBe(false)
+    expect(await $('dialog .mermaid-frame').isExisting()).toBe(false)
+  })
+
+  it('blocks network, inline script, navigation, and unsolicited parent messages even with code execution in the frame', async () => {
+    const frame = await $('.message-text iframe.mermaid-frame')
+    const originalHeight = await frame.getCSSProperty('height')
+    await browser.switchFrame(frame)
+    const probes = await browser.executeAsync((url, done) => {
+      const violations: string[] = []
+      document.addEventListener('securitypolicyviolation', (event) =>
+        violations.push(event.effectiveDirective),
+      )
+      const script = document.createElement('script')
+      script.textContent = 'document.body.dataset.inlineExecuted = "yes"'
+      document.body.append(script)
+      const img = document.createElement('img')
+      img.src = `${url}/diagram-image-probe`
+      document.body.append(img)
+      window.parent.postMessage({ type: 'rendered', width: 1e9, height: 1e9 }, '*')
+      void fetch(`${url}/diagram-fetch-probe`).then(
+        () =>
+          done({
+            fetchBlocked: false,
+            inlineExecuted: document.body.dataset['inlineExecuted'],
+            violations,
+          }),
+        () =>
+          setTimeout(
+            () =>
+              done({
+                fetchBlocked: true,
+                inlineExecuted: document.body.dataset['inlineExecuted'] ?? null,
+                violations,
+              }),
+            100,
+          ),
+      )
+    }, probeUrl)
+    expect(probes.fetchBlocked).toBe(true)
+    expect(probes.inlineExecuted).toBe(null)
+    expect(probes.violations).toContain('connect-src')
+    expect(probes.violations).toContain('img-src')
+    expect(probes.violations).toContain('script-src-elem')
+    await browser.execute((url) => {
+      window.location.href = `${url}/diagram-navigation-probe`
+    }, probeUrl)
+    await browser.switchToParentFrame()
+    await browser.switchFrame(await $('.message-text iframe.mermaid-frame'))
+    const navigation = await browser.execute(() => window.location.href)
+    // Chromium replaces the cancelled navigation with its local error document.
+    // The security assertion is that the destination receives no request.
+    expect(navigation).toBe('chrome-error://chromewebdata/')
+    await browser.switchToParentFrame()
+    expect((await frame.getCSSProperty('height')).value).toBe(originalHeight.value)
+    await browser.pause(100)
+    expect(requests).toBe(0)
   })
 })

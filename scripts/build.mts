@@ -27,6 +27,7 @@ import {
   BUNDLED_CURSOR_SKILLS_VENDOR_DIR,
   assertBundledCursorSkillsSnapshot,
 } from './bundled-cursor-skills-sync.mts'
+import { writeMermaidFrameHtml } from './write-mermaid-frame.mts'
 
 const bundledGortexName = process.platform === 'win32' ? 'gortex.exe' : 'gortex'
 const isDemo = process.argv.includes('--demo')
@@ -275,6 +276,15 @@ if (!isDemo) {
   })
   copyFileSync('src/renderer/video/decoder.html', `${rendererOutDir}/video/decoder.html`)
 }
+
+// Separate execution context: never include Mermaid in the app renderer bundle.
+await esbuild.build({
+  ...browserOpts,
+  entryPoints: ['src/renderer/markdown/mermaid-frame-entry.ts'],
+  outfile: `${rendererOutDir}/mermaid-frame.js`,
+  loader: { ...browserOpts.loader, '.ttf': 'base64' },
+})
+writeMermaidFrameHtml(rendererOutDir)
 
 copyFileSync('src/renderer/index.html', `${rendererOutDir}/index.html`)
 copyFileSync('src/renderer/theme-boot.js', `${rendererOutDir}/theme-boot.js`)

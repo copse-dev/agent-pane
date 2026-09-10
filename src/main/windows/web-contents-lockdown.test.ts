@@ -6,6 +6,7 @@ import {
   browserGuestWindowOpen,
   hardenWebviewPreferences,
   isAllowedRendererNavigation,
+  isAllowedDiagramNavigation,
   isExternalHttpUrl,
 } from './web-contents-lockdown.ts'
 
@@ -67,5 +68,22 @@ describe('isExternalHttpUrl', () => {
     assert.equal(isExternalHttpUrl('http://localhost:3000/'), true)
     assert.equal(isExternalHttpUrl('javascript:alert(1)'), false)
     assert.equal(isExternalHttpUrl('file:///etc/passwd'), false)
+  })
+})
+
+describe('diagram subframe navigation', () => {
+  it('allows only the exact packaged diagram document', () => {
+    const frame = pathToFileURL(join(__dirname, '../renderer/mermaid-frame.html')).href
+    assert.equal(isAllowedDiagramNavigation(frame), true)
+    for (const url of [
+      'about:blank',
+      'https://example.com',
+      'data:text/html,hello',
+      pathToFileURL(join(__dirname, '../renderer/index.html')).href,
+      `${frame}?source=evil`,
+      `${frame}#navigation`,
+    ]) {
+      assert.equal(isAllowedDiagramNavigation(url), false)
+    }
   })
 })

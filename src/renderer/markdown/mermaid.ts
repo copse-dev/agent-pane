@@ -1,101 +1,29 @@
 import { attachMermaidExpand } from './mermaid-expand.ts'
 import { renderMermaidFallback } from './mermaid-fallback.ts'
-import { mermaidSourceCandidates, prepareMermaidSource } from '@copse/streaming-markdown'
+import { createMermaidFrame } from './mermaid-frame.ts'
 
-interface MermaidRenderer {
-  initialize(config: Parameters<typeof import('mermaid').default.initialize>[0]): void
-  run(options: Parameters<typeof import('mermaid').default.run>[0]): Promise<void>
-}
-
-let mermaidPromise: Promise<MermaidRenderer> | null = null
-let initialized = false
-
-const defaultMermaidLoader = (): Promise<MermaidRenderer> =>
-  import('mermaid').then((mod) => mod.default)
-let mermaidLoader = defaultMermaidLoader
-
-/**
- * Test seam: override the lazy `mermaid` loader (it is otherwise a heavy,
- * browser-only dynamic import) and reset the memoized instance so unit tests
- * can inject a fake and stay isolated. Pass `null` to restore the real loader.
- */
-export function setMermaidLoaderForTests(loader: (() => Promise<MermaidRenderer>) | null): void {
-  mermaidLoader = loader ?? defaultMermaidLoader
-  mermaidPromise = null
-  initialized = false
-}
-
-async function loadMermaid(): Promise<MermaidRenderer> {
-  mermaidPromise ??= mermaidLoader()
-  return mermaidPromise
-}
-
-function initMermaid(mermaid: MermaidRenderer): void {
-  if (initialized) return
-  mermaid.initialize({
-    startOnLoad: false,
-    theme: 'dark',
-    // Diagram source is chat/LLM-generated and therefore untrusted. 'strict'
-    // encodes HTML in labels, disables `click`/interaction directives, and
-    // runs the output through DOMPurify — neutralizing the XSS class behind
-    // CVE-2026-54011 (Open WebUI), GHSA-wvh5-6vjm-23qh (OneUptime), and the
-    // Mermaid-XSS-to-RCE reports in other Electron apps. Do not relax this.
-    securityLevel: 'strict',
-  })
-  initialized = true
-}
-
-function diagramRenderFailed(container: HTMLElement): boolean {
-  const svg = container.querySelector('svg')
-  if (svg && !container.querySelector('.error-icon')) return false
-  if (container.querySelector('.error-icon')) return true
-  if (container.textContent.includes('Syntax error in text')) return true
-  return !svg
-}
-
-async function runMermaidNodes(mermaid: MermaidRenderer, nodes: HTMLElement[]): Promise<void> {
-  if (nodes.length === 0) return
-  await mermaid.run({ nodes, suppressErrors: true })
-}
-
-/** Render pending `.mermaid` blocks inside `root`. No-op when none are present. */
+/** Only inert source text crosses into a separate Mermaid execution realm. */
 export async function renderMermaidIn(root: ParentNode): Promise<void> {
   const nodes = root.querySelectorAll<HTMLElement>('pre.mermaid:not([data-processed])')
-  if (nodes.length === 0) return
-
-  const mermaid = await loadMermaid()
-  initMermaid(mermaid)
-
-  const elements = Array.from(nodes)
-  const sourceByNode = new Map<HTMLElement, string>()
-
-  for (const node of elements) {
-    const raw = node.textContent
-    const source = prepareMermaidSource(raw)
-    sourceByNode.set(node, source)
-    node.textContent = source
-  }
-
-  await runMermaidNodes(mermaid, elements)
-
-  for (const node of elements) {
-    const container = node.closest<HTMLElement>('.mermaid-diagram')
-    if (!container || container.querySelector('.mermaid-fallback-title')) continue
-
-    if (!diagramRenderFailed(container)) continue
-
-    const candidates = mermaidSourceCandidates(sourceByNode.get(node) ?? node.textContent)
-    const retrySource = candidates.find((c) => c !== node.textContent)
-    if (retrySource) {
-      node.textContent = retrySource
-      node.removeAttribute('data-processed')
-      await runMermaidNodes(mermaid, [node])
-      if (!diagramRenderFailed(container)) continue
-    }
-
-    renderMermaidFallback(container, sourceByNode.get(node) ?? node.textContent)
-    node.remove()
-  }
-
-  attachMermaidExpand(root)
+  await Promise.all(
+    Array.from(nodes, async (node) => {
+      const container = node.closest<HTMLElement>('.mermaid-diagram')
+      if (!container) return
+      node.dataset['processed'] = 'true'
+      const source = node.textContent
+      const style = getComputedStyle(node)
+      const layoutWidth =
+        node.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)
+      const frame = createMermaidFrame(source, layoutWidth)
+      // Keep the original pre's padding and responsive Markdown styles.
+      node.replaceChildren(frame.element)
+      try {
+        await frame.ready
+        attachMermaidExpand(container.parentElement ?? root)
+      } catch {
+        frame.element.remove()
+        renderMermaidFallback(container, source)
+      }
+    }),
+  )
 }

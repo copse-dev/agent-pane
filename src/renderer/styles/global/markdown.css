@@ -23,7 +23,7 @@
   overflow-wrap: anywhere;
 }
 .message-text .mermaid-diagram {
-  /* Cap height before/after mermaid.run so large source/SVG cannot blow flex layout. */
+  /* Cap the thumbnail; untrusted frame size reports are bounded in the host. */
   max-height: min(280px, 42vh);
   overflow: auto;
   margin: var(--spacing-sm) 0;
@@ -89,7 +89,7 @@
   display: inline-block;
   padding: var(--spacing-md);
 }
-.mermaid-expand-stage svg {
+.mermaid-expand-stage .mermaid-frame {
   display: block;
   max-width: none;
   height: auto;
@@ -381,4 +381,14 @@ html.mark-external-links
 [data-theme='light'] .streaming-markdown .hljs-meta,
 [data-theme='light'] .streaming-markdown .hljs-symbol {
   color: #1f1f1f;
+}
+
+/* The parent owns geometry and interaction; diagram markup stays in the frame. */
+.mermaid-frame {
+  display: block;
+  border: 0;
+  pointer-events: none;
+}
+.message-text .mermaid-frame {
+  max-width: 100%;
 }
