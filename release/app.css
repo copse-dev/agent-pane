@@ -786,23 +786,6 @@ copse-ui-field input[type=password],
   height: var(--chrome-action-band-height);
   border-top: 1px solid var(--border);
 }
-.projects-menu-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--chrome-action-band-height);
-  height: 100%;
-  padding: 0;
-  color: var(--text-muted);
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  -webkit-app-region: no-drag;
-}
-.projects-menu-btn:hover {
-  color: var(--text-primary);
-  background: var(--bg-hover);
-}
 .projects-settings-btn {
   display: flex;
   align-items: center;
@@ -942,6 +925,7 @@ copse-ui-field input[type=password],
   flex: 1;
   min-width: 0;
 }
+.project-menu-btn,
 .project-new-thread-btn {
   flex-shrink: 0;
   width: var(--projects-action-size);
@@ -951,6 +935,7 @@ copse-ui-field input[type=password],
   line-height: 1;
   color: var(--text-secondary);
 }
+.project-menu-btn:hover,
 .project-new-thread-btn:hover {
   color: var(--text-primary);
   background: var(--bg-hover);
@@ -3661,7 +3646,7 @@ label {
   border-radius: var(--radius);
 }
 .message-reasoning[open] {
-  padding: var(--spacing-sm) var(--spacing-md);
+  padding: var(--spacing-md) var(--spacing-lg);
   background:
     repeating-linear-gradient(
       135deg,
@@ -4576,10 +4561,8 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
 }
 .tool-rollup-body > .message-reasoning {
   margin: 0 0 var(--spacing-xs);
-  border-left: 0;
-  padding-left: 0;
 }
-.tool-rollup-body > .message-reasoning > .message-reasoning-summary {
+.tool-rollup-body > .message-reasoning:not([open]) > .message-reasoning-summary {
   margin-inline: calc(-1 * var(--spacing-xs));
 }
 .tool-rollup-body .reasoning-activity-icon {

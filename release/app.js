@@ -29829,6 +29829,11 @@ function launchesAcpCatalogEntry(agent, entry) {
 function isClaudeAcpAgent(agent) {
   return isKnownAcpAgent(agent, CLAUDE_ADAPTERS);
 }
+function acpPlanProvider(agent) {
+  if (isClaudeAcpAgent(agent)) return "claude";
+  if (isKnownAcpAgent(agent, CODEX_ADAPTERS)) return "codex";
+  return null;
+}
 function enabledClaudeAcpAgent(agents) {
   return agents.find((agent) => agent.enabled && isClaudeAcpAgent(agent));
 }
@@ -39896,8 +39901,8 @@ function frontierForKnownModels(extra = [], adjust3, keepRoute) {
     });
   }
   const candidates = keepRoute ? [...cloud2, ...extra].filter(keepRoute) : [...cloud2, ...extra];
-  const grouped = groupByModelIdentity(candidates);
-  return computeParetoFrontier(adjust3 ? grouped.map(adjust3) : grouped);
+  const adjusted = adjust3 ? candidates.map(adjust3) : candidates;
+  return computeParetoFrontier(groupByModelIdentity(adjusted));
 }
 var init_pareto_frontier = __esm({
   "packages/llm/src/pareto-frontier.ts"() {
@@ -53180,6 +53185,50 @@ var init_plan_inclusion = __esm({
   }
 });
 
+// src/shared/plan-frontier-candidates.ts
+function planAcpFrontierCandidates(agents) {
+  const candidates = [];
+  for (const agent of agents) {
+    if (!agent.enabled) continue;
+    const provider = acpPlanProvider(agent);
+    if (!provider) continue;
+    const advertised = agent.availableModels ?? [];
+    const selected = agent.model;
+    const selectedChoice = selected ? advertised.find((choice2) => choice2.value === selected) : void 0;
+    const choices = /* @__PURE__ */ new Map();
+    if (selected) choices.set(selected, selectedChoice ?? { value: selected, label: selected });
+    for (const choice2 of advertised) choices.set(choice2.value, choice2);
+    for (const choice2 of choices.values()) {
+      const resolved3 = resolveAgentModelIdentity(
+        choice2.value,
+        acpModelVersionName(choice2.description),
+        choice2.label,
+        acpModelChoiceLabel(choice2)
+      );
+      if (!resolved3) continue;
+      const score = getIntellectScore(resolved3);
+      const info2 = getModelInfo(resolved3);
+      if (!score || !info2) continue;
+      candidates.push({
+        id: acpModelValue(agent.id, choice2.value),
+        intellect: score.value,
+        costPerMTok: blendedPricePerMTok(info2),
+        planAccess: { provider, modelId: resolved3 }
+      });
+    }
+  }
+  return candidates;
+}
+var init_plan_frontier_candidates = __esm({
+  "src/shared/plan-frontier-candidates.ts"() {
+    init_pareto_frontier();
+    init_model_catalog();
+    init_model_intellect();
+    init_agent_model_identity();
+    init_acp();
+  }
+});
+
 // src/renderer/views/intellect-frontier-panel.ts
 function displayModelLabel2(id39) {
   const resolved3 = resolveIntellectModelId(id39);
@@ -53606,7 +53655,12 @@ function renderFrontierSvg(points, size4 = {}, gutters = {}, tooltip, costAxis =
     const rowEnds = [];
     for (const u2 of [...unscored].sort((a3, b5) => a3.costPerMTok - b5.costPerMTok)) {
       if (dense) {
-        unscoredRows.push({ id: u2.id, costPerMTok: u2.costPerMTok, row: 0, text: "" });
+        unscoredRows.push({
+          id: u2.id,
+          costPerMTok: u2.costPerMTok,
+          row: 0,
+          text: ""
+        });
         continue;
       }
       const text4 = displayModelLabel2(u2.id);
@@ -54122,7 +54176,11 @@ function unpricedCanonicalModels(plottedIds, liveHintOnly) {
     if (plottedIds.has(id39)) continue;
     const score = getIntellectScore(id39);
     if (!score) continue;
-    out.push({ id: id39, intellect: score.value, estimated: score.estimated === true });
+    out.push({
+      id: id39,
+      intellect: score.value,
+      estimated: score.estimated === true
+    });
   }
   for (const live of liveHintOnly) {
     out.push({ id: live.id, intellect: live.intellect, estimated: true });
@@ -54242,7 +54300,11 @@ function buildAuxLists(unpricedList, unscoredList) {
         { class: "field-hint frontier-unpriced-list" },
         el("summary", {}, `${String(unpricedList.length)} scored models with no price data yet`),
         renderBandedModelList(
-          unpricedList.map((u2) => ({ id: u2.id, intellect: u2.intellect, estimated: u2.estimated }))
+          unpricedList.map((u2) => ({
+            id: u2.id,
+            intellect: u2.intellect,
+            estimated: u2.estimated
+          }))
         )
       )
     );
@@ -54263,7 +54325,7 @@ function buildAuxLists(unpricedList, unscoredList) {
   }
   return out;
 }
-function createIntellectFrontierPanel(loadLocalModels, loadExtraProviders, loadLiveModels, loadPlanUsage, loadOpenRouter, loadRoutableModelSelections) {
+function createIntellectFrontierPanel(loadLocalModels, loadExtraProviders, loadLiveModels, loadPlanUsage, loadOpenRouter, loadRoutableModelSelections, loadAcpAgents) {
   const chartHost = el("div", { class: "frontier-chart" });
   const liveNotes = el("div", { class: "field-hint frontier-live-notes" });
   const compositeHost = el("div", { class: "frontier-composite-strip" });
@@ -54484,7 +54546,9 @@ function createIntellectFrontierPanel(loadLocalModels, loadExtraProviders, loadL
     expandNoTrainingBtn.addEventListener("click", toggleNoTrainingOnly);
     expandCostAxisGroup = makeCostAxisGroup();
     expandPlanCoverageGroup = makePlanCoverageGroup();
-    const bigChart = el("div", { class: "frontier-chart frontier-expand-chart" });
+    const bigChart = el("div", {
+      class: "frontier-chart frontier-expand-chart"
+    });
     expandChartHost = bigChart;
     expandTooltip = createTooltipLayer(dialog2);
     const closeDialog = () => {
@@ -54585,6 +54649,11 @@ function createIntellectFrontierPanel(loadLocalModels, loadExtraProviders, loadL
         routableSelections = [];
       }
     }
+    let acpAgents = [];
+    try {
+      acpAgents = await loadAcpAgents?.() ?? [];
+    } catch {
+    }
     const live = liveIntellectCandidates(liveFetch.models, liveFetch.indexVersion);
     state4 = {
       localIds,
@@ -54593,7 +54662,8 @@ function createIntellectFrontierPanel(loadLocalModels, loadExtraProviders, loadL
       liveFetch,
       planUsage,
       openRouter,
-      routableSelections
+      routableSelections,
+      acpAgents
     };
     render8();
   }
@@ -54631,7 +54701,16 @@ function createIntellectFrontierPanel(loadLocalModels, loadExtraProviders, loadL
   }
   function render8() {
     if (!state4) return;
-    const { localIds, extraProviders, live, liveFetch, planUsage, openRouter, routableSelections } = state4;
+    const {
+      localIds,
+      extraProviders,
+      live,
+      liveFetch,
+      planUsage,
+      openRouter,
+      routableSelections,
+      acpAgents
+    } = state4;
     const liveNoteParts = [];
     if (liveFetch.models.length > 0 && live.verification.verified) {
       const stale = live.verification.mismatches;
@@ -54690,7 +54769,8 @@ function createIntellectFrontierPanel(loadLocalModels, loadExtraProviders, loadL
     const baseCandidates = [
       ...localFrontierCandidates(localIds),
       ...extraProviderFrontierCandidates(extraProviders),
-      ...openRouterFrontierCandidates(openRouter.models)
+      ...openRouterFrontierCandidates(openRouter.models),
+      ...planAcpFrontierCandidates(acpAgents)
     ];
     const exactRoutes = routableSelections === null ? null : new Set(routableSelections);
     const delegatedModelIds = /* @__PURE__ */ new Set();
@@ -54727,7 +54807,10 @@ function createIntellectFrontierPanel(loadLocalModels, loadExtraProviders, loadL
     );
     const liveDiscoverableCandidates = [
       ...live.candidates,
-      ...livePricedCurated.map((candidate) => ({ ...candidate, discovery: true }))
+      ...livePricedCurated.map((candidate) => ({
+        ...candidate,
+        discovery: true
+      }))
     ];
     const trackedDiscoverableCandidates = [];
     if (exactRoutes !== null) {
@@ -55005,6 +55088,7 @@ var init_intellect_frontier_panel = __esm({
     init_local_model_catalog();
     init_data_policies();
     init_plan_inclusion();
+    init_plan_frontier_candidates();
     init_helpers();
     SVG_NS2 = "http://www.w3.org/2000/svg";
     WIDTH = 460;
@@ -55416,7 +55500,8 @@ function createUsageSection(api3, store3, onRequestClose) {
     () => api3.intellect.liveModels(),
     () => api3.usage.getPlanUsage(),
     loadOpenRouter,
-    async () => (await fetchModelOptions(api3, "")).filter((option2) => option2.value !== "" && option2.disabled !== true).map((option2) => option2.value)
+    async () => (await fetchModelOptions(api3, "")).filter((option2) => option2.value !== "" && option2.disabled !== true).map((option2) => option2.value),
+    async () => parseAcpAgentConfigs(await api3.settings.get("registeredAcpAgents"))
   );
   root4.append(frontierPanel.root);
   const planEl = qsRequired(root4, "#usage-plan-section");
@@ -55456,7 +55541,10 @@ function createUsageSection(api3, store3, onRequestClose) {
       },
       onShowInference: () => {
         frontierPanel.setPlanCoverageMode("inference");
-        frontierPanel.root.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        frontierPanel.root.scrollIntoView({
+          block: "nearest",
+          behavior: "smooth"
+        });
       }
     });
   }
@@ -55564,6 +55652,7 @@ var init_usage_section = __esm({
     init_dist();
     init_intellect_frontier_panel();
     init_model_options();
+    init_acp();
     PERIOD_LABELS = {
       day: "Last 24 hours",
       month: "Last 30 days",
@@ -55889,12 +55978,11 @@ function liveWorktreeLimit(value2) {
   if (value2 === "3") return 3;
   return 1;
 }
-function createAutomationPluginSettings(store3, api3, pluginEnabled, revealScheduleId, createNew = false) {
+function createAutomationPluginSettings(store3, api3, pluginEnabled, revealScheduleId, createNew = false, projectId = store3.getState().activeProjectId) {
   const root4 = el("section", {
     class: "automation-plugin-settings",
     "data-plugin-detail": AUTOMATIONS_PLUGIN_ID
   });
-  const projectId = store3.getState().activeProjectId;
   const project2 = store3.getState().projects.find((candidate) => candidate.id === projectId);
   const heading = el("div", { class: "automation-plugin-heading" });
   heading.append(
@@ -59964,7 +60052,8 @@ function hasAutomationDialog(plugin27) {
 }
 function openAutomationDialog(store3, api3, options2 = {}) {
   if (document.querySelector("#automation-dialog[open]")) return;
-  const projectId = store3.getState().activeProjectId;
+  const activeProjectId = store3.getState().activeProjectId;
+  const projectId = options2.projectId ?? activeProjectId;
   const { dialog: dialog2, open: open3, close: close2 } = createOverlayDialog({ id: "automation-dialog" });
   dialog2.setAttribute("aria-labelledby", "automation-dialog-title");
   const closeButton = el(
@@ -59988,7 +60077,7 @@ function openAutomationDialog(store3, api3, options2 = {}) {
   body.append(status);
   dialog2.append(header, body);
   const unsubscribe = store3.on("workspace_changed", () => {
-    if (store3.getState().activeProjectId !== projectId) close2();
+    if (store3.getState().activeProjectId !== activeProjectId) close2();
   });
   dialog2.addEventListener(
     "close",
@@ -60007,7 +60096,8 @@ function openAutomationDialog(store3, api3, options2 = {}) {
       api3,
       enabled,
       options2.scheduleId,
-      options2.createNew
+      options2.createNew,
+      projectId
     );
     const toggle = el(
       "button",
@@ -60670,56 +60760,11 @@ function mountProjectsPane(root4, store3, api3) {
   settingsBtn.addEventListener("click", () => {
     openSettingsDialog();
   });
-  const menuButton = el(
-    "button",
-    {
-      type: "button",
-      class: "projects-menu-btn",
-      "aria-label": "Project menu",
-      "aria-haspopup": "menu",
-      "data-tooltip": "Settings and automations"
-    },
-    settingsIcon()
-  );
-  menuButton.addEventListener("click", () => {
-    menuButton.disabled = true;
-    void api3.plugins.list().then((result) => {
-      const rect2 = menuButton.getBoundingClientRect();
-      const plugin27 = result.plugins.find(hasAutomationDialog);
-      showContextMenu(rect2.left, rect2.top, [
-        {
-          label: "Settings",
-          onSelect: () => {
-            openSettingsDialog();
-          }
-        },
-        ...plugin27 ? [
-          {
-            label: "Automations",
-            onSelect: () => {
-              openAutomationDialog(store3, api3);
-            }
-          },
-          {
-            label: "New automation\u2026",
-            disabled: !store3.getState().activeProjectId,
-            onSelect: () => {
-              openAutomationDialog(store3, api3, { createNew: true });
-            }
-          }
-        ] : []
-      ]);
-    }).catch((error63) => {
-      showErrorToast("Could not load project menu", error63);
-    }).finally(() => {
-      menuButton.disabled = false;
-    });
-  });
   root4.append(
     header,
     searchRow,
     list,
-    el("div", { class: "projects-settings-actions" }, menuButton, settingsBtn)
+    el("div", { class: "projects-settings-actions" }, settingsBtn)
   );
   let sshWorkspaceEnabled = false;
   addBtn.addEventListener("click", () => {
@@ -61173,25 +61218,68 @@ function mountProjectsPane(root4, store3, api3) {
         }
         switchProject(store3, api3, project2.id);
       });
+      const projectMenuEntries = [
+        {
+          label: "Remove from sidebar",
+          onSelect: () => {
+            void removeProject(store3, api3, project2.id);
+          }
+        },
+        ...groupMenuEntries(project2, projectGroups)
+      ];
       projectRow.addEventListener("contextmenu", (e4) => {
         e4.preventDefault();
         e4.stopPropagation();
-        showContextMenu(e4.clientX, e4.clientY, [
-          {
-            label: "Remove from sidebar",
-            onSelect: () => {
-              void removeProject(store3, api3, project2.id);
-            }
-          },
-          ...groupMenuEntries(project2, projectGroups)
-        ]);
+        showContextMenu(e4.clientX, e4.clientY, projectMenuEntries);
       });
+      const menuButton = el(
+        "button",
+        {
+          type: "button",
+          class: "project-menu-btn",
+          "aria-label": `Project menu for ${projectDisplayName(project2)}`,
+          "aria-haspopup": "menu",
+          "data-tooltip": "Project menu"
+        },
+        moreHorizontalIcon("ui-icon ui-icon-sm")
+      );
+      menuButton.addEventListener("click", () => {
+        menuButton.disabled = true;
+        void api3.plugins.list().then((result) => {
+          if (!menuButton.isConnected) return;
+          const rect2 = menuButton.getBoundingClientRect();
+          const entries2 = [];
+          if (result.plugins.some(hasAutomationDialog)) {
+            entries2.push(
+              {
+                label: "Automations",
+                onSelect: () => {
+                  openAutomationDialog(store3, api3, { projectId: project2.id });
+                }
+              },
+              {
+                label: "New automation\u2026",
+                disabled: project2.missing === true,
+                onSelect: () => {
+                  openAutomationDialog(store3, api3, { projectId: project2.id, createNew: true });
+                }
+              }
+            );
+          }
+          showContextMenu(rect2.left, rect2.bottom, [...entries2, ...projectMenuEntries]);
+        }).catch((error63) => {
+          showErrorToast("Could not load project menu", error63);
+        }).finally(() => {
+          menuButton.disabled = false;
+        });
+      });
+      const projectLine = el("div", { class: "project-line" }, projectRow, menuButton);
+      entry.append(projectLine);
       if (isExpanded && project2.missing) {
-        entry.append(projectRow, renderMissingNotice(project2));
+        entry.append(renderMissingNotice(project2));
         return entry;
       }
       if (isExpanded) {
-        const projectLine = el("div", { class: "project-line" });
         const newThreadBtn = el(
           "button",
           {
@@ -61214,10 +61302,7 @@ function mountProjectsPane(root4, store3, api3) {
           }
           openNewThread(store3);
         });
-        projectLine.append(projectRow, newThreadBtn);
-        entry.append(projectLine);
-      } else {
-        entry.append(projectRow);
+        projectLine.append(newThreadBtn);
       }
       if (!isExpanded) return entry;
       const sidebarThreads = getSidebarThreads(store3, project2.id);
@@ -61935,6 +62020,30 @@ var init_hook_run_detail = __esm({
 var init_hook_run_detail2 = __esm({
   "src/shared/hooks/hook-run-detail.ts"() {
     init_hook_run_detail();
+  }
+});
+
+// src/shared/preview-csp.ts
+function securePreviewHtml(html2) {
+  return `<!doctype html><meta http-equiv="Content-Security-Policy" content="${PREVIEW_CSP}">${html2}`;
+}
+var PREVIEW_CSP;
+var init_preview_csp = __esm({
+  "src/shared/preview-csp.ts"() {
+    PREVIEW_CSP = [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline'",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data: blob:",
+      "font-src 'self' data:",
+      "media-src 'self' data: blob:",
+      "connect-src 'self'",
+      "frame-src 'none'",
+      "worker-src 'none'",
+      "object-src 'none'",
+      "base-uri 'none'",
+      "form-action 'self'"
+    ].join("; ");
   }
 });
 
@@ -62829,7 +62938,7 @@ var init_browser_url = __esm({
 
 // src/shared/canvas/artefact.ts
 function htmlDataUrl(html2) {
-  const bytes = new TextEncoder().encode(html2);
+  const bytes = new TextEncoder().encode(securePreviewHtml(html2));
   let binary2 = "";
   const CHUNK = 32768;
   for (let i4 = 0; i4 < bytes.length; i4 += CHUNK) {
@@ -62848,6 +62957,7 @@ function artefactTitleFromUri(uri) {
 }
 var init_artefact = __esm({
   "src/shared/canvas/artefact.ts"() {
+    init_preview_csp();
     init_browser_url();
   }
 });
@@ -249267,7 +249377,8 @@ function bindWorkspaceLinkClicks(root4, store3, api3) {
     if (!parsed2) return;
     event3.preventDefault();
     event3.stopPropagation();
-    void api3.index.resolveFileReferences([parsed2.candidate]).then((resolved3) => {
+    const owner = getActiveThreadOwner(store3);
+    void api3.index.resolveFileReferences([parsed2.candidate], owner ?? void 0).then((resolved3) => {
       const match3 = resolved3.find((entry) => entry.candidate === parsed2.candidate);
       if (!match3) {
         showErrorToast(`Could not find ${parsed2.candidate} in the workspace`, "not in index");
@@ -249290,6 +249401,7 @@ function bindWorkspaceLinkClicks(root4, store3, api3) {
 var init_workspace_links = __esm({
   "src/renderer/markdown/workspace-links.ts"() {
     init_host_workspace();
+    init_active_thread_owner();
     init_files();
     init_toast();
   }
@@ -251840,6 +251952,7 @@ function createGroupToolCard(item) {
       "data-status": tc2.status
     });
     appendStandardToolSections(entry, tc2, getToolCallLabel(tc2), "tool-group-item-header");
+    toolGroupItemSignatures.set(entry, renderSignature(tc2));
     groupItems.append(entry);
   }
   return card2;
@@ -251855,7 +251968,10 @@ function createRollupToolCard(item, api3, threadId, store3) {
   const count2 = item.children.length === 1 && item.children[0]?.type === "group" ? item.toolCalls.length : void 0;
   const body = el("div", { class: "tool-rollup-body" });
   for (const child of item.children) {
-    body.append(createToolCard(child, api3, threadId, store3));
+    const childCard = createToolCard(child, api3, threadId, store3);
+    toolCardKeys.set(childCard, toolCardKey(child));
+    toolCardSignatures.set(childCard, toolCardSignature(child));
+    body.append(childCard);
   }
   card2.append(createToolHeader(item.label, status, "tool-card-header", count2), body);
   return card2;
@@ -251871,7 +251987,10 @@ function createStepToolCard(item, api3, threadId) {
   });
   const body = el("div", { class: "tool-rollup-body" });
   for (const child of item.children) {
-    body.append(createToolCard(child, api3, threadId));
+    const childCard = createToolCard(child, api3, threadId);
+    toolCardKeys.set(childCard, toolCardKey(child));
+    toolCardSignatures.set(childCard, toolCardSignature(child));
+    body.append(childCard);
   }
   card2.append(createToolHeader(item.label, status, "tool-card-header"), body);
   return card2;
@@ -251891,6 +252010,134 @@ function toolCardKey(item) {
 function toolCardSignature(item, extra) {
   const base = renderSignature(item);
   return extra === void 0 ? base : `${base}|${extra}`;
+}
+function replaceDirectToolHeader(card2, header) {
+  const current = Array.from(card2.children).find(
+    (node3) => node3.classList.contains("tool-card-header")
+  );
+  if (current) current.replaceWith(header);
+  else card2.prepend(header);
+}
+function populateRegularToolCard(card2, tc2, label, threadId) {
+  const wasOpen = card2.open;
+  lazyToolCardBodies.delete(card2);
+  card2.dataset["status"] = tc2.status;
+  card2.replaceChildren();
+  card2.open = wasOpen;
+  appendStandardToolSections(card2, tc2, label, "tool-card-header");
+  onToolCardBodyBuilt(card2, () => {
+    const preview = createCanvasPreviewSection(tc2, threadId);
+    if (preview) card2.append(preview);
+  });
+  if (wasOpen) ensureToolCardBodyRendered(card2);
+}
+function populateGroupItem(entry, tc2) {
+  const wasOpen = entry.open;
+  lazyToolCardBodies.delete(entry);
+  entry.dataset["status"] = tc2.status;
+  entry.replaceChildren();
+  entry.open = wasOpen;
+  appendStandardToolSections(entry, tc2, getToolCallLabel(tc2), "tool-group-item-header");
+  if (wasOpen) ensureToolCardBodyRendered(entry);
+  toolGroupItemSignatures.set(entry, renderSignature(tc2));
+}
+function reconcileGroupCard(card2, item) {
+  const status = aggregateToolStatus(item.toolCalls);
+  card2.dataset["status"] = status;
+  replaceDirectToolHeader(
+    card2,
+    createToolHeader(item.label, status, "tool-card-header", item.toolCalls.length)
+  );
+  let host = Array.from(card2.children).find(
+    (node3) => node3 instanceof HTMLElement && node3.classList.contains("tool-group-items")
+  );
+  if (!host) {
+    host = el("div", { class: "tool-group-items" });
+    card2.append(host);
+  }
+  const existing = /* @__PURE__ */ new Map();
+  host.querySelectorAll(":scope > .tool-group-item[data-tool-id]").forEach((entry) => {
+    const id39 = entry.dataset["toolId"];
+    if (id39) existing.set(id39, entry);
+  });
+  const desired = [];
+  for (const tc2 of item.toolCalls) {
+    let entry = existing.get(tc2.id);
+    existing.delete(tc2.id);
+    if (!entry) {
+      entry = el("details", {
+        class: "tool-group-item",
+        "data-tool-id": tc2.id,
+        "data-status": tc2.status
+      });
+      populateGroupItem(entry, tc2);
+    } else if (toolGroupItemSignatures.get(entry) !== renderSignature(tc2)) {
+      populateGroupItem(entry, tc2);
+    }
+    desired.push(entry);
+  }
+  existing.forEach((entry) => {
+    entry.remove();
+  });
+  desired.forEach((entry, index) => {
+    if (host.children[index] !== entry) host.insertBefore(entry, host.children[index] ?? null);
+  });
+}
+function reconcileNestedToolCards(host, items, api3, threadId, store3) {
+  const existing = /* @__PURE__ */ new Map();
+  host.querySelectorAll(":scope > .tool-card").forEach((card2) => {
+    const key = toolCardKeys.get(card2);
+    if (key) existing.set(key, card2);
+  });
+  const desired = [];
+  for (const item of items) {
+    const key = toolCardKey(item);
+    const sig = toolCardSignature(item);
+    let card2 = existing.get(key);
+    existing.delete(key);
+    if (!card2) {
+      card2 = createToolCard(item, api3, threadId, store3);
+      toolCardKeys.set(card2, key);
+      toolCardSignatures.set(card2, sig);
+    } else if (toolCardSignatures.get(card2) !== sig) {
+      reconcileToolCard(card2, item, api3, threadId, store3);
+    }
+    desired.push(card2);
+  }
+  existing.forEach((card2) => {
+    card2.remove();
+  });
+  desired.forEach((card2, index) => {
+    const current = host.querySelectorAll(":scope > .tool-card");
+    if (current[index] !== card2) host.insertBefore(card2, current[index] ?? null);
+  });
+}
+function reconcileToolCard(card2, item, api3, threadId, store3) {
+  if (item.type === "rollup" || item.type === "step") {
+    const status = aggregateToolStatus(item.toolCalls);
+    card2.dataset["status"] = status;
+    card2.dataset["toolCount"] = String(item.toolCalls.length);
+    if (item.type === "step") {
+      card2.dataset["stepMessageId"] = item.messageId;
+    }
+    const count2 = item.type === "rollup" && item.children.length === 1 && item.children[0]?.type === "group" ? item.toolCalls.length : void 0;
+    replaceDirectToolHeader(card2, createToolHeader(item.label, status, "tool-card-header", count2));
+    let body = Array.from(card2.children).find(
+      (node3) => node3 instanceof HTMLElement && node3.classList.contains("tool-rollup-body")
+    );
+    if (!body) {
+      body = el("div", { class: "tool-rollup-body" });
+      card2.append(body);
+    }
+    reconcileNestedToolCards(body, item.children, api3, threadId, store3);
+  } else if (item.type === "group") {
+    reconcileGroupCard(card2, item);
+  } else if (item.toolCall.subagent && card2.classList.contains("tool-card-subagent")) {
+    populateSubagentCard(card2, item.toolCall, item.label, api3);
+  } else {
+    populateRegularToolCard(card2, item.toolCall, item.label, threadId);
+  }
+  toolCardSignatures.set(card2, toolCardSignature(item));
 }
 function createMessageImages(images) {
   const wrap3 = el("div", { class: "message-images" });
@@ -252370,6 +252617,8 @@ function mountConversation(root4, store3, api3) {
     if (!details) return;
     details.dataset["userToggled"] = "1";
     details.open = true;
+    const key = details.dataset["disclosureKey"];
+    if (key) disclosurePreferences.set(key, true);
     details.scrollIntoView({ block: "nearest" });
   });
   const queuedHost = el("div", { class: "conversation-queued", hidden: true });
@@ -252596,6 +252845,117 @@ function mountConversation(root4, store3, api3) {
   let userScrolledUpAt = 0;
   let renderedThreadId = null;
   let backfillGeneration = 0;
+  const disclosurePreferences = /* @__PURE__ */ new Map();
+  const liveRollupMessages = /* @__PURE__ */ new Set();
+  const autoOpenedDisclosures = /* @__PURE__ */ new Set();
+  const autoOpenedAt = /* @__PURE__ */ new Map();
+  const runningDisclosures = /* @__PURE__ */ new Set();
+  const disclosureElements = /* @__PURE__ */ new Map();
+  const wiredDisclosureSummaries = /* @__PURE__ */ new WeakSet();
+  const revealTimers = /* @__PURE__ */ new Map();
+  const compactTimers = /* @__PURE__ */ new Map();
+  const deferredCompactions = /* @__PURE__ */ new Set();
+  function cancelReveal(key) {
+    const timer3 = revealTimers.get(key);
+    if (timer3 !== void 0) clearTimeout(timer3);
+    revealTimers.delete(key);
+  }
+  function wireDisclosurePreference(details, key) {
+    const summary = details.querySelector(":scope > summary");
+    if (!summary || wiredDisclosureSummaries.has(summary)) return;
+    wiredDisclosureSummaries.add(summary);
+    summary.addEventListener("click", (event3) => {
+      const target = event3.target;
+      if (target instanceof Element && target.closest("button")) return;
+      event3.preventDefault();
+      details.open = !details.open;
+      disclosurePreferences.set(key, details.open);
+      details.dataset["userToggled"] = "1";
+      autoOpenedDisclosures.delete(key);
+      autoOpenedAt.delete(key);
+      cancelReveal(key);
+      if (details.open) ensureToolCardBodyRendered(details);
+    });
+  }
+  function registerReasoningDisclosures(msgEl) {
+    const threadId = getActiveThread(store3)?.id;
+    const fallbackMessageId = msgEl.dataset["messageId"];
+    if (!threadId || !fallbackMessageId) return;
+    msgEl.querySelectorAll(".message-reasoning").forEach((details) => {
+      const step3 = details.closest(".tool-card-step[data-step-message-id]");
+      const messageId = step3?.dataset["stepMessageId"] ?? fallbackMessageId;
+      const key = `${threadId}:${messageId}:reasoning`;
+      details.dataset["disclosureKey"] = key;
+      disclosureElements.set(key, details);
+      wireDisclosurePreference(details, key);
+      const preference = disclosurePreferences.get(key);
+      if (preference !== void 0) {
+        details.dataset["userToggled"] = "1";
+        details.open = preference;
+      }
+    });
+  }
+  function cancelThreadCompaction(threadId) {
+    const timer3 = compactTimers.get(threadId);
+    if (timer3 !== void 0) clearTimeout(timer3);
+    compactTimers.delete(threadId);
+  }
+  function revealAfterDelay(key) {
+    if (revealTimers.has(key) || autoOpenedDisclosures.has(key)) return;
+    const timer3 = setTimeout(() => {
+      revealTimers.delete(key);
+      if (!runningDisclosures.has(key) || disclosurePreferences.has(key) || !pinnedToBottom) return;
+      const details = disclosureElements.get(key);
+      if (!details?.isConnected) return;
+      autoOpenedDisclosures.add(key);
+      autoOpenedAt.set(key, Date.now());
+      details.open = true;
+      ensureToolCardBodyRendered(details);
+      scrollToBottom();
+    }, TOOL_AUTO_REVEAL_DELAY_MS);
+    revealTimers.set(key, timer3);
+  }
+  function compactThreadDisclosures(threadId) {
+    compactTimers.delete(threadId);
+    if (threadId === store3.getState().activeThreadId && !pinnedToBottom) {
+      deferredCompactions.add(threadId);
+      return;
+    }
+    deferredCompactions.delete(threadId);
+    const prefix = `${threadId}:`;
+    const now4 = Date.now();
+    let dwellRemaining = 0;
+    for (const key of autoOpenedDisclosures) {
+      if (!key.startsWith(prefix)) continue;
+      const details = disclosureElements.get(key);
+      if (details?.dataset["status"] === "error") continue;
+      const openedAt = autoOpenedAt.get(key) ?? 0;
+      dwellRemaining = Math.max(dwellRemaining, TOOL_AUTO_REVEAL_MIN_DWELL_MS - (now4 - openedAt));
+    }
+    if (dwellRemaining > 0) {
+      const timer3 = setTimeout(() => {
+        compactThreadDisclosures(threadId);
+      }, Math.ceil(dwellRemaining));
+      compactTimers.set(threadId, timer3);
+      return;
+    }
+    for (const key of [...autoOpenedDisclosures]) {
+      if (!key.startsWith(prefix)) continue;
+      const details = disclosureElements.get(key);
+      if (details?.dataset["status"] === "error") continue;
+      autoOpenedDisclosures.delete(key);
+      autoOpenedAt.delete(key);
+      if (!disclosurePreferences.has(key) && details?.isConnected) details.open = false;
+    }
+    if (threadId === store3.getState().activeThreadId) scrollToBottom();
+  }
+  function scheduleThreadCompaction(threadId) {
+    cancelThreadCompaction(threadId);
+    const timer3 = setTimeout(() => {
+      compactThreadDisclosures(threadId);
+    }, TOOL_AUTO_COMPACT_DELAY_MS);
+    compactTimers.set(threadId, timer3);
+  }
   function isNearBottom() {
     const distance3 = list.scrollHeight - list.scrollTop - list.clientHeight;
     return distance3 <= SCROLL_PIN_THRESHOLD_PX;
@@ -252618,6 +252978,8 @@ function mountConversation(root4, store3, api3) {
       pinnedToBottom = false;
     } else if (isNearBottom()) {
       pinnedToBottom = true;
+      const threadId = store3.getState().activeThreadId;
+      if (threadId && deferredCompactions.delete(threadId)) scheduleThreadCompaction(threadId);
     }
     lastScrollTop = scrollTop;
     updateScrollButton();
@@ -252684,6 +253046,8 @@ function mountConversation(root4, store3, api3) {
     if (force) {
       userScrolledUpAt = 0;
       pinnedToBottom = true;
+      const threadId = store3.getState().activeThreadId;
+      if (threadId && deferredCompactions.delete(threadId)) scheduleThreadCompaction(threadId);
     }
     updateScrollButton();
   }
@@ -252707,72 +253071,67 @@ function mountConversation(root4, store3, api3) {
       item.label = commandSummary;
     }
   }
-  function applyToolCardOpenState(card2, item, userExpandedRollups, userExpandedGroups, userExpandedTools) {
+  function applyToolCardOpenState(card2, item, threadId, messageId, autoRevealEligible) {
+    if (card2.classList.contains("thread-proposal")) return;
+    const key = `${threadId}:${messageId}:${toolCardKey(item)}`;
+    card2.dataset["disclosureKey"] = key;
+    disclosureElements.set(key, card2);
+    wireDisclosurePreference(card2, key);
+    const preference = disclosurePreferences.get(key);
+    const running = item.type === "individual" ? item.toolCall.status === "running" || item.toolCall.subagent?.status === "running" : aggregateToolStatus(item.toolCalls) === "running";
+    if (running) runningDisclosures.add(key);
+    else {
+      runningDisclosures.delete(key);
+      cancelReveal(key);
+    }
+    if (preference !== void 0) {
+      card2.open = preference;
+    } else if (autoOpenedDisclosures.has(key)) {
+      card2.open = true;
+    } else {
+      card2.open = false;
+      if (running && autoRevealEligible) revealAfterDelay(key);
+    }
+    if (card2.open) ensureToolCardBodyRendered(card2);
     if (item.type === "rollup" || item.type === "step") {
-      const status = aggregateToolStatus(item.toolCalls);
-      card2.open = status === "running" || userExpandedRollups.has(item.key);
       const nestedCards = card2.querySelectorAll(
         ":scope > .tool-rollup-body > .tool-card"
       );
       item.children.forEach((child, index) => {
         const nested = nestedCards[index];
         if (nested) {
-          applyToolCardOpenState(
-            nested,
-            child,
-            userExpandedRollups,
-            userExpandedGroups,
-            userExpandedTools
-          );
+          applyToolCardOpenState(nested, child, threadId, messageId, false);
         }
       });
       return;
     }
     if (item.type === "group") {
-      const status = aggregateToolStatus(item.toolCalls);
-      card2.open = status === "running" || userExpandedGroups.has(item.key);
       card2.querySelectorAll(".tool-group-item[data-tool-id]").forEach((entry) => {
         const id39 = entry.dataset["toolId"];
-        if (id39 && userExpandedTools.has(id39)) {
-          entry.open = true;
-          ensureToolCardBodyRendered(entry);
-        }
+        if (!id39) return;
+        const itemKey = `${threadId}:${messageId}:t:${id39}`;
+        entry.dataset["disclosureKey"] = itemKey;
+        disclosureElements.set(itemKey, entry);
+        wireDisclosurePreference(entry, itemKey);
+        entry.open = disclosurePreferences.get(itemKey) ?? false;
+        if (entry.open) ensureToolCardBodyRendered(entry);
       });
-      return;
     }
-    const tc2 = item.toolCall;
-    if (card2.classList.contains("thread-proposal")) return;
-    const running = tc2.status === "running" || tc2.subagent?.status === "running";
-    card2.open = running || userExpandedTools.has(tc2.id);
-    if (card2.open) ensureToolCardBodyRendered(card2);
   }
   function renderToolCards(msgEl, toolCalls, opts = {}) {
     const threadId = store3.getState().activeThreadId ?? "";
-    const userExpandedRollups = /* @__PURE__ */ new Set();
-    msgEl.querySelectorAll(".tool-card-rollup[open], .tool-card-step[open]").forEach((node3) => {
-      const key = node3.dataset["rollupKey"] ?? node3.dataset["stepKey"];
-      if (key && node3.dataset["status"] !== "running") userExpandedRollups.add(key);
-    });
-    const userExpandedGroups = /* @__PURE__ */ new Set();
-    msgEl.querySelectorAll(".tool-card-group[open]").forEach((node3) => {
-      const key = node3.dataset["groupKey"];
-      if (key && node3.dataset["status"] !== "running") userExpandedGroups.add(key);
-    });
-    const userExpandedTools = /* @__PURE__ */ new Set();
-    msgEl.querySelectorAll(
-      ".tool-card[data-tool-id][open], .tool-group-item[open], .tool-card-subagent[open]"
-    ).forEach((node3) => {
-      const id39 = node3.dataset["toolId"];
-      if (node3.classList.contains("thread-proposal")) return;
-      if (id39 && node3.dataset["status"] !== "running") userExpandedTools.add(id39);
-    });
     const msgId = msgEl.dataset["messageId"] ?? "";
+    const messageKey = threadId && msgId ? `${threadId}:${msgId}` : null;
+    const activeThread = getActiveThread(store3);
+    if (messageKey && activeThread?.status === "running" && toolCalls.some((tool) => !tool.subagent)) {
+      liveRollupMessages.add(messageKey);
+    }
     const run6 = opts.run && (opts.run.anchorId === msgId || list.querySelector(`[data-message-id="${opts.run.anchorId}"]`) !== null) ? opts.run : void 0;
     const isRunMember = run6 !== void 0 && run6.anchorId !== msgId;
     msgEl.classList.toggle("msg-tool-run-member", isRunMember);
     const nestReasoning = run6 === void 0 && Boolean(opts.reasoning?.trim()) && shouldNestReasoningInTools(toolCalls);
     const items = run6 ? isRunMember ? buildSubagentDisplayItems(toolCalls) : [...buildToolRunDisplayItems(run6), ...buildSubagentDisplayItems(toolCalls)] : buildToolCallDisplayItems(toolCalls, {
-      ...nestReasoning ? { forceRollup: true } : {}
+      ...nestReasoning || messageKey !== null && liveRollupMessages.has(messageKey) ? { forceRollup: true } : {}
     });
     if (!run6) for (const item of items) applyRollupSummaries(item, opts);
     const existing = /* @__PURE__ */ new Map();
@@ -252790,16 +253149,15 @@ function mountConversation(root4, store3, api3) {
       let card2 = existing.get(key) ?? null;
       if (card2) existing.delete(key);
       if (card2 && toolCardSignatures.get(card2) === sig) {
-      } else if (card2 && item.type === "individual" && item.toolCall.subagent && card2.classList.contains("tool-card-subagent")) {
-        populateSubagentCard(card2, item.toolCall, item.label, api3);
-        toolCardSignatures.set(card2, sig);
+      } else if (card2 && !card2.classList.contains("thread-proposal") && !(item.type === "individual" && isThreadProposalCall(item.toolCall))) {
+        reconcileToolCard(card2, item, api3, threadId, store3);
       } else {
         card2?.remove();
         card2 = createToolCard(item, api3, threadId, store3);
         toolCardKeys.set(card2, key);
         toolCardSignatures.set(card2, sig);
       }
-      applyToolCardOpenState(card2, item, userExpandedRollups, userExpandedGroups, userExpandedTools);
+      applyToolCardOpenState(card2, item, threadId, msgId, true);
       if (item.type === "rollup" && nestReasoning) {
         syncNestedRollupReasoning(card2, msgEl, opts.reasoning, opts.reasoningLive === true);
       }
@@ -252831,6 +253189,7 @@ function mountConversation(root4, store3, api3) {
         msgEl.insertBefore(node3, msgEl.children[base + i4] ?? null);
       }
     }
+    registerReasoningDisclosures(msgEl);
     syncToolRunMemberVisibility(msgEl);
   }
   function renderRunAnchor(thread, run6) {
@@ -253168,6 +253527,7 @@ function mountConversation(root4, store3, api3) {
       userScrolledUpAt = 0;
       lastScrollTop = 0;
     }
+    disclosureElements.clear();
     clear(list);
     backfillGeneration++;
     renderedThreadId = thread?.id ?? null;
@@ -253196,12 +253556,35 @@ function mountConversation(root4, store3, api3) {
       setScrollTopProgrammatically(preservedScrollTop);
     }
     finishThreadChrome(thread);
+    if (thread.status === "running") cancelThreadCompaction(thread.id);
+    else if ([...autoOpenedDisclosures].some((key) => key.startsWith(`${thread.id}:`))) {
+      scheduleThreadCompaction(thread.id);
+    }
     if (initialStart > 0) {
       const generation = backfillGeneration;
       requestAnimationFrame(() => {
         backfillOlderMessages(thread, initialStart, generation);
       });
     }
+  }
+  function captureReadingAnchor() {
+    const listRect = list.getBoundingClientRect();
+    const candidates = list.querySelectorAll(
+      ":scope > .msg, :scope > [data-review-card], :scope > [data-comparison-card]"
+    );
+    for (const element3 of candidates) {
+      const rect2 = element3.getBoundingClientRect();
+      if (rect2.bottom > listRect.top) return { element: element3, viewportTop: rect2.top };
+    }
+    return null;
+  }
+  function restoreReadingAnchor(anchor3, fallbackScrollTop) {
+    if (anchor3?.element.isConnected) {
+      const delta = anchor3.element.getBoundingClientRect().top - anchor3.viewportTop;
+      if (Math.abs(delta) > 0.5) setScrollTopProgrammatically(list.scrollTop + delta);
+      return;
+    }
+    if (list.scrollTop !== fallbackScrollTop) setScrollTopProgrammatically(fallbackScrollTop);
   }
   function refreshToolCards(msgId) {
     const thread = store3.getState().threads.find((t4) => t4.messages.some((m3) => m3.id === msgId));
@@ -253210,6 +253593,7 @@ function mountConversation(root4, store3, api3) {
     if (!msg || !msgEl) return;
     const prevScrollTop = list.scrollTop;
     const wasPinned = pinnedToBottom;
+    const readingAnchor = wasPinned ? null : captureReadingAnchor();
     const run6 = multiStepRunFor(thread, msgId);
     renderToolCards(msgEl, msg.toolCalls ?? [], {
       ...messageToolCardOpts(msg),
@@ -253219,9 +253603,7 @@ function mountConversation(root4, store3, api3) {
     if (run6) syncRunLayout(thread, run6, msgId);
     if (wasPinned) {
       scrollToBottom();
-    } else if (list.scrollTop !== prevScrollTop) {
-      setScrollTopProgrammatically(prevScrollTop);
-    }
+    } else restoreReadingAnchor(readingAnchor, prevScrollTop);
   }
   const unsubs = [
     store3.on("message_added", (tid, mid) => {
@@ -253265,6 +253647,7 @@ function mountConversation(root4, store3, api3) {
         const run6 = multiStepRunFor(thread, mid);
         if (run6) syncRunStepTrail(thread, run6);
         else syncReasoningEl(msgEl, msg, isReasoningDisclosureLive(thread, msg));
+        registerReasoningDisclosures(msgEl);
         activityBar.classList.add("agent-activity-clickable");
         setActivity(activityLabel.textContent);
         scrollToBottom();
@@ -253337,8 +253720,9 @@ function mountConversation(root4, store3, api3) {
       }
     }),
     store3.on("thread_status_changed", (tid, status) => {
-      if (tid !== store3.getState().activeThreadId) return;
-      if (status !== "running") setActivity(null);
+      if (status === "running") cancelThreadCompaction(tid);
+      else scheduleThreadCompaction(tid);
+      if (tid === store3.getState().activeThreadId && status !== "running") setActivity(null);
     }),
     store3.on("agent_activity", (tid, label) => {
       if (tid !== store3.getState().activeThreadId) return;
@@ -253355,6 +253739,14 @@ function mountConversation(root4, store3, api3) {
   return () => {
     backfillGeneration++;
     showAcpTransportNoiseDisclosure = () => false;
+    revealTimers.forEach((timer3) => {
+      clearTimeout(timer3);
+    });
+    compactTimers.forEach((timer3) => {
+      clearTimeout(timer3);
+    });
+    revealTimers.clear();
+    compactTimers.clear();
     unbindFileLinks();
     unbindWorkspaceLinks();
     unbindBrowserLinks();
@@ -253374,7 +253766,7 @@ function attachCopyButton(body, msgId, store3) {
   });
   body.append(copyBtn);
 }
-var lazyToolCardBodies, streamingRenderers, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolCardKeys, toolCardSignatures, SCROLL_PIN_THRESHOLD_PX, USER_SCROLL_UP_DEBOUNCE_MS, INITIAL_RENDER_WINDOW, BACKFILL_CHUNK_SIZE;
+var lazyToolCardBodies, streamingRenderers, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolCardKeys, toolCardSignatures, toolGroupItemSignatures, SCROLL_PIN_THRESHOLD_PX, USER_SCROLL_UP_DEBOUNCE_MS, TOOL_AUTO_REVEAL_DELAY_MS, TOOL_AUTO_REVEAL_MIN_DWELL_MS, TOOL_AUTO_COMPACT_DELAY_MS, INITIAL_RENDER_WINDOW, BACKFILL_CHUNK_SIZE;
 var init_conversation = __esm({
   "src/renderer/views/conversation.ts"() {
     init_helpers();
@@ -253434,8 +253826,12 @@ var init_conversation = __esm({
     subagentCardChromeSig = /* @__PURE__ */ new WeakMap();
     toolCardKeys = /* @__PURE__ */ new WeakMap();
     toolCardSignatures = /* @__PURE__ */ new WeakMap();
+    toolGroupItemSignatures = /* @__PURE__ */ new WeakMap();
     SCROLL_PIN_THRESHOLD_PX = 48;
     USER_SCROLL_UP_DEBOUNCE_MS = 150;
+    TOOL_AUTO_REVEAL_DELAY_MS = 300;
+    TOOL_AUTO_REVEAL_MIN_DWELL_MS = 1e3;
+    TOOL_AUTO_COMPACT_DELAY_MS = 750;
     INITIAL_RENDER_WINDOW = 40;
     BACKFILL_CHUNK_SIZE = 30;
   }
@@ -280982,7 +281378,70 @@ var init_git_image_diff = __esm({
   }
 });
 
+// src/shared/fs/image-path.ts
+function imageMimeType(path4) {
+  const name = path4.split("/").pop()?.toLowerCase() ?? "";
+  const ext = name.split(".").pop() ?? "";
+  return IMAGE_MIME_BY_EXT[ext] ?? null;
+}
+function isRasterImagePath(path4) {
+  const mime = imageMimeType(path4);
+  return mime !== null && mime !== "image/svg+xml";
+}
+var IMAGE_MIME_BY_EXT;
+var init_image_path = __esm({
+  "src/shared/fs/image-path.ts"() {
+    IMAGE_MIME_BY_EXT = {
+      avif: "image/avif",
+      bmp: "image/bmp",
+      gif: "image/gif",
+      ico: "image/x-icon",
+      jpeg: "image/jpeg",
+      jpg: "image/jpeg",
+      png: "image/png",
+      svg: "image/svg+xml",
+      webp: "image/webp"
+    };
+  }
+});
+
 // src/renderer/views/git-changes-pane.ts
+function bytesToBase64(bytes) {
+  const chunks = [];
+  const chunkSize = 32768;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    chunks.push(String.fromCharCode(...bytes.subarray(offset, offset + chunkSize)));
+  }
+  return btoa(chunks.join(""));
+}
+function proposedImageDataUrl(path4, content) {
+  if (!content) return null;
+  const mime = imageMimeType(path4);
+  if (!mime) return null;
+  const dataUrlPrefix = `data:${mime};base64,`;
+  if (content.startsWith(dataUrlPrefix)) return content;
+  if (isRasterImagePath(path4)) {
+    const bytes = new Uint8Array(content.length);
+    for (let i4 = 0; i4 < content.length; i4++) {
+      const codeUnit = content.charCodeAt(i4);
+      if (codeUnit > 255) return null;
+      bytes[i4] = codeUnit;
+    }
+    return `${dataUrlPrefix}${bytesToBase64(bytes)}`;
+  }
+  return `${dataUrlPrefix}${bytesToBase64(new TextEncoder().encode(content))}`;
+}
+function proposedImageDiff(view) {
+  if (!imageMimeType(view.path)) return null;
+  return {
+    path: view.path,
+    before: "",
+    after: "",
+    language: view.language,
+    beforeImage: proposedImageDataUrl(view.path, view.before),
+    afterImage: proposedImageDataUrl(view.path, view.after)
+  };
+}
 function isChangeSelection(seed) {
   if (!seed || typeof seed !== "object") return false;
   if (!("kind" in seed) || !("path" in seed) || typeof seed.path !== "string") return false;
@@ -281056,7 +281515,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store3, api3, monaco) {
   const dirWrap = el("div", { class: "git-dir-view" });
   dirWrap.hidden = true;
   const emptyState = el("div", { class: "panel-empty" }, "Select a changed file");
-  viewerRoot.append(conflictBanner, diffWrap, approvalBar, imageWrap, dirWrap, emptyState);
+  viewerRoot.append(conflictBanner, diffWrap, imageWrap, dirWrap, emptyState, approvalBar);
   let diffEditor = null;
   let pendingSelect = null;
   let selectRequestId = 0;
@@ -281330,9 +281789,20 @@ function mountGitChangesPane(listRoot, viewerRoot, store3, api3, monaco) {
       const owner = activeOwner();
       if (owner) void api3.diff.reject(owner.projectId, owner.threadId, view.path);
     };
+    const imageDiff = proposedImageDiff(view);
+    if (imageDiff) {
+      emptyState.hidden = true;
+      diffWrap.hidden = true;
+      imageWrap.hidden = false;
+      dirWrap.hidden = true;
+      if (diffEditor) disposeDiffModels(diffEditor);
+      renderImageDiff(imageWrap, imageDiff);
+      return;
+    }
     emptyState.hidden = true;
     imageWrap.hidden = true;
     dirWrap.hidden = true;
+    clear(imageWrap);
     diffWrap.hidden = false;
     const proposed = {
       path: view.path,
@@ -281819,6 +282289,7 @@ var init_git_changes_pane = __esm({
     init_ui_scale();
     init_git_image_diff();
     init_material_file_icons();
+    init_image_path();
     STATUS_LABEL = {
       modified: "M",
       added: "A",
@@ -285667,6 +286138,12 @@ var init_roadmap_pane = __esm({
 });
 
 // src/shared/browser-session.ts
+function browserThreadScope(projectId, threadId) {
+  return projectId && threadId ? `thread:${encodeURIComponent(JSON.stringify([projectId, threadId]))}` : "";
+}
+function browserSessionPartition(base, scope) {
+  return scope ? `${base}:${scope}` : base;
+}
 var BROWSER_SESSION_PARTITION;
 var init_browser_session = __esm({
   "src/shared/browser-session.ts"() {
@@ -285698,6 +286175,7 @@ function toStoredTab(tab) {
     if (tab.artefactTitle.length > 200) return null;
     return {
       url: "",
+      ...tab.partition ? { partition: tab.partition } : {},
       ...label ? { label } : {},
       artefactTitle: tab.artefactTitle,
       artefactThreadId: tab.artefactThreadId,
@@ -285705,7 +286183,11 @@ function toStoredTab(tab) {
     };
   }
   if (!isStorableUrl(tab.url)) return null;
-  return { url: tab.url, ...label ? { label } : {} };
+  return {
+    url: tab.url,
+    ...label ? { label } : {},
+    ...tab.partition ? { partition: tab.partition } : {}
+  };
 }
 function toBrowserPaneSession(tabs, activeTabIndex, paneOpen) {
   const kept = [];
@@ -285995,11 +286477,11 @@ function createIframeWebview(resolveWorkspacePreview) {
     }
   });
 }
-function createWebview(resolveWorkspacePreview) {
+function createWebview(partition2, resolveWorkspacePreview) {
   const webview = document.createElement("webview");
   if (!supportsElectronWebview(webview)) return createIframeWebview(resolveWorkspacePreview);
   const guest = webview;
-  guest.setAttribute("partition", BROWSER_SESSION_PARTITION);
+  guest.setAttribute("partition", partition2);
   guest.setAttribute("webpreferences", WEBVIEW_PREFS);
   guest.setAttribute("allowpopups", "false");
   guest.className = "browser-webview";
@@ -286146,7 +286628,7 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
   }
   function ensureWebview(tab) {
     if (tab.webview) return tab.webview;
-    const webview = createWebview(resolveWorkspacePreview);
+    const webview = createWebview(tab.partition, resolveWorkspacePreview);
     tab.webviewHost.append(webview);
     tab.webview = webview;
     const onNavigate = () => {
@@ -286241,14 +286723,18 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
   }
   function openRequestedBrowserUrl(rawUrl) {
     const url2 = normalizeBrowserUrl(rawUrl);
-    const existing = urlTabFor(url2);
+    const scopePartition = browserSessionPartition(
+      BROWSER_SESSION_PARTITION,
+      browserThreadScope(store3.getState().activeProjectId, store3.getState().activeThreadId)
+    );
+    const existing = urlTabFor(url2, scopePartition);
     if (existing) {
       setActiveTab(existing.id);
       navigateTab(existing, url2);
       return;
     }
     let tab = activeTabId ? tabs.get(activeTabId) : void 0;
-    if (!tab || !isIdleBrowserTab(tab)) {
+    if (!tab || tab.partition !== scopePartition || !isIdleBrowserTab(tab)) {
       addTab({ activate: true });
       tab = activeTabId ? tabs.get(activeTabId) : void 0;
     }
@@ -286269,9 +286755,10 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
       urlInput.select();
     });
   }
-  function artefactTabFor(title2, threadId) {
+  function artefactTabFor(title2, threadId, projectId) {
     for (const tab of tabs.values()) {
-      if (tab.artefactTitle === title2 && tab.artefactThreadId === (threadId ?? null)) return tab;
+      if (tab.artefactTitle === title2 && tab.artefactThreadId === (threadId ?? null) && (!projectId || tab.artefactProjectId === projectId))
+        return tab;
     }
     return void 0;
   }
@@ -286289,19 +286776,23 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
     const reopened = await api3.canvas.reopenArtefact(projectId, threadId, title2).catch(() => false);
     if (!reopened) showToast(`"${title2}" is no longer available`);
   }
-  function urlTabFor(url2) {
+  function urlTabFor(url2, partition2) {
     for (const tab of tabs.values()) {
       if (tab.artefactTitle) continue;
-      if (displayUrl(tab) === url2) return tab;
+      if (displayUrl(tab) === url2 && tab.partition === partition2) return tab;
     }
     return void 0;
   }
-  function showTabForUrl(rawUrl) {
+  function showTabForUrl(rawUrl, partition2) {
     const url2 = normalizeBrowserUrl(rawUrl);
     openRightPanel(store3, "browser");
-    const existing = urlTabFor(url2);
+    const scopePartition = partition2 ?? browserSessionPartition(
+      BROWSER_SESSION_PARTITION,
+      browserThreadScope(store3.getState().activeProjectId, store3.getState().activeThreadId)
+    );
+    const existing = urlTabFor(url2, scopePartition);
     if (!existing) {
-      addTab({ url: url2, activate: true });
+      addTab({ url: url2, activate: true, partition: partition2 });
       return;
     }
     setActiveTab(existing.id);
@@ -286316,16 +286807,31 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
   }
   function openArtefact(artefact) {
     const target = artefactUrl(artefact);
-    const existing = artefactTabFor(artefact.title, artefact.threadId);
+    const existing = artefactTabFor(
+      artefact.title,
+      artefact.owner?.threadId ?? artefact.threadId,
+      artefact.owner?.projectId
+    );
     if (existing) {
       existing.pendingUrl = null;
     }
     if (!existing) openRightPanel(store3, "browser");
-    const tab = existing ?? tabs.get(addTab({ activate: true }));
+    const tab = existing ?? tabs.get(
+      addTab({
+        activate: true,
+        partition: browserSessionPartition(
+          BROWSER_SESSION_PARTITION,
+          browserThreadScope(
+            artefact.owner?.projectId ?? store3.getState().activeProjectId,
+            artefact.owner?.threadId ?? artefact.threadId ?? store3.getState().activeThreadId
+          )
+        )
+      })
+    );
     if (!tab) return;
     tab.artefactTitle = artefact.title;
-    tab.artefactThreadId = artefact.threadId ?? null;
-    tab.artefactProjectId = store3.getState().activeProjectId;
+    tab.artefactThreadId = artefact.owner?.threadId ?? artefact.threadId ?? null;
+    tab.artefactProjectId = artefact.owner?.projectId ?? store3.getState().activeProjectId;
     tab.urlInput.value = "";
     tab.urlInput.placeholder = artefact.title;
     syncTabLabel(tab);
@@ -286467,6 +286973,10 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
     const panel = el("div", { class: "browser-tab-panel", "data-tab-id": id39 }, toolbar, webviewHost);
     const tab = {
       id: id39,
+      partition: options2?.partition ?? browserSessionPartition(
+        BROWSER_SESSION_PARTITION,
+        browserThreadScope(store3.getState().activeProjectId, store3.getState().activeThreadId)
+      ),
       label,
       panel,
       webviewHost,
@@ -286644,6 +287154,7 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
       // (#508) rejects `||`, but `??` alone would change behaviour — these
       // fall back on EMPTY strings, not just null/undefined.
       url: [tab.urlInput.value, webviewUrl(tab), tab.pendingUrl].find((value2) => value2) ?? "about:blank",
+      partition: tab.partition,
       label: tab.label,
       artefactTitle: tab.artefactTitle,
       artefactThreadId: tab.artefactThreadId,
@@ -286667,9 +287178,11 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
         const snapshot = tabSnapshot(tab);
         return {
           url: snapshot.url,
+          partition: tab.partition,
           ...snapshot.label !== void 0 ? { label: snapshot.label } : {},
           artefactTitle: tab.artefactTitle,
-          artefactThreadId: tab.artefactThreadId
+          artefactThreadId: tab.artefactThreadId,
+          artefactProjectId: tab.artefactProjectId
         };
       }),
       activeTabIndex: activeIndexOf(ordered)
@@ -286688,13 +287201,17 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
     purgeAllTabs();
     const createdIds = [];
     for (const entry of raw.tabs) {
-      const id39 = addTab({ activate: false });
+      const id39 = addTab({
+        activate: false,
+        partition: entry.partition ?? BROWSER_SESSION_PARTITION
+      });
       createdIds.push(id39);
       const tab = tabs.get(id39);
       if (!tab) continue;
       if (entry.artefactTitle) {
         tab.artefactTitle = entry.artefactTitle;
         tab.artefactThreadId = entry.artefactThreadId ?? null;
+        tab.artefactProjectId = entry.artefactProjectId ?? null;
         tab.urlInput.placeholder = entry.artefactTitle;
       }
       if (entry.url && entry.url !== "about:blank") {
@@ -286751,7 +287268,10 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
     purgeAllTabs();
     const restored = [];
     for (const entry of session.tabs) {
-      const id39 = addTab({ activate: false });
+      const id39 = addTab({
+        activate: false,
+        partition: entry.partition ?? BROWSER_SESSION_PARTITION
+      });
       const tab = tabs.get(id39);
       if (!tab) continue;
       if (entry.artefactTitle) {
@@ -286823,7 +287343,7 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
     }),
     // cmd/ctrl click and target=_blank links inside a guide open as a new
     // background tab (main blocks the popup window and forwards the URL here).
-    api3?.browser.onOpenTab((url2) => addTab({ url: url2, activate: false })),
+    api3?.browser.onOpenTab((url2, partition2) => addTab({ url: url2, partition: partition2, activate: false })),
     api3?.browser.onShowTab?.(showTabForUrl),
     api3?.browser.onPreviewStale?.(refreshStalePreviews),
     api3?.browser.onShareText(attachSharedText),
