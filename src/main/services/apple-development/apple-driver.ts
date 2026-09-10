@@ -123,6 +123,10 @@ export function appleBuildPathArguments(paths: AppleOperationPaths): string[] {
   ]
 }
 
+export function appleBuildActionArguments(paths: AppleOperationPaths): string[] {
+  return [...appleBuildPathArguments(paths), '-allowProvisioningUpdates']
+}
+
 async function ensureContainedDirectory(root: string, target: string): Promise<string> {
   const relativeTarget = relative(root, target)
   if (
@@ -697,7 +701,7 @@ export class InstalledXcodeDriver {
       plan.target.configuration,
       '-destination',
       plan.target.destinationId,
-      ...appleBuildPathArguments(paths),
+      ...appleBuildActionArguments(paths),
     ]
     const env = { DEVELOPER_DIR: developerDir }
     const args = [...commonArgs, '-resultBundlePath', resultBundlePath]

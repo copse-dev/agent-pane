@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
 import {
+  appleBuildActionArguments,
   appleBuildPathArguments,
   appleOperationPaths,
   discoverAppleCandidates,
@@ -24,13 +25,18 @@ describe('appleOperationPaths', () => {
     assert.equal(next.clonedSourcePackagesPath, first.clonedSourcePackagesPath)
     assert.equal(next.packageCachePath, first.packageCachePath)
     assert.notEqual(otherCheckout.clonedSourcePackagesPath, first.clonedSourcePackagesPath)
-    assert.deepEqual(appleBuildPathArguments(first), [
+    const pathArguments = [
       '-derivedDataPath',
       first.derivedDataPath,
       '-clonedSourcePackagesDirPath',
       first.clonedSourcePackagesPath,
       '-packageCachePath',
       first.packageCachePath,
+    ]
+    assert.deepEqual(appleBuildPathArguments(first), pathArguments)
+    assert.deepEqual(appleBuildActionArguments(first), [
+      ...pathArguments,
+      '-allowProvisioningUpdates',
     ])
   })
 })

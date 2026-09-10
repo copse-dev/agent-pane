@@ -352,8 +352,10 @@ revisiting this document, not silently diverging in an implementation PR.
     normal host access because Xcode requires package, cache, signing, developer-service, and
     Simulator access and may execute project-controlled build phases. The durable boundary is the
     fixed executable and argument construction plus validated project, thread, root, target,
-    ownership, and Copse-owned output paths, with provenance recorded on the supervised task. A
-    macOS Run resolves and launches only the executable inside the validated built app bundle; an
+    ownership, and Copse-owned output paths, with provenance recorded on the supervised task.
+    Authorized Build, Test, and Run actions pass `-allowProvisioningUpdates`; passive discovery and
+    metadata loading do not. A macOS Run resolves and launches only the executable inside the
+    validated built app bundle; an
     iOS Run continues through the selected Simulator.
     Operation authority is process-lifetime scoped: recovery after a host restart blocks before
     relaunch because the prior Xcode process may still be alive.

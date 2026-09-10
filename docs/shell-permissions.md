@@ -34,7 +34,10 @@ the checkout does not prompt.
 
 After that direct action or approval, main resolves the enrolled project and thread, validates the
 selected target, constructs fixed `xcodebuild` or `simctl` argument arrays, or resolves a macOS
-executable inside the validated built app bundle, and runs the process with normal host access. Xcode needs package resolution, caches, Keychain and signing services,
+executable inside the validated built app bundle, and runs the process with normal host access.
+Build, Test, and Run pass `-allowProvisioningUpdates`, so an authorized action may contact Apple and
+download or update signing profiles; passive discovery and metadata loading do not pass it. Xcode
+needs package resolution, caches, Keychain and signing services,
 CoreSimulator, and project-controlled build phases; the generic project sandbox is not a functional
 or honest boundary for it. Operation products remain in Copse-owned per-operation scratch
 directories, and ownership, cancellation, duration, and log bounds remain enforced. Enrollment
