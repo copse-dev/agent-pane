@@ -185,6 +185,55 @@
           0
         ]
       },
+      "apple-development:configure": {
+        "api": "appleDevelopment.configure",
+        "args": [
+          3,
+          3
+        ]
+      },
+      "apple-development:discover": {
+        "api": "appleDevelopment.discover",
+        "args": [
+          3,
+          3
+        ]
+      },
+      "apple-development:execute": {
+        "api": "appleDevelopment.execute",
+        "args": [
+          3,
+          3
+        ]
+      },
+      "apple-development:operation": {
+        "api": "appleDevelopment.operation",
+        "args": [
+          3,
+          3
+        ]
+      },
+      "apple-development:set-enrolled": {
+        "api": "appleDevelopment.setEnrolled",
+        "args": [
+          3,
+          3
+        ]
+      },
+      "apple-development:state": {
+        "api": "appleDevelopment.state",
+        "args": [
+          2,
+          2
+        ]
+      },
+      "apple-development:stop-app": {
+        "api": "appleDevelopment.stopApp",
+        "args": [
+          3,
+          3
+        ]
+      },
       "approval:respond": {
         "api": "approval.respond",
         "args": [

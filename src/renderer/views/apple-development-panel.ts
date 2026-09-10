@@ -82,8 +82,8 @@ export function createAppleDevelopmentPanel(
     stopPolling()
     renderedOwnerKey = `${owner.projectId}\0${owner.threadId}`
     host.replaceChildren()
-    const hasHistory = state.operations.length > 0
-    if ((!state.pluginEnabled || !state.enrolled) && !hasHistory && !options.allowEnrollment) {
+    const latestOperation = state.operations[0]
+    if ((!state.pluginEnabled || !state.enrolled) && !latestOperation && !options.allowEnrollment) {
       host.hidden = true
       return
     }
@@ -264,9 +264,9 @@ export function createAppleDevelopmentPanel(
       )
     }
 
-    if (hasHistory) {
+    if (latestOperation) {
       const history = el('ul', { class: 'apple-development-operations', role: 'list' })
-      for (const operation of state.operations.slice(0, 5)) {
+      for (const operation of [latestOperation]) {
         const cancel = el('button', { type: 'button', class: 'btn btn-ghost' }, 'Cancel')
         cancel.hidden = operation.status !== 'queued' && operation.status !== 'running'
         cancel.addEventListener('click', () => {

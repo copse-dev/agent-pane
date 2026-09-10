@@ -4691,12 +4691,12 @@ export function seedAppleDevelopmentFixture(workspaceRoot: string): void {
                     selection,
                     operations: [
                       operation('build-demo', 'build', 'succeeded', 1_000, {}),
-                      operation('test-demo', 'test', 'failed', 2_000, {
+                      operation('test-demo', 'test', 'failed', 3_000, {
                         reason:
-                          'xcodebuild: error: Could not write the package cache: Operation not permitted.',
+                          "DemoAppTests/BrowserTests.swift:42:13: error: XCTAssertEqual failed: ('duck') is not equal to ('go').",
                         testSummary: { passed: 42, failed: 1, skipped: 2 },
                       }),
-                      operation('run-demo', 'run', 'cancelled', 3_000, {
+                      operation('run-demo', 'run', 'cancelled', 2_000, {
                         reason: 'Cancelled while waiting for the selected Simulator.',
                       }),
                     ],
@@ -4724,7 +4724,7 @@ export function seedAppleDevelopmentFixture(workspaceRoot: string): void {
           {
             id: 'apple-demo-assistant',
             role: 'assistant',
-            content: 'The latest Apple Development operations are retained with this thread.',
+            content: 'The panel shows the latest Apple Development operation for this thread.',
             toolCalls: [],
             createdAt: createdAt + 1,
           },

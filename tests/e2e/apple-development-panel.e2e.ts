@@ -18,7 +18,7 @@ describe('Apple Development thread panel', function () {
     resetUserData()
   })
 
-  it('renders an enrolled target and retained operation outcomes in an isolated profile', async () => {
+  it('renders an enrolled target and only its latest operation in an isolated profile', async () => {
     const panel = $('.apple-development-panel[data-plugin-id="copse.apple-development"]')
     await panel.waitForDisplayed({ timeout: 30_000 })
     await expect(panel.$('.apple-development-title')).toHaveText('APPLE DEVELOPMENT')
@@ -29,21 +29,21 @@ describe('Apple Development thread panel', function () {
     assert.doesNotMatch(await panel.getText(), /Xcode targets are revalidated/)
 
     const operations = panel.$$('.apple-development-operation')
-    await expect(operations).toBeElementsArrayOfSize(3)
+    await expect(operations).toBeElementsArrayOfSize(1)
     assert.deepEqual(
       await Promise.all(
         operations.map((item) => item.$('.apple-development-operation-status').getText()),
       ),
-      ['cancelled', 'failed', 'succeeded'],
+      ['failed'],
     )
     await expect(panel.$('[data-operation-id="test-demo"]')).toHaveText(
       expect.stringContaining(
-        'xcodebuild: error: Could not write the package cache: Operation not permitted.',
+        'DemoAppTests/BrowserTests.swift:42:13: error: XCTAssertEqual failed',
       ),
     )
-    await expect(panel.$('[data-operation-id="run-demo"]')).toHaveText(
-      expect.stringContaining('waiting for the selected Simulator'),
-    )
+    await expect(panel.$('[data-operation-id="run-demo"]')).not.toExist()
+    await expect(panel.$('[data-operation-id="build-demo"]')).not.toExist()
+    assert.doesNotMatch(await panel.getText(), /error:\s*permissionDenied/)
 
     await saveAppScreenshot('apple-development-test-profile.png')
 

@@ -1,6 +1,6 @@
-import { basename, extname, isAbsolute, relative, resolve, sep } from 'node:path'
+import { basename, dirname, extname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
-import { readdir, realpath } from 'node:fs/promises'
+import { mkdir, open, readdir, realpath } from 'node:fs/promises'
 import { z } from 'zod'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
 import type {
@@ -54,6 +54,7 @@ const buildSettingsOutputSchema = z.array(
     buildSettings: z.record(z.string(), z.string()),
   }),
 )
+const MAX_PACKAGE_FILE_BYTES = 4 * 1024 * 1024
 
 export interface AppleDriverDiscovery {
   toolchain: { developerDir: string; version: string } | null
@@ -121,6 +122,46 @@ export function appleBuildPathArguments(paths: AppleOperationPaths): string[] {
   ]
 }
 
+async function ensureContainedDirectory(root: string, target: string): Promise<string> {
+  const relativeTarget = relative(root, target)
+  if (
+    relativeTarget === '' ||
+    isAbsolute(relativeTarget) ||
+    relativeTarget === '..' ||
+    relativeTarget.startsWith(`..${sep}`)
+  ) {
+    throw new Error('Apple operation storage resolved outside Copse scratch space.')
+  }
+  let cursor = root
+  for (const segment of relativeTarget.split(sep)) {
+    const next = resolve(cursor, segment)
+    await mkdir(next, { recursive: true })
+    const canonical = await realpath(next)
+    if (!withinRoot(root, canonical)) {
+      throw new Error('Apple operation storage contains a symlink outside Copse scratch space.')
+    }
+    cursor = canonical
+  }
+  return cursor
+}
+
+export async function prepareAppleOperationPaths(
+  root: string,
+  operationId: string,
+): Promise<AppleOperationPaths> {
+  const scratchRoot = await realpath(ensureWorkspaceTmpDir())
+  const requested = appleOperationPaths(root, operationId)
+  return {
+    outputRoot: await ensureContainedDirectory(scratchRoot, requested.outputRoot),
+    derivedDataPath: await ensureContainedDirectory(scratchRoot, requested.derivedDataPath),
+    clonedSourcePackagesPath: await ensureContainedDirectory(
+      scratchRoot,
+      requested.clonedSourcePackagesPath,
+    ),
+    packageCachePath: await ensureContainedDirectory(scratchRoot, requested.packageCachePath),
+  }
+}
+
 function withinRoot(root: string, candidate: string): boolean {
   const normalizedRoot = resolve(root)
   const normalizedCandidate = resolve(candidate)
@@ -137,12 +178,17 @@ async function runProcess(
   signal: AbortSignal,
   env?: NodeJS.ProcessEnv,
 ): Promise<ProcessResult> {
-  const tmpDir = ensureWorkspaceTmpDir()
   const child = await spawnInProjectSandbox(executable, args, {
     cwd,
-    env: { ...env, TMPDIR: tmpDir, TMP: tmpDir, TEMP: tmpDir },
+    ...(env ? { env } : {}),
     signal,
     stdio: 'pipe',
+    // Xcode projects may run build scripts and Xcode needs package, cache,
+    // signing, developer-service, and Simulator access. The caller obtains
+    // authority from a direct UI action or an agent-tool approval before this
+    // driver runs; pretending those operations fit the generic project sandbox
+    // makes ordinary builds fail while providing a misleading security boundary.
+    unsandboxed: true,
   })
   let output = ''
   let stdout = ''
@@ -235,15 +281,95 @@ export async function discoverSharedSchemes(
     .slice(0, MAX_SCHEMES)
 }
 
-function processFailureDetail(result: ProcessResult): string | null {
-  const lines = result.stderr
+async function readBoundedText(path: string): Promise<string | null> {
+  const handle = await open(path, 'r').catch(() => null)
+  if (!handle) return null
+  try {
+    const buffer = Buffer.alloc(MAX_PACKAGE_FILE_BYTES + 1)
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0)
+    if (bytesRead > MAX_PACKAGE_FILE_BYTES) return null
+    return buffer.subarray(0, bytesRead).toString('utf8')
+  } finally {
+    await handle.close()
+  }
+}
+
+/** Local Swift package references that cannot be resolved from the selected project. */
+export async function discoverMissingLocalPackages(
+  root: string,
+  candidateId: string,
+): Promise<string[]> {
+  const canonicalRoot = await realpath(root).catch(() => null)
+  if (!canonicalRoot) return []
+  const candidatePath = await realpath(resolve(canonicalRoot, candidateId)).catch(() => null)
+  if (
+    !candidatePath ||
+    !withinRoot(canonicalRoot, candidatePath) ||
+    extname(candidatePath) !== '.xcodeproj'
+  ) {
+    return []
+  }
+  const projectFile = await realpath(resolve(candidatePath, 'project.pbxproj')).catch(() => null)
+  if (!projectFile || !withinRoot(canonicalRoot, projectFile)) return []
+  const text = await readBoundedText(projectFile)
+  if (!text) return []
+
+  const missing = new Set<string>()
+  for (const object of text.matchAll(
+    /\{[^{}]*\bisa\s*=\s*XCLocalSwiftPackageReference;[^{}]*\}/g,
+  )) {
+    const pathMatch = /\brelativePath\s*=\s*(?:"([^"]+)"|([^;\s]+))\s*;/.exec(object[0])
+    const packagePath = pathMatch?.[1] ?? pathMatch?.[2]
+    if (!packagePath || packagePath.length > 1_024) continue
+    const resolvedPackage = await realpath(resolve(dirname(candidatePath), packagePath)).catch(
+      () => null,
+    )
+    if (!resolvedPackage) missing.add(packagePath)
+  }
+  return [...missing].sort((left, right) => left.localeCompare(right)).slice(0, 50)
+}
+
+export function xcodeFailureDetail(stderr: string): string | null {
+  const lines = stderr
     .replaceAll(/\u001b\[[0-9;]*m/g, '')
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter((line) => line !== '')
+  const operationDenied = lines.some((line) =>
+    /NSPOSIXErrorDomain Code=1 .*Operation not permitted/i.test(line),
+  )
+  if (operationDenied) {
+    const fileUrl = lines
+      .flatMap((line) => /NSURL\s*=\s*"?(file:\/\/\/[^";,}]+)/.exec(line)?.[1] ?? [])
+      .at(-1)
+    try {
+      const path = fileUrl ? decodeURIComponent(new URL(fileUrl).pathname) : null
+      if (!path) throw new Error('No denied path')
+      return `Xcode could not access ${path}: Operation not permitted.`.slice(0, 1_500)
+    } catch {
+      // Fall through to the bounded original line when Xcode emits a malformed URL.
+    }
+  }
   for (let index = lines.length - 1; index >= 0; index -= 1) {
     const line = lines[index]
-    if (line && /error:|failed|could not|operation not permitted|permission denied/i.test(line)) {
+    if (
+      line &&
+      /(?:unable|failed) to open .*(?:permission|authorization)|(?:don.t|don’t) have permission|operation not permitted/i.test(
+        line,
+      )
+    ) {
+      return line.slice(0, 1_500)
+    }
+  }
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index]
+    if (
+      line &&
+      !/^(?:error:\s*)?permissionDenied$/i.test(line) &&
+      /error:|failed|could not|cannot|does(?:n't|n’t) exist|permission denied|authorization denied/i.test(
+        line,
+      )
+    ) {
       return line.slice(0, 1_500)
     }
   }
@@ -251,7 +377,7 @@ function processFailureDetail(result: ProcessResult): string | null {
 }
 
 function optionalFailureReason(result: ProcessResult): { failureReason?: string } {
-  const reason = processFailureDetail(result)
+  const reason = xcodeFailureDetail(result.stderr)
   return reason ? { failureReason: reason } : {}
 }
 
@@ -417,15 +543,11 @@ export class InstalledXcodeDriver {
         setupMessage: 'The selected developer directory does not contain a complete Xcode.',
       }
     }
-    const versionResult = await runProcess(xcodebuild, ['-version'], root, signal, env)
     if (!includeMetadata) {
       return {
         toolchain: {
           developerDir,
-          version:
-            versionResult.exitCode === 0
-              ? versionResult.output.trim().slice(0, 512) || 'Unknown Xcode version'
-              : 'Unknown Xcode version',
+          version: 'Xcode detected',
         },
         candidates,
         destinations: [],
@@ -433,11 +555,11 @@ export class InstalledXcodeDriver {
         setupMessage:
           candidates.length === 0
             ? 'No Xcode workspace or project was found within the project directory.'
-            : versionResult.exitCode === 0
-              ? null
-              : 'Copse could not inspect the selected Xcode installation.',
+            : null,
       }
     }
+
+    const versionResult = await runProcess(xcodebuild, ['-version'], root, signal, env)
 
     for (const candidate of candidates) {
       const sharedSchemes = await discoverSharedSchemes(root, candidate)
@@ -459,7 +581,7 @@ export class InstalledXcodeDriver {
         .filter((scheme) => scheme.trim() !== '')
         .slice(0, MAX_SCHEMES)
       if (candidate.schemes.length === 0) {
-        const detail = processFailureDetail(listed)
+        const detail = xcodeFailureDetail(listed.stderr)
         const summary =
           listed.exitCode === 0
             ? 'Xcode returned no shared schemes for this target.'
@@ -522,16 +644,35 @@ export class InstalledXcodeDriver {
     if (!withinRoot(plan.root, canonical))
       throw new Error('Selected Xcode project escapes the execution root.')
     const kind = extname(candidatePath) === '.xcworkspace' ? 'workspace' : 'project'
+    const missingLocalPackages = await discoverMissingLocalPackages(
+      plan.root,
+      plan.target.candidateId,
+    )
+    if (missingLocalPackages.length > 0) {
+      const paths = missingLocalPackages.join(', ')
+      const failureReason = `Missing local Swift package${missingLocalPackages.length === 1 ? '' : 's'}: ${paths}. Restore the referenced package directories before building.`
+      return {
+        exitCode: 1,
+        failureReason,
+        logs: failureReason,
+        outputTruncated: false,
+        diagnostics: [],
+        testSummary: null,
+      }
+    }
     const [candidateFlag, candidateValue] = candidateArg({
       id: plan.target.candidateId,
       name: basename(plan.target.candidateId),
       kind,
       schemes: [],
     })
-    const paths = appleOperationPaths(plan.root, plan.operationId)
+    const paths = await prepareAppleOperationPaths(plan.root, plan.operationId)
     const xcodebuild = await installedDeveloperTool(developerDir, 'xcodebuild')
-    const resultBundlePath = resolve(paths.outputRoot, 'TestResults.xcresult')
-    const args = [
+    const resultBundlePath = resolve(
+      paths.outputRoot,
+      plan.action === 'test' ? 'TestResults.xcresult' : 'BuildResults.xcresult',
+    )
+    const commonArgs = [
       candidateFlag,
       candidateValue,
       '-scheme',
@@ -542,25 +683,25 @@ export class InstalledXcodeDriver {
       plan.target.destinationId,
       ...appleBuildPathArguments(paths),
     ]
+    const env = { DEVELOPER_DIR: developerDir }
+    const args = [...commonArgs, '-resultBundlePath', resultBundlePath]
     if (plan.action === 'test') {
-      args.push('-resultBundlePath', resultBundlePath)
       if (plan.testFilter) args.push(`-only-testing:${plan.testFilter}`)
       args.push('test')
     } else {
       args.push('build')
     }
-    const result = await runProcess(xcodebuild, args, plan.root, signal, {
-      DEVELOPER_DIR: developerDir,
-    })
+    const result = await runProcess(xcodebuild, args, plan.root, signal, env)
+    const buildOutput = boundedOutput([result])
     if (plan.action !== 'run' || result.exitCode !== 0) {
       return {
         exitCode: result.exitCode,
         ...(result.exitCode === 0 ? {} : optionalFailureReason(result)),
-        logs: result.output,
-        outputTruncated: result.truncated,
-        diagnostics: parseDiagnostics(result.output, plan.root),
-        testSummary: plan.action === 'test' ? parseTestSummary(result.output) : null,
-        ...(plan.action === 'test' ? { resultBundlePath } : {}),
+        logs: buildOutput.logs,
+        outputTruncated: buildOutput.outputTruncated,
+        diagnostics: parseDiagnostics(buildOutput.logs, plan.root),
+        testSummary: plan.action === 'test' ? parseTestSummary(buildOutput.logs) : null,
+        resultBundlePath,
       }
     }
 
@@ -592,7 +733,7 @@ export class InstalledXcodeDriver {
       ],
       plan.root,
       signal,
-      { DEVELOPER_DIR: developerDir },
+      env,
     )
     const parsedSettings = safeJsonParse(
       settings.stdout,
@@ -609,7 +750,7 @@ export class InstalledXcodeDriver {
       return {
         exitCode: settings.exitCode === 0 ? 1 : settings.exitCode,
         failureReason:
-          processFailureDetail(settings) ??
+          xcodeFailureDetail(settings.stderr) ??
           'The built app path or bundle identifier was unavailable.',
         logs: `${output.logs}\nThe built app path or bundle identifier was unavailable.`,
         outputTruncated: output.outputTruncated,
@@ -623,7 +764,6 @@ export class InstalledXcodeDriver {
       throw new Error('The built app resolved outside this operation output directory.')
     }
 
-    const env = { DEVELOPER_DIR: developerDir }
     const simctl = await installedDeveloperTool(developerDir, 'simctl')
     const boot = await runProcess(simctl, ['bootstatus', simulatorId, '-b'], plan.root, signal, env)
     const install =

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
@@ -7,7 +7,9 @@ import {
   appleBuildPathArguments,
   appleOperationPaths,
   discoverAppleCandidates,
+  discoverMissingLocalPackages,
   discoverSharedSchemes,
+  xcodeFailureDetail,
 } from './apple-driver.ts'
 
 describe('appleOperationPaths', () => {
@@ -30,6 +32,34 @@ describe('appleOperationPaths', () => {
       '-packageCachePath',
       first.packageCachePath,
     ])
+  })
+})
+
+describe('xcodeFailureDetail', () => {
+  it('prefers the actionable denied path over SwiftPM permission tokens', () => {
+    assert.equal(
+      xcodeFailureDetail(
+        [
+          'failed loading cached manifest: Unable to open database at path /scratch/manifest.db: authorization denied',
+          'xcodebuild: error: Could not resolve package dependencies:',
+          '  error: permissionDenied',
+        ].join('\n'),
+      ),
+      'failed loading cached manifest: Unable to open database at path /scratch/manifest.db: authorization denied',
+    )
+  })
+
+  it('names the denied Xcode path instead of rendering a nested NSError token', () => {
+    assert.equal(
+      xcodeFailureDetail(
+        [
+          '[MT] IDELogStore: Failed to open Build log store: Error Domain=NSCocoaErrorDomain Code=513',
+          'NSURL = "file:///Users/me/.copse/workspace/tmp/apple-development/DerivedData/Logs/Build/LogStoreManifest.plist";',
+          'NSUnderlyingError = "Error Domain=NSPOSIXErrorDomain Code=1 \\"Operation not permitted\\"";',
+        ].join('\n'),
+      ),
+      'Xcode could not access /Users/me/.copse/workspace/tmp/apple-development/DerivedData/Logs/Build/LogStoreManifest.plist: Operation not permitted.',
+    )
   })
 })
 
@@ -69,6 +99,47 @@ describe('discoverAppleCandidates', () => {
           kind: 'project',
           schemes: [],
         },
+      ])
+    } finally {
+      await rm(parent, { recursive: true, force: true })
+    }
+  })
+
+  it('reports missing local Swift packages before launching Xcode', async () => {
+    const parent = await mkdtemp(join(tmpdir(), 'copse-apple-local-packages-'))
+    const root = join(parent, 'checkout')
+    const project = join(root, 'apps', 'Browser.xcodeproj')
+    try {
+      await mkdir(project, { recursive: true })
+      await writeFile(
+        join(project, 'project.pbxproj'),
+        [
+          'A1 = {',
+          '  isa = XCLocalSwiftPackageReference;',
+          '  relativePath = LocalPackages/AppUpdater;',
+          '};',
+          'A2 = {',
+          '  isa = XCLocalSwiftPackageReference;',
+          '  relativePath = "LocalPackages/Existing Package";',
+          '};',
+        ].join('\n'),
+      )
+      await mkdir(join(root, 'apps', 'LocalPackages', 'Existing Package'), { recursive: true })
+      await mkdir(join(parent, 'ExternalPackage'), { recursive: true })
+      const projectText = await readFile(join(project, 'project.pbxproj'), 'utf8')
+      await writeFile(
+        join(project, 'project.pbxproj'),
+        [
+          projectText,
+          'A3 = {',
+          '  isa = XCLocalSwiftPackageReference;',
+          '  relativePath = ../../ExternalPackage;',
+          '};',
+        ].join('\n'),
+      )
+
+      assert.deepEqual(await discoverMissingLocalPackages(root, 'apps/Browser.xcodeproj'), [
+        'LocalPackages/AppUpdater',
       ])
     } finally {
       await rm(parent, { recursive: true, force: true })

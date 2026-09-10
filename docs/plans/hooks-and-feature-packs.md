@@ -345,6 +345,17 @@ revisiting this document, not silently diverging in an implementation PR.
     vocabulary, re-exported by the spine under its old name. Rule 4 of the execution guidance
     names the new layout.
 
+26. **First-party development actions use actor-specific consent.** For Apple Development, a
+    panel button click is the consent for that operation and does not open another approval modal.
+    The equivalent agent call still requires per-call approval; enrolling a project only exposes
+    the contribution. Once authorized, host-validated `xcodebuild` and `simctl` invocations run with
+    normal host access because Xcode requires package, cache, signing, developer-service, and
+    Simulator access and may execute project-controlled build phases. The durable boundary is the
+    fixed executable and argument construction plus validated project, thread, root, target,
+    ownership, and Copse-owned output paths, with provenance recorded on the supervised task.
+    Operation authority is process-lifetime scoped: recovery after a host restart blocks before
+    relaunch because the prior Xcode process may still be alive.
+
 ## Target architecture
 
 ```mermaid

@@ -1520,18 +1520,18 @@ async function checkAppleOperationPermission(
         : `Run Apple ${action}?`
   const body =
     toolName === 'apple_discover'
-      ? 'xcodebuild will inspect schemes and destinations. Xcode may resolve package dependencies.'
+      ? 'The agent wants Xcode to inspect schemes and destinations. Xcode may resolve packages and will run with normal host access.'
       : toolName === 'apple_app_stop'
-        ? 'Copse will terminate only the app session launched by this thread.'
-        : `Copse will invoke the installed Xcode toolchain${target} inside this thread’s captured checkout.`
+        ? 'The agent wants to terminate the Simulator app session launched by this thread.'
+        : `The agent wants to invoke the installed Xcode toolchain${target} inside this thread’s captured checkout. Xcode may execute project build phases and will run with normal host access.`
   const { approved } = await requestApproval(
     {
       title,
       body,
       type: 'shell',
-      cause: 'shell-in-sandbox',
+      cause: 'shell-sandbox-escalation',
       subject: toolName,
-      scope: 'sandbox',
+      scope: 'external',
     },
     signal,
   )

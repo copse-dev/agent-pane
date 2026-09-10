@@ -24,6 +24,24 @@ Where a sandbox is active, the sandbox—not a fuzzy match—decides whether the
 sandbox there is no containment boundary, so ambiguity must prompt, and auto-approval cannot skip
 that prompt.
 
+## Typed Apple operations
+
+Apple Development uses actor-specific consent. Clicking Load targets, Build, Test, Run, or Cancel
+in the panel is the authorization for that operation and does not open another approval
+modal. An agent call that asks Xcode to load metadata, build, test, run, or stop still requires a
+per-call approval. Passive discovery that only probes the selected developer directory and scans
+the checkout does not prompt.
+
+After that direct action or approval, main resolves the enrolled project and thread, validates the
+selected target, constructs fixed `xcodebuild` or `simctl` argument arrays, and runs the process with
+normal host access. Xcode needs package resolution, caches, Keychain and signing services,
+CoreSimulator, and project-controlled build phases; the generic project sandbox is not a functional
+or honest boundary for it. Operation products remain in Copse-owned per-operation scratch
+directories, and ownership, cancellation, duration, and log bounds remain enforced. Enrollment
+only exposes the feature and its agent tools; it does not pre-authorize agent execution. A host
+restart invalidates the operation authority epoch, so a recovered task cannot launch a second Xcode
+process whose predecessor may still be alive.
+
 ## Strict mode and expected blocks
 
 `safetyExternalDenyThreshold` defaults to `1` (off). At a lower threshold, a command is hard-denied

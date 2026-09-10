@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { APPLE_DEVELOPMENT_PLUGIN_ID } from '@copse/agent/plugins/apple-development-plugin.ts'
 import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
@@ -30,6 +30,7 @@ const STORE_KEY = 'plugin.copse.apple-development.state'
 const APPLE_HANDLER = 'apple_operation'
 const MAX_LOG_CHARS = 1_000_000
 const LOG_PAGE_CHARS = 64_000
+const APPLE_AUTHORITY_EPOCH = randomUUID()
 
 const storedOperationSchema = z.object({
   operation: appleOperationSchema,
@@ -138,7 +139,7 @@ export class AppleDevelopmentService {
   private readonly resolveContext: typeof resolveThreadExecutionContext
   private readonly pluginEnabled: () => boolean
   private readonly platform: NodeJS.Platform
-  private readonly discoveries = new Map<string, AppleDriverDiscovery>()
+  private readonly discoveries = new Map<string, Map<string, AppleDriverDiscovery>>()
   private readonly leases = new Map<string, Promise<void>>()
 
   constructor(dependencies: AppleDevelopmentServiceDependencies = {}) {
@@ -177,6 +178,16 @@ export class AppleDevelopmentService {
       const parsed = appleStoreSchema.safeParse(raw)
       return update(parsed.success ? parsed.data : emptyStore())
     })
+  }
+
+  private discovery(owner: ThreadExecutionOwner): AppleDriverDiscovery | undefined {
+    return this.discoveries.get(owner.projectId)?.get(owner.threadId)
+  }
+
+  private setDiscovery(owner: ThreadExecutionOwner, discovery: AppleDriverDiscovery): void {
+    const project = this.discoveries.get(owner.projectId) ?? new Map<string, AppleDriverDiscovery>()
+    project.set(owner.threadId, discovery)
+    this.discoveries.set(owner.projectId, project)
   }
 
   private async updateOperation(
@@ -236,7 +247,7 @@ export class AppleDevelopmentService {
       await this.cancelProject(projectId)
     } else if (this.platform === 'darwin' && !isRemoteProject(projectId)) {
       const discovery = await this.driver.discover(context.root, false, invocation.signal)
-      this.discoveries.set(projectId, discovery)
+      this.setDiscovery(invocation.owner, discovery)
     }
     return this.getState(invocation.owner)
   }
@@ -250,7 +261,7 @@ export class AppleDevelopmentService {
     const store = readStore()
     const enrolled = store.projects[owner.projectId]?.enrolled === true
     const thread = threadState(store, owner)
-    const discovery = this.discoveries.get(owner.projectId)
+    const discovery = this.discovery(owner)
     const operations = thread.operations
       .map((entry) =>
         operationStatus(this.supervisor.get(owner.projectId, entry.operation.id), entry.operation),
@@ -290,7 +301,7 @@ export class AppleDevelopmentService {
     this.requireEligible(invocation.owner)
     const context = await this.resolveContext(invocation.owner.projectId, invocation.owner.threadId)
     const discovery = await this.driver.discover(context.root, includeMetadata, invocation.signal)
-    this.discoveries.set(invocation.owner.projectId, discovery)
+    this.setDiscovery(invocation.owner, discovery)
     return this.getState(invocation.owner)
   }
 
@@ -299,7 +310,7 @@ export class AppleDevelopmentService {
     input: AppleConfigureInput,
   ): Promise<AppleSelection> {
     this.requireEligible(invocation.owner)
-    const discovery = this.discoveries.get(invocation.owner.projectId)
+    const discovery = this.discovery(invocation.owner)
     if (!discovery) throw new Error('Run apple_discover before configuring a target.')
     const store = readStore()
     const current = threadState(store, invocation.owner).selection
@@ -384,11 +395,19 @@ export class AppleDevelopmentService {
       permissionSnapshot: {
         capturedAt: Date.now(),
         autoRunSandboxCommands: false,
-        projectSandboxEnabled: true,
+        projectSandboxEnabled: false,
         executionRoot: context.root,
         workspaceTargetKind: 'local',
-        extra: { pluginId: APPLE_DEVELOPMENT_PLUGIN_ID },
+        extra: {
+          pluginId: APPLE_DEVELOPMENT_PLUGIN_ID,
+          authority:
+            invocation.source === 'user' ? 'direct-user-action' : 'per-call-agent-approval',
+          authorityEpoch: APPLE_AUTHORITY_EPOCH,
+        },
       },
+      // A restarted host cannot prove the old Xcode process stopped. The
+      // process-lifetime authority epoch lets the initial run start, then blocks
+      // every recovered operation before it can launch another host process.
       reapproveOnWake: true,
       concurrencyClass: `apple:${context.root}`,
       resourceBudget: { maxDurationMs: 30 * 60 * 1_000, maxAttempts: 1 },
@@ -459,7 +478,7 @@ export class AppleDevelopmentService {
   private async handleOperation(
     task: SupervisedTaskMeta,
     signal: AbortSignal,
-  ): Promise<{ resultRef: { kind: 'handler'; ref: string } }> {
+  ): Promise<{ resultRef: { kind: 'handler'; ref: string } } | { blockedReason: string }> {
     const input = task.handlerInput
     const action = input?.['action']
     const selectionParsed = appleSelectionSchema.safeParse(input?.['selection'])
@@ -472,6 +491,28 @@ export class AppleDevelopmentService {
       (testFilter !== undefined && typeof testFilter !== 'string')
     ) {
       throw new Error('Stored Apple operation input is invalid.')
+    }
+    if (
+      task.reapproveOnWake &&
+      task.permissionSnapshot.extra?.['authorityEpoch'] !== APPLE_AUTHORITY_EPOCH
+    ) {
+      const reason = 'Apple operation requires approval again after Copse restarted.'
+      await this.updateOperation(task.projectId, task.threadId, task.taskId, (operation) => ({
+        ...operation,
+        status: 'failed',
+        updatedAt: Date.now(),
+        outcome: {
+          operationId: task.taskId,
+          status: 'failed',
+          reason,
+          exitCode: null,
+          diagnostics: [],
+          testSummary: null,
+          logArtifactId: `apple-log:${task.taskId}`,
+          outputTruncated: false,
+        },
+      }))
+      return { blockedReason: reason }
     }
     await this.updateOperation(task.projectId, task.threadId, task.taskId, (operation) => ({
       ...operation,
@@ -489,9 +530,9 @@ export class AppleDevelopmentService {
       if (current?.revision !== selectionParsed.data.revision) {
         throw new Error('The Apple target selection changed before execution.')
       }
+      const owner = { projectId: task.projectId, threadId: task.threadId }
       const discovery =
-        this.discoveries.get(task.projectId) ??
-        (await this.driver.discover(context.root, false, signal))
+        this.discovery(owner) ?? (await this.driver.discover(context.root, false, signal))
       if (!discovery.toolchain) throw new Error(discovery.setupMessage ?? 'Xcode is unavailable.')
       const toolchain = discovery.toolchain
       const plan: AppleDriverPlan = {

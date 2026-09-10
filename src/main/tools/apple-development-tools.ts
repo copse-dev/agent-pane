@@ -29,7 +29,7 @@ function present(value: unknown): string {
 export const appleDiscoverTool = defineTool({
   name: 'apple_discover',
   description:
-    'Inspect Apple Development setup for this thread. With refresh=false, probe the host and find Xcode projects without invoking project metadata commands. With refresh=true, also ask installed Xcode for schemes and available destinations; this can resolve dependencies and may require approval.',
+    'Inspect Apple Development setup for this thread. With refresh=false, probe the host and find Xcode projects without invoking project metadata commands. With refresh=true, also ask installed Xcode for schemes and available destinations; this can resolve dependencies, report unavailable project metadata, and requires per-call user approval.',
   parameters: z.object({ refresh: z.boolean().optional() }),
   async execute({ refresh }, signal) {
     const state = await getAppleDevelopmentService().discover(invocation(signal), refresh === true)
@@ -50,7 +50,7 @@ export const appleConfigureTool = defineTool({
 export const appleExecuteTool = defineTool({
   name: 'apple_execute',
   description:
-    'Queue a supervised build, test, or Simulator run for this thread’s captured Apple target. Requires the current selection revision and a request ID; exact retries deduplicate.',
+    'Queue a supervised build, test, or Simulator run for this thread’s captured Apple target. Agent calls require per-call user approval. Requires the current selection revision and a request ID; exact retries deduplicate.',
   parameters: appleExecuteInputSchema,
   async execute(input, signal) {
     const operation = await getAppleDevelopmentService().execute(invocation(signal), input)
@@ -81,7 +81,7 @@ export const appleOperationTool = defineTool({
 export const appleAppStopTool = defineTool({
   name: 'apple_app_stop',
   description:
-    'Stop an iOS Simulator app session launched by this thread. It never terminates unrelated simulator apps.',
+    'Stop an iOS Simulator app session launched by this thread. Agent calls require per-call user approval. It never terminates unrelated simulator apps.',
   parameters: z.object({ appSessionId: z.string().min(1).max(256) }),
   async execute({ appSessionId }, signal) {
     const stopped = await getAppleDevelopmentService().stopApp(invocation(signal), appSessionId)

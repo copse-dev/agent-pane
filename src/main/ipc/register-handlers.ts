@@ -240,7 +240,6 @@ import {
   appleExecuteInputSchema,
   appleOperationInputSchema,
 } from '@shared/types/apple-development.ts'
-import { ensureToolPermitted } from '../services/security/permission-gate.ts'
 
 import type { SupervisedTaskSummary } from '@shared/types/supervised-task.ts'
 import { READ_TERMINAL_ENABLED_SETTING } from '@shared/terminal/read-terminal.ts'
@@ -2281,15 +2280,6 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
         [rawProjectId, rawThreadId, rawIncludeMetadata],
       )
       const controller = new AbortController()
-      if (
-        includeMetadata &&
-        !(await ensureToolPermitted(
-          { toolName: 'apple_discover', args: { refresh: true } },
-          controller.signal,
-        ))
-      ) {
-        throw new Error('Apple metadata discovery was not approved.')
-      }
       return getAppleDevelopmentService().discover(
         appleInvocation(projectId, threadId, controller.signal),
         includeMetadata,
@@ -2320,11 +2310,6 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
         [rawProjectId, rawThreadId, rawInput],
       )
       const controller = new AbortController()
-      if (
-        !(await ensureToolPermitted({ toolName: 'apple_execute', args: input }, controller.signal))
-      ) {
-        throw new Error('Apple operation was not approved.')
-      }
       return getAppleDevelopmentService().execute(
         appleInvocation(projectId, threadId, controller.signal),
         input,
@@ -2356,14 +2341,6 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
         [rawProjectId, rawThreadId, rawAppSessionId],
       )
       const controller = new AbortController()
-      if (
-        !(await ensureToolPermitted(
-          { toolName: 'apple_app_stop', args: { appSessionId } },
-          controller.signal,
-        ))
-      ) {
-        throw new Error('Stopping the Apple app was not approved.')
-      }
       return getAppleDevelopmentService().stopApp(
         appleInvocation(projectId, threadId, controller.signal),
         appSessionId,

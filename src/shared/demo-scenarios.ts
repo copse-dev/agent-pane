@@ -1033,7 +1033,7 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
           {
             id: 'demo-apple-assistant',
             role: 'assistant',
-            content: 'The operation history stays attached to this thread.',
+            content: 'The panel shows the latest Apple Development operation for this thread.',
             toolCalls: [],
             createdAt: FIXED_TIME + 1,
           },
