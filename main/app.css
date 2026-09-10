@@ -4190,7 +4190,7 @@ label {
   display: inline-block;
   padding: var(--spacing-md);
 }
-.mermaid-expand-stage svg {
+.mermaid-expand-stage .mermaid-frame {
   display: block;
   max-width: none;
   height: auto;
@@ -4400,6 +4400,14 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
 [data-theme=light] .streaming-markdown .hljs-meta,
 [data-theme=light] .streaming-markdown .hljs-symbol {
   color: #1f1f1f;
+}
+.mermaid-frame {
+  display: block;
+  border: 0;
+  pointer-events: none;
+}
+.message-text .mermaid-frame {
+  max-width: 100%;
 }
 
 /* src/renderer/styles/global/tool-cards.css */
