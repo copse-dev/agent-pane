@@ -25,3 +25,21 @@ export function browserThreadScope(projectId: string | null, threadId: string | 
 export function browserSessionPartition(base: string, scope: string): string {
   return scope ? `${base}:${scope}` : base
 }
+
+/** Task plugin routes may only operate the visible cookie jar owned by that task. */
+export function isVisibleBrowserSessionForThread(partition: string, threadId: string): boolean {
+  const prefix = `${BROWSER_SESSION_PARTITION}:thread:`
+  if (!threadId || !partition.startsWith(prefix)) return false
+  try {
+    const owner: unknown = JSON.parse(decodeURIComponent(partition.slice(prefix.length)))
+    return (
+      Array.isArray(owner) &&
+      owner.length === 2 &&
+      typeof owner[0] === 'string' &&
+      owner[0].length > 0 &&
+      owner[1] === threadId
+    )
+  } catch {
+    return false
+  }
+}
