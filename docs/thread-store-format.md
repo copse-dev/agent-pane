@@ -7,6 +7,10 @@ explored with the ordinary read tools (`read_file`, `list_dir`, `search_code`,
 preamble ([`build-text-with-attachments.ts`](../packages/agent/src/build-text-with-attachments.ts))
 describes it to the agent, so changing the layout means updating that preamble.
 
+The implementation lives in [`@copse/thread-store`](../packages/thread-store/README.md).
+The app's `src/main/services/thread-store.ts` is a compatibility re-export that
+installs the profile and tracing environment first.
+
 ## Location
 
 ```
@@ -32,6 +36,7 @@ describes it to the agent, so changing the layout means updating that preamble.
     meta.json                        # mutable task record (state, trigger, handler input, permissions)
     audit.jsonl                      # append-only lifecycle transitions
   task-history/<taskId>.json         # compact terminal-task support summary; no permissions
+  event-inbox/<sha256>.json          # internal event admission/recovery receipts (not startup-wired)
   <threadId>/
     meta.json                        # mutable thread metadata (everything except messages)
     events.jsonl                     # append-only spine: message + hook/audit + plan lines
@@ -69,8 +74,16 @@ describes it to the agent, so changing the layout means updating that preamble.
   `handlerInput` in the task record so a wait can survive restart without inventing a second
   registry; `contentHash` binds input that will later authorize tool use or a continuation.
   The reserved directory name `tasks` must not be used as a thread id (thread ids are
-  UUIDs). Writers and the main-process singleton land in later phases; P1 is schema +
-  pure reconcile only.
+  UUIDs). The task store and main-process supervisor are implemented; external
+  processes such as container runs can be tracked without automatically replaying them.
+
+- **`event-inbox/`** holds the internal event-automation admission and recovery
+  receipts. The inbox is not installed by app startup and adds no event-triggered
+  model execution. Evidence and disposition share one atomic receipt; retained
+  identities prevent duplicate dispatch across recovery. See the
+  [inbox contract](plans/event-automation-inbox.md) for limits and host obligations.
+  Container review records instead live under `~/.copse/runtimes/<runtimeId>/`,
+  outside the project thread tree; see [container execution](plans/thread-in-container.md).
 
 - **`events.jsonl`** is the linear history — one JSON line per finalized message
   (plus interleaved `hook_run`, `decision`, legacy `permission_decision`,

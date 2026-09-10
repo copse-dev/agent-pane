@@ -63,8 +63,9 @@ for writers before deciding. See
 
 ### State and permissions
 
-Every Copse store lives under one root, `~/.copse/` (`COPSE_DIR` moves the profile). Persistent
-settings live in `user-data/config.json`, but chat threads do **not**.
+Every Copse store lives under one root, `~/.copse/` (`COPSE_DIR` moves the profile). General app
+state lives in `user-data/config.json`; validated settings and encrypted secrets
+live in `user-data/settings.json`. Chat threads live in neither store.
 Threads live under `~/.copse/workspace/<projectId>/<threadId>/`; use `writeSeedConfig`
 (`tests/e2e/helpers/seed-config.ts`) so test threads are routed into the native thread store. See
 [`docs/thread-store-format.md`](docs/thread-store-format.md) and
@@ -126,7 +127,7 @@ oracle. Detailed local commands and screenshot ownership behavior are in
 
 ## Specialized surfaces
 
-Conversation messages, subagent timelines, and file preview use the hand-rolled renderer in
-`src/renderer/markdown/`. Before markdown or list-indent changes, read
+Conversation messages, subagent timelines, and file preview use `@copse/streaming-markdown`,
+with app integration in `src/renderer/markdown/`. Before markdown or list-indent changes, read
 [`src/renderer/markdown/README.md`](src/renderer/markdown/README.md); then run
 `pnpm run build && pnpm run test:e2e:markdown`.

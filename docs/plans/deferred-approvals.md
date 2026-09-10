@@ -6,6 +6,11 @@ outcome with its durable queue are implemented; D2 onward is design only. Split 
 its phases. It is separate work with a separate value case: **it needs no container, no
 Docker, and no new runtime**, and it is worth shipping on today's host sandbox on its own.
 
+The motivation and future-tense decisions below are the original design. D0–D1
+now provide the gate outcome and storage; the review UI and approved-action replay
+remain later phases. The experimental container runtime consumes the implemented
+queue; this does not imply those later review workflows are available.
+
 ## What this is
 
 A third outcome for the permission gate. Today every gate resolves to `allow`, `deny`, or

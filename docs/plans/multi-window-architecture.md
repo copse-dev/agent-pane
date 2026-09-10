@@ -1,6 +1,12 @@
 # Multiple main windows
 
-Status: **Active.** The multiple-window registry and New Window foundation have landed. Per-window navigation and restoration are in progress; concurrent agent routing remains gated. Profile and account picking are explicitly deferred to follow-up work.
+Status: **Partially delivered; remaining work tracked below.** Reviewed at `main`
+`a2880354f` (2026-09-09): the window registry, New Window command, per-window
+navigation and restoration are implemented. `tests/e2e/multiple-main-windows.e2e.ts`
+verifies independent project selection and restart restoration. Owner-scoped
+routing exists, but that spec does not establish the complete concurrent-run and
+physical-display acceptance matrix below. Profile and account picking remain
+separate follow-up work.
 
 ## Outcome
 

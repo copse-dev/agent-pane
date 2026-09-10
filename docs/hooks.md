@@ -15,11 +15,12 @@ author writes. Read this doc for **how the pieces fit** — where the harness fi
 how a decision flows back, and the cross-cutting concerns (budget, spine, sandbox, UI)
 that are dialect-agnostic.
 
-> Everything below reflects what has **landed** (through the
-> [validation & tooling phase](./plans/hooks-and-feature-packs.md#phase-g--validation--tooling)).
-> [Feature packs](./plans/hooks-and-feature-packs.md#feature-packs) are the intended end
-> state and are not implemented yet; the packs section of the plan doc describes them.
-> Where behavior differs by phase, the phase tag links to the plan's issue breakdown.
+> Current architecture reviewed at `main` `a2880354f` (2026-09-09).
+> The hooks platform and [plugin lifecycle](plugins.md) are implemented; the
+> historical feature-pack phases record how they landed. External isolated
+> function-hook registration is a separate, partial SDK capability: explicit host
+> invocation exists, but canonical fire sites do not dispatch those registrations
+> automatically. See [the SDK contract](../packages/plugin-sdk/README.md).
 
 ## What a hook is
 
@@ -331,7 +332,7 @@ hooks cannot retroactively block work that already completed.
   summary. It is **side-effect-free by construction** — it reuses only the pure seams
   (adapter marshal/interpret + `spawnHookProcess`), so it never records a spine line, never
   propagates `sessionStart` env, and **never applies the outcome**; it reproduces the live
-  spawn boundary faithfully (sandboxed-by-default, macOS-only enforcement). Host module:
+  spawn boundary faithfully (sandboxed by default on macOS/Linux when the OS sandbox is active). Host module:
   `src/main/services/hooks/dry-run.ts`.
 
 ## Payload stability & schema drift tooling

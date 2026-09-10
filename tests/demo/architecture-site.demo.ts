@@ -15,25 +15,41 @@ interface DiagramState {
   readonly title: string
 }
 
+const VIEW_ANCHORS = new Map([
+  ['Overview', 'overview'],
+  ['Agent turn', 'agent-turn'],
+  ['Harness', 'harness'],
+  ['Tools & safety', 'tools-safety'],
+  ['Data & storage', 'data-storage'],
+  ['UI & IPC', 'ui-ipc'],
+  ['Agents & hooks', 'agents-hooks'],
+  ['Workspace & search', 'workspace-search'],
+  ['Build & CI', 'build-ci'],
+])
+
 async function selectView(label: string): Promise<void> {
+  const anchor = VIEW_ANCHORS.get(label)
+  if (!anchor) throw new Error(`architecture view ${label} has no expected anchor`)
   await browser.execute((viewLabel) => {
-    const tab = [...document.querySelectorAll<HTMLButtonElement>('.arch-tab')].find(
+    const tab = [...document.querySelectorAll<HTMLAnchorElement>('.arch-tab')].find(
       (candidate) => candidate.textContent === viewLabel,
     )
     tab?.click()
   }, label)
   await browser.waitUntil(
-    () =>
-      browser.execute(
+    async () => {
+      const selected = await browser.execute(
         (viewLabel) =>
-          [...document.querySelectorAll<HTMLButtonElement>('.arch-tab')].some(
+          [...document.querySelectorAll<HTMLAnchorElement>('.arch-tab')].some(
             (candidate) =>
               candidate.textContent === viewLabel &&
-              candidate.getAttribute('aria-pressed') === 'true',
+              candidate.getAttribute('aria-current') === 'page',
           ),
         label,
-      ),
-    { timeoutMsg: `architecture view ${label} did not activate` },
+      )
+      return selected && (await browser.getUrl()).endsWith(`#${anchor}`)
+    },
+    { timeoutMsg: `architecture view ${label} did not activate at #${anchor}` },
   )
 }
 
@@ -107,23 +123,28 @@ describe('architecture site diagrams', () => {
         (tab) => tab.textContent ?? '',
       ),
     )
-    expect(labels).toEqual([
-      'Overview',
-      'Agent turn',
-      'Harness',
-      'Tools & safety',
-      'Data & storage',
-      'UI & IPC',
-      'Agents & hooks',
-      'Workspace & search',
-      'Build & CI',
-      'Recent changes',
-    ])
-    await expect($('.architecture-note')).toHaveText(expect.stringContaining('abe5fa352'))
+    expect(labels).toEqual([...VIEW_ANCHORS.keys()])
+    const links = await browser.execute(() =>
+      Object.fromEntries(
+        [...document.querySelectorAll<HTMLAnchorElement>('.arch-tab')].map((tab) => [
+          tab.textContent ?? '',
+          tab.getAttribute('href') ?? '',
+        ]),
+      ),
+    )
+    expect(links).toEqual(
+      Object.fromEntries([...VIEW_ANCHORS].map(([label, anchor]) => [label, `#${anchor}`])),
+    )
+    await expect($('.architecture-note')).not.toExist()
+    await expect($('body')).not.toHaveText(expect.stringContaining('Verified against'))
+    const coverage = $('#sandbox-coverage')
+    await expect(coverage).not.toBeDisplayed()
 
     const overflowFailures: string[] = []
     for (const label of labels) {
       await selectView(label)
+      if (label === 'Tools & safety') await expect(coverage).toBeDisplayed()
+      else await expect(coverage).not.toBeDisplayed()
       const state = await diagramState()
       expect(state).not.toBeNull()
       if (!state) throw new Error(`architecture view ${label} did not render`)
@@ -143,9 +164,72 @@ describe('architecture site diagrams', () => {
     }
     expect(overflowFailures).toEqual([])
 
+    await selectView('Agents & hooks')
+    await $('.diagram-node[data-id="acpserver"]').click()
+    await expect($('.arch-inspector h3')).toHaveText('Headless host')
+    await expect($('.arch-inspector p')).toHaveText(expect.stringContaining('without replaying'))
+    await expect($('.arch-inspector p')).toHaveText(expect.stringContaining('off by default'))
+
+    await selectView('Data & storage')
+    await $('.diagram-node[data-id="longtasks"]').click()
+    await expect($('.arch-inspector p')).toHaveText(expect.stringContaining('remain future work'))
+
+    await selectView('UI & IPC')
+    await $('.diagram-node[data-id="api"]').click()
+    await expect($('.arch-inspector p')).toHaveText(
+      expect.stringContaining('both handshake directions'),
+    )
+
+    await selectView('Tools & safety')
+    await $('.diagram-node[data-id="shell"]').click()
+    await expect($('.arch-inspector p')).toHaveText(expect.stringContaining('Linux bubblewrap'))
+    expect(await captureView('architecture-safety-current.png')).toBeLessThanOrEqual(0)
+
     await selectView('Overview')
     expect(await captureView('architecture-overview-current.png')).toBeLessThanOrEqual(0)
-    await selectView('Recent changes')
-    expect(await captureView('architecture-recent-changes.png')).toBeLessThanOrEqual(0)
+    await selectView('Tools & safety')
+    await $('.diagram-node[data-id="externalexec"]').click()
+    await expect($('.arch-inspector p')).toHaveText(
+      expect.stringContaining('outside the project sandbox'),
+    )
+    await $('.diagram-node[data-id="mcp"]').click()
+    await expect($('.arch-inspector p')).toHaveText(
+      expect.stringContaining('without the project sandbox wrapper'),
+    )
+
+    await expect(coverage.$$('tbody tr')).toBeElementsArrayOfSize(6)
+    await expect(coverage).toHaveText(
+      expect.stringContaining('GitHub service explicitly runs gh outside'),
+    )
+    await expect(coverage).toHaveText(
+      expect.stringContaining('Windows and sandbox initialization failures'),
+    )
+    await expect(coverage).toHaveText(expect.stringContaining('Guarded YOLO'))
+    await coverage.scrollIntoView()
+    await coverage.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'architecture-sandbox-coverage.png'))
+
+    await browser.setWindowSize(390, 844)
+    expect(
+      await browser.execute(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true)
+    const coverageFits = await browser.execute(() => {
+      const table = document.querySelector('#sandbox-coverage table')
+      if (!table) return false
+      const rect = table.getBoundingClientRect()
+      return rect.left >= 0 && rect.right <= window.innerWidth
+    })
+    expect(coverageFits).toBe(true)
+  })
+
+  it('opens a linked view directly from its fragment', async () => {
+    // The preceding test already selected this fragment. Leave the document
+    // first so this exercises a fresh linked load, not same-document navigation.
+    await browser.url('about:blank')
+    await browser.setWindowSize(1280, 900)
+    await browser.url('/marketing/architecture.html#tools-safety')
+    await $('.arch-map').waitForDisplayed()
+    await expect($('.arch-tab[aria-current="page"]')).toHaveText('Tools & safety')
+    await expect($('#sandbox-coverage')).toBeDisplayed()
+    await expect($('.arch-inspector h3')).toHaveText('Offered toolset')
   })
 })
