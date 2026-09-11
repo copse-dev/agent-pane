@@ -82,6 +82,8 @@ describe('profile vault cryptography', () => {
       { ...manifest, deviceKeyId: randomUUID() },
       { ...manifest, deviceEnvelope: randomBytes(120).toString('base64') },
       { ...manifest, recovery: 'verified' as const },
+      { ...manifest, requireAuth: false },
+      { ...manifest, requireAuth: true },
       { ...manifest, challenge: manifest.challenge.slice(4) },
     ])
       assert.throws(() => {
@@ -92,7 +94,9 @@ describe('profile vault cryptography', () => {
     }, VaultError)
   })
   it('strictly decodes manifest version, shape, bounds and duplicate properties', () => {
-    const { manifest } = fixture()
+    const { key, manifest } = fixture()
+    const withPolicy = authenticateManifest(key, { ...manifest, requireAuth: false })
+    assert.deepEqual(decodeVaultManifest(JSON.stringify(withPolicy)), withPolicy)
     const text = JSON.stringify(manifest)
     assert.deepEqual(decodeVaultManifest(text), manifest)
     for (const invalid of [

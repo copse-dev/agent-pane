@@ -1,3 +1,4 @@
+import { nodeWorkerExecutable } from '../node-worker-runtime.ts'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { isElectronAppPackaged } from '../electron-app-runtime.ts'
@@ -123,6 +124,6 @@ export function getXcodeBuildMcpConfig(): McpServerConfig | null {
   return createXcodeBuildMcpConfig({
     root,
     entryPath: resolveXcodeBuildMcpEntry(),
-    execPath: process.execPath,
+    execPath: nodeWorkerExecutable(),
   })
 }
