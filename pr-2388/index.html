@@ -6,34 +6,38 @@
       style-src keeps 'unsafe-inline' on purpose. Our own code never emits
       markup-level inline styles (no style="" attributes, no <style> blocks —
       all dynamic styling goes through the CSSOM, which CSP does not govern).
-      The requirement comes from two bundled libraries that inject styles at
-      runtime and offer no CSP nonce hook:
+      The requirement comes from a bundled library that injects styles at
+      runtime and offers no CSP nonce hook:
         - monaco-editor injects <style> elements (and uses innerHTML) for its
           theming; content is dynamic per load, so nonce/hash do not apply.
           This is unfixed upstream since 2016 (microsoft/monaco-editor#271),
           and VS Code itself ships style-src 'unsafe-inline' for the same
           reason (src/vs/code/electron-browser/workbench/workbench.html).
-        - mermaid emits SVG with <style> blocks and inline style="" attributes
-          (which cannot be nonced at all). Its securityLevel:'sandbox' iframe
-          uses srcdoc, which INHERITS this CSP, so it does not help here.
-      Dropping 'unsafe-inline' would break the editor and diagram rendering.
-      The exfiltration risk it would otherwise carry is already closed off by
-      img-src below (no remote URLs), so CSS-based data exfiltration is blocked.
+      Mermaid runs in a separate opaque-origin frame with its own CSP.
+      Dropping 'unsafe-inline' here would break the editor.
+      img-src excludes remote HTTP(S) images in this document, including
+      CSS image loads. This restriction is not an app-wide network boundary.
 
-      Compensating controls for the residual mermaid concern (diagram source is
-      model/workspace-controlled and mermaid has a history of XSS via crafted
-      syntax):
-        - mermaid runs with securityLevel:'strict' (markdown/mermaid.ts), which
-          HTML-encodes labels, disables click/interaction directives, and passes
-          its SVG through DOMPurify. Do not relax that setting.
-        - all renderer innerHTML of model output is sanitized through DOMPurify
-          first (markdown/sanitize.ts); the mermaid fallback path inserts source
-          via textContent only (markdown/mermaid-fallback.ts), never as markup.
-        - script-src 'self' blocks inline/remote script regardless, and
-          img-src below has no remote http(s) origin, so even a style/SVG that
-          slipped through has no network sink to exfiltrate to.
-      Note: 'unsafe-inline' here governs style only; it does NOT loosen
-      script-src, so it cannot enable script-based XSS.
+      Untrusted markdown and diagram rendering:
+        - @copse/streaming-markdown prefers the native Sanitizer API
+          (Element.setHTML). markdown/sanitizer-backend.ts installs its
+          DOMPurify backend only when the native backend is unavailable;
+          main.ts awaits backend readiness before the first render.
+        - mermaid runs with securityLevel:'strict' inside mermaid-frame.html.
+          Parsing, sanitization, and SVG insertion stay in that frame, including
+          expansion. Only source text and bounded dimensions cross the boundary.
+          Its source fallback uses textContent (markdown/mermaid-fallback.ts).
+        - script-src 'self' blocks inline and remote scripts. The
+          'unsafe-inline' allowance above applies only to styles.
+        - This policy does not enforce Trusted Types: it has neither
+          require-trusted-types-for 'script' nor a trusted-types allowlist.
+          Using the native Sanitizer API does not enforce other DOM sinks.
+
+      Scope: this CSP governs the app renderer document. Artifact-image
+      hydration calls main-process IPC to download images and then sets data:
+      URLs (markdown/remote-artifact-images.ts); those native downloads are not
+      governed by this CSP. Generated HTML canvas artifacts load in separate
+      browser contexts and need their own content and network restrictions.
     -->
     <meta
       http-equiv="Content-Security-Policy"
