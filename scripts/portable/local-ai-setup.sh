@@ -57,4 +57,5 @@ done < "$portable_source/models.tsv"
 cp "$portable_source/models.tsv" "$portable_root/models/models.tsv"
 echo "LM Studio installed: $app"
 echo "Model library: $portable_root/models"
+echo 'The GUI refuses to run directly from external storage. Use make portable-lm-studio for offline installation into /Applications and launch.'
 echo 'LM Studio keeps its own per-user profile. This installer does not change the host profile or model-library selection.'

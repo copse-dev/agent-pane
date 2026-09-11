@@ -119,6 +119,13 @@ cat > "$portable_root/Launch Copse.command" <<'WRAPPER'
 exec "$(cd "$(dirname "$0")" && pwd -P)/portable-dev" run
 WRAPPER
 chmod 755 "$portable_root/Open Dev Shell.command" "$portable_root/Launch Copse.command"
+for entry in 'LM Studio:lm-studio' 'Claude Code:claude' 'Codex CLI:codex'; do
+  label="${entry%%:*}"
+  action="${entry#*:}"
+  launcher="$portable_root/Launch $label.command"
+  printf '%s\n' '#!/bin/bash' "exec \"\$(cd \"\$(dirname \"\$0\")\" && pwd -P)/portable-dev\" $action" > "$launcher"
+  chmod 755 "$launcher"
+done
 "$portable_root/portable-dev" doctor
 "$portable_root/portable-dev" prepare
 echo "Portable development setup complete: $portable_root"
