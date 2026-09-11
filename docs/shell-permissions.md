@@ -124,7 +124,13 @@ gortex binary, and whether remote E2E is configured. `prepare_worktree` is mutat
 once before it runs; the approval cannot be remembered or reused for arbitrary commands.
 
 The preparer writes only the active worktree and fixed directories under `~/.copse/cache/`
-(`COPSE_DIR` relocates them). It routes the lockfile-exact pnpm install through Socket Firewall with
+(`COPSE_DIR` relocates them), including the pinned Socket Firewall bootstrap, its npm cache, and native build caches.
+Native preparation uses a managed build home for headers and compiler caches.
+Both preparation and preflight fail closed when the OS sandbox is unavailable. Preflight runs
+version probes without filesystem writes or network access. Preparation uses ASRT platform
+wrappers with only the worktree and enumerated caches writable; temporary files stay inside the
+worktree. Symlinked cache roots are rejected. Root Git and editor configuration remains protected;
+inert configuration metadata inside dependency packages may be extracted. It routes the lockfile-exact pnpm install through Socket Firewall with
 all dependency lifecycle scripts disabled, then invokes the repository-declared `prepare:native`
 entry point. That entry point explicitly prepares Electron, ChromeDriver, node-pty, and checksum-
 verified gortex inputs. Preparation records the existing dev-dependency fingerprint only after the
@@ -134,7 +140,9 @@ preparation changes invalidate it.
 Ordinary project-sandbox commands receive read-only access to those fixed cache directories so
 prepared package symlinks and runtimes work without repeated sandbox escapes. The caches are never
 added to `allowWrite`; installs and repairs remain behind the dedicated approval. Offline mode
-forbids downloads and fails closed with remediation when the matching inputs are unavailable.
+forbids network access for every subprocess, including native preparation, using kernel isolation
+with no proxy ports or sockets. Other agents’ network grants cannot widen this boundary. Missing
+cached inputs fail with remediation. Online preparation retains the same filesystem restrictions.
 
 ## Guarded YOLO
 

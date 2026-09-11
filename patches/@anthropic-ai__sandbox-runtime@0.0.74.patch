@@ -1,3 +1,29 @@
+diff --git a/dist/sandbox/linux-sandbox-utils.js b/dist/sandbox/linux-sandbox-utils.js
+index 185a9bd6a092041c24190a9216d2aa88ef910dd4..7e3226fedbdfd6997be425178c12574ea9724942 100644
+--- a/dist/sandbox/linux-sandbox-utils.js
++++ b/dist/sandbox/linux-sandbox-utils.js
+@@ -860,7 +860,7 @@ async function generateFilesystemArgs(readConfig, writeConfig, maskedFileBinds,
+         // Deny writes within allowed paths (user-specified + mandatory denies)
+         const denyPaths = [
+             ...(writeConfig.denyWithinAllow || []),
+-            ...(await linuxGetMandatoryDenyPaths(ripgrepConfig, mandatoryDenySearchDepth, allowGitConfig, abortSignal)),
++            ...(writeConfig.mandatoryDenyPaths ?? await linuxGetMandatoryDenyPaths(ripgrepConfig, mandatoryDenySearchDepth, allowGitConfig, abortSignal)),
+         ];
+         // Duplicate deny entries must be collapsed: a duplicate
+         // --ro-bind /dev/null <dest> hits a char device on the second pass and
+diff --git a/dist/sandbox/macos-sandbox-utils.js b/dist/sandbox/macos-sandbox-utils.js
+index e6d9fb687115a70c6d1dd538e01945c68e324810..d4ffc48ec0c0eb6f4236e7d5dcd3422ff3206cd6 100644
+--- a/dist/sandbox/macos-sandbox-utils.js
++++ b/dist/sandbox/macos-sandbox-utils.js
+@@ -433,7 +433,7 @@ function generateWriteRules(config, logTag, allowGitConfig = false) {
+     // Combine user-specified and mandatory deny patterns (no ripgrep needed on macOS)
+     const denyPaths = [
+         ...(config.denyWithinAllow || []),
+-        ...macGetMandatoryDenyPatterns(allowGitConfig),
++        ...(config.mandatoryDenyPaths ?? macGetMandatoryDenyPatterns(allowGitConfig)),
+     ];
+     const denyFilters = new Set();
+     for (const pathPattern of denyPaths) {
 diff --git a/dist/sandbox/sandbox-manager.js b/dist/sandbox/sandbox-manager.js
 index 3a2d9c8abd01fefff36edea0cd76e9c31a3ed411..7e422b7a159da0ae00902cefcd5d38ac501c223c 100644
 --- a/dist/sandbox/sandbox-manager.js
@@ -11,6 +37,21 @@ index 3a2d9c8abd01fefff36edea0cd76e9c31a3ed411..7e422b7a159da0ae00902cefcd5d38ac
                  allowAllUnixSockets: getAllowAllUnixSockets(),
                  allowLocalBinding: getAllowLocalBinding(),
                  allowMachLookup: getAllowMachLookup(),
+diff --git a/dist/sandbox/sandbox-schemas.d.ts b/dist/sandbox/sandbox-schemas.d.ts
+index d753a3a3a500be8c485f511ec5a94d5921094b91..d9f0b1b6207d802c3bfbc422ed9be82f03001994 100644
+--- a/dist/sandbox/sandbox-schemas.d.ts
++++ b/dist/sandbox/sandbox-schemas.d.ts
+@@ -32,6 +32,10 @@ export interface FsReadRestrictionConfig {
+  * Note: Empty `allowOnly` means NO paths are writable (unlike read's empty denyOnly).
+  */
+ export interface FsWriteRestrictionConfig {
++    /** Host-supplied replacement for default configuration-file denies. Allows a
++     * bounded package installer to protect worktree config while extracting
++     * inert configuration metadata inside dependencies. Omit for default denies. */
++    mandatoryDenyPaths?: string[];
+     allowOnly: string[];
+     denyWithinAllow: string[];
+ }
 diff --git a/dist/sandbox/sandbox-utils.js b/dist/sandbox/sandbox-utils.js
 index 32831bf4b8fb14d9ea6fc5bcfe0dc621702c91f4..f53b047ebb0cd376a0f12a9deb3de08d185145b4 100644
 --- a/dist/sandbox/sandbox-utils.js

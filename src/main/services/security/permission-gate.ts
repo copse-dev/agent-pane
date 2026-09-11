@@ -1605,7 +1605,7 @@ export async function ensureToolPermitted(
   }
 
   // A host-owned preparation run performs one fixed install/native-artifact
-  // workflow outside the project sandbox. It receives one bounded prompt here;
+  // workflow inside an enforcing OS sandbox. It receives one bounded prompt here;
   // the tool never delegates approval to arbitrary shell text.
   if (toolName === 'prepare_worktree') {
     return checkWorktreePreparationPermission(signal)
