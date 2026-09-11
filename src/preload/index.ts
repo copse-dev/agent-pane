@@ -946,6 +946,11 @@ const api: ApiClient = {
     remove: (id: string) => ipcRenderer.invoke('classifiers:remove', id),
     test: (id: string) => ipcRenderer.invoke('classifiers:test', id),
   },
+  profileVault: {
+    status: () => ipcRenderer.invoke('profile-vault:status'),
+    run: (action: import('@shared/types/profile-vault.ts').ProfileVaultAction) =>
+      ipcRenderer.invoke('profile-vault:run', action),
+  },
   settings: {
     get: (key: string) => ipcRenderer.invoke('settings:get', key),
     set: (key: string, value: unknown) => ipcRenderer.invoke('settings:set', key, value),

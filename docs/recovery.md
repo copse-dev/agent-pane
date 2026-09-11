@@ -103,3 +103,28 @@ Reinstalling the latest application bundle can repair a damaged app binary, but
 it is not a data restore and does not replace the backup steps above. Thread
 hash-validation failures are reported rather than silently accepted; restore
 the affected complete thread directory from backup.
+
+## Device-encrypted saved secrets
+
+If you enabled **Saved-secret encryption**, saved API keys and SSH/VNC credentials
+need both their encrypted profile files and either the original Mac's device key
+or the separately saved recovery key. An ordinary file copy does not move the
+Secure Enclave key. Browser logins and other externally managed credentials are
+not covered.
+
+Quit Copse and take a consistent copy of the complete profile, including the
+`user-data` manifest and credential stores. Keep the recovery key separately in
+your password manager. For restoration, preserve the original backup, copy the
+profile to the supported replacement Mac, launch the current desktop build and
+choose **Settings → Storage → Saved-secret encryption → Restore access**. Import
+the matching recovery key in the native window. Verification installs a new device
+envelope and restarts locked; subsequent unlock uses that Mac's authentication.
+A wrong key does not replace the existing manifest. Recovery validates the profile
+key; damaged individual records still fail authentication when read.
+
+Without either device access or the matching recovery key, encrypted saved secrets
+cannot be recovered. A recovery key alone cannot restore missing files. Do not
+remove the manifest, combine files from different backups or recreate keys over
+existing ciphertext. Restore a complete consistent backup if startup reports a
+missing or mismatched manifest. Recovery does not revoke a lost Mac's old copy;
+rotate compromised credentials with their providers.
