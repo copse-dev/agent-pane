@@ -1,6 +1,6 @@
+import { profileVaultSourceHash } from './lib/profile-vault-source.mts'
 import { execFileSync } from 'node:child_process'
-import { createHash } from 'node:crypto'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 if (process.platform !== 'darwin') throw new Error('The native profile vault requires macOS.')
@@ -29,6 +29,7 @@ for (const [source, filename, identifier] of [
       '-o',
       output,
       resolve(root, 'native/profile-vault', source),
+      ...(source === 'main.swift' ? [resolve(root, 'native/profile-vault/policy.swift')] : []),
     ],
     { stdio: 'inherit' },
   )
@@ -63,9 +64,7 @@ writeFileSync(
   resolve(directory, 'build.json'),
   JSON.stringify({
     version: 1,
-    sourceHash: createHash('sha256')
-      .update(readFileSync(resolve(root, 'native/profile-vault/main.swift')))
-      .digest('hex'),
+    sourceHash: profileVaultSourceHash(root),
   }) + '\n',
 )
 if (process.argv.includes('--authenticate')) {

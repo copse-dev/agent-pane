@@ -6,8 +6,8 @@ import type { ProfileVaultResult } from '@shared/types/profile-vault.ts'
 import { assertMainFrameSender, parseIpcArgs } from './ipc-guards.ts'
 
 const actionSchema = z.union([
-  z.strictObject({ action: z.literal('enable'), backup: z.boolean() }),
-  z.strictObject({ action: z.enum(['unlock', 'backup', 'recover']) }),
+  z.strictObject({ action: z.literal('set-auth'), requireAuth: z.boolean() }),
+  z.strictObject({ action: z.enum(['unlock', 'backup', 'recover', 'retry-migration']) }),
 ])
 export function registerProfileVaultIpc(win: BrowserWindow, vault: AppProfileVault): void {
   ipcMain.handle('profile-vault:status', (event) => {
@@ -19,8 +19,11 @@ export function registerProfileVaultIpc(win: BrowserWindow, vault: AppProfileVau
     const request = parseIpcArgs(actionSchema, [raw])
     try {
       switch (request.action) {
-        case 'enable':
-          await vault.enable(request.backup)
+        case 'set-auth':
+          await vault.setRequireAuth(request.requireAuth)
+          break
+        case 'retry-migration':
+          await vault.migrate()
           break
         case 'unlock':
           await vault.unlock()

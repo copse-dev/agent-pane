@@ -41,7 +41,8 @@ export class AppProfileVault {
   #session: ProfileVaultSession | null = null
   #busy = false
   #operation: AbortController | null = null
-  #startupUnlock: Promise<void> | null = null
+  #startup: Promise<boolean> | null = null
+  #migrationFailed = false
   readonly cipher: SecretCipher
   constructor(dependencies: ProfileVaultDependencies) {
     this.#deps = dependencies
@@ -89,7 +90,15 @@ export class AppProfileVault {
           nativeRequest('unlock', this.#deps.userData, manifest),
           signal,
         )
-        return this.#key(reply)
+        const key = this.#key(reply)
+        try {
+          if (signal.aborted) throw new VaultError('cancelled')
+          this.#synchronizeEnvelope(key, reply)
+          return key
+        } catch (error) {
+          key.fill(0)
+          throw error
+        }
       },
     })
   }
@@ -103,38 +112,67 @@ export class AppProfileVault {
     }
     return key
   }
+  #synchronizeEnvelope(key: Buffer, reply: NativeVaultReply): void {
+    const manifest = this.#manifest
+    if (!manifest) throw new VaultError('corrupt')
+    verifyManifest(key, manifest)
+    if (!reply.deviceKeyId || !reply.deviceEnvelope) return
+    const updated = authenticateManifest(key, {
+      ...manifest,
+      deviceKeyId: reply.deviceKeyId,
+      deviceEnvelope: reply.deviceEnvelope,
+      requireAuth: reply.requireAuth ?? true,
+    })
+    // Native state is authoritative. A policy change can commit there before the
+    // app writes its mirror; the next unlock repairs the mirror after a crash.
+    if (JSON.stringify(updated) !== JSON.stringify(manifest)) {
+      writeVaultFile(this.#deps.userData, 'vault-manifest.json', JSON.stringify(updated))
+      this.#manifest = updated
+    }
+  }
   async status(): Promise<ProfileVaultStatus> {
-    let available = false
+    let reply: NativeVaultReply = { ok: false }
     try {
-      const reply = await this.#deps.invoke(
+      reply = await this.#deps.invoke(
         nativeRequest('status', this.#deps.userData, this.#manifest ?? newVaultIdentity()),
       )
-      available = reply.ok
     } catch {
       /* Status probes never prompt or weaken encryption. */
     }
     return {
       state: this.#busy
         ? 'busy'
-        : !available
+        : !reply.ok
           ? 'unavailable'
           : (this.#session?.status ?? 'disabled'),
       recovery: this.#manifest?.recovery ?? 'not-backed-up',
-      available,
+      available: reply.ok,
       enabled: this.#manifest !== null,
+      requireAuth: reply.requireAuth ?? this.#manifest?.requireAuth ?? true,
+      automatic: reply.automatic === true,
+      migrationFailed: this.#migrationFailed,
     }
   }
   async unlock(): Promise<void> {
     if (this.#busy || !this.#session) throw new VaultError('unavailable')
     await this.#session.unlock()
   }
-  /** One authentication attempt per process, before credential consumers are initialized.
-   * Sleep and screen lock retain this session; a failed/cancelled attempt requires an explicit retry.
+  /** Initialize before credential consumers. True means migration requested a restart.
+   * One attempt per process; cancellation/failure never starts a prompt loop.
    */
-  unlockOnStartup(): Promise<void> {
-    if (!this.#manifest) return Promise.resolve()
-    this.#startupUnlock ??= this.unlock()
-    return this.#startupUnlock
+  initialize(): Promise<boolean> {
+    this.#startup ??= this.#initialize()
+    return this.#startup
+  }
+  async #initialize(): Promise<boolean> {
+    if (this.#manifest) {
+      await this.unlock()
+      return false
+    }
+    const status = await this.status()
+    if (!status.available || !status.automatic) return false
+    await this.migrate()
+    return true
   }
   lock(): void {
     this.#operation?.abort()
@@ -145,7 +183,7 @@ export class AppProfileVault {
     this.#operation?.abort()
     this.#session?.lock()
   }
-  async enable(backup: boolean): Promise<void> {
+  async migrate(): Promise<void> {
     if (this.#busy || this.#manifest) throw new VaultError('unsupported')
     this.#busy = true
     const operation = new AbortController()
@@ -153,6 +191,11 @@ export class AppProfileVault {
     let key: Buffer | null = null
     let releaseMaintenance: (() => void) | undefined
     try {
+      const support = await this.#deps.invoke(
+        nativeRequest('status', this.#deps.userData, newVaultIdentity()),
+        operation.signal,
+      )
+      if (!support.ok || !support.automatic) throw new VaultError('unavailable')
       releaseMaintenance = acquireVaultMaintenance(this.#deps.userData)
       await this.#deps.beforeMigration()
       const identity = newVaultIdentity()
@@ -162,15 +205,11 @@ export class AppProfileVault {
       )
       key = this.#key(reply)
       if (!reply.deviceKeyId || !reply.deviceEnvelope) throw new VaultError('corrupt')
-      let manifest = createVaultManifest(key, identity, reply.deviceKeyId, reply.deviceEnvelope)
-      if (backup) {
-        const exported = await this.#deps.invoke(
-          nativeRequest('backup', this.#deps.userData, manifest),
-          operation.signal,
-        )
-        if (exported.recoveryVerified !== true) throw new VaultError('cancelled')
-        manifest = authenticateManifest(key, { ...manifest, recovery: 'verified' })
-      }
+      if (reply.requireAuth !== false) throw new VaultError('corrupt')
+      const manifest = authenticateManifest(key, {
+        ...createVaultManifest(key, identity, reply.deviceKeyId, reply.deviceEnvelope),
+        requireAuth: false,
+      })
       await this.#deps.beforeMigration()
       if (operation.signal.aborted) throw new VaultError('cancelled')
       // Snapshot only after all asynchronous native interactions, then inventory,
@@ -181,6 +220,9 @@ export class AppProfileVault {
       commitVaultMigration(this.#deps.userData, migrated, manifest)
       this.#installSession(manifest)
       this.#deps.restart()
+    } catch (error) {
+      this.#migrationFailed = true
+      throw error
     } finally {
       key?.fill(0)
       releaseMaintenance?.()
@@ -197,20 +239,39 @@ export class AppProfileVault {
     this.#operation = operation
     let key: Buffer | null = null
     try {
-      const unlocked = await this.#deps.invoke(
-        nativeRequest('unlock', this.#deps.userData, manifest),
-        operation.signal,
-      )
-      key = this.#key(unlocked)
-      verifyManifest(key, manifest)
       const reply = await this.#deps.invoke(
         nativeRequest('backup', this.#deps.userData, manifest),
         operation.signal,
       )
+      key = this.#key(reply)
       if (!reply.recoveryVerified || operation.signal.aborted) throw new VaultError('cancelled')
-      const updated = authenticateManifest(key, { ...manifest, recovery: 'verified' })
+      this.#synchronizeEnvelope(key, reply)
+      const current = this.#manifest
+      const updated = authenticateManifest(key, { ...current, recovery: 'verified' })
       writeVaultFile(this.#deps.userData, 'vault-manifest.json', JSON.stringify(updated))
       this.#manifest = updated
+    } finally {
+      key?.fill(0)
+      this.#busy = false
+      this.#operation = null
+    }
+  }
+  async setRequireAuth(requireAuth: boolean): Promise<void> {
+    if (this.#busy || !this.#manifest) throw new VaultError('unsupported')
+    this.#busy = true
+    const operation = new AbortController()
+    this.#operation = operation
+    let key: Buffer | null = null
+    try {
+      const reply = await this.#deps.invoke(
+        { ...nativeRequest('set-auth', this.#deps.userData, this.#manifest), requireAuth },
+        operation.signal,
+      )
+      key = this.#key(reply)
+      if (!reply.deviceKeyId || !reply.deviceEnvelope) throw new VaultError('corrupt')
+      if (reply.requireAuth !== requireAuth || operation.signal.aborted)
+        throw new VaultError('cancelled')
+      this.#synchronizeEnvelope(key, reply)
     } finally {
       key?.fill(0)
       this.#busy = false
@@ -241,6 +302,7 @@ export class AppProfileVault {
         ...manifest,
         deviceKeyId: reply.deviceKeyId,
         deviceEnvelope: reply.deviceEnvelope,
+        requireAuth: reply.requireAuth ?? true,
       })
       writeVaultFile(this.#deps.userData, 'vault-manifest.json', JSON.stringify(updated))
       this.#installSession(updated)

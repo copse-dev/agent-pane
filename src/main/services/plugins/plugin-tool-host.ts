@@ -1,3 +1,4 @@
+import { nodeWorkerExecutable, nodeWorkerScript } from '../node-worker-runtime.ts'
 import type { ChildProcess } from 'node:child_process'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -102,14 +103,14 @@ export function pluginToolSandboxOverlay(
 }
 
 export function pluginToolWorkerPath(): string {
-  return join(__dirname, 'plugin-tool-worker.js')
+  return nodeWorkerScript(join(__dirname, 'plugin-tool-worker.js'))
 }
 
 const defaultDependencies: PluginToolHostDependencies = {
   sandboxAvailable: isProjectSandboxEnabled,
   materialize: materializePluginToolSnapshot,
   spawn(candidate, workerPath) {
-    return spawnInProjectSandbox(process.execPath, [workerPath], {
+    return spawnInProjectSandbox(nodeWorkerExecutable(), [workerPath], {
       cwd: candidate.sourcePath,
       env: { ELECTRON_RUN_AS_NODE: '1' },
       stdio: 'pipe',

@@ -1,3 +1,4 @@
+import { hasUnsafeVaultLaunchArguments } from './services/vault-launch-policy.ts'
 import {
   acquireVaultMaintenance,
   registerVaultProfileClient,
@@ -15,6 +16,15 @@ import { augmentPathForGuiLaunch } from './launch-path.ts'
 import { setElectronAppRuntime } from './services/electron-app-runtime.ts'
 import { installElectronStoreBackend } from './services/storage/electron-store-backend.ts'
 import { resolveUserDataDir } from './services/storage/user-data-migration.ts'
+
+// This check runs before profile stores or the vault can expose credentials.
+if (
+  app.isPackaged &&
+  process.platform === 'darwin' &&
+  hasUnsafeVaultLaunchArguments(process.argv)
+) {
+  app.exit(1)
+}
 
 augmentPathForGuiLaunch()
 
