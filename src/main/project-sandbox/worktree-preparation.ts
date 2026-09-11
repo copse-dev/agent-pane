@@ -12,6 +12,7 @@ import { envForRendererChildProcess } from '../services/exec/child-process-env.t
 import { terminateProcessTree } from '../services/exec/subprocess-kill.ts'
 import {
   resolveNodeToolchainAllowRead,
+  electronRuntimeAllowReadPaths,
   sandboxRuntimeHelperAllowReadPaths,
   workspaceMandatoryWriteDenyPaths,
 } from './config.ts'
@@ -50,6 +51,34 @@ export function preparationCacheRoots(env: NodeJS.ProcessEnv, create: boolean): 
   return canonical.slice(1)
 }
 
+/** Executable files and known runtime installations, never the entire user profile. */
+function preparationExecutableReadPaths(command: string, env: NodeJS.ProcessEnv): string[] {
+  const paths: string[] = []
+  for (const candidate of command.includes('/')
+    ? [resolve(command)]
+    : (env['PATH'] ?? '')
+        .split(':')
+        .filter(Boolean)
+        .map((directory) => join(directory, command))) {
+    try {
+      paths.push(candidate, realpathSync(candidate))
+    } catch {
+      /* Not an installed executable. */
+    }
+  }
+  for (const path of [
+    '.bun/bin',
+    '.cargo/bin',
+    '.rustup/toolchains',
+    '.pyenv/versions',
+    '.local/share/uv/python',
+  ]) {
+    const absolute = join(homedir(), path)
+    if (lstatSync(absolute, { throwIfNoEntry: false })) paths.push(absolute)
+  }
+  return paths
+}
+
 interface PreparationProcessOptions {
   root: string
   env: NodeJS.ProcessEnv
@@ -57,6 +86,7 @@ interface PreparationProcessOptions {
   offline: boolean
   signal?: AbortSignal
   output?: (text: string) => void
+  additionalExecutables?: string[]
 }
 
 /**
@@ -106,7 +136,15 @@ export async function runWorktreePreparationProcess(
       allowWithinDeny: [
         root,
         ...caches,
-        ...resolveNodeToolchainAllowRead(env),
+        // Do not let a ~/bin/node layout turn the whole home into a read grant.
+        ...resolveNodeToolchainAllowRead(env).filter(
+          (path) => path !== homedir() && path !== `${homedir()}/**`,
+        ),
+        ...electronRuntimeAllowReadPaths(),
+        ...preparationExecutableReadPaths(command, env),
+        ...(options.additionalExecutables ?? []).flatMap((executable) =>
+          preparationExecutableReadPaths(executable, env),
+        ),
         ...sandboxRuntimeHelperAllowReadPaths(),
       ],
     },
@@ -116,9 +154,14 @@ export async function runWorktreePreparationProcess(
       // Package tarballs contain inert .idea/.vscode metadata. Protect the
       // checkout's configuration rather than denying those names in every
       // dependency directory. This override is private to this approved runner.
+      // The whole .git path also covers hooks. Emitting both .git/hooks and an
+      // absent .git makes bwrap create a directory and then try to mask it as a
+      // file, aborting before execution on a fresh Linux project.
       mandatoryDenyPaths: writable
         ? [
-            ...workspaceMandatoryWriteDenyPaths(root).filter((path) => !path.includes('*')),
+            ...workspaceMandatoryWriteDenyPaths(root).filter(
+              (path) => !path.includes('*') && !path.startsWith(`${join(root, '.git')}/`),
+            ),
             join(root, '.git'),
           ]
         : [],

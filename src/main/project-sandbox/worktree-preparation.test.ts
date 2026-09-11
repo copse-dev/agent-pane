@@ -24,8 +24,11 @@ import {
   preparationEnvironment,
   prepareWorktree,
 } from '../services/worktree-preparation.ts'
-import { NATIVE_PREPARATION_SCRIPT } from '../../../scripts/lib/native-artifacts.mts'
-import { DEV_STATE } from '../../../scripts/lib/dev-sync.mts'
+import {
+  PREPARATION_CONFIG,
+  PREPARATION_STAMP,
+  readWorktreePreparationPlan,
+} from '../services/worktree-preparation-plan.ts'
 
 const parent = realpathSync(mkdtempSync(join(tmpdir(), 'copse-preparation-boundary-')))
 const root = join(parent, 'worktree')
@@ -48,7 +51,11 @@ it('fails closed before running preparation or preflight when the sandbox is una
   mkdirSync(root, { recursive: true })
   setProjectSandboxEnabled(false)
   await assert.rejects(
-    prepareWorktree(root, { env, signal: new AbortController().signal }),
+    prepareWorktree(root, {
+      env,
+      planFingerprint: '0'.repeat(64),
+      signal: new AbortController().signal,
+    }),
     /active OS sandbox/,
   )
   await assert.rejects(inspectWorktreePreparation(root, { env }), /active OS sandbox/)
@@ -141,23 +148,13 @@ describe('real worktree preparation containment', { skip: process.platform === '
 
   it('runs spoofed version probes read-only, including against workspace and cache files', async () => {
     write(
-      join(root, 'package.json'),
+      join(root, PREPARATION_CONFIG),
       JSON.stringify({
-        name: 'copse-panel',
-        packageManager: 'pnpm@10.34.5',
-        scripts: { 'prepare:native': NATIVE_PREPARATION_SCRIPT },
+        version: 1,
+        checks: [
+          { name: 'Runtime', command: { command: './probe', args: [] }, outputIncludes: 'ready' },
+        ],
       }),
-    )
-    write(join(root, '.nvmrc'), process.versions.node)
-    const driver = join(root, 'node_modules/electron-chromedriver')
-    write(join(driver, 'package.json'), '{"version":"44.0.0"}')
-    write(join(root, 'node_modules/electron/package.json'), '{"version":"44.0.0"}')
-    write(join(root, 'node_modules/electron/dist/version'), '44.0.0')
-    write(join(root, 'node_modules/electron/path.txt'), 'electron')
-    write(
-      join(root, 'node_modules/electron/dist/electron'),
-      '#!/bin/sh\necho 152.0.7977.65\n',
-      true,
     )
     const targets = [
       join(root, 'probe-write'),
@@ -165,12 +162,16 @@ describe('real worktree preparation containment', { skip: process.platform === '
       join(parent, 'probe-write'),
     ]
     write(
-      join(driver, 'bin/chromedriver'),
-      `#!/usr/bin/env node\nconst fs=require('node:fs');for(const p of ${JSON.stringify(targets)}){try{fs.writeFileSync(p,'escaped')}catch{}}console.log('ChromeDriver 152.0.7977.65')`,
+      join(root, 'probe'),
+      `#!/usr/bin/env node\nconst fs=require('node:fs');for(const p of ${JSON.stringify(targets)}){try{fs.writeFileSync(p,'escaped')}catch{}}console.log('ready')`,
       true,
     )
     const report = await inspectWorktreePreparation(root, { env })
-    assert.equal(report.components.chromedriver.ready, true, JSON.stringify(report))
+    assert.equal(
+      report.components.find((component) => component.name === 'Runtime')?.ready,
+      true,
+      JSON.stringify(report),
+    )
     for (const path of targets) assert.equal(existsSync(path), false, path)
   })
 
@@ -236,6 +237,20 @@ describe('real worktree preparation containment', { skip: process.platform === '
   })
 
   it('contains a spoofed repository native-preparation script through the real prepare operation', async () => {
+    write(
+      join(root, 'package.json'),
+      JSON.stringify({ name: 'unrelated-app', packageManager: 'pnpm@10.34.5' }),
+    )
+    write(join(root, 'pnpm-lock.yaml'), 'fixture lock')
+    write(
+      join(root, PREPARATION_CONFIG),
+      JSON.stringify({
+        version: 1,
+        inputs: ['scripts/setup.mjs'],
+        prepare: [{ command: 'node', args: ['scripts/setup.mjs'] }],
+        checks: [{ name: 'Built artifact', path: 'artifact' }],
+      }),
+    )
     const outside = join(parent, 'native-escape')
     const installOutside = join(parent, 'install-escape')
     const fakeBin = join(root, 'bin')
@@ -254,17 +269,18 @@ describe('real worktree preparation containment', { skip: process.platform === '
       else if(process.argv.includes('install')) {
         fs.writeFileSync('install-ran','yes');
         try {fs.writeFileSync(${JSON.stringify(installOutside)},'escaped')}catch{}
-      } else {const p=cp.spawnSync(process.execPath,['scripts/prepare-native-artifacts.mts'],{stdio:'inherit'});process.exit(p.status??1)}
+      } else {const p=cp.spawnSync(process.execPath,['scripts/setup.mjs'],{stdio:'inherit'});process.exit(p.status??1)}
     `,
       true,
     )
     write(
-      join(root, 'scripts/prepare-native-artifacts.mts'),
+      join(root, 'scripts/setup.mjs'),
       `import {writeFileSync} from 'node:fs';writeFileSync('native-ran','yes');writeFileSync(${JSON.stringify(outside)},'escaped')`,
     )
     await assert.rejects(
       prepareWorktree(root, {
         env: fixtureEnv,
+        planFingerprint: readWorktreePreparationPlan(root).fingerprint,
         offline: true,
         signal: new AbortController().signal,
       }),
@@ -274,24 +290,14 @@ describe('real worktree preparation containment', { skip: process.platform === '
     assert.equal(readFileSync(join(root, 'native-ran'), 'utf8'), 'yes')
     assert.equal(existsSync(outside), false)
     assert.equal(existsSync(installOutside), false)
-    assert.equal(existsSync(join(root, DEV_STATE.dependencies)), false)
+    assert.equal(existsSync(join(root, PREPARATION_STAMP)), false)
   })
 
   it('records a successful preparation, reuses it, and confines redirected readiness writes', async () => {
     const fixtureEnv = { ...env, PATH: `${join(root, 'bin')}:${env['PATH'] ?? ''}` }
-    const files = {
-      'node_modules/.modules.yaml': 'ready',
-      'node_modules/esbuild/package.json': '{"version":"1.0.0"}',
-      'node_modules/electron/package.json': '{"version":"44.0.0"}',
-      'node_modules/electron/dist/version': '44.0.0',
-      'node_modules/electron/path.txt': 'electron',
-      'node_modules/electron/dist/electron': '#!/bin/sh\necho 152.0.7977.65\n',
-      'node_modules/electron-chromedriver/bin/chromedriver':
-        '#!/bin/sh\necho "ChromeDriver 152.0.7977.65"\n',
-      'vendor/gortex/gortex': '#!/bin/sh\necho "gortex 0.60.0"\n',
-    }
+    const files = { artifact: 'prepared' }
     write(
-      join(root, 'scripts/prepare-native-artifacts.mts'),
+      join(root, 'scripts/setup.mjs'),
       `
       import fs from 'node:fs';import path from 'node:path';
       for(const [name, contents] of Object.entries(${JSON.stringify(files)})) {
@@ -300,15 +306,111 @@ describe('real worktree preparation containment', { skip: process.platform === '
       fs.appendFileSync('native-count','x');
     `,
     )
-    const options = { env: fixtureEnv, offline: true, signal: new AbortController().signal }
+    const options = {
+      env: fixtureEnv,
+      offline: true,
+      planFingerprint: readWorktreePreparationPlan(root).fingerprint,
+      signal: new AbortController().signal,
+    }
     assert.equal((await prepareWorktree(root, options)).state, 'ready')
     assert.equal((await prepareWorktree(root, options)).state, 'ready')
     assert.equal(readFileSync(join(root, 'native-count'), 'utf8'), 'x')
 
-    rmSync(join(root, DEV_STATE.dependencies))
+    rmSync(join(root, PREPARATION_STAMP))
     const outside = join(parent, 'redirected-fingerprint')
-    symlinkSync(outside, join(root, DEV_STATE.dependencies))
+    symlinkSync(outside, join(root, PREPARATION_STAMP))
     await assert.rejects(prepareWorktree(root, options), /failed/)
     assert.equal(existsSync(outside), false)
+  })
+  it('prepares a non-Node project and rejects a changed plan before executing it', async () => {
+    const other = join(parent, 'non-node')
+    write(
+      join(other, PREPARATION_CONFIG),
+      JSON.stringify({
+        version: 1,
+        inputs: ['setup.sh'],
+        prepare: [{ command: '/bin/sh', args: ['setup.sh'] }],
+        checks: [{ name: 'Build output', path: 'output' }],
+      }),
+    )
+    write(join(other, 'setup.sh'), 'printf prepared > output\n')
+    const options = {
+      env: { ...env, PATH: '/usr/bin:/bin' },
+      offline: true,
+      planFingerprint: readWorktreePreparationPlan(other).fingerprint,
+      signal: new AbortController().signal,
+    }
+    assert.equal((await prepareWorktree(other, options)).state, 'ready')
+    assert.equal(readFileSync(join(other, 'output'), 'utf8'), 'prepared')
+    write(join(other, 'setup.sh'), 'printf changed > output\n')
+    await assert.rejects(prepareWorktree(other, options), /plan changed/)
+    assert.equal(readFileSync(join(other, 'output'), 'utf8'), 'prepared')
+  })
+  it('validates a real Python virtual environment whose interpreter is a symlink', async () => {
+    const other = join(parent, 'python-project')
+    write(
+      join(other, PREPARATION_CONFIG),
+      JSON.stringify({
+        version: 1,
+        prepare: [{ command: 'python3', args: ['-m', 'venv', '--without-pip', '.venv'] }],
+        checks: [
+          {
+            name: 'Python environment',
+            path: '.venv/bin/python',
+            command: { command: '.venv/bin/python', args: ['--version'] },
+            outputIncludes: 'Python',
+          },
+        ],
+      }),
+    )
+    const options = {
+      env,
+      offline: true,
+      planFingerprint: readWorktreePreparationPlan(other).fingerprint,
+      signal: new AbortController().signal,
+    }
+    assert.equal((await prepareWorktree(other, options)).state, 'ready')
+    assert.equal((await prepareWorktree(other, options)).state, 'ready')
+  })
+  it('adapts the legacy Yarn CA setting while retaining the firewall proxy and Node trust', async () => {
+    const other = join(parent, 'yarn-compatibility')
+    const bin = join(other, 'bin')
+    const certificate = join(other, 'test-ca.pem')
+    write(join(other, 'package.json'), '{"packageManager":"yarn@3.8.7"}')
+    write(join(other, 'yarn.lock'), '__metadata:\n  version: 6')
+    write(certificate, '')
+    write(
+      join(profile, 'cache/socket-firewall/bin/sfw'),
+      `#!/bin/sh
+if [ "$1" = --version ]; then echo 2.0.6; exit 0; fi
+export YARN_HTTPS_CA_FILE_PATH=legacy-unsupported
+export NODE_EXTRA_CA_CERTS=${JSON.stringify(certificate)}
+export HTTPS_PROXY=http://127.0.0.1:12345
+exec "$@"
+`,
+      true,
+    )
+    write(
+      join(bin, 'corepack'),
+      `#!/usr/bin/env node
+if(process.argv.includes('--version')) console.log('3.8.7');
+else {
+  const assert=require('node:assert/strict');
+  assert.equal(process.env.YARN_HTTPS_CA_FILE_PATH,undefined);
+  assert.equal(process.env.NODE_EXTRA_CA_CERTS,${JSON.stringify(certificate)});
+  assert.equal(process.env.HTTPS_PROXY,'http://127.0.0.1:12345');
+  require('node:fs').writeFileSync('compatibility-checked','yes');
+}
+`,
+      true,
+    )
+    const options = {
+      env: { ...env, PATH: `${bin}:${env['PATH'] ?? ''}` },
+      offline: true,
+      planFingerprint: readWorktreePreparationPlan(other).fingerprint,
+      signal: new AbortController().signal,
+    }
+    assert.equal((await prepareWorktree(other, options)).state, 'ready')
+    assert.equal(readFileSync(join(other, 'compatibility-checked'), 'utf8'), 'yes')
   })
 })

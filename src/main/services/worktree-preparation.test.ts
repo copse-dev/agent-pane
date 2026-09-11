@@ -1,250 +1,259 @@
 import assert from 'node:assert/strict'
 import { after, beforeEach, describe, it } from 'node:test'
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import {
-  DEV_STATE,
-  NATIVE_PREPARATION_INPUTS,
-  dependencyFingerprint,
-  writeFingerprint,
-  type DependencyContextFingerprint,
-} from '../../../scripts/lib/dev-sync.mts'
-import { NATIVE_PREPARATION_SCRIPT } from '../../../scripts/lib/native-artifacts.mts'
 import {
   inspectWorktreePreparation,
   preparationEnvironment,
   worktreePreparationShellEnvironment,
-  type WorktreePreparationReport,
 } from './worktree-preparation.ts'
+import {
+  packageInstallCommand,
+  PREPARATION_CONFIG,
+  PREPARATION_STAMP,
+  readWorktreePreparationPlan,
+} from './worktree-preparation-plan.ts'
 
-const root = mkdtempSync(join(tmpdir(), 'copse-worktree-preparation-'))
-const runtime: DependencyContextFingerprint = {
-  node: '24.20.0',
-  nodeModulesAbi: '137',
-  platform: process.platform,
-  arch: process.arch,
-}
-
+const root = mkdtempSync(join(tmpdir(), 'project-preflight-'))
 after(() => {
   rmSync(root, { recursive: true, force: true })
 })
-
 beforeEach(() => {
   rmSync(root, { recursive: true, force: true })
-  mkdirSync(root, { recursive: true })
-  seedRepositoryInputs()
+  mkdirSync(root)
 })
-
-function write(path: string, value: string, executable = false): void {
-  const absolute = join(root, path)
-  mkdirSync(dirname(absolute), { recursive: true })
-  writeFileSync(absolute, value)
-  if (executable && process.platform !== 'win32') chmodSync(absolute, 0o755)
+function write(path: string, contents: string): void {
+  mkdirSync(dirname(join(root, path)), { recursive: true })
+  writeFileSync(join(root, path), contents)
 }
-
-function seedRepositoryInputs(): void {
+function project(manager: string, lock: string): void {
   write(
     'package.json',
     JSON.stringify({
-      name: 'copse-panel',
-      packageManager: 'pnpm@10.34.5',
-      scripts: { 'prepare:native': NATIVE_PREPARATION_SCRIPT },
+      name: 'ordinary-project',
+      packageManager: manager,
+      dependencies: { example: '1.0.0' },
     }),
   )
-  write('.nvmrc', 'v24.20.0\n')
-  write('.npmrc', 'ignore-scripts=false\n')
-  write('pnpm-lock.yaml', "lockfileVersion: '9.0'\n")
-  write('pnpm-workspace.yaml', 'packages: []\n')
-  for (const path of NATIVE_PREPARATION_INPUTS) {
-    if (path === 'scripts/prepare-native-artifacts.mts') continue
-    write(path, `fixture:${path}\n`)
-  }
-  write('scripts/prepare-native-artifacts.mts', 'fixture:native-preparation\n')
-}
-
-function seedReadyArtifacts(): void {
-  write('node_modules/.modules.yaml', 'ready\n')
-  write('node_modules/esbuild/package.json', '{"version":"1.0.0"}\n')
-  write('node_modules/electron/package.json', '{"version":"44.0.0"}\n')
-  write('node_modules/electron/dist/version', 'v44.0.0\n')
-  write('node_modules/electron/path.txt', 'electron\n')
-  write('node_modules/electron/dist/electron', 'electron fixture\n', true)
-  write('node_modules/electron-chromedriver/package.json', '{"version":"44.0.0"}\n')
   write(
-    `node_modules/electron-chromedriver/bin/${
-      process.platform === 'win32' ? 'chromedriver.exe' : 'chromedriver'
-    }`,
-    'driver fixture\n',
-    true,
-  )
-  write(
-    `vendor/gortex/${process.platform === 'win32' ? 'gortex.exe' : 'gortex'}`,
-    'gortex fixture\n',
-    true,
+    lock,
+    lock === 'yarn.lock' && !manager.startsWith('yarn@1.')
+      ? '__metadata:\n  version: 8'
+      : 'fixture lock',
   )
 }
-
 function probe(command: string, args: readonly string[]): string | null {
   if (command === 'node') return '24.20.0\n137'
-  if (command === 'corepack' && args.join(' ') === 'pnpm --version') return '10.34.5'
-  if (command.endsWith('electron')) return '152.0.7977.65'
-  if (command.includes('chromedriver')) return 'ChromeDriver 152.0.7977.65'
-  if (command.endsWith('gortex') || command.endsWith('gortex.exe')) return 'gortex 0.60.0'
+  if (command === 'npm') return '11.12.0'
+  if (command === 'bun') return '1.4.2'
+  if (command === 'corepack')
+    return args[0]?.split('@')[1] ?? (args[0] === 'yarn' ? '1.22.22' : '10.34.5')
   return null
 }
+const inspect = (offline = false): ReturnType<typeof inspectWorktreePreparation> =>
+  inspectWorktreePreparation(root, { probe, offline })
 
-function inspect(offline = false): Promise<WorktreePreparationReport> {
-  return inspectWorktreePreparation(root, {
-    dependencyContext: runtime,
-    offline,
-    probe: (command, args) => probe(command, args),
-  })
-}
-
-function recordCurrentFingerprint(): void {
-  writeFingerprint(root, DEV_STATE.dependencies, dependencyFingerprint(root, runtime))
-}
-
-describe('inspectWorktreePreparation', () => {
-  it('reports an absent fresh worktree with focused remediation', async () => {
-    const report = await inspect()
-
-    assert.equal(report.state, 'absent')
-    assert.equal(report.components.dependencies.ready, false)
-    assert.match(report.remediation, /prepare_worktree/)
-  })
-
-  it('accepts a present, matching prepared worktree', async () => {
-    seedReadyArtifacts()
-    recordCurrentFingerprint()
-
-    const report = await inspect()
-
-    assert.equal(report.state, 'ready')
-    assert.equal(report.components.node.ready, true)
-    assert.equal(report.components.pnpm.ready, true)
-    assert.equal(report.components.electron.ready, true)
-    assert.equal(report.components.chromedriver.ready, true)
-    assert.equal(report.components.gortex.ready, true)
-  })
-
-  it('rejects a driver for the wrong Chromium major even when its Electron package matches', async () => {
-    seedReadyArtifacts()
-    recordCurrentFingerprint()
-    const report = await inspectWorktreePreparation(root, {
-      dependencyContext: runtime,
-      probe: (command, args) =>
-        command.includes('chromedriver') ? 'ChromeDriver 44.0.0' : probe(command, args),
-    })
-    assert.equal(report.components.chromedriver.ready, false)
-    assert.equal(report.state, 'corrupt')
-  })
-
-  it('reports stale when a fingerprinted repository input changes', async () => {
-    seedReadyArtifacts()
-    recordCurrentFingerprint()
-    write('pnpm-lock.yaml', "lockfileVersion: '9.1'\n")
-
-    assert.equal((await inspect()).state, 'stale')
-  })
-
-  it('reports corrupt for a malformed fingerprint', async () => {
-    seedReadyArtifacts()
-    write(DEV_STATE.dependencies, 'not-a-fingerprint\n')
-
-    assert.equal((await inspect()).state, 'corrupt')
-  })
-
-  it('reports corrupt when a recorded preparation loses a native artifact', async () => {
-    seedReadyArtifacts()
-    recordCurrentFingerprint()
-    unlinkSync(
-      join(
-        root,
-        'node_modules',
-        'electron-chromedriver',
-        'bin',
-        process.platform === 'win32' ? 'chromedriver.exe' : 'chromedriver',
-      ),
+const managerCases: Array<[string, string, string]> = [
+  ['npm@11.12.0', 'package-lock.json', 'ci'],
+  ['pnpm@10.34.5', 'pnpm-lock.yaml', 'install'],
+  ['yarn@1.22.22', 'yarn.lock', 'install'],
+  ['yarn@2.4.3', 'yarn.lock', 'install'],
+  ['yarn@3.8.7', 'yarn.lock', 'install'],
+  ['yarn@4.9.2', 'yarn.lock', 'install'],
+  ['bun@1.4.2', 'bun.lock', 'install'],
+  ['bun@1.4.2', 'bun.lockb', 'install'],
+]
+for (const [manager, lock, verb] of managerCases) {
+  it(`checks and fingerprints an unrelated ${manager} project`, async () => {
+    project(manager, lock)
+    const absent = await inspect()
+    assert.equal(absent.state, 'absent')
+    assert.equal(
+      absent.components.some((component) => /Electron|gortex|ChromeDriver/.test(component.name)),
+      false,
     )
+    write('node_modules/example/package.json', '{"version":"1.0.0"}')
+    const unstamped = await inspect()
+    write(PREPARATION_STAMP, unstamped.expectedFingerprint)
+    assert.equal((await inspect()).state, 'ready')
+    assert.equal((await inspect(true)).state, 'ready')
+    rmSync(join(root, 'node_modules/example'), { recursive: true })
+    assert.equal((await inspect()).state, 'corrupt')
+    write(lock, 'changed lock')
+    assert.equal((await inspect()).state, 'stale')
+    const command = packageInstallCommand(readWorktreePreparationPlan(root), true)
+    assert.ok(command)
+    assert.ok(command.args.includes(verb))
+    assert.ok(
+      command.args.includes('--ignore-scripts') ||
+        command.args.includes('--mode=skip-build') ||
+        command.args.includes('--skip-builds'),
+    )
+  })
+}
 
+describe('project detection and declared setup', () => {
+  it('detects a single lockfile without name, scripts, packageManager, or a Node pin', async () => {
+    write('package.json', '{}')
+    write('package-lock.json', '{}')
     const report = await inspect()
-    assert.equal(report.state, 'corrupt')
-    assert.equal(report.components.chromedriver.ready, false)
+    assert.equal(report.state, 'absent')
+    assert.equal(report.components.find((component) => component.name === 'Node')?.ready, true)
+    assert.equal(readWorktreePreparationPlan(root).manager?.name, 'npm')
   })
-
-  it('reports unavailable-offline when matching prepared inputs are absent', async () => {
-    const report = await inspect(true)
-
-    assert.equal(report.state, 'unavailable-offline')
-    assert.match(report.remediation, /Reconnect|restore/)
+  it('reports configuration guidance for unknown ecosystems and missing lockfiles', async () => {
+    write('pyproject.toml', '[project]\nname="demo"')
+    assert.equal((await inspect()).state, 'needs-configuration')
+    write('package.json', '{}')
+    assert.match((await inspect()).remediation, /lockfile/)
   })
-
-  it('invalidates when Node, package-manager, or native preparation inputs change', async () => {
-    const initial = dependencyFingerprint(root, runtime)
-
-    assert.notEqual(dependencyFingerprint(root, { ...runtime, node: '24.21.0' }), initial)
-
+  it('rejects ambiguous lockfiles, and uses an explicit manager to disambiguate', async () => {
+    project('npm@11.12.0', 'package-lock.json')
+    write('yarn.lock', 'fixture')
+    assert.equal(readWorktreePreparationPlan(root).manager?.name, 'npm')
+    write('package.json', '{}')
+    assert.match((await inspect()).remediation, /Conflicting lockfiles/)
+  })
+  it('rejects unsupported or non-exact manager pins without guessing', async () => {
+    project('pnpm@latest', 'pnpm-lock.yaml')
+    assert.equal((await inspect()).state, 'needs-configuration')
+  })
+  it('validates Node ranges and does not require Node for Bun-only projects', async () => {
+    project('npm@11.12.0', 'package-lock.json')
+    write('.nvmrc', '>=26')
+    assert.equal(
+      (await inspect()).components.find((component) => component.name === 'Node')?.ready,
+      false,
+    )
+    write('.nvmrc', '24')
+    assert.equal(
+      (await inspect()).components.find((component) => component.name === 'Node')?.ready,
+      true,
+    )
+    rmSync(join(root, '.nvmrc'))
+    project('bun@1.4.2', 'bun.lock')
+    const report = await inspectWorktreePreparation(root, {
+      probe: (command, args) => (command === 'node' ? null : probe(command, args)),
+    })
+    assert.equal(
+      report.components.some((component) => component.name === 'Node'),
+      false,
+    )
+  })
+  it('fingerprints manifests outside packages/, config, patches, and declared inputs', () => {
+    project('npm@11.12.0', 'package-lock.json')
+    write('package.json', JSON.stringify({ packageManager: 'npm@11.12.0', workspaces: ['apps/*'] }))
+    const first = readWorktreePreparationPlan(root).fingerprint
+    write('apps/web/package.json', '{}')
+    assert.notEqual(readWorktreePreparationPlan(root).fingerprint, first)
+    write(PREPARATION_CONFIG, JSON.stringify({ version: 1, inputs: ['setup.py'] }))
+    const second = readWorktreePreparationPlan(root).fingerprint
+    write('setup.py', 'print("setup")')
+    assert.notEqual(readWorktreePreparationPlan(root).fingerprint, second)
+  })
+  it('supports any project with explicit setup and read-only checks, including an explicit no-op', async () => {
     write(
-      'package.json',
+      PREPARATION_CONFIG,
       JSON.stringify({
-        name: 'copse-panel',
-        packageManager: 'pnpm@10.35.0',
-        scripts: { 'prepare:native': NATIVE_PREPARATION_SCRIPT },
+        version: 1,
+        inputs: ['requirements.txt'],
+        prepare: [{ command: 'python3', args: ['-m', 'venv', '.venv'] }],
+        checks: [{ name: 'Python environment', path: '.venv/bin/python' }],
       }),
     )
-    assert.notEqual(dependencyFingerprint(root, runtime), initial)
-
-    seedRepositoryInputs()
-    write('scripts/lib/native-artifacts.mts', 'changed native version constants\n')
-    assert.notEqual(dependencyFingerprint(root, runtime), initial)
-
-    seedRepositoryInputs()
-    write('scripts/check-node-version.cjs', 'changed Node validation\n')
-    assert.notEqual(dependencyFingerprint(root, runtime), initial)
+    const missing = await inspect()
+    assert.equal(missing.state, 'absent')
+    assert.match(missing.plan, /python3/)
+    write('.venv/bin/python', 'fixture')
+    const present = await inspect()
+    write(PREPARATION_STAMP, present.expectedFingerprint)
+    assert.equal((await inspect()).state, 'ready')
+    write(PREPARATION_CONFIG, '{"version":1}')
+    assert.equal((await inspect()).state, 'ready')
+  })
+  it('requires configuration/check paths to stay within the checkout', async () => {
+    write(PREPARATION_CONFIG, JSON.stringify({ version: 1, inputs: ['../secret'] }))
+    await assert.rejects(inspect(), /stay in the worktree/)
+  })
+  it('rejects symlinked host-read inputs', { skip: process.platform === 'win32' }, async () => {
+    const outside = mkdtempSync(join(tmpdir(), 'preflight-outside-'))
+    try {
+      writeFileSync(join(outside, 'package.json'), '{}')
+      symlinkSync(join(outside, 'package.json'), join(root, 'package.json'))
+      await assert.rejects(inspect(), /outside the worktree/)
+    } finally {
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+  it('uses declared pnpm workspace patterns and ignores excluded/example projects', async () => {
+    project('pnpm@10.34.5', 'pnpm-lock.yaml')
+    write('pnpm-workspace.yaml', "packages:\n  - 'apps/*'\n  - '!apps/excluded'\n")
+    write('apps/web/package.json', '{"dependencies":{"nested":"1.0.0"}}')
+    write('apps/excluded/package.json', 'invalid ignored fixture')
+    write('examples/standalone/package.json', 'invalid ignored fixture')
+    const plan = readWorktreePreparationPlan(root)
+    assert.deepEqual(plan.manifests, ['apps/web/package.json', 'package.json'])
+    const report = await inspect()
+    assert.match(
+      report.components.find((component) => component.name === 'Dependencies')?.detail ?? '',
+      /apps\/web/,
+    )
+    write('pnpm-workspace.yaml', 'packages: [broken')
+    assert.equal((await inspect()).state, 'needs-configuration')
+  })
+  it('invalidates readiness for a declared runtime version probe', async () => {
+    write(
+      PREPARATION_CONFIG,
+      JSON.stringify({
+        version: 1,
+        checks: [
+          {
+            name: 'Python',
+            command: { command: 'python3', args: ['--version'] },
+            fingerprintOutput: true,
+          },
+        ],
+      }),
+    )
+    const before = await inspectWorktreePreparation(root, { probe: () => 'Python 3.13.0' })
+    write(PREPARATION_STAMP, before.expectedFingerprint)
+    assert.equal(
+      (await inspectWorktreePreparation(root, { probe: () => 'Python 3.13.1' })).state,
+      'stale',
+    )
+  })
+  it(
+    'fingerprints the contents of declared input symlinks inside the project',
+    { skip: process.platform === 'win32' },
+    () => {
+      project('npm@11.12.0', 'package-lock.json')
+      write('runtime-version', '24.20.0')
+      symlinkSync('runtime-version', join(root, '.nvmrc'))
+      const before = readWorktreePreparationPlan(root).fingerprint
+      write('runtime-version', '24.21.0')
+      assert.notEqual(readWorktreePreparationPlan(root).fingerprint, before)
+    },
+  )
+  it('reports offline and malformed stamp states accurately', async () => {
+    project('npm@11.12.0', 'package-lock.json')
+    assert.equal((await inspect(true)).state, 'unavailable-offline')
+    write(PREPARATION_STAMP, 'broken')
+    assert.equal((await inspect()).state, 'corrupt')
   })
 })
 
-describe('preparationEnvironment', () => {
-  it('routes every external preparation cache under COPSE_DIR', async () => {
-    const env = preparationEnvironment({
-      COPSE_DIR: '/profiles/copse',
-      PATH: '/usr/bin',
-    })
-
-    assert.equal(env['COREPACK_HOME'], '/profiles/copse/cache/corepack')
-    assert.equal(env['npm_config_store_dir'], '/profiles/copse/cache/pnpm-store')
-    assert.equal(env['electron_config_cache'], '/profiles/copse/cache/electron-downloads')
-    assert.equal(env['COPSE_ELECTRON_DIST_CACHE'], '/profiles/copse/cache/electron-dist')
-    assert.equal(env['COPSE_GORTEX_CACHE'], '/profiles/copse/cache/gortex')
-    assert.equal(env['CI'], 'true')
-    assert.equal(env['npm_config_ignore_scripts'], 'true')
-    assert.equal(env['HOME'], '/profiles/copse/cache/native-build')
-    assert.equal(env['npm_config_cache'], '/profiles/copse/cache/socket-firewall/npm-cache')
+it('shares package caches with later shells without changing their install policy', () => {
+  project('npm@11.12.0', 'package-lock.json')
+  const shell = worktreePreparationShellEnvironment(root, {
+    COPSE_DIR: '/profile',
+    npm_config_ignore_scripts: 'false',
   })
-
-  it('routes later shell commands through the same caches without changing install policy', async () => {
-    const env = worktreePreparationShellEnvironment(root, {
-      COPSE_DIR: '/profiles/copse',
-      PATH: '/usr/bin',
-      npm_config_ignore_scripts: 'false',
-    })
-
-    assert.equal(env['COREPACK_HOME'], '/profiles/copse/cache/corepack')
-    assert.equal(env['npm_config_store_dir'], '/profiles/copse/cache/pnpm-store')
-    assert.equal(env['npm_config_ignore_scripts'], 'false')
-  })
-
-  it('leaves unrelated project shell environments unchanged', async () => {
-    const unrelated = mkdtempSync(join(tmpdir(), 'unrelated-worktree-'))
-    try {
-      writeFileSync(join(unrelated, 'package.json'), '{"name":"another-project"}')
-      const env = { PATH: '/usr/bin' }
-
-      assert.equal(worktreePreparationShellEnvironment(unrelated, env), env)
-    } finally {
-      rmSync(unrelated, { recursive: true, force: true })
-    }
-  })
+  assert.equal(shell['npm_config_cache'], '/profile/cache/npm')
+  assert.equal(shell['npm_config_ignore_scripts'], 'false')
+  const env = preparationEnvironment({ COPSE_DIR: '/profile' })
+  assert.equal(env['YARN_CACHE_FOLDER'], '/profile/cache/yarn')
+  assert.equal(env['BUN_INSTALL_CACHE_DIR'], '/profile/cache/bun')
+  assert.equal(env['npm_config_ignore_scripts'], 'true')
+  assert.equal(env['YARN_ENABLE_SCRIPTS'], 'false')
 })
