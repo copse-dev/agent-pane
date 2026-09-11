@@ -26311,7 +26311,8 @@ var init_demo_scenarios = __esm({
               id: "platform=iOS Simulator,id=E2E-IP17-PRO",
               name: "iPhone 17 Pro",
               platform: "iOS Simulator",
-              supported: true
+              supported: true,
+              booted: true
             }
           ],
           metadataRequiresExecution: false,
@@ -27169,6 +27170,7 @@ This response is streamed through the real renderer event path.`
         return resolved(structuredClone(state));
       },
       discover: unsupported,
+      destinations: (projectId) => resolved(structuredClone(appleDevelopmentStateFor(projectId).destinations)),
       configure: unsupported,
       execute: unsupported,
       operation: unsupported,
@@ -27792,7 +27794,8 @@ var init_apple_development = __esm({
       id: external_exports.string().min(1).max(512),
       name: external_exports.string().min(1).max(256),
       platform: external_exports.string().min(1).max(128),
-      supported: external_exports.boolean()
+      supported: external_exports.boolean(),
+      booted: external_exports.boolean().optional()
     });
     appleSelectionSchema = external_exports.object({
       candidateId: external_exports.string().min(1).max(512),
@@ -56798,11 +56801,19 @@ function operationDetail(operation) {
   if (operation.status === "succeeded" && operation.action === "build") return "Build completed.";
   return null;
 }
+function preferredDestinationId(destinations, savedId, previousId) {
+  for (const id of [savedId, previousId]) {
+    if (id && destinations.some((destination) => destination.id === id)) return id;
+  }
+  return destinations.find((destination) => destination.booted)?.id ?? destinations[0]?.id ?? "";
+}
 function createAppleDevelopmentPanel(store2, api2, options) {
   const host = el("div", { class: "apple-development-host" });
   let generation = 0;
   let renderedOwnerKey = null;
   let polling = null;
+  let destinationRequest = 0;
+  const destinationCache = /* @__PURE__ */ new Map();
   const stopPolling = () => {
     if (polling) clearTimeout(polling);
     polling = null;
@@ -56910,6 +56921,7 @@ function createAppleDevelopmentPanel(store2, api2, options) {
         void run2(
           discover,
           async () => {
+            destinationCache.clear();
             await api2.appleDevelopment.discover(owner.projectId, owner.threadId, true);
           },
           "Loading targets\u2026"
@@ -56931,11 +56943,70 @@ function createAppleDevelopmentPanel(store2, api2, options) {
           );
         }
         const scheme = el("select", { "aria-label": "Scheme" });
+        const destination = el("select", { "aria-label": "Destination" });
         const schemeStatus = el("p", {
           class: "apple-development-scheme-status",
           role: "status"
         });
+        const destinationStatus = el("p", {
+          class: "apple-development-scheme-status",
+          role: "status"
+        });
         const save = el("button", { type: "button", class: "btn btn-secondary" }, "Use target");
+        const fillDestinations = (items) => {
+          const previousId = destination.value;
+          destination.replaceChildren(
+            ...items.map(
+              (item) => el("option", { value: item.id }, `${item.name} \xB7 ${item.platform}`)
+            )
+          );
+          const savedId = state.selection?.candidateId === candidate.value && state.selection.schemeId === scheme.value ? state.selection.destinationId : void 0;
+          destination.value = preferredDestinationId(items, savedId, previousId);
+          destination.disabled = items.length === 0;
+          save.disabled = items.length === 0;
+          destinationStatus.hidden = true;
+        };
+        const loadDestinations = async () => {
+          if (scheme.value === "") {
+            destination.replaceChildren(el("option", { value: "" }, "No destinations available"));
+            destination.disabled = true;
+            save.disabled = true;
+            return;
+          }
+          const candidateId = candidate.value;
+          const schemeId = scheme.value;
+          const key = `${owner.projectId}\0${owner.threadId}\0${candidateId}\0${schemeId}`;
+          const cached2 = destinationCache.get(key);
+          if (cached2) {
+            fillDestinations(cached2);
+            return;
+          }
+          const request = ++destinationRequest;
+          destination.replaceChildren(el("option", { value: "" }, "Loading destinations\u2026"));
+          destination.disabled = true;
+          save.disabled = true;
+          destinationStatus.hidden = true;
+          try {
+            const items = await api2.appleDevelopment.destinations(
+              owner.projectId,
+              owner.threadId,
+              candidateId,
+              schemeId
+            );
+            if (request !== destinationRequest || candidate.value !== candidateId || scheme.value !== schemeId) {
+              return;
+            }
+            destinationCache.set(key, items);
+            fillDestinations(items);
+          } catch (error61) {
+            if (request !== destinationRequest) return;
+            destination.replaceChildren(el("option", { value: "" }, "No destinations available"));
+            destination.disabled = true;
+            save.disabled = true;
+            destinationStatus.textContent = error61 instanceof Error ? error61.message : String(error61);
+            destinationStatus.hidden = false;
+          }
+        };
         const fillSchemes = () => {
           const selected = state.candidates.find((item) => item.id === candidate.value);
           const schemes = selected?.schemes ?? [];
@@ -56952,12 +57023,13 @@ function createAppleDevelopmentPanel(store2, api2, options) {
             )
           );
           scheme.disabled = schemes.length === 0;
-          save.disabled = schemes.length === 0;
           schemeStatus.textContent = selected?.metadataError ?? (schemes.length === 0 ? "Load target metadata to choose a scheme." : "");
           schemeStatus.hidden = schemeStatus.textContent === "";
+          void loadDestinations();
         };
         fillSchemes();
         candidate.addEventListener("change", fillSchemes);
+        scheme.addEventListener("change", () => void loadDestinations());
         const configuration = el(
           "select",
           { "aria-label": "Configuration" },
@@ -56972,19 +57044,6 @@ function createAppleDevelopmentPanel(store2, api2, options) {
             )
           )
         );
-        const destination = el("select", { "aria-label": "Destination" });
-        for (const item of state.destinations) {
-          destination.append(
-            el(
-              "option",
-              {
-                value: item.id,
-                selected: state.selection?.destinationId === item.id ? true : void 0
-              },
-              `${item.name} \xB7 ${item.platform}`
-            )
-          );
-        }
         save.addEventListener("click", () => {
           if (scheme.value === "") return;
           void run2(save, async () => {
@@ -57013,7 +57072,8 @@ function createAppleDevelopmentPanel(store2, api2, options) {
               configuration,
               destination,
               save,
-              schemeStatus
+              schemeStatus,
+              destinationStatus
             )
           )
         );
