@@ -2,7 +2,7 @@
 
 Status: implemented in the working branch; native release acceptance pending. Scoped from
 [#2652](https://github.com/copse-dev/agent-pane/pull/2652) on 2026-09-11.
-Code baseline: `origin/main` at `f5f1764c2`. The implementation adds the native
+Code baseline: rebased onto `origin/main` at `c148894d2`. The implementation adds the native
 helper, encrypted stores, optional recovery export/import, migration and settings.
 Hardware acceptance is still pending; this document does not certify production readiness.
 
@@ -21,10 +21,11 @@ Hardware acceptance is still pending; this document does not certify production 
   caller and profile, followed by user presence on the actual private-key operation.
   This applies to packaged and development callers; there is no durable development
   allowlist or reliance on Electron's signature to authorize mutable JavaScript.
-- Lock invalidates the cipher immediately and restarts Copse to dispose SDK,
-  renderer and connection caches. It stops current work. A profile-volume identity
-  check runs every second; loss or replacement quits without relaunching. Sleep and
-  session lock use Electron power-monitor events. New saved keys are never mirrored
+- Quitting invalidates the cipher and disposes SDK, renderer and connection
+  caches. There is no separate user-facing Lock action. A profile-volume identity
+  check runs every second; loss or replacement quits without relaunching. An unlocked
+  session survives sleep and screen lock; normal cold launch automatically requests
+  native authentication once. New saved keys are never mirrored
   into the environment; externally supplied credentials remain external.
 - Encrypted profiles currently require the Electron desktop. Shared-profile ACP,
   smoke and agent-eval entry points refuse them. A maintenance gate and registered
@@ -47,7 +48,8 @@ prompts were run after the user asked to stop authentication for the night.
 ## Outcome and scope
 
 Protect Copse's saved secrets with a per-profile key bound to the current Mac.
-The user explicitly unlocks them with Touch ID or macOS system authentication.
+A normal cold launch automatically requests Touch ID or macOS system authentication.
+An unlocked session then survives sleep and screen lock. Enrollment remains opt-in.
 Offer a recovery-key backup that the user saves separately in a password manager
 and can use to restore access after losing the Mac or its device key.
 
@@ -81,9 +83,13 @@ continue to work, including `COPSE_DIR`; an external SSD is not required.
    encryption status and separately shows recovery as “Not backed up” or
    “Verified for this key”. Verification remains transient in native UI. Verification records a successful
    recovery challenge, not a claim that a password-manager copy still exists.
-4. **Normal use.** Start locked; show Unlock and Lock actions. Unlock is
-   asynchronous and user-initiated. A cancelled prompt leaves saved data intact.
-   Local-model work that needs no saved credential can continue while locked.
+4. **Normal use.** Start locked internally and automatically request native
+   authentication once, before credential consumers initialize. Cancellation leaves
+   saved data intact and opens the app locked; retry with **Unlock** in Settings →
+   Storage. An unlocked session survives sleep and screen lock until quit. There
+   is no separate Lock button: quitting clears access and a subsequent launch
+   requests authentication again. Local-model work that needs no saved credential
+   can continue while locked.
 5. **Back up later.** A user who skipped recovery can export and verify it later,
    after fresh authentication. Recovery material stays in native UI; settings
    receives only status and success/failure.
@@ -202,12 +208,29 @@ rehearsal are not release gates for this reduced slice.
 ## Unlock and lock lifecycle
 
 The vault service owns asynchronous unlock and a synchronous session cipher.
-Expose non-secret status and narrow unlock/lock/backup/restore operations.
-Coalesce concurrent unlock requests. Background probes never trigger prompts.
+Expose non-secret status and narrow unlock/backup/restore operations.
+Coalesce concurrent unlock requests. Status probes and background credential reads
+never trigger prompts. A normal cold launch makes one authentication attempt;
+failure or cancellation requires an explicit retry in Settings → Storage.
 Locked, cancelled, corrupt and unsupported states must remain distinguishable.
 
-Lock on explicit action, app quit, profile switch, system sleep/session lock and
-loss of the selected profile volume. Confirm native event coverage. On lock:
+Clear access on app quit, profile switch and loss of the selected profile volume.
+Sleep and screen lock retain the authenticated session, including the data key
+in process memory, so waking does not interrupt work or ask for authentication
+again. This relies on the OS session lock to protect a running session and extends
+memory exposure compared with clearing the key on sleep. Disk encryption and
+fresh authentication for recovery export remain unchanged.
+
+There is no separate Lock button or locked-restart launch option. Quit clears
+access and leaves Copse closed; a subsequent launch requests authentication again.
+Closing a window is not a lock operation. Setup and recovery restart normally.
+
+This is application session policy, separate from the manifest and record format.
+A future setting could require reauthentication after sleep without re-encrypting
+stored records. Truly silent cold startup would require changing the device-key
+authorization policy and replacing its envelope; it is not implemented here.
+
+On lock:
 
 1. Block new saved-secret operations and advance the unlock generation.
 2. Cancel pending authentication; ignore late results from older generations.
@@ -265,7 +288,8 @@ automatic replacement key. Recovery follows the forward-only policy in
    recovery and refusal to downgrade. Keep platform adapters outside the renderer.
 3. **Runtime and settings.** Integrate the main vault service, narrow IPC, provider
    and SSH/VNC gating, lock invalidation and the setup/unlock/recovery status UI.
-   Test one prompt per unlock, no background prompts, late results after lock,
+   Test one startup authentication attempt, no retries after cancellation,
+   no status-probe prompts, late results after shutdown,
    locked reads versus absent keys, and continued credential-free local work.
 4. **Migration and backup.** Implement the complete registry, journaled commit,
    native export/import and verification, and explicit skip/later-backup paths.

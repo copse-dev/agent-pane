@@ -118,7 +118,8 @@ your password manager. For restoration, preserve the original backup, copy the
 profile to the supported replacement Mac, launch the current desktop build and
 choose **Settings → Storage → Saved-secret encryption → Restore access**. Import
 the matching recovery key in the native window. Verification installs a new device
-envelope and restarts locked; subsequent unlock uses that Mac's authentication.
+envelope and restarts Copse, which automatically requests that Mac's authentication.
+If authentication is cancelled, retry with **Unlock** in the same settings section.
 A wrong key does not replace the existing manifest. Recovery validates the profile
 key; damaged individual records still fail authentication when read.
 

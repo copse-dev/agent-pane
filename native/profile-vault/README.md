@@ -15,7 +15,7 @@ Recovery reveal and import stay in native UI. Clipboard copying is manual and
 may be retained by password managers, clipboard history or synchronization.
 
 JavaScript and Swift immutable strings are not guaranteed to be erased. Mutable
-buffers are cleared where practical. Lock restarts the application to clear
+buffers are cleared where practical. Quitting the application clears
 managed credential consumers. This does not revoke tokens already supplied to
 external processes or protect a compromised, already authorized application.
 
@@ -54,9 +54,13 @@ that mechanism is not used in the implementation.
 Before release, use a throwaway Copse profile and synthetic credentials to verify:
 
 - Enable with verified backup and with acknowledged skip; cancel each native step.
-- Unlock with Touch ID and system password, cancel, restart and reboot.
-- Lock during pending authentication and active authenticated work; sleep and
-  screen-lock events must clear access; removing the profile volume must quit.
+- Cold launch automatically requests Touch ID/system authentication once. Cancel
+  and confirm the app opens locked without retrying; explicit Unlock can retry.
+  Verify ordinary restart and reboot require fresh authentication.
+- Quit during pending authentication and active authenticated work; quit must clear
+  access and the next launch must request authentication. Sleep and screen lock
+  must retain an unlocked session without restarting or prompting; profile-volume
+  loss must quit.
 - Rebuild ad-hoc Electron repeatedly and update the signed helper; neither may
   require a new profile data key. Check packaged signing/notarization and each CPU.
 - Restore copied files on a replacement Mac using the saved key, restart and
@@ -69,17 +73,17 @@ fingerprint/password prompts during the unattended implementation session.
 
 ## Automated evidence (2026-09-11)
 
-- Full unit suite: 9,162 passed, 7 skipped, no failures. A final focused run
-  including the added Apple requirement-parser checks passed all 26 vault and
-  environment-cleanup tests.
-- Typecheck, ESLint, formatting, dead-code guard and the application build passed.
-- Test-selection guard: 256 specs live and 15 invariants passed; e2e syntax parsed
-  all 283 files. The remaining `check` gates passed as individual commands after
-  correcting the lint findings in the initial combined run.
+- The final implementation passed the full `pnpm run check` pre-commit gate
+  (9,206 tests passed, 7 skipped, no failures). The oracle guard validated
+  258 live specs and 15 invariants; e2e syntax checked 285 files.
+- The session-policy follow-up passed 27 focused vault tests, including automatic
+  startup, cancellation without automatic retry and quit
+  cleanup. Both application and demo builds passed after rebasing onto current main.
 - Browser eval: setup/acknowledged skip, locked/error and verified backup states
-  passed all three tests. Screenshots were inspected and checkbox spacing corrected.
-- Electron eval: real unavailable-helper main/preload IPC passed. Its screenshot
-  is restricted to the encryption fieldset; no recovery material is captured.
+  passed all three tests. Updated policy copy and screenshots were inspected.
+- Electron eval: both real unavailable-helper main/preload IPC and encrypted-profile
+  startup with unavailable authentication passed. Screenshots are restricted to
+  the encryption fieldset; no recovery material is captured.
 - The real signed helper passed its private-channel `status` operation with the
   final disk/live signature requirements. This operation cannot prompt or access
   Keychain items. No authentication was requested after the user's cutoff.

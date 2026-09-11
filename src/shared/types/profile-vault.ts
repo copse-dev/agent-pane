@@ -6,7 +6,7 @@ export interface ProfileVaultStatus {
 }
 export type ProfileVaultAction =
   | { action: 'enable'; backup: boolean }
-  | { action: 'unlock' | 'lock' | 'backup' | 'recover' }
+  | { action: 'unlock' | 'backup' | 'recover' }
 export type ProfileVaultResult = { ok: true } | { ok: false; reason: string }
 export interface ProfileVaultApi {
   status(): Promise<ProfileVaultStatus>

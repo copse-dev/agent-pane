@@ -15,7 +15,7 @@ export function createProfileVaultSection(api: ProfileVaultApi | undefined): HTM
   const description = el(
     'p',
     { class: 'settings-fieldset-desc' },
-    'Protect saved API keys and SSH/VNC credentials with this Mac’s Secure Enclave. Unlock with Touch ID or macOS authentication. Conversations, repositories and browser cookies are not encrypted by this option.',
+    'Protect saved API keys and SSH/VNC credentials with this Mac’s Secure Enclave. Copse asks you to authenticate when it starts, then stays unlocked through sleep and screen lock until you quit. Conversations, repositories and browser cookies are not encrypted by this option.',
   )
   const status = el(
     'p',
@@ -37,8 +37,8 @@ export function createProfileVaultSection(api: ProfileVaultApi | undefined): HTM
     try {
       const result = await api.run(action)
       notice.textContent = result.ok
-        ? action.action === 'enable' || action.action === 'lock' || action.action === 'recover'
-          ? 'Restarting Copse with saved secrets locked…'
+        ? action.action === 'enable' || action.action === 'recover'
+          ? 'Restarting Copse. Authenticate when it opens to unlock saved secrets.'
           : 'Done.'
         : result.reason === 'cancelled'
           ? 'Cancelled. Your saved credentials are unchanged.'
@@ -116,8 +116,8 @@ export function createProfileVaultSection(api: ProfileVaultApi | undefined): HTM
     const unlocked = current.state === 'unlocked'
     status.textContent = `${unlocked ? 'Unlocked on this Mac.' : 'Saved secrets are locked.'} ${current.recovery === 'verified' ? 'Recovery key verified for this profile key.' : 'Recovery key not backed up.'}`
     const actions = el('div', { class: 'profile-vault-actions' })
+    if (!unlocked) actions.append(button('Unlock', { action: 'unlock' }))
     actions.append(
-      button(unlocked ? 'Lock and restart' : 'Unlock', { action: unlocked ? 'lock' : 'unlock' }),
       button('Back up recovery key', { action: 'backup' }),
       button('Restore access', { action: 'recover' }),
     )
@@ -126,7 +126,7 @@ export function createProfileVaultSection(api: ProfileVaultApi | undefined): HTM
       el(
         'p',
         { class: 'field-hint' },
-        'Keep a separate backup of your profile files. A recovery key cannot restore deleted files. Locking restarts Copse and stops running work to clear cached credentials.',
+        'Keep a separate backup of your profile files. A recovery key cannot restore deleted files.',
       ),
     )
   }
