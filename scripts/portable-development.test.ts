@@ -145,3 +145,29 @@ test('failed preparation invalidates a previous successful launch marker', () =>
     rmSync(f.parent, { recursive: true, force: true })
   }
 })
+
+test('scratch directories do not inherit the enclosing checkout Git identity', () => {
+  const f = fixture()
+  try {
+    assert.equal(spawnSync('git', ['init', f.parent]).status, 0)
+    const scratch = join(f.root, 'tmp/scratch')
+    mkdirSync(scratch, { recursive: true })
+    assert.notEqual(
+      f.run(f.root, ['exec', 'git', '-C', scratch, 'rev-parse', '--show-toplevel']).status,
+      0,
+    )
+    assert.equal(f.run(f.root, ['exec', 'git', 'init', scratch]).status, 0)
+    const initialized = f.run(f.root, [
+      'exec',
+      'git',
+      '-C',
+      scratch,
+      'rev-parse',
+      '--show-toplevel',
+    ])
+    assert.equal(initialized.status, 0, initialized.stderr)
+    assert.equal(initialized.stdout.trim(), scratch)
+  } finally {
+    rmSync(f.parent, { recursive: true, force: true })
+  }
+})

@@ -328,6 +328,12 @@ async function cleanSuccessfulOutput(outputDir: string, keepReport: boolean): Pr
 const TEST_FILE_CONCURRENCY = 4
 
 async function runTests(testFiles: string[], outputDir: string): Promise<number> {
+  // Tests create their own profiles (often under a fake home). Inheriting a
+  // developer's profile overrides can both invalidate those fixtures and write
+  // to real user state when running from the portable development shell.
+  const testEnv = { ...process.env }
+  delete testEnv['COPSE_DIR']
+  delete testEnv['CLAUDE_CONFIG_DIR']
   // Unfiltered: hand node the glob so it picks up every emitted test entry.
   // Filtered: hand it the exact entries selected above.
   const specs =
@@ -351,7 +357,7 @@ async function runTests(testFiles: string[], outputDir: string): Promise<number>
       ...specs,
     ],
     {
-      env: { ...process.env, COPSE_TEST_OUTPUT_DIR: resolve(outputDir) },
+      env: { ...testEnv, COPSE_TEST_OUTPUT_DIR: resolve(outputDir) },
       stdio: 'inherit',
     },
   )
