@@ -307,6 +307,28 @@ separately on each Mac. Setup never imports host secrets. Profile relocation doe
 not implement portable secret encryption. Copse ACP sandbox access to relocated
 agent state still needs end-to-end validation.
 
+The Copse and CLI portable entry points (`portable-dev`, their Make targets and
+generated Finder launchers) start a clean child environment. Only OS identity,
+terminal/locale variables and the requested offline mode are retained; the drive
+paths and profiles are then applied. Inherited API keys, OAuth tokens, provider
+selection, custom endpoints, cloud credentials, proxies and runtime injection
+variables are excluded, including unfamiliar provider variables. No credential
+values are printed or written, and the calling shell is unchanged. This applies
+to Copse, the coding CLIs, ACP adapters started from that environment, development
+commands and the portable shell. The low-level binaries under `apps/` are not
+isolated entry points; launch them through `portable-dev exec`.
+
+Configure personal routing deliberately after entering `make portable-shell`, or
+use `portable-dev exec env NAME=value COMMAND...` for non-secret settings. Avoid
+putting secrets in command arguments or shell history; use the tool's sign-in or
+credential store. Inherited SSH-agent sockets, package-registry credentials and
+corporate proxy settings are also dropped, so private development services may
+need explicit configuration in the portable shell. This cleans process
+inheritance; it does not isolate macOS Keychain, machine-managed policy, project
+configuration or host credential files. Those remain separate concerns from
+environment-variable leakage. GUI apps launched by macOS Launch Services also
+remain outside this child-process environment contract.
+
 Cloud inference requires a connection. The optional local AI recipe downloads
 model weights and LM Studio; the runtime target also installs the engine software.
 LM Studio profile activation and model load testing remain separate.
