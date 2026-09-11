@@ -74,6 +74,11 @@ shell rc files. It retains the real user home. `exec` runs a command in the same
 environment. Other projects can be opened from this shell normally. Do not point
 global npm/pnpm configuration at a removable disk.
 
+The scratch directory is a Git discovery ceiling, so a temporary non-repository
+does not inherit the enclosing Copse checkout. Explicitly initialized scratch
+repositories still work. The unit runner clears inherited Copse/Claude profile
+overrides before starting test processes, preserving their fixture isolation.
+
 Launchers derive the root from their own location. After moving the checkout or
 changing the mount path, run `prepare` online: it invalidates the dependency
 fingerprint so pnpm rebuilds absolute metadata and generated commands. `run`

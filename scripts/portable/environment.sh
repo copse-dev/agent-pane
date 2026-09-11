@@ -18,6 +18,9 @@ export ELECTRON_CACHE="$portable_root/cache/electron-downloads"
 export electron_config_cache="$ELECTRON_CACHE"
 export ELECTRON_BUILDER_CACHE="$portable_root/cache/electron-builder"
 export TMPDIR="$portable_root/tmp/"
+# Scratch directories inside a checkout must not inherit its Git identity.
+# Repositories explicitly initialized below this ceiling still work normally.
+export GIT_CEILING_DIRECTORIES="$portable_root/tmp${GIT_CEILING_DIRECTORIES:+:$GIT_CEILING_DIRECTORIES}"
 export CLAUDE_CONFIG_DIR="$portable_root/data/claude"
 export DISABLE_UPDATES=1
 export DISABLE_AUTOUPDATER=1
