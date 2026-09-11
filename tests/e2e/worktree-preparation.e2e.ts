@@ -39,7 +39,12 @@ describe('worktree preparation tool cards', () => {
     await expect(prepare.$('.tool-result')).toHaveText('Worktree preparation: ready', {
       containing: true,
     })
-    await expect(prepare.$('.tool-result')).toHaveText('ChromeDriver 44.0.0 ready', {
+    await expect(prepare.$('.tool-result')).toHaveText('Package manager: npm@11.19.0', {
+      containing: true,
+    })
+
+    await expect(prepare.$('.tool-result')).not.toHaveText('gortex', { containing: true })
+    await expect(prepare.$('.tool-result')).toHaveText('not build or test success', {
       containing: true,
     })
 

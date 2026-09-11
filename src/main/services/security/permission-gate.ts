@@ -1,3 +1,9 @@
+import { z } from 'zod'
+import { assertPreparationPlan } from '../worktree-preparation.ts'
+import {
+  containedPreparationPath,
+  formatPreparationApproval,
+} from '../worktree-preparation-plan.ts'
 import {
   browserAllowedOrigins,
   currentBrowserScope,
@@ -674,21 +680,28 @@ async function checkCustomToolPermission(
   return approved
 }
 
-/**
- * Mutating GitHub PR actions always prompt (issue #690 Q3). There is no
- * "remember" yet — the per-repo grant granularity is still an open question, so
- * every approve / merge-when-ready / mark-ready / rerun-CI call asks first.
- */
-async function checkWorktreePreparationPermission(signal?: AbortSignal): Promise<boolean> {
+/** Approve the concrete project plan; execution rechecks its input fingerprint. */
+async function checkWorktreePreparationPermission(
+  args: unknown,
+  signal?: AbortSignal,
+): Promise<boolean> {
+  const parsed = z
+    .object({
+      planFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+      directory: z.string().optional().default('.'),
+      offline: z.boolean().optional(),
+    })
+    .parse(args)
+  const root = getAgentExecutionRoot()
+  if (!root) throw new Error('No workspace open.')
+  const plan = assertPreparationPlan(
+    containedPreparationPath(root, parsed.directory),
+    parsed.planFingerprint,
+  )
   const { approved } = await requestApproval(
     {
       title: 'Prepare this worktree?',
-      body:
-        'Copse will install lockfile-pinned packages through Socket Firewall with dependency ' +
-        'lifecycle scripts disabled, then run only this repository’s declared prepare:native ' +
-        'entry point. Writes are limited to the active worktree and Copse-managed cache ' +
-        'directories for Corepack, pnpm, Electron, ChromeDriver, and gortex. Downloads may use ' +
-        'the network unless offline mode was requested.',
+      ...formatPreparationApproval(plan, parsed.offline === true),
       type: 'shell',
       cause: 'shell-package-install',
       allowRemember: false,
@@ -1604,11 +1617,10 @@ export async function ensureToolPermitted(
     return true
   }
 
-  // A host-owned preparation run performs one fixed install/native-artifact
-  // workflow inside an enforcing OS sandbox. It receives one bounded prompt here;
-  // the tool never delegates approval to arbitrary shell text.
+  // The approval names the exact detected install and declared setup steps.
+  // Its fingerprint is checked again during execution; changed plans need approval.
   if (toolName === 'prepare_worktree') {
-    return checkWorktreePreparationPermission(signal)
+    return checkWorktreePreparationPermission(args, signal)
   }
 
   // Mutating PR actions (approve / merge-when-ready / mark-ready / rerun CI)

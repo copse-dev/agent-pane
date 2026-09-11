@@ -1,3 +1,4 @@
+import { containedPreparationPath } from '../services/worktree-preparation-plan.ts'
 import { z } from 'zod'
 import { defineTool } from '@shared/types'
 import { getAgentExecutionRoot } from '../services/execution-root.ts'
@@ -10,8 +11,15 @@ import {
 export const preflightWorktreeTool = defineTool({
   name: 'preflight_worktree',
   description:
-    'Read-only Copse source-worktree readiness check. Reports the pinned Node and pnpm state, dependency fingerprint, Electron runtime, matching ChromeDriver, gortex binary, and remote-E2E configuration. Use before running project tests/builds when a fresh or changed worktree may not be prepared. Set offline=true to verify that the current prepared state is usable without downloads.',
+    'Read-only project readiness check. Detects npm, pnpm, Yarn (Classic and modern), or Bun from packageManager and lockfiles. Other ecosystems and optional native setup use .copse/worktree-preparation.json. Reports runtime requirements, dependency state, declared checks, exact setup commands, and a plan fingerprint. Unknown or conflicting projects get configuration guidance. Checks run offline in the OS sandbox.',
   parameters: z.object({
+    directory: z
+      .string()
+      .optional()
+      .default('.')
+      .describe(
+        'Project directory relative to the execution root, for nested projects. Must stay inside the worktree.',
+      ),
     offline: z
       .boolean()
       .optional()
@@ -20,9 +28,10 @@ export const preflightWorktreeTool = defineTool({
         'Report unavailable-offline when matching prepared inputs are not already present.',
       ),
   }),
-  async execute({ offline }) {
-    const root = getAgentExecutionRoot()
-    if (!root) return 'No workspace open.'
+  async execute({ offline, directory }) {
+    const executionRoot = getAgentExecutionRoot()
+    if (!executionRoot) return 'No workspace open.'
+    const root = containedPreparationPath(executionRoot, directory)
     return formatWorktreePreparationReport(await inspectWorktreePreparation(root, { offline }))
   },
 })
@@ -30,17 +39,33 @@ export const preflightWorktreeTool = defineTool({
 export const prepareWorktreeTool = defineTool({
   name: 'prepare_worktree',
   description:
-    'Prepare a Copse source worktree through one bounded, approval-gated operation. Uses Copse-managed Corepack, pnpm, Electron, ChromeDriver, and gortex caches; installs lockfile-pinned packages through Socket Firewall with all dependency lifecycle scripts disabled; then runs only the repository-declared prepare:native entry point. Reuses the worktree dependency fingerprint, so unchanged prepared worktrees are a no-op. Set offline=true to forbid downloads and fail with concise cache remediation.',
+    'Prepare the active project using the plan fingerprint returned by preflight_worktree. Approval displays the exact install and project-declared setup commands. Automatic JavaScript installs use frozen lockfiles and disabled lifecycle scripts through Socket Firewall. Declared setup runs in the same bounded OS sandbox; no repository-specific native scripts run implicitly. Writes stay in this worktree and managed caches. Offline mode blocks network for every subprocess.',
   parameters: z.object({
+    directory: z
+      .string()
+      .optional()
+      .default('.')
+      .describe(
+        'Project directory relative to the execution root, for nested projects. Must stay inside the worktree.',
+      ),
+    planFingerprint: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .describe(
+        'Exact plan fingerprint returned by preflight_worktree; changed plans require a new approval.',
+      ),
     offline: z
       .boolean()
       .optional()
       .default(false)
       .describe('Forbid downloads and use only matching inputs already in Copse-managed caches.'),
   }),
-  async execute({ offline }, signal) {
-    const root = getAgentExecutionRoot()
-    if (!root) return 'No workspace open.'
-    return formatWorktreePreparationReport(await prepareWorktree(root, { offline, signal }))
+  async execute({ offline, planFingerprint, directory }, signal) {
+    const executionRoot = getAgentExecutionRoot()
+    if (!executionRoot) return 'No workspace open.'
+    const root = containedPreparationPath(executionRoot, directory)
+    return formatWorktreePreparationReport(
+      await prepareWorktree(root, { offline, signal, planFingerprint }),
+    )
   },
 })

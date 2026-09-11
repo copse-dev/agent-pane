@@ -3386,7 +3386,7 @@ export function seedWorktreePreparationFixture(workspaceRoot: string): void {
           {
             id: 'msg-worktree-user',
             role: 'user',
-            content: 'Check this fresh worktree and prepare it for the focused Electron test.',
+            content: 'Check this fresh npm project and prepare its dependencies.',
             toolCalls: [],
             createdAt: now,
           },
@@ -3401,7 +3401,7 @@ export function seedWorktreePreparationFixture(workspaceRoot: string): void {
                 args: { offline: false },
                 status: 'done',
                 result:
-                  'Worktree preparation: absent\n- not ready — Dependencies: missing node_modules/.modules.yaml\nRemediation: Run prepare_worktree once.',
+                  'Worktree preparation: absent\nProject: /workspace/customer-app\nPackage manager: npm@11.19.0\n- not ready — Dependencies: missing package.json: example\nRemediation: Run prepare_worktree once with this plan fingerprint.',
               },
             ],
             createdAt: now + 1,
@@ -3409,15 +3409,15 @@ export function seedWorktreePreparationFixture(workspaceRoot: string): void {
           {
             id: 'msg-worktree-prepare',
             role: 'assistant',
-            content: 'The pinned dependencies and native runtimes are ready.',
+            content: 'The project dependencies are ready. No native setup was declared.',
             toolCalls: [
               {
                 id: 'tc-prepare-worktree',
                 name: 'prepare_worktree',
-                args: { offline: false },
+                args: { offline: false, planFingerprint: 'a'.repeat(64) },
                 status: 'done',
                 result:
-                  'Worktree preparation: ready\n- ready — Node: Node 24.20.0 ready\n- ready — pnpm: pnpm 10.34.5 ready in the Copse Corepack cache\n- ready — Electron: Electron 44.0.0 runtime ready\n- ready — ChromeDriver: ChromeDriver 44.0.0 ready\n- ready — gortex: gortex v0.60.0 ready\nRemediation: No preparation needed.',
+                  'Worktree preparation: ready\nProject: /workspace/customer-app\nPackage manager: npm@11.19.0\n- ready — Node: found 24.20.0; no project version constraint\n- ready — Dependencies: declared direct dependencies present\nRemediation: No preparation needed. Readiness covers dependencies and declared checks, not build or test success.',
               },
             ],
             createdAt: now + 2,

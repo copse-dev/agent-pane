@@ -26,11 +26,11 @@ Installs use pnpm’s default isolated linker with `package-import-method=auto`
 through `node_modules/.pnpm` while store bytes are shared when the filesystem
 allows. Agent-prepared worktrees route Corepack, the pnpm store, Electron downloads and extracted
 runtime, and gortex through fixed directories under `~/.copse/cache/`. The read-only
-`preflight_worktree` tool reports readiness; one approved `prepare_worktree` call installs
-lockfile-pinned dependencies through Socket Firewall with lifecycle scripts disabled and then runs
-the repository-declared `prepare:native` entry point for pinned native artifacts. Each worktree
-still gets its own `node_modules` links and preparation fingerprint. `make run` remains the ordinary
-human-facing setup path.
+`preflight_worktree` reports the current project's package-manager and declared setup readiness.
+Pass its `planFingerprint` to one approved `prepare_worktree` call to install locked dependencies
+and run the setup declared in `.copse/worktree-preparation.json`. This repository declares its
+Electron/ChromeDriver/native/gortex steps there; other projects need none of those artifacts.
+See [project worktree preparation](plans/project-worktree-preparation.md).
 
 Cursor Cloud setup normally installs the pinned version through `.cursor/cloud-setup.sh`. If an
 older executable still shadows it, activate the repo version:

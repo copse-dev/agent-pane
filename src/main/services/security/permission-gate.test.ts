@@ -1,3 +1,4 @@
+import { readWorktreePreparationPlan } from '../worktree-preparation-plan.ts'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
@@ -62,27 +63,45 @@ import { shellReplayLeaseStore } from './capability-lease.ts'
 
 describe('prepare_worktree permission', () => {
   it('asks once for the bounded preparation capability', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'prepare-permission-'))
+    writeFileSync(join(root, 'package.json'), '{"packageManager":"npm@11.12.0"}')
+    writeFileSync(join(root, 'package-lock.json'), '{}')
+    setWorkspaceRootForTest(root)
+    const planFingerprint = readWorktreePreparationPlan(root).fingerprint
     let prompts = 0
     setApprovalHandler(async (request) => {
       prompts += 1
       assert.equal(request.title, 'Prepare this worktree?')
       assert.equal(request.cause, 'shell-package-install')
       assert.equal(request.allowRemember, false)
-      assert.match(request.body, /lifecycle scripts disabled/)
-      assert.match(request.body, /Copse-managed cache/)
+      assert.match(request.bodyAdvice ?? '', /lifecycle scripts disabled/)
+      assert.match(request.bodyFooter ?? '', /Copse-managed cache/)
+      assert.match(request.body, /npm.*ci/)
+      assert.ok(request.bodyFooter?.includes(root))
       return { approved: true, remember: false }
     })
     try {
       assert.equal(
         await ensureToolPermitted(
-          { toolName: 'prepare_worktree', args: { offline: false } },
+          { toolName: 'prepare_worktree', args: { offline: false, planFingerprint } },
           new AbortController().signal,
         ),
         true,
       )
       assert.equal(prompts, 1)
+      writeFileSync(join(root, 'package.json'), '{"packageManager":"npm@11.20.0"}')
+      await assert.rejects(
+        ensureToolPermitted(
+          { toolName: 'prepare_worktree', args: { offline: false, planFingerprint } },
+          new AbortController().signal,
+        ),
+        /plan changed/,
+      )
+      assert.equal(prompts, 1)
     } finally {
       setApprovalHandler(null)
+      setWorkspaceRootForTest(null)
+      rmSync(root, { recursive: true, force: true })
     }
   })
 })
