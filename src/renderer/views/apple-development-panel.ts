@@ -4,6 +4,7 @@ import type {
   AppleDestination,
   AppleOperation,
   AppleProjectState,
+  AppleSelection,
 } from '@shared/types/apple-development.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { el } from '../dom/helpers.ts'
@@ -78,6 +79,26 @@ function preferredDestinationId(
     if (id && destinations.some((destination) => destination.id === id)) return id
   }
   return destinations.find((destination) => destination.booted)?.id ?? destinations[0]?.id ?? ''
+}
+
+function sameTarget(left: AppleSelection, right: AppleSelection): boolean {
+  return (
+    left.candidateId === right.candidateId &&
+    left.schemeId === right.schemeId &&
+    left.configuration === right.configuration &&
+    left.destinationId === right.destinationId
+  )
+}
+
+function candidateLabel(candidateId: string): string {
+  const fileName = candidateId.split('/').at(-1) ?? candidateId
+  return fileName.replace(/\.(?:xcworkspace|xcodeproj)$/i, '')
+}
+
+function destinationLabel(destinationId: string): string {
+  if (destinationId === 'platform=macOS') return 'This Mac'
+  const platform = /(?:^|,)platform=([^,]+)/.exec(destinationId)?.[1]
+  return platform ?? destinationId
 }
 
 export function createAppleDevelopmentPanel(
@@ -164,7 +185,15 @@ export function createAppleDevelopmentPanel(
     stopPolling()
     renderedOwnerKey = `${owner.projectId}\0${owner.threadId}`
     host.replaceChildren()
-    const latestOperation = state.operations[0]
+    const selection = state.selection
+    const activeOperation = state.operations.find(
+      (operation) => operation.status === 'queued' || operation.status === 'running',
+    )
+    const latestOperation =
+      activeOperation ??
+      (selection
+        ? state.operations.find((operation) => sameTarget(operation.target, selection))
+        : state.operations[0])
     if ((!state.pluginEnabled || !state.enrolled) && !latestOperation && !options.allowEnrollment) {
       host.hidden = true
       return
@@ -200,10 +229,10 @@ export function createAppleDevelopmentPanel(
           await api.appleDevelopment.setEnrolled(owner.projectId, owner.threadId, !state.enrolled)
         })
       })
-      panel.append(enrollment)
+      headingActions.append(enrollment)
     }
 
-    if (state.setupMessage) {
+    if (state.setupMessage && !state.selection) {
       panel.append(el('p', { class: 'apple-development-message' }, state.setupMessage))
     }
 
@@ -398,6 +427,11 @@ export function createAppleDevelopmentPanel(
       }
 
       if (state.selection) {
+        const selectedCandidate = state.candidates.find(
+          (candidate) => candidate.id === state.selection?.candidateId,
+        )
+        const selectedCandidateLabel =
+          selectedCandidate?.name ?? candidateLabel(state.selection.candidateId)
         const selectedDestination = state.destinations.find(
           (destination) => destination.id === state.selection?.destinationId,
         )
@@ -409,13 +443,19 @@ export function createAppleDevelopmentPanel(
               'div',
               { class: 'apple-development-target-name' },
               el('strong', {}, state.selection.schemeId),
-              el('span', {}, state.selection.candidateId),
+              ...(selectedCandidateLabel === state.selection.schemeId
+                ? []
+                : [el('span', { title: state.selection.candidateId }, selectedCandidateLabel)]),
             ),
             el(
               'div',
               { class: 'apple-development-target-meta' },
               el('span', {}, state.selection.configuration),
-              el('span', {}, selectedDestination?.name ?? state.selection.destinationId),
+              el(
+                'span',
+                { title: state.selection.destinationId },
+                selectedDestination?.name ?? destinationLabel(state.selection.destinationId),
+              ),
             ),
             el(
               'div',

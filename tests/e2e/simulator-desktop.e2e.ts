@@ -92,8 +92,12 @@ describe('Simulator desktop preview', function () {
     const simulator = $(`.vnc-device-header[data-machine="simulator:${DEVICE_UDID}"]`)
     await simulator.waitForDisplayed({ timeout: 20_000 })
     await simulator.click()
+    await expect($('.vnc-devices-heading')).toHaveText('DEVICES')
+    await expect($('.vnc-nearby-feedback')).not.toBeDisplayed()
     await expect($(`.vnc-device.is-selected .vnc-device-meta`)).toHaveText('iOS 26.5 · Booted')
     await expect($('.vnc-device.is-selected .vnc-device-details')).toHaveText('Connect')
+    await expect($('.vnc-empty')).toHaveText('Connect to view iPhone 17 Pro.')
+    await expect($('.vnc-view-only-note')).not.toBeDisplayed()
     await saveAppScreenshot('simulator-desktop-choice.png')
 
     await browser.execute(async (udid) => {
