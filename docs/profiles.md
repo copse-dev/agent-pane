@@ -22,6 +22,26 @@ travel with one.
 Project repositories are not part of a profile. A profile records _where_ your
 projects are, not their contents.
 
+### Development build caches
+
+The Electron development distribution and gortex binary cache default to
+`<COPSE_DIR>/cache/electron-dist/` and `<COPSE_DIR>/cache/gortex/` (or
+`~/.copse/cache/` without an override). Entries remain version/platform/architecture
+specific. Set `COPSE_ELECTRON_DIST_CACHE` or `COPSE_GORTEX_CACHE` to share an
+explicit cache between profiles; blank values use the default.
+
+Keep the checkout and these caches on the same drive when preparing a portable
+development installation. New cache symlinks are relative, so moving both with
+their directory layout intact preserves the links, including mount names with
+spaces. Run `pnpm install` or `pnpm start` during preparation to replace old
+absolute Electron links; `node scripts/fetch-gortex.mts` replaces gortex links.
+A populated matching cache can be reused without downloading. Missing cache
+contents still require preparation online; this is not an offline installer.
+
+These caches are disposable build artifacts. The package-manager store, downloaded
+archives, native rebuild tools, experimental Tauri shell cache and local models
+have their own locations and are not relocated by this change.
+
 ## Running more than one profile
 
 Set `COPSE_DIR` before launching:
