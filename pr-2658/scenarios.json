@@ -49,7 +49,7 @@
   },
   {
     "id": "vault-setup",
-    "label": "Saved-secret encryption: setup"
+    "label": "Saved-secret encryption: migration pending"
   },
   {
     "id": "vault-locked",

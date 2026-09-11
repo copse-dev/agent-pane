@@ -26144,11 +26144,18 @@ var init_demo_scenarios = __esm({
       },
       {
         id: "vault-setup",
-        label: "Saved-secret encryption: setup",
+        label: "Saved-secret encryption: migration pending",
         project: project("demo-vault-project"),
         settings: { onboardingCompleted: true, theme: "dark", uiTintStrength: "off" },
         threads: [],
-        profileVault: { state: "disabled", enabled: false, available: true, recovery: "not-backed-up" }
+        profileVault: {
+          state: "disabled",
+          enabled: false,
+          available: true,
+          recovery: "not-backed-up",
+          automatic: true,
+          migrationFailed: true
+        }
       },
       {
         id: "vault-locked",
@@ -26164,7 +26171,13 @@ var init_demo_scenarios = __esm({
         project: project("demo-vault-project"),
         settings: { onboardingCompleted: true, theme: "dark", uiTintStrength: "off" },
         threads: [],
-        profileVault: { state: "unlocked", enabled: true, available: true, recovery: "verified" }
+        profileVault: {
+          state: "unlocked",
+          enabled: true,
+          available: true,
+          recovery: "verified",
+          requireAuth: false
+        }
       },
       {
         id: "settings-footer",
@@ -29295,7 +29308,7 @@ function createProfileVaultSection(api2) {
   const description = el(
     "p",
     { class: "settings-fieldset-desc" },
-    "Protect saved API keys and SSH/VNC credentials with this Mac\u2019s Secure Enclave. Copse asks you to authenticate when it starts, then stays unlocked through sleep and screen lock until you quit. Conversations, repositories and browser cookies are not encrypted by this option."
+    "Saved API keys and SSH/VNC credentials are automatically protected with this Mac\u2019s Secure Enclave on supported Macs. Copse normally unlocks them silently. Conversations, repositories and browser cookies are outside this protection."
   );
   const status = el(
     "p",
@@ -29313,10 +29326,10 @@ function createProfileVaultSection(api2) {
       "button, input"
     ))
       button2.disabled = true;
-    notice.textContent = "Complete the native authentication window to continue.";
+    notice.textContent = action.action === "retry-migration" || action.action === "unlock" ? "Opening saved-secret encryption\u2026" : "Complete the native authentication window to continue.";
     try {
       const result = await api2.run(action);
-      notice.textContent = result.ok ? action.action === "enable" || action.action === "recover" ? "Restarting Copse. Authenticate when it opens to unlock saved secrets." : "Done." : result.reason === "cancelled" ? "Cancelled. Your saved credentials are unchanged." : result.reason === "locked" ? "Unlock saved secrets to continue." : result.reason === "recovery-required" ? "This Mac does not have the device key. Restore access with your recovery key." : result.reason === "corrupt" ? "Verification failed. Check the recovery key and restore a complete profile backup if needed." : result.reason === "unavailable" ? "The native encryption helper or macOS authentication is unavailable." : result.reason;
+      notice.textContent = result.ok ? action.action === "retry-migration" || action.action === "recover" ? "Restarting Copse\u2026" : action.action === "set-auth" ? "Updated. The startup authentication setting takes effect next time you launch Copse." : "Done." : result.reason === "cancelled" ? "Cancelled. Your saved credentials are unchanged." : result.reason === "locked" ? "Unlock saved secrets to continue." : result.reason === "recovery-required" ? "This Mac does not have the device key. Restore access with your recovery key." : result.reason === "corrupt" ? "Verification failed. Check the recovery key and restore a complete profile backup if needed." : result.reason === "unavailable" ? "The native encryption helper or macOS authentication is unavailable." : result.reason;
     } catch {
       notice.textContent = "Could not reach the encryption service.";
     } finally {
@@ -29335,7 +29348,7 @@ function createProfileVaultSection(api2) {
     root.dataset["state"] = current.state;
     controls.replaceChildren();
     if (current.state === "busy" || current.state === "unlocking") {
-      status.textContent = "Complete the native authentication window to continue.";
+      status.textContent = "Updating saved-secret encryption\u2026";
       return;
     }
     if (!current.available) {
@@ -29343,42 +29356,31 @@ function createProfileVaultSection(api2) {
       return;
     }
     if (!current.enabled) {
-      status.textContent = "Uses existing OS secure storage until enabled. Setup restarts Copse.";
-      const backup = el("input", { type: "checkbox" });
-      backup.checked = true;
-      const backupLabel = el("label", { class: "profile-vault-choice" });
-      backupLabel.append(
-        backup,
-        document.createTextNode("Back up a recovery key in my password manager (recommended)")
-      );
-      const acknowledge = el("input", { type: "checkbox" });
-      const lossLabel = el("label", { class: "profile-vault-choice" });
-      lossLabel.append(
-        acknowledge,
-        document.createTextNode(
-          "I understand that losing this Mac\u2019s device key will make my saved secrets unrecoverable without a recovery backup."
-        )
-      );
-      lossLabel.hidden = true;
-      const enable = el(
-        "button",
-        { type: "button", class: "ui-btn ui-btn-primary" },
-        "Enable encryption"
-      );
-      enable.addEventListener("click", () => {
-        void run2({ action: "enable", backup: backup.checked });
-      });
-      const updateChoice = () => {
-        lossLabel.hidden = backup.checked;
-        enable.disabled = !backup.checked && !acknowledge.checked;
-      };
-      backup.addEventListener("change", updateChoice);
-      acknowledge.addEventListener("change", updateChoice);
-      controls.append(backupLabel, lossLabel, enable);
+      status.textContent = current.migrationFailed ? "Automatic migration could not finish. Your credentials still use the existing OS secure storage. Close other Copse processes and retry." : current.automatic ? "This profile will migrate automatically when Copse starts." : "Uses existing OS secure storage. Automatic device encryption requires a supported signed Copse release.";
+      if (current.automatic)
+        controls.append(button("Retry migration", { action: "retry-migration" }));
       return;
     }
     const unlocked = current.state === "unlocked";
     status.textContent = `${unlocked ? "Unlocked on this Mac." : "Saved secrets are locked."} ${current.recovery === "verified" ? "Recovery key verified for this profile key." : "Recovery key not backed up."}`;
+    const authentication = el("input", { type: "checkbox" });
+    authentication.checked = current.requireAuth ?? true;
+    const authenticationLabel = el("label", { class: "profile-vault-choice" });
+    authenticationLabel.append(
+      authentication,
+      document.createTextNode("Require authentication when Copse starts")
+    );
+    authentication.addEventListener("change", () => {
+      void run2({ action: "set-auth", requireAuth: authentication.checked });
+    });
+    controls.append(
+      authenticationLabel,
+      el(
+        "p",
+        { class: "field-hint" },
+        "Once unlocked, saved secrets remain available through sleep and screen lock until you quit. Exporting a recovery key always requires authentication."
+      )
+    );
     const actions = el("div", { class: "profile-vault-actions" });
     if (!unlocked) actions.append(button("Unlock", { action: "unlock" }));
     actions.append(
