@@ -64,6 +64,10 @@
     "label": "Thread switch hydration failure"
   },
   {
+    "id": "apple-development",
+    "label": "Apple Development test profile"
+  },
+  {
     "id": "chat-layout-styling",
     "label": "Chat layout styling"
   }

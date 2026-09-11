@@ -10600,6 +10600,218 @@ dialog.settings-overlay::backdrop {
   margin-bottom: 0;
 }
 
+/* src/renderer/styles/global/apple-development.css */
+.apple-development-host {
+  margin: 6px 12px 0;
+}
+.apple-development-host[hidden] {
+  display: none;
+}
+.apple-development-panel {
+  display: grid;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--bg-secondary);
+}
+.apple-development-heading,
+.apple-development-heading-actions,
+.apple-development-actions,
+.apple-development-target-meta,
+.apple-development-operation-line,
+.apple-development-operation-controls {
+  display: flex;
+  align-items: center;
+}
+.apple-development-heading {
+  gap: 7px;
+  min-height: 22px;
+}
+.apple-development-heading-actions {
+  gap: 2px;
+}
+.apple-development-title {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+.apple-development-status,
+.apple-development-target-picker,
+.apple-development-selection-status,
+.apple-development-operation-status,
+.apple-development-operation-detail {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.apple-development-status {
+  margin-left: auto;
+}
+.apple-development-discover [data-pending-label] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.apple-development-discover[aria-busy=true] .ui-icon {
+  animation: apple-development-spin 900ms linear infinite;
+}
+@keyframes apple-development-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.apple-development-message,
+.apple-development-error {
+  margin: 0;
+  font-size: 12px;
+}
+.apple-development-error {
+  color: var(--error);
+}
+.apple-development-target-picker > summary {
+  width: max-content;
+  cursor: pointer;
+  color: var(--text-secondary);
+}
+.apple-development-selection {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(100px, 1fr) auto minmax(150px, 1fr) auto;
+  gap: 6px;
+  padding-top: 6px;
+}
+.apple-development-selection select {
+  min-width: 0;
+}
+.apple-development-selection-status {
+  grid-column: 1 / -1;
+}
+.apple-development-target {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 8px;
+  border-radius: var(--radius);
+  background: var(--bg-primary);
+  font-size: 11px;
+}
+.apple-development-target-name {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+.apple-development-target-name span {
+  overflow: hidden;
+  color: var(--text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.apple-development-target-meta {
+  gap: 5px;
+}
+.apple-development-target-meta span {
+  padding: 1px 5px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.apple-development-actions,
+.apple-development-operation-controls {
+  gap: 4px;
+}
+.apple-development-actions .btn,
+.apple-development-operation .btn {
+  min-height: 24px;
+  padding: 3px 8px;
+  font-size: 11px;
+}
+.apple-development-operations {
+  display: grid;
+  gap: 4px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+.apple-development-operation {
+  display: grid;
+  gap: 3px;
+  padding: 6px 8px;
+  border-radius: var(--radius);
+  background: var(--bg-primary);
+  font-size: 12px;
+}
+.apple-development-operation-line {
+  gap: 7px;
+  min-width: 0;
+}
+.apple-development-operation-indicator {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+.apple-development-operation-action {
+  font-weight: 600;
+  text-transform: capitalize;
+}
+.apple-development-operation-controls {
+  margin-left: auto;
+}
+.apple-development-operation-detail {
+  padding-left: 14px;
+  line-height: var(--line-height-base);
+  overflow-wrap: anywhere;
+}
+.apple-development-operation-running .apple-development-operation-indicator,
+.apple-development-operation-queued .apple-development-operation-indicator {
+  background: var(--accent);
+  animation: apple-development-pulse 1.2s ease-in-out infinite;
+}
+.apple-development-operation-succeeded .apple-development-operation-indicator,
+.apple-development-operation-succeeded .apple-development-operation-status {
+  color: var(--success);
+}
+.apple-development-operation-succeeded .apple-development-operation-indicator {
+  background: var(--success);
+}
+.apple-development-operation-failed .apple-development-operation-indicator,
+.apple-development-operation-cancelled .apple-development-operation-indicator,
+.apple-development-operation-failed .apple-development-operation-status,
+.apple-development-operation-cancelled .apple-development-operation-status {
+  color: var(--error);
+}
+.apple-development-operation-failed .apple-development-operation-indicator,
+.apple-development-operation-cancelled .apple-development-operation-indicator {
+  background: var(--error);
+}
+@keyframes apple-development-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+.plugin-settings .apple-development-host {
+  margin: 0;
+}
+@media (max-width: 760px) {
+  .apple-development-selection {
+    grid-template-columns: 1fr 1fr;
+  }
+  .apple-development-target {
+    grid-template-columns: minmax(140px, 1fr) auto;
+  }
+  .apple-development-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+  }
+}
+
 /* src/renderer/styles/global/thread-proposal.css */
 .thread-proposal {
   margin-top: var(--spacing-sm);
@@ -11623,6 +11835,7 @@ dialog.settings-overlay::backdrop {
 }
 .vnc-connect-btn,
 .vnc-control-btn,
+.vnc-home-btn,
 .vnc-disconnect-btn {
   justify-content: center;
   width: 100%;
@@ -11852,6 +12065,17 @@ dialog.settings-overlay::backdrop {
   max-width: 100%;
   max-height: 100%;
   box-shadow: 0 0 0 1px var(--border);
+}
+.simulator-desktop-canvas {
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border-radius: var(--radius);
+  outline: none;
+}
+.vnc-screen.is-controlling .simulator-desktop-canvas {
+  cursor: crosshair;
+  touch-action: none;
 }
 .vnc-screen.is-controlling canvas {
   box-shadow: 0 0 0 1px var(--warning), 0 0 0 3px color-mix(in srgb, var(--warning) 18%, transparent);
