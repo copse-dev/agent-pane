@@ -27159,6 +27159,14 @@ This response is streamed through the real renderer event path.`
     },
     appleDevelopment: {
       state: (projectId) => resolved(structuredClone(appleDevelopmentStateFor(projectId))),
+      detectProject: (projectId) => {
+        const state = appleDevelopmentStateFor(projectId);
+        return resolved({
+          detected: state.candidates.length > 0,
+          enrolled: state.enrolled,
+          supportedHost: state.supportedHost
+        });
+      },
       setEnrolled: (projectId, _threadId, enrolled) => {
         const current = appleDevelopmentStateFor(projectId);
         const state = {
@@ -57462,6 +57470,11 @@ function openAutomationSettings(scheduleId) {
   };
   openSettingsDialog("customise");
 }
+function openAppleDevelopmentSettings() {
+  if (!overlayEl || overlayEl.open) return;
+  pendingPluginDetail = { pluginId: APPLE_DEVELOPMENT_PLUGIN_ID };
+  openSettingsDialog("customise");
+}
 function closeSettingsDialog() {
   if (!overlayEl || !overlayEl.open) return;
   overlayEl.close();
@@ -62088,10 +62101,33 @@ function mountProjectsPane(root, store2, api2) {
       );
       menuButton.addEventListener("click", () => {
         menuButton.disabled = true;
-        void api2.plugins.list().then((result) => {
+        void Promise.all([
+          api2.plugins.list(),
+          api2.appleDevelopment.detectProject(project2.id).catch(() => null)
+        ]).then(([result, appleDetection]) => {
           if (!menuButton.isConnected) return;
           const rect = menuButton.getBoundingClientRect();
           const entries2 = [];
+          if (appleDetection?.supportedHost === true && (appleDetection.detected || appleDetection.enrolled)) {
+            entries2.push({
+              label: "Apple Development\u2026",
+              onSelect: () => {
+                if (store2.getState().activeProjectId === project2.id) {
+                  openAppleDevelopmentSettings();
+                  return;
+                }
+                const unsubscribe = store2.on("workspace_changed", () => {
+                  if (store2.getState().activeProjectId === project2.id) {
+                    unsubscribe();
+                    openAppleDevelopmentSettings();
+                  } else if (!isProjectSwitchInFlight(store2, project2.id)) {
+                    unsubscribe();
+                  }
+                });
+                switchProject(store2, api2, project2.id);
+              }
+            });
+          }
           if (result.plugins.some(hasAutomationDialog)) {
             entries2.push(
               {
