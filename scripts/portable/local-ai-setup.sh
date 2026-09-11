@@ -35,14 +35,19 @@ app="$app_parent/LM Studio.app"
 if [ ! -d "$app" ]; then
   mount="$(mktemp -d /private/tmp/copse-lmstudio.XXXXXX)"
   /usr/bin/hdiutil attach "$archive" -nobrowse -readonly -mountpoint "$mount" >/dev/null
-  /usr/bin/codesign --verify --deep --strict -R 'anchor apple generic and certificate leaf[subject.OU] = "D65G88RHWN"' "$mount/LM Studio.app"
+  /usr/bin/codesign --verify --deep --strict -R='anchor apple generic and certificate leaf[subject.OU] = "D65G88RHWN"' "$mount/LM Studio.app"
   mkdir -p "$app_parent"
   /usr/bin/ditto "$mount/LM Studio.app" "$app"
   /usr/bin/hdiutil detach "$mount" >/dev/null
   rmdir "$mount"
   mount=''
 fi
-/usr/bin/codesign --verify --deep --strict -R 'anchor apple generic and certificate leaf[subject.OU] = "D65G88RHWN"' "$app"
+/usr/bin/codesign --verify --deep --strict -R='anchor apple generic and certificate leaf[subject.OU] = "D65G88RHWN"' "$app"
+installed_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")"
+if [ "$installed_version" != "${LM_STUDIO_VERSION/-/+}" ]; then
+  echo "Installed LM Studio is $installed_version; expected ${LM_STUDIO_VERSION/-/+}. Quit it, remove $app_parent, and rerun this installer to restore the pinned app." >&2
+  exit 1
+fi
 while IFS=$'\t' read -r repository revision filename checksum bytes minimum_memory tier; do
   folder="$portable_root/models/$repository"
   mkdir -p "$folder"
