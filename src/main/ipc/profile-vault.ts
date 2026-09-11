@@ -7,7 +7,7 @@ import { assertMainFrameSender, parseIpcArgs } from './ipc-guards.ts'
 
 const actionSchema = z.union([
   z.strictObject({ action: z.literal('enable'), backup: z.boolean() }),
-  z.strictObject({ action: z.enum(['unlock', 'lock', 'backup', 'recover']) }),
+  z.strictObject({ action: z.enum(['unlock', 'backup', 'recover']) }),
 ])
 export function registerProfileVaultIpc(win: BrowserWindow, vault: AppProfileVault): void {
   ipcMain.handle('profile-vault:status', (event) => {
@@ -24,9 +24,6 @@ export function registerProfileVaultIpc(win: BrowserWindow, vault: AppProfileVau
           break
         case 'unlock':
           await vault.unlock()
-          break
-        case 'lock':
-          vault.lock()
           break
         case 'backup':
           await vault.backup()
