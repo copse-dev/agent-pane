@@ -256,4 +256,75 @@ describe('Apple Development target selection', () => {
     active = false
     await new Promise((resolve) => setTimeout(resolve, 1_600))
   })
+
+  it('uses friendly saved-target labels and shows history for that target', async () => {
+    const base = createFakeApi()
+    const savedTarget = {
+      candidateId: 'ios/DemoApp.xcworkspace',
+      schemeId: 'DemoApp',
+      configuration: 'Debug',
+      destinationId: 'platform=iOS Simulator,id=IPHONE-17',
+      revision: 5,
+    }
+    const operation = {
+      id: 'ios-test',
+      action: 'test' as const,
+      status: 'failed' as const,
+      target: savedTarget,
+      createdAt: 1_000,
+      updatedAt: 2_000,
+      outcome: {
+        operationId: 'ios-test',
+        status: 'failed' as const,
+        reason: 'One test failed.',
+        exitCode: 65,
+        diagnostics: [],
+        testSummary: null,
+        logArtifactId: 'apple-log:ios-test',
+        outputTruncated: false,
+      },
+    }
+    const state: AppleProjectState = {
+      ...stateWithRunningBuild(),
+      candidates: [],
+      destinations: [],
+      selection: savedTarget,
+      setupMessage: 'Discover the installed Xcode and project targets to continue.',
+      operations: [
+        {
+          ...operation,
+          id: 'mac-build',
+          action: 'build',
+          status: 'succeeded',
+          target: {
+            ...savedTarget,
+            destinationId: 'platform=macOS',
+            revision: 4,
+          },
+          outcome: { ...operation.outcome, operationId: 'mac-build', status: 'succeeded' },
+        },
+        operation,
+      ],
+    }
+    const api = {
+      ...base,
+      appleDevelopment: {
+        ...base.appleDevelopment,
+        state: async (): Promise<AppleProjectState> => state,
+      },
+    } satisfies ApiClient
+    const store = createStore({ activeProjectId: 'project', activeThreadId: 'thread' })
+    const panel = createAppleDevelopmentPanel(store, api, { allowEnrollment: false })
+    document.body.append(panel)
+    await tick()
+
+    const target = panel.querySelector<HTMLElement>('.apple-development-target')
+    assert.ok(target)
+    assert.match(target.textContent, /DemoApp/)
+    assert.match(target.textContent, /iOS Simulator/)
+    assert.doesNotMatch(target.textContent, /IPHONE-17/)
+    assert.doesNotMatch(panel.textContent, /Discover the installed Xcode/)
+    assert.ok(panel.querySelector('[data-operation-id="ios-test"]'))
+    assert.equal(panel.querySelector('[data-operation-id="mac-build"]'), null)
+  })
 })

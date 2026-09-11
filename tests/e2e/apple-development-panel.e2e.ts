@@ -25,13 +25,14 @@ describeAppleDevelopment('Apple Development thread panel', function () {
     await panel.waitForDisplayed({ timeout: 30_000 })
     await expect(panel.$('.apple-development-title')).toHaveText('Apple development')
     await expect(panel.$('.apple-development-status')).toHaveText('Target saved')
+    await expect(panel.$('.apple-development-message')).not.toExist()
     await expect(panel.$('.apple-development-discover')).toHaveAttribute(
       'aria-label',
       'Refresh targets',
     )
     await expect(panel.$('.apple-development-discover svg')).toExist()
     await expect(panel.$('[aria-label="Selected Apple target"]')).toHaveText(
-      expect.stringContaining('ios/DemoApp.xcworkspace'),
+      expect.stringMatching(/DemoApp[\s\S]*Debug[\s\S]*iOS Simulator/),
     )
     assert.doesNotMatch(await panel.getText(), /Xcode targets are revalidated/)
 
@@ -73,6 +74,10 @@ describeAppleDevelopment('Apple Development thread panel', function () {
     await expect(settingsFold).toHaveAttribute('open')
     await expect(pluginRow.$('.apple-development-panel')).toBeDisplayed()
     await expect(pluginRow.$('.apple-development-panel').$('button=Remove project')).toBeDisplayed()
+    const embeddedTitleSize = await pluginRow
+      .$('.apple-development-title')
+      .getCSSProperty('font-size')
+    assert.ok(Number.parseFloat(String(embeddedTitleSize.value)) < 20)
     await saveAppScreenshot('apple-development-enrollment-settings.png')
   })
 })

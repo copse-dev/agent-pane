@@ -112,7 +112,7 @@ function mountVncSession(
     hidden: true,
   })
   machineSelect.append(el('option', { value: LOCAL_MACHINE }, 'This machine'))
-  const devicesHeading = el('div', { class: 'vnc-devices-heading' }, 'Nearby and saved')
+  const devicesHeading = el('div', { class: 'vnc-devices-heading' }, 'Devices')
   const deviceList = el('div', {
     class: 'vnc-device-list',
     role: 'list',
@@ -551,7 +551,7 @@ function mountVncSession(
     disconnectButton.hidden = !active
     controlButton.hidden = !connected
     homeButton.hidden = !connected || simulatorSessionId === null
-    note.hidden = active
+    note.hidden = active || isSimulatorMachine(machineSelect.value)
     disconnectButton.textContent = connected ? 'Disconnect' : 'Cancel'
     portInput.disabled = active
     addressInput.disabled = active
@@ -868,7 +868,7 @@ function mountVncSession(
   }
 
   function updateNearbyStatus(): void {
-    nearbyFeedback.hidden = allNearbyServers.length > 0
+    nearbyFeedback.hidden = allNearbyServers.length > 0 || simulatorDevices.length > 0
     nearbyStatus.dataset['kind'] = 'idle'
     nearbyStatus.textContent =
       'No nearby desktops found. Add a device if you know its hostname or IP address.'
@@ -941,6 +941,12 @@ function mountVncSession(
     if (simulator) {
       discoveryGeneration++
       renderDiscoveredPorts([])
+      empty.textContent = `Connect to view ${selectedSimulator()?.name ?? 'this Simulator'}.`
+      note.hidden = true
+    } else if (!channel) {
+      empty.textContent =
+        'Choose this machine, a nearby device, another address, or a saved SSH machine.'
+      note.hidden = false
     }
     const nearby = selectedNearbyServer()
     if (nearby) {
@@ -1090,7 +1096,7 @@ function mountVncSession(
     const generation = ++nearbyGeneration
     const previous = machineSelect.value
     const previousNearby = selectedNearbyServer()
-    nearbyFeedback.hidden = false
+    nearbyFeedback.hidden = simulatorDevices.length > 0
     nearbyButton.hidden = true
     nearbyButton.disabled = true
     nearbyStatus.dataset['kind'] = 'working'
