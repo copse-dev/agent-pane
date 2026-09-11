@@ -88,6 +88,14 @@ describe('Simulator desktop preview', function () {
   })
 
   it('shows and controls a booted Simulator in the Desktop pane', async () => {
+    await $('[data-panel-control="vnc"]').click()
+    const simulator = $(`.vnc-device-header[data-machine="simulator:${DEVICE_UDID}"]`)
+    await simulator.waitForDisplayed({ timeout: 20_000 })
+    await simulator.click()
+    await expect($(`.vnc-device.is-selected .vnc-device-meta`)).toHaveText('iOS 26.5 · Booted')
+    await expect($('.vnc-device.is-selected .vnc-device-details')).toHaveText('Connect')
+    await saveAppScreenshot('simulator-desktop-choice.png')
+
     await browser.execute(async (udid) => {
       const e2e = (
         window as unknown as {
@@ -97,7 +105,6 @@ describe('Simulator desktop preview', function () {
       if (!e2e) throw new Error('__copseE2e unavailable')
       await e2e.showSimulatorDesktop(udid)
     }, DEVICE_UDID)
-    const simulator = $(`.vnc-device-header[data-machine="simulator:${DEVICE_UDID}"]`)
     await simulator.waitForDisplayed({ timeout: 20_000 })
 
     const canvas = $('.simulator-desktop-canvas')

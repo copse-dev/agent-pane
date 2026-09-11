@@ -171,11 +171,6 @@ function mountVncSession(
       ),
     ),
   )
-  const simulatorHint = el(
-    'p',
-    { class: 'vnc-simulator-hint', hidden: true },
-    'Streams the booted Simulator framebuffer directly. Simulator.app can stay closed.',
-  )
   const connectButton = el(
     'button',
     { type: 'button', class: 'ui-btn ui-btn-primary vnc-connect-btn' },
@@ -359,7 +354,6 @@ function mountVncSession(
     'div',
     { class: 'vnc-device-details' },
     addressField,
-    simulatorHint,
     discoveryStatus,
     discoverButton,
     discoveredPorts,
@@ -473,7 +467,7 @@ function mountVncSession(
         (candidate) => `${SIMULATOR_MACHINE_PREFIX}${candidate.udid}` === value,
       )
       return device
-        ? { name: device.name, meta: `${device.runtime} Simulator · Booted` }
+        ? { name: device.name, meta: `${device.runtime} · Booted` }
         : { name: 'iOS Simulator', meta: 'Booted on this Mac' }
     }
     return { name: 'Desktop', meta: 'Saved device' }
@@ -481,7 +475,6 @@ function mountVncSession(
 
   function renderSelectedLogin(): void {
     const simulator = isSimulatorMachine(machineSelect.value)
-    simulatorHint.hidden = !simulator
     if (simulator) {
       savedLoginDetails.hidden = true
       setupCredentials.hidden = true
