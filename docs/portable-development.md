@@ -13,7 +13,7 @@ directory inside the checkout:
     apps/darwin-arm64/        # Node, Corepack, Claude, Codex, ripgrep, ACP adapters
     projects/                # other independent clones, or another Copse checkout
     models/                  # reserved; setup does not download model weights
-    cache/                   # pnpm, npm, Corepack, Electron and gortex
+    cache/                   # pnpm, npm, Corepack, Electron, native headers, gortex
     data/                    # fresh Copse and agent profiles
     tmp/
     portable-dev
@@ -80,7 +80,7 @@ repositories still work. The unit runner clears inherited Copse/Claude profile
 overrides before starting test processes, preserving their fixture isolation.
 
 Launchers derive the root from their own location. After moving the checkout or
-changing the mount path, run `prepare` online: it invalidates the dependency
+changing the mount path, run `prepare` (or `prepare --offline`): it invalidates the dependency
 fingerprint so pnpm rebuilds absolute metadata and generated commands. `run`
 refuses an unprepared/moved checkout and starts the existing build; it does not
 silently remove dependencies or attempt an offline rebuild. After source or
@@ -98,13 +98,56 @@ selected tools; the launcher reports its absence. PR #2656 makes the shared
 Electron/gortex cache symlinks relative; include it before testing relocation.
 These changes are independent of the encryption plan in #2652.
 
+## Offline setup and verification
+
+Populate the drive once while connected, then verify the exact committed recipe:
+
+```bash
+make portable-setup
+make portable-verify-offline
+```
+
+Verification requires a clean checkout. It creates an independent clone of the
+current commit under `.portable/validation/offline.XXXXXX/checkout`, copies only
+`cache/` using APFS copy-on-write, and runs setup without any preinstalled tools,
+`node_modules`, build outputs or copied account profiles. macOS sandbox-exec
+blocks network access and common host development caches, including
+`~/.electron-gyp`, `~/.npm`, `~/.copse/cache` and `~/Library/Caches`. The build log
+and result stay in that validation directory. The disposable directory can be
+removed after review; it contains no copied personal profile.
+
+After a successful verification, on either prepared Apple Silicon Mac:
+
+```bash
+make portable-setup-offline             # repair/reinstall tools and build
+.portable/portable-dev prepare --offline # rebuild after edits or relocation
+.portable/portable-dev exec --offline pnpm test -- portable-development
+```
+
+Offline mode disables npm/pnpm fetching and Corepack networking, checks cached
+Node/Claude downloads against their pinned SHA-256 values, and denies networking
+for the entire process tree, including lifecycle scripts. Missing cache inputs
+fail instead of falling back to an online download. Reinstallation replaces
+installed dependency trees: stop portable processes first, and keep the caches.
+A failed repair may need an online setup to restore missing inputs.
+
+Electron headers are installed into `cache/electron-headers/<version>` by the
+locked node-gyp installer, which validates downloads against Electron's SHA-256
+manifest. Native rebuild receives that directory explicitly rather than using
+`~/.electron-gyp`. Other native modules use `cache/node-gyp`. The real user home
+remains unchanged.
+
+A passing verification applies to the tested commit, pins, cached assets and
+platform. Repeat after dependency/tool updates. Newly added dependencies or
+project-specific downloads must be cached while connected. `pnpm fetch` alone
+cannot populate arbitrary lifecycle-script downloads.
+
 ## Boundaries
 
-This is a reproducible tool installation and development build, not a complete
-offline workstation image. Apple's SDK, OS permissions, Keychain and system
-utilities remain host dependencies. Electron rebuild currently also writes
-headers under the host `~/.electron-gyp`; its internal path overrides node-gyp's
-configured cache. Further work is needed to relocate this upstream cache.
+Apple's SDK, OS permissions, Keychain and system utilities remain host dependencies.
+Install/select Command Line Tools or Xcode on each Mac before travelling. Offline
+setup reconstructs Copse and its pinned tools; it cannot provision a bare Mac's
+Apple SDK or provide cloud inference without a connection.
 
 Claude's launcher disables updates so its pinned version stays selected. Codex's
 wrapper selects `data/codex` only for the child process. Fresh Codex profiles use
@@ -115,10 +158,10 @@ not implement portable secret encryption. Copse ACP sandbox access to relocated
 agent state still needs end-to-end validation.
 
 Cloud inference requires a connection. Local model runtimes/weights, desktop
-Claude/Codex apps, project-specific tools, guaranteed offline reinstalls and a
-second-Mac acceptance run are not included in this preview. pnpm fetch alone
-does not prefetch all lifecycle-script downloads. `doctor` reports prerequisites
-and selected executable paths; it does not certify those broader checks.
+Claude/Codex apps, project-specific tools and a second-Mac acceptance run are not
+included in this preview. First-time account sign-in requires a connection.
+`doctor` reports prerequisites and executable paths; `verify-offline` proves
+installation and compilation from the available caches on the current Mac.
 
 To update tools, review `versions.sh` and `tools/package.json`, regenerate
 `tools/package-lock.json` with the pinned Node's npm, then rerun setup and the

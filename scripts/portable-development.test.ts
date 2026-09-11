@@ -19,7 +19,11 @@ import { test } from 'node:test'
 function fixture(): {
   parent: string
   root: string
-  run: (directory: string, args: string[]) => SpawnSyncReturns<string>
+  run: (
+    directory: string,
+    args: string[],
+    environment?: NodeJS.ProcessEnv,
+  ) => SpawnSyncReturns<string>
 } {
   const parent = realpathSync(mkdtempSync(join(tmpdir(), 'copse portable ')))
   const root = join(parent, 'environment with spaces')
@@ -32,15 +36,19 @@ function fixture(): {
     '#!/bin/bash\nif [ "$1" = -s ]; then echo Darwin; else echo arm64; fi\n',
   )
   chmodSync(join(bin, 'uname'), 0o755)
-  for (const file of ['environment.sh', 'versions.sh']) {
+  for (const file of ['environment.sh', 'versions.sh', 'offline.sh']) {
     copyFileSync(resolve('scripts/portable', file), join(scripts, file))
   }
   copyFileSync(resolve('scripts/portable/run.sh'), join(root, 'portable-dev'))
   writeFileSync(join(root, '.copse-checkout'), 'projects/agent-panel\n')
-  const run = (directory: string, args: string[]): SpawnSyncReturns<string> =>
+  const run = (
+    directory: string,
+    args: string[],
+    environment: NodeJS.ProcessEnv = {},
+  ): SpawnSyncReturns<string> =>
     spawnSync('/bin/bash', [join(directory, 'portable-dev'), ...args], {
       encoding: 'utf8',
-      env: { ...process.env, PATH: `${bin}:/usr/bin:/bin` },
+      env: { ...process.env, ...environment, PATH: `${bin}:/usr/bin:/bin` },
     })
   return { parent, root, run }
 }
@@ -63,6 +71,23 @@ test('portable launcher preserves arguments and derives paths after relocating a
       result.stdout,
       `${moved}/data/copse\n${moved}/cache/pnpm\nargument with spaces; $(false)\n`,
     )
+  } finally {
+    rmSync(f.parent, { recursive: true, force: true })
+  }
+})
+
+test('offline settings reach package managers without changing normal execution', () => {
+  const f = fixture()
+  try {
+    const command =
+      'printf "%s\\n" "${npm_config_offline:-unset}" "${COREPACK_ENABLE_NETWORK:-unset}" "$COPSE_ELECTRON_HEADERS_CACHE"'
+    const normal = f.run(f.root, ['exec', '/bin/bash', '-c', command])
+    assert.equal(normal.status, 0, normal.stderr)
+    const offline = f.run(f.root, ['exec', '/bin/bash', '-c', command], {
+      COPSE_PORTABLE_OFFLINE: '1',
+    })
+    assert.equal(offline.status, 0, offline.stderr)
+    assert.equal(offline.stdout, `true\n0\n${f.root}/cache/electron-headers\n`)
   } finally {
     rmSync(f.parent, { recursive: true, force: true })
   }

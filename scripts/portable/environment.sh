@@ -12,6 +12,7 @@ export COREPACK_ENABLE_AUTO_PIN=0
 export npm_config_cache="$portable_root/cache/npm"
 export npm_config_store_dir="$portable_root/cache/pnpm"
 export npm_config_devdir="$portable_root/cache/node-gyp"
+export COPSE_ELECTRON_HEADERS_CACHE="$portable_root/cache/electron-headers"
 export npm_config_userconfig="$portable_root/data/npmrc"
 export XDG_CACHE_HOME="$portable_root/cache/xdg"
 export ELECTRON_CACHE="$portable_root/cache/electron-downloads"
@@ -27,3 +28,7 @@ export DISABLE_AUTOUPDATER=1
 # Codex state is selected by its wrapper, never by changing the caller's CODEX_HOME.
 export npm_config_python=/usr/bin/python3
 export PYTHON=/usr/bin/python3
+if [ "${COPSE_PORTABLE_OFFLINE:-0}" = 1 ]; then
+  export npm_config_offline=true
+  export COREPACK_ENABLE_NETWORK=0
+fi
