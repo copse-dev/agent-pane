@@ -84,6 +84,8 @@ help:
 	@echo "App dev loop:"
 	@echo "  make portable-setup    Install tools and build in the checkout's .portable/"
 	@echo "                         Install the pinned Apple Silicon development environment"
+	@echo "  make portable-setup-offline  Reinstall and build from drive caches, with networking blocked"
+	@echo "  make portable-verify-offline Test a clean install/build with networking and host caches blocked"
 	@echo "  make portable-shell    Develop using the installed portable tools"
 	@echo "  make portable-run      Launch the prepared portable build"
 	@echo "  make deps              Sync dependencies to their content fingerprint"
@@ -219,9 +221,15 @@ runners-ps:
 
 # --- node preflight ---------------------------------------------------------
 PORTABLE_ROOT ?= .portable
-.PHONY: portable-setup portable-shell portable-run
+.PHONY: portable-setup portable-setup-offline portable-verify-offline portable-shell portable-run
 portable-setup:
 	@bash scripts/portable/setup.sh "$(PORTABLE_ROOT)"
+
+portable-setup-offline:
+	@bash scripts/portable/setup.sh --offline "$(PORTABLE_ROOT)"
+
+portable-verify-offline:
+	@bash "$(PORTABLE_ROOT)/portable-dev" verify-offline
 
 portable-shell:
 	@bash "$(PORTABLE_ROOT)/portable-dev" shell

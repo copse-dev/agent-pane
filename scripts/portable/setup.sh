@@ -3,8 +3,12 @@
 set -euo pipefail
 portable_source="$(cd "$(dirname "$0")" && pwd -P)"
 portable_repo="$(cd "$portable_source/../.." && pwd -P)"
+if [ "${1:-}" = --offline ]; then
+  shift
+  exec bash "$portable_source/offline.sh" bash "$portable_source/setup.sh" "$@"
+fi
 if [ "$#" -gt 1 ]; then
-  echo 'Usage: bash scripts/portable/setup.sh [ROOT] (default: checkout/.portable)' >&2
+  echo 'Usage: bash scripts/portable/setup.sh [--offline] [ROOT] (default: checkout/.portable)' >&2
   exit 1
 fi
 requested_root="${1:-$portable_repo/.portable}"
@@ -53,6 +57,10 @@ download() {
   if [ -f "$destination" ]; then
     actual="$(/usr/bin/shasum -a 256 "$destination" | /usr/bin/cut -d ' ' -f 1)"
     if [ "$actual" = "$checksum" ]; then return; fi
+  fi
+  if [ "${COPSE_PORTABLE_OFFLINE:-0}" = 1 ]; then
+    echo "Offline setup needs a valid cached download: $destination. Run portable-setup online first." >&2
+    return 1
   fi
   /usr/bin/curl --fail --location --retry 3 --proto '=https' --tlsv1.2 "$url" -o "$destination.part"
   actual="$(/usr/bin/shasum -a 256 "$destination.part" | /usr/bin/cut -d ' ' -f 1)"

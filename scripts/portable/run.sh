@@ -15,6 +15,11 @@ else
     *) echo 'Checkout resolves outside this environment.' >&2; exit 1 ;;
   esac
 fi
+if [ "${2:-}" = --offline ]; then
+  action="$1"
+  shift 2
+  exec bash "$portable_repo/scripts/portable/offline.sh" bash "$portable_root/portable-dev" "$action" "$@"
+fi
 if [ "$(uname -s)" != Darwin ] || [ "$(uname -m)" != arm64 ]; then
   echo 'This environment requires native Apple Silicon macOS.' >&2
   exit 1
@@ -23,6 +28,9 @@ source "$portable_repo/scripts/portable/environment.sh"
 source "$portable_repo/scripts/portable/versions.sh"
 cd "$portable_repo"
 case "${1:-doctor}" in
+  verify-offline)
+    exec bash "$portable_repo/scripts/portable/verify-offline.sh" "$portable_root"
+    ;;
   doctor)
     test -d .git || { echo 'An independent clone is required, not a linked worktree.' >&2; exit 1; }
     test "$(node -p 'process.versions.node')" = "$NODE_VERSION"
@@ -37,11 +45,11 @@ case "${1:-doctor}" in
     echo "pnpm store: $(pnpm store path)"
     echo "Copse profile: $COPSE_DIR"
     echo 'Host dependencies: macOS, Xcode/Command Line Tools (Git, make, Python, SDK), Keychain.'
-    echo 'Electron rebuild still uses the host ~/.electron-gyp cache. Offline readiness is not certified.'
+    echo "Electron headers: $COPSE_ELECTRON_HEADERS_CACHE"
+    echo 'Offline repair: make portable-setup-offline (requires previously populated caches).'
     ;;
   prepare)
-    # Explicitly online/rebuilding. The normal launcher never clears a working
-    # dependency tree in response to an absent download while travelling offline.
+    # Rebuilding is explicit; --offline also blocks lifecycle-script networking.
     rm -f "$portable_root/.copse-prepared-path"
     if [ "$(cat "$portable_root/.copse-installed-path" 2>/dev/null || true)" != "$(pwd -P)" ]; then
       # pnpm stores some absolute paths in its metadata and generated commands.
@@ -54,7 +62,7 @@ case "${1:-doctor}" in
     ;;
   run)
     if [ "$(cat "$portable_root/.copse-prepared-path" 2>/dev/null || true)" != "$(pwd -P)" ]; then
-      echo 'Checkout moved or setup is incomplete. Run ./portable-dev prepare while online first.' >&2
+      echo 'Checkout moved or setup is incomplete. Run portable-dev prepare (or prepare --offline with populated caches).' >&2
       exit 1
     fi
     if ! /usr/bin/grep -q COPSE_PRESERVE_PATH src/main/app-init.ts && [ ! -f src/main/launch-path.ts ]; then
@@ -73,5 +81,5 @@ case "${1:-doctor}" in
     test "$#" -gt 0
     exec "$@"
     ;;
-  *) echo 'Usage: portable-dev {doctor|prepare|run|shell|exec COMMAND...}' >&2; exit 1 ;;
+  *) echo 'Usage: portable-dev {doctor|prepare|verify-offline|run|shell|exec COMMAND...}; add --offline after the action to block networking.' >&2; exit 1 ;;
 esac
