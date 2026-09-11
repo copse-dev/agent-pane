@@ -26,6 +26,7 @@ const manifestSchema = z.strictObject({
   keyId: ID,
   deviceKeyId: ID,
   deviceEnvelope: BASE64.min(1),
+  requireAuth: z.boolean().optional(),
   recovery: z.enum(['not-backed-up', 'verified']),
   challenge: BASE64.min(1),
   mac: BASE64,
@@ -135,6 +136,7 @@ function manifestPayload(manifest: VaultManifest): string {
     manifest.deviceEnvelope,
     manifest.recovery,
     manifest.challenge,
+    ...(manifest.requireAuth === undefined ? [] : [manifest.requireAuth]),
   ])
 }
 function manifestMac(key: Buffer, manifest: VaultManifest): Buffer {
@@ -155,8 +157,8 @@ function manifestMac(key: Buffer, manifest: VaultManifest): Buffer {
   }
 }
 export function authenticateManifest(key: Buffer, manifest: VaultManifest): VaultManifest {
-  manifestSchema.parse(manifest)
-  return { ...manifest, mac: manifestMac(key, manifest).toString('base64') }
+  const parsed = manifestSchema.parse(manifest)
+  return { ...parsed, mac: manifestMac(key, parsed).toString('base64') }
 }
 export function verifyManifest(key: Buffer, manifest: VaultManifest): void {
   if (!manifestSchema.safeParse(manifest).success) throw new VaultError('corrupt')

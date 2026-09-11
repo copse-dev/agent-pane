@@ -6,6 +6,8 @@
 module.exports = async function afterPack(context) {
   await checkLicenses(context)
   if (context.electronPlatformName !== 'darwin') return
+  const { hardenVaultCaller } = await import('./lib/vault-fuses.mts')
+  await hardenVaultCaller(require('node:path').join(context.appOutDir, 'Copse.app'))
 
   // `Arch` originates in builder-util, but that is only a transitive dependency:
   // pnpm's isolated linker gives top-level symlinks to direct dependencies alone,
@@ -80,6 +82,16 @@ module.exports = async function afterPack(context) {
     { recursive: true, force: true },
   )
   pruneForeignMacosPayloads(join(resources, 'node_modules'), keyringPackageArch)
+
+  // The worker interpreter has a separate identity and no vault entitlement.
+  const workerRoot = join(resources, 'dist', 'resources', 'node')
+  const worker = join(workerRoot, keyringPackageArch, 'node')
+  const workerArchs = execFileSync('lipo', ['-archs', worker], { encoding: 'utf8' })
+    .trim()
+    .split(/\s+/)
+  if (workerArchs.length !== 1 || workerArchs[0] !== targetArch)
+    throw new Error('Wrong Node worker architecture')
+  rmSync(join(workerRoot, unusedKeyringPackageArch), { recursive: true, force: true })
 
   if (archs.length === 1) return
 
