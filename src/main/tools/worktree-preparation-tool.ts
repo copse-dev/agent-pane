@@ -20,10 +20,10 @@ export const preflightWorktreeTool = defineTool({
         'Report unavailable-offline when matching prepared inputs are not already present.',
       ),
   }),
-  execute({ offline }) {
+  async execute({ offline }) {
     const root = getAgentExecutionRoot()
     if (!root) return 'No workspace open.'
-    return formatWorktreePreparationReport(inspectWorktreePreparation(root, { offline }))
+    return formatWorktreePreparationReport(await inspectWorktreePreparation(root, { offline }))
   },
 })
 

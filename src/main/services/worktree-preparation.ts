@@ -1,5 +1,4 @@
-import { spawn, execFileSync } from 'node:child_process'
-import { accessSync, constants, existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { accessSync, constants, existsSync, readFileSync } from 'node:fs'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { z } from 'zod'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
@@ -8,17 +7,20 @@ import {
   DEPENDENCY_SENTINELS,
   DEV_STATE,
   dependencyFingerprint,
-  writeFingerprint,
   type DependencyContextFingerprint,
 } from '../../../scripts/lib/dev-sync.mts'
 import {
   GORTEX_VERSION,
   NATIVE_PREPARATION_SCRIPT,
 } from '../../../scripts/lib/native-artifacts.mts'
-import { copseCacheDir, copseManagedPreparationCacheDirs } from './storage/copse-paths.ts'
+import { copseCacheDir } from './storage/copse-paths.ts'
 import { emitShellOutput } from './exec/shell-output-context.ts'
 import { envForRendererChildProcess } from './exec/child-process-env.ts'
-import { installSocketFirewall, isSocketFirewallAvailable } from './security/socket-firewall.ts'
+import { sfwInstallArgs } from './security/socket-firewall.ts'
+import {
+  requirePreparationSandbox,
+  runWorktreePreparationProcess,
+} from '../project-sandbox/worktree-preparation.ts'
 
 export type WorktreePreparationState =
   | 'ready'
@@ -62,7 +64,7 @@ type ProcessProbe = (
   command: string,
   args: readonly string[],
   env: NodeJS.ProcessEnv,
-) => string | null
+) => string | null | Promise<string | null>
 
 const packageJsonSchema = z.object({
   name: z.string(),
@@ -77,20 +79,19 @@ const remoteHostSchema = z.object({
 })
 const FINGERPRINT_RE = /^[a-f0-9]{64}$/
 
-function defaultProbe(
-  command: string,
-  args: readonly string[],
-  env: NodeJS.ProcessEnv,
-): string | null {
-  try {
-    return execFileSync(command, [...args], {
-      encoding: 'utf8',
-      env,
-      stdio: ['ignore', 'pipe', 'ignore'],
-      timeout: 5_000,
-    }).trim()
-  } catch {
-    return null
+function sandboxProbe(root: string, signal?: AbortSignal): ProcessProbe {
+  return async (command, args, env) => {
+    try {
+      return await runWorktreePreparationProcess(command, args, {
+        root,
+        env,
+        mode: 'preflight',
+        offline: true,
+        ...(signal ? { signal } : {}),
+      })
+    } catch {
+      return null
+    }
   }
 }
 
@@ -130,13 +131,13 @@ function pinnedPnpmVersion(packageManager: string): string {
   return match[1]
 }
 
-function resolveDependencyContext(
+async function resolveDependencyContext(
   env: NodeJS.ProcessEnv,
   probe: ProcessProbe,
   supplied: DependencyContextFingerprint | undefined,
-): DependencyContextFingerprint | null {
+): Promise<DependencyContextFingerprint | null> {
   if (supplied) return supplied
-  const output = probe(
+  const output = await probe(
     'node',
     ['-p', 'process.versions.node + "\\n" + process.versions.modules'],
     env,
@@ -170,13 +171,15 @@ function existingRelativeTarget(root: string, relativeTarget: string | null): st
   return existsSync(target) ? target : null
 }
 
-function nativeArtifactComponents(
+async function nativeArtifactComponents(
   root: string,
   probe: ProcessProbe,
   env: NodeJS.ProcessEnv,
-): Pick<
-  WorktreePreparationReport['components'],
-  'dependencies' | 'electron' | 'chromedriver' | 'gortex'
+): Promise<
+  Pick<
+    WorktreePreparationReport['components'],
+    'dependencies' | 'electron' | 'chromedriver' | 'gortex'
+  >
 > {
   const missingDependencies = DEPENDENCY_SENTINELS.filter((path) => !existsSync(join(root, path)))
   const dependencies = {
@@ -214,11 +217,26 @@ function nativeArtifactComponents(
     process.platform === 'win32' ? 'chromedriver.exe' : 'chromedriver',
   )
   const driverOutput =
-    driverVersion && executableReady(driverBinary) ? probe(driverBinary, ['--version'], env) : null
+    driverVersion && executableReady(driverBinary)
+      ? await probe(driverBinary, ['--version'], env)
+      : null
+  // The package is versioned with Electron (44.x), but the executable reports
+  // Chromium (152.x). Compare its major to the actual Electron runtime, not
+  // to the npm package's version or an arbitrary matching substring.
+  const chromiumVersion =
+    electronReady && electronTarget
+      ? await probe(electronTarget, ['-p', 'process.versions.chrome'], {
+          ...env,
+          ELECTRON_RUN_AS_NODE: '1',
+        })
+      : null
+  const chromiumMajor = chromiumVersion?.match(/^(\d+)\./)?.[1]
   const driverReady =
     driverVersion !== null &&
-    driverOutput !== null &&
-    driverOutput.includes(driverVersion.split('.')[0] ?? driverVersion)
+    driverVersion === electronVersion &&
+    chromiumMajor !== undefined &&
+    driverOutput?.match(/^ChromeDriver (\d+)\./)?.[1] === chromiumMajor
+
   const chromedriver = {
     ready: driverReady,
     detail: driverReady
@@ -232,7 +250,9 @@ function nativeArtifactComponents(
     'gortex',
     process.platform === 'win32' ? 'gortex.exe' : 'gortex',
   )
-  const gortexOutput = executableReady(gortexBinary) ? probe(gortexBinary, ['version'], env) : null
+  const gortexOutput = executableReady(gortexBinary)
+    ? await probe(gortexBinary, ['version'], env)
+    : null
   const gortexReady =
     gortexOutput !== null && gortexOutput.includes(GORTEX_VERSION.replace(/^v/, ''))
   const gortex = {
@@ -304,19 +324,26 @@ export function preparationEnvironment(env: NodeJS.ProcessEnv = process.env): No
   return {
     ...preparationCacheEnvironment(envForRendererChildProcess(env)),
     CI: 'true',
+    SFW_SKIP_UPDATE_CHECK: '1',
+    // Native build tooling hardcodes ~/.electron-gyp and similar directories.
+    // Its home is a managed build cache, never the user's profile.
+    HOME: join(copseCacheDir(env), 'native-build'),
+    XDG_CACHE_HOME: join(copseCacheDir(env), 'native-build', '.cache'),
     npm_config_ignore_scripts: 'true',
+    npm_config_cache: join(copseCacheDir(env), 'socket-firewall', 'npm-cache'),
   }
 }
 
-export function inspectWorktreePreparation(
+export async function inspectWorktreePreparation(
   root: string,
   options: InspectOptions = {},
-): WorktreePreparationReport {
+): Promise<WorktreePreparationReport> {
+  if (!options.probe) requirePreparationSandbox()
   const env = preparationEnvironment(options.env)
-  const probe = options.probe ?? defaultProbe
+  const probe = options.probe ?? sandboxProbe(root)
   const pkg = readProjectPackage(root)
   const expectedPnpm = pinnedPnpmVersion(pkg.packageManager)
-  const runtime = resolveDependencyContext(env, probe, options.dependencyContext)
+  const runtime = await resolveDependencyContext(env, probe, options.dependencyContext)
   const expectedFingerprint = dependencyFingerprint(
     root,
     runtime ?? {
@@ -328,12 +355,12 @@ export function inspectWorktreePreparation(
   )
   const pinnedNode = readText(join(root, '.nvmrc'))?.replace(/^v/, '') ?? 'unknown'
   const nodeReady = runtime !== null && runtime.node === pinnedNode
-  const pnpmOutput = probe('corepack', ['pnpm', '--version'], {
+  const pnpmOutput = await probe('corepack', ['pnpm', '--version'], {
     ...env,
     COREPACK_ENABLE_NETWORK: '0',
   })
   const pnpmReady = pnpmOutput === expectedPnpm
-  const native = nativeArtifactComponents(root, probe, env)
+  const native = await nativeArtifactComponents(root, probe, env)
   const fingerprint = fingerprintFileState(root)
   const fingerprintMatches =
     fingerprint.kind === 'present' && fingerprint.value === expectedFingerprint
@@ -391,44 +418,21 @@ export function inspectWorktreePreparation(
   return { state, expectedFingerprint, components, remediation }
 }
 
-function runPreparationStep(
+async function runPreparationStep(
   command: string,
   args: readonly string[],
   root: string,
   env: NodeJS.ProcessEnv,
-  signal: AbortSignal,
+  options: PrepareOptions,
 ): Promise<void> {
-  return new Promise((resolvePromise, reject) => {
-    emitShellOutput(`[prepare-worktree] $ ${command} ${args.join(' ')}\n`)
-    const child = spawn(command, [...args], {
-      cwd: root,
-      env,
-      signal,
-      stdio: 'pipe',
-      shell: false,
-    })
-    let output = ''
-    const stream = (data: Buffer): void => {
-      const text = data.toString()
-      output = (output + text).slice(-50_000)
-      emitShellOutput(text)
-    }
-    child.stdout.on('data', stream)
-    child.stderr.on('data', stream)
-    child.on('error', (error) => {
-      reject(error)
-    })
-    child.on('close', (code, childSignal) => {
-      if (code === 0) {
-        resolvePromise()
-        return
-      }
-      reject(
-        new Error(
-          `${command} ${args.join(' ')} failed (${childSignal ?? String(code)}):\n${output.trim()}`,
-        ),
-      )
-    })
+  emitShellOutput(`[prepare-worktree] $ ${command} ${args.join(' ')}\n`)
+  await runWorktreePreparationProcess(command, args, {
+    root,
+    env,
+    mode: 'prepare',
+    offline: options.offline === true,
+    signal: options.signal,
+    output: emitShellOutput,
   })
 }
 
@@ -436,24 +440,40 @@ export async function prepareWorktree(
   root: string,
   options: PrepareOptions,
 ): Promise<WorktreePreparationReport> {
-  const before = inspectWorktreePreparation(root, options)
+  requirePreparationSandbox()
+  const before = await inspectWorktreePreparation(root, options)
   if (before.state === 'ready') return before
 
   const env = preparationEnvironment(options.env)
-  for (const path of copseManagedPreparationCacheDirs(env)) {
-    mkdirSync(path, { recursive: true })
-  }
+  // Temp files stay within the execution root, including downloads and native builds.
+  await runPreparationStep(
+    'node',
+    [
+      '-e',
+      'require("node:fs").mkdirSync(process.argv[1], {recursive:true})',
+      join(root, '.tmp', 'worktree-preparation'),
+    ],
+    root,
+    env,
+    options,
+  )
 
-  if (!isSocketFirewallAvailable()) {
+  const firewallRoot = join(copseCacheDir(env), 'socket-firewall')
+  const firewall = join(firewallRoot, 'bin', 'sfw')
+  const probe = options.probe ?? sandboxProbe(root, options.signal)
+  if (!(await probe(firewall, ['--version'], env))) {
     if (options.offline === true) {
       throw new Error(
-        'Worktree preparation is unavailable offline because Socket Firewall is not installed.',
+        'Worktree preparation is unavailable offline because Socket Firewall is not installed in the managed cache.',
       )
     }
-    const installed = await installSocketFirewall(options.signal)
-    if (!installed) {
-      throw new Error('Could not install the pinned Socket Firewall; worktree preparation stopped.')
-    }
+    await runPreparationStep(
+      'npm',
+      [...sfwInstallArgs(), '--prefix', firewallRoot],
+      root,
+      env,
+      options,
+    )
   }
 
   const installArgs = [
@@ -465,14 +485,8 @@ export async function prepareWorktree(
     ...(options.offline === true ? ['--offline'] : []),
   ]
   try {
-    await runPreparationStep('sfw', installArgs, root, env, options.signal)
-    await runPreparationStep(
-      'corepack',
-      ['pnpm', 'run', 'prepare:native'],
-      root,
-      env,
-      options.signal,
-    )
+    await runPreparationStep(firewall, installArgs, root, env, options)
+    await runPreparationStep('corepack', ['pnpm', 'run', 'prepare:native'], root, env, options)
   } catch (error) {
     if (options.offline === true) {
       throw new Error(`Matching cached inputs are unavailable offline. ${errorMessage(error)}`, {
@@ -482,15 +496,11 @@ export async function prepareWorktree(
     throw error
   }
 
-  const runtime = resolveDependencyContext(
-    env,
-    options.probe ?? defaultProbe,
-    options.dependencyContext,
-  )
+  const runtime = await resolveDependencyContext(env, probe, options.dependencyContext)
   if (!runtime)
     throw new Error('Prepared dependencies, but the pinned Node runtime is unavailable.')
   const fingerprint = dependencyFingerprint(root, runtime)
-  const validation = inspectWorktreePreparation(root, {
+  const validation = await inspectWorktreePreparation(root, {
     ...options,
     dependencyContext: runtime,
   })
@@ -499,9 +509,22 @@ export async function prepareWorktree(
       `Native preparation finished but validation failed:\n${formatWorktreePreparationReport(validation)}`,
     )
   }
-  writeFingerprint(root, DEV_STATE.dependencies, fingerprint)
+  // Record readiness inside the same boundary: a checkout-controlled symlink
+  // must not redirect a host-side fingerprint write outside the execution root.
+  await runPreparationStep(
+    'node',
+    [
+      '-e',
+      'const fs=require("node:fs"),p=require("node:path");fs.mkdirSync(p.dirname(process.argv[1]),{recursive:true});fs.writeFileSync(process.argv[1],process.argv[2]+"\\n")',
+      join(root, DEV_STATE.dependencies),
+      fingerprint,
+    ],
+    root,
+    env,
+    options,
+  )
 
-  const complete = inspectWorktreePreparation(root, {
+  const complete = await inspectWorktreePreparation(root, {
     ...options,
     dependencyContext: runtime,
   })

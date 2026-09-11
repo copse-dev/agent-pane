@@ -30,6 +30,8 @@ export function copseCacheDir(env: NodeJS.ProcessEnv = process.env): string {
 export function copseManagedPreparationCacheDirs(env: NodeJS.ProcessEnv = process.env): string[] {
   const root = copseCacheDir(env)
   return [
+    join(root, 'socket-firewall'),
+    join(root, 'native-build'),
     join(root, 'corepack'),
     join(root, 'pnpm-store'),
     join(root, 'electron-downloads'),

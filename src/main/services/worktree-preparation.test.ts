@@ -88,12 +88,13 @@ function seedReadyArtifacts(): void {
 function probe(command: string, args: readonly string[]): string | null {
   if (command === 'node') return '24.20.0\n137'
   if (command === 'corepack' && args.join(' ') === 'pnpm --version') return '10.34.5'
-  if (command.includes('chromedriver')) return 'ChromeDriver 44.0.0'
+  if (command.endsWith('electron')) return '152.0.7977.65'
+  if (command.includes('chromedriver')) return 'ChromeDriver 152.0.7977.65'
   if (command.endsWith('gortex') || command.endsWith('gortex.exe')) return 'gortex 0.60.0'
   return null
 }
 
-function inspect(offline = false): WorktreePreparationReport {
+function inspect(offline = false): Promise<WorktreePreparationReport> {
   return inspectWorktreePreparation(root, {
     dependencyContext: runtime,
     offline,
@@ -106,19 +107,19 @@ function recordCurrentFingerprint(): void {
 }
 
 describe('inspectWorktreePreparation', () => {
-  it('reports an absent fresh worktree with focused remediation', () => {
-    const report = inspect()
+  it('reports an absent fresh worktree with focused remediation', async () => {
+    const report = await inspect()
 
     assert.equal(report.state, 'absent')
     assert.equal(report.components.dependencies.ready, false)
     assert.match(report.remediation, /prepare_worktree/)
   })
 
-  it('accepts a present, matching prepared worktree', () => {
+  it('accepts a present, matching prepared worktree', async () => {
     seedReadyArtifacts()
     recordCurrentFingerprint()
 
-    const report = inspect()
+    const report = await inspect()
 
     assert.equal(report.state, 'ready')
     assert.equal(report.components.node.ready, true)
@@ -128,22 +129,34 @@ describe('inspectWorktreePreparation', () => {
     assert.equal(report.components.gortex.ready, true)
   })
 
-  it('reports stale when a fingerprinted repository input changes', () => {
+  it('rejects a driver for the wrong Chromium major even when its Electron package matches', async () => {
+    seedReadyArtifacts()
+    recordCurrentFingerprint()
+    const report = await inspectWorktreePreparation(root, {
+      dependencyContext: runtime,
+      probe: (command, args) =>
+        command.includes('chromedriver') ? 'ChromeDriver 44.0.0' : probe(command, args),
+    })
+    assert.equal(report.components.chromedriver.ready, false)
+    assert.equal(report.state, 'corrupt')
+  })
+
+  it('reports stale when a fingerprinted repository input changes', async () => {
     seedReadyArtifacts()
     recordCurrentFingerprint()
     write('pnpm-lock.yaml', "lockfileVersion: '9.1'\n")
 
-    assert.equal(inspect().state, 'stale')
+    assert.equal((await inspect()).state, 'stale')
   })
 
-  it('reports corrupt for a malformed fingerprint', () => {
+  it('reports corrupt for a malformed fingerprint', async () => {
     seedReadyArtifacts()
     write(DEV_STATE.dependencies, 'not-a-fingerprint\n')
 
-    assert.equal(inspect().state, 'corrupt')
+    assert.equal((await inspect()).state, 'corrupt')
   })
 
-  it('reports corrupt when a recorded preparation loses a native artifact', () => {
+  it('reports corrupt when a recorded preparation loses a native artifact', async () => {
     seedReadyArtifacts()
     recordCurrentFingerprint()
     unlinkSync(
@@ -156,19 +169,19 @@ describe('inspectWorktreePreparation', () => {
       ),
     )
 
-    const report = inspect()
+    const report = await inspect()
     assert.equal(report.state, 'corrupt')
     assert.equal(report.components.chromedriver.ready, false)
   })
 
-  it('reports unavailable-offline when matching prepared inputs are absent', () => {
-    const report = inspect(true)
+  it('reports unavailable-offline when matching prepared inputs are absent', async () => {
+    const report = await inspect(true)
 
     assert.equal(report.state, 'unavailable-offline')
     assert.match(report.remediation, /Reconnect|restore/)
   })
 
-  it('invalidates when Node, package-manager, or native preparation inputs change', () => {
+  it('invalidates when Node, package-manager, or native preparation inputs change', async () => {
     const initial = dependencyFingerprint(root, runtime)
 
     assert.notEqual(dependencyFingerprint(root, { ...runtime, node: '24.21.0' }), initial)
@@ -194,7 +207,7 @@ describe('inspectWorktreePreparation', () => {
 })
 
 describe('preparationEnvironment', () => {
-  it('routes every external preparation cache under COPSE_DIR', () => {
+  it('routes every external preparation cache under COPSE_DIR', async () => {
     const env = preparationEnvironment({
       COPSE_DIR: '/profiles/copse',
       PATH: '/usr/bin',
@@ -207,9 +220,11 @@ describe('preparationEnvironment', () => {
     assert.equal(env['COPSE_GORTEX_CACHE'], '/profiles/copse/cache/gortex')
     assert.equal(env['CI'], 'true')
     assert.equal(env['npm_config_ignore_scripts'], 'true')
+    assert.equal(env['HOME'], '/profiles/copse/cache/native-build')
+    assert.equal(env['npm_config_cache'], '/profiles/copse/cache/socket-firewall/npm-cache')
   })
 
-  it('routes later shell commands through the same caches without changing install policy', () => {
+  it('routes later shell commands through the same caches without changing install policy', async () => {
     const env = worktreePreparationShellEnvironment(root, {
       COPSE_DIR: '/profiles/copse',
       PATH: '/usr/bin',
@@ -221,7 +236,7 @@ describe('preparationEnvironment', () => {
     assert.equal(env['npm_config_ignore_scripts'], 'false')
   })
 
-  it('leaves unrelated project shell environments unchanged', () => {
+  it('leaves unrelated project shell environments unchanged', async () => {
     const unrelated = mkdtempSync(join(tmpdir(), 'unrelated-worktree-'))
     try {
       writeFileSync(join(unrelated, 'package.json'), '{"name":"another-project"}')
