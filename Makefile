@@ -86,6 +86,8 @@ help:
 	@echo "                         Install the pinned Apple Silicon development environment"
 	@echo "  make portable-setup-offline  Reinstall and build from drive caches, with networking blocked"
 	@echo "  make portable-verify-offline Test a clean install/build with networking and host caches blocked"
+	@echo "  make portable-local-ai-setup Install LM Studio and pinned Qwen models (about 72 GB)"
+	@echo "  make portable-model      Print a downloaded model path selected for this Mac's RAM"
 	@echo "  make portable-shell    Develop using the installed portable tools"
 	@echo "  make portable-run      Launch the prepared portable build"
 	@echo "  make deps              Sync dependencies to their content fingerprint"
@@ -221,7 +223,12 @@ runners-ps:
 
 # --- node preflight ---------------------------------------------------------
 PORTABLE_ROOT ?= .portable
-.PHONY: portable-setup portable-setup-offline portable-verify-offline portable-shell portable-run
+MODEL_TIER ?= auto
+.PHONY: portable-model
+portable-model:
+	@bash scripts/portable/model-path.sh "$(PORTABLE_ROOT)" "$(MODEL_TIER)"
+
+.PHONY: portable-setup portable-setup-offline portable-verify-offline portable-local-ai-setup portable-local-ai-setup-offline portable-shell portable-run
 portable-setup:
 	@bash scripts/portable/setup.sh "$(PORTABLE_ROOT)"
 
@@ -230,6 +237,12 @@ portable-setup-offline:
 
 portable-verify-offline:
 	@bash "$(PORTABLE_ROOT)/portable-dev" verify-offline
+
+portable-local-ai-setup:
+	@bash scripts/portable/local-ai-setup.sh "$(PORTABLE_ROOT)"
+
+portable-local-ai-setup-offline:
+	@bash scripts/portable/local-ai-setup.sh --offline "$(PORTABLE_ROOT)"
 
 portable-shell:
 	@bash "$(PORTABLE_ROOT)/portable-dev" shell

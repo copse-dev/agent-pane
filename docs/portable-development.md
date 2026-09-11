@@ -142,6 +142,56 @@ platform. Repeat after dependency/tool updates. Newly added dependencies or
 project-specific downloads must be cached while connected. `pnpm fetch` alone
 cannot populate arbitrary lifecycle-script downloads.
 
+## Optional LM Studio and models
+
+```bash
+make portable-local-ai-setup
+make portable-local-ai-setup-offline # verify cached assets and reinstall the app offline
+```
+
+This opt-in download adds LM Studio 0.4.24-1 for Apple Silicon and three GGUF
+models (about 72 GB of model weights combined). The default development setup
+continues to install only the coding toolchain.
+
+| Model                             | Quantization | Download | Intended use                                                                  |
+| --------------------------------- | ------------ | -------- | ----------------------------------------------------------------------------- |
+| Qwen3-4B-Instruct-2507            | Q4_K_M       | 2.50 GB  | Small local experiments and quick tests                                       |
+| Qwen3.6-35B-A3B                   | Q4_K_M       | 21.17 GB | Larger coding/reasoning workloads; start with a modest context on a 32 GB Mac |
+| Qwen3-Coder-Next (80B, 3B active) | Q4_K_M       | 48.49 GB | Coding model for the 64 GB Mac; start at 8K context                           |
+
+`make portable-model` prints the largest downloaded tier appropriate for the
+current Mac's physical memory: small from 16 GiB, medium from 32 GiB, large from
+64 GiB. It falls back to a smaller downloaded model if needed. Use
+`make portable-model MODEL_TIER=small` to select a tier explicitly; an oversized
+explicit tier is refused. This recommends a file path and does not load a model
+or change LM Studio's settings. Free memory and context size still matter.
+
+The app lives at `.portable/apps/darwin-arm64/lm-studio-0.4.24-1/LM Studio.app`.
+Models live under `.portable/models/lmstudio-community/`. `models.tsv` pins each
+Hugging Face repository revision, filename, size, SHA-256 and recommended memory tier. The installer
+checks the official DMG's pinned SHA-256 and Apple's code signature for Element
+Labs before installing. It verifies model checksums on every run.
+
+LM Studio's current per-user profile and inference runtime storage are separate
+from the app bundle. Installing a second app copy does not create a separate
+profile. This recipe deliberately leaves the host's profile, model-library
+selection, running server and shell configuration unchanged. Select the drive's
+model directory in LM Studio's My Models page when you want to use that library;
+that selection affects the active host profile. Runtime downloads and loading a
+model must be completed before claiming offline inference readiness. This is
+not covered by `portable-verify-offline`, which checks the development toolchain.
+
+Model weights are not extra RAM: the larger model still needs memory for its
+context and runtime. Use one model at a time and a modest context. The small
+model is provided for lighter machines. Qwen3-Coder-Next should only be loaded
+on the 64 GB Mac, with enough free memory for the OS, Copse and its context cache;
+the 32 GB laptop should use Qwen3.6 or the small model. These are starting
+configurations, not a guarantee of peak memory use. Load-test the large model
+on the 64 GB machine before relying on that configuration. Model downloads use LM Studio's
+published [Qwen3-4B](https://huggingface.co/lmstudio-community/Qwen3-4B-Instruct-2507-GGUF),
+[Qwen3.6](https://huggingface.co/lmstudio-community/Qwen3.6-35B-A3B-GGUF),
+and [Qwen3-Coder-Next](https://huggingface.co/lmstudio-community/Qwen3-Coder-Next-GGUF) repositories.
+
 ## Boundaries
 
 Apple's SDK, OS permissions, Keychain and system utilities remain host dependencies.
@@ -157,9 +207,10 @@ separately on each Mac. Setup never imports host secrets. Profile relocation doe
 not implement portable secret encryption. Copse ACP sandbox access to relocated
 agent state still needs end-to-end validation.
 
-Cloud inference requires a connection. Local model runtimes/weights, desktop
-Claude/Codex apps, project-specific tools and a second-Mac acceptance run are not
-included in this preview. First-time account sign-in requires a connection.
+Cloud inference requires a connection. The optional local AI recipe downloads
+model weights and LM Studio; its inference runtimes still need separate setup.
+Desktop Claude/Codex apps, project-specific tools and a second-Mac acceptance run
+are not included in this preview. First-time account sign-in requires a connection.
 `doctor` reports prerequisites and executable paths; `verify-offline` proves
 installation and compilation from the available caches on the current Mac.
 

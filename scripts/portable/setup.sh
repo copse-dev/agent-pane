@@ -52,24 +52,7 @@ rm -f "$portable_root/.copse-prepared-path"
 source "$portable_source/environment.sh"
 touch "$npm_config_userconfig"
 
-download() {
-  local url="$1" destination="$2" checksum="$3" actual
-  if [ -f "$destination" ]; then
-    actual="$(/usr/bin/shasum -a 256 "$destination" | /usr/bin/cut -d ' ' -f 1)"
-    if [ "$actual" = "$checksum" ]; then return; fi
-  fi
-  if [ "${COPSE_PORTABLE_OFFLINE:-0}" = 1 ]; then
-    echo "Offline setup needs a valid cached download: $destination. Run portable-setup online first." >&2
-    return 1
-  fi
-  /usr/bin/curl --fail --location --retry 3 --proto '=https' --tlsv1.2 "$url" -o "$destination.part"
-  actual="$(/usr/bin/shasum -a 256 "$destination.part" | /usr/bin/cut -d ' ' -f 1)"
-  if [ "$actual" != "$checksum" ]; then
-    echo "Checksum mismatch: $url" >&2
-    return 1
-  fi
-  mv "$destination.part" "$destination"
-}
+source "$portable_source/download.sh"
 
 node_archive="$portable_root/cache/downloads/node-v$NODE_VERSION-darwin-arm64.tar.gz"
 download "https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-darwin-arm64.tar.gz" "$node_archive" "$NODE_SHA256"
