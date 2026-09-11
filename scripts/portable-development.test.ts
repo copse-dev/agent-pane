@@ -76,6 +76,34 @@ test('portable launcher preserves arguments and derives paths after relocating a
   }
 })
 
+test('named coding launchers use drive executables and relocated Claude state and temporary paths', () => {
+  const f = fixture()
+  try {
+    const bin = join(f.root, 'apps/darwin-arm64/bin')
+    mkdirSync(bin, { recursive: true })
+    for (const tool of ['claude', 'codex']) {
+      const executable = join(bin, tool)
+      writeFileSync(
+        executable,
+        '#!/bin/bash\nprintf "%s\\n" "$0" "$CLAUDE_CONFIG_DIR" "$CLAUDE_CODE_TMPDIR" "$@"\n',
+      )
+      chmodSync(executable, 0o755)
+    }
+    const moved = join(f.parent, 'moved coding environment')
+    renameSync(f.root, moved)
+    for (const tool of ['claude', 'codex']) {
+      const result = f.run(moved, [tool, 'argument with spaces'])
+      assert.equal(result.status, 0, result.stderr)
+      assert.equal(
+        result.stdout,
+        `${moved}/apps/darwin-arm64/bin/${tool}\n${moved}/data/claude\n${moved}/tmp\nargument with spaces\n`,
+      )
+    }
+  } finally {
+    rmSync(f.parent, { recursive: true, force: true })
+  }
+})
+
 test('offline settings reach package managers without changing normal execution', () => {
   const f = fixture()
   try {

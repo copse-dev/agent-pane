@@ -166,7 +166,33 @@ current Mac's physical memory: small from 16 GiB, medium from 32 GiB, large from
 explicit tier is refused. This recommends a file path and does not load a model
 or change LM Studio's settings. Free memory and context size still matter.
 
-The app lives at `.portable/apps/darwin-arm64/lm-studio-0.4.24-1/LM Studio.app`.
+The cached app lives at `.portable/apps/darwin-arm64/lm-studio-0.4.24-1/LM Studio.app`.
+This version explicitly rejects launching outside `/Applications`, even through
+an Applications symlink. The GUI therefore needs a real app copy on each Mac;
+the cached bundle and model library can travel on the drive.
+
+```bash
+make portable-lm-studio-install # verify and copy cached app into /Applications; no downloads
+make portable-lm-studio         # install if missing, then launch
+make portable-claude            # drive-installed Claude Code CLI
+make portable-codex             # drive-installed Codex CLI
+```
+
+The LM Studio launcher installs `/Applications/LM Studio Copse 0.4.24-1.app`,
+verifies the publisher signature and version, and refuses an invalid existing
+copy rather than replacing it. Quit other LM Studio instances first: otherwise
+the app's single-instance behavior can silently activate the other copy. The
+launcher reports this condition instead of closing a running app. Installation
+needs write access to `/Applications` and works from the drive without internet.
+It does not move profiles or select the model directory automatically.
+
+Setup also creates `Launch LM Studio.command`, `Launch Claude Code.command` and
+`Launch Codex CLI.command` inside `.portable/` for Finder. The CLI launchers
+select the drive's tools and profiles. They do not install the Claude or Codex
+desktop apps. Both CLIs require separate sign-in for these fresh profiles;
+Claude's initial interactive startup also requires connectivity. `--version`
+can run offline, but that is not proof of offline cloud-agent operation.
+
 Models live under `.portable/models/lmstudio-community/`. `models.tsv` pins each
 Hugging Face repository revision, filename, size, SHA-256 and recommended memory tier. The installer
 checks the official DMG's pinned SHA-256 and Apple's code signature for Element

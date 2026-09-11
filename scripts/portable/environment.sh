@@ -23,6 +23,7 @@ export TMPDIR="$portable_root/tmp/"
 # Repositories explicitly initialized below this ceiling still work normally.
 export GIT_CEILING_DIRECTORIES="$portable_root/tmp${GIT_CEILING_DIRECTORIES:+:$GIT_CEILING_DIRECTORIES}"
 export CLAUDE_CONFIG_DIR="$portable_root/data/claude"
+export CLAUDE_CODE_TMPDIR="$portable_root/tmp"
 export DISABLE_UPDATES=1
 export DISABLE_AUTOUPDATER=1
 # Codex state is selected by its wrapper, never by changing the caller's CODEX_HOME.

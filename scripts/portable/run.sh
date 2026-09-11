@@ -28,6 +28,14 @@ source "$portable_repo/scripts/portable/environment.sh"
 source "$portable_repo/scripts/portable/versions.sh"
 cd "$portable_repo"
 case "${1:-doctor}" in
+  lm-studio)
+    exec bash "$portable_repo/scripts/portable/launch-lm-studio.sh" "$portable_root"
+    ;;
+  claude|codex)
+    tool="$1"
+    shift
+    exec "$tool" "$@"
+    ;;
   verify-offline)
     exec bash "$portable_repo/scripts/portable/verify-offline.sh" "$portable_root"
     ;;
@@ -81,5 +89,5 @@ case "${1:-doctor}" in
     test "$#" -gt 0
     exec "$@"
     ;;
-  *) echo 'Usage: portable-dev {doctor|prepare|verify-offline|run|shell|exec COMMAND...}; add --offline after the action to block networking.' >&2; exit 1 ;;
+  *) echo 'Usage: portable-dev {doctor|prepare|verify-offline|run|shell|lm-studio|claude|codex|exec COMMAND...}; add --offline after the action to block networking.' >&2; exit 1 ;;
 esac
