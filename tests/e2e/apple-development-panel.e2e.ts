@@ -4,7 +4,9 @@ import { $, browser, expect } from '@wdio/globals'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedAppleDevelopmentFixture } from './helpers/seed-config.ts'
 
-describe('Apple Development thread panel', function () {
+const describeAppleDevelopment = process.platform === 'darwin' ? describe : describe.skip
+
+describeAppleDevelopment('Apple Development thread panel', function () {
   this.timeout(60_000)
 
   before(async () => {
