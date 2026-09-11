@@ -1073,6 +1073,11 @@ const api: ApiClient = {
     stop: (id: string) => ipcRenderer.invoke('local-classifiers:stop', id),
     connect: (id: string) => ipcRenderer.invoke('local-classifiers:connect', id),
   },
+  profileVault: {
+    status: () => ipcRenderer.invoke('profile-vault:status'),
+    run: (action: import('@shared/types/profile-vault.ts').ProfileVaultAction) =>
+      ipcRenderer.invoke('profile-vault:run', action),
+  },
   settings: {
     getSnapshot: () => ipcRenderer.invoke('settings:get-snapshot'),
     update: (changes) => ipcRenderer.invoke('settings:update', changes),
