@@ -56815,6 +56815,18 @@ function preferredDestinationId(destinations, savedId, previousId) {
   }
   return destinations.find((destination) => destination.booted)?.id ?? destinations[0]?.id ?? "";
 }
+function sameTarget(left, right) {
+  return left.candidateId === right.candidateId && left.schemeId === right.schemeId && left.configuration === right.configuration && left.destinationId === right.destinationId;
+}
+function candidateLabel(candidateId) {
+  const fileName = candidateId.split("/").at(-1) ?? candidateId;
+  return fileName.replace(/\.(?:xcworkspace|xcodeproj)$/i, "");
+}
+function destinationLabel(destinationId) {
+  if (destinationId === "platform=macOS") return "This Mac";
+  const platform = /(?:^|,)platform=([^,]+)/.exec(destinationId)?.[1];
+  return platform ?? destinationId;
+}
 function createAppleDevelopmentPanel(store2, api2, options) {
   const host = el("div", { class: "apple-development-host" });
   let generation = 0;
@@ -56877,7 +56889,11 @@ function createAppleDevelopmentPanel(store2, api2, options) {
     stopPolling();
     renderedOwnerKey = `${owner.projectId}\0${owner.threadId}`;
     host.replaceChildren();
-    const latestOperation = state.operations[0];
+    const selection2 = state.selection;
+    const activeOperation = state.operations.find(
+      (operation) => operation.status === "queued" || operation.status === "running"
+    );
+    const latestOperation = activeOperation ?? (selection2 ? state.operations.find((operation) => sameTarget(operation.target, selection2)) : state.operations[0]);
     if ((!state.pluginEnabled || !state.enrolled) && !latestOperation && !options.allowEnrollment) {
       host.hidden = true;
       return;
@@ -56907,9 +56923,9 @@ function createAppleDevelopmentPanel(store2, api2, options) {
           await api2.appleDevelopment.setEnrolled(owner.projectId, owner.threadId, !state.enrolled);
         });
       });
-      panel.append(enrollment);
+      headingActions.append(enrollment);
     }
-    if (state.setupMessage) {
+    if (state.setupMessage && !state.selection) {
       panel.append(el("p", { class: "apple-development-message" }, state.setupMessage));
     }
     if (state.pluginEnabled && state.enrolled && state.supportedHost) {
@@ -57087,6 +57103,10 @@ function createAppleDevelopmentPanel(store2, api2, options) {
         );
       }
       if (state.selection) {
+        const selectedCandidate = state.candidates.find(
+          (candidate) => candidate.id === state.selection?.candidateId
+        );
+        const selectedCandidateLabel = selectedCandidate?.name ?? candidateLabel(state.selection.candidateId);
         const selectedDestination = state.destinations.find(
           (destination) => destination.id === state.selection?.destinationId
         );
@@ -57098,13 +57118,17 @@ function createAppleDevelopmentPanel(store2, api2, options) {
               "div",
               { class: "apple-development-target-name" },
               el("strong", {}, state.selection.schemeId),
-              el("span", {}, state.selection.candidateId)
+              ...selectedCandidateLabel === state.selection.schemeId ? [] : [el("span", { title: state.selection.candidateId }, selectedCandidateLabel)]
             ),
             el(
               "div",
               { class: "apple-development-target-meta" },
               el("span", {}, state.selection.configuration),
-              el("span", {}, selectedDestination?.name ?? state.selection.destinationId)
+              el(
+                "span",
+                { title: state.selection.destinationId },
+                selectedDestination?.name ?? destinationLabel(state.selection.destinationId)
+              )
             ),
             el(
               "div",
@@ -117508,7 +117532,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     hidden: true
   });
   machineSelect.append(el("option", { value: LOCAL_MACHINE }, "This machine"));
-  const devicesHeading = el("div", { class: "vnc-devices-heading" }, "Nearby and saved");
+  const devicesHeading = el("div", { class: "vnc-devices-heading" }, "Devices");
   const deviceList = el("div", {
     class: "vnc-device-list",
     role: "list",
@@ -117931,7 +117955,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     disconnectButton.hidden = !active2;
     controlButton.hidden = !connected;
     homeButton.hidden = !connected || simulatorSessionId === null;
-    note.hidden = active2;
+    note.hidden = active2 || isSimulatorMachine(machineSelect.value);
     disconnectButton.textContent = connected ? "Disconnect" : "Cancel";
     portInput.disabled = active2;
     addressInput.disabled = active2;
@@ -118192,7 +118216,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     nearbyServers = dedupeNearbyVncServers(allNearbyServers, sshHosts, sshHostResolutions);
   }
   function updateNearbyStatus() {
-    nearbyFeedback.hidden = allNearbyServers.length > 0;
+    nearbyFeedback.hidden = allNearbyServers.length > 0 || simulatorDevices.length > 0;
     nearbyStatus.dataset["kind"] = "idle";
     nearbyStatus.textContent = "No nearby desktops found. Add a device if you know its hostname or IP address.";
   }
@@ -118257,6 +118281,11 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     if (simulator) {
       discoveryGeneration++;
       renderDiscoveredPorts([]);
+      empty.textContent = `Connect to view ${selectedSimulator()?.name ?? "this Simulator"}.`;
+      note.hidden = true;
+    } else if (!channel) {
+      empty.textContent = "Choose this machine, a nearby device, another address, or a saved SSH machine.";
+      note.hidden = false;
     }
     const nearby = selectedNearbyServer();
     if (nearby) {
@@ -118389,7 +118418,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     const generation = ++nearbyGeneration;
     const previous = machineSelect.value;
     const previousNearby = selectedNearbyServer();
-    nearbyFeedback.hidden = false;
+    nearbyFeedback.hidden = simulatorDevices.length > 0;
     nearbyButton.hidden = true;
     nearbyButton.disabled = true;
     nearbyStatus.dataset["kind"] = "working";

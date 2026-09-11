@@ -10634,6 +10634,7 @@ dialog.settings-overlay::backdrop {
 .apple-development-title {
   margin: 0;
   color: var(--text-secondary);
+  font-family: var(--font-family);
   font-size: var(--font-size-sm);
   font-weight: 600;
 }
@@ -10726,6 +10727,7 @@ dialog.settings-overlay::backdrop {
   gap: 4px;
 }
 .apple-development-actions .btn,
+.apple-development-heading-actions .btn,
 .apple-development-operation .btn {
   min-height: 24px;
   padding: 3px 8px;
@@ -10798,6 +10800,11 @@ dialog.settings-overlay::backdrop {
 }
 .plugin-settings .apple-development-host {
   margin: 0;
+}
+.settings-section .plugin-settings-fold .apple-development-title {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
 }
 @media (max-width: 760px) {
   .apple-development-selection {
