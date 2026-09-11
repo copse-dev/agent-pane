@@ -34,6 +34,7 @@ import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.t
 import { DARK_FACTORY_PLUGIN_ID } from '@copse/agent/plugins/dark-factory-plugin.ts'
 import { PARALLEL_SEARCH_PLUGIN_ID } from '@copse/agent/plugins/parallel-search-plugin.ts'
 import { ARTIFACT_CHECKPOINT_PLUGIN_ID } from '@copse/agent/plugins/artifact-checkpoint-plugin.ts'
+import { APPLE_DEVELOPMENT_PLUGIN_ID } from '@copse/agent/plugins/apple-development-plugin.ts'
 import { storageDelete, storageGet, storageSet } from '../storage/storage.ts'
 import {
   __resetPluginServiceForTests,
@@ -50,6 +51,7 @@ const AUTOMATIONS_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.automationsEnablem
 const PARALLEL_SEARCH_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.parallelSearchEnablement'
 const ARTIFACT_CHECKPOINT_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.artifactCheckpointEnablement'
 const BACKGROUND_TASKS_STABLE_MIGRATION_KEY = 'pluginMigration.backgroundTasksStable'
+const APPLE_DEVELOPMENT_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.appleDevelopmentEnablement'
 const PLUGIN_SOURCES_KEY = 'pluginSources'
 const pluginSettingsKey = (id: string): string => `plugin.${id}.settings`
 const localPluginRoots: string[] = []
@@ -125,6 +127,7 @@ function clearStorage(): void {
   storageSet(PARALLEL_SEARCH_ENABLEMENT_MIGRATION_KEY, true)
   storageSet(ARTIFACT_CHECKPOINT_ENABLEMENT_MIGRATION_KEY, true)
   storageSet(BACKGROUND_TASKS_STABLE_MIGRATION_KEY, true)
+  storageSet(APPLE_DEVELOPMENT_ENABLEMENT_MIGRATION_KEY, true)
   storageSet(PLUGIN_SOURCES_KEY, [])
   storageSet(pluginSettingsKey('demo.plugin'), {})
   storageSet(pluginSettingsKey('copse.other'), {})
@@ -358,6 +361,7 @@ describe('PluginService', () => {
       DARK_FACTORY_PLUGIN_ID,
       PARALLEL_SEARCH_PLUGIN_ID,
       ARTIFACT_CHECKPOINT_PLUGIN_ID,
+      APPLE_DEVELOPMENT_PLUGIN_ID,
     ]) {
       assert.equal(service.registry.isEnabled(id), false, id)
     }
@@ -378,6 +382,7 @@ describe('PluginService', () => {
         DARK_FACTORY_PLUGIN_ID,
         PARALLEL_SEARCH_PLUGIN_ID,
         ARTIFACT_CHECKPOINT_PLUGIN_ID,
+        APPLE_DEVELOPMENT_PLUGIN_ID,
       ].sort(),
     )
   })
@@ -413,6 +418,17 @@ describe('PluginService', () => {
     __resetPluginServiceForTests()
     const later = getPluginService()
     assert.equal(later.registry.isEnabled(AUTOMATIONS_PLUGIN_ID), true)
+  })
+  it('seeds Apple Development off once for existing profiles without erasing later choices', async () => {
+    storageDelete(APPLE_DEVELOPMENT_ENABLEMENT_MIGRATION_KEY)
+    const service = getPluginService()
+    assert.equal(service.registry.isEnabled(APPLE_DEVELOPMENT_PLUGIN_ID), false)
+    assert.equal(storageGet(APPLE_DEVELOPMENT_ENABLEMENT_MIGRATION_KEY), true)
+
+    await service.setEnabled(APPLE_DEVELOPMENT_PLUGIN_ID, true)
+    __resetPluginServiceForTests()
+    const later = getPluginService()
+    assert.equal(later.registry.isEnabled(APPLE_DEVELOPMENT_PLUGIN_ID), true)
   })
 
   it('seeds Parallel Search off once for existing profiles without erasing later choices', async () => {

@@ -19,6 +19,7 @@ import { runWithActiveRunIdentity } from '../thread-models.ts'
 import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { runWithAcpBridgePermissionContext } from './acp-bridge-permission-context.ts'
 import {
+  getThreadExecutionContext,
   runWithThreadExecutionContext,
   type ThreadExecutionContext,
 } from '../thread-execution-context.ts'
@@ -131,7 +132,7 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
 ]
 
 /** Core tools plus ACP-safe tools declared by currently enabled first-party plugins. */
-export function activeBridgeToolNames(): readonly string[] {
+export function activeBridgeToolNames(_projectId?: string): readonly string[] {
   return [...new Set([...BRIDGE_TOOL_NAMES, ...getDefaultPluginRegistry().activeAcpToolNames()])]
 }
 
@@ -167,7 +168,9 @@ export function activeBridgeToolNames(): readonly string[] {
 export function isBridgedNativeToolTitle(title: string | null | undefined): boolean {
   if (!title) return false
   const text = unwrapInlineCode(title)
-  return activeBridgeToolNames().some((tool) => matchesBridgedToolName(text, tool))
+  return activeBridgeToolNames(getThreadExecutionContext()?.projectId).some((tool) =>
+    matchesBridgedToolName(text, tool),
+  )
 }
 
 export interface AcpNativeBridge {
@@ -205,8 +208,9 @@ export interface AcpNativeBridge {
 
 function bridgedTools(
   registry: ToolRegistry,
+  projectId?: string,
 ): { name: string; description: string; inputSchema: Record<string, unknown> }[] {
-  const offered = new Set(activeBridgeToolNames())
+  const offered = new Set(activeBridgeToolNames(projectId))
   // toMcpTools, not toLLMTools: the agent forwards these schemas to the
   // Anthropic API, which validates them as JSON Schema draft 2020-12 and
   // 400s the whole request on the openapi-3.0 flavor.
@@ -230,6 +234,8 @@ interface BridgeExecuteContext {
   inflightCalls: Map<string, (detail: string) => void>
   /** Owning Copse thread — rebound into ALS so approvals attribute correctly. */
   threadId: string
+  /** Owning project used to scope project-enrolled tool schemas. */
+  projectId?: string
   /**
    * Live reader for the in-flight turn's resolved execution context; null
    * between turns. Read at request time rather than captured at session start
@@ -315,7 +321,9 @@ function buildMcpServer(
     { name: BRIDGE_MCP_SERVER_NAME, version: '1.0.0' },
     { capabilities: { tools: {} } },
   )
-  server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: bridgedTools(registry) }))
+  server.setRequestHandler(ListToolsRequestSchema, () => ({
+    tools: bridgedTools(registry, ctx.projectId),
+  }))
   // Stateless mode gives every POST its own server, so the SDK's built-in
   // cancellation (which aborts a request on the SAME server) never sees the
   // call a `notifications/cancelled` names. Route it through the bridge-wide
@@ -330,7 +338,7 @@ function buildMcpServer(
   })
   server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     const name = request.params.name
-    if (!activeBridgeToolNames().includes(name) || !registry.has(name)) {
+    if (!activeBridgeToolNames(ctx.projectId).includes(name) || !registry.has(name)) {
       return {
         content: [{ type: 'text', text: `Tool "${name}" is not offered by this bridge.` }],
         isError: true,
@@ -485,10 +493,10 @@ function compatibleServerTransport(transport: StreamableHTTPServerTransport): Tr
 export async function startAcpNativeBridge(
   registry: ToolRegistry,
   signal: AbortSignal,
-  opts: { networkScopeAlreadyApplies?: boolean; threadId: string },
+  opts: { networkScopeAlreadyApplies?: boolean; projectId?: string; threadId: string },
 ): Promise<AcpNativeBridge | null> {
   if (!getSetting<boolean>('acpNativeBridgeEnabled', true)) return null
-  if (bridgedTools(registry).length === 0) return null
+  if (bridgedTools(registry, opts.projectId).length === 0) return null
 
   const token = randomBytes(32).toString('hex')
   const networkScopeAlreadyApplies = opts.networkScopeAlreadyApplies === true
@@ -534,6 +542,7 @@ export async function startAcpNativeBridge(
         abandonCall,
         inflightCalls,
         threadId: opts.threadId,
+        ...(opts.projectId ? { projectId: opts.projectId } : {}),
         getExecutionContext: () => executionContext,
         networkScopeAlreadyApplies,
         recordWorkspaceWrite: (path) => workspaceWriteObserver?.(path),

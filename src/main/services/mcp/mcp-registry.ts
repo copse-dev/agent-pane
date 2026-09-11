@@ -27,7 +27,7 @@ import {
   MCP_TOOL_PREFIX,
   isMcpServerEffectivelyDisabled,
 } from './mcp-config.ts'
-import { flattenMcpContent, sanitizeMcpInputSchema } from './mcp-schema.ts'
+import { extractMcpImages, flattenMcpContent, sanitizeMcpInputSchema } from './mcp-schema.ts'
 import { createBundledMcpServers } from './bundled-mcp-server.ts'
 import { dispatchCanvasArtefacts } from '../canvas-dispatch.ts'
 import { getActiveRunThread } from '../thread-models.ts'
@@ -44,6 +44,12 @@ import {
 } from '../skills/cursor-plugins.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { getElectronUserDataPath } from '../electron-app-runtime.ts'
+import {
+  getXcodeBuildMcpConfig,
+  prepareXcodeBuildMcpArguments,
+  XCODEBUILD_MCP_SERVER_NAME,
+} from '../apple-development/xcodebuildmcp.ts'
+import { isAppleDevelopmentProjectEnrolled } from '../apple-development/apple-development-service.ts'
 
 const CONNECT_TIMEOUT_MS = 30_000
 const GRANTS_STORAGE_KEY = 'mcp-remembered-grants'
@@ -179,7 +185,14 @@ async function collectConfigs(): Promise<{
   // over the curated catalog on name collisions, so a user can override a curated
   // definition in their own mcp.json.
   const userMerged = mergeMcpConfigs([...userPerSource, pluginMerged])
-  const appActive = mergeMcpConfigs([userMerged, getEnabledCuratedConfigs()])
+  const xcodeBuildMcp = getXcodeBuildMcpConfig()
+  // The bundled first-party definition owns its reserved server name. A
+  // workspace or user config cannot shadow the executable Copse reviewed.
+  const appActive = mergeMcpConfigs([
+    xcodeBuildMcp ? [xcodeBuildMcp] : [],
+    userMerged,
+    getEnabledCuratedConfigs(),
+  ])
   const trusted = isWorkspaceTrusted(workspace)
 
   if (!trusted) {
@@ -382,8 +395,12 @@ async function registerClientTools(
       parameters: z.unknown(),
       rawParameters: sanitizeMcpInputSchema(tool.inputSchema),
       async execute(args, signal) {
+        const preparedArgs =
+          serverName === XCODEBUILD_MCP_SERVER_NAME
+            ? prepareXcodeBuildMcpArguments(tool.name, args)
+            : args
         const result = await client.callTool(
-          { name: tool.name, arguments: isRecord(args) ? args : {} },
+          { name: tool.name, arguments: isRecord(preparedArgs) ? preparedArgs : {} },
           undefined,
           { signal },
         )
@@ -397,11 +414,15 @@ async function registerClientTools(
         if (summarizeUiResources) {
           await dispatchCanvasArtefacts(result.content, getActiveRunThread() ?? undefined)
         }
-        const text = flattenMcpContent(result.content, { summarizeUiResources })
+        const images = extractMcpImages(result.content)
+        const text = flattenMcpContent(result.content, {
+          summarizeUiResources,
+          imagesAttached: images.length > 0,
+        })
         if (result.isError) {
           throw new Error(text || `MCP tool ${tool.name} reported an error`)
         }
-        return text
+        return images.length > 0 ? { result: text, images } : text
       },
     })
   }
@@ -587,7 +608,7 @@ export async function loadMcpServers(registry: ToolRegistry): Promise<void> {
  * the session request, but inherited environment comes from the agent process
  * (which is scrubbed of Copse's provider keys), not from Copse.
  */
-export async function listForwardableMcpServers(): Promise<McpServerConfig[]> {
+export async function listForwardableMcpServers(projectId?: string): Promise<McpServerConfig[]> {
   // Mirror loadMcpServers: under agent-eval/e2e nothing may spawn or reach the
   // network, so the external agent gets no servers either.
   if (process.env['COPSE_AGENT_EVAL'] === '1' || process.env['COPSE_E2E'] === '1') {
@@ -596,6 +617,11 @@ export async function listForwardableMcpServers(): Promise<McpServerConfig[]> {
   const { active } = await collectConfigs()
   const userDisabled = getUserDisabledServerNames()
   return active
+    .filter(
+      (cfg) =>
+        cfg.name !== XCODEBUILD_MCP_SERVER_NAME ||
+        (projectId !== undefined && isAppleDevelopmentProjectEnrolled(projectId)),
+    )
     .filter((cfg) => !isMcpServerEffectivelyDisabled(cfg, userDisabled))
     .filter((cfg) => cfg.transport === 'stdio' || cfg.transport === 'http')
     .map((cfg) => interpolateServerConfig(cfg, process.env, envAllowlistFor(cfg)))

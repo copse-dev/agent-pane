@@ -133,7 +133,7 @@ export async function spawnInProjectSandbox(
   if (!isProjectSandboxEnabled() || opts.unsandboxed) {
     return spawn(executable, args, {
       cwd: opts.cwd,
-      env: opts.env ?? strippedBaseEnv(),
+      env: mergeSpawnEnv(strippedBaseEnv(), opts.env),
       stdio: opts.stdio,
       signal: opts.signal,
       detached: detachForGroupKill,
@@ -197,7 +197,7 @@ export async function spawnShellInProjectSandbox(
       process.platform === 'win32' ? ['/c', shellCommandLine] : ['-c', shellCommandLine]
     return spawn(shell, shellArgs, {
       cwd: opts.cwd,
-      env: opts.env ?? strippedBaseEnv(),
+      env: mergeSpawnEnv(strippedBaseEnv(), opts.env),
       stdio: opts.stdio,
       signal: opts.signal,
       detached: detachForGroupKill,
@@ -269,7 +269,7 @@ export async function spawnBackgroundProcess(
       process.platform === 'win32' ? ['/c', shellCommandLine] : ['-c', shellCommandLine]
     return spawn(shell, shellArgs, {
       cwd: opts.cwd,
-      env: opts.env ?? strippedBaseEnv(),
+      env: mergeSpawnEnv(strippedBaseEnv(), opts.env),
       stdio: 'pipe',
       detached: detachForGroupKill,
     })

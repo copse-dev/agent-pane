@@ -234,6 +234,18 @@ describe('portrait panel controls row', () => {
     expect(layout.barBottomLeftRadius).toBe('0px')
     expect(layout.barBottomRightRadius).toBe('0px')
 
+    // The resizer widens its drag target two pixels into each neighboring pane.
+    // Keep the entire visible Settings box above that invisible overlap so its
+    // far-right edge still opens Settings.
+    const settingsOwnsRightEdge = await browser.execute(() => {
+      const settings = document.querySelector<HTMLElement>('.projects-settings-btn')!
+      const rect = settings.getBoundingClientRect()
+      return settings.contains(
+        document.elementFromPoint(rect.right - 0.5, rect.top + rect.height / 2),
+      )
+    })
+    expect(settingsOwnsRightEdge).toBe(true)
+
     const unboxedButtons = await browser.execute(() =>
       ['explorer', 'terminal', 'changes'].map((id) => {
         const element = document.querySelector<HTMLElement>(

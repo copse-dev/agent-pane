@@ -71,6 +71,7 @@ const roots = [
   'src/renderer/monaco/monaco-global.ts',
   // Hidden video-decoder window's page bundle (main/services/video opens it).
   'src/renderer/video/decoder.ts',
+  'src/renderer/markdown/mermaid-frame-entry.ts',
   ...tracked.filter((p) => /\.test\.ts$/.test(p)),
   ...tracked.filter((p) => p.startsWith('src/') && /\.test-shim\.ts$/.test(p)),
   ...tracked.filter((p) => p.startsWith('tests/') && isModuleTs(p)),

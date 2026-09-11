@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'sha256-__MERMAID_SCRIPT_HASH__'; style-src 'unsafe-inline'; img-src 'none'; font-src 'none'; connect-src 'none'; worker-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none';"
+    />
+    <title>Mermaid diagram</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      :root {
+        color-scheme: dark;
+      }
+      html,
+      body,
+      .mermaid-diagram,
+      pre {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+      }
+      body {
+        font-family:
+          'Pliant',
+          -apple-system,
+          BlinkMacSystemFont,
+          'Segoe UI',
+          sans-serif;
+        color: #ddd;
+        line-height: 1.55;
+      }
+      svg {
+        display: block;
+      }
+      strong {
+        font-weight: 600;
+      }
+    </style>
+    <script>
+      __MERMAID_BOOTSTRAP__
+    </script>
+  </head>
+  <body></body>
+</html>

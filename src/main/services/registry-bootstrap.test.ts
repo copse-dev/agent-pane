@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import {
   createRegistry,
   registerSkillTools,
+  syncAppleDevelopmentTools,
   syncGhTools,
   syncOkfMemoryTools,
   syncParallelSearchTools,
@@ -26,6 +27,8 @@ import {
 } from './skills/bundled-cursor-skills.ts'
 import { OKF_MEMORIES_PLUGIN_ID } from '@copse/agent/plugins/okf-memories-plugin.ts'
 import { PARALLEL_SEARCH_PLUGIN_ID } from '@copse/agent/plugins/parallel-search-plugin.ts'
+import { APPLE_DEVELOPMENT_PLUGIN_ID } from '@copse/agent/plugins/apple-development-plugin.ts'
+import { OPEN_SIMULATOR_DESKTOP_TOOL_NAME } from '../tools/simulator-desktop-tool.ts'
 
 describe('registerSkillTools', () => {
   let tempRoot = ''
@@ -183,6 +186,30 @@ describe('syncOkfMemoryTools', () => {
     syncOkfMemoryTools(registry)
     assert.equal(registry.has('remember'), false)
     assert.equal(registry.has('recall'), false)
+  })
+})
+
+describe('syncAppleDevelopmentTools', () => {
+  afterEach(() => {
+    setDefaultPluginRegistry(null)
+  })
+
+  it('keeps the visible Simulator tool aligned with the Apple plugin', () => {
+    const plugins = createFirstPartyPluginRegistry()
+    setDefaultPluginRegistry(plugins)
+    const registry = new ToolRegistry()
+
+    plugins.disable(APPLE_DEVELOPMENT_PLUGIN_ID)
+    syncAppleDevelopmentTools(registry)
+    assert.equal(registry.has(OPEN_SIMULATOR_DESKTOP_TOOL_NAME), false)
+
+    plugins.enable(APPLE_DEVELOPMENT_PLUGIN_ID)
+    syncAppleDevelopmentTools(registry)
+    assert.equal(registry.has(OPEN_SIMULATOR_DESKTOP_TOOL_NAME), true)
+
+    plugins.disable(APPLE_DEVELOPMENT_PLUGIN_ID)
+    syncAppleDevelopmentTools(registry)
+    assert.equal(registry.has(OPEN_SIMULATOR_DESKTOP_TOOL_NAME), false)
   })
 })
 

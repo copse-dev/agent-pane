@@ -16,6 +16,17 @@ import type {
   AutomationScheduleInput,
   AutomationTriggerEvent,
 } from '@shared/types/automations.ts'
+import type {
+  AppleConfigureInput,
+  AppleDestination,
+  AppleExecuteInput,
+  AppleOperation,
+  AppleOperationInput,
+  AppleOperationLogPage,
+  AppleProjectDetection,
+  AppleProjectState,
+  AppleSelection,
+} from '@shared/types/apple-development.ts'
 import type { ProjectInstructionSummary } from '@shared/types/instructions.ts'
 import type { SupervisedTaskSummary } from '@shared/types/supervised-task.ts'
 import type { CursorRuleSummary } from '@shared/types/cursor-rules.ts'
@@ -81,6 +92,13 @@ import type {
   VncStatusEvent,
   VncTarget,
 } from '@shared/types/vnc.ts'
+import type {
+  SimulatorDesktopConnection,
+  SimulatorDesktopDevice,
+  SimulatorDesktopFrame,
+  SimulatorDesktopInput,
+  SimulatorDesktopStatusEvent,
+} from '@shared/types/simulator-desktop.ts'
 
 export type { DetectedAcpAgent }
 
@@ -809,6 +827,16 @@ export interface ApiClient {
     onData: (handler: (connectionId: string, bytes: Uint8Array) => void) => () => void
     onStatus: (handler: (event: VncStatusEvent) => void) => () => void
   }
+  simulatorDesktop: {
+    list: () => Promise<SimulatorDesktopDevice[]>
+    open: (udid: string) => Promise<SimulatorDesktopConnection>
+    start: (connectionId: string) => Promise<void>
+    input: (connectionId: string, input: SimulatorDesktopInput) => Promise<void>
+    close: (connectionId: string) => Promise<void>
+    onFrame: (handler: (frame: SimulatorDesktopFrame) => void) => () => void
+    onStatus: (handler: (event: SimulatorDesktopStatusEvent) => void) => () => void
+    onShow: (handler: (udid: string) => void) => () => void
+  }
   memories: {
     list: () => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote[]>
     create: (
@@ -963,6 +991,42 @@ export interface ApiClient {
     remove: (projectId: string, scheduleId: string) => Promise<void>
     runNow: (projectId: string, scheduleId: string) => Promise<AutomationTriggerEvent>
     onTriggered: (handler: (event: AutomationTriggerEvent) => void) => () => void
+  }
+  appleDevelopment: {
+    state: (projectId: string, threadId: string) => Promise<AppleProjectState>
+    detectProject: (projectId: string) => Promise<AppleProjectDetection>
+    setEnrolled: (
+      projectId: string,
+      threadId: string,
+      enrolled: boolean,
+    ) => Promise<AppleProjectState>
+    discover: (
+      projectId: string,
+      threadId: string,
+      includeMetadata: boolean,
+    ) => Promise<AppleProjectState>
+    destinations: (
+      projectId: string,
+      threadId: string,
+      candidateId: string,
+      schemeId: string,
+    ) => Promise<AppleDestination[]>
+    configure: (
+      projectId: string,
+      threadId: string,
+      input: AppleConfigureInput,
+    ) => Promise<AppleSelection>
+    execute: (
+      projectId: string,
+      threadId: string,
+      input: AppleExecuteInput,
+    ) => Promise<AppleOperation>
+    operation: (
+      projectId: string,
+      threadId: string,
+      input: AppleOperationInput,
+    ) => Promise<AppleOperation | AppleOperationLogPage>
+    stopApp: (projectId: string, threadId: string, appSessionId: string) => Promise<boolean>
   }
   instructions: {
     list: () => Promise<ProjectInstructionSummary[]>

@@ -1503,7 +1503,6 @@ async function applyToolGateHooks(
 
   return { ok: true, ...rewrite, ...inject }
 }
-
 /**
  * Returns true when the tool call may proceed, false when the user rejected.
  *
@@ -1577,7 +1576,6 @@ export async function ensureToolPermitted(
   if (toolName === 'parallel_search') {
     return checkParallelSearchPermission(signal)
   }
-
   // GitHub CI tools never mutate remote state. Status/log reads are ephemeral;
   // wait also persists one bounded local task under the active turn tree.
   if (GITHUB_NONMUTATING_CI_TOOLS.has(toolName)) {

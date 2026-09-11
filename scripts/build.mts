@@ -27,6 +27,7 @@ import {
   BUNDLED_CURSOR_SKILLS_VENDOR_DIR,
   assertBundledCursorSkillsSnapshot,
 } from './bundled-cursor-skills-sync.mts'
+import { writeMermaidFrameHtml } from './write-mermaid-frame.mts'
 
 const bundledGortexName = process.platform === 'win32' ? 'gortex.exe' : 'gortex'
 const isDemo = process.argv.includes('--demo')
@@ -276,6 +277,15 @@ if (!isDemo) {
   copyFileSync('src/renderer/video/decoder.html', `${rendererOutDir}/video/decoder.html`)
 }
 
+// Separate execution context: never include Mermaid in the app renderer bundle.
+await esbuild.build({
+  ...browserOpts,
+  entryPoints: ['src/renderer/markdown/mermaid-frame-entry.ts'],
+  outfile: `${rendererOutDir}/mermaid-frame.js`,
+  loader: { ...browserOpts.loader, '.ttf': 'base64' },
+})
+writeMermaidFrameHtml(rendererOutDir)
+
 copyFileSync('src/renderer/index.html', `${rendererOutDir}/index.html`)
 copyFileSync('src/renderer/theme-boot.js', `${rendererOutDir}/theme-boot.js`)
 copyFileSync('assets/icons/rose/icon-32.png', `${rendererOutDir}/favicon.png`)
@@ -345,6 +355,9 @@ if (isDemo) {
 }
 
 cpSync('assets', 'dist/assets', { recursive: true })
+cpSync('src/main/services/simulator-desktop/native', 'dist/resources/apple-simulator', {
+  recursive: true,
+})
 
 // The full renderer ↔ main API protocol schema (docs/api-protocol.md). The
 // committed manifest carries only channels and arity; the typed schema a

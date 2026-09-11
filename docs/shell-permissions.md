@@ -24,6 +24,29 @@ Where a sandbox is active, the sandbox—not a fuzzy match—decides whether the
 sandbox there is no containment boundary, so ambiguity must prompt, and auto-approval cannot skip
 that prompt.
 
+## Apple development operations
+
+Apple Development uses actor-specific consent. Clicking Load targets, Build, Test, Run, or Cancel
+in the panel authorizes that operation and does not open another approval modal. Main resolves the
+enrolled project and thread, validates the selected target, constructs fixed `xcodebuild` or
+`simctl` argument arrays, or resolves a macOS executable inside the validated built app bundle.
+The process runs with normal host access. The generic project sandbox is not a functional boundary
+for Xcode's package resolution, caches, Keychain and signing services, CoreSimulator, devices, and
+project-controlled build phases.
+
+The agent receives the pinned XcodeBuildMCP server only while the first-party pack is enabled and
+the active local macOS project is enrolled. All upstream workflows are available. Each call passes
+through the normal MCP permission gate, including its per-tool remembered grants and corroborated
+read-only auto-run option; enrollment alone does not approve agent execution. XcodeBuildMCP runs
+with normal host access after that gate for the same Xcode service requirements as the panel.
+
+Panel Build, Test, and Run operations, and XcodeBuildMCP build/test/build-and-run tools, add
+`-allowProvisioningUpdates`. An authorized operation may therefore contact Apple and download or
+update signing profiles. Discovery and unrelated tools do not receive the flag. Panel operation
+products remain in Copse-owned per-operation scratch directories, with ownership, cancellation,
+duration, and log bounds enforced. A host restart invalidates the panel operation authority epoch,
+so a recovered task cannot launch a second Xcode process whose predecessor may still be alive.
+
 ## Strict mode and expected blocks
 
 `safetyExternalDenyThreshold` defaults to `1` (off). At a lower threshold, a command is hard-denied

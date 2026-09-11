@@ -1,6 +1,6 @@
 import type { WebContents } from 'electron'
 import { shell } from 'electron'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { join } from 'node:path'
 
 const lockedDown = new WeakSet<WebContents>()
@@ -60,6 +60,10 @@ export function isAllowedRendererNavigation(url: string): boolean {
   return target === root || target.startsWith(`${root}/`)
 }
 
+export function isAllowedDiagramNavigation(url: string): boolean {
+  return url === pathToFileURL(join(rendererRootDir(), 'mermaid-frame.html')).href
+}
+
 export function attachWebContentsLockdown(contents: WebContents): void {
   if (lockedDown.has(contents)) return
   lockedDown.add(contents)
@@ -71,6 +75,15 @@ export function attachWebContentsLockdown(contents: WebContents): void {
 
   contents.on('will-attach-webview', (_event, webPreferences) => {
     hardenWebviewPreferences(webPreferences)
+  })
+
+  // CSP does not prohibit a diagram from navigating its own frame. Only the
+  // fixed packaged frame document is a valid subframe destination in the app
+  // shell. Unlike a user-clicked app link, rejected frame URLs are never opened
+  // externally. Browser guests have a separate WebContents and policy.
+  contents.on('will-frame-navigate', (event) => {
+    if (event.isMainFrame) return
+    if (!isAllowedDiagramNavigation(event.url)) event.preventDefault()
   })
 
   const blockIfDisallowed = (event: Electron.Event, url: string): void => {

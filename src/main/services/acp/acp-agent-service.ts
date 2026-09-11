@@ -412,7 +412,7 @@ export async function runAcpAgentFromSettings(
   // Hand the agent the user's MCP servers so its session mounts them itself
   // (issue #602, tier 1). Best-effort: a config-read failure downgrades the turn
   // to "no forwarded servers" instead of failing it.
-  const mcpServers = await listForwardableMcpServers().catch(() => [])
+  const mcpServers = await listForwardableMcpServers(executionContext?.projectId).catch(() => [])
   // No `model` and no `nativeBridge` here: the session pool owns the bridge
   // (it must exist before spawn for the seatbelt's loopback), and the model
   // switches live via session/set_config_option so it never forces a respawn.
@@ -521,6 +521,7 @@ export async function runAcpAgentFromSettings(
   let lastPrompt = ''
   const attempt = async (): Promise<{ stopReason: StopReason; usage?: Usage | null }> => {
     const { entry, fresh } = await acquireAcpSession({
+      ...(executionContext ? { projectId: executionContext.projectId } : {}),
       threadId: options.threadId,
       config: spawnConfig,
       registry: options.registry,

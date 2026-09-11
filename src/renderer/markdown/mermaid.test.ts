@@ -1,7 +1,10 @@
 import '../../../tests/setup-dom.ts'
 import { describe, it, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { renderMermaidIn, setMermaidLoaderForTests } from './mermaid.ts'
+import {
+  renderMermaidInFrame as renderMermaidIn,
+  setMermaidLoaderForTests,
+} from './mermaid-render.ts'
 import { qs, qsRequired } from '../dom/helpers.ts'
 
 type Nodes = { nodes: HTMLElement[] }
@@ -44,7 +47,7 @@ describe('renderMermaidIn', () => {
     assert.equal(fake.initCount, 0) // loader never consulted
   })
 
-  it('renders a diagram, folds it, and initializes mermaid once', async () => {
+  it('renders a diagram and initializes mermaid once', async () => {
     const fake = fakeMermaid((node) => {
       node.innerHTML = '<svg><g></g></svg>'
     })
@@ -54,7 +57,6 @@ describe('renderMermaidIn', () => {
 
     const container = qsRequired(root, '.mermaid-diagram')
     assert.ok(qs(container, 'svg'))
-    assert.equal(container.classList.contains('mermaid-diagram--folded'), true)
     assert.equal(qs(container, '.mermaid-fallback-title'), null)
     assert.equal(fake.initCount, 1)
   })
