@@ -36,7 +36,13 @@ function fixture(): {
     '#!/bin/bash\nif [ "$1" = -s ]; then echo Darwin; else echo arm64; fi\n',
   )
   chmodSync(join(bin, 'uname'), 0o755)
-  for (const file of ['environment.sh', 'versions.sh', 'offline.sh']) {
+  for (const file of [
+    'environment.sh',
+    'versions.sh',
+    'offline.sh',
+    'clean-environment.sh',
+    'dispatch.sh',
+  ]) {
     copyFileSync(resolve('scripts/portable', file), join(scripts, file))
   }
   copyFileSync(resolve('scripts/portable/run.sh'), join(root, 'portable-dev'))
@@ -99,6 +105,71 @@ test('named coding launchers use drive executables and relocated Claude state an
         `${moved}/apps/darwin-arm64/bin/${tool}\n${moved}/data/claude\n${moved}/tmp\nargument with spaces\n`,
       )
     }
+  } finally {
+    rmSync(f.parent, { recursive: true, force: true })
+  }
+})
+
+test('portable entry drops inherited work authentication and routing without exposing values', () => {
+  const f = fixture()
+  try {
+    const workEnvironment = {
+      ANTHROPIC_API_KEY: 'work-secret',
+      ANTHROPIC_AUTH_TOKEN: 'work-secret',
+      CLAUDE_CODE_OAUTH_TOKEN: 'work-secret',
+      ANTHROPIC_BASE_URL: 'https://work.invalid',
+      CLAUDE_CODE_USE_BEDROCK: '1',
+      CLAUDE_CODE_USE_VERTEX: '1',
+      OPENAI_API_KEY: 'work-secret',
+      OPENAI_BASE_URL: 'https://work.invalid',
+      AWS_PROFILE: 'work',
+      AWS_ACCESS_KEY_ID: 'work-secret',
+      GOOGLE_APPLICATION_CREDENTIALS: '/work/credentials.json',
+      AZURE_OPENAI_API_KEY: 'work-secret',
+      HTTPS_PROXY: 'https://work.invalid',
+      NODE_OPTIONS: '--require=/work/preload.js',
+      UNKNOWN_FUTURE_PROVIDER_TOKEN: 'work-secret',
+      CLAUDE_CONFIG_DIR: '/work/claude',
+      CODEX_HOME: '/work/codex',
+      COPSE_DIR: '/work/copse',
+      TERM: 'xterm-256color',
+      LANG: 'en_GB.UTF-8',
+    }
+    const result = f.run(f.root, ['exec', '/usr/bin/env'], workEnvironment)
+    assert.equal(result.status, 0, result.stderr)
+    assert.doesNotMatch(result.stdout + result.stderr, /work-secret|work\.invalid|\/work\//)
+    assert.doesNotMatch(
+      result.stdout,
+      /ANTHROPIC_|OPENAI_|AWS_|GOOGLE_|AZURE_|HTTPS_PROXY=|NODE_OPTIONS=|UNKNOWN_FUTURE_PROVIDER_TOKEN=|CODEX_HOME=/,
+    )
+    assert.match(result.stdout, /TERM=xterm-256color/)
+    assert.match(result.stdout, /LANG=en_GB.UTF-8/)
+    assert.ok(result.stdout.includes(`CLAUDE_CONFIG_DIR=${f.root}/data/claude\n`))
+    assert.ok(result.stdout.includes(`COPSE_DIR=${f.root}/data/copse\n`))
+    const originalHome = process.env['HOME']
+    if (originalHome !== undefined) assert.ok(result.stdout.includes(`HOME=${originalHome}\n`))
+  } finally {
+    rmSync(f.parent, { recursive: true, force: true })
+  }
+})
+
+test('portable execution permits deliberate environment configuration after the clean boundary', () => {
+  const f = fixture()
+  try {
+    const result = f.run(
+      f.root,
+      [
+        'exec',
+        '/usr/bin/env',
+        'ANTHROPIC_BASE_URL=http://127.0.0.1:1234',
+        '/bin/bash',
+        '-c',
+        'printf "%s\\n" "$ANTHROPIC_BASE_URL"',
+      ],
+      { ANTHROPIC_BASE_URL: 'https://work.invalid' },
+    )
+    assert.equal(result.status, 0, result.stderr)
+    assert.equal(result.stdout, 'http://127.0.0.1:1234\n')
   } finally {
     rmSync(f.parent, { recursive: true, force: true })
   }
