@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   afterSandboxedCommand,
@@ -315,5 +315,30 @@ describe('linked-worktree sandbox integration', () => {
       if (previousCopseDir === undefined) delete process.env['COPSE_DIR']
       else process.env['COPSE_DIR'] = previousCopseDir
     }
+  })
+
+  it('starts Node in a home-contained workspace while keeping sibling files unreadable', async (t) => {
+    if (process.platform !== 'darwin') {
+      t.skip('regression covers macOS Seatbelt read-rule precedence')
+      return
+    }
+
+    const parent = await mkdtemp(join(homedir(), 'copse-cwd-regression-'))
+    cleanups.push(parent)
+    const root = join(parent, 'workspace')
+    const sibling = join(parent, 'sibling.txt')
+    await mkdir(root)
+    await writeFile(sibling, 'outside workspace')
+
+    await initProjectSandbox()
+    assert.equal(isProjectSandboxEnabled(), true, 'macOS regression must run inside ASRT')
+
+    const cwd = await runSandboxed(process.execPath, ['-p', 'process.cwd()'], root)
+    assert.equal(cwd.code, 0, cwd.stderr)
+    assert.equal(cwd.stdout.trim(), root)
+
+    const readSibling = await runSandboxed('/bin/cat', [sibling], root)
+    assert.notEqual(readSibling.code, 0)
+    assert.equal(readSibling.stdout, '')
   })
 })

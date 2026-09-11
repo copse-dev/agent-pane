@@ -77,6 +77,30 @@ describe('withSandboxShellPath', () => {
   })
 })
 
+describe('spawn environment overrides', () => {
+  it('overlays caller variables without dropping the scrubbed base environment', async () => {
+    const script =
+      'process.stdout.write(JSON.stringify({ overlay: process.env.COPSE_TEST_OVERLAY, home: Boolean(process.env.HOME), path: Boolean(process.env.PATH) }))'
+    const child = await spawnInProjectSandbox(process.execPath, ['-e', script], {
+      cwd: process.cwd(),
+      env: { COPSE_TEST_OVERLAY: 'present' },
+      stdio: 'pipe',
+      unsandboxed: true,
+    })
+    let output = ''
+    child.stdout?.setEncoding('utf8')
+    child.stdout?.on('data', (chunk: string) => {
+      output += chunk
+    })
+    const code = await new Promise<number | null>((resolveCode, reject) => {
+      child.once('error', reject)
+      child.once('close', resolveCode)
+    })
+    assert.equal(code, 0)
+    assert.equal(output, '{"overlay":"present","home":true,"path":true}')
+  })
+})
+
 describe('isSpawnableWorkingDirectory', () => {
   it('accepts an existing directory and rejects a deleted one or a file', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'copse-spawn-cwd-'))

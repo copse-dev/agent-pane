@@ -37,6 +37,7 @@ import {
   EXPERIMENTAL_FIRST_PARTY_PLUGIN_IDS,
 } from '@copse/agent/plugins/first-party-plugins.ts'
 import { ARTIFACT_CHECKPOINT_PLUGIN_ID } from '@copse/agent/plugins/artifact-checkpoint-plugin.ts'
+import { APPLE_DEVELOPMENT_PLUGIN_ID } from '@copse/agent/plugins/apple-development-plugin.ts'
 import { setDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { summarizePlugins, type PluginSummaryOut } from '@copse/agent/plugins/plugin-summary.ts'
 import {
@@ -127,6 +128,9 @@ const PARALLEL_SEARCH_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.parallelSearch
 
 /** One-time default-off seed for the delayed artifact-checkpoint experiment. */
 const ARTIFACT_CHECKPOINT_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.artifactCheckpointEnablement'
+
+/** One-time default-off seed for Apple Development on upgraded profiles. */
+const APPLE_DEVELOPMENT_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.appleDevelopmentEnablement'
 
 /** Storage key holding one plugin's settings values (`pluginId` scoped). */
 function pluginSettingsKey(pluginId: string): string {
@@ -302,6 +306,19 @@ function migrateArtifactCheckpointEnablement(): void {
   disabled.add(ARTIFACT_CHECKPOINT_PLUGIN_ID)
   storageSet(PLUGIN_DISABLED_KEY, [...disabled].sort())
   storageSet(ARTIFACT_CHECKPOINT_ENABLEMENT_MIGRATION_KEY, true)
+}
+
+/**
+ * Existing profiles already own their disable list, so manifest stability only
+ * protects fresh profiles. Seed Apple Development off once on upgrade; later
+ * toggles remain user-owned.
+ */
+function migrateAppleDevelopmentEnablement(): void {
+  if (storageGet(APPLE_DEVELOPMENT_ENABLEMENT_MIGRATION_KEY) === true) return
+  const disabled = readDisabledIds()
+  disabled.add(APPLE_DEVELOPMENT_PLUGIN_ID)
+  storageSet(PLUGIN_DISABLED_KEY, [...disabled].sort())
+  storageSet(APPLE_DEVELOPMENT_ENABLEMENT_MIGRATION_KEY, true)
 }
 
 /** Read one pack's persisted settings bag (`{}` when nothing stored). */
@@ -794,6 +811,7 @@ export function getPluginService(): PluginService {
   migrateParallelSearchEnablement()
   migrateArtifactCheckpointEnablement()
   const registry = createFirstPartyPluginRegistry()
+  migrateAppleDevelopmentEnablement()
   const service = createPluginService(registry)
   setDefaultPluginRegistry(registry)
   singleton = service

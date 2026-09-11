@@ -175,6 +175,8 @@ import {
 import { requestSshPrompt } from '../services/ssh-workspace/ssh-prompt.ts'
 import { requestCloseConfirmation } from '../services/close-confirm.ts'
 import { setSeededVncNearbyServersForTests } from '../services/vnc/vnc-service.ts'
+import { setSeededSimulatorDesktopForTests } from '../services/simulator-desktop/simulator-desktop-service.ts'
+import { showSimulatorDesktop } from '../services/simulator-desktop/simulator-desktop-panel.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
 import {
   listSkills,
@@ -206,6 +208,7 @@ import { discoverCursorRules, toCursorRuleSummaries } from '../services/skills/c
 import { loadProjectInstructionSources } from '../services/project-instructions.ts'
 import {
   registerSkillTools,
+  syncAppleDevelopmentTools,
   syncAdvisorStrategyTools,
   syncCiInvestigatorTools,
   syncLongHorizonTasksTools,
@@ -229,9 +232,17 @@ import { BACKGROUND_TASKS_PLUGIN_ID } from '@copse/agent/plugins/background-task
 import { PARALLEL_SEARCH_PLUGIN_ID } from '@copse/agent/plugins/parallel-search-plugin.ts'
 import { DARK_FACTORY_PLUGIN_ID } from '@copse/agent/plugins/dark-factory-plugin.ts'
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
+import { APPLE_DEVELOPMENT_PLUGIN_ID } from '@copse/agent/plugins/apple-development-plugin.ts'
 import { getAutomationService } from '../services/automations/automation-service.ts'
 import { syncDarkFactorySensor } from '../services/supervisor/dark-factory-sensor.ts'
 import { getTaskSupervisor } from '../services/supervisor/task-supervisor.ts'
+import { getAppleDevelopmentService } from '../services/apple-development/apple-development-service.ts'
+import {
+  appleConfigureInputSchema,
+  appleExecuteInputSchema,
+  appleOperationInputSchema,
+} from '@shared/types/apple-development.ts'
+
 import type { SupervisedTaskSummary } from '@shared/types/supervised-task.ts'
 import { READ_TERMINAL_ENABLED_SETTING } from '@shared/terminal/read-terminal.ts'
 import { EXTERNAL_CONTEXT_FIELD, MEMORY_TYPE } from '../tools/memory-tools.ts'
@@ -432,6 +443,16 @@ you want the coding agent to follow on every turn.
 `
 
 export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry): void {
+  const reloadMcpForWorkspace = (): void => {
+    void reloadMcpServers(registry)
+      .then((statuses) => {
+        if (!win.isDestroyed()) win.webContents.send('mcp:status-changed', statuses)
+      })
+      .catch((err: unknown) => {
+        console.error('[mcp] workspace reload failed:', err)
+      })
+  }
+
   setGitHubListWatchBroadcast(() => {
     broadcastToAppWindows('gh:lists-tick')
   })
@@ -503,6 +524,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     if (result.canceled || !result.filePaths[0]) return null
     const root = await registerAllowedWorkspaceRoot(result.filePaths[0])
     setWorkspaceRoot(root)
+    reloadMcpForWorkspace()
     // Scheduled, not awaited — index builds must not block the renderer's
     // swap to the full layout; the footer indicator reports progress.
     startWorkspaceIndexing(root)
@@ -660,6 +682,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const sshHost = resolveSshHostForWorkspaceRoot(parsedRoot, explicitSshHost)
     const canonical = await assertAllowedWorkspaceRoot(parsedRoot, sshHost)
     setWorkspaceRoot(canonical)
+    reloadMcpForWorkspace()
     startWorkspaceIndexing(canonical)
     // Do NOT block the IPC response (and therefore the renderer's boot / first
     // paint) on the skills scan. It re-scans user + bundled + workspace skill
@@ -2152,6 +2175,15 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       getTaskSupervisor().syncCronTasks()
       await getAutomationService().sync()
     }
+    if (id === APPLE_DEVELOPMENT_PLUGIN_ID) {
+      syncAppleDevelopmentTools(registry)
+      const statuses = await reloadMcpServers(registry)
+      win.webContents.send('mcp:status-changed', statuses)
+      if (!enabled) {
+        const activeProjectId = getActiveProjectId()
+        if (activeProjectId) await getAppleDevelopmentService().cancelProject(activeProjectId)
+      }
+    }
     return { plugins: getPluginService().list() }
   })
   ipcMain.handle(
@@ -2213,6 +2245,152 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
         [rawProjectId, rawScheduleId],
       )
       return getAutomationService().runNow(projectId, scheduleId)
+    },
+  )
+
+  // Apple Development first-party pack. Renderer requests carry only project/thread
+  // identities; main resolves and validates the checkout before every operation.
+  const appleInvocation = (
+    projectId: string,
+    threadId: string,
+    signal: AbortSignal,
+  ): { owner: { projectId: string; threadId: string }; source: 'user'; signal: AbortSignal } => ({
+    owner: { projectId, threadId },
+    source: 'user' as const,
+    signal,
+  })
+
+  ipcMain.handle(
+    'apple-development:state',
+    async (event, rawProjectId: unknown, rawThreadId: unknown) => {
+      assertMainFrameSender(event, win)
+      const [projectId, threadId] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [
+        rawProjectId,
+        rawThreadId,
+      ])
+      await resolveThreadExecutionContext(projectId, threadId)
+      return getAppleDevelopmentService().getState({ projectId, threadId })
+    },
+  )
+  ipcMain.handle('apple-development:detect-project', async (event, rawProjectId: unknown) => {
+    assertMainFrameSender(event, win)
+    const projectId = parseIpcArgs(zProjectId, [rawProjectId])
+    return getAppleDevelopmentService().detectProject(projectId)
+  })
+  ipcMain.handle(
+    'apple-development:set-enrolled',
+    async (event, rawProjectId: unknown, rawThreadId: unknown, rawEnrolled: unknown) => {
+      assertMainFrameSender(event, win)
+      const [projectId, threadId, enrolled] = parseIpcArgs(
+        z.tuple([zProjectId, zThreadId, z.boolean()]),
+        [rawProjectId, rawThreadId, rawEnrolled],
+      )
+      const controller = new AbortController()
+      const state = await getAppleDevelopmentService().setEnrolled(
+        appleInvocation(projectId, threadId, controller.signal),
+        enrolled,
+      )
+      const statuses = await reloadMcpServers(registry)
+      win.webContents.send('mcp:status-changed', statuses)
+      return state
+    },
+  )
+  ipcMain.handle(
+    'apple-development:discover',
+    async (event, rawProjectId: unknown, rawThreadId: unknown, rawIncludeMetadata: unknown) => {
+      assertMainFrameSender(event, win)
+      const [projectId, threadId, includeMetadata] = parseIpcArgs(
+        z.tuple([zProjectId, zThreadId, z.boolean()]),
+        [rawProjectId, rawThreadId, rawIncludeMetadata],
+      )
+      const controller = new AbortController()
+      return getAppleDevelopmentService().discover(
+        appleInvocation(projectId, threadId, controller.signal),
+        includeMetadata,
+      )
+    },
+  )
+  ipcMain.handle(
+    'apple-development:configure',
+    async (event, rawProjectId: unknown, rawThreadId: unknown, rawInput: unknown) => {
+      assertMainFrameSender(event, win)
+      const [projectId, threadId, input] = parseIpcArgs(
+        z.tuple([zProjectId, zThreadId, appleConfigureInputSchema]),
+        [rawProjectId, rawThreadId, rawInput],
+      )
+      const controller = new AbortController()
+      return getAppleDevelopmentService().configure(
+        appleInvocation(projectId, threadId, controller.signal),
+        input,
+      )
+    },
+  )
+  ipcMain.handle(
+    'apple-development:destinations',
+    async (
+      event,
+      rawProjectId: unknown,
+      rawThreadId: unknown,
+      rawCandidateId: unknown,
+      rawSchemeId: unknown,
+    ) => {
+      assertMainFrameSender(event, win)
+      const [projectId, threadId, candidateId, schemeId] = parseIpcArgs(
+        z.tuple([zProjectId, zThreadId, zNonEmptyString.max(512), zNonEmptyString.max(256)]),
+        [rawProjectId, rawThreadId, rawCandidateId, rawSchemeId],
+      )
+      const controller = new AbortController()
+      return getAppleDevelopmentService().destinations(
+        appleInvocation(projectId, threadId, controller.signal),
+        candidateId,
+        schemeId,
+      )
+    },
+  )
+  ipcMain.handle(
+    'apple-development:execute',
+    async (event, rawProjectId: unknown, rawThreadId: unknown, rawInput: unknown) => {
+      assertMainFrameSender(event, win)
+      const [projectId, threadId, input] = parseIpcArgs(
+        z.tuple([zProjectId, zThreadId, appleExecuteInputSchema]),
+        [rawProjectId, rawThreadId, rawInput],
+      )
+      const controller = new AbortController()
+      return getAppleDevelopmentService().execute(
+        appleInvocation(projectId, threadId, controller.signal),
+        input,
+      )
+    },
+  )
+  ipcMain.handle(
+    'apple-development:operation',
+    async (event, rawProjectId: unknown, rawThreadId: unknown, rawInput: unknown) => {
+      assertMainFrameSender(event, win)
+      const [projectId, threadId, input] = parseIpcArgs(
+        z.tuple([zProjectId, zThreadId, appleOperationInputSchema]),
+        [rawProjectId, rawThreadId, rawInput],
+      )
+      const controller = new AbortController()
+      const call = appleInvocation(projectId, threadId, controller.signal)
+      if (input.action === 'cancel') {
+        return getAppleDevelopmentService().cancel(call, input.operationId)
+      }
+      return getAppleDevelopmentService().operation(call, input.operationId, input.logCursor)
+    },
+  )
+  ipcMain.handle(
+    'apple-development:stop-app',
+    async (event, rawProjectId: unknown, rawThreadId: unknown, rawAppSessionId: unknown) => {
+      assertMainFrameSender(event, win)
+      const [projectId, threadId, appSessionId] = parseIpcArgs(
+        z.tuple([zProjectId, zThreadId, zNonEmptyString.max(256)]),
+        [rawProjectId, rawThreadId, rawAppSessionId],
+      )
+      const controller = new AbortController()
+      return getAppleDevelopmentService().stopApp(
+        appleInvocation(projectId, threadId, controller.signal),
+        appSessionId,
+      )
     },
   )
 
@@ -2848,6 +3026,47 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
         [raw],
       )
       setSeededVncNearbyServersForTests(servers)
+    })
+    ipcMain.handle('test:setSimulatorDesktop', (event, raw: unknown) => {
+      assertMainFrameSender(event, win)
+      const value = parseIpcArgs(
+        z.object({
+          devices: z
+            .array(
+              z.object({
+                udid: z.uuid(),
+                name: z.string().min(1).max(256),
+                runtime: z.string().min(1).max(128),
+              }),
+            )
+            .max(8),
+          frame: z
+            .object({
+              base64: z.string().max(2_000_000),
+              mimeType: z.enum(['image/jpeg', 'image/png', 'image/svg+xml']),
+              pixelWidth: z.number().int().positive().max(10_000),
+              pixelHeight: z.number().int().positive().max(10_000),
+            })
+            .nullable(),
+        }),
+        [raw],
+      )
+      setSeededSimulatorDesktopForTests(
+        value.devices,
+        value.frame
+          ? {
+              bytes: Uint8Array.from(Buffer.from(value.frame.base64, 'base64')),
+              mimeType: value.frame.mimeType,
+              pixelWidth: value.frame.pixelWidth,
+              pixelHeight: value.frame.pixelHeight,
+            }
+          : null,
+      )
+    })
+    ipcMain.handle('test:showSimulatorDesktop', (event, raw: unknown) => {
+      assertMainFrameSender(event, win)
+      const udid = parseIpcArgs(z.uuid(), [raw])
+      showSimulatorDesktop(udid)
     })
     ipcMain.handle('test:setSemanticIndexScaleGuard', (event, phase: unknown, reason: unknown) => {
       assertMainFrameSender(event, win)

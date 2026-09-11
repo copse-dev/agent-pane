@@ -44,7 +44,7 @@ import {
   switchProject,
   switchProjectThread,
 } from '../controller/projects.ts'
-import { openSettingsDialog } from './settings-dialog.ts'
+import { openAppleDevelopmentSettings, openSettingsDialog } from './settings-dialog.ts'
 import { hasAutomationDialog, openAutomationDialog } from './automation-dialog.ts'
 import { showErrorToast, showToast } from './toast.ts'
 import { forkThread } from '../controller/fork-thread.ts'
@@ -866,12 +866,37 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       )
       menuButton.addEventListener('click', () => {
         menuButton.disabled = true
-        void api.plugins
-          .list()
-          .then((result) => {
+        void Promise.all([
+          api.plugins.list(),
+          api.appleDevelopment.detectProject(project.id).catch(() => null),
+        ])
+          .then(([result, appleDetection]) => {
             if (!menuButton.isConnected) return
             const rect = menuButton.getBoundingClientRect()
             const entries: ContextMenuEntry[] = []
+            if (
+              appleDetection?.supportedHost === true &&
+              (appleDetection.detected || appleDetection.enrolled)
+            ) {
+              entries.push({
+                label: 'Apple Development…',
+                onSelect: (): void => {
+                  if (store.getState().activeProjectId === project.id) {
+                    openAppleDevelopmentSettings()
+                    return
+                  }
+                  const unsubscribe = store.on('workspace_changed', () => {
+                    if (store.getState().activeProjectId === project.id) {
+                      unsubscribe()
+                      openAppleDevelopmentSettings()
+                    } else if (!isProjectSwitchInFlight(store, project.id)) {
+                      unsubscribe()
+                    }
+                  })
+                  switchProject(store, api, project.id)
+                },
+              })
+            }
             if (result.plugins.some(hasAutomationDialog)) {
               entries.push(
                 {

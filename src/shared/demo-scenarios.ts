@@ -1,4 +1,5 @@
 import type { Project, Thread } from './types/index.ts'
+import type { AppleProjectState } from './types/apple-development.ts'
 import type { AcpAgentConfig } from './types/acp.ts'
 import type { DemoTrace } from './demo-traces.ts'
 import { LANDING_TRACE } from './demo-traces/landing.ts'
@@ -81,6 +82,8 @@ export interface DemoScenario {
     type: string
     allowRemember?: boolean
   }[]
+  /** Browser-hosted state for the first-party Apple Development panel. */
+  appleDevelopmentState?: AppleProjectState
 }
 
 export const FOOTER_COMPACT_EXPECTATIONS = {
@@ -1004,6 +1007,150 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
         updatedAt: FIXED_TIME,
       },
     ],
+  },
+  {
+    id: 'apple-development',
+    label: 'Apple Development test profile',
+    project: project('demo-apple-development-project', 'DemoApp', '/demo/DemoApp'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+    },
+    threads: [
+      {
+        id: 'demo-apple-development-thread',
+        title: 'Apple Development demo',
+        status: 'idle',
+        messages: [
+          {
+            id: 'demo-apple-user',
+            role: 'user',
+            content: 'Build and test DemoApp on the selected iPhone Simulator.',
+            toolCalls: [],
+            createdAt: FIXED_TIME,
+          },
+          {
+            id: 'demo-apple-assistant',
+            role: 'assistant',
+            content: 'The panel shows the latest Apple Development operation for this thread.',
+            toolCalls: [],
+            createdAt: FIXED_TIME + 1,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME + 4_000,
+      },
+    ],
+    appleDevelopmentState: {
+      pluginEnabled: true,
+      enrolled: true,
+      supportedHost: true,
+      toolchain: {
+        developerDir: '/Applications/Xcode.app/Contents/Developer',
+        version: 'Xcode 26.6',
+      },
+      candidates: [
+        {
+          id: 'ios/DemoApp.xcworkspace',
+          name: 'ios/DemoApp',
+          kind: 'workspace',
+          schemes: ['DemoApp'],
+        },
+      ],
+      destinations: [
+        {
+          id: 'platform=iOS Simulator,id=E2E-IP17-PRO',
+          name: 'iPhone 17 Pro',
+          platform: 'iOS Simulator',
+          supported: true,
+          booted: true,
+        },
+      ],
+      metadataRequiresExecution: false,
+      selection: {
+        candidateId: 'ios/DemoApp.xcworkspace',
+        schemeId: 'DemoApp',
+        configuration: 'Debug',
+        destinationId: 'platform=iOS Simulator,id=E2E-IP17-PRO',
+        revision: 1,
+      },
+      operations: [
+        {
+          id: 'run-demo',
+          action: 'run',
+          status: 'cancelled',
+          target: {
+            candidateId: 'ios/DemoApp.xcworkspace',
+            schemeId: 'DemoApp',
+            configuration: 'Debug',
+            destinationId: 'platform=iOS Simulator,id=E2E-IP17-PRO',
+            revision: 1,
+          },
+          createdAt: FIXED_TIME + 3_000,
+          updatedAt: FIXED_TIME + 4_000,
+          outcome: {
+            operationId: 'run-demo',
+            status: 'cancelled',
+            reason: 'Cancelled while waiting for the selected Simulator.',
+            exitCode: null,
+            diagnostics: [],
+            testSummary: null,
+            logArtifactId: 'apple-log:run-demo',
+            outputTruncated: false,
+          },
+        },
+        {
+          id: 'test-demo',
+          action: 'test',
+          status: 'failed',
+          target: {
+            candidateId: 'ios/DemoApp.xcworkspace',
+            schemeId: 'DemoApp',
+            configuration: 'Debug',
+            destinationId: 'platform=iOS Simulator,id=E2E-IP17-PRO',
+            revision: 1,
+          },
+          createdAt: FIXED_TIME + 2_000,
+          updatedAt: FIXED_TIME + 3_000,
+          outcome: {
+            operationId: 'test-demo',
+            status: 'failed',
+            reason: 'DemoAppTests failed with 1 failing test.',
+            exitCode: 65,
+            diagnostics: [],
+            testSummary: { passed: 42, failed: 1, skipped: 2 },
+            logArtifactId: 'apple-log:test-demo',
+            outputTruncated: false,
+          },
+        },
+        {
+          id: 'build-demo',
+          action: 'build',
+          status: 'succeeded',
+          target: {
+            candidateId: 'ios/DemoApp.xcworkspace',
+            schemeId: 'DemoApp',
+            configuration: 'Debug',
+            destinationId: 'platform=iOS Simulator,id=E2E-IP17-PRO',
+            revision: 1,
+          },
+          createdAt: FIXED_TIME + 1_000,
+          updatedAt: FIXED_TIME + 2_000,
+          outcome: {
+            operationId: 'build-demo',
+            status: 'succeeded',
+            exitCode: 0,
+            diagnostics: [],
+            testSummary: null,
+            logArtifactId: 'apple-log:build-demo',
+            outputTruncated: false,
+          },
+        },
+      ],
+      setupMessage: null,
+    },
   },
   {
     id: 'chat-layout-styling',

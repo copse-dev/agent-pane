@@ -185,6 +185,69 @@
           0
         ]
       },
+      "apple-development:configure": {
+        "api": "appleDevelopment.configure",
+        "args": [
+          3,
+          3
+        ]
+      },
+      "apple-development:destinations": {
+        "api": "appleDevelopment.destinations",
+        "args": [
+          4,
+          4
+        ]
+      },
+      "apple-development:detect-project": {
+        "api": "appleDevelopment.detectProject",
+        "args": [
+          1,
+          1
+        ]
+      },
+      "apple-development:discover": {
+        "api": "appleDevelopment.discover",
+        "args": [
+          3,
+          3
+        ]
+      },
+      "apple-development:execute": {
+        "api": "appleDevelopment.execute",
+        "args": [
+          3,
+          3
+        ]
+      },
+      "apple-development:operation": {
+        "api": "appleDevelopment.operation",
+        "args": [
+          3,
+          3
+        ]
+      },
+      "apple-development:set-enrolled": {
+        "api": "appleDevelopment.setEnrolled",
+        "args": [
+          3,
+          3
+        ]
+      },
+      "apple-development:state": {
+        "api": "appleDevelopment.state",
+        "args": [
+          2,
+          2
+        ]
+      },
+      "apple-development:stop-app": {
+        "api": "appleDevelopment.stopApp",
+        "args": [
+          3,
+          3
+        ]
+      },
       "approval:respond": {
         "api": "approval.respond",
         "args": [
@@ -1256,6 +1319,41 @@
           3
         ]
       },
+      "simulator-desktop:close": {
+        "api": "simulatorDesktop.close",
+        "args": [
+          1,
+          1
+        ]
+      },
+      "simulator-desktop:input": {
+        "api": "simulatorDesktop.input",
+        "args": [
+          2,
+          2
+        ]
+      },
+      "simulator-desktop:list": {
+        "api": "simulatorDesktop.list",
+        "args": [
+          0,
+          0
+        ]
+      },
+      "simulator-desktop:open": {
+        "api": "simulatorDesktop.open",
+        "args": [
+          1,
+          1
+        ]
+      },
+      "simulator-desktop:start": {
+        "api": "simulatorDesktop.start",
+        "args": [
+          1,
+          1
+        ]
+      },
       "skills:list": {
         "api": "skills.list",
         "args": [
@@ -2032,6 +2130,27 @@
       },
       "security:guarded-yolo-changed": {
         "api": "security.onGuardedYoloChanged",
+        "args": [
+          1,
+          1
+        ]
+      },
+      "simulator-desktop:frame": {
+        "api": "simulatorDesktop.onFrame",
+        "args": [
+          1,
+          1
+        ]
+      },
+      "simulator-desktop:show": {
+        "api": "simulatorDesktop.onShow",
+        "args": [
+          1,
+          1
+        ]
+      },
+      "simulator-desktop:status": {
+        "api": "simulatorDesktop.onStatus",
         "args": [
           1,
           1

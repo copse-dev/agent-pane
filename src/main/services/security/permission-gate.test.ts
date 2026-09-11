@@ -103,6 +103,30 @@ describe('ensureToolPermitted', () => {
     )
   })
 
+  it('routes XcodeBuildMCP execution through the MCP approval gate', async () => {
+    setPermissionGateForTests(null)
+    let title = ''
+    let type = ''
+    setApprovalHandler(async (request) => {
+      title = request.title
+      type = request.type
+      return { approved: false, remember: false }
+    })
+    try {
+      assert.equal(
+        await ensureToolPermitted({
+          toolName: 'mcp__xcodebuildmcp__build_run_macos',
+          args: { scheme: 'Example' },
+        }),
+        false,
+      )
+      assert.equal(title, 'MCP tool: xcodebuildmcp/build_run_macos')
+      assert.equal(type, 'mcp')
+    } finally {
+      setApprovalHandler(null)
+    }
+  })
+
   it('blocks mutating tools but allows reads during a read-only agent run', async () => {
     setPermissionGateForTests(null)
     await runWithAgentRunReadonly(true, async () => {

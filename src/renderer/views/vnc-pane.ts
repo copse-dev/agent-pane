@@ -11,6 +11,7 @@ import type {
   VncSshHostResolution,
   VncTarget,
 } from '@shared/types/vnc.ts'
+import type { SimulatorDesktopDevice } from '@shared/types/simulator-desktop.ts'
 import type { SshWorkspaceHost } from '@shared/types/ssh-workspace.ts'
 import { paneMaximizeButton } from './pane-maximize-button.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
@@ -18,6 +19,8 @@ import { VncIpcChannel } from './vnc-channel.ts'
 import { showConfirmDialog } from './confirm-dialog.ts'
 import { dedupeNearbyVncServers, parseVncEndpoint, preferredVncUsername } from './vnc-machines.ts'
 import { showToast } from './toast.ts'
+import { createSimulatorDesktopView, type SimulatorDesktopView } from './simulator-desktop-view.ts'
+import { openRightPanel } from '../controller/panels.ts'
 
 function vncModeActive(store: AppStore): boolean {
   const { filesPaneOpen, rightPanelMode } = store.getState()
@@ -28,6 +31,7 @@ const LOCAL_MACHINE = 'local'
 const MANUAL_MACHINE = 'network:manual'
 const NEARBY_MACHINE_PREFIX = 'network:nearby:'
 const SSH_MACHINE_PREFIX = 'ssh:'
+const SIMULATOR_MACHINE_PREFIX = 'simulator:'
 
 function discoveryHost(machine: string): VncDiscoveryHost {
   if (machine.startsWith(SSH_MACHINE_PREFIX)) {
@@ -43,6 +47,10 @@ function sshMachineValue(hostId: string): string {
 
 function isNetworkMachine(machine: string): boolean {
   return machine === MANUAL_MACHINE || machine.startsWith(NEARBY_MACHINE_PREFIX)
+}
+
+function isSimulatorMachine(machine: string): boolean {
+  return machine.startsWith(SIMULATOR_MACHINE_PREFIX)
 }
 
 function hostLabel(host: SshWorkspaceHost): string {
@@ -67,6 +75,7 @@ interface PendingStatus {
 interface VncSessionController {
   cleanup(): void
   focus(): void
+  showSimulator(udid: string): void
 }
 
 interface VncSessionOptions {
@@ -181,6 +190,11 @@ function mountVncSession(
       hidden: true,
     },
     'Control desktop',
+  )
+  const homeButton = el(
+    'button',
+    { type: 'button', class: 'ui-btn vnc-home-btn', hidden: true },
+    'Home',
   )
   const discoverButton = el(
     'button',
@@ -382,6 +396,7 @@ function mountVncSession(
     status,
     forgetLoginButton,
     controlButton,
+    homeButton,
     disconnectButton,
     note,
   )
@@ -402,6 +417,7 @@ function mountVncSession(
   let nearbyGeneration = 0
   let sshHostsGeneration = 0
   let sshHosts: SshWorkspaceHost[] = []
+  let simulatorDevices: SimulatorDesktopDevice[] = []
   let sshHostResolutions: VncSshHostResolution[] = []
   let allNearbyServers: VncNearbyServer[] = []
   let nearbyServers: VncNearbyServer[] = []
@@ -410,6 +426,8 @@ function mountVncSession(
   let pendingDisconnectStatus: PendingStatus | null = null
   let connectedAtLeastOnce = false
   let activeTarget: VncTarget | null = null
+  let simulatorSessionId: string | null = null
+  let simulatorView: SimulatorDesktopView | null = null
   let authenticationUsername = ''
   let authenticationPassword = ''
   let authenticationPasswordWasRemembered = false
@@ -444,10 +462,25 @@ function mountVncSession(
         return { name: host.label, meta: `Saved SSH · ${address}` }
       }
     }
+    if (value.startsWith(SIMULATOR_MACHINE_PREFIX)) {
+      const device = simulatorDevices.find(
+        (candidate) => `${SIMULATOR_MACHINE_PREFIX}${candidate.udid}` === value,
+      )
+      return device
+        ? { name: device.name, meta: `${device.runtime} · Booted` }
+        : { name: 'iOS Simulator', meta: 'Booted on this Mac' }
+    }
     return { name: 'Desktop', meta: 'Saved device' }
   }
 
   function renderSelectedLogin(): void {
+    const simulator = isSimulatorMachine(machineSelect.value)
+    if (simulator) {
+      savedLoginDetails.hidden = true
+      setupCredentials.hidden = true
+      connectButton.textContent = 'Connect'
+      return
+    }
     savedLoginDetails.hidden = !selectedHasSavedPassword
     setupCredentials.hidden = selectedHasSavedPassword
     connectButton.textContent = selectedHasSavedPassword ? 'Connect' : 'Sign in & connect'
@@ -517,6 +550,7 @@ function mountVncSession(
     connectButton.hidden = active
     disconnectButton.hidden = !active
     controlButton.hidden = !connected
+    homeButton.hidden = !connected || simulatorSessionId === null
     note.hidden = active
     disconnectButton.textContent = connected ? 'Disconnect' : 'Cancel'
     portInput.disabled = active
@@ -550,6 +584,9 @@ function mountVncSession(
       const id = machineSelect.value.slice(SSH_MACHINE_PREFIX.length)
       return sshHosts.find((host) => host.id === id)?.label ?? 'saved machine'
     }
+    if (machineSelect.value.startsWith(SIMULATOR_MACHINE_PREFIX)) {
+      return selectedSimulator()?.name ?? 'iOS Simulator'
+    }
     return 'remote desktop'
   }
 
@@ -574,7 +611,11 @@ function mountVncSession(
   }
 
   function updateControlUi(): void {
-    controlButton.textContent = controlEnabled ? 'Stop controlling' : 'Control desktop'
+    controlButton.textContent = controlEnabled
+      ? 'Stop controlling'
+      : simulatorSessionId
+        ? 'Control simulator'
+        : 'Control desktop'
     controlButton.setAttribute('aria-pressed', String(controlEnabled))
     controlButton.classList.toggle('is-active', controlEnabled)
     screen.classList.toggle('is-controlling', controlEnabled)
@@ -582,12 +623,18 @@ function mountVncSession(
   }
 
   function setControlEnabled(enabled: boolean): void {
-    if (!rfb || !connectedAtLeastOnce) return
+    if ((!rfb && !simulatorView) || !connectedAtLeastOnce) return
     controlEnabled = enabled
-    rfb.viewOnly = !enabled
+    if (rfb) rfb.viewOnly = !enabled
+    simulatorView?.setControlEnabled(enabled)
     updateControlUi()
     renderConnectedStatus()
-    if (enabled) queueMicrotask(() => rfb?.focus())
+    if (enabled) {
+      queueMicrotask(() => {
+        if (rfb) rfb.focus()
+        else simulatorView?.focus()
+      })
+    }
   }
 
   function resetControlState(): void {
@@ -606,10 +653,13 @@ function mountVncSession(
     targetInput.value = ''
   }
 
-  function clearViewer(title: string, kind: 'idle' | 'error' = 'idle', detail = ''): void {
+  function clearViewer(title: string, kind: VncStatusKind = 'idle', detail = ''): void {
     rfb = null
     channel = null
     activeTarget = null
+    simulatorSessionId = null
+    simulatorView?.cleanup()
+    simulatorView = null
     authenticationUsername = ''
     authenticationPassword = ''
     authenticationPasswordWasRemembered = false
@@ -757,6 +807,12 @@ function mountVncSession(
     return nearbyServers[index] ?? null
   }
 
+  function selectedSimulator(): SimulatorDesktopDevice | null {
+    if (!isSimulatorMachine(machineSelect.value)) return null
+    const udid = machineSelect.value.slice(SIMULATOR_MACHINE_PREFIX.length)
+    return simulatorDevices.find((device) => device.udid === udid) ?? null
+  }
+
   function preferredNearbyAddress(server: VncNearbyServer): string {
     const host = server.host.trim()
     return (
@@ -767,6 +823,19 @@ function mountVncSession(
 
   function rebuildMachineOptions(preferred: string): void {
     machineSelect.replaceChildren(el('option', { value: LOCAL_MACHINE }, 'This machine'))
+    if (simulatorDevices.length > 0) {
+      const simulatorGroup = el('optgroup', { label: 'Local simulators' })
+      for (const device of simulatorDevices) {
+        simulatorGroup.append(
+          el(
+            'option',
+            { value: `${SIMULATOR_MACHINE_PREFIX}${device.udid}` },
+            `${device.name} · ${device.runtime}`,
+          ),
+        )
+      }
+      machineSelect.append(simulatorGroup)
+    }
     if (nearbyServers.length > 0) {
       const nearbyGroup = el('optgroup', { label: 'Nearby devices' })
       nearbyServers.forEach((server, index) => {
@@ -853,10 +922,12 @@ function mountVncSession(
     const machineChanged = machine !== displayedMachine
     displayedMachine = machine
     const network = isNetworkMachine(machine)
+    const simulator = isSimulatorMachine(machine)
     addressField.hidden = machine !== MANUAL_MACHINE
     networkWarning.hidden = !network
+    advancedSettings.hidden = simulator
     discoverButton.hidden = true
-    discoveryStatus.hidden = network
+    discoveryStatus.hidden = network || simulator
     if (machineChanged) {
       setupUsernameInput.value = ''
       setupPasswordInput.value = ''
@@ -864,6 +935,10 @@ function mountVncSession(
       selectedSavedUsername = ''
     }
     if (network) {
+      discoveryGeneration++
+      renderDiscoveredPorts([])
+    }
+    if (simulator) {
       discoveryGeneration++
       renderDiscoveredPorts([])
     }
@@ -902,6 +977,13 @@ function mountVncSession(
 
   async function refreshSavedLogin(): Promise<void> {
     const generation = ++savedLoginGeneration
+    if (isSimulatorMachine(machineSelect.value)) {
+      selectedHasSavedPassword = false
+      selectedSavedUsername = ''
+      forgetLoginButton.hidden = true
+      renderSelectedLogin()
+      return
+    }
     const port = Number.parseInt(portInput.value, 10)
     const target =
       activeTarget ??
@@ -972,7 +1054,7 @@ function mountVncSession(
   }
 
   async function discoverSelectedMachine(): Promise<void> {
-    if (isNetworkMachine(machineSelect.value)) return
+    if (isNetworkMachine(machineSelect.value) || isSimulatorMachine(machineSelect.value)) return
     const generation = ++discoveryGeneration
     discoverButton.hidden = true
     discoverButton.disabled = true
@@ -1039,12 +1121,103 @@ function mountVncSession(
       .getState()
       .projects.find((project) => project.id === store.getState().activeProjectId)
     const preferred = activeProject?.sshHost ? sshMachineValue(activeProject.sshHost) : previous
-    secureCredentialStorage = await api.vnc.canStoreCredentials().catch(() => false)
+    const [canStoreCredentials, devices] = await Promise.all([
+      api.vnc.canStoreCredentials().catch(() => false),
+      api.simulatorDesktop.list().catch(() => []),
+    ])
+    secureCredentialStorage = canStoreCredentials
+    simulatorDevices = devices
     await refreshSshHosts(preferred)
     await Promise.all([discoverSelectedMachine(), discoverNearby()])
   }
 
+  async function connectSimulator(device: SimulatorDesktopDevice): Promise<void> {
+    const generation = ++connectGeneration
+    let openedConnectionId: string | null = null
+    connectButton.disabled = true
+    setStatus('Preparing Simulator stream…', 'working', 'Compiling the local helper on first use.')
+    try {
+      const connection = await api.simulatorDesktop.open(device.udid)
+      openedConnectionId = connection.id
+      if (generation !== connectGeneration) {
+        await api.simulatorDesktop.close(connection.id)
+        return
+      }
+      simulatorSessionId = connection.id
+      connectedAtLeastOnce = false
+      pendingDisconnectStatus = null
+      resetControlState()
+      options.onLabelChange(device.name)
+      empty.textContent = 'Waiting for the Simulator framebuffer…'
+      setSessionUi(true)
+      const view = createSimulatorDesktopView({
+        connectionId: connection.id,
+        sendInput: (input) => api.simulatorDesktop.input(connection.id, input),
+        onFirstFrame: () => {
+          if (simulatorSessionId !== connection.id) return
+          connectedAtLeastOnce = true
+          connectedMachineName = device.name
+          setSessionUi(true, true)
+          renderConnectedStatus()
+        },
+        onInputError: (error) => {
+          if (simulatorSessionId !== connection.id) return
+          setStatus(
+            `Connected to ${device.name}`,
+            'error',
+            error instanceof Error ? error.message : String(error),
+          )
+        },
+      })
+      simulatorView = view
+      screen.replaceChildren(view.canvas)
+      await api.simulatorDesktop.start(connection.id)
+    } catch (error) {
+      if (openedConnectionId) {
+        await api.simulatorDesktop.close(openedConnectionId).catch(() => {})
+      }
+      clearViewer(
+        'Couldn’t open the Simulator',
+        'error',
+        error instanceof Error ? error.message : String(error),
+      )
+    } finally {
+      connectButton.disabled = false
+    }
+  }
+
+  async function showSimulatorFromAgent(udid: string): Promise<void> {
+    openRightPanel(store, 'vnc')
+    const machine = `${SIMULATOR_MACHINE_PREFIX}${udid}`
+    if (simulatorSessionId && machineSelect.value === machine) return
+
+    await loadMachines()
+    const device = simulatorDevices.find((candidate) => candidate.udid === udid)
+    if (!device) {
+      setStatus(
+        'Couldn’t open the Simulator',
+        'error',
+        'The Simulator selected by the agent is no longer booted.',
+      )
+      return
+    }
+
+    if (simulatorSessionId) {
+      const previousId = simulatorSessionId
+      clearViewer('Switching Simulator…', 'working')
+      await api.simulatorDesktop.close(previousId).catch(() => {})
+    }
+    machineSelect.value = machine
+    updateMachineUi()
+    await connectSimulator(device)
+  }
+
   async function connect(): Promise<void> {
+    const simulator = selectedSimulator()
+    if (simulator) {
+      await connectSimulator(simulator)
+      return
+    }
     const port = Number.parseInt(portInput.value, 10)
     if (!Number.isInteger(port) || port < 1 || port > 65_535) {
       setStatus('Enter a port from 1 to 65535.', 'error')
@@ -1241,6 +1414,17 @@ function mountVncSession(
   function disconnect(): void {
     connectGeneration++
     setStatus('Disconnecting…', 'working')
+    if (simulatorSessionId) {
+      const connectionId = simulatorSessionId
+      void api.simulatorDesktop.close(connectionId).catch((error: unknown) => {
+        clearViewer(
+          'Couldn’t close the Simulator stream',
+          'error',
+          error instanceof Error ? error.message : String(error),
+        )
+      })
+      return
+    }
     if (rfb) rfb.disconnect()
     else channel?.close()
   }
@@ -1282,6 +1466,19 @@ function mountVncSession(
   disconnectButton.addEventListener('click', disconnect)
   controlButton.addEventListener('click', () => {
     setControlEnabled(!controlEnabled)
+  })
+  homeButton.addEventListener('click', () => {
+    const connectionId = simulatorSessionId
+    if (!connectionId) return
+    void api.simulatorDesktop
+      .input(connectionId, { type: 'button-tap', name: 'home' })
+      .catch((error: unknown) => {
+        setStatus(
+          'Simulator control failed',
+          'error',
+          error instanceof Error ? error.message : String(error),
+        )
+      })
   })
   authenticateButton.addEventListener('click', submitCredentials)
   const forgetLogin = (): void => {
@@ -1363,8 +1560,23 @@ function mountVncSession(
     }
     channel?.handleStatus(event)
   })
+  const stopSimulatorFrame = api.simulatorDesktop.onFrame((frame) => {
+    simulatorView?.frame(frame)
+  })
+  const stopSimulatorStatus = api.simulatorDesktop.onStatus((event) => {
+    if (event.id !== simulatorSessionId) return
+    if (event.status === 'error') {
+      clearViewer(
+        connectedAtLeastOnce ? 'Simulator stream lost' : 'Couldn’t open the Simulator',
+        'error',
+        event.detail ?? 'The private CoreSimulator stream ended unexpectedly.',
+      )
+    } else if (event.status === 'closed') {
+      clearViewer('Disconnected')
+    }
+  })
   const stopWorkspace = store.on('workspace_changed', () => {
-    if (channel) disconnect()
+    if (channel || simulatorSessionId) disconnect()
     const activeProject = store
       .getState()
       .projects.find((project) => project.id === store.getState().activeProjectId)
@@ -1374,8 +1586,11 @@ function mountVncSession(
   })
   const stopMode = store.on('right_panel_mode_changed', () => {
     if (!vncModeActive(store)) return
-    void refreshSshHosts()
-    if (options.isActive()) rfb?.focus()
+    void loadMachines()
+    if (options.isActive()) {
+      if (rfb) rfb.focus()
+      else simulatorView?.focus()
+    }
   })
   const stopSettings = store.on('settings_changed', () => {
     void refreshSshHosts()
@@ -1387,7 +1602,11 @@ function mountVncSession(
 
   return {
     focus: (): void => {
-      rfb?.focus()
+      if (rfb) rfb.focus()
+      else simulatorView?.focus()
+    },
+    showSimulator: (udid): void => {
+      void showSimulatorFromAgent(udid)
     },
     cleanup: (): void => {
       connectGeneration++
@@ -1396,9 +1615,13 @@ function mountVncSession(
       sshHostsGeneration++
       rfb?.disconnect()
       channel?.close()
+      simulatorView?.cleanup()
+      if (simulatorSessionId) void api.simulatorDesktop.close(simulatorSessionId).catch(() => {})
       screen.removeEventListener('contextmenu', onScreenContextMenu, true)
       stopData()
       stopStatus()
+      stopSimulatorFrame()
+      stopSimulatorStatus()
       stopWorkspace()
       stopMode()
       stopSettings()
@@ -1602,8 +1825,13 @@ export function mountVncPane(
 
   newButton.addEventListener('click', addTab)
   addTab()
+  const stopSimulatorShow = api.simulatorDesktop.onShow((udid) => {
+    const tabId = activeTabId ?? addTab()
+    tabs.get(tabId)?.session.showSimulator(udid)
+  })
 
   return () => {
+    stopSimulatorShow()
     for (const tab of tabs.values()) tab.session.cleanup()
     tabs.clear()
   }
