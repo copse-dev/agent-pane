@@ -1065,6 +1065,7 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
           name: 'iPhone 17 Pro',
           platform: 'iOS Simulator',
           supported: true,
+          booted: true,
         },
       ],
       metadataRequiresExecution: false,

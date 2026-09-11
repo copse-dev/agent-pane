@@ -2321,6 +2321,28 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     },
   )
   ipcMain.handle(
+    'apple-development:destinations',
+    async (
+      event,
+      rawProjectId: unknown,
+      rawThreadId: unknown,
+      rawCandidateId: unknown,
+      rawSchemeId: unknown,
+    ) => {
+      assertMainFrameSender(event, win)
+      const [projectId, threadId, candidateId, schemeId] = parseIpcArgs(
+        z.tuple([zProjectId, zThreadId, zNonEmptyString.max(512), zNonEmptyString.max(256)]),
+        [rawProjectId, rawThreadId, rawCandidateId, rawSchemeId],
+      )
+      const controller = new AbortController()
+      return getAppleDevelopmentService().destinations(
+        appleInvocation(projectId, threadId, controller.signal),
+        candidateId,
+        schemeId,
+      )
+    },
+  )
+  ipcMain.handle(
     'apple-development:execute',
     async (event, rawProjectId: unknown, rawThreadId: unknown, rawInput: unknown) => {
       assertMainFrameSender(event, win)

@@ -1259,6 +1259,14 @@ const api: ApiClient = {
       ipcRenderer.invoke('apple-development:set-enrolled', projectId, threadId, enrolled),
     discover: (projectId: string, threadId: string, includeMetadata: boolean) =>
       ipcRenderer.invoke('apple-development:discover', projectId, threadId, includeMetadata),
+    destinations: (projectId: string, threadId: string, candidateId: string, schemeId: string) =>
+      ipcRenderer.invoke(
+        'apple-development:destinations',
+        projectId,
+        threadId,
+        candidateId,
+        schemeId,
+      ),
     configure: (projectId: string, threadId: string, input: unknown) =>
       ipcRenderer.invoke('apple-development:configure', projectId, threadId, input),
     execute: (projectId: string, threadId: string, input: unknown) =>

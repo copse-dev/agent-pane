@@ -10,8 +10,52 @@ import {
   discoverAppleCandidates,
   discoverMissingLocalPackages,
   discoverSharedSchemes,
+  parseCompatibleDestinations,
   xcodeFailureDetail,
 } from './apple-driver.ts'
+
+describe('parseCompatibleDestinations', () => {
+  it('keeps concrete eligible destinations and excludes ineligible devices', () => {
+    const available = [
+      { id: 'platform=macOS', name: 'This Mac', platform: 'macOS', supported: true },
+      {
+        id: 'platform=iOS Simulator,id=BOOTED-17',
+        name: 'iPhone 17 Pro',
+        platform: 'iOS Simulator',
+        supported: true,
+        booted: true,
+      },
+      {
+        id: 'platform=iOS Simulator,id=SHUTDOWN-16',
+        name: 'iPhone 16',
+        platform: 'iOS Simulator',
+        supported: true,
+      },
+    ]
+    const output = `
+Available destinations for the "DemoApp" scheme:
+  { platform:iOS Simulator, arch:arm64, id:BOOTED-17, OS:26.0, name:iPhone 17 Pro }
+  { platform:iOS Simulator, id:dvtdevice-DVTiPhonePlaceholder-iphonesimulator:placeholder, name:Any iOS Simulator Device }
+
+Ineligible destinations for the "DemoApp" scheme:
+  { platform:iOS Simulator, id:SHUTDOWN-16, name:iPhone 16, error:iOS 26.0 is not installed }
+  { platform:macOS, arch:arm64, id:LOCAL-MAC, name:My Mac }
+`
+
+    assert.deepEqual(parseCompatibleDestinations(output, available), [available[1]])
+  })
+
+  it('maps a concrete macOS destination to the stable This Mac selector', () => {
+    const mac = { id: 'platform=macOS', name: 'This Mac', platform: 'macOS', supported: true }
+    assert.deepEqual(
+      parseCompatibleDestinations(
+        'Available destinations:\n  { platform:macOS, arch:arm64, id:LOCAL-MAC, name:My Mac }',
+        [mac],
+      ),
+      [mac],
+    )
+  })
+})
 
 describe('appleOperationPaths', () => {
   it('isolates build products per operation and package caches per checkout', () => {

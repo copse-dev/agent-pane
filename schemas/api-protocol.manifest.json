@@ -192,6 +192,13 @@
           3
         ]
       },
+      "apple-development:destinations": {
+        "api": "appleDevelopment.destinations",
+        "args": [
+          4,
+          4
+        ]
+      },
       "apple-development:discover": {
         "api": "appleDevelopment.discover",
         "args": [

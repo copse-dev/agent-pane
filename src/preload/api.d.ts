@@ -18,6 +18,7 @@ import type {
 } from '@shared/types/automations.ts'
 import type {
   AppleConfigureInput,
+  AppleDestination,
   AppleExecuteInput,
   AppleOperation,
   AppleOperationInput,
@@ -1002,6 +1003,12 @@ export interface ApiClient {
       threadId: string,
       includeMetadata: boolean,
     ) => Promise<AppleProjectState>
+    destinations: (
+      projectId: string,
+      threadId: string,
+      candidateId: string,
+      schemeId: string,
+    ) => Promise<AppleDestination[]>
     configure: (
       projectId: string,
       threadId: string,

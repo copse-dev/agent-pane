@@ -33,22 +33,17 @@ describe('Apple Development thread panel', function () {
     )
     assert.doesNotMatch(await panel.getText(), /Xcode targets are revalidated/)
 
-    const operations = panel.$$('.apple-development-operation')
-    await expect(operations).toBeElementsArrayOfSize(1)
-    assert.deepEqual(
-      await Promise.all(
-        operations.map((item) => item.$('.apple-development-operation-status').getText()),
-      ),
-      ['Failed · 1s'],
-    )
+    await expect(panel.$$('.apple-development-operation')).toBeElementsArrayOfSize(1)
+    await expect(panel.$('.apple-development-operation-status')).toHaveText('Failed · 1s')
     await expect(panel.$('[data-operation-id="test-demo"]')).toHaveText(
       expect.stringContaining(
         'DemoAppTests/BrowserTests.swift:42:13: error: XCTAssertEqual failed',
       ),
     )
-    await expect(panel.$('.apple-development-actions button=Build')).toBeEnabled()
-    await expect(panel.$('.apple-development-actions button=Test')).toBeEnabled()
-    await expect(panel.$('.apple-development-actions button=Run')).toBeEnabled()
+    const actions = panel.$('.apple-development-actions')
+    await expect(actions.$('button=Build')).toBeEnabled()
+    await expect(actions.$('button=Test')).toBeEnabled()
+    await expect(actions.$('button=Run')).toBeEnabled()
     await expect(panel.$('[data-operation-id="run-demo"]')).not.toExist()
     await expect(panel.$('[data-operation-id="build-demo"]')).not.toExist()
     assert.doesNotMatch(await panel.getText(), /error:\s*permissionDenied/)
@@ -61,11 +56,11 @@ describe('Apple Development thread panel', function () {
     await dialog.$('button[data-section="customise"]').click()
     const pluginRow = dialog.$('.plugin-row[data-plugin-id="copse.apple-development"]')
     await pluginRow.waitForDisplayed({ timeout: 15_000 })
-    await expect(pluginRow.$('.plugin-name')).toHaveText('Apple Development')
+    await expect(pluginRow.$('.plugin-name')).toHaveText('Apple development')
     const settingsFold = pluginRow.$('.plugin-settings-fold')
     await settingsFold.$('summary').click()
     await expect(pluginRow.$('.apple-development-panel')).toBeDisplayed()
-    await expect(pluginRow.$('button=Remove project')).toBeDisplayed()
+    await expect(pluginRow.$('.apple-development-panel').$('button=Remove project')).toBeDisplayed()
     await saveAppScreenshot('apple-development-enrollment-settings.png')
   })
 })

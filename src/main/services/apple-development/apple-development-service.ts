@@ -6,6 +6,7 @@ import {
   appleOperationSchema,
   appleSelectionSchema,
   type AppleConfigureInput,
+  type AppleDestination,
   type AppleExecuteInput,
   type AppleOperation,
   type AppleOperationLogPage,
@@ -25,6 +26,7 @@ import {
   type AppleDriverDiscovery,
   type AppleDriverPlan,
 } from './apple-driver.ts'
+import { showSimulatorDesktop } from '../simulator-desktop/simulator-desktop-panel.ts'
 
 const STORE_KEY = 'plugin.copse.apple-development.state'
 const APPLE_HANDLER = 'apple_operation'
@@ -72,6 +74,7 @@ export interface AppleDevelopmentServiceDependencies {
   resolveContext?: typeof resolveThreadExecutionContext
   pluginEnabled?: () => boolean
   platform?: NodeJS.Platform
+  presentSimulator?: (udid: string) => void
 }
 
 function readStore(): AppleStore {
@@ -147,7 +150,9 @@ export class AppleDevelopmentService {
   private readonly resolveContext: typeof resolveThreadExecutionContext
   private readonly pluginEnabled: () => boolean
   private readonly platform: NodeJS.Platform
+  private readonly presentSimulator: (udid: string) => void
   private readonly discoveries = new Map<string, Map<string, AppleDriverDiscovery>>()
+  private readonly destinationCache = new Map<string, Map<string, AppleDestination[]>>()
   private readonly leases = new Map<string, Promise<void>>()
 
   constructor(dependencies: AppleDevelopmentServiceDependencies = {}) {
@@ -158,6 +163,7 @@ export class AppleDevelopmentService {
       dependencies.pluginEnabled ??
       ((): boolean => getDefaultPluginRegistry().isEnabled(APPLE_DEVELOPMENT_PLUGIN_ID))
     this.platform = dependencies.platform ?? process.platform
+    this.presentSimulator = dependencies.presentSimulator ?? showSimulatorDesktop
     this.supervisor.registerHandler(APPLE_HANDLER, (task, context) =>
       this.handleOperation(task, context.signal),
     )
@@ -196,6 +202,30 @@ export class AppleDevelopmentService {
     const project = this.discoveries.get(owner.projectId) ?? new Map<string, AppleDriverDiscovery>()
     project.set(owner.threadId, discovery)
     this.discoveries.set(owner.projectId, project)
+    const cached = this.destinationCache.get(owner.projectId)
+    if (!cached) return
+    for (const key of cached.keys()) {
+      if (key.startsWith(`${owner.threadId}\0`)) cached.delete(key)
+    }
+    if (cached.size === 0) this.destinationCache.delete(owner.projectId)
+  }
+
+  private cachedDestinations(
+    owner: ThreadExecutionOwner,
+    key: string,
+  ): AppleDestination[] | undefined {
+    return this.destinationCache.get(owner.projectId)?.get(`${owner.threadId}\0${key}`)
+  }
+
+  private setCachedDestinations(
+    owner: ThreadExecutionOwner,
+    key: string,
+    destinations: AppleDestination[],
+  ): void {
+    const project =
+      this.destinationCache.get(owner.projectId) ?? new Map<string, AppleDestination[]>()
+    project.set(`${owner.threadId}\0${key}`, destinations)
+    this.destinationCache.set(owner.projectId, project)
   }
 
   private async updateOperation(
@@ -252,6 +282,7 @@ export class AppleDevelopmentService {
     })
     if (!enrolled) {
       this.discoveries.delete(projectId)
+      this.destinationCache.delete(projectId)
       await this.cancelProject(projectId)
     } else if (this.platform === 'darwin' && !isRemoteProject(projectId)) {
       const discovery = await this.driver.discover(context.root, false, invocation.signal)
@@ -313,6 +344,36 @@ export class AppleDevelopmentService {
     return this.getState(invocation.owner)
   }
 
+  async destinations(
+    invocation: AppleInvocation,
+    candidateId: string,
+    schemeId: string,
+  ): Promise<AppleDestination[]> {
+    this.requireEligible(invocation.owner)
+    const discovery = this.discovery(invocation.owner)
+    if (!discovery?.toolchain) {
+      throw new Error('Load targets before choosing an Apple Development destination.')
+    }
+    const candidate = discovery.candidates.find((item) => item.id === candidateId)
+    if (!candidate || !candidate.schemes.includes(schemeId)) {
+      throw new Error('The selected Xcode project or scheme is no longer available.')
+    }
+    const key = `${candidate.id}\0${schemeId}`
+    const cached = this.cachedDestinations(invocation.owner, key)
+    if (cached) return cached
+    const context = await this.resolveContext(invocation.owner.projectId, invocation.owner.threadId)
+    const destinations = await this.driver.destinations(
+      context.root,
+      candidate,
+      schemeId,
+      discovery.destinations,
+      discovery.toolchain.developerDir,
+      invocation.signal,
+    )
+    this.setCachedDestinations(invocation.owner, key, destinations)
+    return destinations
+  }
+
   async configure(
     invocation: AppleInvocation,
     input: AppleConfigureInput,
@@ -331,7 +392,8 @@ export class AppleDevelopmentService {
     if (!candidate || !candidate.schemes.includes(input.schemeId)) {
       throw new Error('The selected Xcode project or scheme is no longer available.')
     }
-    const destination = discovery.destinations.find((item) => item.id === input.destinationId)
+    const compatibleDestinations = await this.destinations(invocation, candidate.id, input.schemeId)
+    const destination = compatibleDestinations.find((item) => item.id === input.destinationId)
     if (!destination?.supported) throw new Error('The selected destination is unavailable.')
     const selection: AppleSelection = {
       candidateId: candidate.id,
@@ -590,6 +652,19 @@ export class AppleDevelopmentService {
         }),
         result.logs,
       )
+      if (succeeded && action === 'run' && task.provenance === 'user') {
+        const simulatorId = /(?:^|,)id=([^,]+)/.exec(selectionParsed.data.destinationId)?.[1]
+        if (
+          selectionParsed.data.destinationId.startsWith('platform=iOS Simulator') &&
+          simulatorId
+        ) {
+          try {
+            this.presentSimulator(simulatorId)
+          } catch {
+            // The app run succeeded even if its optional Desktop presentation is unavailable.
+          }
+        }
+      }
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error)
       await this.updateOperation(

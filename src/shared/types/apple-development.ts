@@ -26,6 +26,7 @@ export const appleDestinationSchema = z.object({
   name: z.string().min(1).max(256),
   platform: z.string().min(1).max(128),
   supported: z.boolean(),
+  booted: z.boolean().optional(),
 })
 export type AppleDestination = z.infer<typeof appleDestinationSchema>
 

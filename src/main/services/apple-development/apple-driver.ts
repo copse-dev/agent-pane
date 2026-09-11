@@ -46,6 +46,7 @@ const simulatorOutputSchema = z.object({
         name: z.string(),
         udid: z.string(),
         isAvailable: z.boolean().optional(),
+        state: z.string().optional(),
       }),
     ),
   ),
@@ -263,6 +264,36 @@ async function runProcess(
 
 function candidateArg(candidate: AppleCandidate): ['-workspace' | '-project', string] {
   return candidate.kind === 'workspace' ? ['-workspace', candidate.id] : ['-project', candidate.id]
+}
+
+/** Keep only concrete destinations Xcode reports as eligible for the selected scheme. */
+export function parseCompatibleDestinations(
+  output: string,
+  available: readonly AppleDestination[],
+): AppleDestination[] {
+  const destinations: AppleDestination[] = []
+  let eligible = false
+  for (const line of output.split(/\r?\n/)) {
+    if (/Available destinations/i.test(line)) {
+      eligible = true
+      continue
+    }
+    if (/Ineligible destinations/i.test(line)) {
+      eligible = false
+      continue
+    }
+    if (!eligible) continue
+    const platform = /(?:^|[{,])\s*platform:\s*([^,}]+)/i.exec(line)?.[1]?.trim()
+    const id = /(?:^|[{,])\s*id:\s*([^,}]+)/i.exec(line)?.[1]?.trim()
+    const destination = available.find((item) => {
+      if (platform === 'macOS') return item.platform === 'macOS'
+      return platform === 'iOS Simulator' && id !== undefined && item.id.endsWith(`id=${id}`)
+    })
+    if (destination && !destinations.some((item) => item.id === destination.id)) {
+      destinations.push(destination)
+    }
+  }
+  return destinations.slice(0, MAX_DESTINATIONS)
 }
 
 export async function discoverSharedSchemes(
@@ -631,6 +662,7 @@ export class InstalledXcodeDriver {
           name: device.name,
           platform: 'iOS Simulator',
           supported: true,
+          ...(device.state === 'Booted' ? { booted: true } : {}),
         })
       }
     }
@@ -652,6 +684,39 @@ export class InstalledXcodeDriver {
             ? null
             : 'Copse could not inspect the selected Xcode installation.',
     }
+  }
+
+  async destinations(
+    root: string,
+    candidate: AppleCandidate,
+    scheme: string,
+    available: readonly AppleDestination[],
+    developerDir: string,
+    signal: AbortSignal,
+  ): Promise<AppleDestination[]> {
+    const candidatePath = await realpath(resolve(root, candidate.id))
+    if (!withinRoot(root, candidatePath)) {
+      throw new Error('Selected Xcode project escapes the execution root.')
+    }
+    const xcodebuild = await installedDeveloperTool(developerDir, 'xcodebuild')
+    const [flag, value] = candidateArg(candidate)
+    const result = await runProcess(
+      xcodebuild,
+      [flag, value, '-scheme', scheme, '-showdestinations'],
+      root,
+      signal,
+      { DEVELOPER_DIR: developerDir },
+    )
+    if (result.exitCode !== 0) {
+      throw new Error(
+        xcodeFailureDetail(result.output) ?? 'Xcode could not load destinations for this scheme.',
+      )
+    }
+    const compatible = parseCompatibleDestinations(result.output, available)
+    if (compatible.length === 0) {
+      throw new Error('Xcode reported no supported destinations for this scheme.')
+    }
+    return compatible
   }
 
   async execute(

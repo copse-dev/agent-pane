@@ -352,6 +352,10 @@ revisiting this document, not silently diverging in an implementation PR.
     and resolves a macOS executable only inside the validated built app bundle. These operations run
     with normal host access because Xcode requires package, cache, signing, developer-service, and
     Simulator access and may execute project-controlled build phases.
+    Destination choices come from Xcode's eligible destinations for the selected scheme; a valid
+    saved choice is retained, otherwise simulator-only schemes prefer an already booted device.
+    After a successful user-triggered simulator Run, the panel opens that simulator in Copse's
+    Desktop pane. Preview presentation failure does not change the recorded Run result.
 
     Agent-facing Apple tools come from the exact XcodeBuildMCP production dependency bundled with
     Copse, rather than a smaller parallel wrapper API. Enabling the pack and enrolling a local macOS

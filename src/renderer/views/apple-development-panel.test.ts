@@ -2,7 +2,7 @@ import '../../../tests/setup-dom.ts'
 import assert from 'node:assert/strict'
 import { afterEach, describe, it } from 'node:test'
 import { createStore } from '@shared/store/store.ts'
-import type { AppleProjectState } from '@shared/types/apple-development.ts'
+import type { AppleDestination, AppleProjectState } from '@shared/types/apple-development.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { createAppleDevelopmentPanel } from './apple-development-panel.ts'
@@ -103,6 +103,56 @@ afterEach(() => {
 })
 
 describe('Apple Development target selection', () => {
+  it('shows only scheme-compatible destinations and prefers a booted simulator', async () => {
+    const base = createFakeApi()
+    const state = stateWithRunningBuild()
+    const simulator: AppleDestination = {
+      id: 'platform=iOS Simulator,id=BOOTED-17',
+      name: 'iPhone 17 Pro',
+      platform: 'iOS Simulator',
+      supported: true,
+      booted: true,
+    }
+    const api = {
+      ...base,
+      appleDevelopment: {
+        ...base.appleDevelopment,
+        state: async (): Promise<AppleProjectState> => ({
+          ...state,
+          selection: null,
+          operations: [],
+          destinations: [
+            {
+              id: 'platform=macOS',
+              name: 'This Mac',
+              platform: 'macOS',
+              supported: true,
+            },
+            simulator,
+          ],
+        }),
+        destinations: async (): Promise<AppleDestination[]> => [simulator],
+      },
+    } satisfies ApiClient
+    const store = createStore({ activeProjectId: 'project', activeThreadId: 'thread' })
+    const panel = createAppleDevelopmentPanel(store, api, { allowEnrollment: false })
+    document.body.append(panel)
+    await tick()
+    await tick()
+
+    const destination = panel.querySelector<HTMLSelectElement>('[aria-label="Destination"]')
+    const save = Array.from(panel.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent === 'Use target',
+    )
+    assert.ok(destination)
+    assert.ok(save)
+    assert.equal(destination.disabled, false)
+    assert.equal(destination.options.length, 1)
+    assert.equal(destination.value, simulator.id)
+    assert.equal(destination.textContent, 'iPhone 17 Pro · iOS Simulator')
+    assert.equal(save.disabled, false)
+  })
+
   it('explains an unavailable scheme and prevents an empty configure request', async () => {
     const base = createFakeApi()
     const configureCalls: unknown[] = []

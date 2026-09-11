@@ -94,13 +94,24 @@ describe('AppleDevelopmentService enrollment', () => {
         },
       ],
       destinations: [
-        { id: 'platform=macOS', name: 'This Mac', platform: 'macOS', supported: true },
+        {
+          id: 'platform=iOS Simulator,id=SIMULATOR-17',
+          name: 'iPhone 17 Pro',
+          platform: 'iOS Simulator',
+          supported: true,
+          booted: true,
+        },
       ],
       metadataRequiresExecution: false,
       setupMessage: null,
     }
     const driver = new InstalledXcodeDriver()
     driver.discover = (): Promise<AppleDriverDiscovery> => Promise.resolve(discovery)
+    let destinationQueries = 0
+    driver.destinations = (): Promise<AppleDriverDiscovery['destinations']> => {
+      destinationQueries += 1
+      return Promise.resolve(discovery.destinations)
+    }
     driver.execute = (): Promise<AppleDriverResult> =>
       Promise.resolve({
         exitCode: 0,
@@ -120,12 +131,17 @@ describe('AppleDevelopmentService enrollment', () => {
       store: taskStore,
       createId: (): string => 'operation-1',
     })
+    const presentedSimulators: string[] = []
     const service = new AppleDevelopmentService({
       driver,
       supervisor,
       resolveContext: (): Promise<ThreadExecutionContext> => Promise.resolve(context),
       pluginEnabled: (): boolean => true,
       platform: 'darwin',
+      presentSimulator: (udid): void => {
+        presentedSimulators.push(udid)
+        throw new Error('Desktop pane unavailable')
+      },
     })
     const invocation = {
       owner: { projectId: context.projectId, threadId: context.threadId },
@@ -134,11 +150,17 @@ describe('AppleDevelopmentService enrollment', () => {
     }
 
     await service.setEnrolled(invocation, true)
+    await service.destinations(invocation, 'DemoApp.xcodeproj', 'DemoApp')
+    await service.destinations(invocation, 'DemoApp.xcodeproj', 'DemoApp')
+    assert.equal(destinationQueries, 1)
+    await service.discover(invocation, true)
+    await service.destinations(invocation, 'DemoApp.xcodeproj', 'DemoApp')
+    assert.equal(destinationQueries, 2)
     const selection = await service.configure(invocation, {
       candidateId: 'DemoApp.xcodeproj',
       schemeId: 'DemoApp',
       configuration: 'Debug',
-      destinationId: 'platform=macOS',
+      destinationId: 'platform=iOS Simulator,id=SIMULATOR-17',
       expectedRevision: 0,
     })
     const queued = await service.execute(invocation, {
@@ -163,6 +185,7 @@ describe('AppleDevelopmentService enrollment', () => {
       service.operation(invocation, queued.id).operation.outcome?.appSessionId,
       'app-session-1',
     )
+    assert.deepEqual(presentedSimulators, ['SIMULATOR-17'])
 
     assert.equal(await service.stopApp(invocation, 'app-session-1'), true)
     assert.equal(stoppedSession, 'app-session-1')

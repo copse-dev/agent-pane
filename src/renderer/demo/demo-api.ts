@@ -978,6 +978,8 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         return resolved(structuredClone(state))
       },
       discover: unsupported,
+      destinations: (projectId) =>
+        resolved(structuredClone(appleDevelopmentStateFor(projectId).destinations)),
       configure: unsupported,
       execute: unsupported,
       operation: unsupported,

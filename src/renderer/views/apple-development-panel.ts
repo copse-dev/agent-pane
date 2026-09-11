@@ -1,6 +1,7 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type {
   AppleAction,
+  AppleDestination,
   AppleOperation,
   AppleProjectState,
 } from '@shared/types/apple-development.ts'
@@ -68,6 +69,17 @@ function operationDetail(operation: AppleOperation): string | null {
   return null
 }
 
+function preferredDestinationId(
+  destinations: readonly AppleDestination[],
+  savedId: string | undefined,
+  previousId: string | undefined,
+): string {
+  for (const id of [savedId, previousId]) {
+    if (id && destinations.some((destination) => destination.id === id)) return id
+  }
+  return destinations.find((destination) => destination.booted)?.id ?? destinations[0]?.id ?? ''
+}
+
 export function createAppleDevelopmentPanel(
   store: AppStore,
   api: ApiClient,
@@ -77,6 +89,8 @@ export function createAppleDevelopmentPanel(
   let generation = 0
   let renderedOwnerKey: string | null = null
   let polling: ReturnType<typeof setTimeout> | null = null
+  let destinationRequest = 0
+  const destinationCache = new Map<string, AppleDestination[]>()
 
   const stopPolling = (): void => {
     if (polling) clearTimeout(polling)
@@ -212,6 +226,7 @@ export function createAppleDevelopmentPanel(
         void run(
           discover,
           async () => {
+            destinationCache.clear()
             await api.appleDevelopment.discover(owner.projectId, owner.threadId, true)
           },
           'Loading targets…',
@@ -234,11 +249,78 @@ export function createAppleDevelopmentPanel(
           )
         }
         const scheme = el('select', { 'aria-label': 'Scheme' })
+        const destination = el('select', { 'aria-label': 'Destination' })
         const schemeStatus = el('p', {
           class: 'apple-development-scheme-status',
           role: 'status',
         })
+        const destinationStatus = el('p', {
+          class: 'apple-development-scheme-status',
+          role: 'status',
+        })
         const save = el('button', { type: 'button', class: 'btn btn-secondary' }, 'Use target')
+        const fillDestinations = (items: AppleDestination[]): void => {
+          const previousId = destination.value
+          destination.replaceChildren(
+            ...items.map((item) =>
+              el('option', { value: item.id }, `${item.name} · ${item.platform}`),
+            ),
+          )
+          const savedId =
+            state.selection?.candidateId === candidate.value &&
+            state.selection.schemeId === scheme.value
+              ? state.selection.destinationId
+              : undefined
+          destination.value = preferredDestinationId(items, savedId, previousId)
+          destination.disabled = items.length === 0
+          save.disabled = items.length === 0
+          destinationStatus.hidden = true
+        }
+        const loadDestinations = async (): Promise<void> => {
+          if (scheme.value === '') {
+            destination.replaceChildren(el('option', { value: '' }, 'No destinations available'))
+            destination.disabled = true
+            save.disabled = true
+            return
+          }
+          const candidateId = candidate.value
+          const schemeId = scheme.value
+          const key = `${owner.projectId}\0${owner.threadId}\0${candidateId}\0${schemeId}`
+          const cached = destinationCache.get(key)
+          if (cached) {
+            fillDestinations(cached)
+            return
+          }
+          const request = ++destinationRequest
+          destination.replaceChildren(el('option', { value: '' }, 'Loading destinations…'))
+          destination.disabled = true
+          save.disabled = true
+          destinationStatus.hidden = true
+          try {
+            const items = await api.appleDevelopment.destinations(
+              owner.projectId,
+              owner.threadId,
+              candidateId,
+              schemeId,
+            )
+            if (
+              request !== destinationRequest ||
+              candidate.value !== candidateId ||
+              scheme.value !== schemeId
+            ) {
+              return
+            }
+            destinationCache.set(key, items)
+            fillDestinations(items)
+          } catch (error) {
+            if (request !== destinationRequest) return
+            destination.replaceChildren(el('option', { value: '' }, 'No destinations available'))
+            destination.disabled = true
+            save.disabled = true
+            destinationStatus.textContent = error instanceof Error ? error.message : String(error)
+            destinationStatus.hidden = false
+          }
+        }
         const fillSchemes = (): void => {
           const selected = state.candidates.find((item) => item.id === candidate.value)
           const schemes = selected?.schemes ?? []
@@ -257,14 +339,15 @@ export function createAppleDevelopmentPanel(
                 )),
           )
           scheme.disabled = schemes.length === 0
-          save.disabled = schemes.length === 0
           schemeStatus.textContent =
             selected?.metadataError ??
             (schemes.length === 0 ? 'Load target metadata to choose a scheme.' : '')
           schemeStatus.hidden = schemeStatus.textContent === ''
+          void loadDestinations()
         }
         fillSchemes()
         candidate.addEventListener('change', fillSchemes)
+        scheme.addEventListener('change', () => void loadDestinations())
         const configuration = el(
           'select',
           { 'aria-label': 'Configuration' },
@@ -279,19 +362,6 @@ export function createAppleDevelopmentPanel(
             ),
           ),
         )
-        const destination = el('select', { 'aria-label': 'Destination' })
-        for (const item of state.destinations) {
-          destination.append(
-            el(
-              'option',
-              {
-                value: item.id,
-                selected: state.selection?.destinationId === item.id ? true : undefined,
-              },
-              `${item.name} · ${item.platform}`,
-            ),
-          )
-        }
         save.addEventListener('click', () => {
           if (scheme.value === '') return
           void run(save, async () => {
@@ -321,6 +391,7 @@ export function createAppleDevelopmentPanel(
               destination,
               save,
               schemeStatus,
+              destinationStatus,
             ),
           ),
         )
