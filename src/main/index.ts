@@ -427,13 +427,14 @@ app
       return
     }
 
-    // Authenticate once on a normal cold launch before providers/automations or
-    // the renderer can consume saved credentials. No prompt is issued for a
-    // legacy profile.
+    // Migrate supported profiles before any credential consumer initializes.
+    // The helper permits silent enrollment only for the hardened release app.
     try {
-      await profileVault.unlockOnStartup()
+      if (await profileVault.initialize()) return
     } catch {
-      console.warn('[vault] Saved secrets remain locked. Retry Unlock in Settings → Storage.')
+      console.warn(
+        '[vault] Could not initialize saved-secret encryption. Check Settings → Storage.',
+      )
     }
 
     // Watch the main event loop for stalls from here on. Startup is exactly when

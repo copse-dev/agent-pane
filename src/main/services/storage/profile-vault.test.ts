@@ -9,10 +9,11 @@ import {
   newVaultIdentity,
   verifyManifest,
   VaultError,
+  type VaultManifest,
 } from '@copse/store-kit/profile-vault-crypto.ts'
 import { readVaultManifest } from '@copse/store-kit/profile-vault-files.ts'
 import type { NativeVaultRequest, NativeVaultReply } from '@copse/store-kit/profile-vault-native.ts'
-import { AppProfileVault } from './profile-vault.ts'
+import { AppProfileVault, type ProfileVaultDependencies } from './profile-vault.ts'
 import type { SecretCipher } from './secret-cipher.ts'
 
 const legacy: SecretCipher = {
@@ -20,32 +21,72 @@ const legacy: SecretCipher = {
   encryptString: (text) => Buffer.from(text),
   decryptString: (bytes) => bytes.toString(),
 }
-function fixture(): { path: string; key: Buffer; dispose: () => void } {
+function fixture(): {
+  path: string
+  key: Buffer
+  calls: NativeVaultRequest[]
+  deps: ProfileVaultDependencies
+  restarts: () => number
+  seed: () => VaultManifest
+  dispose: () => void
+} {
   const path = mkdtempSync(join(tmpdir(), 'copse-vault-service-'))
+  const key = randomBytes(32)
+  const calls: NativeVaultRequest[] = []
+  let deviceKeyId = randomUUID()
+  let requireAuth = false
+  let restarts = 0
+  const invoke = async (request: NativeVaultRequest): Promise<NativeVaultReply> => {
+    calls.push(request)
+    if (request.operation === 'status') return { ok: true, automatic: true, requireAuth }
+    if (request.operation === 'set-auth') {
+      requireAuth = request.requireAuth ?? true
+      deviceKeyId = randomUUID()
+    }
+    return {
+      ok: true,
+      dataKey: key.toString('base64'),
+      deviceKeyId,
+      deviceEnvelope: Buffer.from('synthetic envelope').toString('base64'),
+      requireAuth,
+      ...(request.operation === 'backup' ? { recoveryVerified: true } : {}),
+    }
+  }
+  const deps = {
+    userData: path,
+    legacy,
+    invoke,
+    beforeMigration: async (): Promise<void> => {},
+    restart: (): void => {
+      restarts++
+    },
+  }
   return {
     path,
-    key: randomBytes(32),
+    key,
+    calls,
+    deps,
+    restarts: (): number => restarts,
+    seed: (): VaultManifest => {
+      const manifest = createVaultManifest(
+        key,
+        newVaultIdentity(),
+        deviceKeyId,
+        Buffer.from('synthetic envelope').toString('base64'),
+      )
+      writeFileSync(join(path, 'vault-manifest.json'), JSON.stringify(manifest))
+      return manifest
+    },
     dispose: (): void => {
+      key.fill(0)
       rmSync(path, { recursive: true, force: true })
     },
   }
 }
+
 describe('application vault', () => {
-  it('commits every legacy secret, starts locked, and authenticates automatically on normal restart', async () => {
+  it('automatically migrates every saved credential before startup and silently opens on restart', async () => {
     const f = fixture()
-    const calls: string[] = []
-    let restarts = 0
-    const invoke = async (request: NativeVaultRequest): Promise<NativeVaultReply> => {
-      calls.push(request.operation)
-      return request.operation === 'status'
-        ? { ok: true }
-        : {
-            ok: true,
-            dataKey: f.key.toString('base64'),
-            deviceKeyId: randomUUID(),
-            deviceEnvelope: Buffer.from('synthetic envelope').toString('base64'),
-          }
-    }
     try {
       writeFileSync(
         join(f.path, 'settings.json'),
@@ -55,141 +96,194 @@ describe('application vault', () => {
           },
         }),
       )
-      const deps = {
-        userData: f.path,
-        legacy,
-        invoke,
-        beforeMigration: async (): Promise<void> => {},
-        restart: (): void => {
-          restarts++
-        },
-      }
-      const vault = new AppProfileVault(deps)
-      await vault.enable(false)
-      assert.equal(restarts, 1)
-      assert.equal(vault.cipher.isEncryptionAvailable(), false)
-      assert.equal((await vault.status()).recovery, 'not-backed-up')
+      const vault = new AppProfileVault(f.deps)
+      assert.deepEqual(await Promise.all([vault.initialize(), vault.initialize()]), [true, true])
+      assert.equal(f.restarts(), 1)
+      assert.equal(f.calls.filter((call) => call.operation === 'create').length, 1)
       const manifest = readVaultManifest(f.path)
       assert.ok(manifest)
       verifyManifest(f.key, manifest)
+      assert.equal(manifest.requireAuth, false)
       assert.ok(
         !readFileSync(join(f.path, 'settings.json'), 'utf8').includes(
           Buffer.from('synthetic api key').toString('base64'),
         ),
       )
-      const restarted = new AppProfileVault(deps)
-      assert.throws(
-        () => restarted.cipher.encryptString('secret', { store: 'api-key', record: 'openai' }),
-        VaultError,
-      )
-      await Promise.all([restarted.unlockOnStartup(), restarted.unlockOnStartup()])
-      await restarted.unlockOnStartup()
-      const record = { store: 'api-key', record: 'openai' } as const
-      const sealed = restarted.cipher.encryptString('roundtrip', record)
-      assert.equal(restarted.cipher.decryptString(sealed, record), 'roundtrip')
-      restarted.lock()
-      assert.throws(() => restarted.cipher.decryptString(sealed, record), VaultError)
-      assert.equal(restarts, 2)
-      assert.deepEqual(calls, ['create', 'status', 'unlock'])
+      const restarted = new AppProfileVault(f.deps)
+      assert.equal(await restarted.initialize(), false)
+      assert.equal(restarted.cipher.isEncryptionAvailable(), true)
+      const identity = { store: 'api-key', record: 'openai' } as const
+      const sealed = restarted.cipher.encryptString('roundtrip', identity)
+      assert.equal(restarted.cipher.decryptString(sealed, identity), 'roundtrip')
       restarted.dispose()
+      assert.throws(() => restarted.cipher.decryptString(sealed, identity), VaultError)
     } finally {
       f.dispose()
     }
   })
-  it('does not enroll or authenticate a legacy profile on startup', async () => {
+  it('enrolls an empty new profile without a setup choice or recovery export', async () => {
     const f = fixture()
     try {
+      assert.equal(await new AppProfileVault(f.deps).initialize(), true)
+      assert.equal(readVaultManifest(f.path)?.requireAuth, false)
+      assert.equal(readVaultManifest(f.path)?.recovery, 'not-backed-up')
+      assert.ok(!f.calls.some((call) => call.operation === 'backup'))
+    } finally {
+      f.dispose()
+    }
+  })
+  it('keeps unsupported or development profiles on existing storage without enrollment prompts', async () => {
+    const f = fixture()
+    try {
+      const calls: string[] = []
       const vault = new AppProfileVault({
-        userData: f.path,
-        legacy,
-        beforeMigration: async (): Promise<void> => {},
-        restart: (): void => assert.fail('unexpected restart'),
-        invoke: async (): Promise<NativeVaultReply> => assert.fail('unexpected native request'),
+        ...f.deps,
+        invoke: async (request): Promise<NativeVaultReply> => {
+          calls.push(request.operation)
+          return { ok: true, automatic: false }
+        },
       })
-      await vault.unlockOnStartup()
+      assert.equal(await vault.initialize(), false)
       assert.equal(vault.cipher.protection, undefined)
       assert.equal(readVaultManifest(f.path), null)
+      assert.deepEqual(calls, ['status'])
+    } finally {
+      f.dispose()
+    }
+  })
+  it('preserves unreadable source records on failed automatic migration and reports retry guidance', async () => {
+    const f = fixture()
+    try {
+      const original = JSON.stringify({ apiKey: { openai: { broken: true } } })
+      writeFileSync(join(f.path, 'settings.json'), original)
+      const vault = new AppProfileVault(f.deps)
+      await assert.rejects(vault.initialize())
+      await assert.rejects(vault.initialize())
+      assert.equal(readVaultManifest(f.path), null)
+      assert.equal(readFileSync(join(f.path, 'settings.json'), 'utf8'), original)
+      assert.equal((await vault.status()).migrationFailed, true)
+      assert.equal(f.restarts(), 0)
+      assert.equal(f.calls.filter((call) => call.operation === 'create').length, 1)
+    } finally {
+      f.dispose()
+    }
+  })
+  it('changes authentication without re-encrypting records and always delegates backup authentication to native', async () => {
+    const f = fixture()
+    try {
+      f.seed()
+      const vault = new AppProfileVault(f.deps)
+      await vault.initialize()
+      const before = readVaultManifest(f.path)
+      const identity = { store: 'api-key', record: 'openai' } as const
+      const secret = vault.cipher.encryptString('synthetic', identity)
+      await vault.setRequireAuth(true)
+      const after = readVaultManifest(f.path)
+      assert.equal(after?.keyId, before?.keyId)
+      assert.notEqual(after?.deviceKeyId, before?.deviceKeyId)
+      assert.equal(after?.requireAuth, true)
+      assert.equal(vault.cipher.decryptString(secret, identity), 'synthetic')
+      assert.equal(vault.cipher.isEncryptionAvailable(), true)
+      const start = f.calls.length
+      await vault.backup()
+      assert.deepEqual(
+        f.calls.slice(start).map((call) => call.operation),
+        ['backup'],
+      )
+      assert.equal(readVaultManifest(f.path)?.recovery, 'verified')
+      await vault.setRequireAuth(false)
+      assert.equal(readVaultManifest(f.path)?.requireAuth, false)
+      assert.equal(f.restarts(), 0)
       vault.dispose()
     } finally {
       f.dispose()
     }
   })
-  it('does not automatically retry cancelled startup authentication but allows explicit Unlock', async () => {
+  it('repairs the manifest after native policy committed but the reply was lost', async () => {
+    const f = fixture()
+    try {
+      f.seed()
+      const vault = new AppProfileVault({
+        ...f.deps,
+        invoke: async (request): Promise<NativeVaultReply> => {
+          const reply = await f.deps.invoke(request)
+          if (request.operation === 'set-auth') throw new VaultError('unavailable')
+          return reply
+        },
+      })
+      await vault.initialize()
+      const original = readVaultManifest(f.path)
+      await assert.rejects(vault.setRequireAuth(true))
+      assert.equal(readVaultManifest(f.path)?.requireAuth, false)
+      assert.equal((await vault.status()).requireAuth, true)
+      vault.dispose()
+      const restarted = new AppProfileVault(f.deps)
+      await restarted.initialize()
+      const repaired = readVaultManifest(f.path)
+      assert.equal(repaired?.requireAuth, true)
+      assert.equal(repaired.keyId, original?.keyId)
+      assert.notEqual(repaired.deviceKeyId, original?.deviceKeyId)
+      restarted.dispose()
+    } finally {
+      f.dispose()
+    }
+  })
+  it('does not automatically retry cancelled startup authentication but permits explicit Unlock', async () => {
     const f = fixture()
     let attempts = 0
     try {
-      writeFileSync(
-        join(f.path, 'vault-manifest.json'),
-        JSON.stringify(
-          createVaultManifest(f.key, newVaultIdentity(), randomUUID(), 'c3ludGhldGlj'),
-        ),
-      )
+      f.seed()
       const vault = new AppProfileVault({
-        userData: f.path,
-        legacy,
-        beforeMigration: async (): Promise<void> => {},
-        restart: (): void => assert.fail('unexpected restart'),
-        invoke: async (): Promise<NativeVaultReply> => {
+        ...f.deps,
+        invoke: async (request): Promise<NativeVaultReply> => {
           if (++attempts === 1) throw new VaultError('cancelled')
-          return { ok: true, dataKey: f.key.toString('base64') }
+          return f.deps.invoke(request)
         },
       })
-      await assert.rejects(vault.unlockOnStartup(), { reason: 'cancelled' })
-      await assert.rejects(vault.unlockOnStartup(), { reason: 'cancelled' })
+      await assert.rejects(vault.initialize(), { reason: 'cancelled' })
+      await assert.rejects(vault.initialize(), { reason: 'cancelled' })
       assert.equal(attempts, 1)
       assert.equal(vault.cipher.isEncryptionAvailable(), false)
       await vault.unlock()
       assert.equal(attempts, 2)
       assert.equal(vault.cipher.isEncryptionAvailable(), true)
       vault.dispose()
-      assert.equal(vault.cipher.isEncryptionAvailable(), false)
     } finally {
       f.dispose()
     }
   })
-  it('cancelling mandatory backup leaves all original files unchanged', async () => {
+  it('preserves existing vault authentication and leaves policy unchanged when native auth is cancelled', async () => {
     const f = fixture()
     try {
-      const original = JSON.stringify({ arbitrary: 'unchanged' })
-      writeFileSync(join(f.path, 'settings.json'), original)
+      f.seed()
       const vault = new AppProfileVault({
-        userData: f.path,
-        legacy,
-        beforeMigration: async (): Promise<void> => {},
-        restart: (): void => {
-          assert.fail('must not restart')
-        },
+        ...f.deps,
         invoke: async (request): Promise<NativeVaultReply> => {
-          if (request.operation === 'backup') throw new VaultError('cancelled')
-          return {
-            ok: true,
-            dataKey: f.key.toString('base64'),
-            deviceKeyId: randomUUID(),
-            deviceEnvelope: 'c3ludGhldGlj',
-          }
+          if (request.operation === 'set-auth' || request.operation === 'backup')
+            throw new VaultError('cancelled')
+          return { ...(await f.deps.invoke(request)), requireAuth: true }
         },
       })
-      await assert.rejects(vault.enable(true), { reason: 'cancelled' })
-      assert.equal(readVaultManifest(f.path), null)
-      assert.equal(readFileSync(join(f.path, 'settings.json'), 'utf8'), original)
-      assert.equal(vault.cipher.protection, undefined)
+      await vault.initialize()
+      const before = readFileSync(join(f.path, 'vault-manifest.json'), 'utf8')
+      assert.equal(readVaultManifest(f.path)?.requireAuth, true)
+      await assert.rejects(vault.setRequireAuth(false), { reason: 'cancelled' })
+      await assert.rejects(vault.backup(), { reason: 'cancelled' })
+      assert.equal(readFileSync(join(f.path, 'vault-manifest.json'), 'utf8'), before)
+      assert.equal(vault.cipher.isEncryptionAvailable(), true)
+      assert.ok(!f.calls.some((call) => call.operation === 'create'))
+      vault.dispose()
     } finally {
       f.dispose()
     }
   })
-  it('rejects a wrong recovery key without changing the original envelope', async () => {
+  it('rejects a wrong recovery key without changing the profile manifest', async () => {
     const f = fixture()
     try {
-      const manifest = createVaultManifest(f.key, newVaultIdentity(), randomUUID(), 'c3ludGhldGlj')
-      const original = JSON.stringify(manifest)
-      writeFileSync(join(f.path, 'vault-manifest.json'), original)
+      f.seed()
+      const original = readFileSync(join(f.path, 'vault-manifest.json'), 'utf8')
       const vault = new AppProfileVault({
-        userData: f.path,
-        legacy,
-        beforeMigration: async (): Promise<void> => {},
-        restart: (): void => {
-          assert.fail('must not restart')
-        },
+        ...f.deps,
         invoke: async (): Promise<NativeVaultReply> => ({
           ok: true,
           dataKey: randomBytes(32).toString('base64'),

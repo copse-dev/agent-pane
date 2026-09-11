@@ -1,4 +1,3 @@
-import assert from 'node:assert/strict'
 import { $, browser, expect } from '@wdio/globals'
 import { saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
 
@@ -10,25 +9,15 @@ async function openVault(scenario: string): Promise<void> {
   await $('.profile-vault-section').waitForDisplayed()
 }
 describe('saved-secret encryption settings', () => {
-  it('offers optional backup and requires acknowledgement before skipping it', async () => {
+  it('explains a deferred automatic migration and offers retry', async () => {
     await openVault('vault-setup')
     const section = $('.profile-vault-section')
     await expect(section).toHaveAttribute('data-state', 'disabled')
     await expect(section).toHaveText(
-      expect.stringContaining('stays unlocked through sleep and screen lock'),
+      expect.stringContaining('Automatic migration could not finish.'),
     )
-    const choices = section.$$('input[type="checkbox"]')
-    const backup = choices[0]
-    const acknowledge = choices[1]
-    assert.ok(backup && acknowledge)
-    assert.equal(await backup.isSelected(), true)
-    assert.equal(await acknowledge.isDisplayed(), false)
-    await backup.click()
-    assert.equal(await acknowledge.isDisplayed(), true)
-    const enable = section.$('button=Enable encryption')
-    await expect(enable).toBeDisabled()
-    await acknowledge.click()
-    await expect(enable).toBeEnabled()
+    await expect(section.$('button=Retry migration')).toBeDisplayed()
+    await expect(section.$('button=Enable encryption')).not.toExist()
     await saveElementScreenshot('#settings-dialog', 'settings-vault-setup.png')
   })
   it('shows a locked vault and keeps native authentication out of the browser', async () => {
@@ -53,6 +42,10 @@ describe('saved-secret encryption settings', () => {
     await expect(section.$('button=Unlock')).not.toExist()
     await expect(section.$('button=Back up recovery key')).toBeDisplayed()
     await expect(section).toHaveText(expect.stringContaining('until you quit.'))
+    await expect(section.$('input[type=checkbox]')).not.toBeSelected()
+    await expect(section).toHaveText(
+      expect.stringContaining('Exporting a recovery key always requires authentication.'),
+    )
     await expect(section).toHaveText(
       expect.stringContaining('A recovery key cannot restore deleted files.'),
     )

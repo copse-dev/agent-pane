@@ -23,14 +23,26 @@ const replySchema = z.strictObject({
   deviceKeyId: z.uuid().optional(),
   deviceEnvelope: z.string().min(1).max(8192).optional(),
   recoveryVerified: z.boolean().optional(),
+  requireAuth: z.boolean().optional(),
+  automatic: z.boolean().optional(),
 })
 export type NativeVaultReply = z.infer<typeof replySchema>
-export type NativeVaultOperation = 'status' | 'create' | 'unlock' | 'backup' | 'recover'
+export type NativeVaultOperation =
+  | 'status'
+  | 'create'
+  | 'unlock'
+  | 'backup'
+  | 'recover'
+  | 'set-auth'
 export interface NativeVaultRequest extends VaultIdentity {
   operation: NativeVaultOperation
   profilePath: string
   deviceKeyId?: string
   deviceEnvelope?: string
+  requireAuth?: boolean
+  manifestMac?: string
+  challenge?: string
+  recovery?: VaultManifest['recovery']
 }
 export interface NativeVaultOptions {
   /** A pinned trusted helper, outside app.asar. No environment override at runtime. */
@@ -165,7 +177,13 @@ export async function callNativeVault(
 export function nativeRequest(
   operation: NativeVaultOperation,
   profilePath: string,
-  manifest: VaultIdentity & Partial<Pick<VaultManifest, 'deviceKeyId' | 'deviceEnvelope'>>,
+  manifest: VaultIdentity &
+    Partial<
+      Pick<
+        VaultManifest,
+        'deviceKeyId' | 'deviceEnvelope' | 'requireAuth' | 'mac' | 'challenge' | 'recovery'
+      >
+    >,
 ): NativeVaultRequest {
   return {
     operation,
@@ -174,5 +192,9 @@ export function nativeRequest(
     keyId: manifest.keyId,
     ...(manifest.deviceKeyId ? { deviceKeyId: manifest.deviceKeyId } : {}),
     ...(manifest.deviceEnvelope ? { deviceEnvelope: manifest.deviceEnvelope } : {}),
+    ...(manifest.requireAuth === undefined ? {} : { requireAuth: manifest.requireAuth }),
+    ...(manifest.mac ? { manifestMac: manifest.mac } : {}),
+    ...(manifest.challenge ? { challenge: manifest.challenge } : {}),
+    ...(manifest.recovery ? { recovery: manifest.recovery } : {}),
   }
 }

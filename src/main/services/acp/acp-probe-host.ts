@@ -1,3 +1,4 @@
+import { nodeWorkerExecutable, nodeWorkerScript } from '../node-worker-runtime.ts'
 import { spawn } from 'node:child_process'
 import { join } from 'node:path'
 import { errorMessage } from '@shared/errors.ts'
@@ -29,7 +30,7 @@ const HOST_TIMEOUT_GRACE_MS = 5_000
 const WORKER_STDOUT_MAX_BYTES = 256 * 1024
 
 export function acpProbeWorkerPath(): string {
-  return join(__dirname, 'acp-probe-worker.js')
+  return nodeWorkerScript(join(__dirname, 'acp-probe-worker.js'))
 }
 
 /**
@@ -111,7 +112,7 @@ function runProbeWorker(
   timeoutMs: number,
 ): Promise<AcpAgentProbe | null> {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [acpProbeWorkerPath()], {
+    const child = spawn(nodeWorkerExecutable(), [acpProbeWorkerPath()], {
       cwd: config.cwd,
       env: {
         ...process.env,

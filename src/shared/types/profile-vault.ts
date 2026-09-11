@@ -3,10 +3,13 @@ export interface ProfileVaultStatus {
   recovery: 'not-backed-up' | 'verified'
   available: boolean
   enabled: boolean
+  requireAuth?: boolean
+  automatic?: boolean
+  migrationFailed?: boolean
 }
 export type ProfileVaultAction =
-  | { action: 'enable'; backup: boolean }
-  | { action: 'unlock' | 'backup' | 'recover' }
+  | { action: 'set-auth'; requireAuth: boolean }
+  | { action: 'unlock' | 'backup' | 'recover' | 'retry-migration' }
 export type ProfileVaultResult = { ok: true } | { ok: false; reason: string }
 export interface ProfileVaultApi {
   status(): Promise<ProfileVaultStatus>

@@ -85,3 +85,5 @@ native/profile-vault/dist/
 
 # Browser drivers downloaded by focused visual evals.
 .cache/wdio-demo/
+
+native/node-runtime/dist/

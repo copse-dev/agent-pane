@@ -181,3 +181,28 @@ must not write to those branches. If a real visual change is not mapped, apply t
 review PR is created. Local filtering is implemented by
 `scripts/lib/screenshot-scope.mts`; fixture determinism and tier selection are documented in
 [`testing-strategy.md`](testing-strategy.md).
+
+### Device encryption and the packaged Node runtime
+
+Supported signed macOS releases automatically migrate saved API/SSH/VNC credentials
+and normally unlock silently. Development Electron builds keep legacy storage for
+unenrolled profiles; an enrolled profile requires explicit native authorization
+when used from a development caller. Test with a separate profile. See
+[native vault build and acceptance](../native/profile-vault/README.md).
+
+The release app disables Electron's RunAsNode, Node options and inspector fuses,
+and requires the sealed app archive. Background workers therefore use a separate
+Node interpreter under `app.asar.unpacked/dist/resources/node/<arch>/node`.
+`pnpm run prepare:node` downloads both macOS architectures for the Node version
+pinned in `.nvmrc` and verifies official release checksums. `--arch arm64` or
+`--arch x64` prepares one architecture. Packaging removes the other architecture
+and signs the worker independently. Workers retain their existing sandbox scope;
+the worker interpreter is never trusted for silent vault access.
+Worker scripts and production `node_modules`, including transitive dependencies,
+are unpacked together because standalone Node cannot resolve files inside asar.
+
+The main app's entitlements and inherited worker entitlements are separate. Do not
+relax the main app's library-validation or DYLD protections while advertising
+`CopseVaultSilentAccess`. Packaged debugger/V8 injection launch options are refused
+before credentials initialize. Normal development Electron remains available for
+debugging.

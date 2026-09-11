@@ -1,315 +1,170 @@
-# On-device secret encryption and optional recovery backup
+# Standard on-device secret encryption and optional recovery backup
 
-Status: implemented in the working branch; native release acceptance pending. Scoped from
-[#2652](https://github.com/copse-dev/agent-pane/pull/2652) on 2026-09-11.
-Code baseline: rebased onto `origin/main` at `c148894d2`. The implementation adds the native
-helper, encrypted stores, optional recovery export/import, migration and settings.
-Hardware acceptance is still pending; this document does not certify production readiness.
+Status: implementation in [PR #2658](https://github.com/copse-dev/agent-pane/pull/2658);
+packaged/native acceptance pending. Scoped from
+[#2652](https://github.com/copse-dev/agent-pane/pull/2652).
 
-## Implementation decisions and validation record
+## Product decisions
 
-- The selected primitive is Apple CryptoKit HPKE, P-256 / HKDF-SHA256 / AES-GCM-256.
-  Direct permanent Security-framework keys failed with `-34018` (missing entitlement).
-  The helper instead persists CryptoKit's opaque hardware-encrypted Secure Enclave
-  key representation in an ordinary login Keychain item under its stable signing
-  identity. This is not an export of the private scalar or profile data key.
-- A signed synthetic probe passed both an ephemeral operation and persistent
-  fresh-process HPKE unwrap using that representation. Its test Keychain item was
-  removed. Live helper status and signature validation were exercised without
-  authentication. The interactive application flows are not established by these probes.
-- Each non-status native request requires helper-owned authorization of the live
-  caller and profile, followed by user presence on the actual private-key operation.
-  This applies to packaged and development callers; there is no durable development
-  allowlist or reliance on Electron's signature to authorize mutable JavaScript.
-- Quitting invalidates the cipher and disposes SDK, renderer and connection
-  caches. There is no separate user-facing Lock action. A profile-volume identity
-  check runs every second; loss or replacement quits without relaunching. An unlocked
-  session survives sleep and screen lock; normal cold launch automatically requests
-  native authentication once. New saved keys are never mirrored
-  into the environment; externally supplied credentials remain external.
-- Encrypted profiles currently require the Electron desktop. Shared-profile ACP,
-  smoke and agent-eval entry points refuse them. A maintenance gate and registered
-  headless-client leases prevent participating writers during migration. Quit all
-  older Copse processes before setup: old binaries cannot honor this new protocol.
-- The settings marker pins format version 1, profile and key IDs. Missing manifests
-  or orphan CPS3 records fail closed before legacy stores open. Commit uses a
-  ciphertext-only journal; restoration replaces only the authenticated manifest by
-  a single durable rename. The empty-vault challenge verifies the recovered key;
-  individual records are authenticated on access, not repaired by recovery.
-- The helper is independently signed and copied unchanged outside app.asar. Ordinary
-  rebuilds reuse it. macOS release builds fail if it was not prepared. See
-  [native build and manual checks](../../native/profile-vault/README.md).
+Supported signed macOS releases automatically enroll new profiles and migrate
+existing saved API keys and SSH/VNC credentials. Normal startup is silent.
+Settings → Storage offers **Require authentication when Copse starts**, off by
+default for newly enrolled profiles. Existing vault profiles keep their previous
+authentication requirement. Changing the setting requires fresh authentication.
 
-Before release, complete the real native UI checks: cancellation at each step,
-password fallback, sleep/session lock with active work, repeated app rebuilds,
-packaged-helper update, reboot, and replacement-device restore. No further native
-prompts were run after the user asked to stop authentication for the night.
+Recovery-key export always requires fresh native authentication, including when
+startup authentication is disabled or the app is already unlocked. Recovery
+backup is optional and can be completed later in a password manager. A recovery
+key needs the encrypted profile files; it cannot reconstruct deleted files.
 
-## Outcome and scope
+An unlocked session survives sleep and screen lock until quit. There is no
+separate Lock button. Quit clears managed access and leaves the app closed.
+Cancelling startup authentication opens the app locked; **Unlock** retries only
+when the user requests it. No background retry loop prompts repeatedly.
 
-Protect Copse's saved secrets with a per-profile key bound to the current Mac.
-A normal cold launch automatically requests Touch ID or macOS system authentication.
-An unlocked session then survives sleep and screen lock. Enrollment remains opt-in.
-Offer a recovery-key backup that the user saves separately in a password manager
-and can use to restore access after losing the Mac or its device key.
+Conversations, ordinary settings, repositories, browser cookies and externally
+managed credentials are outside this option. It must be called **Saved-secret
+encryption**. Portable toolchains, offline model bundles, regular multi-device
+handoff, recipient management and delegated credentials remain deferred.
 
-This is the first implementation slice of #2652. It includes provider API keys
-and remembered SSH/VNC credentials. It does not encrypt conversations, ordinary
-settings, repositories, browser cookies or externally managed credentials.
-The product must say **Saved-secret encryption**, rather than imply the whole
-profile or disk is encrypted.
+Unsupported platforms and development builds retain existing OS storage for
+unenrolled profiles. A migrated profile requires the desktop unlock service;
+headless ACP/smoke/eval modes refuse it. Mutable development callers require
+explicit approval and native authentication to open an enrolled profile. They
+are never silently trusted or automatically enrolled.
 
-Initial delivery supports macOS. Other platforms retain their existing storage
-behaviour and report this feature as unavailable. A migrated profile opened on
-an unsupported platform fails closed for secret access and writes.
+## Native key and caller protection
 
-Deferred from #2652: a portable application/toolchain/model bundle, offline
-development configuration, regular multi-Mac enrollment and handoff, recipient
-management, remote containers, delegated GitHub credentials, brokers and renewal.
-Restoring a backup on a replacement Mac remains in scope. Existing profile paths
-continue to work, including `COPSE_DIR`; an external SSD is not required.
+The profile data key encrypts CPS3 records with AES-256-GCM. Each record binds its
+profile ID, key ID, store and slot as authenticated data. A Secure Enclave P-256
+key wraps the data key using CryptoKit HPKE, P256 / HKDF-SHA256 / AES-GCM-256.
+`.privateKeyUsage` is always present; `.userPresence` is added when startup
+authentication is required. Key material is device-bound, but the unlocked data
+key and credentials necessarily enter application memory.
 
-## Product flow
+Direct permanent Security-framework keys failed with `-34018` during feasibility
+work. CryptoKit's opaque hardware-encrypted key representation is stored instead;
+the private scalar is not exportable. The earlier signed synthetic probe proved
+a persistent, fresh-process HPKE round trip on the development Mac. Current
+packaged behavior is still subject to native acceptance.
 
-1. **Enable saved-secret encryption.** Explain which saved credentials are
-   protected. Check native support and inventory existing secrets before modifying
-   data. Authenticate, create the device envelope, and prove it can be reopened.
-2. **Choose recovery backup.** Recommend saving a recovery key in a password
-   manager. The user may skip it after acknowledging that losing access to the
-   device key makes these saved secrets unrecoverable. When backup is selected,
-   require re-import verification before marking it complete. Cancelling the
-   export never silently changes the choice to “skip”.
-3. **Finish setup.** Commit the verified migration. The settings surface shows
-   encryption status and separately shows recovery as “Not backed up” or
-   “Verified for this key”. Verification remains transient in native UI. Verification records a successful
-   recovery challenge, not a claim that a password-manager copy still exists.
-4. **Normal use.** Start locked internally and automatically request native
-   authentication once, before credential consumers initialize. Cancellation leaves
-   saved data intact and opens the app locked; retry with **Unlock** in Settings →
-   Storage. An unlocked session survives sleep and screen lock until quit. There
-   is no separate Lock button: quitting clears access and a subsequent launch
-   requests authentication again. Local-model work that needs no saved credential
-   can continue while locked.
-5. **Back up later.** A user who skipped recovery can export and verify it later,
-   after fresh authentication. Recovery material stays in native UI; settings
-   receives only status and success/failure.
-6. **Restore.** With Copse stopped, restore a consistent profile backup using the
-   supported recovery procedure. Import the matching recovery key, authenticate
-   the saved manifest and records, and bind the profile to the replacement Mac.
-   A restart must unlock normally without asking for the recovery key again.
+The signed helper and main process communicate on a bounded inherited socket.
+Main validates the pinned helper identity on disk and as a live process before
+sending. Native validates the kernel-supplied peer audit token and code signature.
+Silent access additionally requires the exact `dev.copse.app` Developer ID,
+hardened runtime, restrictive main-process entitlements, signed
+`CopseVaultSilentAccess` marker and complete resource validation. Other callers
+need an explicit native confirmation plus fresh macOS authentication.
 
-“Backup” in this slice means a **recovery-key backup**, not a new cloud backup or
-archive scheduler. Recovery needs both the recovery key and the encrypted profile
-files. The key alone cannot reconstruct deleted files. Continue to use the profile
-copy procedure in [Backup, migration, and recovery](../recovery.md), including
-separately located stores selected by granular overrides. Project repositories
-need their own backups. Keep the recovery key independently of the profile copy.
+The marker is shipped only with release hardening: RunAsNode, Node environment
+options and Node inspector fuses disabled; embedded asar integrity and loading
+only from app.asar enabled. Packaged debugger/V8 injection launch arguments are
+rejected before credentials initialize. Main library validation and DYLD
+protections remain enabled. Separate worker identities retain compatibility
+entitlements without becoming trusted vault callers.
 
-## Current implementation and required changes
+Packaged macOS workers use a separately signed Node interpreter, pinned by
+`.nvmrc` and downloaded with official release checksum verification. Worker
+scripts and all production dependencies are unpacked for standalone Node; their
+sandbox scopes do not change.
+Other platforms and development builds retain the existing runtime path.
 
-- `packages/store-kit/src/keyring-cipher.ts` writes AES-256-GCM `CPS2` records;
-  `os-keyring.ts` stores one OS-user key as `Copse / secret-data-key`. Keep this
-  backend for existing profiles and migration reads, not as the new device key.
-- `createMigratingCipher()` can fall back to Electron `safeStorage` for writes.
-  A migrated profile must never take that fallback or write base64 plaintext.
-- Settings and SSH/VNC readers can hide decrypt failures as missing credentials.
-  Introduce typed locked, cancelled, unavailable, corrupt and unsupported results;
-  only an absent record means “not saved”. Inventory every `getSecretCipher`
-  consumer before finalizing the migration registry.
-- Current key and credential caches outlive a single operation. Lock must
-  invalidate the session cipher and every managed consumer, including providers,
-  SSH/VNC sessions and any environment entries populated from saved credentials.
+## Native authority and authentication changes
 
-## Key and record design
+A single Keychain item per profile/key generation contains the active device key
+representation, device envelope and authentication policy. The helper chooses
+this current record rather than trusting a device-key ID or policy supplied by
+profile files. Status reads cannot display Keychain authorization UI.
 
-Create a random 256-bit data key for each profile and key generation. Encrypt
-secret records with AES-256-GCM, fresh random nonces and full authentication tags.
-Use a versioned `CPS3` record that authenticates format, profile ID, key ID, store
-kind and record identity as associated data. Define one canonical, unambiguous
-encoding with bounded lengths. Moving a record between provider or host slots,
-or between profiles, must fail authentication.
+Changing authentication performs fresh authentication, unwraps the data key,
+creates a new device key with the requested access-control flags, verifies the
+new envelope, then atomically replaces that Keychain value. No old silent key is
+retained in a second native item. Saved records and recovery keys keep the same
+profile data key.
 
-Wrap the data key with a non-exportable Secure Enclave device key using an
-Apple CryptoKit HPKE operation with the suite recorded above. Do not invent a
-cryptographic protocol. Enforce user presence on the actual private-key operation,
-not by trusting a successful standalone biometric prompt.
+Main verifies the returned key against its original authenticated manifest and
+writes the updated envelope/policy mirror. If native commits but the app exits
+before writing, the next unlock uses the current native record and repairs the
+mirror. Replaying an older profile manifest cannot select the previous silent
+key after opting into authentication. This does not promise resistance to
+rollback of the OS Keychain itself or an already compromised native helper.
 
-The local profile contains a versioned security manifest and one active device
-envelope. The authenticated envelope payload binds profile ID, key generation,
-recipient fingerprint, format version and data key. Authenticate security-relevant
-manifest metadata with a domain-separated key derived from the data key. Reject
-unsupported formats, duplicate/oversized fields and mismatched identities before
-using the metadata. IDs must not depend on the profile's absolute path.
+Older always-authenticated vault items are adopted only after successful unwrap;
+the old per-device item is then removed. Their authentication requirement stays
+on. Recovery validates the supplied key against the original manifest HMAC in
+native before replacing native state, then main verifies the manifest challenge
+before writing the mirror. A wrong recovery key preserves existing state and
+cannot poison a subsequent correct retry.
 
-The device private key stays in macOS-protected storage. An unlocked data key may
-exist in Copse's main-process memory. This protects saved secrets at rest; it does
-not prevent authorized development code or a compromised running host from
-capturing them. Do not claim that plaintext credentials stay inside the enclave.
+## Automatic migration and failure behavior
 
-## Recovery format and restoration
+Before providers, automations or renderer credential consumers initialize, the
+app probes native support. Only the hardened release caller can create a new
+silent device key. Supported new and legacy profiles migrate automatically.
 
-Use #2652's random-key recovery record: version, profile ID, key generation,
-profile data key and a transcription checksum. The checksum detects input errors;
-it does not authenticate the profile. Import succeeds only after cryptographic
-verification of the manifest and a challenge/record for that generation.
+Migration acquires the profile maintenance gate, refuses participating headless
+writers, drains pending writes and inventories the complete API/SSH/VNC registry.
+It includes consented legacy plaintext records and existing encrypted formats.
+Every source credential must decode and encrypt successfully. No partial success
+or silent omission is reported.
 
-Do not introduce a passphrase-derived recovery envelope or store the raw recovery
-key beside the ciphertext. Native reveal/import UI requires fresh authentication
-for export and explicit user action for import. Never send recovery material
-through generic settings IPC, logs, telemetry, argv, environment variables or
-screenshots. Clipboard copy, if offered, is explicit and explains that clipboard
-history/synchronization may retain it; later clearing is best effort.
+Commit uses a ciphertext-only staged journal with fsync/atomic replacement. The
+manifest is installed last. Startup replays an interrupted committed transaction
+under single-instance ownership before stores open. A settings marker pins
+profile/key identity; missing manifests and orphan CPS3 records fail closed.
+Successful migration restarts once to discard cached legacy stores and keys.
+The next startup opens the vault under its selected authentication policy.
 
-Export verification must re-import the user's saved record into an isolated flow
-and open a challenge. This also works when the vault has no saved credentials.
-Reject a wrong profile, generation, checksum, key, truncated record or unsupported
-version without overwriting existing security metadata. Never create a new data
-key over ciphertext merely because the device key is missing.
+Failure before commit preserves the original stores and uses existing storage.
+Settings explains that migration is incomplete and offers **Retry migration**.
+The next launch also retries. Unsupported machines retain existing storage;
+they must not claim that device encryption was applied. Quit older Copse binaries
+before migration: they cannot participate in the new maintenance protocol.
 
-Restoration installs a new device envelope only after the recovered key verifies
-the copied profile and the new device envelope passes an authenticated round trip.
-Replace the single manifest with an fsynced same-directory rename; retain the original until the replacement is verified. Keep the original backup
-unchanged. A replacement device does not enter a shared multi-device recipient
-list in this slice.
+Every store remains under the selected profile root (`COPSE_DIR` supported).
+A profile-volume identity check runs while the app is open; loss/replacement
+invalidates access and quits without relaunching.
 
-Recovery does not revoke a lost Mac's access to an old profile copy. Removing an
-envelope cannot revoke keys or provider tokens already obtained. Suspected secret
-compromise requires credential rotation at the provider. General profile-key
-rotation and recipient management remain separate work. Offline restoration does
-not promise detection of a valid but older backup.
+## Session and recovery security
 
-## Native feasibility and development builds
+The service owns asynchronous, coalesced unlock and a synchronous session cipher.
+Native key returns are checked against the manifest before use. Cancellation,
+shutdown and lost-profile events invalidate pending generations and clear owned
+buffers on a best-effort basis. Decrypted vault keys are never mirrored into the
+environment. Externally supplied credentials retain their separate ownership.
 
-Packaged Copse and ordinary ad-hoc `make run` must open the same real profile
-sequentially. Do not require signing every Electron rebuild or duplicating the
-user's saved credentials. `make run-dev` retains its separate default profile.
+Retaining the unlocked key through sleep matches the existing keyring cache's
+memory lifetime. It relies on OS session security and does not protect against
+an attacker already able to read Copse's process memory. Swift/JavaScript strings
+and SDK copies cannot be promised securely erased. Quit clears managed consumers;
+it cannot revoke a completed request or credentials given to an external process.
 
-Start with #2652's stable, signed native helper candidate. Prove its hosting,
-transport, update identity, Secure Enclave access and native authorization UI
-before enabling migration. The helper owns its device key independently of the
-changing Electron build. Ship the verified helper for development without
-putting production signing credentials in the checkout.
+Recovery display/import is native-only. Export uses a fresh authentication
+context independent of the startup policy and verifies the manifest before
+revealing the key. Re-import verification marks recovery as verified for this
+profile key; it does not prove the password-manager copy still exists. Clipboard
+copy is explicit/manual and may be retained by clipboard managers or sync.
 
-Authenticate the live IPC peer. Validate production code identity; for ad-hoc
-builds, obtain helper-owned user authorization bound to that running process,
-profile and private channel, expiring when the process exits. A path, UID, claimed
-bundle ID or caller-provided “authenticated” flag is insufficient. Do not trust
-arbitrary rebuilt JavaScript because its Electron executable is signed. Reject
-untrusted callers and wrong-profile or replayed requests. Keep handles and raw
-key transfer out of agent subprocesses and debug output.
+See [profiles](../profiles.md), [recovery](../recovery.md) and the
+[native build and acceptance checklist](../../native/profile-vault/README.md).
 
-Prove Touch ID and the system-password fallback, cancellation, reboot behaviour,
-helper updates and repeated ad-hoc rebuilds on actual supported hardware. If this
-boundary cannot be implemented, record the failed feasibility gate; do not
-substitute an ordinary exportable Keychain item while calling it Secure Enclave
-protection. An external-drive helper installation and a two-laptop portability
-rehearsal are not release gates for this reduced slice.
+## Validation and remaining release gates
 
-## Unlock and lock lifecycle
+Automated tests cover authenticated records/manifests, old-format compatibility,
+automatic new/legacy enrollment, unsupported callers, migration failure, policy
+updates, interrupted native/app synchronization, cancellation and recovery.
+Native policy tests compile and execute only pure policy/HMAC code: no Keychain,
+Secure Enclave operation or authentication UI. Fuse tests modify/read a disposable
+Electron binary copy without signing or executing it. Focused browser/Electron
+evals capture settings and unavailable-helper behavior using synthetic profiles.
 
-The vault service owns asynchronous unlock and a synchronous session cipher.
-Expose non-secret status and narrow unlock/backup/restore operations.
-Coalesce concurrent unlock requests. Status probes and background credential reads
-never trigger prompts. A normal cold launch makes one authentication attempt;
-failure or cancellation requires an explicit retry in Settings → Storage.
-Locked, cancelled, corrupt and unsupported states must remain distinguishable.
+Run `pnpm run check` before committing. Review screenshots from the focused
+WebdriverIO workflows. Full CI remains selected for these cross-cutting changes.
 
-Clear access on app quit, profile switch and loss of the selected profile volume.
-Sleep and screen lock retain the authenticated session, including the data key
-in process memory, so waking does not interrupt work or ask for authentication
-again. This relies on the OS session lock to protect a running session and extends
-memory exposure compared with clearing the key on sleep. Disk encryption and
-fresh authentication for recovery export remain unchanged.
-
-There is no separate Lock button or locked-restart launch option. Quit clears
-access and leaves Copse closed; a subsequent launch requests authentication again.
-Closing a window is not a lock operation. Setup and recovery restart normally.
-
-This is application session policy, separate from the manifest and record format.
-A future setting could require reauthentication after sleep without re-encrypting
-stored records. Truly silent cold startup would require changing the device-key
-authorization policy and replacing its envelope; it is not implemented here.
-
-On lock:
-
-1. Block new saved-secret operations and advance the unlock generation.
-2. Cancel pending authentication; ignore late results from older generations.
-3. Cancel owned authenticated requests, dispose provider clients, clear SSH/VNC
-   credential caches and close owned authenticated sessions.
-4. Remove credentials Copse injected into its environment without deleting
-   externally supplied credentials. Prefer eliminating vault-to-env reflection.
-5. Release helper contexts and key references; overwrite mutable buffers on a
-   best-effort basis. Do not promise erasure of JavaScript strings or SDK copies.
-
-Lock cannot retract a completed request or revoke a credential previously given
-to an external process. The lock indicator describes saved-secret availability,
-not encryption of the visible conversation.
-
-## Migration and crash recovery
-
-Migration runs explicitly on the original Mac while legacy secrets remain
-readable. Cover provider keys, remembered SSH passwords/key passphrases and VNC
-username/password records, including consented plaintext and legacy `safeStorage`
-records as well as `CPS2`. Never export or delete the old account-wide key; another
-profile may still depend on it.
-
-Use exclusive profile access across all supported writers, a staging area and a
-non-secret journal. Inventory the complete secret registry before staging. Route
-secret-store files through that registry so consented plaintext is encrypted
-before it reaches staging. Verify every migrated record, device unwrap and the
-selected recovery outcome before committing. If a record cannot be read, require
-re-entry or explicit omission; never report silent data loss as successful setup.
-
-Flush staged data and use same-filesystem renames with deterministic startup
-recovery at every interruption point. A multi-file or two-rename swap is not one
-atomic operation. Preserve source data until verified commit and document how
-encrypted backups retain their original key requirements. Reject path escapes,
-unsafe symlinks, read-only/full disks and concurrent writes without changing the
-active profile. Granular path overrides must be explicitly covered or reported
-as unsupported before migration; never silently omit an external secret store.
-
-Persist a minimum reader version before opening migrated stores. Supported
-launchers must refuse incompatible readers. Old binaries cannot retroactively
-honour a marker, so document that opening migrated data with an older build is
-unsupported. Missing/corrupt manifests never trigger fallback encryption or an
-automatic replacement key. Recovery follows the forward-only policy in
-[Backup, migration, and recovery](../recovery.md).
-
-## Implementation sequence and acceptance
-
-1. **Native feasibility.** Add the helper prototype, authenticated transport and
-   packaging/update proof. Demonstrate synthetic-key unwrap from packaged Copse
-   and repeated `make run` sessions, with actual macOS authorization. Denial,
-   cancellation and untrusted clients receive no key. No real-profile migration
-   is enabled before this passes.
-2. **Vault primitives.** Implement manifest/record decoders, authenticated identity
-   binding, session generations and recovery encoding in `packages/store-kit/src/`.
-   Test corruption, wrong keys/slots/profiles, nonce uniqueness, bounds, empty-vault
-   recovery and refusal to downgrade. Keep platform adapters outside the renderer.
-3. **Runtime and settings.** Integrate the main vault service, narrow IPC, provider
-   and SSH/VNC gating, lock invalidation and the setup/unlock/recovery status UI.
-   Test one startup authentication attempt, no retries after cancellation,
-   no status-probe prompts, late results after shutdown,
-   locked reads versus absent keys, and continued credential-free local work.
-4. **Migration and backup.** Implement the complete registry, journaled commit,
-   native export/import and verification, and explicit skip/later-backup paths.
-   Test interruption at every commit boundary, full/read-only disk, unreadable
-   legacy records, and failure preserving the source without plaintext staging.
-5. **Restore and delivery.** Restore a synthetic profile copy onto a replacement
-   Mac or a supported clean device-key setup. Verify normal unlock after restart,
-   wrong-generation rejection and failed restore leaving the backup untouched.
-   Ship the helper and update `docs/profiles.md`, `docs/recovery.md` and development
-   instructions with the proven behaviour and platform limits.
-
-Run `pnpm run check` before committing implementation. For visible changes follow
-`.cursor/skills/screenshot-validate/SKILL.md`: add focused WDIO specs with DOM
-assertions and inspect screenshots for setup, backup skipped/verified, locked
-status, cancellation and recovery failure/success. Use synthetic secrets and
-keep native recovery values out of screenshots. Build and run the selected
-visual tier. Real native authorization and replacement-device recovery require
-on-machine validation; mocks and remote Linux e2e cannot establish those claims.
-
-Release is complete when the supported Mac can enable encryption, optionally
-verify a separate recovery backup, unlock and lock correctly, and restore a
-copied encrypted profile after losing device-key access. Portable development
-bundles and detached remote work are not acceptance requirements for this slice.
+Before release, complete signed packaged caller acceptance, native-addon and
+worker compatibility, actual silent enrollment/startup, opt-in Touch ID/password
+fallback, export authentication in both modes, cancellations, interrupted policy
+updates, sleep/reboot/helper updates and replacement-Mac restore. These checks
+remain pending because the user requested no further fingerprint/password
+approvals during unattended work. Do not infer native acceptance from typecheck
+or mock tests, or ship an old signed helper with new source.

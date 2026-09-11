@@ -145,23 +145,27 @@ cases it will not force:
 Until a launch has completed the move, back up both locations. Afterwards,
 `~/.copse/` is the only one that matters.
 
-## Optional device-bound saved-secret encryption
+## Standard device-bound saved-secret encryption
 
-On a supported Mac with the signed native helper, **Settings → Storage →
-Saved-secret encryption** can migrate saved API keys and SSH/VNC credentials to a
-per-profile key protected by Secure Enclave. On a normal cold launch, Copse
-automatically requests native authorization. It then stays unlocked through sleep
-and screen lock until you quit or lose the profile volume.
-Cancelling startup authentication leaves the app locked; retry with **Unlock**.
-Quit Copse to clear access and managed credential caches. There is no separate
-Lock button. Closing a window alone does not lock the vault.
-Conversations, repositories and browser cookies are outside this option's scope.
+Supported signed macOS releases automatically enroll new profiles and migrate
+saved API keys and SSH/VNC credentials from existing OS storage. Migration
+restarts Copse once; normal startup then unlocks silently. Unsupported platforms
+and development builds retain existing storage for unenrolled profiles. Failed
+migration leaves original credentials intact and offers a retry in Settings.
 
-Setup recommends a separate recovery key in your password manager and verifies
-it by re-import. You can skip it after acknowledging possible permanent loss of
-saved secrets, or back up later. Copy the complete profile separately: the recovery
-key cannot reconstruct deleted files. On a replacement Mac, use **Restore access**
-with the matching key; see [recovery](recovery.md#device-encrypted-saved-secrets).
+**Settings → Storage → Saved-secret encryption** offers **Require authentication
+when Copse starts**. It is off by default for new enrollment; previously enrolled
+vaults retain their authentication requirement. Changing the setting requires
+authentication. The session stays unlocked through sleep/screen lock until quit
+or profile-volume loss. Cancelling startup authentication leaves the app locked;
+**Unlock** retries. Closing a window alone does not guarantee the app has quit.
+
+Recovery-key export always requires fresh authentication, even with silent
+startup. Save the optional recovery key in your password manager and verify it by
+re-import. Copy the complete profile separately: the key cannot reconstruct deleted
+files. **Restore access** accepts the matching recovery key on a replacement Mac;
+see [recovery](recovery.md#device-encrypted-saved-secrets). Conversations,
+repositories and browser cookies are outside saved-secret encryption.
 
 Keep `vault-manifest.json`, `settings.json` and `ssh-credentials.json` from the same
 backup. Never open a migrated profile with an older build. Quit older desktop and

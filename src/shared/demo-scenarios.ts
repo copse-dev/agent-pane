@@ -900,11 +900,18 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
   },
   {
     id: 'vault-setup',
-    label: 'Saved-secret encryption: setup',
+    label: 'Saved-secret encryption: migration pending',
     project: project('demo-vault-project'),
     settings: { onboardingCompleted: true, theme: 'dark', uiTintStrength: 'off' },
     threads: [],
-    profileVault: { state: 'disabled', enabled: false, available: true, recovery: 'not-backed-up' },
+    profileVault: {
+      state: 'disabled',
+      enabled: false,
+      available: true,
+      recovery: 'not-backed-up',
+      automatic: true,
+      migrationFailed: true,
+    },
   },
   {
     id: 'vault-locked',
@@ -920,7 +927,13 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     project: project('demo-vault-project'),
     settings: { onboardingCompleted: true, theme: 'dark', uiTintStrength: 'off' },
     threads: [],
-    profileVault: { state: 'unlocked', enabled: true, available: true, recovery: 'verified' },
+    profileVault: {
+      state: 'unlocked',
+      enabled: true,
+      available: true,
+      recovery: 'verified',
+      requireAuth: false,
+    },
   },
   {
     id: 'settings-footer',
