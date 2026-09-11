@@ -32,8 +32,8 @@ export interface ProfileVaultDependencies {
   invoke: (request: NativeVaultRequest, signal?: AbortSignal) => Promise<NativeVaultReply>
   /** Refuse active work and drain writes; called again immediately before the synchronous commit. */
   beforeMigration: () => Promise<void>
-  /** Restart the application after committing new storage or locking the vault. */
-  restartLocked: () => void
+  /** Discard cached stores/credentials after storage changes or profile loss. */
+  restart: () => void
 }
 export class AppProfileVault {
   readonly #deps: ProfileVaultDependencies
@@ -41,6 +41,7 @@ export class AppProfileVault {
   #session: ProfileVaultSession | null = null
   #busy = false
   #operation: AbortController | null = null
+  #startupUnlock: Promise<void> | null = null
   readonly cipher: SecretCipher
   constructor(dependencies: ProfileVaultDependencies) {
     this.#deps = dependencies
@@ -127,10 +128,18 @@ export class AppProfileVault {
     if (this.#busy || !this.#session) throw new VaultError('unavailable')
     await this.#session.unlock()
   }
+  /** One authentication attempt per process, before credential consumers are initialized.
+   * Sleep and screen lock retain this session; a failed/cancelled attempt requires an explicit retry.
+   */
+  unlockOnStartup(): Promise<void> {
+    if (!this.#manifest) return Promise.resolve()
+    this.#startupUnlock ??= this.unlock()
+    return this.#startupUnlock
+  }
   lock(): void {
     this.#operation?.abort()
     this.#session?.lock()
-    if (this.#manifest) this.#deps.restartLocked()
+    if (this.#manifest) this.#deps.restart()
   }
   dispose(): void {
     this.#operation?.abort()
@@ -171,7 +180,7 @@ export class AppProfileVault {
       const migrated = migrateVaultStores(settings, ssh, this.#deps.legacy, key, manifest)
       commitVaultMigration(this.#deps.userData, migrated, manifest)
       this.#installSession(manifest)
-      this.#deps.restartLocked()
+      this.#deps.restart()
     } finally {
       key?.fill(0)
       releaseMaintenance?.()
@@ -235,7 +244,7 @@ export class AppProfileVault {
       })
       writeVaultFile(this.#deps.userData, 'vault-manifest.json', JSON.stringify(updated))
       this.#installSession(updated)
-      this.#deps.restartLocked()
+      this.#deps.restart()
     } finally {
       key?.fill(0)
       releaseMaintenance?.()

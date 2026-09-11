@@ -25,7 +25,7 @@ import {
 armPerfTrace()
 installIpcPerfTracing()
 
-import { app, BrowserWindow, ipcMain, safeStorage, powerMonitor } from 'electron'
+import { app, BrowserWindow, ipcMain, safeStorage } from 'electron'
 import { attachWebContentsLockdown } from './windows/web-contents-lockdown.ts'
 import {
   attachBrowserGuestWindowOpen,
@@ -246,13 +246,15 @@ const profileVault = new AppProfileVault({
       throw new Error('Stop running tasks before changing saved-secret encryption.')
     await drainWriteQueue()
   },
-  restartLocked: (): void => {
+  restart: (): void => {
     if (vaultRestartRequested) return
     vaultRestartRequested = true
     for (const id of listRunningThreadIds()) abortAgent(id)
     clearSshCredentialCache()
     savedSecretEnvironment.clear()
-    if (!vaultVolumeLost && existsSync(app.getPath('userData'))) app.relaunch()
+    if (!vaultVolumeLost && existsSync(app.getPath('userData'))) {
+      app.relaunch()
+    }
     approveClose()
     app.quit()
   },
@@ -425,6 +427,15 @@ app
       return
     }
 
+    // Authenticate once on a normal cold launch before providers/automations or
+    // the renderer can consume saved credentials. No prompt is issued for a
+    // legacy profile.
+    try {
+      await profileVault.unlockOnStartup()
+    } catch {
+      console.warn('[vault] Saved secrets remain locked. Retry Unlock in Settings → Storage.')
+    }
+
     // Watch the main event loop for stalls from here on. Startup is exactly when
     // a synchronous hang (migrations, sandbox init, indexing) is most likely and
     // most expensive to diagnose after the fact (issue #995).
@@ -547,12 +558,8 @@ app
     const disposeVncHandlers = initVnc(win)
     const disposeSimulatorDesktopHandlers = initSimulatorDesktop(win)
     registerProfileVaultIpc(win, profileVault)
-    powerMonitor.on('suspend', () => {
-      profileVault.lock()
-    })
-    powerMonitor.on('lock-screen', () => {
-      profileVault.lock()
-    })
+    // An unlocked vault session survives sleep and screen lock. Shutdown or loss
+    // of the selected profile clears it.
     const vaultVolume = statSync(app.getPath('userData'))
     const vaultVolumeCheck = setInterval(() => {
       if (profileVault.cipher.protection !== 'device-vault') return

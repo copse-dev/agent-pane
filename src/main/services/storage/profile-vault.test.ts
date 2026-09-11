@@ -31,7 +31,7 @@ function fixture(): { path: string; key: Buffer; dispose: () => void } {
   }
 }
 describe('application vault', () => {
-  it('commits every legacy secret, starts locked, and requires explicit unlock after restart', async () => {
+  it('commits every legacy secret, starts locked, and authenticates automatically on normal restart', async () => {
     const f = fixture()
     const calls: string[] = []
     let restarts = 0
@@ -60,7 +60,7 @@ describe('application vault', () => {
         legacy,
         invoke,
         beforeMigration: async (): Promise<void> => {},
-        restartLocked: (): void => {
+        restart: (): void => {
           restarts++
         },
       }
@@ -82,7 +82,8 @@ describe('application vault', () => {
         () => restarted.cipher.encryptString('secret', { store: 'api-key', record: 'openai' }),
         VaultError,
       )
-      await restarted.unlock()
+      await Promise.all([restarted.unlockOnStartup(), restarted.unlockOnStartup()])
+      await restarted.unlockOnStartup()
       const record = { store: 'api-key', record: 'openai' } as const
       const sealed = restarted.cipher.encryptString('roundtrip', record)
       assert.equal(restarted.cipher.decryptString(sealed, record), 'roundtrip')
@@ -91,6 +92,57 @@ describe('application vault', () => {
       assert.equal(restarts, 2)
       assert.deepEqual(calls, ['create', 'status', 'unlock'])
       restarted.dispose()
+    } finally {
+      f.dispose()
+    }
+  })
+  it('does not enroll or authenticate a legacy profile on startup', async () => {
+    const f = fixture()
+    try {
+      const vault = new AppProfileVault({
+        userData: f.path,
+        legacy,
+        beforeMigration: async (): Promise<void> => {},
+        restart: (): void => assert.fail('unexpected restart'),
+        invoke: async (): Promise<NativeVaultReply> => assert.fail('unexpected native request'),
+      })
+      await vault.unlockOnStartup()
+      assert.equal(vault.cipher.protection, undefined)
+      assert.equal(readVaultManifest(f.path), null)
+      vault.dispose()
+    } finally {
+      f.dispose()
+    }
+  })
+  it('does not automatically retry cancelled startup authentication but allows explicit Unlock', async () => {
+    const f = fixture()
+    let attempts = 0
+    try {
+      writeFileSync(
+        join(f.path, 'vault-manifest.json'),
+        JSON.stringify(
+          createVaultManifest(f.key, newVaultIdentity(), randomUUID(), 'c3ludGhldGlj'),
+        ),
+      )
+      const vault = new AppProfileVault({
+        userData: f.path,
+        legacy,
+        beforeMigration: async (): Promise<void> => {},
+        restart: (): void => assert.fail('unexpected restart'),
+        invoke: async (): Promise<NativeVaultReply> => {
+          if (++attempts === 1) throw new VaultError('cancelled')
+          return { ok: true, dataKey: f.key.toString('base64') }
+        },
+      })
+      await assert.rejects(vault.unlockOnStartup(), { reason: 'cancelled' })
+      await assert.rejects(vault.unlockOnStartup(), { reason: 'cancelled' })
+      assert.equal(attempts, 1)
+      assert.equal(vault.cipher.isEncryptionAvailable(), false)
+      await vault.unlock()
+      assert.equal(attempts, 2)
+      assert.equal(vault.cipher.isEncryptionAvailable(), true)
+      vault.dispose()
+      assert.equal(vault.cipher.isEncryptionAvailable(), false)
     } finally {
       f.dispose()
     }
@@ -104,7 +156,7 @@ describe('application vault', () => {
         userData: f.path,
         legacy,
         beforeMigration: async (): Promise<void> => {},
-        restartLocked: (): void => {
+        restart: (): void => {
           assert.fail('must not restart')
         },
         invoke: async (request): Promise<NativeVaultReply> => {
@@ -135,7 +187,7 @@ describe('application vault', () => {
         userData: f.path,
         legacy,
         beforeMigration: async (): Promise<void> => {},
-        restartLocked: (): void => {
+        restart: (): void => {
           assert.fail('must not restart')
         },
         invoke: async (): Promise<NativeVaultReply> => ({

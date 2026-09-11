@@ -149,10 +149,13 @@ Until a launch has completed the move, back up both locations. Afterwards,
 
 On a supported Mac with the signed native helper, **Settings → Storage →
 Saved-secret encryption** can migrate saved API keys and SSH/VNC credentials to a
-per-profile key protected by Secure Enclave. The app starts locked; **Unlock**
-requests native authorization. **Lock and restart** stops current work and clears
-managed credential caches. Conversations, repositories and browser cookies are
-outside this option's scope.
+per-profile key protected by Secure Enclave. On a normal cold launch, Copse
+automatically requests native authorization. It then stays unlocked through sleep
+and screen lock until you quit or lose the profile volume.
+Cancelling startup authentication leaves the app locked; retry with **Unlock**.
+Quit Copse to clear access and managed credential caches. There is no separate
+Lock button. Closing a window alone does not lock the vault.
+Conversations, repositories and browser cookies are outside this option's scope.
 
 Setup recommends a separate recovery key in your password manager and verifies
 it by re-import. You can skip it after acknowledging possible permanent loss of
