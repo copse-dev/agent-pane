@@ -1,3 +1,5 @@
+import { savedSecretEnvironment } from '@copse/store-kit/secret-environment.ts'
+import { VaultError } from '@copse/store-kit/profile-vault-crypto.ts'
 import { getSecretCipher, isSecretEncryptionAvailable, type SecretCipher } from './secret-cipher.ts'
 import { clearKeyReadability, resolveKeyReadability } from './api-key-readability.ts'
 import { registerSecretSweep, requestSecretSweep } from './secret-migration.ts'
@@ -97,14 +99,18 @@ export function getApiKey(provider: KeyProvider): string | null {
   if (!isStoredKey(raw) || !raw.enc) return null
   try {
     const buf = Buffer.from(raw.enc, 'base64')
-    if (raw.plain) return buf.toString('utf8')
+    if (raw.plain) {
+      if (getSecretCipher()?.protection === 'device-vault') throw new VaultError('corrupt')
+      return buf.toString('utf8')
+    }
     // No cipher installed: an encrypted key cannot be read here.
     const cipher = getSecretCipher()
     if (!cipher) return null
-    const value = cipher.decryptString(buf)
+    const value = cipher.decryptString(buf, { store: 'api-key', record: provider })
     migrateStoredKey(provider, cipher, buf, value)
     return value
-  } catch {
+  } catch (error) {
+    if (error instanceof VaultError) throw error
     return null
   }
 }
@@ -179,6 +185,9 @@ registerSecretSweep(function sweepStoredApiKeys(): void {
 export function isApiKeyReadable(provider: KeyProvider): boolean | null {
   if (getExplicitSettingsProfile()) return hasApiKey(provider) ? true : null
   const raw = cached.get(`apiKey.${provider}`)
+  if (getSecretCipher()?.protection === 'device-vault' && !isSecretEncryptionAvailable()) {
+    return isStoredKey(raw) ? false : null
+  }
   return resolveKeyReadability(provider, isStoredKey(raw) ? raw : null, {
     encryptionAvailable: isSecretEncryptionAvailable(),
     readKey: () => getApiKey(provider),
@@ -218,7 +227,9 @@ export function setApiKey(
     return { ok: true }
   }
 
+  const cipher = getSecretCipher()
   const available = isSecretEncryptionAvailable()
+  if (cipher?.protection === 'device-vault' && !available) throw new VaultError('locked')
   const writePolicy = resolveSecretWritePolicy(available, opts.allowPlaintext === true)
   if (writePolicy === 'plaintext-disabled') {
     return { ok: false, reason: 'plaintext-storage-disabled' }
@@ -232,7 +243,7 @@ export function setApiKey(
   // needs no env var. Done only once we're committing to store the key, so a
   // declined plaintext key leaks into neither the environment nor disk.
   const envVar = envVarFor(provider)
-  if (envVar) process.env[envVar] = trimmed
+  if (envVar && cipher?.protection !== 'device-vault') savedSecretEnvironment.set(envVar, trimmed)
 
   if (!available) {
     console.warn(
@@ -240,7 +251,8 @@ export function setApiKey(
     )
   }
   const bytes = available
-    ? (getSecretCipher()?.encryptString(trimmed) ?? Buffer.from(trimmed, 'utf8'))
+    ? (getSecretCipher()?.encryptString(trimmed, { store: 'api-key', record: provider }) ??
+      Buffer.from(trimmed, 'utf8'))
     : Buffer.from(trimmed, 'utf8')
   const record: StoredKey = { v: 1, enc: bytes.toString('base64'), plain: !available }
   cached.set(`apiKey.${provider}`, record)
@@ -253,10 +265,13 @@ export function deleteApiKey(provider: KeyProvider): void {
   if (getExplicitSettingsProfile()) {
     throw new Error('Cannot mutate API keys inside an explicit settings profile.')
   }
+  if (getSecretCipher()?.protection === 'device-vault' && !isSecretEncryptionAvailable())
+    throw new VaultError('locked')
   cached.delete(`apiKey.${provider}`)
   clearKeyReadability(provider)
   const envVar = envVarFor(provider)
-  if (envVar) Reflect.deleteProperty(process.env, envVar)
+  if (envVar && getSecretCipher()?.protection !== 'device-vault')
+    Reflect.deleteProperty(process.env, envVar)
 }
 
 /**
@@ -294,6 +309,15 @@ export function isProviderAvailable(provider: CloudKeyProvider): boolean {
 export function resolveApiKey(provider: KeyProvider): string | null {
   const scoped = getExplicitSettingsProfile()
   if (scoped) return firstNonEmptyString(scoped.apiKeys?.[provider]) ?? null
+  const externalEnvVar = envVarFor(provider)
+  if (
+    getSecretCipher()?.protection === 'device-vault' &&
+    !isSecretEncryptionAvailable() &&
+    externalEnvVar
+  ) {
+    const external = firstNonEmptyString(process.env[externalEnvVar])
+    if (external) return external
+  }
   const stored = getApiKey(provider)
   if (stored) return stored
   const envVar = envVarFor(provider)
