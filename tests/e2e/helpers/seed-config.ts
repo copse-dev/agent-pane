@@ -3366,6 +3366,71 @@ export function seedMachineTurnAttributionFixture(workspaceRoot: string): void {
   })
 }
 
+/** A prepared-worktree before/after trace for focused tool-card visual evidence. */
+export function seedWorktreePreparationFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-worktree-preparation-project'
+  const threadId = 'e2e-worktree-preparation-thread'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    expandedProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Prepare a fresh worktree',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-worktree-user',
+            role: 'user',
+            content: 'Check this fresh npm project and prepare its dependencies.',
+            toolCalls: [],
+            createdAt: now,
+          },
+          {
+            id: 'msg-worktree-preflight',
+            role: 'assistant',
+            content: 'This fresh checkout needs one bounded preparation run.',
+            toolCalls: [
+              {
+                id: 'tc-preflight-worktree',
+                name: 'preflight_worktree',
+                args: { offline: false },
+                status: 'done',
+                result:
+                  'Worktree preparation: absent\nProject: /workspace/customer-app\nPackage manager: npm@11.19.0\n- not ready — Dependencies: missing package.json: example\nRemediation: Run prepare_worktree once with this plan fingerprint.',
+              },
+            ],
+            createdAt: now + 1,
+          },
+          {
+            id: 'msg-worktree-prepare',
+            role: 'assistant',
+            content: 'The project dependencies are ready. No native setup was declared.',
+            toolCalls: [
+              {
+                id: 'tc-prepare-worktree',
+                name: 'prepare_worktree',
+                args: { offline: false, planFingerprint: 'a'.repeat(64) },
+                status: 'done',
+                result:
+                  'Worktree preparation: ready\nProject: /workspace/customer-app\nPackage manager: npm@11.19.0\n- ready — Node: found 24.20.0; no project version constraint\n- ready — Dependencies: declared direct dependencies present\nRemediation: No preparation needed. Readiness covers dependencies and declared checks, not build or test success.',
+              },
+            ],
+            createdAt: now + 2,
+          },
+        ],
+        createdAt: now,
+        updatedAt: now + 2,
+        model: 'claude-sonnet-4-6',
+      },
+    ],
+  })
+}
+
 /**
  * Multi-segment tool-display fixture: a user bug report followed by several
  * assistant bubbles (text-after-tools splits), each with Reasoning + a tool

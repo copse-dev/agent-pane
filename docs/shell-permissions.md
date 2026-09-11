@@ -116,6 +116,41 @@ active, which is seatbelt on macOS and bubblewrap on Linux. `permission-policy.t
 up-front prompts and `sandbox-failure.ts` the after-a-block retry; the `expects_sandbox_block`
 wording stays an expectation, per the section above.
 
+## Worktree preparation capability
+
+Every project can use `preflight_worktree` and `prepare_worktree`. Preflight detects npm, pnpm,
+Yarn Classic/modern, and Bun from an exact package-manager declaration or an unambiguous lockfile.
+It reports runtime requirements, dependency state, declared checks, configuration problems, exact
+setup commands, and a plan fingerprint. The optional `directory` selects a nested project inside
+the execution root. There is no repository-name check or implicit Electron/native requirement.
+
+Other ecosystems and optional native setup use `.copse/worktree-preparation.json` to declare argv
+commands, fingerprint inputs, and read-only checks. Unknown projects receive configuration guidance.
+See [the project preparation plan](plans/project-worktree-preparation.md) for the schema and examples.
+Copse's own native setup uses that same declaration. Readiness covers dependencies and declared
+checks; it does not claim that builds or tests pass.
+
+Preparation always asks once, displaying the selected project, exact package install, every declared
+setup command, and its network/write scope. Project-defined setup is labelled executable repository
+code. The fingerprint from preflight is required in the tool call and is checked before approval and
+again before each step; changed inputs require a new approval. Grants cannot be remembered or reused
+for arbitrary commands. Automatic JavaScript installs use frozen lockfiles, Socket Firewall, and
+manager-specific lifecycle disabling. Custom steps retain their explicitly approved semantics.
+
+Both tools require an enforcing OS sandbox and have no unsandboxed fallback. Preflight probes and
+checks run read-only with network blocked. Preparation writes only the selected project and fixed
+managed cache directories under `~/.copse/cache/` (`COPSE_DIR` relocates them), including Corepack,
+npm, pnpm, Yarn, Bun, Socket Firewall, and native build caches. Toolchains are read-only; native setup
+uses a managed build home. No declaration may request broader filesystem grants. Temporary files
+stay in the project; redirected cache roots and outside-worktree metadata inputs are rejected.
+Root Git/editor configuration remains protected, while dependency metadata can be extracted.
+
+Later project-sandbox shell commands receive read-only cache access and matching package-manager
+cache variables without changing their install policy. Offline preparation blocks network for every
+subprocess using kernel isolation with no proxy ports or sockets; other agents' network grants
+cannot widen this boundary. Missing runtime versions or offline inputs fail with remediation.
+Runtime installation/version switching and Windows sandbox support remain separate capabilities.
+
 ## Guarded YOLO
 
 Guarded YOLO is a session-only, thread-scoped mode armed from the composer footer. It becomes

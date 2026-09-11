@@ -1,3 +1,9 @@
+import { z } from 'zod'
+import { assertPreparationPlan } from '../worktree-preparation.ts'
+import {
+  containedPreparationPath,
+  formatPreparationApproval,
+} from '../worktree-preparation-plan.ts'
 import {
   browserAllowedOrigins,
   currentBrowserScope,
@@ -674,11 +680,38 @@ async function checkCustomToolPermission(
   return approved
 }
 
-/**
- * Mutating GitHub PR actions always prompt (issue #690 Q3). There is no
- * "remember" yet — the per-repo grant granularity is still an open question, so
- * every approve / merge-when-ready / mark-ready / rerun-CI call asks first.
- */
+/** Approve the concrete project plan; execution rechecks its input fingerprint. */
+async function checkWorktreePreparationPermission(
+  args: unknown,
+  signal?: AbortSignal,
+): Promise<boolean> {
+  const parsed = z
+    .object({
+      planFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+      directory: z.string().optional().default('.'),
+      offline: z.boolean().optional(),
+    })
+    .parse(args)
+  const root = getAgentExecutionRoot()
+  if (!root) throw new Error('No workspace open.')
+  const plan = assertPreparationPlan(
+    containedPreparationPath(root, parsed.directory),
+    parsed.planFingerprint,
+  )
+  const { approved } = await requestApproval(
+    {
+      title: 'Prepare this worktree?',
+      ...formatPreparationApproval(plan, parsed.offline === true),
+      type: 'shell',
+      cause: 'shell-package-install',
+      allowRemember: false,
+      subject: 'prepare_worktree',
+    },
+    signal,
+  )
+  return approved
+}
+
 async function checkGithubWriteToolPermission(
   toolName: string,
   args: unknown,
@@ -1582,6 +1615,12 @@ export async function ensureToolPermitted(
   // wait also persists one bounded local task under the active turn tree.
   if (GITHUB_NONMUTATING_CI_TOOLS.has(toolName)) {
     return true
+  }
+
+  // The approval names the exact detected install and declared setup steps.
+  // Its fingerprint is checked again during execution; changed plans need approval.
+  if (toolName === 'prepare_worktree') {
+    return checkWorktreePreparationPermission(args, signal)
   }
 
   // Mutating PR actions (approve / merge-when-ready / mark-ready / rerun CI)
