@@ -14,6 +14,7 @@ export interface SimulatorDesktopView {
 
 interface SimulatorDesktopViewOptions {
   connectionId: string
+  screenLabel?: string
   sendInput(input: SimulatorDesktopInput): Promise<void>
   onFirstFrame(): void
   onInputError(error: unknown): void
@@ -63,7 +64,7 @@ export function createSimulatorDesktopView(
 ): SimulatorDesktopView {
   const canvas = el('canvas', {
     class: 'simulator-desktop-canvas',
-    'aria-label': 'iOS Simulator screen',
+    'aria-label': options.screenLabel ?? 'iOS Simulator screen',
     tabindex: '0',
   })
   const context = canvas.getContext('2d')
@@ -71,6 +72,7 @@ export function createSimulatorDesktopView(
   const lifecycle = new AbortController()
   const isClosed = (): boolean => lifecycle.signal.aborted
   let pointerId: number | null = null
+  let lastPoint = { x: 0, y: 0 }
   let firstFrame = true
   let decoding = false
   let pendingFrame: SimulatorDesktopFrame | null = null
@@ -90,22 +92,31 @@ export function createSimulatorDesktopView(
   }
 
   const onPointerDown = (event: PointerEvent): void => {
-    if (!controlEnabled || event.button !== 0) return
+    if (!controlEnabled || event.button !== 0 || pointerId !== null) return
     event.preventDefault()
     pointerId = event.pointerId
     canvas.setPointerCapture(event.pointerId)
-    send({ type: 'touch', phase: 'down', ...point(event) })
+    lastPoint = point(event)
+    send({ type: 'touch', phase: 'down', ...lastPoint })
   }
   const onPointerMove = (event: PointerEvent): void => {
     if (!controlEnabled || pointerId !== event.pointerId) return
     event.preventDefault()
-    send({ type: 'touch', phase: 'move', ...point(event) })
+    lastPoint = point(event)
+    send({ type: 'touch', phase: 'move', ...lastPoint })
+  }
+  const releasePointer = (): void => {
+    if (pointerId === null) return
+    const released = pointerId
+    pointerId = null
+    send({ type: 'touch', phase: 'up', ...lastPoint })
+    if (canvas.hasPointerCapture(released)) canvas.releasePointerCapture(released)
   }
   const finishPointer = (event: PointerEvent): void => {
     if (!controlEnabled || pointerId !== event.pointerId) return
     event.preventDefault()
-    send({ type: 'touch', phase: 'up', ...point(event) })
-    pointerId = null
+    lastPoint = point(event)
+    releasePointer()
   }
   const onKeyDown = (event: KeyboardEvent): void => {
     if (!controlEnabled || event.repeat) return
@@ -119,6 +130,8 @@ export function createSimulatorDesktopView(
   canvas.addEventListener('pointermove', onPointerMove)
   canvas.addEventListener('pointerup', finishPointer)
   canvas.addEventListener('pointercancel', finishPointer)
+  canvas.addEventListener('lostpointercapture', releasePointer)
+  canvas.addEventListener('blur', releasePointer)
   canvas.addEventListener('keydown', onKeyDown)
 
   const decodePendingFrame = async (): Promise<void> => {
@@ -161,19 +174,22 @@ export function createSimulatorDesktopView(
       void decodePendingFrame()
     },
     setControlEnabled: (enabled): void => {
+      if (!enabled) releasePointer()
       controlEnabled = enabled
-      if (!enabled) pointerId = null
     },
     focus: (): void => {
       canvas.focus({ preventScroll: true })
     },
     cleanup: (): void => {
+      releasePointer()
       lifecycle.abort()
       pendingFrame = null
       canvas.removeEventListener('pointerdown', onPointerDown)
       canvas.removeEventListener('pointermove', onPointerMove)
       canvas.removeEventListener('pointerup', finishPointer)
       canvas.removeEventListener('pointercancel', finishPointer)
+      canvas.removeEventListener('lostpointercapture', releasePointer)
+      canvas.removeEventListener('blur', releasePointer)
       canvas.removeEventListener('keydown', onKeyDown)
     },
   }

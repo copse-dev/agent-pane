@@ -3037,6 +3037,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
                 udid: z.uuid(),
                 name: z.string().min(1).max(256),
                 runtime: z.string().min(1).max(128),
+                platform: z.literal('android').optional(),
               }),
             )
             .max(8),

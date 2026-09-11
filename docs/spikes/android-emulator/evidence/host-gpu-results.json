@@ -1,0 +1,38 @@
+{
+  "without_token": "UNAUTHENTICATED",
+  "version": "33.1.24.0 (33.1.24-11237101)",
+  "initial": {
+    "width": 540,
+    "height": 960,
+    "bytes": 54125,
+    "rpc_ms": 43.5,
+    "sha256": "fba4550ed2e7ca11aa30286be94a8ad6020952bc18b6a85b69412759fce243d4"
+  },
+  "png_stream_idle": {
+    "frames": 9,
+    "empty_frames": 0,
+    "seconds": 4.01,
+    "fps_observed": 2.2,
+    "bytes": 487385,
+    "first_frame_ms": 53.5,
+    "first_seq": [0],
+    "last_seq": [8]
+  },
+  "rgba_stream_idle": {
+    "frames": 10,
+    "empty_frames": 0,
+    "seconds": 4.0,
+    "fps_observed": 2.5,
+    "bytes": 20736000,
+    "first_frame_ms": 14.1,
+    "first_seq": [0],
+    "last_seq": [9]
+  },
+  "after_stream_cancel": {
+    "width": 540,
+    "height": 960,
+    "bytes": 54210,
+    "rpc_ms": 46.9,
+    "sha256": "8997da38a902a6fdf4f7a64b0e33c31f37fddbde2d063d797a01af11da684c22"
+  }
+}

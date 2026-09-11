@@ -132,6 +132,9 @@
 }
 
 .vnc-devices-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   color: var(--text-muted);
   font-size: var(--font-size-xs);
   font-weight: 600;
@@ -339,6 +342,23 @@
   color: var(--warning);
   background: color-mix(in srgb, var(--warning) 10%, transparent);
   border-color: color-mix(in srgb, var(--warning) 45%, var(--border));
+}
+
+.vnc-device-navigation {
+  display: flex;
+  gap: var(--spacing-xs);
+}
+
+.vnc-device-navigation:has(> button:not([hidden])) > button {
+  flex: 1;
+  min-width: 0;
+  padding-inline: var(--spacing-xs);
+  width: auto;
+  justify-content: center;
+}
+
+.vnc-device-navigation:not(:has(> button:not([hidden]))) {
+  display: none;
 }
 
 .vnc-advanced summary {

@@ -1,5 +1,6 @@
 import { $, browser } from '@wdio/globals'
 import { PNG } from 'pngjs'
+import { readFileSync } from 'node:fs'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 
 const DEVICE_UDID = '11111111-2222-4333-8444-555555555555'
@@ -126,5 +127,51 @@ describe('Simulator desktop preview', function () {
     await expect($('.vnc-control-btn')).toHaveText('Stop controlling')
     await canvas.click()
     await saveAppScreenshot('simulator-desktop-live.png')
+  })
+
+  it('connects an Android display with view-only navigation and explicit control', async () => {
+    await $('.vnc-disconnect-btn').click()
+    await browser.execute(
+      async (udid, frameBase64) => {
+        const e2e = (
+          window as unknown as {
+            __copseE2e?: { setSimulatorDesktop(value: unknown): Promise<void> }
+          }
+        ).__copseE2e
+        if (!e2e) throw new Error('__copseE2e unavailable')
+        // Inject the display at the existing service fixture boundary. Transport/auth
+        // and real Android identifiers are covered by the local gRPC integration tests.
+        await e2e.setSimulatorDesktop({
+          devices: [
+            { udid, name: 'Pixel emulator', runtime: 'Android Emulator', platform: 'android' },
+          ],
+          frame: { base64: frameBase64, mimeType: 'image/png', pixelWidth: 540, pixelHeight: 960 },
+        })
+      },
+      DEVICE_UDID,
+      readFileSync('docs/spikes/android-emulator/evidence/app-input.png').toString('base64'),
+    )
+    await $('.vnc-refresh-devices').click()
+    await expect($('.vnc-device.is-selected .vnc-device-meta')).toHaveText(
+      'Android Emulator · Running',
+    )
+    await $('.vnc-connect-btn').click()
+    const canvas = $('[aria-label="Android emulator screen"]')
+    await canvas.waitForDisplayed({ timeout: 20_000 })
+    await browser.waitUntil(async () => Number(await canvas.getAttribute('width')) === 540)
+    await expect($('.vnc-status-title')).toHaveText('Connected to Pixel emulator')
+    await expect($('.vnc-control-btn')).toHaveText('Control emulator')
+    await expect($('.vnc-back-btn')).toBeDisabled()
+    await expect($('.vnc-home-btn')).toBeDisabled()
+    await expect($('.vnc-overview-btn')).toBeDisabled()
+    await $('.vnc-control-btn').click()
+    await expect($('.vnc-back-btn')).toBeEnabled()
+    await expect($('.vnc-overview-btn')).toBeEnabled()
+    await $('.vnc-back-btn').click()
+    await saveAppScreenshot('android-desktop-live.png')
+    await $('.vnc-control-btn').click()
+    await expect($('.vnc-back-btn')).toBeDisabled()
+    await $('.vnc-disconnect-btn').click()
+    await expect($('.vnc-status-title')).toHaveText('Disconnected')
   })
 })
