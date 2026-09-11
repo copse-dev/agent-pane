@@ -23,6 +23,7 @@ import type {
   AppleOperation,
   AppleOperationInput,
   AppleOperationLogPage,
+  AppleProjectDetection,
   AppleProjectState,
   AppleSelection,
 } from '@shared/types/apple-development.ts'
@@ -993,6 +994,7 @@ export interface ApiClient {
   }
   appleDevelopment: {
     state: (projectId: string, threadId: string) => Promise<AppleProjectState>
+    detectProject: (projectId: string) => Promise<AppleProjectDetection>
     setEnrolled: (
       projectId: string,
       threadId: string,

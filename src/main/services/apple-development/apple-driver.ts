@@ -20,6 +20,8 @@ const MAX_OUTPUT_BYTES = 2 * 1024 * 1024
 const MAX_CANDIDATES = 100
 const MAX_DISCOVERY_DEPTH = 6
 const MAX_DISCOVERY_DIRECTORIES = 2_000
+const MAX_DETECTION_DEPTH = 4
+const MAX_DETECTION_DIRECTORIES = 256
 const MAX_SCHEMES = 200
 const MAX_DESTINATIONS = 200
 const IGNORED_DISCOVERY_DIRECTORIES = new Set([
@@ -480,7 +482,10 @@ function boundedOutput(parts: readonly ProcessResult[]): {
   return { logs, outputTruncated }
 }
 
-export async function discoverAppleCandidates(root: string): Promise<AppleCandidate[]> {
+async function scanAppleCandidates(
+  root: string,
+  limits: { maxCandidates: number; maxDepth: number; maxDirectories: number },
+): Promise<AppleCandidate[]> {
   const canonicalRoot = await realpath(root)
   const candidates: AppleCandidate[] = []
   const pending: Array<{ directory: string; depth: number }> = [
@@ -489,8 +494,8 @@ export async function discoverAppleCandidates(root: string): Promise<AppleCandid
   let scannedDirectories = 0
   while (
     pending.length > 0 &&
-    scannedDirectories < MAX_DISCOVERY_DIRECTORIES &&
-    candidates.length < MAX_CANDIDATES
+    scannedDirectories < limits.maxDirectories &&
+    candidates.length < limits.maxCandidates
   ) {
     const current = pending.shift()
     if (!current) break
@@ -512,11 +517,11 @@ export async function discoverAppleCandidates(root: string): Promise<AppleCandid
           kind: extension === '.xcworkspace' ? 'workspace' : 'project',
           schemes: [],
         })
-        if (candidates.length >= MAX_CANDIDATES) break
+        if (candidates.length >= limits.maxCandidates) break
         continue
       }
       if (
-        current.depth >= MAX_DISCOVERY_DEPTH ||
+        current.depth >= limits.maxDepth ||
         entry.name.startsWith('.') ||
         IGNORED_DISCOVERY_DIRECTORIES.has(entry.name)
       ) {
@@ -529,6 +534,24 @@ export async function discoverAppleCandidates(root: string): Promise<AppleCandid
     if (left.kind !== right.kind) return left.kind === 'workspace' ? -1 : 1
     return left.name.localeCompare(right.name)
   })
+}
+
+export function discoverAppleCandidates(root: string): Promise<AppleCandidate[]> {
+  return scanAppleCandidates(root, {
+    maxCandidates: MAX_CANDIDATES,
+    maxDepth: MAX_DISCOVERY_DEPTH,
+    maxDirectories: MAX_DISCOVERY_DIRECTORIES,
+  })
+}
+
+/** A shallow, early-exit scan suitable for opening a project overflow menu. */
+export async function detectAppleProject(root: string): Promise<boolean> {
+  const candidates = await scanAppleCandidates(root, {
+    maxCandidates: 1,
+    maxDepth: MAX_DETECTION_DEPTH,
+    maxDirectories: MAX_DETECTION_DIRECTORIES,
+  })
+  return candidates.length > 0
 }
 
 async function installedDeveloperTool(developerDir: string, tool: string): Promise<string> {

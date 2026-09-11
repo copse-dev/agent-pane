@@ -96,6 +96,13 @@ export const appleProjectStateSchema = z.object({
 })
 export type AppleProjectState = z.infer<typeof appleProjectStateSchema>
 
+/** Cheap project-level probe used to decide whether Apple setup belongs in a workspace menu. */
+export interface AppleProjectDetection {
+  detected: boolean
+  enrolled: boolean
+  supportedHost: boolean
+}
+
 export const appleConfigureInputSchema = z.object({
   candidateId: z.string().min(1).max(512),
   schemeId: z.string().min(1).max(256),

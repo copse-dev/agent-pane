@@ -71,6 +71,28 @@ describe('AppleDevelopmentService enrollment', () => {
     storageDelete(STORE_KEY)
   })
 
+  it('detects project eligibility without starting Xcode or changing enrollment', async () => {
+    const roots: string[] = []
+    const service = new AppleDevelopmentService({
+      supervisor: new TaskSupervisor({ store: new EmptyTaskStore() }),
+      pluginEnabled: (): boolean => true,
+      platform: 'darwin',
+      resolveProjectRoot: (projectId): string | null =>
+        projectId === 'project-1' ? '/project' : null,
+      detectProject: (root): Promise<boolean> => {
+        roots.push(root)
+        return Promise.resolve(true)
+      },
+    })
+
+    assert.deepEqual(await service.detectProject('project-1'), {
+      detected: true,
+      enrolled: false,
+      supportedHost: true,
+    })
+    assert.deepEqual(roots, ['/project'])
+  })
+
   it('records direct user authority for an unsandboxed Apple operation', async () => {
     const context: ThreadExecutionContext = {
       projectId: 'project-1',

@@ -490,6 +490,13 @@ export function openAutomationSettings(scheduleId?: string): void {
   openSettingsDialog('customise')
 }
 
+/** Open the existing project-scoped Apple setup rather than duplicating enrollment in menus. */
+export function openAppleDevelopmentSettings(): void {
+  if (!overlayEl || overlayEl.open) return
+  pendingPluginDetail = { pluginId: APPLE_DEVELOPMENT_PLUGIN_ID }
+  openSettingsDialog('customise')
+}
+
 export function closeSettingsDialog(): void {
   if (!overlayEl || !overlayEl.open) return
   overlayEl.close()

@@ -10,6 +10,7 @@ import {
   type AppleExecuteInput,
   type AppleOperation,
   type AppleOperationLogPage,
+  type AppleProjectDetection,
   type AppleProjectState,
   type AppleSelection,
 } from '@shared/types/apple-development.ts'
@@ -22,11 +23,13 @@ import {
 import { getTaskSupervisor, type TaskSupervisor } from '../supervisor/task-supervisor.ts'
 import type { SupervisedTaskMeta } from '@shared/supervisor/task-schema.ts'
 import {
+  detectAppleProject,
   InstalledXcodeDriver,
   type AppleDriverDiscovery,
   type AppleDriverPlan,
 } from './apple-driver.ts'
 import { showSimulatorDesktop } from '../simulator-desktop/simulator-desktop-panel.ts'
+import { getProjectRoot } from '../workspace.ts'
 
 const STORE_KEY = 'plugin.copse.apple-development.state'
 const APPLE_HANDLER = 'apple_operation'
@@ -75,6 +78,8 @@ export interface AppleDevelopmentServiceDependencies {
   pluginEnabled?: () => boolean
   platform?: NodeJS.Platform
   presentSimulator?: (udid: string) => void
+  resolveProjectRoot?: typeof getProjectRoot
+  detectProject?: typeof detectAppleProject
 }
 
 function readStore(): AppleStore {
@@ -151,6 +156,8 @@ export class AppleDevelopmentService {
   private readonly pluginEnabled: () => boolean
   private readonly platform: NodeJS.Platform
   private readonly presentSimulator: (udid: string) => void
+  private readonly resolveProjectRoot: typeof getProjectRoot
+  private readonly detectProjectRoot: typeof detectAppleProject
   private readonly discoveries = new Map<string, Map<string, AppleDriverDiscovery>>()
   private readonly destinationCache = new Map<string, Map<string, AppleDestination[]>>()
   private readonly leases = new Map<string, Promise<void>>()
@@ -164,6 +171,8 @@ export class AppleDevelopmentService {
       ((): boolean => getDefaultPluginRegistry().isEnabled(APPLE_DEVELOPMENT_PLUGIN_ID))
     this.platform = dependencies.platform ?? process.platform
     this.presentSimulator = dependencies.presentSimulator ?? showSimulatorDesktop
+    this.resolveProjectRoot = dependencies.resolveProjectRoot ?? getProjectRoot
+    this.detectProjectRoot = dependencies.detectProject ?? detectAppleProject
     this.supervisor.registerHandler(APPLE_HANDLER, (task, context) =>
       this.handleOperation(task, context.signal),
     )
@@ -293,6 +302,23 @@ export class AppleDevelopmentService {
 
   isProjectEnrolled(projectId: string): boolean {
     return isAppleDevelopmentProjectEnrolled(projectId)
+  }
+
+  /**
+   * Probe only enough of a persisted local workspace to decide whether its menu
+   * should offer Apple setup. This does not start Xcode or change enrollment.
+   */
+  async detectProject(projectId: string): Promise<AppleProjectDetection> {
+    const enrolled = this.isProjectEnrolled(projectId)
+    const supportedHost = isAppleDevelopmentProjectSupported(projectId, this.platform)
+    if (!supportedHost) return { detected: false, enrolled, supportedHost }
+    const root = this.resolveProjectRoot(projectId)
+    if (!root) return { detected: false, enrolled, supportedHost }
+    return {
+      detected: await this.detectProjectRoot(root),
+      enrolled,
+      supportedHost,
+    }
   }
 
   getState(owner: ThreadExecutionOwner): AppleProjectState {

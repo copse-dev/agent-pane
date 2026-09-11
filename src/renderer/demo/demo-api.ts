@@ -963,6 +963,14 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     },
     appleDevelopment: {
       state: (projectId) => resolved(structuredClone(appleDevelopmentStateFor(projectId))),
+      detectProject: (projectId) => {
+        const state = appleDevelopmentStateFor(projectId)
+        return resolved({
+          detected: state.candidates.length > 0,
+          enrolled: state.enrolled,
+          supportedHost: state.supportedHost,
+        })
+      },
       setEnrolled: (projectId, _threadId, enrolled) => {
         const current = appleDevelopmentStateFor(projectId)
         const state: AppleProjectState = {

@@ -50,15 +50,25 @@ describe('Apple Development thread panel', function () {
 
     await saveAppScreenshot('apple-development-test-profile.png')
 
-    await $('[aria-label="Settings"]').click()
+    const detection = await browser.execute(() =>
+      window.api.appleDevelopment.detectProject('e2e-apple-development-project'),
+    )
+    assert.equal(detection.enrolled, true)
+    assert.equal(detection.supportedHost, true)
+    const projectMenu = $(
+      '.project-entry[data-project-id="e2e-apple-development-project"] .project-menu-btn',
+    )
+    await projectMenu.click()
+    await expect($('.context-menu-item=Apple Development…')).toBeDisplayed()
+    await saveAppScreenshot('apple-development-project-menu.png')
+    await $('.context-menu-item=Apple Development…').click()
     const dialog = $('#settings-dialog')
     await expect(dialog).toBeDisplayed()
-    await dialog.$('button[data-section="customise"]').click()
     const pluginRow = dialog.$('.plugin-row[data-plugin-id="copse.apple-development"]')
     await pluginRow.waitForDisplayed({ timeout: 15_000 })
     await expect(pluginRow.$('.plugin-name')).toHaveText('Apple development')
     const settingsFold = pluginRow.$('.plugin-settings-fold')
-    await settingsFold.$('summary').click()
+    await expect(settingsFold).toHaveAttribute('open')
     await expect(pluginRow.$('.apple-development-panel')).toBeDisplayed()
     await expect(pluginRow.$('.apple-development-panel').$('button=Remove project')).toBeDisplayed()
     await saveAppScreenshot('apple-development-enrollment-settings.png')

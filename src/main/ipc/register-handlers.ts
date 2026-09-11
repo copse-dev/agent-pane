@@ -2272,6 +2272,11 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       return getAppleDevelopmentService().getState({ projectId, threadId })
     },
   )
+  ipcMain.handle('apple-development:detect-project', async (event, rawProjectId: unknown) => {
+    assertMainFrameSender(event, win)
+    const projectId = parseIpcArgs(zProjectId, [rawProjectId])
+    return getAppleDevelopmentService().detectProject(projectId)
+  })
   ipcMain.handle(
     'apple-development:set-enrolled',
     async (event, rawProjectId: unknown, rawThreadId: unknown, rawEnrolled: unknown) => {

@@ -7,6 +7,7 @@ import {
   appleBuildActionArguments,
   appleBuildPathArguments,
   appleOperationPaths,
+  detectAppleProject,
   discoverAppleCandidates,
   discoverMissingLocalPackages,
   discoverSharedSchemes,
@@ -163,6 +164,18 @@ describe('discoverAppleCandidates', () => {
           schemes: [],
         },
       ])
+    } finally {
+      await rm(parent, { recursive: true, force: true })
+    }
+  })
+
+  it('detects an Apple workspace without invoking Xcode', async () => {
+    const parent = await mkdtemp(join(tmpdir(), 'copse-apple-detect-'))
+    const root = join(parent, 'checkout')
+    try {
+      await mkdir(join(root, 'apps', 'DemoApp.xcodeproj'), { recursive: true })
+      assert.equal(await detectAppleProject(root), true)
+      assert.equal(await detectAppleProject(join(root, 'apps', 'DemoApp.xcodeproj')), false)
     } finally {
       await rm(parent, { recursive: true, force: true })
     }

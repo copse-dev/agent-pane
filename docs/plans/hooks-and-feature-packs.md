@@ -356,6 +356,9 @@ revisiting this document, not silently diverging in an implementation PR.
     saved choice is retained, otherwise simulator-only schemes prefer an already booted device.
     After a successful user-triggered simulator Run, the panel opens that simulator in Copse's
     Desktop pane. Preview presentation failure does not change the recorded Run result.
+    The project overflow menu uses a bounded filesystem-only scan to reveal Apple Development for
+    likely Xcode workspaces and already-enrolled projects. It deep-links to the existing setup panel;
+    detection alone never enrolls a project or starts the MCP server.
 
     Agent-facing Apple tools come from the exact XcodeBuildMCP production dependency bundled with
     Copse, rather than a smaller parallel wrapper API. Enabling the pack and enrolling a local macOS

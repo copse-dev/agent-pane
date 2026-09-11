@@ -1255,6 +1255,8 @@ const api: ApiClient = {
   appleDevelopment: {
     state: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('apple-development:state', projectId, threadId),
+    detectProject: (projectId: string) =>
+      ipcRenderer.invoke('apple-development:detect-project', projectId),
     setEnrolled: (projectId: string, threadId: string, enrolled: boolean) =>
       ipcRenderer.invoke('apple-development:set-enrolled', projectId, threadId, enrolled),
     discover: (projectId: string, threadId: string, includeMetadata: boolean) =>

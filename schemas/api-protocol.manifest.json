@@ -199,6 +199,13 @@
           4
         ]
       },
+      "apple-development:detect-project": {
+        "api": "appleDevelopment.detectProject",
+        "args": [
+          1,
+          1
+        ]
+      },
       "apple-development:discover": {
         "api": "appleDevelopment.discover",
         "args": [
