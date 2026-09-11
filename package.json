@@ -15,6 +15,7 @@
     "check:e2e-syntax": "node scripts/check-e2e-syntax.mts",
     "filter:screenshots": "node scripts/filter-screenshots.mts",
     "build": "node scripts/build.mts",
+    "prepare:vault": "node scripts/prepare-profile-vault.mts",
     "build:demo": "node scripts/build.mts --demo",
     "build:servo": "node scripts/build.mts --servo",
     "servo": "node scripts/run-servo.mts",
@@ -119,7 +120,8 @@
       "**/node_modules/@napi-rs/**/*",
       "**/node_modules/@anthropic-ai/sandbox-runtime/**/*",
       "**/node_modules/xcodebuildmcp/**/*",
-      "dist/resources/gortex/**"
+      "dist/resources/gortex/**",
+      "dist/resources/profile-vault/**"
     ],
     "afterPack": "scripts/after-pack.cjs",
     "generateUpdatesFilesForAllChannels": true,
@@ -152,6 +154,9 @@
         }
       ],
       "hardenedRuntime": true,
+      "signIgnore": [
+        "dist/resources/profile-vault/CopseVault$"
+      ],
       "gatekeeperAssess": false,
       "extendInfo": {
         "NSLocalNetworkUsageDescription": "Copse discovers nearby computers that advertise VNC screen sharing.",

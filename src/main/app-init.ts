@@ -1,3 +1,14 @@
+import {
+  acquireVaultMaintenance,
+  registerVaultProfileClient,
+  retireVaultMaintenance,
+} from '@copse/store-kit/profile-vault-access.ts'
+import { existsSync } from 'node:fs'
+import {
+  recoverVaultMigration,
+  readVaultManifest,
+  assertVaultProfileState,
+} from '@copse/store-kit/profile-vault-files.ts'
 import { app } from 'electron'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
@@ -58,6 +69,33 @@ if (userData.outcome === 'moved' || userData.outcome === 'copied') {
   )
 }
 app.setPath('userData', userData.dir)
+
+const sharedHeadlessProfile =
+  process.argv.includes('--acp') ||
+  process.argv.includes('--release-smoke-test') ||
+  process.env['COPSE_AGENT_EVAL'] === '1'
+// Acquire ownership before constructing any store or replaying a vault commit.
+export const profileSingleInstanceLock = sharedHeadlessProfile || app.requestSingleInstanceLock()
+if (!profileSingleInstanceLock) app.exit(0)
+if (sharedHeadlessProfile) {
+  const releaseClient = registerVaultProfileClient(userData.dir)
+  process.once('exit', releaseClient)
+  if (existsSync(join(userData.dir, '.vault-migration')) || readVaultManifest(userData.dir))
+    throw new Error(
+      'Device-encrypted profiles require the Copse desktop unlock service. Use a separate profile for headless work.',
+    )
+} else {
+  retireVaultMaintenance(userData.dir)
+  if (existsSync(join(userData.dir, '.vault-migration'))) {
+    const releaseMaintenance = acquireVaultMaintenance(userData.dir)
+    try {
+      recoverVaultMigration(userData.dir)
+    } finally {
+      releaseMaintenance()
+    }
+  }
+}
+assertVaultProfileState(userData.dir)
 
 setElectronAppRuntime({
   userDataPath: app.getPath('userData'),

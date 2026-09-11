@@ -63,9 +63,10 @@ Two consequences:
   cryptographic: anything running as your OS user that can read the file can
   decrypt it. Do not treat a second profile as a security boundary for
   credentials.
-- **Keys do not survive a move to another machine or OS user.** The ciphertext
+- **With default storage, keys do not survive a move to another machine or OS user.** The ciphertext
   copies fine; the key that opens it does not. After restoring a profile
-  elsewhere, every stored key is unreadable and must be re-entered.
+  elsewhere, stored keys must be re-entered. The optional device-bound vault below
+  can instead restore saved secrets using a separately backed-up recovery key.
 
 Run `/checkup` after restoring a profile. A key that cannot be decrypted is
 reported as an error against the provider it belongs to. Re-enter it in
@@ -100,11 +101,12 @@ What needs attention:
 | Knowledge, long tasks, roadmap review | Survive — keyed by project id                                                                                 |
 | Projects (`config.json`)              | Record absolute paths. A path that no longer exists is quarantined, not deleted; relocate it from the sidebar |
 | Worktrees                             | Git records absolute paths inside each linked checkout; expect to recreate them                               |
-| Browser sessions                      | Cookies are sealed with the same OS key as API keys, so logins do not survive                                 |
+| Browser sessions                      | Cookies use Chromium’s OS storage and are outside the optional saved-secret vault                             |
 | Semantic-search index                 | Rebuilt on demand                                                                                             |
 
 So the practical restore sequence is: copy `~/.copse/` across, relocate each
-project onto its path on the new machine, and re-enter your API keys. Threads
+project onto its path on the new machine, and re-enter your API keys (or restore
+access with your recovery key if you enabled the optional vault). Threads
 and per-project notes follow the project once it is relocated; browser logins
 and the search index rebuild themselves.
 
@@ -142,3 +144,23 @@ cases it will not force:
 
 Until a launch has completed the move, back up both locations. Afterwards,
 `~/.copse/` is the only one that matters.
+
+## Optional device-bound saved-secret encryption
+
+On a supported Mac with the signed native helper, **Settings → Storage →
+Saved-secret encryption** can migrate saved API keys and SSH/VNC credentials to a
+per-profile key protected by Secure Enclave. The app starts locked; **Unlock**
+requests native authorization. **Lock and restart** stops current work and clears
+managed credential caches. Conversations, repositories and browser cookies are
+outside this option's scope.
+
+Setup recommends a separate recovery key in your password manager and verifies
+it by re-import. You can skip it after acknowledging possible permanent loss of
+saved secrets, or back up later. Copy the complete profile separately: the recovery
+key cannot reconstruct deleted files. On a replacement Mac, use **Restore access**
+with the matching key; see [recovery](recovery.md#device-encrypted-saved-secrets).
+
+Keep `vault-manifest.json`, `settings.json` and `ssh-credentials.json` from the same
+backup. Never open a migrated profile with an older build. Quit older desktop and
+headless Copse processes before setup. Encrypted profiles currently require the
+Electron desktop; ACP/headless clients need a separate unencrypted profile.

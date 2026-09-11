@@ -1,7 +1,9 @@
+import { createHash } from 'node:crypto'
 import * as esbuild from 'esbuild'
 import { execSync, spawnSync } from 'node:child_process'
 import {
   accessSync,
+  existsSync,
   cpSync,
   copyFileSync,
   mkdirSync,
@@ -406,4 +408,28 @@ if (isRelease) {
 // import time — is never reached on a default build.
 if (isServo) {
   await import('./build-tauri.mts')
+}
+
+// The independently signed helper is prepared once, not re-signed on each
+// Electron rebuild. Unsupported hosts/builds show encryption as unavailable.
+const vaultHelper = 'native/profile-vault/dist/CopseVault'
+if (existsSync(vaultHelper)) {
+  const expectedVaultBuild =
+    JSON.stringify({
+      version: 1,
+      sourceHash: createHash('sha256')
+        .update(readFileSync('native/profile-vault/main.swift'))
+        .digest('hex'),
+    }) + '\n'
+  if (readFileSync('native/profile-vault/dist/build.json', 'utf8') !== expectedVaultBuild) {
+    throw new Error(
+      'The native vault helper is stale. Run pnpm run prepare:vault with its signing identity before building.',
+    )
+  }
+  mkdirSync('dist/resources/profile-vault', { recursive: true })
+  copyFileSync(vaultHelper, 'dist/resources/profile-vault/CopseVault')
+} else if (isRelease && process.platform === 'darwin') {
+  throw new Error(
+    'Release builds require the signed native helper. Run pnpm run prepare:vault with the product signing identity first.',
+  )
 }
