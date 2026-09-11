@@ -1,5 +1,7 @@
 node_modules/
 .pnpm-store/
+# Installed portable software, profiles, caches, and independent project clones.
+.portable/
 .pr-validation/
 dist/
 dist-test/

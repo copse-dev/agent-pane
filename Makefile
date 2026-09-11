@@ -82,6 +82,10 @@ help:
 	@echo "  make runner-env          Check/scaffold the ci-runners/.env file"
 	@echo
 	@echo "App dev loop:"
+	@echo "  make portable-setup    Install tools and build in the checkout's .portable/"
+	@echo "                         Install the pinned Apple Silicon development environment"
+	@echo "  make portable-shell    Develop using the installed portable tools"
+	@echo "  make portable-run      Launch the prepared portable build"
 	@echo "  make deps              Sync dependencies to their content fingerprint"
 	@echo "  make build             Sync dependencies and dist/ by content"
 	@echo "  make run               deps -> build (if changed) -> start the app"
@@ -214,6 +218,17 @@ runners-ps:
 # ============================================================================
 
 # --- node preflight ---------------------------------------------------------
+PORTABLE_ROOT ?= .portable
+.PHONY: portable-setup portable-shell portable-run
+portable-setup:
+	@bash scripts/portable/setup.sh "$(PORTABLE_ROOT)"
+
+portable-shell:
+	@bash "$(PORTABLE_ROOT)/portable-dev" shell
+
+portable-run:
+	@bash "$(PORTABLE_ROOT)/portable-dev" run
+
 .PHONY: check-node
 check-node:
 	@$(USE_NVM); \
