@@ -103,6 +103,9 @@ importers:
       '@copse/thread-store':
         specifier: workspace:*
         version: link:packages/thread-store
+      '@electron/fuses':
+        specifier: 2.1.1
+        version: 2.1.1
       '@electron/rebuild':
         specifier: ^4.2.0
         version: 4.2.0
@@ -529,6 +532,11 @@ packages:
 
   '@electron/fuses@1.8.0':
     resolution: {integrity: sha512-zx0EIq78WlY/lBb1uXlziZmDZI4ubcCXIMJ4uGjXzZW0nS19TjSPeXPAjzzTmKQlJUZm0SbmZhPKP7tuQ1SsEw==}
+    hasBin: true
+
+  '@electron/fuses@2.1.1':
+    resolution: {integrity: sha512-38ho27/mtUV/LpsZ1LCDJUomKBBSUZDk/qBH4FNNtoN5fmnkmWDcIp5pm1Kv3InqhRjKZKs7Jzx+wWZNMArHrA==}
+    engines: {node: '>=22.12.0'}
     hasBin: true
 
   '@electron/get@2.0.3':
@@ -5183,6 +5191,8 @@ snapshots:
       chalk: 4.1.2
       fs-extra: 9.1.0
       minimist: 1.2.8
+
+  '@electron/fuses@2.1.1': {}
 
   '@electron/get@2.0.3':
     dependencies:

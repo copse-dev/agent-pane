@@ -1,3 +1,4 @@
+import { nodeWorkerExecutable, nodeWorkerScript } from '../node-worker-runtime.ts'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { join } from 'node:path'
 import { errorMessage } from '@shared/errors.ts'
@@ -15,7 +16,7 @@ import {
 const SESSION_HOST_START_TIMEOUT_MS = 15_000
 
 export function acpSessionHostWorkerPath(): string {
-  return join(__dirname, 'acp-session-host-worker.js')
+  return nodeWorkerScript(join(__dirname, 'acp-session-host-worker.js'))
 }
 
 function readHostMessage(value: unknown): AcpSessionHostMessage | null {
@@ -59,7 +60,7 @@ export function spawnSandboxedAcpSessionHost(config: AcpAgentSpawnConfig): Promi
       },
       allowLocalhost: Boolean(config.nativeBridge),
     }
-    const child = spawn(process.execPath, [acpSessionHostWorkerPath()], {
+    const child = spawn(nodeWorkerExecutable(), [acpSessionHostWorkerPath()], {
       cwd: config.cwd,
       env: {
         ...process.env,

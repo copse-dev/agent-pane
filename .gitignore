@@ -79,3 +79,11 @@ docs/acp-behavior-matrix.json
 docs/plans/perf-data*/runs/**/process.log
 # Warmup runs are discarded by the harness; keeping them would commit noise.
 docs/plans/perf-data*/runs/*warmup*/
+
+# Locally prepared and signed native vault helpers.
+native/profile-vault/dist/
+
+# Browser drivers downloaded by focused visual evals.
+.cache/wdio-demo/
+
+native/node-runtime/dist/
