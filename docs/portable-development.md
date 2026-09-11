@@ -177,9 +177,10 @@ from the app bundle. Installing a second app copy does not create a separate
 profile. This recipe deliberately leaves the host's profile, model-library
 selection, running server and shell configuration unchanged. Select the drive's
 model directory in LM Studio's My Models page when you want to use that library;
-that selection affects the active host profile. Runtime downloads and loading a
-model must be completed before claiming offline inference readiness. This is
-not covered by `portable-verify-offline`, which checks the development toolchain.
+that selection affects the active host profile. The runtime target below provisions the engine software separately; activating
+that runtime location in an LM Studio profile and loading a model remain
+separate steps. `portable-verify-offline` checks the development toolchain,
+not LM Studio inference.
 
 Model weights are not extra RAM: the larger model still needs memory for its
 context and runtime. Use one model at a time and a modest context. The small
@@ -191,6 +192,79 @@ on the 64 GB machine before relying on that configuration. Model downloads use L
 published [Qwen3-4B](https://huggingface.co/lmstudio-community/Qwen3-4B-Instruct-2507-GGUF),
 [Qwen3.6](https://huggingface.co/lmstudio-community/Qwen3.6-35B-A3B-GGUF),
 and [Qwen3-Coder-Next](https://huggingface.co/lmstudio-community/Qwen3-Coder-Next-GGUF) repositories.
+
+## Expanded model library and inference runtimes
+
+```bash
+make portable-local-ai-library          # optional public collection: about 197 GB
+make portable-local-ai-library-offline  # verify/reconstruct from files already present
+make portable-local-ai-runtimes         # pinned GGUF, MLX, Harmony and Python archives
+make portable-local-ai-runtimes-offline # reinstall from caches; also run after relocation
+```
+
+The public expanded collection is opt-in and adds 16 model repositories
+(including the Nomic embedding model), with 121 files. Alongside the three
+starter models, the combined weights and supporting files occupy about 269 GB
+before filesystem sharing. Separate MLX/GGUF and 4/6/8-bit variants remain separate selections.
+Repeated entries for the same model on multiple machines are consolidated.
+
+`scripts/portable/collections/extended.tsv` pins every required file: repository,
+immutable revision, filename, SHA-256 and byte size. MLX entries include their
+configuration, tokenizer, processor and index files; GGUF vision entries include
+projectors. Files preserved from an existing installation are matched to their
+publisher's history, so individual files can have different revision pins.
+Remote-only entries use the exact variant's publisher revision at collection
+time; they are not asserted to be byte-identical to an inaccessible installation.
+
+The separately gated ThinkingCap GGUF variant and its projector are pinned in
+`scripts/portable/collections/extended-gated.tsv` (about 18 GB). To install them,
+obtain the publisher's access through Hugging Face, configure `HF_TOKEN` securely
+in the invoking environment, and select that manifest with `MODEL_MANIFEST`.
+The installer only sends this token to Hugging Face, through curl's stdin; it
+never writes the token into the drive, a manifest or a command argument.
+Cached gated files can subsequently be verified offline without credentials.
+This optional gated collection brings the combined library to about 287 GB.
+
+Use `MODEL_MANIFEST=/absolute/path/collection.tsv` for another collection with
+those five tab-separated fields. The installer rejects malformed pins,
+duplicate destinations, path traversal and destination symlinks. Each first
+occurrence of a checksum is verified; later identical files are materialized
+with APFS copy-on-write (ordinary copies on filesystems without clone support).
+This preserves complete model directories without downloading identical bytes
+again. Offline mode refuses missing or corrupt files unless an identical,
+already-verified file in the collection can supply them.
+
+Runtime software is installed at
+`.portable/apps/darwin-arm64/lm-studio-runtimes/`. The official registry's pinned
+archives are retained under `.portable/cache/downloads/lm-studio-runtimes/`.
+`runtimes.tsv` pins Metal llama.cpp 2.34.0, MLX 1.11.0, Harmony 0.3.5 and their
+shared Python dependencies. These are public software packages; the installer
+never copies an LM Studio user profile or credentials.
+
+Stop processes using the portable runtimes before reinstalling them. Runtime
+setup replaces its managed software directory and runs the archive's bundled
+venvstacks postinstall scripts using its own Python interpreter. Those scripts
+regenerate absolute Python environment paths, so rerun the offline runtime
+target whenever the mount path changes. The host app's runtime selections and
+profile remain unchanged: installing these packages does not activate a second
+isolated LM Studio GUI profile automatically.
+
+The runtime executables also support direct use of the drive's models without
+changing the host GUI profile. Enter `make portable-shell` first so temporary
+files and caches also stay on the drive. For example, after installing the expanded library:
+
+```bash
+COPSE_LOCAL_AI_RUNTIME="$PWD/.portable/apps/darwin-arm64/lm-studio-runtimes"
+"$COPSE_LOCAL_AI_RUNTIME/vendor/_amphibian/app-mlx-generate-mac14-arm64@34/bin/python" -I \
+  -m mlx_vlm.generate --model "$PWD/.portable/models/lmstudio-community/gemma-4-E4B-it-MLX-4bit" \
+  --prompt "Reply with just the word ready." --max-tokens 8 --thinking-mode disabled
+```
+
+The GGUF server is at
+`$COPSE_LOCAL_AI_RUNTIME/llama.cpp-mac-arm64-apple-metal-advsimd-2.34.0/llama-server`.
+Select a model and a modest context explicitly; a server may be connected to a
+client over localhost. These direct executables are separate from the LM Studio
+GUI's active per-user configuration.
 
 ## Boundaries
 
@@ -208,7 +282,8 @@ not implement portable secret encryption. Copse ACP sandbox access to relocated
 agent state still needs end-to-end validation.
 
 Cloud inference requires a connection. The optional local AI recipe downloads
-model weights and LM Studio; its inference runtimes still need separate setup.
+model weights and LM Studio; the runtime target also installs the engine software.
+LM Studio profile activation and model load testing remain separate.
 Desktop Claude/Codex apps, project-specific tools and a second-Mac acceptance run
 are not included in this preview. First-time account sign-in requires a connection.
 `doctor` reports prerequisites and executable paths; `verify-offline` proves

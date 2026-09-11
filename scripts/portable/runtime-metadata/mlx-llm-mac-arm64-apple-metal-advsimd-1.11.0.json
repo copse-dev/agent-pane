@@ -1,0 +1,16 @@
+[
+  [
+    "en",
+    {
+      "langKey": "en",
+      "displayName": "LM Studio MLX",
+      "description": "Apple MLX engine, based on the MLX Python implementation",
+      "releaseNotes": [
+        {
+          "version": "1.11.0",
+          "releaseNotes": "- Updated MLX dependencies\n\nMLX version info:\n- mlx-engine==ec2f585\n- mlx==0.32.0\n- mlx-lm==0.31.3\n- mlx-vlm==0.6.5\n"
+        }
+      ]
+    }
+  ]
+]
