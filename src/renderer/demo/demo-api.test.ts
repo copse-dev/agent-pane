@@ -160,6 +160,33 @@ const rewriteScenario = scenarioFor('rewrite', REWRITE_TRACE)
 const readScenario = scenarioFor('read', READ_TRACE)
 const dollarScenario = scenarioFor('dollar', DOLLAR_TRACE)
 
+describe('createDemoApi Apple Development enrollment', () => {
+  it('keeps enrollment scoped to its project while exposing the plugin in Customise', async () => {
+    const scenario = DEMO_SCENARIOS.find((entry) => entry.id === 'apple-development')
+    assert.ok(scenario)
+    const threadId = scenario.threads[0]?.id
+    assert.ok(threadId)
+    const api = createDemoApi(scenario)
+
+    const plugin = (await api.plugins.list()).plugins.find(
+      (entry) => entry.id === 'copse.apple-development',
+    )
+    assert.equal(plugin?.enabled, true)
+    assert.equal((await api.appleDevelopment.state(scenario.project.id, threadId)).enrolled, true)
+    assert.equal((await api.appleDevelopment.state('new-project', 'new-thread')).enrolled, false)
+
+    const enrolled = await api.appleDevelopment.setEnrolled('new-project', 'new-thread', true)
+    await api.appleDevelopment.setEnrolled(scenario.project.id, threadId, false)
+
+    assert.equal(
+      enrolled.setupMessage,
+      'No Xcode workspace or project was found within the project directory.',
+    )
+    assert.equal((await api.appleDevelopment.state('new-project', 'new-thread')).enrolled, true)
+    assert.equal((await api.appleDevelopment.state(scenario.project.id, threadId)).enrolled, false)
+  })
+})
+
 describe('createDemoApi decisions surface', () => {
   it('exposes list/export stubs so ApiClient stays complete for the browser demo', async () => {
     const scenario = DEMO_SCENARIOS[0]

@@ -7,17 +7,18 @@ import {
   lstat,
   mkdir,
   readFile,
-  realpath,
+  readlink,
   rename,
   rm,
   stat,
   symlink,
   writeFile,
 } from 'node:fs/promises'
-import { homedir, tmpdir } from 'node:os'
+import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expectRecord, nonEmptyStringOr } from '../src/shared/unknown-value.mts'
+import { cacheLinkTarget, gortexCacheRoot } from './lib/build-cache-paths.mts'
 
 const GORTEX_VERSION = 'v0.60.0'
 const REPO = 'zzet/gortex'
@@ -125,9 +126,7 @@ function assetName(): string | null {
 
 /** Machine-wide cache dir for this version/platform/arch (shared across worktrees). */
 function sharedGortexDir(): string {
-  const override = process.env['COPSE_GORTEX_CACHE']?.trim()
-  const root = override ?? join(homedir(), '.copse', 'cache', 'gortex')
-  return join(root, `${GORTEX_VERSION}-${process.platform}-${TARGET_ARCH}`)
+  return join(gortexCacheRoot(), `${GORTEX_VERSION}-${process.platform}-${TARGET_ARCH}`)
 }
 
 function sharedBinPath(): string {
@@ -215,12 +214,13 @@ async function findExtractedBinary(root: string): Promise<string | null> {
 async function linkVendorToShared(sharedBin: string): Promise<void> {
   await mkdir(OUT_DIR, { recursive: true })
   const outPath = join(OUT_DIR, BIN_NAME)
+  const linkTarget = cacheLinkTarget(outPath, sharedBin)
 
   try {
     const st = await lstat(outPath)
     if (st.isSymbolicLink()) {
       try {
-        if ((await realpath(outPath)) === (await realpath(sharedBin))) {
+        if ((await readlink(outPath)) === linkTarget) {
           console.log(`[fetch-gortex] ${outPath} → ${sharedBin}`)
           return
         }
@@ -236,7 +236,7 @@ async function linkVendorToShared(sharedBin: string): Promise<void> {
   }
 
   try {
-    await symlink(sharedBin, outPath)
+    await symlink(linkTarget, outPath)
     console.log(`[fetch-gortex] ${outPath} → ${sharedBin}`)
   } catch {
     // Windows without Developer Mode often cannot create file symlinks.

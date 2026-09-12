@@ -5,6 +5,7 @@ import type { LLMTool } from '@shared/types'
 import type { ToolRegistry } from '../tool-registry.ts'
 import { setHookRunToolset } from '../hook-run-recorder.ts'
 import { activeBridgeToolNames } from './acp-native-bridge.ts'
+import { getThreadExecutionContext } from '../thread-execution-context.ts'
 
 export interface AssembleAcpTurnStartOptions {
   userText: string
@@ -29,7 +30,7 @@ export interface AssembleAcpTurnStartOptions {
 export async function assembleAcpTurnStart(
   options: AssembleAcpTurnStartOptions,
 ): Promise<string | undefined> {
-  const offeredNames = new Set(activeBridgeToolNames())
+  const offeredNames = new Set(activeBridgeToolNames(getThreadExecutionContext()?.projectId))
   const bridgedTools = options.registry
     .toMcpTools()
     .filter((tool) => offeredNames.has(tool.name))

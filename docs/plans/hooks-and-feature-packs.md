@@ -345,6 +345,40 @@ revisiting this document, not silently diverging in an implementation PR.
     vocabulary, re-exported by the spine under its old name. Rule 4 of the execution guidance
     names the new layout.
 
+26. **First-party development actions use actor-specific consent.** For Apple Development, a
+    panel button click is the consent for that operation and does not open another approval modal.
+    The panel keeps Copse's typed, thread-owned driver: it validates the selected target, constructs
+    fixed `xcodebuild` and `simctl` arguments, records a supervised task, bounds logs and duration,
+    and resolves a macOS executable only inside the validated built app bundle. These operations run
+    with normal host access because Xcode requires package, cache, signing, developer-service, and
+    Simulator access and may execute project-controlled build phases.
+    Destination choices come from Xcode's eligible destinations for the selected scheme; a valid
+    saved choice is retained, otherwise simulator-only schemes prefer an already booted device.
+    After a successful user-triggered simulator Run, the panel opens that simulator in Copse's
+    Desktop pane. Preview presentation failure does not change the recorded Run result.
+    The project overflow menu uses a bounded filesystem-only scan to reveal Apple Development for
+    likely Xcode workspaces and already-enrolled projects. It deep-links to the existing setup panel;
+    detection alone never enrolls a project or starts the MCP server.
+
+    Agent-facing Apple tools come from the exact XcodeBuildMCP production dependency bundled with
+    Copse, rather than a smaller parallel wrapper API. Enabling the pack and enrolling a local macOS
+    project starts the server in that project root with every upstream workflow enabled; disabling
+    or unenrolling tears it down. The server is first-party configuration but its calls retain the
+    normal MCP permission policy: they prompt unless a per-tool grant or the corroborated read-only
+    policy allows them. It runs outside the generic shell sandbox after that gate because its Xcode,
+    Simulator, device, debugger, UI-automation, and package operations need host services. Build,
+    Test, and Build-and-Run calls receive `-allowProvisioningUpdates`; unrelated tools do not.
+    XcodeBuildMCP image blocks are bounded before being attached to tool results.
+
+    The pack also declares one host-native presentation tool, `open_simulator_desktop`. It does not
+    duplicate any XcodeBuildMCP build, boot, launch, or automation operation: after those operations
+    boot a Simulator, it asks Copse's existing Desktop pane to connect to that validated booted UDID.
+    The pane opens view-only and mouse/keyboard control remains an explicit user toggle. This small
+    host bridge is necessary because an external MCP server cannot address Copse renderer state.
+
+    Operation authority for the Copse panel remains process-lifetime scoped: recovery after a host
+    restart blocks before relaunch because the prior Xcode process may still be alive.
+
 ## Target architecture
 
 ```mermaid

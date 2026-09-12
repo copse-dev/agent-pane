@@ -160,6 +160,52 @@ function describeUiResource(resource: Record<string, unknown>): string {
   return `[ui resource: ${label}${size} — rendered in the canvas]`
 }
 
+export interface McpResultImage {
+  dataUrl: string
+  name: string
+}
+
+const MAX_RESULT_IMAGES = 8
+const MAX_RESULT_IMAGE_BYTES = 20 * 1024 * 1024
+
+function imageExtension(mimeType: string): string {
+  const subtype = mimeType.slice('image/'.length).split(/[;+]/, 1)[0]
+  if (!subtype) return 'image'
+  return subtype === 'jpeg' ? 'jpg' : subtype
+}
+
+/**
+ * Extract bounded inline MCP image blocks for providers that accept tool-result
+ * images. MCP data is raw base64; Copse's provider contract uses data URLs.
+ */
+export function extractMcpImages(content: unknown): McpResultImage[] {
+  if (!Array.isArray(content)) return []
+  const images: McpResultImage[] = []
+  let acceptedBytes = 0
+  for (const raw of content) {
+    if (images.length >= MAX_RESULT_IMAGES) break
+    if (!isRecord(raw) || raw['type'] !== 'image') continue
+    const data = raw['data']
+    const mimeType = raw['mimeType']
+    if (
+      typeof data !== 'string' ||
+      !data ||
+      typeof mimeType !== 'string' ||
+      !mimeType.toLowerCase().startsWith('image/')
+    ) {
+      continue
+    }
+    const bytes = Buffer.byteLength(data, 'base64')
+    if (bytes <= 0 || acceptedBytes + bytes > MAX_RESULT_IMAGE_BYTES) continue
+    acceptedBytes += bytes
+    images.push({
+      dataUrl: `data:${mimeType};base64,${data}`,
+      name: `mcp-image-${String(images.length + 1)}.${imageExtension(mimeType.toLowerCase())}`,
+    })
+  }
+  return images
+}
+
 export interface FlattenOptions {
   /**
    * When set, embedded UI resources (`text/html` / `text/uri-list`) are replaced
@@ -168,6 +214,8 @@ export interface FlattenOptions {
    * to preserve the legacy transcript shape.
    */
   summarizeUiResources?: boolean
+  /** Image blocks are being carried alongside the text as tool-result images. */
+  imagesAttached?: boolean
 }
 
 /** Flatten an MCP tool-call result `content` array into a single string for the model. */
@@ -186,7 +234,7 @@ export function flattenMcpContent(content: unknown, options: FlattenOptions = {}
         break
       case 'image':
         parts.push(
-          `[image${typeof raw['mimeType'] === 'string' ? ` ${raw['mimeType']}` : ''} omitted]`,
+          `[image${typeof raw['mimeType'] === 'string' ? ` ${raw['mimeType']}` : ''} ${options.imagesAttached ? 'attached' : 'omitted'}]`,
         )
         break
       case 'audio':

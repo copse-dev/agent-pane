@@ -78,6 +78,11 @@ import {
 } from '@copse/agent/plugins/parallel-search-plugin.ts'
 import { parallelSearchTool } from '../tools/parallel-search-tool.ts'
 import { PARALLEL_SEARCH_PROVIDER_ID } from './parallel-search.ts'
+import { APPLE_DEVELOPMENT_PLUGIN_ID } from '@copse/agent/plugins/apple-development-plugin.ts'
+import {
+  OPEN_SIMULATOR_DESKTOP_TOOL_NAME,
+  openSimulatorDesktopTool,
+} from '../tools/simulator-desktop-tool.ts'
 
 export function createRegistry(): ToolRegistry {
   const registry = new ToolRegistry()
@@ -176,6 +181,10 @@ export function createRegistry(): ToolRegistry {
   // Optional hosted web search. The pack and a configured key are both needed,
   // so the model never sees a tool that can only answer with setup guidance.
   syncParallelSearchTools(registry)
+  // The Apple pack exposes XcodeBuildMCP for build/run work. This companion
+  // tool brings the resulting booted Simulator into Copse's visible Desktop
+  // panel, keeping display integration out of the third-party MCP server.
+  syncAppleDevelopmentTools(registry)
   // Reading a video as stills. Registered unconditionally because a video can
   // be attached to any thread at any time, but withheld per turn from threads
   // that have never had one (see `parentTools`) — most threads never will, and
@@ -197,6 +206,17 @@ export function createRegistry(): ToolRegistry {
     registerBrowserTools(registry)
   }
   return registry
+}
+
+/** Keep the Simulator panel bridge aligned with the experimental Apple pack. */
+export function syncAppleDevelopmentTools(registry: ToolRegistry): void {
+  if (getDefaultPluginRegistry().isEnabled(APPLE_DEVELOPMENT_PLUGIN_ID)) {
+    if (!registry.has(OPEN_SIMULATOR_DESKTOP_TOOL_NAME)) {
+      registry.register(openSimulatorDesktopTool)
+    }
+  } else {
+    registry.unregister(OPEN_SIMULATOR_DESKTOP_TOOL_NAME)
+  }
 }
 
 /**

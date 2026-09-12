@@ -2,7 +2,7 @@ name: Sync model cards
 
 # Refreshes packages/llm/src/model-cards.generated.ts from the reviewed link file
 # scripts/data/model-cards.json, discovering cards for any model still listed in
-# `wanted` and verifying that every link resolves. Opens a PR if anything moved.
+# `wanted` and checking every link for definitive link rot. Opens a PR if anything moved.
 # See packages/llm/src/model-cards.ts for the data flow.
 #
 # Discovery and verification need direct egress to vendor sites (anthropic.com,
@@ -36,8 +36,9 @@ jobs:
 
       - name: Discover and verify model cards
         # --discover fills models listed in `wanted` from each vendor's card
-        # index; --verify GETs every link and fails on link rot, so a dead card
-        # breaks this workflow instead of shipping to the value map.
+        # index; --verify GETs every link and fails on definitive 404/410 link
+        # rot. Access-control and transient failures remain warnings because
+        # they do not prove that a reviewed link is dead.
         run: npm run sync:model-cards -- --discover --verify --delay=1.5
 
       # `npm run check` covers typecheck + lint + format:check + unit tests,

@@ -26,6 +26,9 @@ cpSync('node_modules/vscode-material-icons/generated/icons', 'dist/renderer/mate
 copyFileSync('src/renderer/index.html', 'dist/renderer/index.html')
 copyFileSync('src/renderer/theme-boot.js', 'dist/renderer/theme-boot.js')
 cpSync('assets', 'dist/assets', { recursive: true })
+cpSync('src/main/services/simulator-desktop/native', 'dist/resources/apple-simulator', {
+  recursive: true,
+})
 copyFileSync('assets/icons/rose/icon-32.png', 'dist/renderer/favicon.png')
 cpSync('src/renderer/icon-previews', 'dist/renderer/icon-previews', { recursive: true })
 
@@ -193,12 +196,13 @@ buildContexts.push(mainCtx)
 // for them would only add startup churn (`watch()` runs its own initial build,
 // which would fire the hook again once restarts are armed).
 const standaloneCtxs = await Promise.all(
-  STANDALONE_MAIN_BUNDLES.map(({ entry, outfile, external, alias }) =>
+  STANDALONE_MAIN_BUNDLES.map(({ entry, outfile, external, alias, logOverride }) =>
     esbuild.context({
       ...nodeOpts,
       entryPoints: [entry],
       outfile,
       ...(external ? { external } : {}),
+      ...(logOverride ? { logOverride: { ...MAIN_LOG_OVERRIDE, ...logOverride } } : {}),
       alias: {
         ...sharedAlias,
         ...Object.fromEntries(

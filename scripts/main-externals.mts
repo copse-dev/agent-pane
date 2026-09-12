@@ -25,6 +25,9 @@ export const MAIN_EXTERNALS = [
   'jsdom',
   '@mozilla/readability',
   'turndown',
+  // Spawned as a stdio MCP child from its packaged CLI entry. Keep the package
+  // and its runtime assets intact rather than folding them into Copse's bundle.
+  'xcodebuildmcp',
   // electron-updater lazy-requires its provider backends (GitHub/S3/generic)
   // and js-yaml at runtime; bundling breaks those dynamic requires. It ships as
   // a production dependency, so electron-builder packs it into the app's

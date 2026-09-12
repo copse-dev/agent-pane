@@ -66,6 +66,10 @@ import {
 import { loadCustomTools } from './services/mcp/custom-tools-registry.ts'
 import { disposeAllAcpSessions } from './services/acp/acp-session-pool.ts'
 import { initApproval } from './services/approval.ts'
+import {
+  setSimulatorDesktopPanelPresenter,
+  SIMULATOR_DESKTOP_SHOW_CHANNEL,
+} from './services/simulator-desktop/simulator-desktop-panel.ts'
 import { initAskUser } from './services/ask-user.ts'
 import { createElectronUserAlertSender } from './services/user-alerts-electron.ts'
 import { setTerminalCommandLauncher } from './services/exec/terminal-launch.ts'
@@ -83,6 +87,7 @@ import {
 } from './services/search/semantic-index.ts'
 import { initTerminal } from './ipc/terminal.ts'
 import { initVnc } from './ipc/vnc.ts'
+import { initSimulatorDesktop } from './ipc/simulator-desktop.ts'
 import { registerAllHandlers } from './ipc/register-handlers.ts'
 import { initSkillsRegistry } from './services/skills/skills-registry.ts'
 import { initAgentsRegistry } from './services/agents/agents-registry.ts'
@@ -267,6 +272,12 @@ setBrowserSessionPlatform({
     if (!win || win.isDestroyed()) return
     win.webContents.send(CANVAS_ARTEFACT_SHOW_CHANNEL, identity)
   },
+})
+
+setSimulatorDesktopPanelPresenter((udid) => {
+  const win = getMainWindow()
+  if (!win || win.isDestroyed()) return
+  win.webContents.send(SIMULATOR_DESKTOP_SHOW_CHANNEL, udid)
 })
 
 setVideoDecoderPlatform({
@@ -505,6 +516,7 @@ app
     initFsWatcher(win)
     const disposeTerminalHandlers = initTerminal(win)
     const disposeVncHandlers = initVnc(win)
+    const disposeSimulatorDesktopHandlers = initSimulatorDesktop(win)
     recordStartupPhase('register-handlers')
     perfMark('main:register-handlers')
     registerAllHandlers(win, registry)
@@ -708,6 +720,7 @@ app
         const { draftText = '', invokedSkills = [], imageCount = 0, model } = parsed.data
         const priorMessages = await agentDispatcher.history(projectId, threadId)
         return estimateContextBreakdown(registry, {
+          projectId,
           draftText,
           invokedSkills,
           imageCount,
@@ -965,6 +978,7 @@ app
       })
     disposeTerminal = disposeTerminalHandlers
     disposeVnc = disposeVncHandlers
+    disposeSimulatorDesktop = disposeSimulatorDesktopHandlers
   })
   .catch(console.error)
 
@@ -989,6 +1003,7 @@ let quitCleanupFinished = false
 const QUIT_CLEANUP_DEADLINE_MS = 30_000
 let disposeTerminal: (() => void) | undefined
 let disposeVnc: (() => Promise<void>) | undefined
+let disposeSimulatorDesktop: (() => Promise<void>) | undefined
 let disposeLongTaskWake: (() => void) | undefined
 let disposeCiWatchConsumer: (() => void) | undefined
 let disposeBackgroundProcessSupervisor: (() => void) | undefined
@@ -1024,6 +1039,8 @@ async function cleanupBeforeQuit(): Promise<void> {
   disposeTerminal = undefined
   await disposeVnc?.()
   disposeVnc = undefined
+  await disposeSimulatorDesktop?.()
+  disposeSimulatorDesktop = undefined
   closeAllWatchers()
   stopWorkspaceIndexWatcher()
   shutdownBrowserSession()
