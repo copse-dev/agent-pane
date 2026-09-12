@@ -298,3 +298,16 @@ test('scratch directories do not inherit the enclosing checkout Git identity', (
     rmSync(f.parent, { recursive: true, force: true })
   }
 })
+
+test(
+  'standalone engines preserve profiles, validate relocation, and clean up only owned children',
+  {
+    skip: process.platform === 'win32',
+  },
+  () => {
+    const result = spawnSync('python3', ['scripts/portable/local-engines.test.py'], {
+      encoding: 'utf8',
+    })
+    assert.equal(result.status, 0, result.stdout + result.stderr)
+  },
+)

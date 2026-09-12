@@ -96,6 +96,7 @@ help:
 	@echo "  make portable-model      Print a downloaded model path selected for this Mac's RAM"
 	@echo "  make portable-local-ai-library  Install the optional expanded model collection (197 GB)"
 	@echo "  make portable-local-ai-runtimes Install pinned GGUF/MLX inference runtimes"
+	@echo "  make portable-local-ai-enable Start drive engines automatically with portable-run"
 	@echo "  make portable-lm-studio        Install cached LM Studio into /Applications and launch"
 	@echo "  make portable-claude / portable-codex  Launch the drive's coding CLIs"
 	@echo "  make portable-shell    Develop using the installed portable tools"
@@ -267,6 +268,13 @@ portable-local-ai-runtimes:
 
 portable-local-ai-runtimes-offline:
 	@bash scripts/portable/runtime-setup.sh --offline "$(PORTABLE_ROOT)"
+
+.PHONY: portable-local-ai-enable portable-local-ai-serve
+portable-local-ai-enable:
+	@bash "$(PORTABLE_ROOT)/portable-dev" local-ai-enable
+
+portable-local-ai-serve:
+	@bash "$(PORTABLE_ROOT)/portable-dev" local-ai-serve
 
 .PHONY: portable-lm-studio portable-lm-studio-install portable-claude portable-codex
 portable-lm-studio:

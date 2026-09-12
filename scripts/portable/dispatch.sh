@@ -8,6 +8,10 @@ source "$portable_repo/scripts/portable/environment.sh"
 source "$portable_repo/scripts/portable/versions.sh"
 cd "$portable_repo"
 case "${1:-doctor}" in
+  local-ai-enable|local-ai-serve)
+    action="${1#local-ai-}"
+    exec /usr/bin/python3 "$portable_repo/scripts/portable/local-engines.py" "$portable_root" "$action"
+    ;;
   lm-studio)
     exec bash "$portable_repo/scripts/portable/launch-lm-studio.sh" "$portable_root"
     ;;
@@ -57,6 +61,9 @@ case "${1:-doctor}" in
       echo 'Launching with the drive PATH requires Copse PR #2657 (portable-launch-path).' >&2
       exit 1
     fi
+    if [ -f "$portable_root/data/local-engines.json" ]; then
+      exec /usr/bin/python3 "$portable_repo/scripts/portable/local-engines.py" "$portable_root" run
+    fi
     exec pnpm start
     ;;
   shell)
@@ -69,5 +76,5 @@ case "${1:-doctor}" in
     test "$#" -gt 0
     exec "$@"
     ;;
-  *) echo 'Usage: portable-dev {doctor|prepare|verify-offline|run|shell|lm-studio|claude|codex|exec COMMAND...}; add --offline after the action to block networking.' >&2; exit 1 ;;
+  *) echo 'Usage: portable-dev {doctor|prepare|verify-offline|run|shell|local-ai-enable|local-ai-serve|lm-studio|claude|codex|exec COMMAND...}; add --offline after the action to block networking.' >&2; exit 1 ;;
 esac
