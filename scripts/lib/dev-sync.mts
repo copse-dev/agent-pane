@@ -117,6 +117,8 @@ export function dependencyFingerprint(
     'pnpm-lock.yaml',
     'pnpm-workspace.yaml',
     'patches',
+    'scripts/postinstall-native.mts',
+    'scripts/lib/electron-headers.mts',
     ...packageManifests(root),
   ])
   const hash = createHash('sha256')

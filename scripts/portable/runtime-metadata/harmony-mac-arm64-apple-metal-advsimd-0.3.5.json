@@ -1,0 +1,16 @@
+[
+  [
+    "en",
+    {
+      "langKey": "en",
+      "displayName": "Harmony (Mac)",
+      "description": "Chat history renderer and parser from OpenAI",
+      "releaseNotes": [
+        {
+          "version": "0.3.5",
+          "releaseNotes": "Prompt renderer from OpenAI\n- Upgrade python environment\n- [Linux] Fix bug where the harmony server is orphaned when LM Studio receives SIGKILL\n\nVersion info:\n- openai-harmony==0.0.3\n"
+        }
+      ]
+    }
+  ]
+]

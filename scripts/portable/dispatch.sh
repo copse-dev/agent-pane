@@ -1,0 +1,80 @@
+#!/bin/bash
+# Internal dispatch after run.sh has resolved the checkout and cleaned the environment.
+set -euo pipefail
+portable_root="$1"
+portable_repo="$2"
+shift 2
+source "$portable_repo/scripts/portable/environment.sh"
+source "$portable_repo/scripts/portable/versions.sh"
+cd "$portable_repo"
+case "${1:-doctor}" in
+  local-ai-enable|local-ai-serve)
+    action="${1#local-ai-}"
+    exec /usr/bin/python3 "$portable_repo/scripts/portable/local-engines.py" "$portable_root" "$action"
+    ;;
+  lm-studio)
+    exec bash "$portable_repo/scripts/portable/launch-lm-studio.sh" "$portable_root"
+    ;;
+  claude|codex)
+    tool="$1"
+    shift
+    exec "$tool" "$@"
+    ;;
+  verify-offline)
+    exec bash "$portable_repo/scripts/portable/verify-offline.sh" "$portable_root"
+    ;;
+  doctor)
+    test -d .git || { echo 'An independent clone is required, not a linked worktree.' >&2; exit 1; }
+    test "$(node -p 'process.versions.node')" = "$NODE_VERSION"
+    test "$(pnpm --version)" = "$PNPM_VERSION"
+    /usr/bin/xcrun --find clang
+    /usr/bin/python3 --version
+    for tool in node corepack pnpm rg claude codex claude-agent-acp codex-acp; do
+      command -v "$tool"
+    done
+    claude --version
+    codex --version
+    echo "pnpm store: $(pnpm store path)"
+    echo "Copse profile: $COPSE_DIR"
+    echo 'Host dependencies: macOS, Xcode/Command Line Tools (Git, make, Python, SDK), Keychain.'
+    echo "Electron headers: $COPSE_ELECTRON_HEADERS_CACHE"
+    echo 'Offline repair: make portable-setup-offline (requires previously populated caches).'
+    ;;
+  prepare)
+    # Rebuilding is explicit; --offline also blocks lifecycle-script networking.
+    rm -f "$portable_root/.copse-prepared-path"
+    if [ "$(cat "$portable_root/.copse-installed-path" 2>/dev/null || true)" != "$(pwd -P)" ]; then
+      # pnpm stores some absolute paths in its metadata and generated commands.
+      # Force reconciliation after relocation, even when package inputs match.
+      rm -f .tmp/dev-dependencies.fingerprint
+    fi
+    /usr/bin/make USE_NVM=: build
+    pwd -P > "$portable_root/.copse-installed-path"
+    pwd -P > "$portable_root/.copse-prepared-path"
+    ;;
+  run)
+    if [ "$(cat "$portable_root/.copse-prepared-path" 2>/dev/null || true)" != "$(pwd -P)" ]; then
+      echo 'Checkout moved or setup is incomplete. Run portable-dev prepare (or prepare --offline with populated caches).' >&2
+      exit 1
+    fi
+    if ! /usr/bin/grep -q COPSE_PRESERVE_PATH src/main/app-init.ts && [ ! -f src/main/launch-path.ts ]; then
+      echo 'Launching with the drive PATH requires Copse PR #2657 (portable-launch-path).' >&2
+      exit 1
+    fi
+    if [ -f "$portable_root/data/local-engines.json" ]; then
+      exec /usr/bin/python3 "$portable_repo/scripts/portable/local-engines.py" "$portable_root" run
+    fi
+    exec pnpm start
+    ;;
+  shell)
+    # No host rc files: nvm/fnm and Homebrew must not replace the pinned tools.
+    export PS1='portable \w $ '
+    exec /bin/bash --noprofile --norc -i
+    ;;
+  exec)
+    shift
+    test "$#" -gt 0
+    exec "$@"
+    ;;
+  *) echo 'Usage: portable-dev {doctor|prepare|verify-offline|run|shell|local-ai-enable|local-ai-serve|lm-studio|claude|codex|exec COMMAND...}; add --offline after the action to block networking.' >&2; exit 1 ;;
+esac

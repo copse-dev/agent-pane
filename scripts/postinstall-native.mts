@@ -1,7 +1,17 @@
-import { accessSync, chmodSync, constants, existsSync, readdirSync, statSync } from 'node:fs'
+import {
+  accessSync,
+  chmodSync,
+  constants,
+  existsSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+} from 'node:fs'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { resolveDepRoot } from './resolve-dep.mts'
+import { createRequire } from 'node:module'
+import { prepareElectronHeaders } from './lib/electron-headers.mts'
 
 /**
  * node-pty ships spawn-helper without the executable bit (prebuilds); PTY spawn
@@ -72,8 +82,23 @@ if (!existsSync(rebuildCli)) {
   process.exit(1)
 }
 
+const rebuildEnvironment = { ...process.env }
+const headerCache = process.env['COPSE_ELECTRON_HEADERS_CACHE']
+if (headerCache) {
+  const version = readFileSync(join(resolveDepRoot('electron'), 'dist', 'version'), 'utf8')
+    .trim()
+    .replace(/^v/, '')
+  rebuildEnvironment['npm_package_config_node_gyp_nodedir'] = prepareElectronHeaders({
+    cache: headerCache,
+    version,
+    nodeGypCli: createRequire(rebuildCli).resolve('node-gyp/bin/node-gyp.js'),
+    offline: process.env['COPSE_PORTABLE_OFFLINE'] === '1',
+  })
+}
+
 const result = spawnSync(process.execPath, [rebuildCli, '-f', '-w', 'node-pty'], {
   stdio: 'inherit',
+  env: rebuildEnvironment,
 })
 
 if (result.status !== 0) {
