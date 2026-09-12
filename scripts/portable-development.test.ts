@@ -16,7 +16,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { test } from 'node:test'
 
-function fixture(): {
+function fixture(rootName = 'environment with spaces'): {
   parent: string
   root: string
   run: (
@@ -26,7 +26,7 @@ function fixture(): {
   ) => SpawnSyncReturns<string>
 } {
   const parent = realpathSync(mkdtempSync(join(tmpdir(), 'copse portable ')))
-  const root = join(parent, 'environment with spaces')
+  const root = join(parent, rootName)
   const scripts = join(root, 'projects/agent-panel/scripts/portable')
   const bin = join(parent, 'system')
   mkdirSync(scripts, { recursive: true })
@@ -111,7 +111,7 @@ test('named coding launchers use drive executables and relocated Claude state an
 })
 
 test('portable entry drops inherited work authentication and routing without exposing values', () => {
-  const f = fixture()
+  const f = fixture('work/environment with spaces')
   try {
     const workEnvironment = {
       ANTHROPIC_API_KEY: 'work-secret',
@@ -124,20 +124,23 @@ test('portable entry drops inherited work authentication and routing without exp
       OPENAI_BASE_URL: 'https://work.invalid',
       AWS_PROFILE: 'work',
       AWS_ACCESS_KEY_ID: 'work-secret',
-      GOOGLE_APPLICATION_CREDENTIALS: '/work/credentials.json',
+      GOOGLE_APPLICATION_CREDENTIALS: '/work-profile-sentinel/credentials.json',
       AZURE_OPENAI_API_KEY: 'work-secret',
       HTTPS_PROXY: 'https://work.invalid',
-      NODE_OPTIONS: '--require=/work/preload.js',
+      NODE_OPTIONS: '--require=/work-profile-sentinel/preload.js',
       UNKNOWN_FUTURE_PROVIDER_TOKEN: 'work-secret',
-      CLAUDE_CONFIG_DIR: '/work/claude',
-      CODEX_HOME: '/work/codex',
-      COPSE_DIR: '/work/copse',
+      CLAUDE_CONFIG_DIR: '/work-profile-sentinel/claude',
+      CODEX_HOME: '/work-profile-sentinel/codex',
+      COPSE_DIR: '/work-profile-sentinel/copse',
       TERM: 'xterm-256color',
       LANG: 'en_GB.UTF-8',
     }
     const result = f.run(f.root, ['exec', '/usr/bin/env'], workEnvironment)
     assert.equal(result.status, 0, result.stderr)
-    assert.doesNotMatch(result.stdout + result.stderr, /work-secret|work\.invalid|\/work\//)
+    assert.doesNotMatch(
+      result.stdout + result.stderr,
+      /work-secret|work\.invalid|\/work-profile-sentinel\//,
+    )
     assert.doesNotMatch(
       result.stdout,
       /ANTHROPIC_|OPENAI_|AWS_|GOOGLE_|AZURE_|HTTPS_PROXY=|NODE_OPTIONS=|UNKNOWN_FUTURE_PROVIDER_TOKEN=|CODEX_HOME=/,

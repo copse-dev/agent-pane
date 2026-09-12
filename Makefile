@@ -61,6 +61,12 @@ NODE_MIN_MINOR := 0
 NVM_DIR ?= $(HOME)/.nvm
 USE_NVM := if [ -s "$(NVM_DIR)/nvm.sh" ]; then set +u; . "$(NVM_DIR)/nvm.sh"; nvm use >/dev/null || true; set -u; fi
 
+# A prepared portable launcher supplies its own Node and package manager.
+# Keep the same opt-in as Electron startup and tool-availability probes.
+ifeq ($(COPSE_PRESERVE_PATH),1)
+USE_NVM := :
+endif
+
 DEV_SYNC := node scripts/sync-dev.mts
 
 # ----------------------------------------------------------------------------
