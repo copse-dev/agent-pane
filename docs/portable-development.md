@@ -340,3 +340,41 @@ installation and compilation from the available caches on the current Mac.
 To update tools, review `versions.sh` and `tools/package.json`, regenerate
 `tools/package-lock.json` with the pinned Node's npm, then rerun setup and the
 relocation checks. Do not replace pins with `latest` in the setup script.
+
+## Start Copse with standalone engines
+
+After installing the models and runtimes, run `make portable-local-ai-enable` once.
+Then `make portable-run` or `.portable/Launch Copse.command` starts llama.cpp and
+MLX directly from the drive, verifies a real completion from each, and opens
+Copse. No LM Studio application or `/Applications` installation is needed.
+Quitting Copse stops the engines created by that launch. A second launch refuses
+to overwrite settings or take over another session. Occupied ports are errors;
+the launcher never adopts or stops another application's server.
+
+The initial pair is Qwen3 4B GGUF and Gemma 4 E4B MLX, using modest weight sizes
+so both can coexist on a 32 GB Mac. This MLX integration serves text; it does not
+expose the vision/audio features of the downloaded multimodal models. Both appear
+as local providers in Copse. Existing model selections and unrelated settings are
+preserved; a fresh profile defaults to the GGUF model. Onboarding still runs for a
+fresh profile. Changed settings are backed up beside `settings.json`.
+
+Configuration lives in `.portable/data/local-engines.json`, initialized from
+`scripts/portable/local-engines.json`. Quit portable Copse before editing it.
+Each engine has a model path relative to `.portable/models`, a port, and a context
+size. For MLX, `id` must equal its relative model directory; for GGUF, `id` is the
+server alias. Only one model per engine is loaded at a time. Select larger models
+explicitly on the 64 GB Mac, budgeting memory for both engines, context, Copse and
+other applications; the launcher does not automatically fill available RAM.
+After editing, choose the new model in Copse if an existing selection names the
+old model. After moving the drive mount path, rebuild runtimes with
+`make portable-local-ai-runtimes-offline` before launching.
+
+Engines bind only to `127.0.0.1` (initial ports 18341/18342). Hugging Face offline
+mode prevents model downloads and uses the drive cache. Normal local inference
+requires loopback networking: the strict `--offline` setup sandbox denies even
+loopback and intentionally cannot launch these servers. This is not a network
+sandbox for the whole Copse application. Logs stay in
+`.portable/data/local-engine-logs/`. `make portable-local-ai-serve` runs the same
+engines without opening Copse; Ctrl-C stops them. Remove or rename
+`.portable/data/local-engines.json` while stopped to return to plain portable
+launches.
