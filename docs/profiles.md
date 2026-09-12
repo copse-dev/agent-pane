@@ -65,6 +65,35 @@ Three narrower overrides move one directory each, and take precedence over
 If you set any of them, that directory is no longer inside `COPSE_DIR` and needs
 backing up separately.
 
+## Launching with a prepared toolchain
+
+Set `COPSE_PRESERVE_PATH=1` when a launcher supplies a complete `PATH`:
+
+```bash
+export COPSE_DIR="/Volumes/Dev Disk/CopseKit/data/copse"
+export COPSE_PANEL_USER_DATA="$COPSE_DIR/user-data"
+export COPSE_PRESERVE_PATH=1
+export PATH="/Volumes/Dev Disk/CopseKit/toolchains/macos-arm64/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+make run
+```
+
+Run this from the prepared Copse checkout. Its toolchain directory must already
+contain the compatible Node and pnpm executables and other required development
+tools. `COPSE_PANEL_USER_DATA` skips migration of a host's legacy profile.
+
+With this opt-in, Copse leaves the launcher's PATH intact, its tool-availability
+probes use that PATH without adding system prefixes, and `make run`/`make run-dev`
+do not activate host nvm. Without `COPSE_PRESERVE_PATH=1`, launch behavior stays
+unchanged. This option supplies no default tools: a missing or incomplete PATH
+can cause startup or tool checks to fail.
+
+This is control over PATH, not a complete portable or offline mode. Shell startup
+files, explicit executable paths, MCP/skill discovery, model runtimes, credential
+helpers and binary dependencies still need preparation. `make run` can still
+install dependencies or build missing outputs. HOME, secret filtering and sandbox
+policy are unchanged. See the [drive portability audit](plans/drive-portability-audit.md)
+for the remaining work beyond #2652.
+
 ## What profiles do not isolate: encrypted credentials
 
 **Stored API keys and remembered SSH authentication are not cryptographically
