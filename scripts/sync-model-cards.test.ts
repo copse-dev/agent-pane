@@ -2,6 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   graduateWanted,
+  isDefinitiveLinkFailure,
   pickCardUrl,
   renderFile,
   titleFromUrl,
@@ -19,6 +20,19 @@ const card = (over: Partial<CardEntry> = {}): CardEntry => ({
   source: 'seed source string',
   asOf: '2026-08-04',
   ...over,
+})
+
+describe('isDefinitiveLinkFailure', () => {
+  it('identifies HTTP responses that prove a card link is gone', () => {
+    assert.equal(isDefinitiveLinkFailure(404), true)
+    assert.equal(isDefinitiveLinkFailure(410), true)
+  })
+
+  it('keeps access-control, throttling, transient, and transport failures inconclusive', () => {
+    for (const status of [401, 403, 429, 500, 503, null]) {
+      assert.equal(isDefinitiveLinkFailure(status), false)
+    }
+  })
 })
 
 describe('pickCardUrl', () => {

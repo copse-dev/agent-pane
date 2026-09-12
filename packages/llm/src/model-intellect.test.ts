@@ -100,14 +100,13 @@ describe('getIntellectScore', () => {
     }
   })
 
-  it('explains a v4.3-only frontier measurement as an extrapolated estimate', () => {
+  it('explains a v4.3-only measurement as an equated estimate', () => {
     const modelId = 'claude-fable-5-1'
     const score = getIntellectScore(modelId)
     assert.ok(score)
     assert.equal(score.estimated, true)
     assert.match(score.basis ?? '', /equated v4\.3→v4\.1/)
-    assert.match(score.basis ?? '', /611 anchors/)
-    assert.match(score.basis ?? '', /extrapolated beyond anchor range/)
+    assert.match(score.basis ?? '', /linear fit, \d+ anchors/)
     const explanation = explainIntellectScore(modelId)
     assert.ok(explanation)
     assert.equal(explanation.value, score.value)

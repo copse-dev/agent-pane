@@ -1,29 +1,9 @@
 import { app } from 'electron'
 import { join } from 'node:path'
-import { homedir } from 'node:os'
+import { augmentPathForGuiLaunch } from './launch-path.ts'
 import { setElectronAppRuntime } from './services/electron-app-runtime.ts'
 import { installElectronStoreBackend } from './services/storage/electron-store-backend.ts'
 import { resolveUserDataDir } from './services/storage/user-data-migration.ts'
-
-function augmentPathForGuiLaunch(): void {
-  const pathKey = process.platform === 'win32' ? 'Path' : 'PATH'
-  const sep = process.platform === 'win32' ? ';' : ':'
-  const current = process.env[pathKey] ?? ''
-  const seen = new Set(current.split(sep).filter(Boolean))
-  const extra = [
-    '/opt/homebrew/bin',
-    '/usr/local/bin',
-    join(homedir(), '.local', 'bin'),
-    join(homedir(), '.vera', 'bin'),
-  ]
-  if (process.platform !== 'win32') {
-    extra.push('/usr/bin', '/bin')
-  }
-  const missing = extra.filter((entry) => !seen.has(entry))
-  if (missing.length > 0) {
-    process.env[pathKey] = [...missing, current].filter(Boolean).join(sep)
-  }
-}
 
 augmentPathForGuiLaunch()
 
