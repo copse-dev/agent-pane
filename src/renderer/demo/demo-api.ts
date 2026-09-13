@@ -963,6 +963,18 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       runNow: unsupported,
       onTriggered: subscribe,
     },
+    appRun: {
+      detect: () => resolved(false),
+      discover: () => resolved({ apps: [], devices: [], issues: [], preferred: null }),
+      cancelDiscovery: () => resolved(undefined),
+      devices: () => resolved([]),
+      operations: () => resolved([]),
+      execute: () => Promise.reject(new Error('App running requires the desktop app.')),
+      cancel: () => resolved(undefined),
+      stop: () => resolved(undefined),
+      setupOptions: () => resolved({ runtimes: [], deviceTypes: [] }),
+      setup: () => resolved(null),
+    },
     appleDevelopment: {
       state: (projectId) => resolved(structuredClone(appleDevelopmentStateFor(projectId))),
       detectProject: (projectId) => {

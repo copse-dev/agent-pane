@@ -1,3 +1,4 @@
+import type { SimulatorDesktopPresentation } from '@shared/types/simulator-desktop.ts'
 import RFB from '@novnc/novnc'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 import { showContextMenu } from '../dom/context-menu.ts'
@@ -75,7 +76,8 @@ interface PendingStatus {
 interface VncSessionController {
   cleanup(): void
   focus(): void
-  showSimulator(udid: string): void
+  simulatorMatch(udid: string): 'same' | 'empty' | 'other'
+  showSimulator(udid: string, options?: SimulatorDesktopPresentation): void
 }
 
 interface VncSessionOptions {
@@ -1185,7 +1187,10 @@ function mountVncSession(
       setStatus('Couldn’t discover local emulators', 'error', discoveryError)
   }
 
-  async function connectSimulator(device: SimulatorDesktopDevice): Promise<void> {
+  async function connectSimulator(
+    device: SimulatorDesktopDevice,
+    immediateControl = false,
+  ): Promise<void> {
     if (device.unavailableReason) {
       setStatus('Couldn’t connect to emulator', 'error', device.unavailableReason)
       return
@@ -1223,6 +1228,7 @@ function mountVncSession(
           if (simulatorSessionId !== connection.id) return
           connectedAtLeastOnce = true
           connectedMachineName = device.name
+          if (immediateControl) setControlEnabled(true)
           setSessionUi(true, true)
           renderConnectedStatus()
         },
@@ -1252,10 +1258,16 @@ function mountVncSession(
     }
   }
 
-  async function showSimulatorFromAgent(udid: string): Promise<void> {
+  async function showSimulatorFromAgent(
+    udid: string,
+    presentation?: SimulatorDesktopPresentation,
+  ): Promise<void> {
     openRightPanel(store, 'vnc')
     const machine = `${SIMULATOR_MACHINE_PREFIX}${udid}`
-    if (simulatorSessionId && machineSelect.value === machine) return
+    if (simulatorSessionId && machineSelect.value === machine) {
+      if (presentation?.control) setControlEnabled(true)
+      return
+    }
 
     await loadMachines()
     const device = simulatorDevices.find((candidate) => candidate.udid === udid)
@@ -1263,7 +1275,7 @@ function mountVncSession(
       setStatus(
         'Couldn’t open the Simulator',
         'error',
-        'The Simulator selected by the agent is no longer booted.',
+        'The selected simulator or emulator is no longer running.',
       )
       return
     }
@@ -1275,7 +1287,7 @@ function mountVncSession(
     }
     machineSelect.value = machine
     updateMachineUi()
-    await connectSimulator(device)
+    await connectSimulator(device, presentation?.control === true)
   }
 
   async function connect(): Promise<void> {
@@ -1682,12 +1694,16 @@ function mountVncSession(
   void loadMachines()
 
   return {
+    simulatorMatch: (udid): 'same' | 'empty' | 'other' => {
+      if (simulatorSessionId && selectedSimulator()?.udid === udid) return 'same'
+      return !simulatorSessionId && !channel && !rfb && !connectButton.disabled ? 'empty' : 'other'
+    },
     focus: (): void => {
       if (rfb) rfb.focus()
       else simulatorView?.focus()
     },
-    showSimulator: (udid): void => {
-      void showSimulatorFromAgent(udid)
+    showSimulator: (udid, presentation): void => {
+      void showSimulatorFromAgent(udid, presentation)
     },
     cleanup: (): void => {
       connectGeneration++
@@ -1906,9 +1922,22 @@ export function mountVncPane(
 
   newButton.addEventListener('click', addTab)
   addTab()
-  const stopSimulatorShow = api.simulatorDesktop.onShow((udid) => {
-    const tabId = activeTabId ?? addTab()
-    tabs.get(tabId)?.session.showSimulator(udid)
+  const stopSimulatorShow = api.simulatorDesktop.onShow((udid, presentation) => {
+    if (presentation?.control) store.emit('settings_changed')
+    const state = store.getState()
+    if (
+      presentation?.owner &&
+      (presentation.owner.projectId !== state.activeProjectId ||
+        (presentation.owner.threadId && presentation.owner.threadId !== state.activeThreadId))
+    )
+      return
+    const existing = [...tabs.values()]
+    const tabId =
+      existing.find((tab) => tab.session.simulatorMatch(udid) === 'same')?.id ??
+      existing.find((tab) => tab.session.simulatorMatch(udid) === 'empty')?.id ??
+      addTab()
+    setActiveTab(tabId)
+    tabs.get(tabId)?.session.showSimulator(udid, presentation)
   })
 
   return () => {

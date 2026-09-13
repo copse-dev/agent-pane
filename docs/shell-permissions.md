@@ -47,6 +47,28 @@ products remain in Copse-owned per-operation scratch directories, with ownership
 duration, and log bounds enforced. A host restart invalidates the panel operation authority epoch,
 so a recovered task cannot launch a second Xcode process whose predecessor may still be alive.
 
+## Shared Run app workflow
+
+The titlebar/project-menu **Run app…** flow is available for detected local Apple and Android
+projects independently of agent-pack enrollment. Opening the picker authorizes loading the project
+configuration (including Gradle configuration or Xcode metadata). Clicking Build, Test, or Run
+authorizes the selected workflow and its project-controlled build scripts with normal host access.
+The main process resolves the selected project/thread checkout and validates the discovered app,
+variant, and device. It never receives arbitrary command lines from the renderer. This workflow does
+not enable agent packs or create remembered agent-tool permissions.
+
+The shared Apple picker defaults signing-profile updates off. Its explicit per-run checkbox adds
+`-allowProvisioningUpdates` only to that operation; the existing Apple pack/MCP behavior described
+above is preserved. Creating a device uses an installed runtime. Downloading an iOS runtime or an
+Android system image is a separate labeled action. Android license agreements are not silently
+accepted. External setup links open only the fixed Xcode/Android Studio destinations.
+
+Operations have a duration bound and cancellable process trees. Logs are bounded; interrupted
+operations are reported after restart and never replayed. A user-run local simulator/emulator opens
+in Desktop with control enabled, scoped to the same project/thread. Agent-originated presentation
+and remote desktops retain explicit view-only control. Closing Desktop leaves the device running;
+Stop app targets only the app session launched by that workflow.
+
 ## Strict mode and expected blocks
 
 `safetyExternalDenyThreshold` defaults to `1` (off). At a lower threshold, a command is hard-denied

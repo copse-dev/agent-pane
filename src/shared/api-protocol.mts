@@ -34,4 +34,5 @@
 // v7 versions task ownership in browser session and canvas payloads.
 // v8 versions the expanded supervisor task summaries and recovery API.
 // v9 versions Android device kinds and input in the simulator desktop API.
-export const API_PROTOCOL_VERSION = 9 as const
+// v10 conservatively versions optional local-device presentation intent.
+export const API_PROTOCOL_VERSION = 10 as const

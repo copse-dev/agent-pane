@@ -1,3 +1,4 @@
+import { openAppRunDialog } from './app-run-dialog.ts'
 import { el, clear } from '../dom/helpers.ts'
 import { dismissContextMenu, showContextMenu, type ContextMenuEntry } from '../dom/context-menu.ts'
 import { bindRenameBlur } from '../dom/rename-blur.ts'
@@ -44,7 +45,7 @@ import {
   switchProject,
   switchProjectThread,
 } from '../controller/projects.ts'
-import { openAppleDevelopmentSettings, openSettingsDialog } from './settings-dialog.ts'
+import { openSettingsDialog } from './settings-dialog.ts'
 import { hasAutomationDialog, openAutomationDialog } from './automation-dialog.ts'
 import { showErrorToast, showToast } from './toast.ts'
 import { forkThread } from '../controller/fork-thread.ts'
@@ -866,29 +867,34 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       )
       menuButton.addEventListener('click', () => {
         menuButton.disabled = true
+        const state = store.getState()
         void Promise.all([
           api.plugins.list(),
-          api.appleDevelopment.detectProject(project.id).catch(() => null),
+          api.appRun
+            .detect({
+              projectId: project.id,
+              ...(state.activeProjectId === project.id && state.activeThreadId
+                ? { threadId: state.activeThreadId }
+                : {}),
+            })
+            .catch(() => false),
         ])
-          .then(([result, appleDetection]) => {
+          .then(([result, appDetected]) => {
             if (!menuButton.isConnected) return
             const rect = menuButton.getBoundingClientRect()
             const entries: ContextMenuEntry[] = []
-            if (
-              appleDetection?.supportedHost === true &&
-              (appleDetection.detected || appleDetection.enrolled)
-            ) {
+            if (appDetected) {
               entries.push({
-                label: 'Apple Development…',
+                label: 'Run app…',
                 onSelect: (): void => {
                   if (store.getState().activeProjectId === project.id) {
-                    openAppleDevelopmentSettings()
+                    openAppRunDialog(store, api, project.id)
                     return
                   }
                   const unsubscribe = store.on('workspace_changed', () => {
                     if (store.getState().activeProjectId === project.id) {
                       unsubscribe()
-                      openAppleDevelopmentSettings()
+                      openAppRunDialog(store, api, project.id)
                     } else if (!isProjectSwitchInFlight(store, project.id)) {
                       unsubscribe()
                     }
