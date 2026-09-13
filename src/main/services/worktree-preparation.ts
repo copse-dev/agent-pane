@@ -320,6 +320,7 @@ export async function prepareWorktree(
 ): Promise<WorktreePreparationReport> {
   requirePreparationSandbox()
   const plan = assertPreparationPlan(root, options.planFingerprint)
+  containedPreparationPath(root, PREPARATION_STAMP)
   const before = await inspectPlan(plan, options)
   if (before.state === 'ready') return before
   const offline = options.offline === true

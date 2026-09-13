@@ -1,8 +1,8 @@
 import { formatArgvForShell } from '../project-sandbox/sandbox-argv.ts'
 import { load } from 'js-yaml'
 import { createHash } from 'node:crypto'
-import { existsSync, globSync, readFileSync, realpathSync } from 'node:fs'
-import { isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { existsSync, globSync, lstatSync, readFileSync, realpathSync } from 'node:fs'
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { z } from 'zod'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
 import { fingerprintPaths } from '../../../scripts/lib/dev-sync.mts'
@@ -87,11 +87,14 @@ function relativePreparationPath(root: string, path: string): string {
 
 export function containedPreparationPath(root: string, path: string): string {
   const absolute = relativePreparationPath(root, path)
-  if (existsSync(absolute)) {
-    const canonical = relative(realpathSync(root), realpathSync(absolute))
-    if (canonical === '..' || canonical.startsWith(`..${sep}`) || isAbsolute(canonical)) {
-      throw new Error(`Preparation input points outside the worktree: ${path}`)
-    }
+  // Inspect the deepest existing ancestor even when the output is absent.
+  // lstat also sees dangling links, which must fail closed rather than make a
+  // host write (or a Linux namespace-only write) follow an unchecked target.
+  let ancestor = absolute
+  while (!lstatSync(ancestor, { throwIfNoEntry: false })) ancestor = dirname(ancestor)
+  const canonical = relative(realpathSync(root), realpathSync(ancestor))
+  if (canonical === '..' || canonical.startsWith(`..${sep}`) || isAbsolute(canonical)) {
+    throw new Error(`Preparation input points outside the worktree: ${path}`)
   }
   return absolute
 }
