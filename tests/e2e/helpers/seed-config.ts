@@ -31,6 +31,7 @@ import { ACP_CANCELLED_TOOL_CALL_RESULT } from '../../../src/main/services/acp/a
 
 const USER_DATA = copseUserDataDir()
 const CONFIG_PATH = join(USER_DATA, 'config.json')
+const PENDING_CONFIG_PATH = join(USER_DATA, '.e2e-pending-config.json')
 const SETTINGS_PATH = join(USER_DATA, 'settings.json')
 // A developer may have LM Studio listening on the product's default port. E2E
 // must not discover or query that real service unless a fixture explicitly
@@ -235,7 +236,11 @@ export function writeSeedConfig(config: Record<string, unknown>): void {
       remaining[key] = value
     }
   }
-  writeFileSync(CONFIG_PATH, JSON.stringify(remaining), 'utf8')
+  const serialized = JSON.stringify(remaining)
+  writeFileSync(CONFIG_PATH, serialized, 'utf8')
+  // The running app can flush its old config while reloadSession closes it.
+  // The test-only launcher consumes this copy before the replacement boots.
+  writeFileSync(PENDING_CONFIG_PATH, serialized, 'utf8')
   // The app process that exists before a fixture calls reloadSession() can
   // already have created an empty derived catalog. Remove it after writing the
   // seed so the replacement process rebuilds from the thread directories.
@@ -245,6 +250,7 @@ export function writeSeedConfig(config: Record<string, unknown>): void {
 }
 
 export function resetUserData(): void {
+  rmSync(PENDING_CONFIG_PATH, { force: true })
   rmSync(CONFIG_PATH, { force: true })
   rmSync(SETTINGS_PATH, { force: true })
   writeSettings({})

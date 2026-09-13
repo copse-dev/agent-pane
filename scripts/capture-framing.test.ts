@@ -88,6 +88,20 @@ describe('recentreClippedCapture', () => {
     assert.deepEqual(scrolls, [{ block: 'center', inline: 'nearest' }])
   })
 
+  it('resolves a replacement node by selector instead of retaining a detached handle', () => {
+    const { subject } = build()
+    const oldScrolls = captureScrolls(subject)
+    const replacement = document.createElement('div')
+    replacement.className = subject.className
+    subject.replaceWith(replacement)
+    stubRect(replacement, { top: 705, bottom: 924 })
+    const scrolls = captureScrolls(replacement)
+
+    assert.ok(recentreClippedCapture('.automation-plugin-settings', '#app'))
+    assert.deepEqual(oldScrolls, [])
+    assert.deepEqual(scrolls, [{ block: 'center', inline: 'nearest' }])
+  })
+
   it('still centres a subject taller than the shell', () => {
     const { subject } = build()
     // Nothing can make this fit; centring is what the specs ask for anyway.
