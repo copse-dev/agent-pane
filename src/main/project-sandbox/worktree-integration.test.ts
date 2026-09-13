@@ -352,6 +352,20 @@ describe('linked-worktree sandbox integration', () => {
       t.skip('ASRT sandbox unavailable')
       return
     }
+    const overlay = gitBackupSandboxOverlay(root)
+    const scratch = await mkdtemp(join(workspaceTmpDir(), 'copse-backup-probe-'))
+    cleanups.push(scratch)
+    const scratchWrite = await runSandboxed(
+      process.execPath,
+      [
+        '-e',
+        'require("node:fs").writeFileSync(process.argv[1], "scratch")',
+        join(scratch, 'probe'),
+      ],
+      root,
+      overlay,
+    )
+    assert.equal(scratchWrite.code, 0, scratchWrite.stderr)
     const backup = await createWorktreeBackup('home checkpoint', root)
     assert.ok(backup, 'expected a backup ref')
     assert.equal(git(root, ['show', `${backup}:tracked.txt`]), 'changed\n')
@@ -360,7 +374,6 @@ describe('linked-worktree sandbox integration', () => {
       '.bashrc',
       'tracked.txt',
     ])
-    const overlay = gitBackupSandboxOverlay(root)
     for (const path of ['tracked.txt', '.git/index', '.git/config', '.git/hooks/pre-commit']) {
       const write = await runSandboxed(
         process.execPath,

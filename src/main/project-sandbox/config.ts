@@ -844,7 +844,15 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
   // more-specific allow. NOT added to allowWrite — the sandbox denies chat-store
   // writes too, matching the workspace-only path guards.
   const chatStore = getChatStoreRootSync()
-  const chatStoreRead = chatStore ? [chatStore, `${chatStore}/**`] : []
+  // Linux read binds shadow writable descendants. The store contains scratch
+  // and may also contain the active checkout; those retain their own grants.
+  const chatStoreRead = chatStore
+    ? readOnlyTreeExcluding(chatStore, [
+        root,
+        tmpDir,
+        ...(internalRoot ? [internalRoot.commonGitDir] : []),
+      ])
+    : []
   // Git discovers a repository by probing `.git` while walking from cwd toward
   // the checkout top-level. A project may itself be a monorepo subdirectory, so
   // allow metadata reads on each ancestor directory without recursively exposing
