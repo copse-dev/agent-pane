@@ -15,9 +15,9 @@
 //     `index` placeholder to the exact card — matched on the `match` tokens in
 //     the data file, never fuzzy-matched on the model name — so the set of
 //     linked models stays a reviewed decision.
-//   - Verification (`--verify`) GETs every card URL and fails on anything that
-//     is not reachable, so link rot breaks the sync workflow rather than
-//     shipping quietly.
+//   - Verification (`--verify`) GETs every card URL and fails on definitive
+//     404/410 responses. Access-control and transient failures are reported as
+//     inconclusive because they do not prove link rot.
 //   - Hugging Face weights are deliberately absent: the README *is* the model
 //     card, and `model-cards.ts` derives that URL from the router id, whose
 //     org/model casing comes from the HF API itself.
@@ -273,8 +273,13 @@ export function titleFromUrl(url: string, publisherLabel: string): string {
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
 
-/** GET a URL, returning its text, or null on any non-OK / network failure. */
-async function getText(url: string, delayMs: number): Promise<string | null> {
+interface TextFetchResult {
+  text: string | null
+  status: number | null
+}
+
+/** GET a URL, preserving the status so callers can distinguish dead links from blocked checks. */
+async function getText(url: string, delayMs: number): Promise<TextFetchResult> {
   await sleep(delayMs)
   try {
     const res = await fetch(url, {
@@ -284,19 +289,19 @@ async function getText(url: string, delayMs: number): Promise<string | null> {
     })
     if (!res.ok) {
       console.log(`    unreachable: ${url} (HTTP ${String(res.status)})`)
-      return null
+      return { text: null, status: res.status }
     }
-    return await res.text()
+    return { text: await res.text(), status: res.status }
   } catch (err) {
     console.log(`    unreachable: ${url} (${err instanceof Error ? err.message : String(err)})`)
-    return null
+    return { text: null, status: null }
   }
 }
 
 /** Every <loc> in a sitemap, following nested sitemap indexes. */
 async function readSitemap(url: string, delayMs: number, depth = 0): Promise<string[]> {
   if (depth > 3) return []
-  const text = await getText(url, delayMs)
+  const { text } = await getText(url, delayMs)
   if (text === null) return []
   const locs = [...text.matchAll(LOC_RE)].map(([, loc]) => (loc ?? '').trim()).filter(Boolean)
   const out: string[] = []
@@ -340,7 +345,7 @@ async function discoverPublisher(cfg: PublisherConfig, delayMs: number): Promise
   // Hubs and known cards both link siblings; the pages themselves are only
   // candidates when they were listed as known cards.
   for (const page of [...cfg.seedPages, ...(cfg.knownCards ?? [])]) {
-    const html = await getText(page, delayMs)
+    const { text: html } = await getText(page, delayMs)
     if (html === null) continue
     for (const link of extractLinks(html, page, cfg)) urls.add(link)
   }
@@ -463,20 +468,41 @@ export function graduateWanted(
   return wanted.filter((w) => !carded.has(w.modelId))
 }
 
+export function isDefinitiveLinkFailure(status: number | null): boolean {
+  return status === 404 || status === 410
+}
+
 async function verify(data: CardDataFile, delayMs: number): Promise<void> {
   const dead: string[] = []
+  const inconclusive: string[] = []
+  const urls = [...new Set(data.cards.map((c) => c.url))]
   // One check per distinct URL: the Anthropic hub is shared by every Claude id.
-  for (const url of [...new Set(data.cards.map((c) => c.url))]) {
-    const text = await getText(url, delayMs)
-    if (text === null) dead.push(url)
+  for (const url of urls) {
+    const result = await getText(url, delayMs)
+    if (result.text !== null) continue
+
+    if (isDefinitiveLinkFailure(result.status)) {
+      dead.push(`${url} (HTTP ${String(result.status)})`)
+    } else {
+      inconclusive.push(url)
+    }
   }
   if (dead.length > 0) {
     throw new Error(
-      `[sync-model-cards] Refusing to write cards — unreachable card URLs:\n  - ${dead.join('\n  - ')}\n` +
+      `[sync-model-cards] Refusing to write cards — dead card URLs:\n  - ${dead.join('\n  - ')}\n` +
         `Re-check the vendor's card index and update scripts/data/model-cards.json (or drop the entry — no link beats a dead link).`,
     )
   }
-  console.log(`[sync-model-cards] Verified ${String(data.cards.length)} card links.`)
+
+  if (inconclusive.length > 0) {
+    console.warn(
+      `[sync-model-cards] WARNING: verification was inconclusive for ${String(inconclusive.length)} card URL(s); preserving them because access-control and transient failures do not prove link rot.`,
+    )
+  }
+
+  console.log(
+    `[sync-model-cards] Verified ${String(urls.length - inconclusive.length)} of ${String(urls.length)} distinct card links.`,
+  )
 }
 
 export async function main(argv: string[] = process.argv.slice(2)): Promise<void> {

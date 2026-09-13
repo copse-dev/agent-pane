@@ -27,16 +27,16 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
-  realpathSync,
+  readlinkSync,
   rmSync,
   symlinkSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs'
-import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { expectRecord, expectString, parseJsonUnknown } from '../src/shared/unknown-value.mts'
 import { moveDirectory } from './lib/move-directory.mts'
+import { cacheLinkTarget, electronDistCacheRoot } from './lib/build-cache-paths.mts'
 import { resolveDepRoot } from './resolve-dep.mts'
 
 const APP_BUNDLE = 'Copse.app'
@@ -77,9 +77,7 @@ function readDistVersion(): string | undefined {
 }
 
 function sharedElectronDistDir(pkgVersion: string): string {
-  const override = process.env['COPSE_ELECTRON_DIST_CACHE']?.trim()
-  const root = override ?? join(homedir(), '.copse', 'cache', 'electron-dist')
-  return join(root, `${pkgVersion}-${process.platform}-${process.arch}`)
+  return join(electronDistCacheRoot(), `${pkgVersion}-${process.platform}-${process.arch}`)
 }
 
 function sharedDistReady(sharedDist: string, pkgVersion: string): boolean {
@@ -104,11 +102,12 @@ function linkDistToShared(sharedDist: string): void {
     console.log(`[patch-dev-name] promoted Electron dist → ${sharedDist}`)
   }
 
-  if (existsSync(ELECTRON_DIST)) {
-    const st = lstatSync(ELECTRON_DIST)
+  const linkTarget = cacheLinkTarget(ELECTRON_DIST, sharedDist)
+  const st = lstatSync(ELECTRON_DIST, { throwIfNoEntry: false })
+  if (st) {
     if (st.isSymbolicLink()) {
       try {
-        if (realpathSync(ELECTRON_DIST) === realpathSync(sharedDist)) return
+        if (readlinkSync(ELECTRON_DIST) === linkTarget) return
       } catch {
         /* broken symlink — replace */
       }
@@ -117,7 +116,7 @@ function linkDistToShared(sharedDist: string): void {
       rmSync(ELECTRON_DIST, { recursive: true, force: true })
     }
   }
-  symlinkSync(sharedDist, ELECTRON_DIST, 'dir')
+  symlinkSync(linkTarget, ELECTRON_DIST, 'dir')
   console.log(`[patch-dev-name] electron/dist → ${sharedDist}`)
 }
 
@@ -136,12 +135,17 @@ function ensureElectronDist(): void {
   }
 
   const distVersion = readDistVersion()
+  // A link into another profile's cache is shared data: never promote/move it
+  // into this profile. With no ready destination cache, fetch a local extract.
   const needsDownload =
-    !existsSync(sourcePlist) || distVersion === undefined || distVersion !== pkgVersion
+    !existsSync(sourcePlist) ||
+    distVersion === undefined ||
+    distVersion !== pkgVersion ||
+    lstatSync(ELECTRON_DIST, { throwIfNoEntry: false })?.isSymbolicLink() === true
 
   if (needsDownload) {
     // install.js writes into electron/dist; if dist is a stale symlink, remove it first.
-    if (existsSync(ELECTRON_DIST) && lstatSync(ELECTRON_DIST).isSymbolicLink()) {
+    if (lstatSync(ELECTRON_DIST, { throwIfNoEntry: false })?.isSymbolicLink()) {
       unlinkSync(ELECTRON_DIST)
     }
     console.log(

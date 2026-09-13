@@ -22,6 +22,26 @@ travel with one.
 Project repositories are not part of a profile. A profile records _where_ your
 projects are, not their contents.
 
+### Development build caches
+
+The Electron development distribution and gortex binary cache default to
+`<COPSE_DIR>/cache/electron-dist/` and `<COPSE_DIR>/cache/gortex/` (or
+`~/.copse/cache/` without an override). Entries remain version/platform/architecture
+specific. Set `COPSE_ELECTRON_DIST_CACHE` or `COPSE_GORTEX_CACHE` to share an
+explicit cache between profiles; blank values use the default.
+
+Keep the checkout and these caches on the same drive when preparing a portable
+development installation. New cache symlinks are relative, so moving both with
+their directory layout intact preserves the links, including mount names with
+spaces. Run `pnpm install` or `pnpm start` during preparation to replace old
+absolute Electron links; `node scripts/fetch-gortex.mts` replaces gortex links.
+A populated matching cache can be reused without downloading. Missing cache
+contents still require preparation online; this is not an offline installer.
+
+These caches are disposable build artifacts. The package-manager store, downloaded
+archives, native rebuild tools, experimental Tauri shell cache and local models
+have their own locations and are not relocated by this change.
+
 ## Running more than one profile
 
 Set `COPSE_DIR` before launching:
@@ -44,6 +64,35 @@ Three narrower overrides move one directory each, and take precedence over
 
 If you set any of them, that directory is no longer inside `COPSE_DIR` and needs
 backing up separately.
+
+## Launching with a prepared toolchain
+
+Set `COPSE_PRESERVE_PATH=1` when a launcher supplies a complete `PATH`:
+
+```bash
+export COPSE_DIR="/Volumes/Dev Disk/CopseKit/data/copse"
+export COPSE_PANEL_USER_DATA="$COPSE_DIR/user-data"
+export COPSE_PRESERVE_PATH=1
+export PATH="/Volumes/Dev Disk/CopseKit/toolchains/macos-arm64/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+make run
+```
+
+Run this from the prepared Copse checkout. Its toolchain directory must already
+contain the compatible Node and pnpm executables and other required development
+tools. `COPSE_PANEL_USER_DATA` skips migration of a host's legacy profile.
+
+With this opt-in, Copse leaves the launcher's PATH intact, its tool-availability
+probes use that PATH without adding system prefixes, and `make run`/`make run-dev`
+do not activate host nvm. Without `COPSE_PRESERVE_PATH=1`, launch behavior stays
+unchanged. This option supplies no default tools: a missing or incomplete PATH
+can cause startup or tool checks to fail.
+
+This is control over PATH, not a complete portable or offline mode. Shell startup
+files, explicit executable paths, MCP/skill discovery, model runtimes, credential
+helpers and binary dependencies still need preparation. `make run` can still
+install dependencies or build missing outputs. HOME, secret filtering and sandbox
+policy are unchanged. See the [drive portability audit](plans/drive-portability-audit.md)
+for the remaining work beyond #2652.
 
 ## What profiles do not isolate: encrypted credentials
 
