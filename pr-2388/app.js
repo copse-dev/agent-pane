@@ -26258,6 +26258,150 @@ var init_demo_scenarios = __esm({
         ]
       },
       {
+        id: "apple-development",
+        label: "Apple Development test profile",
+        project: project("demo-apple-development-project", "DemoApp", "/demo/DemoApp"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off"
+        },
+        threads: [
+          {
+            id: "demo-apple-development-thread",
+            title: "Apple Development demo",
+            status: "idle",
+            messages: [
+              {
+                id: "demo-apple-user",
+                role: "user",
+                content: "Build and test DemoApp on the selected iPhone Simulator.",
+                toolCalls: [],
+                createdAt: FIXED_TIME
+              },
+              {
+                id: "demo-apple-assistant",
+                role: "assistant",
+                content: "The panel shows the latest Apple Development operation for this thread.",
+                toolCalls: [],
+                createdAt: FIXED_TIME + 1
+              }
+            ],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME + 4e3
+          }
+        ],
+        appleDevelopmentState: {
+          pluginEnabled: true,
+          enrolled: true,
+          supportedHost: true,
+          toolchain: {
+            developerDir: "/Applications/Xcode.app/Contents/Developer",
+            version: "Xcode 26.6"
+          },
+          candidates: [
+            {
+              id: "ios/DemoApp.xcworkspace",
+              name: "ios/DemoApp",
+              kind: "workspace",
+              schemes: ["DemoApp"]
+            }
+          ],
+          destinations: [
+            {
+              id: "platform=iOS Simulator,id=E2E-IP17-PRO",
+              name: "iPhone 17 Pro",
+              platform: "iOS Simulator",
+              supported: true,
+              booted: true
+            }
+          ],
+          metadataRequiresExecution: false,
+          selection: {
+            candidateId: "ios/DemoApp.xcworkspace",
+            schemeId: "DemoApp",
+            configuration: "Debug",
+            destinationId: "platform=iOS Simulator,id=E2E-IP17-PRO",
+            revision: 1
+          },
+          operations: [
+            {
+              id: "run-demo",
+              action: "run",
+              status: "cancelled",
+              target: {
+                candidateId: "ios/DemoApp.xcworkspace",
+                schemeId: "DemoApp",
+                configuration: "Debug",
+                destinationId: "platform=iOS Simulator,id=E2E-IP17-PRO",
+                revision: 1
+              },
+              createdAt: FIXED_TIME + 3e3,
+              updatedAt: FIXED_TIME + 4e3,
+              outcome: {
+                operationId: "run-demo",
+                status: "cancelled",
+                reason: "Cancelled while waiting for the selected Simulator.",
+                exitCode: null,
+                diagnostics: [],
+                testSummary: null,
+                logArtifactId: "apple-log:run-demo",
+                outputTruncated: false
+              }
+            },
+            {
+              id: "test-demo",
+              action: "test",
+              status: "failed",
+              target: {
+                candidateId: "ios/DemoApp.xcworkspace",
+                schemeId: "DemoApp",
+                configuration: "Debug",
+                destinationId: "platform=iOS Simulator,id=E2E-IP17-PRO",
+                revision: 1
+              },
+              createdAt: FIXED_TIME + 2e3,
+              updatedAt: FIXED_TIME + 3e3,
+              outcome: {
+                operationId: "test-demo",
+                status: "failed",
+                reason: "DemoAppTests failed with 1 failing test.",
+                exitCode: 65,
+                diagnostics: [],
+                testSummary: { passed: 42, failed: 1, skipped: 2 },
+                logArtifactId: "apple-log:test-demo",
+                outputTruncated: false
+              }
+            },
+            {
+              id: "build-demo",
+              action: "build",
+              status: "succeeded",
+              target: {
+                candidateId: "ios/DemoApp.xcworkspace",
+                schemeId: "DemoApp",
+                configuration: "Debug",
+                destinationId: "platform=iOS Simulator,id=E2E-IP17-PRO",
+                revision: 1
+              },
+              createdAt: FIXED_TIME + 1e3,
+              updatedAt: FIXED_TIME + 2e3,
+              outcome: {
+                operationId: "build-demo",
+                status: "succeeded",
+                exitCode: 0,
+                diagnostics: [],
+                testSummary: null,
+                logArtifactId: "apple-log:build-demo",
+                outputTruncated: false
+              }
+            }
+          ],
+          setupMessage: null
+        }
+      },
+      {
         id: "chat-layout-styling",
         label: "Chat layout styling",
         project: project("demo-chat-layout-project"),
@@ -26353,6 +26497,25 @@ function createDemoApi(scenario, options = {}) {
   };
   let browserSession = null;
   let currentBranch = threads[0]?.gitBranch ?? "demo/browser-renderer";
+  const emptyAppleDevelopmentState = (pluginEnabled) => ({
+    pluginEnabled,
+    enrolled: false,
+    supportedHost: false,
+    toolchain: null,
+    candidates: [],
+    destinations: [],
+    metadataRequiresExecution: false,
+    selection: null,
+    operations: [],
+    setupMessage: pluginEnabled ? "Enroll this project to use Apple Development." : "Enable Apple Development in Settings \u2192 Plugins."
+  });
+  const initialAppleDevelopmentState = structuredClone(
+    scenario.appleDevelopmentState ?? emptyAppleDevelopmentState(false)
+  );
+  const appleDevelopmentStates = /* @__PURE__ */ new Map([
+    [scenario.project.id, initialAppleDevelopmentState]
+  ]);
+  const appleDevelopmentStateFor = (projectId) => appleDevelopmentStates.get(projectId) ?? emptyAppleDevelopmentState(initialAppleDevelopmentState.pluginEnabled);
   const chunkHandlers = /* @__PURE__ */ new Set();
   const showDiffHandlers = /* @__PURE__ */ new Set();
   const queuedHandlers = /* @__PURE__ */ new Set();
@@ -26904,6 +27067,16 @@ This response is streamed through the real renderer event path.`
       onData: subscribe,
       onStatus: subscribe
     },
+    simulatorDesktop: {
+      list: emptyArray,
+      open: unsupported,
+      start: resolvedVoid,
+      input: resolvedVoid,
+      close: resolvedVoid,
+      onFrame: subscribe,
+      onStatus: subscribe,
+      onShow: subscribe
+    },
     memories: {
       list: emptyArray,
       create: unsupported,
@@ -26966,7 +27139,11 @@ This response is streamed through the real renderer event path.`
       runDetail: () => resolved({ found: false })
     },
     plugins: {
-      list: () => resolved({ plugins: DEMO_PLUGINS }),
+      list: () => resolved({
+        plugins: DEMO_PLUGINS.map(
+          (plugin) => plugin.id === "copse.apple-development" ? { ...plugin, enabled: initialAppleDevelopmentState.pluginEnabled } : plugin
+        )
+      }),
       setEnabled: () => resolved({ plugins: [] }),
       setSetting: () => resolved({ plugins: [] }),
       addSource: () => resolved({ plugins: [] })
@@ -26981,6 +27158,33 @@ This response is streamed through the real renderer event path.`
       remove: unsupported,
       runNow: unsupported,
       onTriggered: subscribe
+    },
+    appleDevelopment: {
+      state: (projectId) => resolved(structuredClone(appleDevelopmentStateFor(projectId))),
+      detectProject: (projectId) => {
+        const state = appleDevelopmentStateFor(projectId);
+        return resolved({
+          detected: state.candidates.length > 0,
+          enrolled: state.enrolled,
+          supportedHost: state.supportedHost
+        });
+      },
+      setEnrolled: (projectId, _threadId, enrolled) => {
+        const current = appleDevelopmentStateFor(projectId);
+        const state = {
+          ...current,
+          enrolled,
+          setupMessage: enrolled ? projectId === scenario.project.id ? null : "No Xcode workspace or project was found within the project directory." : "Enroll this project to use Apple Development."
+        };
+        appleDevelopmentStates.set(projectId, state);
+        return resolved(structuredClone(state));
+      },
+      discover: unsupported,
+      destinations: (projectId) => resolved(structuredClone(appleDevelopmentStateFor(projectId).destinations)),
+      configure: unsupported,
+      execute: unsupported,
+      operation: unsupported,
+      stopApp: unsupported
     },
     instructions: { list: emptyArray, read: () => resolved("") },
     cursorRules: { list: emptyArray },
@@ -27171,6 +27375,34 @@ var init_demo_api = __esm({
             value: 2
           }
         ]
+      },
+      {
+        id: "copse.apple-development",
+        trust: "first-party",
+        stability: "experimental",
+        name: "Apple Development",
+        version: "1.0.0",
+        description: "Build, test, and run enrolled local Apple projects with an installed Xcode.",
+        enabled: false,
+        contributions: {
+          ...DEMO_PLUGIN_CONTRIBUTIONS,
+          toolNames: [],
+          ui: [
+            {
+              id: "apple-development",
+              level: 3,
+              slot: "thread-plugin-panel",
+              title: "Apple Development"
+            },
+            {
+              id: "apple-development-setup",
+              level: 3,
+              slot: "settings-plugin-detail",
+              title: "Apple Development setup"
+            }
+          ]
+        },
+        settings: []
       },
       {
         id: "personal.reference-tools",
@@ -27548,6 +27780,106 @@ var init_automations = __esm({
   }
 });
 
+// src/shared/types/apple-development.ts
+var APPLE_ACTIONS, APPLE_OPERATION_STATUSES, appleCandidateSchema, appleDestinationSchema, appleSelectionSchema, appleDiagnosticSchema, appleTestSummarySchema, appleOutcomeSchema, appleOperationSchema, appleProjectStateSchema, appleConfigureInputSchema, appleExecuteInputSchema, appleOperationInputSchema;
+var init_apple_development = __esm({
+  "src/shared/types/apple-development.ts"() {
+    init_zod();
+    APPLE_ACTIONS = ["build", "test", "run"];
+    APPLE_OPERATION_STATUSES = [
+      "queued",
+      "running",
+      "succeeded",
+      "failed",
+      "cancelled"
+    ];
+    appleCandidateSchema = external_exports.object({
+      id: external_exports.string().min(1).max(512),
+      name: external_exports.string().min(1).max(256),
+      kind: external_exports.enum(["workspace", "project"]),
+      schemes: external_exports.array(external_exports.string().min(1).max(256)).max(200),
+      metadataError: external_exports.string().min(1).max(2048).optional()
+    });
+    appleDestinationSchema = external_exports.object({
+      id: external_exports.string().min(1).max(512),
+      name: external_exports.string().min(1).max(256),
+      platform: external_exports.string().min(1).max(128),
+      supported: external_exports.boolean(),
+      booted: external_exports.boolean().optional()
+    });
+    appleSelectionSchema = external_exports.object({
+      candidateId: external_exports.string().min(1).max(512),
+      schemeId: external_exports.string().min(1).max(256),
+      configuration: external_exports.string().min(1).max(128),
+      destinationId: external_exports.string().min(1).max(512),
+      revision: external_exports.number().int().positive()
+    });
+    appleDiagnosticSchema = external_exports.object({
+      severity: external_exports.enum(["error", "warning", "note"]),
+      message: external_exports.string().max(8192),
+      file: external_exports.string().max(4096).optional(),
+      line: external_exports.number().int().positive().optional(),
+      column: external_exports.number().int().positive().optional()
+    });
+    appleTestSummarySchema = external_exports.object({
+      passed: external_exports.number().int().nonnegative().nullable(),
+      failed: external_exports.number().int().nonnegative().nullable(),
+      skipped: external_exports.number().int().nonnegative().nullable()
+    });
+    appleOutcomeSchema = external_exports.object({
+      operationId: external_exports.string().min(1),
+      status: external_exports.enum(["succeeded", "failed", "cancelled"]),
+      reason: external_exports.string().max(8192).optional(),
+      exitCode: external_exports.number().int().nullable(),
+      diagnostics: external_exports.array(appleDiagnosticSchema).max(500),
+      testSummary: appleTestSummarySchema.nullable(),
+      logArtifactId: external_exports.string().min(1),
+      resultBundleArtifactId: external_exports.string().min(1).optional(),
+      appSessionId: external_exports.string().min(1).optional(),
+      outputTruncated: external_exports.boolean()
+    });
+    appleOperationSchema = external_exports.object({
+      id: external_exports.string().min(1),
+      action: external_exports.enum(APPLE_ACTIONS),
+      status: external_exports.enum(APPLE_OPERATION_STATUSES),
+      target: appleSelectionSchema,
+      createdAt: external_exports.number().int(),
+      updatedAt: external_exports.number().int(),
+      outcome: appleOutcomeSchema.nullable()
+    });
+    appleProjectStateSchema = external_exports.object({
+      pluginEnabled: external_exports.boolean(),
+      enrolled: external_exports.boolean(),
+      supportedHost: external_exports.boolean(),
+      toolchain: external_exports.object({ developerDir: external_exports.string().min(1), version: external_exports.string().min(1).max(512) }).nullable(),
+      candidates: external_exports.array(appleCandidateSchema).max(100),
+      destinations: external_exports.array(appleDestinationSchema).max(200),
+      metadataRequiresExecution: external_exports.boolean(),
+      selection: appleSelectionSchema.nullable(),
+      operations: external_exports.array(appleOperationSchema).max(50),
+      setupMessage: external_exports.string().max(2048).nullable()
+    });
+    appleConfigureInputSchema = external_exports.object({
+      candidateId: external_exports.string().min(1).max(512),
+      schemeId: external_exports.string().min(1).max(256),
+      configuration: external_exports.string().min(1).max(128),
+      destinationId: external_exports.string().min(1).max(512),
+      expectedRevision: external_exports.number().int().nonnegative()
+    });
+    appleExecuteInputSchema = external_exports.object({
+      action: external_exports.enum(APPLE_ACTIONS),
+      expectedRevision: external_exports.number().int().positive(),
+      requestId: external_exports.string().min(1).max(256),
+      testFilter: external_exports.string().min(1).max(512).optional()
+    });
+    appleOperationInputSchema = external_exports.object({
+      operationId: external_exports.string().min(1).max(256),
+      action: external_exports.enum(["status", "logs", "cancel"]),
+      logCursor: external_exports.number().int().nonnegative().optional()
+    });
+  }
+});
+
 // src/shared/types/index.ts
 var init_types = __esm({
   "src/shared/types/index.ts"() {
@@ -27567,6 +27899,7 @@ var init_types = __esm({
     init_worktree();
     init_guarded_yolo();
     init_automations();
+    init_apple_development();
   }
 });
 
@@ -30060,10 +30393,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 35.7,
+          value: 29.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'minimax-m3', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'minimax-m3', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "QwQ-32B-Preview": [
@@ -30074,10 +30407,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 3.6,
+          value: 7.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'QwQ-32B-Preview', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'QwQ-32B-Preview', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "a-x-k2": [
@@ -30088,10 +30421,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 26.8,
+          value: 22.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'a-x-k2', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'a-x-k2', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "agnes-2-5-pro-alpha": [
@@ -30102,10 +30435,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 31.2,
+          value: 26.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'agnes-2-5-pro-alpha', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'agnes-2-5-pro-alpha', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "agnes-2-5-pro-beta": [
@@ -30116,10 +30449,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-01"
         },
         {
-          value: 39.5,
+          value: 35.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'agnes-2-5-pro-beta', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'agnes-2-5-pro-beta', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "apertus-70b-instruct": [
@@ -30130,10 +30463,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'apertus-70b-instruct', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'apertus-70b-instruct', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "apertus-8b-instruct": [
@@ -30144,10 +30477,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 4.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'apertus-8b-instruct', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'apertus-8b-instruct', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "apodex-1-1": [
@@ -30158,10 +30491,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-01"
         },
         {
-          value: 34.9,
+          value: 30.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'apodex-1-1', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'apodex-1-1', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "apriel-v1-5-15b-thinker": [
@@ -30172,10 +30505,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 15,
+          value: 13.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'apriel-v1-5-15b-thinker', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'apriel-v1-5-15b-thinker', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "apriel-v1-6-15b-thinker": [
@@ -30186,10 +30519,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 14.3,
+          value: 13.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'apriel-v1-6-15b-thinker', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'apriel-v1-6-15b-thinker', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "arctic-instruct": [
@@ -30200,10 +30533,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'arctic-instruct', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'arctic-instruct', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "celeris-1": [
@@ -30214,10 +30547,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 7.6,
+          value: 6.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'celeris-1', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'celeris-1', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "claude-2": [
@@ -30228,10 +30561,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-2', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'claude-2', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "claude-21": [
@@ -30242,10 +30575,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-21', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'claude-21', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "claude-3-5-haiku": [
@@ -30256,10 +30589,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 6.5,
+          value: 8.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-3-5-haiku', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'claude-3-5-haiku', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "claude-3-7-sonnet": [
@@ -30270,10 +30603,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 17.2,
+          value: 15.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-3-7-sonnet', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'claude-3-7-sonnet', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "claude-3-7-sonnet-thinking": [
@@ -30284,10 +30617,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 20.5,
+          value: 17.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-3-7-sonnet-thinking', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'claude-3-7-sonnet-thinking', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "claude-3-haiku": [
@@ -30298,10 +30631,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-3-haiku', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'claude-3-haiku', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "claude-3-opus": [
@@ -30312,10 +30645,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 6,
+          value: 8.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-3-opus', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'claude-3-opus', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "claude-3-sonnet": [
@@ -30326,10 +30659,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-3-sonnet', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'claude-3-sonnet', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "claude-35-sonnet": [
@@ -30340,10 +30673,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 4.2,
+          value: 7.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-35-sonnet', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'claude-35-sonnet', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "claude-35-sonnet-june-24": [
@@ -30354,10 +30687,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 2.7,
+          value: 7.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-35-sonnet-june-24', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'claude-35-sonnet-june-24', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "claude-4-1-opus": [
@@ -30368,10 +30701,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 21.7,
+          value: 18.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-4-1-opus', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'claude-4-1-opus', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "claude-4-1-opus-thinking": [
@@ -30382,10 +30715,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 26.9,
+          value: 22.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-4-1-opus-thinking', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'claude-4-1-opus-thinking', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "claude-4-5-haiku": [
@@ -30396,10 +30729,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 17.4,
+          value: 15.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-4-5-haiku', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'claude-4-5-haiku', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "claude-4-5-haiku-reasoning": [
@@ -30410,10 +30743,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 22.5,
+          value: 17.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-4-5-haiku-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'claude-4-5-haiku-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "claude-4-5-sonnet": [
@@ -30424,10 +30757,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 22.7,
+          value: 19.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-4-5-sonnet', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'claude-4-5-sonnet', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "claude-4-5-sonnet-thinking": [
@@ -30438,10 +30771,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 27.3,
+          value: 21.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-4-5-sonnet-thinking', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'claude-4-5-sonnet-thinking', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "claude-4-opus": [
@@ -30452,10 +30785,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 19.1,
+          value: 16.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-4-opus', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'claude-4-opus', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "claude-4-opus-thinking": [
@@ -30466,10 +30799,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 24.3,
+          value: 20.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-4-opus-thinking', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'claude-4-opus-thinking', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "claude-4-sonnet": [
@@ -30480,10 +30813,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 19.1,
+          value: 16.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-4-sonnet', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'claude-4-sonnet', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "claude-4-sonnet-thinking": [
@@ -30494,10 +30827,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 22.2,
+          value: 18.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-4-sonnet-thinking', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'claude-4-sonnet-thinking', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "claude-fable-5": [
@@ -30508,50 +30841,50 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 53.2,
+          value: 49.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-fable-5', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'claude-fable-5', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "claude-fable-5-1": [
         {
-          value: 56.8,
+          value: 53.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-fable-5-1', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'claude-fable-5-1', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "claude-fable-5-1-high": [
         {
-          value: 54.5,
+          value: 51.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-fable-5-1-high', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'claude-fable-5-1-high', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "claude-fable-5-1-low": [
         {
-          value: 50.9,
+          value: 47,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-fable-5-1-low', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'claude-fable-5-1-low', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "claude-fable-5-1-medium": [
         {
-          value: 52.8,
+          value: 49.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-fable-5-1-medium', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'claude-fable-5-1-medium', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "claude-fable-5-1-xhigh": [
         {
-          value: 56.2,
+          value: 53.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-fable-5-1-xhigh', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'claude-fable-5-1-xhigh', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "claude-haiku-4-5": [
@@ -30570,10 +30903,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-instant', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'claude-instant', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "claude-opus-4-5": [
@@ -30584,10 +30917,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 27.8,
+          value: 23.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-opus-4-5', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'claude-opus-4-5', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "claude-opus-4-5-thinking": [
@@ -30598,10 +30931,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 33.6,
+          value: 29.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-opus-4-5-thinking', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'claude-opus-4-5-thinking', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "claude-opus-4-6": [
@@ -30612,10 +30945,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 30.8,
+          value: 26.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-opus-4-6', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'claude-opus-4-6', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "claude-opus-4-6-adaptive": [
@@ -30626,10 +30959,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 36.4,
+          value: 31.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-opus-4-6-adaptive', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'claude-opus-4-6-adaptive', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "claude-opus-4-7": [
@@ -30640,10 +30973,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 44.3,
+          value: 40.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-opus-4-7', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'claude-opus-4-7', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "claude-opus-4-7-non-reasoning": [
@@ -30654,10 +30987,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 35.4,
+          value: 30.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-opus-4-7-non-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'claude-opus-4-7-non-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "claude-opus-4-8": [
@@ -30674,10 +31007,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 47.8,
+          value: 42,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-opus-4-8', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'claude-opus-4-8', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "claude-opus-5": [
@@ -30688,10 +31021,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 54.1,
+          value: 50.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-opus-5', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'claude-opus-5', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "claude-opus-5-high": [
@@ -30702,10 +31035,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 52,
+          value: 48.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-opus-5-high', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'claude-opus-5-high', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "claude-opus-5-low": [
@@ -30716,10 +31049,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 43.8,
+          value: 39.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-opus-5-low', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'claude-opus-5-low', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "claude-opus-5-medium": [
@@ -30730,10 +31063,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 49.5,
+          value: 45.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-opus-5-medium', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'claude-opus-5-medium', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "claude-opus-5-xhigh": [
@@ -30744,10 +31077,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 53.4,
+          value: 49.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-opus-5-xhigh', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'claude-opus-5-xhigh', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "claude-sonnet-4-6": [
@@ -30758,10 +31091,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 29,
+          value: 24.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-sonnet-4-6', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'claude-sonnet-4-6', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "claude-sonnet-4-6-adaptive": [
@@ -30772,10 +31105,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 38.5,
+          value: 30.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-sonnet-4-6-adaptive', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'claude-sonnet-4-6-adaptive', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "claude-sonnet-4-6-non-reasoning-low-effort": [
@@ -30786,10 +31119,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 27.4,
+          value: 23.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-sonnet-4-6-non-reasoning-low-effort', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'claude-sonnet-4-6-non-reasoning-low-effort', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "claude-sonnet-5": [
@@ -30800,10 +31133,34 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 45.1,
+          value: 38.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-sonnet-5', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'claude-sonnet-5', fetched 2026-09-11",
+          asOf: "2026-09-11"
+        }
+      ],
+      "claude-sonnet-5-high": [
+        {
+          value: 32,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-sonnet-5-high', fetched 2026-09-11",
+          asOf: "2026-09-11"
+        }
+      ],
+      "claude-sonnet-5-low": [
+        {
+          value: 24.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-sonnet-5-low', fetched 2026-09-11",
+          asOf: "2026-09-11"
+        }
+      ],
+      "claude-sonnet-5-medium": [
+        {
+          value: 28.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-sonnet-5-medium', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "claude-sonnet-5-non-reasoning": [
@@ -30814,10 +31171,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 33.5,
+          value: 28.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-sonnet-5-non-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'claude-sonnet-5-non-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "command-a": [
@@ -30828,10 +31185,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 2.1,
+          value: 7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'command-a', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'command-a', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "command-a-plus": [
@@ -30842,10 +31199,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 15.6,
+          value: 13.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'command-a-plus', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'command-a-plus', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "command-r-03-2024": [
@@ -30856,10 +31213,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'command-r-03-2024', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'command-r-03-2024', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "command-r-plus-04-2024": [
@@ -30870,10 +31227,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'command-r-plus-04-2024', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'command-r-plus-04-2024', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       dbrx: [
@@ -30884,10 +31241,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'dbrx', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'dbrx', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "deephermes-3-llama-3-1-8b-preview": [
@@ -30898,10 +31255,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'deephermes-3-llama-3-1-8b-preview', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'deephermes-3-llama-3-1-8b-preview', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "deephermes-3-mistral-24b-preview": [
@@ -30912,10 +31269,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 6.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'deephermes-3-mistral-24b-preview', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'deephermes-3-mistral-24b-preview', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "deepseek-coder-v2": [
@@ -30926,10 +31283,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'deepseek-coder-v2', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-coder-v2', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "deepseek-llm-67b-chat": [
@@ -30940,10 +31297,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'deepseek-llm-67b-chat', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-llm-67b-chat', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "deepseek-r1": [
@@ -30954,10 +31311,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 13.9,
+          value: 13.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'deepseek-r1', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-r1', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "deepseek-r1-0120": [
@@ -30968,10 +31325,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 12,
+          value: 11.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'deepseek-r1-0120', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-r1-0120', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "deepseek-r1-distill-llama-70b": [
@@ -30982,10 +31339,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 4.2,
+          value: 7.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'deepseek-r1-distill-llama-70b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-r1-distill-llama-70b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "deepseek-r1-distill-llama-8b": [
@@ -30996,10 +31353,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 6.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'deepseek-r1-distill-llama-8b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-r1-distill-llama-8b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "deepseek-r1-distill-qwen-1-5b": [
@@ -31010,10 +31367,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'deepseek-r1-distill-qwen-1-5b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-r1-distill-qwen-1-5b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "deepseek-r1-distill-qwen-14b": [
@@ -31024,10 +31381,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 4.1,
+          value: 7.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'deepseek-r1-distill-qwen-14b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-r1-distill-qwen-14b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "deepseek-r1-distill-qwen-32b": [
@@ -31038,10 +31395,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 5.3,
+          value: 8.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'deepseek-r1-distill-qwen-32b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-r1-distill-qwen-32b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "deepseek-r1-qwen3-8b": [
@@ -31052,10 +31409,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 4.7,
+          value: 8.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'deepseek-r1-qwen3-8b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-r1-qwen3-8b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "deepseek-v2": [
@@ -31066,10 +31423,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'deepseek-v2', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v2', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "deepseek-v2-5": [
@@ -31080,10 +31437,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1.2,
+          value: 6.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'deepseek-v2-5', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v2-5', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "deepseek-v2-5-sep-2024": [
@@ -31094,10 +31451,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1.1,
+          value: 6.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'deepseek-v2-5-sep-2024', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v2-5-sep-2024', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "deepseek-v3": [
@@ -31108,10 +31465,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 10.4,
+          value: 8.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'deepseek-v3', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v3', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "deepseek-v3-0324": [
@@ -31122,10 +31479,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 9.2,
+          value: 9.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'deepseek-v3-0324', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v3-0324', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "deepseek-v3-1": [
@@ -31136,10 +31493,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 14.8,
+          value: 13.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'deepseek-v3-1', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v3-1', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "deepseek-v3-1-reasoning": [
@@ -31150,10 +31507,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 14.5,
+          value: 13.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'deepseek-v3-1-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v3-1-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "deepseek-v3-1-terminus": [
@@ -31164,10 +31521,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 15.2,
+          value: 13.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'deepseek-v3-1-terminus', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v3-1-terminus', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "deepseek-v3-1-terminus-reasoning": [
@@ -31178,10 +31535,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-25"
         },
         {
-          value: 23.5,
+          value: 15.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'deepseek-v3-1-terminus-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v3-1-terminus-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "deepseek-v3-2": [
@@ -31192,10 +31549,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 18.3,
+          value: 16,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'deepseek-v3-2', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v3-2', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "deepseek-v3-2-0925": [
@@ -31206,10 +31563,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 15.1,
+          value: 13.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'deepseek-v3-2-0925', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v3-2-0925', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "deepseek-v3-2-reasoning": [
@@ -31220,10 +31577,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 25.3,
+          value: 21.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'deepseek-v3-2-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v3-2-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "deepseek-v3-2-reasoning-0925": [
@@ -31234,10 +31591,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 19,
+          value: 16.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'deepseek-v3-2-reasoning-0925', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v3-2-reasoning-0925', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "deepseek-v3-2-speciale": [
@@ -31248,10 +31605,18 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 16,
+          value: 14.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'deepseek-v3-2-speciale', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v3-2-speciale', fetched 2026-09-11",
+          asOf: "2026-09-11"
+        }
+      ],
+      "deepseek-v4-1-flash": [
+        {
+          value: 39.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-1-flash', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "deepseek-v4-flash": [
@@ -31262,10 +31627,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 40.8,
+          value: 34.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-flash', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-flash', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "deepseek-v4-flash-0420": [
@@ -31276,10 +31641,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 30.7,
+          value: 24.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-flash-0420', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-flash-0420', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "deepseek-v4-flash-0420-high": [
@@ -31290,10 +31655,18 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 30.2,
+          value: 24.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-flash-0420-high', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-flash-0420-high', fetched 2026-09-11",
+          asOf: "2026-09-11"
+        }
+      ],
+      "deepseek-v4-flash-0420-non-reasoning": [
+        {
+          value: 18.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-flash-0420-non-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "deepseek-v4-flash-non-reasoning": [
@@ -31318,10 +31691,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-01"
         },
         {
-          value: 40.7,
+          value: 35,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-flash-vision', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-flash-vision', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "deepseek-v4-pro": [
@@ -31332,10 +31705,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 42.1,
+          value: 36.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-pro', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-pro', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "deepseek-v4-pro-0424": [
@@ -31346,10 +31719,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 34.5,
+          value: 30.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-pro-0424', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-pro-0424', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "deepseek-v4-pro-0424-high": [
@@ -31360,10 +31733,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 34.6,
+          value: 30.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-pro-0424-high', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-pro-0424-high', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "deepseek-v4-pro-0424-non-reasoning": [
@@ -31374,10 +31747,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 24.5,
+          value: 20.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-pro-0424-non-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-pro-0424-non-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "deepseek/deepseek-coder-v2-lite": [
@@ -31388,10 +31761,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'deepseek-coder-v2-lite', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-coder-v2-lite', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "devstral-2": [
@@ -31402,10 +31775,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 12.7,
+          value: 9.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'devstral-2', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'devstral-2', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "devstral-medium": [
@@ -31416,10 +31789,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 6.6,
+          value: 9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'devstral-medium', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'devstral-medium', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "devstral-small": [
@@ -31430,10 +31803,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 3.6,
+          value: 7.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'devstral-small', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'devstral-small', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "devstral-small-2": [
@@ -31444,10 +31817,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 11.7,
+          value: 8.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'devstral-small-2', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'devstral-small-2', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "devstral-small-2505": [
@@ -31458,10 +31831,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 6,
+          value: 8.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'devstral-small-2505', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'devstral-small-2505', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "diffusiongemma-26b-a4b": [
@@ -31472,10 +31845,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 7.6,
+          value: 9.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'diffusiongemma-26b-a4b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'diffusiongemma-26b-a4b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "doubao-seed-code": [
@@ -31486,10 +31859,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 19.5,
+          value: 16.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'doubao-seed-code', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'doubao-seed-code', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "ernie-4-5-300b-a47b": [
@@ -31500,10 +31873,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 3.4,
+          value: 7.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'ernie-4-5-300b-a47b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'ernie-4-5-300b-a47b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "ernie-5-0-thinking-preview": [
@@ -31514,10 +31887,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 15.7,
+          value: 14.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'ernie-5-0-thinking-preview', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'ernie-5-0-thinking-preview', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "exaone-4-0-1-2b": [
@@ -31528,10 +31901,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'exaone-4-0-1-2b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'exaone-4-0-1-2b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "exaone-4-0-1-2b-reasoning": [
@@ -31542,10 +31915,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'exaone-4-0-1-2b-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'exaone-4-0-1-2b-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "exaone-4-0-32b": [
@@ -31556,10 +31929,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 6.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'exaone-4-0-32b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'exaone-4-0-32b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "exaone-4-0-32b-reasoning": [
@@ -31570,10 +31943,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 4.9,
+          value: 8.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'exaone-4-0-32b-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'exaone-4-0-32b-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "exaone-4-5-33b": [
@@ -31584,10 +31957,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 14,
+          value: 13.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'exaone-4-5-33b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'exaone-4-5-33b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "falcon-h1r-7b": [
@@ -31598,10 +31971,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 4.1,
+          value: 7.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'falcon-h1r-7b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'falcon-h1r-7b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "g9v3-39a5b": [
@@ -31612,10 +31985,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-25"
         },
         {
-          value: 25.7,
+          value: 21.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'g9v3-39a5b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'g9v3-39a5b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "g9v3-3b": [
@@ -31626,10 +31999,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 10.1,
+          value: 10.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'g9v3-3b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'g9v3-3b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemini-1-0-pro": [
@@ -31640,10 +32013,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemini-1-0-pro', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemini-1-0-pro', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemini-1-0-ultra": [
@@ -31654,10 +32027,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemini-1-0-ultra', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemini-1-0-ultra', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemini-1-5-flash": [
@@ -31668,10 +32041,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 2.4,
+          value: 7.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemini-1-5-flash', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemini-1-5-flash', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemini-1-5-flash-8b": [
@@ -31682,10 +32055,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 6.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemini-1-5-flash-8b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemini-1-5-flash-8b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemini-1-5-flash-may-2024": [
@@ -31696,10 +32069,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemini-1-5-flash-may-2024', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemini-1-5-flash-may-2024', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemini-1-5-pro": [
@@ -31710,10 +32083,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 4.3,
+          value: 7.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemini-1-5-pro', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemini-1-5-pro', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemini-1-5-pro-may-2024": [
@@ -31724,10 +32097,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 6.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemini-1-5-pro-may-2024', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemini-1-5-pro-may-2024', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemini-2-0-flash": [
@@ -31738,10 +32111,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 6.5,
+          value: 8.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemini-2-0-flash', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemini-2-0-flash', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemini-2-0-flash-experimental": [
@@ -31752,10 +32125,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 5,
+          value: 8.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemini-2-0-flash-experimental', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemini-2-0-flash-experimental', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemini-2-0-flash-lite-001": [
@@ -31766,10 +32139,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 3.2,
+          value: 7.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemini-2-0-flash-lite-001', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemini-2-0-flash-lite-001', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemini-2-0-flash-lite-preview": [
@@ -31780,10 +32153,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 3,
+          value: 7.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemini-2-0-flash-lite-preview', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemini-2-0-flash-lite-preview', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemini-2-0-flash-thinking-exp-0121": [
@@ -31794,10 +32167,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 7.4,
+          value: 9.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemini-2-0-flash-thinking-exp-0121', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemini-2-0-flash-thinking-exp-0121', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemini-2-0-flash-thinking-exp-1219": [
@@ -31808,10 +32181,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1.1,
+          value: 6.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemini-2-0-flash-thinking-exp-1219', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemini-2-0-flash-thinking-exp-1219', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemini-2-0-pro-experimental-02-05": [
@@ -31822,10 +32195,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 6.1,
+          value: 8.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemini-2-0-pro-experimental-02-05', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemini-2-0-pro-experimental-02-05', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemini-2-5-flash": [
@@ -31836,10 +32209,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 8.2,
+          value: 9.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemini-2-5-flash', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemini-2-5-flash', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemini-2-5-flash-04-2025": [
@@ -31850,10 +32223,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 5.9,
+          value: 8.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemini-2-5-flash-04-2025', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemini-2-5-flash-04-2025', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemini-2-5-flash-lite": [
@@ -31864,10 +32237,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1.4,
+          value: 6.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemini-2-5-flash-lite', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemini-2-5-flash-lite', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemini-2-5-flash-lite-preview-09-2025": [
@@ -31878,10 +32251,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 7.3,
+          value: 9.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemini-2-5-flash-lite-preview-09-2025', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemini-2-5-flash-lite-preview-09-2025', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemini-2-5-flash-lite-preview-09-2025-reasoning": [
@@ -31892,10 +32265,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 9.2,
+          value: 10.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemini-2-5-flash-lite-preview-09-2025-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemini-2-5-flash-lite-preview-09-2025-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemini-2-5-flash-lite-reasoning": [
@@ -31906,10 +32279,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 5.6,
+          value: 8.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemini-2-5-flash-lite-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemini-2-5-flash-lite-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemini-2-5-flash-preview-09-2025": [
@@ -31920,10 +32293,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 12.7,
+          value: 12.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemini-2-5-flash-preview-09-2025', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemini-2-5-flash-preview-09-2025', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemini-2-5-flash-preview-09-2025-reasoning": [
@@ -31934,10 +32307,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 17.4,
+          value: 15.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemini-2-5-flash-preview-09-2025-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemini-2-5-flash-preview-09-2025-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemini-2-5-flash-reasoning": [
@@ -31948,10 +32321,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 13.9,
+          value: 13.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemini-2-5-flash-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemini-2-5-flash-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemini-2-5-flash-reasoning-04-2025": [
@@ -31962,10 +32335,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 11.5,
+          value: 11.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemini-2-5-flash-reasoning-04-2025', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemini-2-5-flash-reasoning-04-2025', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemini-2-5-pro": [
@@ -31976,10 +32349,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 19,
+          value: 16.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemini-2-5-pro', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemini-2-5-pro', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemini-2-5-pro-03-25": [
@@ -31990,10 +32363,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 16.7,
+          value: 15,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemini-2-5-pro-03-25', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemini-2-5-pro-03-25', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemini-2-5-pro-05-06": [
@@ -32004,10 +32377,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 16.1,
+          value: 14.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemini-2-5-pro-05-06', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemini-2-5-pro-05-06', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemini-3-1-flash-lite-preview": [
@@ -32018,10 +32391,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 19.3,
+          value: 16,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemini-3-1-flash-lite-preview', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemini-3-1-flash-lite-preview', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemini-3-1-pro-preview": [
@@ -32032,10 +32405,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 36.7,
+          value: 30.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemini-3-1-pro-preview', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemini-3-1-pro-preview', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemini-3-5-flash": [
@@ -32046,10 +32419,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 39.7,
+          value: 33,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemini-3-5-flash', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemini-3-5-flash', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemini-3-5-flash-lite": [
@@ -32060,10 +32433,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 27.6,
+          value: 22.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemini-3-5-flash-lite', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemini-3-5-flash-lite', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemini-3-5-flash-medium": [
@@ -32074,10 +32447,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 38,
+          value: 33.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemini-3-5-flash-medium', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemini-3-5-flash-medium', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemini-3-5-flash-minimal": [
@@ -32088,10 +32461,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 28,
+          value: 23.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemini-3-5-flash-minimal', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemini-3-5-flash-minimal', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemini-3-6-flash": [
@@ -32102,10 +32475,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 40.3,
+          value: 34.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemini-3-6-flash', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemini-3-6-flash', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemini-3-7-flash": [
@@ -32116,10 +32489,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 45.2,
+          value: 39.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemini-3-7-flash', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemini-3-7-flash', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemini-3-7-flash-low": [
@@ -32130,10 +32503,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 41.1,
+          value: 36.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemini-3-7-flash-low', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemini-3-7-flash-low', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemini-3-7-flash-medium": [
@@ -32144,34 +32517,34 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 43.4,
+          value: 39.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemini-3-7-flash-medium', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemini-3-7-flash-medium', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemini-3-8-flash": [
         {
-          value: 47.1,
+          value: 41.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemini-3-8-flash', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemini-3-8-flash', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemini-3-8-flash-low": [
         {
-          value: 41,
+          value: 33.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemini-3-8-flash-low', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemini-3-8-flash-low', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemini-3-8-flash-medium": [
         {
-          value: 46.8,
+          value: 40,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemini-3-8-flash-medium', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemini-3-8-flash-medium', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemini-3-flash": [
@@ -32182,10 +32555,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 20.8,
+          value: 17.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemini-3-flash', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemini-3-flash', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemini-3-flash-reasoning": [
@@ -32196,10 +32569,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 30.7,
+          value: 26.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemini-3-flash-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemini-3-flash-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemini-3-pro": [
@@ -32210,10 +32583,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 32.4,
+          value: 28,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemini-3-pro', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemini-3-pro', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemini-3-pro-low": [
@@ -32224,10 +32597,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 26.3,
+          value: 22.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemini-3-pro-low', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemini-3-pro-low', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemma-3-1b": [
@@ -32238,10 +32611,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 4.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemma-3-1b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemma-3-1b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemma-3-270m": [
@@ -32252,10 +32625,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemma-3-270m', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemma-3-270m', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemma-3-27b": [
@@ -32266,10 +32639,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 2,
+          value: 4.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemma-3-27b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemma-3-27b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemma-3-4b": [
@@ -32280,10 +32653,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 4.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemma-3-4b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemma-3-4b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemma-3n-e2b": [
@@ -32294,10 +32667,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 4.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemma-3n-e2b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemma-3n-e2b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemma-3n-e4b": [
@@ -32308,10 +32681,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 4.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemma-3n-e4b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemma-3n-e4b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemma-3n-e4b-preview-0520": [
@@ -32322,10 +32695,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemma-3n-e4b-preview-0520', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemma-3n-e4b-preview-0520', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemma-4-12b": [
@@ -32336,10 +32709,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 15.6,
+          value: 14.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemma-4-12b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemma-4-12b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemma-4-12b-non-reasoning": [
@@ -32350,10 +32723,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 7.3,
+          value: 9.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemma-4-12b-non-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemma-4-12b-non-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemma-4-26b-a4b": [
@@ -32364,10 +32737,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 19.2,
+          value: 16.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemma-4-26b-a4b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemma-4-26b-a4b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemma-4-26b-a4b-non-reasoning": [
@@ -32378,10 +32751,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 13.9,
+          value: 13.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemma-4-26b-a4b-non-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemma-4-26b-a4b-non-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemma-4-31b": [
@@ -32392,10 +32765,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 22.2,
+          value: 15.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemma-4-31b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemma-4-31b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemma-4-31b-non-reasoning": [
@@ -32406,10 +32779,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 15.2,
+          value: 13.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemma-4-31b-non-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemma-4-31b-non-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemma-4-e2b": [
@@ -32420,10 +32793,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 4,
+          value: 7.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemma-4-e2b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemma-4-e2b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemma-4-e2b-non-reasoning": [
@@ -32434,10 +32807,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 6.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemma-4-e2b-non-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemma-4-e2b-non-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gemma-4-e4b-non-reasoning": [
@@ -32448,10 +32821,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 3.3,
+          value: 7.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemma-4-e4b-non-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemma-4-e4b-non-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "glm-4-5-air": [
@@ -32462,10 +32835,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 10.5,
+          value: 11.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'glm-4-5-air', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'glm-4-5-air', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "glm-4-5v": [
@@ -32476,10 +32849,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1.4,
+          value: 6.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'glm-4-5v', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'glm-4-5v', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "glm-4-5v-reasoning": [
@@ -32490,10 +32863,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 3.5,
+          value: 7.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'glm-4-5v-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'glm-4-5v-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "glm-4-6": [
@@ -32504,10 +32877,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 16.7,
+          value: 14.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'glm-4-6', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'glm-4-6', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "glm-4-6-reasoning": [
@@ -32518,10 +32891,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 21.7,
+          value: 18.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'glm-4-6-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'glm-4-6-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "glm-4-6v": [
@@ -32532,10 +32905,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 5.2,
+          value: 8.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'glm-4-6v', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'glm-4-6v', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "glm-4-6v-reasoning": [
@@ -32546,10 +32919,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 10.7,
+          value: 11.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'glm-4-6v-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'glm-4-6v-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "glm-4-7": [
@@ -32560,10 +32933,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 26.2,
+          value: 22.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'glm-4-7', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'glm-4-7', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "glm-4-7-flash": [
@@ -32574,10 +32947,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 16.6,
+          value: 14.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'glm-4-7-flash', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'glm-4-7-flash', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "glm-4-7-flash-non-reasoning": [
@@ -32588,10 +32961,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 9.6,
+          value: 10.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'glm-4-7-flash-non-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'glm-4-7-flash-non-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "glm-4-7-non-reasoning": [
@@ -32602,10 +32975,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 20.1,
+          value: 17.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'glm-4-7-non-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'glm-4-7-non-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "glm-4.5": [
@@ -32616,10 +32989,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 13.3,
+          value: 12.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'glm-4.5', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'glm-4.5', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "glm-5": [
@@ -32630,10 +33003,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 32.4,
+          value: 27.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'glm-5', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'glm-5', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "glm-5-1": [
@@ -32644,10 +33017,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 31.9,
+          value: 26.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'glm-5-1', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'glm-5-1', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "glm-5-1-non-reasoning": [
@@ -32658,10 +33031,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 28.5,
+          value: 24.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'glm-5-1-non-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'glm-5-1-non-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "glm-5-2-non-reasoning": [
@@ -32672,10 +33045,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 26.5,
+          value: 22.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'glm-5-2-non-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'glm-5-2-non-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "glm-5-3": [
@@ -32686,10 +33059,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-25"
         },
         {
-          value: 48.6,
+          value: 44.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'glm-5-3', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'glm-5-3', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "glm-5-3-flash": [
@@ -32700,10 +33073,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-01"
         },
         {
-          value: 46.2,
+          value: 41.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'glm-5-3-flash', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'glm-5-3-flash', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "glm-5-non-reasoning": [
@@ -32714,10 +33087,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 25.6,
+          value: 21.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'glm-5-non-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'glm-5-non-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "glm-5-turbo": [
@@ -32728,10 +33101,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 31,
+          value: 26.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'glm-5-turbo', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'glm-5-turbo', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "glm-5v-turbo": [
@@ -32742,10 +33115,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 27.6,
+          value: 23.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'glm-5v-turbo', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'glm-5v-turbo', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "google/gemma-3-12b": [
@@ -32756,10 +33129,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-07-19"
         },
         {
-          value: 1,
+          value: 3.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemma-3-12b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemma-3-12b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "google/gemma-4-e4b": [
@@ -32770,10 +33143,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 6.4,
+          value: 8.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemma-4-e4b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gemma-4-e4b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-35-turbo": [
@@ -32784,10 +33157,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-35-turbo', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-35-turbo', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-4": [
@@ -32798,10 +33171,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1.5,
+          value: 6.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-4', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-4', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-4-1": [
@@ -32812,10 +33185,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 13.2,
+          value: 12.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-4-1', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-4-1', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-4-1-mini": [
@@ -32826,10 +33199,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 8.8,
+          value: 10.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-4-1-mini', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-4-1-mini', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-4-1-nano": [
@@ -32840,10 +33213,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 4.1,
+          value: 7.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-4-1-nano', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-4-1-nano', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-4-5": [
@@ -32854,10 +33227,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 7.7,
+          value: 9.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-4-5', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-4-5', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-4-turbo": [
@@ -32868,10 +33241,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 2.3,
+          value: 7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-4-turbo', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-4-turbo', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-4o": [
@@ -32882,10 +33255,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 5.4,
+          value: 8.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-4o', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-4o', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-4o-2024-05-13": [
@@ -32896,10 +33269,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 3,
+          value: 7.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-4o-2024-05-13', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-4o-2024-05-13', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-4o-2024-08-06": [
@@ -32910,10 +33283,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 3.9,
+          value: 7.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-4o-2024-08-06', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-4o-2024-08-06', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-4o-chatgpt": [
@@ -32924,10 +33297,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 2.6,
+          value: 7.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-4o-chatgpt', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-4o-chatgpt', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-4o-chatgpt-03-25": [
@@ -32938,10 +33311,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 6.5,
+          value: 9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-4o-chatgpt-03-25', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-4o-chatgpt-03-25', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-4o-mini": [
@@ -32952,10 +33325,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1.4,
+          value: 6.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-4o-mini', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-4o-mini', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5": [
@@ -32966,10 +33339,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 27.1,
+          value: 23,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5-1": [
@@ -32980,10 +33353,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 29.1,
+          value: 24.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-1', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-1', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5-1-codex": [
@@ -32994,10 +33367,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 27.9,
+          value: 23.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-1-codex', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-1-codex', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5-1-codex-mini": [
@@ -33008,10 +33381,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 24,
+          value: 20.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-1-codex-mini', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-1-codex-mini', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5-1-non-reasoning": [
@@ -33022,10 +33395,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 14.2,
+          value: 13.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-1-non-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-1-non-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5-2": [
@@ -33036,10 +33409,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 35,
+          value: 30.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-2', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-2', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5-2-codex": [
@@ -33050,10 +33423,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 33,
+          value: 28.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-2-codex', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-2-codex', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5-2-medium": [
@@ -33064,10 +33437,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 30.9,
+          value: 26.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-2-medium', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-2-medium', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5-2-non-reasoning": [
@@ -33078,10 +33451,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 19.6,
+          value: 17,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-2-non-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-2-non-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5-3-codex": [
@@ -33092,10 +33465,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 36.9,
+          value: 32.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-3-codex', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-3-codex', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5-4": [
@@ -33106,10 +33479,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 42.8,
+          value: 39,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-4', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-4', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5-4-low": [
@@ -33120,10 +33493,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 32.1,
+          value: 27.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-4-low', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-4-low', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5-4-mini": [
@@ -33134,10 +33507,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 31.9,
+          value: 24.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-4-mini', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-4-mini', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5-4-mini-medium": [
@@ -33148,10 +33521,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 23.2,
+          value: 19.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-4-mini-medium', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-4-mini-medium', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5-4-mini-non-reasoning": [
@@ -33162,10 +33535,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 10.6,
+          value: 11.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-4-mini-non-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-4-mini-non-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5-4-nano": [
@@ -33176,10 +33549,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 30.9,
+          value: 21.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-4-nano', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-4-nano', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5-4-nano-medium": [
@@ -33190,10 +33563,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 23.5,
+          value: 20,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-4-nano-medium', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-4-nano-medium', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5-4-nano-non-reasoning": [
@@ -33204,10 +33577,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 11.5,
+          value: 11.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-4-nano-non-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-4-nano-non-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5-4-non-reasoning": [
@@ -33218,10 +33591,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 21.1,
+          value: 18.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-4-non-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-4-non-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5-5": [
@@ -33232,10 +33605,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 45.6,
+          value: 38.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-5', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-5', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5-5-high": [
@@ -33246,10 +33619,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 44.1,
+          value: 37.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-5-high', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-5-high', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5-5-instant-05-26": [
@@ -33260,10 +33633,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 26.7,
+          value: 22.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-5-instant-05-26', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-5-instant-05-26', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5-5-instant-06-26": [
@@ -33274,10 +33647,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 21.6,
+          value: 26.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-5-instant-06-26', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-5-instant-06-26', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5-5-low": [
@@ -33288,10 +33661,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 35.3,
+          value: 30.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-5-low', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-5-low', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5-5-medium": [
@@ -33302,10 +33675,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 41.2,
+          value: 34.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-5-medium', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-5-medium', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5-5-non-reasoning": [
@@ -33316,10 +33689,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 27.3,
+          value: 23.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-5-non-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-5-non-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5-6-luna-high": [
@@ -33330,10 +33703,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 37.4,
+          value: 32.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-luna-high', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-luna-high', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5-6-luna-low": [
@@ -33344,10 +33717,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 25.8,
+          value: 21.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-luna-low', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-luna-low', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5-6-luna-medium": [
@@ -33358,10 +33731,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 30.2,
+          value: 25.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-luna-medium', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-luna-medium', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5-6-luna-non-reasoning": [
@@ -33372,10 +33745,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 19.3,
+          value: 16.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-luna-non-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-luna-non-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5-6-luna-xhigh": [
@@ -33386,10 +33759,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 41.6,
+          value: 34.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-luna-xhigh', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-luna-xhigh', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5-6-sol": [
@@ -33400,10 +33773,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 51.3,
+          value: 47.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-sol', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-sol', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5-6-sol-high": [
@@ -33414,10 +33787,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 48.3,
+          value: 42.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-sol-high', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-sol-high', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5-6-sol-low": [
@@ -33428,10 +33801,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 40.8,
+          value: 33.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-sol-low', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-sol-low', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5-6-sol-medium": [
@@ -33442,10 +33815,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 46,
+          value: 39.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-sol-medium', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-sol-medium', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5-6-sol-non-reasoning": [
@@ -33456,10 +33829,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 32.9,
+          value: 28.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-sol-non-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-sol-non-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5-6-sol-xhigh": [
@@ -33470,10 +33843,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 49.8,
+          value: 44.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-sol-xhigh', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-sol-xhigh', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5-6-terra": [
@@ -33484,10 +33857,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 46.8,
+          value: 42.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-terra', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-terra', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5-6-terra-high": [
@@ -33498,10 +33871,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 41.3,
+          value: 34.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-terra-high', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-terra-high', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5-6-terra-low": [
@@ -33512,10 +33885,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 32.4,
+          value: 27.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-terra-low', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-terra-low', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5-6-terra-medium": [
@@ -33526,10 +33899,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 37.2,
+          value: 30.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-terra-medium', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-terra-medium', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5-6-terra-non-reasoning": [
@@ -33540,10 +33913,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 26.3,
+          value: 22.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-terra-non-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-terra-non-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5-6-terra-xhigh": [
@@ -33554,10 +33927,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 44.4,
+          value: 38.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-terra-xhigh', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-terra-xhigh', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5-chatgpt": [
@@ -33568,10 +33941,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 9.4,
+          value: 10.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-chatgpt', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-chatgpt', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5-codex": [
@@ -33582,10 +33955,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 29.2,
+          value: 24.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-codex', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-codex', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5-low": [
@@ -33596,10 +33969,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 24.4,
+          value: 20.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-low', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-low', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5-medium": [
@@ -33610,10 +33983,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 26.9,
+          value: 22.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-medium', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-medium', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5-mini": [
@@ -33624,10 +33997,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 18.4,
+          value: 17.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-mini', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-mini', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5-mini-medium": [
@@ -33638,10 +34011,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 24.2,
+          value: 20.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-mini-medium', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-mini-medium', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5-mini-minimal": [
@@ -33652,10 +34025,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 8.4,
+          value: 9.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-mini-minimal', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-mini-minimal', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5-minimal": [
@@ -33666,10 +34039,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 11.1,
+          value: 11.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-minimal', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-minimal', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5-nano": [
@@ -33680,10 +34053,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 13.7,
+          value: 13,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-nano', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-nano', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5-nano-medium": [
@@ -33694,10 +34067,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 12.9,
+          value: 12.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-nano-medium', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-nano-medium', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5-nano-minimal": [
@@ -33708,10 +34081,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 2.4,
+          value: 7.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-nano-minimal', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-nano-minimal', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5.5": [
@@ -33736,10 +34109,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 43.4,
+          value: 37.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-luna', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-luna', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-5.6-sol": [
@@ -33760,50 +34133,50 @@ var init_model_intellect_generated = __esm({
       ],
       "gpt-6-astra": [
         {
-          value: 54.7,
+          value: 52.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-6-astra', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-6-astra', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-6-astra-high": [
         {
-          value: 53.4,
+          value: 51,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-6-astra-high', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-6-astra-high', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-6-astra-low": [
         {
-          value: 49.3,
+          value: 46,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-6-astra-low', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-6-astra-low', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-6-astra-medium": [
         {
-          value: 52.2,
+          value: 49.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-6-astra-medium', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-6-astra-medium', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-6-astra-non-reasoning": [
         {
-          value: 47.8,
+          value: 45.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-6-astra-non-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-6-astra-non-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-6-astra-xhigh": [
         {
-          value: 54.3,
+          value: 52.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-6-astra-xhigh', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-6-astra-xhigh', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-oss-120b": [
@@ -33814,10 +34187,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 15.6,
+          value: 12.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-oss-120b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-oss-120b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-oss-120b-low": [
@@ -33828,10 +34201,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 8.9,
+          value: 10.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-oss-120b-low', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-oss-120b-low', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-oss-20b": [
@@ -33842,10 +34215,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 10.8,
+          value: 9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-oss-20b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-oss-20b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "gpt-oss-20b-low": [
@@ -33856,10 +34229,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 8.4,
+          value: 10,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-oss-20b-low', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-oss-20b-low', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "granite-3-3-8b-instruct": [
@@ -33870,10 +34243,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 4.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'granite-3-3-8b-instruct', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'granite-3-3-8b-instruct', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "granite-4-0-350m": [
@@ -33884,10 +34257,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 4.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'granite-4-0-350m', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'granite-4-0-350m', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "granite-4-0-h-350m": [
@@ -33898,10 +34271,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 4.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'granite-4-0-h-350m', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'granite-4-0-h-350m', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "granite-4-0-h-nano-1b": [
@@ -33912,10 +34285,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'granite-4-0-h-nano-1b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'granite-4-0-h-nano-1b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "granite-4-0-h-small": [
@@ -33926,10 +34299,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'granite-4-0-h-small', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'granite-4-0-h-small', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "granite-4-0-micro": [
@@ -33940,10 +34313,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'granite-4-0-micro', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'granite-4-0-micro', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "granite-4-0-nano-1b": [
@@ -33954,10 +34327,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'granite-4-0-nano-1b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'granite-4-0-nano-1b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "granite-4-1-30b": [
@@ -33968,10 +34341,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 3.2,
+          value: 7.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'granite-4-1-30b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'granite-4-1-30b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "granite-4-1-3b": [
@@ -33982,10 +34355,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'granite-4-1-3b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'granite-4-1-3b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "granite-4-1-8b": [
@@ -33996,10 +34369,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1.1,
+          value: 6.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'granite-4-1-8b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'granite-4-1-8b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "granite-4-2-30b": [
@@ -34010,10 +34383,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-01"
         },
         {
-          value: 16.5,
+          value: 14.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'granite-4-2-30b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'granite-4-2-30b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "granite-4-2-3b": [
@@ -34024,10 +34397,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-01"
         },
         {
-          value: 10.7,
+          value: 9.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'granite-4-2-3b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'granite-4-2-3b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "granite-4-2-8b": [
@@ -34038,10 +34411,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-01"
         },
         {
-          value: 13.9,
+          value: 11.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'granite-4-2-8b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'granite-4-2-8b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "grok-1": [
@@ -34052,10 +34425,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 6.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'grok-1', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'grok-1', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "grok-2-1212": [
@@ -34066,10 +34439,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 2.4,
+          value: 7.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'grok-2-1212', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'grok-2-1212', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "grok-3": [
@@ -34080,10 +34453,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 12.3,
+          value: 12.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'grok-3', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'grok-3', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "grok-3-mini-reasoning": [
@@ -34094,10 +34467,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 16.2,
+          value: 14.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'grok-3-mini-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'grok-3-mini-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "grok-3-reasoning": [
@@ -34108,10 +34481,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 9.2,
+          value: 10.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'grok-3-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'grok-3-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "grok-4": [
@@ -34122,10 +34495,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 26.5,
+          value: 22.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'grok-4', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'grok-4', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "grok-4-1-fast": [
@@ -34136,10 +34509,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 10.9,
+          value: 11.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'grok-4-1-fast', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'grok-4-1-fast', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "grok-4-1-fast-reasoning": [
@@ -34150,10 +34523,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 23.9,
+          value: 20.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'grok-4-1-fast-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'grok-4-1-fast-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "grok-4-20": [
@@ -34164,10 +34537,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 30,
+          value: 25.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'grok-4-20', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'grok-4-20', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "grok-4-20-0309": [
@@ -34178,10 +34551,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 29.5,
+          value: 25.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'grok-4-20-0309', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'grok-4-20-0309', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "grok-4-20-0309-non-reasoning": [
@@ -34192,10 +34565,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 16.2,
+          value: 14.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'grok-4-20-0309-non-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'grok-4-20-0309-non-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "grok-4-20-non-reasoning": [
@@ -34206,10 +34579,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 15.6,
+          value: 14.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'grok-4-20-non-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'grok-4-20-non-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "grok-4-3": [
@@ -34220,10 +34593,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 29.9,
+          value: 25.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'grok-4-3', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'grok-4-3', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "grok-4-3-low": [
@@ -34234,10 +34607,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 28.5,
+          value: 24.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'grok-4-3-low', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'grok-4-3-low', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "grok-4-3-medium": [
@@ -34248,10 +34621,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 29.1,
+          value: 24.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'grok-4-3-medium', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'grok-4-3-medium', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "grok-4-3-non-reasoning": [
@@ -34262,10 +34635,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 17.5,
+          value: 14.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'grok-4-3-non-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'grok-4-3-non-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "grok-4-6": [
@@ -34276,10 +34649,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 50.6,
+          value: 44.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'grok-4-6', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'grok-4-6', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "grok-4-6-low": [
@@ -34290,10 +34663,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-25"
         },
         {
-          value: 41.6,
+          value: 35.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'grok-4-6-low', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'grok-4-6-low', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "grok-4-6-medium": [
@@ -34304,10 +34677,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-25"
         },
         {
-          value: 48.8,
+          value: 43,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'grok-4-6-medium', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'grok-4-6-medium', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "grok-4-6-xhigh": [
@@ -34318,10 +34691,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-25"
         },
         {
-          value: 49.9,
+          value: 44.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'grok-4-6-xhigh', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'grok-4-6-xhigh', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "grok-4-fast": [
@@ -34332,10 +34705,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 10.5,
+          value: 11.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'grok-4-fast', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'grok-4-fast', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "grok-4-fast-reasoning": [
@@ -34346,10 +34719,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 20.8,
+          value: 17.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'grok-4-fast-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'grok-4-fast-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "grok-4.5": [
@@ -34360,10 +34733,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 45.5,
+          value: 39.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'grok-4-5', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'grok-4-5', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "grok-beta": [
@@ -34374,10 +34747,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1.9,
+          value: 6.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'grok-beta', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'grok-beta', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "grok-build-0-1-06-16": [
@@ -34388,10 +34761,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 31.7,
+          value: 27.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'grok-build-0-1-06-16', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'grok-build-0-1-06-16', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "grok-code-fast-1": [
@@ -34402,10 +34775,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 15.4,
+          value: 14.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'grok-code-fast-1', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'grok-code-fast-1', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "hermes-3-llama-3-1-70b": [
@@ -34416,10 +34789,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'hermes-3-llama-3-1-70b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'hermes-3-llama-3-1-70b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "hermes-4-llama-3-1-405b": [
@@ -34430,10 +34803,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 3.2,
+          value: 7.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'hermes-4-llama-3-1-405b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'hermes-4-llama-3-1-405b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "hermes-4-llama-3-1-405b-reasoning": [
@@ -34444,10 +34817,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 3.4,
+          value: 7.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'hermes-4-llama-3-1-405b-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'hermes-4-llama-3-1-405b-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "hermes-4-llama-3-1-70b": [
@@ -34458,10 +34831,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1.3,
+          value: 6.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'hermes-4-llama-3-1-70b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'hermes-4-llama-3-1-70b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "hermes-4-llama-3-1-70b-reasoning": [
@@ -34472,10 +34845,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 4.3,
+          value: 7.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'hermes-4-llama-3-1-70b-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'hermes-4-llama-3-1-70b-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       hy3: [
@@ -34486,10 +34859,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 32.4,
+          value: 25.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'hy3', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'hy3', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "hy3-non-reasoning": [
@@ -34500,10 +34873,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 19.6,
+          value: 17,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'hy3-non-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'hy3-non-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "hy3-preview": [
@@ -34514,10 +34887,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 26.8,
+          value: 22.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'hy3-preview', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'hy3-preview', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "hyperclova-x-seed-think-32b": [
@@ -34528,10 +34901,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 11,
+          value: 11.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'hyperclova-x-seed-think-32b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'hyperclova-x-seed-think-32b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "hypernova-60b": [
@@ -34556,10 +34929,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 32.2,
+          value: 25.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'inkling', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'inkling', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "inkling-small": [
@@ -34570,10 +34943,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 32.2,
+          value: 26.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'inkling-small', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'inkling-small', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "intellect-3": [
@@ -34584,10 +34957,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 9.6,
+          value: 10.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'intellect-3', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'intellect-3', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "jamba-1-5-large": [
@@ -34598,10 +34971,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'jamba-1-5-large', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'jamba-1-5-large', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "jamba-1-5-mini": [
@@ -34612,10 +34985,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'jamba-1-5-mini', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'jamba-1-5-mini', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "jamba-1-6-large": [
@@ -34626,10 +34999,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'jamba-1-6-large', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'jamba-1-6-large', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "jamba-1-6-mini": [
@@ -34640,10 +35013,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'jamba-1-6-mini', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'jamba-1-6-mini', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "jamba-1-7-large": [
@@ -34654,10 +35027,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 6.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'jamba-1-7-large', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'jamba-1-7-large', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "jamba-1-7-mini": [
@@ -34668,10 +35041,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'jamba-1-7-mini', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'jamba-1-7-mini', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "jamba-reasoning-3b": [
@@ -34682,10 +35055,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'jamba-reasoning-3b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'jamba-reasoning-3b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "jt-35b-flash": [
@@ -34696,10 +35069,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 21.8,
+          value: 18.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'jt-35b-flash', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'jt-35b-flash', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "jt-4-1-flash-236b-a21b": [
@@ -34710,10 +35083,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 31.8,
+          value: 27.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'jt-4-1-flash-236b-a21b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'jt-4-1-flash-236b-a21b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "jt-mini": [
@@ -34724,10 +35097,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 12.4,
+          value: 12.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'jt-mini', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'jt-mini', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "k-exaone": [
@@ -34738,10 +35111,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 15.8,
+          value: 14.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'k-exaone', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'k-exaone', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "k-exaone-2-0-0803": [
@@ -34752,10 +35125,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 23.1,
+          value: 19.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'k-exaone-2-0-0803', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'k-exaone-2-0-0803', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "k-exaone-non-reasoning": [
@@ -34766,18 +35139,18 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 10.7,
+          value: 11.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'k-exaone-non-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'k-exaone-non-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "k2-horizon-375b-a23b": [
         {
-          value: 37.8,
+          value: 33.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'k2-horizon-375b-a23b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'k2-horizon-375b-a23b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "k2-think-v2": [
@@ -34788,10 +35161,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 11.2,
+          value: 11.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'k2-think-v2', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'k2-think-v2', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "k2-v2": [
@@ -34802,10 +35175,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 8.3,
+          value: 9.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'k2-v2', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'k2-v2', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "k2-v2-low": [
@@ -34816,10 +35189,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 2.9,
+          value: 7.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'k2-v2-low', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'k2-v2-low', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "k2-v2-medium": [
@@ -34830,10 +35203,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 6.6,
+          value: 9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'k2-v2-medium', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'k2-v2-medium', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "kat-coder-pro-v1": [
@@ -34844,10 +35217,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 21.7,
+          value: 18.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'kat-coder-pro-v1', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'kat-coder-pro-v1', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "kat-coder-pro-v2": [
@@ -34858,10 +35231,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-18"
         },
         {
-          value: 25.6,
+          value: 21.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'kat-coder-pro-v2', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'kat-coder-pro-v2', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "kimi-k2": [
@@ -34872,10 +35245,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 13.3,
+          value: 12.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'kimi-k2', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'kimi-k2', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "kimi-k2-0905": [
@@ -34886,10 +35259,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 17.2,
+          value: 15.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'kimi-k2-0905', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'kimi-k2-0905', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "kimi-k2-5": [
@@ -34900,10 +35273,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 27.6,
+          value: 23.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'kimi-k2-5', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'kimi-k2-5', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "kimi-k2-5-non-reasoning": [
@@ -34914,10 +35287,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 22.8,
+          value: 19.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'kimi-k2-5-non-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'kimi-k2-5-non-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "kimi-k2-6-non-reasoning": [
@@ -34928,10 +35301,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 27.7,
+          value: 23.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'kimi-k2-6-non-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'kimi-k2-6-non-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "kimi-k2-7-code": [
@@ -34942,10 +35315,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 32.7,
+          value: 26.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'kimi-k2-7-code', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'kimi-k2-7-code', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "kimi-k2-thinking": [
@@ -34956,10 +35329,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 25.9,
+          value: 22,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'kimi-k2-thinking', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'kimi-k2-thinking', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "kimi-k3-low": [
@@ -34970,10 +35343,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 37.1,
+          value: 34.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'kimi-k3-low', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'kimi-k3-low', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "kimi-linear-48b-a3b-instruct": [
@@ -34984,10 +35357,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 2.9,
+          value: 7.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'kimi-linear-48b-a3b-instruct', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'kimi-linear-48b-a3b-instruct', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "lfm-40b": [
@@ -34998,10 +35371,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'lfm-40b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'lfm-40b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "lfm2-1-2b": [
@@ -35012,10 +35385,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 4.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'lfm2-1-2b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'lfm2-1-2b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "lfm2-2-6b": [
@@ -35026,10 +35399,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'lfm2-2-6b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'lfm2-2-6b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "lfm2-24b-a2b": [
@@ -35040,10 +35413,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'lfm2-24b-a2b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'lfm2-24b-a2b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "lfm2-5-1-2b-instruct": [
@@ -35054,10 +35427,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'lfm2-5-1-2b-instruct', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'lfm2-5-1-2b-instruct', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "lfm2-5-1-2b-thinking": [
@@ -35068,10 +35441,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'lfm2-5-1-2b-thinking', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'lfm2-5-1-2b-thinking', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "lfm2-5-2-6b": [
@@ -35082,10 +35455,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-25"
         },
         {
-          value: 5.3,
+          value: 8.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'lfm2-5-2-6b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'lfm2-5-2-6b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "lfm2-5-8b-a1b": [
@@ -35096,10 +35469,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 2.7,
+          value: 7.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'lfm2-5-8b-a1b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'lfm2-5-8b-a1b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "lfm2-5-vl-1-6b": [
@@ -35110,10 +35483,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 4.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'lfm2-5-vl-1-6b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'lfm2-5-vl-1-6b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "lfm2-8b-a1b": [
@@ -35124,10 +35497,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 4.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'lfm2-8b-a1b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'lfm2-8b-a1b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "ling-1t": [
@@ -35138,10 +35511,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 6.9,
+          value: 9.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'ling-1t', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'ling-1t', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "ling-2-6-1t": [
@@ -35152,10 +35525,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 19.6,
+          value: 17,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'ling-2-6-1t', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'ling-2-6-1t', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "ling-2-6-flash": [
@@ -35166,10 +35539,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 7.9,
+          value: 9.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'ling-2-6-flash', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'ling-2-6-flash', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "ling-3-0-flash": [
@@ -35180,10 +35553,18 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 27.4,
+          value: 24.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'ling-3-0-flash', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'ling-3-0-flash', fetched 2026-09-11",
+          asOf: "2026-09-11"
+        }
+      ],
+      "ling-3-0-flash-vl": [
+        {
+          value: 24.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'ling-3-0-flash-vl', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "ling-3-0-tiny": [
@@ -35194,10 +35575,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 15.7,
+          value: 11.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'ling-3-0-tiny', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'ling-3-0-tiny', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "ling-flash-2-0": [
@@ -35208,10 +35589,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 4.1,
+          value: 7.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'ling-flash-2-0', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'ling-flash-2-0', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "ling-mini-2-0": [
@@ -35222,10 +35603,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'ling-mini-2-0', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'ling-mini-2-0', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "llama-2-chat-13b": [
@@ -35236,10 +35617,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'llama-2-chat-13b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'llama-2-chat-13b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "llama-2-chat-70b": [
@@ -35250,10 +35631,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'llama-2-chat-70b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'llama-2-chat-70b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "llama-2-chat-7b": [
@@ -35264,10 +35645,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'llama-2-chat-7b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'llama-2-chat-7b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "llama-3-1-instruct-405b": [
@@ -35278,10 +35659,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 2.9,
+          value: 7.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'llama-3-1-instruct-405b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'llama-3-1-instruct-405b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "llama-3-1-instruct-70b": [
@@ -35292,10 +35673,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1.2,
+          value: 6.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'llama-3-1-instruct-70b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'llama-3-1-instruct-70b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "llama-3-1-instruct-8b": [
@@ -35306,10 +35687,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 2,
+          value: 6.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'llama-3-1-instruct-8b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'llama-3-1-instruct-8b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "llama-3-1-nemotron-instruct-70b": [
@@ -35320,10 +35701,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 2.1,
+          value: 6.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'llama-3-1-nemotron-instruct-70b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'llama-3-1-nemotron-instruct-70b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "llama-3-1-nemotron-nano-4b-reasoning": [
@@ -35334,10 +35715,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 2.9,
+          value: 7.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'llama-3-1-nemotron-nano-4b-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'llama-3-1-nemotron-nano-4b-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "llama-3-1-nemotron-ultra-253b-v1-reasoning": [
@@ -35348,10 +35729,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 3.4,
+          value: 7.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'llama-3-1-nemotron-ultra-253b-v1-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'llama-3-1-nemotron-ultra-253b-v1-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "llama-3-2-instruct-11b-vision": [
@@ -35362,10 +35743,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'llama-3-2-instruct-11b-vision', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'llama-3-2-instruct-11b-vision', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "llama-3-2-instruct-1b": [
@@ -35376,10 +35757,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 4.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'llama-3-2-instruct-1b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'llama-3-2-instruct-1b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "llama-3-2-instruct-3b": [
@@ -35390,10 +35771,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'llama-3-2-instruct-3b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'llama-3-2-instruct-3b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "llama-3-2-instruct-90b-vision": [
@@ -35404,10 +35785,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 6.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'llama-3-2-instruct-90b-vision', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'llama-3-2-instruct-90b-vision', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "llama-3-3-instruct-70b": [
@@ -35418,10 +35799,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 3.7,
+          value: 7.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'llama-3-3-instruct-70b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'llama-3-3-instruct-70b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "llama-3-3-nemotron-super-49b": [
@@ -35432,10 +35813,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 2.8,
+          value: 7.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'llama-3-3-nemotron-super-49b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'llama-3-3-nemotron-super-49b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "llama-3-3-nemotron-super-49b-reasoning": [
@@ -35446,10 +35827,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 6.4,
+          value: 8.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'llama-3-3-nemotron-super-49b-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'llama-3-3-nemotron-super-49b-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "llama-3-instruct-70b": [
@@ -35460,10 +35841,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'llama-3-instruct-70b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'llama-3-instruct-70b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "llama-3-instruct-8b": [
@@ -35474,10 +35855,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 4.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'llama-3-instruct-8b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'llama-3-instruct-8b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "llama-4-maverick": [
@@ -35488,10 +35869,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 10.3,
+          value: 9.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'llama-4-maverick', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'llama-4-maverick', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "llama-4-scout": [
@@ -35502,10 +35883,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 4.6,
+          value: 6.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'llama-4-scout', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'llama-4-scout', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "llama-65b": [
@@ -35516,10 +35897,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'llama-65b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'llama-65b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "llama-nemotron-super-49b-v1-5": [
@@ -35530,10 +35911,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 3,
+          value: 7.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'llama-nemotron-super-49b-v1-5', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'llama-nemotron-super-49b-v1-5', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "llama-nemotron-super-49b-v1-5-reasoning": [
@@ -35544,10 +35925,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 6.6,
+          value: 9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'llama-nemotron-super-49b-v1-5-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'llama-nemotron-super-49b-v1-5-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "longcat-2-0": [
@@ -35558,10 +35939,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-18"
         },
         {
-          value: 25.8,
+          value: 19.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'longcat-2-0', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'longcat-2-0', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "longcat-flash-lite": [
@@ -35572,10 +35953,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 11.2,
+          value: 11.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'longcat-flash-lite', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'longcat-flash-lite', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "magistral-medium": [
@@ -35586,10 +35967,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 6.7,
+          value: 9.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'magistral-medium', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'magistral-medium', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "magistral-medium-2509": [
@@ -35614,10 +35995,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 5,
+          value: 8.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'magistral-small', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'magistral-small', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "magistral-small-2509": [
@@ -35628,10 +36009,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 5.7,
+          value: 8.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'magistral-small-2509', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'magistral-small-2509', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "mercury-2": [
@@ -35642,10 +36023,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 14.9,
+          value: 11.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mercury-2', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'mercury-2', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "mi-dm-k-2-5-pro-dec28": [
@@ -35656,10 +36037,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 10.4,
+          value: 11,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mi-dm-k-2-5-pro-dec28', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'mi-dm-k-2-5-pro-dec28', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "microsoft/phi-4": [
@@ -35670,10 +36051,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'phi-4', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'phi-4', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "mimo-v2-0206": [
@@ -35684,10 +36065,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 26.4,
+          value: 22.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mimo-v2-0206', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'mimo-v2-0206', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "mimo-v2-5-0424": [
@@ -35698,10 +36079,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 28.2,
+          value: 22.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mimo-v2-5-0424', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'mimo-v2-5-0424', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "mimo-v2-5-pro": [
@@ -35712,10 +36093,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 32.6,
+          value: 26.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mimo-v2-5-pro', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'mimo-v2-5-pro', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "mimo-v2-5-pro-non-reasoning": [
@@ -35726,10 +36107,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 21.3,
+          value: 18.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mimo-v2-5-pro-non-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'mimo-v2-5-pro-non-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "mimo-v2-flash": [
@@ -35740,10 +36121,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 18.3,
+          value: 16,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mimo-v2-flash', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'mimo-v2-flash', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "mimo-v2-flash-reasoning": [
@@ -35754,10 +36135,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 24.5,
+          value: 20.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mimo-v2-flash-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'mimo-v2-flash-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "mimo-v2-omni": [
@@ -35768,10 +36149,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 28.1,
+          value: 23.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mimo-v2-omni', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'mimo-v2-omni', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "mimo-v2-omni-0327": [
@@ -35782,10 +36163,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 29.4,
+          value: 25.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mimo-v2-omni-0327', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'mimo-v2-omni-0327', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "mimo-v2-pro": [
@@ -35796,10 +36177,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 33.1,
+          value: 28.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mimo-v2-pro', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'mimo-v2-pro', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "minicpm-v4-6-1-3b": [
@@ -35810,10 +36191,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'minicpm-v4-6-1-3b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'minicpm-v4-6-1-3b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "minicpm5-1b": [
@@ -35824,10 +36205,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 6.2,
+          value: 8.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'minicpm5-1b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'minicpm5-1b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "minicpm5-1b-non-reasoning": [
@@ -35838,18 +36219,18 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 6,
+          value: 8.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'minicpm5-1b-non-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'minicpm5-1b-non-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "minicpm5-2b": [
         {
-          value: 15,
+          value: 13.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'minicpm5-2b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'minicpm5-2b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "minimax-m1-40k": [
@@ -35860,10 +36241,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 8.5,
+          value: 10,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'minimax-m1-40k', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'minimax-m1-40k', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "minimax-m1-80k": [
@@ -35874,10 +36255,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 11.6,
+          value: 11.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'minimax-m1-80k', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'minimax-m1-80k', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "minimax-m2": [
@@ -35888,10 +36269,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 21.7,
+          value: 18.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'minimax-m2', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'minimax-m2', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "minimax-m2-1": [
@@ -35902,10 +36283,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 24.6,
+          value: 20.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'minimax-m2-1', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'minimax-m2-1', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "minimax-m2-5": [
@@ -35916,10 +36297,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 26.8,
+          value: 22.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'minimax-m2-5', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'minimax-m2-5', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "minimax-m2-7": [
@@ -35930,10 +36311,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 30.1,
+          value: 23.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'minimax-m2-7', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'minimax-m2-7', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "ministral-3-14b": [
@@ -35944,10 +36325,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 5.5,
+          value: 6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'ministral-3-14b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'ministral-3-14b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "ministral-3-3b": [
@@ -35958,10 +36339,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1.7,
+          value: 4.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'ministral-3-3b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'ministral-3-3b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "ministral-3-8b": [
@@ -35972,10 +36353,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 3.5,
+          value: 5.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'ministral-3-8b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'ministral-3-8b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "mistral-7b-instruct": [
@@ -35986,10 +36367,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mistral-7b-instruct', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'mistral-7b-instruct', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "mistral-8x22b-instruct": [
@@ -36000,10 +36381,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mistral-8x22b-instruct', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'mistral-8x22b-instruct', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "mistral-large": [
@@ -36014,10 +36395,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mistral-large', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'mistral-large', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "mistral-large-2": [
@@ -36028,10 +36409,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 3.5,
+          value: 7.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mistral-large-2', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'mistral-large-2', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "mistral-large-2407": [
@@ -36042,10 +36423,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1.7,
+          value: 6.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mistral-large-2407', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'mistral-large-2407', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "mistral-large-3": [
@@ -36056,10 +36437,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 11.1,
+          value: 9.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mistral-large-3', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'mistral-large-3', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "mistral-medium": [
@@ -36070,10 +36451,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mistral-medium', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'mistral-medium', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "mistral-medium-3": [
@@ -36084,10 +36465,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 6.7,
+          value: 9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mistral-medium-3', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'mistral-medium-3', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "mistral-medium-3-1": [
@@ -36098,10 +36479,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 8.4,
+          value: 9.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mistral-medium-3-1', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'mistral-medium-3-1', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "mistral-medium-3-5": [
@@ -36112,10 +36493,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 22.7,
+          value: 14.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mistral-medium-3-5', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'mistral-medium-3-5', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "mistral-saba": [
@@ -36126,10 +36507,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 6.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mistral-saba', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'mistral-saba', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "mistral-small": [
@@ -36140,10 +36521,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mistral-small', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'mistral-small', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "mistral-small-2402": [
@@ -36154,10 +36535,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mistral-small-2402', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'mistral-small-2402', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "mistral-small-3-2": [
@@ -36168,10 +36549,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 5,
+          value: 7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mistral-small-3-2', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'mistral-small-3-2', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "mistral-small-4": [
@@ -36182,10 +36563,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 12.8,
+          value: 11.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mistral-small-4', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'mistral-small-4', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "mistral-small-4-non-reasoning": [
@@ -36196,10 +36577,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 6.6,
+          value: 9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mistral-small-4-non-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'mistral-small-4-non-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "mistralai/mistral-small-24b": [
@@ -36210,10 +36591,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-01"
         },
         {
-          value: 1.4,
+          value: 6.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mistral-small-3', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'mistral-small-3', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "mixtral-8x7b-instruct": [
@@ -36224,10 +36605,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mixtral-8x7b-instruct', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'mixtral-8x7b-instruct', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "molmo-7b-d": [
@@ -36238,10 +36619,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'molmo-7b-d', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'molmo-7b-d', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "molmo2-8b": [
@@ -36252,10 +36633,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'molmo2-8b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'molmo2-8b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "moonshotai/kimi-k2.6": [
@@ -36272,10 +36653,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 35.8,
+          value: 31.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'kimi-k2-6', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'kimi-k2-6', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "moonshotai/kimi-k3": [
@@ -36286,10 +36667,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 50.2,
+          value: 43.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'kimi-k3', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'kimi-k3', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "motif-0714": [
@@ -36300,10 +36681,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 36.8,
+          value: 32.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'motif-0714', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'motif-0714', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "motif-2-12-7b": [
@@ -36314,10 +36695,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 7,
+          value: 9.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'motif-2-12-7b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'motif-2-12-7b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "motif-3": [
@@ -36328,10 +36709,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 38,
+          value: 33.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'motif-3', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'motif-3', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "muse-glimmer": [
@@ -36342,10 +36723,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 24.4,
+          value: 18.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'muse-glimmer', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'muse-glimmer', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "muse-spark": [
@@ -36356,10 +36737,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 35.8,
+          value: 31.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'muse-spark', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'muse-spark', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "muse-spark-1-1": [
@@ -36370,10 +36751,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 41.2,
+          value: 34.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'muse-spark-1-1', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'muse-spark-1-1', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "muse-spark-1-2": [
@@ -36384,26 +36765,26 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 46.8,
+          value: 39.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'muse-spark-1-2', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'muse-spark-1-2', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "muse-spark-1-3": [
         {
-          value: 53,
+          value: 48.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'muse-spark-1-3', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'muse-spark-1-3', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "muse-spark-1-3-xhigh": [
         {
-          value: 51.6,
+          value: 45.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'muse-spark-1-3-xhigh', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'muse-spark-1-3-xhigh', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "nanbeige4-1-3b": [
@@ -36414,10 +36795,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 5.3,
+          value: 8.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'nanbeige4-1-3b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'nanbeige4-1-3b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "nemotron-3-5-lightning": [
@@ -36428,10 +36809,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 16.4,
+          value: 13.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'nemotron-3-5-lightning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'nemotron-3-5-lightning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "nemotron-3-nano-omni-30b-a3b": [
@@ -36442,10 +36823,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 9,
+          value: 10.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'nemotron-3-nano-omni-30b-a3b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'nemotron-3-nano-omni-30b-a3b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "nemotron-cascade-2-30b-a3b": [
@@ -36456,10 +36837,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 11.5,
+          value: 11.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'nemotron-cascade-2-30b-a3b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'nemotron-cascade-2-30b-a3b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "nex-n2-pro": [
@@ -36470,10 +36851,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-18"
         },
         {
-          value: 32.7,
+          value: 28.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'nex-n2-pro', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'nex-n2-pro', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "north-mini-code": [
@@ -36484,10 +36865,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 13.5,
+          value: 12.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'north-mini-code', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'north-mini-code', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "nova-2-0-lite": [
@@ -36498,10 +36879,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 6,
+          value: 8.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'nova-2-0-lite', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'nova-2-0-lite', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "nova-2-0-lite-reasoning": [
@@ -36512,10 +36893,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 14.3,
+          value: 13.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'nova-2-0-lite-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'nova-2-0-lite-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "nova-2-0-lite-reasoning-low": [
@@ -36526,10 +36907,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 11.7,
+          value: 11.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'nova-2-0-lite-reasoning-low', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'nova-2-0-lite-reasoning-low', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "nova-2-0-lite-reasoning-medium": [
@@ -36540,10 +36921,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 12.9,
+          value: 12.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'nova-2-0-lite-reasoning-medium', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'nova-2-0-lite-reasoning-medium', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "nova-2-0-omni": [
@@ -36554,10 +36935,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 4.8,
+          value: 8.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'nova-2-0-omni', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'nova-2-0-omni', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "nova-2-0-omni-reasoning-low": [
@@ -36568,10 +36949,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 10.6,
+          value: 11.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'nova-2-0-omni-reasoning-low', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'nova-2-0-omni-reasoning-low', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "nova-2-0-omni-reasoning-medium": [
@@ -36582,10 +36963,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 14.7,
+          value: 13.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'nova-2-0-omni-reasoning-medium', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'nova-2-0-omni-reasoning-medium', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "nova-2-0-pro": [
@@ -36596,10 +36977,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 8.5,
+          value: 10,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'nova-2-0-pro', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'nova-2-0-pro', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "nova-2-0-pro-reasoning-low": [
@@ -36610,10 +36991,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 13.4,
+          value: 12.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'nova-2-0-pro-reasoning-low', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'nova-2-0-pro-reasoning-low', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "nova-2-0-pro-reasoning-medium": [
@@ -36624,10 +37005,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 15.5,
+          value: 14.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'nova-2-0-pro-reasoning-medium', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'nova-2-0-pro-reasoning-medium', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "nova-lite": [
@@ -36638,10 +37019,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1.4,
+          value: 6.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'nova-lite', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'nova-lite', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "nova-micro": [
@@ -36652,10 +37033,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'nova-micro', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'nova-micro', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "nova-premier": [
@@ -36666,10 +37047,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 6.9,
+          value: 9.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'nova-premier', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'nova-premier', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "nova-pro": [
@@ -36680,10 +37061,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 2.1,
+          value: 7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'nova-pro', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'nova-pro', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "nvidia-nemotron-3-nano-30b-a3b": [
@@ -36694,10 +37075,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1.8,
+          value: 6.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'nvidia-nemotron-3-nano-30b-a3b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'nvidia-nemotron-3-nano-30b-a3b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "nvidia-nemotron-3-nano-30b-a3b-reasoning": [
@@ -36708,10 +37089,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 8.6,
+          value: 8.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'nvidia-nemotron-3-nano-30b-a3b-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'nvidia-nemotron-3-nano-30b-a3b-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "nvidia-nemotron-3-nano-4b": [
@@ -36722,10 +37103,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 3.1,
+          value: 7.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'nvidia-nemotron-3-nano-4b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'nvidia-nemotron-3-nano-4b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "nvidia-nemotron-3-super-120b-a12b": [
@@ -36736,10 +37117,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 18.6,
+          value: 13.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'nvidia-nemotron-3-super-120b-a12b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'nvidia-nemotron-3-super-120b-a12b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "nvidia-nemotron-3-ultra-550b-a55b": [
@@ -36750,10 +37131,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 29.3,
+          value: 23.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'nvidia-nemotron-3-ultra-550b-a55b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'nvidia-nemotron-3-ultra-550b-a55b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "nvidia-nemotron-nano-12b-v2-vl": [
@@ -36764,10 +37145,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'nvidia-nemotron-nano-12b-v2-vl', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'nvidia-nemotron-nano-12b-v2-vl', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "nvidia-nemotron-nano-12b-v2-vl-reasoning": [
@@ -36778,10 +37159,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 3.3,
+          value: 7.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'nvidia-nemotron-nano-12b-v2-vl-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'nvidia-nemotron-nano-12b-v2-vl-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "nvidia-nemotron-nano-9b-v2": [
@@ -36792,10 +37173,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1.8,
+          value: 6.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'nvidia-nemotron-nano-9b-v2', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'nvidia-nemotron-nano-9b-v2', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "nvidia-nemotron-nano-9b-v2-reasoning": [
@@ -36806,10 +37187,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 3.2,
+          value: 7.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'nvidia-nemotron-nano-9b-v2-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'nvidia-nemotron-nano-9b-v2-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       o1: [
@@ -36820,10 +37201,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 17.1,
+          value: 15.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'o1', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'o1', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "o1-mini": [
@@ -36834,10 +37215,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 8.1,
+          value: 9.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'o1-mini', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'o1-mini', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "o1-preview": [
@@ -36848,10 +37229,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 11,
+          value: 11.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'o1-preview', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'o1-preview', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "o1-pro": [
@@ -36862,10 +37243,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 12.8,
+          value: 12.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'o1-pro', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'o1-pro', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       o3: [
@@ -36876,10 +37257,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 23.7,
+          value: 20.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'o3', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'o3', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "o3-mini": [
@@ -36890,10 +37271,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 12.9,
+          value: 12.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'o3-mini', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'o3-mini', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "o3-mini-high": [
@@ -36904,10 +37285,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 9.6,
+          value: 11,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'o3-mini-high', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'o3-mini-high', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "o3-pro": [
@@ -36918,10 +37299,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 25.7,
+          value: 21.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'o3-pro', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'o3-pro', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "o4-mini": [
@@ -36932,10 +37313,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 19.1,
+          value: 16.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'o4-mini', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'o4-mini', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "olmo-2-32b": [
@@ -36946,10 +37327,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'olmo-2-32b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'olmo-2-32b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "olmo-2-7b": [
@@ -36960,10 +37341,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'olmo-2-7b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'olmo-2-7b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "olmo-3-1-32b-instruct": [
@@ -36974,10 +37355,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 6.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'olmo-3-1-32b-instruct', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'olmo-3-1-32b-instruct', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "olmo-3-1-32b-think": [
@@ -36988,10 +37369,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 2.5,
+          value: 7.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'olmo-3-1-32b-think', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'olmo-3-1-32b-think', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "olmo-3-32b-think": [
@@ -37002,10 +37383,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 6.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'olmo-3-32b-think', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'olmo-3-32b-think', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "olmo-3-7b-instruct": [
@@ -37016,10 +37397,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'olmo-3-7b-instruct', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'olmo-3-7b-instruct', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "olmo-3-7b-think": [
@@ -37030,10 +37411,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'olmo-3-7b-think', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'olmo-3-7b-think', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "openchat-35": [
@@ -37044,10 +37425,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'openchat-35', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'openchat-35', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "palm-2": [
@@ -37058,10 +37439,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'palm-2', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'palm-2', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "phi-3-mini": [
@@ -37072,10 +37453,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'phi-3-mini', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'phi-3-mini', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "phi-4-mini": [
@@ -37086,10 +37467,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 6.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'phi-4-mini', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'phi-4-mini', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "phi-4-multimodal": [
@@ -37100,10 +37481,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'phi-4-multimodal', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'phi-4-multimodal', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "pixtral-large-2411": [
@@ -37114,18 +37495,18 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 2.5,
+          value: 7.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'pixtral-large-2411', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'pixtral-large-2411', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "quasar-438b": [
         {
-          value: 34.2,
+          value: 27.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'quasar-438b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'quasar-438b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen-2-5-max": [
@@ -37136,10 +37517,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 4.5,
+          value: 8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen-2-5-max', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen-2-5-max', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen-chat-14b": [
@@ -37150,10 +37531,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen-chat-14b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen-chat-14b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen-chat-72b": [
@@ -37164,10 +37545,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen-chat-72b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen-chat-72b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen-turbo": [
@@ -37178,10 +37559,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 6.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen-turbo', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen-turbo', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen/qwen2.5-coder-32b": [
@@ -37192,10 +37573,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1.6,
+          value: 6.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen2-5-coder-32b-instruct', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen2-5-coder-32b-instruct', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen/qwen3.6-35b-a3b": [
@@ -37206,10 +37587,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 26.2,
+          value: 18.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-6-35b-a3b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-6-35b-a3b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen1.5-110b-chat": [
@@ -37220,10 +37601,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen1.5-110b-chat', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen1.5-110b-chat', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen2-5-72b-instruct": [
@@ -37234,10 +37615,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 3.9,
+          value: 7.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen2-5-72b-instruct', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen2-5-72b-instruct', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen2-5-coder-7b-instruct": [
@@ -37248,10 +37629,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen2-5-coder-7b-instruct', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen2-5-coder-7b-instruct', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen2-72b-instruct": [
@@ -37262,10 +37643,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 6.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen2-72b-instruct', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen2-72b-instruct', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen2.5-32b-instruct": [
@@ -37276,10 +37657,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1.9,
+          value: 6.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen2.5-32b-instruct', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen2.5-32b-instruct', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-0.6b-instruct": [
@@ -37290,10 +37671,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 4.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-0.6b-instruct', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-0.6b-instruct', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-0.6b-instruct-reasoning": [
@@ -37304,10 +37685,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 4.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-0.6b-instruct-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-0.6b-instruct-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-1.7b-instruct": [
@@ -37318,10 +37699,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 4.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-1.7b-instruct', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-1.7b-instruct', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-1.7b-instruct-reasoning": [
@@ -37332,10 +37713,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-1.7b-instruct-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-1.7b-instruct-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-14b-instruct": [
@@ -37346,10 +37727,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1.5,
+          value: 6.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-14b-instruct', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-14b-instruct', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-14b-instruct-reasoning": [
@@ -37360,10 +37741,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 7.1,
+          value: 6.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-14b-instruct-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-14b-instruct-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-235b-a22b-instruct": [
@@ -37374,10 +37755,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 5.1,
+          value: 8.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-235b-a22b-instruct', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-235b-a22b-instruct', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-235b-a22b-instruct-2507": [
@@ -37388,10 +37769,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 12.1,
+          value: 12,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-235b-a22b-instruct-2507', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-235b-a22b-instruct-2507', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-235b-a22b-instruct-2507-reasoning": [
@@ -37402,10 +37783,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 13.1,
+          value: 12.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-235b-a22b-instruct-2507-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-235b-a22b-instruct-2507-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-235b-a22b-instruct-reasoning": [
@@ -37416,10 +37797,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 7.6,
+          value: 9.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-235b-a22b-instruct-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-235b-a22b-instruct-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-30b-a3b-2507": [
@@ -37430,10 +37811,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 3.4,
+          value: 7.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-30b-a3b-2507', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-30b-a3b-2507', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-30b-a3b-2507-reasoning": [
@@ -37444,10 +37825,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 8.6,
+          value: 9.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-30b-a3b-2507-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-30b-a3b-2507-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-30b-a3b-instruct": [
@@ -37458,10 +37839,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1.3,
+          value: 6.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-30b-a3b-instruct', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-30b-a3b-instruct', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-30b-a3b-instruct-reasoning": [
@@ -37472,10 +37853,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 3.6,
+          value: 7.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-30b-a3b-instruct-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-30b-a3b-instruct-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-32b-instruct": [
@@ -37486,10 +37867,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 3,
+          value: 7.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-32b-instruct', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-32b-instruct', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-32b-instruct-reasoning": [
@@ -37500,10 +37881,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 8,
+          value: 7.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-32b-instruct-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-32b-instruct-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-4b-2507-instruct": [
@@ -37514,10 +37895,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1.6,
+          value: 6.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-4b-2507-instruct', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-4b-2507-instruct', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-4b-2507-instruct-reasoning": [
@@ -37528,10 +37909,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 6.2,
+          value: 8.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-4b-2507-instruct-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-4b-2507-instruct-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-4b-instruct": [
@@ -37542,10 +37923,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1.2,
+          value: 6.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-4b-instruct', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-4b-instruct', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-4b-instruct-reasoning": [
@@ -37556,10 +37937,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 2.7,
+          value: 7.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-4b-instruct-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-4b-instruct-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-5-0-8b": [
@@ -37570,10 +37951,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 6.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-0-8b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-0-8b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-5-0-8b-non-reasoning": [
@@ -37584,10 +37965,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-0-8b-non-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-0-8b-non-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-5-122b-a10b": [
@@ -37598,10 +37979,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 24.8,
+          value: 16.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-122b-a10b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-122b-a10b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-5-122b-a10b-non-reasoning": [
@@ -37612,10 +37993,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 20.6,
+          value: 17.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-122b-a10b-non-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-122b-a10b-non-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-5-27b": [
@@ -37626,10 +38007,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 26.9,
+          value: 22.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-27b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-27b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-5-27b-non-reasoning": [
@@ -37640,10 +38021,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 22.7,
+          value: 19.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-27b-non-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-27b-non-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-5-2b": [
@@ -37654,10 +38035,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 2.1,
+          value: 6.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-2b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-2b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-5-2b-non-reasoning": [
@@ -37668,10 +38049,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 6.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-2b-non-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-2b-non-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-5-35b-a3b": [
@@ -37682,10 +38063,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 22.6,
+          value: 19.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-35b-a3b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-35b-a3b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-5-35b-a3b-non-reasoning": [
@@ -37696,10 +38077,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 17,
+          value: 15.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-35b-a3b-non-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-35b-a3b-non-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-5-397b-a17b": [
@@ -37710,10 +38091,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 26.1,
+          value: 19.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-397b-a17b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-397b-a17b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-5-397b-a17b-non-reasoning": [
@@ -37724,10 +38105,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 25.2,
+          value: 21.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-397b-a17b-non-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-397b-a17b-non-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-5-4b": [
@@ -37738,10 +38119,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 13.9,
+          value: 13.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-4b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-4b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-5-4b-non-reasoning": [
@@ -37752,10 +38133,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 10,
+          value: 10.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-4b-non-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-4b-non-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-5-9b": [
@@ -37766,10 +38147,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 14.8,
+          value: 13.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-9b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-9b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-5-9b-non-reasoning": [
@@ -37780,10 +38161,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 14.1,
+          value: 13.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-9b-non-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-9b-non-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-5-omni-flash": [
@@ -37794,10 +38175,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 12.9,
+          value: 12.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-omni-flash', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-omni-flash', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-5-omni-plus": [
@@ -37808,10 +38189,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 24,
+          value: 20.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-omni-plus', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-omni-plus', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-6-27b": [
@@ -37822,10 +38203,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 29,
+          value: 21.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-6-27b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-6-27b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-6-27b-non-reasoning": [
@@ -37836,10 +38217,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 23.3,
+          value: 19.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-6-27b-non-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-6-27b-non-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-6-35b-a3b-non-reasoning": [
@@ -37850,10 +38231,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 17.1,
+          value: 15.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-6-35b-a3b-non-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-6-35b-a3b-non-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-6-max": [
@@ -37864,10 +38245,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 32.9,
+          value: 28.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-6-max', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-6-max', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-6-plus": [
@@ -37878,10 +38259,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 31.5,
+          value: 27,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-6-plus', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-6-plus', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-7-max": [
@@ -37892,10 +38273,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 36.6,
+          value: 29.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-7-max', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-7-max', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-7-plus": [
@@ -37906,10 +38287,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 31.9,
+          value: 25.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-7-plus', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-7-plus', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-8-2-4t-a95b": [
@@ -37920,10 +38301,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-18"
         },
         {
-          value: 46.7,
+          value: 40,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-8-2-4t-a95b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-8-2-4t-a95b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-8-27b": [
@@ -37934,10 +38315,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-25"
         },
         {
-          value: 41.4,
+          value: 33.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-8-27b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-8-27b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-8-27b-low": [
@@ -37948,10 +38329,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-25"
         },
         {
-          value: 33.8,
+          value: 26.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-8-27b-low', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-8-27b-low', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-8-27b-medium": [
@@ -37962,10 +38343,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-25"
         },
         {
-          value: 35.2,
+          value: 27.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-8-27b-medium', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-8-27b-medium', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-8-27b-non-reasoning": [
@@ -37976,10 +38357,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-01"
         },
         {
-          value: 26.5,
+          value: 22.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-8-27b-non-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-8-27b-non-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-8-flash-next": [
@@ -37990,10 +38371,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-01"
         },
         {
-          value: 45.6,
+          value: 39.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-8-flash-next', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-8-flash-next', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-8-max": [
@@ -38004,10 +38385,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 46.9,
+          value: 40.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-8-max', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-8-max', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-8b-instruct": [
@@ -38018,10 +38399,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-8b-instruct', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-8b-instruct', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-8b-instruct-reasoning": [
@@ -38032,10 +38413,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 2.8,
+          value: 5.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-8b-instruct-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-8b-instruct-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-coder-30b-a3b-instruct": [
@@ -38046,10 +38427,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 7.7,
+          value: 9.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-coder-30b-a3b-instruct', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-coder-30b-a3b-instruct', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-coder-480b-a35b-instruct": [
@@ -38074,10 +38455,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 14.1,
+          value: 10.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-coder-next', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-coder-next', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-max": [
@@ -38088,10 +38469,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 17.6,
+          value: 15.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-max', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-max', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-max-preview": [
@@ -38102,10 +38483,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 13,
+          value: 12.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-max-preview', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-max-preview', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-max-thinking": [
@@ -38116,10 +38497,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 25,
+          value: 21.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-max-thinking', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-max-thinking', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-max-thinking-preview": [
@@ -38130,10 +38511,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 18.6,
+          value: 16.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-max-thinking-preview', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-max-thinking-preview', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-next-80b-a3b-instruct": [
@@ -38144,10 +38525,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 7.8,
+          value: 9.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-next-80b-a3b-instruct', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-next-80b-a3b-instruct', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-next-80b-a3b-reasoning": [
@@ -38158,10 +38539,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 10.7,
+          value: 11.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-next-80b-a3b-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-next-80b-a3b-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-omni-30b-a3b-instruct": [
@@ -38172,10 +38553,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-omni-30b-a3b-instruct', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-omni-30b-a3b-instruct', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-omni-30b-a3b-reasoning": [
@@ -38186,10 +38567,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 4,
+          value: 7.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-omni-30b-a3b-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-omni-30b-a3b-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-vl-235b-a22b-instruct": [
@@ -38200,10 +38581,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 8.4,
+          value: 9.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-vl-235b-a22b-instruct', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-vl-235b-a22b-instruct', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-vl-235b-a22b-reasoning": [
@@ -38214,10 +38595,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 14.4,
+          value: 13.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-vl-235b-a22b-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-vl-235b-a22b-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-vl-30b-a3b-instruct": [
@@ -38228,10 +38609,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 4.3,
+          value: 7.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-vl-30b-a3b-instruct', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-vl-30b-a3b-instruct', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-vl-30b-a3b-reasoning": [
@@ -38242,10 +38623,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 7.5,
+          value: 9.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-vl-30b-a3b-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-vl-30b-a3b-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-vl-32b-instruct": [
@@ -38256,10 +38637,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 5.3,
+          value: 8.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-vl-32b-instruct', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-vl-32b-instruct', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-vl-32b-reasoning": [
@@ -38284,10 +38665,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-vl-4b-instruct', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-vl-4b-instruct', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-vl-4b-reasoning": [
@@ -38298,10 +38679,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 2.3,
+          value: 7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-vl-4b-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-vl-4b-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-vl-8b-instruct": [
@@ -38312,10 +38693,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 2.8,
+          value: 7.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-vl-8b-instruct', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-vl-8b-instruct', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwen3-vl-8b-reasoning": [
@@ -38326,10 +38707,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 4.9,
+          value: 8.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-vl-8b-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-vl-8b-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "qwq-32b": [
@@ -38340,10 +38721,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 7.5,
+          value: 9.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwq-32b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'qwq-32b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "r1-1776": [
@@ -38354,10 +38735,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 6.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'r1-1776', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'r1-1776', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "reka-flash": [
@@ -38368,10 +38749,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 6.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'reka-flash', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'reka-flash', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "reka-flash-3": [
@@ -38382,10 +38763,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'reka-flash-3', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'reka-flash-3', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "ring-1t": [
@@ -38396,10 +38777,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 10.2,
+          value: 10.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'ring-1t', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'ring-1t', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "ring-2-6-1t": [
@@ -38410,10 +38791,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-18"
         },
         {
-          value: 23.7,
+          value: 17.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'ring-2-6-1t', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'ring-2-6-1t', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "ring-flash-2-0": [
@@ -38424,10 +38805,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 2.6,
+          value: 7.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'ring-flash-2-0', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'ring-flash-2-0', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "sarvam-105b": [
@@ -38438,10 +38819,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 6.2,
+          value: 8.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'sarvam-105b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'sarvam-105b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "sarvam-30b": [
@@ -38452,10 +38833,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1.1,
+          value: 6.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'sarvam-30b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'sarvam-30b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "sarvam-m-reasoning": [
@@ -38466,10 +38847,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 5.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'sarvam-m-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'sarvam-m-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "seed-oss-36b-instruct": [
@@ -38480,10 +38861,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 12.2,
+          value: 12.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'seed-oss-36b-instruct', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'seed-oss-36b-instruct', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "solar-mini": [
@@ -38494,10 +38875,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 6.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'solar-mini', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'solar-mini', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "solar-open-100b-reasoning": [
@@ -38508,10 +38889,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 9.2,
+          value: 10.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'solar-open-100b-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'solar-open-100b-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "solar-open2-250b": [
@@ -38522,10 +38903,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 29,
+          value: 24.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'solar-open2-250b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'solar-open2-250b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "solar-pro-2": [
@@ -38536,10 +38917,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 2.2,
+          value: 7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'solar-pro-2', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'solar-pro-2', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "solar-pro-2-preview": [
@@ -38550,10 +38931,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 4.3,
+          value: 7.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'solar-pro-2-preview', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'solar-pro-2-preview', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "solar-pro-2-preview-reasoning": [
@@ -38564,10 +38945,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 6.7,
+          value: 9.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'solar-pro-2-preview-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'solar-pro-2-preview-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "solar-pro-2-reasoning": [
@@ -38578,10 +38959,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 3.3,
+          value: 7.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'solar-pro-2-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'solar-pro-2-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "solar-pro-3": [
@@ -38592,10 +38973,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 9.4,
+          value: 7.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'solar-pro-3', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'solar-pro-3', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "solar-pro4": [
@@ -38606,10 +38987,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 32.7,
+          value: 28.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'solar-pro4', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'solar-pro4', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       sonar: [
@@ -38620,10 +39001,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 3.8,
+          value: 7.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'sonar', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'sonar', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "sonar-pro": [
@@ -38634,10 +39015,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 3.6,
+          value: 7.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'sonar-pro', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'sonar-pro', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "sonar-reasoning": [
@@ -38648,10 +39029,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 5.9,
+          value: 8.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'sonar-reasoning', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'sonar-reasoning', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "sonar-reasoning-pro": [
@@ -38676,10 +39057,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 19.5,
+          value: 17,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'step-3-5-flash', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'step-3-5-flash', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "step-3-5-flash-0202": [
@@ -38690,10 +39071,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 19.1,
+          value: 16.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'step-3-5-flash-0202', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'step-3-5-flash-0202', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "step-3-7-flash": [
@@ -38704,10 +39085,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 22.9,
+          value: 19.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'step-3-7-flash', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'step-3-7-flash', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "step-3-vl-10b": [
@@ -38718,10 +39099,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 3.8,
+          value: 7.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'step-3-vl-10b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'step-3-vl-10b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "tiny-aya-global": [
@@ -38732,10 +39113,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 1,
+          value: 4.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'tiny-aya-global', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'tiny-aya-global', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "tri-21b-think-preview": [
@@ -38746,10 +39127,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 7.7,
+          value: 9.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'tri-21b-think-preview', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'tri-21b-think-preview', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "tri-21b-think-v0-5": [
@@ -38760,10 +39141,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 6.6,
+          value: 9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'tri-21b-think-v0-5', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'tri-21b-think-v0-5', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "trinity-large-thinking": [
@@ -38774,10 +39155,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-18"
         },
         {
-          value: 13.1,
+          value: 10.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'trinity-large-thinking', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'trinity-large-thinking', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "tulu3-405b": [
@@ -38788,10 +39169,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 2.7,
+          value: 7.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'tulu3-405b', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'tulu3-405b', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ],
       "zai-org/GLM-5.2": [
@@ -38802,10 +39183,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 42.1,
+          value: 38.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'glm-5-2', fetched 2026-09-08",
-          asOf: "2026-09-08"
+          source: "Artificial Analysis API (index v4.3), model 'glm-5-2', fetched 2026-09-11",
+          asOf: "2026-09-11"
         }
       ]
     };
@@ -56378,6 +56759,541 @@ var init_parallel_search_plugin_settings = __esm({
   }
 });
 
+// packages/agent/src/plugins/apple-development-plugin.ts
+var APPLE_DEVELOPMENT_PLUGIN_ID, APPLE_DEVELOPMENT_PANEL_ID, APPLE_DEVELOPMENT_TOOL_NAMES, appleDevelopmentPlugin;
+var init_apple_development_plugin = __esm({
+  "packages/agent/src/plugins/apple-development-plugin.ts"() {
+    init_plugin_manifest();
+    APPLE_DEVELOPMENT_PLUGIN_ID = "copse.apple-development";
+    APPLE_DEVELOPMENT_PANEL_ID = "apple-development";
+    APPLE_DEVELOPMENT_TOOL_NAMES = ["open_simulator_desktop"];
+    appleDevelopmentPlugin = definePlugin(
+      {
+        name: APPLE_DEVELOPMENT_PLUGIN_ID,
+        description: "Build, test, and run enrolled local Apple projects with an installed Xcode. Adds thread-scoped target selection, supervised operations, diagnostics, and Simulator controls.",
+        trust: "first-party",
+        stability: "experimental",
+        tools: {
+          native: [...APPLE_DEVELOPMENT_TOOL_NAMES],
+          acpTools: [...APPLE_DEVELOPMENT_TOOL_NAMES]
+        },
+        ui: [
+          {
+            id: APPLE_DEVELOPMENT_PANEL_ID,
+            level: 3,
+            slot: "thread-plugin-panel",
+            title: "Apple Development"
+          },
+          {
+            id: "apple-development-setup",
+            level: 3,
+            slot: "settings-plugin-detail",
+            title: "Apple Development setup"
+          }
+        ],
+        storage: { namespace: APPLE_DEVELOPMENT_PLUGIN_ID }
+      },
+      {
+        toolNames: [...APPLE_DEVELOPMENT_TOOL_NAMES],
+        uiContributions: [
+          {
+            id: APPLE_DEVELOPMENT_PANEL_ID,
+            level: 3,
+            slot: "thread-plugin-panel",
+            title: "Apple Development"
+          },
+          {
+            id: "apple-development-setup",
+            level: 3,
+            slot: "settings-plugin-detail",
+            title: "Apple Development setup"
+          }
+        ]
+      }
+    );
+  }
+});
+
+// src/renderer/views/apple-development-panel.ts
+function activeOwner(store2) {
+  const state = store2.getState();
+  return state.activeProjectId && state.activeThreadId ? { projectId: state.activeProjectId, threadId: state.activeThreadId } : null;
+}
+function operationDuration(operation) {
+  const end = operation.status === "queued" || operation.status === "running" ? Date.now() : operation.updatedAt;
+  const seconds = Math.max(0, Math.round((end - operation.createdAt) / 1e3));
+  if (seconds < 60) return `${String(seconds)}s`;
+  const minutes2 = Math.floor(seconds / 60);
+  return `${String(minutes2)}m`;
+}
+function operationStatusLabel(operation) {
+  const elapsed = operationDuration(operation);
+  switch (operation.status) {
+    case "queued":
+      return "Queued";
+    case "running":
+      return `Running \xB7 ${elapsed}`;
+    case "succeeded":
+      return `Succeeded \xB7 ${elapsed}`;
+    case "failed":
+      return `Failed \xB7 ${elapsed}`;
+    case "cancelled":
+      return `Cancelled \xB7 ${elapsed}`;
+  }
+}
+function operationDetail(operation) {
+  if (operation.outcome?.reason) return operation.outcome.reason;
+  const summary = operation.outcome?.testSummary;
+  if (summary) {
+    return `${String(summary.passed ?? "?")} passed \xB7 ${String(summary.failed ?? "?")} failed \xB7 ${String(summary.skipped ?? "?")} skipped`;
+  }
+  if (operation.status === "queued") return "Waiting for the current Apple operation to finish.";
+  if (operation.status === "running") {
+    if (operation.action === "test") return "Xcode is building and running the selected tests.";
+    if (operation.action === "run") return "Xcode is building the app before launch.";
+    return "Xcode is building the selected scheme.";
+  }
+  if (operation.status === "succeeded" && operation.action === "run") {
+    return operation.outcome?.appSessionId ? "App launched and is still tracked by Copse." : "App launched.";
+  }
+  if (operation.status === "succeeded" && operation.action === "build") return "Build completed.";
+  return null;
+}
+function preferredDestinationId(destinations, savedId, previousId) {
+  for (const id of [savedId, previousId]) {
+    if (id && destinations.some((destination) => destination.id === id)) return id;
+  }
+  return destinations.find((destination) => destination.booted)?.id ?? destinations[0]?.id ?? "";
+}
+function sameTarget(left, right) {
+  return left.candidateId === right.candidateId && left.schemeId === right.schemeId && left.configuration === right.configuration && left.destinationId === right.destinationId;
+}
+function candidateLabel(candidateId) {
+  const fileName = candidateId.split("/").at(-1) ?? candidateId;
+  return fileName.replace(/\.(?:xcworkspace|xcodeproj)$/i, "");
+}
+function destinationLabel(destinationId) {
+  if (destinationId === "platform=macOS") return "This Mac";
+  const platform = /(?:^|,)platform=([^,]+)/.exec(destinationId)?.[1];
+  return platform ?? destinationId;
+}
+function createAppleDevelopmentPanel(store2, api2, options) {
+  const host = el("div", { class: "apple-development-host" });
+  let generation = 0;
+  let renderedOwnerKey = null;
+  let polling = null;
+  let destinationRequest = 0;
+  const destinationCache = /* @__PURE__ */ new Map();
+  const stopPolling = () => {
+    if (polling) clearTimeout(polling);
+    polling = null;
+  };
+  const run2 = async (button, action, pendingLabel) => {
+    const pendingLabelNode = button.querySelector("[data-pending-label]");
+    const label = pendingLabelNode?.textContent ?? button.textContent;
+    button.disabled = true;
+    button.setAttribute("aria-busy", "true");
+    if (pendingLabel) {
+      if (pendingLabelNode) pendingLabelNode.textContent = pendingLabel;
+      else button.textContent = pendingLabel;
+      button.setAttribute("aria-label", pendingLabel);
+      button.setAttribute("data-tooltip", pendingLabel);
+    }
+    try {
+      await action();
+      await refresh();
+    } catch (error61) {
+      const message2 = error61 instanceof Error ? error61.message : String(error61);
+      host.querySelector(".apple-development-error")?.remove();
+      host.append(el("p", { class: "apple-development-error", role: "alert" }, message2));
+    } finally {
+      button.disabled = false;
+      button.removeAttribute("aria-busy");
+      if (pendingLabel) {
+        if (pendingLabelNode) pendingLabelNode.textContent = label;
+        else button.textContent = label;
+        button.setAttribute("aria-label", label);
+        button.setAttribute("data-tooltip", label);
+      }
+    }
+  };
+  const actionButton = (label, action, owner, state) => {
+    const button = el("button", { type: "button", class: "btn btn-secondary" }, label);
+    button.disabled = state.selection === null || state.operations.some(
+      (operation) => operation.status === "queued" || operation.status === "running"
+    );
+    button.addEventListener("click", () => {
+      const { selection: selection2 } = state;
+      if (!selection2) return;
+      void run2(button, async () => {
+        await api2.appleDevelopment.execute(owner.projectId, owner.threadId, {
+          action,
+          expectedRevision: selection2.revision,
+          requestId: crypto.randomUUID()
+        });
+      });
+    });
+    return button;
+  };
+  const render = (owner, state) => {
+    stopPolling();
+    renderedOwnerKey = `${owner.projectId}\0${owner.threadId}`;
+    host.replaceChildren();
+    const selection2 = state.selection;
+    const activeOperation = state.operations.find(
+      (operation) => operation.status === "queued" || operation.status === "running"
+    );
+    const latestOperation = activeOperation ?? (selection2 ? state.operations.find((operation) => sameTarget(operation.target, selection2)) : state.operations[0]);
+    if ((!state.pluginEnabled || !state.enrolled) && !latestOperation && !options.allowEnrollment) {
+      host.hidden = true;
+      return;
+    }
+    host.hidden = false;
+    const panel = el("section", {
+      class: "apple-development-panel",
+      "data-plugin-id": "copse.apple-development",
+      "aria-label": "Apple Development"
+    });
+    const title = el("h3", { class: "apple-development-title" }, "Apple development");
+    const status = el(
+      "span",
+      { class: "apple-development-status" },
+      state.toolchain?.version.split("\n")[0] ?? (state.selection ? "Target saved" : state.supportedHost ? "Setup needed" : "Unsupported host")
+    );
+    const headingActions = el("div", { class: "apple-development-heading-actions" });
+    panel.append(el("div", { class: "apple-development-heading" }, title, status, headingActions));
+    if (options.allowEnrollment && options.pluginEnabled !== false) {
+      const enrollment = el(
+        "button",
+        { type: "button", class: "btn btn-secondary" },
+        state.enrolled ? "Remove project" : "Enroll project"
+      );
+      enrollment.addEventListener("click", () => {
+        void run2(enrollment, async () => {
+          await api2.appleDevelopment.setEnrolled(owner.projectId, owner.threadId, !state.enrolled);
+        });
+      });
+      headingActions.append(enrollment);
+    }
+    if (state.setupMessage && !state.selection) {
+      panel.append(el("p", { class: "apple-development-message" }, state.setupMessage));
+    }
+    if (state.pluginEnabled && state.enrolled && state.supportedHost) {
+      const discoverLabel = state.metadataRequiresExecution ? "Load schemes and destinations" : "Refresh targets";
+      const discover = el(
+        "button",
+        {
+          type: "button",
+          class: "git-changes-refresh-btn apple-development-discover",
+          "aria-label": discoverLabel,
+          "data-tooltip": discoverLabel
+        },
+        refreshIcon("ui-icon ui-icon-sm"),
+        el("span", { class: "sr-only", "data-pending-label": "" }, discoverLabel)
+      );
+      discover.addEventListener("click", () => {
+        void run2(
+          discover,
+          async () => {
+            destinationCache.clear();
+            await api2.appleDevelopment.discover(owner.projectId, owner.threadId, true);
+          },
+          "Loading targets\u2026"
+        );
+      });
+      headingActions.append(discover);
+      if (state.candidates.length > 0 && state.destinations.length > 0) {
+        const candidate = el("select", { "aria-label": "Xcode project" });
+        for (const item of state.candidates) {
+          candidate.append(
+            el(
+              "option",
+              {
+                value: item.id,
+                selected: state.selection?.candidateId === item.id ? true : void 0
+              },
+              item.name
+            )
+          );
+        }
+        const scheme = el("select", { "aria-label": "Scheme" });
+        const destination = el("select", { "aria-label": "Destination" });
+        const schemeStatus = el("p", {
+          class: "apple-development-scheme-status",
+          role: "status"
+        });
+        const destinationStatus = el("p", {
+          class: "apple-development-scheme-status",
+          role: "status"
+        });
+        const save = el("button", { type: "button", class: "btn btn-secondary" }, "Use target");
+        const fillDestinations = (items) => {
+          const previousId = destination.value;
+          destination.replaceChildren(
+            ...items.map(
+              (item) => el("option", { value: item.id }, `${item.name} \xB7 ${item.platform}`)
+            )
+          );
+          const savedId = state.selection?.candidateId === candidate.value && state.selection.schemeId === scheme.value ? state.selection.destinationId : void 0;
+          destination.value = preferredDestinationId(items, savedId, previousId);
+          destination.disabled = items.length === 0;
+          save.disabled = items.length === 0;
+          destinationStatus.hidden = true;
+        };
+        const loadDestinations = async () => {
+          if (scheme.value === "") {
+            destination.replaceChildren(el("option", { value: "" }, "No destinations available"));
+            destination.disabled = true;
+            save.disabled = true;
+            return;
+          }
+          const candidateId = candidate.value;
+          const schemeId = scheme.value;
+          const key = `${owner.projectId}\0${owner.threadId}\0${candidateId}\0${schemeId}`;
+          const cached2 = destinationCache.get(key);
+          if (cached2) {
+            fillDestinations(cached2);
+            return;
+          }
+          const request = ++destinationRequest;
+          destination.replaceChildren(el("option", { value: "" }, "Loading destinations\u2026"));
+          destination.disabled = true;
+          save.disabled = true;
+          destinationStatus.hidden = true;
+          try {
+            const items = await api2.appleDevelopment.destinations(
+              owner.projectId,
+              owner.threadId,
+              candidateId,
+              schemeId
+            );
+            if (request !== destinationRequest || candidate.value !== candidateId || scheme.value !== schemeId) {
+              return;
+            }
+            destinationCache.set(key, items);
+            fillDestinations(items);
+          } catch (error61) {
+            if (request !== destinationRequest) return;
+            destination.replaceChildren(el("option", { value: "" }, "No destinations available"));
+            destination.disabled = true;
+            save.disabled = true;
+            destinationStatus.textContent = error61 instanceof Error ? error61.message : String(error61);
+            destinationStatus.hidden = false;
+          }
+        };
+        const fillSchemes = () => {
+          const selected = state.candidates.find((item) => item.id === candidate.value);
+          const schemes = selected?.schemes ?? [];
+          scheme.replaceChildren(
+            ...schemes.length === 0 ? [el("option", { value: "" }, "No schemes available")] : schemes.map(
+              (name) => el(
+                "option",
+                {
+                  value: name,
+                  selected: state.selection?.schemeId === name ? true : void 0
+                },
+                name
+              )
+            )
+          );
+          scheme.disabled = schemes.length === 0;
+          schemeStatus.textContent = selected?.metadataError ?? (schemes.length === 0 ? "Load target metadata to choose a scheme." : "");
+          schemeStatus.hidden = schemeStatus.textContent === "";
+          void loadDestinations();
+        };
+        fillSchemes();
+        candidate.addEventListener("change", fillSchemes);
+        scheme.addEventListener("change", () => void loadDestinations());
+        const configuration = el(
+          "select",
+          { "aria-label": "Configuration" },
+          ...["Debug", "Release"].map(
+            (name) => el(
+              "option",
+              {
+                value: name,
+                selected: (state.selection?.configuration ?? "Debug") === name ? true : void 0
+              },
+              name
+            )
+          )
+        );
+        save.addEventListener("click", () => {
+          if (scheme.value === "") return;
+          void run2(save, async () => {
+            await api2.appleDevelopment.configure(owner.projectId, owner.threadId, {
+              candidateId: candidate.value,
+              schemeId: scheme.value,
+              configuration: configuration.value,
+              destinationId: destination.value,
+              expectedRevision: state.selection?.revision ?? 0
+            });
+          });
+        });
+        panel.append(
+          el(
+            "details",
+            {
+              class: "apple-development-target-picker",
+              open: state.selection ? void 0 : true
+            },
+            el("summary", {}, state.selection ? "Change target" : "Choose target"),
+            el(
+              "div",
+              { class: "apple-development-selection" },
+              candidate,
+              scheme,
+              configuration,
+              destination,
+              save,
+              schemeStatus,
+              destinationStatus
+            )
+          )
+        );
+      }
+      if (state.selection) {
+        const selectedCandidate = state.candidates.find(
+          (candidate) => candidate.id === state.selection?.candidateId
+        );
+        const selectedCandidateLabel = selectedCandidate?.name ?? candidateLabel(state.selection.candidateId);
+        const selectedDestination = state.destinations.find(
+          (destination) => destination.id === state.selection?.destinationId
+        );
+        panel.append(
+          el(
+            "div",
+            { class: "apple-development-target", "aria-label": "Selected Apple target" },
+            el(
+              "div",
+              { class: "apple-development-target-name" },
+              el("strong", {}, state.selection.schemeId),
+              ...selectedCandidateLabel === state.selection.schemeId ? [] : [el("span", { title: state.selection.candidateId }, selectedCandidateLabel)]
+            ),
+            el(
+              "div",
+              { class: "apple-development-target-meta" },
+              el("span", {}, state.selection.configuration),
+              el(
+                "span",
+                { title: state.selection.destinationId },
+                selectedDestination?.name ?? destinationLabel(state.selection.destinationId)
+              )
+            ),
+            el(
+              "div",
+              { class: "apple-development-actions" },
+              actionButton("Build", "build", owner, state),
+              actionButton("Test", "test", owner, state),
+              actionButton("Run", "run", owner, state)
+            )
+          )
+        );
+      }
+    }
+    if (latestOperation) {
+      const history = el("ul", { class: "apple-development-operations", role: "list" });
+      for (const operation of [latestOperation]) {
+        const controls = el("div", { class: "apple-development-operation-controls" });
+        if (operation.status === "queued" || operation.status === "running") {
+          const cancel = el("button", { type: "button", class: "btn btn-ghost" }, "Cancel");
+          cancel.addEventListener("click", () => {
+            void run2(cancel, async () => {
+              await api2.appleDevelopment.operation(owner.projectId, owner.threadId, {
+                operationId: operation.id,
+                action: "cancel"
+              });
+            });
+          });
+          controls.append(cancel);
+        }
+        if (operation.outcome?.appSessionId) {
+          const stop = el("button", { type: "button", class: "btn btn-ghost" }, "Stop app");
+          stop.addEventListener("click", () => {
+            const appSessionId = operation.outcome?.appSessionId;
+            if (!appSessionId) return;
+            void run2(stop, async () => {
+              await api2.appleDevelopment.stopApp(owner.projectId, owner.threadId, appSessionId);
+            });
+          });
+          controls.append(stop);
+        }
+        const detail = operationDetail(operation);
+        history.append(
+          el(
+            "li",
+            {
+              class: `apple-development-operation apple-development-operation-${operation.status}`,
+              "data-operation-id": operation.id
+            },
+            el(
+              "div",
+              { class: "apple-development-operation-line" },
+              el("span", { class: "apple-development-operation-indicator", "aria-hidden": "true" }),
+              el("span", { class: "apple-development-operation-action" }, operation.action),
+              el(
+                "span",
+                { class: "apple-development-operation-status" },
+                operationStatusLabel(operation)
+              ),
+              controls
+            ),
+            ...detail ? [el("span", { class: "apple-development-operation-detail" }, detail)] : []
+          )
+        );
+      }
+      panel.append(history);
+    }
+    host.append(panel);
+    if (state.operations.some(
+      (operation) => operation.status === "queued" || operation.status === "running"
+    )) {
+      polling = setTimeout(() => void refresh(), 1500);
+    }
+  };
+  const refresh = async () => {
+    const owner = activeOwner(store2);
+    const current = ++generation;
+    if (!owner) {
+      stopPolling();
+      host.replaceChildren();
+      host.hidden = true;
+      return;
+    }
+    const ownerKey = `${owner.projectId}\0${owner.threadId}`;
+    if (renderedOwnerKey !== ownerKey) {
+      stopPolling();
+      host.replaceChildren();
+      host.hidden = true;
+    }
+    try {
+      const state = await api2.appleDevelopment.state(owner.projectId, owner.threadId);
+      if (current === generation) render(owner, state);
+    } catch (error61) {
+      if (current !== generation) return;
+      host.hidden = false;
+      host.replaceChildren(
+        el(
+          "p",
+          { class: "apple-development-error", role: "alert" },
+          error61 instanceof Error ? error61.message : String(error61)
+        )
+      );
+    }
+  };
+  host.addEventListener("apple-development-refresh", () => {
+    void refresh();
+  });
+  void refresh();
+  return host;
+}
+var init_apple_development_panel = __esm({
+  "src/renderer/views/apple-development-panel.ts"() {
+    init_helpers();
+    init_icons();
+  }
+});
+
 // packages/shell-guard/src/trusted-commands.ts
 function isValidTrustedCommand(name) {
   return VALID_COMMAND.test(name);
@@ -56626,6 +57542,11 @@ function openAutomationSettings(scheduleId) {
     pluginId: AUTOMATIONS_PLUGIN_ID,
     ...scheduleId ? { detailId: scheduleId } : {}
   };
+  openSettingsDialog("customise");
+}
+function openAppleDevelopmentSettings() {
+  if (!overlayEl || overlayEl.open) return;
+  pendingPluginDetail = { pluginId: APPLE_DEVELOPMENT_PLUGIN_ID };
   openSettingsDialog("customise");
 }
 function closeSettingsDialog() {
@@ -59016,6 +59937,16 @@ function mountSettingsDialog(store2, api2) {
         )
       );
     }
+    if (plugin.id === APPLE_DEVELOPMENT_PLUGIN_ID && plugin.contributions.ui.some(
+      (contribution) => contribution.level === 3 && contribution.slot === "settings-plugin-detail"
+    )) {
+      settingsFold.append(
+        createAppleDevelopmentPanel(store2, api2, {
+          allowEnrollment: true,
+          pluginEnabled: plugin.enabled
+        })
+      );
+    }
     if (plugin.id === PARALLEL_SEARCH_PLUGIN_ID && plugin.contributions.ui.some(
       (contribution) => contribution.level === 3 && contribution.slot === "settings-plugin-detail"
     )) {
@@ -59947,6 +60878,8 @@ var init_settings_dialog = __esm({
     init_automation_plugin_settings();
     init_parallel_search_plugin();
     init_parallel_search_plugin_settings();
+    init_apple_development_plugin();
+    init_apple_development_panel();
     init_web_origins();
     init_provider_hosts();
     init_command_routing();
@@ -61242,10 +62175,33 @@ function mountProjectsPane(root, store2, api2) {
       );
       menuButton.addEventListener("click", () => {
         menuButton.disabled = true;
-        void api2.plugins.list().then((result) => {
+        void Promise.all([
+          api2.plugins.list(),
+          api2.appleDevelopment.detectProject(project2.id).catch(() => null)
+        ]).then(([result, appleDetection]) => {
           if (!menuButton.isConnected) return;
           const rect = menuButton.getBoundingClientRect();
           const entries2 = [];
+          if (appleDetection?.supportedHost === true && (appleDetection.detected || appleDetection.enrolled)) {
+            entries2.push({
+              label: "Apple Development\u2026",
+              onSelect: () => {
+                if (store2.getState().activeProjectId === project2.id) {
+                  openAppleDevelopmentSettings();
+                  return;
+                }
+                const unsubscribe = store2.on("workspace_changed", () => {
+                  if (store2.getState().activeProjectId === project2.id) {
+                    unsubscribe();
+                    openAppleDevelopmentSettings();
+                  } else if (!isProjectSwitchInFlight(store2, project2.id)) {
+                    unsubscribe();
+                  }
+                });
+                switchProject(store2, api2, project2.id);
+              }
+            });
+          }
           if (result.plugins.some(hasAutomationDialog)) {
             entries2.push(
               {
@@ -67088,6 +68044,7 @@ function mountConversation(root, store2, api2) {
   showAcpTransportNoiseDisclosure = () => store2.getState().developerMode;
   const scrollArea = el("div", { class: "conversation-scroll" });
   const todoHost = el("div", { class: "conversation-todos-host" });
+  const appleDevelopmentHost = createAppleDevelopmentPanel(store2, api2, { allowEnrollment: false });
   const list = el("div", { class: "messages-list", role: "log", "aria-live": "polite" });
   const scrollToBottomBtn = el(
     "button",
@@ -67101,7 +68058,7 @@ function mountConversation(root, store2, api2) {
     },
     arrowDownIcon("ui-icon")
   );
-  scrollArea.append(todoHost, list, scrollToBottomBtn);
+  scrollArea.append(appleDevelopmentHost, todoHost, list, scrollToBottomBtn);
   const activityBar = el("div", { class: "agent-activity", role: "status", "aria-live": "polite" });
   const activityLabel = el("span", { class: "agent-activity-label" });
   activityBar.append(reasoningActivityIcon("reasoning-activity-icon"), activityLabel);
@@ -67980,6 +68937,7 @@ function mountConversation(root, store2, api2) {
   }
   function finishThreadChrome(thread) {
     syncTodoPanel();
+    appleDevelopmentHost.dispatchEvent(new Event("apple-development-refresh"));
     syncComparisonPanel();
     if (thread) {
       renderQueuedPanel(thread.id);
@@ -68301,6 +69259,7 @@ var init_conversation = __esm({
     init_plugin_panel();
     init_plugin_panel2();
     init_todos_plugin();
+    init_apple_development_panel();
     init_review_panel();
     init_comparison_panel();
     init_retry_review_comparison();
@@ -96033,7 +96992,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     console.warn(`[git-changes-pane] ${scope} failed:`, error61);
   }
   let seededProposedPath = null;
-  function activeOwner() {
+  function activeOwner2() {
     const { activeProjectId, activeThreadId } = store2.getState();
     return activeProjectId && activeThreadId ? { projectId: activeProjectId, threadId: activeThreadId } : null;
   }
@@ -96047,16 +97006,16 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     return cache;
   }
   acceptAllBtn.addEventListener("click", () => {
-    const owner = activeOwner();
+    const owner = activeOwner2();
     if (owner) void api2.diff.approveAll(owner.projectId, owner.threadId);
   });
   rejectAllBtn.addEventListener("click", () => {
-    const owner = activeOwner();
+    const owner = activeOwner2();
     if (owner) void api2.diff.rejectAll(owner.projectId, owner.threadId);
   });
   api2.diff.onShowDiff((projectId, threadId, path, before, after, language) => {
     proposedDiffCacheFor(projectId, threadId).set(path, { path, before, after, language });
-    const owner = activeOwner();
+    const owner = activeOwner2();
     if (!owner || owner.projectId !== projectId || owner.threadId !== threadId) return;
     pendingProposedNavigate = path;
     if (changesModeActive(store2)) void syncFromStore();
@@ -96246,7 +97205,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     restoreInFlight = true;
     renderRestoreBanner();
     try {
-      const owner = activeOwner();
+      const owner = activeOwner2();
       if (!owner) return;
       const ok = await api2.git.restoreBackup(owner.projectId, owner.threadId);
       if (ok) {
@@ -96276,11 +97235,11 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     acceptBtn.hidden = false;
     rejectBtn.hidden = false;
     acceptBtn.onclick = () => {
-      const owner = activeOwner();
+      const owner = activeOwner2();
       if (owner) void api2.diff.approve(owner.projectId, owner.threadId, view.path);
     };
     rejectBtn.onclick = () => {
-      const owner = activeOwner();
+      const owner = activeOwner2();
       if (owner) void api2.diff.reject(owner.projectId, owner.threadId, view.path);
     };
     const imageDiff = proposedImageDiff(view);
@@ -96319,7 +97278,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
   }
   async function selectProposed(path) {
     const { stagedDiffs, activeDiff } = store2.getState();
-    const owner = activeOwner();
+    const owner = activeOwner2();
     if (!owner) {
       clearViewer();
       return;
@@ -96354,7 +97313,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     pendingSelect = { kind: "git", path, staged };
     hideApprovalButtons();
     renderList();
-    const owner = activeOwner();
+    const owner = activeOwner2();
     if (!owner) return;
     let diff = null;
     try {
@@ -96362,7 +97321,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     } catch (error61) {
       markGitUnavailable(`diff read for ${path}`, error61);
     }
-    if (requestId !== selectRequestId || activeOwner()?.projectId !== owner.projectId || activeOwner()?.threadId !== owner.threadId || pendingSelect.path !== path || pendingSelect.staged !== staged) {
+    if (requestId !== selectRequestId || activeOwner2()?.projectId !== owner.projectId || activeOwner2()?.threadId !== owner.threadId || pendingSelect.path !== path || pendingSelect.staged !== staged) {
       return;
     }
     if (!diff) {
@@ -96413,7 +97372,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     pendingSelect = { kind: "committed", path };
     hideApprovalButtons();
     renderList();
-    const owner = activeOwner();
+    const owner = activeOwner2();
     if (!owner) return;
     let diff = null;
     try {
@@ -96421,7 +97380,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     } catch (error61) {
       markGitUnavailable(`committed diff read for ${path}`, error61);
     }
-    if (requestId !== selectRequestId || activeOwner()?.projectId !== owner.projectId || activeOwner()?.threadId !== owner.threadId || pendingSelect.path !== path) {
+    if (requestId !== selectRequestId || activeOwner2()?.projectId !== owner.projectId || activeOwner2()?.threadId !== owner.threadId || pendingSelect.path !== path) {
       return;
     }
     if (!diff) {
@@ -96593,7 +97552,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
   }
   async function refresh() {
     const requestId = ++refreshRequestId;
-    const owner = activeOwner();
+    const owner = activeOwner2();
     if (!owner) {
       gitAvailable = false;
       loaded = false;
@@ -96608,7 +97567,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
       availabilityFailed = true;
       markGitUnavailable("git availability check", error61);
     }
-    const currentOwner = activeOwner();
+    const currentOwner = activeOwner2();
     if (requestId !== refreshRequestId || currentOwner?.projectId !== owner.projectId || currentOwner.threadId !== owner.threadId)
       return;
     gitAvailable = available;
@@ -96667,7 +97626,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
   refreshBtn.addEventListener("click", () => void refresh());
   const stopObservingLayout = observeDiffHostLayout(viewerRoot, () => diffEditor);
   const unsubDiffConflict = api2.diff.onConflict((projectId, threadId, paths) => {
-    const owner = activeOwner();
+    const owner = activeOwner2();
     if (!owner || owner.projectId !== projectId || owner.threadId !== threadId) return;
     conflictBanner.hidden = false;
     conflictBanner.textContent = paths.length === 1 ? `${at(paths, 0)} changed on disk since this diff was staged. The diff was refreshed against the current file \u2014 review and re-approve to keep your changes.` : `${String(paths.length)} files changed on disk since they were staged. Their diffs were refreshed against the current files \u2014 review and re-approve.`;
@@ -116431,6 +117390,162 @@ var init_vnc_machines = __esm({
   }
 });
 
+// src/renderer/views/simulator-desktop-view.ts
+function keyUsage(code) {
+  if (/^Key[A-Z]$/.test(code)) return code.charCodeAt(3) - 65 + 4;
+  if (/^Digit[1-9]$/.test(code)) return Number(code.at(-1)) + 29;
+  if (code === "Digit0") return 39;
+  const usages = {
+    Enter: 40,
+    Escape: 41,
+    Backspace: 42,
+    Tab: 43,
+    Space: 44,
+    Minus: 45,
+    Equal: 46,
+    BracketLeft: 47,
+    BracketRight: 48,
+    Backslash: 49,
+    Semicolon: 51,
+    Quote: 52,
+    Backquote: 53,
+    Comma: 54,
+    Period: 55,
+    Slash: 56,
+    CapsLock: 57,
+    ArrowRight: 79,
+    ArrowLeft: 80,
+    ArrowDown: 81,
+    ArrowUp: 82
+  };
+  return usages[code] ?? null;
+}
+function modifierUsages(event) {
+  const usages = [];
+  if (event.ctrlKey) usages.push(224);
+  if (event.shiftKey) usages.push(225);
+  if (event.altKey) usages.push(226);
+  if (event.metaKey) usages.push(227);
+  return usages;
+}
+function createSimulatorDesktopView(options) {
+  const canvas = el("canvas", {
+    class: "simulator-desktop-canvas",
+    "aria-label": "iOS Simulator screen",
+    tabindex: "0"
+  });
+  const context = canvas.getContext("2d");
+  let controlEnabled = false;
+  const lifecycle = new AbortController();
+  const isClosed = () => lifecycle.signal.aborted;
+  let pointerId = null;
+  let firstFrame = true;
+  let decoding = false;
+  let pendingFrame = null;
+  const send = (input2) => {
+    void options.sendInput(input2).catch((error61) => {
+      options.onInputError(error61);
+    });
+  };
+  const point = (event) => {
+    const bounds = canvas.getBoundingClientRect();
+    return {
+      x: Math.min(1, Math.max(0, (event.clientX - bounds.left) / bounds.width)),
+      y: Math.min(1, Math.max(0, (event.clientY - bounds.top) / bounds.height))
+    };
+  };
+  const onPointerDown = (event) => {
+    if (!controlEnabled || event.button !== 0) return;
+    event.preventDefault();
+    pointerId = event.pointerId;
+    canvas.setPointerCapture(event.pointerId);
+    send({ type: "touch", phase: "down", ...point(event) });
+  };
+  const onPointerMove = (event) => {
+    if (!controlEnabled || pointerId !== event.pointerId) return;
+    event.preventDefault();
+    send({ type: "touch", phase: "move", ...point(event) });
+  };
+  const finishPointer = (event) => {
+    if (!controlEnabled || pointerId !== event.pointerId) return;
+    event.preventDefault();
+    send({ type: "touch", phase: "up", ...point(event) });
+    pointerId = null;
+  };
+  const onKeyDown = (event) => {
+    if (!controlEnabled || event.repeat) return;
+    const usage = keyUsage(event.code);
+    if (usage === null) return;
+    event.preventDefault();
+    send({ type: "key-tap", usage, modifiers: modifierUsages(event) });
+  };
+  canvas.addEventListener("pointerdown", onPointerDown);
+  canvas.addEventListener("pointermove", onPointerMove);
+  canvas.addEventListener("pointerup", finishPointer);
+  canvas.addEventListener("pointercancel", finishPointer);
+  canvas.addEventListener("keydown", onKeyDown);
+  const decodePendingFrame = async () => {
+    if (decoding || isClosed() || !context) return;
+    const frame = pendingFrame;
+    if (!frame) return;
+    pendingFrame = null;
+    decoding = true;
+    try {
+      const bitmap = await createImageBitmap(
+        new Blob([Uint8Array.from(frame.bytes)], { type: frame.mimeType })
+      );
+      if (isClosed()) {
+        bitmap.close();
+        return;
+      }
+      if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+      }
+      context.drawImage(bitmap, 0, 0);
+      bitmap.close();
+      if (firstFrame) {
+        firstFrame = false;
+        options.onFirstFrame();
+      }
+    } finally {
+      decoding = false;
+      queueMicrotask(() => {
+        if (pendingFrame) void decodePendingFrame();
+      });
+    }
+  };
+  return {
+    canvas,
+    frame: (frame) => {
+      if (frame.id !== options.connectionId || isClosed()) return;
+      pendingFrame = frame;
+      void decodePendingFrame();
+    },
+    setControlEnabled: (enabled) => {
+      controlEnabled = enabled;
+      if (!enabled) pointerId = null;
+    },
+    focus: () => {
+      canvas.focus({ preventScroll: true });
+    },
+    cleanup: () => {
+      lifecycle.abort();
+      pendingFrame = null;
+      canvas.removeEventListener("pointerdown", onPointerDown);
+      canvas.removeEventListener("pointermove", onPointerMove);
+      canvas.removeEventListener("pointerup", finishPointer);
+      canvas.removeEventListener("pointercancel", finishPointer);
+      canvas.removeEventListener("keydown", onKeyDown);
+    }
+  };
+}
+var init_simulator_desktop_view = __esm({
+  "src/renderer/views/simulator-desktop-view.ts"() {
+    init_helpers();
+  }
+});
+
 // src/renderer/views/vnc-pane.ts
 function vncModeActive(store2) {
   const { filesPaneOpen, rightPanelMode } = store2.getState();
@@ -116449,6 +117564,9 @@ function sshMachineValue(hostId) {
 function isNetworkMachine(machine) {
   return machine === MANUAL_MACHINE || machine.startsWith(NEARBY_MACHINE_PREFIX);
 }
+function isSimulatorMachine(machine) {
+  return machine.startsWith(SIMULATOR_MACHINE_PREFIX);
+}
 function hostLabel(host) {
   const address = host.user ? `${host.user}@${host.host}` : host.host;
   return host.label === address ? host.label : `${host.label} \xB7 ${address}`;
@@ -116464,7 +117582,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     hidden: true
   });
   machineSelect.append(el("option", { value: LOCAL_MACHINE }, "This machine"));
-  const devicesHeading = el("div", { class: "vnc-devices-heading" }, "Nearby and saved");
+  const devicesHeading = el("div", { class: "vnc-devices-heading" }, "Devices");
   const deviceList = el("div", {
     class: "vnc-device-list",
     role: "list",
@@ -116542,6 +117660,11 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
       hidden: true
     },
     "Control desktop"
+  );
+  const homeButton = el(
+    "button",
+    { type: "button", class: "ui-btn vnc-home-btn", hidden: true },
+    "Home"
   );
   const discoverButton = el(
     "button",
@@ -116743,6 +117866,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     status,
     forgetLoginButton,
     controlButton,
+    homeButton,
     disconnectButton,
     note
   );
@@ -116761,6 +117885,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
   let nearbyGeneration = 0;
   let sshHostsGeneration = 0;
   let sshHosts = [];
+  let simulatorDevices = [];
   let sshHostResolutions = [];
   let allNearbyServers = [];
   let nearbyServers = [];
@@ -116769,6 +117894,8 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
   let pendingDisconnectStatus = null;
   let connectedAtLeastOnce = false;
   let activeTarget = null;
+  let simulatorSessionId = null;
+  let simulatorView = null;
   let authenticationUsername = "";
   let authenticationPassword = "";
   let authenticationPasswordWasRemembered = false;
@@ -116800,9 +117927,22 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
         return { name: host.label, meta: `Saved SSH \xB7 ${address}` };
       }
     }
+    if (value.startsWith(SIMULATOR_MACHINE_PREFIX)) {
+      const device = simulatorDevices.find(
+        (candidate) => `${SIMULATOR_MACHINE_PREFIX}${candidate.udid}` === value
+      );
+      return device ? { name: device.name, meta: `${device.runtime} \xB7 Booted` } : { name: "iOS Simulator", meta: "Booted on this Mac" };
+    }
     return { name: "Desktop", meta: "Saved device" };
   }
   function renderSelectedLogin() {
+    const simulator = isSimulatorMachine(machineSelect.value);
+    if (simulator) {
+      savedLoginDetails.hidden = true;
+      setupCredentials.hidden = true;
+      connectButton.textContent = "Connect";
+      return;
+    }
     savedLoginDetails.hidden = !selectedHasSavedPassword;
     setupCredentials.hidden = selectedHasSavedPassword;
     connectButton.textContent = selectedHasSavedPassword ? "Connect" : "Sign in & connect";
@@ -116864,7 +118004,8 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     connectButton.hidden = active2;
     disconnectButton.hidden = !active2;
     controlButton.hidden = !connected;
-    note.hidden = active2;
+    homeButton.hidden = !connected || simulatorSessionId === null;
+    note.hidden = active2 || isSimulatorMachine(machineSelect.value);
     disconnectButton.textContent = connected ? "Disconnect" : "Cancel";
     portInput.disabled = active2;
     addressInput.disabled = active2;
@@ -116893,6 +118034,9 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
       const id = machineSelect.value.slice(SSH_MACHINE_PREFIX.length);
       return sshHosts.find((host) => host.id === id)?.label ?? "saved machine";
     }
+    if (machineSelect.value.startsWith(SIMULATOR_MACHINE_PREFIX)) {
+      return selectedSimulator()?.name ?? "iOS Simulator";
+    }
     return "remote desktop";
   }
   function setStatus(title, kind, detail = "") {
@@ -116911,19 +118055,25 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     setStatus(`Connected to ${connectedMachineName}`, "ok", connectedStatusDetail());
   }
   function updateControlUi() {
-    controlButton.textContent = controlEnabled ? "Stop controlling" : "Control desktop";
+    controlButton.textContent = controlEnabled ? "Stop controlling" : simulatorSessionId ? "Control simulator" : "Control desktop";
     controlButton.setAttribute("aria-pressed", String(controlEnabled));
     controlButton.classList.toggle("is-active", controlEnabled);
     screen.classList.toggle("is-controlling", controlEnabled);
     options.onControlChange(controlEnabled);
   }
   function setControlEnabled(enabled) {
-    if (!rfb || !connectedAtLeastOnce) return;
+    if (!rfb && !simulatorView || !connectedAtLeastOnce) return;
     controlEnabled = enabled;
-    rfb.viewOnly = !enabled;
+    if (rfb) rfb.viewOnly = !enabled;
+    simulatorView?.setControlEnabled(enabled);
     updateControlUi();
     renderConnectedStatus();
-    if (enabled) queueMicrotask(() => rfb?.focus());
+    if (enabled) {
+      queueMicrotask(() => {
+        if (rfb) rfb.focus();
+        else simulatorView?.focus();
+      });
+    }
   }
   function resetControlState() {
     connectedMachineName = null;
@@ -116943,6 +118093,9 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     rfb = null;
     channel = null;
     activeTarget = null;
+    simulatorSessionId = null;
+    simulatorView?.cleanup();
+    simulatorView = null;
     authenticationUsername = "";
     authenticationPassword = "";
     authenticationPasswordWasRemembered = false;
@@ -117059,12 +118212,30 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     const index = Number.parseInt(machineSelect.value.slice(NEARBY_MACHINE_PREFIX.length), 10);
     return nearbyServers[index] ?? null;
   }
+  function selectedSimulator() {
+    if (!isSimulatorMachine(machineSelect.value)) return null;
+    const udid = machineSelect.value.slice(SIMULATOR_MACHINE_PREFIX.length);
+    return simulatorDevices.find((device) => device.udid === udid) ?? null;
+  }
   function preferredNearbyAddress(server) {
     const host = server.host.trim();
     return server.addresses.find((address) => /^\d{1,3}(?:\.\d{1,3}){3}$/.test(address)) ?? (host ? host : server.addresses[0] ?? "");
   }
   function rebuildMachineOptions(preferred) {
     machineSelect.replaceChildren(el("option", { value: LOCAL_MACHINE }, "This machine"));
+    if (simulatorDevices.length > 0) {
+      const simulatorGroup = el("optgroup", { label: "Local simulators" });
+      for (const device of simulatorDevices) {
+        simulatorGroup.append(
+          el(
+            "option",
+            { value: `${SIMULATOR_MACHINE_PREFIX}${device.udid}` },
+            `${device.name} \xB7 ${device.runtime}`
+          )
+        );
+      }
+      machineSelect.append(simulatorGroup);
+    }
     if (nearbyServers.length > 0) {
       const nearbyGroup = el("optgroup", { label: "Nearby devices" });
       nearbyServers.forEach((server, index) => {
@@ -117095,7 +118266,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     nearbyServers = dedupeNearbyVncServers(allNearbyServers, sshHosts, sshHostResolutions);
   }
   function updateNearbyStatus() {
-    nearbyFeedback.hidden = allNearbyServers.length > 0;
+    nearbyFeedback.hidden = allNearbyServers.length > 0 || simulatorDevices.length > 0;
     nearbyStatus.dataset["kind"] = "idle";
     nearbyStatus.textContent = "No nearby desktops found. Add a device if you know its hostname or IP address.";
   }
@@ -117141,10 +118312,12 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     const machineChanged = machine !== displayedMachine;
     displayedMachine = machine;
     const network = isNetworkMachine(machine);
+    const simulator = isSimulatorMachine(machine);
     addressField.hidden = machine !== MANUAL_MACHINE;
     networkWarning.hidden = !network;
+    advancedSettings.hidden = simulator;
     discoverButton.hidden = true;
-    discoveryStatus.hidden = network;
+    discoveryStatus.hidden = network || simulator;
     if (machineChanged) {
       setupUsernameInput.value = "";
       setupPasswordInput.value = "";
@@ -117154,6 +118327,15 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     if (network) {
       discoveryGeneration++;
       renderDiscoveredPorts([]);
+    }
+    if (simulator) {
+      discoveryGeneration++;
+      renderDiscoveredPorts([]);
+      empty.textContent = `Connect to view ${selectedSimulator()?.name ?? "this Simulator"}.`;
+      note.hidden = true;
+    } else if (!channel) {
+      empty.textContent = "Choose this machine, a nearby device, another address, or a saved SSH machine.";
+      note.hidden = false;
     }
     const nearby = selectedNearbyServer();
     if (nearby) {
@@ -117188,6 +118370,13 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
   }
   async function refreshSavedLogin() {
     const generation = ++savedLoginGeneration;
+    if (isSimulatorMachine(machineSelect.value)) {
+      selectedHasSavedPassword = false;
+      selectedSavedUsername = "";
+      forgetLoginButton.hidden = true;
+      renderSelectedLogin();
+      return;
+    }
     const port = Number.parseInt(portInput.value, 10);
     const target = activeTarget ?? (Number.isInteger(port) && port >= 1 && port <= 65535 ? selectedTarget(port) : null);
     if (!target) {
@@ -117252,7 +118441,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     if (ports[0] !== void 0) chooseDiscoveredPort(ports[0]);
   }
   async function discoverSelectedMachine() {
-    if (isNetworkMachine(machineSelect.value)) return;
+    if (isNetworkMachine(machineSelect.value) || isSimulatorMachine(machineSelect.value)) return;
     const generation = ++discoveryGeneration;
     discoverButton.hidden = true;
     discoverButton.disabled = true;
@@ -117279,7 +118468,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     const generation = ++nearbyGeneration;
     const previous = machineSelect.value;
     const previousNearby = selectedNearbyServer();
-    nearbyFeedback.hidden = false;
+    nearbyFeedback.hidden = simulatorDevices.length > 0;
     nearbyButton.hidden = true;
     nearbyButton.disabled = true;
     nearbyStatus.dataset["kind"] = "working";
@@ -117307,11 +118496,100 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     const previous = machineSelect.value;
     const activeProject = store2.getState().projects.find((project2) => project2.id === store2.getState().activeProjectId);
     const preferred = activeProject?.sshHost ? sshMachineValue(activeProject.sshHost) : previous;
-    secureCredentialStorage = await api2.vnc.canStoreCredentials().catch(() => false);
+    const [canStoreCredentials, devices] = await Promise.all([
+      api2.vnc.canStoreCredentials().catch(() => false),
+      api2.simulatorDesktop.list().catch(() => [])
+    ]);
+    secureCredentialStorage = canStoreCredentials;
+    simulatorDevices = devices;
     await refreshSshHosts(preferred);
     await Promise.all([discoverSelectedMachine(), discoverNearby()]);
   }
+  async function connectSimulator(device) {
+    const generation = ++connectGeneration;
+    let openedConnectionId = null;
+    connectButton.disabled = true;
+    setStatus("Preparing Simulator stream\u2026", "working", "Compiling the local helper on first use.");
+    try {
+      const connection = await api2.simulatorDesktop.open(device.udid);
+      openedConnectionId = connection.id;
+      if (generation !== connectGeneration) {
+        await api2.simulatorDesktop.close(connection.id);
+        return;
+      }
+      simulatorSessionId = connection.id;
+      connectedAtLeastOnce = false;
+      pendingDisconnectStatus = null;
+      resetControlState();
+      options.onLabelChange(device.name);
+      empty.textContent = "Waiting for the Simulator framebuffer\u2026";
+      setSessionUi(true);
+      const view = createSimulatorDesktopView({
+        connectionId: connection.id,
+        sendInput: (input2) => api2.simulatorDesktop.input(connection.id, input2),
+        onFirstFrame: () => {
+          if (simulatorSessionId !== connection.id) return;
+          connectedAtLeastOnce = true;
+          connectedMachineName = device.name;
+          setSessionUi(true, true);
+          renderConnectedStatus();
+        },
+        onInputError: (error61) => {
+          if (simulatorSessionId !== connection.id) return;
+          setStatus(
+            `Connected to ${device.name}`,
+            "error",
+            error61 instanceof Error ? error61.message : String(error61)
+          );
+        }
+      });
+      simulatorView = view;
+      screen.replaceChildren(view.canvas);
+      await api2.simulatorDesktop.start(connection.id);
+    } catch (error61) {
+      if (openedConnectionId) {
+        await api2.simulatorDesktop.close(openedConnectionId).catch(() => {
+        });
+      }
+      clearViewer(
+        "Couldn\u2019t open the Simulator",
+        "error",
+        error61 instanceof Error ? error61.message : String(error61)
+      );
+    } finally {
+      connectButton.disabled = false;
+    }
+  }
+  async function showSimulatorFromAgent(udid) {
+    openRightPanel(store2, "vnc");
+    const machine = `${SIMULATOR_MACHINE_PREFIX}${udid}`;
+    if (simulatorSessionId && machineSelect.value === machine) return;
+    await loadMachines();
+    const device = simulatorDevices.find((candidate) => candidate.udid === udid);
+    if (!device) {
+      setStatus(
+        "Couldn\u2019t open the Simulator",
+        "error",
+        "The Simulator selected by the agent is no longer booted."
+      );
+      return;
+    }
+    if (simulatorSessionId) {
+      const previousId = simulatorSessionId;
+      clearViewer("Switching Simulator\u2026", "working");
+      await api2.simulatorDesktop.close(previousId).catch(() => {
+      });
+    }
+    machineSelect.value = machine;
+    updateMachineUi();
+    await connectSimulator(device);
+  }
   async function connect() {
+    const simulator = selectedSimulator();
+    if (simulator) {
+      await connectSimulator(simulator);
+      return;
+    }
     const port = Number.parseInt(portInput.value, 10);
     if (!Number.isInteger(port) || port < 1 || port > 65535) {
       setStatus("Enter a port from 1 to 65535.", "error");
@@ -117488,6 +118766,17 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
   function disconnect() {
     connectGeneration++;
     setStatus("Disconnecting\u2026", "working");
+    if (simulatorSessionId) {
+      const connectionId = simulatorSessionId;
+      void api2.simulatorDesktop.close(connectionId).catch((error61) => {
+        clearViewer(
+          "Couldn\u2019t close the Simulator stream",
+          "error",
+          error61 instanceof Error ? error61.message : String(error61)
+        );
+      });
+      return;
+    }
     if (rfb) rfb.disconnect();
     else channel?.close();
   }
@@ -117526,6 +118815,17 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
   disconnectButton.addEventListener("click", disconnect);
   controlButton.addEventListener("click", () => {
     setControlEnabled(!controlEnabled);
+  });
+  homeButton.addEventListener("click", () => {
+    const connectionId = simulatorSessionId;
+    if (!connectionId) return;
+    void api2.simulatorDesktop.input(connectionId, { type: "button-tap", name: "home" }).catch((error61) => {
+      setStatus(
+        "Simulator control failed",
+        "error",
+        error61 instanceof Error ? error61.message : String(error61)
+      );
+    });
   });
   authenticateButton.addEventListener("click", submitCredentials);
   const forgetLogin = () => {
@@ -117597,8 +118897,23 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     }
     channel?.handleStatus(event);
   });
+  const stopSimulatorFrame = api2.simulatorDesktop.onFrame((frame) => {
+    simulatorView?.frame(frame);
+  });
+  const stopSimulatorStatus = api2.simulatorDesktop.onStatus((event) => {
+    if (event.id !== simulatorSessionId) return;
+    if (event.status === "error") {
+      clearViewer(
+        connectedAtLeastOnce ? "Simulator stream lost" : "Couldn\u2019t open the Simulator",
+        "error",
+        event.detail ?? "The private CoreSimulator stream ended unexpectedly."
+      );
+    } else if (event.status === "closed") {
+      clearViewer("Disconnected");
+    }
+  });
   const stopWorkspace = store2.on("workspace_changed", () => {
-    if (channel) disconnect();
+    if (channel || simulatorSessionId) disconnect();
     const activeProject = store2.getState().projects.find((project2) => project2.id === store2.getState().activeProjectId);
     void refreshSshHosts(
       activeProject?.sshHost ? sshMachineValue(activeProject.sshHost) : machineSelect.value
@@ -117606,8 +118921,11 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
   });
   const stopMode = store2.on("right_panel_mode_changed", () => {
     if (!vncModeActive(store2)) return;
-    void refreshSshHosts();
-    if (options.isActive()) rfb?.focus();
+    void loadMachines();
+    if (options.isActive()) {
+      if (rfb) rfb.focus();
+      else simulatorView?.focus();
+    }
   });
   const stopSettings = store2.on("settings_changed", () => {
     void refreshSshHosts();
@@ -117617,7 +118935,11 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
   void loadMachines();
   return {
     focus: () => {
-      rfb?.focus();
+      if (rfb) rfb.focus();
+      else simulatorView?.focus();
+    },
+    showSimulator: (udid) => {
+      void showSimulatorFromAgent(udid);
     },
     cleanup: () => {
       connectGeneration++;
@@ -117626,9 +118948,14 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
       sshHostsGeneration++;
       rfb?.disconnect();
       channel?.close();
+      simulatorView?.cleanup();
+      if (simulatorSessionId) void api2.simulatorDesktop.close(simulatorSessionId).catch(() => {
+      });
       screen.removeEventListener("contextmenu", onScreenContextMenu, true);
       stopData();
       stopStatus();
+      stopSimulatorFrame();
+      stopSimulatorStatus();
       stopWorkspace();
       stopMode();
       stopSettings();
@@ -117814,12 +119141,17 @@ function mountVncPane(controlsRoot, viewerRoot, store2, api2) {
   }
   newButton.addEventListener("click", addTab);
   addTab();
+  const stopSimulatorShow = api2.simulatorDesktop.onShow((udid) => {
+    const tabId = activeTabId ?? addTab();
+    tabs.get(tabId)?.session.showSimulator(udid);
+  });
   return () => {
+    stopSimulatorShow();
     for (const tab of tabs.values()) tab.session.cleanup();
     tabs.clear();
   };
 }
-var LOCAL_MACHINE, MANUAL_MACHINE, NEARBY_MACHINE_PREFIX, SSH_MACHINE_PREFIX, isVncCredentialType;
+var LOCAL_MACHINE, MANUAL_MACHINE, NEARBY_MACHINE_PREFIX, SSH_MACHINE_PREFIX, SIMULATOR_MACHINE_PREFIX, isVncCredentialType;
 var init_vnc_pane = __esm({
   async "src/renderer/views/vnc-pane.ts"() {
     await init_rfb();
@@ -117833,10 +119165,13 @@ var init_vnc_pane = __esm({
     init_confirm_dialog();
     init_vnc_machines();
     init_toast();
+    init_simulator_desktop_view();
+    init_panels();
     LOCAL_MACHINE = "local";
     MANUAL_MACHINE = "network:manual";
     NEARBY_MACHINE_PREFIX = "network:nearby:";
     SSH_MACHINE_PREFIX = "ssh:";
+    SIMULATOR_MACHINE_PREFIX = "simulator:";
     isVncCredentialType = (type) => type === "username" || type === "password" || type === "target";
   }
 });
