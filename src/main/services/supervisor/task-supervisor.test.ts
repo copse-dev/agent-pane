@@ -12,6 +12,7 @@ import {
   type TaskSupervisorClock,
 } from './task-supervisor.ts'
 import type { LoadedSupervisedTasks, SupervisedTaskStore } from './task-store.ts'
+import { createSupervisedTaskClient } from './task-client.ts'
 
 function memoryKey(projectId: string, taskId: string): string {
   return `${projectId}\0${taskId}`
@@ -102,6 +103,7 @@ class MemoryTaskStore implements SupervisedTaskStore {
 class FakeClock implements TaskSupervisorClock {
   readonly scheduledDelays: number[] = []
   private value: number
+  private elapsed = 0
   private nextId = 1
   private readonly timers = new Map<number, { at: number; callback: () => void }>()
 
@@ -116,7 +118,7 @@ class FakeClock implements TaskSupervisorClock {
   setTimeout(callback: () => void, delayMs: number): number {
     this.scheduledDelays.push(delayMs)
     const id = this.nextId++
-    this.timers.set(id, { at: this.value + delayMs, callback })
+    this.timers.set(id, { at: this.elapsed + delayMs, callback })
     return id
   }
 
@@ -126,13 +128,18 @@ class FakeClock implements TaskSupervisorClock {
 
   advanceBy(ms: number): void {
     this.value += ms
+    this.elapsed += ms
     const due = [...this.timers.entries()]
-      .filter(([, timer]) => timer.at <= this.value)
+      .filter(([, timer]) => timer.at <= this.elapsed)
       .sort((left, right) => left[1].at - right[1].at)
     for (const [id, timer] of due) {
       this.timers.delete(id)
       timer.callback()
     }
+  }
+
+  shiftWallBy(ms: number): void {
+    this.value += ms
   }
 }
 
@@ -181,6 +188,394 @@ function persistedTask(overrides: Partial<SupervisedTaskMeta> = {}): SupervisedT
 }
 
 describe('TaskSupervisor', () => {
+  it('runs overdue one-shot wakes on admission and restart, exactly once', async () => {
+    const store = new MemoryTaskStore([
+      persistedTask({ state: 'waiting', trigger: { kind: 'wake_at', wakeAt: 10 } }),
+    ])
+    const supervisor = new TaskSupervisor({ store, clock: new FakeClock(100) })
+    let runs = 0
+    supervisor.registerHandler('test', async () => {
+      runs++
+      return {}
+    })
+    await supervisor.start()
+    await supervisor.enqueue(input({ kind: 'wake_at', wakeAt: 100 }))
+    await supervisor.waitForIdle()
+    assert.equal(runs, 2)
+    await supervisor.wake('project-1', 'persisted-task')
+    await supervisor.waitForIdle()
+    assert.equal(runs, 2)
+  })
+
+  it('keeps ownership isolated for every client operation and returned record', async () => {
+    const supervisor = new TaskSupervisor({
+      store: new MemoryTaskStore(),
+      clock: new FakeClock(100),
+    })
+    const task = await supervisor.enqueue(input({ kind: 'event', event: 'ready' }))
+    const owner = { projectId: task.projectId, threadId: task.threadId }
+    const client = createSupervisedTaskClient(supervisor, owner)
+    for (const foreignOwner of [
+      { ...owner, projectId: 'project-2' },
+      { ...owner, threadId: 'thread-2' },
+    ]) {
+      const foreign = createSupervisedTaskClient(supervisor, foreignOwner)
+      assert.deepEqual(await foreign.list(), { tasks: [] })
+      assert.deepEqual(await foreign.get(task.taskId), { task: null })
+      assert.deepEqual(await foreign.cancel(task.taskId), { task: null })
+      assert.deepEqual(await foreign.resume(task.taskId), { task: null })
+    }
+    task.threadId = 'thread-2'
+    const exposed = supervisor.get(task.projectId, task.taskId)
+    assert.ok(exposed)
+    exposed.threadId = 'thread-2'
+    owner.threadId = 'thread-2'
+    const inspected = (await client.get(task.taskId)).task
+    assert.equal(inspected?.threadId, 'thread-1')
+    assert.ok(!Object.hasOwn(inspected, 'permissionSnapshot'))
+    assert.equal((await client.cancel(task.taskId)).task?.state, 'cancelled')
+    assert.equal((await client.resume(task.taskId)).task?.state, 'cancelled')
+  })
+
+  it('persists bounded exponential retries without losing the event trigger', async () => {
+    const store = new MemoryTaskStore()
+    const clock = new FakeClock(100)
+    const first = new TaskSupervisor({ store, clock })
+    first.registerHandler('test', async () => {
+      throw new Error('temporary failure')
+    })
+    const task = await first.enqueue({
+      ...input({ kind: 'event', event: 'ready' }),
+      maxAttempts: 3,
+      retryPolicy: { initialDelayMs: 100, maxDelayMs: 150 },
+    })
+    assert.deepEqual(
+      await Promise.all([first.emitEvent('ready'), first.emitEvent('ready')]),
+      [1, 0],
+    )
+    await first.waitForIdle()
+    assert.equal(first.get(task.projectId, task.taskId)?.retryAt, 200)
+    await first.shutdown()
+    const second = new TaskSupervisor({ store, clock })
+    let attempts = 0
+    second.registerHandler('test', async () => {
+      attempts++
+      throw new Error('still failing')
+    })
+    await second.start()
+    clock.advanceBy(99)
+    await second.waitForIdle()
+    assert.equal(attempts, 0)
+    clock.advanceBy(1)
+    await second.waitForIdle()
+    assert.equal(second.get(task.projectId, task.taskId)?.retryAt, 350)
+    assert.deepEqual(second.get(task.projectId, task.taskId)?.trigger, {
+      kind: 'event',
+      event: 'ready',
+    })
+    clock.advanceBy(150)
+    await second.waitForIdle()
+    assert.equal(attempts, 2)
+    assert.equal(second.get(task.projectId, task.taskId)?.state, 'failed')
+    clock.advanceBy(10_000)
+    await second.waitForIdle()
+    assert.equal(attempts, 2)
+  })
+
+  it('coalesces missed cron occurrences after restart and does not repeat them after clock rollback', async () => {
+    const clock = new FakeClock(new Date(2026, 0, 1, 0, 0, 0).getTime())
+    const store = new MemoryTaskStore()
+    const first = new TaskSupervisor({ store, clock, cronEnabled: (): boolean => true })
+    const task = await first.enqueue(input({ kind: 'cron', expression: '* * * * *' }))
+    const firstDeadline = first.get(task.projectId, task.taskId)?.nextWakeAt
+    assert.ok(firstDeadline)
+    await first.shutdown()
+    clock.advanceBy(5 * 60_000)
+    const second = new TaskSupervisor({ store, clock, cronEnabled: (): boolean => true })
+    let runs = 0
+    second.registerHandler('test', async () => {
+      runs++
+      return {}
+    })
+    await second.start()
+    clock.advanceBy(0)
+    await second.waitForIdle()
+    assert.equal(runs, 1)
+    const next = second.get(task.projectId, task.taskId)?.nextWakeAt
+    assert.ok(next && next > clock.now())
+    clock.shiftWallBy(-3 * 60_000)
+    clock.advanceBy(60_000)
+    await second.waitForIdle()
+    assert.equal(runs, 1)
+    clock.advanceBy(3 * 60_000)
+    await second.waitForIdle()
+    assert.equal(runs, 2)
+  })
+
+  it('detects a forward wall-clock jump within one minute without early backward-clock wakes', async () => {
+    const clock = new FakeClock(1_000)
+    const supervisor = new TaskSupervisor({ store: new MemoryTaskStore(), clock })
+    let runs = 0
+    supervisor.registerHandler('test', async () => {
+      runs++
+      return {}
+    })
+    await supervisor.enqueue(input({ kind: 'wake_at', wakeAt: 3_601_000 }))
+    clock.shiftWallBy(-60_000)
+    clock.advanceBy(60_000)
+    await supervisor.waitForIdle()
+    assert.equal(runs, 0)
+    clock.shiftWallBy(4_000_000)
+    clock.advanceBy(60_000)
+    await supervisor.waitForIdle()
+    assert.equal(runs, 1)
+  })
+
+  it('holds crash-interrupted execution unless recovery is explicitly idempotent', async () => {
+    const original = persistedTask({ state: 'running', attempt: 1 })
+    const supervisor = new TaskSupervisor({
+      store: new MemoryTaskStore([original]),
+      clock: new FakeClock(100),
+    })
+    let runs = 0
+    supervisor.registerHandler('test', async () => {
+      runs++
+      return {}
+    })
+    const client = createSupervisedTaskClient(supervisor, original)
+    assert.equal((await client.get(original.taskId)).task?.state, 'blocked')
+    assert.equal(runs, 0)
+    await client.resume(original.taskId)
+    await supervisor.waitForIdle()
+    assert.equal(runs, 1)
+    assert.equal((await client.get(original.taskId)).task?.state, 'completed')
+  })
+
+  it('requires a fresh explicit resume for each approval-scoped cron occurrence', async () => {
+    const clock = new FakeClock(new Date(2026, 0, 1, 0, 0, 0).getTime())
+    const supervisor = new TaskSupervisor({
+      store: new MemoryTaskStore(),
+      clock,
+      cronEnabled: (): boolean => true,
+    })
+    let runs = 0
+    supervisor.registerHandler('test', async (task) => {
+      assert.equal(task.reapproveOnWake, false)
+      runs++
+      return {}
+    })
+    const task = await supervisor.enqueue({
+      ...input({ kind: 'cron', expression: '* * * * *' }),
+      reapproveOnWake: true,
+    })
+    clock.advanceBy(60_000)
+    await supervisor.waitForIdle()
+    assert.equal(supervisor.get(task.projectId, task.taskId)?.state, 'blocked')
+    assert.equal(runs, 0)
+    const client = createSupervisedTaskClient(supervisor, task)
+    await client.resume(task.taskId)
+    await supervisor.waitForIdle()
+    assert.equal(runs, 1)
+    clock.advanceBy(60_000)
+    await supervisor.waitForIdle()
+    assert.equal(supervisor.get(task.projectId, task.taskId)?.state, 'blocked')
+    assert.equal(runs, 1)
+  })
+
+  it('never refreshes an expired snapshot through resume', async () => {
+    const supervisor = new TaskSupervisor({
+      store: new MemoryTaskStore(),
+      clock: new FakeClock(100),
+    })
+    supervisor.registerHandler('test', async () => {
+      assert.fail('expired permission')
+    })
+    const task = await supervisor.enqueue({
+      ...input(),
+      permissionSnapshot: { ...input().permissionSnapshot, expiresAt: 99 },
+    })
+    await supervisor.waitForIdle()
+    await createSupervisedTaskClient(supervisor, task).resume(task.taskId)
+    await supervisor.waitForIdle()
+    assert.match(supervisor.get(task.projectId, task.taskId)?.lastError ?? '', /expired/)
+    assert.equal(supervisor.get(task.projectId, task.taskId)?.state, 'blocked')
+  })
+
+  it('cancels before invoking a handler when cancellation wins the start-write race', async () => {
+    let release!: () => void
+    let started!: () => void
+    const starting = new Promise<void>((resolve) => {
+      started = resolve
+    })
+    class SlowStartStore extends MemoryTaskStore {
+      override async saveTransition(
+        task: SupervisedTaskMeta,
+        audit: SupervisedTaskAuditEvent,
+      ): Promise<void> {
+        await super.saveTransition(task, audit)
+        if (audit.action === 'start') {
+          started()
+          await new Promise<void>((resolve) => {
+            release = resolve
+          })
+        }
+      }
+    }
+    const supervisor = new TaskSupervisor({
+      store: new SlowStartStore(),
+      clock: new FakeClock(100),
+    })
+    let runs = 0
+    supervisor.registerHandler('test', async () => {
+      runs++
+      return {}
+    })
+    const task = await supervisor.enqueue(input())
+    await starting
+    await supervisor.cancel(task.projectId, task.taskId)
+    release()
+    await supervisor.waitForIdle()
+    assert.equal(runs, 0)
+    assert.equal(supervisor.get(task.projectId, task.taskId)?.state, 'cancelled')
+  })
+
+  it('fences external completion that races a cancellation', async () => {
+    const supervisor = new TaskSupervisor({
+      store: new MemoryTaskStore(),
+      clock: new FakeClock(100),
+    })
+    supervisor.registerExternalCanceller('shell_process', async (task) => {
+      await supervisor.completeExternal(task.projectId, task.taskId)
+    })
+    const task = await supervisor.adoptRunning(
+      { ...input(), handler: 'shell_process' },
+      'process-1',
+    )
+    await supervisor.cancel(task.projectId, task.taskId)
+    assert.equal(supervisor.get(task.projectId, task.taskId)?.state, 'cancelled')
+  })
+
+  it('enforces duration and cancellation grace even for a handler that ignores abort', async () => {
+    const clock = new FakeClock(100)
+    const supervisor = new TaskSupervisor({
+      store: new MemoryTaskStore(),
+      clock,
+      cancellationGraceMs: 10,
+      maxConcurrent: 1,
+    })
+    let entered!: () => void
+    const enteredPromise = new Promise<void>((resolve) => {
+      entered = resolve
+    })
+    let release!: (result: SupervisedTaskHandlerResult) => void
+    supervisor.registerHandler('test', () => {
+      entered()
+      return new Promise<SupervisedTaskHandlerResult>((resolve) => {
+        release = resolve
+      })
+    })
+    const task = await supervisor.enqueue({ ...input(), resourceBudget: { maxDurationMs: 50 } })
+    await enteredPromise
+    clock.advanceBy(50)
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    assert.equal(supervisor.get(task.projectId, task.taskId)?.state, 'failed')
+    clock.advanceBy(10)
+    await supervisor.waitForIdle()
+    await assert.rejects(
+      createSupervisedTaskClient(supervisor, task).resume(task.taskId),
+      /has not stopped/,
+    )
+    release({ resultRef: { kind: 'handler', ref: 'late' } })
+    await supervisor.waitForIdle()
+    assert.equal(supervisor.get(task.projectId, task.taskId)?.state, 'failed')
+    assert.equal(supervisor.get(task.projectId, task.taskId)?.resultRef, undefined)
+  })
+
+  it('bounds shutdown, persists the recovery state, and refuses work after shutdown', async () => {
+    const clock = new FakeClock(100)
+    const store = new MemoryTaskStore()
+    const supervisor = new TaskSupervisor({ store, clock, cancellationGraceMs: 10 })
+    let entered!: () => void
+    const started = new Promise<void>((resolve) => {
+      entered = resolve
+    })
+    supervisor.registerHandler('test', () => {
+      entered()
+      return new Promise<SupervisedTaskHandlerResult>(() => {})
+    })
+    const task = await supervisor.enqueue(input())
+    await started
+    const stopping = supervisor.shutdown()
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    clock.advanceBy(10)
+    await stopping
+    assert.equal(supervisor.get(task.projectId, task.taskId)?.state, 'blocked')
+    await assert.rejects(supervisor.enqueue(input()), /stopping/)
+    await assert.rejects(supervisor.adoptRunning(input(), 'new-process'), /stopping/)
+    const restarted = new TaskSupervisor({ store, clock })
+    restarted.registerHandler('test', async () => {
+      assert.fail('Interrupted work must wait for inspection')
+    })
+    await restarted.start()
+    await restarted.waitForIdle()
+    assert.equal(restarted.get(task.projectId, task.taskId)?.state, 'blocked')
+  })
+
+  it('lets resource policy tighten automatic retries and records an explicit retry cycle', async () => {
+    const clock = new FakeClock(100)
+    const store = new MemoryTaskStore()
+    const supervisor = new TaskSupervisor({ store, clock })
+    let runs = 0
+    supervisor.registerHandler('test', async () => {
+      runs++
+      if (runs === 1) throw new Error('temporary failure')
+      return {}
+    })
+    const task = await supervisor.enqueue({
+      ...input(),
+      maxAttempts: 5,
+      retryPolicy: { initialDelayMs: 100, maxDelayMs: 200 },
+      resourceBudget: { maxAttempts: 1 },
+    })
+    await supervisor.waitForIdle()
+    assert.equal(supervisor.get(task.projectId, task.taskId)?.state, 'failed')
+    clock.advanceBy(1000)
+    await supervisor.waitForIdle()
+    assert.equal(runs, 1)
+    await createSupervisedTaskClient(supervisor, task).resume(task.taskId)
+    await supervisor.waitForIdle()
+    assert.equal(runs, 2)
+    assert.equal(supervisor.get(task.projectId, task.taskId)?.state, 'completed')
+    assert.ok(store.audit.some((event) => event.action === 'retry' && event.fromState === 'failed'))
+  })
+
+  it('respects class capacity without starving an unrelated class', async () => {
+    const supervisor = new TaskSupervisor({
+      store: new MemoryTaskStore(),
+      clock: new FakeClock(100),
+      maxConcurrent: 2,
+      concurrencyClassLimits: { poller: 1 },
+    })
+    const classes: string[] = []
+    let release!: (result: SupervisedTaskHandlerResult) => void
+    supervisor.registerHandler('test', (task) => {
+      classes.push(task.concurrencyClass)
+      if (classes.length === 1)
+        return new Promise((resolve) => {
+          release = resolve
+        })
+      return Promise.resolve({})
+    })
+    await supervisor.enqueue({ ...input(), concurrencyClass: 'poller' })
+    await supervisor.enqueue({ ...input(), concurrencyClass: 'poller' })
+    await supervisor.enqueue({ ...input(), concurrencyClass: 'toString' })
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    assert.deepEqual(classes, ['poller', 'toString'])
+    release({})
+    await supervisor.waitForIdle()
+    assert.deepEqual(classes, ['poller', 'toString', 'poller'])
+  })
+
   it('persists every immediate-task transition before completing', async () => {
     const store = new MemoryTaskStore()
     const clock = new FakeClock(100)

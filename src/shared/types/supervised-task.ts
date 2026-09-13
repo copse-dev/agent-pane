@@ -1,4 +1,4 @@
-import type { TaskState } from '../supervisor/task-schema.ts'
+import type { TaskState, TaskTrigger, TaskResultRef } from '../supervisor/task-schema.ts'
 
 export interface SupervisedTaskSummary {
   taskId: string
@@ -7,4 +7,10 @@ export interface SupervisedTaskSummary {
   handler: string
   state: TaskState
   updatedAt: number
+  lastError?: string
+  attempt?: number
+  maxAttempts?: number
+  trigger?: TaskTrigger
+  retryAt?: number
+  resultRef?: TaskResultRef
 }

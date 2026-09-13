@@ -75,47 +75,51 @@ export class AutomationEventInbox {
     this.adapter = dependencies.adapter
     this.host = dependencies.host
     this.now = dependencies.now ?? Date.now
-    this.unregister = this.supervisor.registerHandler(HANDLER, async (task, { signal }) => {
-      // Read afresh across awaits: AbortSignal.aborted is mutable at runtime.
-      const isAborted = (): boolean => signal.aborted
-      const input = handlerInputSchema.safeParse(task.handlerInput)
-      if (!input.success) return { blockedReason: 'Invalid event inbox task input' }
-      const record = await this.store.get(task.projectId, input.data.inboxKey)
-      if (
-        !record ||
-        record.runId !== task.taskId ||
-        task.threadId !== task.taskId ||
-        task.contentHash !== contentHash(record)
-      ) {
-        return { blockedReason: 'Event task does not match its durable claim' }
-      }
-      if (record.state === 'prepared') return this.result(task.threadId)
-      if (!pending(record))
-        return { blockedReason: record.reason ?? 'Event delivery is not pending' }
-      const reason = await this.check(record)
-      if (reason) {
-        await this.hold(record, reason)
-        return { blockedReason: reason }
-      }
-      // Fencing may have happened during an asynchronous permission/resource check.
-      const current = await this.store.get(task.projectId, record.key)
-      if (!current || !pending(current) || isAborted()) {
-        return { blockedReason: 'Event delivery was fenced before preparation' }
-      }
-      try {
-        await this.host.prepareRun({ ...current, runId: task.taskId }, signal)
-      } catch (error) {
-        if (!isAborted())
-          await this.hold(current, 'Run preparation failed; inspect the supervised task')
-        throw error
-      }
-      if (isAborted()) return { blockedReason: 'Event preparation interrupted' }
-      await this.store.update(task.projectId, record.key, (latest) => {
-        if (!latest) throw new Error('Event claim disappeared')
-        return pending(latest) ? { ...latest, state: 'prepared', updatedAt: this.now() } : latest
-      })
-      return this.result(task.threadId)
-    })
+    this.unregister = this.supervisor.registerHandler(
+      HANDLER,
+      async (task, { signal }) => {
+        // Read afresh across awaits: AbortSignal.aborted is mutable at runtime.
+        const isAborted = (): boolean => signal.aborted
+        const input = handlerInputSchema.safeParse(task.handlerInput)
+        if (!input.success) return { blockedReason: 'Invalid event inbox task input' }
+        const record = await this.store.get(task.projectId, input.data.inboxKey)
+        if (
+          !record ||
+          record.runId !== task.taskId ||
+          task.threadId !== task.taskId ||
+          task.contentHash !== contentHash(record)
+        ) {
+          return { blockedReason: 'Event task does not match its durable claim' }
+        }
+        if (record.state === 'prepared') return this.result(task.threadId)
+        if (!pending(record))
+          return { blockedReason: record.reason ?? 'Event delivery is not pending' }
+        const reason = await this.check(record)
+        if (reason) {
+          await this.hold(record, reason)
+          return { blockedReason: reason }
+        }
+        // Fencing may have happened during an asynchronous permission/resource check.
+        const current = await this.store.get(task.projectId, record.key)
+        if (!current || !pending(current) || isAborted()) {
+          return { blockedReason: 'Event delivery was fenced before preparation' }
+        }
+        try {
+          await this.host.prepareRun({ ...current, runId: task.taskId }, signal)
+        } catch (error) {
+          if (!isAborted())
+            await this.hold(current, 'Run preparation failed; inspect the supervised task')
+          throw error
+        }
+        if (isAborted()) return { blockedReason: 'Event preparation interrupted' }
+        await this.store.update(task.projectId, record.key, (latest) => {
+          if (!latest) throw new Error('Event claim disappeared')
+          return pending(latest) ? { ...latest, state: 'prepared', updatedAt: this.now() } : latest
+        })
+        return this.result(task.threadId)
+      },
+      { preparesOnly: true },
+    )
   }
 
   dispose(): void {
@@ -210,6 +214,7 @@ export class AutomationEventInbox {
           reapproveOnWake: true,
           concurrencyClass: `automation-event:${claimed.binding.automationId}`,
           maxAttempts: 3,
+          restartPolicy: 'retry',
           contentHash: contentHash(claimed),
         })
         await this.store.update(projectId, claimed.key, (latest) => {
