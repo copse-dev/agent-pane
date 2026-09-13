@@ -5,6 +5,7 @@ import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
 import {
   afterSandboxedCommand,
   initProjectSandbox,
@@ -18,7 +19,7 @@ import {
 } from '../services/workspace.ts'
 import { createWorktreeBackup, getGitStatus } from '../services/github/git-service.ts'
 import { setGitAvailableForTest } from '../services/tool-availability.ts'
-import { workspaceTmpDir } from './config.ts'
+import { gitBackupSandboxOverlay, workspaceTmpDir } from './config.ts'
 
 interface CommandResult {
   stdout: string
@@ -42,11 +43,13 @@ async function runSandboxed(
   executable: string,
   args: string[],
   cwd: string,
+  sandboxConfig?: Partial<SandboxRuntimeConfig>,
 ): Promise<CommandResult> {
   const child = await spawnInProjectSandbox(executable, args, {
     cwd,
     env: gitEnv,
     stdio: ['pipe', 'pipe', 'pipe'],
+    ...(sandboxConfig ? { sandboxConfig } : {}),
   })
   let stdout = ''
   let stderr = ''
@@ -279,10 +282,12 @@ describe('linked-worktree sandbox integration', () => {
 
       const tracked = join(nested, 'tracked.txt')
       const untracked = join(nested, 'untracked.txt')
+      const protectedConfig = join(nested, '.bashrc')
       await writeFile(tracked, 'staged\n')
       git(worktree, ['add', 'packages/app/tracked.txt'])
       await writeFile(tracked, 'staged and unstaged\n')
       await writeFile(untracked, 'new user file\n')
+      await writeFile(protectedConfig, '# existing user config\n')
 
       const headBefore = git(worktree, ['rev-parse', 'HEAD'])
       const indexBefore = git(worktree, ['ls-files', '--stage'])
@@ -304,6 +309,15 @@ describe('linked-worktree sandbox integration', () => {
         'new user file\n',
       )
       assert.doesNotMatch(git(worktree, ['ls-tree', '-r', '--name-only', backup]), /copse-backup-/)
+      assert.equal(
+        git(worktree, ['show', `${backup}:packages/app/.bashrc`]),
+        '# existing user config\n',
+      )
+      assert.deepEqual(git(worktree, ['ls-tree', '-r', '--name-only', backup]).trim().split('\n'), [
+        'packages/app/.bashrc',
+        'packages/app/tracked.txt',
+        'packages/app/untracked.txt',
+      ])
 
       const scratchEntries = await readdir(workspaceTmpDir())
       assert.equal(
@@ -315,6 +329,49 @@ describe('linked-worktree sandbox integration', () => {
       if (previousCopseDir === undefined) delete process.env['COPSE_DIR']
       else process.env['COPSE_DIR'] = previousCopseDir
     }
+  })
+
+  it('backs up an ordinary home-contained repository with a read-only checkout', async (t) => {
+    if (process.platform === 'win32') {
+      t.skip('project sandbox integration is not enabled on Windows')
+      return
+    }
+    const root = await mkdtemp(join(homedir(), 'copse-backup-home-'))
+    cleanups.push(root)
+    git(root, ['init', '-q', '-b', 'main'])
+    await writeFile(join(root, 'tracked.txt'), 'base\n')
+    git(root, ['add', '.'])
+    git(root, ['commit', '-q', '-m', 'initial'])
+    await writeFile(join(root, 'tracked.txt'), 'changed\n')
+    await writeFile(join(root, '.bashrc'), '# user config\n')
+    const statusBefore = git(root, ['status', '--porcelain=v1'])
+    const indexBefore = await readFile(join(root, '.git', 'index'))
+    setGitAvailableForTest(true)
+    await initProjectSandbox()
+    if (!isProjectSandboxEnabled()) {
+      t.skip('ASRT sandbox unavailable')
+      return
+    }
+    const backup = await createWorktreeBackup('home checkpoint', root)
+    assert.ok(backup, 'expected a backup ref')
+    assert.equal(git(root, ['show', `${backup}:tracked.txt`]), 'changed\n')
+    assert.equal(git(root, ['show', `${backup}:.bashrc`]), '# user config\n')
+    assert.deepEqual(git(root, ['ls-tree', '-r', '--name-only', backup]).trim().split('\n'), [
+      '.bashrc',
+      'tracked.txt',
+    ])
+    const overlay = gitBackupSandboxOverlay(root)
+    for (const path of ['tracked.txt', '.git/index', '.git/config', '.git/hooks/pre-commit']) {
+      const write = await runSandboxed(
+        process.execPath,
+        ['-e', 'require("node:fs").writeFileSync(process.argv[1], "blocked")', join(root, path)],
+        root,
+        overlay,
+      )
+      assert.notEqual(write.code, 0, `backup must not write ${path}`)
+    }
+    assert.equal(git(root, ['status', '--porcelain=v1']), statusBefore)
+    assert.deepEqual(await readFile(join(root, '.git', 'index')), indexBefore)
   })
 
   it('starts Node in a home-contained workspace while keeping sibling files unreadable', async (t) => {

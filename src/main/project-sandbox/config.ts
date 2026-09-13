@@ -1,4 +1,4 @@
-import { accessSync, mkdirSync, readdirSync, realpathSync, statSync } from 'node:fs'
+import { accessSync, lstatSync, mkdirSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
@@ -537,6 +537,58 @@ export function readOnlyWorkspaceSandboxOverlay(
       ...fs,
       allowWrite: [],
       denyWrite: [],
+    },
+  }
+}
+
+/**
+ * Backups read the checkout and write only Git objects/refs and a scratch index.
+ * Keeping the checkout read-only also avoids Linux's synthetic write-deny
+ * mount points: `git add -A` must snapshot user files, not sandbox placeholders.
+ */
+export function gitBackupSandboxOverlay(workspaceRoot: string): Partial<SandboxRuntimeConfig> {
+  const root = canonicalizeWorkspaceRoot(workspaceRoot)
+  const overlay = readOnlyWorkspaceSandboxOverlay(root)
+  const fs = overlay.filesystem
+  if (!fs) throw new Error('readOnlyWorkspaceSandboxOverlay must define a filesystem config')
+  const registration = getInternalWorkspaceRootRegistration(root)
+  const commonGitDir = realpathSync.native(registration?.commonGitDir ?? join(root, '.git'))
+  const commonRelative = relative(root, commonGitDir)
+  if (
+    !registration &&
+    (isAbsolute(commonRelative) || commonRelative === '..' || commonRelative.startsWith(`..${sep}`))
+  ) {
+    throw new Error('Backup Git metadata escapes its allowed directory')
+  }
+  const gitWrites = ['objects', 'refs', 'logs'].map((entry) => join(commonGitDir, entry))
+  // Only a validated linked-worktree registration may authorize metadata
+  // outside the execution root. Never follow a project-created symlink there.
+  for (const path of gitWrites) {
+    const entry = lstatSync(path, { throwIfNoEntry: false })
+    const canonical = entry ? realpathSync.native(path) : path
+    const rel = relative(commonGitDir, canonical)
+    if (entry?.isSymbolicLink() || isAbsolute(rel) || rel === '..' || rel.startsWith(`..${sep}`)) {
+      throw new Error('Backup Git metadata escapes its allowed directory')
+    }
+  }
+  const scratch = ensureWorkspaceTmpDir()
+  return {
+    ...overlay,
+    filesystem: {
+      ...fs,
+      // On Linux a read bind of the checkout would shadow the writable Git
+      // subdirectories. Split that read tree around the metadata carve-outs.
+      allowRead:
+        commonRelative !== '..' &&
+        !commonRelative.startsWith(`..${sep}`) &&
+        !isAbsolute(commonRelative)
+          ? [
+              ...(fs.allowRead ?? []).filter((path) => path !== root && path !== `${root}/**`),
+              ...readOnlyTreeExcluding(root, gitWrites),
+              ...gitWrites.flatMap((path) => [path, `${path}/**`]),
+            ]
+          : fs.allowRead,
+      allowWrite: [scratch, `${scratch}/**`, ...gitWrites.flatMap((path) => [path, `${path}/**`])],
     },
   }
 }

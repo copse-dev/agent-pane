@@ -21,6 +21,7 @@ import {
   ensureWorkspaceTmpDir,
   fsServerSandboxOverlay,
   fsWorkerSandboxOverlay,
+  gitBackupSandboxOverlay,
   readAllowedSandboxOverlay,
   readOnlyTreeExcluding,
   readOnlyWorkspaceSandboxOverlay,
@@ -803,5 +804,48 @@ describe('readOnlyWorkspaceSandboxOverlay', () => {
     assert.deepEqual(filesystem.allowRead, workspace.filesystem?.allowRead)
     assert.deepEqual(filesystem.allowWrite, [])
     assert.deepEqual(filesystem.denyWrite, [])
+  })
+})
+
+describe('gitBackupSandboxOverlay', () => {
+  it('allows snapshot metadata and scratch writes without writable checkout or mount stubs', () => {
+    const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'copse-backup-overlay-')))
+    try {
+      execFileSync('git', ['init', '-q', root])
+      const overlay = gitBackupSandboxOverlay(root)
+      const fs = overlay.filesystem
+      assert.ok(fs)
+      assert.deepEqual(fs.denyWrite, [])
+      assert.deepEqual(fs.allowWrite, [
+        workspaceTmpDir(),
+        `${workspaceTmpDir()}/**`,
+        ...['objects', 'refs', 'logs'].flatMap((entry) => [
+          join(root, '.git', entry),
+          `${join(root, '.git', entry)}/**`,
+        ]),
+      ])
+      assert.ok(fs.allowRead?.includes(join(root, '.git', 'objects')))
+      assert.equal(fs.allowRead?.includes(`${root}/**`), false)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects Git metadata symlinks outside the authorized directory', () => {
+    const parent = mkdtempSync(join(tmpdir(), 'copse-backup-overlay-'))
+    const root = join(parent, 'repo')
+    const outside = join(parent, 'outside')
+    try {
+      mkdirSync(outside)
+      execFileSync('git', ['init', '-q', root])
+      rmSync(join(root, '.git', 'objects'), { recursive: true })
+      symlinkSync(outside, join(root, '.git', 'objects'))
+      assert.throws(() => gitBackupSandboxOverlay(root), /escapes its allowed directory/)
+      rmSync(join(root, '.git'), { recursive: true })
+      symlinkSync(outside, join(root, '.git'))
+      assert.throws(() => gitBackupSandboxOverlay(root), /escapes its allowed directory/)
+    } finally {
+      rmSync(parent, { recursive: true, force: true })
+    }
   })
 })
