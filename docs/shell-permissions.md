@@ -143,6 +143,9 @@ wording stays an expectation, per the section above.
 
 Every project can use `preflight_worktree` and `prepare_worktree`. Preflight detects npm, pnpm,
 Yarn Classic/modern, and Bun from an exact package-manager declaration or an unambiguous lockfile.
+Python projects with `pyproject.toml` and `uv.lock` use locked uv workspace synchronization with an
+installed compatible Python. uv package builds may execute repository code, which approval states;
+automatic Python/tool installation is disabled.
 It reports runtime requirements, dependency state, declared checks, configuration problems, exact
 setup commands, and a plan fingerprint. The optional `directory` selects a nested project inside
 the execution root. There is no repository-name check or implicit Electron/native requirement.
@@ -161,9 +164,10 @@ for arbitrary commands. Automatic JavaScript installs use frozen lockfiles, Sock
 manager-specific lifecycle disabling. Custom steps retain their explicitly approved semantics.
 
 Both tools require an enforcing OS sandbox and have no unsandboxed fallback. Preflight probes and
-checks run read-only with network blocked. Preparation writes only the selected project and fixed
+checks run with network blocked and the project/shared caches read-only. Each probe can write only
+private disposable scratch, removed after execution, for manager bookkeeping. Preparation writes only the selected project and fixed
 managed cache directories under `~/.copse/cache/` (`COPSE_DIR` relocates them), including Corepack,
-npm, pnpm, Yarn, Bun, Socket Firewall, and native build caches. Toolchains are read-only; native setup
+npm, pnpm, Yarn, Bun, uv, Socket Firewall, and native build caches. Toolchains are read-only; native setup
 uses a managed build home. No declaration may request broader filesystem grants. Temporary files
 stay in the project; redirected cache roots and outside-worktree metadata inputs are rejected.
 Root Git/editor configuration remains protected, while dependency metadata can be extracted.

@@ -1,6 +1,6 @@
 # Project worktree preparation
 
-Tracking: #2376; implementation: #2388. This replaces the Copse-source-only scope of the original bootstrap proposal.
+Tracking: #2376 and #2654; foundation: #2388. This replaces the Copse-source-only scope of the original bootstrap proposal.
 
 ## Product contract
 
@@ -8,9 +8,10 @@ Worktree readiness is a capability for the user's project. The application must 
 
 Preflight is read-only. It returns the detected package manager, runtime requirements, dependency state, declared checks, exact preparation commands, configuration problems, and a plan fingerprint. Preparation approves those commands once, checks the fingerprint again during execution, and records readiness only after the required checks pass. Readiness means dependencies and declared setup are ready; it never implies the project's build or tests pass.
 
-## Scope implemented in #2388
+## Implemented scope
 
 - Automatic JavaScript adapters: npm, pnpm, Yarn Classic, modern Yarn (including Plug'n'Play), and Bun. Prefer an exact `packageManager` declaration; otherwise require an unambiguous lockfile. No package name, scripts field, or `.nvmrc` is required. Respect Node version files and `engines.node` when present.
+- Automatic Python adapter: a root `pyproject.toml` and `uv.lock` select uv. Run `uv sync --locked --all-packages --no-python-downloads` against the project's `.venv`, including workspace packages and default dependency groups. uv enforces Python constraints and lock freshness; an installed compatible Python and uv are prerequisites. This does not install Python or uv globally. An explicit declaration owns non-JavaScript setup and can override detection; mixed JavaScript/Python roots and conflicting Python locks require that declaration or selection of a nested project.
 - Frozen/immutable installs; no automatic lockfile generation or package-manager migration. Include development dependencies. General install lifecycle scripts remain disabled.
 - Any other ecosystem can declare preparation commands and read-only checks in `.copse/worktree-preparation.json`. This is a general extension mechanism, not a claim that every ecosystem is automatically detected. An unknown project gets actionable configuration guidance rather than a false `ready` result.
 - Project-specific native setup is opt-in through the same declaration. Copse's Electron/gortex setup becomes one ordinary declaration in this repository; there is no privileged application-side adapter for it.
@@ -57,9 +58,19 @@ The host does not invent safe flags for arbitrary project-defined commands: thei
 ## Follow-up sequence
 
 1. Land and validate this general foundation, keeping #2388 draft until its expanded CI passes.
-2. #2654: Add zero-configuration adapters for Python (uv and locked pip), Rust (Cargo), and Go. Each adapter needs documented lock/constraint handling, cache identity, offline behavior, toolchain requirements, and build-script policy, plus real sandbox installation fixtures. Declarations already support these projects while adapters are developed.
+2. #2654: uv is the first automatic non-JavaScript adapter (details below). Hash-locked pip, Rust (Cargo), and Go remain next. Each adapter needs documented lock/constraint handling, cache identity, offline behavior, toolchain requirements, and build-script policy, plus real sandbox installation fixtures. Declarations already support these projects while adapters are developed.
 3. #2655: Add Maven/Gradle, .NET/NuGet, Ruby/Bundler, and PHP/Composer using the same adapter contract and evidence. Do not market automatic support until its adapter and tests ship.
 4. Improve configuration discovery/authoring and mixed-ecosystem monorepo reporting. Preserve project-root confinement and explicit approval when selecting setup commands.
 5. Run #1916's end-to-end approval-budget regression across different project types. #2377 (linked-worktree Git) and #2378 (edit ownership) remain independent prerequisites for reducing the rest of that friction; neither provides package-manager support.
 
 Runtime installation/version switching and Windows sandbox support are separate capabilities. Preparation reports an unavailable runtime and the required version; it does not silently install tools globally or relax its boundary.
+
+## Python adapter evidence and remaining work (#2654)
+
+uv readiness checks the manager identity, selected interpreter, environment runtime identity, and `uv sync --locked --all-packages --check --offline --no-cache --no-python-downloads`. A success stamp alone never substitutes for that check. Root/workspace Python manifests, uv configuration, Python version files, and the lockfile invalidate the plan. uv's own check decides whether the installed distribution metadata matches the locked environment. This is not an integrity scan of every installed source file or a claim that tests pass.
+
+uv initializes bookkeeping even during `--check`. Every preflight subprocess therefore receives a private disposable scratch directory; only that directory is writable, and it is removed after success or failure. The project, shared caches, and unrelated host files remain read-only. `--no-cache` directs uv's check to disposable storage; installation and later shells use the fixed managed `uv` cache. Offline mode still has kernel network isolation. Python builds may execute backend/repository code and are labelled accordingly in approval; they do not inherit the JavaScript disabled-lifecycle claim.
+
+The real uv regression creates an unrelated application with a local wheel, consumes its reviewed lock, installs/imports the dependency, reuses preparation offline, repairs removed distribution metadata, and rejects changed manifests/stale locks without rewriting the lock. It uses the host's installed uv and Python and explicitly skips only that fixture when those tools are absent. Unit and sandbox-boundary coverage do not require uv. A focused Electron eval captures the automatic Python approval.
+
+Validated against uv 0.12.2. Command semantics: [uv CLI reference](https://docs.astral.sh/uv/reference/cli/). Hash-locked pip, Cargo and Go remain the next adapters in #2654; JVM/.NET/Ruby/PHP remain in #2655. Neither issue is complete merely because uv is supported.

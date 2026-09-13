@@ -58,7 +58,11 @@ type ProcessProbe = (
   env: NodeJS.ProcessEnv,
 ) => string | null | Promise<string | null>
 
-function sandboxProbe(root: string, signal?: AbortSignal): ProcessProbe {
+function sandboxProbe(
+  root: string,
+  signal?: AbortSignal,
+  onFailure?: (message: string) => void,
+): ProcessProbe {
   return async (command, args, env) => {
     try {
       return await runWorktreePreparationProcess(command, args, {
@@ -68,8 +72,9 @@ function sandboxProbe(root: string, signal?: AbortSignal): ProcessProbe {
         offline: true,
         ...(signal ? { signal } : {}),
       })
-    } catch {
+    } catch (error) {
       signal?.throwIfAborted()
+      onFailure?.(errorMessage(error).slice(0, 1500))
       return null
     }
   }
@@ -86,6 +91,7 @@ function preparationCacheEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv 
     YARN_CACHE_FOLDER: join(root, 'yarn'),
     YARN_GLOBAL_FOLDER: join(root, 'yarn', 'global'),
     BUN_INSTALL_CACHE_DIR: join(root, 'bun'),
+    UV_CACHE_DIR: join(root, 'uv'),
     electron_config_cache: join(root, 'electron-downloads'),
     COPSE_ELECTRON_DIST_CACHE: join(root, 'electron-dist'),
     COPSE_GORTEX_CACHE: join(root, 'gortex'),
@@ -130,6 +136,14 @@ function environmentForPlan(
     // Explicit versions are selected through Corepack; do not rewrite package.json.
     COREPACK_ENABLE_AUTO_PIN: '0',
     COREPACK_ENABLE_NETWORK: offline ? '0' : '1',
+    ...(plan.ecosystem === 'uv'
+      ? {
+          UV_PROJECT_ENVIRONMENT: join(plan.root, '.venv'),
+          UV_PYTHON_DOWNLOADS: 'never',
+          UV_OFFLINE: offline ? 'true' : 'false',
+          PYTHONDONTWRITEBYTECODE: '1',
+        }
+      : {}),
     ...(plan.manager?.name === 'yarn' && plan.manager.modernYarn
       ? {
           YARN_ENABLE_NETWORK: offline ? 'false' : 'true',
@@ -157,7 +171,12 @@ async function inspectPlan(
   options: InspectOptions,
 ): Promise<WorktreePreparationReport> {
   const env = environmentForPlan(preparationEnvironment(options.env), plan, true)
-  const probe = options.probe ?? sandboxProbe(plan.root)
+  const probeFailures: string[] = []
+  const probe =
+    options.probe ??
+    sandboxProbe(plan.root, undefined, (message) => {
+      probeFailures.push(message)
+    })
   const components: WorktreePreparationComponent[] = []
   const identity: string[] = [plan.fingerprint, process.platform, process.arch]
   if (plan.manager) {
@@ -242,6 +261,7 @@ async function inspectPlan(
     })
   }
   for (const check of plan.checks) {
+    probeFailures.length = 0
     const pathReady = check.path === undefined || existsSync(join(plan.root, check.path))
     const output = check.command
       ? await probe(check.command.command, check.command.args, env)
@@ -256,7 +276,7 @@ async function inspectPlan(
       detail: !pathReady
         ? `missing ${check.path ?? ''}`
         : !commandReady
-          ? 'read-only check failed or expected output was absent'
+          ? (probeFailures.at(-1) ?? 'read-only check failed or expected output was absent')
           : (check.path ?? output?.slice(0, 300) ?? 'check passed'),
     })
   }

@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { lstatSync, mkdirSync, realpathSync } from 'node:fs'
+import { lstatSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { wrapCommandWithSandboxMacOS } from '@anthropic-ai/sandbox-runtime/dist/sandbox/macos-sandbox-utils.js'
@@ -103,14 +103,30 @@ export async function runWorktreePreparationProcess(
 ): Promise<string> {
   requirePreparationSandbox()
   options.signal?.throwIfAborted()
+  // Some read-only manager checks need temporary bookkeeping. Give each probe
+  // private, disposable scratch; never make the project or shared caches writable.
+  const scratch =
+    options.mode === 'preflight'
+      ? realpathSync(mkdtempSync(join(tmpdir(), 'copse-preflight-')))
+      : join(realpathSync(options.root), '.tmp', 'worktree-preparation')
+  try {
+    return await runContainedPreparationProcess(command, args, options, scratch)
+  } finally {
+    if (options.mode === 'preflight') rmSync(scratch, { recursive: true, force: true })
+  }
+}
+
+async function runContainedPreparationProcess(
+  command: string,
+  args: readonly string[],
+  options: PreparationProcessOptions,
+  scratch: string,
+): Promise<string> {
   const root = realpathSync(options.root)
   const caches = preparationCacheRoots(options.env, options.mode === 'prepare')
   const writable = options.mode === 'prepare'
   const env = withSandboxShellPath(
-    withSandboxTmpEnv(
-      envForRendererChildProcess(options.env),
-      join(root, '.tmp', 'worktree-preparation'),
-    ),
+    withSandboxTmpEnv(envForRendererChildProcess(options.env), scratch),
   )
   // The outer wrapper shell starts before kernel confinement. Never let its
   // startup files execute ambient code before sandbox-exec/bwrap takes over.
@@ -120,10 +136,10 @@ export async function runWorktreePreparationProcess(
     // ASRT's proxy environment overrides spawn.env (including TMPDIR). Set
     // scratch after those assignments, inside the confined command.
     command: formatArgvForShell('/usr/bin/env', [
-      `TMPDIR=${join(root, '.tmp', 'worktree-preparation')}`,
-      `TMP=${join(root, '.tmp', 'worktree-preparation')}`,
-      `TEMP=${join(root, '.tmp', 'worktree-preparation')}`,
-      `TMPPREFIX=${join(root, '.tmp', 'worktree-preparation', 'zsh')}`,
+      `TMPDIR=${scratch}`,
+      `TMP=${scratch}`,
+      `TEMP=${scratch}`,
+      `TMPPREFIX=${join(scratch, 'zsh')}`,
       command,
       ...args,
     ]),
@@ -135,6 +151,7 @@ export async function runWorktreePreparationProcess(
       denyOnly: [homedir(), tmpdir(), '/private/tmp', '/private/var/folders'],
       allowWithinDeny: [
         root,
+        scratch,
         ...caches,
         // Do not let a ~/bin/node layout turn the whole home into a read grant.
         ...resolveNodeToolchainAllowRead(env).filter(
@@ -149,7 +166,7 @@ export async function runWorktreePreparationProcess(
       ],
     },
     writeConfig: {
-      allowOnly: writable ? ['/dev/null', root, ...caches] : ['/dev/null'],
+      allowOnly: writable ? ['/dev/null', root, ...caches] : ['/dev/null', scratch],
       denyWithinAllow: [],
       // Package tarballs contain inert .idea/.vscode metadata. Protect the
       // checkout's configuration rather than denying those names in every
