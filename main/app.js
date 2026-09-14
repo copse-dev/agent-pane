@@ -22090,11 +22090,13 @@ var init_tool_display = __esm({
       container_run: {
         running: "Running unattended in a container",
         done: "Ran unattended in a container"
-      }
+      },
+      preflight_worktree: { running: "Checking worktree", done: "Checked worktree" },
+      prepare_worktree: { running: "Preparing worktree", done: "Prepared worktree" }
     };
     TOOL_GROUPS = {
       reading: {
-        tools: ["explore", "read_file", "list_dir", "video_frames"],
+        tools: ["explore", "read_file", "list_dir", "video_frames", "preflight_worktree"],
         label: { running: "Reading files", done: "Read files" }
       },
       searching: {
@@ -22138,7 +22140,7 @@ var init_tool_display = __esm({
         label: { running: "Editing files", done: "Edited files" }
       },
       shell: {
-        tools: ["run_shell", "run_background", "read_terminal"],
+        tools: ["run_shell", "run_background", "read_terminal", "prepare_worktree"],
         label: { running: "Running commands", done: "Ran commands" }
       }
     };
