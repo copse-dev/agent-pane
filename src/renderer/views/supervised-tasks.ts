@@ -29,6 +29,15 @@ export function mountSupervisedTasks(
   section.append(header, list)
   listRoot.append(section)
   let loadToken = 0
+  const expanded = new Set<string>()
+  const feedback = el('p', { class: 'supervised-task-feedback', role: 'status', hidden: true })
+  section.append(feedback)
+
+  function report(error: unknown): void {
+    feedback.textContent =
+      error instanceof Error ? error.message : 'Unable to update background tasks'
+    feedback.hidden = false
+  }
 
   function render(tasks: SupervisedTaskSummary[]): void {
     clear(list)
@@ -39,12 +48,66 @@ export function mountSupervisedTasks(
         'aria-hidden': 'true',
         'data-state': task.state,
       })
-      const copy = el(
-        'span',
-        { class: 'supervised-task-copy' },
+      const copy = el('details', { class: 'supervised-task-copy' })
+      copy.open = expanded.has(task.taskId)
+      const label = el(
+        'summary',
+        { class: 'supervised-task-summary' },
         el('span', { class: 'supervised-task-label' }, taskLabel(task.handler)),
         el('span', { class: 'supervised-task-state' }, task.state),
       )
+      const detail = el('div', { class: 'supervised-task-detail' })
+      function showDetail(value: SupervisedTaskSummary): void {
+        clear(detail)
+        if (value.lastError)
+          detail.append(el('p', { class: 'supervised-task-reason' }, value.lastError))
+        if (value.attempt !== undefined && value.maxAttempts !== undefined) {
+          detail.append(
+            el('p', {}, `Attempt ${String(value.attempt)} of ${String(value.maxAttempts)}`),
+          )
+        }
+        if (value.resultRef) detail.append(el('p', {}, value.resultRef.ref))
+        if (
+          (value.state === 'blocked' || value.state === 'failed') &&
+          value.handler !== 'shell_process'
+        ) {
+          const resume = el(
+            'button',
+            {
+              type: 'button',
+              class: 'ui-btn ui-btn-secondary supervised-task-resume',
+            },
+            'Resume',
+          )
+          resume.addEventListener('click', () => {
+            resume.disabled = true
+            feedback.hidden = true
+            void api.supervisor
+              .resume(value.projectId, value.threadId, value.taskId)
+              .then(() => refresh())
+              .catch((error: unknown) => {
+                resume.disabled = false
+                report(error)
+              })
+          })
+          detail.append(resume)
+        }
+      }
+      showDetail(task)
+      copy.append(label, detail)
+      copy.addEventListener('toggle', () => {
+        if (!copy.open) {
+          expanded.delete(task.taskId)
+          return
+        }
+        expanded.add(task.taskId)
+        void api.supervisor
+          .get(task.projectId, task.threadId, task.taskId)
+          .then(({ task: latest }) => {
+            if (latest && copy.isConnected) showDetail(latest)
+          })
+          .catch(report)
+      })
       const cancel = el(
         'button',
         {
@@ -60,10 +123,13 @@ export function mountSupervisedTasks(
         void api.supervisor
           .cancel(task.projectId, task.taskId)
           .then(() => refresh())
-          .catch(() => {
+          .catch((error: unknown) => {
             cancel.disabled = false
+            report(error)
           })
       })
+      cancel.hidden =
+        task.state === 'failed' || task.state === 'completed' || task.state === 'cancelled'
       list.append(
         el(
           'div',
@@ -88,9 +154,13 @@ export function mountSupervisedTasks(
       render([])
       return
     }
-    const result = await api.supervisor.list(projectId)
-    if (token !== loadToken || projectId !== store.getState().activeProjectId) return
-    render(result.tasks)
+    try {
+      const result = await api.supervisor.list(projectId)
+      if (token !== loadToken || projectId !== store.getState().activeProjectId) return
+      render(result.tasks)
+    } catch (error) {
+      if (token === loadToken) report(error)
+    }
   }
 
   const unsubs = [

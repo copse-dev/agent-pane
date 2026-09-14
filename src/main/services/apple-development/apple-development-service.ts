@@ -173,8 +173,12 @@ export class AppleDevelopmentService {
     this.presentSimulator = dependencies.presentSimulator ?? showSimulatorDesktop
     this.resolveProjectRoot = dependencies.resolveProjectRoot ?? getProjectRoot
     this.detectProjectRoot = dependencies.detectProject ?? detectAppleProject
-    this.supervisor.registerHandler(APPLE_HANDLER, (task, context) =>
-      this.handleOperation(task, context.signal),
+    this.supervisor.registerHandler(
+      APPLE_HANDLER,
+      (task, context) => this.handleOperation(task, context.signal),
+      // Xcode authority is a per-call/process-epoch grant checked by handleOperation.
+      // Generic task Resume must never replace or clear that grant requirement.
+      { reapprovesWake: true },
     )
     this.supervisor.subscribe((task) => {
       if (task.handler !== APPLE_HANDLER || task.state !== 'cancelled') return

@@ -370,6 +370,10 @@ describe('AppleDevelopmentService enrollment', () => {
 
     assert.equal(executions, 0)
     assert.equal(supervisor.get('project-1', operation.id)?.state, 'blocked')
+    await supervisor.acknowledgeBlock('project-1', operation.id)
+    await supervisor.waitForIdle()
+    assert.equal(executions, 0, 'Generic Resume cannot renew process-scoped Apple authority')
+    assert.equal(supervisor.get('project-1', operation.id)?.state, 'blocked')
     assert.equal(
       service.operation(
         {

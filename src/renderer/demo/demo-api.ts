@@ -910,6 +910,8 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     supervisor: {
       list: () => resolved({ tasks: [] }),
       cancel: () => resolved({ task: null }),
+      get: () => resolved({ task: null }),
+      resume: () => resolved({ task: null }),
       onChanged: subscribe,
     },
     // The browser demo has no repository behind it, so it owns no checkouts to
