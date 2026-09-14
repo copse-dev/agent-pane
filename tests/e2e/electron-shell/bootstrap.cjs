@@ -21,6 +21,12 @@ function applyEnvFile(filePath) {
 applyEnvFile(path.join(__dirname, '.eval-env.json'))
 applyEnvFile(path.join(__dirname, '.e2e-env.json'))
 
+// Fixtures may be seeded while the previous app is still open. Apply the
+// pending config only in this e2e entry point, after that app's shutdown saves.
+if (process.env.COPSE_E2E === '1' && process.env.COPSE_PANEL_USER_DATA) {
+  require('./apply-seed-config.cjs').applyPendingSeedConfig(process.env.COPSE_PANEL_USER_DATA)
+}
+
 /**
  * Inject unavailable storage at the two external cipher boundaries. Linux's
  * native keyring falls back from Secret Service to kernel keyutils, so host
