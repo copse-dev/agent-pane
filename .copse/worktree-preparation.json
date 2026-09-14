@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "inputs": [
+    "scripts/prepare-native-artifacts.mts",
+    "scripts/check-prepared-worktree.mts",
+    "scripts/lib/native-artifacts.mts",
+    "scripts/check-node-version.cjs",
+    "scripts/patch-dev-name.mts",
+    "scripts/postinstall-native.mts",
+    "scripts/fetch-gortex.mts",
+    "scripts/gortex-checksums.json",
+    "scripts/resolve-dep.mts",
+    "src/shared/unknown-value.mts"
+  ],
+  "prepare": [{ "command": "node", "args": ["scripts/prepare-native-artifacts.mts"] }],
+  "checks": [
+    {
+      "name": "Native runtimes",
+      "command": { "command": "node", "args": ["scripts/check-prepared-worktree.mts"] },
+      "outputIncludes": "Native runtimes ready",
+      "fingerprintOutput": true
+    }
+  ]
+}

@@ -12,6 +12,7 @@ import { isSpawnableWorkingDirectory } from '../../project-sandbox/spawn-cwd.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/enabled.ts'
 import {
   ensureWorkspaceTmpDir,
+  gitBackupSandboxOverlay,
   readOnlyWorkspaceSandboxOverlay,
 } from '../../project-sandbox/config.ts'
 import {
@@ -660,10 +661,14 @@ export async function createWorktreeBackup(
     // The throwaway index is allocated where git runs (a remote workspace
     // cannot use a client-local path), then the shared snapshot does the rest.
     tempIndex = await createTemporaryGitIndex(root)
+    const sandboxOptions: Pick<RunCommandOptions, 'sandboxConfig'> =
+      isProjectSandboxEnabled() && !isActiveSshWorkspace()
+        ? { sandboxConfig: gitBackupSandboxOverlay(root) }
+        : {}
     const run = async (args: string[], env?: Record<string, string>): Promise<string> => {
       let result: Awaited<ReturnType<typeof runCommand>>
       try {
-        result = await runCommand('git', args, { cwd: root, env: { ...env } })
+        result = await runCommand('git', args, { cwd: root, env: { ...env }, ...sandboxOptions })
       } catch (error) {
         throw new WorktreeBackupFailure(backupStage(args), failureCode(error))
       }
@@ -678,7 +683,7 @@ export async function createWorktreeBackup(
     const ref = `refs/copse/backups/${String(Date.now())}`
     let updateRef: Awaited<ReturnType<typeof runGit>>
     try {
-      updateRef = await runGit(['update-ref', ref, snapshot.sha], root)
+      updateRef = await runGit(['update-ref', ref, snapshot.sha], root, sandboxOptions)
     } catch (error) {
       reportBackupFailure(new WorktreeBackupFailure('update-ref', failureCode(error)))
       return null

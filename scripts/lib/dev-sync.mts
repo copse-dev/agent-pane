@@ -26,6 +26,21 @@ export const DEPENDENCY_SENTINELS = [
   'node_modules/esbuild/package.json',
 ] as const
 
+/**
+ * Host-native setup code is part of dependency identity: changing one of these
+ * files must invalidate a previously prepared worktree even when the lockfile
+ * is unchanged.
+ */
+export const NATIVE_PREPARATION_INPUTS = [
+  'scripts/prepare-native-artifacts.mts',
+  'scripts/lib/native-artifacts.mts',
+  'scripts/check-node-version.cjs',
+  'scripts/patch-dev-name.mts',
+  'scripts/postinstall-native.mts',
+  'scripts/fetch-gortex.mts',
+  'scripts/gortex-checksums.json',
+] as const
+
 export const BUILD_SENTINELS = [
   'dist/main/index.js',
   'dist/preload/index.js',
@@ -117,6 +132,7 @@ export function dependencyFingerprint(
     'pnpm-lock.yaml',
     'pnpm-workspace.yaml',
     'patches',
+    ...NATIVE_PREPARATION_INPUTS,
     ...packageManifests(root),
   ])
   const hash = createHash('sha256')
