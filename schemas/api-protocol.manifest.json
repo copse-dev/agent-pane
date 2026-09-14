@@ -1004,6 +1004,20 @@
           0
         ]
       },
+      "profile-vault:run": {
+        "api": "profileVault.run",
+        "args": [
+          1,
+          1
+        ]
+      },
+      "profile-vault:status": {
+        "api": "profileVault.status",
+        "args": [
+          0,
+          0
+        ]
+      },
       "remote-agent:artifact-image-data-url": {
         "api": "remoteAgent.artifactImageDataUrl",
         "args": [

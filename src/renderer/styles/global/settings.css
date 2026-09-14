@@ -2507,3 +2507,27 @@ dialog.settings-overlay::backdrop {
 .sources-worktrees-fieldset {
   min-inline-size: 0;
 }
+
+.profile-vault-controls {
+  display: grid;
+  justify-items: start;
+  gap: var(--spacing-md);
+}
+
+.profile-vault-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+}
+
+.settings-content .profile-vault-choice {
+  flex-direction: row;
+  margin-bottom: 0;
+  display: flex;
+  align-items: start;
+  gap: var(--spacing-sm);
+}
+
+.settings-content .profile-vault-choice[hidden] {
+  display: none;
+}

@@ -129,6 +129,8 @@ export interface DetectedEnvKey {
 }
 
 export interface ApiClient {
+  /** Optional on shells without the native desktop vault service. */
+  profileVault?: import('@shared/types/profile-vault.ts').ProfileVaultApi
   windowState: {
     getNavigation: () => Promise<import('@shared/types/main-window.ts').MainWindowNavigation>
     setNavigation: (

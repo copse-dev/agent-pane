@@ -1,4 +1,11 @@
-import './app-init.ts' // MUST be first — sets app name/userData before electron-store builds
+import { profileSingleInstanceLock } from './app-init.ts' // MUST be first — sets app name/userData before electron-store builds
+import { savedSecretEnvironment } from '@copse/store-kit/secret-environment.ts'
+import { join } from 'node:path'
+import { existsSync, statSync } from 'node:fs'
+import { AppProfileVault, nativeVaultInvoker } from './services/storage/profile-vault.ts'
+import { registerProfileVaultIpc } from './ipc/profile-vault.ts'
+import { getSshConnectionManager } from './services/ssh-workspace/connection-manager.ts'
+import { clearSshCredentialCache } from './services/ssh-workspace/ssh-credential-cache.ts'
 import {
   armPerfTrace,
   flushPerfTrace,
@@ -222,13 +229,38 @@ import { broadcastToAppWindows } from './windows/app-window-broadcast.ts'
 // `safeStorage` blobs, rewriting each one on first read. After a few releases
 // every active profile holds only keyring-cipher blobs, and a Copse shell that
 // is not Electron can open them without ever touching `safeStorage`.
-setSecretCipher(
-  createMigratingCipher(createKeyringCipher(createOsKeyringStore()), {
-    isEncryptionAvailable: () => safeStorage.isEncryptionAvailable(),
-    encryptString: (plainText) => safeStorage.encryptString(plainText),
-    decryptString: (encrypted) => safeStorage.decryptString(encrypted),
-  }),
-)
+const legacySecretCipher = createMigratingCipher(createKeyringCipher(createOsKeyringStore()), {
+  isEncryptionAvailable: () => safeStorage.isEncryptionAvailable(),
+  encryptString: (plainText) => safeStorage.encryptString(plainText),
+  decryptString: (encrypted) => safeStorage.decryptString(encrypted),
+})
+const vaultAppPath = app.getAppPath().replace(/\.asar$/, '.asar.unpacked')
+let vaultRestartRequested = false
+let vaultVolumeLost = false
+const profileVault = new AppProfileVault({
+  userData: app.getPath('userData'),
+  legacy: legacySecretCipher,
+  invoke: nativeVaultInvoker(join(vaultAppPath, 'dist/resources/profile-vault/CopseVault')),
+  beforeMigration: async (): Promise<void> => {
+    if (listRunningThreadIds().length > 0)
+      throw new Error('Stop running tasks before changing saved-secret encryption.')
+    await drainWriteQueue()
+  },
+  restart: (): void => {
+    if (vaultRestartRequested) return
+    vaultRestartRequested = true
+    for (const id of listRunningThreadIds()) abortAgent(id)
+    clearSshCredentialCache()
+    savedSecretEnvironment.clear()
+    if (!vaultVolumeLost && existsSync(app.getPath('userData'))) {
+      app.relaunch()
+    }
+    approveClose()
+    app.quit()
+  },
+})
+setSecretCipher(profileVault.cipher)
+
 const taskSupervisor = getTaskSupervisor()
 
 // Own stdout/stderr's `error` events before anything can provoke one. A closed
@@ -352,8 +384,7 @@ const releaseSmokeTest = process.argv.includes('--release-smoke-test')
 // `copse --acp` drives the agent over stdio for an ACP client; it must not take
 // the single-instance lock (each client spawns its own) or open a window.
 const acpMode = process.argv.includes('--acp')
-const gotSingleInstanceLock =
-  agentEval || acpMode || releaseSmokeTest ? true : app.requestSingleInstanceLock()
+const gotSingleInstanceLock = profileSingleInstanceLock
 if (!gotSingleInstanceLock) {
   app.quit()
 } else if (!agentEval && !acpMode && !releaseSmokeTest) {
@@ -394,6 +425,16 @@ app
         app.exit(1)
       }
       return
+    }
+
+    // Migrate supported profiles before any credential consumer initializes.
+    // The helper permits silent enrollment only for the hardened release app.
+    try {
+      if (await profileVault.initialize()) return
+    } catch {
+      console.warn(
+        '[vault] Could not initialize saved-secret encryption. Check Settings → Storage.',
+      )
     }
 
     // Watch the main event loop for stalls from here on. Startup is exactly when
@@ -517,6 +558,27 @@ app
     const disposeTerminalHandlers = initTerminal(win)
     const disposeVncHandlers = initVnc(win)
     const disposeSimulatorDesktopHandlers = initSimulatorDesktop(win)
+    registerProfileVaultIpc(win, profileVault)
+    // An unlocked vault session survives sleep and screen lock. Shutdown or loss
+    // of the selected profile clears it.
+    const vaultVolume = statSync(app.getPath('userData'))
+    const vaultVolumeCheck = setInterval(() => {
+      if (profileVault.cipher.protection !== 'device-vault') return
+      try {
+        const current = statSync(app.getPath('userData'))
+        if (current.dev !== vaultVolume.dev || current.ino !== vaultVolume.ino) {
+          vaultVolumeLost = true
+          profileVault.lock()
+        }
+      } catch {
+        vaultVolumeLost = true
+        profileVault.lock()
+      }
+    }, 1000)
+    vaultVolumeCheck.unref()
+    win.once('closed', () => {
+      clearInterval(vaultVolumeCheck)
+    })
     recordStartupPhase('register-handlers')
     perfMark('main:register-handlers')
     registerAllHandlers(win, registry)
@@ -1012,6 +1074,12 @@ let disposeDarkFactorySensor: (() => void) | undefined
 let disposeTaskSupervisorEvents: (() => void) | undefined
 
 async function cleanupBeforeQuit(): Promise<void> {
+  profileVault.dispose()
+  clearSshCredentialCache()
+  const sshConnections = getSshConnectionManager()
+  await Promise.allSettled(
+    sshConnections.listStates().map(({ hostId }) => sshConnections.disconnect(hostId)),
+  )
   stopEventLoopWatchdog()
   perfMark('main:quit')
   perfDumpCounters('quit')
