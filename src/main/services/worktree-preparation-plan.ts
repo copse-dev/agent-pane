@@ -55,6 +55,7 @@ export type PackageManager = 'npm' | 'pnpm' | 'yarn' | 'bun'
 export interface WorktreePreparationPlan {
   root: string
   fingerprint: string
+  ecosystem: 'uv' | null
   manager: {
     name: PackageManager
     version: string | null
@@ -128,6 +129,20 @@ export function readWorktreePreparationPlan(root: string): WorktreePreparationPl
   const pkgText = readPreparationText(root, 'package.json')
   const pkg = pkgText === null ? null : safeJsonParse(pkgText, decodeWithSchema(packageSchema))
   if (pkgText !== null && !pkg) problems.push('Invalid package.json.')
+  // An explicit declaration owns non-JavaScript setup. Mixed roots must choose
+  // deliberately; executable availability is never package-manager selection.
+  const uvProject = existsSync(join(root, 'uv.lock'))
+  const ecosystem = !pkg && !config && uvProject ? 'uv' : null
+  if (pkg && uvProject && !config)
+    problems.push(
+      `Multiple ecosystems found; declare their setup in ${PREPARATION_CONFIG} or select a nested project.`,
+    )
+  if (ecosystem && !existsSync(join(root, 'pyproject.toml')))
+    problems.push('uv.lock requires a pyproject.toml in the selected project.')
+  if (ecosystem && ['poetry.lock', 'Pipfile.lock'].some((file) => existsSync(join(root, file))))
+    problems.push(
+      `Conflicting Python lockfiles; select the intended setup in ${PREPARATION_CONFIG}.`,
+    )
   let manager: WorktreePreparationPlan['manager'] = null
   if (pkg) {
     const pin = pkg.packageManager?.match(
@@ -163,7 +178,7 @@ export function readWorktreePreparationPlan(root: string): WorktreePreparationPl
           (pin ? Number(pin[2]?.split('.')[0]) >= 2 : /^__metadata:/m.test(yarnLock ?? '')),
       }
     }
-  } else if (pkgText === null && !config) {
+  } else if (pkgText === null && !config && !ecosystem) {
     problems.push(
       `No automatic package-manager adapter found. Declare this project's setup commands, inputs, and checks in ${PREPARATION_CONFIG}; an empty declaration explicitly means no setup is needed.`,
     )
@@ -222,6 +237,29 @@ export function readWorktreePreparationPlan(root: string): WorktreePreparationPl
     '.yarn/patches',
     ...locks.flatMap(([, names]) => names),
     ...(config?.inputs ?? []),
+    // Include detection inputs even when absent so adding another ecosystem or
+    // a conflicting lock invalidates an already approved plan.
+    'uv.lock',
+    'poetry.lock',
+    'Pipfile.lock',
+    ...(ecosystem
+      ? [
+          'pyproject.toml',
+          'uv.toml',
+          '.python-version',
+          '.python-versions',
+          ...globSync(['**/pyproject.toml', '**/uv.toml', '**/.python-version'], {
+            cwd: root,
+            exclude: [
+              '**/.venv/**',
+              '**/venv/**',
+              '**/node_modules/**',
+              '**/.git/**',
+              '**/.tmp/**',
+            ],
+          }),
+        ]
+      : []),
   ]
   for (const input of inputs) containedPreparationPath(root, input)
   for (const check of config?.checks ?? [])
@@ -245,9 +283,47 @@ export function readWorktreePreparationPlan(root: string): WorktreePreparationPl
     readPreparationText(root, '.node-version'),
     pkg?.engines?.node,
   ].flatMap((value) => (typeof value === 'string' && value.length > 0 ? [value] : []))
+  const uvArgs = ['sync', '--locked', '--all-packages', '--no-python-downloads']
+  const uvChecks: PreparationCheck[] = ecosystem
+    ? [
+        {
+          name: 'uv',
+          command: { command: 'uv', args: ['--version'] },
+          outputIncludes: 'uv ',
+          fingerprintOutput: true,
+        },
+        {
+          name: 'Compatible Python',
+          command: {
+            command: 'uv',
+            args: ['python', 'find', '--offline', '--no-cache', '--no-python-downloads'],
+          },
+          fingerprintOutput: true,
+        },
+        {
+          name: 'Python environment',
+          path: '.venv/bin/python',
+          command: {
+            command: '.venv/bin/python',
+            args: [
+              '-I',
+              '-c',
+              'import sys; print(sys.version); print(sys.implementation.cache_tag); print(sys.base_prefix)',
+            ],
+          },
+          fingerprintOutput: true,
+        },
+        {
+          name: 'Locked Python dependencies',
+          command: { command: 'uv', args: [...uvArgs, '--check', '--offline', '--no-cache'] },
+          fingerprintOutput: false,
+        },
+      ]
+    : []
   return {
     root,
     fingerprint,
+    ecosystem,
     manager,
     nodeRequirements,
     manifests,
@@ -262,8 +338,8 @@ export function readWorktreePreparationPlan(root: string): WorktreePreparationPl
         ),
       }
     }),
-    prepare: config?.prepare ?? [],
-    checks: config?.checks ?? [],
+    prepare: ecosystem ? [{ command: 'uv', args: uvArgs }] : (config?.prepare ?? []),
+    checks: ecosystem ? uvChecks : (config?.checks ?? []),
     problems,
   }
 }
@@ -335,7 +411,7 @@ export function formatPreparationPlan(plan: WorktreePreparationPlan, offline: bo
   return [
     `Project: ${plan.root}`,
     `Plan fingerprint: ${plan.fingerprint}`,
-    `Package manager: ${plan.manager ? `${plan.manager.name}${plan.manager.version ? `@${plan.manager.version}` : ' (version detected locally)'}` : 'project-defined setup'}`,
+    `Package manager: ${plan.manager ? `${plan.manager.name}${plan.manager.version ? `@${plan.manager.version}` : ' (version detected locally)'}` : plan.ecosystem === 'uv' ? 'uv (Python)' : 'project-defined setup'}`,
     ...(install
       ? [
           `Install through Socket Firewall: ${JSON.stringify([install.command, ...install.args])} (dependency lifecycle scripts disabled)`,

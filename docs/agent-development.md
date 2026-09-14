@@ -30,6 +30,9 @@ runtime, and gortex through fixed directories under `~/.copse/cache/`. The read-
 Pass its `planFingerprint` to one approved `prepare_worktree` call to install locked dependencies
 and run the setup declared in `.copse/worktree-preparation.json`. This repository declares its
 Electron/ChromeDriver/native/gortex steps there; other projects need none of those artifacts.
+Python projects with `pyproject.toml` and `uv.lock` automatically use locked uv workspace sync;
+they need an installed compatible Python and uv, but no Copse declaration. Preflight leaves the
+project and shared caches read-only, using disposable scratch for manager bookkeeping.
 See [project worktree preparation](plans/project-worktree-preparation.md).
 
 Cursor Cloud setup normally installs the pinned version through `.cursor/cloud-setup.sh`. If an
