@@ -88,6 +88,19 @@ help:
 	@echo "  make runner-env          Check/scaffold the ci-runners/.env file"
 	@echo
 	@echo "App dev loop:"
+	@echo "  make portable-setup    Install tools and build in the checkout's .portable/"
+	@echo "                         Install the pinned Apple Silicon development environment"
+	@echo "  make portable-setup-offline  Reinstall and build from drive caches, with networking blocked"
+	@echo "  make portable-verify-offline Test a clean install/build with networking and host caches blocked"
+	@echo "  make portable-local-ai-setup Install LM Studio and pinned Qwen models (about 72 GB)"
+	@echo "  make portable-model      Print a downloaded model path selected for this Mac's RAM"
+	@echo "  make portable-local-ai-library  Install the optional expanded model collection (197 GB)"
+	@echo "  make portable-local-ai-runtimes Install pinned GGUF/MLX inference runtimes"
+	@echo "  make portable-local-ai-enable Start drive engines automatically with portable-run"
+	@echo "  make portable-lm-studio        Install cached LM Studio into /Applications and launch"
+	@echo "  make portable-claude / portable-codex  Launch the drive's coding CLIs"
+	@echo "  make portable-shell    Develop using the installed portable tools"
+	@echo "  make portable-run      Launch the prepared portable build"
 	@echo "  make deps              Sync dependencies to their content fingerprint"
 	@echo "  make build             Sync dependencies and dist/ by content"
 	@echo "  make run               deps -> build (if changed) -> start the app"
@@ -220,6 +233,68 @@ runners-ps:
 # ============================================================================
 
 # --- node preflight ---------------------------------------------------------
+PORTABLE_ROOT ?= .portable
+MODEL_TIER ?= auto
+MODEL_MANIFEST ?= scripts/portable/collections/extended.tsv
+.PHONY: portable-model
+portable-model:
+	@bash scripts/portable/model-path.sh "$(PORTABLE_ROOT)" "$(MODEL_TIER)"
+
+.PHONY: portable-setup portable-setup-offline portable-verify-offline portable-local-ai-setup portable-local-ai-setup-offline portable-shell portable-run
+portable-setup:
+	@bash scripts/portable/setup.sh "$(PORTABLE_ROOT)"
+
+portable-setup-offline:
+	@bash scripts/portable/setup.sh --offline "$(PORTABLE_ROOT)"
+
+portable-verify-offline:
+	@bash "$(PORTABLE_ROOT)/portable-dev" verify-offline
+
+portable-local-ai-setup:
+	@bash scripts/portable/local-ai-setup.sh "$(PORTABLE_ROOT)"
+
+portable-local-ai-setup-offline:
+	@bash scripts/portable/local-ai-setup.sh --offline "$(PORTABLE_ROOT)"
+
+.PHONY: portable-local-ai-library portable-local-ai-library-offline portable-local-ai-runtimes portable-local-ai-runtimes-offline
+portable-local-ai-library:
+	@bash scripts/portable/model-library.sh "$(PORTABLE_ROOT)" "$(MODEL_MANIFEST)"
+
+portable-local-ai-library-offline:
+	@bash scripts/portable/model-library.sh --offline "$(PORTABLE_ROOT)" "$(MODEL_MANIFEST)"
+
+portable-local-ai-runtimes:
+	@bash scripts/portable/runtime-setup.sh "$(PORTABLE_ROOT)"
+
+portable-local-ai-runtimes-offline:
+	@bash scripts/portable/runtime-setup.sh --offline "$(PORTABLE_ROOT)"
+
+.PHONY: portable-local-ai-enable portable-local-ai-serve
+portable-local-ai-enable:
+	@bash "$(PORTABLE_ROOT)/portable-dev" local-ai-enable
+
+portable-local-ai-serve:
+	@bash "$(PORTABLE_ROOT)/portable-dev" local-ai-serve
+
+.PHONY: portable-lm-studio portable-lm-studio-install portable-claude portable-codex
+portable-lm-studio:
+	@bash scripts/portable/launch-lm-studio.sh "$(PORTABLE_ROOT)"
+
+portable-lm-studio-install:
+	@bash scripts/portable/launch-lm-studio.sh "$(PORTABLE_ROOT)" install
+
+portable-claude:
+	@bash "$(PORTABLE_ROOT)/portable-dev" claude
+
+portable-codex:
+	@bash "$(PORTABLE_ROOT)/portable-dev" codex
+
+portable-shell:
+	@bash "$(PORTABLE_ROOT)/portable-dev" shell
+
+portable-run:
+	@bash "$(PORTABLE_ROOT)/portable-dev" run
+
 .PHONY: check-node
 check-node:
 	@$(USE_NVM); \

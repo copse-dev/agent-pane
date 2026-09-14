@@ -34,6 +34,7 @@ export const DEPENDENCY_SENTINELS = [
 export const NATIVE_PREPARATION_INPUTS = [
   'scripts/prepare-native-artifacts.mts',
   'scripts/lib/native-artifacts.mts',
+  'scripts/lib/electron-headers.mts',
   'scripts/check-node-version.cjs',
   'scripts/patch-dev-name.mts',
   'scripts/postinstall-native.mts',
