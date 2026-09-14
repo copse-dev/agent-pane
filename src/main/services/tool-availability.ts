@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { runCommand } from './exec/command-runner.ts'
+import { toolProbePath } from '../launch-path.ts'
 import { probeIndexedGrepBackends, type IndexedGrepBackend } from './search/indexed-grep.ts'
 import {
   isSemanticBackendBundled,
@@ -202,14 +203,10 @@ export function setGhAvailableForTest(value: boolean | null): void {
   ghAvail = value
 }
 
-function probePathPrefix(): string {
-  return process.platform === 'win32' ? '' : '/usr/bin:/bin:/exec-daemon:'
-}
-
 async function probe(cmd: string, args: string[]): Promise<boolean> {
   try {
     await runCommand(cmd, args, {
-      env: { PATH: `${probePathPrefix()}${process.env['PATH'] ?? ''}` },
+      env: { PATH: toolProbePath() },
     })
     return true
   } catch {
@@ -239,7 +236,7 @@ export async function probeGhAccessible(run: typeof runCommand = runCommand): Pr
       // negative, and the PR panel stays disabled for the whole app session.
       // Normal GitHub calls already use this same unsandboxed boundary in runGh.
       unsandboxed: true,
-      env: { PATH: `${probePathPrefix()}${process.env['PATH'] ?? ''}` },
+      env: { PATH: toolProbePath() },
     })
     return code === 0
   } catch {

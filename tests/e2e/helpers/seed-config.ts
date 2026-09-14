@@ -31,6 +31,7 @@ import { ACP_CANCELLED_TOOL_CALL_RESULT } from '../../../src/main/services/acp/a
 
 const USER_DATA = copseUserDataDir()
 const CONFIG_PATH = join(USER_DATA, 'config.json')
+const PENDING_CONFIG_PATH = join(USER_DATA, '.e2e-pending-config.json')
 const SETTINGS_PATH = join(USER_DATA, 'settings.json')
 // A developer may have LM Studio listening on the product's default port. E2E
 // must not discover or query that real service unless a fixture explicitly
@@ -235,7 +236,11 @@ export function writeSeedConfig(config: Record<string, unknown>): void {
       remaining[key] = value
     }
   }
-  writeFileSync(CONFIG_PATH, JSON.stringify(remaining), 'utf8')
+  const serialized = JSON.stringify(remaining)
+  writeFileSync(CONFIG_PATH, serialized, 'utf8')
+  // The running app can flush its old config while reloadSession closes it.
+  // The test-only launcher consumes this copy before the replacement boots.
+  writeFileSync(PENDING_CONFIG_PATH, serialized, 'utf8')
   // The app process that exists before a fixture calls reloadSession() can
   // already have created an empty derived catalog. Remove it after writing the
   // seed so the replacement process rebuilds from the thread directories.
@@ -245,6 +250,7 @@ export function writeSeedConfig(config: Record<string, unknown>): void {
 }
 
 export function resetUserData(): void {
+  rmSync(PENDING_CONFIG_PATH, { force: true })
   rmSync(CONFIG_PATH, { force: true })
   rmSync(SETTINGS_PATH, { force: true })
   writeSettings({})
@@ -3362,6 +3368,71 @@ export function seedMachineTurnAttributionFixture(workspaceRoot: string): void {
         usage: { inputTokens: 1200, outputTokens: 180 },
         createdAt: now,
         updatedAt: now + 3,
+      },
+    ],
+  })
+}
+
+/** A prepared-worktree before/after trace for focused tool-card visual evidence. */
+export function seedWorktreePreparationFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-worktree-preparation-project'
+  const threadId = 'e2e-worktree-preparation-thread'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    expandedProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Prepare a fresh worktree',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-worktree-user',
+            role: 'user',
+            content: 'Check this fresh npm project and prepare its dependencies.',
+            toolCalls: [],
+            createdAt: now,
+          },
+          {
+            id: 'msg-worktree-preflight',
+            role: 'assistant',
+            content: 'This fresh checkout needs one bounded preparation run.',
+            toolCalls: [
+              {
+                id: 'tc-preflight-worktree',
+                name: 'preflight_worktree',
+                args: { offline: false },
+                status: 'done',
+                result:
+                  'Worktree preparation: absent\nProject: /workspace/customer-app\nPackage manager: npm@11.19.0\n- not ready — Dependencies: missing package.json: example\nRemediation: Run prepare_worktree once with this plan fingerprint.',
+              },
+            ],
+            createdAt: now + 1,
+          },
+          {
+            id: 'msg-worktree-prepare',
+            role: 'assistant',
+            content: 'The project dependencies are ready. No native setup was declared.',
+            toolCalls: [
+              {
+                id: 'tc-prepare-worktree',
+                name: 'prepare_worktree',
+                args: { offline: false, planFingerprint: 'a'.repeat(64) },
+                status: 'done',
+                result:
+                  'Worktree preparation: ready\nProject: /workspace/customer-app\nPackage manager: npm@11.19.0\n- ready — Node: found 24.20.0; no project version constraint\n- ready — Dependencies: declared direct dependencies present\nRemediation: No preparation needed. Readiness covers dependencies and declared checks, not build or test success.',
+              },
+            ],
+            createdAt: now + 2,
+          },
+        ],
+        createdAt: now,
+        updatedAt: now + 2,
+        model: 'claude-sonnet-4-6',
       },
     ],
   })

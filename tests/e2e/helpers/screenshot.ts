@@ -275,7 +275,9 @@ export async function saveElementScreenshot(selector: string, filename: string):
   await prepareE2eScreenshot()
   const el = await browser.$(selector)
   await el.waitForDisplayed({ timeout: 15_000 })
-  const saved = await browser.execute(recentreClippedCapture, el, '#app')
+  // Resolve inside the page: a transcript update can replace `el` between
+  // waitForDisplayed and execute, and WebDriver cannot revive an execute arg.
+  const saved = await browser.execute(recentreClippedCapture, selector, '#app')
   if (saved) {
     // Let the scroll settle before capturing, as the prepare step does.
     await browser.pause(100)
@@ -288,7 +290,7 @@ export async function saveElementScreenshot(selector: string, filename: string):
   await subject.saveScreenshot(join(E2E_SCREENSHOT_DIR, filename))
   // Hand the page back exactly as the caller left it — the scroll was for the
   // capture, and specs keep interacting with the page afterwards.
-  if (saved) await browser.execute(restoreScrollAfterCapture, subject, saved)
+  if (saved) await browser.execute(restoreScrollAfterCapture, selector, saved)
 }
 
 /**

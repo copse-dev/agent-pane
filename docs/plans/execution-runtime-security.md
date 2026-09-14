@@ -71,6 +71,11 @@ to enforced containment.
    attaches a credential only to an authorized request and records use by opaque
    credential identity, never by value. Any temporary raw-secret injection must be
    named as a reduced guarantee, scoped, short-lived, and removed after use.
+   The initial detached-worker exception is explicit, read-only, expiring GitHub
+   user-token delegation to one task/repository container on a trusted host, as
+   specified in [the device-bound profile plan](device-bound-profile-encryption.md#initial-scope-direct-delegation-to-a-trusted-host-container).
+   It does not protect the token from the workload or host administrator, widen
+   network permissions, or delegate the desktop vault or renewal credentials.
 6. **Policy decisions and observed effects are canonical events.** Runtime state,
    approvals, process start/exit, network allow/deny, credential use, checkpoints,
    restores, and teardown append to the thread spine. Optional hooks may subscribe;

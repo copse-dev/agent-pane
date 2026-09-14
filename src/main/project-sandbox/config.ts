@@ -1,11 +1,14 @@
-import { accessSync, mkdirSync, readdirSync, realpathSync, statSync } from 'node:fs'
+import { accessSync, lstatSync, mkdirSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
 import { getApplySeccompBinaryPath } from '@anthropic-ai/sandbox-runtime/dist/sandbox/generate-seccomp-filter.js'
 import { expandScratchPath } from '@shared/acp-scratch-paths.ts'
 import { getSetting } from '../services/storage/settings.ts'
-import { copseWorkspaceTmpDir } from '../services/storage/copse-paths.ts'
+import {
+  copseManagedPreparationCacheDirs,
+  copseWorkspaceTmpDir,
+} from '../services/storage/copse-paths.ts'
 import { sanctionedAgentScratchEntries } from './agent-scratch-roots.ts'
 import { canonicalizePathCached } from './canonical-path-cache.ts'
 import {
@@ -539,6 +542,58 @@ export function readOnlyWorkspaceSandboxOverlay(
 }
 
 /**
+ * Backups read the checkout and write only Git objects/refs and a scratch index.
+ * Keeping the checkout read-only also avoids Linux's synthetic write-deny
+ * mount points: `git add -A` must snapshot user files, not sandbox placeholders.
+ */
+export function gitBackupSandboxOverlay(workspaceRoot: string): Partial<SandboxRuntimeConfig> {
+  const root = canonicalizeWorkspaceRoot(workspaceRoot)
+  const overlay = readOnlyWorkspaceSandboxOverlay(root)
+  const fs = overlay.filesystem
+  if (!fs) throw new Error('readOnlyWorkspaceSandboxOverlay must define a filesystem config')
+  const registration = getInternalWorkspaceRootRegistration(root)
+  const commonGitDir = realpathSync.native(registration?.commonGitDir ?? join(root, '.git'))
+  const commonRelative = relative(root, commonGitDir)
+  if (
+    !registration &&
+    (isAbsolute(commonRelative) || commonRelative === '..' || commonRelative.startsWith(`..${sep}`))
+  ) {
+    throw new Error('Backup Git metadata escapes its allowed directory')
+  }
+  const gitWrites = ['objects', 'refs', 'logs'].map((entry) => join(commonGitDir, entry))
+  // Only a validated linked-worktree registration may authorize metadata
+  // outside the execution root. Never follow a project-created symlink there.
+  for (const path of gitWrites) {
+    const entry = lstatSync(path, { throwIfNoEntry: false })
+    const canonical = entry ? realpathSync.native(path) : path
+    const rel = relative(commonGitDir, canonical)
+    if (entry?.isSymbolicLink() || isAbsolute(rel) || rel === '..' || rel.startsWith(`..${sep}`)) {
+      throw new Error('Backup Git metadata escapes its allowed directory')
+    }
+  }
+  const scratch = ensureWorkspaceTmpDir()
+  return {
+    ...overlay,
+    filesystem: {
+      ...fs,
+      // On Linux a read bind of the checkout would shadow the writable Git
+      // subdirectories. Split that read tree around the metadata carve-outs.
+      allowRead:
+        commonRelative !== '..' &&
+        !commonRelative.startsWith(`..${sep}`) &&
+        !isAbsolute(commonRelative)
+          ? [
+              ...(fs.allowRead ?? []).filter((path) => path !== root && path !== `${root}/**`),
+              ...readOnlyTreeExcluding(root, gitWrites),
+              ...gitWrites.flatMap((path) => [path, `${path}/**`]),
+            ]
+          : fs.allowRead,
+      allowWrite: [scratch, `${scratch}/**`, ...gitWrites.flatMap((path) => [path, `${path}/**`])],
+    },
+  }
+}
+
+/**
  * Read-only overlay for the persistent fs server.
  *
  * Linux bwrap materializes non-existent mandatory write-deny paths (such as
@@ -765,6 +820,13 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
   const internalRoot = getInternalWorkspaceRootRegistration(root)
   const toolchainRead = resolveNodeToolchainAllowRead()
   const sandboxRuntimeRead = sandboxRuntimeHelperAllowReadPaths()
+  // Prepared worktrees link dependencies and native runtimes into these fixed,
+  // Copse-owned caches. Routine tests/builds need only read them; preparation is
+  // the sole path that receives write access after one explicit approval.
+  const preparationCacheRead = copseManagedPreparationCacheDirs().flatMap((path) => [
+    path,
+    `${path}/**`,
+  ])
   // A workspace-owned scratch dir so commands writing to $TMPDIR stay on the
   // allow-list instead of hitting the system /tmp deny (issue #481). Created
   // here (best-effort) so the path the seatbelt allows actually exists; spawn
@@ -782,7 +844,15 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
   // more-specific allow. NOT added to allowWrite — the sandbox denies chat-store
   // writes too, matching the workspace-only path guards.
   const chatStore = getChatStoreRootSync()
-  const chatStoreRead = chatStore ? [chatStore, `${chatStore}/**`] : []
+  // Linux read binds shadow writable descendants. The store contains scratch
+  // and may also contain the active checkout; those retain their own grants.
+  const chatStoreRead = chatStore
+    ? readOnlyTreeExcluding(chatStore, [
+        root,
+        tmpDir,
+        ...(internalRoot ? [internalRoot.commonGitDir] : []),
+      ])
+    : []
   // Git discovers a repository by probing `.git` while walking from cwd toward
   // the checkout top-level. A project may itself be a monorepo subdirectory, so
   // allow metadata reads on each ancestor directory without recursively exposing
@@ -878,6 +948,7 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
         `${tmpDir}/**`,
         ...toolchainRead,
         ...sandboxRuntimeRead,
+        ...preparationCacheRead,
         ...gitConfigReadPaths(),
         ...chatStoreRead,
         ...worktreeDiscoveryRead,

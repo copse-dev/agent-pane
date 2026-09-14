@@ -1,9 +1,11 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import {
   cleanupGitChangesFixture,
   resetUserData,
+  seedEmptyProject,
   seedGitImageChangesFixture,
 } from './helpers/seed-config.ts'
 import { setComposerValue } from './helpers/composer.ts'
@@ -69,6 +71,7 @@ describe('git changes image preview', function () {
   this.timeout(90_000)
 
   let repoRoot = ''
+  let proposedRoot = ''
 
   before(async () => {
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
@@ -81,6 +84,7 @@ describe('git changes image preview', function () {
   after(() => {
     resetUserData()
     if (repoRoot) cleanupGitChangesFixture(repoRoot)
+    if (proposedRoot) cleanupGitChangesFixture(proposedRoot)
   })
 
   it('shows before/after image previews for staged and unstaged images', async () => {
@@ -126,10 +130,19 @@ describe('git changes image preview', function () {
       join(process.cwd(), 'tests/e2e/fixtures/git-changes-blue.png'),
     )
 
-    // A new file applies directly. Change it outside Copse, then request the
-    // original image again so the stale-overwrite guard stages the replacement.
-    await proposeImage('proposed.png', proposedBytes)
-    writeFileSync(join(repoRoot, 'proposed.png'), interveningBytes)
+    // A Git-backed edit can apply once Copse has made a recovery snapshot.
+    // Use an ordinary non-Git project to reach the supported approval path,
+    // independently of whether backup creation succeeds on this platform.
+    proposedRoot = mkdtempSync(join(tmpdir(), 'copse-proposed-image-'))
+    writeFileSync(join(proposedRoot, 'proposed.png'), interveningBytes)
+    resetUserData()
+    seedEmptyProject(proposedRoot, 'e2e-proposed-image-project', {
+      subagentsEnabled: false,
+      model: 'claude-sonnet-4-6',
+    })
+    await browser.reloadSession()
+    await waitForWorkspace()
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await proposeImage('proposed.png', proposedBytes)
 
     await $('.git-changes-section-proposed').waitForDisplayed({ timeout: 30_000 })

@@ -183,6 +183,12 @@ loop and tool policy in control and uses a runtime Copse provisions and reconcil
   safely on human approval; and let desktop clients observe or take over after an
   explicit handoff. Start with one task in one repo. Fleet campaigns and external
   trigger ingress consume this only after single-task crash/replay behavior is proven.
+  Initial credentials use the explicitly reduced-guarantee
+  [trusted-host container delegation scope](device-bound-profile-encryption.md#initial-scope-direct-delegation-to-a-trusted-host-container):
+  short-lived read-only GitHub access, no renewal or desktop vault keys, and model
+  inference available independently of the desktop. Protected credential brokers
+  and confidential-computing infrastructure are deferred; credential-session loss
+  parks work for reauthorization rather than silently restoring secrets.
   Exit gate: disconnect the initiating desktop during model and tool execution, restart
   both sides in adversarial order, and observe one converged task with no duplicate
   provider turn, GitHub action, commit, or spine append.

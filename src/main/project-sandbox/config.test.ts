@@ -21,6 +21,7 @@ import {
   ensureWorkspaceTmpDir,
   fsServerSandboxOverlay,
   fsWorkerSandboxOverlay,
+  gitBackupSandboxOverlay,
   readAllowedSandboxOverlay,
   readOnlyTreeExcluding,
   readOnlyWorkspaceSandboxOverlay,
@@ -33,7 +34,11 @@ import {
   workspaceSandboxOverlay,
   workspaceTmpDir,
 } from './config.ts'
-import { copseWorkspaceTmpDir } from '../services/storage/copse-paths.ts'
+import {
+  copseManagedPreparationCacheDirs,
+  copseWorkspaceDir,
+  copseWorkspaceTmpDir,
+} from '../services/storage/copse-paths.ts'
 import {
   assertAllowedWorkspaceRoot,
   clearAllowedWorkspaceRootsForTest,
@@ -148,6 +153,21 @@ describe('resolveNodeToolchainAllowRead', () => {
     const binDir = dirname(nodePath)
     assert.ok(allow.includes(binDir))
     assert.ok(allow.some((p) => p === `${binDir}/**`))
+  })
+})
+
+describe('prepared worktree cache access', () => {
+  it('allows fixed Copse cache reads without granting cache writes', () => {
+    const overlay = workspaceSandboxOverlay('/tmp/project')
+    const allowRead = overlay.filesystem?.allowRead ?? []
+    const allowWrite = overlay.filesystem?.allowWrite ?? []
+
+    for (const path of copseManagedPreparationCacheDirs()) {
+      assert.ok(allowRead.includes(path), path)
+      assert.ok(allowRead.includes(`${path}/**`), `${path}/**`)
+      assert.ok(!allowWrite.includes(path), path)
+      assert.ok(!allowWrite.includes(`${path}/**`), `${path}/**`)
+    }
   })
 })
 
@@ -785,5 +805,81 @@ describe('readOnlyWorkspaceSandboxOverlay', () => {
     assert.deepEqual(filesystem.allowRead, workspace.filesystem?.allowRead)
     assert.deepEqual(filesystem.allowWrite, [])
     assert.deepEqual(filesystem.denyWrite, [])
+  })
+})
+
+describe('gitBackupSandboxOverlay', () => {
+  it('allows snapshot metadata and scratch writes without writable checkout or mount stubs', () => {
+    const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'copse-backup-overlay-')))
+    try {
+      execFileSync('git', ['init', '-q', root])
+      const overlay = gitBackupSandboxOverlay(root)
+      const fs = overlay.filesystem
+      assert.ok(fs)
+      assert.deepEqual(fs.denyWrite, [])
+      assert.deepEqual(fs.allowWrite, [
+        workspaceTmpDir(),
+        `${workspaceTmpDir()}/**`,
+        ...['objects', 'refs', 'logs'].flatMap((entry) => [
+          join(root, '.git', entry),
+          `${join(root, '.git', entry)}/**`,
+        ]),
+      ])
+      assert.ok(fs.allowRead?.includes(join(root, '.git', 'objects')))
+      assert.equal(fs.allowRead?.includes(`${root}/**`), false)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects Git metadata symlinks outside the authorized directory', () => {
+    const parent = mkdtempSync(join(tmpdir(), 'copse-backup-overlay-'))
+    const root = join(parent, 'repo')
+    const outside = join(parent, 'outside')
+    try {
+      mkdirSync(outside)
+      execFileSync('git', ['init', '-q', root])
+      rmSync(join(root, '.git', 'objects'), { recursive: true })
+      symlinkSync(outside, join(root, '.git', 'objects'))
+      assert.throws(() => gitBackupSandboxOverlay(root), /escapes its allowed directory/)
+      rmSync(join(root, '.git'), { recursive: true })
+      symlinkSync(outside, join(root, '.git'))
+      assert.throws(() => gitBackupSandboxOverlay(root), /escapes its allowed directory/)
+    } finally {
+      rmSync(parent, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('chat-store sandbox reads', () => {
+  it('keeps chat data read-only without shadowing nested scratch or checkout write mounts', () => {
+    const profile = realpathSync.native(mkdtempSync(join(tmpdir(), 'copse-chat-overlay-')))
+    const previous = process.env['COPSE_DIR']
+    process.env['COPSE_DIR'] = profile
+    try {
+      const store = copseWorkspaceDir()
+      const root = join(store, 'project', 'active')
+      const chat = join(store, 'project', 'history')
+      mkdirSync(root, { recursive: true })
+      mkdirSync(chat)
+      const overlay = workspaceSandboxOverlay(root)
+      const fs = overlay.filesystem
+      assert.ok(fs)
+      assert.ok(fs.allowRead)
+      assert.ok(fs.allowRead.includes(chat))
+      assert.equal(fs.allowRead.includes(`${store}/**`), false)
+      assert.equal(fs.allowRead.includes(`${join(store, 'project')}/**`), false)
+      if (process.platform === 'linux') {
+        assert.equal(fs.allowRead.includes(store), false)
+        assert.equal(fs.allowRead.includes(join(store, 'project')), false)
+      }
+      assert.ok(fs.allowWrite.includes(root))
+      assert.ok(fs.allowWrite.includes(workspaceTmpDir()))
+      assert.equal(fs.allowWrite.includes(chat), false)
+    } finally {
+      if (previous === undefined) delete process.env['COPSE_DIR']
+      else process.env['COPSE_DIR'] = previous
+      rmSync(profile, { recursive: true, force: true })
+    }
   })
 })

@@ -34,7 +34,11 @@
  * `fn.toString()`, so a reference to anything declared outside the body is a
  * `ReferenceError` there and nowhere else. `capture-framing.test.ts` pins that.
  */
-export function recentreClippedCapture(element: Element, shellSelector: string): number[] | null {
+export function recentreClippedCapture(
+  target: Element | string,
+  shellSelector: string,
+): number[] | null {
+  const element = typeof target === 'string' ? document.querySelector(target) : target
   const shell = document.querySelector(shellSelector)
   if (!(shell instanceof HTMLElement)) return null
   if (!(element instanceof HTMLElement)) return null
@@ -72,7 +76,8 @@ export function recentreClippedCapture(element: Element, shellSelector: string):
  *
  * Same no-module-scope rule as above.
  */
-export function restoreScrollAfterCapture(element: Element, saved: number[]): void {
+export function restoreScrollAfterCapture(target: Element | string, saved: number[]): void {
+  const element = typeof target === 'string' ? document.querySelector(target) : target
   if (!(element instanceof HTMLElement)) return
   window.scrollTo(saved[0] ?? 0, saved[1] ?? 0)
   let i = 2
