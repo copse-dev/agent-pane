@@ -19,8 +19,8 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expectRecord, nonEmptyStringOr } from '../src/shared/unknown-value.mts'
 import { cacheLinkTarget, gortexCacheRoot } from './lib/build-cache-paths.mts'
+import { GORTEX_VERSION } from './lib/native-artifacts.mts'
 
-const GORTEX_VERSION = 'v0.60.0'
 const REPO = 'zzet/gortex'
 /** Explicit override (release lipo / isolated extract). Default: vendor/gortex in cwd. */
 const OUT_DIR_OVERRIDE = process.env['GORTEX_OUT_DIR']?.trim()

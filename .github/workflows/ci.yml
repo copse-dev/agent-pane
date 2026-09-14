@@ -577,6 +577,17 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/setup
+      # Preparation tests exercise the real kernel boundary and must not skip it.
+      - name: Install sandbox dependencies for unit integration tests
+        if: runner.environment == 'github-hosted' && runner.os == 'Linux'
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends bubblewrap socat
+          if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          bwrap --unshare-all --dev-bind / / --die-with-parent true
       # Unit suite under c8 + coverage-baseline.json ratchet (replaces the
       # separate coverage job — same tests, no duplicate npm test run).
       #

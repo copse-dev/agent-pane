@@ -79,7 +79,7 @@ minimumReleaseAgeExclude:
 # until a release newer than 0.6.0 includes cthackers/adm-zip#575. The regression
 # test in scripts/adm-zip-symlink-patch.test.ts fails if this patch is dropped.
 
-# Three patches to @anthropic-ai/sandbox-runtime, all in one patch file. Drop
+# Four patches to @anthropic-ai/sandbox-runtime, all in one patch file. Drop
 # each once upstream does the same; the named test fails loudly if a version
 # bump silently drops the patch.
 #
@@ -104,6 +104,12 @@ minimumReleaseAgeExclude:
 #    the ssh-agent socket and nothing else, so the patch lets `customConfig`
 #    supply the list and falls back to the getter. Guarded by
 #    `git-commit-signing.test.ts`.
+#
+# 4. The platform write policy accepts host-supplied mandatory deny paths for
+#    approved worktree preparation. Root configuration stays protected, while
+#    inert .idea/.vscode metadata inside dependency tarballs can be extracted.
+#    Other sandbox callers retain the default recursive denies. Guarded by
+#    `project-sandbox/worktree-preparation.test.ts`.
 patchedDependencies:
   '@anthropic-ai/sandbox-runtime@0.0.74': patches/@anthropic-ai__sandbox-runtime@0.0.74.patch
   adm-zip@0.6.0: patches/adm-zip@0.6.0.patch

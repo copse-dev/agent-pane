@@ -26,11 +26,16 @@ stripping.
 Installs use pnpm’s default isolated linker with `package-import-method=auto`
 (`.npmrc`: prefer clone, then hardlink, then copy) so packages are symlinked
 through `node_modules/.pnpm` while store bytes are shared when the filesystem
-allows. Electron’s macOS `dist/` is shared under `~/.copse/cache/electron-dist/`
-(see `scripts/patch-dev-name.mts`); gortex is shared under
-`~/.copse/cache/gortex/` (see `scripts/fetch-gortex.mts`). Each worktree still
-runs its own install — `make run` or `pnpm install` — to link its own `node_modules`
-and symlink those caches.
+allows. Agent-prepared worktrees route Corepack, the pnpm store, Electron downloads and extracted
+runtime, and gortex through fixed directories under `~/.copse/cache/`. The read-only
+`preflight_worktree` reports the current project's package-manager and declared setup readiness.
+Pass its `planFingerprint` to one approved `prepare_worktree` call to install locked dependencies
+and run the setup declared in `.copse/worktree-preparation.json`. This repository declares its
+Electron/ChromeDriver/native/gortex steps there; other projects need none of those artifacts.
+Python projects with `pyproject.toml` and `uv.lock` automatically use locked uv workspace sync;
+they need an installed compatible Python and uv, but no Copse declaration. Preflight leaves the
+project and shared caches read-only, using disposable scratch for manager bookkeeping.
+See [project worktree preparation](plans/project-worktree-preparation.md).
 
 Cursor Cloud setup normally installs the pinned version through `.cursor/cloud-setup.sh`. If an
 older executable still shadows it, activate the repo version:
