@@ -27113,6 +27113,8 @@ This response is streamed through the real renderer event path.`
     supervisor: {
       list: () => resolved({ tasks: [] }),
       cancel: () => resolved({ task: null }),
+      get: () => resolved({ task: null }),
+      resume: () => resolved({ task: null }),
       onChanged: subscribe
     },
     // The browser demo has no repository behind it, so it owns no checkouts to
@@ -96673,21 +96675,73 @@ function mountSupervisedTasks(listRoot, store2, api2) {
   section.append(header, list);
   listRoot.append(section);
   let loadToken = 0;
+  const expanded = /* @__PURE__ */ new Set();
+  const feedback = el("p", { class: "supervised-task-feedback", role: "status", hidden: true });
+  section.append(feedback);
+  function report(error61) {
+    feedback.textContent = error61 instanceof Error ? error61.message : "Unable to update background tasks";
+    feedback.hidden = false;
+  }
   function render(tasks) {
     clear(list);
     section.hidden = tasks.length === 0;
     for (const task of tasks) {
+      let showDetail = function(value) {
+        clear(detail);
+        if (value.lastError)
+          detail.append(el("p", { class: "supervised-task-reason" }, value.lastError));
+        if (value.attempt !== void 0 && value.maxAttempts !== void 0) {
+          detail.append(
+            el("p", {}, `Attempt ${String(value.attempt)} of ${String(value.maxAttempts)}`)
+          );
+        }
+        if (value.resultRef) detail.append(el("p", {}, value.resultRef.ref));
+        if ((value.state === "blocked" || value.state === "failed") && value.handler !== "shell_process") {
+          const resume = el(
+            "button",
+            {
+              type: "button",
+              class: "ui-btn ui-btn-secondary supervised-task-resume"
+            },
+            "Resume"
+          );
+          resume.addEventListener("click", () => {
+            resume.disabled = true;
+            feedback.hidden = true;
+            void api2.supervisor.resume(value.projectId, value.threadId, value.taskId).then(() => refresh()).catch((error61) => {
+              resume.disabled = false;
+              report(error61);
+            });
+          });
+          detail.append(resume);
+        }
+      };
       const dot = el("span", {
         class: "supervised-task-dot",
         "aria-hidden": "true",
         "data-state": task.state
       });
-      const copy = el(
-        "span",
-        { class: "supervised-task-copy" },
+      const copy = el("details", { class: "supervised-task-copy" });
+      copy.open = expanded.has(task.taskId);
+      const label = el(
+        "summary",
+        { class: "supervised-task-summary" },
         el("span", { class: "supervised-task-label" }, taskLabel(task.handler)),
         el("span", { class: "supervised-task-state" }, task.state)
       );
+      const detail = el("div", { class: "supervised-task-detail" });
+      showDetail(task);
+      copy.append(label, detail);
+      copy.addEventListener("toggle", () => {
+        if (!copy.open) {
+          expanded.delete(task.taskId);
+          return;
+        }
+        expanded.add(task.taskId);
+        void api2.supervisor.get(task.projectId, task.threadId, task.taskId).then(({ task: latest }) => {
+          if (latest && copy.isConnected) showDetail(latest);
+        }).catch(report);
+      });
       const cancel = el(
         "button",
         {
@@ -96700,10 +96754,12 @@ function mountSupervisedTasks(listRoot, store2, api2) {
       );
       cancel.addEventListener("click", () => {
         cancel.disabled = true;
-        void api2.supervisor.cancel(task.projectId, task.taskId).then(() => refresh()).catch(() => {
+        void api2.supervisor.cancel(task.projectId, task.taskId).then(() => refresh()).catch((error61) => {
           cancel.disabled = false;
+          report(error61);
         });
       });
+      cancel.hidden = task.state === "failed" || task.state === "completed" || task.state === "cancelled";
       list.append(
         el(
           "div",
@@ -96727,9 +96783,13 @@ function mountSupervisedTasks(listRoot, store2, api2) {
       render([]);
       return;
     }
-    const result = await api2.supervisor.list(projectId);
-    if (token !== loadToken || projectId !== store2.getState().activeProjectId) return;
-    render(result.tasks);
+    try {
+      const result = await api2.supervisor.list(projectId);
+      if (token !== loadToken || projectId !== store2.getState().activeProjectId) return;
+      render(result.tasks);
+    } catch (error61) {
+      if (token === loadToken) report(error61);
+    }
   }
   const unsubs = [
     store2.on("projects_changed", () => {

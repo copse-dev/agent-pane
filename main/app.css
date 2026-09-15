@@ -2382,7 +2382,7 @@ copse-ui-field input[type=password],
 }
 .supervised-task-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--spacing-sm);
   min-width: 0;
   padding: 5px var(--spacing-sm);
@@ -2392,6 +2392,7 @@ copse-ui-field input[type=password],
 }
 .supervised-task-dot {
   flex-shrink: 0;
+  margin-top: var(--spacing-sm);
   width: 8px;
   height: 8px;
   border-radius: 50%;
@@ -2405,10 +2406,40 @@ copse-ui-field input[type=password],
   background: var(--warning);
 }
 .supervised-task-copy {
-  display: flex;
   flex: 1;
-  flex-direction: column;
   min-width: 0;
+}
+.supervised-task-summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: var(--spacing-xs);
+  list-style: none;
+  cursor: pointer;
+}
+.supervised-task-summary::before {
+  content: "\25b8";
+  grid-row: 1 / span 2;
+  align-self: center;
+  color: var(--text-muted);
+}
+.supervised-task-copy[open] > .supervised-task-summary::before {
+  content: "\25be";
+}
+.supervised-task-summary .supervised-task-label,
+.supervised-task-summary .supervised-task-state {
+  display: block;
+}
+.supervised-task-detail,
+.supervised-task-feedback {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
+.supervised-task-detail p {
+  margin: var(--spacing-xs) 0;
+}
+.supervised-task-resume {
+  margin-top: var(--spacing-xs);
 }
 .supervised-task-label {
   overflow: hidden;
