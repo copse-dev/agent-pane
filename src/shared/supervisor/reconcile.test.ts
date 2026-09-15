@@ -60,6 +60,7 @@ describe('reconcileSupervisedTasks', () => {
     const agentRunning: SupervisedTaskMeta = {
       ...loadMeta('meta-queued.json'),
       taskId: 'task-agent-running',
+      restartPolicy: 'retry',
       state: 'running',
       startedAt: 1700000001000,
       updatedAt: 1700000001000,
@@ -78,6 +79,7 @@ describe('reconcileSupervisedTasks', () => {
     const agentRunning: SupervisedTaskMeta = {
       ...loadMeta('meta-waiting-wake-at.json'),
       taskId: 'task-agent-waiting-run',
+      restartPolicy: 'retry',
       state: 'running',
       startedAt: 1700000001000,
     }

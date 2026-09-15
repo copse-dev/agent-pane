@@ -1,0 +1,79 @@
+{
+  "without_token": "UNAUTHENTICATED",
+  "version": "33.1.24.0 (33.1.24-11237101)",
+  "initial": {
+    "width": 540,
+    "height": 960,
+    "bytes": 66218,
+    "rpc_ms": 72.8,
+    "sha256": "a1de66564e63d369d5d1522ae149d962411477b35fe32b95094b4dae1543548e"
+  },
+  "touch_network": {
+    "width": 540,
+    "height": 960,
+    "bytes": 69525,
+    "rpc_ms": 88.7,
+    "sha256": "c092fc2f1e138df0c12eededc36bed0fdd6d44fc83364f9f1068c1011e09f25f"
+  },
+  "text_search": {
+    "width": 540,
+    "height": 960,
+    "bytes": 69525,
+    "rpc_ms": 55.4,
+    "sha256": "c092fc2f1e138df0c12eededc36bed0fdd6d44fc83364f9f1068c1011e09f25f"
+  },
+  "home": {
+    "width": 540,
+    "height": 960,
+    "bytes": 69525,
+    "rpc_ms": 70.8,
+    "sha256": "c092fc2f1e138df0c12eededc36bed0fdd6d44fc83364f9f1068c1011e09f25f"
+  },
+  "png_stream_idle": {
+    "frames": 47,
+    "empty_frames": 0,
+    "seconds": 4.01,
+    "fps_observed": 11.7,
+    "bytes": 3287683,
+    "first_frame_ms": 160.9,
+    "first_seq": [0],
+    "last_seq": [60]
+  },
+  "rgba_stream_idle": {
+    "frames": 42,
+    "empty_frames": 0,
+    "seconds": 4.01,
+    "fps_observed": 10.5,
+    "bytes": 87091200,
+    "first_frame_ms": 14.0,
+    "first_seq": [0],
+    "last_seq": [41]
+  },
+  "png_stream_animated": {
+    "frames": 12,
+    "empty_frames": 0,
+    "seconds": 4.0,
+    "fps_observed": 3.0,
+    "bytes": 801720,
+    "first_frame_ms": 64.7,
+    "first_seq": [0],
+    "last_seq": [12]
+  },
+  "rgba_stream_animated": {
+    "frames": 6,
+    "empty_frames": 0,
+    "seconds": 4.02,
+    "fps_observed": 1.5,
+    "bytes": 12441600,
+    "first_frame_ms": 21.6,
+    "first_seq": [0],
+    "last_seq": [5]
+  },
+  "after_stream_cancel": {
+    "width": 540,
+    "height": 960,
+    "bytes": 441756,
+    "rpc_ms": 670.2,
+    "sha256": "1b0da37ff02cb073fc57fe5fb07d68eaee00ef03a635fea3393d1ae7de9418e7"
+  }
+}

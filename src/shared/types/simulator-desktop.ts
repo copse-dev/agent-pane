@@ -2,6 +2,8 @@ export interface SimulatorDesktopDevice {
   udid: string
   name: string
   runtime: string
+  platform?: 'android' | undefined
+  unavailableReason?: string
 }
 
 export type SimulatorDesktopStatus = 'connecting' | 'connected' | 'closed' | 'error'
@@ -40,5 +42,11 @@ export type SimulatorDesktopInput =
     }
   | {
       type: 'button-tap'
-      name: 'home' | 'lock' | 'side' | 'siri'
+      name: 'home' | 'lock' | 'side' | 'siri' | 'back' | 'overview'
     }
+
+/** Main-originated presentation intent; agent tools never set control. */
+export interface SimulatorDesktopPresentation {
+  control?: boolean
+  owner?: { projectId: string; threadId?: string | undefined }
+}

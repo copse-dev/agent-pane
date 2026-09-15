@@ -243,7 +243,7 @@ import {
   appleOperationInputSchema,
 } from '@shared/types/apple-development.ts'
 
-import type { SupervisedTaskSummary } from '@shared/types/supervised-task.ts'
+import { createSupervisedTaskClient } from '../services/supervisor/task-client.ts'
 import { READ_TERMINAL_ENABLED_SETTING } from '@shared/terminal/read-terminal.ts'
 import { EXTERNAL_CONTEXT_FIELD, MEMORY_TYPE } from '../tools/memory-tools.ts'
 import { ROADMAP_STATUSES, ROADMAP_TYPE, roadmapTitleFromPrompt } from '../tools/roadmap-tools.ts'
@@ -2065,40 +2065,54 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     await getPluginService().refreshPluginSources()
     return { plugins: getPluginService().list() }
   })
-  ipcMain.handle('supervisor:list', (event, rawProjectId: unknown) => {
+  ipcMain.handle('supervisor:list', async (event, rawProjectId: unknown) => {
     assertMainFrameSender(event, win)
     const projectId = parseIpcArgs(zNonEmptyString.max(256), [rawProjectId])
-    const activeStates = new Set(['queued', 'running', 'waiting', 'blocked'])
-    const tasks: SupervisedTaskSummary[] = getTaskSupervisor()
-      .list(projectId)
-      .filter((task) => activeStates.has(task.state))
-      .map((task) => ({
-        taskId: task.taskId,
-        projectId: task.projectId,
-        threadId: task.threadId,
-        handler: task.handler,
-        state: task.state,
-        updatedAt: task.updatedAt,
-      }))
+    const supervisor = getTaskSupervisor()
+    await supervisor.start()
+    // The trusted desktop owns a project overview, including orphaned threads.
+    // Individual clients still receive a bound thread scope, just like headless hosts.
+    const owners = new Set(supervisor.list(projectId).map((task) => task.threadId))
+    const results = await Promise.all(
+      [...owners].map((threadId) =>
+        createSupervisedTaskClient(supervisor, { projectId, threadId }).list(),
+      ),
+    )
+    const tasks = results
+      .flatMap((result) => result.tasks)
+      .filter((task) => task.state !== 'completed' && task.state !== 'cancelled')
     return { tasks }
   })
   ipcMain.handle('supervisor:cancel', async (event, rawProjectId: unknown, rawTaskId: unknown) => {
     assertMainFrameSender(event, win)
     const projectId = parseIpcArgs(zNonEmptyString.max(256), [rawProjectId])
     const taskId = parseIpcArgs(zNonEmptyString.max(256), [rawTaskId])
-    const task = await getTaskSupervisor().cancel(projectId, taskId)
-    const summary: SupervisedTaskSummary | null = task
-      ? {
-          taskId: task.taskId,
-          projectId: task.projectId,
-          threadId: task.threadId,
-          handler: task.handler,
-          state: task.state,
-          updatedAt: task.updatedAt,
-        }
-      : null
-    return { task: summary }
+    const supervisor = getTaskSupervisor()
+    await supervisor.start()
+    const task = supervisor.get(projectId, taskId)
+    if (!task) return { task: null }
+    return createSupervisedTaskClient(supervisor, task).cancel(taskId)
   })
+  ipcMain.handle(
+    'supervisor:get',
+    async (event, rawProjectId: unknown, rawThreadId: unknown, rawTaskId: unknown) => {
+      assertMainFrameSender(event, win)
+      const projectId = parseIpcArgs(zNonEmptyString.max(256), [rawProjectId])
+      const threadId = parseIpcArgs(zNonEmptyString.max(256), [rawThreadId])
+      const taskId = parseIpcArgs(zNonEmptyString.max(256), [rawTaskId])
+      return createSupervisedTaskClient(getTaskSupervisor(), { projectId, threadId }).get(taskId)
+    },
+  )
+  ipcMain.handle(
+    'supervisor:resume',
+    async (event, rawProjectId: unknown, rawThreadId: unknown, rawTaskId: unknown) => {
+      assertMainFrameSender(event, win)
+      const projectId = parseIpcArgs(zNonEmptyString.max(256), [rawProjectId])
+      const threadId = parseIpcArgs(zNonEmptyString.max(256), [rawThreadId])
+      const taskId = parseIpcArgs(zNonEmptyString.max(256), [rawTaskId])
+      return createSupervisedTaskClient(getTaskSupervisor(), { projectId, threadId }).resume(taskId)
+    },
+  )
   ipcMain.handle('plugins:add-source', async (event) => {
     assertMainFrameSender(event, win)
     const result = await dialog.showOpenDialog(win, {
@@ -3037,6 +3051,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
                 udid: z.uuid(),
                 name: z.string().min(1).max(256),
                 runtime: z.string().min(1).max(128),
+                platform: z.literal('android').optional(),
               }),
             )
             .max(8),

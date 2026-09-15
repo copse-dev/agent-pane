@@ -1,4 +1,8 @@
-export type SimulatorDesktopPanelPresenter = (udid: string) => void
+import type { SimulatorDesktopPresentation } from '@shared/types/simulator-desktop.ts'
+export type SimulatorDesktopPanelPresenter = (
+  udid: string,
+  options?: SimulatorDesktopPresentation,
+) => void
 
 export const SIMULATOR_DESKTOP_SHOW_CHANNEL = 'simulator-desktop:show'
 
@@ -11,7 +15,7 @@ export function setSimulatorDesktopPanelPresenter(
   presenter = next
 }
 
-export function showSimulatorDesktop(udid: string): void {
+export function showSimulatorDesktop(udid: string, options?: SimulatorDesktopPresentation): void {
   if (!presenter) throw new Error('The Copse Desktop panel is not available in this process')
-  presenter(udid)
+  presenter(udid, options)
 }

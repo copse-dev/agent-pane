@@ -210,6 +210,8 @@ export function installLongTaskWakeConsumer(
       trigger: { kind: 'wake_at', wakeAt },
       permissionSnapshot: {
         capturedAt: now,
+        // A missed continuation is not standing authorization to run days later.
+        expiresAt: wakeAt + 24 * 60 * 60 * 1_000,
         autoRunSandboxCommands: dependencies.autoRunSandboxCommands(),
         projectSandboxEnabled: dependencies.projectSandboxEnabled(),
         workspaceTargetKind: workspaceTarget.kind,
@@ -218,7 +220,8 @@ export function installLongTaskWakeConsumer(
       },
       reapproveOnWake: false,
       concurrencyClass: 'agent',
-      maxAttempts: 1,
+      maxAttempts: 3,
+      retryPolicy: { initialDelayMs: 1_000, maxDelayMs: 30_000 },
       contentHash: executionIdentity(context),
       turnId: turnTreeId,
     })

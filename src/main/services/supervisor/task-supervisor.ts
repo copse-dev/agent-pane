@@ -9,6 +9,7 @@ import {
   type SupervisedTaskMeta,
   type TaskProvenance,
   type TaskResourceBudget,
+  type TaskRetryPolicy,
   type TaskResultRef,
   type TaskState,
   type TaskTrigger,
@@ -56,6 +57,8 @@ export interface EnqueueSupervisedTaskInput {
   concurrencyClass: string
   resourceBudget?: TaskResourceBudget
   maxAttempts: number
+  retryPolicy?: TaskRetryPolicy
+  restartPolicy?: 'block' | 'retry'
   contentHash?: string
   turnId?: string
   agentId?: string
@@ -77,6 +80,8 @@ export interface TaskSupervisorDependencies {
   concurrencyClassLimits?: Readonly<Record<string, number>>
   terminalRetentionMs?: number
   cronEnabled?: () => boolean
+  /** Upper bound for cooperative cancellation before a handler is fenced off. */
+  cancellationGraceMs?: number
 }
 
 export type SupervisedEventSourceStart = (emit: (event: string) => void) => (() => void) | undefined
@@ -84,6 +89,7 @@ export type SupervisedTaskListener = (task: SupervisedTaskMeta) => void
 export type SupervisedExternalTaskCanceller = (task: SupervisedTaskMeta) => void | Promise<void>
 export const DEFAULT_TERMINAL_RETENTION_MS = 30 * 24 * 60 * 60 * 1_000
 const MAX_TIMER_DELAY_MS = 2_147_000_000
+const CLOCK_RECHECK_MS = 60_000
 
 const systemClock: TaskSupervisorClock = {
   now: () => Date.now(),
@@ -132,8 +138,12 @@ export class TaskSupervisor {
   private readonly concurrencyClassLimits: Readonly<Record<string, number>>
   private readonly terminalRetentionMs: number
   private readonly cronEnabled: () => boolean
+  private readonly cancellationGraceMs: number
   private readonly tasks = new Map<string, SupervisedTaskMeta>()
   private readonly handlers = new Map<string, SupervisedTaskHandler>()
+  private readonly preparationHandlers = new Set<string>()
+  private readonly reapprovalHandlers = new Set<string>()
+  private readonly approvedWakes = new Set<string>()
   private readonly externalCancellers = new Map<string, SupervisedExternalTaskCanceller>()
   private readonly timers = new Map<string, ReturnType<typeof setTimeout> | number>()
   private readonly eventWaiters = new Map<string, Set<string>>()
@@ -141,6 +151,8 @@ export class TaskSupervisor {
   private readonly listeners = new Set<SupervisedTaskListener>()
   private readonly pending = new Set<string>()
   private readonly active = new Map<string, Promise<void>>()
+  /** A fenced handler still occupies its resource slot until it actually settles. */
+  private readonly lingering = new Set<string>()
   private readonly abortControllers = new Map<string, AbortController>()
   private startPromise: Promise<void> | null = null
   private stopping = false
@@ -177,14 +189,28 @@ export class TaskSupervisor {
       throw new Error('Task supervisor terminal retention must be a non-negative duration')
     }
     this.cronEnabled = dependencies.cronEnabled ?? ((): boolean => false)
+    this.cancellationGraceMs = dependencies.cancellationGraceMs ?? 5_000
+    if (!Number.isFinite(this.cancellationGraceMs) || this.cancellationGraceMs < 0) {
+      throw new Error('Task cancellation grace must be a non-negative duration')
+    }
   }
 
-  registerHandler(kind: string, handler: SupervisedTaskHandler): () => void {
+  registerHandler(
+    kind: string,
+    handler: SupervisedTaskHandler,
+    options: { preparesOnly?: boolean; reapprovesWake?: boolean } = {},
+  ): () => void {
     if (kind.trim() === '') throw new Error('Supervised task handler kind is required')
     if (this.handlers.has(kind)) throw new Error(`Supervised task handler "${kind}" is registered`)
     this.handlers.set(kind, handler)
+    if (options.preparesOnly) this.preparationHandlers.add(kind)
+    if (options.reapprovesWake) this.reapprovalHandlers.add(kind)
     return () => {
-      if (this.handlers.get(kind) === handler) this.handlers.delete(kind)
+      if (this.handlers.get(kind) === handler) {
+        this.handlers.delete(kind)
+        this.preparationHandlers.delete(kind)
+        this.reapprovalHandlers.delete(kind)
+      }
     }
   }
 
@@ -275,7 +301,7 @@ export class TaskSupervisor {
             this.arm(live.data)
           }
         }
-        return existing
+        return structuredClone(existing)
       }
       return this.enqueueWithId(taskId, input)
     })
@@ -315,6 +341,11 @@ export class TaskSupervisor {
       ...(input.resourceBudget ? { resourceBudget: input.resourceBudget } : {}),
       attempt: 0,
       maxAttempts: input.maxAttempts,
+      ...(input.retryPolicy ? { retryPolicy: input.retryPolicy } : {}),
+      ...(input.restartPolicy ? { restartPolicy: input.restartPolicy } : {}),
+      ...(input.trigger.kind === 'cron'
+        ? { nextWakeAt: nextCronOccurrence(input.trigger.expression, now) }
+        : {}),
       ...(input.contentHash ? { contentHash: input.contentHash } : {}),
       ...(input.turnId ? { turnId: input.turnId } : {}),
       ...(input.agentId ? { agentId: input.agentId } : {}),
@@ -323,12 +354,13 @@ export class TaskSupervisor {
     this.tasks.set(taskKey(task.projectId, task.taskId), task)
     this.notify(task)
     this.arm(task)
-    return task
+    return structuredClone(task)
   }
 
   syncCronTasks(): void {
     for (const task of this.tasks.values()) {
-      if (task.trigger.kind !== 'cron' || task.state !== 'waiting') continue
+      if (task.trigger.kind !== 'cron' || (task.state !== 'waiting' && task.state !== 'queued'))
+        continue
       const key = taskKey(task.projectId, task.taskId)
       this.clearTimer(key)
       if (this.cronEnabled()) this.arm(task)
@@ -357,7 +389,10 @@ export class TaskSupervisor {
         this.enqueueReady(taskKey(queued.projectId, queued.taskId))
         woken++
       } catch (error) {
-        this.arm(task)
+        for (const waitingKey of waiters) {
+          const waiting = this.tasks.get(waitingKey)
+          if (waiting?.state === 'waiting') this.arm(waiting)
+        }
         throw error
       }
     }
@@ -382,6 +417,7 @@ export class TaskSupervisor {
     processHandle: string,
   ): Promise<SupervisedTaskMeta> {
     await this.start()
+    if (this.stopping) throw new Error('Task supervisor is stopping')
     if (input.trigger.kind !== 'immediate') {
       throw new Error('An adopted external task must use an immediate trigger')
     }
@@ -452,16 +488,19 @@ export class TaskSupervisor {
   }
 
   get(projectId: string, taskId: string): SupervisedTaskMeta | null {
-    return this.tasks.get(taskKey(projectId, taskId)) ?? null
+    const task = this.tasks.get(taskKey(projectId, taskId))
+    return task ? structuredClone(task) : null
   }
 
   list(projectId?: string): SupervisedTaskMeta[] {
     return [...this.tasks.values()]
       .filter((task) => projectId === undefined || task.projectId === projectId)
       .sort((left, right) => left.createdAt - right.createdAt)
+      .map((task) => structuredClone(task))
   }
 
   async cancel(projectId: string, taskId: string): Promise<SupervisedTaskMeta | null> {
+    await this.start()
     const key = taskKey(projectId, taskId)
     const task = this.tasks.get(key)
     if (!task) return null
@@ -469,50 +508,107 @@ export class TaskSupervisor {
     this.clearTimer(key)
     this.removeEventWaiter(key, task)
     this.pending.delete(key)
+    this.approvedWakes.delete(key)
+    // Publish the terminal fence before abort callbacks or process exits can race it.
+    const cancelled = await this.transition(task, 'cancelled', 'cancel', 'cancel requested')
     this.abortControllers.get(key)?.abort()
     const externalCanceller = this.externalCancellers.get(task.handler)
     if (externalCanceller) {
       try {
-        await externalCanceller(task)
+        await this.boundCancellation(Promise.resolve().then(() => externalCanceller(task)))
       } catch (error) {
         this.onError(error)
       }
     }
-    const current = this.tasks.get(key)
-    if (!current || isTerminalTaskState(current.state)) return current ?? null
-    return this.transition(current, 'cancelled', 'cancel', 'cancel requested')
+    return cancelled
   }
 
   async acknowledgeBlock(projectId: string, taskId: string): Promise<SupervisedTaskMeta | null> {
+    await this.start()
+    if (this.stopping) throw new Error('Task supervisor is stopping')
     const task = this.tasks.get(taskKey(projectId, taskId))
     if (!task) return null
     if (task.state !== 'blocked') return task
-    const now = this.clock.now()
-    const toState: TaskState =
-      task.trigger.kind === 'cron' || (task.trigger.kind === 'wake_at' && task.trigger.wakeAt > now)
-        ? 'waiting'
-        : 'queued'
-    const cleared = withoutLastError(task)
-    const next = await this.transition(cleared, toState, 'unblock', 'block acknowledged')
+    if (this.lingering.has(taskKey(projectId, taskId))) {
+      throw new Error('Previous execution has not stopped; wait before resuming')
+    }
+    if (task.handler === 'shell_process' || task.processHandleId) {
+      throw new Error('A lost process cannot be resumed; start a new background command')
+    }
+    // Explicit resume approves this scheduling attempt only. It cannot refresh a stale
+    // permission snapshot, grant tool access, or survive a restart / later recurrence.
+    this.approvedWakes.add(taskKey(projectId, taskId))
+    const { retryAt: _retry, finishedAt: _finished, ...cleared } = withoutLastError(task)
+    const next = await this.transition(
+      { ...cleared, attempt: 0 },
+      'queued',
+      'unblock',
+      'block acknowledged; recheck execution permissions',
+    )
+    this.arm(next)
+    return next
+  }
+
+  /** An explicit human retry starts a new bounded attempt cycle, recorded in the audit. */
+  async retry(projectId: string, taskId: string): Promise<SupervisedTaskMeta | null> {
+    await this.start()
+    if (this.stopping) throw new Error('Task supervisor is stopping')
+    const task = this.tasks.get(taskKey(projectId, taskId))
+    if (!task) return null
+    if (task.state !== 'failed') return this.acknowledgeBlock(projectId, taskId)
+    if (this.lingering.has(taskKey(projectId, taskId))) {
+      throw new Error('Previous execution has not stopped; wait before retrying')
+    }
+    if (task.handler === 'shell_process' || task.processHandleId) {
+      throw new Error('A lost process cannot be retried; start a new background command')
+    }
+    this.approvedWakes.add(taskKey(projectId, taskId))
+    const { retryAt: _retry, finishedAt: _finished, ...cleared } = withoutLastError(task)
+    const next = await this.transition(
+      { ...cleared, attempt: 0 },
+      'queued',
+      'retry',
+      'explicit retry; recheck execution permissions',
+    )
     this.arm(next)
     return next
   }
 
   async waitForIdle(): Promise<void> {
     await Promise.resolve()
-    await Promise.allSettled([...this.active.values()])
+    while (this.active.size > 0) await Promise.allSettled([...this.active.values()])
   }
 
   async shutdown(): Promise<void> {
     this.stopping = true
     this.pending.clear()
+    this.approvedWakes.clear()
     this.eventWaiters.clear()
     for (const source of this.eventSources.values()) source.dispose()
     this.eventSources.clear()
     this.listeners.clear()
     for (const [key] of this.timers) this.clearTimer(key)
-    for (const controller of this.abortControllers.values()) controller.abort()
     if (this.startPromise) await this.startPromise
+    // A clean shutdown has the same honest recovery state as an interrupted run.
+    for (const [key, controller] of this.abortControllers) {
+      const task = this.tasks.get(key)
+      if (task?.state === 'running') {
+        await this.transition(
+          task,
+          task.restartPolicy === 'retry' ? 'queued' : 'blocked',
+          'reconcile',
+          task.restartPolicy === 'retry'
+            ? 'Idempotent execution suspended for app restart'
+            : 'Execution stopped during app shutdown; inspect before resuming',
+        )
+      }
+      controller.abort()
+    }
+    for (const task of this.tasks.values()) {
+      if (task.state === 'running' && task.processHandleId) {
+        await this.cancel(task.projectId, task.taskId)
+      }
+    }
     await this.waitForIdle()
   }
 
@@ -530,30 +626,41 @@ export class TaskSupervisor {
       this.tasks.set(taskKey(patch.next.projectId, patch.taskId), patch.next)
       this.notify(patch.next)
     }
-    const eligibleTaskIds = new Set(reconciled.eligibleWakeTaskIds)
-    for (const task of this.tasks.values()) {
-      if (eligibleTaskIds.has(task.taskId)) this.arm(task)
-    }
     for (const task of this.tasks.values()) {
       if (
         task.state === 'waiting' &&
-        task.trigger.kind === 'wake_at' &&
-        task.trigger.wakeAt > this.clock.now()
+        task.trigger.kind === 'cron' &&
+        task.nextWakeAt === undefined
       ) {
-        this.arm(task)
-      }
-      if (task.state === 'waiting' && task.trigger.kind === 'event') this.arm(task)
-      if (task.state === 'waiting' && task.trigger.kind === 'cron' && this.cronEnabled()) {
-        this.arm(task)
-      }
+        const armed = await this.transition(
+          { ...task, nextWakeAt: nextCronOccurrence(task.trigger.expression, this.clock.now()) },
+          'waiting',
+          'suspend',
+          'initialize persisted cron deadline',
+        )
+        this.arm(armed)
+      } else this.arm(task)
     }
   }
 
   private arm(task: SupervisedTaskMeta): void {
-    if (this.stopping || isTerminalTaskState(task.state) || task.state === 'blocked') return
+    if (this.stopping || (task.state !== 'queued' && task.state !== 'waiting')) return
     const key = taskKey(task.projectId, task.taskId)
     this.clearTimer(key)
     this.removeEventWaiter(key, task)
+    if (task.trigger.kind === 'cron' && !this.cronEnabled()) return
+    if (task.retryAt !== undefined) {
+      this.scheduleAt(key, task.retryAt, () => {
+        this.enqueueReady(key)
+      })
+      return
+    }
+    if (task.state === 'queued') {
+      queueMicrotask(() => {
+        this.enqueueReady(key)
+      })
+      return
+    }
     if (task.trigger.kind === 'event') {
       let waiters = this.eventWaiters.get(task.trigger.event)
       if (!waiters) {
@@ -565,7 +672,8 @@ export class TaskSupervisor {
     }
     if (task.trigger.kind === 'cron') {
       if (!this.cronEnabled()) return
-      const wakeAt = nextCronOccurrence(task.trigger.expression, this.clock.now())
+      const wakeAt =
+        task.nextWakeAt ?? nextCronOccurrence(task.trigger.expression, this.clock.now())
       this.scheduleAt(key, wakeAt, () => {
         if (this.cronEnabled()) this.enqueueReady(key)
       })
@@ -577,7 +685,6 @@ export class TaskSupervisor {
       })
       return
     }
-    if (task.trigger.kind !== 'immediate') return
     queueMicrotask(() => {
       this.enqueueReady(key)
     })
@@ -590,7 +697,10 @@ export class TaskSupervisor {
   }
 
   private drainReady(): void {
-    while (!this.stopping && this.active.size < this.maxConcurrent) {
+    while (
+      !this.stopping &&
+      new Set([...this.active.keys(), ...this.lingering]).size < this.maxConcurrent
+    ) {
       const key = [...this.pending].find((candidate) => this.hasClassCapacity(candidate))
       if (!key) return
       this.pending.delete(key)
@@ -599,11 +709,14 @@ export class TaskSupervisor {
   }
 
   private hasClassCapacity(key: string): boolean {
+    if (this.active.has(key) || this.lingering.has(key)) return false
     const task = this.tasks.get(key)
     if (!task) return true
-    const limit = this.concurrencyClassLimits[task.concurrencyClass] ?? this.maxConcurrent
+    const limit = Object.hasOwn(this.concurrencyClassLimits, task.concurrencyClass)
+      ? (this.concurrencyClassLimits[task.concurrencyClass] ?? this.maxConcurrent)
+      : this.maxConcurrent
     let activeInClass = 0
-    for (const activeKey of this.active.keys()) {
+    for (const activeKey of new Set([...this.active.keys(), ...this.lingering])) {
       if (this.tasks.get(activeKey)?.concurrencyClass === task.concurrencyClass) activeInClass++
     }
     return activeInClass < limit
@@ -646,36 +759,123 @@ export class TaskSupervisor {
       )
       return
     }
-    if (task.attempt >= task.maxAttempts) {
+    if (task.trigger.kind === 'cron' && !this.cronEnabled()) return
+    if (
+      task.permissionSnapshot.expiresAt !== undefined &&
+      task.permissionSnapshot.expiresAt <= this.clock.now()
+    ) {
+      await this.transition(
+        task,
+        'blocked',
+        'block',
+        'Permission snapshot expired; schedule new work with current permissions',
+      )
+      return
+    }
+    const approved = this.approvedWakes.delete(key)
+    if (
+      task.reapproveOnWake &&
+      !approved &&
+      !this.preparationHandlers.has(task.handler) &&
+      !this.reapprovalHandlers.has(task.handler)
+    ) {
+      await this.transition(
+        task,
+        'blocked',
+        'block',
+        'This wake requires explicit resume before execution',
+      )
+      return
+    }
+    if (
+      task.attempt >=
+      Math.min(task.maxAttempts, task.resourceBudget?.maxAttempts ?? task.maxAttempts)
+    ) {
       await this.transition(task, 'failed', 'fail', 'maximum attempts exhausted')
       return
     }
     const controller = new AbortController()
+    const interrupted = (): boolean => controller.signal.aborted || this.stopping
     this.abortControllers.set(key, controller)
     const now = this.clock.now()
+    const { retryAt: _retry, ...ready } = withoutLastError(task)
     const started = await this.transition(
       {
-        ...withoutLastError(task),
+        ...ready,
         attempt: task.attempt + 1,
         startedAt: task.startedAt ?? now,
       },
       'running',
       task.state === 'waiting' ? 'wake' : 'start',
     )
+    // Cancellation can win while the start record is being flushed to disk.
+    if (this.tasks.get(key) !== started || interrupted()) return
+    const duration = task.resourceBudget?.maxDurationMs
+    const deadline =
+      duration === undefined
+        ? undefined
+        : this.clock.setTimeout(
+            () => {
+              const current = this.tasks.get(key)
+              if (current?.state !== 'running') return
+              void this.transition(
+                current,
+                'failed',
+                'fail',
+                'Task execution exceeded its duration budget',
+              )
+                .then(() => {
+                  controller.abort()
+                })
+                .catch(this.onError)
+            },
+            Math.min(duration, MAX_TIMER_DELAY_MS),
+          )
     try {
-      const result = await handler(started, { signal: controller.signal })
+      const executionTask = structuredClone(started)
+      if (approved && !this.reapprovalHandlers.has(task.handler))
+        executionTask.reapproveOnWake = false
+      const result = await this.runCancellable(
+        Promise.resolve().then(() => {
+          controller.signal.throwIfAborted()
+          return handler(executionTask, { signal: controller.signal })
+        }),
+        controller.signal,
+        key,
+      )
       const current = this.tasks.get(key)
-      if (!current || current.state !== 'running' || controller.signal.aborted) return
+      if (!current || current.state !== 'running' || interrupted()) return
       if (result.blockedReason) {
         await this.transition(current, 'blocked', 'block', result.blockedReason)
         return
       }
       if (result.reschedule) {
+        if (result.reschedule.trigger.kind === 'cron') {
+          validateCronExpression(result.reschedule.trigger.expression)
+          if (!this.cronEnabled()) {
+            await this.transition(
+              current,
+              'blocked',
+              'block',
+              'Recurring supervised tasks are disabled',
+            )
+            return
+          }
+        }
+        const { nextWakeAt: _wake, ...rescheduled } = current
         const waiting = await this.transition(
           {
-            ...current,
+            ...rescheduled,
             trigger: result.reschedule.trigger,
             attempt: 0,
+            ...(result.reschedule.trigger.kind === 'cron'
+              ? {
+                  nextWakeAt: nextCronOccurrence(
+                    result.reschedule.trigger.expression,
+                    this.clock.now(),
+                  ),
+                }
+              : {}),
             ...(result.reschedule.handlerInput
               ? { handlerInput: result.reschedule.handlerInput }
               : {}),
@@ -693,6 +893,10 @@ export class TaskSupervisor {
           {
             ...current,
             attempt: 0,
+            nextWakeAt: nextCronOccurrence(
+              current.trigger.expression,
+              Math.max(this.clock.now(), current.nextWakeAt ?? this.clock.now()),
+            ),
             ...(result.resultRef ? { resultRef: result.resultRef } : {}),
           },
           'waiting',
@@ -712,13 +916,28 @@ export class TaskSupervisor {
       )
     } catch (error) {
       const current = this.tasks.get(key)
-      if (!current || current.state !== 'running' || controller.signal.aborted) return
-      await this.transition(
-        current,
-        'failed',
-        'fail',
-        error instanceof Error ? error.message : String(error),
+      if (!current || current.state !== 'running' || interrupted()) return
+      const reason = error instanceof Error ? error.message : String(error)
+      const policy = current.retryPolicy
+      const attempts = Math.min(
+        current.maxAttempts,
+        current.resourceBudget?.maxAttempts ?? current.maxAttempts,
       )
+      if (policy && current.attempt < attempts) {
+        const delay = Math.min(
+          policy.maxDelayMs,
+          policy.initialDelayMs * 2 ** Math.min(current.attempt - 1, 30),
+        )
+        const waiting = await this.transition(
+          { ...current, retryAt: this.clock.now() + delay, lastError: reason },
+          'waiting',
+          'retry',
+          reason,
+        )
+        this.arm(waiting)
+      } else await this.transition(current, 'failed', 'fail', reason)
+    } finally {
+      if (deadline !== undefined) this.clock.clearTimeout(deadline)
     }
   }
 
@@ -729,6 +948,10 @@ export class TaskSupervisor {
     reason?: string,
   ): Promise<SupervisedTaskMeta> {
     const now = this.clock.now()
+    const key = taskKey(task.projectId, task.taskId)
+    const previous = this.tasks.get(key)
+    // An older asynchronous completion cannot overwrite a cancellation or newer wake.
+    if (previous && previous.state !== task.state) return previous
     const terminal = isTerminalTaskState(toState)
     const next = supervisedTaskMetaSchema.parse({
       ...task,
@@ -737,12 +960,10 @@ export class TaskSupervisor {
       ...(terminal ? { finishedAt: now } : {}),
       ...(reason && (toState === 'failed' || toState === 'blocked') ? { lastError: reason } : {}),
     })
-    const key = taskKey(task.projectId, task.taskId)
-    const previous = this.tasks.get(key)
     this.tasks.set(key, next)
     try {
       await this.store.saveTransition(next, auditEvent(task, action, toState, now, reason))
-      this.notify(next)
+      if (this.tasks.get(key) === next) this.notify(next)
     } catch (error) {
       if (this.tasks.get(key) === next) {
         if (previous) this.tasks.set(key, previous)
@@ -756,7 +977,7 @@ export class TaskSupervisor {
   private notify(task: SupervisedTaskMeta): void {
     for (const listener of this.listeners) {
       try {
-        listener(task)
+        listener(structuredClone(task))
       } catch (error) {
         this.onError(error)
       }
@@ -782,9 +1003,35 @@ export class TaskSupervisor {
         }
         callback()
       },
-      Math.min(remaining, MAX_TIMER_DELAY_MS),
+      Math.min(remaining, CLOCK_RECHECK_MS),
     )
     this.timers.set(key, handle)
+  }
+
+  private runCancellable<T>(work: Promise<T>, signal: AbortSignal, key?: string): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      let grace: ReturnType<typeof setTimeout> | number | undefined
+      const abort = (): void => {
+        grace = this.clock.setTimeout(() => {
+          if (key) this.lingering.add(key)
+          reject(new Error('Task did not stop within cancellation grace'))
+        }, this.cancellationGraceMs)
+      }
+      signal.addEventListener('abort', abort, { once: true })
+      if (signal.aborted) abort()
+      const cleanup = (): void => {
+        signal.removeEventListener('abort', abort)
+        if (grace !== undefined) this.clock.clearTimeout(grace)
+        if (key && this.lingering.delete(key)) this.drainReady()
+      }
+      work.then(resolve, reject).finally(cleanup).catch(this.onError)
+    })
+  }
+
+  private async boundCancellation(work: Promise<void>): Promise<void> {
+    const controller = new AbortController()
+    controller.abort()
+    await this.runCancellable(work, controller.signal)
   }
 
   private removeEventWaiter(key: string, task: SupervisedTaskMeta): void {

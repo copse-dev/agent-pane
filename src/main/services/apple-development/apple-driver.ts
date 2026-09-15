@@ -1,4 +1,5 @@
 import type { ChildProcess } from 'node:child_process'
+import type { AppRunProgress } from '../app-run/app-run-driver.ts'
 import { basename, dirname, extname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, open, readdir, realpath } from 'node:fs/promises'
@@ -74,6 +75,8 @@ export interface AppleDriverPlan {
   target: AppleSelection
   action: AppleAction
   testFilter?: string
+  provisioningUpdates?: boolean
+  progress?: AppRunProgress
 }
 
 export interface AppleDriverResult {
@@ -126,8 +129,14 @@ export function appleBuildPathArguments(paths: AppleOperationPaths): string[] {
   ]
 }
 
-export function appleBuildActionArguments(paths: AppleOperationPaths): string[] {
-  return [...appleBuildPathArguments(paths), '-allowProvisioningUpdates']
+export function appleBuildActionArguments(
+  paths: AppleOperationPaths,
+  provisioningUpdates = true,
+): string[] {
+  return [
+    ...appleBuildPathArguments(paths),
+    ...(provisioningUpdates ? ['-allowProvisioningUpdates'] : []),
+  ]
 }
 
 async function ensureContainedDirectory(root: string, target: string): Promise<string> {
@@ -185,6 +194,7 @@ async function runProcess(
   cwd: string,
   signal: AbortSignal,
   env?: NodeJS.ProcessEnv,
+  onLog?: (text: string) => void,
 ): Promise<ProcessResult> {
   const child = await spawnInProjectSandbox(executable, args, {
     cwd,
@@ -240,10 +250,12 @@ async function runProcess(
   }
   child.stdout?.on('data', (chunk: Buffer) => {
     appendOutput(chunk)
+    onLog?.(chunk.toString('utf8'))
     appendStdout(chunk)
   })
   child.stderr?.on('data', (chunk: Buffer) => {
     appendOutput(chunk)
+    onLog?.(chunk.toString('utf8'))
     appendStderr(chunk)
   })
   const cancelKill: { value: (() => void) | null } = { value: null }
@@ -747,6 +759,14 @@ export class InstalledXcodeDriver {
     developerDir: string,
     signal: AbortSignal,
   ): Promise<AppleDriverResult> {
+    const run = (
+      executable: string,
+      args: string[],
+      cwd: string,
+      runSignal: AbortSignal,
+      env?: NodeJS.ProcessEnv,
+    ): Promise<ProcessResult> =>
+      runProcess(executable, args, cwd, runSignal, env, plan.progress?.log)
     const candidatePath = resolve(plan.root, plan.target.candidateId)
     const canonical = await realpath(candidatePath)
     if (!withinRoot(plan.root, canonical))
@@ -789,7 +809,7 @@ export class InstalledXcodeDriver {
       plan.target.configuration,
       '-destination',
       plan.target.destinationId,
-      ...appleBuildActionArguments(paths),
+      ...appleBuildActionArguments(paths, plan.provisioningUpdates ?? true),
     ]
     const env = { DEVELOPER_DIR: developerDir }
     const args = [...commonArgs, '-resultBundlePath', resultBundlePath]
@@ -799,7 +819,8 @@ export class InstalledXcodeDriver {
     } else {
       args.push('build')
     }
-    const result = await runProcess(xcodebuild, args, plan.root, signal, env)
+    plan.progress?.stage(plan.action === 'test' ? 'testing' : 'building')
+    const result = await run(xcodebuild, args, plan.root, signal, env)
     const buildOutput = boundedOutput([result])
     if (plan.action !== 'run' || result.exitCode !== 0) {
       return {
@@ -813,7 +834,7 @@ export class InstalledXcodeDriver {
       }
     }
 
-    const settings = await runProcess(
+    const settings = await run(
       xcodebuild,
       [
         candidateFlag,
@@ -869,6 +890,7 @@ export class InstalledXcodeDriver {
     }
 
     if (plan.target.destinationId === 'platform=macOS') {
+      plan.progress?.stage('launching')
       const executable = await realpath(resolve(targetBuildDir, executablePath))
       if (!withinRoot(appPath, executable)) {
         throw new Error('The built executable resolved outside the selected app bundle.')
@@ -918,14 +940,17 @@ export class InstalledXcodeDriver {
     }
 
     const simctl = await installedDeveloperTool(developerDir, 'simctl')
-    const boot = await runProcess(simctl, ['bootstatus', simulatorId, '-b'], plan.root, signal, env)
+    plan.progress?.stage('starting-device')
+    const boot = await run(simctl, ['bootstatus', simulatorId, '-b'], plan.root, signal, env)
+    if (boot.exitCode === 0) plan.progress?.stage('installing')
     const install =
       boot.exitCode === 0
-        ? await runProcess(simctl, ['install', simulatorId, appPath], plan.root, signal, env)
+        ? await run(simctl, ['install', simulatorId, appPath], plan.root, signal, env)
         : null
+    if (install?.exitCode === 0) plan.progress?.stage('launching')
     const launch =
       install?.exitCode === 0
-        ? await runProcess(simctl, ['launch', simulatorId, bundleId], plan.root, signal, env)
+        ? await run(simctl, ['launch', simulatorId, bundleId], plan.root, signal, env)
         : null
     const stages = [
       result,

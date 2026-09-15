@@ -1,5 +1,6 @@
-import { $, browser } from '@wdio/globals'
+import { $, $$, browser } from '@wdio/globals'
 import { PNG } from 'pngjs'
+import { readFileSync } from 'node:fs'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 
 const DEVICE_UDID = '11111111-2222-4333-8444-555555555555'
@@ -126,5 +127,107 @@ describe('Simulator desktop preview', function () {
     await expect($('.vnc-control-btn')).toHaveText('Stop controlling')
     await canvas.click()
     await saveAppScreenshot('simulator-desktop-live.png')
+  })
+
+  it('connects an Android display with view-only navigation and explicit control', async () => {
+    await $('.vnc-disconnect-btn').click()
+    await browser.execute(
+      async (udid, frameBase64) => {
+        const e2e = (
+          window as unknown as {
+            __copseE2e?: { setSimulatorDesktop(value: unknown): Promise<void> }
+          }
+        ).__copseE2e
+        if (!e2e) throw new Error('__copseE2e unavailable')
+        // Inject the display at the existing service fixture boundary. Transport/auth
+        // and real Android identifiers are covered by the local gRPC integration tests.
+        await e2e.setSimulatorDesktop({
+          devices: [
+            { udid, name: 'Pixel emulator', runtime: 'Android Emulator', platform: 'android' },
+          ],
+          frame: { base64: frameBase64, mimeType: 'image/png', pixelWidth: 540, pixelHeight: 960 },
+        })
+      },
+      DEVICE_UDID,
+      readFileSync('docs/spikes/android-emulator/evidence/app-input.png').toString('base64'),
+    )
+    await $('.vnc-refresh-devices').click()
+    await expect($('.vnc-device.is-selected .vnc-device-meta')).toHaveText(
+      'Android Emulator · Running',
+    )
+    await $('.vnc-connect-btn').click()
+    const canvas = $('[aria-label="Android emulator screen"]')
+    await canvas.waitForDisplayed({ timeout: 20_000 })
+    await browser.waitUntil(async () => Number(await canvas.getAttribute('width')) === 540)
+    await expect($('.vnc-status-title')).toHaveText('Connected to Pixel emulator')
+    await expect($('.vnc-control-btn')).toHaveText('Control emulator')
+    await expect($('.vnc-back-btn')).toBeDisabled()
+    await expect($('.vnc-home-btn')).toBeDisabled()
+    await expect($('.vnc-overview-btn')).toBeDisabled()
+    await $('.vnc-control-btn').click()
+    await expect($('.vnc-back-btn')).toBeEnabled()
+    await expect($('.vnc-overview-btn')).toBeEnabled()
+    await $('.vnc-back-btn').click()
+    await saveAppScreenshot('android-desktop-live.png')
+    await $('.vnc-control-btn').click()
+    await expect($('.vnc-back-btn')).toBeDisabled()
+    await $('.vnc-disconnect-btn').click()
+    await expect($('.vnc-status-title')).toHaveText('Disconnected')
+  })
+
+  it('opens another device in a separate tab and reuses its existing tab on repeat presentation', async () => {
+    await browser.execute(
+      async (frameBase64, udid) => {
+        const bridge = (
+          window as unknown as {
+            __copseE2e?: {
+              setSimulatorDesktop(value: unknown): Promise<void>
+              showSimulatorDesktop(udid: string): Promise<void>
+            }
+          }
+        ).__copseE2e
+        if (!bridge) throw new Error('__copseE2e unavailable')
+        await bridge.setSimulatorDesktop({
+          devices: [
+            { udid, name: 'First phone', runtime: 'iOS 26.5' },
+            {
+              udid: '22222222-2222-4333-8444-555555555555',
+              name: 'Second phone',
+              runtime: 'iOS 26.5',
+            },
+          ],
+          frame: { base64: frameBase64, mimeType: 'image/png', pixelWidth: 390, pixelHeight: 844 },
+        })
+        await bridge.showSimulatorDesktop(udid)
+      },
+      simulatorFrame(),
+      DEVICE_UDID,
+    )
+    await expect($('.vnc-controls-panel:not([hidden]) .vnc-status-title')).toHaveText(
+      'Connected to First phone',
+    )
+    const show = async (udid: string): Promise<void> => {
+      await browser.execute(async (id) => {
+        const bridge = (
+          window as unknown as {
+            __copseE2e?: { showSimulatorDesktop(udid: string): Promise<void> }
+          }
+        ).__copseE2e
+        if (!bridge) throw new Error('__copseE2e unavailable')
+        await bridge.showSimulatorDesktop(id)
+      }, udid)
+    }
+    await show('22222222-2222-4333-8444-555555555555')
+    await expect($('.vnc-controls-panel:not([hidden]) .vnc-status-title')).toHaveText(
+      'Connected to Second phone',
+    )
+    await expect($$('.vnc-tab')).toBeElementsArrayOfSize(2)
+    await expect($('.vnc-controls-panel:not([hidden]) .vnc-control-btn')).toHaveText(
+      'Control simulator',
+    )
+    await show(DEVICE_UDID)
+    await expect($('.vnc-tab.is-active .vnc-tab-label')).toHaveText('First phone')
+    await expect($$('.vnc-tab')).toBeElementsArrayOfSize(2)
+    await saveAppScreenshot('simulator-desktop-multiple.png')
   })
 })

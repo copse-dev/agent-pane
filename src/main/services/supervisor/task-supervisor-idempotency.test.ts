@@ -19,7 +19,7 @@ const input: EnqueueSupervisedTaskInput & { contentHash: string } = {
     projectSandboxEnabled: false,
   },
   concurrencyClass: 'test',
-  reapproveOnWake: true,
+  reapproveOnWake: false,
   contentHash: 'stable-content',
 }
 

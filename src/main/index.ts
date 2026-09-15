@@ -88,6 +88,7 @@ import {
 import { initTerminal } from './ipc/terminal.ts'
 import { initVnc } from './ipc/vnc.ts'
 import { initSimulatorDesktop } from './ipc/simulator-desktop.ts'
+import { initAppRun } from './ipc/app-run.ts'
 import { registerAllHandlers } from './ipc/register-handlers.ts'
 import { initSkillsRegistry } from './services/skills/skills-registry.ts'
 import { initAgentsRegistry } from './services/agents/agents-registry.ts'
@@ -274,10 +275,10 @@ setBrowserSessionPlatform({
   },
 })
 
-setSimulatorDesktopPanelPresenter((udid) => {
+setSimulatorDesktopPanelPresenter((udid, options) => {
   const win = getMainWindow()
   if (!win || win.isDestroyed()) return
-  win.webContents.send(SIMULATOR_DESKTOP_SHOW_CHANNEL, udid)
+  win.webContents.send(SIMULATOR_DESKTOP_SHOW_CHANNEL, udid, options)
 })
 
 setVideoDecoderPlatform({
@@ -516,6 +517,8 @@ app
     initFsWatcher(win)
     const disposeTerminalHandlers = initTerminal(win)
     const disposeVncHandlers = initVnc(win)
+    const disposeAppRunHandlers = initAppRun(win)
+    win.once('closed', disposeAppRunHandlers)
     const disposeSimulatorDesktopHandlers = initSimulatorDesktop(win)
     recordStartupPhase('register-handlers')
     perfMark('main:register-handlers')

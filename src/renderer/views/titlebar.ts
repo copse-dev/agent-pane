@@ -1,3 +1,5 @@
+import { openAppRunDialog } from './app-run-dialog.ts'
+import { playIcon } from '../dom/icons.ts'
 import { el } from '../dom/helpers.ts'
 import { setTooltip } from '../dom/tooltip.ts'
 import type { AppStore } from '@shared/store/store.ts'
@@ -40,6 +42,37 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
     panelControls.element.insertBefore(openInEditor.element, firstBtn)
   }
 
+  const runApp = el(
+    'button',
+    {
+      type: 'button',
+      class: 'ui-btn ui-btn-ghost titlebar-run-app',
+      hidden: true,
+      'aria-label': 'Run app',
+    },
+    playIcon(),
+    'Run app',
+  )
+  runApp.addEventListener('click', () => {
+    openAppRunDialog(store, api)
+  })
+  panelControls.element.prepend(runApp)
+  let detectionGeneration = 0
+  let detectedThread: string | null = null
+  function syncRunApp(): void {
+    const generation = ++detectionGeneration
+    const { activeProjectId: projectId, activeThreadId: threadId } = store.getState()
+    detectedThread = threadId
+    runApp.hidden = true
+    if (projectId)
+      void api.appRun
+        .detect({ projectId, ...(threadId ? { threadId } : {}) })
+        .then((detected) => {
+          if (generation === detectionGeneration) runApp.hidden = !detected
+        })
+        .catch(() => {})
+  }
+  syncRunApp()
   root.append(leftCluster, dragRegion, panelControls.element)
   const destroyCompactLayout = bindTitlebarCompactLayout(root, [leftCluster, panelControls.element])
 
@@ -112,9 +145,15 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
     store.on('workspace_changed', () => {
       syncName()
       syncBranch()
+      syncRunApp()
     }),
     store.on('projects_changed', syncName),
     store.on('threads_changed', syncBranch),
+    store.on('threads_changed', () => {
+      if (store.getState().activeThreadId !== detectedThread) syncRunApp()
+    }),
+    store.on('thread_checkout_changed', syncRunApp),
+    store.on('message_done', syncRunApp),
     store.on('git_branch_changed', syncBranch),
     api.fs.onChanged(scheduleBranchSync),
     api.git.onWorkingTreeChanged(scheduleBranchSync),
@@ -122,6 +161,7 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
 
   return () => {
     if (branchTimer) clearTimeout(branchTimer)
+    detectionGeneration++
     openInEditor.destroy()
     panelControls.destroy()
     destroyCompactLayout()

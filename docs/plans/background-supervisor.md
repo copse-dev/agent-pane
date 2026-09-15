@@ -2,13 +2,12 @@
 
 Tracking: [#1081](https://github.com/copse-dev/agent-pane/issues/1081)
 
-**Status: Active (P7 complete).** Design contract is on `develop` via [#1170](https://github.com/copse-dev/agent-pane/pull/1170).
-P1 landed the Zod/JSON schema + pure load/reconcile helpers. P2 adds the durable
-main-process store, lifecycle APIs, restart reconciliation, and one-shot scheduling
-without registering a production consumer yet. Implementation PRs should link here
-and keep long-horizon checklists (#558), dark-factory orchestration, A2A/remote
-delegation (#1015), and `run_background` shell tasks as **consumers**, not alternate
-supervisors.
+**Status: Implemented through the #1081 supervisor contract.** Design contract originated in [#1170](https://github.com/copse-dev/agent-pane/pull/1170).
+The transport-independent service owns persistence, scheduling, bounded execution,
+recovery, and client operations. Long-horizon continuations, CI watches, automation
+ticks, event preparation, and background processes are consumers. The phases below
+record their delivery; campaign orchestration remains a separate follow-up. New
+consumers must share this lifecycle instead of building alternate supervisors.
 
 Parent investigation: [`grok-build-architecture-comparison.md`](grok-build-architecture-comparison.md).
 Related foundations: [`long-horizon-tasks.md`](long-horizon-tasks.md),
@@ -261,7 +260,64 @@ dark-factory poller implementation, and changes to `run_background`.
       app was closed is reconciled on reopen. Stale epochs and exhausted continuation budgets
       block visibly instead of starting obsolete work.
 
-### P6 — Campaigns + authenticated trigger adapters
+### P9 — Recovery, bounded execution, and shared client operations
+
+- [x] `TaskSupervisor` is transport independent: inject a store, clock, handler registry,
+      concurrency limits, and cancellation grace. Desktop and headless hosts share
+      `createSupervisedTaskClient(supervisor, owner)` for `list`, `get`, `cancel`, and
+      `resume`. Bind `owner` from the host's trusted project/thread context, never from
+      a model-supplied task record. The client cannot reassign or adopt work. Returned
+      summaries omit handler input and permission snapshots. The trusted desktop also
+      provides a project overview so orphaned tasks remain inspectable/cancellable.
+- [x] Resume/retry is an explicit client action. Cancelled/completed tasks stay terminal;
+      failed/blocked tasks can begin a new bounded attempt cycle with an audit record.
+      Lost shell processes must be started as new commands, through the normal gate.
+- [x] Cancellation publishes a terminal fence before process-exit/abort callbacks.
+      No handler starts after a cancellation that won while the start write was pending.
+      Handlers receive an `AbortSignal`; after the default five-second grace the
+      supervisor stops awaiting an uncooperative handler. Its real execution continues
+      to occupy a concurrency slot until it settles, and cannot be resumed concurrently.
+      JavaScript work cannot be forcibly killed; process consumers own OS termination.
+- [x] `resourceBudget.maxDurationMs` bounds one execution attempt (up to the platform's
+      2,147,000,000 ms timer limit). Timeouts fail and abort the attempt; they are not
+      automatically retried because an uncooperative execution may still be active.
+      `resourceBudget.maxAttempts` can tighten the task's ordinary attempt cap.
+- [x] Reported handler errors retry only with an explicit `retryPolicy`, using a persisted
+      `retryAt` deadline and capped exponential delay. The original event/cron trigger
+      survives retries. Long-horizon continuations use three attempts, starting at one
+      second with a thirty-second cap, and retain dispatcher operation-id deduplication.
+- [x] Running work without an attachable process blocks on crash or clean shutdown by
+      default. Only consumers declaring `restartPolicy: 'retry'` replay automatically;
+      durable, idempotent event preparation opts in. Waiting/queued work rearms normally.
+- [x] `reapproveOnWake` requires an explicit resume for one attempt. That consent is held
+      in memory, consumed before dispatch, and never survives restart or another cron
+      occurrence. It grants scheduling consent only: consumers still check the captured
+      execution identity and use the existing tool permission gate. Resume never refreshes
+      an expired snapshot or silently changes the workspace/policy binding. Long-task
+      snapshots expire 24 hours after the requested wake; changed/expired contexts require
+      scheduling new work through the consumer. Preparation-only handlers may prepare
+      a draft with `preparesOnly`, but cannot execute tools or dispatch a model turn.
+      Consumers with an existing approval model declare `reapprovesWake` and keep their
+      own gate authoritative: Apple operations validate their per-call/process-epoch
+      grant, which generic Resume never clears or renews.
+- [x] One-shot overdue wakes run on admission/restart. Cron deadlines persist in
+      `nextWakeAt`; missed occurrences coalesce into one run, then advance beyond both
+      the delivered occurrence and current time. Clock rollback does not repeat an
+      occurrence; active wake timers recheck wall time at most every minute to detect
+      forward clock jumps. Empty supervisors still allocate no wake timers.
+- [x] Desktop task details show block/failure reasons and attempts, offer Resume when
+      supported, and keep failed work visible. Existing supervisor change events refresh
+      the view; consumer results still enter conversations through the ordinary dispatcher
+      and continuation budget, with no new conversation store or wake protocol.
+
+Acceptance evidence: `task-supervisor.test.ts` covers owner isolation, duplicate delivery,
+clock changes, missed schedules, restart recovery, retry/deadline/resource policy, and
+cancellation races. `long-task-wake.test.ts` covers normal dispatch and changed permission /
+execution targets; `event-inbox.test.ts` covers durable consumer deduplication across crashes.
+`supervised-tasks.test.ts` and `tests/e2e/supervised-task-recovery.e2e.ts` cover inspect/cancel/resume
+and capture the real Electron task-details state.
+
+### Follow-up — Campaigns + authenticated trigger adapters
 
 - Add campaign records and bounded fan-out/fan-in over explicit repository/task sets.
 - Persist immutable trigger envelopes; dedupe duplicate delivery across restart.
