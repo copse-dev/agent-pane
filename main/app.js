@@ -117491,7 +117491,7 @@ function modifierUsages(event) {
 function createSimulatorDesktopView(options) {
   const canvas = el("canvas", {
     class: "simulator-desktop-canvas",
-    "aria-label": "iOS Simulator screen",
+    "aria-label": options.screenLabel ?? "iOS Simulator screen",
     tabindex: "0"
   });
   const context = canvas.getContext("2d");
@@ -117499,6 +117499,7 @@ function createSimulatorDesktopView(options) {
   const lifecycle = new AbortController();
   const isClosed = () => lifecycle.signal.aborted;
   let pointerId = null;
+  let lastPoint = { x: 0, y: 0 };
   let firstFrame = true;
   let decoding = false;
   let pendingFrame = null;
@@ -117515,22 +117516,31 @@ function createSimulatorDesktopView(options) {
     };
   };
   const onPointerDown = (event) => {
-    if (!controlEnabled || event.button !== 0) return;
+    if (!controlEnabled || event.button !== 0 || pointerId !== null) return;
     event.preventDefault();
     pointerId = event.pointerId;
     canvas.setPointerCapture(event.pointerId);
-    send({ type: "touch", phase: "down", ...point(event) });
+    lastPoint = point(event);
+    send({ type: "touch", phase: "down", ...lastPoint });
   };
   const onPointerMove = (event) => {
     if (!controlEnabled || pointerId !== event.pointerId) return;
     event.preventDefault();
-    send({ type: "touch", phase: "move", ...point(event) });
+    lastPoint = point(event);
+    send({ type: "touch", phase: "move", ...lastPoint });
+  };
+  const releasePointer = () => {
+    if (pointerId === null) return;
+    const released = pointerId;
+    pointerId = null;
+    send({ type: "touch", phase: "up", ...lastPoint });
+    if (canvas.hasPointerCapture(released)) canvas.releasePointerCapture(released);
   };
   const finishPointer = (event) => {
     if (!controlEnabled || pointerId !== event.pointerId) return;
     event.preventDefault();
-    send({ type: "touch", phase: "up", ...point(event) });
-    pointerId = null;
+    lastPoint = point(event);
+    releasePointer();
   };
   const onKeyDown = (event) => {
     if (!controlEnabled || event.repeat) return;
@@ -117543,6 +117553,8 @@ function createSimulatorDesktopView(options) {
   canvas.addEventListener("pointermove", onPointerMove);
   canvas.addEventListener("pointerup", finishPointer);
   canvas.addEventListener("pointercancel", finishPointer);
+  canvas.addEventListener("lostpointercapture", releasePointer);
+  canvas.addEventListener("blur", releasePointer);
   canvas.addEventListener("keydown", onKeyDown);
   const decodePendingFrame = async () => {
     if (decoding || isClosed() || !context) return;
@@ -117583,19 +117595,22 @@ function createSimulatorDesktopView(options) {
       void decodePendingFrame();
     },
     setControlEnabled: (enabled) => {
+      if (!enabled) releasePointer();
       controlEnabled = enabled;
-      if (!enabled) pointerId = null;
     },
     focus: () => {
       canvas.focus({ preventScroll: true });
     },
     cleanup: () => {
+      releasePointer();
       lifecycle.abort();
       pendingFrame = null;
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("pointermove", onPointerMove);
       canvas.removeEventListener("pointerup", finishPointer);
       canvas.removeEventListener("pointercancel", finishPointer);
+      canvas.removeEventListener("lostpointercapture", releasePointer);
+      canvas.removeEventListener("blur", releasePointer);
       canvas.removeEventListener("keydown", onKeyDown);
     }
   };
@@ -117642,7 +117657,21 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     hidden: true
   });
   machineSelect.append(el("option", { value: LOCAL_MACHINE }, "This machine"));
-  const devicesHeading = el("div", { class: "vnc-devices-heading" }, "Devices");
+  const refreshDevicesButton = el(
+    "button",
+    {
+      type: "button",
+      class: "ui-btn ui-btn-ghost vnc-refresh-devices",
+      "aria-label": "Refresh desktop devices"
+    },
+    refreshIcon()
+  );
+  const devicesHeading = el(
+    "div",
+    { class: "vnc-devices-heading" },
+    "Devices",
+    refreshDevicesButton
+  );
   const deviceList = el("div", {
     class: "vnc-device-list",
     role: "list",
@@ -117725,6 +117754,23 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     "button",
     { type: "button", class: "ui-btn vnc-home-btn", hidden: true },
     "Home"
+  );
+  const backButton = el(
+    "button",
+    { type: "button", class: "ui-btn vnc-back-btn", hidden: true },
+    "Back"
+  );
+  const overviewButton = el(
+    "button",
+    { type: "button", class: "ui-btn vnc-overview-btn", hidden: true, "aria-label": "Recent apps" },
+    "Apps"
+  );
+  const deviceNavigation = el(
+    "div",
+    { class: "vnc-device-navigation" },
+    backButton,
+    homeButton,
+    overviewButton
   );
   const discoverButton = el(
     "button",
@@ -117926,7 +117972,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     status,
     forgetLoginButton,
     controlButton,
-    homeButton,
+    deviceNavigation,
     disconnectButton,
     note
   );
@@ -117991,7 +118037,10 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
       const device = simulatorDevices.find(
         (candidate) => `${SIMULATOR_MACHINE_PREFIX}${candidate.udid}` === value
       );
-      return device ? { name: device.name, meta: `${device.runtime} \xB7 Booted` } : { name: "iOS Simulator", meta: "Booted on this Mac" };
+      return device ? {
+        name: device.name,
+        meta: `${device.runtime} \xB7 ${device.platform === "android" ? "Running" : "Booted"}`
+      } : { name: "iOS Simulator", meta: "Booted on this Mac" };
     }
     return { name: "Desktop", meta: "Saved device" };
   }
@@ -118065,6 +118114,9 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     disconnectButton.hidden = !active2;
     controlButton.hidden = !connected;
     homeButton.hidden = !connected || simulatorSessionId === null;
+    const android = selectedSimulator()?.platform === "android";
+    backButton.hidden = !connected || !android;
+    overviewButton.hidden = !connected || !android;
     note.hidden = active2 || isSimulatorMachine(machineSelect.value);
     disconnectButton.textContent = connected ? "Disconnect" : "Cancel";
     portInput.disabled = active2;
@@ -118115,7 +118167,10 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     setStatus(`Connected to ${connectedMachineName}`, "ok", connectedStatusDetail());
   }
   function updateControlUi() {
-    controlButton.textContent = controlEnabled ? "Stop controlling" : simulatorSessionId ? "Control simulator" : "Control desktop";
+    homeButton.disabled = !controlEnabled;
+    backButton.disabled = !controlEnabled;
+    overviewButton.disabled = !controlEnabled;
+    controlButton.textContent = controlEnabled ? "Stop controlling" : simulatorSessionId ? selectedSimulator()?.platform === "android" ? "Control emulator" : "Control simulator" : "Control desktop";
     controlButton.setAttribute("aria-pressed", String(controlEnabled));
     controlButton.classList.toggle("is-active", controlEnabled);
     screen.classList.toggle("is-controlling", controlEnabled);
@@ -118556,20 +118611,35 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     const previous = machineSelect.value;
     const activeProject = store2.getState().projects.find((project2) => project2.id === store2.getState().activeProjectId);
     const preferred = activeProject?.sshHost ? sshMachineValue(activeProject.sshHost) : previous;
+    let discoveryError = "";
     const [canStoreCredentials, devices] = await Promise.all([
       api2.vnc.canStoreCredentials().catch(() => false),
-      api2.simulatorDesktop.list().catch(() => [])
+      api2.simulatorDesktop.list().catch((error61) => {
+        discoveryError = error61 instanceof Error ? error61.message : String(error61);
+        return [];
+      })
     ]);
     secureCredentialStorage = canStoreCredentials;
     simulatorDevices = devices;
     await refreshSshHosts(preferred);
     await Promise.all([discoverSelectedMachine(), discoverNearby()]);
+    if (discoveryError && !simulatorSessionId && !channel)
+      setStatus("Couldn\u2019t discover local emulators", "error", discoveryError);
   }
   async function connectSimulator(device) {
+    if (device.unavailableReason) {
+      setStatus("Couldn\u2019t connect to emulator", "error", device.unavailableReason);
+      return;
+    }
+    const android = device.platform === "android";
     const generation = ++connectGeneration;
     let openedConnectionId = null;
     connectButton.disabled = true;
-    setStatus("Preparing Simulator stream\u2026", "working", "Compiling the local helper on first use.");
+    setStatus(
+      android ? "Connecting to Android emulator\u2026" : "Preparing Simulator stream\u2026",
+      "working",
+      android ? "Waiting for the emulator display." : "Compiling the local helper on first use."
+    );
     try {
       const connection = await api2.simulatorDesktop.open(device.udid);
       openedConnectionId = connection.id;
@@ -118582,10 +118652,11 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
       pendingDisconnectStatus = null;
       resetControlState();
       options.onLabelChange(device.name);
-      empty.textContent = "Waiting for the Simulator framebuffer\u2026";
+      empty.textContent = android ? "Waiting for the Android display\u2026" : "Waiting for the Simulator framebuffer\u2026";
       setSessionUi(true);
       const view = createSimulatorDesktopView({
         connectionId: connection.id,
+        screenLabel: android ? "Android emulator screen" : "iOS Simulator screen",
         sendInput: (input2) => api2.simulatorDesktop.input(connection.id, input2),
         onFirstFrame: () => {
           if (simulatorSessionId !== connection.id) return;
@@ -118612,7 +118683,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
         });
       }
       clearViewer(
-        "Couldn\u2019t open the Simulator",
+        android ? "Couldn\u2019t open the Android emulator" : "Couldn\u2019t open the Simulator",
         "error",
         error61 instanceof Error ? error61.message : String(error61)
       );
@@ -118876,15 +118947,30 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
   controlButton.addEventListener("click", () => {
     setControlEnabled(!controlEnabled);
   });
-  homeButton.addEventListener("click", () => {
+  const sendDeviceButton = (name) => {
     const connectionId = simulatorSessionId;
-    if (!connectionId) return;
-    void api2.simulatorDesktop.input(connectionId, { type: "button-tap", name: "home" }).catch((error61) => {
+    if (!connectionId || !controlEnabled) return;
+    void api2.simulatorDesktop.input(connectionId, { type: "button-tap", name }).catch((error61) => {
       setStatus(
-        "Simulator control failed",
+        "Device control failed",
         "error",
         error61 instanceof Error ? error61.message : String(error61)
       );
+    });
+  };
+  homeButton.addEventListener("click", () => {
+    sendDeviceButton("home");
+  });
+  backButton.addEventListener("click", () => {
+    sendDeviceButton("back");
+  });
+  overviewButton.addEventListener("click", () => {
+    sendDeviceButton("overview");
+  });
+  refreshDevicesButton.addEventListener("click", () => {
+    refreshDevicesButton.disabled = true;
+    void loadMachines().finally(() => {
+      refreshDevicesButton.disabled = false;
     });
   });
   authenticateButton.addEventListener("click", submitCredentials);
@@ -118964,9 +119050,9 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     if (event.id !== simulatorSessionId) return;
     if (event.status === "error") {
       clearViewer(
-        connectedAtLeastOnce ? "Simulator stream lost" : "Couldn\u2019t open the Simulator",
+        connectedAtLeastOnce ? "Device stream lost" : "Couldn\u2019t open the device",
         "error",
-        event.detail ?? "The private CoreSimulator stream ended unexpectedly."
+        event.detail ?? "The device stream ended unexpectedly."
       );
     } else if (event.status === "closed") {
       clearViewer("Disconnected");
