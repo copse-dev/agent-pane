@@ -1,11 +1,11 @@
-import { PREVIEW_CSP } from '@shared/preview-csp.ts'
-import { isAllowedBrowserNavigationUrl, isLoopbackHost } from './browser-origin-policy.ts'
+import { isAllowedBrowserNavigationUrl } from './browser-origin-policy.ts'
+import { isStaticPreviewUrl } from './static-preview-server.ts'
 import { matchesWebOriginAllowlist, parseFetchUrl } from '../security/web-origin-policy.ts'
 
-export function isLocalPreview(url: string): boolean {
+function isRestrictedPreview(url: string): boolean {
   if (!URL.canParse(url)) return false
   const parsed = new URL(url)
-  return ['data:', 'file:', 'about:'].includes(parsed.protocol) || isLoopbackHost(parsed.hostname)
+  return ['data:', 'file:', 'about:'].includes(parsed.protocol) || isStaticPreviewUrl(url)
 }
 
 /** Applied to every request, including redirects, nested frames and WebSockets. */
@@ -37,7 +37,7 @@ function isDocumentNetworkAllowed(documentUrl: string, target: URL): boolean {
   // Requests without an owning document (e.g. a service worker) fail closed.
   if (!URL.canParse(documentUrl)) return false
   const document = new URL(documentUrl)
-  if (isLocalPreview(documentUrl)) {
+  if (isRestrictedPreview(documentUrl)) {
     return document.origin !== 'null' && target.origin === document.origin
   }
   return document.protocol === 'http:' || document.protocol === 'https:'
@@ -50,18 +50,4 @@ export function isBrowserPageNavigationAllowed(documentUrl: string, url: string)
   if (!isAllowedBrowserNavigationUrl(url)) return false
   if (url === 'about:blank') return true
   return isDocumentNetworkAllowed(documentUrl, new URL(url))
-}
-
-/** Preserve the server's CSP: multiple policies intersect, never replace it. */
-export function previewResponseHeaders(
-  url: string,
-  headers: Record<string, string[]> = {},
-): Record<string, string[]> {
-  if (!isLocalPreview(url)) return headers
-  const result = { ...headers }
-  const key =
-    Object.keys(result).find((name) => name.toLowerCase() === 'content-security-policy') ??
-    'Content-Security-Policy'
-  result[key] = [...(result[key] ?? []), PREVIEW_CSP]
-  return result
 }

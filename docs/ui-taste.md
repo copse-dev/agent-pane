@@ -1049,10 +1049,12 @@ worktree fieldset needs `min-inline-size: 0`: its native min-content width other
 truncation and pushes actions outside Settings. Explicitly use a row direction for the Select all
 label; the default form label stacks its control above its text.
 
-## Local browser previews
+## Browser prototypes
 
-Keep HTML artefacts self-contained and serve local preview assets from the page's own
-origin. Browser sessions enforce the network allowlist, and the preview CSP blocks
-external fonts, scripts, images and API endpoints even when their origin is approved
-for browsing. Data URL previews have no network access. Bundle assets locally;
-see [browser network policy](browser-network-policy.md) for the boundary and tests.
+Keep HTML artefacts self-contained and serve Copse static prototype assets from the
+page's own origin. Browser sessions enforce the network allowlist, and the prototype
+CSP blocks external fonts, scripts, images and API endpoints even when their origin
+is approved for browsing. Data URL prototypes have no network access. Ordinary pages,
+including user-opened local development servers, retain their server's CSP. Bundle
+prototype assets locally; see [browser network policy](browser-network-policy.md) for
+the boundary and tests.

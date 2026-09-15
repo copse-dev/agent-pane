@@ -1,4 +1,4 @@
-/** Additive CSP for local previews. Inline code is needed for self-contained artefacts. */
+/** CSP embedded in self-contained HTML artefacts. */
 export const PREVIEW_CSP = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-inline'",

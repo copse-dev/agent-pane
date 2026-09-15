@@ -77,6 +77,13 @@ export interface StaticPreviewServer {
 
 const servers = new Map<string, PreviewServerEntry>()
 
+/** Whether this URL belongs to a Copse-owned static prototype server. */
+export function isStaticPreviewUrl(url: string): boolean {
+  if (!URL.canParse(url)) return false
+  const origin = new URL(url).origin
+  return [...servers.values()].some((entry) => new URL(entry.url).origin === origin)
+}
+
 function isInsideRoot(root: string, candidate: string): boolean {
   const path = relative(root, candidate)
   return path === '' || (!path.startsWith(`..${sep}`) && path !== '..' && !isAbsolute(path))
