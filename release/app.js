@@ -23482,6 +23482,9 @@ var init_outline_icon = __esm({
 });
 
 // src/renderer/dom/icons.ts
+function playIcon(className = DEFAULT) {
+  return outlineIcon("play", ["m6 3 14 9-14 9V3Z"], className);
+}
 function chevronRightIcon(className = DEFAULT) {
   return outlineIcon("chevron-right", ["m9 18 6-6-6-6"], className);
 }
@@ -27113,6 +27116,8 @@ This response is streamed through the real renderer event path.`
     supervisor: {
       list: () => resolved({ tasks: [] }),
       cancel: () => resolved({ task: null }),
+      get: () => resolved({ task: null }),
+      resume: () => resolved({ task: null }),
       onChanged: subscribe
     },
     // The browser demo has no repository behind it, so it owns no checkouts to
@@ -27158,6 +27163,18 @@ This response is streamed through the real renderer event path.`
       remove: unsupported,
       runNow: unsupported,
       onTriggered: subscribe
+    },
+    appRun: {
+      detect: () => resolved(false),
+      discover: () => resolved({ apps: [], devices: [], issues: [], preferred: null }),
+      cancelDiscovery: () => resolved(void 0),
+      devices: () => resolved([]),
+      operations: () => resolved([]),
+      execute: () => Promise.reject(new Error("App running requires the desktop app.")),
+      cancel: () => resolved(void 0),
+      stop: () => resolved(void 0),
+      setupOptions: () => resolved({ runtimes: [], deviceTypes: [] }),
+      setup: () => resolved(null)
     },
     appleDevelopment: {
       state: (projectId) => resolved(structuredClone(appleDevelopmentStateFor(projectId))),
@@ -28078,6 +28095,587 @@ var init_welcome = __esm({
     init_projects();
     init_ssh_workspace_ui();
     init_toast();
+  }
+});
+
+// src/shared/types/app-run.ts
+var appRunPlatformSchema, appRunOwnerSchema, appRunSelectionSchema, appRunSetupKindSchema, appRunStageSchema, appRunActionSchema, appRunOperationSchema, appRunSetupInputSchema, APP_RUN_STAGE_LABELS;
+var init_app_run = __esm({
+  "src/shared/types/app-run.ts"() {
+    init_zod();
+    appRunPlatformSchema = external_exports.enum(["apple", "android"]);
+    appRunOwnerSchema = external_exports.object({
+      projectId: external_exports.string().min(1).max(256),
+      threadId: external_exports.string().min(1).max(256).optional()
+    });
+    appRunSelectionSchema = external_exports.object({
+      appId: external_exports.string().min(1).max(2048),
+      deviceId: external_exports.string().max(512),
+      variant: external_exports.string().min(1).max(256),
+      configuration: external_exports.string().min(1).max(128).default("Debug"),
+      provisioningUpdates: external_exports.boolean().default(false)
+    });
+    appRunSetupKindSchema = external_exports.enum([
+      "open-xcode",
+      "open-android-studio",
+      "install-ios-runtime",
+      "install-android-image",
+      "create-device"
+    ]);
+    appRunStageSchema = external_exports.enum([
+      "queued",
+      "building",
+      "starting-device",
+      "testing",
+      "installing",
+      "launching",
+      "running",
+      "succeeded",
+      "failed",
+      "cancelled",
+      "stopped",
+      "setting-up"
+    ]);
+    appRunActionSchema = external_exports.enum(["run", "build", "test"]);
+    appRunOperationSchema = external_exports.object({
+      id: external_exports.string(),
+      owner: appRunOwnerSchema,
+      action: external_exports.enum(["run", "build", "test", "setup"]),
+      stage: appRunStageSchema,
+      appName: external_exports.string(),
+      deviceName: external_exports.string(),
+      createdAt: external_exports.number(),
+      updatedAt: external_exports.number(),
+      logs: external_exports.string(),
+      error: external_exports.string().nullable(),
+      desktopId: external_exports.string().nullable(),
+      appSessionId: external_exports.string().nullable()
+    });
+    appRunSetupInputSchema = external_exports.object({
+      platform: appRunPlatformSchema,
+      action: appRunSetupKindSchema,
+      runtimeId: external_exports.string().max(512).optional(),
+      deviceTypeId: external_exports.string().max(512).optional(),
+      name: external_exports.string().trim().min(1).max(80).optional()
+    });
+    APP_RUN_STAGE_LABELS = {
+      queued: "Queued",
+      building: "Building",
+      "starting-device": "Starting device",
+      testing: "Testing",
+      installing: "Installing",
+      launching: "Launching",
+      running: "App running",
+      succeeded: "Completed",
+      failed: "Failed",
+      cancelled: "Cancelled",
+      stopped: "App stopped",
+      "setting-up": "Setting up"
+    };
+  }
+});
+
+// src/renderer/views/dialog-shell.ts
+function createOverlayDialog(opts) {
+  const dialog2 = document.createElement("dialog");
+  dialog2.id = opts.id;
+  if (opts.className) dialog2.className = opts.className;
+  document.body.append(dialog2);
+  return {
+    dialog: dialog2,
+    open: () => {
+      if (!dialog2.open) dialog2.showModal();
+    },
+    close: () => {
+      if (dialog2.open) dialog2.close();
+    },
+    isOpen: () => dialog2.open
+  };
+}
+function isAnyDialogOpen() {
+  return document.querySelector("dialog[open]") !== null;
+}
+var init_dialog_shell = __esm({
+  "src/renderer/views/dialog-shell.ts"() {
+  }
+});
+
+// src/renderer/views/app-run-dialog.ts
+function createAppRunPanel(api2, owner, onLaunched = () => {
+}) {
+  const element = el("div", { class: "app-run-panel" });
+  const notice = el("p", { class: "app-run-notice", role: "status" }, "Loading app configuration\u2026");
+  const fields = el("div", { class: "app-run-fields" });
+  const appSelect = el("select", { "aria-label": "App", class: "app-run-app" });
+  const deviceSelect = el("select", { "aria-label": "Device", class: "app-run-device" });
+  const variantSelect = el("select", {
+    "aria-label": "Build variant or scheme",
+    class: "app-run-variant"
+  });
+  const configuration = el(
+    "select",
+    { "aria-label": "Configuration" },
+    el("option", { value: "Debug" }, "Debug"),
+    el("option", { value: "Release" }, "Release")
+  );
+  const signing = el("input", { type: "checkbox", class: "app-run-signing" });
+  const signingLabel = el(
+    "label",
+    { class: "app-run-check" },
+    signing,
+    "Allow signing profile updates for this run"
+  );
+  const configurationLabel = el("label", {}, "Configuration", configuration);
+  const variantLabel = el("label", {}, el("span", {}, "Build variant / scheme"), variantSelect);
+  const more = el(
+    "details",
+    { class: "app-run-more" },
+    el("summary", {}, "More options"),
+    variantLabel,
+    configurationLabel,
+    signingLabel
+  );
+  const appLabel = el("label", {}, "App", appSelect);
+  const deviceLabel = el("label", {}, "Device", deviceSelect);
+  fields.append(appLabel, deviceLabel, more);
+  const issues = el("div", { class: "app-run-issues" });
+  const setupHost = el("div", { class: "app-run-setup", hidden: true });
+  const create2 = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-ghost app-run-create" },
+    "Create a device\u2026"
+  );
+  const refresh = el(
+    "button",
+    {
+      type: "button",
+      class: "ui-btn ui-btn-ghost app-run-refresh",
+      "aria-label": "Refresh app targets"
+    },
+    refreshIcon()
+  );
+  const run2 = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-primary app-run-run" },
+    playIcon(),
+    "Run"
+  );
+  const build = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-ghost app-run-build" },
+    "Build"
+  );
+  const test = el("button", { type: "button", class: "ui-btn ui-btn-ghost app-run-test" }, "Test");
+  const actions = el(
+    "div",
+    { class: "app-run-actions" },
+    run2,
+    build,
+    test,
+    el("span", { class: "app-run-spacer" }),
+    create2,
+    refresh
+  );
+  const status = el("div", { class: "app-run-operation", hidden: true, "aria-live": "polite" });
+  const statusTitle = el("strong", { class: "app-run-stage" });
+  const elapsed = el("span", { class: "app-run-elapsed" });
+  const cancel = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-ghost app-run-cancel" },
+    "Cancel"
+  );
+  const stop = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-ghost app-run-stop" },
+    "Stop app"
+  );
+  const error61 = el("p", { class: "app-run-error", role: "alert", hidden: true });
+  const log = el("pre", { class: "app-run-log" });
+  const logs = el("details", { class: "app-run-logs" }, el("summary", {}, "View logs"), log);
+  status.append(
+    el(
+      "div",
+      { class: "app-run-actions" },
+      statusTitle,
+      elapsed,
+      el("span", { class: "app-run-spacer" }),
+      cancel,
+      stop
+    ),
+    error61,
+    logs
+  );
+  element.append(notice, fields, issues, setupHost, actions, status);
+  let disposed = false, loading = false, deviceGeneration = 0, setupGeneration = 0;
+  let discovery = { apps: [], devices: [], issues: [], preferred: null };
+  let operation;
+  let startedHere = null;
+  let refreshedSetup = null;
+  let timer;
+  const currentApp = () => discovery.apps.find((app) => app.id === appSelect.value);
+  function fail(value) {
+    notice.textContent = value instanceof Error ? value.message : String(value);
+    notice.hidden = false;
+    notice.dataset["kind"] = "error";
+  }
+  function updateEnabled() {
+    const busy = loading || operation !== void 0 && isBusy(operation);
+    run2.disabled = busy || !currentApp() || !variantSelect.value || !deviceSelect.value;
+    build.disabled = busy || !currentApp() || !variantSelect.value || currentApp()?.platform === "apple" && !deviceSelect.value;
+    test.disabled = build.disabled;
+    for (const control of [
+      appSelect,
+      deviceSelect,
+      variantSelect,
+      configuration,
+      signing,
+      create2,
+      refresh
+    ])
+      control.disabled = busy;
+  }
+  function selection2() {
+    return {
+      appId: appSelect.value,
+      deviceId: deviceSelect.value,
+      variant: variantSelect.value,
+      configuration: configuration.value,
+      provisioningUpdates: signing.checked
+    };
+  }
+  async function loadDevices(preferred) {
+    const app = currentApp();
+    const generation = ++deviceGeneration;
+    if (!app) return;
+    loading = true;
+    notice.hidden = false;
+    notice.textContent = "Finding compatible devices\u2026";
+    updateEnabled();
+    try {
+      const devices = await api2.appRun.devices(owner, app.id, variantSelect.value);
+      if (disposed || generation !== deviceGeneration) return;
+      deviceSelect.replaceChildren(
+        ...devices.map(
+          (device) => el(
+            "option",
+            { value: device.id, disabled: device.state === "unavailable" },
+            `${device.name} \xB7 ${device.runtime}${device.state === "stopped" ? " \xB7 Stopped" : ""}${device.detail ? ` \xB7 ${device.detail}` : ""}`
+          )
+        )
+      );
+      if (preferred && devices.some((d2) => d2.id === preferred && d2.state !== "unavailable"))
+        deviceSelect.value = preferred;
+      else
+        deviceSelect.value = devices.find((d2) => d2.state === "running")?.id ?? devices.find((d2) => d2.state !== "unavailable")?.id ?? "";
+      notice.textContent = devices.length ? "No compatible device is available. Create a device with a supported runtime." : "Create a device to run this app.";
+      notice.hidden = devices.some((device) => device.state !== "unavailable");
+    } catch (value) {
+      if (generation === deviceGeneration) fail(value);
+    } finally {
+      if (generation === deviceGeneration) {
+        loading = false;
+        updateEnabled();
+      }
+    }
+  }
+  async function selectApp(preferred) {
+    const app = currentApp();
+    if (!app) return;
+    variantSelect.replaceChildren(
+      ...app.variants.map((variant) => el("option", { value: variant }, variant))
+    );
+    variantSelect.value = preferred?.appId === app.id && app.variants.includes(preferred.variant) ? preferred.variant : app.variants[0] ?? "";
+    configuration.value = preferred?.configuration ?? "Debug";
+    signing.checked = false;
+    configurationLabel.hidden = app.platform !== "apple";
+    signingLabel.hidden = app.platform !== "apple";
+    variantLabel.firstElementChild?.replaceChildren(
+      app.platform === "apple" ? "Scheme" : "Build variant"
+    );
+    await loadDevices(preferred?.deviceId);
+  }
+  async function discover() {
+    loading = true;
+    notice.hidden = false;
+    notice.dataset["kind"] = "working";
+    notice.textContent = "Loading app configuration\u2026";
+    updateEnabled();
+    const previous = appSelect.value ? selection2() : null;
+    try {
+      const result = await api2.appRun.discover(owner);
+      if (disposed) return;
+      discovery = result;
+      appSelect.replaceChildren(
+        ...result.apps.map(
+          (app) => el(
+            "option",
+            { value: app.id },
+            `${app.name} \xB7 ${app.platform === "apple" ? "Apple" : "Android"}${result.apps.length > 1 ? ` \u2014 ${app.location}` : ""}`
+          )
+        )
+      );
+      const preferred = previous && result.apps.some((a2) => a2.id === previous.appId) ? previous : result.preferred;
+      appSelect.value = preferred?.appId ?? result.apps[0]?.id ?? "";
+      issues.replaceChildren(
+        ...result.issues.map((issue2) => {
+          const action = el("button", { type: "button", class: "ui-btn ui-btn-ghost" }, issue2.label);
+          action.addEventListener("click", () => {
+            void api2.appRun.setup(owner, { platform: issue2.platform, action: issue2.action }).catch(fail);
+          });
+          return el("div", { class: "app-run-issue" }, el("p", {}, issue2.message), action);
+        })
+      );
+      fields.hidden = !result.apps.length;
+      notice.hidden = result.apps.length > 0 || result.issues.length > 0;
+      notice.textContent = result.apps.length ? "" : "No supported apps found. Add an Xcode project or an Android project with a Gradle wrapper.";
+      if (result.apps.length) await selectApp(preferred);
+    } catch (value) {
+      if (!disposed) fail(value);
+    } finally {
+      loading = false;
+      updateEnabled();
+    }
+  }
+  function renderOperation() {
+    status.hidden = !operation;
+    if (!operation) return;
+    statusTitle.textContent = APP_RUN_STAGE_LABELS[operation.stage];
+    status.dataset["stage"] = operation.stage;
+    const end = isBusy(operation) ? Date.now() : operation.updatedAt;
+    elapsed.textContent = `${String(Math.max(0, Math.round((end - operation.createdAt) / 1e3)))}s`;
+    log.textContent = operation.logs || "Waiting for output\u2026";
+    error61.textContent = operation.error ?? "";
+    error61.hidden = !operation.error;
+    cancel.hidden = !isBusy(operation);
+    stop.hidden = operation.stage !== "running" || !operation.appSessionId;
+    updateEnabled();
+    if (operation.stage === "running" && operation.id === startedHere) {
+      startedHere = null;
+      onLaunched();
+    }
+  }
+  async function poll() {
+    try {
+      const list = await api2.appRun.operations(owner);
+      if (disposed) return;
+      operation = list[0];
+      renderOperation();
+      if (operation?.action === "setup" && operation.stage === "succeeded" && refreshedSetup !== operation.id) {
+        refreshedSetup = operation.id;
+        void discover();
+      }
+    } catch (value) {
+      if (!disposed) fail(value);
+    }
+    if (!disposed)
+      timer = setTimeout(() => {
+        void poll();
+      }, 750);
+  }
+  async function execute(action) {
+    loading = true;
+    notice.hidden = true;
+    updateEnabled();
+    try {
+      operation = await api2.appRun.execute(owner, selection2(), action);
+      if (action === "run") startedHere = operation.id;
+      signing.checked = false;
+      renderOperation();
+    } catch (value) {
+      fail(value);
+    } finally {
+      loading = false;
+      updateEnabled();
+    }
+  }
+  async function showSetup(platform) {
+    const generation = ++setupGeneration;
+    setupHost.hidden = false;
+    setupHost.replaceChildren(el("p", {}, "Loading device setup\u2026"));
+    let options;
+    try {
+      options = await api2.appRun.setupOptions(owner, platform);
+    } catch (value) {
+      setupHost.replaceChildren(el("p", {}, value instanceof Error ? value.message : String(value)));
+      return;
+    }
+    if (disposed || generation !== setupGeneration) return;
+    const runtime = el(
+      "select",
+      { "aria-label": "Device runtime" },
+      ...options.runtimes.map(
+        (r) => el(
+          "option",
+          { value: r.id },
+          `${r.name}${r.installed ? " \xB7 Installed" : " \xB7 Download required"}`
+        )
+      )
+    );
+    const deviceType = el(
+      "select",
+      { "aria-label": "Device type" },
+      ...options.deviceTypes.map((d2) => el("option", { value: d2.id }, d2.name))
+    );
+    const name = el("input", {
+      "aria-label": "Device name",
+      value: "Development phone",
+      maxlength: "80"
+    });
+    const explanation = el("p", { class: "app-run-notice" });
+    const apply2 = el("button", {
+      type: "button",
+      class: "ui-btn ui-btn-primary app-run-setup-apply"
+    });
+    const dismiss = el("button", { type: "button", class: "ui-btn ui-btn-ghost" }, "Close setup");
+    const installApple = el(
+      "button",
+      { type: "button", class: "ui-btn ui-btn-ghost", hidden: platform !== "apple" },
+      "Download iOS runtime\u2026"
+    );
+    const sync = () => {
+      const selected = options.runtimes.find((r) => r.id === runtime.value);
+      const download2 = selected && !selected.installed;
+      apply2.textContent = download2 ? "Download selected image" : "Create device";
+      explanation.textContent = download2 ? "Downloads this system image into your Android SDK. Review any license agreement in Android Studio before continuing." : "Uses an installed runtime. Your existing devices are kept.";
+      apply2.disabled = !selected || !download2 && (!name.value.trim() || !deviceType.value);
+    };
+    runtime.addEventListener("change", sync);
+    name.addEventListener("input", sync);
+    dismiss.addEventListener("click", () => {
+      setupHost.hidden = true;
+    });
+    apply2.addEventListener("click", () => {
+      apply2.disabled = true;
+      const selected = options.runtimes.find((r) => r.id === runtime.value);
+      void api2.appRun.setup(owner, {
+        platform,
+        action: selected?.installed ? "create-device" : "install-android-image",
+        runtimeId: runtime.value,
+        deviceTypeId: deviceType.value,
+        name: name.value
+      }).then((result) => {
+        operation = result ?? void 0;
+        setupHost.hidden = true;
+        renderOperation();
+      }).catch(fail).finally(sync);
+    });
+    installApple.addEventListener("click", () => {
+      explanation.textContent = "Downloads the iOS runtime through Xcode. This can be a large download and take several minutes.";
+      const confirm2 = el(
+        "button",
+        { type: "button", class: "ui-btn ui-btn-primary" },
+        "Download iOS runtime"
+      );
+      confirm2.addEventListener("click", () => {
+        confirm2.disabled = true;
+        void api2.appRun.setup(owner, { platform: "apple", action: "install-ios-runtime" }).then((result) => {
+          operation = result ?? void 0;
+          setupHost.hidden = true;
+          renderOperation();
+        }).catch(fail);
+      });
+      installApple.replaceWith(confirm2);
+    });
+    setupHost.replaceChildren(
+      el("strong", {}, "Create a device"),
+      el("label", {}, "Runtime", runtime),
+      el("label", {}, "Device type", deviceType),
+      el("label", {}, "Name", name),
+      explanation,
+      el("div", { class: "app-run-actions" }, apply2, installApple, dismiss)
+    );
+    sync();
+  }
+  appSelect.addEventListener("change", () => {
+    void selectApp();
+  });
+  variantSelect.addEventListener("change", () => {
+    void loadDevices(deviceSelect.value);
+  });
+  refresh.addEventListener("click", () => {
+    void discover();
+  });
+  create2.addEventListener("click", () => {
+    void showSetup(currentApp()?.platform ?? discovery.issues[0]?.platform ?? "android");
+  });
+  run2.addEventListener("click", () => {
+    void execute("run");
+  });
+  build.addEventListener("click", () => {
+    void execute("build");
+  });
+  test.addEventListener("click", () => {
+    void execute("test");
+  });
+  cancel.addEventListener("click", () => {
+    if (operation) void api2.appRun.cancel(owner, operation.id).catch(fail);
+  });
+  stop.addEventListener("click", () => {
+    if (operation) void api2.appRun.stop(owner, operation.id).catch(fail);
+  });
+  void discover();
+  void poll();
+  return {
+    element,
+    dispose: () => {
+      disposed = true;
+      deviceGeneration++;
+      setupGeneration++;
+      if (timer) clearTimeout(timer);
+      void api2.appRun.cancelDiscovery(owner).catch(() => {
+      });
+    }
+  };
+}
+function openAppRunDialog(store2, api2, projectId = store2.getState().activeProjectId) {
+  if (!projectId || document.querySelector("#app-run-dialog[open]")) return;
+  const state = store2.getState();
+  const owner = {
+    projectId,
+    ...state.activeProjectId === projectId && state.activeThreadId ? { threadId: state.activeThreadId } : {}
+  };
+  const { dialog: dialog2, open: open2, close } = createOverlayDialog({ id: "app-run-dialog" });
+  dialog2.setAttribute("aria-labelledby", "app-run-title");
+  const closeButton = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-ghost", "aria-label": "Close Run app" },
+    closeIcon()
+  );
+  closeButton.addEventListener("click", close);
+  const panel = createAppRunPanel(api2, owner, close);
+  dialog2.append(
+    el(
+      "header",
+      { class: "app-run-heading" },
+      el("h2", { id: "app-run-title" }, "Run app"),
+      closeButton
+    ),
+    panel.element
+  );
+  const unsubscribe = store2.on("workspace_changed", close);
+  const unsubscribeThread = store2.on("threads_changed", () => {
+    if (store2.getState().activeThreadId !== (owner.threadId ?? null)) close();
+  });
+  dialog2.addEventListener(
+    "close",
+    () => {
+      unsubscribe();
+      unsubscribeThread();
+      panel.dispose();
+      dialog2.remove();
+    },
+    { once: true }
+  );
+  open2();
+}
+var isBusy;
+var init_app_run_dialog = __esm({
+  "src/renderer/views/app-run-dialog.ts"() {
+    init_app_run();
+    init_helpers();
+    init_icons();
+    init_dialog_shell();
+    isBusy = (operation) => !["running", "succeeded", "failed", "cancelled", "stopped"].includes(operation.stage);
   }
 });
 
@@ -29049,6 +29647,35 @@ function mountTitlebar(root, store2, api2) {
   if (firstBtn) {
     panelControls.element.insertBefore(openInEditor.element, firstBtn);
   }
+  const runApp = el(
+    "button",
+    {
+      type: "button",
+      class: "ui-btn ui-btn-ghost titlebar-run-app",
+      hidden: true,
+      "aria-label": "Run app"
+    },
+    playIcon(),
+    "Run app"
+  );
+  runApp.addEventListener("click", () => {
+    openAppRunDialog(store2, api2);
+  });
+  panelControls.element.prepend(runApp);
+  let detectionGeneration = 0;
+  let detectedThread = null;
+  function syncRunApp() {
+    const generation = ++detectionGeneration;
+    const { activeProjectId: projectId, activeThreadId: threadId } = store2.getState();
+    detectedThread = threadId;
+    runApp.hidden = true;
+    if (projectId)
+      void api2.appRun.detect({ projectId, ...threadId ? { threadId } : {} }).then((detected) => {
+        if (generation === detectionGeneration) runApp.hidden = !detected;
+      }).catch(() => {
+      });
+  }
+  syncRunApp();
   root.append(leftCluster, dragRegion, panelControls.element);
   const destroyCompactLayout = bindTitlebarCompactLayout(root, [leftCluster, panelControls.element]);
   function syncName() {
@@ -29109,15 +29736,22 @@ function mountTitlebar(root, store2, api2) {
     store2.on("workspace_changed", () => {
       syncName();
       syncBranch();
+      syncRunApp();
     }),
     store2.on("projects_changed", syncName),
     store2.on("threads_changed", syncBranch),
+    store2.on("threads_changed", () => {
+      if (store2.getState().activeThreadId !== detectedThread) syncRunApp();
+    }),
+    store2.on("thread_checkout_changed", syncRunApp),
+    store2.on("message_done", syncRunApp),
     store2.on("git_branch_changed", syncBranch),
     api2.fs.onChanged(scheduleBranchSync),
     api2.git.onWorkingTreeChanged(scheduleBranchSync)
   ];
   return () => {
     if (branchTimer) clearTimeout(branchTimer);
+    detectionGeneration++;
     openInEditor.destroy();
     panelControls.destroy();
     destroyCompactLayout();
@@ -29128,6 +29762,8 @@ function mountTitlebar(root, store2, api2) {
 }
 var init_titlebar = __esm({
   "src/renderer/views/titlebar.ts"() {
+    init_app_run_dialog();
+    init_icons();
     init_helpers();
     init_tooltip();
     init_open_in_editor();
@@ -29282,31 +29918,6 @@ var init_auto_approval = __esm({
       "remote-write": "Reads + local commits + pushes \u2014 also git push and gh pr create"
     };
     isAutoApprovalLevel = memberOf(AUTO_APPROVAL_LEVELS);
-  }
-});
-
-// src/renderer/views/dialog-shell.ts
-function createOverlayDialog(opts) {
-  const dialog2 = document.createElement("dialog");
-  dialog2.id = opts.id;
-  if (opts.className) dialog2.className = opts.className;
-  document.body.append(dialog2);
-  return {
-    dialog: dialog2,
-    open: () => {
-      if (!dialog2.open) dialog2.showModal();
-    },
-    close: () => {
-      if (dialog2.open) dialog2.close();
-    },
-    isOpen: () => dialog2.open
-  };
-}
-function isAnyDialogOpen() {
-  return document.querySelector("dialog[open]") !== null;
-}
-var init_dialog_shell = __esm({
-  "src/renderer/views/dialog-shell.ts"() {
   }
 });
 
@@ -57544,11 +58155,6 @@ function openAutomationSettings(scheduleId) {
   };
   openSettingsDialog("customise");
 }
-function openAppleDevelopmentSettings() {
-  if (!overlayEl || overlayEl.open) return;
-  pendingPluginDetail = { pluginId: APPLE_DEVELOPMENT_PLUGIN_ID };
-  openSettingsDialog("customise");
-}
 function closeSettingsDialog() {
   if (!overlayEl || !overlayEl.open) return;
   overlayEl.close();
@@ -62175,25 +62781,29 @@ function mountProjectsPane(root, store2, api2) {
       );
       menuButton.addEventListener("click", () => {
         menuButton.disabled = true;
+        const state = store2.getState();
         void Promise.all([
           api2.plugins.list(),
-          api2.appleDevelopment.detectProject(project2.id).catch(() => null)
-        ]).then(([result, appleDetection]) => {
+          api2.appRun.detect({
+            projectId: project2.id,
+            ...state.activeProjectId === project2.id && state.activeThreadId ? { threadId: state.activeThreadId } : {}
+          }).catch(() => false)
+        ]).then(([result, appDetected]) => {
           if (!menuButton.isConnected) return;
           const rect = menuButton.getBoundingClientRect();
           const entries2 = [];
-          if (appleDetection?.supportedHost === true && (appleDetection.detected || appleDetection.enrolled)) {
+          if (appDetected) {
             entries2.push({
-              label: "Apple Development\u2026",
+              label: "Run app\u2026",
               onSelect: () => {
                 if (store2.getState().activeProjectId === project2.id) {
-                  openAppleDevelopmentSettings();
+                  openAppRunDialog(store2, api2, project2.id);
                   return;
                 }
                 const unsubscribe = store2.on("workspace_changed", () => {
                   if (store2.getState().activeProjectId === project2.id) {
                     unsubscribe();
-                    openAppleDevelopmentSettings();
+                    openAppRunDialog(store2, api2, project2.id);
                   } else if (!isProjectSwitchInFlight(store2, project2.id)) {
                     unsubscribe();
                   }
@@ -62646,6 +63256,7 @@ function mountProjectsPane(root, store2, api2) {
 var PR_STATUS_CACHE_TTL_MS, ICON_SIZE2, SVG_NS3;
 var init_projects_pane = __esm({
   "src/renderer/views/projects-pane.ts"() {
+    init_app_run_dialog();
     init_helpers();
     init_context_menu();
     init_rename_blur();
@@ -96673,21 +97284,73 @@ function mountSupervisedTasks(listRoot, store2, api2) {
   section.append(header, list);
   listRoot.append(section);
   let loadToken = 0;
+  const expanded = /* @__PURE__ */ new Set();
+  const feedback = el("p", { class: "supervised-task-feedback", role: "status", hidden: true });
+  section.append(feedback);
+  function report(error61) {
+    feedback.textContent = error61 instanceof Error ? error61.message : "Unable to update background tasks";
+    feedback.hidden = false;
+  }
   function render(tasks) {
     clear(list);
     section.hidden = tasks.length === 0;
     for (const task of tasks) {
+      let showDetail = function(value) {
+        clear(detail);
+        if (value.lastError)
+          detail.append(el("p", { class: "supervised-task-reason" }, value.lastError));
+        if (value.attempt !== void 0 && value.maxAttempts !== void 0) {
+          detail.append(
+            el("p", {}, `Attempt ${String(value.attempt)} of ${String(value.maxAttempts)}`)
+          );
+        }
+        if (value.resultRef) detail.append(el("p", {}, value.resultRef.ref));
+        if ((value.state === "blocked" || value.state === "failed") && value.handler !== "shell_process") {
+          const resume = el(
+            "button",
+            {
+              type: "button",
+              class: "ui-btn ui-btn-secondary supervised-task-resume"
+            },
+            "Resume"
+          );
+          resume.addEventListener("click", () => {
+            resume.disabled = true;
+            feedback.hidden = true;
+            void api2.supervisor.resume(value.projectId, value.threadId, value.taskId).then(() => refresh()).catch((error61) => {
+              resume.disabled = false;
+              report(error61);
+            });
+          });
+          detail.append(resume);
+        }
+      };
       const dot = el("span", {
         class: "supervised-task-dot",
         "aria-hidden": "true",
         "data-state": task.state
       });
-      const copy = el(
-        "span",
-        { class: "supervised-task-copy" },
+      const copy = el("details", { class: "supervised-task-copy" });
+      copy.open = expanded.has(task.taskId);
+      const label = el(
+        "summary",
+        { class: "supervised-task-summary" },
         el("span", { class: "supervised-task-label" }, taskLabel(task.handler)),
         el("span", { class: "supervised-task-state" }, task.state)
       );
+      const detail = el("div", { class: "supervised-task-detail" });
+      showDetail(task);
+      copy.append(label, detail);
+      copy.addEventListener("toggle", () => {
+        if (!copy.open) {
+          expanded.delete(task.taskId);
+          return;
+        }
+        expanded.add(task.taskId);
+        void api2.supervisor.get(task.projectId, task.threadId, task.taskId).then(({ task: latest }) => {
+          if (latest && copy.isConnected) showDetail(latest);
+        }).catch(report);
+      });
       const cancel = el(
         "button",
         {
@@ -96700,10 +97363,12 @@ function mountSupervisedTasks(listRoot, store2, api2) {
       );
       cancel.addEventListener("click", () => {
         cancel.disabled = true;
-        void api2.supervisor.cancel(task.projectId, task.taskId).then(() => refresh()).catch(() => {
+        void api2.supervisor.cancel(task.projectId, task.taskId).then(() => refresh()).catch((error61) => {
           cancel.disabled = false;
+          report(error61);
         });
       });
+      cancel.hidden = task.state === "failed" || task.state === "completed" || task.state === "cancelled";
       list.append(
         el(
           "div",
@@ -96727,9 +97392,13 @@ function mountSupervisedTasks(listRoot, store2, api2) {
       render([]);
       return;
     }
-    const result = await api2.supervisor.list(projectId);
-    if (token !== loadToken || projectId !== store2.getState().activeProjectId) return;
-    render(result.tasks);
+    try {
+      const result = await api2.supervisor.list(projectId);
+      if (token !== loadToken || projectId !== store2.getState().activeProjectId) return;
+      render(result.tasks);
+    } catch (error61) {
+      if (token === loadToken) report(error61);
+    }
   }
   const unsubs = [
     store2.on("projects_changed", () => {
@@ -117431,7 +118100,7 @@ function modifierUsages(event) {
 function createSimulatorDesktopView(options) {
   const canvas = el("canvas", {
     class: "simulator-desktop-canvas",
-    "aria-label": "iOS Simulator screen",
+    "aria-label": options.screenLabel ?? "iOS Simulator screen",
     tabindex: "0"
   });
   const context = canvas.getContext("2d");
@@ -117439,6 +118108,7 @@ function createSimulatorDesktopView(options) {
   const lifecycle = new AbortController();
   const isClosed = () => lifecycle.signal.aborted;
   let pointerId = null;
+  let lastPoint = { x: 0, y: 0 };
   let firstFrame = true;
   let decoding = false;
   let pendingFrame = null;
@@ -117455,22 +118125,31 @@ function createSimulatorDesktopView(options) {
     };
   };
   const onPointerDown = (event) => {
-    if (!controlEnabled || event.button !== 0) return;
+    if (!controlEnabled || event.button !== 0 || pointerId !== null) return;
     event.preventDefault();
     pointerId = event.pointerId;
     canvas.setPointerCapture(event.pointerId);
-    send({ type: "touch", phase: "down", ...point(event) });
+    lastPoint = point(event);
+    send({ type: "touch", phase: "down", ...lastPoint });
   };
   const onPointerMove = (event) => {
     if (!controlEnabled || pointerId !== event.pointerId) return;
     event.preventDefault();
-    send({ type: "touch", phase: "move", ...point(event) });
+    lastPoint = point(event);
+    send({ type: "touch", phase: "move", ...lastPoint });
+  };
+  const releasePointer = () => {
+    if (pointerId === null) return;
+    const released = pointerId;
+    pointerId = null;
+    send({ type: "touch", phase: "up", ...lastPoint });
+    if (canvas.hasPointerCapture(released)) canvas.releasePointerCapture(released);
   };
   const finishPointer = (event) => {
     if (!controlEnabled || pointerId !== event.pointerId) return;
     event.preventDefault();
-    send({ type: "touch", phase: "up", ...point(event) });
-    pointerId = null;
+    lastPoint = point(event);
+    releasePointer();
   };
   const onKeyDown = (event) => {
     if (!controlEnabled || event.repeat) return;
@@ -117483,6 +118162,8 @@ function createSimulatorDesktopView(options) {
   canvas.addEventListener("pointermove", onPointerMove);
   canvas.addEventListener("pointerup", finishPointer);
   canvas.addEventListener("pointercancel", finishPointer);
+  canvas.addEventListener("lostpointercapture", releasePointer);
+  canvas.addEventListener("blur", releasePointer);
   canvas.addEventListener("keydown", onKeyDown);
   const decodePendingFrame = async () => {
     if (decoding || isClosed() || !context) return;
@@ -117523,19 +118204,22 @@ function createSimulatorDesktopView(options) {
       void decodePendingFrame();
     },
     setControlEnabled: (enabled) => {
+      if (!enabled) releasePointer();
       controlEnabled = enabled;
-      if (!enabled) pointerId = null;
     },
     focus: () => {
       canvas.focus({ preventScroll: true });
     },
     cleanup: () => {
+      releasePointer();
       lifecycle.abort();
       pendingFrame = null;
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("pointermove", onPointerMove);
       canvas.removeEventListener("pointerup", finishPointer);
       canvas.removeEventListener("pointercancel", finishPointer);
+      canvas.removeEventListener("lostpointercapture", releasePointer);
+      canvas.removeEventListener("blur", releasePointer);
       canvas.removeEventListener("keydown", onKeyDown);
     }
   };
@@ -117582,7 +118266,21 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     hidden: true
   });
   machineSelect.append(el("option", { value: LOCAL_MACHINE }, "This machine"));
-  const devicesHeading = el("div", { class: "vnc-devices-heading" }, "Devices");
+  const refreshDevicesButton = el(
+    "button",
+    {
+      type: "button",
+      class: "ui-btn ui-btn-ghost vnc-refresh-devices",
+      "aria-label": "Refresh desktop devices"
+    },
+    refreshIcon()
+  );
+  const devicesHeading = el(
+    "div",
+    { class: "vnc-devices-heading" },
+    "Devices",
+    refreshDevicesButton
+  );
   const deviceList = el("div", {
     class: "vnc-device-list",
     role: "list",
@@ -117665,6 +118363,23 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     "button",
     { type: "button", class: "ui-btn vnc-home-btn", hidden: true },
     "Home"
+  );
+  const backButton = el(
+    "button",
+    { type: "button", class: "ui-btn vnc-back-btn", hidden: true },
+    "Back"
+  );
+  const overviewButton = el(
+    "button",
+    { type: "button", class: "ui-btn vnc-overview-btn", hidden: true, "aria-label": "Recent apps" },
+    "Apps"
+  );
+  const deviceNavigation = el(
+    "div",
+    { class: "vnc-device-navigation" },
+    backButton,
+    homeButton,
+    overviewButton
   );
   const discoverButton = el(
     "button",
@@ -117866,7 +118581,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     status,
     forgetLoginButton,
     controlButton,
-    homeButton,
+    deviceNavigation,
     disconnectButton,
     note
   );
@@ -117931,7 +118646,10 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
       const device = simulatorDevices.find(
         (candidate) => `${SIMULATOR_MACHINE_PREFIX}${candidate.udid}` === value
       );
-      return device ? { name: device.name, meta: `${device.runtime} \xB7 Booted` } : { name: "iOS Simulator", meta: "Booted on this Mac" };
+      return device ? {
+        name: device.name,
+        meta: `${device.runtime} \xB7 ${device.platform === "android" ? "Running" : "Booted"}`
+      } : { name: "iOS Simulator", meta: "Booted on this Mac" };
     }
     return { name: "Desktop", meta: "Saved device" };
   }
@@ -118005,6 +118723,9 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     disconnectButton.hidden = !active2;
     controlButton.hidden = !connected;
     homeButton.hidden = !connected || simulatorSessionId === null;
+    const android = selectedSimulator()?.platform === "android";
+    backButton.hidden = !connected || !android;
+    overviewButton.hidden = !connected || !android;
     note.hidden = active2 || isSimulatorMachine(machineSelect.value);
     disconnectButton.textContent = connected ? "Disconnect" : "Cancel";
     portInput.disabled = active2;
@@ -118055,7 +118776,10 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     setStatus(`Connected to ${connectedMachineName}`, "ok", connectedStatusDetail());
   }
   function updateControlUi() {
-    controlButton.textContent = controlEnabled ? "Stop controlling" : simulatorSessionId ? "Control simulator" : "Control desktop";
+    homeButton.disabled = !controlEnabled;
+    backButton.disabled = !controlEnabled;
+    overviewButton.disabled = !controlEnabled;
+    controlButton.textContent = controlEnabled ? "Stop controlling" : simulatorSessionId ? selectedSimulator()?.platform === "android" ? "Control emulator" : "Control simulator" : "Control desktop";
     controlButton.setAttribute("aria-pressed", String(controlEnabled));
     controlButton.classList.toggle("is-active", controlEnabled);
     screen.classList.toggle("is-controlling", controlEnabled);
@@ -118496,20 +119220,35 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     const previous = machineSelect.value;
     const activeProject = store2.getState().projects.find((project2) => project2.id === store2.getState().activeProjectId);
     const preferred = activeProject?.sshHost ? sshMachineValue(activeProject.sshHost) : previous;
+    let discoveryError = "";
     const [canStoreCredentials, devices] = await Promise.all([
       api2.vnc.canStoreCredentials().catch(() => false),
-      api2.simulatorDesktop.list().catch(() => [])
+      api2.simulatorDesktop.list().catch((error61) => {
+        discoveryError = error61 instanceof Error ? error61.message : String(error61);
+        return [];
+      })
     ]);
     secureCredentialStorage = canStoreCredentials;
     simulatorDevices = devices;
     await refreshSshHosts(preferred);
     await Promise.all([discoverSelectedMachine(), discoverNearby()]);
+    if (discoveryError && !simulatorSessionId && !channel)
+      setStatus("Couldn\u2019t discover local emulators", "error", discoveryError);
   }
-  async function connectSimulator(device) {
+  async function connectSimulator(device, immediateControl = false) {
+    if (device.unavailableReason) {
+      setStatus("Couldn\u2019t connect to emulator", "error", device.unavailableReason);
+      return;
+    }
+    const android = device.platform === "android";
     const generation = ++connectGeneration;
     let openedConnectionId = null;
     connectButton.disabled = true;
-    setStatus("Preparing Simulator stream\u2026", "working", "Compiling the local helper on first use.");
+    setStatus(
+      android ? "Connecting to Android emulator\u2026" : "Preparing Simulator stream\u2026",
+      "working",
+      android ? "Waiting for the emulator display." : "Compiling the local helper on first use."
+    );
     try {
       const connection = await api2.simulatorDesktop.open(device.udid);
       openedConnectionId = connection.id;
@@ -118522,15 +119261,17 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
       pendingDisconnectStatus = null;
       resetControlState();
       options.onLabelChange(device.name);
-      empty.textContent = "Waiting for the Simulator framebuffer\u2026";
+      empty.textContent = android ? "Waiting for the Android display\u2026" : "Waiting for the Simulator framebuffer\u2026";
       setSessionUi(true);
       const view = createSimulatorDesktopView({
         connectionId: connection.id,
+        screenLabel: android ? "Android emulator screen" : "iOS Simulator screen",
         sendInput: (input2) => api2.simulatorDesktop.input(connection.id, input2),
         onFirstFrame: () => {
           if (simulatorSessionId !== connection.id) return;
           connectedAtLeastOnce = true;
           connectedMachineName = device.name;
+          if (immediateControl) setControlEnabled(true);
           setSessionUi(true, true);
           renderConnectedStatus();
         },
@@ -118552,7 +119293,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
         });
       }
       clearViewer(
-        "Couldn\u2019t open the Simulator",
+        android ? "Couldn\u2019t open the Android emulator" : "Couldn\u2019t open the Simulator",
         "error",
         error61 instanceof Error ? error61.message : String(error61)
       );
@@ -118560,17 +119301,20 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
       connectButton.disabled = false;
     }
   }
-  async function showSimulatorFromAgent(udid) {
+  async function showSimulatorFromAgent(udid, presentation) {
     openRightPanel(store2, "vnc");
     const machine = `${SIMULATOR_MACHINE_PREFIX}${udid}`;
-    if (simulatorSessionId && machineSelect.value === machine) return;
+    if (simulatorSessionId && machineSelect.value === machine) {
+      if (presentation?.control) setControlEnabled(true);
+      return;
+    }
     await loadMachines();
     const device = simulatorDevices.find((candidate) => candidate.udid === udid);
     if (!device) {
       setStatus(
         "Couldn\u2019t open the Simulator",
         "error",
-        "The Simulator selected by the agent is no longer booted."
+        "The selected simulator or emulator is no longer running."
       );
       return;
     }
@@ -118582,7 +119326,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     }
     machineSelect.value = machine;
     updateMachineUi();
-    await connectSimulator(device);
+    await connectSimulator(device, presentation?.control === true);
   }
   async function connect() {
     const simulator = selectedSimulator();
@@ -118816,15 +119560,30 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
   controlButton.addEventListener("click", () => {
     setControlEnabled(!controlEnabled);
   });
-  homeButton.addEventListener("click", () => {
+  const sendDeviceButton = (name) => {
     const connectionId = simulatorSessionId;
-    if (!connectionId) return;
-    void api2.simulatorDesktop.input(connectionId, { type: "button-tap", name: "home" }).catch((error61) => {
+    if (!connectionId || !controlEnabled) return;
+    void api2.simulatorDesktop.input(connectionId, { type: "button-tap", name }).catch((error61) => {
       setStatus(
-        "Simulator control failed",
+        "Device control failed",
         "error",
         error61 instanceof Error ? error61.message : String(error61)
       );
+    });
+  };
+  homeButton.addEventListener("click", () => {
+    sendDeviceButton("home");
+  });
+  backButton.addEventListener("click", () => {
+    sendDeviceButton("back");
+  });
+  overviewButton.addEventListener("click", () => {
+    sendDeviceButton("overview");
+  });
+  refreshDevicesButton.addEventListener("click", () => {
+    refreshDevicesButton.disabled = true;
+    void loadMachines().finally(() => {
+      refreshDevicesButton.disabled = false;
     });
   });
   authenticateButton.addEventListener("click", submitCredentials);
@@ -118904,9 +119663,9 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     if (event.id !== simulatorSessionId) return;
     if (event.status === "error") {
       clearViewer(
-        connectedAtLeastOnce ? "Simulator stream lost" : "Couldn\u2019t open the Simulator",
+        connectedAtLeastOnce ? "Device stream lost" : "Couldn\u2019t open the device",
         "error",
-        event.detail ?? "The private CoreSimulator stream ended unexpectedly."
+        event.detail ?? "The device stream ended unexpectedly."
       );
     } else if (event.status === "closed") {
       clearViewer("Disconnected");
@@ -118934,12 +119693,16 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
   portInput.value = "5901";
   void loadMachines();
   return {
+    simulatorMatch: (udid) => {
+      if (simulatorSessionId && selectedSimulator()?.udid === udid) return "same";
+      return !simulatorSessionId && !channel && !rfb && !connectButton.disabled ? "empty" : "other";
+    },
     focus: () => {
       if (rfb) rfb.focus();
       else simulatorView?.focus();
     },
-    showSimulator: (udid) => {
-      void showSimulatorFromAgent(udid);
+    showSimulator: (udid, presentation) => {
+      void showSimulatorFromAgent(udid, presentation);
     },
     cleanup: () => {
       connectGeneration++;
@@ -119141,9 +119904,15 @@ function mountVncPane(controlsRoot, viewerRoot, store2, api2) {
   }
   newButton.addEventListener("click", addTab);
   addTab();
-  const stopSimulatorShow = api2.simulatorDesktop.onShow((udid) => {
-    const tabId = activeTabId ?? addTab();
-    tabs.get(tabId)?.session.showSimulator(udid);
+  const stopSimulatorShow = api2.simulatorDesktop.onShow((udid, presentation) => {
+    if (presentation?.control) store2.emit("settings_changed");
+    const state = store2.getState();
+    if (presentation?.owner && (presentation.owner.projectId !== state.activeProjectId || presentation.owner.threadId && presentation.owner.threadId !== state.activeThreadId))
+      return;
+    const existing = [...tabs.values()];
+    const tabId = existing.find((tab) => tab.session.simulatorMatch(udid) === "same")?.id ?? existing.find((tab) => tab.session.simulatorMatch(udid) === "empty")?.id ?? addTab();
+    setActiveTab(tabId);
+    tabs.get(tabId)?.session.showSimulator(udid, presentation);
   });
   return () => {
     stopSimulatorShow();
