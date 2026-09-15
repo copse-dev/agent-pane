@@ -70,6 +70,85 @@ function seedAcpTrailingToolUpdateFixture(workspaceRoot: string): void {
   })
 }
 
+function seedAcpSettledOpenToolFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-acp-settled-open-tool-project'
+  const threadId = 'e2e-acp-settled-open-tool-thread'
+  const now = Date.now()
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'ACP settled open tool',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-user-acp-settled-open-tool',
+            role: 'user',
+            content: 'Tell me what landed this week.',
+            toolCalls: [],
+            createdAt: now,
+          },
+          {
+            id: 'msg-assistant-acp-settled-first-step',
+            role: 'assistant',
+            content: '',
+            toolCalls: [
+              {
+                id: 'tc-acp-settled-git-log',
+                name: 'git_log',
+                args: { max_count: 20 },
+                status: 'done',
+                result: 'Five matching commits',
+              },
+            ],
+            createdAt: now + 1,
+          },
+          {
+            id: 'msg-assistant-acp-settled-second-step',
+            role: 'assistant',
+            content: '',
+            toolCalls: [
+              {
+                id: 'tc-acp-settled-web-search',
+                name: 'web_search',
+                args: { query: 'latest merged pull requests' },
+                status: 'error',
+                result:
+                  'Interrupted before completion — no final output was received. This tool may have partially run or produced effects; inspect the current state before retrying it.',
+              },
+            ],
+            createdAt: now + 2,
+          },
+          {
+            id: 'msg-assistant-acp-settled-answer',
+            role: 'assistant',
+            content: 'Five pull requests landed this week.',
+            turnOutcome: {
+              status: 'completed',
+              stopReason: 'end_turn',
+              rawStopReason: 'end_turn',
+              source: 'provider',
+              executor: 'acp',
+              provider: 'codex-acp',
+              model: 'acp:codex-acp#gpt-5.6-sol',
+              lastEvent: 'text',
+              endedAt: now + 3,
+            },
+            toolCalls: [],
+            createdAt: now + 3,
+          },
+        ],
+        usage: { inputTokens: 900, outputTokens: 150 },
+        createdAt: now,
+        updatedAt: now + 3,
+      },
+    ],
+  })
+}
+
 describe('ACP unfinished-turn recovery fallback', () => {
   before(async () => {
     process.env.COPSE_PANEL_MOCK_LLM = '1'
@@ -159,5 +238,42 @@ describe('ACP final answer followed by a trailing tool update', () => {
     expect(positions?.answerTop ?? 0).toBeGreaterThan(positions?.toolBottom ?? 0)
 
     await savePreparedElementScreenshot('.messages-list', 'acp-trailing-tool-update.png')
+  })
+})
+
+describe('ACP successful turn with an unterminated tool call', () => {
+  before(async () => {
+    process.env.COPSE_PANEL_MOCK_LLM = '1'
+    process.env.ANTHROPIC_API_KEY = ''
+    process.env.OPENAI_API_KEY = ''
+    resetUserData()
+    seedAcpSettledOpenToolFixture(process.cwd())
+    await browser.reloadSession()
+    await $('[data-message-id="msg-assistant-acp-settled-answer"] .message-text').waitForExist({
+      timeout: 30_000,
+    })
+  })
+
+  after(() => {
+    resetUserData()
+  })
+
+  it('shows the completed rollup as failed without a running spinner', async () => {
+    const anchor = await $('[data-message-id="msg-assistant-acp-settled-first-step"]')
+    const rollup = await anchor.$('.tool-card-rollup')
+    await expect(rollup).toHaveAttribute('data-status', 'error')
+    await expect(rollup.$('summary.tool-card-header')).toHaveText(
+      'Used 2 tools · 2 steps · 1 failed',
+    )
+    await expect(anchor.$('[data-status="running"]')).not.toExist()
+
+    await rollup.$('summary.tool-card-header').click()
+    const failedSearch = await anchor.$('[data-tool-id="tc-acp-settled-web-search"]')
+    await expect(failedSearch).toHaveAttribute('data-status', 'error')
+    await expect(
+      $('[data-message-id="msg-assistant-acp-settled-answer"] .message-text'),
+    ).toHaveText('Five pull requests landed this week.')
+
+    await savePreparedElementScreenshot('.messages-list', 'acp-settled-open-tool.png')
   })
 })
