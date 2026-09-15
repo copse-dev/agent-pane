@@ -4,10 +4,11 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
+import { ndJsonStream } from '@agentclientprotocol/sdk'
 import * as agentService from './agent-service.ts'
 import * as providerSelection from './providers/provider-selection.ts'
 import { suggestThreadTitle } from './title-generator.ts'
-import { setSetting } from './storage/settings.ts'
+import { getSetting, setSetting } from './storage/settings.ts'
 import type { AgentHost } from '@copse/agent/agent-host.ts'
 import type { LLMMessage, LLMProvider, StreamChunk } from '@shared/types'
 import { ToolRegistry } from './tool-registry.ts'
@@ -23,6 +24,9 @@ import {
 import { pluginModelValue } from '@shared/plugin-model.ts'
 import { defineTool } from '@shared/types'
 import { runWithWorkspaceTrust } from './security/workspace-trust.ts'
+import { buildAcpAgentApp, type AcpTurnRunner } from './acp/acp-agent-server.ts'
+import { acquireAcpSession, disposeAllAcpSessions } from './acp/acp-session-pool.ts'
+import { ACP_CANCELLED_TOOL_CALL_RESULT } from './acp/acp-turn-recovery.ts'
 
 // agent-service is now an orchestrator that re-exports the public surface from the
 // focused modules it composes. These tests pin that public surface so IPC callers
@@ -53,6 +57,99 @@ describe('agent-service public surface', () => {
 // its output through an injected AgentHost<StreamChunk> rather than a BrowserWindow. This proves
 // a full turn can be driven with a mock host and no Electron present.
 describe('runAgent AgentHost decoupling', () => {
+  it('settles an ACP tool call left open when a successful turn ends', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'copse-agent-acp-open-tool-'))
+    const threadId = 'thread-acp-open-tool'
+    const projectId = 'project-acp-open-tool'
+    const agentId = 'open-tool-agent'
+    const command = 'unused-open-tool-agent'
+    const previousAgents = getSetting('registeredAcpAgents', [])
+    const received: StreamChunk[] = []
+    const registry = new ToolRegistry()
+    const runner: AcpTurnRunner = async (ctx) => {
+      await ctx.emit({
+        type: 'tool_call',
+        toolCall: { id: 'orphaned-search', name: 'web_search', args: { query: 'latest PRs' } },
+      })
+      await ctx.emit({ type: 'text', text: 'Five pull requests landed this week.' })
+      return { stopReason: 'end_turn' }
+    }
+    const createTransport = (): Promise<{
+      stream: ReturnType<typeof ndJsonStream>
+      dispose: () => void
+    }> => {
+      const clientToAgent = new TransformStream<Uint8Array, Uint8Array>()
+      const agentToClient = new TransformStream<Uint8Array, Uint8Array>()
+      const connection = buildAcpAgentApp(runner, { name: 'open-tool-test-agent' }).connect(
+        ndJsonStream(agentToClient.writable, clientToAgent.readable),
+      )
+      return Promise.resolve({
+        stream: ndJsonStream(clientToAgent.writable, agentToClient.readable),
+        dispose: (): void => {
+          connection.close()
+        },
+      })
+    }
+
+    try {
+      await setSetting('registeredAcpAgents', [
+        { id: agentId, title: 'Open tool test agent', command, enabled: true },
+      ])
+      await acquireAcpSession({
+        threadId,
+        config: { command, cwd: root },
+        createTransport,
+      })
+
+      const host: AgentHost<StreamChunk> = {
+        emit: (_threadId, chunk) => received.push(chunk),
+      }
+      await runWithThreadExecutionContext(
+        {
+          projectId,
+          threadId,
+          projectRoot: root,
+          root,
+          checkoutMode: 'shared',
+          branch: null,
+        },
+        () =>
+          runWithActiveRunIdentity(threadId, () =>
+            agentService.runAgent(threadId, 'What landed this week?', [], host, registry, {
+              model: `acp:${agentId}`,
+            }),
+          ),
+      )
+
+      const openedAt = received.findIndex(
+        (chunk) => chunk.type === 'tool_call' && chunk.toolCall.id === 'orphaned-search',
+      )
+      const settledAt = received.findIndex(
+        (chunk) =>
+          chunk.type === 'tool_call_update' &&
+          chunk.toolCallId === 'orphaned-search' &&
+          chunk.status === 'error',
+      )
+      const doneAt = received.findIndex((chunk) => chunk.type === 'done')
+      assert.ok(openedAt >= 0, 'the ACP tool call should reach the host')
+      assert.ok(settledAt > openedAt, 'the open call should settle after it starts')
+      assert.ok(doneAt > settledAt, 'the interrupted verdict should arrive before done')
+      const settled = received[settledAt]
+      assert.ok(settled?.type === 'tool_call_update')
+      assert.equal(settled.result, ACP_CANCELLED_TOOL_CALL_RESULT)
+      assert.ok(
+        received.some(
+          (chunk) => chunk.type === 'text' && chunk.text === 'Five pull requests landed this week.',
+        ),
+        'the final answer should remain intact',
+      )
+    } finally {
+      await disposeAllAcpSessions()
+      await setSetting('registeredAcpAgents', previousAgents)
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
   it('streams a fallback notice when a remote agent is selected without a valid key', async () => {
     const priorCursorKey = process.env['CURSOR_API_KEY']
     const priorLmStudioUrl = process.env['COPSE_EVAL_LM_STUDIO_URL']
