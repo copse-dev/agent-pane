@@ -2,7 +2,7 @@ import RFB from '@novnc/novnc'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 import { showContextMenu } from '../dom/context-menu.ts'
 import { el } from '../dom/helpers.ts'
-import { closeIcon, lockIcon, monitorIcon, plusIcon } from '../dom/icons.ts'
+import { closeIcon, lockIcon, monitorIcon, plusIcon, refreshIcon } from '../dom/icons.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type {
@@ -112,7 +112,21 @@ function mountVncSession(
     hidden: true,
   })
   machineSelect.append(el('option', { value: LOCAL_MACHINE }, 'This machine'))
-  const devicesHeading = el('div', { class: 'vnc-devices-heading' }, 'Devices')
+  const refreshDevicesButton = el(
+    'button',
+    {
+      type: 'button',
+      class: 'ui-btn ui-btn-ghost vnc-refresh-devices',
+      'aria-label': 'Refresh desktop devices',
+    },
+    refreshIcon(),
+  )
+  const devicesHeading = el(
+    'div',
+    { class: 'vnc-devices-heading' },
+    'Devices',
+    refreshDevicesButton,
+  )
   const deviceList = el('div', {
     class: 'vnc-device-list',
     role: 'list',
@@ -195,6 +209,23 @@ function mountVncSession(
     'button',
     { type: 'button', class: 'ui-btn vnc-home-btn', hidden: true },
     'Home',
+  )
+  const backButton = el(
+    'button',
+    { type: 'button', class: 'ui-btn vnc-back-btn', hidden: true },
+    'Back',
+  )
+  const overviewButton = el(
+    'button',
+    { type: 'button', class: 'ui-btn vnc-overview-btn', hidden: true, 'aria-label': 'Recent apps' },
+    'Apps',
+  )
+  const deviceNavigation = el(
+    'div',
+    { class: 'vnc-device-navigation' },
+    backButton,
+    homeButton,
+    overviewButton,
   )
   const discoverButton = el(
     'button',
@@ -396,7 +427,7 @@ function mountVncSession(
     status,
     forgetLoginButton,
     controlButton,
-    homeButton,
+    deviceNavigation,
     disconnectButton,
     note,
   )
@@ -467,7 +498,10 @@ function mountVncSession(
         (candidate) => `${SIMULATOR_MACHINE_PREFIX}${candidate.udid}` === value,
       )
       return device
-        ? { name: device.name, meta: `${device.runtime} · Booted` }
+        ? {
+            name: device.name,
+            meta: `${device.runtime} · ${device.platform === 'android' ? 'Running' : 'Booted'}`,
+          }
         : { name: 'iOS Simulator', meta: 'Booted on this Mac' }
     }
     return { name: 'Desktop', meta: 'Saved device' }
@@ -551,6 +585,9 @@ function mountVncSession(
     disconnectButton.hidden = !active
     controlButton.hidden = !connected
     homeButton.hidden = !connected || simulatorSessionId === null
+    const android = selectedSimulator()?.platform === 'android'
+    backButton.hidden = !connected || !android
+    overviewButton.hidden = !connected || !android
     note.hidden = active || isSimulatorMachine(machineSelect.value)
     disconnectButton.textContent = connected ? 'Disconnect' : 'Cancel'
     portInput.disabled = active
@@ -611,10 +648,15 @@ function mountVncSession(
   }
 
   function updateControlUi(): void {
+    homeButton.disabled = !controlEnabled
+    backButton.disabled = !controlEnabled
+    overviewButton.disabled = !controlEnabled
     controlButton.textContent = controlEnabled
       ? 'Stop controlling'
       : simulatorSessionId
-        ? 'Control simulator'
+        ? selectedSimulator()?.platform === 'android'
+          ? 'Control emulator'
+          : 'Control simulator'
         : 'Control desktop'
     controlButton.setAttribute('aria-pressed', String(controlEnabled))
     controlButton.classList.toggle('is-active', controlEnabled)
@@ -1127,21 +1169,36 @@ function mountVncSession(
       .getState()
       .projects.find((project) => project.id === store.getState().activeProjectId)
     const preferred = activeProject?.sshHost ? sshMachineValue(activeProject.sshHost) : previous
+    let discoveryError = ''
     const [canStoreCredentials, devices] = await Promise.all([
       api.vnc.canStoreCredentials().catch(() => false),
-      api.simulatorDesktop.list().catch(() => []),
+      api.simulatorDesktop.list().catch((error: unknown) => {
+        discoveryError = error instanceof Error ? error.message : String(error)
+        return []
+      }),
     ])
     secureCredentialStorage = canStoreCredentials
     simulatorDevices = devices
     await refreshSshHosts(preferred)
     await Promise.all([discoverSelectedMachine(), discoverNearby()])
+    if (discoveryError && !simulatorSessionId && !channel)
+      setStatus('Couldn’t discover local emulators', 'error', discoveryError)
   }
 
   async function connectSimulator(device: SimulatorDesktopDevice): Promise<void> {
+    if (device.unavailableReason) {
+      setStatus('Couldn’t connect to emulator', 'error', device.unavailableReason)
+      return
+    }
+    const android = device.platform === 'android'
     const generation = ++connectGeneration
     let openedConnectionId: string | null = null
     connectButton.disabled = true
-    setStatus('Preparing Simulator stream…', 'working', 'Compiling the local helper on first use.')
+    setStatus(
+      android ? 'Connecting to Android emulator…' : 'Preparing Simulator stream…',
+      'working',
+      android ? 'Waiting for the emulator display.' : 'Compiling the local helper on first use.',
+    )
     try {
       const connection = await api.simulatorDesktop.open(device.udid)
       openedConnectionId = connection.id
@@ -1154,10 +1211,13 @@ function mountVncSession(
       pendingDisconnectStatus = null
       resetControlState()
       options.onLabelChange(device.name)
-      empty.textContent = 'Waiting for the Simulator framebuffer…'
+      empty.textContent = android
+        ? 'Waiting for the Android display…'
+        : 'Waiting for the Simulator framebuffer…'
       setSessionUi(true)
       const view = createSimulatorDesktopView({
         connectionId: connection.id,
+        screenLabel: android ? 'Android emulator screen' : 'iOS Simulator screen',
         sendInput: (input) => api.simulatorDesktop.input(connection.id, input),
         onFirstFrame: () => {
           if (simulatorSessionId !== connection.id) return
@@ -1183,7 +1243,7 @@ function mountVncSession(
         await api.simulatorDesktop.close(openedConnectionId).catch(() => {})
       }
       clearViewer(
-        'Couldn’t open the Simulator',
+        android ? 'Couldn’t open the Android emulator' : 'Couldn’t open the Simulator',
         'error',
         error instanceof Error ? error.message : String(error),
       )
@@ -1473,18 +1533,33 @@ function mountVncSession(
   controlButton.addEventListener('click', () => {
     setControlEnabled(!controlEnabled)
   })
-  homeButton.addEventListener('click', () => {
+  const sendDeviceButton = (name: 'home' | 'back' | 'overview'): void => {
     const connectionId = simulatorSessionId
-    if (!connectionId) return
+    if (!connectionId || !controlEnabled) return
     void api.simulatorDesktop
-      .input(connectionId, { type: 'button-tap', name: 'home' })
+      .input(connectionId, { type: 'button-tap', name })
       .catch((error: unknown) => {
         setStatus(
-          'Simulator control failed',
+          'Device control failed',
           'error',
           error instanceof Error ? error.message : String(error),
         )
       })
+  }
+  homeButton.addEventListener('click', () => {
+    sendDeviceButton('home')
+  })
+  backButton.addEventListener('click', () => {
+    sendDeviceButton('back')
+  })
+  overviewButton.addEventListener('click', () => {
+    sendDeviceButton('overview')
+  })
+  refreshDevicesButton.addEventListener('click', () => {
+    refreshDevicesButton.disabled = true
+    void loadMachines().finally(() => {
+      refreshDevicesButton.disabled = false
+    })
   })
   authenticateButton.addEventListener('click', submitCredentials)
   const forgetLogin = (): void => {
@@ -1573,9 +1648,9 @@ function mountVncSession(
     if (event.id !== simulatorSessionId) return
     if (event.status === 'error') {
       clearViewer(
-        connectedAtLeastOnce ? 'Simulator stream lost' : 'Couldn’t open the Simulator',
+        connectedAtLeastOnce ? 'Device stream lost' : 'Couldn’t open the device',
         'error',
-        event.detail ?? 'The private CoreSimulator stream ended unexpectedly.',
+        event.detail ?? 'The device stream ended unexpectedly.',
       )
     } else if (event.status === 'closed') {
       clearViewer('Disconnected')

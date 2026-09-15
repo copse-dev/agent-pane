@@ -33,4 +33,5 @@
 // v6 conservatively versions the optional file-reference task owner shape.
 // v7 versions task ownership in browser session and canvas payloads.
 // v8 versions the expanded supervisor task summaries and recovery API.
-export const API_PROTOCOL_VERSION = 8 as const
+// v9 versions Android device kinds and input in the simulator desktop API.
+export const API_PROTOCOL_VERSION = 9 as const
