@@ -13,6 +13,10 @@ import { outlineIcon } from './outline-icon.ts'
 
 const DEFAULT = 'ui-icon'
 
+export function playIcon(className = DEFAULT): SVGSVGElement {
+  return outlineIcon('play', ['m6 3 14 9-14 9V3Z'], className)
+}
+
 export function chevronRightIcon(className = DEFAULT): SVGSVGElement {
   return outlineIcon('chevron-right', ['m9 18 6-6-6-6'], className)
 }

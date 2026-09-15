@@ -1,3 +1,4 @@
+import type { SimulatorDesktopPresentation } from '@shared/types/simulator-desktop.ts'
 import { contextBridge, ipcRenderer } from 'electron'
 import type { AutoApprovalLevel } from '@shared/auto-approval.ts'
 import type { ApiClient } from './api.d.ts'
@@ -1101,9 +1102,13 @@ const api: ApiClient = {
         ipcRenderer.off('simulator-desktop:status', listener)
       }
     },
-    onShow: (handler: (udid: string) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, udid: string): void => {
-        handler(udid)
+    onShow: (handler: (udid: string, options?: SimulatorDesktopPresentation) => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        udid: string,
+        options?: SimulatorDesktopPresentation,
+      ): void => {
+        handler(udid, options)
       }
       ipcRenderer.on('simulator-desktop:show', listener)
       return (): void => {
@@ -1255,6 +1260,20 @@ const api: ApiClient = {
         ipcRenderer.off('automations:triggered', listener)
       }
     },
+  },
+  appRun: {
+    detect: (owner) => ipcRenderer.invoke('app-run:detect', owner),
+    discover: (owner) => ipcRenderer.invoke('app-run:discover', owner),
+    cancelDiscovery: (owner) => ipcRenderer.invoke('app-run:cancel-discovery', owner),
+    devices: (owner, appId, variant) =>
+      ipcRenderer.invoke('app-run:devices', owner, appId, variant),
+    operations: (owner) => ipcRenderer.invoke('app-run:operations', owner),
+    execute: (owner, selection, action) =>
+      ipcRenderer.invoke('app-run:execute', owner, selection, action),
+    cancel: (owner, id) => ipcRenderer.invoke('app-run:cancel', owner, id),
+    stop: (owner, id) => ipcRenderer.invoke('app-run:stop', owner, id),
+    setupOptions: (owner, platform) => ipcRenderer.invoke('app-run:setup-options', owner, platform),
+    setup: (owner, input) => ipcRenderer.invoke('app-run:setup', owner, input),
   },
   appleDevelopment: {
     state: (projectId: string, threadId: string) =>

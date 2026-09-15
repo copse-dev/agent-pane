@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import type { SimulatorDesktopDevice } from '@shared/types/simulator-desktop.ts'
 
 export interface AndroidEndpoint {
+  avdId?: string
   device: SimulatorDesktopDevice
   port: number
   token: string
@@ -29,7 +30,9 @@ function parseAdvertisement(text: string, pid: number): AndroidEndpoint | null {
   if (!Number.isInteger(port) || port < 1 || port > 65535) return null
   const token = fields.get('grpc.token') ?? ''
   const supported = token.length > 0 && token.length <= 8192 && /^[\x20-\x7e]+$/.test(token)
+  const avdId = fields.get('avd.id')
   return {
+    ...(avdId ? { avdId } : {}),
     device: {
       udid: `android:${String(pid)}`,
       platform: 'android',

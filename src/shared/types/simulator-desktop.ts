@@ -44,3 +44,9 @@ export type SimulatorDesktopInput =
       type: 'button-tap'
       name: 'home' | 'lock' | 'side' | 'siri' | 'back' | 'overview'
     }
+
+/** Main-originated presentation intent; agent tools never set control. */
+export interface SimulatorDesktopPresentation {
+  control?: boolean
+  owner?: { projectId: string; threadId?: string | undefined }
+}

@@ -1,4 +1,4 @@
-import { $, browser } from '@wdio/globals'
+import { $, $$, browser } from '@wdio/globals'
 import { PNG } from 'pngjs'
 import { readFileSync } from 'node:fs'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
@@ -173,5 +173,61 @@ describe('Simulator desktop preview', function () {
     await expect($('.vnc-back-btn')).toBeDisabled()
     await $('.vnc-disconnect-btn').click()
     await expect($('.vnc-status-title')).toHaveText('Disconnected')
+  })
+
+  it('opens another device in a separate tab and reuses its existing tab on repeat presentation', async () => {
+    await browser.execute(
+      async (frameBase64, udid) => {
+        const bridge = (
+          window as unknown as {
+            __copseE2e?: {
+              setSimulatorDesktop(value: unknown): Promise<void>
+              showSimulatorDesktop(udid: string): Promise<void>
+            }
+          }
+        ).__copseE2e
+        if (!bridge) throw new Error('__copseE2e unavailable')
+        await bridge.setSimulatorDesktop({
+          devices: [
+            { udid, name: 'First phone', runtime: 'iOS 26.5' },
+            {
+              udid: '22222222-2222-4333-8444-555555555555',
+              name: 'Second phone',
+              runtime: 'iOS 26.5',
+            },
+          ],
+          frame: { base64: frameBase64, mimeType: 'image/png', pixelWidth: 390, pixelHeight: 844 },
+        })
+        await bridge.showSimulatorDesktop(udid)
+      },
+      simulatorFrame(),
+      DEVICE_UDID,
+    )
+    await expect($('.vnc-controls-panel:not([hidden]) .vnc-status-title')).toHaveText(
+      'Connected to First phone',
+    )
+    const show = async (udid: string): Promise<void> => {
+      await browser.execute(async (id) => {
+        const bridge = (
+          window as unknown as {
+            __copseE2e?: { showSimulatorDesktop(udid: string): Promise<void> }
+          }
+        ).__copseE2e
+        if (!bridge) throw new Error('__copseE2e unavailable')
+        await bridge.showSimulatorDesktop(id)
+      }, udid)
+    }
+    await show('22222222-2222-4333-8444-555555555555')
+    await expect($('.vnc-controls-panel:not([hidden]) .vnc-status-title')).toHaveText(
+      'Connected to Second phone',
+    )
+    await expect($$('.vnc-tab')).toBeElementsArrayOfSize(2)
+    await expect($('.vnc-controls-panel:not([hidden]) .vnc-control-btn')).toHaveText(
+      'Control simulator',
+    )
+    await show(DEVICE_UDID)
+    await expect($('.vnc-tab.is-active .vnc-tab-label')).toHaveText('First phone')
+    await expect($$('.vnc-tab')).toBeElementsArrayOfSize(2)
+    await saveAppScreenshot('simulator-desktop-multiple.png')
   })
 })

@@ -1,4 +1,7 @@
 import { $, $$, browser, expect } from '@wdio/globals'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
   cleanupGitChangesFixture,
   resetUserData,
@@ -21,9 +24,13 @@ async function completeMockTurn(): Promise<void> {
 
 describe('follow-up suggestion bubbles', () => {
   describe('mock demo (Debug CI + Compare models + Continue Plan)', () => {
+    let workspace = ''
     before(async () => {
       resetUserData()
-      seedEmptyProject(process.cwd(), 'e2e-follow-up-mock-project', {
+      // A dirty development checkout legitimately adds a Changes bubble.
+      // Keep the mock-only scenario independent of the branch being tested.
+      workspace = mkdtempSync(join(tmpdir(), 'copse-follow-up-demo-'))
+      seedEmptyProject(workspace, 'e2e-follow-up-mock-project', {
         subagentsEnabled: false,
         model: 'claude-sonnet-4-6',
         mockFollowUps: true,
@@ -33,6 +40,7 @@ describe('follow-up suggestion bubbles', () => {
 
     after(() => {
       resetUserData()
+      if (workspace) rmSync(workspace, { recursive: true, force: true })
     })
 
     it('shows demo bubbles after a turn completes', async () => {

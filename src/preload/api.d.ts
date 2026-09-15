@@ -1,3 +1,15 @@
+import type {
+  AppRunOwner,
+  AppRunSelection,
+  AppRunAction,
+  AppRunPlatform,
+  AppRunDiscovery,
+  AppRunDevice,
+  AppRunOperation,
+  AppRunSetupInput,
+  AppRunSetupOptions,
+} from '@shared/types/app-run.ts'
+import type { SimulatorDesktopPresentation } from '@shared/types/simulator-desktop.ts'
 import type { StreamChunk, ContextBreakdown } from '@shared/types'
 import type { AutoApprovalLevel } from '@shared/auto-approval.ts'
 import type { RightPanelMode, ActiveDiff } from '@shared/types/state.ts'
@@ -835,7 +847,7 @@ export interface ApiClient {
     close: (connectionId: string) => Promise<void>
     onFrame: (handler: (frame: SimulatorDesktopFrame) => void) => () => void
     onStatus: (handler: (event: SimulatorDesktopStatusEvent) => void) => () => void
-    onShow: (handler: (udid: string) => void) => () => void
+    onShow: (handler: (udid: string, options?: SimulatorDesktopPresentation) => void) => () => void
   }
   memories: {
     list: () => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote[]>
@@ -1001,6 +1013,22 @@ export interface ApiClient {
     remove: (projectId: string, scheduleId: string) => Promise<void>
     runNow: (projectId: string, scheduleId: string) => Promise<AutomationTriggerEvent>
     onTriggered: (handler: (event: AutomationTriggerEvent) => void) => () => void
+  }
+  appRun: {
+    detect(owner: AppRunOwner): Promise<boolean>
+    discover(owner: AppRunOwner): Promise<AppRunDiscovery>
+    cancelDiscovery(owner: AppRunOwner): Promise<void>
+    devices(owner: AppRunOwner, appId: string, variant: string): Promise<AppRunDevice[]>
+    operations(owner: AppRunOwner): Promise<AppRunOperation[]>
+    execute(
+      owner: AppRunOwner,
+      selection: AppRunSelection,
+      action: AppRunAction,
+    ): Promise<AppRunOperation>
+    cancel(owner: AppRunOwner, id: string): Promise<void>
+    stop(owner: AppRunOwner, id: string): Promise<void>
+    setupOptions(owner: AppRunOwner, platform: AppRunPlatform): Promise<AppRunSetupOptions>
+    setup(owner: AppRunOwner, input: AppRunSetupInput): Promise<AppRunOperation | null>
   }
   appleDevelopment: {
     state: (projectId: string, threadId: string) => Promise<AppleProjectState>
