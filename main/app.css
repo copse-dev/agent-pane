@@ -10850,6 +10850,115 @@ dialog.settings-overlay::backdrop {
   }
 }
 
+/* src/renderer/styles/global/app-run.css */
+#app-run-dialog {
+  width: min(520px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  padding: 20px;
+  overflow-y: auto;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.app-run-heading,
+.app-run-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.app-run-heading {
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+.app-run-heading h2 {
+  margin: 0;
+  font-size: 20px;
+}
+.app-run-spacer {
+  flex: 1;
+}
+.app-run-fields,
+.app-run-setup {
+  display: grid;
+  gap: 12px;
+}
+.app-run-panel:has(.app-run-setup:not([hidden]) .app-run-setup-apply) > .app-run-fields,
+.app-run-panel:has(.app-run-setup:not([hidden]) .app-run-setup-apply) > .app-run-actions {
+  display: none;
+}
+.app-run-panel:has(.app-run-setup:not([hidden]) .app-run-setup-apply) > .app-run-setup {
+  border-top: 0;
+  margin-top: 0;
+  padding-top: 0;
+}
+.app-run-panel label {
+  display: grid;
+  gap: 5px;
+}
+.app-run-panel select,
+.app-run-panel input:not([type=checkbox]) {
+  width: 100%;
+  min-width: 0;
+}
+.app-run-panel .app-run-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+.app-run-panel .app-run-actions {
+  margin-top: 14px;
+}
+.app-run-more summary,
+.app-run-logs summary {
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.app-run-more > label {
+  margin-top: 12px;
+}
+.app-run-notice,
+.app-run-elapsed {
+  color: var(--text-secondary);
+}
+.app-run-notice:empty {
+  display: none;
+}
+.app-run-error,
+.app-run-notice[data-kind=error] {
+  color: var(--error);
+}
+.app-run-operation,
+.app-run-setup {
+  border-top: 1px solid var(--border);
+  margin-top: 16px;
+  padding-top: 12px;
+}
+.app-run-operation[data-stage=running] .app-run-stage {
+  color: var(--success);
+}
+.app-run-log {
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: 12px/1.5 var(--font-mono);
+}
+.app-run-logs {
+  margin-top: 10px;
+}
+.app-run-issue p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 160px;
+  overflow: auto;
+}
+.titlebar-run-app {
+  -webkit-app-region: no-drag;
+}
+
 /* src/renderer/styles/global/thread-proposal.css */
 .thread-proposal {
   margin-top: var(--spacing-sm);
