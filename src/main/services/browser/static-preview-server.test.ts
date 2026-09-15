@@ -3,10 +3,12 @@ import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, it } from 'node:test'
+import { isBrowserRequestAllowed } from './browser-network-policy.ts'
 import {
   flushPreviewStaleForTest,
   getStaticPreviewServer,
   handlePreviewWatchEvent,
+  isStaticPreviewUrl,
   setPreviewStaleSink,
   shutdownStaticPreviewServers,
   staticPreviewUrl,
@@ -38,6 +40,18 @@ describe('static browser preview server', () => {
     const second = await getStaticPreviewServer(root)
     assert.equal(second.url, first.url)
     assert.match(first.url, /^http:\/\/localhost:\d+\/$/)
+    assert.equal(isStaticPreviewUrl(first.url), true)
+    assert.equal(isStaticPreviewUrl(first.url.replace('localhost', '127.0.0.1')), false)
+    assert.equal(isStaticPreviewUrl('http://localhost:9/'), false)
+    assert.equal(
+      isBrowserRequestAllowed({
+        url: 'https://example.com/theme.css',
+        documentUrl: first.url,
+        resourceType: 'stylesheet',
+        allowedOrigins: ['https://example.com'],
+      }),
+      false,
+    )
 
     const page = await fetch(first.url)
     assert.equal(page.status, 200)

@@ -38,7 +38,7 @@ async function navigate(url: string, title: string): Promise<void> {
   )
 }
 
-describe('browser preview network policy', () => {
+describe('browser network policy', () => {
   let local: Server
   let external: Server
   let origin: string
@@ -50,15 +50,20 @@ describe('browser preview network policy', () => {
     external = createServer((req, res) => {
       externalRequests.push(req.url ?? '')
       res.setHeader('Access-Control-Allow-Origin', '*')
+      if (req.url === '/user-style.css') {
+        res.setHeader('Content-Type', 'text/css')
+        res.end('body{background:#fff8ed}#styled{color:#8f2f41;font-weight:700}')
+        return
+      }
       res.end('external resource')
     })
-    otherOrigin = await listen(external, '0.0.0.0')
+    otherOrigin = await listen(external)
     local = createServer((req, res) => {
       localRequests.push(req.url ?? '')
       if (req.url === '/redirect') {
         res
           .writeHead(302, {
-            Location: `${otherOrigin.replace('127.0.0.1', '127.0.0.2')}/redirect-leak`,
+            Location: `${otherOrigin.replace('127.0.0.1', 'localhost')}/redirect-leak`,
           })
           .end()
         return
@@ -72,12 +77,14 @@ describe('browser preview network policy', () => {
       }
       res.setHeader('Content-Type', 'text/html')
       res.end(
-        `<title>Local preview</title><style>body{font:18px system-ui;padding:32px;background:#fff;color:#111}img{width:80px;height:80px}</style><h1>Local preview</h1><p>Local image loads. External resources are blocked.</p><img id="own" src="/own.svg"><img id="remote" src="${otherOrigin}/remote.svg"><script>fetch('${otherOrigin}/fetch').catch(()=>{}); new WebSocket('${otherOrigin.replace('http:', 'ws:')}/socket');</script>`,
+        `<title>User server</title><link rel="stylesheet" href="${otherOrigin}/user-style.css"><style>body{font:18px system-ui;padding:32px;background:#fff;color:#111}img{width:80px;height:80px}</style><h1>User server</h1><p id="styled">Cross-origin stylesheet loaded.</p><img id="own" src="/own.svg">`,
       )
     })
     origin = await listen(local)
     resetUserData()
-    seedEmptyProject(process.cwd(), 'browser-network-policy')
+    seedEmptyProject(process.cwd(), 'browser-network-policy', {
+      webAllowedOrigins: ['http://127.0.0.1:*'],
+    })
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await $('.titlebar-btn[aria-label="Open browser"]').click()
@@ -103,7 +110,7 @@ describe('browser preview network policy', () => {
     resetUserData()
   })
 
-  it('blocks data URL embeds even without a supplied CSP, then allows only same-origin preview resources', async () => {
+  it('blocks opaque data embeds but preserves styles on user-entered web traffic', async () => {
     // Deliberately omit CSP first: the main-process guard must protect arbitrary data URLs.
     const html = `<title>Data preview</title><img src="${otherOrigin}/data-image"><script>fetch('${otherOrigin}/data-fetch').catch(()=>{});</script>`
     await navigate(`data:text/html,${encodeURIComponent(html)}`, 'Data preview')
@@ -113,25 +120,39 @@ describe('browser preview network policy', () => {
     })
     expect(externalRequests).toEqual([])
     await navigate(`data:text/html,${encodeURIComponent(securePreviewHtml(html))}`, 'Data preview')
-    await navigate(origin, 'Local preview')
+
+    const address = await $('.browser-tab-panel.is-active .browser-url-input')
+    await address.setValue(origin)
+    await browser.keys('Enter')
+    await browser.waitUntil(
+      async () =>
+        browser.execute(() => {
+          const guest = document.querySelector<Guest>('webview')
+          return guest?.getTitle() === 'User server'
+        }),
+      { timeout: 15_000, timeoutMsg: 'expected the user-entered server to load' },
+    )
     await browser.waitUntil(async () =>
       browser.execute(async () => {
         const guest = document.querySelector<Guest>('webview')
-        return guest?.executeJavaScript<boolean>('document.querySelector("#own").naturalWidth > 0')
+        return guest?.executeJavaScript<boolean>(
+          'document.querySelector("#own").naturalWidth > 0 && getComputedStyle(document.querySelector("#styled")).color === "rgb(143, 47, 65)"',
+        )
       }),
     )
     const result = await browser.execute(async () => {
       const guest = document.querySelector<Guest>('webview')
-      return guest?.executeJavaScript<{ own: number; remote: number }>(
-        '({own: document.querySelector("#own").naturalWidth, remote: document.querySelector("#remote").naturalWidth})',
+      return guest?.executeJavaScript<{ own: number; color: string; background: string }>(
+        '({own: document.querySelector("#own").naturalWidth, color: getComputedStyle(document.querySelector("#styled")).color, background: getComputedStyle(document.body).backgroundColor})',
       )
     })
     expect(result?.own).toBe(80)
-    expect(result?.remote).toBe(0)
+    expect(result?.color).toBe('rgb(143, 47, 65)')
+    expect(result?.background).toBe('rgb(255, 248, 237)')
     expect(localRequests).toContain('/own.svg')
-    expect(externalRequests).toEqual([])
+    expect(externalRequests).toContain('/user-style.css')
     // Native webview surfaces are blank in WebDriver's app screenshot on macOS.
-    // Capture the real guest compositor so the visible local/blocked image state is reviewable.
+    // Capture the guest compositor so the restored user stylesheet is reviewable.
     const screenshot = await browser.execute(async () => {
       const guest = document.querySelector<Guest>('webview')
       if (!guest) throw new Error('missing guest')
@@ -160,9 +181,10 @@ describe('browser preview network policy', () => {
       }
     }, `${origin}/redirect`)
     expect(redirectError).toMatch(/ERR_(FAILED|BLOCKED_BY_CLIENT)/)
-    expect(externalRequests).toEqual([])
+    expect(externalRequests).not.toContain('/redirect-leak')
   })
   it('blocks data previews from navigating or opening a network tab, while host navigation still works', async () => {
+    externalRequests.length = 0
     await navigate('data:text/html,<title>Navigation probe</title>', 'Navigation probe')
     const tabsBefore = await browser.execute(() => document.querySelectorAll('webview').length)
     await browser.execute(async (target) => {
@@ -176,7 +198,7 @@ describe('browser preview network policy', () => {
     expect(await browser.execute(() => document.querySelectorAll('webview').length)).toBe(
       tabsBefore,
     )
-    await navigate(origin, 'Local preview')
-    expect(externalRequests).toEqual([])
+    await navigate(origin, 'User server')
+    expect(externalRequests).toContain('/user-style.css')
   })
 })

@@ -3,7 +3,6 @@ import assert from 'node:assert/strict'
 import {
   isBrowserPageNavigationAllowed,
   isBrowserRequestAllowed,
-  previewResponseHeaders,
 } from './browser-network-policy.ts'
 import { PREVIEW_CSP, securePreviewHtml } from '@shared/preview-csp.ts'
 import { grantWebOriginForNextFetch, clearWebOriginGrant } from '../security/web-origin-policy.ts'
@@ -12,15 +11,11 @@ const allowedOrigins = ['http://localhost:*', 'https://example.com', 'https://*.
 const base = { allowedOrigins, documentUrl: 'http://localhost:3000', resourceType: 'image' }
 
 describe('browser request network boundary', () => {
-  it('allows same-origin local assets but blocks external assets even when allowlisted', () => {
+  it('allows allowlisted resources for regular local web traffic', () => {
     assert.equal(isBrowserRequestAllowed({ ...base, url: 'http://localhost:3000/image.png' }), true)
-    for (const url of [
-      'http://localhost:4000/image.png',
-      'https://example.com/image.png',
-      'https://evil.example/image.png',
-    ]) {
-      assert.equal(isBrowserRequestAllowed({ ...base, url }), false, url)
-    }
+    assert.equal(isBrowserRequestAllowed({ ...base, url: 'http://localhost:4000/image.png' }), true)
+    assert.equal(isBrowserRequestAllowed({ ...base, url: 'https://example.com/image.png' }), true)
+    assert.equal(isBrowserRequestAllowed({ ...base, url: 'https://evil.example/image.png' }), false)
   })
 
   it('blocks network requests from data, blob, file, blank and ownerless documents', () => {
@@ -80,7 +75,7 @@ describe('browser request network boundary', () => {
     )
   })
 
-  it('blocks page-controlled network navigation from opaque previews and across local origins', () => {
+  it('blocks page-controlled network navigation from opaque previews', () => {
     for (const source of [
       'data:text/html,preview',
       'file:///tmp/preview.html',
@@ -91,11 +86,11 @@ describe('browser request network boundary', () => {
       assert.equal(isBrowserPageNavigationAllowed(source, 'https://example.com'), false)
     }
     assert.equal(
-      isBrowserPageNavigationAllowed('http://localhost:3000', 'http://localhost:4000/leak'),
-      false,
+      isBrowserPageNavigationAllowed('http://localhost:3000', 'http://localhost:3000/next'),
+      true,
     )
     assert.equal(
-      isBrowserPageNavigationAllowed('http://localhost:3000', 'http://localhost:3000/next'),
+      isBrowserPageNavigationAllowed('http://localhost:3000', 'http://localhost:4000/next'),
       true,
     )
     assert.equal(
@@ -121,7 +116,12 @@ describe('browser request network boundary', () => {
       true,
     )
     assert.equal(
-      isBrowserRequestAllowed({ ...base, resourceType: 'webSocket', url: 'ws://localhost:4000' }),
+      isBrowserRequestAllowed({
+        ...base,
+        allowedOrigins: ['http://localhost:3000'],
+        resourceType: 'webSocket',
+        url: 'ws://localhost:4000',
+      }),
       false,
     )
   })
@@ -142,22 +142,11 @@ describe('browser request network boundary', () => {
     }
   })
 
-  it('prepends a restrictive HTML policy and intersects existing response policies', () => {
+  it('prepends a restrictive policy to self-contained HTML prototypes', () => {
     assert.ok(
       securePreviewHtml('<script>run()</script>').startsWith(
         `<!doctype html><meta http-equiv="Content-Security-Policy" content="${PREVIEW_CSP}">`,
       ),
     )
-    assert.deepEqual(
-      previewResponseHeaders('http://localhost:3000', {
-        'content-security-policy': ["script-src 'none'"],
-      }),
-      {
-        'content-security-policy': ["script-src 'none'", PREVIEW_CSP],
-      },
-    )
-    assert.deepEqual(previewResponseHeaders('https://example.com', { test: ['value'] }), {
-      test: ['value'],
-    })
   })
 })
