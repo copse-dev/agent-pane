@@ -111,6 +111,11 @@ can; when the dialog itself must flex, use `.foo-dialog[open] { display: flex; }
 
 ## UI kit primitives (buttons, fields, action rows)
 
+Background task rows use a native disclosure for failure reasons and execution details.
+Keep long error text inside the disclosure with `overflow-wrap: anywhere`; keep Resume
+inside those details so its reason is visible before the action. Cancellation remains
+an independently labelled row action.
+
 When building dialogs, settings forms, or labelled controls, prefer the shared kit in
 [`src/renderer/ui/`](../src/renderer/ui/) (`uiActions`, `uiField`) and the styles in
 [`ui.css`](../src/renderer/styles/global/ui.css) (including `.ui-btn*`). Buttons are **CSS

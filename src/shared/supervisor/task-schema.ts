@@ -59,7 +59,7 @@ export const taskStateSchema = z.enum(TASK_STATES)
 export const taskProvenanceSchema = z.enum(TASK_PROVENANCE)
 export const taskAuditActionSchema = z.enum(TASK_AUDIT_ACTIONS)
 
-/** Wake / start trigger. Cron is accepted in the schema; arming is P4+. */
+/** Wake / start trigger. Cron execution also requires the host's feature gate. */
 export const taskTriggerSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('immediate') }),
   z.object({ kind: z.literal('wake_at'), wakeAt: z.number().int() }),
@@ -69,11 +69,13 @@ export const taskTriggerSchema = z.discriminatedUnion('kind', [
 export type TaskTrigger = z.infer<typeof taskTriggerSchema>
 
 /**
- * Permission context captured at enqueue/schedule time. P1 keeps this typed but
- * opaque enough for fixtures; P2/P3 own wake-time fail-closed semantics.
+ * Permission context captured at enqueue/schedule time. The supervisor enforces
+ * expiry and scheduling consent; consumers recheck execution identity and policy
+ * before dispatching through the ordinary tool permission gate.
  */
 export const permissionSnapshotSchema = z.object({
   capturedAt: z.number().int(),
+  expiresAt: z.number().int().optional(),
   autoRunSandboxCommands: z.boolean(),
   projectSandboxEnabled: z.boolean(),
   executionRoot: z.string().min(1).optional(),
@@ -92,10 +94,17 @@ export const taskResultRefSchema = z.object({
 export type TaskResultRef = z.infer<typeof taskResultRefSchema>
 
 export const taskResourceBudgetSchema = z.object({
-  maxDurationMs: z.number().int().positive().optional(),
+  maxDurationMs: z.number().int().positive().max(2_147_000_000).optional(),
   maxAttempts: z.number().int().positive().optional(),
 })
 export type TaskResourceBudget = z.infer<typeof taskResourceBudgetSchema>
+
+/** Retries are opt-in: a handler must be safe to repeat after a reported failure. */
+export const taskRetryPolicySchema = z.object({
+  initialDelayMs: z.number().int().positive(),
+  maxDelayMs: z.number().int().positive(),
+})
+export type TaskRetryPolicy = z.infer<typeof taskRetryPolicySchema>
 
 /** Durable task pointer under `tasks/<taskId>/meta.json`. */
 export const supervisedTaskMetaSchema = z.object({
@@ -120,6 +129,13 @@ export const supervisedTaskMetaSchema = z.object({
   resourceBudget: taskResourceBudgetSchema.optional(),
   attempt: z.number().int().nonnegative(),
   maxAttempts: z.number().int().positive(),
+  retryPolicy: taskRetryPolicySchema.optional(),
+  /** Absolute retry deadline; never replaces the original event/cron trigger. */
+  retryAt: z.number().int().optional(),
+  /** Last armed cron occurrence, retained across restart and clock changes. */
+  nextWakeAt: z.number().int().optional(),
+  /** Only handlers with idempotent recovery may opt into automatic crash replay. */
+  restartPolicy: z.enum(['block', 'retry']).optional(),
   lastError: z.string().optional(),
   resultRef: taskResultRefSchema.optional(),
   /** Integrity hash when the payload will authorize later tool use. */

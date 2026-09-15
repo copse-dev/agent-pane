@@ -930,6 +930,16 @@ export interface ApiClient {
   supervisor: {
     list(projectId: string): Promise<{ tasks: SupervisedTaskSummary[] }>
     cancel(projectId: string, taskId: string): Promise<{ task: SupervisedTaskSummary | null }>
+    get(
+      projectId: string,
+      threadId: string,
+      taskId: string,
+    ): Promise<{ task: SupervisedTaskSummary | null }>
+    resume(
+      projectId: string,
+      threadId: string,
+      taskId: string,
+    ): Promise<{ task: SupervisedTaskSummary | null }>
     onChanged(callback: (projectId: string) => void): () => void
   }
   /** Linked checkouts of the project's repository, listed and managed in Settings → Sources. */

@@ -72,6 +72,7 @@
       "required": ["capturedAt", "autoRunSandboxCommands", "projectSandboxEnabled"],
       "properties": {
         "capturedAt": { "type": "integer" },
+        "expiresAt": { "type": "integer" },
         "autoRunSandboxCommands": { "type": "boolean" },
         "projectSandboxEnabled": { "type": "boolean" },
         "executionRoot": { "type": "string", "minLength": 1 },
@@ -95,8 +96,17 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "maxDurationMs": { "type": "integer", "minimum": 1 },
+        "maxDurationMs": { "type": "integer", "minimum": 1, "maximum": 2147000000 },
         "maxAttempts": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "taskRetryPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["initialDelayMs", "maxDelayMs"],
+      "properties": {
+        "initialDelayMs": { "type": "integer", "minimum": 1 },
+        "maxDelayMs": { "type": "integer", "minimum": 1 }
       }
     },
     "supervisedTaskMeta": {
@@ -138,6 +148,10 @@
         "resourceBudget": { "$ref": "#/$defs/taskResourceBudget" },
         "attempt": { "type": "integer", "minimum": 0 },
         "maxAttempts": { "type": "integer", "minimum": 1 },
+        "retryPolicy": { "$ref": "#/$defs/taskRetryPolicy" },
+        "retryAt": { "type": "integer" },
+        "nextWakeAt": { "type": "integer" },
+        "restartPolicy": { "type": "string", "enum": ["block", "retry"] },
         "lastError": { "type": "string" },
         "resultRef": { "$ref": "#/$defs/taskResultRef" },
         "contentHash": { "type": "string", "minLength": 1 },

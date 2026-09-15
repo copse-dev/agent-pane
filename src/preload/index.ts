@@ -1184,6 +1184,10 @@ const api: ApiClient = {
     list: (projectId: string) => ipcRenderer.invoke('supervisor:list', projectId),
     cancel: (projectId: string, taskId: string) =>
       ipcRenderer.invoke('supervisor:cancel', projectId, taskId),
+    get: (projectId: string, threadId: string, taskId: string) =>
+      ipcRenderer.invoke('supervisor:get', projectId, threadId, taskId),
+    resume: (projectId: string, threadId: string, taskId: string) =>
+      ipcRenderer.invoke('supervisor:resume', projectId, threadId, taskId),
     onChanged: (callback: (projectId: string) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, projectId: string): void => {
         callback(projectId)

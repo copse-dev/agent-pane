@@ -14,8 +14,8 @@ import {
  * Rules (exit-gate coverage in reconcile.test.ts):
  * 1. Terminal states are unchanged.
  * 2. `running` + missing/dead `processHandleId` for shell handlers → `failed`.
- * 3. `running` agent/non-shell without a live handle → `waiting` (wake_at future)
- *    or `queued` (ready to resume).
+ * 3. Other interrupted execution blocks for inspection. An explicit idempotent
+ *    restart policy instead rearms it as `waiting` (future wake) or `queued`.
  * 4. `waiting` + `wake_at` + `wakeAt <= now` → eligible wake id (no auto-start).
  * 5. `blocked` stays blocked.
  * 6. Empty input ⇒ `hasActiveWork: false` (inert when unused).
@@ -114,6 +114,8 @@ function omitProcessHandle(task: SupervisedTaskMeta): SupervisedTaskMeta {
 
 function isWakeEligible(task: SupervisedTaskMeta, now: number): boolean {
   if (task.state !== 'waiting' && task.state !== 'queued') return false
+  if (task.retryAt !== undefined) return task.retryAt <= now
+  if (task.state === 'queued') return true
   if (task.trigger.kind === 'immediate') return true
   if (task.trigger.kind === 'wake_at') return task.trigger.wakeAt <= now
   return false
@@ -130,7 +132,7 @@ export function reconcileSupervisedTasks(input: ReconcileInput): ReconcileResult
 
   const byId = new Map<string, SupervisedTaskMeta>()
   for (const task of tasks) {
-    byId.set(task.taskId, task)
+    byId.set(`${task.projectId}\0${task.taskId}`, task)
   }
 
   for (const task of tasks) {
@@ -147,7 +149,21 @@ export function reconcileSupervisedTasks(input: ReconcileInput): ReconcileResult
             clearProcessHandle: true,
           })
           patches.push(lost)
-          byId.set(task.taskId, lost.next)
+          byId.set(`${task.projectId}\0${task.taskId}`, lost.next)
+          continue
+        }
+        if (task.restartPolicy !== 'retry') {
+          const blocked = patchTask(
+            task,
+            'blocked',
+            now,
+            'Execution interrupted by restart; inspect before resuming',
+            {
+              lastError: 'Execution interrupted by restart; inspect before resuming',
+            },
+          )
+          patches.push(blocked)
+          byId.set(`${task.projectId}\0${task.taskId}`, blocked.next)
           continue
         }
         // Agent-turn / deterministic jobs: demote to waiting/queued for P2 resume.
@@ -160,7 +176,7 @@ export function reconcileSupervisedTasks(input: ReconcileInput): ReconcileResult
           'running task had no live process handle after restart',
         )
         patches.push(demoted)
-        byId.set(task.taskId, demoted.next)
+        byId.set(`${task.projectId}\0${task.taskId}`, demoted.next)
         continue
       }
     }
