@@ -4524,10 +4524,10 @@
     },
     {
       "modelId": "gpt-5-6-luna-low",
-      "value": 21.8,
+      "value": 21.5,
       "indexVersion": "v4.3",
-      "source": "Artificial Analysis API (index v4.3), model 'gpt-5-6-luna-low', fetched 2026-09-11",
-      "asOf": "2026-09-11"
+      "source": "Artificial Analysis API (index v4.3), model 'gpt-5-6-luna-low', fetched 2026-09-15",
+      "asOf": "2026-09-15"
     },
     {
       "modelId": "claude-fable-5-1-low",
@@ -4671,10 +4671,10 @@
     },
     {
       "modelId": "moonshotai/kimi-k2.6",
-      "value": 31.3,
+      "value": 27.5,
       "indexVersion": "v4.3",
-      "source": "Artificial Analysis API (index v4.3), model 'kimi-k2-6', fetched 2026-09-11",
-      "asOf": "2026-09-11",
+      "source": "Artificial Analysis API (index v4.3), model 'kimi-k2-6', fetched 2026-09-15",
+      "asOf": "2026-09-15",
       "aliases": ["Kimi K2.6", "moonshotai/kimi-k2-6", "moonshot/kimi-k2.6", "kimi-k2.6"]
     },
     {
@@ -5072,8 +5072,8 @@
       "modelId": "mistralai/mistral-small-24b",
       "value": 6.7,
       "indexVersion": "v4.3",
-      "source": "Artificial Analysis API (index v4.3), model 'mistral-small-3', fetched 2026-09-11",
-      "asOf": "2026-09-11",
+      "source": "Artificial Analysis API (index v4.3), model 'mistral-small-3', fetched 2026-09-15",
+      "asOf": "2026-09-15",
       "aliases": ["mistral-small-3", "mistral-small-24b", "mistral-small-3-1", "Mistral Small 24B"]
     },
     {
@@ -5840,10 +5840,10 @@
     },
     {
       "modelId": "kimi-k3-low",
-      "value": 34.5,
+      "value": 30.5,
       "indexVersion": "v4.3",
-      "source": "Artificial Analysis API (index v4.3), model 'kimi-k3-low', fetched 2026-09-11",
-      "asOf": "2026-09-11"
+      "source": "Artificial Analysis API (index v4.3), model 'kimi-k3-low', fetched 2026-09-15",
+      "asOf": "2026-09-15"
     },
     {
       "modelId": "palm-2",
@@ -5959,10 +5959,10 @@
     },
     {
       "modelId": "gpt-5-6-luna-medium",
-      "value": 25.8,
+      "value": 25.5,
       "indexVersion": "v4.3",
-      "source": "Artificial Analysis API (index v4.3), model 'gpt-5-6-luna-medium', fetched 2026-09-11",
-      "asOf": "2026-09-11"
+      "source": "Artificial Analysis API (index v4.3), model 'gpt-5-6-luna-medium', fetched 2026-09-15",
+      "asOf": "2026-09-15"
     },
     {
       "modelId": "qwen3-1.7b-instruct-reasoning",
@@ -6998,10 +6998,10 @@
     },
     {
       "modelId": "agnes-2-5-pro-alpha",
-      "value": 26.8,
+      "value": 27.8,
       "indexVersion": "v4.3",
-      "source": "Artificial Analysis API (index v4.3), model 'agnes-2-5-pro-alpha', fetched 2026-09-11",
-      "asOf": "2026-09-11"
+      "source": "Artificial Analysis API (index v4.3), model 'agnes-2-5-pro-alpha', fetched 2026-09-15",
+      "asOf": "2026-09-15"
     },
     {
       "modelId": "qwen3-8-2-4t-a95b",
@@ -7757,10 +7757,10 @@
     },
     {
       "modelId": "k2-horizon-375b-a23b",
-      "value": 33.9,
+      "value": 30.8,
       "indexVersion": "v4.3",
-      "source": "Artificial Analysis API (index v4.3), model 'k2-horizon-375b-a23b', fetched 2026-09-11",
-      "asOf": "2026-09-11"
+      "source": "Artificial Analysis API (index v4.3), model 'k2-horizon-375b-a23b', fetched 2026-09-15",
+      "asOf": "2026-09-15"
     },
     {
       "modelId": "gemini-3-1-pro-preview",
@@ -8431,10 +8431,10 @@
     },
     {
       "modelId": "ling-3-0-flash",
-      "value": 24.9,
+      "value": 20.6,
       "indexVersion": "v4.3",
-      "source": "Artificial Analysis API (index v4.3), model 'ling-3-0-flash', fetched 2026-09-11",
-      "asOf": "2026-09-11"
+      "source": "Artificial Analysis API (index v4.3), model 'ling-3-0-flash', fetched 2026-09-15",
+      "asOf": "2026-09-15"
     },
     {
       "modelId": "gpt-5-5-instant-05-26",
@@ -8691,10 +8691,10 @@
     },
     {
       "modelId": "zai-org/GLM-5.2",
-      "value": 38.6,
+      "value": 34,
       "indexVersion": "v4.3",
-      "source": "Artificial Analysis API (index v4.3), model 'glm-5-2', fetched 2026-09-11",
-      "asOf": "2026-09-11",
+      "source": "Artificial Analysis API (index v4.3), model 'glm-5-2', fetched 2026-09-15",
+      "asOf": "2026-09-15",
       "aliases": ["GLM-5.2", "glm-5.2", "zai/glm-5.2", "z-ai/glm-5.2", "glm-5-2"]
     },
     {
@@ -8840,10 +8840,10 @@
     },
     {
       "modelId": "ling-3-0-flash-vl",
-      "value": 24.8,
+      "value": 25,
       "indexVersion": "v4.3",
-      "source": "Artificial Analysis API (index v4.3), model 'ling-3-0-flash-vl', fetched 2026-09-11",
-      "asOf": "2026-09-11"
+      "source": "Artificial Analysis API (index v4.3), model 'ling-3-0-flash-vl', fetched 2026-09-15",
+      "asOf": "2026-09-15"
     },
     {
       "modelId": "deepseek-v4-flash-0420-non-reasoning",
@@ -8872,6 +8872,48 @@
       "indexVersion": "v4.3",
       "source": "Artificial Analysis API (index v4.3), model 'claude-sonnet-5-medium', fetched 2026-09-11",
       "asOf": "2026-09-11"
+    },
+    {
+      "modelId": "k2-7b-ph2",
+      "value": 21,
+      "indexVersion": "v4.3",
+      "source": "Artificial Analysis API (index v4.3), model 'k2-7b-ph2', fetched 2026-09-15",
+      "asOf": "2026-09-15"
+    },
+    {
+      "modelId": "k2-4b-ph1",
+      "value": 16.2,
+      "indexVersion": "v4.3",
+      "source": "Artificial Analysis API (index v4.3), model 'k2-4b-ph1', fetched 2026-09-15",
+      "asOf": "2026-09-15"
+    },
+    {
+      "modelId": "k2-mova-36b-mid5",
+      "value": 25.7,
+      "indexVersion": "v4.3",
+      "source": "Artificial Analysis API (index v4.3), model 'k2-mova-36b-mid5', fetched 2026-09-15",
+      "asOf": "2026-09-15"
+    },
+    {
+      "modelId": "agnes-3-0-flash",
+      "value": 35.5,
+      "indexVersion": "v4.3",
+      "source": "Artificial Analysis API (index v4.3), model 'agnes-3-0-flash', fetched 2026-09-15",
+      "asOf": "2026-09-15"
+    },
+    {
+      "modelId": "claude-sonnet-5-xhigh",
+      "value": 34.7,
+      "indexVersion": "v4.3",
+      "source": "Artificial Analysis API (index v4.3), model 'claude-sonnet-5-xhigh', fetched 2026-09-15",
+      "asOf": "2026-09-15"
+    },
+    {
+      "modelId": "k2-1b-final",
+      "value": 3,
+      "indexVersion": "v4.3",
+      "source": "Artificial Analysis API (index v4.3), model 'k2-1b-final', fetched 2026-09-15",
+      "asOf": "2026-09-15"
     }
   ],
   "wanted": [
