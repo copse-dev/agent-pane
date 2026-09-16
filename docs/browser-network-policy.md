@@ -22,6 +22,7 @@ Copse-owned static prototypes send a CSP from their preview server. It allows
 resources from the page's own origin, inline scripts/styles and embedded data/blob
 images, but denies external origins, frames, workers, plugins and base URL changes.
 A network approval does not relax this prototype CSP: bundle assets locally.
+The prototype's loopback IP aliases retain its same-origin navigation restriction.
 
 Ordinary HTTP(S) pages, including local development servers opened through the
 address bar or `browser_navigate`, retain only the CSP supplied by their server.

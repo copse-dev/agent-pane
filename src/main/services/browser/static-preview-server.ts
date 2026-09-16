@@ -2,6 +2,7 @@ import { createReadStream, watch, type FSWatcher } from 'node:fs'
 import { realpath, stat } from 'node:fs/promises'
 import { createServer, type Server } from 'node:http'
 import { extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { embeddedIpv4, normalizeHostname } from '@copse/llm/credential-url.ts'
 
 const LOOPBACK_HOST = '127.0.0.1'
 
@@ -80,7 +81,19 @@ const servers = new Map<string, PreviewServerEntry>()
 /** Whether this URL belongs to a Copse-owned static prototype server. */
 export function isStaticPreviewUrl(url: string): boolean {
   if (!URL.canParse(url)) return false
-  const origin = new URL(url).origin
+  const parsed = new URL(url)
+  const host = normalizeHostname(parsed.hostname)
+  // The listener binds 127.0.0.1 but advertises localhost. Opening its IP alias
+  // must not turn an untrusted prototype into an unrestricted ordinary page.
+  if (
+    host === 'localhost' ||
+    host.endsWith('.localhost') ||
+    host === LOOPBACK_HOST ||
+    embeddedIpv4(host) === LOOPBACK_HOST
+  ) {
+    parsed.hostname = 'localhost'
+  }
+  const origin = parsed.origin
   return [...servers.values()].some((entry) => new URL(entry.url).origin === origin)
 }
 
