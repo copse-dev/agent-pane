@@ -8,7 +8,6 @@ import { join } from 'node:path'
 import { securePreviewHtml } from '../../src/shared/preview-csp.ts'
 
 interface Guest extends HTMLElement {
-  src: string
   getTitle(): string
   loadURL(url: string): Promise<void>
   capturePage(): Promise<{ toDataURL(): string }>
@@ -23,10 +22,11 @@ async function listen(server: Server, host = '127.0.0.1'): Promise<string> {
 }
 
 async function navigate(url: string, title: string): Promise<void> {
-  await browser.execute((target) => {
+  await browser.execute(async (target) => {
     const guest = document.querySelector<Guest>('.browser-tab-panel.is-active webview')
     if (!guest) throw new Error('missing browser guest')
-    guest.src = target
+    // Consecutive previews may share a title; finish navigation before editing the address bar.
+    await guest.loadURL(target)
   }, url)
   await browser.waitUntil(
     async () =>
@@ -76,8 +76,9 @@ describe('browser network policy', () => {
         return
       }
       res.setHeader('Content-Type', 'text/html')
+      // Load the external stylesheet last so its body background overrides the base styles.
       res.end(
-        `<title>User server</title><link rel="stylesheet" href="${otherOrigin}/user-style.css"><style>body{font:18px system-ui;padding:32px;background:#fff;color:#111}img{width:80px;height:80px}</style><h1>User server</h1><p id="styled">Cross-origin stylesheet loaded.</p><img id="own" src="/own.svg">`,
+        `<title>User server</title><style>body{font:18px system-ui;padding:32px;background:#fff;color:#111}img{width:80px;height:80px}</style><link rel="stylesheet" href="${otherOrigin}/user-style.css"><h1>User server</h1><p id="styled">Cross-origin stylesheet loaded.</p><img id="own" src="/own.svg">`,
       )
     })
     origin = await listen(local)
