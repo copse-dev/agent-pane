@@ -14,7 +14,6 @@ import { browserAllowedOrigins } from '../services/browser/browser-network-grant
 import {
   isBrowserRequestAllowed,
   isBrowserPageNavigationAllowed,
-  previewResponseHeaders,
 } from '../services/browser/browser-network-policy.ts'
 
 const browserSessions = new Map<string, Electron.Session>()
@@ -56,9 +55,6 @@ function configureBrowserSession(sess: Electron.Session, scope: string): void {
       documents.set(details.webContentsId, details.url)
     }
     callback({ cancel: !allowed })
-  })
-  sess.webRequest.onHeadersReceived((details, callback) => {
-    callback({ responseHeaders: previewResponseHeaders(details.url, details.responseHeaders) })
   })
   sess.setPermissionRequestHandler((_wc, permission, callback) => {
     callback(!DENIED_BROWSER_PERMISSIONS.has(permission))

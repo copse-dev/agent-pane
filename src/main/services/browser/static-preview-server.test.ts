@@ -4,9 +4,14 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, it } from 'node:test'
 import {
+  isBrowserPageNavigationAllowed,
+  isBrowserRequestAllowed,
+} from './browser-network-policy.ts'
+import {
   flushPreviewStaleForTest,
   getStaticPreviewServer,
   handlePreviewWatchEvent,
+  isStaticPreviewUrl,
   setPreviewStaleSink,
   shutdownStaticPreviewServers,
   staticPreviewUrl,
@@ -38,6 +43,17 @@ describe('static browser preview server', () => {
     const second = await getStaticPreviewServer(root)
     assert.equal(second.url, first.url)
     assert.match(first.url, /^http:\/\/localhost:\d+\/$/)
+    assert.equal(isStaticPreviewUrl(first.url), true)
+    assert.equal(isStaticPreviewUrl('http://localhost:9/'), false)
+    assert.equal(
+      isBrowserRequestAllowed({
+        url: 'https://example.com/theme.css',
+        documentUrl: first.url,
+        resourceType: 'stylesheet',
+        allowedOrigins: ['https://example.com'],
+      }),
+      false,
+    )
 
     const page = await fetch(first.url)
     assert.equal(page.status, 200)
@@ -55,6 +71,33 @@ describe('static browser preview server', () => {
     const stylesheet = await fetch(new URL('assets/site.css', first.url))
     assert.equal(stylesheet.headers.get('content-type'), 'text/css; charset=utf-8')
     assert.equal(await stylesheet.text(), 'body { color: plum; }')
+  })
+
+  it('keeps prototype isolation when its listener is opened through an IP alias', async () => {
+    const root = await temporaryRoot('copse-static-preview-alias-')
+    await writeFile(join(root, 'index.html'), '<h1>Prototype</h1>')
+    const preview = await getStaticPreviewServer(root)
+    const alias = preview.url.replace('localhost', '127.0.0.1')
+    assert.equal(await (await fetch(alias)).text(), '<h1>Prototype</h1>')
+    for (const host of ['127.0.0.1', '[::ffff:127.0.0.1]', 'localhost.', 'preview.localhost']) {
+      const url = preview.url.replace('localhost', host)
+      assert.equal(isStaticPreviewUrl(url), true)
+      assert.equal(isBrowserPageNavigationAllowed(url, 'https://example.com/leak'), false)
+      assert.equal(isBrowserPageNavigationAllowed(url, new URL('next.html', url).href), true)
+      assert.equal(
+        isBrowserRequestAllowed({
+          documentUrl: url,
+          url: 'https://example.com/theme.css',
+          resourceType: 'stylesheet',
+          allowedOrigins: ['https://example.com'],
+        }),
+        false,
+      )
+    }
+    assert.equal(isStaticPreviewUrl(preview.url.replace('http:', 'https:')), false)
+    assert.equal(isStaticPreviewUrl(preview.url.replace('localhost', 'example.com')), false)
+    await shutdownStaticPreviewServers()
+    assert.equal(isStaticPreviewUrl(alias), false)
   })
 
   it('reports a preview stale for any file it served, not just the entry page', async () => {
