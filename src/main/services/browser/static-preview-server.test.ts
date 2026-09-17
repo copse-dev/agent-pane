@@ -51,6 +51,7 @@ describe('static browser preview server', () => {
         documentUrl: first.url,
         resourceType: 'stylesheet',
         allowedOrigins: ['https://example.com'],
+        originAccess: 'public-web',
       }),
       false,
     )
@@ -90,6 +91,7 @@ describe('static browser preview server', () => {
           url: 'https://example.com/theme.css',
           resourceType: 'stylesheet',
           allowedOrigins: ['https://example.com'],
+          originAccess: 'public-web',
         }),
         false,
       )

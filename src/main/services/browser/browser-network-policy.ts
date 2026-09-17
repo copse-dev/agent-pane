@@ -8,14 +8,17 @@ function isRestrictedPreview(url: string): boolean {
   return ['data:', 'file:', 'about:'].includes(parsed.protocol) || isStaticPreviewUrl(url)
 }
 
+export type BrowserOriginAccess = 'allowlisted' | 'public-web'
+
 /** Applied to every request, including redirects, nested frames and WebSockets. */
 export function isBrowserRequestAllowed(input: {
   url: string
   documentUrl: string
   resourceType: string
   allowedOrigins: readonly string[]
+  originAccess: BrowserOriginAccess
 }): boolean {
-  const { url, documentUrl, resourceType, allowedOrigins } = input
+  const { url, documentUrl, resourceType, allowedOrigins, originAccess } = input
   if (!URL.canParse(url)) return false
   const target = new URL(url)
   if (target.protocol === 'data:' || url === 'about:blank') return true
@@ -25,7 +28,9 @@ export function isBrowserRequestAllowed(input: {
   if (target.protocol === 'wss:') target.protocol = 'https:'
   try {
     parseFetchUrl(target.href)
-    if (!matchesWebOriginAllowlist(target, allowedOrigins)) return false
+    if (originAccess === 'allowlisted' && !matchesWebOriginAllowlist(target, allowedOrigins)) {
+      return false
+    }
   } catch {
     return false
   }
