@@ -55,6 +55,18 @@ describe('browser network policy', () => {
         res.end('body{background:#fff8ed}#styled{color:#8f2f41;font-weight:700}')
         return
       }
+      if (req.url === '/new-tab.css') {
+        res.setHeader('Content-Type', 'text/css')
+        res.end('body{font:20px system-ui;padding:40px;background:#eef7f4;color:#164f43}')
+        return
+      }
+      if (req.url === '/new-tab') {
+        res.setHeader('Content-Type', 'text/html')
+        res.end(
+          '<title>Fresh user tab</title><link rel="stylesheet" href="/new-tab.css"><h1 id="fresh">Fresh tab loaded</h1><p>Public web content is available in a new user-controlled tab.</p>',
+        )
+        return
+      }
       res.end('external resource')
     })
     otherOrigin = await listen(external)
@@ -63,7 +75,7 @@ describe('browser network policy', () => {
       if (req.url === '/redirect') {
         res
           .writeHead(302, {
-            Location: `${otherOrigin.replace('127.0.0.1', 'localhost')}/redirect-leak`,
+            Location: `${otherOrigin}/redirect-leak`,
           })
           .end()
         return
@@ -84,7 +96,7 @@ describe('browser network policy', () => {
     origin = await listen(local)
     resetUserData()
     seedEmptyProject(process.cwd(), 'browser-network-policy', {
-      webAllowedOrigins: ['http://127.0.0.1:*'],
+      webAllowedOrigins: [],
     })
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
@@ -170,19 +182,14 @@ describe('browser network policy', () => {
       Buffer.from(screenshot.split(',')[1] ?? '', 'base64'),
     )
 
-    // A server redirect gets a fresh allowlist check (no live external host needed).
-    const redirectError = await browser.execute(async (url) => {
+    // A redirect in the user-controlled browser follows ordinary public web traffic.
+    await browser.execute(async (url) => {
       const guest = document.querySelector<Guest>('webview')
       if (!guest) throw new Error('missing guest')
-      try {
-        await guest.loadURL(url)
-        return ''
-      } catch (error) {
-        return String(error)
-      }
+      await guest.loadURL(url)
     }, `${origin}/redirect`)
-    expect(redirectError).toMatch(/ERR_(FAILED|BLOCKED_BY_CLIENT)/)
-    expect(externalRequests).not.toContain('/redirect-leak')
+    await browser.waitUntil(() => externalRequests.includes('/redirect-leak'))
+    expect(externalRequests).toContain('/redirect-leak')
   })
   it('blocks data previews from navigating or opening a network tab, while host navigation still works', async () => {
     externalRequests.length = 0
@@ -201,5 +208,53 @@ describe('browser network policy', () => {
     )
     await navigate(origin, 'User server')
     expect(externalRequests).toContain('/user-style.css')
+  })
+
+  it('loads public web content in a newly opened user tab', async () => {
+    await $('.browser-tabs-new-btn').click()
+    await browser.waitUntil(
+      async () =>
+        browser.execute(() => document.querySelectorAll('.browser-tabs-tab').length === 2),
+      { timeoutMsg: 'expected a second browser tab' },
+    )
+
+    const address = await $('.browser-tab-panel.is-active .browser-url-input')
+    await address.setValue(`${otherOrigin}/new-tab`)
+    await browser.keys('Enter')
+    await browser.waitUntil(
+      async () =>
+        browser.execute(() => {
+          const guest = document.querySelector<Guest>('.browser-tab-panel.is-active webview')
+          return guest?.getTitle() === 'Fresh user tab'
+        }),
+      { timeout: 15_000, timeoutMsg: 'expected the new user tab to load' },
+    )
+
+    const result = await browser.execute(async () => {
+      const guest = document.querySelector<Guest>('.browser-tab-panel.is-active webview')
+      return guest?.executeJavaScript<{ heading: string; background: string }>(
+        '({heading: document.querySelector("#fresh").textContent, background: getComputedStyle(document.body).backgroundColor})',
+      )
+    })
+    expect(result?.heading).toBe('Fresh tab loaded')
+    expect(result?.background).toBe('rgb(238, 247, 244)')
+    expect(externalRequests).toContain('/new-tab')
+    expect(externalRequests).toContain('/new-tab.css')
+
+    const screenshot = await browser.execute(async () => {
+      const guest = document.querySelector<Guest>('.browser-tab-panel.is-active webview')
+      if (!guest) throw new Error('missing guest')
+      guest.style.width = '720px'
+      guest.style.height = '480px'
+      await guest.executeJavaScript(
+        'new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))',
+      )
+      return (await guest.capturePage()).toDataURL()
+    })
+    mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
+    writeFileSync(
+      join(E2E_SCREENSHOT_DIR, 'browser-user-new-tab.png'),
+      Buffer.from(screenshot.split(',')[1] ?? '', 'base64'),
+    )
   })
 })

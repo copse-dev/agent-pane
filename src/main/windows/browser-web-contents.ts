@@ -5,6 +5,7 @@ import {
   BROWSER_SESSION_PARTITION,
   browserSessionPartition,
   isBrowserSessionPartition,
+  isVisibleBrowserSessionPartition,
 } from '@shared/browser-session.ts'
 import { getMainWindow } from './create-main-window.ts'
 import { browserGuestWindowOpen } from './web-contents-lockdown.ts'
@@ -14,6 +15,7 @@ import { browserAllowedOrigins } from '../services/browser/browser-network-grant
 import {
   isBrowserRequestAllowed,
   isBrowserPageNavigationAllowed,
+  type BrowserOriginAccess,
 } from '../services/browser/browser-network-policy.ts'
 
 const browserSessions = new Map<string, Electron.Session>()
@@ -40,7 +42,11 @@ const DENIED_BROWSER_PERMISSIONS = new Set<string>([
   'clipboard-read',
 ])
 
-function configureBrowserSession(sess: Electron.Session, scope: string): void {
+function configureBrowserSession(
+  sess: Electron.Session,
+  scope: string,
+  originAccess: BrowserOriginAccess,
+): void {
   sess.webRequest.onBeforeRequest((details, callback) => {
     const documentUrl =
       details.webContentsId === undefined ? '' : (documents.get(details.webContentsId) ?? '')
@@ -50,6 +56,7 @@ function configureBrowserSession(sess: Electron.Session, scope: string): void {
       documentUrl: frameUrl.startsWith('data:') ? frameUrl : documentUrl,
       resourceType: details.resourceType,
       allowedOrigins: browserAllowedOrigins(scope),
+      originAccess,
     })
     if (allowed && details.resourceType === 'mainFrame' && details.webContentsId !== undefined) {
       documents.set(details.webContentsId, details.url)
@@ -69,7 +76,13 @@ export function getBrowserSessionForPartition(partition: string): Electron.Sessi
   if (!sess) {
     sess = session.fromPartition(partition)
     const marker = partition.indexOf(':thread:')
-    configureBrowserSession(sess, marker < 0 ? '' : partition.slice(marker + 1))
+    // The visible pane is driven by the user and behaves like a regular browser.
+    // Agent automation keeps its separate profile and explicit origin grants.
+    configureBrowserSession(
+      sess,
+      marker < 0 ? '' : partition.slice(marker + 1),
+      isVisibleBrowserSessionPartition(partition) ? 'public-web' : 'allowlisted',
+    )
     browserSessions.set(partition, sess)
   }
   return sess

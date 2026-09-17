@@ -3,12 +3,19 @@ import assert from 'node:assert/strict'
 import {
   isBrowserPageNavigationAllowed,
   isBrowserRequestAllowed,
+  type BrowserOriginAccess,
 } from './browser-network-policy.ts'
 import { PREVIEW_CSP, securePreviewHtml } from '@shared/preview-csp.ts'
 import { grantWebOriginForNextFetch, clearWebOriginGrant } from '../security/web-origin-policy.ts'
 
 const allowedOrigins = ['http://localhost:*', 'https://example.com', 'https://*.assets.example.com']
-const base = { allowedOrigins, documentUrl: 'http://localhost:3000', resourceType: 'image' }
+const originAccess: BrowserOriginAccess = 'allowlisted'
+const base = {
+  allowedOrigins,
+  documentUrl: 'http://localhost:3000',
+  resourceType: 'image',
+  originAccess,
+}
 
 describe('browser request network boundary', () => {
   it('allows allowlisted resources for regular local web traffic', () => {
@@ -16,6 +23,45 @@ describe('browser request network boundary', () => {
     assert.equal(isBrowserRequestAllowed({ ...base, url: 'http://localhost:4000/image.png' }), true)
     assert.equal(isBrowserRequestAllowed({ ...base, url: 'https://example.com/image.png' }), true)
     assert.equal(isBrowserRequestAllowed({ ...base, url: 'https://evil.example/image.png' }), false)
+  })
+
+  it('allows public documents and cross-origin assets in the visible user browser', () => {
+    const publicWebOriginAccess: BrowserOriginAccess = 'public-web'
+    const visible = { ...base, allowedOrigins: [], originAccess: publicWebOriginAccess }
+    assert.equal(
+      isBrowserRequestAllowed({
+        ...visible,
+        resourceType: 'mainFrame',
+        url: 'https://github.com/copse-dev/agent-pane',
+      }),
+      true,
+    )
+    assert.equal(
+      isBrowserRequestAllowed({
+        ...visible,
+        documentUrl: 'https://github.com/copse-dev/agent-pane',
+        resourceType: 'stylesheet',
+        url: 'https://github.githubassets.com/assets/github.css',
+      }),
+      true,
+    )
+    assert.equal(
+      isBrowserRequestAllowed({
+        ...visible,
+        resourceType: 'mainFrame',
+        url: 'http://192.168.1.20/admin',
+      }),
+      false,
+    )
+    assert.equal(
+      isBrowserRequestAllowed({
+        ...visible,
+        documentUrl: '',
+        resourceType: 'script',
+        url: 'https://github.githubassets.com/worker.js',
+      }),
+      false,
+    )
   })
 
   it('blocks network requests from data, blob, file, blank and ownerless documents', () => {
