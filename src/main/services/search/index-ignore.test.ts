@@ -13,6 +13,8 @@ describe('index-ignore', () => {
       'vendor/gortex/gortex',
       '.git/objects/ab/cdef',
       '.claude/worktrees/cool-kilby/src/x.ts',
+      '.portable/projects/another-project/src/index.ts',
+      '.portable/data/copse/user-data/config.json',
     ]) {
       assert.equal(isIgnoredWorkspacePath(path), true, `${path} should be ignored`)
     }
@@ -39,7 +41,7 @@ describe('index-ignore', () => {
     // gortex does not honor .gitignore, so these must be listed explicitly or a
     // dev checkout's ~3 GB of node_modules/dist/worktrees gets indexed.
     const exclusions: readonly string[] = GORTEX_EXCLUDE_PATTERNS
-    for (const dir of ['node_modules/', 'dist/', 'vendor/', '.git/', '.claude/']) {
+    for (const dir of ['node_modules/', 'dist/', 'vendor/', '.git/', '.claude/', '.portable/']) {
       assert.ok(exclusions.includes(dir), `expected gortex excludes to contain ${dir}`)
     }
   })

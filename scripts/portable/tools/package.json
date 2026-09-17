@@ -1,0 +1,11 @@
+{
+  "name": "copse-portable-tools",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "@agentclientprotocol/claude-agent-acp": "0.76.0",
+    "@agentclientprotocol/codex-acp": "1.11.0",
+    "@openai/codex": "0.154.0",
+    "corepack": "0.36.0"
+  }
+}

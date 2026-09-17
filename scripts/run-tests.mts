@@ -244,6 +244,12 @@ const UNIT_TAP_LOG = 'unit-tests.tap'
 const TEST_FILE_CONCURRENCY = 4
 
 function runTests(testFiles: string[]): void {
+  // Tests create their own profiles (often under a fake home). Inheriting a
+  // developer's profile overrides can both invalidate those fixtures and write
+  // to real user state when running from the portable development shell.
+  const testEnv = { ...process.env }
+  delete testEnv['COPSE_DIR']
+  delete testEnv['CLAUDE_CONFIG_DIR']
   // Unfiltered: hand node the glob so it picks up every emitted test entry.
   // Filtered: hand it the exact entries selected above.
   const specs =
@@ -251,7 +257,7 @@ function runTests(testFiles: string[]): void {
   const result = spawnSync(
     'node',
     ['--test', `--test-concurrency=${String(TEST_FILE_CONCURRENCY)}`, ...reporterArgs(), ...specs],
-    { stdio: 'inherit' },
+    { stdio: 'inherit', env: testEnv },
   )
   process.exit(result.status ?? 1)
 }
