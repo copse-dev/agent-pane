@@ -65484,11 +65484,12 @@ function bindWorkspaceLinkClicks(root, store2, api2) {
     if (!href) return;
     const parsed2 = workspaceLinkTargetFromHref(href);
     if (!parsed2) return;
+    const owner = getActiveThreadOwner(store2);
+    const resolutionCandidate = owner && href.startsWith("/") ? `/${parsed2.candidate}` : parsed2.candidate;
     event.preventDefault();
     event.stopPropagation();
-    const owner = getActiveThreadOwner(store2);
-    void api2.index.resolveFileReferences([parsed2.candidate], owner ?? void 0).then((resolved3) => {
-      const match = resolved3.find((entry) => entry.candidate === parsed2.candidate);
+    void api2.index.resolveFileReferences([resolutionCandidate], owner ?? void 0).then((resolved3) => {
+      const match = resolved3.find((entry) => entry.candidate === resolutionCandidate);
       if (!match) {
         showErrorToast(`Could not find ${parsed2.candidate} in the workspace`, "not in index");
         return;
