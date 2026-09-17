@@ -1038,10 +1038,10 @@ export async function runAgent(
       }
       await visualizationDispatch
     }
-    // Tool calls the agent opened but never settled. An interrupted turn leaves
-    // these mid-flight and the host is the only party that knows they were
-    // interrupted, so it settles them itself rather than persisting a spinner
-    // (or the agent's own bogus terminal update) into history (#2332).
+    // Tool calls the agent opened but never settled. An interrupted or malformed
+    // successful turn leaves these mid-flight, and the host is the only party
+    // that knows the turn is over. It settles them itself rather than persisting
+    // a spinner (or the agent's own bogus terminal update) into history (#2332).
     const toolCalls = createAcpToolCallTracker()
     const settleOpenToolCalls = (): void => {
       // sendChunk, not acpChunkSink: these are the host's own bookkeeping, so
@@ -1162,6 +1162,13 @@ export async function runAgent(
       }
 
       await finishInlineVisualizations()
+
+      // A stop response is terminal for every foreground tool call the agent
+      // opened during this turn. If one never sent a final result/update, leave
+      // an explicit interrupted verdict instead of persisting a spinner after
+      // the answer and terminal `done` have already landed. New background
+      // calls announced between turns still flow through the session pump.
+      settleOpenToolCalls()
 
       if (endedAfterTools && !recoverySucceeded) {
         sendChunk({ type: 'text', text: `\n\n${ACP_UNFINISHED_TURN_FALLBACK}` })
