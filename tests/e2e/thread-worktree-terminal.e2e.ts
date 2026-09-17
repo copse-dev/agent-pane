@@ -34,6 +34,7 @@ async function gitChangePaths(): Promise<string[]> {
 describe('isolated thread terminal cwd', () => {
   let projectRoot = ''
   let worktreeRoot = ''
+  let staleWorktreeRoot = ''
 
   before(async function () {
     this.timeout(120_000)
@@ -52,6 +53,7 @@ describe('isolated thread terminal cwd', () => {
     git(projectRoot, ['commit', '-qm', 'seed'])
 
     worktreeRoot = join(worktreesRoot, PROJECT_ID, THREAD_ID)
+    staleWorktreeRoot = join(worktreesRoot, PROJECT_ID, 'retired-thread')
     mkdirSync(dirname(worktreeRoot), { recursive: true })
     const baseBranch = git(projectRoot, ['branch', '--show-current'])
     const baseCommit = git(projectRoot, ['rev-parse', 'HEAD'])
@@ -86,7 +88,7 @@ describe('isolated thread terminal cwd', () => {
             {
               id: 'worktree-link-message',
               role: 'assistant',
-              content: 'Added [the worktree file](/worktree-only.md) for review.',
+              content: `Added [the worktree file](${join(staleWorktreeRoot, 'worktree-only.md')}) for review.`,
               createdAt: now,
             },
           ],
@@ -215,7 +217,7 @@ describe('isolated thread terminal cwd', () => {
     this.timeout(60_000)
     const link = await $('.message-text a[data-workspace-link]')
     await link.waitForDisplayed({ timeout: 30_000 })
-    await expect(link).toHaveAttribute('href', '/worktree-only.md')
+    await expect(link).toHaveAttribute('href', join(staleWorktreeRoot, 'worktree-only.md'))
     await link.click()
 
     const preview = await $('.markdown-file-preview')

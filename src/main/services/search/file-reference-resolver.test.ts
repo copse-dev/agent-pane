@@ -67,6 +67,64 @@ describe('file-reference-resolver', () => {
     assert.deepEqual(await resolveFileReferences(['/workspace/README.md', '../README.md']), [])
   })
 
+  it('resolves root-relative workspace Markdown links inside the active root', async () => {
+    assert.deepEqual(
+      await resolveFileReferences(['/README.md'], tempRoot, {
+        projectRoot: tempRoot,
+        managedProjectRoot: join(tempRoot, '..', 'worktrees', 'project-1'),
+        projectRelativePath: '',
+      }),
+      [{ candidate: '/README.md', path: 'README.md', kind: 'file' }],
+    )
+  })
+
+  it('rebases absolute links from an earlier managed worktree', async () => {
+    await writeFile(join(tempRoot, 'thread-only.md'), '# current checkout\n', 'utf-8')
+    const managedProjectRoot = join(tempRoot, '..', 'worktrees', 'project-1')
+    const staleAbsolutePath = join(
+      managedProjectRoot,
+      'retired-thread',
+      'packages',
+      'app',
+      'thread-only.md',
+    )
+
+    assert.deepEqual(
+      await resolveFileReferences([staleAbsolutePath], tempRoot, {
+        projectRoot: tempRoot,
+        managedProjectRoot,
+        projectRelativePath: join('packages', 'app'),
+      }),
+      [{ candidate: staleAbsolutePath, path: 'thread-only.md', kind: 'file' }],
+    )
+  })
+
+  it('does not rebase absolute links from another managed project', async () => {
+    const worktreesRoot = join(tempRoot, '..', 'worktrees')
+    const foreignPath = join(worktreesRoot, 'project-2', 'retired-thread', 'README.md')
+    assert.deepEqual(
+      await resolveFileReferences([foreignPath], tempRoot, {
+        projectRoot: tempRoot,
+        managedProjectRoot: join(worktreesRoot, 'project-1'),
+        projectRelativePath: '',
+      }),
+      [],
+    )
+  })
+
+  it('does not rebase a managed-worktree path that escapes its source execution root', async () => {
+    const managedProjectRoot = join(tempRoot, '..', 'worktrees', 'project-1')
+    const escapedPath = join(managedProjectRoot, 'retired-thread', '..', '..', 'README.md')
+    assert.deepEqual(
+      await resolveFileReferences([escapedPath], tempRoot, {
+        projectRoot: tempRoot,
+        managedProjectRoot,
+        projectRelativePath: '',
+      }),
+      [],
+    )
+  })
+
   it('normalizes leading dot-slash exact paths', async () => {
     assert.deepEqual(await resolveFileReferences(['./scripts/build.mts']), [
       { candidate: './scripts/build.mts', path: 'scripts/build.mts', kind: 'file' },

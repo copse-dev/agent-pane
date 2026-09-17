@@ -3,7 +3,7 @@ import { app, BrowserWindow, dialog, ipcMain, shell, webContents, type WebConten
 import { mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
-import { basename, join, resolve } from 'node:path'
+import { basename, dirname, join, relative, resolve } from 'node:path'
 import { z } from 'zod'
 import { SPINE_SCHEMA_VERSION } from '@shared/threads/spine-schema.ts'
 import { runCommand } from '../services/exec/command-runner.ts'
@@ -63,6 +63,7 @@ import {
   mainWindowNavigationSchema,
 } from './ipc-guards.ts'
 import { resolveThreadExecutionContext } from '../services/thread-execution-context.ts'
+import { expectedThreadWorktreePath, repositoryLocation } from '../services/worktree-manager.ts'
 import { getIndex, whenFileIndexReady } from '../services/search/file-index.ts'
 import { resolveFileReferences } from '../services/search/file-reference-resolver.ts'
 import {
@@ -790,11 +791,30 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
         ]),
         [rawCandidates, rawOwner],
       )
-      const root = owner
-        ? (await resolveThreadExecutionContext(owner.projectId, owner.threadId)).root
-        : getWorkspaceRoot()
-      if (root) await whenFileIndexReady(root)
-      return await resolveFileReferences(candidates, root)
+      if (!owner) {
+        const root = getWorkspaceRoot()
+        if (root) await whenFileIndexReady(root)
+        return await resolveFileReferences(candidates, root)
+      }
+      const context = await resolveThreadExecutionContext(owner.projectId, owner.threadId)
+      const root = context.root
+      await whenFileIndexReady(root)
+
+      const currentWorktreePath = expectedThreadWorktreePath(owner.projectId, owner.threadId)
+      let projectRelativePath = relative(currentWorktreePath, context.root)
+      if (context.checkoutMode === 'shared') {
+        try {
+          ;({ projectRelativePath } = await repositoryLocation(context.projectRoot))
+        } catch {
+          // Non-Git projects still support root-relative links.
+          projectRelativePath = ''
+        }
+      }
+      return await resolveFileReferences(candidates, root, {
+        projectRoot: context.projectRoot,
+        managedProjectRoot: dirname(currentWorktreePath),
+        projectRelativePath,
+      })
     },
   )
 
