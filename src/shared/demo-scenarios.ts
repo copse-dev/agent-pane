@@ -1,3 +1,4 @@
+import type { ProfileVaultStatus } from './types/profile-vault.ts'
 import type { Project, Thread } from './types/index.ts'
 import type { AppleProjectState } from './types/apple-development.ts'
 import type { AcpAgentConfig } from './types/acp.ts'
@@ -22,6 +23,8 @@ export interface DemoScenario {
   project: Project
   threads: Thread[]
   settings: Readonly<Record<string, unknown>>
+  /** Static native-vault state for browser demonstrations; never unlocks real credentials. */
+  profileVault?: ProfileVaultStatus
   /**
    * A recorded turn the demo can replay when its prompt is submitted. Scenarios
    * without one are static fixtures for visual tests; a scenario with one is a
@@ -894,6 +897,43 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       },
     ],
     vncDiscoveredPorts: [5900, 5901, 5902],
+  },
+  {
+    id: 'vault-setup',
+    label: 'Saved-secret encryption: migration pending',
+    project: project('demo-vault-project'),
+    settings: { onboardingCompleted: true, theme: 'dark', uiTintStrength: 'off' },
+    threads: [],
+    profileVault: {
+      state: 'disabled',
+      enabled: false,
+      available: true,
+      recovery: 'not-backed-up',
+      automatic: true,
+      migrationFailed: true,
+    },
+  },
+  {
+    id: 'vault-locked',
+    label: 'Saved-secret encryption: locked',
+    project: project('demo-vault-project'),
+    settings: { onboardingCompleted: true, theme: 'dark', uiTintStrength: 'off' },
+    threads: [],
+    profileVault: { state: 'locked', enabled: true, available: true, recovery: 'not-backed-up' },
+  },
+  {
+    id: 'vault-verified',
+    label: 'Saved-secret encryption: verified',
+    project: project('demo-vault-project'),
+    settings: { onboardingCompleted: true, theme: 'dark', uiTintStrength: 'off' },
+    threads: [],
+    profileVault: {
+      state: 'unlocked',
+      enabled: true,
+      available: true,
+      recovery: 'verified',
+      requireAuth: false,
+    },
   },
   {
     id: 'settings-footer',

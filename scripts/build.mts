@@ -1,7 +1,10 @@
+import { profileVaultSourceHash } from './lib/profile-vault-source.mts'
+import { createHash } from 'node:crypto'
 import * as esbuild from 'esbuild'
 import { execSync, spawnSync } from 'node:child_process'
 import {
   accessSync,
+  existsSync,
   cpSync,
   copyFileSync,
   mkdirSync,
@@ -406,4 +409,57 @@ if (isRelease) {
 // import time — is never reached on a default build.
 if (isServo) {
   await import('./build-tauri.mts')
+}
+
+// The independently signed helper is prepared once, not re-signed on each
+// Electron rebuild. Unsupported hosts/builds show encryption as unavailable.
+const vaultHelper = 'native/profile-vault/dist/CopseVault'
+if (existsSync(vaultHelper)) {
+  const expectedVaultBuild =
+    JSON.stringify({
+      version: 1,
+      sourceHash: profileVaultSourceHash(process.cwd()),
+    }) + '\n'
+  if (readFileSync('native/profile-vault/dist/build.json', 'utf8') !== expectedVaultBuild) {
+    if (isRelease)
+      throw new Error(
+        'The native vault helper is stale. Prepare and sign it before release packaging.',
+      )
+    console.warn('[build] Native vault helper is stale; omitting it from this development build.')
+    rmSync('dist/resources/profile-vault', { recursive: true, force: true })
+  } else {
+    mkdirSync('dist/resources/profile-vault', { recursive: true })
+    copyFileSync(vaultHelper, 'dist/resources/profile-vault/CopseVault')
+  }
+} else if (isRelease && process.platform === 'darwin') {
+  throw new Error(
+    'Release builds require the signed native helper. Run pnpm run prepare:vault with the product signing identity first.',
+  )
+}
+
+// Packaged macOS workers use a separate interpreter: the trusted app has its
+// RunAsNode fuse disabled. Binaries are verified before packaging signs them.
+if (process.platform === 'darwin') {
+  const version = readFileSync('.nvmrc', 'utf8').trim()
+  for (const arch of ['arm64', 'x64']) {
+    const source = `native/node-runtime/dist/${arch}`
+    if (!existsSync(`${source}/node`)) {
+      if (isRelease && arch === process.arch)
+        throw new Error('Prepare the packaged worker runtime with pnpm run prepare:node.')
+      continue
+    }
+    const expected =
+      JSON.stringify({
+        version,
+        arch,
+        binaryHash: createHash('sha256')
+          .update(readFileSync(`${source}/node`))
+          .digest('hex'),
+      }) + '\n'
+    if (readFileSync(`${source}/build.json`, 'utf8') !== expected)
+      throw new Error(
+        'The packaged worker runtime is stale or modified. Run pnpm run prepare:node.',
+      )
+    cpSync(source, `dist/resources/node/${arch}`, { recursive: true })
+  }
 }
