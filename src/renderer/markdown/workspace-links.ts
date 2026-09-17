@@ -27,15 +27,20 @@ export function bindWorkspaceLinkClicks(
     if (!href) return
     const parsed = workspaceLinkTargetFromHref(href)
     if (!parsed) return
+    const owner = getActiveThreadOwner(store)
+    // Preserve the leading slash across the IPC boundary. It distinguishes a
+    // root-relative Markdown target from the package parser's normalized
+    // candidate, and lets main recognize absolute paths emitted by agents.
+    const resolutionCandidate =
+      owner && href.startsWith('/') ? `/${parsed.candidate}` : parsed.candidate
 
     event.preventDefault()
     event.stopPropagation()
 
-    const owner = getActiveThreadOwner(store)
     void api.index
-      .resolveFileReferences([parsed.candidate], owner ?? undefined)
+      .resolveFileReferences([resolutionCandidate], owner ?? undefined)
       .then((resolved) => {
-        const match = resolved.find((entry) => entry.candidate === parsed.candidate)
+        const match = resolved.find((entry) => entry.candidate === resolutionCandidate)
         if (!match) {
           showErrorToast(`Could not find ${parsed.candidate} in the workspace`, 'not in index')
           return
