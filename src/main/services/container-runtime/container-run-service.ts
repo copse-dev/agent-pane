@@ -119,6 +119,7 @@ export class ContainerRunService {
   private readonly stopSignals = new Map<string, AbortController>()
   private supervisor: TaskSupervisor | null = null
   private readonly deps: RunDependencies
+  private imagePreparation: Promise<void> | null = null
 
   constructor(deps: RunDependencies = productionDependencies) {
     this.deps = deps
@@ -322,21 +323,9 @@ export class ContainerRunService {
         ? this.continuationOf(request.threadId, request.continueFrom, request.continueContext)
         : null
     const model = request.model
-    const plan = await resolveContainerProvider(model, {
-      useAgentLogin: request.useAgentLogin === true,
-    })
-    const credential: ContainerRunProgress['credential'] =
-      plan.mode === 'acp' && plan.harness.login ? 'login' : plan.apiKey ? 'key' : 'none'
-    // The registry and GitHub are reachable when the run installs (A9, A11);
-    // the guest's shell commands are off the network either way.
-    const install = request.installDependencies === true
-    const egressAllowlist = [
-      ...new Set([
-        ...plan.egress,
-        ...(install ? DEPENDENCY_INSTALL_ORIGINS : []),
-        ...(request.extraEgress ?? []),
-      ]),
-    ]
+    let plan: Awaited<ReturnType<typeof resolveContainerProvider>>
+    let credential: ContainerRunProgress['credential'] = 'none'
+    let egressAllowlist: string[] = []
 
     const progress: ContainerRunProgress = {
       threadId: request.threadId,
@@ -348,6 +337,10 @@ export class ContainerRunService {
       model,
       egressAllowlist,
       credential,
+      settings: {
+        budgets: { ...request.budgets },
+        installDependencies: request.installDependencies === true,
+      },
       log: [],
       warnings: [],
       checkout: null,
@@ -363,6 +356,19 @@ export class ContainerRunService {
 
     let checkout: ThreadExecutionContext
     try {
+      plan = await resolveContainerProvider(model, {
+        useAgentLogin: request.useAgentLogin === true,
+      })
+      credential =
+        plan.mode === 'acp' && plan.harness.login ? 'login' : plan.apiKey ? 'key' : 'none'
+      // Only provider resolution and the explicit install choice admit origins.
+      egressAllowlist = [
+        ...new Set([
+          ...plan.egress,
+          ...(request.installDependencies === true ? DEPENDENCY_INSTALL_ORIGINS : []),
+        ]),
+      ]
+      Object.assign(progress, { credential, egressAllowlist })
       // The thread — not the project — owns the checkout the run must carry in:
       // a thread in an isolated worktree has its own branch and its own
       // uncommitted edits, and snapshotting the project root would silently run
@@ -459,6 +465,16 @@ export class ContainerRunService {
     )
   }
 
+  /** Concurrent threads share preparation of the one worker image. */
+  private async ensureImage(): Promise<void> {
+    const preparation = (this.imagePreparation ??= this.deps.ensureImage())
+    try {
+      await preparation
+    } finally {
+      if (this.imagePreparation === preparation) this.imagePreparation = null
+    }
+  }
+
   private async drive(
     request: ContainerRunRequest,
     plan: Awaited<ReturnType<typeof resolveContainerProvider>>,
@@ -512,7 +528,7 @@ export class ContainerRunService {
         taskId = task.taskId
       }
       if (stoppedByUser()) throw new Error('Stopped by you before the container started')
-      await this.deps.ensureImage()
+      await this.ensureImage()
       if (stoppedByUser()) {
         throw new Error('Stopped by you before the container started')
       }
@@ -648,7 +664,13 @@ export function continuationPrompt(earlier: RunContinuation, followUp: string): 
 }
 
 function snapshot(progress: ContainerRunProgress): ContainerRunProgress {
-  return { ...progress, log: [...progress.log] }
+  return {
+    ...progress,
+    log: [...progress.log],
+    ...(progress.settings
+      ? { settings: { ...progress.settings, budgets: { ...progress.settings.budgets } } }
+      : {}),
+  }
 }
 
 /**
