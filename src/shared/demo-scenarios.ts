@@ -489,6 +489,10 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       model: 'claude-sonnet-4-6',
       egressAllowlist: ['api.anthropic.com:443'],
       credential: 'key',
+      settings: {
+        budgets: { wallClockMs: 180_000, tokenCeiling: 20_000 },
+        installDependencies: false,
+      },
       warnings: [],
       checkout: {
         root: '/Users/dev/projects/demo/.copse/worktrees/demo-container-thread',
