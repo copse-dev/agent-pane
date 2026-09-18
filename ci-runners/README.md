@@ -46,6 +46,8 @@ It folds four changes into one image:
 
 ## Quick start
 
+### Docker / Linux hosts
+
 ```bash
 cd ci-runners
 cp .env.example .env     # GITHUB_URL (org), ACCESS_TOKEN; optional BUILD_GH_TOKEN
@@ -60,6 +62,42 @@ docker compose logs -f
 docker compose ps
 docker compose down      # tear down
 ```
+
+### Apple container / Apple silicon Macs
+
+[Apple container](https://apple.github.io/container/documentation/) runs the same
+OCI image without Docker Desktop. It requires Apple silicon and macOS 26 or newer.
+Install the signed package, start its service, and prepare the runner environment:
+
+```bash
+container system start
+cp ci-runners/.env.example ci-runners/.env
+# edit GITHUB_URL, ACCESS_TOKEN, and optionally BUILD_GH_TOKEN
+pnpm run runners:apple -- --count 3
+```
+
+The command builds `ci-runners/Dockerfile`, verifies that bubblewrap can create
+the namespace/procfs shape required by ASRT, and supervises three ephemeral runners.
+It stays in the foreground because Apple container does not provide Compose or a
+restart policy; press Ctrl-C for a graceful stop and GitHub deregistration. Use
+another terminal for status:
+
+```bash
+pnpm run runners:apple -- status
+```
+
+The default guest architecture is `amd64`, using Rosetta, to match the existing CI
+fleet and native x64 dependencies. Use `--arch arm64` only when the workflows and
+dependencies are known to support arm64. Labels are truthful:
+`apple-container,x64` for the default or `apple-container,arm64` when selected;
+override them with `APPLE_RUNNER_LABELS` only when the corresponding capability is
+real. The supervisor removes Apple container's default masked/read-only path rules
+because nested bubblewrap needs to construct its own `/proc`; the pre-registration
+probe fails closed if that still does not work.
+
+Docker Compose remains the supported runner orchestration path on Linux/cloud
+hosts. The Apple path is intentionally a host-specific supervisor rather than a
+partial Compose translator.
 
 ## Scaleway burst hosts
 
@@ -362,7 +400,8 @@ trees and lifecycle outputs are never shared between jobs.
 
 The superset image runs Chromium-under-Xvfb for e2e, so size for the heavy tier
 even though light jobs share the box: **~4-6 GB + ~2 cores per concurrent
-runner**. `docker-compose.yml` caps each at `mem_limit: 6g` with a 2 GB
+runner**. Both `docker-compose.yml` and the Apple supervisor cap each at 6 GB
+with a 2 GB
 `/dev/shm`. Light check jobs simply under-use that budget — the cost of pooling.
 
 ## Cutover
@@ -400,7 +439,7 @@ runner**. `docker-compose.yml` caps each at `mem_limit: 6g` with a 2 GB
 
 ## Extracting to its own repo
 
-This directory is self-contained (Dockerfile + entrypoint + compose reference
+This directory is self-contained (OCI Dockerfile + entrypoint + orchestration reference
 only THIS dir, not the repo root). To split it into `copse-dev/ci-runners`
 preserving history:
 

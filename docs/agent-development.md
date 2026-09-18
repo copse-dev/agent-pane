@@ -50,6 +50,47 @@ With fnm, run `fnm install && fnm use` from the repository root instead.
 
 Confirm with `node -v` before debugging a tooling failure.
 
+## Container engines on macOS
+
+Container-backed development scripts use a small engine boundary instead of assuming
+the Docker CLI. `COPSE_CONTAINER_ENGINE` accepts `auto`, `apple`, or `docker`:
+
+- `auto` (the default) prefers a ready Apple container service on an Apple silicon
+  Mac, then falls back to Docker before starting any build or container.
+- `apple` requires Apple silicon, macOS 26 or newer, the signed
+  [Apple container](https://apple.github.io/container/documentation/) package, and a
+  running service (`container system start`). It never silently falls back.
+- `docker` requires a reachable Docker daemon and preserves the previous commands.
+
+The autonomy regression is portable across those engines:
+
+```bash
+COPSE_CONTAINER_ENGINE=apple pnpm run eval:autonomy
+COPSE_CONTAINER_ENGINE=docker pnpm run eval:autonomy
+```
+
+For a model server bound to loopback, Apple container resolves
+`host.container.internal`; create Apple's localhost DNS entry once as documented by
+the project:
+
+```bash
+sudo container system dns create host.container.internal --localhost 203.0.113.113
+```
+
+The Apple mapping preserves the read-only root, dropped capabilities, resource
+limits, tmpfs work areas, and artifact mount. It uses an `nproc` ulimit in place of
+Docker's PID-limit flag because Apple container does not expose a direct equivalent.
+Do not treat Apple container's `--internal` network as an egress security boundary;
+the runtime's [host-only network issue](https://github.com/apple/container/issues/2062)
+remains open. These development/eval workloads retain the same network access their
+Docker versions had.
+
+The shared CI runner image can also run on Apple container without Compose. See
+[`ci-runners/README.md`](../ci-runners/README.md#apple-container--apple-silicon-macs)
+and `pnpm run runners:apple -- --help`. Linux/cloud fleets, remote e2e hosts, and
+third-party benchmark harnesses stay on Docker where they rely on Compose, Docker
+sockets, or Linux host provisioning.
+
 ## Headless GUI development
 
 The Cloud VM exposes a VNC desktop on `DISPLAY=:1`, so launch the app with
