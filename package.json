@@ -71,6 +71,7 @@
     "validate:browser-tools": "node scripts/validate-browser-tools.mts",
     "runners:burst": "node scripts/burst-runners.mts",
     "runners:burst:scw": "node scripts/burst-runners.mts scaleway",
+    "runners:apple": "node scripts/apple-container-runners.mts",
     "scaleway:prune-volumes": "node scripts/prune-scaleway-volumes.mts",
     "scaleway:prune-ips": "node scripts/prune-scaleway-ips.mts",
     "e2e:remote": "node scripts/remote-e2e.mts",

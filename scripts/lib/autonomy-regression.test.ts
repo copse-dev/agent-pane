@@ -139,7 +139,7 @@ describe('autonomy regression scorer', () => {
 
 describe('autonomy regression container', () => {
   it('uses a bounded outer container and forwards secret names without values', () => {
-    const args = autonomyContainerRunArgs('eval:image', '/host/artifacts', {
+    const args = autonomyContainerRunArgs('docker', 'eval:image', '/host/artifacts', {
       LM_STUDIO_API_KEY: 'secret-value',
       COPSE_EVAL_LOCAL_SERVER_URL: 'http://localhost:1234/v1',
     })
@@ -158,10 +158,43 @@ describe('autonomy regression container', () => {
 
   it('leaves a non-loopback provider URL unchanged', () => {
     assert.equal(
-      autonomyContainerProviderUrl({
+      autonomyContainerProviderUrl('docker', {
         COPSE_EVAL_LOCAL_SERVER_URL: 'https://models.example.test/v1',
       }),
       'https://models.example.test/v1',
     )
+  })
+
+  it('maps hardening and host integration to Apple container primitives', () => {
+    const args = autonomyContainerRunArgs('apple', 'eval:image', '/host/artifacts', {
+      LM_API_TOKEN: 'secret-value',
+      COPSE_EVAL_LOCAL_SERVER_URL: 'http://127.0.0.1:1234/v1',
+    })
+
+    assert.deepEqual(args.slice(0, 17), [
+      'run',
+      '--rm',
+      '--init',
+      '--read-only',
+      '--cap-drop',
+      'ALL',
+      '--masked-path',
+      'NONE',
+      '--read-only-path',
+      'NONE',
+      '--ulimit',
+      'nproc=256:256',
+      '--memory',
+      '4g',
+      '--cpus',
+      '2',
+      '--mount',
+    ])
+    assert.ok(args.includes('type=tmpfs,target=/workspace,size=1g,mode=1777'))
+    assert.ok(args.includes('COPSE_EVAL_LOCAL_SERVER_URL=http://host.container.internal:1234/v1'))
+    assert.ok(args.includes('LM_API_TOKEN'))
+    assert.ok(!args.some((arg) => arg.includes('secret-value')))
+    assert.ok(!args.some((arg) => arg.startsWith('--security-opt')))
+    assert.ok(!args.some((arg) => arg.startsWith('--add-host')))
   })
 })

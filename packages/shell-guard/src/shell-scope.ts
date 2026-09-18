@@ -177,6 +177,10 @@ const EXTERNAL_PATTERNS: Array<{ re: RegExp; reason: ScopeReason; ambiguous?: bo
     ambiguous: true,
   },
   { re: /\bdocker\s+(pull|push|run)\b/i, reason: 'docker network/container operation' },
+  {
+    re: /\bcontainer\s+(?:run|image\s+(?:pull|push))\b/i,
+    reason: 'apple container network/container operation',
+  },
   { re: /\bkubectl\b|\bhelm\s+install\b/i, reason: 'kubernetes remote operation' },
   {
     re: /\b(aws|gcloud|az)\s+/i,
@@ -870,6 +874,7 @@ const SCOPE_REASON_TEXT = {
   'git submodule network/checkout operation':
     'Updates git submodules, which fetches and checks out other repositories',
   'docker network/container operation': 'Pulls or runs a Docker container',
+  'apple container network/container operation': 'Pulls, pushes, or runs an Apple container',
   'kubernetes remote operation': 'Talks to a Kubernetes cluster',
   'cloud CLI (may reach external services)': 'Runs a cloud CLI that may reach external services',
   'GitHub CLI (may reach GitHub)': 'Runs the GitHub CLI, which may reach GitHub',

@@ -239,7 +239,9 @@ writable roots or change the approval policy.
   `gh-argv.ts` (GitHub CLI shapes), `command-routing.ts` (trusted-command routing). The
   `src/main/services/security/` files of the same names re-export them and bind the two facts
   only the app knows through `shell-guard-environment.ts`: the read-only chat-store mount and
-  the scratch directories configured ACP agents declare.
+  the scratch directories configured ACP agents declare. Docker run/pull/push and Apple
+  container run/image pull/image push are hard-external; read-only list/inspect/status commands
+  remain sandbox-scoped.
 - `read-outside-grant.ts`: the thread-scoped read grant; the approval-prompt copy for it stays in
   `read-outside-project.ts` beside the other prompt formatters.
 - `safety-classifier.ts`: optional LM Studio classifier used only when the OS sandbox is unavailable.

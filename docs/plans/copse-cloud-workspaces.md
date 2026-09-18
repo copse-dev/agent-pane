@@ -75,8 +75,9 @@ loop and tool policy in control and uses a runtime Copse provisions and reconcil
 2. **Provider abstraction lives in the main process; the provisioning core is
    shared with the CLI.** A `CloudWorkspaceProvider` service wraps the
    `cloud-hosts` core: `provision(spec) → { hostId, ssh }`, `status()`,
-   `teardown()`. Providers: **local-docker** first (any Docker socket/host —
-   free, fast, validates the whole lifecycle with zero cloud creds), then
+   `teardown()`. Providers: **local-container** first (Apple container on a compatible
+   Mac, Docker on other hosts — free, fast, validates the whole lifecycle with zero
+   cloud creds), then
    **Scaleway** (cheapest, already scripted), then **AWS**. The interface is
    deliberately small so Fly/Hetzner/etc. are additive.
 3. **Generalize the runner image into a `copse-workspace` image.** Same
@@ -149,12 +150,14 @@ loop and tool policy in control and uses a runtime Copse provisions and reconcil
   `cloud-hosts.mts` extraction, remote-e2e loop, and SSH workspace execution/file/git/UI
   stack have shipped. Port forwarding, semantic indexing, and ACP-on-SSH remain
   independent limitations rather than blockers for command offload.
-- **C1 — provisioning service + local-docker provider.** Main-process
+- **C1 — provisioning service + local-container provider.** Main-process
   `CloudWorkspaceProvider`, Settings → Cloud providers (creds via
   `safeStorage`), `copse-workspace` image + sshd entrypoint, lifecycle IPC +
   a minimal status pane. Implement the `ExecutionRuntime` lifecycle/capability
-  contract and canonical runtime-state events here; validate entirely against local
-  Docker before adding cloud credentials.
+  contract and canonical runtime-state events here; validate against the shared
+  container-engine contract before adding cloud credentials. Exercise both
+  Apple and Docker providers in contract tests; capabilities that cannot be mapped
+  must fail explicitly rather than disappearing from the request.
 - **C2 — remote command offload (first user-visible win).** Before the full
   remote workspace, route a command (build, test suite, e2e) through the common runtime
   contract against a snapshot push, streaming output into the thread. The UI may offer
@@ -201,7 +204,7 @@ loop and tool policy in control and uses a runtime Copse provisions and reconcil
 - **Image freshness:** per-workspace baked images go stale on lockfile
   changes; same answer as stage one (lockhash gate, explicit rebake) but
   needs an in-app surface.
-- **Provider sprawl:** stop at local-docker + Scaleway + AWS until real
+- **Provider sprawl:** stop at local-container (Apple/Docker) + Scaleway + AWS until real
   demand; the interface exists precisely so we don't pre-build more.
 - **Billing failure modes:** TTL backstop + tags are necessary but not
   sufficient; C4 should add reconciliation on app start ("these tagged hosts
