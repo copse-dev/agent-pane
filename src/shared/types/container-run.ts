@@ -2,6 +2,7 @@ import type { z } from 'zod'
 import type {
   threadContainerResultSchema,
   containerRunRequestSchema,
+  containerRunSettingsSchema,
 } from '../container-run-schema.ts'
 /**
  * Unattended container runs as the renderer sees them
@@ -102,6 +103,8 @@ export interface ContainerModelVerdict {
 /** What the guest was given to authenticate with. */
 export type ContainerRunCredential = 'none' | 'key' | 'login'
 
+export type ContainerRunSettings = z.infer<typeof containerRunSettingsSchema>
+
 /** Live snapshot of one thread's container run, pushed on every change. */
 export interface ContainerRunProgress {
   threadId: string
@@ -120,6 +123,8 @@ export interface ContainerRunProgress {
   egressAllowlist: string[]
   /** A vendor key scoped to the run, the user's sign-in copied in, or nothing. */
   credential: ContainerRunCredential
+  /** Absent on historical cards; new runs retain their budgets and installation choice. */
+  settings?: ContainerRunSettings
   /** Most recent host and guest log lines (bounded). */
   log: string[]
   /**

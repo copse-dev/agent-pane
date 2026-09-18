@@ -777,7 +777,7 @@ export async function buildWorkerImage(options: BuildImageOptions = {}): Promise
   )
   args.push('--build-arg', `PNPM_VERSION=${options.pnpmVersion ?? WORKER_PNPM_VERSION}`)
   args.push('--build-arg', `WORKER_UID=${String(WORKER_UID)}`, contextDir)
-  await runDocker(args)
+  await runDocker(args, { timeoutMs: 15 * 60_000 })
   return image
 }
 
@@ -785,8 +785,17 @@ export async function buildWorkerImage(options: BuildImageOptions = {}): Promise
 // Lifecycle
 // ---------------------------------------------------------------------------
 
-async function runDocker(args: string[]): Promise<string> {
-  const { stdout } = await execFileAsync('docker', args, { maxBuffer: 64 * 1024 * 1024 })
+/** Every daemon operation has a deadline, including preparation and teardown. */
+export async function runDocker(
+  args: string[],
+  options: { timeoutMs?: number; env?: NodeJS.ProcessEnv } = {},
+): Promise<string> {
+  const { stdout } = await execFileAsync('docker', args, {
+    maxBuffer: 64 * 1024 * 1024,
+    timeout: options.timeoutMs ?? 45_000,
+    killSignal: 'SIGKILL',
+    ...(options.env ? { env: options.env } : {}),
+  })
   return stdout.trim()
 }
 
@@ -1170,6 +1179,7 @@ const STOPPED_BEFORE_START = 'Stopped by you before the container started'
 export async function runThreadInContainer(
   request: ThreadContainerRequest,
   options: RunThreadOptions = {},
+  dependencies: { stageLogin: typeof stageAgentLogin } = { stageLogin: stageAgentLogin },
 ): Promise<ThreadContainerRecord> {
   const log =
     options.onLog ??
@@ -1198,7 +1208,6 @@ export async function runThreadInContainer(
     throw new Error(`Provider key variable ${apiKeyEnv} is not set on the host`)
   }
   const canary = options.canary ?? `copse-canary-${randomBytes(8).toString('hex')}`
-  process.env['COPSE_SECRET_CANARY'] = canary
 
   for (const sub of ['', 'state', 'out']) {
     mkdirSync(join(runDir, sub), { recursive: true })
@@ -1216,15 +1225,28 @@ export async function runThreadInContainer(
   )
   log(`[thread-container] carry-in ${carryIn.sha.slice(0, 12)} as ${carryIn.ref}`)
 
+  const duringPreparation = async <T>(operation: () => T | Promise<T>): Promise<T> => {
+    try {
+      return await operation()
+    } catch (error) {
+      removeStagedLogin(runDir)
+      throw error
+    }
+  }
+
   // The user's sign-in, when they opted in: staged now, removed in `finally`
   // below whatever happens, so the world-readable copy lives only as long as
   // the container it exists for.
   let acp = request.acp
   let stagedLogin: string[] | null = null
   if (acp?.login) {
-    stagedLogin = await stageAgentLogin(homedir(), acp.login.files, runDir, acp.agent.title)
+    const { agent, login } = acp
+    stagedLogin = await duringPreparation(async () => {
+      const files = await dependencies.stageLogin(homedir(), login.files, runDir, agent.title)
+      log(`[thread-container] sign-in carried in: ${files.map((d) => `~/${d}`).join(', ')}`)
+      return files
+    })
     acp = { ...acp, login: { files: stagedLogin } }
-    log(`[thread-container] sign-in carried in: ${stagedLogin.map((d) => `~/${d}`).join(', ')}`)
   }
 
   // The guest's thread is its own; the record names the desktop thread.
@@ -1244,7 +1266,7 @@ export async function runThreadInContainer(
     workspace: GUEST_WORKSPACE,
     carryInRef: carryIn.ref,
     carryInBase: carryIn.sha,
-    originUrl: sanitizedOriginUrl(await originUrlOf(workspace)),
+    originUrl: sanitizedOriginUrl(await duringPreparation(() => originUrlOf(workspace))),
     maxSteps: request.maxSteps ?? null,
   }
   const runInput: DockerRunInput = {
@@ -1259,15 +1281,20 @@ export async function runThreadInContainer(
     pidsLimit: 512,
     cpus: 2,
   }
-  const digest = await imageDigest(image)
+  const digest = await duringPreparation(() => imageDigest(image))
   const attestation = buildAttestation(runInput, digest)
-  writeFileSync(join(runDir, 'run.json'), `${JSON.stringify(spec, null, 2)}\n`)
-  writeFileSync(join(runDir, 'attestation.json'), `${JSON.stringify(attestation, null, 2)}\n`)
-
-  const broker = new EgressBroker({
-    rules: egress,
-    ...(request.egressResolve ? { resolve: request.egressResolve } : {}),
+  await duringPreparation(() => {
+    writeFileSync(join(runDir, 'run.json'), `${JSON.stringify(spec, null, 2)}\n`)
+    writeFileSync(join(runDir, 'attestation.json'), `${JSON.stringify(attestation, null, 2)}\n`)
   })
+
+  const broker = await duringPreparation(
+    () =>
+      new EgressBroker({
+        rules: egress,
+        ...(request.egressResolve ? { resolve: request.egressResolve } : {}),
+      }),
+  )
   const startedAt = Date.now()
   let containerExit: number | null
   let teardown: ThreadContainerRecord['teardown']
@@ -1287,7 +1314,9 @@ export async function runThreadInContainer(
       workspaceVolumeName(runtimeId),
     ])
     if (runInput.sharedStore) await ensurePnpmStoreVolume()
-    await runDocker(dockerRunArgs(runInput))
+    await runDocker(dockerRunArgs(runInput), {
+      env: { ...process.env, COPSE_SECRET_CANARY: canary },
+    })
     // The container exists now; a stop that landed while it was being made
     // has nothing to remove yet, so the `finally` below is the removal.
     if (options.signal?.aborted) throw new Error(STOPPED_BEFORE_START)
@@ -1306,16 +1335,19 @@ export async function runThreadInContainer(
     if (waited.timedOut) log('[thread-container] wall-clock budget reached; container stopped')
     if (cleanupError !== null) log(`[thread-container] cleanup problem: ${cleanupError}`)
   } finally {
-    options.onPhase?.('collecting')
-    teardown = await teardownRuntime(runtimeId)
-    if (teardown === 'failed') {
-      const failure = `the container ${containerName(runtimeId)} could not be removed`
-      cleanupError = cleanupError === null ? failure : `${cleanupError}; ${failure}`
-      log(`[thread-container] ${failure}`)
+    try {
+      options.onPhase?.('collecting')
+      teardown = await teardownRuntime(runtimeId)
+      if (teardown === 'failed') {
+        const failure = `the container ${containerName(runtimeId)} could not be removed`
+        cleanupError = cleanupError === null ? failure : `${cleanupError}; ${failure}`
+        log(`[thread-container] ${failure}`)
+      }
+      broker.stop()
+      if (attached) await detachContainer(attached)
+    } finally {
+      removeStagedLogin(runDir)
     }
-    broker.stop()
-    if (attached) await detachContainer(attached)
-    removeStagedLogin(runDir)
   }
 
   const decoded = readJsonFile(

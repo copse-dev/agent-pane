@@ -35,4 +35,5 @@
 // v8 versions the expanded supervisor task summaries and recovery API.
 // v9 versions Android device kinds and input in the simulator desktop API.
 // v10 conservatively versions optional local-device presentation intent.
-export const API_PROTOCOL_VERSION = 10 as const
+// v11 versions the container-run consent fields and terminal state.
+export const API_PROTOCOL_VERSION = 11 as const

@@ -233,6 +233,13 @@ export function mountContainerRunControl(
    * memory only, which matches the run registry — it is session-only too.
    */
   let lastPrompt = ''
+  let pendingContinuation: {
+    projectId: string
+    threadId: string
+    prompt: string
+    runtimeId: string
+    previous: LatestContainerRun
+  } | null = null
   /**
    * The arming form is rebuilt on every render, so the picker mounted against
    * the previous select has to be torn down or it leaks its menu listeners.
@@ -327,7 +334,10 @@ export function mountContainerRunControl(
         className: 'container-run-dialog',
       })
       // A closed dialog has nothing to tick; the clock restarts on reopen.
-      overlay.dialog.addEventListener('close', stopElapsedClock)
+      overlay.dialog.addEventListener('close', () => {
+        stopElapsedClock()
+        pendingContinuation = null
+      })
     }
     return overlay
   }
@@ -354,7 +364,17 @@ export function mountContainerRunControl(
 
   function renderDialog(): void {
     if (!overlay?.isOpen()) return
-    const run = activeRun()
+    if (
+      pendingContinuation &&
+      (pendingContinuation.threadId !== context.getActiveThreadId() ||
+        pendingContinuation.projectId !== context.getActiveProjectId())
+    ) {
+      pendingContinuation = null
+      overlay.close()
+      return
+    }
+    if (isLive(activeRun())) pendingContinuation = null
+    const run = pendingContinuation ? null : activeRun()
     // Both faces replace the whole dialog, so the picker mounted by a previous
     // arming form is about to be detached: drop it before its select goes.
     modelPicker?.destroy()
@@ -366,7 +386,9 @@ export function mountContainerRunControl(
   }
 
   function armForm(): HTMLElement {
-    const draft = context.getDraft().trim()
+    const continuation = pendingContinuation
+    const previousSettings = continuation?.previous.settings
+    const draft = continuation?.prompt ?? context.getDraft().trim()
     // Read-only means one specific thing: this is the composer draft you just
     // typed, quoted back. Falling back to the last run's task (for "Run again"
     // against an empty composer) is a starting point instead, so it stays
@@ -394,7 +416,7 @@ export function mountContainerRunControl(
     })
     // The thread's model is the default and is always present, so the control
     // names a model before the option list resolves — and still does if it fails.
-    let chosenModel = context.getModel()
+    let chosenModel = continuation?.previous.model ?? context.getModel()
     modelSelect.append(el('option', { value: chosenModel }, modelDisplayLabel(chosenModel)))
     modelSelect.value = chosenModel
     modelSelect.addEventListener('change', () => {
@@ -457,14 +479,16 @@ export function mountContainerRunControl(
       max: '1440',
       step: '1',
     })
-    minutes.value = String(DEFAULT_WALL_CLOCK_MINUTES)
+    minutes.value = String(
+      previousSettings ? previousSettings.budgets.wallClockMs / 60_000 : DEFAULT_WALL_CLOCK_MINUTES,
+    )
     const tokens = el('input', {
       type: 'number',
       class: 'container-run-tokens',
       min: '1000',
       step: '1000',
     })
-    tokens.value = String(DEFAULT_TOKEN_CEILING)
+    tokens.value = String(previousSettings?.budgets.tokenCeiling ?? DEFAULT_TOKEN_CEILING)
 
     const egressHint = el('p', { class: 'field-hint container-run-model-hint' })
     function renderEgressHint(): void {
@@ -527,6 +551,7 @@ export function mountContainerRunControl(
       name: 'containerRunInstall',
       checked: '',
     })
+    installOptIn.checked = previousSettings?.installDependencies ?? continuation === null
     const installField = el(
       'div',
       { class: 'container-run-install-field' },
@@ -548,7 +573,7 @@ export function mountContainerRunControl(
     const start = el(
       'button',
       { type: 'button', class: 'ui-btn ui-btn-primary container-run-start' },
-      'Start unattended run',
+      continuation ? 'Start follow-up run' : 'Start unattended run',
     )
     const cancel = el(
       'button',
@@ -573,6 +598,13 @@ export function mountContainerRunControl(
       const threadId = context.getActiveThreadId()
       const projectId = context.getActiveProjectId()
       if (!threadId || !projectId) return
+      if (
+        continuation &&
+        (continuation.threadId !== threadId || continuation.projectId !== projectId)
+      ) {
+        overlay?.close()
+        return
+      }
       const prompt = task.value.trim()
       if (!prompt) return
       // Remembered for "Run again" when the composer has moved on since.
@@ -588,6 +620,16 @@ export function mountContainerRunControl(
         budgets: { wallClockMs, tokenCeiling },
         ...(loginOffer() !== null && loginOptIn.checked ? { useAgentLogin: true } : {}),
         installDependencies: installOptIn.checked,
+        ...(continuation
+          ? {
+              continueFrom: continuation.runtimeId,
+              continueContext: {
+                prompt: continuation.previous.task,
+                report: continuation.previous.report ?? '',
+                ref: continuation.previous.ref,
+              },
+            }
+          : {}),
       }).then((started) => {
         if (!started) start.disabled = false
       })
@@ -595,7 +637,13 @@ export function mountContainerRunControl(
     return el(
       'div',
       { class: 'container-run-form' },
-      el('h2', { class: 'container-run-title' }, 'Run this thread unattended in a container'),
+      el(
+        'h2',
+        { class: 'container-run-title' },
+        continuation
+          ? 'Review the container follow-up'
+          : 'Run this thread unattended in a container',
+      ),
       el(
         'p',
         { class: 'container-run-intro' },
@@ -940,11 +988,6 @@ export function mountContainerRunControl(
     }
   }
 
-  const DEFAULT_BUDGETS = {
-    wallClockMs: DEFAULT_WALL_CLOCK_MINUTES * 60_000,
-    tokenCeiling: DEFAULT_TOKEN_CEILING,
-  }
-
   function latestOnActiveThread(): LatestContainerRun | null {
     const threadId = context.getActiveThreadId()
     const thread = threadId ? getThreadById(context.store, threadId) : undefined
@@ -967,37 +1010,35 @@ export function mountContainerRunControl(
   }
 
   /**
-   * A follow-up sent to the container (A14): a new run that carries in the
-   * latest run's commits and is told what that run was asked and reported,
-   * on the same model and credential. The guest is a fresh process; the
-   * continuity is the checkout and the prompt.
+   * A continuation is a new run. Review its preserved budgets and install
+   * choice, and ask for fresh sign-in consent before any request reaches main.
    */
-  async function followUp(prompt: string): Promise<boolean> {
+  function followUp(prompt: string): Promise<boolean> {
     const threadId = context.getActiveThreadId()
     const projectId = context.getActiveProjectId()
-    if (!threadId || !projectId) return false
+    if (!threadId || !projectId) return Promise.resolve(false)
     if (isLive(activeRun())) {
       showToast('The container is still busy with the previous run; wait for it or stop it.', {
         variant: 'error',
       })
-      return false
+      return Promise.resolve(false)
     }
     const latest = latestOnActiveThread()
     if (!latest || latest.runtimeId === null) {
       showToast('This thread has no container run to continue.', { variant: 'error' })
-      return false
+      return Promise.resolve(false)
     }
-    return startRun({
+    pendingContinuation = {
       projectId,
       threadId,
       prompt,
-      model: latest.model,
-      budgets: DEFAULT_BUDGETS,
-      ...(latest.credential === 'login' ? { useAgentLogin: true } : {}),
-      installDependencies: true,
-      continueFrom: latest.runtimeId,
-      continueContext: { prompt: latest.task, report: latest.report ?? '', ref: latest.ref },
-    })
+      runtimeId: latest.runtimeId,
+      previous: latest,
+    }
+    const dialog = ensureDialog()
+    dialog.open()
+    renderDialog()
+    return Promise.resolve(false)
   }
 
   /** Runs whose usage has been folded into the thread, so a re-sync never counts twice. */

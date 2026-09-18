@@ -231,7 +231,19 @@ describe('unattended container run (browser-hosted)', () => {
 
     await $('.prompt-input').setValue('Now add a test for the formatter change')
     await $('.submit-btn').click()
-    // The follow-up is a user message and a new, running card; the composer is empty.
+    const dialog = await $('.container-run-dialog')
+    await dialog.waitForDisplayed()
+    await expect($('.container-run-title')).toHaveText('Review the container follow-up')
+    await expect($('.container-run-minutes')).toHaveValue('3')
+    await expect($('.container-run-tokens')).toHaveValue('20000')
+    await expect($('.container-run-install')).not.toBeChecked()
+    const beforeStart = await $$('.tool-card-subagent[data-tool-id^="container-run:"]')
+    expect(beforeStart.length).toBe(1)
+    expect(await $('.prompt-input').getText()).toContain('Now add a test')
+    await saveElementScreenshot('.container-run-dialog', 'container-run-follow-up-form.png')
+    await $('.container-run-start').click()
+    await dialog.waitForDisplayed({ reverse: true })
+    // Confirmation adds the follow-up and a running card, then empties the composer.
     await browser.waitUntil(async () => {
       const cards = await $$('.tool-card-subagent[data-tool-id^="container-run:"]')
       return cards.length === 2

@@ -109,6 +109,9 @@ export const config: Options.Testrunner = {
           '--disable-gpu',
           '--no-sandbox',
           '--disable-dev-shm-usage',
+          ...(process.env['COPSE_DEMO_USER_DATA_DIR']
+            ? [`--user-data-dir=${process.env['COPSE_DEMO_USER_DATA_DIR']}`]
+            : []),
         ],
         // A sandbox without access to the Chrome-for-Testing downloads can
         // point at a Chromium and a matching chromedriver it already has.

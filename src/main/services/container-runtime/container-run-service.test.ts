@@ -505,6 +505,85 @@ describe('ContainerRunService', () => {
     assert.equal(service.isActive(THREAD), false)
   })
 
+  it('shares an image build across concurrent threads and retries after a failed build', async () => {
+    let builds = 0
+    const preparation = Promise.withResolvers<undefined>()
+    const service = new ContainerRunService({
+      sweep: noSweep,
+      adopt: adoptSpy().adopt,
+      loadCarryOut: noRecordOnDisk,
+      loadContinuation: noContinuationOnDisk,
+      resolveContext: checkoutAt(root),
+      ensureImage: (): Promise<void> => {
+        builds += 1
+        return builds === 1 ? preparation.promise : Promise.resolve()
+      },
+      stop: (): Promise<'removed'> => Promise.resolve('removed'),
+      run: (request): Promise<ThreadContainerRecord> =>
+        Promise.resolve(fakeRecord(request.threadId ?? THREAD)),
+    })
+    const request: ContainerRunRequest = {
+      projectId: PROJECT,
+      threadId: THREAD,
+      prompt: 'work',
+      model: 'claude-sonnet-4-6',
+      budgets: { wallClockMs: 60_000, tokenCeiling: 10_000 },
+    }
+    await Promise.all([
+      service.start(request),
+      service.start({ ...request, threadId: 'another-thread' }),
+    ])
+    assert.equal(builds, 1)
+    preparation.reject(new Error('image build failed'))
+    await waitFor(service, THREAD, (progress) => progress.phase === 'failed')
+    await waitFor(service, 'another-thread', (progress) => progress.phase === 'failed')
+    await service.start(request)
+    await waitFor(service, THREAD, (progress) => progress.phase === 'finished')
+    assert.equal(builds, 2)
+  })
+
+  it('reserves the thread before provider resolution yields', async () => {
+    const seen: ThreadContainerRequest[] = []
+    const service = new ContainerRunService({
+      sweep: noSweep,
+      adopt: adoptSpy().adopt,
+      loadCarryOut: noRecordOnDisk,
+      loadContinuation: noContinuationOnDisk,
+      resolveContext: checkoutAt(root),
+      ensureImage: (): Promise<void> => Promise.resolve(),
+      stop: (): Promise<'removed'> => Promise.resolve('removed'),
+      run: (request): Promise<ThreadContainerRecord> => {
+        seen.push(request)
+        return Promise.resolve(fakeRecord(request.threadId ?? THREAD))
+      },
+    })
+    const request: ContainerRunRequest = {
+      projectId: PROJECT,
+      threadId: THREAD,
+      prompt: 'work',
+      model: 'claude-sonnet-4-6',
+      budgets: { wallClockMs: 60_000, tokenCeiling: 10_000 },
+    }
+    const first = service.start(request)
+    assert.equal(service.isActive(THREAD), true)
+    await assert.rejects(service.start(request), /already has a container run/)
+    await first
+    await waitFor(service, THREAD, (progress) => progress.phase === 'finished')
+    assert.equal(seen.length, 1)
+
+    deleteApiKey('anthropic')
+    deleteApiKey('openai')
+    await assert.rejects(
+      service.start({ ...request, model: 'mystery' }),
+      /cannot resolve a provider/,
+    )
+    assert.equal(service.isActive(THREAD), false)
+    setApiKey('anthropic', 'sk-ant-test')
+    await service.start(request)
+    await waitFor(service, THREAD, (progress) => progress.phase === 'finished')
+    assert.equal(seen.length, 2)
+  })
+
   it('refuses a second run while one is live, and reports a failed run', async () => {
     const pending: { release: (() => void) | null } = { release: null }
     const service = new ContainerRunService({
