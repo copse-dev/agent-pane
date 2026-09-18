@@ -1669,6 +1669,27 @@
           3
         ]
       },
+      "tool-permissions:list": {
+        "api": "toolPermissions.list",
+        "args": [
+          0,
+          0
+        ]
+      },
+      "tool-permissions:reset": {
+        "api": "toolPermissions.reset",
+        "args": [
+          1,
+          1
+        ]
+      },
+      "tool-permissions:set": {
+        "api": "toolPermissions.set",
+        "args": [
+          1,
+          1
+        ]
+      },
       "update-prompt:respond": {
         "api": "updatePrompt.respond",
         "args": [

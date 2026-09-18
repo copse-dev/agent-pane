@@ -35,6 +35,11 @@ interface RegisteredTool {
   provenance: ToolProvenance
 }
 
+export interface ToolCatalogDescriptor {
+  name: string
+  description: string
+}
+
 let permissionGateOverride: PermissionGateFn | null = null
 let permissionGateDefault: PermissionGateFn | null = null
 
@@ -95,6 +100,11 @@ export class ToolRegistry {
         t.rawParameters ??
         (z.toJSONSchema(t.parameters, { target: 'openapi-3.0' }) as Record<string, unknown>),
     }))
+  }
+
+  /** Lightweight inventory for Settings; never converts parameter schemas. */
+  catalogTools(): ToolCatalogDescriptor[] {
+    return Array.from(this.tools.values(), ({ name, description }) => ({ name, description }))
   }
 
   /**
