@@ -278,6 +278,18 @@ describe('analyzeShellCommand', () => {
     }
   })
 
+  it('routes the direct local Electron e2e runner through host approval', () => {
+    const command = 'node scripts/run-e2e.mts wdio.conf.ts --spec tests/e2e/example.e2e.ts'
+    const result = analyzeShellCommand(command, root)
+
+    assert.equal(result.verdict, 'external')
+    assert.ok(
+      result.reasons.includes(
+        'runs a local script via an interpreter (contents opaque to analysis)',
+      ),
+    )
+  })
+
   it('runs heredoc scripts inside the sandbox before offering an escape', () => {
     const result = analyzeShellCommand('python3 <<EOF\nimport os\nEOF', root)
     assert.equal(result.verdict, 'ambiguous')
