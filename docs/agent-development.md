@@ -160,6 +160,17 @@ pre-baked image. Use local `test:e2e` for macOS-specific behavior, where no remo
 or when a skill requires an on-machine display. For native GUI behavior or authenticated real-agent
 runs, use the isolated workflow in [`remote-agent-demo-debugging.md`](remote-agent-demo-debugging.md).
 
+Inside a Copse agent session, send local Electron e2e through Copse's `run_shell` host path with the
+same wrapper used by `test:e2e`:
+
+```bash
+node scripts/run-e2e.mts wdio.conf.ts --spec tests/e2e/example.e2e.ts
+```
+
+The direct script form lets the permission gate ask before launching it outside the project sandbox.
+Electron and ChromeDriver then have the macOS host temp directories and services they need. The ACP
+process's own shell remains nested inside its session sandbox and cannot provide that host access.
+
 ## Visual validation
 
 Every visible change needs the smallest focused browser or Electron spec that seeds the target
