@@ -73,9 +73,7 @@ describe('settings tool permissions', () => {
     const persistedBlock = reopenedCanvasGroup.$(`[aria-label="Blocked for ${TOOL_NAME}"]`)
     await persistedBlock.waitForDisplayed({ timeout: 15_000 })
     await expect(persistedBlock).toHaveAttribute('aria-checked', 'true')
-    const persistedRow = persistedBlock.$(
-      'xpath=ancestor::div[contains(@class, "tool-permission-row")]',
-    )
+    const persistedRow = reopenedCanvasGroup.$('.tool-permission-row')
     assert.equal(await persistedRow.getAttribute('data-policy'), 'block')
     assert.equal(await persistedRow.getAttribute('data-overridden'), 'true')
     await expect(
