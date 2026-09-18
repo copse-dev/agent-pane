@@ -528,6 +528,7 @@ describe('ContainerRunService', () => {
         builds += 1
         return builds === 1 ? preparation.promise : Promise.resolve()
       },
+      assertEngine: (): void => undefined,
       stop: (): Promise<'removed'> => Promise.resolve('removed'),
       run: (request): Promise<ThreadContainerRecord> =>
         Promise.resolve(fakeRecord(request.threadId ?? THREAD)),
@@ -561,6 +562,7 @@ describe('ContainerRunService', () => {
       loadContinuation: noContinuationOnDisk,
       resolveContext: checkoutAt(root),
       ensureImage: (): Promise<void> => Promise.resolve(),
+      assertEngine: (): void => undefined,
       stop: (): Promise<'removed'> => Promise.resolve('removed'),
       run: (request): Promise<ThreadContainerRecord> => {
         seen.push(request)

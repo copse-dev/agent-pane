@@ -388,51 +388,64 @@ describe('adoptCarryOut', () => {
 })
 
 describe('run preparation cleanup', () => {
-  it('removes staged credentials after a later preparation failure without changing the host canary', async () => {
-    const workspace = initRepo()
-    const runtimesDir = mkdtempSync(join(tmpdir(), 'copse-preparation-'))
-    const previousCanary = process.env['COPSE_SECRET_CANARY']
-    try {
-      await assert.rejects(
-        runThreadInContainer(
-          {
-            workspace,
-            runtimesDir,
-            threadId: 'thread',
-            prompt: 'work',
-            model: 'acp:codex-acp',
-            acp: {
-              agent: { id: 'codex-acp', title: 'Codex', command: 'codex-acp', enabled: true },
-              keyEnvName: 'CODEX_API_KEY',
-              login: { files: ['synthetic.json'] },
+  it(
+    'removes staged credentials after a later preparation failure without changing the host canary',
+    { skip: process.platform === 'win32' },
+    async () => {
+      const workspace = initRepo()
+      const runtimesDir = mkdtempSync(join(tmpdir(), 'copse-preparation-'))
+      const fakeDockerDir = mkdtempSync(join(tmpdir(), 'copse-docker-probe-'))
+      const previousCanary = process.env['COPSE_SECRET_CANARY']
+      const previousPath = process.env['PATH']
+      try {
+        writeFileSync(join(fakeDockerDir, 'docker'), '#!/bin/sh\n[ "$1" = info ]\n', {
+          mode: 0o755,
+        })
+        process.env['PATH'] = `${fakeDockerDir}:${previousPath ?? ''}`
+        await assert.rejects(
+          runThreadInContainer(
+            {
+              workspace,
+              runtimesDir,
+              threadId: 'thread',
+              prompt: 'work',
+              model: 'acp:codex-acp',
+              acp: {
+                agent: { id: 'codex-acp', title: 'Codex', command: 'codex-acp', enabled: true },
+                keyEnvName: 'CODEX_API_KEY',
+                login: { files: ['synthetic.json'] },
+              },
+              budgets: { wallClockMs: 60_000, tokenCeiling: 1_000 },
+              egressAllowlist: [],
             },
-            budgets: { wallClockMs: 60_000, tokenCeiling: 1_000 },
-            egressAllowlist: [],
-          },
-          {
-            runtimeId: 'failed-preparation',
-            canary: 'synthetic-canary',
-            onLog: (line) => {
-              if (line.includes('sign-in carried in')) throw new Error('preparation failed')
+            {
+              runtimeId: 'failed-preparation',
+              canary: 'synthetic-canary',
+              onLog: (line) => {
+                if (line.includes('sign-in carried in')) throw new Error('preparation failed')
+              },
             },
-          },
-          {
-            stageLogin: (_home, _files, runDir) => {
-              mkdirSync(join(runDir, 'login'))
-              writeFileSync(join(runDir, 'login', 'synthetic.json'), 'synthetic-token')
-              return Promise.resolve(['synthetic.json'])
+            {
+              stageLogin: (_home, _files, runDir) => {
+                mkdirSync(join(runDir, 'login'))
+                writeFileSync(join(runDir, 'login', 'synthetic.json'), 'synthetic-token')
+                return Promise.resolve(['synthetic.json'])
+              },
             },
-          },
-        ),
-        /preparation failed/,
-      )
-      assert.equal(existsSync(join(runtimesDir, 'failed-preparation', 'login')), false)
-      assert.equal(process.env['COPSE_SECRET_CANARY'], previousCanary)
-    } finally {
-      rmSync(workspace, { recursive: true, force: true })
-      rmSync(runtimesDir, { recursive: true, force: true })
-    }
-  })
+          ),
+          /preparation failed/,
+        )
+        assert.equal(existsSync(join(runtimesDir, 'failed-preparation', 'login')), false)
+        assert.equal(process.env['COPSE_SECRET_CANARY'], previousCanary)
+      } finally {
+        if (previousPath === undefined) delete process.env['PATH']
+        else process.env['PATH'] = previousPath
+        rmSync(workspace, { recursive: true, force: true })
+        rmSync(runtimesDir, { recursive: true, force: true })
+        rmSync(fakeDockerDir, { recursive: true, force: true })
+      }
+    },
+  )
 })
 
 describe('Docker command deadlines', () => {
