@@ -1,13 +1,15 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { containerAcpAgentSpecs } from '@shared/container-acp-agents.ts'
 import { WORKER_DOCKERFILE, WORKER_ENTRYPOINT_SH } from './worker-image-files.ts'
 import {
   buildAttestation,
+  runDocker,
+  runThreadInContainer,
   waitForContainer,
   workerBuildFingerprint,
   containerName,
@@ -383,6 +385,76 @@ describe('adoptCarryOut', () => {
       rmSync(dir, { recursive: true, force: true })
     }
   })
+})
+
+describe('run preparation cleanup', () => {
+  it('removes staged credentials after a later preparation failure without changing the host canary', async () => {
+    const workspace = initRepo()
+    const runtimesDir = mkdtempSync(join(tmpdir(), 'copse-preparation-'))
+    const previousCanary = process.env['COPSE_SECRET_CANARY']
+    try {
+      await assert.rejects(
+        runThreadInContainer(
+          {
+            workspace,
+            runtimesDir,
+            threadId: 'thread',
+            prompt: 'work',
+            model: 'acp:codex-acp',
+            acp: {
+              agent: { id: 'codex-acp', title: 'Codex', command: 'codex-acp', enabled: true },
+              keyEnvName: 'CODEX_API_KEY',
+              login: { files: ['synthetic.json'] },
+            },
+            budgets: { wallClockMs: 60_000, tokenCeiling: 1_000 },
+            egressAllowlist: [],
+          },
+          {
+            runtimeId: 'failed-preparation',
+            canary: 'synthetic-canary',
+            onLog: (line) => {
+              if (line.includes('sign-in carried in')) throw new Error('preparation failed')
+            },
+          },
+          {
+            stageLogin: (_home, _files, runDir) => {
+              mkdirSync(join(runDir, 'login'))
+              writeFileSync(join(runDir, 'login', 'synthetic.json'), 'synthetic-token')
+              return Promise.resolve(['synthetic.json'])
+            },
+          },
+        ),
+        /preparation failed/,
+      )
+      assert.equal(existsSync(join(runtimesDir, 'failed-preparation', 'login')), false)
+      assert.equal(process.env['COPSE_SECRET_CANARY'], previousCanary)
+    } finally {
+      rmSync(workspace, { recursive: true, force: true })
+      rmSync(runtimesDir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('Docker command deadlines', () => {
+  it(
+    'kills a daemon client that never returns',
+    { skip: process.platform === 'win32' },
+    async () => {
+      const bin = mkdtempSync(join(tmpdir(), 'copse-docker-client-'))
+      try {
+        writeFileSync(join(bin, 'docker'), '#!/bin/sh\nexec sleep 60\n', { mode: 0o755 })
+        await assert.rejects(
+          runDocker(['container', 'inspect', 'test'], {
+            timeoutMs: 50,
+            env: { ...process.env, PATH: bin + ':' + (process.env['PATH'] ?? '') },
+          }),
+          { killed: true, signal: 'SIGKILL' },
+        )
+      } finally {
+        rmSync(bin, { recursive: true, force: true })
+      }
+    },
+  )
 })
 
 describe('waitForContainer', () => {

@@ -55,6 +55,24 @@ describe('agent sign-in carry-in', () => {
     }
   })
 
+  it('removes earlier copies when a later sign-in file cannot be staged', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'copse-login-home-'))
+    const runDir = mkdtempSync(join(tmpdir(), 'copse-login-run-'))
+    try {
+      mkdirSync(join(home, '.gemini', 'settings.json'), { recursive: true })
+      writeFileSync(join(home, '.gemini', 'oauth_creds.json'), '{"token":"synthetic"}')
+      await assert.rejects(stageAgentLogin(home, GEMINI_FILES, runDir, 'Gemini CLI'))
+      assert.equal(existsSync(join(runDir, 'login')), false)
+      assert.equal(
+        readFileSync(join(home, '.gemini', 'oauth_creds.json'), 'utf8'),
+        '{"token":"synthetic"}',
+      )
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+      rmSync(runDir, { recursive: true, force: true })
+    }
+  })
+
   it('refuses a device with no sign-in for the agent, naming where it looked', async () => {
     const home = mkdtempSync(join(tmpdir(), 'copse-login-home-'))
     const runDir = mkdtempSync(join(tmpdir(), 'copse-login-run-'))
