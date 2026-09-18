@@ -366,7 +366,11 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
           prompt: request.prompt,
           model: request.model,
           egressAllowlist: ['api.anthropic.com:443'],
-          credential: 'key' as const,
+          credential: request.useAgentLogin ? ('login' as const) : ('key' as const),
+          settings: {
+            budgets: { ...request.budgets },
+            installDependencies: request.installDependencies === true,
+          },
           log: ['[thread-container] starting copse-run-demo from copse-worker:local'],
           warnings: [],
           checkout: { root: '/repo', mode: 'shared' as const, branch: 'main' },
