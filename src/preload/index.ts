@@ -637,6 +637,11 @@ const api: ApiClient = {
       }
     },
   },
+  toolPermissions: {
+    list: () => ipcRenderer.invoke('tool-permissions:list'),
+    set: (update) => ipcRenderer.invoke('tool-permissions:set', update),
+    reset: (reset) => ipcRenderer.invoke('tool-permissions:reset', reset),
+  },
   canvas: {
     onArtefact: (handler: (artefact: import('@shared/types/canvas.ts').CanvasArtefact) => void) => {
       const listener = (

@@ -6,6 +6,7 @@ import {
   trustedShellCommandsSchema,
   webAllowedOriginsSchema,
 } from './settings-writable.ts'
+import { TOOL_PERMISSION_POLICIES } from '@shared/types/tool-permissions.ts'
 
 // A provider base URL carries the provider's API key as an Authorization header,
 // so it must be a safe credential URL (https:, or http: only for loopback) and
@@ -109,6 +110,11 @@ const MAIN_ONLY_SETTING_SCHEMAS = {
   // stored array back to the renderer — see the note above SETTING_SCHEMAS.
   trustedShellCommands: trustedShellCommandsSchema,
   mcpAutoAllowReadOnly: z.boolean(),
+  // Per-tool user overrides. Missing entries preserve the existing dynamic
+  // permission policy; stable keys are constructed in tool-permissions.ts.
+  toolPermissionOverrides: z
+    .record(z.string().min(1).max(8192), z.enum(TOOL_PERMISSION_POLICIES))
+    .refine((value) => Object.keys(value).length <= 10_000, 'Too many tool permission overrides'),
   // Cursor-hooks toggle (Settings → Sources) and the per-thread read-only
   // default (Settings → Permissions). Both are written through the security
   // bundle and read back by the Settings form.

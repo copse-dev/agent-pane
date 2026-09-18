@@ -64,6 +64,11 @@ import type {
   CuratedMcpServerStatus,
   DeclaredMcpServer,
 } from '@shared/types/mcp.ts'
+import type {
+  ToolPermissionCatalog,
+  ToolPermissionReset,
+  ToolPermissionUpdate,
+} from '@shared/types/tool-permissions.ts'
 import type { RemoteAgentPrIndexEntry } from '@shared/remote-agent-link.ts'
 import type {
   CanvasArtefact,
@@ -435,6 +440,11 @@ export interface ApiClient {
     listDeclared: () => Promise<DeclaredMcpServer[]>
     setCuratedEnabled: (name: string, enabled: boolean) => Promise<CuratedMcpServerStatus[]>
     onStatusChanged: (handler: (statuses: McpServerStatus[]) => void) => () => void
+  }
+  toolPermissions: {
+    list: () => Promise<ToolPermissionCatalog>
+    set: (update: ToolPermissionUpdate) => Promise<ToolPermissionCatalog>
+    reset: (reset: ToolPermissionReset) => Promise<ToolPermissionCatalog>
   }
   canvas: {
     onArtefact: (handler: (artefact: CanvasArtefact) => void) => () => void

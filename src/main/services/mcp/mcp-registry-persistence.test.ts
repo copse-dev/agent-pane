@@ -1,51 +1,76 @@
-import { describe, it, beforeEach } from 'node:test'
+import { beforeEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { isMcpToolRemembered, rememberMcpTool, setMcpServerUserEnabled } from './mcp-registry.ts'
+import { getSetting, setSetting } from '../storage/settings.ts'
 import { storageGet, storageSet } from '../storage/storage.ts'
 import { expectStringArray } from '@shared/unknown-value.ts'
+import {
+  clearMcpToolPermissionTargets,
+  registerMcpToolPermissionTarget,
+} from '../security/tool-permissions.ts'
+import { mcpToolName } from './mcp-config.ts'
 
-// These exercise the serialized read-modify-write path for the shared
-// electron-store keys. `storage.ts` is replaced by the in-memory test shim,
-// which routes writes through the same write-queue used in production.
+// These exercise serialized read-modify-write paths. The storage modules are
+// replaced by in-memory test shims that use the same write queue as production.
 
-const GRANTS_KEY = 'mcp-remembered-grants'
+const OVERRIDES_KEY = 'toolPermissionOverrides'
 const DISABLED_KEY = 'mcpDisabledServers'
 
+function registerTool(serverName: string, toolName: string): { executionName: string; id: string } {
+  const id = registerMcpToolPermissionTarget({
+    serverName,
+    toolName,
+    origin: 'user',
+    source: '/user/mcp.json',
+  })
+  return { executionName: mcpToolName(serverName, toolName), id }
+}
+
 describe('mcp-registry persistence (serialized + validated)', () => {
-  beforeEach(() => {
-    storageSet(GRANTS_KEY, [])
+  beforeEach(async () => {
+    clearMcpToolPermissionTargets()
+    await setSetting(OVERRIDES_KEY, {})
     storageSet(DISABLED_KEY, [])
   })
 
   it('concurrent rememberMcpTool calls do not drop grants', async () => {
-    await Promise.all([
-      rememberMcpTool('mcp__a__tool'),
-      rememberMcpTool('mcp__b__tool'),
-      rememberMcpTool('mcp__c__tool'),
-    ])
-    const stored = expectStringArray(storageGet(GRANTS_KEY))
-    assert.deepEqual([...stored].sort(), ['mcp__a__tool', 'mcp__b__tool', 'mcp__c__tool'])
+    const tools = [registerTool('a', 'tool'), registerTool('b', 'tool'), registerTool('c', 'tool')]
+
+    await Promise.all(tools.map(({ executionName }) => rememberMcpTool(executionName)))
+
+    assert.deepEqual(getSetting(OVERRIDES_KEY, {}), {
+      [tools[0]?.id ?? '']: 'allow',
+      [tools[1]?.id ?? '']: 'allow',
+      [tools[2]?.id ?? '']: 'allow',
+    })
   })
 
   it('rememberMcpTool is idempotent under concurrency', async () => {
-    await Promise.all([rememberMcpTool('dup'), rememberMcpTool('dup'), rememberMcpTool('dup')])
-    assert.deepEqual(storageGet(GRANTS_KEY), ['dup'])
-    assert.equal(isMcpToolRemembered('dup'), true)
+    const tool = registerTool('server', 'duplicate')
+
+    await Promise.all([
+      rememberMcpTool(tool.executionName),
+      rememberMcpTool(tool.executionName),
+      rememberMcpTool(tool.executionName),
+    ])
+
+    assert.deepEqual(getSetting(OVERRIDES_KEY, {}), { [tool.id]: 'allow' })
+    assert.equal(isMcpToolRemembered(tool.executionName), true)
   })
 
-  it('isMcpToolRemembered ignores a corrupt (non-array) stored value', () => {
-    storageSet(GRANTS_KEY, 'corrupt-not-an-array')
-    assert.equal(isMcpToolRemembered('anything'), false)
+  it('ignores a corrupt override value on read', async () => {
+    const tool = registerTool('server', 'tool')
+    await setSetting(OVERRIDES_KEY, 'corrupt-not-an-object')
+
+    assert.equal(isMcpToolRemembered(tool.executionName), false)
   })
 
-  it('rememberMcpTool recovers from a corrupt stored value', async () => {
-    storageSet(GRANTS_KEY, { not: 'a list' })
-    await rememberMcpTool('fresh')
-    assert.deepEqual(storageGet(GRANTS_KEY), ['fresh'])
+  it('does not remember an unregistered or ambiguous execution identity', async () => {
+    await rememberMcpTool('mcp__missing__tool')
+    assert.deepEqual(getSetting(OVERRIDES_KEY, {}), {})
   })
 
   it('concurrent setMcpServerUserEnabled toggles do not drop updates', async () => {
-    // Disable three servers concurrently; all three must persist.
     await Promise.all([
       setMcpServerUserEnabled('s1', false),
       setMcpServerUserEnabled('s2', false),
@@ -53,7 +78,6 @@ describe('mcp-registry persistence (serialized + validated)', () => {
     ])
     assert.deepEqual(storageGet(DISABLED_KEY), ['s1', 's2', 's3'])
 
-    // Re-enabling one removes only that one.
     await setMcpServerUserEnabled('s2', true)
     assert.deepEqual(storageGet(DISABLED_KEY), ['s1', 's3'])
   })
@@ -61,6 +85,6 @@ describe('mcp-registry persistence (serialized + validated)', () => {
   it('setMcpServerUserEnabled tolerates a corrupt stored value', async () => {
     storageSet(DISABLED_KEY, 42)
     await setMcpServerUserEnabled('only', false)
-    assert.deepEqual(storageGet(DISABLED_KEY), ['only'])
+    assert.deepEqual(expectStringArray(storageGet(DISABLED_KEY)), ['only'])
   })
 })

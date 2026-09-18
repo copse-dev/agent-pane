@@ -1,4 +1,5 @@
 import { containerRunRequestSchema } from '@shared/container-run-schema.ts'
+import { TOOL_PERMISSION_POLICIES } from '@shared/types/tool-permissions.ts'
 import { app, BrowserWindow, dialog, ipcMain, shell, webContents, type WebContents } from 'electron'
 import { mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
@@ -335,6 +336,11 @@ import {
   setWorkspaceTrustAndReload,
 } from '../services/mcp/mcp-registry.ts'
 import { getCuratedServerStatuses, setCuratedServerEnabled } from '../services/mcp/mcp-curated.ts'
+import {
+  listToolPermissionCatalog,
+  resetToolPermissions,
+  updateToolPermissions,
+} from '../services/security/tool-permissions.ts'
 import { isWorkspaceTrusted } from '../services/security/workspace-trust.ts'
 import {
   setMockScript,
@@ -2823,6 +2829,30 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       [mode],
     )
     return takePopoutSeed(parsed)
+  })
+
+  ipcMain.handle('tool-permissions:list', (event) => {
+    assertMainFrameSender(event, win)
+    return listToolPermissionCatalog(registry, getMcpServerStatuses())
+  })
+  ipcMain.handle('tool-permissions:set', async (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    const update = parseIpcArgs(
+      z.object({
+        toolIds: z.array(z.string().min(1).max(8192)).max(2_000),
+        policy: z.enum(TOOL_PERMISSION_POLICIES),
+      }),
+      [raw],
+    )
+    return updateToolPermissions(registry, getMcpServerStatuses(), update)
+  })
+  ipcMain.handle('tool-permissions:reset', async (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    const reset = parseIpcArgs(
+      z.object({ toolIds: z.array(z.string().min(1).max(8192)).max(2_000) }),
+      [raw],
+    )
+    return resetToolPermissions(registry, getMcpServerStatuses(), reset)
   })
 
   ipcMain.handle('mcp:list', (event) => {

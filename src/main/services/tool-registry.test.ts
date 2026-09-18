@@ -15,6 +15,8 @@ import {
 } from './search/execution-root-watcher.ts'
 import { turnIngestedExternalContent } from './security/turn-taint.ts'
 import { z } from 'zod'
+import { setSetting } from './storage/settings.test-shim.ts'
+import { copseToolPermissionId } from './security/tool-permissions.ts'
 
 describe('ToolRegistry', () => {
   it('registers and executes a tool', async () => {
@@ -176,6 +178,27 @@ describe('ToolRegistry', () => {
       }))
       assert.equal(searchCalls, 1)
       assert.equal(first, second)
+    })
+
+    it('checks a new block policy before returning a cached result', async () => {
+      const reg = registryWithSearchAndWrite()
+      const signal = new AbortController().signal
+      await inThread('t1', () => reg.execute('search_code', { pattern: 'foo' }, signal))
+      assert.equal(searchCalls, 1)
+
+      setPermissionGateForTests(null)
+      setSetting('toolPermissionOverrides', {
+        [copseToolPermissionId('search_code')]: 'block',
+      })
+      try {
+        const blocked = await inThread('t1', () =>
+          reg.execute('search_code', { pattern: 'foo' }, signal),
+        )
+        assert.equal(blocked, 'User rejected the search_code tool call.')
+        assert.equal(searchCalls, 1, 'the cached value and handler must both remain untouched')
+      } finally {
+        setSetting('toolPermissionOverrides', {})
+      }
     })
 
     it('drops the cache once a non-read-only tool runs', async () => {
