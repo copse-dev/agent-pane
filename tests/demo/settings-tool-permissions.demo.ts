@@ -49,7 +49,13 @@ describe('browser-hosted tool permission settings', () => {
 
     const getMail = panel.$('[data-tool-id="mcp:project:proton-mcp:get-mail-body"]')
     await expect(getMail).toHaveAttribute('data-policy', 'ask')
-    await getMail.$('[aria-label="Blocked for Get mail body"]').click()
+    const blockGetMail = getMail.$('[aria-label="Blocked for Get mail body"]')
+    await browser.execute(() => {
+      document
+        .querySelector<HTMLElement>('[aria-label="Blocked for Get mail body"]')
+        ?.scrollIntoView({ block: 'start' })
+    })
+    await blockGetMail.click()
     await expect(getMail).toHaveAttribute('data-policy', 'block')
     await expect(getMail.$('[aria-label="Blocked for Get mail body"]')).toHaveAttribute(
       'aria-checked',
