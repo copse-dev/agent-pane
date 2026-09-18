@@ -11,6 +11,30 @@ to start, has no containment: every command prompts. The optional LM Studio clas
 authorization boundary. The deterministic auto-approval classifier may skip a prompt only while the
 project sandbox is active.
 
+## Per-tool permission settings
+
+Settings → Permissions lists registered Copse, custom, and connected MCP tools. Each tool can keep
+its inherited default or receive one explicit override:
+
+- **Always allow** skips the tool's ordinary approval prompt. It does not bypass tool-gate hooks,
+  read-only mode, diff approval, workspace trust, the OS sandbox, hard web/browser denials, or
+  separate operation-specific approval such as a sandbox escape or background port binding.
+- **Always ask** requires approval for every invocation. It disables remembered grants,
+  annotation-based/read-only auto-allow, shell auto-approval, trusted-command routing, replay
+  leases, and standing outside-project read grants for that tool.
+- **Blocked** rejects before hooks, prompts, cache lookup, or handler execution. If the setting
+  changes to Blocked while an approval is pending, the gate rechecks it before execution.
+
+Resetting a row removes its override and restores the existing policy behavior. Group actions store
+only the explicit tool ids currently shown in that group, so tools discovered later inherit their
+own defaults. Stable MCP identities include origin, source, server, and tool name; an ambiguous
+legacy execution name fails closed rather than inheriting another server's grant.
+
+Always allow is unavailable where the product contract requires a fresh operation-specific
+approval: worktree preparation, mutating GitHub actions, and custom tools declared with
+`requiresApproval`. An approval prompt's existing “remember” action writes the same explicit
+Always allow policy when that policy is available.
+
 ## Platform matrix
 
 | Situation                                | Sandbox-contained command                                                    | Hard-external command (network download, `git push`, install, `~/...`)                                                               | Ambiguous “may reach” command (`gh`, `nc`, cloud CLIs, `open <url>`)                                                                                                                                                             |
@@ -46,6 +70,18 @@ update signing profiles. Discovery and unrelated tools do not receive the flag. 
 products remain in Copse-owned per-operation scratch directories, with ownership, cancellation,
 duration, and log bounds enforced. A host restart invalidates the panel operation authority epoch,
 so a recovered task cannot launch a second Xcode process whose predecessor may still be alive.
+
+## ACP MCP mediation
+
+Configured MCP servers are never handed directly to an external ACP agent. Direct forwarding lets
+the agent call a server without a host callback, which would bypass Copse's hooks, read-only mode,
+and per-tool permission policy. Copse instead advertises the connected server's registered
+`mcp__...` tools through its authenticated native-tool HTTP bridge. Each call returns through
+`ToolRegistry` and the normal permission gate before cache lookup or handler execution.
+
+An ACP agent that does not advertise MCP-over-HTTP support cannot mount that bridge and receives no
+configured MCP tools. This is deliberately fail-closed: ACP provides no per-call host enforcement
+point for a stdio or HTTP MCP server the external agent mounts itself.
 
 ## Shared Run app workflow
 

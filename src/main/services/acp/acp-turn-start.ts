@@ -30,7 +30,9 @@ export interface AssembleAcpTurnStartOptions {
 export async function assembleAcpTurnStart(
   options: AssembleAcpTurnStartOptions,
 ): Promise<string | undefined> {
-  const offeredNames = new Set(activeBridgeToolNames(getThreadExecutionContext()?.projectId))
+  const offeredNames = new Set(
+    activeBridgeToolNames(getThreadExecutionContext()?.projectId, options.registry),
+  )
   const bridgedTools = options.registry
     .toMcpTools()
     .filter((tool) => offeredNames.has(tool.name))

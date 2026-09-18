@@ -125,6 +125,29 @@ export function checkIcon(className = DEFAULT): SVGSVGElement {
   return outlineIcon('check', ['M20 6 9 17l-5-5'], className)
 }
 
+/** Open hand — an action needs the person's approval before it can continue. */
+export function handIcon(className = DEFAULT): SVGSVGElement {
+  return outlineIcon(
+    'hand',
+    [
+      'M18 11V6a2 2 0 0 0-4 0v5',
+      'M14 10V4a2 2 0 0 0-4 0v7',
+      'M10 10.5V6a2 2 0 0 0-4 0v8',
+      'M6 14.5 4.5 13a2 2 0 0 0-3 3l5.8 5.8A7.5 7.5 0 0 0 12.6 24H14a8 8 0 0 0 8-8v-5a2 2 0 0 0-4 0Z',
+    ],
+    className,
+  )
+}
+
+/** Circle with a slash — the action is blocked before execution. */
+export function banIcon(className = DEFAULT): SVGSVGElement {
+  return outlineIcon(
+    'ban',
+    ['M4.93 4.93a10 10 0 1 0 14.14 14.14A10 10 0 0 0 4.93 4.93Z', 'm4.93 4.93 14.14 14.14'],
+    className,
+  )
+}
+
 /** Filled dot for "saved / connected" inline statuses. */
 export function dotIcon(className = DEFAULT): SVGSVGElement {
   return outlineIcon('dot', ['M12 12h.01'], `${className} ui-icon-dot`)

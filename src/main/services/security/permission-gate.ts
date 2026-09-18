@@ -120,6 +120,8 @@ import { PARALLEL_SEARCH_PLUGIN_ID } from '@copse/agent/plugins/parallel-search-
 import { assessShellHarm } from './shell-harm.ts'
 import { currentRunUsesGuardedYolo } from './guarded-yolo.ts'
 import { recordPermissionDecision } from './permission-audit.ts'
+import { resolveToolPermission } from './tool-permissions.ts'
+import type { ToolPermissionPolicy } from '@shared/types/tool-permissions.ts'
 import {
   replayLeaseCore,
   shellReplayLeaseStore,
@@ -178,6 +180,8 @@ export interface ShellCommandPermissionOptions {
    * by us (`docs/plans/thread-in-container.md`, decision A3).
    */
   outwardEffects?: 'defer' | 'deny'
+  /** Explicit per-tool policy for an agent-originated run_shell/run_background call. */
+  toolPolicy?: Extract<ToolPermissionPolicy, 'allow' | 'ask'>
 }
 
 export interface TerminalPermissionOptions {
@@ -457,11 +461,12 @@ export async function promptUnsandboxedShell(
   signal?: AbortSignal,
   opts: { readGrantApplied?: boolean } = {},
 ): Promise<boolean> {
-  if (autoApproveShell(command, 'external')) return true
+  const forceAsk = resolveToolPermission('run_shell')?.policy === 'ask'
+  if (!forceAsk && autoApproveShell(command, 'external')) return true
   // A command that failed inside the sandbox because it reads a file in the
   // user's home directory is the same read-access question as the up-front gate,
   // so a thread that already granted that scope should not be asked again.
-  if (opts.readGrantApplied !== true) {
+  if (!forceAsk && opts.readGrantApplied !== true) {
     const readOutside = await resolveReadOutsideProject(command, getAgentExecutionRoot(), signal)
     if (readOutside !== null) return readOutside
   }
@@ -483,7 +488,8 @@ export async function promptExpectedSandboxBlock(
   reasons: string[],
   signal?: AbortSignal,
 ): Promise<boolean> {
-  if (autoApproveShell(command, 'external')) return true
+  const forceAsk = resolveToolPermission('run_shell')?.policy === 'ask'
+  if (!forceAsk && autoApproveShell(command, 'external')) return true
   const { approved } = await requestApproval(
     {
       title: 'Run outside sandbox?',
@@ -525,18 +531,40 @@ export async function promptInstallSocketFirewall(
   return approved
 }
 
-async function checkMcpPermission(
+async function promptExplicitToolAsk(
   toolName: string,
   args: unknown,
   signal?: AbortSignal,
 ): Promise<boolean> {
+  const { approved } = await requestApproval(
+    {
+      title: `Allow tool: ${toolName}`,
+      body: JSON.stringify(args, null, 2),
+      type: toolName === 'run_shell' || toolName === 'run_background' ? 'shell' : 'mcp',
+      subject: toolName,
+      cause: 'mcp-tool',
+      allowRemember: false,
+    },
+    signal,
+  )
+  return approved
+}
+
+async function checkMcpPermission(
+  toolName: string,
+  args: unknown,
+  signal?: AbortSignal,
+  explicitPolicy?: Extract<ToolPermissionPolicy, 'allow' | 'ask'>,
+): Promise<boolean> {
+  if (explicitPolicy === 'allow') return true
   const meta = getMcpToolMeta(toolName)
   const decision = decideMcpPermission({
     toolName,
     annotations: meta?.annotations,
-    remembered: isMcpToolRemembered(toolName),
-    autoAllowReadOnly: getSetting<boolean>('mcpAutoAllowReadOnly', false),
-    bundled: meta?.bundled ?? false,
+    remembered: explicitPolicy === 'ask' ? false : isMcpToolRemembered(toolName),
+    autoAllowReadOnly:
+      explicitPolicy === 'ask' ? false : getSetting<boolean>('mcpAutoAllowReadOnly', false),
+    bundled: explicitPolicy === 'ask' ? false : (meta?.bundled ?? false),
   })
   if (decision.action === 'allow') return true
 
@@ -552,11 +580,11 @@ async function checkMcpPermission(
       subject: toolName,
       scope: 'external',
       cause: 'mcp-tool',
-      allowRemember: true,
+      allowRemember: explicitPolicy !== 'ask',
     },
     signal,
   )
-  if (approved && remember) await rememberMcpTool(toolName)
+  if (approved && remember && explicitPolicy !== 'ask') await rememberMcpTool(toolName)
   return approved
 }
 
@@ -571,6 +599,7 @@ async function promptWebOrigin(
   origin: string,
   detail: string,
   signal?: AbortSignal,
+  allowRemember = true,
 ): Promise<boolean> {
   const { approved, remember } = await requestApproval(
     {
@@ -580,73 +609,100 @@ async function promptWebOrigin(
       cause: 'web-origin',
       subject: origin,
       scope: 'external',
-      allowRemember: true,
-      rememberLabel: 'Always allow this web origin',
+      allowRemember,
+      ...(allowRemember ? { rememberLabel: 'Always allow this web origin' } : {}),
     },
     signal,
   )
   if (!approved) return false
-  if (remember) await rememberWebOrigin(origin)
+  if (remember && allowRemember) await rememberWebOrigin(origin)
   else grantWebOriginForNextFetch(origin)
   return true
 }
 
-async function checkFetchUrlPermission(args: unknown, signal?: AbortSignal): Promise<boolean> {
+async function checkFetchUrlPermission(
+  args: unknown,
+  signal?: AbortSignal,
+  explicitPolicy?: Extract<ToolPermissionPolicy, 'allow' | 'ask'>,
+): Promise<boolean> {
   const url = fetchUrlFromArgs(args)
   if (!url) throw new Error('fetch_url requires a URL argument')
-
   const saved = getSetting<string[] | null>(WEB_ALLOWED_ORIGINS_SETTING, null)
   const decision = decideWebFetchPermission({
     url,
     allowedOrigins: webAllowedOriginsWithDefaults(saved),
     allowUserApproval: getSetting<boolean>(WEB_ALLOW_USER_APPROVAL_SETTING, true),
   })
-  if (decision.action === 'allow') return true
   if (decision.action === 'deny') {
     throw new Error(`Web access denied: ${decision.reasons.join('; ')}`)
   }
-  return promptWebOrigin(decision.origin, url, signal)
+  if (explicitPolicy === 'allow') {
+    grantWebOriginForNextFetch(decision.origin)
+    return true
+  }
+  if (decision.action === 'allow') {
+    return explicitPolicy === 'ask' ? promptExplicitToolAsk('fetch_url', args, signal) : true
+  }
+  return promptWebOrigin(decision.origin, url, signal, explicitPolicy !== 'ask')
 }
 
-async function checkWebSearchPermission(signal?: AbortSignal): Promise<boolean> {
+async function checkWebSearchPermission(
+  signal?: AbortSignal,
+  explicitPolicy?: Extract<ToolPermissionPolicy, 'allow' | 'ask'>,
+): Promise<boolean> {
   const saved = getSetting<string[] | null>(WEB_ALLOWED_ORIGINS_SETTING, null)
   const decision = decideWebSearchPermission({
     allowedOrigins: webAllowedOriginsWithDefaults(saved),
     allowUserApproval: getSetting<boolean>(WEB_ALLOW_USER_APPROVAL_SETTING, true),
   })
-  if (decision.action === 'allow') return true
   if (decision.action === 'deny') {
     throw new Error(`Web search denied: ${decision.reasons.join('; ')}`)
+  }
+  if (explicitPolicy === 'allow') {
+    grantWebOriginForNextFetch(decision.origin)
+    return true
+  }
+  if (decision.action === 'allow') {
+    return explicitPolicy === 'ask' ? promptExplicitToolAsk('web_search', {}, signal) : true
   }
   return promptWebOrigin(
     decision.origin,
     `DuckDuckGo search is allowed by default through: ${DEFAULT_WEB_ALLOWED_ORIGINS.join(', ')}`,
     signal,
+    explicitPolicy !== 'ask',
   )
 }
 
-async function checkParallelSearchPermission(signal?: AbortSignal): Promise<boolean> {
+async function checkParallelSearchPermission(
+  signal?: AbortSignal,
+  explicitPolicy?: Extract<ToolPermissionPolicy, 'allow' | 'ask'>,
+): Promise<boolean> {
   // Enabling the `copse.parallel-search` plugin (default-off, experimental,
   // explicit API key) IS the user's consent to send search queries to Parallel.
   // Auto-allow its fixed API origin while the plugin is enabled, mirroring how
   // the `copse.background-tasks` plugin auto-declares its `loopback-bind`
   // relaxation: no web-origin prompt just because the enabled search tool ran.
-  if (getDefaultPluginRegistry().isEnabled(PARALLEL_SEARCH_PLUGIN_ID)) return true
-
+  if (getDefaultPluginRegistry().isEnabled(PARALLEL_SEARCH_PLUGIN_ID)) {
+    return explicitPolicy === 'ask' ? promptExplicitToolAsk('parallel_search', {}, signal) : true
+  }
   const saved = getSetting<string[] | null>(WEB_ALLOWED_ORIGINS_SETTING, null)
   const decision = decideWebFetchPermission({
     url: PARALLEL_SEARCH_API_URL,
     allowedOrigins: webAllowedOriginsWithDefaults(saved),
     allowUserApproval: getSetting<boolean>(WEB_ALLOW_USER_APPROVAL_SETTING, true),
   })
-  if (decision.action === 'allow') return true
   if (decision.action === 'deny') {
     throw new Error(`Parallel Search access denied: ${decision.reasons.join('; ')}`)
+  }
+  if (explicitPolicy === 'allow') return true
+  if (decision.action === 'allow') {
+    return explicitPolicy === 'ask' ? promptExplicitToolAsk('parallel_search', {}, signal) : true
   }
   return promptWebOrigin(
     decision.origin,
     'The objective and search queries will be sent to Parallel. Requests may consume paid API credits; Zero Data Retention depends on your Parallel account agreement.',
     signal,
+    explicitPolicy !== 'ask',
   )
 }
 
@@ -662,21 +718,24 @@ async function checkCustomToolPermission(
   toolName: string,
   args: unknown,
   signal?: AbortSignal,
+  explicitPolicy?: Extract<ToolPermissionPolicy, 'allow' | 'ask'>,
 ): Promise<boolean> {
   const alwaysPrompt = customToolRequiresApproval(toolName)
-  if (!alwaysPrompt && isCustomToolRemembered(toolName)) return true
+  if (explicitPolicy === 'allow' && !alwaysPrompt) return true
+  if (explicitPolicy !== 'ask' && !alwaysPrompt && isCustomToolRemembered(toolName)) return true
   const { approved, remember } = await requestApproval(
     {
       title: `Custom tool: ${customToolLabel(toolName)}`,
       body: JSON.stringify(args, null, 2),
       type: 'mcp',
       cause: 'custom-tool',
-      // No "remember" for always-prompt tools: a saved grant would never be honored.
-      allowRemember: !alwaysPrompt,
+      allowRemember: explicitPolicy !== 'ask' && !alwaysPrompt,
     },
     signal,
   )
-  if (approved && remember && !alwaysPrompt) await rememberCustomTool(toolName)
+  if (approved && remember && explicitPolicy !== 'ask' && !alwaysPrompt) {
+    await rememberCustomTool(toolName)
+  }
   return approved
 }
 
@@ -780,21 +839,24 @@ async function checkShellPermission(
   args: unknown,
   originalCommand?: string,
   signal?: AbortSignal,
+  explicitPolicy?: Extract<ToolPermissionPolicy, 'allow' | 'ask'>,
 ): Promise<boolean> {
   const command = shellCommandFromArgs(args)
   if (!command) {
-    return promptShell(
-      '(invalid command)',
-      ['missing command argument'],
-      false,
-      'shell-in-sandbox',
-      signal,
-    )
+    return explicitPolicy === 'ask'
+      ? promptExplicitToolAsk('run_shell', args, signal)
+      : promptShell(
+          '(invalid command)',
+          ['missing command argument'],
+          false,
+          'shell-in-sandbox',
+          signal,
+        )
   }
-
   return ensureShellCommandPermitted(command, {
     ...(originalCommand !== undefined ? { originalCommand } : {}),
     ...(signal !== undefined ? { signal } : {}),
+    ...(explicitPolicy !== undefined ? { toolPolicy: explicitPolicy } : {}),
   })
 }
 
@@ -940,6 +1002,7 @@ export async function ensureShellCommandPermitted(
   opts: ShellCommandPermissionOptions = {},
 ): Promise<boolean> {
   if (opts.signal?.aborted) return false
+  const forceAsk = opts.toolPolicy === 'ask'
   const runThread = getActiveRunThread()
   // An unattended run inside an attested container answers by blast radius
   // (`docs/plans/thread-in-container.md`): contained effects run, outward
@@ -947,6 +1010,10 @@ export async function ensureShellCommandPermitted(
   // the sandbox-escalation, trusted-command and auto-approval paths all reason
   // about leaving a *host* sandbox, and there is no host to leave from here.
   if (currentRunIsUnattendedContainer(runThread)) {
+    if (forceAsk) {
+      const approved = await promptExplicitToolAsk('run_shell', { command }, opts.signal)
+      if (!approved) return false
+    }
     return ensureContainedShellCommandPermitted(command, opts)
   }
   const guardedYolo = currentRunUsesGuardedYolo(runThread)
@@ -994,7 +1061,7 @@ export async function ensureShellCommandPermitted(
   // (e.g. xcodebuild). routeShellCommand internally requires auto-run to be on
   // AND the workspace to be trusted, and never waives analysis for an untrusted
   // co-segment, so this can only fire for a genuinely safe command line.
-  if (!guardedYolo) {
+  if (!guardedYolo && !forceAsk) {
     const routing = routeShellCommand(command)
     if (routing.outcome === 'allow') {
       recordDecision({
@@ -1010,7 +1077,12 @@ export async function ensureShellCommandPermitted(
     }
   }
 
-  const autoRun = opts.autoRun ?? getSetting<boolean>('autoRunSandboxCommands', true)
+  const autoRun =
+    opts.toolPolicy === 'allow'
+      ? true
+      : forceAsk
+        ? false
+        : (opts.autoRun ?? getSetting<boolean>('autoRunSandboxCommands', true))
   const workspaceRoot = opts.executionRoot ?? getAgentExecutionRoot()
   const sandboxEnabled = opts.sandboxEnabled ?? isProjectSandboxEnabled()
   const classification = sandboxEnabled || guardedYolo ? null : await classifyShellScope(command)
@@ -1043,12 +1115,18 @@ export async function ensureShellCommandPermitted(
     ...(harmDecision ? { harmDecision } : {}),
     externalDenyThreshold: getSetting<number>('safetyExternalDenyThreshold', 1),
   })
+  const effectiveAction: ShellPermissionDecision['action'] =
+    forceAsk && decision.action === 'allow' ? 'prompt' : decision.action
+  const effectiveReasons =
+    forceAsk && decision.action === 'allow'
+      ? ['the tool permission setting requires approval for every invocation']
+      : decision.reasons
 
   // F2: fire the canonical `permissionDecision` observation with the verdict
   // `decideShellPermission` produced (audit-trail-ready; feeds a future #840
   // subscriber). Fired here, right after the verdict, so it reflects the policy
   // decision itself rather than the downstream prompt result.
-  firePermissionDecision('run_shell', shellVerdictToHookDecision(decision.action), {
+  firePermissionDecision('run_shell', shellVerdictToHookDecision(effectiveAction), {
     executionRoot: workspaceRoot,
     ...(opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {}),
   })
@@ -1066,13 +1144,13 @@ export async function ensureShellCommandPermitted(
       effectiveMode: 'guarded-yolo',
       sandboxState: sandboxEnabled && !outsideSandbox ? 'project-sandbox' : 'unsandboxed',
       harmDecision: harmDecision.action,
-      policyDecision: decision.action,
-      reasons: decision.reasons,
+      policyDecision: effectiveAction,
+      reasons: effectiveReasons,
       userResponse,
     })
   }
 
-  if (decision.action === 'allow') {
+  if (effectiveAction === 'allow') {
     auditGuardedYolo('not-required')
     return true
   }
@@ -1086,7 +1164,7 @@ export async function ensureShellCommandPermitted(
   }
 
   if (guardedYolo) {
-    const approved = await promptGuardedYoloHarm(command, decision.reasons, opts.signal)
+    const approved = await promptGuardedYoloHarm(command, effectiveReasons, opts.signal)
     auditGuardedYolo(approved ? 'approved' : 'declined')
     return approved
   }
@@ -1097,6 +1175,7 @@ export async function ensureShellCommandPermitted(
   // `deny` (both returned above). Deterministic and fail-closed; see
   // auto-approval.ts for the enumerated shapes and the safety argument.
   if (
+    !forceAsk &&
     autoApproveShell(
       command,
       outsideSandbox ? 'external' : 'sandbox',
@@ -1127,7 +1206,7 @@ export async function ensureShellCommandPermitted(
       ? activeShellReplayLeaseIdentity(leaseRoot, outsideSandbox ? 'external' : 'project-sandbox')
       : null
   const leaseOfferIdentity = leaseCore !== null ? leaseIdentity : null
-  if (leaseIdentity) {
+  if (!forceAsk && leaseIdentity) {
     const match = shellReplayLeaseStore.consume(leaseIdentity, command, (segment) =>
       leaseCompanionAllowed(segment, leaseIdentity.executionRoot),
     )
@@ -1160,15 +1239,17 @@ export async function ensureShellCommandPermitted(
   // Ordered after the replay lease so a command the user already authorized for
   // exact retry in this turn tree is still replayed without a prompt: the lease
   // is a no-prompt fast path, whereas this gate may ask.
-  const readOutside = await resolveReadOutsideProject(command, workspaceRoot, opts.signal)
-  if (readOutside !== null) return readOutside
+  if (!forceAsk) {
+    const readOutside = await resolveReadOutsideProject(command, workspaceRoot, opts.signal)
+    if (readOutside !== null) return readOutside
+  }
 
   // A plain package install gets a dedicated, readable approval rather than the
   // generic external-command reason list. Only when the install is the *sole*
   // flagged signal (one reason) — compound or registry-redirected commands keep
   // the full reason list so extra risks (curl, custom registry, …) stay visible.
   const install = detectPackageInstall(command)
-  if (install.isInstall && decision.reasons.length === 1) {
+  if (install.isInstall && effectiveReasons.length === 1) {
     const safeInstall = getSetting<boolean>('safeInstallEnabled', true)
     const { approved } = await requestApproval(
       install.isEphemeralRunner
@@ -1206,11 +1287,11 @@ export async function ensureShellCommandPermitted(
   // and collapsing them would make the U0 measurement unreadable.
   return promptShell(
     command,
-    decision.reasons,
+    effectiveReasons,
     outsideSandbox,
     sandboxEnabled ? 'shell-in-sandbox' : 'shell-no-containment',
     opts.signal,
-    leaseOfferIdentity ?? undefined,
+    (forceAsk ? undefined : leaseOfferIdentity) ?? undefined,
   )
 }
 
@@ -1223,10 +1304,10 @@ function browserUrlFromArgs(args: unknown): string | null {
 async function checkBrowserNavigatePermission(
   args: unknown,
   signal?: AbortSignal,
+  explicitPolicy?: Extract<ToolPermissionPolicy, 'allow' | 'ask'>,
 ): Promise<boolean> {
   const url = browserUrlFromArgs(args)
   if (!url) throw new Error('browser_navigate requires a url argument')
-
   const decision = decideBrowserNavigation({
     url,
     allowedOrigins: browserAllowedOrigins(currentBrowserScope()),
@@ -1234,11 +1315,16 @@ async function checkBrowserNavigatePermission(
       getSetting<boolean>(BROWSER_ALLOW_USER_APPROVAL_SETTING, true) &&
       getSetting<boolean>(WEB_ALLOW_USER_APPROVAL_SETTING, true),
   })
-  if (decision.action === 'allow') return true
   if (decision.action === 'deny') {
     throw new Error(`Browser navigation denied: ${decision.reasons.join('; ')}`)
   }
-
+  if (explicitPolicy === 'allow') {
+    grantBrowserOrigin(currentBrowserScope(), decision.origin)
+    return true
+  }
+  if (decision.action === 'allow') {
+    return explicitPolicy === 'ask' ? promptExplicitToolAsk('browser_navigate', args, signal) : true
+  }
   const { approved, remember } = await requestApproval(
     {
       title: 'Allow browser navigation?',
@@ -1247,14 +1333,13 @@ async function checkBrowserNavigatePermission(
       cause: 'browser-navigation',
       subject: url,
       scope: 'external',
-      allowRemember: true,
+      allowRemember: explicitPolicy !== 'ask',
     },
     signal,
   )
   if (approved) {
-    if (remember) {
-      await rememberWebOrigin(decision.origin)
-    } else grantBrowserOrigin(currentBrowserScope(), decision.origin)
+    if (remember && explicitPolicy !== 'ask') await rememberWebOrigin(decision.origin)
+    else grantBrowserOrigin(currentBrowserScope(), decision.origin)
   }
   return approved
 }
@@ -1280,10 +1365,15 @@ async function checkBackgroundProcessPermission(
   args: unknown,
   originalCommand?: string,
   signal?: AbortSignal,
+  explicitPolicy?: Extract<ToolPermissionPolicy, 'allow' | 'ask'>,
 ): Promise<boolean> {
-  // Only a `start` action carries a command; management actions leave it empty.
   const command = backgroundCommandFromArgs(args)
-  if (command && !(await checkShellPermission(args, originalCommand, signal))) return false
+  if (command && !(await checkShellPermission(args, originalCommand, signal, explicitPolicy))) {
+    return false
+  }
+  if (!command && explicitPolicy === 'ask') {
+    if (!(await promptExplicitToolAsk('run_background', args, signal))) return false
+  }
 
   if (!backgroundAllowsPortBinding(args)) return true
 
@@ -1536,6 +1626,24 @@ async function applyToolGateHooks(
 
   return { ok: true, ...rewrite, ...inject }
 }
+
+function recordExplicitToolPolicy(
+  toolName: string,
+  override: NonNullable<ReturnType<typeof resolveToolPermission>>,
+  source = 'tool-permission-override',
+): void {
+  recordDecision({
+    kind: 'tool-permission',
+    actor: 'system',
+    verdict:
+      override.policy === 'block' ? 'blocked' : override.policy === 'ask' ? 'ask' : 'allowed',
+    subject: toolName,
+    scope: 'tool',
+    reasons: [`explicit ${override.policy} policy`],
+    source: `${source}:${override.id}`,
+  })
+}
+
 /**
  * Returns true when the tool call may proceed, false when the user rejected.
  *
@@ -1551,6 +1659,10 @@ export async function ensureToolPermitted(
   check: PermissionCheck,
   signal?: AbortSignal,
 ): Promise<boolean> {
+  const initialOverride = resolveToolPermission(check.toolName)
+  if (initialOverride) recordExplicitToolPolicy(check.toolName, initialOverride)
+  if (initialOverride?.policy === 'block') return false
+
   const originalShellCommand =
     check.toolName === 'run_shell' || check.toolName === 'run_background'
       ? shellCommandFromArgs(check.args)
@@ -1558,27 +1670,12 @@ export async function ensureToolPermitted(
   const gate = await applyToolGateHooks(check, signal)
   if (!gate.ok) return false
 
-  // H1: a hook rewrote the tool input. Apply the rewrite *in place* so (a) the
-  // policy gates below re-run `analyzeShellCommand` / `decideShellPermission` on
-  // the rewritten input — a rewrite that turns a contained command into an
-  // external one is caught by the matrix, never auto-allowed — and (b) the tool
-  // executes with the rewritten input (ToolRegistry passes a fresh parsed-args
-  // object, so mutating it is safe and is what carries the rewrite to execute()).
   if (gate.updatedInput && typeof check.args === 'object' && check.args !== null) {
     Object.assign(check.args, gate.updatedInput)
   }
-
-  // H2: surface a hook's current-turn injected context on the check so the tool
-  // runner appends it to this call's result (the fire-point injection). Set here
-  // rather than acted on: the gate only decides *whether* to inject; the runner
-  // owns *placing* it into the turn (ToolRegistry.execute).
   if (gate.injectContext !== undefined) check.injectContext = gate.injectContext
 
   const { toolName, args } = check
-
-  // Read-only runs block mutating tools and any MCP tool not provably read-only.
-  // Allowed tools fall through to the normal gates below — read-only mode never
-  // auto-approves a tool that would otherwise prompt.
   if (isAgentRunReadonly()) {
     const blocked = getReadonlyToolBlockReason(toolName, {
       mcpAnnotations: toolName.startsWith('mcp__')
@@ -1588,63 +1685,59 @@ export async function ensureToolPermitted(
     if (blocked) return false
   }
 
-  if (SANDBOX_TOOLS.has(toolName)) return true
+  const explicitPolicy =
+    initialOverride?.policy === 'allow' || initialOverride?.policy === 'ask'
+      ? initialOverride.policy
+      : undefined
+  let permitted: boolean
 
-  if (toolName === 'browser_navigate') {
-    return checkBrowserNavigatePermission(args, signal)
-  }
-  // Snapshot/screenshot/click/type act on the already-approved page; auto-run.
-  if (BROWSER_TOOLS.has(toolName) || READ_ONLY_BROWSER_TOOLS.has(toolName)) {
-    return true
-  }
-
-  if (toolName === 'fetch_url') {
-    return checkFetchUrlPermission(args, signal)
-  }
-
-  if (toolName === 'web_search') {
-    return checkWebSearchPermission(signal)
-  }
-
-  if (toolName === 'parallel_search') {
-    return checkParallelSearchPermission(signal)
-  }
-  // GitHub CI tools never mutate remote state. Status/log reads are ephemeral;
-  // wait also persists one bounded local task under the active turn tree.
-  if (GITHUB_NONMUTATING_CI_TOOLS.has(toolName)) {
-    return true
-  }
-
-  // The approval names the exact detected install and declared setup steps.
-  // Its fingerprint is checked again during execution; changed plans need approval.
-  if (toolName === 'prepare_worktree') {
-    return checkWorktreePreparationPermission(args, signal)
-  }
-
-  // Mutating PR actions (approve / merge-when-ready / mark-ready / rerun CI)
-  // change state on github.com, so they always prompt — never auto-run.
-  if (GITHUB_WRITE_TOOLS.has(toolName)) {
-    return checkGithubWriteToolPermission(toolName, args, signal)
-  }
-
-  if (toolName.startsWith('mcp__')) {
-    return checkMcpPermission(toolName, args, signal)
-  }
-
-  if (toolName.startsWith(CUSTOM_TOOL_PREFIX)) {
-    return checkCustomToolPermission(toolName, args, signal)
-  }
-
-  if (toolName === 'run_shell') {
-    return checkShellPermission(args, originalShellCommand ?? undefined, signal)
-  }
-
-  if (toolName === 'run_background') {
-    return checkBackgroundProcessPermission(args, originalShellCommand ?? undefined, signal)
+  if (SANDBOX_TOOLS.has(toolName)) {
+    permitted =
+      explicitPolicy === 'ask' ? await promptExplicitToolAsk(toolName, args, signal) : true
+  } else if (toolName === 'browser_navigate') {
+    permitted = await checkBrowserNavigatePermission(args, signal, explicitPolicy)
+  } else if (BROWSER_TOOLS.has(toolName) || READ_ONLY_BROWSER_TOOLS.has(toolName)) {
+    permitted =
+      explicitPolicy === 'ask' ? await promptExplicitToolAsk(toolName, args, signal) : true
+  } else if (toolName === 'fetch_url') {
+    permitted = await checkFetchUrlPermission(args, signal, explicitPolicy)
+  } else if (toolName === 'web_search') {
+    permitted = await checkWebSearchPermission(signal, explicitPolicy)
+  } else if (toolName === 'parallel_search') {
+    permitted = await checkParallelSearchPermission(signal, explicitPolicy)
+  } else if (GITHUB_NONMUTATING_CI_TOOLS.has(toolName)) {
+    permitted =
+      explicitPolicy === 'ask' ? await promptExplicitToolAsk(toolName, args, signal) : true
+  } else if (toolName === 'prepare_worktree') {
+    permitted = await checkWorktreePreparationPermission(args, signal)
+  } else if (GITHUB_WRITE_TOOLS.has(toolName)) {
+    permitted = await checkGithubWriteToolPermission(toolName, args, signal)
+  } else if (toolName.startsWith('mcp__')) {
+    permitted = await checkMcpPermission(toolName, args, signal, explicitPolicy)
+  } else if (toolName.startsWith(CUSTOM_TOOL_PREFIX)) {
+    permitted = await checkCustomToolPermission(toolName, args, signal, explicitPolicy)
+  } else if (toolName === 'run_shell') {
+    permitted = await checkShellPermission(
+      args,
+      originalShellCommand ?? undefined,
+      signal,
+      explicitPolicy,
+    )
+  } else if (toolName === 'run_background') {
+    permitted = await checkBackgroundProcessPermission(
+      args,
+      originalShellCommand ?? undefined,
+      signal,
+      explicitPolicy,
+    )
+  } else {
+    permitted =
+      explicitPolicy === 'ask' ? await promptExplicitToolAsk(toolName, args, signal) : true
   }
 
-  // Default-allow: read-only/in-process tools (and mutating tools that are
-  // gated via the diff-approval queue) need no prompt here. See the contract
-  // in this function's doc comment before relying on this branch for a new tool.
-  return true
+  if (!permitted) return false
+  const currentOverride = resolveToolPermission(toolName)
+  if (currentOverride?.policy !== 'block') return true
+  recordExplicitToolPolicy(toolName, currentOverride, 'tool-permission-recheck')
+  return false
 }

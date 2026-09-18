@@ -122,10 +122,9 @@ export interface AcpAgentSpawnConfig {
    */
   configOptions?: Record<string, string>
   /**
-   * Copse-configured MCP servers to hand the agent via `session/new`
-   * (`mcpServers`), so the external agent can mount the user's servers itself.
-   * Filtered against the agent's advertised `mcpCapabilities` before sending
-   * (stdio is baseline; http needs the capability flag).
+   * Connected Copse MCP server configs. They are retained in the session key,
+   * but are not handed to the agent directly: registered MCP tools are exposed
+   * through {@link nativeBridge} so Copse can enforce per-call permissions.
    */
   mcpServers?: McpServerConfig[]
   /**
@@ -534,35 +533,20 @@ export function terminateAcpChild(child: ChildProcess): void {
 }
 
 /**
- * Convert Copse MCP server configs to the ACP `session/new` `mcpServers` shape,
- * keeping only what the agent said it supports in `initialize`: stdio is the
- * protocol baseline, http needs `mcpCapabilities.http`. Unsupported transports
- * are dropped rather than failing the session — the agent just doesn't get that
- * server this turn.
+ * Configured servers must not be handed straight to an external agent. Direct
+ * forwarding makes each call invisible to Copse, so hooks, read-only mode and
+ * per-tool allow/ask/block policies cannot be enforced. Their registered tools
+ * are exposed through Copse's authenticated HTTP bridge instead.
+ *
+ * ACP agents that cannot mount that bridge receive no configured MCP servers.
+ * This closed fallback is intentional: ACP has no host-side per-call callback
+ * for a server the agent mounts itself.
  */
 export function toAcpMcpServers(
-  configs: readonly McpServerConfig[],
-  capabilities: McpCapabilities | undefined,
+  _configs: readonly McpServerConfig[],
+  _capabilities: McpCapabilities | undefined,
 ): McpServer[] {
-  const servers: McpServer[] = []
-  for (const cfg of configs) {
-    if (cfg.transport === 'stdio' && cfg.command !== undefined) {
-      servers.push({
-        name: cfg.name,
-        command: cfg.command,
-        args: cfg.args ?? [],
-        env: Object.entries(cfg.env ?? {}).map(([name, value]) => ({ name, value })),
-      })
-    } else if (cfg.transport === 'http' && cfg.url !== undefined && capabilities?.http === true) {
-      servers.push({
-        type: 'http',
-        name: cfg.name,
-        url: cfg.url,
-        headers: Object.entries(cfg.headers ?? {}).map(([name, value]) => ({ name, value })),
-      })
-    }
-  }
-  return servers
+  return []
 }
 
 /**

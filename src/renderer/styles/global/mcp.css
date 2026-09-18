@@ -21,6 +21,11 @@
   flex: 1;
   min-width: 0;
 }
+.mcp-permissions-btn {
+  flex: none;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: var(--font-size-sm);
+}
 .mcp-server-summary {
   font-weight: 600;
 }

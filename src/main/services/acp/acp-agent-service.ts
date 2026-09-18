@@ -409,9 +409,11 @@ export async function runAcpAgentFromSettings(
   // sandboxed. Part of the spawn config so a change respawns the pooled session
   // (the mode is applied once, at `session/new`, not switched live like model).
   const permissionMode = resolveAcpPermissionMode(agent, sandboxed)
-  // Hand the agent the user's MCP servers so its session mounts them itself
-  // (issue #602, tier 1). Best-effort: a config-read failure downgrades the turn
-  // to "no forwarded servers" instead of failing it.
+  // Resolve the user's configured MCP servers for the pooled-session fingerprint.
+  // Their configs are not handed to the external agent: connected MCP tools are
+  // exposed through Copse's authenticated native bridge so every call returns
+  // through ToolRegistry and the host permission gate. Best-effort config reads
+  // still degrade the turn to no mediated MCP tools instead of failing it.
   const mcpServers = await listForwardableMcpServers(executionContext?.projectId).catch(() => [])
   // No `model` and no `nativeBridge` here: the session pool owns the bridge
   // (it must exist before spawn for the seatbelt's loopback), and the model

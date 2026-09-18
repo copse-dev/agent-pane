@@ -52,9 +52,16 @@ import {
 import { isAppleDevelopmentProjectEnrolled } from '../apple-development/apple-development-service.ts'
 import { getPluginService } from '../plugins/plugin-service.ts'
 import { prepareAgentPluginMcpConfigs } from '../plugins/agent-plugin-mcp-runtime.ts'
+import {
+  clearMcpToolPermissionTargets,
+  migrateLegacyMcpToolGrants,
+  registerMcpToolPermissionTarget,
+  resolveToolPermission,
+  setToolPermissionForExecution,
+  type McpPermissionTarget,
+} from '../security/tool-permissions.ts'
 
 const CONNECT_TIMEOUT_MS = 30_000
-const GRANTS_STORAGE_KEY = 'mcp-remembered-grants'
 const USER_DISABLED_KEY = 'mcpDisabledServers'
 
 function getUserDisabledServerNames(): Set<string> {
@@ -110,19 +117,15 @@ export function getMcpToolMeta(toolName: string): McpToolMeta | undefined {
 }
 
 export function isMcpToolRemembered(toolName: string): boolean {
-  return parseStringList(storageGet(GRANTS_STORAGE_KEY)).includes(toolName)
+  return resolveToolPermission(toolName)?.policy === 'allow'
 }
 
-/**
- * Persist a remembered permission grant. Serialized read-modify-write so two
- * tools granted at once can't drop one grant; the validated read also discards
- * any corrupt/non-string entries already on disk.
- */
-export function rememberMcpTool(toolName: string): Promise<void> {
-  return storageUpdate(GRANTS_STORAGE_KEY, (raw) => {
-    const list = parseStringList(raw)
-    return list.includes(toolName) ? list : [...list, toolName]
-  })
+/** Persist a remembered approval as the tool's explicit allow override. */
+export async function rememberMcpTool(toolName: string): Promise<void> {
+  const stored = await setToolPermissionForExecution(toolName, 'allow')
+  if (!stored) {
+    console.warn(`[MCP] Could not remember an ambiguous tool identity: ${toolName}`)
+  }
 }
 
 async function readConfigFile(path: string): Promise<McpServerConfig[]> {
@@ -389,15 +392,16 @@ function createTransport(cfg: McpServerConfig): CreatedTransport {
 async function registerClientTools(
   registry: ToolRegistry,
   client: Client,
-  serverName: string,
+  server: Omit<McpPermissionTarget, 'toolName'>,
   bundled = false,
 ): Promise<string[]> {
   const { tools } = await client.listTools()
   const toolNames: string[] = []
   for (const tool of tools) {
-    const fullName = mcpToolName(serverName, tool.name)
+    const fullName = mcpToolName(server.serverName, tool.name)
+    registerMcpToolPermissionTarget({ ...server, toolName: tool.name })
     toolNames.push(tool.name)
-    const meta: McpToolMeta = { server: serverName }
+    const meta: McpToolMeta = { server: server.serverName }
     if (bundled) meta.bundled = true
     if (tool.annotations) {
       const annotations: McpToolAnnotations = {}
@@ -419,7 +423,7 @@ async function registerClientTools(
     toolMeta.set(fullName, meta)
     registry.register({
       name: fullName,
-      description: `[MCP:${serverName}] ${tool.description ?? ''}`.trim(),
+      description: `[MCP:${server.serverName}] ${tool.description ?? ''}`.trim(),
       // MCP servers are untrusted (see mcp-schema.ts); their results carry the
       // external-content provenance envelope.
       provenance: 'external',
@@ -427,7 +431,7 @@ async function registerClientTools(
       rawParameters: sanitizeMcpInputSchema(tool.inputSchema),
       async execute(args, signal) {
         const preparedArgs =
-          serverName === XCODEBUILD_MCP_SERVER_NAME
+          server.serverName === XCODEBUILD_MCP_SERVER_NAME
             ? prepareXcodeBuildMcpArguments(tool.name, args)
             : args
         const result = await client.callTool(
@@ -483,7 +487,12 @@ async function connectBundledServers(
   for (const { name, client } of bundled) {
     try {
       activeServers.push({ config: { name, transport: 'in-process' }, client })
-      const tools = await registerClientTools(registry, client, name, true)
+      const tools = await registerClientTools(
+        registry,
+        client,
+        { serverName: name, origin: 'built-in' },
+        true,
+      )
       statuses.push({
         name,
         transport: 'in-process',
@@ -567,7 +576,12 @@ async function connectServer(
     }
     activeServers.push({ config: cfg, client })
 
-    const toolNames = await registerClientTools(registry, client, cfg.name)
+    const toolNames = await registerClientTools(registry, client, {
+      serverName: cfg.name,
+      origin: base.origin,
+      ...(base.source === undefined ? {} : { source: base.source }),
+      ...(base.originDetail === undefined ? {} : { originDetail: base.originDetail }),
+    })
 
     console.log(
       `[MCP] Connected to "${cfg.name}" (${cfg.transport}) — ${String(toolNames.length)} tool(s)`,
@@ -596,6 +610,7 @@ async function teardown(registry: ToolRegistry): Promise<void> {
     if (name.startsWith(MCP_TOOL_PREFIX)) registry.unregister(name)
   }
   toolMeta.clear()
+  clearMcpToolPermissionTargets()
   await Promise.allSettled(activeServers.map((s) => s.client.close()))
   activeServers.length = 0
 }
@@ -618,7 +633,10 @@ export async function loadMcpServers(registry: ToolRegistry): Promise<void> {
   // app and hanging every workspace-loading spec. (Onboarding has no active
   // servers, so it was unaffected.)
   if (process.env['COPSE_AGENT_EVAL'] === '1' || process.env['COPSE_E2E'] === '1') {
-    if (generation === loadGeneration) serverStatuses = bundledStatuses
+    if (generation === loadGeneration) {
+      serverStatuses = bundledStatuses
+      await migrateLegacyMcpToolGrants()
+    }
     return
   }
   const { active, untrusted } = await collectConfigs()
@@ -626,6 +644,7 @@ export async function loadMcpServers(registry: ToolRegistry): Promise<void> {
   const userDisabled = getUserDisabledServerNames()
   if (active.length === 0 && untrusted.length === 0 && bundledStatuses.length === 0) {
     serverStatuses = []
+    await migrateLegacyMcpToolGrants()
     return
   }
   const connected = await Promise.all(
@@ -637,6 +656,7 @@ export async function loadMcpServers(registry: ToolRegistry): Promise<void> {
   // Only publish statuses if a newer load hasn't started in the meantime.
   if (generation === loadGeneration) {
     serverStatuses = [...bundledStatuses, ...connected, ...untrustedStatuses]
+    await migrateLegacyMcpToolGrants()
   }
 }
 
@@ -713,6 +733,7 @@ export async function shutdownMcpServers(): Promise<void> {
   await Promise.allSettled(activeServers.map((s) => s.client.close()))
   activeServers.length = 0
   toolMeta.clear()
+  clearMcpToolPermissionTargets()
   serverStatuses = []
 }
 

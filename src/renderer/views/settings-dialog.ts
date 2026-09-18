@@ -59,6 +59,7 @@ import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.t
 import { createAutomationPluginSettings } from './automation-plugin-settings.ts'
 import { PARALLEL_SEARCH_PLUGIN_ID } from '@copse/agent/plugins/parallel-search-plugin.ts'
 import { createParallelSearchPluginSettings } from './parallel-search-plugin-settings.ts'
+import { createToolPermissionsPanel } from './tool-permissions-panel.ts'
 import { APPLE_DEVELOPMENT_PLUGIN_ID } from '@copse/agent/plugins/apple-development-plugin.ts'
 import { createAppleDevelopmentPanel } from './apple-development-panel.ts'
 import {
@@ -763,6 +764,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             <p class="settings-section-desc">
               What the agent is allowed to do without stopping to ask you.
             </p>
+
+            <fieldset id="tool-permissions-fieldset">
+              <legend>Tool permissions</legend>
+              <p class="settings-fieldset-desc">
+                Choose whether each Copse or MCP tool runs automatically, asks every time, or is
+                blocked. These choices apply to future calls; they do not interrupt completed work.
+              </p>
+              <div id="tool-permissions-host"></div>
+            </fieldset>
 
             <fieldset>
               <legend>Shell commands</legend>
@@ -1561,6 +1571,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   const ghCliSection = createGhCliSection(api)
   qsRequired(overlay, '#settings-gh-cli-host').append(ghCliSection.root)
 
+  const toolPermissionsPanel = createToolPermissionsPanel(api.toolPermissions)
+  qsRequired(overlay, '#tool-permissions-host').append(toolPermissionsPanel.root)
+
   const modelRoutingSection = createModelRoutingSection(api, { modelScope: 'all' })
   qsRequired(overlay, '#settings-model-routing-host').append(modelRoutingSection.root)
 
@@ -1888,6 +1901,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         }
         showSection(id)
         if (id === 'usage') void usageSection.refresh()
+        if (id === 'permissions') void toolPermissionsPanel.refresh()
         // Defer disk scans until each tab is opened, so users who never visit them
         // don't trigger an fs walk (Sources) on open. The Providers panel defers
         // its own device scan until an agent block is actually shown.
@@ -3952,6 +3966,20 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       title.append(`${s.name} (${s.transport}): `, badge)
 
       header.append(toggleLabel, title, mcpOriginChip(s))
+      const permissionsButton = document.createElement('button')
+      permissionsButton.type = 'button'
+      permissionsButton.className = 'ui-btn ui-btn-secondary mcp-permissions-btn'
+      permissionsButton.textContent = 'Manage permissions'
+      permissionsButton.setAttribute('aria-label', `Manage permissions for ${s.name}`)
+      permissionsButton.addEventListener('click', () => {
+        showSection('permissions')
+        // The permissions catalog reads the current registry/status snapshot. It
+        // never connects or reloads an inactive server just to show this view.
+        void toolPermissionsPanel.refresh().then(() => {
+          qsRequired(overlay, '#tool-permissions-fieldset').scrollIntoView({ block: 'start' })
+        })
+      })
+      header.append(permissionsButton)
       row.append(header)
 
       let detailText =
@@ -4251,6 +4279,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     // the nav click path, so refresh lazy section content here too.
     if (openedSection === 'ssh') void sshWorkspaceSection.refresh()
     if (openedSection === 'usage') void usageSection.refresh()
+    if (openedSection === 'permissions') void toolPermissionsPanel.refresh()
     if (openedSection === 'customise') {
       void refreshSources()
       void revealPluginDetail()
