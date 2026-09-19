@@ -2,7 +2,10 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import type { SessionUpdate } from '@agentclientprotocol/sdk'
 import type { StreamChunk } from '@shared/types'
-import { sessionUpdateToStreamChunk, streamChunkToSessionUpdate } from './session-update-adapter.ts'
+import {
+  sessionUpdateToStreamChunks,
+  streamChunkToSessionUpdate,
+} from './session-update-adapter.ts'
 
 describe('streamChunkToSessionUpdate (agent role)', () => {
   it('maps text to an agent_message_chunk', () => {
@@ -182,13 +185,75 @@ describe('streamChunkToSessionUpdate (agent role)', () => {
   })
 })
 
-describe('sessionUpdateToStreamChunk (client role)', () => {
+describe('sessionUpdateToStreamChunks (client role)', () => {
+  for (const status of ['completed', 'failed'] as const) {
+    it(`preserves an initial ${status} status even without output`, () => {
+      assert.deepEqual(
+        sessionUpdateToStreamChunks({
+          sessionUpdate: 'tool_call',
+          toolCallId: 'finished',
+          title: 'read_file',
+          status,
+        }),
+        [
+          { type: 'tool_call', toolCall: { id: 'finished', name: 'read_file', args: {} } },
+          {
+            type: 'tool_call_update',
+            toolCallId: 'finished',
+            status: status === 'failed' ? 'error' : 'done',
+          },
+        ],
+      )
+    })
+  }
+
+  it('keeps output from an initial running call without marking it complete', () => {
+    assert.deepEqual(
+      sessionUpdateToStreamChunks({
+        sessionUpdate: 'tool_call',
+        toolCallId: 'running',
+        title: 'Build',
+        status: 'in_progress',
+        content: [{ type: 'content', content: { type: 'text', text: 'Compiling…' } }],
+      }),
+      [
+        { type: 'tool_call', toolCall: { id: 'running', name: 'Build', args: {} } },
+        {
+          type: 'tool_call_update',
+          toolCallId: 'running',
+          result: 'Compiling…',
+          resultFormat: 'markdown',
+        },
+      ],
+    )
+  })
+
+  it('uses the same MCP output decoding for a completed announcement and a later update', () => {
+    const update = {
+      toolCallId: 'completed',
+      title: 'Read',
+      status: 'completed',
+      rawOutput: { result: { content: [{ type: 'text', text: 'file contents' }] } },
+    } satisfies Omit<Extract<SessionUpdate, { sessionUpdate: 'tool_call' }>, 'sessionUpdate'>
+    const chunks = sessionUpdateToStreamChunks({ ...update, sessionUpdate: 'tool_call' })
+    assert.deepEqual(chunks, [
+      { type: 'tool_call', toolCall: { id: 'completed', name: 'Read', args: {} } },
+      {
+        type: 'tool_call_update',
+        toolCallId: 'completed',
+        status: 'done',
+        result: 'file contents',
+        resultFormat: 'markdown',
+      },
+    ])
+  })
+
   it('maps an agent_message_chunk to text', () => {
     const update: SessionUpdate = {
       sessionUpdate: 'agent_message_chunk',
       content: { type: 'text', text: 'hello' },
     }
-    assert.deepEqual(sessionUpdateToStreamChunk(update), { type: 'text', text: 'hello' })
+    assert.deepEqual(sessionUpdateToStreamChunks(update), [{ type: 'text', text: 'hello' }])
   })
 
   it('maps a tool_call to a tool_call chunk', () => {
@@ -198,10 +263,12 @@ describe('sessionUpdateToStreamChunk (client role)', () => {
       title: 'search',
       rawInput: { q: 'x' },
     }
-    assert.deepEqual(sessionUpdateToStreamChunk(update), {
-      type: 'tool_call',
-      toolCall: { id: 't9', name: 'search', args: { q: 'x' } },
-    })
+    assert.deepEqual(sessionUpdateToStreamChunks(update), [
+      {
+        type: 'tool_call',
+        toolCall: { id: 't9', name: 'search', args: { q: 'x' } },
+      },
+    ])
   })
 
   it('prefers a meaningful ACP title over the programmatic tool name', () => {
@@ -212,14 +279,16 @@ describe('sessionUpdateToStreamChunk (client role)', () => {
       name: 'copse.read_file',
       rawInput: { path: 'package.json' },
     }
-    assert.deepEqual(sessionUpdateToStreamChunk(update), {
-      type: 'tool_call',
-      toolCall: {
-        id: 't-title',
-        name: 'Read the project manifest',
-        args: { path: 'package.json' },
+    assert.deepEqual(sessionUpdateToStreamChunks(update), [
+      {
+        type: 'tool_call',
+        toolCall: {
+          id: 't-title',
+          name: 'Read the project manifest',
+          args: { path: 'package.json' },
+        },
       },
-    })
+    ])
   })
 
   it('uses the programmatic name for Cursor’s generic MCP title', () => {
@@ -230,14 +299,16 @@ describe('sessionUpdateToStreamChunk (client role)', () => {
       name: 'mcp__copse__read_archive',
       rawInput: { path: 'thread.zip' },
     }
-    assert.deepEqual(sessionUpdateToStreamChunk(update), {
-      type: 'tool_call',
-      toolCall: {
-        id: 't-mcp',
-        name: 'mcp__copse__read_archive',
-        args: { path: 'thread.zip' },
+    assert.deepEqual(sessionUpdateToStreamChunks(update), [
+      {
+        type: 'tool_call',
+        toolCall: {
+          id: 't-mcp',
+          name: 'mcp__copse__read_archive',
+          args: { path: 'thread.zip' },
+        },
       },
-    })
+    ])
   })
 
   it('keeps Cursor’s generic MCP title when no programmatic name is available', () => {
@@ -247,10 +318,12 @@ describe('sessionUpdateToStreamChunk (client role)', () => {
       title: 'MCP: tool',
       rawInput: {},
     }
-    assert.deepEqual(sessionUpdateToStreamChunk(update), {
-      type: 'tool_call',
-      toolCall: { id: 't-generic', name: 'MCP: tool', args: {} },
-    })
+    assert.deepEqual(sessionUpdateToStreamChunks(update), [
+      {
+        type: 'tool_call',
+        toolCall: { id: 't-generic', name: 'MCP: tool', args: {} },
+      },
+    ])
   })
 
   it('accepts a programmatic name supplied by a later tool update', () => {
@@ -259,11 +332,13 @@ describe('sessionUpdateToStreamChunk (client role)', () => {
       toolCallId: 't-late-name',
       name: 'copse.search_code',
     }
-    assert.deepEqual(sessionUpdateToStreamChunk(update), {
-      type: 'tool_call_update',
-      toolCallId: 't-late-name',
-      name: 'copse.search_code',
-    })
+    assert.deepEqual(sessionUpdateToStreamChunks(update), [
+      {
+        type: 'tool_call_update',
+        toolCallId: 't-late-name',
+        name: 'copse.search_code',
+      },
+    ])
   })
 
   it('carries the ACP kind so the UI can spot the agent’s shell commands', () => {
@@ -274,10 +349,12 @@ describe('sessionUpdateToStreamChunk (client role)', () => {
       kind: 'execute',
       rawInput: {},
     }
-    assert.deepEqual(sessionUpdateToStreamChunk(update), {
-      type: 'tool_call',
-      toolCall: { id: 'e1', name: 'git status', args: {}, kind: 'execute' },
-    })
+    assert.deepEqual(sessionUpdateToStreamChunks(update), [
+      {
+        type: 'tool_call',
+        toolCall: { id: 'e1', name: 'git status', args: {}, kind: 'execute' },
+      },
+    ])
   })
 
   it('drops the unspecified `other` kind so plain tool calls stay clean', () => {
@@ -288,10 +365,12 @@ describe('sessionUpdateToStreamChunk (client role)', () => {
       kind: 'other',
       rawInput: { path: 'a.ts' },
     }
-    assert.deepEqual(sessionUpdateToStreamChunk(update), {
-      type: 'tool_call',
-      toolCall: { id: 't1', name: 'read_file', args: { path: 'a.ts' } },
-    })
+    assert.deepEqual(sessionUpdateToStreamChunks(update), [
+      {
+        type: 'tool_call',
+        toolCall: { id: 't1', name: 'read_file', args: { path: 'a.ts' } },
+      },
+    ])
   })
 
   it('preserves arguments and content from an in-progress tool_call_update', () => {
@@ -306,15 +385,17 @@ describe('sessionUpdateToStreamChunk (client role)', () => {
         { type: 'content', content: { type: 'text', text: 'part2' } },
       ],
     }
-    assert.deepEqual(sessionUpdateToStreamChunk(update), {
-      type: 'tool_call_update',
-      toolCallId: 't9',
-      name: 'npm test',
-      args: { command: 'npm test', timeout_ms: 30_000 },
-      status: 'running',
-      result: 'part1 part2',
-      resultFormat: 'markdown',
-    })
+    assert.deepEqual(sessionUpdateToStreamChunks(update), [
+      {
+        type: 'tool_call_update',
+        toolCallId: 't9',
+        name: 'npm test',
+        args: { command: 'npm test', timeout_ms: 30_000 },
+        status: 'running',
+        result: 'part1 part2',
+        resultFormat: 'markdown',
+      },
+    ])
   })
 
   it('preserves structured raw output from a completed tool_call_update', () => {
@@ -324,13 +405,15 @@ describe('sessionUpdateToStreamChunk (client role)', () => {
       status: 'completed',
       rawOutput: { exitCode: 0, stdout: 'all good' },
     }
-    assert.deepEqual(sessionUpdateToStreamChunk(update), {
-      type: 'tool_call_update',
-      toolCallId: 't9',
-      status: 'done',
-      result: '{\n  "exitCode": 0,\n  "stdout": "all good"\n}',
-      resultFormat: 'markdown',
-    })
+    assert.deepEqual(sessionUpdateToStreamChunks(update), [
+      {
+        type: 'tool_call_update',
+        toolCallId: 't9',
+        status: 'done',
+        result: '{\n  "exitCode": 0,\n  "stdout": "all good"\n}',
+        resultFormat: 'markdown',
+      },
+    ])
   })
 
   it('unwraps text from a successful MCP raw-output envelope', () => {
@@ -350,13 +433,15 @@ describe('sessionUpdateToStreamChunk (client role)', () => {
         error: null,
       },
     }
-    assert.deepEqual(sessionUpdateToStreamChunk(update), {
-      type: 'tool_call_update',
-      toolCallId: 't9',
-      status: 'done',
-      result: 'first block\nsecond block',
-      resultFormat: 'markdown',
-    })
+    assert.deepEqual(sessionUpdateToStreamChunks(update), [
+      {
+        type: 'tool_call_update',
+        toolCallId: 't9',
+        status: 'done',
+        result: 'first block\nsecond block',
+        resultFormat: 'markdown',
+      },
+    ])
   })
 
   it('prefers unwrapped MCP text when ACP also supplies JSON display content', () => {
@@ -380,13 +465,15 @@ describe('sessionUpdateToStreamChunk (client role)', () => {
       ],
       rawOutput,
     }
-    assert.deepEqual(sessionUpdateToStreamChunk(update), {
-      type: 'tool_call_update',
-      toolCallId: 't9',
-      status: 'done',
-      result: 'readable result',
-      resultFormat: 'markdown',
-    })
+    assert.deepEqual(sessionUpdateToStreamChunks(update), [
+      {
+        type: 'tool_call_update',
+        toolCallId: 't9',
+        status: 'done',
+        result: 'readable result',
+        resultFormat: 'markdown',
+      },
+    ])
   })
 
   it('preserves an MCP error envelope instead of hiding its details', () => {
@@ -403,7 +490,7 @@ describe('sessionUpdateToStreamChunk (client role)', () => {
       status: 'failed',
       rawOutput,
     }
-    const chunk = sessionUpdateToStreamChunk(update)
+    const [chunk] = sessionUpdateToStreamChunks(update)
     assert.ok(chunk?.type === 'tool_call_update')
     assert.equal(chunk.result, JSON.stringify(rawOutput, null, 2))
   })
@@ -436,7 +523,7 @@ describe('sessionUpdateToStreamChunk (client role)', () => {
         status: 'completed',
         rawOutput,
       }
-      const chunk = sessionUpdateToStreamChunk(update)
+      const [chunk] = sessionUpdateToStreamChunks(update)
       assert.ok(chunk?.type === 'tool_call_update')
       assert.equal(chunk.result, JSON.stringify(rawOutput, null, 2))
     }
@@ -447,7 +534,7 @@ describe('sessionUpdateToStreamChunk (client role)', () => {
       sessionUpdate: 'tool_call_update',
       toolCallId: 't9',
     }
-    assert.equal(sessionUpdateToStreamChunk(update), null)
+    assert.deepEqual(sessionUpdateToStreamChunks(update), [])
   })
 
   it('maps an agent_thought_chunk to reasoning, not text', () => {
@@ -455,10 +542,12 @@ describe('sessionUpdateToStreamChunk (client role)', () => {
       sessionUpdate: 'agent_thought_chunk',
       content: { type: 'text', text: 'pondering' },
     }
-    assert.deepEqual(sessionUpdateToStreamChunk(update), {
-      type: 'reasoning',
-      text: 'pondering',
-    })
+    assert.deepEqual(sessionUpdateToStreamChunks(update), [
+      {
+        type: 'reasoning',
+        text: 'pondering',
+      },
+    ])
   })
 
   it('maps a plan to a todo_update with stable index-based ids', () => {
@@ -469,13 +558,15 @@ describe('sessionUpdateToStreamChunk (client role)', () => {
         { content: 'fix the bug', priority: 'medium', status: 'in_progress' },
       ],
     }
-    assert.deepEqual(sessionUpdateToStreamChunk(update), {
-      type: 'todo_update',
-      todos: [
-        { id: 'acp-plan-1', content: 'read the code', status: 'completed' },
-        { id: 'acp-plan-2', content: 'fix the bug', status: 'in_progress' },
-      ],
-    })
+    assert.deepEqual(sessionUpdateToStreamChunks(update), [
+      {
+        type: 'todo_update',
+        todos: [
+          { id: 'acp-plan-1', content: 'read the code', status: 'completed' },
+          { id: 'acp-plan-2', content: 'fix the bug', status: 'in_progress' },
+        ],
+      },
+    ])
   })
 
   it('maps usage_update to authoritative live context pressure', () => {
@@ -484,14 +575,16 @@ describe('sessionUpdateToStreamChunk (client role)', () => {
       used: 80_000,
       size: 200_000,
     }
-    assert.deepEqual(sessionUpdateToStreamChunk(update), {
-      type: 'context_pressure',
-      contextWindow: 200_000,
-      conversationBudget: 200_000,
-      conversationTokens: 80_000,
-      fillRatio: 0.4,
-      source: 'agent-reported',
-    })
+    assert.deepEqual(sessionUpdateToStreamChunks(update), [
+      {
+        type: 'context_pressure',
+        contextWindow: 200_000,
+        conversationBudget: 200_000,
+        conversationTokens: 80_000,
+        fillRatio: 0.4,
+        source: 'agent-reported',
+      },
+    ])
   })
 
   it('handles a zero-sized usage_update without producing an invalid ratio', () => {
@@ -500,14 +593,16 @@ describe('sessionUpdateToStreamChunk (client role)', () => {
       used: 0,
       size: 0,
     }
-    assert.deepEqual(sessionUpdateToStreamChunk(update), {
-      type: 'context_pressure',
-      contextWindow: 0,
-      conversationBudget: 0,
-      conversationTokens: 0,
-      fillRatio: 0,
-      source: 'agent-reported',
-    })
+    assert.deepEqual(sessionUpdateToStreamChunks(update), [
+      {
+        type: 'context_pressure',
+        contextWindow: 0,
+        conversationBudget: 0,
+        conversationTokens: 0,
+        fillRatio: 0,
+        source: 'agent-reported',
+      },
+    ])
   })
 
   it('drops update kinds the renderer does not consume', () => {
@@ -515,6 +610,6 @@ describe('sessionUpdateToStreamChunk (client role)', () => {
       sessionUpdate: 'available_commands_update',
       availableCommands: [],
     }
-    assert.equal(sessionUpdateToStreamChunk(update), null)
+    assert.deepEqual(sessionUpdateToStreamChunks(update), [])
   })
 })
