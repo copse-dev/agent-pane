@@ -75,6 +75,13 @@ function demoPlugin(id: string): RegisteredPlugin {
       capabilities: [
         { name: `${id}-cap`, title: 'Demo capability', description: 'a pure behaviour flag' },
       ],
+      instructionSources: [
+        {
+          name: `${id}-instructions`,
+          title: 'Demo instructions',
+          description: 'a first-party instruction source',
+        },
+      ],
       permissions: [
         {
           name: `${id}-bind`,
@@ -119,6 +126,13 @@ describe('pluginToSummary', () => {
     ])
     assert.deepEqual(summary.contributions.capabilities, [
       { name: 'alpha-cap', title: 'Demo capability', description: 'a pure behaviour flag' },
+    ])
+    assert.deepEqual(summary.contributions.instructionSources, [
+      {
+        name: 'alpha-instructions',
+        title: 'Demo instructions',
+        description: 'a first-party instruction source',
+      },
     ])
     assert.deepEqual(summary.contributions.permissions, [
       {

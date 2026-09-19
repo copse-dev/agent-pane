@@ -85,6 +85,13 @@ export interface PluginCapabilitySummary {
   description?: string
 }
 
+/** One first-party adapter that contributes project instructions. */
+export interface PluginInstructionSourceSummary {
+  name: string
+  title: string
+  description?: string
+}
+
 /**
  * One permission / sandbox relaxation a plugin DECLARES it may request (issue
  * #1190) — the authority the plugin opens. The permission-gate only grants a
@@ -151,6 +158,8 @@ export interface PluginContributionsSummary {
   followUps: readonly PluginFollowUpSummary[]
   /** Named runtime capability flags the plugin owns (pure behaviour, no tool). */
   capabilities: readonly PluginCapabilitySummary[]
+  /** First-party project-instruction source adapters. */
+  instructionSources: readonly PluginInstructionSourceSummary[]
   /** Permission / sandbox relaxations the plugin may request while enabled (#1190). */
   permissions: readonly PluginPermissionSummary[]
   /** Namespaced storage bag the plugin owns (survives disable — decision 17). */

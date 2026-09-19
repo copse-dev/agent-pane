@@ -5,6 +5,7 @@ import {
   DuplicatePluginError,
   InvalidAcpToolsError,
   InvalidFollowUpContributionError,
+  InvalidInstructionSourceContributionError,
   UnknownPluginError,
 } from './plugin-registry.ts'
 import {
@@ -257,6 +258,33 @@ describe('PluginRegistry follow-up bubbles', () => {
         ),
       )
     }, InvalidFollowUpContributionError)
+  })
+})
+
+describe('PluginRegistry instruction sources', () => {
+  it('exposes first-party sources only while their plugin is enabled', () => {
+    const registry = new PluginRegistry()
+    registry.register(
+      definePlugin(
+        { name: 'instructions', trust: 'first-party', stability: 'stable' },
+        { instructionSources: [{ name: 'project-rules', title: 'Project rules' }] },
+      ),
+    )
+    assert.equal(registry.isInstructionSourceActive('project-rules'), true)
+    registry.disable('instructions')
+    assert.equal(registry.isInstructionSourceActive('project-rules'), false)
+  })
+
+  it('rejects instruction transformation from a user plugin', () => {
+    const registry = new PluginRegistry()
+    assert.throws(() => {
+      registry.register(
+        definePlugin(
+          { name: 'personal.instructions', trust: 'user', stability: 'experimental' },
+          { instructionSources: [{ name: 'unsafe', title: 'Unsafe instructions' }] },
+        ),
+      )
+    }, InvalidInstructionSourceContributionError)
   })
 })
 

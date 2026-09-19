@@ -35,6 +35,10 @@ import { DARK_FACTORY_PLUGIN_ID } from '@copse/agent/plugins/dark-factory-plugin
 import { PARALLEL_SEARCH_PLUGIN_ID } from '@copse/agent/plugins/parallel-search-plugin.ts'
 import { ARTIFACT_CHECKPOINT_PLUGIN_ID } from '@copse/agent/plugins/artifact-checkpoint-plugin.ts'
 import { APPLE_DEVELOPMENT_PLUGIN_ID } from '@copse/agent/plugins/apple-development-plugin.ts'
+import {
+  AGENTS_MD_INSTRUCTION_FILES_SETTING_ID,
+  AGENTS_MD_PLUGIN_ID,
+} from '@copse/agent/plugins/agents-md-plugin.ts'
 import { storageDelete, storageGet, storageSet } from '../storage/storage.ts'
 import {
   __resetPluginServiceForTests,
@@ -53,6 +57,7 @@ const PARALLEL_SEARCH_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.parallelSearch
 const ARTIFACT_CHECKPOINT_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.artifactCheckpointEnablement'
 const BACKGROUND_TASKS_STABLE_MIGRATION_KEY = 'pluginMigration.backgroundTasksStable'
 const APPLE_DEVELOPMENT_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.appleDevelopmentEnablement'
+const AGENTS_MD_MODE_MIGRATION_KEY = 'pluginMigration.agentsMdInstructionFiles'
 const PLUGIN_SOURCES_KEY = 'pluginSources'
 const pluginSettingsKey = (id: string): string => `plugin.${id}.settings`
 const localPluginRoots: string[] = []
@@ -129,6 +134,7 @@ function clearStorage(): void {
   storageSet(ARTIFACT_CHECKPOINT_ENABLEMENT_MIGRATION_KEY, true)
   storageSet(BACKGROUND_TASKS_STABLE_MIGRATION_KEY, true)
   storageSet(APPLE_DEVELOPMENT_ENABLEMENT_MIGRATION_KEY, true)
+  storageSet(AGENTS_MD_MODE_MIGRATION_KEY, true)
   storageSet(PLUGIN_SOURCES_KEY, [])
   storageSet(pluginSettingsKey('demo.plugin'), {})
   storageSet(pluginSettingsKey('copse.other'), {})
@@ -684,6 +690,44 @@ describe('migratePackKeysToPlugin', () => {
     // default-off set, exactly as a fresh install gets.
     assert.equal(parseStringList(storageGet('pluginDisabled')).length > 0, true)
     assert.equal(storageGet('packDisabled'), undefined)
+  })
+})
+
+describe('AGENTS.md instruction mode migration', () => {
+  beforeEach(() => {
+    __resetPluginServiceForTests()
+    clearStorage()
+    storageDelete(AGENTS_MD_MODE_MIGRATION_KEY)
+    storageDelete(pluginSettingsKey(AGENTS_MD_PLUGIN_ID))
+  })
+
+  afterEach(() => {
+    __resetPluginServiceForTests()
+    clearStorage()
+  })
+
+  it('preserves combined AGENTS.md + CLAUDE.md behavior for an existing profile', () => {
+    storageSet(PLUGIN_DISABLED_KEY, [])
+
+    getPluginService()
+
+    assert.deepEqual(storageGet(pluginSettingsKey(AGENTS_MD_PLUGIN_ID)), {
+      [AGENTS_MD_INSTRUCTION_FILES_SETTING_ID]: 'claude-md-and-agents-md',
+    })
+  })
+
+  it('keeps the fallback manifest default for a fresh profile', () => {
+    storageDelete(PLUGIN_DISABLED_KEY)
+
+    const service = getPluginService()
+
+    const agents = service.list().find((plugin) => plugin.id === AGENTS_MD_PLUGIN_ID)
+    assert.equal(
+      agents?.settings.find((setting) => setting.id === AGENTS_MD_INSTRUCTION_FILES_SETTING_ID)
+        ?.value,
+      'claude-md-or-agents-md',
+    )
+    assert.equal(storageGet(pluginSettingsKey(AGENTS_MD_PLUGIN_ID)), undefined)
   })
 })
 

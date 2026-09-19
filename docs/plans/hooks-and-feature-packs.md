@@ -391,6 +391,19 @@ revisiting this document, not silently diverging in an implementation PR.
     retiring the old package format does not remove those behaviors. See
     [`agent-plugins-migration.md`](agent-plugins-migration.md) and #1082.
 
+28. **Instruction source policy is plugin-owned; instruction authority is not.**
+    `copse.claude-md`, `copse.agents-md`, and `copse.cursor-rules` are stable,
+    compiled first-party plugins. They own source-family lifecycle, file-name/
+    precedence declarations, and pure selection policy; `copse.agents-md` owns
+    the four-value `instructionFiles` setting. The host instruction engine keeps
+    filesystem access, workspace trust, realpath containment, discovery and byte
+    caps, deduplication, activation state, and prompt rendering. Instruction
+    sources are a typed registry contribution, atomically removed on disable,
+    and are first-party-only: a discovered or selected user plugin must never
+    enter the always-on instruction stream by declaring one. Fresh profiles use
+    `claude-md-or-agents-md`; existing profiles migrate once to
+    `claude-md-and-agents-md`, preserving Copse's former additive behavior.
+
 ## Target architecture
 
 ```mermaid

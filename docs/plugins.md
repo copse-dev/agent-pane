@@ -39,6 +39,7 @@ plugin manifest
 ├── prompt     skills / steering blocks (with trust framing: trusted vs untrusted)
 ├── ui         contributions — level 1 (cards) / 2 (named panel slot) / 3 (real renderer view)
 ├── followUps  bubbles suggested above the composer; the offer-shaped alternative to a modal
+├── instructionSources  first-party-only adapters for always-on project instruction families
 ├── settings   plugin-scoped schema, rendered generically in Settings
 └── storage    namespaced state; survives disable
 ```
@@ -51,6 +52,14 @@ is why the executable bits (function hooks, native tool registrations) live on
 the runtime `RegisteredPlugin.contributions`, not in the serializable manifest.
 The one user-code exception is an explicitly selected plugin's isolated
 shared `runtime`; it never imports code into Electron main.
+
+Instruction sources are an especially narrow first-party contribution. A source plugin owns file
+names, precedence, and pure selection policy; the host instruction engine retains filesystem I/O,
+workspace trust, realpath containment, byte/file caps, deduplication, and prompt rendering. The
+registry rejects `instructionSources` on a user plugin, and the portable Agent Plugins manifest
+has no field that can self-grant this capability. Copse ships `copse.claude-md`,
+`copse.agents-md`, and `copse.cursor-rules`; disabling one removes its source family from newly
+assembled turns without changing transcript history.
 
 The isolated runtime also supports declared `runtime.hooks` registrations through
 `registerHook` and explicit host invocation. Hook-only runtimes are accepted. This
@@ -177,7 +186,8 @@ groups every plugin's contributions by plugin id and owns the lifecycle:
 - **Grouping** — `all()` / `grouping()` enumerate plugins (Settings, P3); the
   `active*()` getters (`activeToolNames`, `activeBlockingHooks`,
   `activeAsyncHooks`, `activePromptBlocks`, `activeUiContributions`,
-  `activeBrowserOrigins`, `activeCapabilities`, `activePermissions`, `activeAcpToolNames`) return the contributions of
+  `activeBrowserOrigins`, `activeCapabilities`, `activeInstructionSources`,
+  `activePermissions`, `activeAcpToolNames`) return the contributions of
   **enabled** plugins only, for **new work**.
 - **ACP tools** — a first-party plugin may declare `tools.acpTools` as the subset
   of its `tools.native` entries safe to execute through Copse's authenticated

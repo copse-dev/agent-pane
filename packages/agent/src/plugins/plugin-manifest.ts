@@ -71,6 +71,25 @@ export interface PluginCapabilityDecl {
 }
 
 /**
+ * A first-party instruction-source adapter owned by a plugin.
+ *
+ * The declaration is intentionally metadata-only. Source-specific policy lives
+ * with the first-party plugin in `packages/agent`; filesystem reads, workspace
+ * trust, symlink containment, byte limits, and prompt rendering remain in the
+ * host instruction engine. User plugins cannot contribute this kind: allowing a
+ * repository manifest to rewrite the always-on instruction stream would be a
+ * prompt-injection privilege escalation.
+ */
+export interface PluginInstructionSourceDecl {
+  /** Stable source id read through `PluginRegistry.isInstructionSourceActive`. */
+  name: string
+  /** Human title shown in Settings contribution enumeration. */
+  title: string
+  /** Optional explanation of the files and activation policy this source owns. */
+  description?: string
+}
+
+/**
  * A permission / sandbox relaxation a plugin DECLARES it may request — the missing
  * "what authority does this plugin open" contribution kind (issue #1190). Some
  * features are, in essence, a sandbox relaxation gated by a permission prompt:
@@ -338,6 +357,12 @@ export interface PluginContributions {
    */
   readonly capabilities: readonly PluginCapabilityDecl[]
   /**
+   * First-party instruction sources active while their owning plugin is enabled.
+   * The host instruction engine is the only consumer and retains all I/O and
+   * trust enforcement.
+   */
+  readonly instructionSources: readonly PluginInstructionSourceDecl[]
+  /**
    * Permission / sandbox relaxations the plugin may request while enabled. A
    * relaxation is grantable iff some enabled plugin declares it (see
    * {@link PluginRegistry.isPermissionDeclared}); disabling the owning plugin drops
@@ -358,6 +383,7 @@ export const EMPTY_PLUGIN_CONTRIBUTIONS: PluginContributions = {
   uiContributions: [],
   followUps: [],
   capabilities: [],
+  instructionSources: [],
   permissions: [],
 }
 

@@ -156,6 +156,7 @@ const DEMO_PLUGIN_CONTRIBUTIONS: PluginContributionsSummary = {
   ui: [],
   followUps: [],
   capabilities: [],
+  instructionSources: [],
   permissions: [],
 }
 
