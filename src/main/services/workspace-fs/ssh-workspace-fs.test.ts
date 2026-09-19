@@ -13,7 +13,9 @@ import {
 import { getSetting, setSetting } from '../storage/settings.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import { clearSshWorkspaceFsCacheForTest, SshWorkspaceFs } from './ssh-workspace-fs.ts'
+import { WorkspaceFileTooLargeError } from './workspace-fs.ts'
 import type { SshWorkspaceHost } from '@shared/types/ssh-workspace.ts'
+import type { SshExecOptions } from '../ssh-workspace/transport.ts'
 
 const TEST_HOST: SshWorkspaceHost = {
   id: 'dev',
@@ -28,7 +30,7 @@ describe('SshWorkspaceFs', () => {
 
   beforeEach(async () => {
     resetSshConnectionManagerForTests()
-    clearSshWorkspaceFsCacheForTest()
+    await clearSshWorkspaceFsCacheForTest()
     previousHosts = getSetting<SshWorkspaceHost[]>('sshWorkspaceHosts', [])
     await setSetting('sshWorkspaceHosts', [TEST_HOST])
     setSshTransportFactory(
@@ -48,7 +50,7 @@ describe('SshWorkspaceFs', () => {
   afterEach(async () => {
     cleanupRoot?.()
     resetSshConnectionManagerForTests()
-    clearSshWorkspaceFsCacheForTest()
+    await clearSshWorkspaceFsCacheForTest()
     await setSetting('sshWorkspaceHosts', previousHosts)
   })
 
@@ -82,28 +84,115 @@ describe('SshWorkspaceFs', () => {
     await getSshConnectionManager().disconnect('dev')
   })
 
-  it(
-    'reads binary bytes with the host base64, including filenames with spaces and quotes',
-    { skip: process.platform === 'win32' },
-    async (t) => {
-      const dir = await mkdtemp(join(tmpdir(), 'copse-ssh-binary-'))
-      const path = join(dir, "image's sample.bin")
-      const bytes = Buffer.from(Array.from({ length: 512 }, (_, i) => i % 256))
-      try {
-        await writeFile(path, bytes)
-        const transport = new FakeSshTransport()
-        t.mock.method(transport, 'execShell', async (command: string) => {
-          const result = spawnSync('/bin/sh', ['-c', command], { encoding: 'utf8' })
-          return { stdout: result.stdout, stderr: result.stderr, code: result.status ?? 1 }
+  it('streams binary bytes past the command cap and caches the pull', async () => {
+    const path = "/home/me/project/image's sample.bin"
+    const bytes = Buffer.alloc(256 * 1024 + 17)
+    for (let index = 0; index < bytes.length; index += 1) bytes[index] = index % 256
+    const transport = new FakeSshTransport([{ when: /image's sample\.bin/, fileBytes: bytes }])
+    setSshTransportFactory(() => transport)
+    const fs = new SshWorkspaceFs('dev', '/home/me/project')
+
+    assert.deepEqual(await fs.readFileBytes(path), bytes)
+    assert.deepEqual(await fs.readFileBytes(path), bytes)
+    assert.equal(transport.calls.filter((call) => call.kind === 'fetch').length, 1)
+    assert.ok(!transport.calls.some((call) => call.kind === 'shell' && /base64/.test(call.command)))
+  })
+
+  it('rejects an oversized remote binary before transferring it', async () => {
+    const path = '/home/me/project/huge.mp4'
+    const transport = new FakeSshTransport([{ when: /huge\.mp4/, sizeBytes: 2048 }])
+    setSshTransportFactory(() => transport)
+    const fs = new SshWorkspaceFs('dev', '/home/me/project')
+
+    await assert.rejects(
+      () => fs.readFileBytes(path, { maxBytes: 1024 }),
+      WorkspaceFileTooLargeError,
+    )
+    assert.equal(transport.calls.filter((call) => call.kind === 'fetch').length, 0)
+  })
+
+  it('keeps enforcing the limit if a remote file grows after the size probe', async () => {
+    const path = '/home/me/project/growing.mp4'
+    const transport = new FakeSshTransport([
+      { when: /growing\.mp4/, sizeBytes: 1024, fileBytes: Buffer.alloc(2048) },
+    ])
+    setSshTransportFactory(() => transport)
+    const fs = new SshWorkspaceFs('dev', '/home/me/project')
+
+    await assert.rejects(
+      () => fs.readFileBytes(path, { maxBytes: 1024 }),
+      /transfer exceeded the 1024 byte limit/,
+    )
+    const fetch = transport.calls.find((call) => call.kind === 'fetch')
+    assert.equal(fetch?.options?.maxBytes, 1024)
+  })
+
+  it('removes materialized remote files when the cache is cleared', async () => {
+    const path = '/home/me/project/capture.mp4'
+    const transport = new FakeSshTransport([
+      { when: /capture\.mp4/, fileBytes: Buffer.from('video') },
+    ])
+    setSshTransportFactory(() => transport)
+    const fs = new SshWorkspaceFs('dev', '/home/me/project')
+
+    const materialized = await fs.materializeToLocal(path)
+    await access(materialized.path)
+    await clearSshWorkspaceFsCacheForTest()
+    await assert.rejects(access(materialized.path), { code: 'ENOENT' })
+  })
+
+  it('cancels an in-flight transfer when the cache is cleared', async (t) => {
+    const path = '/home/me/project/capture.mp4'
+    const transport = new FakeSshTransport([
+      { when: /capture\.mp4/, fileBytes: Buffer.from('video') },
+    ])
+    let markStarted: (() => void) | undefined
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve
+    })
+    t.mock.method(
+      transport,
+      'fetchFile',
+      async (_remotePath: string, _localPath: string, options: SshExecOptions = {}) => {
+        markStarted?.()
+        const signal = options.signal
+        assert.ok(signal)
+        await new Promise<void>((_resolve, reject) => {
+          const abort = (): void => {
+            const error = new Error('transfer stopped')
+            error.name = 'AbortError'
+            reject(error)
+          }
+          signal.addEventListener('abort', abort, { once: true })
+          if (signal.aborted) abort()
         })
-        setSshTransportFactory(() => transport)
-        const fs = new SshWorkspaceFs('dev', dir)
-        assert.deepEqual(await fs.readFileBytes(path), bytes)
-      } finally {
-        await rm(dir, { recursive: true, force: true })
-      }
-    },
-  )
+      },
+    )
+    setSshTransportFactory(() => transport)
+    const fs = new SshWorkspaceFs('dev', '/home/me/project')
+
+    const materialization = fs.materializeToLocal(path)
+    await started
+    const rejected = assert.rejects(materialization, { name: 'AbortError' })
+    await clearSshWorkspaceFsCacheForTest()
+    await rejected
+  })
+
+  it('does not start a transfer when binary reading is already cancelled', async () => {
+    const path = '/home/me/project/capture.mp4'
+    const transport = new FakeSshTransport([
+      { when: /capture\.mp4/, fileBytes: Buffer.from('video') },
+    ])
+    setSshTransportFactory(() => transport)
+    const fs = new SshWorkspaceFs('dev', '/home/me/project')
+    const controller = new AbortController()
+    controller.abort()
+
+    await assert.rejects(() => fs.readFileBytes(path, { signal: controller.signal }), {
+      name: 'AbortError',
+    })
+    assert.equal(transport.calls.filter((call) => call.kind === 'fetch').length, 0)
+  })
 
   it('falls back to POSIX find when the host lacks GNU find -printf', async () => {
     resetSshConnectionManagerForTests()

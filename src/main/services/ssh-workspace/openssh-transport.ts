@@ -1,4 +1,10 @@
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
+import { createWriteStream } from 'node:fs'
+import { mkdir, rename, rm } from 'node:fs/promises'
+import { basename, dirname, join } from 'node:path'
+import { Transform } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
 import type { SshWorkspaceHost, SshExecResult } from '@shared/types/ssh-workspace.ts'
 import { getSetting } from '../storage/settings.ts'
 import type { SshStrictHostKeys } from './git-ssh-env.ts'
@@ -25,6 +31,8 @@ const CONTROL_PERSIST_SECONDS = 14_400
 // reconnects cleanly.
 const SERVER_ALIVE_INTERVAL_SECONDS = 30
 const SERVER_ALIVE_COUNT_MAX = 3
+/** A media transfer is bounded by the caller's size check, but may outlast a normal command. */
+const FILE_TRANSFER_TIMEOUT_MS = 5 * 60_000
 
 /** Keepalives for whichever invocation ends up owning the connection. */
 function keepaliveArgs(): string[] {
@@ -178,6 +186,136 @@ async function runLocalSsh(
   })
 }
 
+function sshAbortError(message: string): Error {
+  const error = new Error(message)
+  error.name = 'AbortError'
+  return error
+}
+
+function sshTransferError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error))
+}
+
+export function createSshFileTransferLimit(maxBytes: number | undefined): Transform | null {
+  if (maxBytes === undefined) return null
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) {
+    throw new Error(`Invalid SSH file transfer limit: ${String(maxBytes)}`)
+  }
+  let transferred = 0
+  return new Transform({
+    transform(chunk: Buffer, _encoding, callback): void {
+      transferred += chunk.byteLength
+      if (transferred > maxBytes) {
+        callback(new Error(`SSH file transfer exceeded the ${String(maxBytes)} byte limit`))
+        return
+      }
+      callback(null, chunk)
+    },
+  })
+}
+
+/**
+ * Run an SSH command whose stdout is file content, streaming it to an atomic
+ * local destination. Unlike {@link runLocalSsh}, stdout never becomes a string
+ * and is therefore not subject to the command-result cap.
+ */
+async function runLocalSshToFile(
+  hostId: string,
+  args: string[],
+  localPath: string,
+  options: SshExecOptions = {},
+): Promise<void> {
+  options.signal?.throwIfAborted()
+  const limiter = createSshFileTransferLimit(options.maxBytes)
+  await mkdir(dirname(localPath), { recursive: true })
+  const partialPath = join(dirname(localPath), `.${basename(localPath)}.${randomUUID()}.partial`)
+  const askpass = leaseSshAskpassEnv(process.env, hostId)
+  let proc: ChildProcess
+  try {
+    proc = spawn('ssh', args, {
+      env: askpass.env,
+      stdio: 'pipe',
+    })
+  } catch (error) {
+    askpass.release()
+    throw error
+  }
+
+  const stdout = proc.stdout
+  if (!stdout) {
+    askpass.release()
+    throw new Error('SSH file transfer did not expose stdout')
+  }
+
+  let stderr = ''
+  let stopReason: Error | null = null
+  let cancelKill: (() => void) | undefined
+  const stop = (error: Error): void => {
+    if (stopReason) return
+    stopReason = error
+    cancelKill = terminateProcessTree(proc)
+  }
+  const currentStopReason = (): Error | null => stopReason
+  const onAbort = (): void => {
+    stop(sshAbortError('SSH file transfer aborted'))
+  }
+  options.signal?.addEventListener('abort', onAbort)
+  if (options.signal?.aborted) onAbort()
+
+  const timeoutMs = options.timeoutMs ?? FILE_TRANSFER_TIMEOUT_MS
+  const timer =
+    timeoutMs > 0
+      ? setTimeout(() => {
+          stop(new Error(`SSH file transfer timed out after ${String(timeoutMs)}ms`))
+        }, timeoutMs)
+      : undefined
+  timer?.unref()
+
+  proc.stdin?.end()
+  proc.stderr?.on('data', (chunk: Buffer) => {
+    stderr = appendFlatCapped(stderr, chunk.toString(), COMMAND_OUTPUT_MAX_BYTES)
+  })
+
+  const closed = new Promise<void>((resolve, reject) => {
+    proc.on('close', (code) => {
+      cancelKill?.()
+      if (stopReason) {
+        reject(stopReason)
+        return
+      }
+      if (code !== 0) {
+        reject(new Error(stderr.trim() || `SSH file transfer failed with exit ${String(code)}`))
+        return
+      }
+      resolve()
+    })
+    proc.on('error', reject)
+  })
+
+  try {
+    const output = createWriteStream(partialPath, { flags: 'wx', mode: 0o600 })
+    const streamed = (limiter ? pipeline(stdout, limiter, output) : pipeline(stdout, output)).catch(
+      (error: unknown) => {
+        const streamError = sshTransferError(error)
+        if (proc.exitCode === null && proc.signalCode === null) stop(streamError)
+        throw streamError
+      },
+    )
+    const [closeResult, streamResult] = await Promise.allSettled([closed, streamed])
+    if (closeResult.status === 'rejected') throw sshTransferError(closeResult.reason)
+    if (streamResult.status === 'rejected') throw sshTransferError(streamResult.reason)
+    const lateStop = currentStopReason()
+    if (lateStop) throw lateStop
+    options.signal?.throwIfAborted()
+    await rename(partialPath, localPath)
+  } finally {
+    if (timer) clearTimeout(timer)
+    options.signal?.removeEventListener('abort', onAbort)
+    askpass.release()
+    await rm(partialPath, { force: true }).catch(() => undefined)
+  }
+}
+
 export class OpenSshTransport implements SshTransport {
   private connected = false
   private readonly host: SshWorkspaceHost
@@ -292,6 +430,34 @@ export class OpenSshTransport implements SshTransport {
       this.forwards.delete(localPort)
     }
     await Promise.resolve()
+  }
+
+  async fetchFile(
+    remotePath: string,
+    localPath: string,
+    options: SshExecOptions = {},
+  ): Promise<void> {
+    const remote = buildRemoteArgvCommand(
+      ['sh', '-c', 'cat -- "$1"', 'sh', remotePath],
+      options.cwd,
+      options.env,
+    )
+    const args = [...baseSshArgs(this.host, this.controlPath), '--', remote]
+    await runLocalSshToFile(this.host.id, args, localPath, options)
+  }
+
+  async sizeOf(remotePath: string, options: SshExecOptions = {}): Promise<number> {
+    const result = await this.execArgv(['sh', '-c', 'wc -c < "$1"', 'sh', remotePath], options)
+    if (result.code !== 0) {
+      throw new Error(result.stderr.trim() || `Could not read remote file size: ${remotePath}`)
+    }
+    const value = result.stdout.trim()
+    if (!/^\d+$/.test(value)) {
+      throw new Error(`Remote file size was not a number: ${value || '(empty)'}`)
+    }
+    const size = Number(value)
+    if (!Number.isSafeInteger(size)) throw new Error(`Remote file size is out of range: ${value}`)
+    return size
   }
 
   private runForwardControl(
