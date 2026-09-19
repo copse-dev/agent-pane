@@ -29,7 +29,7 @@ supportedArchitectures:
 overrides:
   '@hono/node-server': 2.0.11
   '@xmldom/xmldom@0.8': 0.8.15
-  adm-zip: ^0.6.0
+  adm-zip: ^0.6.1
   brace-expansion: 5.0.9
   minimatch: 10.2.5
   deepmerge-ts: 8.0.0
@@ -73,11 +73,10 @@ minimumReleaseAgeExclude:
   - ip-address
   - undici
 
-# adm-zip has no non-vulnerable published release: 0.6.0 fixes the 4 GB memory
-# allocation advisory, but it and every release back to 0.5.9 follow destination
-# symlinks during extraction. Keep the upstream-compatible symlink guard locally
-# until a release newer than 0.6.0 includes cthackers/adm-zip#575. The regression
-# test in scripts/adm-zip-symlink-patch.test.ts fails if this patch is dropped.
+# adm-zip 0.6.1 fixes the declared-size allocation advisory and includes the
+# destination-symlink protections previously carried as a local patch. The
+# regression test in scripts/adm-zip-symlink-patch.test.ts keeps that protection
+# pinned if a future release regresses it.
 
 # Four patches to @anthropic-ai/sandbox-runtime, all in one patch file. Drop
 # each once upstream does the same; the named test fails loudly if a version
@@ -112,4 +111,3 @@ minimumReleaseAgeExclude:
 #    `project-sandbox/worktree-preparation.test.ts`.
 patchedDependencies:
   '@anthropic-ai/sandbox-runtime@0.0.74': patches/@anthropic-ai__sandbox-runtime@0.0.74.patch
-  adm-zip@0.6.0: patches/adm-zip@0.6.0.patch
