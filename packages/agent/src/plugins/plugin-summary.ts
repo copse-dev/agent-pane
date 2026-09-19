@@ -67,6 +67,13 @@ export interface PluginCapabilityOut {
   description?: string
 }
 
+/** One first-party instruction source enumerated for the Settings plugin list. */
+export interface PluginInstructionSourceOut {
+  name: string
+  title: string
+  description?: string
+}
+
 /** One permission / sandbox relaxation enumerated for the Settings plugin list. */
 export interface PluginPermissionOut {
   name: string
@@ -96,6 +103,8 @@ export interface PluginContributionsOut {
   followUps: readonly PluginFollowUpOut[]
   /** Named runtime capability flags the plugin owns (pure behaviour, no tool). */
   capabilities: readonly PluginCapabilityOut[]
+  /** First-party project-instruction source adapters. */
+  instructionSources: readonly PluginInstructionSourceOut[]
   /** Permission / sandbox relaxations the plugin may request while enabled. */
   permissions: readonly PluginPermissionOut[]
   storageNamespace?: string
@@ -212,6 +221,11 @@ export function pluginToSummary(
     if (p.scope !== undefined) entry.scope = p.scope
     return entry
   })
+  const instructionSources = contributions.instructionSources.map((source) => {
+    const entry: PluginInstructionSourceOut = { name: source.name, title: source.title }
+    if (source.description !== undefined) entry.description = source.description
+    return entry
+  })
   const contributionsOut: PluginContributionsOut = {
     toolNames: contributions.toolNames.slice(),
     modelRoutes: contributions.modelRoutes.map((route) => ({ ...route })),
@@ -223,6 +237,7 @@ export function pluginToSummary(
     ui,
     followUps,
     capabilities,
+    instructionSources,
     permissions,
   }
   if (manifest.tools?.mcpServers !== undefined) {

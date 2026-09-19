@@ -21,6 +21,7 @@ import type {
   PluginCapabilityDecl,
   PluginContributions,
   PluginFollowUpDecl,
+  PluginInstructionSourceDecl,
   PluginPermissionDecl,
   PluginUiContribution,
   PluginPromptBlock,
@@ -114,6 +115,20 @@ export class InvalidAcpToolsError extends Error {
   }
 }
 
+/** Thrown when a user plugin tries to enter the always-on instruction stream. */
+export class InvalidInstructionSourceContributionError extends Error {
+  readonly pluginId: string
+  readonly sourceName: string
+  constructor(pluginId: string, sourceName: string) {
+    super(
+      `plugin "${pluginId}" instruction source "${sourceName}" is invalid: only first-party plugins may transform project instructions`,
+    )
+    this.name = 'InvalidInstructionSourceContributionError'
+    this.pluginId = pluginId
+    this.sourceName = sourceName
+  }
+}
+
 export class PluginRegistry {
   // Insertion-ordered so `all()` / the active getters keep a deterministic
   // order (contribution order can be load-bearing, e.g. prompt assembly).
@@ -128,6 +143,12 @@ export class PluginRegistry {
   /** Register a plugin, grouped by its id. Enabled by default. Duplicate id throws. */
   register(plugin: RegisteredPlugin): void {
     if (this.plugins.has(plugin.id)) throw new DuplicatePluginError(plugin.id)
+    if (plugin.trust !== 'first-party' && plugin.contributions.instructionSources.length > 0) {
+      throw new InvalidInstructionSourceContributionError(
+        plugin.id,
+        plugin.contributions.instructionSources[0]?.name ?? 'unknown',
+      )
+    }
     const acpTools = plugin.manifest.tools?.acpTools ?? []
     const nativeTools = new Set(plugin.manifest.tools?.native ?? [])
     const runtimeTools = new Set(plugin.contributions.toolNames)
@@ -346,6 +367,20 @@ export class PluginRegistry {
    */
   isCapabilityActive(name: string): boolean {
     return this.activeCapabilities().some((capability) => capability.name === name)
+  }
+
+  /** First-party instruction sources active for new prompt assembly. */
+  activeInstructionSources(): readonly PluginInstructionSourceDecl[] {
+    return this.collectActive((c) => c.instructionSources)
+  }
+
+  /**
+   * Whether an instruction source is active. This is the sole lifecycle seam
+   * the host instruction engine reads; disabling the owning plugin removes its
+   * source in the same flag flip as every other contribution kind.
+   */
+  isInstructionSourceActive(name: string): boolean {
+    return this.activeInstructionSources().some((source) => source.name === name)
   }
 
   /**

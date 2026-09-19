@@ -100,6 +100,7 @@ function stubApi(
       ui: [],
       followUps: [],
       capabilities: [],
+      instructionSources: [],
       permissions: [],
     },
     settings: [],

@@ -38,6 +38,7 @@ function registryPlugin(id: string, enabled: boolean): PluginSummary {
       ui: [],
       followUps: [],
       capabilities: [],
+      instructionSources: [],
       permissions: [],
     },
     settings: [],
