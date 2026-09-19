@@ -90,7 +90,9 @@ security properties:
 
 - **SSH workspaces** keep the UI, approval policy, model loop, and thread store local,
   but file and process operations run with the configured remote account's authority.
-  The local macOS seatbelt does not protect the SSH host.
+  The local macOS seatbelt does not protect the SSH host. Binary files needed by local
+  media and archive tools are streamed into a size-bounded, short-lived local cache;
+  cache files use private permissions and are removed during orderly app shutdown.
 - **Managed remote agents** hand work to Cursor or Anthropic infrastructure. Copse
   records the provider session and returned events, but the provider owns guest
   isolation, egress, credential handling, retention, and teardown. The current

@@ -15,6 +15,10 @@ export interface SshTransport {
   isConnected(): boolean
   openForward(remotePort: number): Promise<{ localPort: number }>
   closeForward(localPort: number): Promise<void>
+  /** Stream a remote file directly to local disk without the command-output cap. */
+  fetchFile(remotePath: string, localPath: string, options?: SshExecOptions): Promise<void>
+  /** Read a remote file size before transferring its bytes. */
+  sizeOf(remotePath: string, options?: SshExecOptions): Promise<number>
   execArgv(argv: string[], options?: SshExecOptions): Promise<SshExecResult>
   execShell(command: string, options?: SshExecOptions): Promise<SshExecResult>
 }

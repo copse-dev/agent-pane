@@ -2,10 +2,12 @@ import { z } from 'zod'
 import { defineTool } from '@shared/types'
 import { SUPPORTED_ARCHIVE_EXTENSIONS, MAX_ARCHIVE_BYTES } from '@shared/archive/archive-media.ts'
 import { fileExtension, formatByteSize } from '@shared/file-bytes.ts'
-import { resolveReadablePathWithinRoot } from '../services/workspace.ts'
+import { resolveReadableFileWithinRoot, type ResolvedReadableFile } from '../services/workspace.ts'
 import { requireAgentExecutionRoot } from '../services/execution-root.ts'
 import { requireThreadExecutionOwner } from '../services/thread-execution-context.ts'
 import { getActiveWorkspaceFs } from '../services/workspace-fs/get-workspace-fs.ts'
+import { localWorkspaceFs } from '../services/workspace-fs/local-workspace-fs.ts'
+import { WorkspaceFileTooLargeError } from '../services/workspace-fs/workspace-fs.ts'
 import {
   extractArchiveForThread,
   type ExtractedArchive,
@@ -62,17 +64,26 @@ export const readArchiveTool = defineTool({
     }
 
     const root = requireAgentExecutionRoot()
-    let absPath: string
+    let resolvedFile: ResolvedReadableFile
     try {
-      absPath = await resolveReadablePathWithinRoot(path, root)
+      resolvedFile = await resolveReadableFileWithinRoot(path, root)
     } catch (err) {
       return err instanceof Error ? err.message : `Could not resolve ${path}.`
     }
+    const workspaceFs =
+      resolvedFile.source === 'local-chat-store' ? localWorkspaceFs : getActiveWorkspaceFs()
 
     let bytes: Buffer
     try {
-      bytes = await getActiveWorkspaceFs().readFileBytes(absPath)
-    } catch {
+      bytes = await workspaceFs.readFileBytes(resolvedFile.path, {
+        maxBytes: MAX_ARCHIVE_BYTES,
+        signal,
+      })
+    } catch (error) {
+      if (error instanceof WorkspaceFileTooLargeError) {
+        return `${path} is ${formatByteSize(error.sizeBytes)}, over the ${formatByteSize(MAX_ARCHIVE_BYTES)} limit for archive extraction.`
+      }
+      if (signal.aborted) return 'Cancelled before reading the archive.'
       return `Could not read archive: ${path}`
     }
     if (bytes.byteLength === 0) return `${path} is empty.`

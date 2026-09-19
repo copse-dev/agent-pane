@@ -270,7 +270,7 @@ describe('video_frames tool', () => {
     setVideoDecoderForTest(() => {
       throw new Error('should not decode')
     })
-    // Sparse file: the tool reads bytes, so only the length has to be real.
+    // Sparse file: the tool rejects from metadata before allocating the bytes.
     const big = join(tempRoot, 'huge.mp4')
     const handle = await import('node:fs/promises').then((fs) => fs.open(big, 'w'))
     await handle.truncate(MAX_VIDEO_BYTES + 1)

@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { rmSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
+import type { PathBackend } from './workspace-fs/path-backend.ts'
 import { setSetting } from './storage/settings.ts'
 import { storageSet } from './storage/storage.ts'
 import {
@@ -25,6 +26,8 @@ import {
   isResolvedPathInsideWorkspace,
   registerAllowedWorkspaceRoot,
   registerInternalWorkspaceRoot,
+  resolveLocalChatStorePath,
+  resolveReadableFileWithinRoot,
   resolveReadablePath,
   resolveSshHostForWorkspaceRoot,
   resolveWorkspacePath,
@@ -239,6 +242,26 @@ describe('resolveReadablePath (read-only chat-store mount, #644)', () => {
     cleanupRoot = setWorkspaceRootForTest(ws)
     assert.equal(await resolveReadablePath(chatFile), realpathSync.native(chatFile))
     rmSync(ws, { recursive: true, force: true })
+  })
+
+  it('resolves a local chat-store file independently of the workspace backend', async () => {
+    assert.equal(await resolveLocalChatStorePath(chatFile), realpathSync.native(chatFile))
+    assert.equal(await resolveLocalChatStorePath('relative/message.md'), null)
+
+    const unavailableRemote: PathBackend = {
+      exists: () => Promise.reject(new Error('remote backend should not be consulted')),
+      stat: () => Promise.reject(new Error('remote backend should not be consulted')),
+      lstat: () => Promise.reject(new Error('remote backend should not be consulted')),
+      readlink: () => Promise.reject(new Error('remote backend should not be consulted')),
+      realpath: () => Promise.reject(new Error('remote backend should not be consulted')),
+    }
+    assert.deepEqual(
+      await resolveReadableFileWithinRoot(chatFile, '/remote/project', unavailableRemote),
+      {
+        path: realpathSync.native(chatFile),
+        source: 'local-chat-store',
+      },
+    )
   })
 
   it('still resolves workspace-relative paths (workspace takes precedence)', async () => {
