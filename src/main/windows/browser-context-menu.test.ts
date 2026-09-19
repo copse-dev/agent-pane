@@ -2,9 +2,12 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   buildBrowserContextMenuTemplate,
+  createBrowserGuestInspectionController,
+  inspectBrowserGuestElement,
   suggestedImageFilename,
   type BrowserContextMenuActions,
   type BrowserContextMenuParams,
+  type BrowserGuestInspector,
 } from './browser-context-menu.ts'
 
 function baseParams(overrides: Partial<BrowserContextMenuParams> = {}): BrowserContextMenuParams {
@@ -186,6 +189,85 @@ describe('buildBrowserContextMenuTemplate', () => {
 
     invokeItemClick(template, 'Share Selection with Thread')
     assert.deepEqual(actions.calls, ['shareSelection:https://example.com/current:hello'])
+  })
+})
+
+describe('inspectBrowserGuestElement', () => {
+  function recordingInspector(initiallyOpen = false): {
+    inspector: BrowserGuestInspector
+    calls: string[]
+    announceOpened: () => void
+    destroy: () => void
+  } {
+    const calls: string[] = []
+    let destroyed = false
+    let opened = initiallyOpen
+    let openedListener: (() => void) | undefined
+    const inspector: BrowserGuestInspector = {
+      isDestroyed: () => destroyed,
+      isDevToolsOpened: () => opened,
+      onceDevToolsOpened: (listener) => {
+        openedListener = listener
+      },
+      openDevTools: () => {
+        calls.push('open')
+      },
+      inspectElement: (x, y) => {
+        calls.push(`inspect:${String(x)},${String(y)}`)
+      },
+    }
+    return {
+      inspector,
+      calls,
+      announceOpened: (): void => {
+        opened = true
+        openedListener?.()
+      },
+      destroy: (): void => {
+        destroyed = true
+      },
+    }
+  }
+
+  it('waits for the native menu to close before opening and targeting DevTools', () => {
+    const recording = recordingInspector()
+    const controller = createBrowserGuestInspectionController(recording.inspector)
+
+    controller.selectElement(10, 20)
+    assert.deepEqual(recording.calls, [])
+
+    controller.menuClosed()
+    assert.deepEqual(recording.calls, ['open'])
+
+    recording.announceOpened()
+    assert.deepEqual(recording.calls, ['open', 'inspect:10,20'])
+  })
+
+  it('does nothing when the native menu closes without selecting Inspect Element', () => {
+    const recording = recordingInspector()
+    const controller = createBrowserGuestInspectionController(recording.inspector)
+
+    controller.menuClosed()
+
+    assert.deepEqual(recording.calls, [])
+  })
+
+  it('inspects immediately when DevTools are already open', () => {
+    const recording = recordingInspector(true)
+
+    inspectBrowserGuestElement(recording.inspector, 4, 8)
+
+    assert.deepEqual(recording.calls, ['inspect:4,8'])
+  })
+
+  it('does not inspect a guest destroyed while DevTools open', () => {
+    const recording = recordingInspector()
+
+    inspectBrowserGuestElement(recording.inspector, 2, 6)
+    recording.destroy()
+    recording.announceOpened()
+
+    assert.deepEqual(recording.calls, ['open'])
   })
 })
 
