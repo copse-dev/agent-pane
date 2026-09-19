@@ -19,11 +19,14 @@
 import type { CanvasArtefact } from '@shared/types/canvas.ts'
 import { artefactUrl } from '@shared/canvas/artefact.ts'
 
+interface CanvasMirrorNavigateOptions {
+  newTab?: boolean | undefined
+  viewId?: string | undefined
+  backgroundColor?: string | undefined
+}
+
 export interface CanvasMirrorSession {
-  navigate(
-    url: string,
-    opts?: { newTab?: boolean | undefined; viewId?: string | undefined },
-  ): Promise<{ viewId: string }>
+  navigate(url: string, opts?: CanvasMirrorNavigateOptions): Promise<{ viewId: string }>
   /** A small PNG `data:` URL of the tab, or null when capture is unavailable. */
   capturePreview(viewId: string): Promise<string | null>
 }
@@ -54,6 +57,7 @@ export function resetCanvasAgentMirrorForTest(): void {
 export async function mirrorArtefactToAgent(
   artefact: CanvasArtefact,
   session: CanvasMirrorSession,
+  backgroundColor?: string,
 ): Promise<string | null> {
   // `text/uri-list` is supplied by an MCP server and may name any external
   // origin. Navigating it here would bypass the approval that guards
@@ -69,10 +73,12 @@ export async function mirrorArtefactToAgent(
   }
   const key = artefactKey(artefact.threadId, artefact.title)
   const known = viewIdByArtefact.get(key)
+  const navigation: CanvasMirrorNavigateOptions = known ? { viewId: known } : { newTab: true }
+  if (backgroundColor) navigation.backgroundColor = backgroundColor
 
   let viewId: string
   try {
-    viewId = (await session.navigate(url, known ? { viewId: known } : { newTab: true })).viewId
+    viewId = (await session.navigate(url, navigation)).viewId
   } catch {
     // The remembered tab is gone — the agent closed it via `browser_tabs`, or
     // the session was torn down. Forget it and try once more in a fresh tab.
@@ -81,7 +87,9 @@ export async function mirrorArtefactToAgent(
     if (!known) return null
     viewIdByArtefact.delete(key)
     try {
-      viewId = (await session.navigate(url, { newTab: true })).viewId
+      const retry: CanvasMirrorNavigateOptions = { newTab: true }
+      if (backgroundColor) retry.backgroundColor = backgroundColor
+      viewId = (await session.navigate(url, retry)).viewId
     } catch {
       return null
     }
