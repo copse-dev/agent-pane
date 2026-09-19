@@ -20,7 +20,7 @@ import { findThreadOwners, threadDirectoryPath } from '../thread-store.ts'
  *    field, or anything else non-standard, is already gone by the time
  *    `session-update-adapter.ts` runs. (`_meta` and the programmatic `name` are
  *    both modelled as of SDK 1.3.0, so those two do survive the parse.)
- * 2. `sessionUpdateToStreamChunk` then normalizes what is left into Copse's
+ * 2. `sessionUpdateToStreamChunks` then normalizes what is left into Copse's
  *    `StreamChunk` vocabulary, dropping whatever has no counterpart — notably,
  *    it derives the displayed tool name from `title` alone and never reads the
  *    parsed `name`, which is one candidate explanation for a bare `MCP: tool`.

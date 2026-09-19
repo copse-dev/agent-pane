@@ -27,7 +27,7 @@ import {
 import { tapAcpWireStream } from './acp-wire-tap.ts'
 import { acquireAcpSession, disposeAllAcpSessions } from './acp-session-pool.ts'
 import { runAcpSessionPrompt } from './acp-client.ts'
-import { sessionUpdateToStreamChunk } from './session-update-adapter.ts'
+import { sessionUpdateToStreamChunks } from './session-update-adapter.ts'
 import { ToolRegistry } from '../tool-registry.ts'
 import {
   loadProjectThreads,
@@ -266,8 +266,8 @@ describe('acp wire trace', () => {
     // normalized chunk carries only what Copse models. `name` now survives as
     // the label, rescuing the generic `MCP: tool` title, but the vendor
     // metadata sitting beside it does not. The trace still has all of it.
-    const chunk = sessionUpdateToStreamChunk(GENERIC_MCP_TOOL_CALL)
-    assert.ok(chunk !== null && chunk.type === 'tool_call')
+    const [chunk] = sessionUpdateToStreamChunks(GENERIC_MCP_TOOL_CALL)
+    assert.ok(chunk?.type === 'tool_call')
     assert.equal(chunk.toolCall.name, 'mcp__linear__create_issue')
     assert.equal(JSON.stringify(chunk).includes('cursor.dev/serverName'), false)
     assert.equal(JSON.stringify(chunk).includes('vendorExtension'), false)

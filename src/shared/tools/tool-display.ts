@@ -192,6 +192,9 @@ export function getToolDisplayName(name: string, tense: ToolLabelTense = 'done')
   const known = TOOL_DISPLAY_NAMES[name]
   if (known) return pickLabel(known, tense)
   const mcp = parseMcp(name)
+  // Codex reports connection failures as synthetic MCP startup calls. Their
+  // server is the useful identity; stripping it makes every failure "Startup".
+  if (mcp?.tool === 'startup') return `${mcp.server} startup`
   if (mcp) return formatToolNameFallback(mcp.tool)
   // Strip known MCP/ACP server prefixes (dot or underscore notation) so the
   // user sees just the tool name, not the internal server alias.

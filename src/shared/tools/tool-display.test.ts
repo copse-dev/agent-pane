@@ -36,6 +36,12 @@ function rollupChildren(
 }
 
 describe('tool-display', () => {
+  it('identifies which MCP server failed to start', () => {
+    assert.equal(getToolDisplayName('mcp__docs__startup'), 'docs startup')
+    assert.equal(getToolDisplayName('mcp__issue_tracker__startup'), 'issue_tracker startup')
+    assert.equal(getToolDisplayName('mcp__docs__read_page'), 'Read Page')
+  })
+
   it('labels worktree preparation tools and groups them by effect', () => {
     assert.equal(getToolDisplayName('preflight_worktree'), 'Checked worktree')
     assert.equal(getToolDisplayName('preflight_worktree', 'running'), 'Checking worktree')
