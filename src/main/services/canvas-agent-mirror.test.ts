@@ -10,7 +10,13 @@ function artefact(overrides: Partial<CanvasArtefact> = {}): CanvasArtefact {
 
 interface Call {
   url: string
-  opts?: { newTab?: boolean | undefined; viewId?: string | undefined } | undefined
+  opts?:
+    | {
+        newTab?: boolean | undefined
+        viewId?: string | undefined
+        backgroundColor?: string | undefined
+      }
+    | undefined
 }
 
 function session(
@@ -45,15 +51,28 @@ describe('mirrorArtefactToAgent', () => {
     assert.match(s.calls[0].url, /^data:text\/html;charset=utf-8;base64,/)
   })
 
+  it('uses the live canvas background when capturing transparent artefacts', async () => {
+    const s = session()
+    await mirrorArtefactToAgent(artefact(), s, 'rgb(17, 29, 23)')
+
+    assert.deepEqual(s.calls[0]?.opts, {
+      newTab: true,
+      backgroundColor: 'rgb(17, 29, 23)',
+    })
+  })
+
   it('reuses the tab for a re-render of the same title', async () => {
     const s = session()
-    await mirrorArtefactToAgent(artefact(), s)
-    await mirrorArtefactToAgent(artefact({ body: '<h1>v2</h1>' }), s)
+    await mirrorArtefactToAgent(artefact(), s, 'rgb(17, 29, 23)')
+    await mirrorArtefactToAgent(artefact({ body: '<h1>v2</h1>' }), s, 'rgb(17, 29, 23)')
 
     assert.equal(s.calls.length, 2)
     const [v1, v2] = s.calls
     assert.ok(v1 && v2)
-    assert.deepEqual(v2.opts, { viewId: 'tab-1' })
+    assert.deepEqual(v2.opts, {
+      viewId: 'tab-1',
+      backgroundColor: 'rgb(17, 29, 23)',
+    })
     assert.notEqual(v1.url, v2.url)
   })
 
