@@ -4,8 +4,21 @@ import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { MAX_VIDEO_BYTES } from '@shared/video/video-media.ts'
+import type { SshWorkspaceHost } from '@shared/types/ssh-workspace.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
-import { describeWorkspaceVideo, storeVideoAttachment } from './video-attachment-store.ts'
+import {
+  describeWorkspaceVideo,
+  readVideoForPlayback,
+  storeVideoAttachment,
+} from './video-attachment-store.ts'
+import { getSetting, setSetting } from '../storage/settings.ts'
+import { storageGet, storageSet } from '../storage/storage.ts'
+import {
+  resetSshConnectionManagerForTests,
+  setSshTransportFactory,
+} from '../ssh-workspace/connection-manager.ts'
+import { FakeSshTransport } from '../ssh-workspace/fake-ssh-transport.ts'
+import { clearSshWorkspaceFsCacheForTest } from '../workspace-fs/ssh-workspace-fs.ts'
 
 import { storeArchiveAttachment } from '../archive/archive-attachment-store.ts'
 
@@ -141,6 +154,80 @@ describe('video attachment store', () => {
         () => describeWorkspaceVideo('notes.txt', 'notes.txt', 'text/plain'),
         /not a supported video/,
       )
+    })
+
+    it('describes and previews a video from an SSH workspace', async () => {
+      const previousEnabled = getSetting<boolean>('sshWorkspaceEnabled', false)
+      const previousHosts = getSetting<SshWorkspaceHost[]>('sshWorkspaceHosts', [])
+      const previousProject = storageGet('activeProjectId')
+      const previousProjects = storageGet('projects')
+      const restoreLocalRoot = setWorkspaceRootForTest('/remote/project')
+      const videoBytes = Buffer.from('pretend remote mp4')
+      const transport = new FakeSshTransport([
+        { when: /^realpath -e '\/remote\/project'$/, stdout: '/remote/project\n' },
+        {
+          when: /^test -e '\/remote\/project\/demo\.mp4'$/,
+          code: 0,
+        },
+        {
+          when: /^realpath -e '\/remote\/project\/demo\.mp4'$/,
+          stdout: '/remote/project/demo.mp4\n',
+        },
+        {
+          when: /^if \[ -d '\/remote\/project\/demo\.mp4'/,
+          stdout: 'f\n',
+        },
+        { when: /^\/remote\/project\/demo\.mp4$/, fileBytes: videoBytes },
+      ])
+
+      try {
+        await clearSshWorkspaceFsCacheForTest()
+        resetSshConnectionManagerForTests()
+        await setSetting('sshWorkspaceEnabled', true)
+        await setSetting('sshWorkspaceHosts', [
+          { id: 'dev', label: 'Dev', host: 'dev.example.com' },
+        ])
+        storageSet('activeProjectId', 'remote-project')
+        storageSet('projects', [
+          {
+            id: 'remote-project',
+            path: '/remote/project',
+            sshHost: 'dev',
+          },
+        ])
+        setSshTransportFactory(() => transport)
+
+        const ref = await describeWorkspaceVideo('demo.mp4', 'demo.mp4', 'video/mp4')
+        assert.equal(ref.path, '/remote/project/demo.mp4')
+        assert.equal(ref.sizeBytes, videoBytes.byteLength)
+        assert.equal(transport.calls.filter((call) => call.kind === 'fetch').length, 0)
+
+        const played = await readVideoForPlayback('demo.mp4')
+        assert.deepEqual(Buffer.from(played.bytes), videoBytes)
+        assert.equal(played.mimeType, 'video/mp4')
+        assert.equal(transport.calls.filter((call) => call.kind === 'fetch').length, 1)
+
+        const dropped = storeVideoAttachment('proj', 'remote-thread', {
+          name: 'local-capture.mp4',
+          mimeType: 'video/mp4',
+          bytes: BYTES,
+        })
+        const droppedPlayback = await readVideoForPlayback(dropped.path)
+        assert.deepEqual(new Uint8Array(droppedPlayback.bytes), BYTES)
+        assert.equal(
+          transport.calls.filter((call) => call.kind === 'fetch').length,
+          1,
+          'a local thread attachment must not be fetched from the SSH host',
+        )
+      } finally {
+        resetSshConnectionManagerForTests()
+        await clearSshWorkspaceFsCacheForTest()
+        await setSetting('sshWorkspaceEnabled', previousEnabled)
+        await setSetting('sshWorkspaceHosts', previousHosts)
+        storageSet('activeProjectId', previousProject)
+        storageSet('projects', previousProjects)
+        restoreLocalRoot()
+      }
     })
   })
 })

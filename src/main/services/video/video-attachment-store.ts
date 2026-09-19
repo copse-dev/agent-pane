@@ -1,14 +1,16 @@
 import { randomUUID } from 'node:crypto'
-import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
-import { isAbsolute, join, relative, resolve } from 'node:path'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import {
   MAX_VIDEO_BYTES,
   SUPPORTED_VIDEO_EXTENSIONS,
   type VideoAttachmentRef,
 } from '@shared/video/video-media.ts'
 import { fileExtension, formatByteSize } from '@shared/file-bytes.ts'
-import { resolveWorkspacePath } from '../workspace.ts'
-import { chatStoreRoot, threadBlobsDir } from '../thread-store.ts'
+import { resolveLocalChatStorePath, resolveWorkspacePath } from '../workspace.ts'
+import { threadBlobsDir } from '../thread-store.ts'
+import { getActiveWorkspaceFs } from '../workspace-fs/get-workspace-fs.ts'
+import { localWorkspaceFs } from '../workspace-fs/local-workspace-fs.ts'
 
 /**
  * Where a video a user drops into the chat is kept.
@@ -95,15 +97,17 @@ export async function describeWorkspaceVideo(
     throw new Error(`${name} is not a supported video (${SUPPORTED_VIDEO_EXTENSIONS.join(', ')}).`)
   }
   const abs = await resolveWorkspacePath(path)
-  const stat = statSync(abs)
+  const workspaceFs = getActiveWorkspaceFs()
+  const stat = await workspaceFs.stat(abs)
   if (!stat.isFile()) throw new Error(`${name} is not a file.`)
-  if (stat.size === 0) throw new Error(`${name} is empty.`)
-  if (stat.size > MAX_VIDEO_BYTES) {
+  const sizeBytes = await workspaceFs.sizeOf(abs)
+  if (sizeBytes === 0) throw new Error(`${name} is empty.`)
+  if (sizeBytes > MAX_VIDEO_BYTES) {
     throw new Error(
-      `${name} is ${formatByteSize(stat.size)} — over the ${formatByteSize(MAX_VIDEO_BYTES)} limit for chat videos.`,
+      `${name} is ${formatByteSize(sizeBytes)} — over the ${formatByteSize(MAX_VIDEO_BYTES)} limit for chat videos.`,
     )
   }
-  return { path: abs, name, sizeBytes: stat.size, mimeType }
+  return { path: abs, name, sizeBytes, mimeType }
 }
 
 /**
@@ -158,22 +162,18 @@ export async function readVideoForPlayback(path: string): Promise<VideoPlaybackD
     throw new Error(`${path} is not a supported video.`)
   }
 
-  const resolved = resolve(path)
-  const insideChatStore = isInside(resolved, chatStoreRoot())
-  const abs = insideChatStore ? resolved : await resolveWorkspacePath(path)
+  const chatStorePath = await resolveLocalChatStorePath(path)
+  const abs = chatStorePath ?? (await resolveWorkspacePath(path))
+  const workspaceFs = chatStorePath ? localWorkspaceFs : getActiveWorkspaceFs()
 
-  const stat = statSync(abs)
+  const stat = await workspaceFs.stat(abs)
   if (!stat.isFile()) throw new Error('That video is not a file.')
-  if (stat.size > MAX_INLINE_PLAYBACK_BYTES) {
+  const sizeBytes = await workspaceFs.sizeOf(abs)
+  if (sizeBytes > MAX_INLINE_PLAYBACK_BYTES) {
     throw new Error(
-      `This video is ${formatByteSize(stat.size)}, over the ${formatByteSize(MAX_INLINE_PLAYBACK_BYTES)} preview limit. Open it from disk instead.`,
+      `This video is ${formatByteSize(sizeBytes)}, over the ${formatByteSize(MAX_INLINE_PLAYBACK_BYTES)} preview limit. Open it from disk instead.`,
     )
   }
-  return { bytes: new Uint8Array(readFileSync(abs)), mimeType: playbackMimeType(abs) }
-}
-
-/** Whether `candidate` sits inside `root`, with no `..` escape. */
-function isInside(candidate: string, root: string): boolean {
-  const rel = relative(resolve(root), candidate)
-  return rel !== '' && !rel.startsWith('..') && !isAbsolute(rel)
+  const bytes = await workspaceFs.readFileBytes(abs, { maxBytes: MAX_INLINE_PLAYBACK_BYTES })
+  return { bytes: new Uint8Array(bytes), mimeType: playbackMimeType(abs) }
 }

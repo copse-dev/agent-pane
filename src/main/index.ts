@@ -76,6 +76,7 @@ import { setTerminalCommandLauncher } from './services/exec/terminal-launch.ts'
 import { initSshPrompt } from './services/ssh-workspace/ssh-prompt.ts'
 import { initSshAskpassServer } from './services/ssh-workspace/askpass.ts'
 import { initSshWorkspaceIpc } from './services/ssh-workspace/ssh-workspace-ipc.ts'
+import { clearSshWorkspaceFsCache } from './services/workspace-fs/ssh-workspace-fs.ts'
 import { initDiffQueue } from './services/diff-queue.ts'
 import { initFsWatcher, closeAllWatchers } from './ipc/fs-watcher.ts'
 import { stopWorkspaceIndexWatcher } from './services/search/workspace-index-watcher.ts'
@@ -1046,6 +1047,7 @@ async function cleanupBeforeQuit(): Promise<void> {
   disposeSimulatorDesktop = undefined
   closeAllWatchers()
   stopWorkspaceIndexWatcher()
+  await clearSshWorkspaceFsCache()
   shutdownBrowserSession()
   await shutdownStaticPreviewServers()
   await drainWriteQueue()

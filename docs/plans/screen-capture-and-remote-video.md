@@ -1,9 +1,15 @@
 # Screen capture from simulators and remote machines
 
-**Status: Proposed.** Design only. This builds on
-[`docs/video-frames.md`](../video-frames.md) — the `video_frames` tool
-([#1227](https://github.com/copse-dev/agent-pane/pull/1227)) — and assumes it
-lands first. Nothing here is implemented.
+**Status: Active (P0 implemented; P1–P5 proposed).** Tracked in
+[#2694](https://github.com/copse-dev/agent-pane/issues/2694). This builds on
+[`docs/video-frames.md`](../video-frames.md) — the shipped `video_frames` tool
+([#1227](https://github.com/copse-dev/agent-pane/pull/1227)). P0 now makes
+workspace video attachment, preview, and frame reads work over SSH without
+widening the command-output cap. Capture and recording sets remain unimplemented.
+Program-wide asset identity, agent-route parity, assistant evidence, VNC,
+interaction timelines, and delivery order are owned by the umbrella
+[`first-class-video-input-and-visual-evidence.md`](first-class-video-input-and-visual-evidence.md)
+plan; this document remains the detailed capture design.
 
 ## The ask
 
@@ -35,21 +41,18 @@ part of the design assumes a video stream exists.
 
 ## What `video_frames` assumes today
 
-Three assumptions in the shipped tool break the moment the recording is not a
-local file at rest:
+Three constraints shape the shipped tool and the remaining capture work:
 
-| Assumption                                                   | Where                                    | What breaks                               |
-| ------------------------------------------------------------ | ---------------------------------------- | ----------------------------------------- |
-| The whole file can be read into memory as one buffer         | `video-frames-tool.ts:220`               | 256 MB cap is per-file, per-call          |
-| Reading goes through `WorkspaceFs.readFileBytes`             | same                                     | correct shape — but see the SSH bug below |
-| A video is a single seekable container with a known duration | `decode-contract.ts`, `video-decoder.ts` | a recording in progress has neither       |
+| Assumption                                                   | Where                                    | What breaks                         |
+| ------------------------------------------------------------ | ---------------------------------------- | ----------------------------------- |
+| The whole file can be read into memory as one buffer         | `video-frames-tool.ts`                   | 256 MB cap is per-file, per-call    |
+| A remote file can first be materialized on the decoder host  | `WorkspaceFs.materializeToLocal`         | P0 implements this for SSH          |
+| A video is a single seekable container with a known duration | `decode-contract.ts`, `video-decoder.ts` | a recording in progress has neither |
 
-The second one is worth calling out on its own, because it is a live bug rather
-than a limitation:
+Before P0, remote reads had a live bug rather than merely a limitation:
 
-> **`video_frames` cannot read any real video on an SSH workspace today.**
-> `SshWorkspaceFs.readFileBytes` (`ssh-workspace-fs.ts:93`) runs
-> `base64 -w0 <path>` through `execOnSshHost`, and every SSH exec result is
+> `SshWorkspaceFs.readFileBytes` ran `base64 <path>` through
+> `execOnSshHost`, and every SSH exec result is
 > capped by `appendFlatCapped(..., COMMAND_OUTPUT_MAX_BYTES)` — **100 KiB**
 > (`subprocess-output-cap.ts:2`). Base64 inflates 4/3, so anything over ~75 KiB
 > comes back truncated, with `[output truncated]` spliced into the middle of the
@@ -57,8 +60,9 @@ than a limitation:
 > corrupt file. `describeWorkspaceVideo` has a second, smaller version of the
 > same problem: it calls `statSync` on a path that may be on another machine.
 
-Fixing that is P0 below and is worth doing whether or not the rest of this plan
-proceeds.
+P0 replaces that path with an atomic streamed pull, size-checks before transfer,
+and uses the active workspace filesystem for metadata and playback. The normal
+100 KiB shell-output cap is unchanged.
 
 ## Decisions
 
@@ -171,13 +175,14 @@ shape `frame-selection.ts` already consumes. Encoding those into a container jus
 to seek back through them would be silly. Worth building last, but the frame
 selector should not assume its input came from a decode.
 
-### 3. Fix the remote read with a stream, not a bigger cap
+### 3. P0 fixes the remote read with a stream, not a bigger cap
 
-`readFileBytes` accumulates into a JS string and is capped for good reason — it
-is the same helper that stops a chatty command flooding a tool result. Raising
-the cap to video sizes would be wrong for every other caller.
+The old SSH `readFileBytes` implementation accumulated command stdout into a JS
+string, and that output is capped for good reason: it is the same boundary that
+stops a chatty command flooding a tool result. Raising the cap to video sizes
+would be wrong for every other caller.
 
-Instead add a binary channel to the transport:
+The transport now has a dedicated binary channel:
 
 ```typescript
 interface SshTransport {
@@ -196,10 +201,15 @@ after it. There is precedent for a call-site-specific limit already
 (`FILE_INDEX_LIST_MAX_BYTES` raises the cap to 8 MB for path listings), but a
 stream is the right answer for something that is megabytes by definition.
 
-`WorkspaceFs` gains `fetchToLocal(path)` — a no-op returning the same path
-locally, a cached pull over SSH — and `video_frames` calls that instead of
-`readFileBytes`. `describeWorkspaceVideo`'s `statSync` becomes
-`getActiveWorkspaceFs().stat()` at the same time.
+`WorkspaceFs` has `materializeToLocal(path)` — a no-op returning the same path
+locally and a cached pull over SSH. `readFileBytes` uses it, so existing binary
+consumers gain the safe channel without duplicating transfer logic. The SSH cache
+is capped at 512 MB, reuses a cached path for at most five minutes, and is removed
+on app shutdown. `video_frames` and archive extraction pass their own maximum
+sizes and abort signals, while video attachment metadata and playback use the
+active workspace filesystem rather than local synchronous I/O. Reads also keep
+the app-owned thread store local when the active workspace is remote, so a
+desktop-dropped attachment is not misrouted to the SSH host.
 
 ### 4. A capture lands in the chat the way a dropped file does
 
@@ -306,7 +316,7 @@ Each is independently shippable and independently useful.
 
 | Phase                   | Scope                                                                                                                              | Rough size |
 | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ---------- |
-| **P0 Remote read**      | `fetchFile`/`sizeOf` on the transport, `fetchToLocal` on `WorkspaceFs`, async stat in `describeWorkspaceVideo`                     | ~1 day     |
+| **P0 Remote read**      | **Implemented:** `fetchFile`/`sizeOf` on the transport, bounded `materializeToLocal` on `WorkspaceFs`, async metadata and playback | ~1 day     |
 | **P1 Segment sets**     | `Recording` manifest, `video_frames` addressing a recording, segment→absolute time mapping, wall-clock header, still-running line  | 2–3 days   |
 | **P2 Local capture**    | Hidden recorder window, window/display + simulator + emulator sources, source picker, composer record chip, `screenCaptureEnabled` | ~1 week    |
 | **P3 Remote capture**   | Capability probe extension, remote segment writer via `spawnBackgroundProcess`, lazy segment pull + cache, cleanup                 | 3–4 days   |

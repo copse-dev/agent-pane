@@ -1,8 +1,10 @@
 import { describe, it, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
+import { Readable, Writable } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
 import type { SshWorkspaceHost } from '@shared/types/ssh-workspace.ts'
-import { sshExecArgs, sshPtyArgs } from './openssh-transport.ts'
+import { createSshFileTransferLimit, sshExecArgs, sshPtyArgs } from './openssh-transport.ts'
 import { controlSocketPath, setSshControlDirForTests } from './ssh-paths.ts'
 
 const host: SshWorkspaceHost = {
@@ -97,5 +99,29 @@ describe('sshExecArgs / ControlPath', () => {
     assert.ok(!args.includes('-p'))
     assert.ok(!args.includes('-i'))
     assert.equal(args[args.length - 2], 'euw-serp-dev-testing16')
+  })
+})
+
+describe('SSH file transfer limit', () => {
+  it('stops a stream before a chunk would take it over the byte budget', async () => {
+    const limiter = createSshFileTransferLimit(5)
+    assert.ok(limiter)
+    const written: Buffer[] = []
+    const destination = new Writable({
+      write(chunk: Buffer, _encoding, callback): void {
+        written.push(chunk)
+        callback()
+      },
+    })
+
+    await assert.rejects(
+      pipeline(Readable.from([Buffer.alloc(4), Buffer.alloc(4)]), limiter, destination),
+      /exceeded the 5 byte limit/,
+    )
+    assert.equal(Buffer.concat(written).byteLength, 4)
+  })
+
+  it('rejects an invalid byte budget before starting a transfer', () => {
+    assert.throws(() => createSshFileTransferLimit(Number.NaN), /Invalid SSH file transfer limit/)
   })
 })

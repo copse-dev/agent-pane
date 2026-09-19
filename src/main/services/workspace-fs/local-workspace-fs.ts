@@ -1,6 +1,12 @@
 import { realpathSync } from 'node:fs'
 import * as fsp from 'node:fs/promises'
-import type { WorkspaceFsPathProbe, WorkspaceFsStat } from './workspace-fs.ts'
+import {
+  enforceWorkspaceFileSize,
+  type MaterializedWorkspaceFile,
+  type WorkspaceBinaryReadOptions,
+  type WorkspaceFsPathProbe,
+  type WorkspaceFsStat,
+} from './workspace-fs.ts'
 
 /** Local disk implementation — current node:fs/promises behavior. */
 export const localWorkspaceFs: WorkspaceFsPathProbe = {
@@ -45,8 +51,25 @@ export const localWorkspaceFs: WorkspaceFsPathProbe = {
     return fsp.readFile(path, encoding)
   },
 
-  readFileBytes(path: string): Promise<Buffer> {
-    return fsp.readFile(path)
+  async readFileBytes(path: string, options?: WorkspaceBinaryReadOptions): Promise<Buffer> {
+    await this.materializeToLocal(path, options)
+    return options?.signal ? fsp.readFile(path, { signal: options.signal }) : fsp.readFile(path)
+  },
+
+  async sizeOf(path: string, options?: { signal?: AbortSignal }): Promise<number> {
+    options?.signal?.throwIfAborted()
+    const size = (await fsp.stat(path)).size
+    options?.signal?.throwIfAborted()
+    return size
+  },
+
+  async materializeToLocal(
+    path: string,
+    options?: WorkspaceBinaryReadOptions,
+  ): Promise<MaterializedWorkspaceFile> {
+    const sizeBytes = await this.sizeOf(path, options)
+    enforceWorkspaceFileSize(sizeBytes, options?.maxBytes)
+    return { path, sizeBytes }
   },
 
   async writeFile(path: string, content: string, encoding: 'utf-8'): Promise<void> {

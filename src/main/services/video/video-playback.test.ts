@@ -1,6 +1,6 @@
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { open } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -64,6 +64,21 @@ describe('readVideoForPlayback', () => {
     await writeFile(path, Buffer.from('not yours'))
     await assert.rejects(() => readVideoForPlayback(join(chatStore, '..', '..', path)))
   })
+
+  it(
+    'refuses a symlink from the chat store to a video outside its allowed roots',
+    { skip: process.platform === 'win32' },
+    async () => {
+      const dir = join(chatStore, 'project', 'thread', 'blobs', 'media')
+      await mkdir(dir, { recursive: true })
+      const outsideVideo = join(outside, 'secret.mp4')
+      await writeFile(outsideVideo, Buffer.from('not yours'))
+      const link = join(dir, 'capture.mp4')
+      await symlink(outsideVideo, link, 'file')
+
+      await assert.rejects(() => readVideoForPlayback(link), /outside workspace/)
+    },
+  )
 
   it('refuses a file that is not a supported video', async () => {
     const dir = join(chatStore, 'project', 'thread', 'blobs', 'media')

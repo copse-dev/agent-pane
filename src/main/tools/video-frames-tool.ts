@@ -24,9 +24,11 @@ import {
   MAX_SAMPLES_PER_CALL,
   MIN_FRAME_MAX_WIDTH,
 } from '@shared/video/decode-contract.ts'
-import { resolveReadablePathWithinRoot } from '../services/workspace.ts'
+import { resolveReadableFileWithinRoot, type ResolvedReadableFile } from '../services/workspace.ts'
 import { requireAgentExecutionRoot } from '../services/execution-root.ts'
 import { getActiveWorkspaceFs } from '../services/workspace-fs/get-workspace-fs.ts'
+import { localWorkspaceFs } from '../services/workspace-fs/local-workspace-fs.ts'
+import { WorkspaceFileTooLargeError } from '../services/workspace-fs/workspace-fs.ts'
 import { decodeVideoFrames } from '../services/video/video-decoder.ts'
 
 /**
@@ -207,17 +209,26 @@ export const videoFramesTool = defineTool({
     }
 
     const root = requireAgentExecutionRoot()
-    let absPath: string
+    let resolvedFile: ResolvedReadableFile
     try {
-      absPath = await resolveReadablePathWithinRoot(path, root)
+      resolvedFile = await resolveReadableFileWithinRoot(path, root)
     } catch (err) {
       return err instanceof Error ? err.message : `Could not resolve ${path}.`
     }
+    const workspaceFs =
+      resolvedFile.source === 'local-chat-store' ? localWorkspaceFs : getActiveWorkspaceFs()
 
     let bytes: Buffer
     try {
-      bytes = await getActiveWorkspaceFs().readFileBytes(absPath)
-    } catch {
+      bytes = await workspaceFs.readFileBytes(resolvedFile.path, {
+        maxBytes: MAX_VIDEO_BYTES,
+        signal,
+      })
+    } catch (error) {
+      if (error instanceof WorkspaceFileTooLargeError) {
+        return `${path} is ${formatByteSize(error.sizeBytes)}, over the ${formatByteSize(MAX_VIDEO_BYTES)} limit for frame extraction. Trim the recording and try again.`
+      }
+      if (cancelled()) return 'Cancelled before reading the video.'
       return `Could not read video: ${path}`
     }
     if (bytes.byteLength === 0) return `${path} is empty.`

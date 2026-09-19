@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { mkdirSync, statSync, writeFileSync } from 'node:fs'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   MAX_ARCHIVE_BYTES,
@@ -9,6 +9,7 @@ import {
 import { fileExtension, formatByteSize } from '@shared/file-bytes.ts'
 import { resolveWorkspacePath } from '../workspace.ts'
 import { threadBlobsDir } from '../thread-store.ts'
+import { getActiveWorkspaceFs } from '../workspace-fs/get-workspace-fs.ts'
 
 /**
  * Where an archive a user drops into the chat is kept — the thread's own
@@ -78,13 +79,15 @@ export async function describeWorkspaceArchive(
 ): Promise<ArchiveAttachmentRef> {
   assertSupported(name)
   const abs = await resolveWorkspacePath(path)
-  const stat = statSync(abs)
+  const workspaceFs = getActiveWorkspaceFs()
+  const stat = await workspaceFs.stat(abs)
   if (!stat.isFile()) throw new Error(`${name} is not a file.`)
-  if (stat.size === 0) throw new Error(`${name} is empty.`)
-  if (stat.size > MAX_ARCHIVE_BYTES) {
+  const sizeBytes = await workspaceFs.sizeOf(abs)
+  if (sizeBytes === 0) throw new Error(`${name} is empty.`)
+  if (sizeBytes > MAX_ARCHIVE_BYTES) {
     throw new Error(
-      `${name} is ${formatByteSize(stat.size)} — over the ${formatByteSize(MAX_ARCHIVE_BYTES)} limit for chat archives.`,
+      `${name} is ${formatByteSize(sizeBytes)} — over the ${formatByteSize(MAX_ARCHIVE_BYTES)} limit for chat archives.`,
     )
   }
-  return { path: abs, name, sizeBytes: stat.size }
+  return { path: abs, name, sizeBytes }
 }
