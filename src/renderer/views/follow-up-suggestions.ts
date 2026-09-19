@@ -25,7 +25,7 @@ function openChangesReviewer(store: AppStore): void {
 
 /**
  * The "Compare models" bubble: pick the three models, then run the comparison
- * against the working diff. The picker opens on the pack's configured selections
+ * against the working diff. The picker opens on the plugin's configured selections
  * resolved to concrete ids — a comparison priced in three inferences should name
  * what it is about to spend, and "most capable" names nothing.
  *

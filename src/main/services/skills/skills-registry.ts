@@ -24,6 +24,7 @@ import { READ_FILE_LIMITS_CEILING } from '@copse/agent/read-file-limits.ts'
 import { extractExternalLinkHosts } from '@shared/skills/extract-skill-links.ts'
 import { notifyRefreshContextEstimate } from '../context-estimate-notify.ts'
 import { isRecord } from '@shared/unknown-value.ts'
+import { getPluginService } from '../plugins/plugin-service.ts'
 
 /** Max bytes read from a skill file (auto-approved, outside workspace). */
 export const SKILL_READ_MAX_BYTES = READ_FILE_LIMITS_CEILING.maxChars * 4
@@ -45,7 +46,7 @@ export const SKILL_READ_MAX_BYTES = READ_FILE_LIMITS_CEILING.maxChars * 4
  *    way. Before this entry a skill invoked from a Codex-backed thread could
  *    not be discovered at all (reconcile-worktrees post-mortem, 2026-09-09).
  *
- * Across scopes, {@link collectDiscoveryRoots} orders user roots before project
+ * Across scopes, {@link collectDiscoveryTargets} orders user roots before project
  * roots, so a user-installed skill always beats a same-named workspace one.
  */
 export const SKILL_CONTAINER_DIRS: readonly string[] = ['.cursor', '.agents', '.claude', '.codex']
@@ -144,17 +145,29 @@ async function loadSkillFromFile(
   skills.set(parsed.name, toSkillMetadata(parsed, skillPath, source, externalLinks))
 }
 
-async function collectDiscoveryRoots(): Promise<Array<{ root: string; source: SkillSource }>> {
-  const roots: Array<{ root: string; source: SkillSource }> = []
+type SkillDiscoveryTarget =
+  | {
+      readonly kind: 'root'
+      readonly path: string
+      readonly source: SkillSource
+    }
+  | {
+      readonly kind: 'file'
+      readonly path: string
+      readonly source: SkillSource
+    }
+
+async function collectDiscoveryTargets(): Promise<SkillDiscoveryTarget[]> {
+  const targets: SkillDiscoveryTarget[] = []
 
   for (const root of userSkillRoots()) {
-    if (await pathExists(root)) roots.push({ root, source: 'user' })
+    if (await pathExists(root)) targets.push({ kind: 'root', path: root, source: 'user' })
   }
 
   if (getSetting<boolean>('bundledCursorSkillsEnabled', true)) {
     for (const pluginRoot of await listBundledCursorPluginRoots()) {
       const skillsDir = await resolvePluginSkillsDir(pluginRoot)
-      if (skillsDir) roots.push({ root: skillsDir, source: 'bundled' })
+      if (skillsDir) targets.push({ kind: 'root', path: skillsDir, source: 'bundled' })
     }
   }
 
@@ -170,13 +183,22 @@ async function collectDiscoveryRoots(): Promise<Array<{ root: string; source: Sk
     // sort them so first-writer-wins follows the documented container
     // precedence, with the walk order as the tiebreak between subdirectories.
     for (const root of sortByContainerPrecedence([...projectRoots])) {
-      roots.push({ root, source: 'project' })
+      targets.push({ kind: 'root', path: root, source: 'project' })
+    }
+  }
+
+  // Agent Plugins §7.1 permits only immediate-child skills. Discovery records
+  // the exact contained files, so add those directly instead of feeding the
+  // portable `skills/` directory to Copse's recursive legacy scanner.
+  for (const plugin of getPluginService().enabledUserPlugins()) {
+    for (const skillPath of plugin.skillFiles) {
+      targets.push({ kind: 'file', path: skillPath, source: 'plugin' })
     }
   }
 
   for (const pluginRoot of await discoverCursorPluginRoots()) {
     const skillsDir = await resolvePluginSkillsDir(pluginRoot)
-    if (skillsDir) roots.push({ root: skillsDir, source: 'plugin' })
+    if (skillsDir) targets.push({ kind: 'root', path: skillsDir, source: 'plugin' })
   }
 
   const pluginPaths = getSetting<string[]>('skillPluginPaths', [])
@@ -186,10 +208,10 @@ async function collectDiscoveryRoots(): Promise<Array<{ root: string; source: Sk
     const manifest = join(resolved, '.cursor-plugin', 'plugin.json')
     if (await pathExists(manifest)) {
       const skillsDir = await resolvePluginSkillsDir(resolved)
-      if (skillsDir) roots.push({ root: skillsDir, source: 'plugin-path' })
+      if (skillsDir) targets.push({ kind: 'root', path: skillsDir, source: 'plugin-path' })
       continue
     }
-    roots.push({ root: resolved, source: 'plugin-path' })
+    targets.push({ kind: 'root', path: resolved, source: 'plugin-path' })
   }
 
   // First-party skills shipped with Copse (e.g. /checkup). Added last so a
@@ -197,10 +219,10 @@ async function collectDiscoveryRoots(): Promise<Array<{ root: string; source: Sk
   // wins during discovery), letting anyone override a built-in.
   const builtinRoot = getBuiltinSkillsRoot()
   if (builtinRoot && (await pathExists(builtinRoot))) {
-    roots.push({ root: builtinRoot, source: 'bundled' })
+    targets.push({ kind: 'root', path: builtinRoot, source: 'bundled' })
   }
 
-  return roots
+  return targets
 }
 
 async function discoverSkillsRegistry(): Promise<SkillMetadata[]> {
@@ -209,14 +231,18 @@ async function discoverSkillsRegistry(): Promise<SkillMetadata[]> {
   }
 
   const skills = new Map<string, SkillMetadata>()
-  const discoveryRoots = await collectDiscoveryRoots()
+  const discoveryTargets = await collectDiscoveryTargets()
 
-  for (const { root, source } of discoveryRoots) {
+  for (const target of discoveryTargets) {
+    if (target.kind === 'file') {
+      await loadSkillFromFile(target.path, target.source, skills)
+      continue
+    }
     await walkForFiles(
-      root,
+      target.path,
       (fileName) => fileName === 'SKILL.md',
       async (skillPath) => {
-        await loadSkillFromFile(skillPath, source, skills)
+        await loadSkillFromFile(skillPath, target.source, skills)
       },
     )
   }

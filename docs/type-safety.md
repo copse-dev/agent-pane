@@ -55,7 +55,7 @@ answers **true** for the eight members every object literal inherits: `toString`
 
 That is not a hypothetical. It was the body of both key allowlists the renderer can reach:
 `settings:set`'s writability gate, and `plugins:setSetting`, which took its key straight off the
-renderer and then wrote it into the pack's settings bag — defeating a check whose own comment said
+renderer and then wrote it into the plugin's settings bag — defeating a check whose own comment said
 it existed to stop exactly that.
 
 `no-restricted-syntax` bans it (`eslint.config.mjs`). Use **`Object.hasOwn(record, key)`**, or

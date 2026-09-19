@@ -4247,7 +4247,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     pendingSection = null
     pluginDetail = pendingPluginDetail
     pendingPluginDetail = null
-    // Deep-links (e.g. status banner → SSH, an automation heading → Packs) skip
+    // Deep-links (e.g. status banner → SSH, an automation heading → Plugins) skip
     // the nav click path, so refresh lazy section content here too.
     if (openedSection === 'ssh') void sshWorkspaceSection.refresh()
     if (openedSection === 'usage') void usageSection.refresh()

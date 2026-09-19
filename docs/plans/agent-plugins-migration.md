@@ -2,7 +2,10 @@
 
 Tracking: [#1082](https://github.com/copse-dev/agent-pane/issues/1082)
 
-**Status: Proposed.** Adopts the [Agent Plugins Specification v1.0.0](https://agent-plugins.org/specification)
+**Status: Partially implemented.** Portable discovery and component activation (A),
+plus the product/runtime/storage rename (C), have landed. The marketplace install
+lifecycle and built-in manifest conversion (B) remain.
+Adopts the [Agent Plugins Specification v1.0.0](https://agent-plugins.org/specification)
 as Copse's on-disk distribution format, carries the intent of closed
 [#1342](https://github.com/copse-dev/agent-pane/pull/1342) forward in that format,
 renames the product surface from **packs** to **plugins**, and only then expresses
@@ -16,6 +19,25 @@ remains binding on contribution kinds, disable semantics, and permission-gate
 behavior — on conflict, update it in the same PR.
 
 ## Why this plan exists
+
+### Tracking audit (2026-09-19)
+
+The format/rename work already has merged implementations. Keep the remaining
+work on the existing issues rather than opening a parallel pack project:
+
+| Work                                              | Evidence / tracking                                                                                                                                                                                                                                     | Current boundary                                                                                                            |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Portable format, discovery, and activation        | [#1566](https://github.com/copse-dev/agent-pane/pull/1566), [#1569](https://github.com/copse-dev/agent-pane/pull/1569) (merged), [#1082](https://github.com/copse-dev/agent-pane/issues/1082)                                                           | Envelope/extension validation, disabled user rows, portable skills, and stdio/Streamable HTTP MCP                           |
+| Product, identifiers, and persisted state renamed | [#1575](https://github.com/copse-dev/agent-pane/pull/1575), [#1574](https://github.com/copse-dev/agent-pane/pull/1574), [#1576](https://github.com/copse-dev/agent-pane/pull/1576), [#1579](https://github.com/copse-dev/agent-pane/pull/1579) (merged) | Keep compatibility readers and migrations; no separate packs product                                                        |
+| Install lifecycle and Copse extensions            | [#1082](https://github.com/copse-dev/agent-pane/issues/1082) (open)                                                                                                                                                                                     | Command-hook activation, behavior review, install records, pinning, updates, rollback, uninstall, quarantine                |
+| Selected executable behavior                      | [#1336](https://github.com/copse-dev/agent-pane/issues/1336) (open), [#2309](https://github.com/copse-dev/agent-pane/issues/2309) (closed; SDK extracted)                                                                                               | Existing isolated runtime now accepts the portable envelope; lifecycle/diagnostics work remains                             |
+| Built-in manifest conversion (B)                  | [#1082](https://github.com/copse-dev/agent-pane/issues/1082) / this plan                                                                                                                                                                                | Internal compiled declarations remain; moving their declarative metadata to the envelope must preserve first-party behavior |
+
+The issue titles still use historical "pack" wording. That is not a reason to
+reintroduce a separate package format. The remaining filenames, schema, and
+state migrations support existing users.
+
+### Original motivation
 
 Three facts line up:
 
@@ -52,10 +74,13 @@ and gains portability for the two that other clients can actually load.
    skills and MCP lives under `extensions["dev.copse"]` in the manifest, and under a
    top-level `dev.copse/` directory for files (spec §8). Reverse domain of
    `copse.dev`, matching the existing `copse.dev` schema `$id`.
-3. **`copse-pack.json` survives only for selected development directories.**
-   `plugin-tool-source.ts` reads an explicitly chosen folder that is never
-   distributed, so portability buys it nothing. It stays as-is and stays outside
-   discovery, exactly as the marketplace plan already scopes it.
+3. **Selected development directories use the same portable format.**
+   `plugin-tool-source.ts` prefers root `plugin.json`, with executable behavior
+   in `extensions["dev.copse"]` and an entrypoint under `./dev.copse/`.
+   `copse-plugin.json` and `copse-pack.json` remain supported, in that order,
+   only when the root manifest is absent. A malformed or unsupported root
+   manifest never falls back to either legacy format. Selection, source hashing,
+   isolated execution, and consent remain the same host-owned lifecycle.
 4. **`PluginManifest` stays the internal normalized type.** Agent Plugins is a parse
    target, not an internal representation. `PluginRegistry` never learns whether a
    manifest came from disk, from an AP parse, or from a first-party code literal.
@@ -182,11 +207,12 @@ register it. That distinction matters for the error message.
 
 ## Stage A — AP-native user-plugin discovery
 
-**Status: landed.** A1, A2, and the pure half of A3 are on `main`; what remains
-of A3/A4 is listed at the end of this section.
+**Status: landed.** A1–A4, including enabled portable skills and MCP runtime
+mapping, are implemented. Marketplace installation remains a later phase.
 
-This is #1342's intent, re-expressed. Scope is unchanged from marketplace P1:
-discovery and Settings rows only. No install records, no network, no index.
+This is #1342's intent, re-expressed. It adds local directory discovery,
+Settings consent, and portable component activation. It adds no marketplace
+index, network installer, or install records.
 
 **A1 — Parse.** `agentPluginManifest()` in `packages/agent/src/plugins/` parses a root
 `plugin.json` into `PluginManifest`, alongside the existing
@@ -216,14 +242,14 @@ the merge-order table must say so.
 import at `.cursor-plugin/plugin.json`, per marketplace decision 2. Precedence is
 resolved by _source_, not by racing manifest names in one directory:
 
-| Source                            | Manifest                     | Registered as                   |
-| --------------------------------- | ---------------------------- | ------------------------------- |
-| Copse plugin root                 | `plugin.json` (AP)           | User plugin row                 |
-| Explicitly selected dev directory | `copse-pack.json`            | User plugin row (existing path) |
-| `~/.cursor/plugins/`              | `.cursor-plugin/plugin.json` | Skills + MCP import (unchanged) |
+| Source                            | Manifest                                                      | Registered as                               |
+| --------------------------------- | ------------------------------------------------------------- | ------------------------------------------- |
+| Copse plugin root                 | `plugin.json` (AP)                                            | User plugin row                             |
+| Explicitly selected dev directory | `plugin.json`; legacy `copse-plugin.json` / `copse-pack.json` | User plugin row (existing isolated runtime) |
+| `~/.cursor/plugins/`              | `.cursor-plugin/plugin.json`                                  | Skills + MCP import (unchanged)             |
 
-A directory carrying both `plugin.json` and `copse-pack.json` prefers `plugin.json`
-and warns — one rule, stated once.
+A selected directory carrying a root `plugin.json` uses it exclusively. Legacy
+files cannot supplement its core fields or recover from its validation failures.
 
 **Exit gate — met.** A fixture AP plugin registers as a user row; enable/disable is
 atomic; prompt trust is forced untrusted; a malformed sibling is skipped without
@@ -234,19 +260,19 @@ escape in `mcp.json` fails that server entry and no more. Pinned by
 
 ### What Stage A deliberately left
 
-Two things the landed slice validates but does not yet run, both because
-discovering bytes must not be what activates behavior:
+Portable activation uses the plugin toggle as its consent boundary. Immediate
+child skills are loaded without recursive discovery; invalid or escaping skills
+are isolated. Valid stdio and Streamable HTTP MCP servers are mapped into the
+native registry, with per-plugin server names, exact portable placeholder
+expansion, contained command/cwd paths, redirect-safe configured headers, and a
+writable persistent `PLUGIN_DATA` directory created before spawn. Legacy HTTP+SSE
+is reported and skipped as the standard permits.
 
-- **Runtime wiring.** A discovered plugin's command hooks and MCP servers are
-  parsed, validated, and held on the candidate — not registered into
-  `createHookRegistry` or spawned by `mcp-registry.ts`. That wiring is the
-  natural next slice, and it needs the consent step the #1082 follow-up asks for
-  ("derive review/consent from requested behaviors before contributions become
-  live"), not just a flag flip.
-- **`PLUGIN_DATA` on disk.** `userPluginDataDir()` computes the path and
-  `resolveStdioServer()` expands it, but nothing creates the directory yet —
-  §9.1 requires it to exist and be writable _before_ a subprocess launches, so
-  it belongs with the spawn, not ahead of it.
+Two product-specific areas remain on #1082: behavior-derived install review and
+activation of command hooks under `extensions["dev.copse"]`. Neither is an Agent
+Plugins v1 component or blocks portable client conformance. The explicitly
+selected development runtime remains a separate isolated-code lifecycle; putting
+a package under the Copse plugin root is what opts it into portable activation.
 
 One seam Stage A added that the plan did not anticipate: a `pluginsSeen`
 storage key. `packDisabled` cannot express "never seen before" — an id absent
@@ -354,17 +380,14 @@ what is installed — but it became a _lens_ on both:
   knowledge to scope env interpolation. An unrecognised source falls back to
   `project` — repo-supplied until shown otherwise is the safe direction for a label
   someone reads before deciding what to leave running.
-- `PluginService.declaredMcpServers()` reports servers a discovered plugin's
-  `mcp.json` names that nothing is running. Stage A validated these declarations
-  and deliberately stopped short of wiring them into the loop; a disabled plugin's
-  servers would not run either way. Both are states the section has to disclose,
-  because the alternative is "No servers configured" displayed over a package on
-  disk naming three. The rows carry no toggle — offering one would imply Copse
-  could start the server, which is the opposite of what the row exists to say.
+- `PluginService.declaredMcpServers()` reports servers a discovered plugin names
+  when the plugin is disabled, plus enabled legacy HTTP+SSE entries Copse cannot
+  run. Supported servers move into the ordinary live list after plugin consent.
+  The inert rows carry no second toggle because activation belongs to the plugin.
 
-**What C4 does not do.** It does not start plugin MCP servers. Nothing about the
-discovery-is-not-activation split from Stage A changes here; C4 only stops the UI
-from being silent about it.
+**What C4 does not do.** It does not bypass plugin consent or add a separate MCP
+activation decision. C4 keeps the UI complete while Stage A's runtime owns the
+actual connection lifecycle.
 
 ## Stage B — built-ins become plugins
 
@@ -428,20 +451,17 @@ from a dozen sibling plans point at both.
 1. Does the Copse plugin root stay `~/.copse/packs/` (renamed `~/.copse/plugins/`),
    or move under userData? Inherits marketplace open question 1; Stage C makes the
    directory name part of the rename.
-2. Where does `PLUGIN_DATA` live relative to the content-addressed payload? The
-   natural fit is payload = `PLUGIN_ROOT` (immutable, swapped on update), data
-   directory alongside (persistent) — which is exactly AP's split, but P2 owns it.
-3. Do Cursor-imported plugins eventually re-parse as AP when their upstream adopts
+2. Do Cursor-imported plugins eventually re-parse as AP when their upstream adopts
    root `plugin.json`? Marketplace open question 2, now with a concrete trigger.
-4. Should Copse publish its `dev.copse` extension schema at a stable `copse.dev` URL
+3. Should Copse publish its `dev.copse` extension schema at a stable `copse.dev` URL
    so third-party authors get key completion?
-5. Does Stage C rename the `copse.*` plugin ids themselves? They already satisfy
+4. Does Stage C rename the `copse.*` plugin ids themselves? They already satisfy
    §5.5, so this is cosmetic — and every id is a persisted key, so the answer is
    probably no.
 
 ## Non-goals
 
-- Conformance for the selected-directory development path (decision 3).
+- Removing either legacy selected-directory manifest filename (decision 3).
 - Moving typed first-party contributions on-disk (decision 7 / B3).
 - Adopting AP as a trust, permission, or provenance model (decision 5).
 - Any semantic change in a Stage C PR (decision 8).

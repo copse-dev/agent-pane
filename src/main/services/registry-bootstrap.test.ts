@@ -39,7 +39,9 @@ describe('registerSkillTools', () => {
     setBundledCursorSkillsRootForTest(null)
     tempRoot = await mkdtemp(join(tmpdir(), 'copse-panel-registry-'))
     restoreWorkspace = setWorkspaceRootForTest(tempRoot)
-    await mkdir(join(tempRoot, '.cursor', 'skills', 'demo-skill'), { recursive: true })
+    await mkdir(join(tempRoot, '.cursor', 'skills', 'demo-skill'), {
+      recursive: true,
+    })
     await writeFile(
       join(tempRoot, '.cursor', 'skills', 'demo-skill', 'SKILL.md'),
       `---
@@ -67,6 +69,10 @@ description: Demo skill for tests
     registerSkillTools(registry)
 
     assert.equal(registry.has('read_skill'), true)
+
+    setSkillsForTest([])
+    registerSkillTools(registry)
+    assert.equal(registry.has('read_skill'), false)
   })
 })
 

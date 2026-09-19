@@ -2,6 +2,13 @@
 
 Tracking: [#1082](https://github.com/copse-dev/agent-pane/issues/1082)
 
+**Format amendment:** [Agent Plugins migration](agent-plugins-migration.md) defines
+the package contract: root `plugin.json` with additive `dev.copse` extensions.
+The shared runtime is now called plugins. References below to a feature-pack
+manifest describe the historical design, not a new portable file format.
+`copse-plugin.json` and `copse-pack.json` remain selected-directory compatibility
+inputs; new authoring uses the standard envelope.
+
 **Status: Proposed.** This is the first delivery slice for #1082: nail the product
 contract for Copse-native pack distribution (discover → install → pin → update →
 disable → uninstall) before a public index, signing ceremony, or Settings chrome.

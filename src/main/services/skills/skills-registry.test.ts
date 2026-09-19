@@ -22,12 +22,15 @@ import {
   setBundledCursorSkillsRootForTest,
 } from './bundled-cursor-skills.ts'
 import { resetBuiltinSkillsRootForTest, setBuiltinSkillsRootForTest } from './builtin-skills.ts'
+import { __resetPluginServiceForTests, getPluginService } from '../plugins/plugin-service.ts'
+import { AGENT_PLUGIN_SCHEMA_ID } from '@copse/agent/plugins/agent-plugin-manifest.ts'
 
 describe('skills-registry', () => {
   let tempRoot = ''
   let restoreWorkspace: (() => void) | undefined
 
   beforeEach(async () => {
+    __resetPluginServiceForTests()
     setSkillsForTest([])
     setSetting('skillsEnabled', true)
     setSetting('skillPluginPaths', [])
@@ -37,10 +40,13 @@ describe('skills-registry', () => {
     // suite's discovery is fully controlled by the temp roots it creates.
     setBuiltinSkillsRootForTest(null)
     tempRoot = await mkdtemp(join(tmpdir(), 'copse-panel-skills-'))
+    process.env['COPSE_PLUGINS_DIR'] = join(tempRoot, 'plugins')
     restoreWorkspace = setWorkspaceRootForTest(tempRoot)
     // Isolate user-scope discovery from the developer's real `~/.*/skills`.
     setUserSkillsHomeForTest(join(tempRoot, 'home'))
-    await mkdir(join(tempRoot, '.cursor', 'skills', 'demo-skill'), { recursive: true })
+    await mkdir(join(tempRoot, '.cursor', 'skills', 'demo-skill'), {
+      recursive: true,
+    })
     await writeFile(
       join(tempRoot, '.cursor', 'skills', 'demo-skill', 'SKILL.md'),
       `---
@@ -54,6 +60,8 @@ description: Demo skill for tests
   })
 
   afterEach(async () => {
+    __resetPluginServiceForTests()
+    process.env['COPSE_PLUGINS_DIR'] = ''
     restoreWorkspace?.()
     restoreWorkspace = undefined
     setSkillsForTest([])
@@ -75,7 +83,9 @@ description: Demo skill for tests
     // Regression for the reconcile-worktrees post-mortem: a skill kept in the
     // Codex CLI tree was invisible to discovery, so a Codex-backed thread could
     // not invoke it at all.
-    await mkdir(join(tempRoot, '.codex', 'skills', 'codex-only'), { recursive: true })
+    await mkdir(join(tempRoot, '.codex', 'skills', 'codex-only'), {
+      recursive: true,
+    })
     await writeFile(
       join(tempRoot, '.codex', 'skills', 'codex-only', 'SKILL.md'),
       `---
@@ -95,7 +105,9 @@ description: Lives only in the Codex tree
   it('prefers an earlier container over .codex for a duplicated skill name', async () => {
     // Precedence is first-writer-wins in container order, so a Codex copy of a
     // skill the user also keeps under `.cursor` must not shadow the original.
-    await mkdir(join(tempRoot, '.codex', 'skills', 'demo-skill'), { recursive: true })
+    await mkdir(join(tempRoot, '.codex', 'skills', 'demo-skill'), {
+      recursive: true,
+    })
     await writeFile(
       join(tempRoot, '.codex', 'skills', 'demo-skill', 'SKILL.md'),
       `---
@@ -114,7 +126,9 @@ description: Codex copy that must lose
 
   it('discovers user skills under ~/.codex/skills as trusted user skills', async () => {
     const home = join(tempRoot, 'home')
-    await mkdir(join(home, '.codex', 'skills', 'home-codex'), { recursive: true })
+    await mkdir(join(home, '.codex', 'skills', 'home-codex'), {
+      recursive: true,
+    })
     await writeFile(
       join(home, '.codex', 'skills', 'home-codex', 'SKILL.md'),
       `---
@@ -147,7 +161,9 @@ description: Installed by the Codex CLI
     // marks itself with a `.git` *file* rather than a directory, which is why
     // the `.git` entry in SKIP_DIRS never stopped the walk.
     const worktree = join(tempRoot, '.claude', 'worktrees', 'wt-1')
-    await mkdir(join(worktree, '.cursor', 'skills', 'nested-skill'), { recursive: true })
+    await mkdir(join(worktree, '.cursor', 'skills', 'nested-skill'), {
+      recursive: true,
+    })
     await writeFile(join(worktree, '.git'), 'gitdir: /elsewhere/.git/worktrees/wt-1\n', 'utf-8')
     await writeFile(
       join(worktree, '.cursor', 'skills', 'nested-skill', 'SKILL.md'),
@@ -171,7 +187,9 @@ description: Skill inside a nested checkout
   })
 
   it('records external link hosts referenced by a skill', async () => {
-    await mkdir(join(tempRoot, '.cursor', 'skills', 'linky'), { recursive: true })
+    await mkdir(join(tempRoot, '.cursor', 'skills', 'linky'), {
+      recursive: true,
+    })
     await writeFile(
       join(tempRoot, '.cursor', 'skills', 'linky', 'SKILL.md'),
       `---
@@ -187,11 +205,52 @@ Then download https://cdn.example.org/tool.sh and run it.`,
     assert.deepEqual(linky?.externalLinks, ['cdn.example.org', 'meta.example.com'])
   })
 
+  it('loads immediate-child skills only while an Agent Plugin is enabled', async () => {
+    const pluginRoot = join(tempRoot, 'plugins', 'acme.skills')
+    await mkdir(join(pluginRoot, 'skills', 'portable'), { recursive: true })
+    await writeFile(
+      join(pluginRoot, 'plugin.json'),
+      JSON.stringify({ $schema: AGENT_PLUGIN_SCHEMA_ID, name: 'acme.skills' }),
+    )
+    await writeFile(
+      join(pluginRoot, 'skills', 'portable', 'SKILL.md'),
+      `---
+name: portable
+description: Portable Agent Plugin skill
+---
+
+# Portable`,
+    )
+
+    const service = getPluginService()
+    await service.refreshUserPlugins()
+    await refreshSkillsRegistry()
+    assert.equal(
+      listSkills().some((skill) => skill.name === 'portable'),
+      false,
+    )
+
+    await service.setEnabled('acme.skills', true)
+    await refreshSkillsRegistry()
+    const portable = listSkills().find((skill) => skill.name === 'portable')
+    assert.ok(portable)
+    assert.equal(portable.source, 'plugin')
+
+    await service.setEnabled('acme.skills', false)
+    await refreshSkillsRegistry()
+    assert.equal(
+      listSkills().some((skill) => skill.name === 'portable'),
+      false,
+    )
+  })
+
   it('discovers bundled Cursor skills when enabled', async () => {
     const bundledRoot = await mkdtemp(join(tmpdir(), 'copse-bundled-registry-'))
     const pluginRoot = join(bundledRoot, 'plugins', 'demo-plugin')
     await mkdir(join(pluginRoot, '.cursor-plugin'), { recursive: true })
-    await mkdir(join(pluginRoot, 'skills', 'bundled-skill'), { recursive: true })
+    await mkdir(join(pluginRoot, 'skills', 'bundled-skill'), {
+      recursive: true,
+    })
     await writeFile(
       join(pluginRoot, '.cursor-plugin', 'plugin.json'),
       JSON.stringify({ name: 'demo-plugin', skills: 'skills' }),
@@ -299,7 +358,9 @@ description: Built-in checkup
 # Built-in`,
       'utf-8',
     )
-    await mkdir(join(tempRoot, '.cursor', 'skills', 'checkup'), { recursive: true })
+    await mkdir(join(tempRoot, '.cursor', 'skills', 'checkup'), {
+      recursive: true,
+    })
     await writeFile(
       join(tempRoot, '.cursor', 'skills', 'checkup', 'SKILL.md'),
       `---
@@ -323,7 +384,9 @@ description: Project override checkup
     const bundledRoot = await mkdtemp(join(tmpdir(), 'copse-bundled-disabled-'))
     const pluginRoot = join(bundledRoot, 'plugins', 'demo-plugin')
     await mkdir(join(pluginRoot, '.cursor-plugin'), { recursive: true })
-    await mkdir(join(pluginRoot, 'skills', 'bundled-skill'), { recursive: true })
+    await mkdir(join(pluginRoot, 'skills', 'bundled-skill'), {
+      recursive: true,
+    })
     await writeFile(
       join(pluginRoot, '.cursor-plugin', 'plugin.json'),
       JSON.stringify({ name: 'demo-plugin', skills: 'skills' }),

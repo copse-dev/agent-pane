@@ -503,13 +503,16 @@ app
     // `syncModelComparisonTools` reads it — otherwise the fallback fresh
     // first-party registry (all plugins enabled) would register the tool for a
     // plugin the user turned off in a previous session.
-    getPluginService()
+    const pluginService = getPluginService()
     const registry = createRegistry()
     // Start skill discovery while the rest of main-process boot and the tool
     // availability probe continue. The renderer can become interactive before
     // that probe finishes; skills:list waits for this in-flight scan so the
     // first slash-picker open cannot observe the initial empty cache.
-    const skillsReady = initSkillsRegistry()
+    // Portable skills are gated by the plugin registry. Reconcile Agent
+    // Plugins before the first skill scan so enabled packages contribute on
+    // startup while newly discovered packages remain off until consent.
+    const skillsReady = pluginService.refreshInstalledPlugins().then(initSkillsRegistry)
     // Same for agents: `agents:list` is registered with the other handlers well
     // before the gate below, so the scan has to be in flight by then for the
     // handler's wait to have anything to join.
@@ -869,7 +872,7 @@ app
     )
 
     // Defaults for the "Compare models" bubble's picker. Read-only: it resolves
-    // the pack's own settings and starts nothing, so unlike the run below it
+    // the plugin's own settings and starts nothing, so unlike the run below it
     // needs no execution context.
     ipcMain.handle('agent:comparison-models', async (event, payload: unknown) => {
       assertMainFrameSender(event, win)

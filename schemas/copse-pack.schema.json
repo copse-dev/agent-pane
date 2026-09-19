@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://copse.dev/schemas/copse-pack.schema.json",
-  "title": "Copse feature-pack manifest",
-  "description": "The declarative manifest for a Copse feature pack. A pack bundles behaviors such as tools, thread models, hooks, prompt, UI, settings, and storage on top of the plugin.json shape Copse already loads. An explicitly selected user pack may provide executable behaviors through Copse's isolated versioned runtime. See docs/packs.md and docs/plans/hooks-and-feature-packs.md.",
+  "title": "Legacy Copse feature-pack manifest",
+  "description": "Legacy Copse manifest schema retained for compatibility. New packages use the Agent Plugins v1.0.0 root plugin.json envelope with Copse-only declarations under extensions[\"dev.copse\"]. This schema is not the portable plugin.json schema. See docs/plugins.md and docs/plans/agent-plugins-migration.md.",
   "type": "object",
   "additionalProperties": false,
   "required": ["name"],
