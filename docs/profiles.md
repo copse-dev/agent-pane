@@ -12,7 +12,7 @@ travel with one.
 
 | Path                                                                                 | Contents                                                                          |
 | ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
-| `user-data/config.json`                                                              | Projects, active project, workspace root, pack settings, usage ledger             |
+| `user-data/config.json`                                                              | Projects, active project, workspace root, plugin settings, usage ledger           |
 | `user-data/settings.json`                                                            | Settings, including API keys                                                      |
 | `user-data/` (rest)                                                                  | `mcp.json`, encrypted SSH authentication, browser profiles, semantic-search index |
 | `workspace/`                                                                         | Threads, tasks, decision log, deferred approvals                                  |

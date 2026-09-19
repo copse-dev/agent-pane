@@ -83,9 +83,9 @@ export interface McpServerStatus {
 /**
  * An MCP server a plugin's `mcp.json` declares that the app is **not** running.
  *
- * An installed plugin can name servers Copse never spawns — because the plugin
- * is turned off, or because its declarations are validated but not yet wired
- * into the agent loop. Left out of Settings entirely, those declarations are
+ * An installed plugin can name servers Copse does not spawn — because the plugin
+ * is turned off or the declared transport is unsupported. Left out of Settings,
+ * those declarations are
  * invisible: the list would say "no servers" while a package on disk names
  * three. Since the point of this section is to be the complete account of the
  * app's outbound connections, a declaration that is not running is still

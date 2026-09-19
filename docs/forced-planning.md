@@ -1,6 +1,6 @@
 # Forced planning for weaker models
 
-Copse ships an opt-in first-party pack, **`copse.forced-planning`**, that makes a
+Copse ships an opt-in first-party plugin, **`copse.forced-planning`**, that makes a
 plan mandatory when the model running a turn measures below a capability
 threshold.
 
@@ -9,14 +9,14 @@ from a wrong turn. A smaller — or heavily quantized — model drifts, forgets 
 second half of the request, and declares victory early. An externalised plan is
 the cheapest known fix: it gives the weaker model a checklist to re-read every
 step instead of relying on recall. So rather than asking the user to remember to
-say "make a plan first", the pack decides from the _measured_ capability of
+say "make a plan first", the plugin decides from the _measured_ capability of
 whatever model is selected.
 
-Turn it on in **Settings → Packs → Forced planning**. It ships disabled.
+Turn it on in **Settings → Plugins → Forced planning**. It ships disabled.
 
 ## What it does
 
-On every turn start, while the pack is enabled:
+On every turn start, while the plugin is enabled:
 
 1. Resolve the capability of the model about to run
    (`resolveModelIntellect`, [`packages/llm/src/intellect-lookup.ts`](../packages/llm/src/intellect-lookup.ts)).
@@ -26,10 +26,10 @@ On every turn start, while the pack is enabled:
      3–7 concrete steps, one `in_progress` at a time, no "finished" while items
      are open. The plan shows up in the usual plan panel.
    - a **written numbered plan** in the reply when it does not (the `copse.todos`
-     pack is disabled, or read-only mode dropped the tool). The plan is still
+     plugin is disabled, or read-only mode dropped the tool). The plan is still
      mandatory; it just has nowhere structured to live.
 3. Otherwise abstain — the turn is assembled exactly as it would have been
-   without the pack.
+   without the plugin.
 
 It also abstains when the request is under 40 characters (greetings, "continue",
 one-line follow-ups) and when a plan from a prior turn is still open — the
@@ -42,7 +42,7 @@ recorded on the decision instead.
 
 ## Two scales, two thresholds
 
-Capability resolves on one of two deliberately incomparable rulers, and the pack
+Capability resolves on one of two deliberately incomparable rulers, and the plugin
 holds a threshold for each:
 
 | Scale                                              | Typical range                                                    | Setting                       | Default |
@@ -74,7 +74,7 @@ a number for the model:
 | ------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
 | [`packages/llm/src/intellect-lookup.ts`](../packages/llm/src/intellect-lookup.ts)                             | Scale-tagged capability lookup for a selected model id (cloud, OpenRouter, ACP, local). |
 | [`packages/agent/src/forced-planning.ts`](../packages/agent/src/forced-planning.ts)                           | The pure policy: thresholds, gates, and the two steering texts.                         |
-| `forcedPlanningHook` in [`turn-start-hooks.ts`](../packages/agent/src/hooks/turn-start-hooks.ts)              | The `turnStart` hook — supplies turn facts and reads the pack's own settings.           |
+| `forcedPlanningHook` in [`turn-start-hooks.ts`](../packages/agent/src/hooks/turn-start-hooks.ts)              | The `turnStart` hook — supplies turn facts and reads the plugin's own settings.         |
 | [`packages/agent/src/plugins/forced-planning-pack.ts`](../packages/agent/src/plugins/forced-planning-pack.ts) | The manifest: the hook contribution, the settings schema, namespaced storage.           |
 
 Two small platform additions came with it, both documented in
@@ -85,14 +85,14 @@ Two small platform additions came with it, both documented in
   and never name a tool the turn filtered out. `turnStart` has no dialect
   marshaller, so no external hook wire contract changed.
 - `HookContext.resolvePackSetting(packId, key)` is the service-injection seam a
-  first-party pack hook reads its own configuration through — the same shape as
+  first-party plugin hook reads its own configuration through — the same shape as
   `resolveGithubRepoSlug`, and what keeps `packages/agent` free of any import of
-  the host's pack service or `electron-store`.
+  the host's plugin service or `electron-store`.
 
-Disabling the pack drops the hook from the assembly pipeline in one atomic flag
+Disabling the plugin drops the hook from the assembly pipeline in one atomic flag
 flip, restoring a byte-identical system prompt.
 
 ## Related
 
-- [`docs/plugins.md`](plugins.md) — the pack manifest, registry, and lifecycle
-- [`docs/hooks.md`](hooks.md) — the hook registry the pack's hook registers through
+- [`docs/plugins.md`](plugins.md) — the plugin manifest, registry, and lifecycle
+- [`docs/hooks.md`](hooks.md) — the hook registry the plugin's hook registers through

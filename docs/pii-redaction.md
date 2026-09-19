@@ -1,8 +1,8 @@
 # PII redaction (experimental)
 
 On-device redaction of personal data in your messages before they leave for a
-model provider. Off by default; enable it under **Settings → Packs → PII
-redaction** (the `copse.pii-redaction` first-party pack).
+model provider. Off by default; enable it under **Settings → Plugins → PII
+redaction** (the `copse.pii-redaction` first-party plugin).
 
 ## What it does
 

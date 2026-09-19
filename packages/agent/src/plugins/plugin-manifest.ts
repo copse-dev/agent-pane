@@ -103,7 +103,7 @@ export interface PluginPermissionDecl {
 /**
  * What clicking a plugin-contributed follow-up bubble does.
  *  - `prompt` — send the decl's `prompt` to the agent, exactly what every
- *    follow-up bubble did before packs could contribute one.
+ *    follow-up bubble did before plugins could contribute one.
  *  - `model-compare` — open the comparison model picker, then run the
  *    comparison with what the user chose.
  *
@@ -123,7 +123,7 @@ export type PluginFollowUpAction = 'prompt' | 'model-compare'
  * context) instead of shipping code that runs at the end of every turn.
  *
  * `workspace-changes` — only when the working tree has uncommitted changes.
- * `always` — whenever the pack is enabled (the default).
+ * `always` — whenever the plugin is enabled (the default).
  */
 export type PluginFollowUpCondition = 'always' | 'workspace-changes'
 
@@ -326,7 +326,7 @@ export interface PluginContributions {
   /**
    * Follow-up bubbles offered above the composer while enabled. Like every other
    * contribution kind these are consulted only for *new* work — a bubble already
-   * on screen when the pack is disabled is stale UI, not history, and clears on
+   * on screen when the plugin is disabled is stale UI, not history, and clears on
    * the next turn.
    */
   readonly followUps: readonly PluginFollowUpDecl[]
@@ -469,7 +469,7 @@ export function pluginManifestFromPluginJson(
   // blocks (decision 15's capability tiering applied to prompt).
   if (raw.prompt) manifest.prompt = raw.prompt.map((b) => ({ ...b, trust: 'untrusted' }))
   if (raw.ui) manifest.ui = raw.ui
-  // A discovered pack may *suggest* a follow-up, never bind one to a host action:
+  // A discovered plugin may *suggest* a follow-up, never bind one to a host action:
   // `model-compare` opens a picker that spends money, and the rest of the action
   // vocabulary drives app UI outside the agent. Force every declared action back
   // to `prompt` here (the same self-grant this function denies prompt blocks), so

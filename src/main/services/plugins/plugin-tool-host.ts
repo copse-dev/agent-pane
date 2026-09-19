@@ -240,7 +240,7 @@ export class PluginToolHost {
           .replace(/\s+/gu, ' ')
           .trim()
         console.warn(
-          `[packs] plugin ${JSON.stringify(this.pluginId)} worker exited during startup (${status})${diagnostic ? `: ${diagnostic}` : ''}`,
+          `[plugins] plugin ${JSON.stringify(this.pluginId)} worker exited during startup (${status})${diagnostic ? `: ${diagnostic}` : ''}`,
         )
       }
       this.fail(new PluginToolHostUnavailable('Plugin tool worker exited.'))

@@ -34,7 +34,7 @@ The process runs with normal host access. The generic project sandbox is not a f
 for Xcode's package resolution, caches, Keychain and signing services, CoreSimulator, devices, and
 project-controlled build phases.
 
-The agent receives the pinned XcodeBuildMCP server only while the first-party pack is enabled and
+The agent receives the pinned XcodeBuildMCP server only while the first-party plugin is enabled and
 the active local macOS project is enrolled. All upstream workflows are available. Each call passes
 through the normal MCP permission gate, including its per-tool remembered grants and corroborated
 read-only auto-run option; enrollment alone does not approve agent execution. XcodeBuildMCP runs
@@ -50,15 +50,15 @@ so a recovered task cannot launch a second Xcode process whose predecessor may s
 ## Shared Run app workflow
 
 The titlebar/project-menu **Run app…** flow is available for detected local Apple and Android
-projects independently of agent-pack enrollment. Opening the picker authorizes loading the project
+projects independently of agent-plugin enrollment. Opening the picker authorizes loading the project
 configuration (including Gradle configuration or Xcode metadata). Clicking Build, Test, or Run
 authorizes the selected workflow and its project-controlled build scripts with normal host access.
 The main process resolves the selected project/thread checkout and validates the discovered app,
 variant, and device. It never receives arbitrary command lines from the renderer. This workflow does
-not enable agent packs or create remembered agent-tool permissions.
+not enable agent plugins or create remembered agent-tool permissions.
 
 The shared Apple picker defaults signing-profile updates off. Its explicit per-run checkbox adds
-`-allowProvisioningUpdates` only to that operation; the existing Apple pack/MCP behavior described
+`-allowProvisioningUpdates` only to that operation; the existing Apple plugin/MCP behavior described
 above is preserved. Creating a device uses an installed runtime. Downloading an iOS runtime or an
 Android system image is a separate labeled action. Android license agreements are not silently
 accepted. External setup links open only the fixed Xcode/Android Studio destinations.

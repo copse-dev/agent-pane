@@ -236,7 +236,7 @@ export const config: Options.Testrunner = {
       // Agent Plugins discovery root. Isolating it matters beyond the discovery
       // spec: without the override the app would walk the *developer's* real
       // ~/.copse/plugins, so whatever they happen to have installed would leak
-      // into every Settings → Packs assertion and screenshot.
+      // into every Settings → Plugins assertion and screenshot.
       COPSE_PLUGINS_DIR: join(e2eUserDataDir, 'plugins'),
       // Blank every provider key the app recognises so e2e is deterministic:
       // the mock LLM is used (no real key), and the env-key-detection scan

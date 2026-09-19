@@ -50,6 +50,8 @@ import {
   XCODEBUILD_MCP_SERVER_NAME,
 } from '../apple-development/xcodebuildmcp.ts'
 import { isAppleDevelopmentProjectEnrolled } from '../apple-development/apple-development-service.ts'
+import { getPluginService } from '../plugins/plugin-service.ts'
+import { prepareAgentPluginMcpConfigs } from '../plugins/agent-plugin-mcp-runtime.ts'
 
 const CONNECT_TIMEOUT_MS = 30_000
 const GRANTS_STORAGE_KEY = 'mcp-remembered-grants'
@@ -155,6 +157,23 @@ async function readPluginMcpConfigs(): Promise<McpServerConfig[]> {
   return mergeMcpConfigs(perPlugin)
 }
 
+async function readAgentPluginMcpConfigs(): Promise<McpServerConfig[]> {
+  const prepared = await Promise.all(
+    getPluginService().enabledUserPlugins().map(prepareAgentPluginMcpConfigs),
+  )
+  for (const result of prepared) {
+    for (const warning of result.warnings) console.warn(`[MCP] Agent Plugin: ${warning}`)
+  }
+  return mergeMcpConfigs(prepared.map((result) => [...result.configs]))
+}
+
+function agentPluginIdForMcpSource(source: string | undefined): string | undefined {
+  if (source === undefined) return undefined
+  return getPluginService()
+    .enabledUserPlugins()
+    .find((plugin) => plugin.mcpConfigPath === source)?.manifest.name
+}
+
 /**
  * Gather and merge MCP server definitions from all known config locations.
  *
@@ -174,17 +193,19 @@ async function collectConfigs(): Promise<{
   const projectSources = workspace ? projectMcpSourcePaths(workspace) : []
   const userSources = userMcpSourcePaths()
 
-  const [projectPerSource, userPerSource, pluginMerged] = await Promise.all([
-    Promise.all(projectSources.map(readConfigFile)),
-    Promise.all(userSources.map(readConfigFile)),
-    readPluginMcpConfigs(),
-  ])
+  const [projectPerSource, userPerSource, cursorPluginMerged, agentPluginMerged] =
+    await Promise.all([
+      Promise.all(projectSources.map(readConfigFile)),
+      Promise.all(userSources.map(readConfigFile)),
+      readPluginMcpConfigs(),
+      readAgentPluginMcpConfigs(),
+    ])
 
   // App-level servers the user trusts implicitly: their own/global/plugin configs
   // plus any enabled "Copse reviewed" catalog entries. User/global and plugins win
   // over the curated catalog on name collisions, so a user can override a curated
   // definition in their own mcp.json.
-  const userMerged = mergeMcpConfigs([...userPerSource, pluginMerged])
+  const userMerged = mergeMcpConfigs([...userPerSource, cursorPluginMerged, agentPluginMerged])
   const xcodeBuildMcp = getXcodeBuildMcpConfig()
   // The bundled first-party definition owns its reserved server name. A
   // workspace or user config cannot shadow the executable Copse reviewed.
@@ -218,6 +239,7 @@ function isUserMcpSource(source: string | undefined): boolean {
     source === CURATED_MCP_SOURCE ||
     source === join(homedir(), '.cursor', 'mcp.json') ||
     source === join(getElectronUserDataPath(), 'mcp.json') ||
+    agentPluginIdForMcpSource(source) !== undefined ||
     isCursorPluginMcpSource(source)
   )
 }
@@ -235,6 +257,7 @@ function isUserMcpSource(source: string | undefined): boolean {
 function classifyMcpOrigin(source: string | undefined): McpServerOrigin {
   if (source === CURATED_MCP_SOURCE) return 'curated'
   if (source === undefined) return 'built-in'
+  if (agentPluginIdForMcpSource(source) !== undefined) return 'plugin'
   if (isCursorPluginMcpSource(source)) return 'plugin'
   if (source === join(homedir(), '.cursor', 'mcp.json')) return 'user'
   if (source === join(getElectronUserDataPath(), 'mcp.json')) return 'user'
@@ -244,6 +267,8 @@ function classifyMcpOrigin(source: string | undefined): McpServerOrigin {
 /** The short label shown beside the origin — the file or plugin it came from. */
 function mcpOriginDetail(source: string | undefined): string | undefined {
   if (source === undefined || source === CURATED_MCP_SOURCE) return undefined
+  const agentPluginId = agentPluginIdForMcpSource(source)
+  if (agentPluginId !== undefined) return agentPluginId
   if (!isCursorPluginMcpSource(source)) return source
   // `<cursor plugins root>/<publisher>/<plugin>/…/.mcp.json` — the segment
   // under the root is what a user recognises, not the config filename.
@@ -291,10 +316,16 @@ function createTransport(cfg: McpServerConfig): CreatedTransport {
     if (cfg.url === undefined) {
       throw new Error(`MCP server "${cfg.name}" uses http transport but has no url`)
     }
-    const transport = new StreamableHTTPClientTransport(
-      new URL(cfg.url),
-      cfg.headers ? { requestInit: { headers: cfg.headers } } : undefined,
-    )
+    const agentPluginSource = agentPluginIdForMcpSource(cfg.source) !== undefined
+    const transport = new StreamableHTTPClientTransport(new URL(cfg.url), {
+      requestInit: {
+        ...(cfg.headers ? { headers: cfg.headers } : {}),
+        // Configured Agent Plugin headers are scoped to the declared origin.
+        // Refusing redirects prevents fetch from forwarding them to another
+        // origin without the explicit authorization §7.2.1 requires.
+        ...(agentPluginSource ? { redirect: 'error' as const } : {}),
+      },
+    })
     const compatible: Transport = {
       start: () => transport.start(),
       send: (message, options) => transport.send(message, options),
@@ -400,7 +431,10 @@ async function registerClientTools(
             ? prepareXcodeBuildMcpArguments(tool.name, args)
             : args
         const result = await client.callTool(
-          { name: tool.name, arguments: isRecord(preparedArgs) ? preparedArgs : {} },
+          {
+            name: tool.name,
+            arguments: isRecord(preparedArgs) ? preparedArgs : {},
+          },
           undefined,
           { signal },
         )
@@ -488,7 +522,13 @@ async function connectServer(
   userDisabled: ReadonlySet<string>,
   generation: number,
 ): Promise<McpServerStatus> {
-  const cfg = interpolateServerConfig(rawCfg, process.env, envAllowlistFor(rawCfg))
+  // Agent Plugins performs exactly the two portable placeholder expansions in
+  // its adapter. Running the native env interpolator afterwards would violate
+  // §9.2 by expanding arbitrary `${VAR}` strings.
+  const cfg =
+    agentPluginIdForMcpSource(rawCfg.source) === undefined
+      ? interpolateServerConfig(rawCfg, process.env, envAllowlistFor(rawCfg))
+      : rawCfg
   const configDisabled = rawCfg.disabled === true
   const userEnabled = !userDisabled.has(cfg.name)
   const base: McpServerStatus = {
@@ -532,7 +572,12 @@ async function connectServer(
     console.log(
       `[MCP] Connected to "${cfg.name}" (${cfg.transport}) — ${String(toolNames.length)} tool(s)`,
     )
-    return { ...base, state: 'connected', toolCount: toolNames.length, tools: toolNames }
+    return {
+      ...base,
+      state: 'connected',
+      toolCount: toolNames.length,
+      tools: toolNames,
+    }
   } catch (err) {
     const stderr = stderrOutput()
     const message = errorMessage(err)
@@ -624,7 +669,11 @@ export async function listForwardableMcpServers(projectId?: string): Promise<Mcp
     )
     .filter((cfg) => !isMcpServerEffectivelyDisabled(cfg, userDisabled))
     .filter((cfg) => cfg.transport === 'stdio' || cfg.transport === 'http')
-    .map((cfg) => interpolateServerConfig(cfg, process.env, envAllowlistFor(cfg)))
+    .map((cfg) =>
+      agentPluginIdForMcpSource(cfg.source) === undefined
+        ? interpolateServerConfig(cfg, process.env, envAllowlistFor(cfg))
+        : cfg,
+    )
 }
 
 function untrustedStatus(cfg: McpServerConfig, userDisabled: ReadonlySet<string>): McpServerStatus {

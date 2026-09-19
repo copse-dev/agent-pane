@@ -1,7 +1,9 @@
 # Plugins in Copse
 
-A **plugin** is a manifest-bundled feature. It extends the `plugin.json` shape Copse
-already loads (skills + MCP) with the remaining slots, and the plugin registry owns
+A **plugin** is a manifest-bundled feature. New on-disk packages use the
+[Agent Plugins v1.0.0 format](https://agent-plugins.org/specification): root
+`plugin.json`, fixed `skills/` and `mcp.json` locations, and additive Copse
+contributions under `extensions["dev.copse"]`. The plugin registry owns
 its lifecycle. This document describes the landed plugin layer: the manifest shape,
 the registry, atomic enable/disable, and the level-2 declarative panel
 contribution.
@@ -16,11 +18,15 @@ the same PR.
 
 ## Manifest shape
 
-The declarative manifest is a superset of the plugin.json shape, published as a
-JSON schema at [`schemas/copse-pack.schema.json`](../schemas/copse-pack.schema.json)
-(`$id` `https://copse.dev/schemas/copse-pack.schema.json`). The TypeScript
-contract is `PluginManifest` in
+The portable manifest uses the standard's closed envelope. Copse must not add
+top-level fields, relocate portable components, or give unknown core fields
+semantics. Client-specific declarations belong in `extensions["dev.copse"]`,
+and their files belong in `dev.copse/`. The normalized internal TypeScript
+contract remains `PluginManifest` in
 [`packages/agent/src/plugins/plugin-manifest.ts`](../packages/agent/src/plugins/plugin-manifest.ts).
+The slots below describe that internal representation, not a second portable
+manifest. [`schemas/copse-pack.schema.json`](../schemas/copse-pack.schema.json)
+is retained for legacy Copse manifests; it is not the schema for root `plugin.json`.
 
 ```
 plugin manifest
@@ -71,16 +77,19 @@ parses the envelope and the `extensions["dev.copse"]` block, and
 ([`src/main/services/plugins/discover-user-plugins.ts`](../src/main/services/plugins/discover-user-plugins.ts))
 walks the root and feeds the registry.
 
-Discovery **validates but never activates**: a discovered plugin gets a Settings
-row and the enable/disable lifecycle, and is seeded **off** the first time it is
-seen. Its command hooks and MCP servers are parsed and held, not registered into
-the live agent loop — that wiring is deliberately separate work. Skills and MCP
-from a Cursor-installed plugin still load via Cursor plugin discovery (see
-[`docs/adding-a-plugin.md`](adding-a-plugin.md)), which remains a distinct
-compatibility path.
+Discovery alone never activates behavior: a discovered plugin gets a Settings
+row and is seeded **off** the first time it is seen. Enabling it is the consent
+boundary that adds its immediate-child portable skills and valid stdio or
+Streamable HTTP MCP servers to the existing registries. Invalid siblings stay
+isolated; legacy HTTP+SSE is reported and skipped. Copse-specific command hooks
+remain declarative. Cursor-installed skills and MCP continue to load through a
+distinct compatibility path.
 
 An explicitly selected plugin directory is an ordinary **user** plugin, not a new
-trust tier. Its `copse-pack.json` can declare tool names under `tools.provides`,
+trust tier. Root `plugin.json` declares executable behavior under
+`extensions["dev.copse"]`; `copse-plugin.json` and `copse-pack.json` remain
+compatibility inputs when that root manifest is absent. A present invalid
+`plugin.json` rejects the source instead of falling back. Its runtime can declare tool names under `tools.provides`,
 whole-thread model metadata under `models.provides`, or both, implemented by one
 versioned `runtime`.
 The host validates the manifest/tree, rejects symlinks and escaping entrypoints,
@@ -243,7 +252,7 @@ A plugin contributes a **level-2 panel** by declaring a UI contribution at
 and by emitting `panel_update` chunks
 ([`PanelData`](../packages/agent/src/plugins/plugin-panel.ts)) whose contents the
 host renders with a generic list/tree component
-([`createPackPanelEl`](../src/renderer/views/plugin-panel.ts)). Each `panel_update`
+([`createPluginPanelEl`](../src/renderer/views/plugin-panel.ts)). Each `panel_update`
 **replaces** the panel's contents, matching ACP `plan`'s whole-list-per-update
 semantics — which is why a list panel is one adapter away from cross-client
 rendering.
@@ -252,7 +261,7 @@ rendering.
   hooks emit it via `FunctionHookContext.emitChunk` (external command hooks
   never see `emitChunk`, so a user plugin cannot smuggle typed feature chunks —
   decision 15, pinned by `command-hooks-cannot-emit-feature-chunks.test.ts`).
-- The chunk carries `packId` + `contributionId` so two plugins cannot collide on
+- The chunk carries `pluginId` + `contributionId` so two plugins cannot collide on
   the same declared panel slot.
 - Level 2 is deliberately declarative: no freeform React from a plugin at this
   level. Real renderer views are level 3, first-party only (VS Code
@@ -295,10 +304,10 @@ than a status list:
   `mcp-registry.ts` where the roots of each are known. Only `project` is
   coloured: a `.mcp.json` is the one that arrives with a checkout.
 - **Declarations nothing is running are disclosed, not omitted.**
-  `PluginService.declaredMcpServers()` reports every server a discovered plugin's
-  `mcp.json` names, with the reason it is inert — the plugin is off, or Copse
-  does not start plugin MCP servers yet. These rows carry no toggle: a
-  disclosure that offered a switch would imply Copse could start the server.
+  `PluginService.declaredMcpServers()` reports servers whose plugin is off and
+  enabled legacy HTTP+SSE entries that Copse does not support. Enabled stdio and
+  Streamable HTTP servers move into the ordinary live status list. These inert
+  rows carry no separate toggle; their plugin row owns activation.
 
 - **Shared registry.** The host's `PluginService`
   ([`src/main/services/plugins/plugin-service.ts`](../src/main/services/plugins/plugin-service.ts))
@@ -316,12 +325,12 @@ than a status list:
   drop each other's change. Applied to the registry at boot before the
   provider is installed, so a plugin the user turned off stays off across
   relaunches.
-- **IPC.** `packs:list` / `packs:setEnabled` / `packs:setSetting` (renderer
+- **IPC.** `plugins:list` / `plugins:set-enabled` / `plugins:set-setting` (renderer
   surface: `api.plugins.*` in the preload). Values are validated to
   `boolean` / `number` / `string ≤ 8192` so a compromised renderer cannot
   stuff arbitrary payloads.
 - **Selected-plugin IPC.** Source selection is owned by the main process's native
-  directory picker. `packs:addSource` exposes only a host-validated candidate;
+  directory picker. `plugins:add-source` exposes only a host-validated candidate;
   the renderer never supplies a path directly.
 - **Renderer.** The Settings dialog gains a `Plugins` nav section
   (`src/renderer/views/settings-dialog.ts`). Each row shows the plugin's name +

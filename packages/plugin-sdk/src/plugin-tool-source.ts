@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import * as fsp from 'node:fs/promises'
-import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { z } from 'zod'
 import {
   definePlugin,
@@ -10,7 +10,13 @@ import {
 } from '@copse/agent/plugins/plugin-manifest.ts'
 import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
 import { zPluginHookRegistrations } from './plugin-tool-protocol.ts'
+import {
+  AGENT_PLUGIN_MANIFEST_FILE,
+  COPSE_EXTENSION_NAMESPACE,
+  parseAgentPluginManifest,
+} from '@copse/agent/plugins/agent-plugin-manifest.ts'
 
+/** Compatibility filename. New packages use root plugin.json (Agent Plugins). */
 export const PLUGIN_MANIFEST_FILE = 'copse-plugin.json'
 
 /**
@@ -144,22 +150,62 @@ export function normalizePluginBrowserOrigins(origins: readonly string[]): reado
 }
 
 async function readManifest(manifestPath: string): Promise<PluginToolSourceJson> {
+  const filename = basename(manifestPath)
   let bytes: Buffer
   try {
+    // Do not read a manifest through a symlink before hashTree rejects it.
+    if (!(await fsp.lstat(manifestPath)).isFile()) {
+      throw new PluginToolSourceError('Manifest must be a regular file, not a symbolic link.')
+    }
     bytes = await fsp.readFile(manifestPath)
   } catch (error) {
     throw new PluginToolSourceError(
-      `Could not read ${PLUGIN_MANIFEST_FILE}: ${error instanceof Error ? error.message : String(error)}`,
+      `Could not read ${filename}: ${error instanceof Error ? error.message : String(error)}`,
     )
   }
   if (bytes.byteLength > MAX_MANIFEST_BYTES) {
-    throw new PluginToolSourceError(`${PLUGIN_MANIFEST_FILE} exceeds 1 MB.`)
+    throw new PluginToolSourceError(`${filename} exceeds 1 MB.`)
+  }
+  if (filename === AGENT_PLUGIN_MANIFEST_FILE) {
+    const parsed = parseAgentPluginManifest(safeJsonParse(bytes.toString('utf8')))
+    for (const warning of parsed.warnings) console.warn(`[plugins] ${manifestPath}: ${warning}`)
+    const manifest = parsed.manifest
+    // Reuse the selected-runtime behavior contract, without imposing the old
+    // manifest's metadata limits on the portable envelope (§5.4).
+    const behavior = zPluginToolSourceJson.safeParse({
+      name: manifest.name,
+      runtime: manifest.runtime,
+      ...(manifest.tools ? { tools: manifest.tools } : {}),
+      ...(manifest.models ? { models: manifest.models } : {}),
+      ...(manifest.browser ? { browser: manifest.browser } : {}),
+    })
+    if (!behavior.success) {
+      throw new PluginToolSourceError(
+        `${filename} must declare a supported executable behavior in extensions["${COPSE_EXTENSION_NAMESPACE}"].`,
+      )
+    }
+    const entrypoint = behavior.data.runtime.entrypoint
+    const extensionRoot = `./${COPSE_EXTENSION_NAMESPACE}/`
+    if (!entrypoint.startsWith(extensionRoot)) {
+      throw new PluginToolSourceError(
+        `Agent Plugin runtime entrypoint must begin with ${extensionRoot}.`,
+      )
+    }
+    // Namespace files cannot reach into portable skills or another extension.
+    ensureContained(
+      join(dirname(manifestPath), COPSE_EXTENSION_NAMESPACE),
+      entrypoint.slice(extensionRoot.length),
+      'Runtime entrypoint',
+    )
+    return {
+      ...behavior.data,
+      ...(manifest.version === undefined ? {} : { version: manifest.version }),
+      ...(manifest.description === undefined ? {} : { description: manifest.description }),
+    }
   }
   const decoded = safeJsonParse(bytes.toString('utf8'), decodeWithSchema(zPluginToolSourceJson))
   if (!decoded) {
-    throw new PluginToolSourceError(
-      `${PLUGIN_MANIFEST_FILE} must declare a supported executable behavior.`,
-    )
+    throw new PluginToolSourceError(`${filename} must declare a supported executable behavior.`)
   }
   return decoded
 }
@@ -228,11 +274,15 @@ export async function discoverPluginToolSource(
   const rootStat = await fsp.stat(root)
   if (!rootStat.isDirectory()) throw new PluginToolSourceError('Plugin source is not a directory.')
 
-  // Prefer the current name; fall back to the one the folder may already carry.
-  const preferred = join(root, PLUGIN_MANIFEST_FILE)
-  const manifestPath = (await fsp.stat(preferred).catch(() => null))?.isFile()
-    ? preferred
-    : join(root, LEGACY_PLUGIN_MANIFEST_FILE)
+  // Root plugin.json is authoritative, even if malformed. A legacy file must
+  // never rescue, supplement, or override a rejected portable manifest.
+  const portable = join(root, AGENT_PLUGIN_MANIFEST_FILE)
+  const preferredLegacy = join(root, PLUGIN_MANIFEST_FILE)
+  const manifestPath = (await fsp.lstat(portable).catch(() => null))
+    ? portable
+    : (await fsp.stat(preferredLegacy).catch(() => null))?.isFile()
+      ? preferredLegacy
+      : join(root, LEGACY_PLUGIN_MANIFEST_FILE)
   const raw = await readManifest(manifestPath)
   const entrypoint = ensureContained(root, raw.runtime.entrypoint, 'Runtime entrypoint')
   const entrypointStat = await fsp.stat(entrypoint).catch(() => null)

@@ -461,9 +461,15 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   const pluginService = getPluginService()
   setPluginBrowserService(createPluginBrowserPanelService(win))
   setPluginToolRuntimeController(new ToolingPluginToolRuntimeController(registry))
-  void pluginService.refreshInstalledPlugins().catch((error: unknown) => {
-    console.warn('[plugins] startup reconciliation failed:', error)
-  })
+  void pluginService
+    .refreshInstalledPlugins()
+    // The first startup pass may have run before this handler installed the
+    // selected-plugin runtime controller. Reconcile selected sources once more
+    // so their behavior starts after the controller is available.
+    .then(() => pluginService.refreshPluginSources())
+    .catch((error: unknown) => {
+      console.warn('[plugins] startup reconciliation failed:', error)
+    })
   // Register the DevTools shortcut at boot iff the `copse.devtools-shortcut`
   // plugin is enabled. The plugin ships off (`defaultEnabled: false`) and
   // getPluginService() has already layered the user's explicit choices on top, so
@@ -2082,7 +2088,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   // write plugin-scoped settings values under the manifest's declared schema.
   ipcMain.handle('plugins:list', async (event) => {
     assertMainFrameSender(event, win)
-    await getPluginService().refreshPluginSources()
+    await getPluginService().refreshInstalledPlugins()
     return { plugins: getPluginService().list() }
   })
   ipcMain.handle('supervisor:list', async (event, rawProjectId: unknown) => {
@@ -2149,7 +2155,17 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zNonEmptyString.max(128), [rawId])
     const enabled = parseIpcArgs(z.boolean(), [rawEnabled])
-    await getPluginService().setEnabled(id, enabled)
+    const pluginService = getPluginService()
+    await pluginService.setEnabled(id, enabled)
+    if (pluginService.hasUserPlugin(id)) {
+      // The plugin toggle is the portable component consent boundary. Refresh
+      // both registries immediately so skills and MCP disappear atomically on
+      // disable and become available without a restart on enable.
+      await initSkillsRegistry()
+      registerSkillTools(registry)
+      const statuses = await reloadMcpServers(registry)
+      win.webContents.send('mcp:status-changed', statuses)
+    }
     // P5: toggling the model-comparison plugin adds/removes its `compare_models`
     // tool on the live registry so the atomic plugin-disable also drops the tool
     // from the model tool list without an app restart (mirrors the setting
@@ -2282,7 +2298,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     },
   )
 
-  // Apple Development first-party pack. Renderer requests carry only project/thread
+  // Apple Development first-party plugin. Renderer requests carry only project/thread
   // identities; main resolves and validates the checkout before every operation.
   const appleInvocation = (
     projectId: string,

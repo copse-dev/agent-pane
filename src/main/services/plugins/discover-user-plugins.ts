@@ -1,7 +1,7 @@
 // Host disk discovery for Agent Plugins — Stage A2 of
 // docs/plans/agent-plugins-migration.md.
 //
-// Closes the gap `docs/packs.md` has carried since the plugin registry landed:
+// Closes the gap `docs/plugins.md` has carried since the plugin registry landed:
 // "Host disk-discovery that feeds user plugins into the registry is **not wired
 // yet**". The first attempt (#1342) was closed unmerged; its follow-up list is
 // preserved on #1082 and is implemented here.
@@ -99,12 +99,18 @@ export interface UserPluginCandidate {
   readonly metadata: AgentPluginMetadata
   /** Absolute `skills/` path when the plugin ships skills (§6.1). */
   readonly skillsDir?: string
+  /**
+   * Valid, contained immediate-child `SKILL.md` files (§7.1). Kept as exact
+   * files so the skills registry cannot accidentally recurse into deeper
+   * descendants, which the portable format explicitly forbids.
+   */
+  readonly skillFiles: readonly string[]
   /** Absolute `mcp.json` path when the plugin ships MCP servers (§6.1). */
   readonly mcpConfigPath?: string
   /**
    * Server entries that validated. Populated at discovery because validating a
-   * declaration is not the same as running it — nothing here is spawned, and
-   * wiring these into the live agent loop is separate work.
+   * declaration is not the same as running it: nothing in disk discovery
+   * spawns a server. The MCP registry consumes these only after enablement.
    */
   readonly mcpServers: ReadonlyMap<string, AgentPluginMcpServer>
   /** Non-fatal findings: ignored fields, stripped capabilities, skipped parts. */
@@ -183,6 +189,54 @@ async function resolveComponent(
   return contained
 }
 
+/**
+ * Discover exactly `skills/<immediate child>/SKILL.md` (§7.1).
+ *
+ * A bad sibling is isolated: missing/non-regular/escaping skill files are
+ * reported and skipped without disabling the plugin's other skills or MCP
+ * servers. Symlinks are accepted only when their filesystem-resolved targets
+ * remain inside the plugin root (§4.1).
+ */
+export async function discoverUserPluginSkillFiles(
+  pluginRoot: string,
+  skillsDir: string | undefined,
+): Promise<{
+  readonly skillFiles: readonly string[]
+  readonly warnings: readonly string[]
+}> {
+  if (skillsDir === undefined) return { skillFiles: [], warnings: [] }
+
+  const entries = await fsp.readdir(skillsDir, { withFileTypes: true }).catch(() => null)
+  if (!entries) {
+    return {
+      skillFiles: [],
+      warnings: ['Ignoring `skills/`: its immediate children could not be read.'],
+    }
+  }
+
+  const skillFiles: string[] = []
+  const warnings: string[] = []
+  for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+    if (!entry.isDirectory() && !entry.isSymbolicLink()) continue
+    const skillDir = await resolveWithinRoot(pluginRoot, join(skillsDir, entry.name))
+    if (!skillDir || !(await fsp.stat(skillDir).catch(() => null))?.isDirectory()) {
+      warnings.push(
+        `Skipping skill ${JSON.stringify(entry.name)}: its directory resolves outside the plugin root or is not a directory.`,
+      )
+      continue
+    }
+    const skillPath = await resolveWithinRoot(pluginRoot, join(skillDir, 'SKILL.md'))
+    if (!skillPath || !(await fsp.stat(skillPath).catch(() => null))?.isFile()) {
+      warnings.push(
+        `Skipping skill ${JSON.stringify(entry.name)}: SKILL.md is missing, not a regular file, or resolves outside the plugin root.`,
+      )
+      continue
+    }
+    skillFiles.push(skillPath)
+  }
+  return { skillFiles, warnings }
+}
+
 /** Load and validate one plugin directory. Throws with a reportable reason. */
 export async function loadUserPlugin(pluginPath: string): Promise<UserPluginCandidate> {
   const pluginRoot = await fsp.realpath(pluginPath).catch(() => null)
@@ -207,6 +261,8 @@ export async function loadUserPlugin(pluginPath: string): Promise<UserPluginCand
     'directory',
     warnings,
   )
+  const skillDiscovery = await discoverUserPluginSkillFiles(pluginRoot, skillsDir)
+  warnings.push(...skillDiscovery.warnings)
   const mcpConfigPath = await resolveComponent(pluginRoot, AGENT_PLUGIN_MCP_FILE, 'file', warnings)
   const mcpServers = await readMcpServers(mcpConfigPath, warnings)
 
@@ -216,6 +272,7 @@ export async function loadUserPlugin(pluginPath: string): Promise<UserPluginCand
     manifest: parsed.manifest,
     metadata: parsed.metadata,
     ...(skillsDir === undefined ? {} : { skillsDir }),
+    skillFiles: skillDiscovery.skillFiles,
     ...(mcpConfigPath === undefined ? {} : { mcpConfigPath }),
     mcpServers,
     warnings,
@@ -307,9 +364,9 @@ export async function discoverUserPlugins(root = userPluginsRoot()): Promise<Use
  * Project a discovered plugin into a {@link RegisteredPlugin}.
  *
  * Contributions stay empty: this phase gives the plugin a Settings row and a
- * lifecycle, and nothing more. Wiring its command hooks and MCP servers into the
- * live agent loop is deliberately separate work — the same split #1342 drew —
- * because discovering bytes must not be what activates behavior.
+ * lifecycle. The skills and MCP registries consume the portable components
+ * only after enablement; Copse-specific command-hook activation remains
+ * separate work. Discovering bytes is never what activates behavior.
  */
 export function registeredUserPlugin(candidate: UserPluginCandidate): RegisteredPlugin {
   return definePlugin({ ...candidate.manifest, trust: 'user' })

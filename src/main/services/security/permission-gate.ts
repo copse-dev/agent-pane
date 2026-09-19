@@ -626,10 +626,10 @@ async function checkWebSearchPermission(signal?: AbortSignal): Promise<boolean> 
 }
 
 async function checkParallelSearchPermission(signal?: AbortSignal): Promise<boolean> {
-  // Enabling the `copse.parallel-search` pack (default-off, experimental,
+  // Enabling the `copse.parallel-search` plugin (default-off, experimental,
   // explicit API key) IS the user's consent to send search queries to Parallel.
-  // Auto-allow its fixed API origin while the pack is enabled, mirroring how
-  // the `copse.background-tasks` pack auto-declares its `loopback-bind`
+  // Auto-allow its fixed API origin while the plugin is enabled, mirroring how
+  // the `copse.background-tasks` plugin auto-declares its `loopback-bind`
   // relaxation: no web-origin prompt just because the enabled search tool ran.
   if (getDefaultPluginRegistry().isEnabled(PARALLEL_SEARCH_PLUGIN_ID)) return true
 

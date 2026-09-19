@@ -390,7 +390,7 @@ The boundary is fixed (execution-guidance rule 4):
 ## Related
 
 - [`docs/plans/hooks-and-feature-packs.md`](./plans/hooks-and-feature-packs.md) — the design
-  source of truth: decisions log, canonical-event table, phased issue breakdown, feature packs
+  source of truth: decisions log, canonical-event table, phased issue breakdown, and the historical feature-plugin migration
 - [`docs/cursor-hooks.md`](./cursor-hooks.md) · [`docs/claude-hooks.md`](./claude-hooks.md) ·
   [`docs/copse-hooks.md`](./copse-hooks.md) — the three dialect references
 - [`docs/thread-store-format.md`](./thread-store-format.md) — spine format the `hook_run` line extends
