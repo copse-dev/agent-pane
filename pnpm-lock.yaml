@@ -7,7 +7,7 @@ settings:
 overrides:
   '@hono/node-server': 2.0.11
   '@xmldom/xmldom@0.8': 0.8.15
-  adm-zip: ^0.6.0
+  adm-zip: ^0.6.1
   brace-expansion: 5.0.9
   minimatch: 10.2.5
   deepmerge-ts: 8.0.0
@@ -28,9 +28,6 @@ patchedDependencies:
   '@anthropic-ai/sandbox-runtime@0.0.74':
     hash: 3af40e346c5cb771abf30a0a0b6cf2a64e2de5500b20fab9f500f21089d916c8
     path: patches/@anthropic-ai__sandbox-runtime@0.0.74.patch
-  adm-zip@0.6.0:
-    hash: b7a4d985cd2a95694e3292c0ee538dd780db7ef714b42bb7d3eab8eb4c9ff43f
-    path: patches/adm-zip@0.6.0.patch
 
 importers:
 
@@ -2076,8 +2073,8 @@ packages:
     engines: {node: '>=0.4.0'}
     hasBin: true
 
-  adm-zip@0.6.0:
-    resolution: {integrity: sha512-XleryMhbuksdKtofnWZ9Sk+4CUTbms4Mb/EU32SZwToAyZ5RgVos/ki8n+yr0LWHOGKuakbXTuuYNHLQjhddgg==}
+  adm-zip@0.6.1:
+    resolution: {integrity: sha512-Xwrja8nx9e5o2N1my4DsKCeKpdrnACyr1wtbPxBDgGzKzKyE9kRtBFA8mWldI+RVlD7CBZNWY/wQ2+ydwOR6kQ==}
     engines: {node: '>=14.0'}
 
   agent-base@7.1.4:
@@ -6741,7 +6738,7 @@ snapshots:
 
   acorn@8.18.0: {}
 
-  adm-zip@0.6.0(patch_hash=b7a4d985cd2a95694e3292c0ee538dd780db7ef714b42bb7d3eab8eb4c9ff43f):
+  adm-zip@0.6.1:
     optional: true
 
   agent-base@7.1.4: {}
@@ -8935,7 +8932,7 @@ snapshots:
 
   onnxruntime-node@1.24.3:
     dependencies:
-      adm-zip: 0.6.0(patch_hash=b7a4d985cd2a95694e3292c0ee538dd780db7ef714b42bb7d3eab8eb4c9ff43f)
+      adm-zip: 0.6.1
       global-agent: 3.0.0
       onnxruntime-common: 1.24.3
     optional: true
