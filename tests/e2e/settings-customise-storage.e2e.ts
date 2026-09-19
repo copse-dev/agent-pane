@@ -140,7 +140,7 @@ describe('settings → Customise / MCP / Storage', function () {
     const declaredRow = declared.$(`.mcp-declared-row[data-plugin-id="${PLUGIN_ID}"]`)
     await declaredRow.waitForExist({ timeout: 15_000 })
     const text = await declaredRow.getText()
-    assert.match(text, /declared_reviewer \(stdio\)/)
+    assert.match(text, /^plugin_acme-mcp-declarer_declared_reviewer_[a-f0-9]{12} \(stdio\)/)
     assert.match(text, /not running/)
     const origin = declaredRow.$('.mcp-origin-chip')
     await origin.waitForExist({ timeout: 15_000 })
