@@ -32,14 +32,14 @@ not have is a Copse-owned distribution lifecycle: a signed/indexed way for users
 who never open Cursor IDE to install, pin, update, roll back, and conflict-report
 packs whose runtime unit is still a feature pack.
 
-| Surface                                    | Role today                                           | Gap versus a Copse marketplace                                                                                     |
-| ------------------------------------------ | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| First-party packs (`FIRST_PARTY_PLUGINS`)  | Shipped in-app; Settings → Packs enable/disable      | Not third-party distribution                                                                                       |
-| Pack manifest + JSON schema                | Declares skills/MCP/hooks/prompt/ui/settings/storage | Host disk discovery → registry landed for Agent Plugins packages (P1); install records, pinning, and update remain |
-| Cursor plugin cache (`~/.cursor/plugins/`) | Read-only import of skills + MCP                     | No Copse install/update; depends on Cursor's marketplace                                                           |
-| `skillPluginPaths` / local symlinks        | Power-user overlay                                   | Manual; no pin, signature, or update channel                                                                       |
-| Hooks dialect files / custom `tools/*.mjs` | Adjacent extension paths                             | Outside pack rows; must not become a silent marketplace bypass                                                     |
-| Grok Build-style plugin install UX         | Discoverable install/update/uninstall                | Copse needs the same UX **without** copying fail-open trust                                                        |
+| Surface                                     | Role today                                           | Gap versus a Copse marketplace                                                                                     |
+| ------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| First-party plugins (`FIRST_PARTY_PLUGINS`) | Shipped in-app; Settings → Plugins enable/disable    | Not third-party distribution                                                                                       |
+| Pack manifest + JSON schema                 | Declares skills/MCP/hooks/prompt/ui/settings/storage | Host disk discovery → registry landed for Agent Plugins packages (P1); install records, pinning, and update remain |
+| Cursor plugin cache (`~/.cursor/plugins/`)  | Read-only import of skills + MCP                     | No Copse install/update; depends on Cursor's marketplace                                                           |
+| `skillPluginPaths` / local symlinks         | Power-user overlay                                   | Manual; no pin, signature, or update channel                                                                       |
+| Hooks dialect files / custom `tools/*.mjs`  | Adjacent extension paths                             | Outside pack rows; must not become a silent marketplace bypass                                                     |
+| Grok Build-style plugin install UX          | Discoverable install/update/uninstall                | Copse needs the same UX **without** copying fail-open trust                                                        |
 
 #1078's ownership map assigns Copse-native distribution to #1082 and requires
 reusing feature packs as the runtime unit. This plan defines the binding
@@ -92,16 +92,16 @@ verification work.
 
 ### Install lifecycle
 
-| Phase     | Meaning                                                                                         |
-| --------- | ----------------------------------------------------------------------------------------------- |
-| Discover  | Resolve a pack source (local path, pinned URL, or later index entry) to a manifest + payload    |
-| Verify    | Check schema, content hash, and signature/provenance policy before any registry registration    |
-| Install   | Write immutable payload under Copse-owned storage; write an install record (pin, source, time)  |
-| Enable    | User (or policy) enables the pack in Settings → Packs; contributions apply to **new** work only |
-| Update    | Fetch candidate → verify → stage → swap pin; keep previous pin for rollback                     |
-| Rollback  | Restore previous pin; fail closed if previous payload missing                                   |
-| Disable   | Atomic contribution drop for new work; storage retained                                         |
-| Uninstall | Remove install record + payload after confirm; optional storage wipe is a separate prompt       |
+| Phase     | Meaning                                                                                             |
+| --------- | --------------------------------------------------------------------------------------------------- |
+| Discover  | Resolve a pack source (local path, pinned URL, or later index entry) to a manifest + payload        |
+| Verify    | Check schema, content hash, and signature/provenance policy before any registry registration        |
+| Install   | Write immutable payload under Copse-owned storage; write an install record (pin, source, time)      |
+| Enable    | User (or policy) enables the plugin in Settings → Plugins; contributions apply to **new** work only |
+| Update    | Fetch candidate → verify → stage → swap pin; keep previous pin for rollback                         |
+| Rollback  | Restore previous pin; fail closed if previous payload missing                                       |
+| Disable   | Atomic contribution drop for new work; storage retained                                             |
+| Uninstall | Remove install record + payload after confirm; optional storage wipe is a separate prompt           |
 
 ### Install record (minimum fields)
 
@@ -159,7 +159,7 @@ client, Settings marketplace browser, and changes to Cursor plugin discovery.
 
 ## Later phases
 
-### P1 — Local user-pack discovery (prerequisite)
+### P1 — Local Agent Plugin discovery (landed in #2701)
 
 **Format superseded by [`agent-plugins-migration.md`](agent-plugins-migration.md).**
 P1's scope is unchanged, but the manifest it discovers is now an
@@ -169,17 +169,19 @@ manifest. The first attempt ([#1342](https://github.com/copse-dev/agent-pane/pul
 was closed unmerged; its follow-up is preserved on
 [#1082](https://github.com/copse-dev/agent-pane/issues/1082#issuecomment-5105765166).
 
-- Wire host disk discovery so an Agent Plugins manifest on a configured local root
-  registers as a **user** pack row in Settings → Packs (closes the gap documented
-  in [`../adding-a-plugin.md`](../adding-a-plugin.md)).
-- Exit gate: unit/integration test registers a fixture user pack, enable/disable
-  is atomic, prompt trust forced untrusted; no network.
+- Host disk discovery now scans the configured Copse plugin root and registers a
+  valid Agent Plugins manifest as a disabled **user** plugin row in Settings →
+  Plugins. Enablement activates its portable skills and stdio/Streamable HTTP
+  MCP servers; one malformed neighbour cannot block the others.
+- Exit gate: unit/integration tests register fixture user plugins, keep new
+  discoveries disabled, activate skills/MCP atomically, force prompt trust
+  untrusted, and perform no network access during discovery.
 
-The selected-directory prerequisite now exercises the stricter half of this
+The selected-directory path exercises the stricter executable half of this
 boundary: explicit-path discovery, fail-closed validation, deterministic hash,
-ordinary user-pack registration, and isolated tool execution. General portable
-user-pack discovery remains outstanding; executable behavior uses the isolated
-host rather than importing code into Electron main.
+ordinary user-plugin registration, and isolated tool execution. General portable
+package discovery is now satisfied by #2701; executable behavior continues to use
+the isolated host rather than importing code into Electron main.
 
 ### P2 — Install record + path/URL install
 

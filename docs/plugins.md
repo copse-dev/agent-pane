@@ -390,7 +390,9 @@ disable is pinned by
   (`electron-store` under `pluginDisabled` and `plugin.<pluginId>.settings`), the
   shared `PluginRegistry` singleton, and the Settings plugin list UI landed in P3
   (`src/main/services/plugins/plugin-service.ts` + `src/renderer/views/settings-dialog.ts`).
-  Host disk-discovery of user plugins into that registry is still outstanding.
+  Host disk discovery loads Agent Plugin packages from `~/.copse/plugins/` (or
+  `COPSE_PLUGINS_DIR`) into that registry. Newly discovered packages start
+  disabled; their portable skills and MCP servers activate only after enablement.
 
 ## Related
 
