@@ -23571,6 +23571,25 @@ function runningStatusIcon(className = DEFAULT) {
 function checkIcon(className = DEFAULT) {
   return outlineIcon("check", ["M20 6 9 17l-5-5"], className);
 }
+function handIcon(className = DEFAULT) {
+  return outlineIcon(
+    "hand",
+    [
+      "M18 11V6a2 2 0 0 0-4 0v5",
+      "M14 10V4a2 2 0 0 0-4 0v7",
+      "M10 10.5V6a2 2 0 0 0-4 0v8",
+      "M6 14.5 4.5 13a2 2 0 0 0-3 3l5.8 5.8A7.5 7.5 0 0 0 12.6 24H14a8 8 0 0 0 8-8v-5a2 2 0 0 0-4 0Z"
+    ],
+    className
+  );
+}
+function banIcon(className = DEFAULT) {
+  return outlineIcon(
+    "ban",
+    ["M4.93 4.93a10 10 0 1 0 14.14 14.14A10 10 0 0 0 4.93 4.93Z", "m4.93 4.93 14.14 14.14"],
+    className
+  );
+}
 function dotIcon(className = DEFAULT) {
   return outlineIcon("dot", ["M12 12h.01"], `${className} ui-icon-dot`);
 }
@@ -26448,6 +26467,17 @@ var init_demo_scenarios = __esm({
 });
 
 // src/renderer/demo/demo-api.ts
+function updateDemoToolPermissions(catalog, toolIds, policy) {
+  const selected = new Set(toolIds);
+  return {
+    groups: catalog.groups.map((group) => ({
+      ...group,
+      tools: group.tools.map(
+        (tool) => selected.has(tool.id) ? policy ? { ...tool, policy, overridden: true } : { ...tool, policy: tool.defaultPolicy, overridden: false } : tool
+      )
+    }))
+  };
+}
 function providerSlug(model) {
   if (model === void 0) return void 0;
   const colon = model.indexOf(":");
@@ -26491,6 +26521,7 @@ function unsupported() {
 }
 function createDemoApi(scenario, options = {}) {
   const settings = new Map(Object.entries(scenario.settings));
+  let toolPermissionCatalog = structuredClone(DEMO_TOOL_PERMISSIONS);
   const storage = /* @__PURE__ */ new Map([
     ["projects", [scenario.project]],
     ["activeProjectId", scenario.project.id]
@@ -26805,13 +26836,28 @@ This response is streamed through the real renderer event path.`
       onConnectionChanged: subscribe
     },
     mcp: {
-      list: emptyArray,
+      list: () => resolved(structuredClone(DEMO_MCP_STATUSES)),
       reload: emptyArray,
       setEnabled: emptyArray,
       listCurated: emptyArray,
       listDeclared: emptyArray,
       setCuratedEnabled: emptyArray,
       onStatusChanged: subscribe
+    },
+    toolPermissions: {
+      list: () => resolved(structuredClone(toolPermissionCatalog)),
+      set: (update) => {
+        toolPermissionCatalog = updateDemoToolPermissions(
+          toolPermissionCatalog,
+          update.toolIds,
+          update.policy
+        );
+        return resolved(structuredClone(toolPermissionCatalog));
+      },
+      reset: (reset) => {
+        toolPermissionCatalog = updateDemoToolPermissions(toolPermissionCatalog, reset.toolIds);
+        return resolved(structuredClone(toolPermissionCatalog));
+      }
     },
     canvas: {
       onArtefact: subscribe,
@@ -27338,7 +27384,7 @@ This response is streamed through the real renderer event path.`
   };
   return api2;
 }
-var DEMO_MODEL, DEMO_TIME, DEMO_PLUGIN_CONTRIBUTIONS, DEMO_PLUGINS, emptyArray;
+var DEMO_MODEL, DEMO_TIME, DEMO_MCP_STATUSES, DEMO_TOOL_PERMISSIONS, DEMO_PLUGIN_CONTRIBUTIONS, DEMO_PLUGINS, emptyArray;
 var init_demo_api = __esm({
   "src/renderer/demo/demo-api.ts"() {
     init_parse_agent_run_payload();
@@ -27351,6 +27397,106 @@ var init_demo_api = __esm({
     init_icons();
     DEMO_MODEL = "mock:demo";
     DEMO_TIME = "2026-07-17T09:00:00.000Z";
+    DEMO_MCP_STATUSES = [
+      {
+        name: "proton-mcp",
+        transport: "stdio",
+        state: "connected",
+        toolCount: 4,
+        tools: ["list_mail", "get_mail_body", "send_mail", "delete_mail"],
+        source: "/demo/copse/.mcp.json",
+        origin: "project",
+        originDetail: ".mcp.json",
+        userEnabled: true,
+        configDisabled: false
+      }
+    ];
+    DEMO_TOOL_PERMISSIONS = {
+      groups: [
+        {
+          id: "copse",
+          name: "Copse tools",
+          kind: "copse",
+          tools: [
+            {
+              id: "copse:read-file",
+              executionName: "read_file",
+              name: "Read file",
+              description: "Read a file in the active project.",
+              policy: "allow",
+              defaultPolicy: "allow",
+              overridden: false
+            },
+            {
+              id: "copse:run-shell",
+              executionName: "run_shell",
+              name: "Run shell command",
+              description: "Run a command in the project sandbox.",
+              policy: "ask",
+              defaultPolicy: "ask",
+              overridden: true
+            },
+            {
+              id: "copse:prepare-worktree",
+              executionName: "prepare_worktree",
+              name: "Prepare worktree",
+              description: "Create an isolated checkout for a new thread.",
+              policy: "ask",
+              defaultPolicy: "ask",
+              overridden: false,
+              disabledPolicies: ["allow"],
+              disabledReason: "Worktree preparation always requires approval."
+            }
+          ]
+        },
+        {
+          id: "mcp:project:proton-mcp",
+          name: "proton-mcp",
+          kind: "mcp",
+          origin: "project",
+          originDetail: "/demo/copse/.mcp.json",
+          status: "connected",
+          tools: [
+            {
+              id: "mcp:project:proton-mcp:list-mail",
+              executionName: "mcp__proton__list_mail",
+              name: "List mail",
+              description: "List messages in a mail folder.",
+              policy: "allow",
+              defaultPolicy: "ask",
+              overridden: true
+            },
+            {
+              id: "mcp:project:proton-mcp:get-mail-body",
+              executionName: "mcp__proton__get_mail_body",
+              name: "Get mail body",
+              description: "Read the complete body of one message.",
+              policy: "ask",
+              defaultPolicy: "ask",
+              overridden: false
+            },
+            {
+              id: "mcp:project:proton-mcp:send-mail",
+              executionName: "mcp__proton__send_mail",
+              name: "Send mail",
+              description: "Send a new mail message.",
+              policy: "ask",
+              defaultPolicy: "ask",
+              overridden: false
+            },
+            {
+              id: "mcp:project:proton-mcp:delete-mail",
+              executionName: "mcp__proton__delete_mail",
+              name: "Delete mail",
+              description: "Delete a message from a mailbox.",
+              policy: "block",
+              defaultPolicy: "ask",
+              overridden: true
+            }
+          ]
+        }
+      ]
+    };
     DEMO_PLUGIN_CONTRIBUTIONS = {
       toolNames: [],
       modelRoutes: [],
@@ -27362,6 +27508,7 @@ var init_demo_api = __esm({
       ui: [],
       followUps: [],
       capabilities: [],
+      instructionSources: [],
       permissions: []
     };
     DEMO_PLUGINS = [
@@ -27769,6 +27916,14 @@ var init_mcp = __esm({
   }
 });
 
+// src/shared/types/tool-permissions.ts
+var TOOL_PERMISSION_POLICIES;
+var init_tool_permissions = __esm({
+  "src/shared/types/tool-permissions.ts"() {
+    TOOL_PERMISSION_POLICIES = ["allow", "ask", "block"];
+  }
+});
+
 // src/shared/types/usage.ts
 var init_usage = __esm({
   "src/shared/types/usage.ts"() {
@@ -27915,6 +28070,7 @@ var init_types = __esm({
     init_skills();
     init_git();
     init_mcp();
+    init_tool_permissions();
     init_usage();
     init_worktree();
     init_guarded_yolo();
@@ -29121,6 +29277,7 @@ var init_plugin_manifest = __esm({
       uiContributions: [],
       followUps: [],
       capabilities: [],
+      instructionSources: [],
       permissions: []
     };
   }
@@ -57421,6 +57578,400 @@ var init_parallel_search_plugin_settings = __esm({
   }
 });
 
+// src/renderer/views/tool-permissions-panel.ts
+function cloneCatalog(catalog) {
+  return structuredClone(catalog);
+}
+function groupMatches(group, query) {
+  if (!query) return true;
+  return [group.name, group.origin, group.originDetail, group.status].filter((value) => typeof value === "string").join(" ").toLowerCase().includes(query);
+}
+function matchingTools(group, query) {
+  if (groupMatches(group, query)) return group.tools;
+  return group.tools.filter(
+    (tool) => [tool.name, tool.executionName, tool.description].join(" ").toLowerCase().includes(query)
+  );
+}
+function groupPolicy(tools) {
+  const first = tools[0]?.policy;
+  if (!first || tools.some((tool) => tool.policy !== first)) return "mixed";
+  return first;
+}
+function withPolicy(catalog, toolIds, policy) {
+  return {
+    ...catalog,
+    groups: catalog.groups.map((group) => ({
+      ...group,
+      tools: group.tools.map(
+        (tool) => toolIds.has(tool.id) ? { ...tool, policy, overridden: true } : tool
+      )
+    }))
+  };
+}
+function withDefaults(catalog, toolIds) {
+  return {
+    ...catalog,
+    groups: catalog.groups.map((group) => ({
+      ...group,
+      tools: group.tools.map(
+        (tool) => toolIds.has(tool.id) ? { ...tool, policy: tool.defaultPolicy, overridden: false } : tool
+      )
+    }))
+  };
+}
+function createToolPermissionsPanel(api2) {
+  const root = document.createElement("div");
+  root.className = "tool-permissions-panel";
+  const toolbar = document.createElement("div");
+  toolbar.className = "tool-permissions-toolbar";
+  const search = document.createElement("input");
+  search.type = "search";
+  search.className = "tool-permissions-search";
+  search.placeholder = "Search tools or servers\u2026";
+  search.autocomplete = "off";
+  search.spellcheck = false;
+  search.setAttribute("aria-label", "Search tool permissions");
+  const resetAll = document.createElement("button");
+  resetAll.type = "button";
+  resetAll.className = "ui-btn ui-btn-secondary tool-permissions-reset-all";
+  resetAll.textContent = "Reset all to defaults";
+  const status = document.createElement("span");
+  status.className = "tool-permissions-status";
+  status.setAttribute("role", "status");
+  status.setAttribute("aria-live", "polite");
+  toolbar.append(search, resetAll, status);
+  const groups = document.createElement("div");
+  groups.className = "tool-permissions-groups";
+  const empty = document.createElement("p");
+  empty.className = "tool-permissions-empty";
+  empty.hidden = true;
+  root.append(toolbar, groups, empty);
+  let catalog = null;
+  let loading = false;
+  let pendingToolIds = /* @__PURE__ */ new Set();
+  let policyFocus = null;
+  const groupOpenState = /* @__PURE__ */ new Map();
+  root.addEventListener("focusin", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const policy = target.dataset["policy"];
+    const toolId = target.closest(".tool-permission-row")?.dataset["toolId"];
+    policyFocus = target.classList.contains("tool-permission-choice") && toolId !== void 0 && isToolPermissionPolicy(policy) ? { toolId, policy } : null;
+  });
+  function allToolIds() {
+    return catalog?.groups.flatMap((group) => group.tools.map((tool) => tool.id)) ?? [];
+  }
+  function setBusy(busy) {
+    root.dataset["pending"] = String(busy);
+    search.disabled = loading;
+    resetAll.disabled = busy || loading || !catalog?.groups.some((group) => group.tools.length > 0);
+  }
+  async function mutate(toolIds, optimistic, request) {
+    if (!catalog || toolIds.length === 0 || pendingToolIds.size > 0) return;
+    const before = cloneCatalog(catalog);
+    pendingToolIds = new Set(toolIds);
+    catalog = optimistic(catalog, pendingToolIds);
+    status.textContent = "Saving\u2026";
+    render();
+    try {
+      catalog = await request();
+      status.textContent = "Saved";
+    } catch (error61) {
+      catalog = before;
+      status.textContent = "Could not save: " + errorMessage(error61);
+      status.classList.add("is-error");
+    } finally {
+      pendingToolIds.clear();
+      render();
+    }
+  }
+  function selectPolicy(tool, policy) {
+    if (tool.overridden && tool.policy === policy || tool.disabledPolicies?.includes(policy)) {
+      return;
+    }
+    status.classList.remove("is-error");
+    void mutate(
+      [tool.id],
+      (current, ids) => withPolicy(current, ids, policy),
+      () => api2.set({ toolIds: [tool.id], policy })
+    );
+  }
+  function policyControl(tool) {
+    const control = document.createElement("div");
+    control.className = "tool-permission-policy";
+    control.setAttribute("role", "radiogroup");
+    control.setAttribute("aria-label", "Permission for " + tool.name);
+    const buttons = [];
+    for (const policy of TOOL_PERMISSION_POLICIES) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "tool-permission-choice tool-permission-" + policy;
+      button.dataset["policy"] = policy;
+      button.setAttribute("role", "radio");
+      button.setAttribute("aria-checked", String(tool.policy === policy));
+      button.setAttribute("aria-label", POLICY_LABELS[policy] + " for " + tool.name);
+      button.title = POLICY_LABELS[policy];
+      button.tabIndex = (tool.overridden ? tool.policy : tool.defaultPolicy) === policy ? 0 : -1;
+      button.disabled = pendingToolIds.size > 0 || tool.disabledPolicies?.includes(policy) === true;
+      if (tool.disabledPolicies?.includes(policy) && tool.disabledReason) {
+        button.title = tool.disabledReason;
+        button.setAttribute("aria-description", tool.disabledReason);
+      }
+      button.append(POLICY_ICON[policy]("ui-icon ui-icon-sm"));
+      button.addEventListener("click", () => {
+        selectPolicy(tool, policy);
+      });
+      buttons.push(button);
+      control.append(button);
+    }
+    control.addEventListener("keydown", (event) => {
+      const current = buttons.findIndex((button) => button === document.activeElement);
+      if (current < 0) return;
+      let direction = 0;
+      let targetIndex = current;
+      if (event.key === "ArrowRight" || event.key === "ArrowDown") direction = 1;
+      else if (event.key === "ArrowLeft" || event.key === "ArrowUp") direction = -1;
+      else if (event.key === "Home") targetIndex = 0;
+      else if (event.key === "End") targetIndex = buttons.length - 1;
+      else return;
+      event.preventDefault();
+      if (direction !== 0) {
+        for (let offset = 1; offset <= buttons.length; offset += 1) {
+          const candidate = (current + direction * offset + buttons.length) % buttons.length;
+          if (!buttons[candidate]?.disabled) {
+            targetIndex = candidate;
+            break;
+          }
+        }
+      }
+      if (buttons[targetIndex]?.disabled) {
+        const enabledIndex = buttons.findIndex((button) => !button.disabled);
+        if (enabledIndex < 0) return;
+        targetIndex = enabledIndex;
+      }
+      buttons[targetIndex]?.focus();
+      buttons[targetIndex]?.click();
+    });
+    return control;
+  }
+  function toolRow(tool) {
+    const row2 = document.createElement("div");
+    row2.className = "tool-permission-row";
+    row2.dataset["toolId"] = tool.id;
+    row2.dataset["policy"] = tool.policy;
+    row2.dataset["overridden"] = String(tool.overridden);
+    if (pendingToolIds.has(tool.id)) row2.dataset["pending"] = "true";
+    const copy = document.createElement("div");
+    copy.className = "tool-permission-copy";
+    const title = document.createElement("div");
+    title.className = "tool-permission-name";
+    title.append(tool.name);
+    const inherited = document.createElement("span");
+    inherited.className = "tool-permission-inherited";
+    inherited.textContent = "Default";
+    inherited.title = "Inherited default: " + POLICY_LABELS[tool.defaultPolicy];
+    inherited.setAttribute(
+      "aria-label",
+      "Using inherited default: " + POLICY_LABELS[tool.defaultPolicy]
+    );
+    inherited.hidden = tool.overridden;
+    title.append(inherited);
+    copy.append(title);
+    if (tool.description) {
+      const description = document.createElement("p");
+      description.className = "tool-permission-description";
+      description.textContent = tool.description;
+      copy.append(description);
+    }
+    const actions = document.createElement("div");
+    actions.className = "tool-permission-actions";
+    actions.append(policyControl(tool));
+    const reset = document.createElement("button");
+    reset.type = "button";
+    reset.className = "tool-permission-reset";
+    reset.textContent = "Use default";
+    reset.setAttribute("aria-label", "Use default permission for " + tool.name);
+    reset.title = "Default: " + POLICY_LABELS[tool.defaultPolicy];
+    reset.hidden = !tool.overridden;
+    reset.disabled = pendingToolIds.size > 0;
+    reset.addEventListener("click", () => {
+      status.classList.remove("is-error");
+      void mutate(
+        [tool.id],
+        (current, ids) => withDefaults(current, ids),
+        () => api2.reset({ toolIds: [tool.id] })
+      );
+    });
+    actions.append(reset);
+    row2.append(copy, actions);
+    return row2;
+  }
+  function groupSelect(group) {
+    const select = document.createElement("select");
+    select.className = "tool-permission-group-select";
+    select.setAttribute("aria-label", "Set all permissions in " + group.name);
+    const current = groupPolicy(group.tools);
+    const mixed = document.createElement("option");
+    mixed.value = "mixed";
+    mixed.textContent = "Mixed";
+    mixed.disabled = true;
+    select.append(mixed);
+    for (const policy of TOOL_PERMISSION_POLICIES) {
+      const option = document.createElement("option");
+      option.value = policy;
+      option.textContent = "Set all to " + POLICY_LABELS[policy].toLowerCase();
+      option.disabled = group.tools.some((tool) => tool.disabledPolicies?.includes(policy) === true);
+      select.append(option);
+    }
+    select.value = current;
+    select.disabled = pendingToolIds.size > 0 || group.tools.length === 0;
+    select.addEventListener("click", (event) => {
+      event.stopPropagation();
+    });
+    select.addEventListener("change", () => {
+      const policy = select.value;
+      if (!isToolPermissionPolicy(policy)) return;
+      const toolIds = group.tools.map((tool) => tool.id);
+      status.classList.remove("is-error");
+      void mutate(
+        toolIds,
+        (catalogBefore, ids) => withPolicy(catalogBefore, ids, policy),
+        () => api2.set({ toolIds, policy })
+      );
+    });
+    return select;
+  }
+  function groupView(group, visibleTools) {
+    const details = document.createElement("details");
+    details.className = "tool-permission-group";
+    details.dataset["groupId"] = group.id;
+    details.open = groupOpenState.get(group.id) ?? true;
+    details.addEventListener("toggle", () => {
+      groupOpenState.set(group.id, details.open);
+    });
+    const summary = document.createElement("summary");
+    summary.className = "tool-permission-group-summary";
+    const disclosure = chevronDownIcon("ui-icon tool-permission-group-chevron");
+    const heading = document.createElement("span");
+    heading.className = "tool-permission-group-name";
+    heading.textContent = group.name;
+    const count = document.createElement("span");
+    count.className = "tool-permission-count";
+    count.textContent = String(group.tools.length);
+    count.setAttribute("aria-label", String(group.tools.length) + " tools");
+    summary.append(disclosure, heading, count);
+    if (group.origin) {
+      const origin = document.createElement("span");
+      origin.className = "tool-permission-group-origin";
+      origin.textContent = group.origin;
+      origin.title = group.originDetail ?? group.origin;
+      summary.append(origin);
+    }
+    if (group.status) {
+      const connection = document.createElement("span");
+      connection.className = "tool-permission-group-status";
+      connection.dataset["status"] = group.status;
+      connection.textContent = group.status;
+      summary.append(connection);
+    }
+    summary.append(groupSelect(group));
+    const list = document.createElement("div");
+    list.className = "tool-permission-list";
+    for (const tool of visibleTools) list.append(toolRow(tool));
+    if (visibleTools.length === 0) {
+      const noTools = document.createElement("p");
+      noTools.className = "tool-permission-group-empty";
+      noTools.textContent = "This server has not reported any tools.";
+      list.append(noTools);
+    }
+    details.append(summary, list);
+    return details;
+  }
+  function render() {
+    for (const detail of groups.querySelectorAll(".tool-permission-group")) {
+      const id = detail.dataset["groupId"];
+      if (id) groupOpenState.set(id, detail.open);
+    }
+    groups.innerHTML = "";
+    const query = search.value.trim().toLowerCase();
+    let visibleGroupCount = 0;
+    for (const group of catalog?.groups ?? []) {
+      const visibleTools = matchingTools(group, query);
+      if (visibleTools.length === 0 && !groupMatches(group, query)) continue;
+      visibleGroupCount += 1;
+      groups.append(groupView(group, visibleTools));
+    }
+    empty.hidden = visibleGroupCount > 0;
+    empty.textContent = query ? "No tools or servers match \u201C" + search.value.trim() + "\u201D." : "No tools are available yet.";
+    resetAll.hidden = !catalog?.groups.some((group) => group.tools.some((tool) => tool.overridden));
+    setBusy(pendingToolIds.size > 0);
+    if (policyFocus && pendingToolIds.size === 0) {
+      const focusedRow = [...groups.querySelectorAll(".tool-permission-row")].find(
+        (row2) => row2.dataset["toolId"] === policyFocus?.toolId
+      );
+      const focusedChoice = [
+        ...focusedRow?.querySelectorAll(".tool-permission-choice") ?? []
+      ].find((choice) => choice.dataset["policy"] === policyFocus?.policy);
+      focusedChoice?.focus({ preventScroll: true });
+    }
+  }
+  async function refresh() {
+    if (loading) return;
+    loading = true;
+    status.classList.remove("is-error");
+    status.textContent = "Loading\u2026";
+    setBusy(false);
+    try {
+      catalog = await api2.list();
+      status.textContent = "";
+    } catch (error61) {
+      status.textContent = "Could not load tool permissions: " + errorMessage(error61);
+      status.classList.add("is-error");
+    } finally {
+      loading = false;
+      render();
+    }
+  }
+  search.addEventListener("input", render);
+  resetAll.addEventListener("click", () => {
+    const toolIds = allToolIds();
+    status.classList.remove("is-error");
+    void mutate(
+      toolIds,
+      (current, ids) => withDefaults(current, ids),
+      () => api2.reset({ toolIds })
+    );
+  });
+  render();
+  return {
+    root,
+    refresh,
+    focusSearch: () => {
+      search.focus();
+    }
+  };
+}
+var isToolPermissionPolicy, POLICY_LABELS, POLICY_ICON;
+var init_tool_permissions_panel = __esm({
+  "src/renderer/views/tool-permissions-panel.ts"() {
+    init_errors4();
+    init_member_of2();
+    init_tool_permissions();
+    init_icons();
+    isToolPermissionPolicy = memberOf(TOOL_PERMISSION_POLICIES);
+    POLICY_LABELS = {
+      allow: "Always allow",
+      ask: "Always ask",
+      block: "Blocked"
+    };
+    POLICY_ICON = {
+      allow: checkIcon,
+      ask: handIcon,
+      block: banIcon
+    };
+  }
+});
+
 // packages/agent/src/plugins/apple-development-plugin.ts
 var APPLE_DEVELOPMENT_PLUGIN_ID, APPLE_DEVELOPMENT_PANEL_ID, APPLE_DEVELOPMENT_TOOL_NAMES, appleDevelopmentPlugin;
 var init_apple_development_plugin = __esm({
@@ -58468,6 +59019,15 @@ function mountSettingsDialog(store2, api2) {
               What the agent is allowed to do without stopping to ask you.
             </p>
 
+            <fieldset id="tool-permissions-fieldset">
+              <legend>Tool permissions</legend>
+              <p class="settings-fieldset-desc">
+                Choose whether each Copse or MCP tool runs automatically, asks every time, or is
+                blocked. These choices apply to future calls; they do not interrupt completed work.
+              </p>
+              <div id="tool-permissions-host"></div>
+            </fieldset>
+
             <fieldset>
               <legend>Shell commands</legend>
               <label class="checkbox-label">
@@ -59242,6 +59802,8 @@ function mountSettingsDialog(store2, api2) {
   qsRequired(overlay, "#settings-providers-host").append(providersPanel.root);
   const ghCliSection = createGhCliSection(api2);
   qsRequired(overlay, "#settings-gh-cli-host").append(ghCliSection.root);
+  const toolPermissionsPanel = createToolPermissionsPanel(api2.toolPermissions);
+  qsRequired(overlay, "#tool-permissions-host").append(toolPermissionsPanel.root);
   const modelRoutingSection = createModelRoutingSection(api2, { modelScope: "all" });
   qsRequired(overlay, "#settings-model-routing-host").append(modelRoutingSection.root);
   const modelParametersSection = createModelParametersSection(api2.settings);
@@ -59487,6 +60049,7 @@ function mountSettingsDialog(store2, api2) {
         }
         showSection(id);
         if (id === "usage") void usageSection.refresh();
+        if (id === "permissions") void toolPermissionsPanel.refresh();
         if (id === "ssh") void sshWorkspaceSection.refresh();
         if (id === "customise") {
           void refreshSources();
@@ -60517,6 +61080,13 @@ function mountSettingsDialog(store2, api2) {
         title: contributions.capabilities.map((c2) => `${c2.title} (${c2.name})`).join(", ")
       });
     }
+    if (contributions.instructionSources.length > 0) {
+      chips.push({
+        label: "Instruction sources",
+        count: contributions.instructionSources.length,
+        title: contributions.instructionSources.map((source) => `${source.title} (${source.name})`).join(", ")
+      });
+    }
     if (contributions.permissions.length > 0) {
       chips.push({
         label: "Permissions",
@@ -60984,6 +61554,18 @@ function mountSettingsDialog(store2, api2) {
       title.className = "mcp-server-summary";
       title.append(`${s15.name} (${s15.transport}): `, badge);
       header.append(toggleLabel, title, mcpOriginChip(s15));
+      const permissionsButton = document.createElement("button");
+      permissionsButton.type = "button";
+      permissionsButton.className = "ui-btn ui-btn-secondary mcp-permissions-btn";
+      permissionsButton.textContent = "Manage permissions";
+      permissionsButton.setAttribute("aria-label", `Manage permissions for ${s15.name}`);
+      permissionsButton.addEventListener("click", () => {
+        showSection("permissions");
+        void toolPermissionsPanel.refresh().then(() => {
+          qsRequired(overlay, "#tool-permissions-fieldset").scrollIntoView({ block: "start" });
+        });
+      });
+      header.append(permissionsButton);
       row2.append(header);
       let detailText = s15.state === "connected" ? `${String(s15.toolCount)} tool(s)${s15.tools.length ? `: ${s15.tools.join(", ")}` : ""}` : s15.error ?? "";
       if (s15.configDisabled) {
@@ -61213,6 +61795,7 @@ function mountSettingsDialog(store2, api2) {
     pendingPluginDetail = null;
     if (openedSection === "ssh") void sshWorkspaceSection.refresh();
     if (openedSection === "usage") void usageSection.refresh();
+    if (openedSection === "permissions") void toolPermissionsPanel.refresh();
     if (openedSection === "customise") {
       void refreshSources();
       void revealPluginDetail();
@@ -61535,6 +62118,7 @@ var init_settings_dialog = __esm({
     init_automation_plugin_settings();
     init_parallel_search_plugin();
     init_parallel_search_plugin_settings();
+    init_tool_permissions_panel();
     init_apple_development_plugin();
     init_apple_development_panel();
     init_web_origins();
