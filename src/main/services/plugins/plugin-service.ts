@@ -1,19 +1,19 @@
 // Plugin service — P3 of docs/plans/hooks-and-feature-packs.md.
 //
-// The host wiring for the feature-pack layer:
-//  - owns the **shared** `PluginRegistry` (first-party packs registered), and
+// The host wiring for the plugin layer:
+//  - owns the **shared** `PluginRegistry` (first-party plugins registered), and
 //    installs it via `setDefaultPluginRegistry` so `createHookRegistry` (called
 //    every turn) reads through the same instance the Settings UI toggles;
 //  - applies the persisted disable set from `electron-store` before wiring the
-//    provider, so a pack the user turned off stays off across relaunches;
-//  - persists pack-scoped settings values under a namespaced storage key so
+//    provider, so a plugin the user turned off stays off across relaunches;
+//  - persists plugin-scoped settings values under a namespaced storage key so
 //    the manifest's declarative `settings` schema round-trips through Settings
 //    generically (P3's "the about:addons of Copse");
 //  - exposes `list()` / `setEnabled()` / `getSetting()` / `setSetting()` for
-//    the `packs:*` IPC handlers.
+//    the `plugins:*` IPC handlers.
 //
 // **Atomic enable/disable (P1 contract).** `setEnabled` flips a single flag on
-// the shared registry — every one of the pack's contribution kinds drops from
+// the shared registry — every one of the plugin's contribution kinds drops from
 // the active getters at once (tools, hooks, prompt blocks, panels). There is
 // no partial state; persistence is a write-behind snapshot of `registry`.
 //
@@ -29,8 +29,8 @@
 //
 // The disable list stays a plain array (like `mcpDisabledServers`) so it is
 // still readable / editable by hand and easy to migrate. Plugin settings are
-// bagged per pack to keep the top-level key namespace clean and let the P4
-// todos pack lift/shift its config into a single record.
+// bagged per plugin to keep the top-level key namespace clean and let the P4
+// todos plugin lift/shift its config into a single record.
 import type { PluginRegistry } from '@copse/agent/plugins/plugin-registry.ts'
 import {
   createFirstPartyPluginRegistry,
@@ -73,8 +73,9 @@ import {
 import { setPluginBrowserService } from './plugin-browser-service.ts'
 import type { DeclaredMcpServer } from '@shared/types/mcp.ts'
 import { isRecord } from '@shared/unknown-value.ts'
+import { agentPluginMcpServerName } from './agent-plugin-mcp-runtime.ts'
 
-// P1 of #1336: selected-pack discovery is part of the production graph before
+// P1 of #1336: selected-plugin discovery is part of the production graph before
 // the isolated behavior runtime is wired by the host.
 export { discoverPluginToolSource, hashPluginToolSource } from './plugin-tool-source.ts'
 
@@ -100,12 +101,12 @@ const PLUGINS_SEEN_KEY = 'pluginsSeen'
 /**
  * Plugins that ship registered but off.
  *
- * `createFirstPartyPluginRegistry()` seeds every pack enabled. The off-by-default
+ * `createFirstPartyPluginRegistry()` seeds every plugin enabled. The off-by-default
  * set is derived from each first-party manifest's `experimental` stability and
  * written into `packDisabled` on a profile that has never had one. This makes a
  * forgotten rollout-list update impossible when a new experiment is added.
  *
- * The capability packs added in #1188 remain experimental because each replaces
+ * The capability plugins added in #1188 remain experimental because each replaces
  * a retired opt-in boolean (`mcpUiArtefactsEnabled`, `devtoolsShortcutEnabled`).
  * `copse.background-tasks` graduated to stable/default-on: its ordinary sandboxed
  * process support needs no extra authority, while `loopback-bind` still requires
@@ -243,7 +244,7 @@ function knownPluginIds(): Set<string> {
 /**
  * Write the default-off set, but only on a profile that has no `packDisabled`
  * list at all. Once the key exists it is the user's own — including an empty
- * list, which means "everything on" — and is never re-seeded, so a pack enabled
+ * list, which means "everything on" — and is never re-seeded, so a plugin enabled
  * in Settings stays enabled across relaunches.
  *
  * Runs synchronously before the shared registry is created: `createRegistry()`
@@ -270,7 +271,7 @@ function migrateBackgroundTasksStable(): void {
 }
 
 /**
- * Automations have no retired standalone toggle to migrate. Seed the new pack
+ * Automations have no retired standalone toggle to migrate. Seed the new plugin
  * disabled exactly once so an upgrade never starts a clock-driven feature
  * without an explicit opt-in; subsequent user toggles own the disable set.
  */
@@ -284,7 +285,7 @@ function migrateAutomationsEnablement(): void {
 
 /**
  * Parallel Search sends user queries to a paid external API. Existing profiles
- * already own `packDisabled`, so seed this newly introduced pack off exactly
+ * already own `packDisabled`, so seed this newly introduced plugin off exactly
  * once instead of accidentally enabling network access on upgrade.
  */
 function migrateParallelSearchEnablement(): void {
@@ -321,17 +322,17 @@ function migrateAppleDevelopmentEnablement(): void {
   storageSet(APPLE_DEVELOPMENT_ENABLEMENT_MIGRATION_KEY, true)
 }
 
-/** Read one pack's persisted settings bag (`{}` when nothing stored). */
+/** Read one plugin's persisted settings bag (`{}` when nothing stored). */
 function readPluginSettings(pluginId: string): Record<string, unknown> {
   const raw = storageGet(pluginSettingsKey(pluginId))
   return isRecord(raw) ? raw : {}
 }
 
 /**
- * Read one pack-scoped setting value directly from storage, without constructing
- * (or booting) the pack service. Exposed so host read sites that previously read
+ * Read one plugin-scoped setting value directly from storage, without constructing
+ * (or booting) the plugin service. Exposed so host read sites that previously read
  * a top-level model setting — `advisor-runner.ts`, `model-comparison-runner.ts` —
- * can read the pack-owned value with no init-order coupling. Returns the raw
+ * can read the plugin-owned value with no init-order coupling. Returns the raw
  * persisted value (the caller coerces/trims); `undefined` when unset.
  */
 export function readPluginSettingValue(pluginId: string, key: string): unknown {
@@ -341,9 +342,9 @@ export function readPluginSettingValue(pluginId: string, key: string): unknown {
 /**
  * Preserve the model choices users had before `advisorModel` /
  * `comparisonModelA` / `comparisonModelB` / `comparisonJudgeModel` moved from
- * top-level **settings.json** keys onto their packs' `model` setting fields
+ * top-level **settings.json** keys onto their plugins' `model` setting fields
  * (under `config.json` `pack.<id>.settings`). Copies any existing top-level
- * value into the owning pack's settings bag (without clobbering a value already
+ * value into the owning plugin's settings bag (without clobbering a value already
  * written there), so the Settings → Plugins picker and the runtime read sites
  * agree and no user loses their configured models on upgrade.
  *
@@ -400,7 +401,7 @@ function migratePluginModelSettings(): void {
 }
 
 /**
- * The singleton pack service. Constructed lazily on first `getPluginService()` so
+ * The singleton plugin service. Constructed lazily on first `getPluginService()` so
  * host boot order (electron-store availability) is respected without an
  * explicit init call, and unit tests can create their own via `createPluginService`.
  */
@@ -410,50 +411,51 @@ let singleton: PluginService | null = null
 export interface PluginService {
   /** The shared registry, exposed so callers that need typed contributions can read it. */
   readonly registry: PluginRegistry
-  /** Snapshot every pack for the Settings pack list. */
+  /** Snapshot every plugin for the Settings plugin list. */
   list(): readonly PluginSummaryOut[]
   /**
-   * Toggle a pack's enablement. Persists the change to `electron-store` and
+   * Toggle a plugin's enablement. Persists the change to `electron-store` and
    * flips the flag on the shared registry — atomic, per the P1 contract.
    */
   setEnabled(pluginId: string, enabled: boolean): Promise<void>
-  /** Read one pack-scoped setting value (raw persisted value; renderer coerces). */
+  /** Read one plugin-scoped setting value (raw persisted value; renderer coerces). */
   getSetting(pluginId: string, key: string): unknown
-  /** Persist one pack-scoped setting value under the pack's namespaced bag. */
+  /** Persist one plugin-scoped setting value under the plugin's namespaced bag. */
   setSetting(pluginId: string, key: string, value: unknown): Promise<void>
-  /** Reconcile explicitly selected pack sources into the registry. */
+  /** Reconcile explicitly selected plugin sources into the registry. */
   refreshPluginSources(): Promise<void>
   /**
    * Discover Agent Plugins packages under the Copse-owned plugin root and give
    * each a registry row. Stage A2 of `docs/plans/agent-plugins-migration.md`.
    */
   refreshUserPlugins(): Promise<void>
+  /** Enabled Agent Plugins candidates whose portable components may be activated. */
+  enabledUserPlugins(): readonly UserPluginCandidate[]
+  /** Whether an id belongs to an auto-discovered Agent Plugins package. */
+  hasUserPlugin(pluginId: string): boolean
   /** Reconcile selected sources first, then auto-discovered packages. */
   refreshInstalledPlugins(): Promise<void>
-  /**
-   * MCP servers discovered plugins declare that nothing is running, so
-   * Settings → MCP servers can account for them. See {@link DeclaredMcpServer}.
-   */
+  /** MCP declarations that remain inert (disabled plugin or unsupported transport). */
   declaredMcpServers(): readonly DeclaredMcpServer[]
   /** Persist and discover one directory selected through the host-owned native dialog. */
   addPluginSource(sourcePath: string): Promise<void>
 }
 
 /**
- * Build a pack service backed by the given registry. The persisted disable set
+ * Build a plugin service backed by the given registry. The persisted disable set
  * is applied before returning, so subsequent `getDefaultPluginRegistry()` /
  * `createHookRegistry()` calls see the same enablement the Settings list will
  * show. Exposed for tests; production callers go through `getPluginService`.
  */
 /**
- * Why a selected pack ended up unusable, keyed by pack id — and, for sources
- * that never yielded a pack at all, keyed by source path.
+ * Why a selected plugin ended up unusable, keyed by plugin id — and, for sources
+ * that never yielded a plugin at all, keyed by source path.
  *
  * `refreshPluginSources` is the only place that sees the real cause: the runtime
  * threw, or the source would not load. Until now it went solely to a
  * `console.warn`, which in CI lives inside a failure artifact. Anything
  * downstream could therefore report the resulting *state* ("is disabled") but
- * never the reason, so diagnosing a pack that would not start meant fetching
+ * never the reason, so diagnosing a plugin that would not start meant fetching
  * that artifact by hand. Holding the reason here lets the error a caller
  * already throws carry it.
  *
@@ -468,13 +470,13 @@ function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-/** Why this pack is not usable, when {@link refreshPluginSources} recorded a cause. */
+/** Why this plugin is not usable, when {@link refreshPluginSources} recorded a cause. */
 export function pluginUnavailableReason(pluginId: string): string | undefined {
   return pluginUnavailableReasons.get(pluginId)
 }
 
 /**
- * Sources that failed discovery, as `path: reason`. A pack missing from the
+ * Sources that failed discovery, as `path: reason`. A plugin missing from the
  * registry entirely is usually explained by one of these rather than by
  * anything keyed on its id — discovery never got far enough to learn the id.
  */
@@ -486,6 +488,7 @@ export function createPluginService(registry: PluginRegistry): PluginService {
   const disabled = readDisabledIds()
   const selectedCandidates = new Map<string, PluginToolSourceCandidate>()
   const userPlugins = new Map<string, UserPluginCandidate>()
+  let installedRefreshPromise: Promise<void> | null = null
   for (const id of disabled) {
     if (registry.has(id)) registry.disable(id)
   }
@@ -493,10 +496,10 @@ export function createPluginService(registry: PluginRegistry): PluginService {
   /**
    * Reconcile the Agent Plugins packages on disk into the registry.
    *
-   * Registration is deliberately all a discovered plugin gets: a Settings row
-   * and the atomic enable/disable lifecycle. Its command hooks and MCP servers
-   * are not wired into the live agent loop here, because finding bytes must not
-   * be what activates behavior (#1082 follow-up).
+   * Registration gives a discovered plugin a Settings row and the atomic
+   * enable/disable lifecycle. Portable skills and supported MCP servers are
+   * consumed by their existing registries only after this registry says the
+   * plugin is enabled; discovery alone still activates nothing (#1082).
    *
    * A plugin whose directory disappeared is unregistered, mirroring the
    * selected-source reconciliation above. Its persisted settings and disable
@@ -523,13 +526,13 @@ export function createPluginService(registry: PluginRegistry): PluginService {
       const id = candidate.manifest.name
       if (userPlugins.has(id)) continue
       if (registry.has(id)) {
-        // A first-party or selected-directory pack already owns this id.
+        // A first-party or selected-directory plugin already owns this id.
         // Refusing here keeps the incumbent working rather than throwing.
         inertSourceReasons.set(
           candidate.pluginRoot,
           `plugin id ${JSON.stringify(id)} is already registered`,
         )
-        console.warn(`[plugins] ${candidate.pluginRoot} conflicts with a registered pack id.`)
+        console.warn(`[plugins] ${candidate.pluginRoot} conflicts with a registered plugin id.`)
         continue
       }
       for (const warning of candidate.warnings) {
@@ -570,28 +573,20 @@ export function createPluginService(registry: PluginRegistry): PluginService {
     }
   }
 
-  /**
-   * Every MCP server a discovered plugin declares, as an inert record.
-   *
-   * Discovery validates these entries and stops there — wiring them into the
-   * live agent loop is separate work, and a disabled plugin's servers would not
-   * run in any case. Both are states a user reading Settings → MCP servers
-   * needs told about, because the alternative is a section that says "no
-   * servers" while a package on disk names three. Nothing here is spawned:
-   * reporting a declaration is not honouring it.
-   */
+  /** Every MCP declaration that the live registry intentionally does not run. */
   function declaredMcpServers(): readonly DeclaredMcpServer[] {
     const out: DeclaredMcpServer[] = []
     for (const [id, candidate] of userPlugins) {
       const enabled = registry.has(id) && registry.isEnabled(id)
       for (const [name, server] of candidate.mcpServers) {
+        if (enabled && server.type !== 'sse') continue
         out.push({
-          name,
+          name: agentPluginMcpServerName(id, name),
           transport: server.type === 'stdio' ? 'stdio' : 'http',
           pluginId: id,
           pluginEnabled: enabled,
           reason: enabled
-            ? 'Declared by an enabled plugin; Copse does not start plugin MCP servers yet.'
+            ? 'Copse does not support the legacy HTTP+SSE transport declared by this server.'
             : 'The plugin that declares it is turned off.',
         })
       }
@@ -608,7 +603,7 @@ export function createPluginService(registry: PluginRegistry): PluginService {
         inertSourceReasons.delete(source)
       } catch (error) {
         inertSourceReasons.set(source, describeError(error))
-        console.warn(`[packs] selected source ${JSON.stringify(source)} is inert:`, error)
+        console.warn(`[plugins] selected source ${JSON.stringify(source)} is inert:`, error)
       }
     }
 
@@ -635,10 +630,19 @@ export function createPluginService(registry: PluginRegistry): PluginService {
       const id = candidate.manifest.name
       const existing = selectedCandidates.get(id)
       if (!existing && registry.has(id)) {
-        console.warn(
-          `[packs] selected pack id ${JSON.stringify(id)} conflicts with a registered pack.`,
-        )
-        continue
+        if (userPlugins.has(id)) {
+          // Explicit development sources have documented precedence over the
+          // passive plugin-root scan, even if concurrent startup discovery saw
+          // the passive candidate first.
+          registry.disable(id)
+          registry.unregister(id)
+          userPlugins.delete(id)
+        } else {
+          console.warn(
+            `[plugins] selected plugin id ${JSON.stringify(id)} conflicts with a registered plugin.`,
+          )
+          continue
+        }
       }
       if (!existing) {
         registry.register(registeredPluginToolSource(candidate))
@@ -655,12 +659,12 @@ export function createPluginService(registry: PluginRegistry): PluginService {
         } catch (error) {
           registry.disable(id)
           // Note the cause before disabling loses it. This is the branch the
-          // selected-pack e2e lands in when the OS sandbox is unavailable:
-          // pack behavior fails closed, so the pack is registered and then
+          // selected-plugin e2e lands in when the OS sandbox is unavailable:
+          // plugin behavior fails closed, so the plugin is registered and then
           // switched off, which on its own is indistinguishable from a user
           // having turned it off.
           pluginUnavailableReasons.set(id, describeError(error))
-          console.warn(`[packs] pack ${JSON.stringify(id)} tools could not start:`, error)
+          console.warn(`[plugins] plugin ${JSON.stringify(id)} tools could not start:`, error)
         }
       } else {
         registry.disable(id)
@@ -671,23 +675,35 @@ export function createPluginService(registry: PluginRegistry): PluginService {
   }
 
   async function refreshInstalledPlugins(): Promise<void> {
-    // Explicitly selected development sources are a user choice and already
-    // have executable-runtime lifecycle handling. Reconcile them before the
-    // passive Agent Plugins walk so a duplicate id has one deterministic
-    // incumbent instead of whichever async disk walk happens to finish first.
-    const failures: unknown[] = []
-    try {
-      await refreshPluginSources()
-    } catch (error) {
-      failures.push(error)
+    if (installedRefreshPromise) {
+      await installedRefreshPromise
+      return
     }
+    const refresh = (async (): Promise<void> => {
+      // Explicitly selected development sources are a user choice and already
+      // have executable-runtime lifecycle handling. Reconcile them before the
+      // passive Agent Plugins walk so a duplicate id has one deterministic
+      // incumbent instead of whichever async disk walk happens to finish first.
+      const failures: unknown[] = []
+      try {
+        await refreshPluginSources()
+      } catch (error) {
+        failures.push(error)
+      }
+      try {
+        await refreshUserPlugins()
+      } catch (error) {
+        failures.push(error)
+      }
+      if (failures.length > 0) {
+        throw new AggregateError(failures, 'One or more plugin sources could not be reconciled.')
+      }
+    })()
+    installedRefreshPromise = refresh
     try {
-      await refreshUserPlugins()
-    } catch (error) {
-      failures.push(error)
-    }
-    if (failures.length > 0) {
-      throw new AggregateError(failures, 'One or more plugin sources could not be reconciled.')
+      await refresh
+    } finally {
+      if (installedRefreshPromise === refresh) installedRefreshPromise = null
     }
   }
 
@@ -726,7 +742,7 @@ export function createPluginService(registry: PluginRegistry): PluginService {
         }
         const controller = getPluginToolRuntimeController()
         if (!controller) {
-          throw new Error(`pack "${pluginId}" runtime is unavailable`)
+          throw new Error(`plugin "${pluginId}" runtime is unavailable`)
         }
         await controller.enable(selected)
         registry.enable(pluginId)
@@ -750,13 +766,13 @@ export function createPluginService(registry: PluginRegistry): PluginService {
       return readPluginSettings(pluginId)[key]
     },
     async setSetting(pluginId: string, key: string, value: unknown): Promise<void> {
-      // Only keys the pack's manifest declares are persistable (P3 review): the
+      // Only keys the plugin's manifest declares are persistable (P3 review): the
       // IPC caps value size, but without this any renderer bug (or compromise)
-      // could grow arbitrary keys in any pack's bag forever.
-      const pack = registry.has(pluginId) ? registry.get(pluginId) : undefined
-      const declared = pack?.manifest.settings
+      // could grow arbitrary keys in any plugin's bag forever.
+      const plugin = registry.has(pluginId) ? registry.get(pluginId) : undefined
+      const declared = plugin?.manifest.settings
       if (!declared || !Object.hasOwn(declared, key)) {
-        throw new Error(`pack "${pluginId}" declares no setting "${key}"`)
+        throw new Error(`plugin "${pluginId}" declares no setting "${key}"`)
       }
       await storageUpdate(pluginSettingsKey(pluginId), (raw) => {
         const current: Record<string, unknown> = isRecord(raw) ? { ...raw } : {}
@@ -766,6 +782,14 @@ export function createPluginService(registry: PluginRegistry): PluginService {
     },
     refreshPluginSources,
     refreshUserPlugins,
+    enabledUserPlugins(): readonly UserPluginCandidate[] {
+      return [...userPlugins]
+        .filter(([id]) => registry.has(id) && registry.isEnabled(id))
+        .map(([, candidate]) => candidate)
+    },
+    hasUserPlugin(pluginId: string): boolean {
+      return userPlugins.has(pluginId)
+    },
     refreshInstalledPlugins,
     declaredMcpServers,
     async addPluginSource(sourcePath: string): Promise<void> {
@@ -774,7 +798,7 @@ export function createPluginService(registry: PluginRegistry): PluginService {
         registry.has(candidate.manifest.name) &&
         !selectedCandidates.has(candidate.manifest.name)
       ) {
-        throw new Error(`pack id "${candidate.manifest.name}" is already registered`)
+        throw new Error(`plugin id "${candidate.manifest.name}" is already registered`)
       }
       await storageUpdate(PLUGIN_SOURCES_KEY, (raw) => {
         const sources = new Set(parseStringList(raw))
@@ -792,7 +816,7 @@ export function createPluginService(registry: PluginRegistry): PluginService {
 }
 
 /**
- * Boot the process-wide pack service and install its registry as the loop's
+ * Boot the process-wide plugin service and install its registry as the loop's
  * default. Safe to call multiple times — the second call returns the existing
  * singleton, which is exactly what the IPC handlers rely on.
  */

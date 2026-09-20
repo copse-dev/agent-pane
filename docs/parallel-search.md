@@ -1,29 +1,29 @@
-# Parallel Search pack
+# Parallel Search plugin
 
-`copse.parallel-search` is a default-off, first-party pack that gives the agent a
+`copse.parallel-search` is a default-off, first-party plugin that gives the agent a
 native `parallel_search` tool. Copse sends requests directly to
 `https://api.parallel.ai/v1/search`; there is no MCP process or MCP server in the
 Parallel request path.
 
 ## Setup and lifecycle
 
-1. Open **Settings → Packs → copse.parallel-search**.
+1. Open **Settings → Plugins → copse.parallel-search**.
 2. Save a Parallel API key. Copse uses the existing encrypted API-key store; the
-   key is never exposed through `packs:list` or generic pack settings. The
+   key is never exposed through `plugins:list` or generic plugin settings. The
    `PARALLEL_API_KEY` environment variable is also supported.
 3. Choose the default search mode (`turbo`, `basic`, or `advanced`) and enable
-   the pack.
+   the plugin.
 
 The live tool registry requires both enablement and a resolved key. Saving or
-clearing the key and toggling the pack synchronizes the registry immediately,
-without restarting Copse. Disabling the pack removes the tool from new turns but
+clearing the key and toggling the plugin synchronizes the registry immediately,
+without restarting Copse. Disabling the plugin removes the tool from new turns but
 does not erase the saved key or historical tool cards.
 
-Settings enforces the same order. The pack's enable toggle stays inert until a
-key is stored, so the switch can never be turned on into a state where the pack
+Settings enforces the same order. The plugin's enable toggle stays inert until a
+key is stored, so the switch can never be turned on into a state where the plugin
 looks enabled but contributes no tool; a hint next to the toggle says what is
 missing. The off direction is never blocked — clearing the key on an enabled
-pack unregisters the tool and shows the hint, leaving the toggle usable.
+plugin unregisters the tool and shows the hint, leaving the toggle usable.
 
 The manifest also lists `parallel_search` in `tools.acpTools`. External ACP
 agents that advertise HTTP MCP support receive it through Copse's authenticated
@@ -50,6 +50,6 @@ The first call is routed through Copse's web-origin permission gate for
 agent mode blocks the call because it is a network operation.
 
 Search objectives and queries leave the device and requests may consume paid
-Parallel API credits. Enabling the pack does **not** enable Zero Data Retention.
+Parallel API credits. Enabling the plugin does **not** enable Zero Data Retention.
 ZDR is a property of the user's Parallel account or enterprise agreement and
 must be confirmed with Parallel separately.

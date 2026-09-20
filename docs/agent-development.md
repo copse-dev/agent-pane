@@ -135,14 +135,14 @@ one-shot steering.
 
 Everything Copse persists lives under one root, `~/.copse/` (`COPSE_DIR` moves the whole profile):
 
-| Path                                                                                 | Contents                                                                 |
-| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------ |
-| `user-data/config.json`                                                              | projects, `activeProjectId`, workspace root, pack settings, usage ledger |
-| `user-data/settings.json`                                                            | settings, including encrypted API keys                                   |
-| `user-data/` (rest)                                                                  | `mcp.json`, `tools/`, browser profiles, `gortex/` semantic index         |
-| `workspace/<projectId>/<threadId>/`                                                  | threads, tasks, decision log, deferred approvals                         |
-| `worktrees/`                                                                         | Copse-managed Git worktrees                                              |
-| `knowledge/`, `long-tasks/`, `roadmap-review/`, `pack-tool-snapshots/`, `hooks.json` | per-feature stores                                                       |
+| Path                                                                                 | Contents                                                                   |
+| ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------- |
+| `user-data/config.json`                                                              | projects, `activeProjectId`, workspace root, plugin settings, usage ledger |
+| `user-data/settings.json`                                                            | settings, including encrypted API keys                                     |
+| `user-data/` (rest)                                                                  | `mcp.json`, `tools/`, browser profiles, `gortex/` semantic index           |
+| `workspace/<projectId>/<threadId>/`                                                  | threads, tasks, decision log, deferred approvals                           |
+| `worktrees/`                                                                         | Copse-managed Git worktrees                                                |
+| `knowledge/`, `long-tasks/`, `roadmap-review/`, `pack-tool-snapshots/`, `hooks.json` | per-feature stores                                                         |
 
 Electron's `userData` used to default to `<appData>/copse-panel` (`~/Library/Application Support/`
 on macOS), which split the profile across two unrelated directories. `app-init.ts` now points it at

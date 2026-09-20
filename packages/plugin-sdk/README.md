@@ -19,18 +19,30 @@ not invoke these registrations automatically yet. Results are opaque JSON, not
 permission decisions or tool-result replacements. The existing command-hook path
 is separate.
 
-An explicitly selected `copse-plugin.json` may contain only a hook runtime:
+An explicitly selected Agent Plugins `plugin.json` may contain only a Copse hook runtime:
 
 ```json
 {
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "personal.inspect",
-  "runtime": {
-    "entrypoint": "index.mjs",
-    "apiVersion": 1,
-    "hooks": [{ "id": "inspect-start", "event": "turnStart" }]
+  "extensions": {
+    "dev.copse": {
+      "runtime": {
+        "entrypoint": "./dev.copse/index.mjs",
+        "apiVersion": 1,
+        "hooks": [{ "id": "inspect-start", "event": "turnStart" }]
+      }
+    }
   }
 }
 ```
+
+Legacy selected folders using `copse-plugin.json` or `copse-pack.json` remain
+supported, in that order, when root `plugin.json` is absent. A present invalid
+portable manifest is never bypassed by a legacy file. The portable envelope
+does not grant extra runtime capabilities. Selecting a development runtime is
+separate from installing the package under Copse's Agent Plugins root, where its
+portable skills and MCP servers follow the normal plugin enablement lifecycle.
 
 Its module exports the existing `activate(api)` entry point:
 

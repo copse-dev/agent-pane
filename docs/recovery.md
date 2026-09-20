@@ -12,14 +12,14 @@ stores are not changing during the backup.
 Back up **`~/.copse/`** — or the directory `COPSE_DIR` selects. That single root
 holds the whole profile:
 
-| Path                                                                                 | Contents                                                              |
-| ------------------------------------------------------------------------------------ | --------------------------------------------------------------------- |
-| `user-data/config.json`                                                              | Projects, active project, workspace root, pack settings, usage ledger |
-| `user-data/settings.json`                                                            | Settings, including encrypted API keys                                |
-| `user-data/` (rest)                                                                  | `mcp.json`, custom tools, browser profiles, the semantic-search index |
-| `workspace/`                                                                         | Conversation store: threads, tasks, decision log, deferred approvals  |
-| `worktrees/`                                                                         | Copse-managed Git worktrees                                           |
-| `knowledge/`, `long-tasks/`, `roadmap-review/`, `pack-tool-snapshots/`, `hooks.json` | Per-feature stores                                                    |
+| Path                                                                                 | Contents                                                                |
+| ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------- |
+| `user-data/config.json`                                                              | Projects, active project, workspace root, plugin settings, usage ledger |
+| `user-data/settings.json`                                                            | Settings, including encrypted API keys                                  |
+| `user-data/` (rest)                                                                  | `mcp.json`, custom tools, browser profiles, the semantic-search index   |
+| `workspace/`                                                                         | Conversation store: threads, tasks, decision log, deferred approvals    |
+| `worktrees/`                                                                         | Copse-managed Git worktrees                                             |
+| `knowledge/`, `long-tasks/`, `roadmap-review/`, `pack-tool-snapshots/`, `hooks.json` | Per-feature stores                                                      |
 
 Back up each project repository separately, through its normal version-control
 and backup process. Copse's app-data backup is not a backup of the project

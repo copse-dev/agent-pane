@@ -2528,7 +2528,7 @@ export async function retryPostTurnReview(
  * resolution and its approval apply as before.
  */
 /**
- * The three models the "Compare models" picker opens on: the pack's settings (or
+ * The three models the "Compare models" picker opens on: the plugin's settings (or
  * its defaults) expanded to concrete ids, against the same chat model the run
  * would use for reviewer A. Resolved when the bubble is *clicked* rather than
  * when it is built — expansion can reach the provider catalogue, and a bubble

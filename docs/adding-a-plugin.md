@@ -12,23 +12,23 @@ lifecycle and internal design, see [`docs/plugins.md`](./plugins.md).
 | Goal                                           | Where it lives today                                                                          | Shows up in Settings…                                              |
 | ---------------------------------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
 | Turn a shipped Copse feature on or off         | First-party plugins (`copse.todos`, `copse.pii-redaction`, …)                                 | **Plugins** (toggle per row)                                       |
-| Add skills and/or MCP servers                  | A Cursor-style plugin under `~/.cursor/plugins/`                                              | **Sources → Plugins** (and **MCP servers**)                        |
+| Add portable skills and/or MCP servers         | An Agent Plugins package under `~/.copse/plugins/`                                            | **Plugins** (and **MCP servers**)                                  |
+| Keep a legacy Cursor skills/MCP package        | A Cursor-style plugin under `~/.cursor/plugins/`                                              | **Sources → Plugins** (and **MCP servers**)                        |
 | Add command hooks                              | Cursor / Claude / Copse hooks files                                                           | **Sources → Hooks**                                                |
 | Add an in-process custom tool                  | `<userData>/tools/*.mjs`                                                                      | Used by the agent (approval-gated)                                 |
 | Add a personal plugin with executable behavior | Explicit folder selected in **Settings → Customise**                                          | **Plugins** (ordinary user-plugin row)                             |
 | Author a full user plugin row in **Plugins**   | An [Agent Plugins](https://agent-plugins.org/specification) package under `~/.copse/plugins/` | **Plugins** (row, seeded off — see [Status](#status-user-plugins)) |
 
-So: a third-party bundle now appears as its own row under **Settings → Customise**.
-What it _contributes_ is still limited — the row and the enable/disable
-lifecycle landed first, deliberately, because finding a manifest on disk must
-not be what starts running its behavior.
+So: a third-party bundle appears as its own row under **Settings → Customise**.
+Newly discovered packages start disabled. Enabling the row activates the
+portable skills and supported MCP servers declared by that package.
 
 ## Author an Agent Plugins package
 
 Drop a directory under `~/.copse/plugins/` (override the root with
-`COPSE_PLUGINS_DIR`). Copse implements
-[Agent Plugins v1.0.0](https://agent-plugins.org/specification), so the layout
-and manifest are the same ones Cursor, Claude Code, and Codex read:
+`COPSE_PLUGINS_DIR`). Copse validates and discovers
+[Agent Plugins v1.0.0](https://agent-plugins.org/specification) packages. This
+provides the standard package lifecycle and portable component activation:
 
 ```
 ~/.copse/plugins/acme.reviewer/
@@ -66,18 +66,19 @@ A few rules worth knowing before you hit them:
 - **The name is constrained.** 1–64 characters, lowercase `a-z0-9-.`, starting
   and ending alphanumeric, no `--` or `..`.
 - **A new plugin starts disabled.** Enable it in **Settings → Customise**; your
-  choice then persists.
+  choice then persists. The same toggle refreshes its skills and MCP servers.
 - **You cannot self-grant first-party power.** Native tool registration, ACP
   exposure, level-3 renderer views, and `trusted` prompt blocks are stripped on
   load, with a warning in the console.
 - **Failures are isolated.** A malformed neighbour is skipped, not fatal; a bad
   `mcp.json` disables MCP for that plugin only; a bad server entry skips that
   entry only.
+- **MCP supports stdio and Streamable HTTP.** Legacy HTTP+SSE entries remain
+  visible as unsupported and do not prevent sibling servers from loading.
 
-## Install skills + MCP (closest thing to a user plugin today)
+## Legacy Cursor skills + MCP compatibility
 
-Copse already loads Cursor plugins from disk. That path is the practical way to
-ship skills and MCP together:
+Copse continues to load Cursor plugins from disk for existing installations:
 
 ```
 my-plugin/
@@ -118,37 +119,50 @@ Details and trust rules: [`docs/cursor-plugins.md`](./cursor-plugins.md).
 
 Executable plugin behavior is deliberately explicit: Copse does not scan
 arbitrary plugin directories for code. Choose **Settings → Customise → Add plugin…**
-and select a folder containing `copse-pack.json`. Selecting the folder is the
+and select a folder containing root `plugin.json`. Selecting the folder is the
 current opt-in. Copse validates the manifest and source tree and computes a
 content hash used to create a consistent executable snapshot; the hash is not a
-separate trust tier or approval identity.
+separate trust tier or approval identity. Put executable declarations inside
+`extensions["dev.copse"]` and their files inside `dev.copse/`. This selection
+activates the existing isolated runtime only; portable skills, MCP, and command
+hooks are not activated by selecting an executable plugin.
+
+Existing folders containing `copse-plugin.json` or `copse-pack.json` keep working
+with their existing top-level declarations and entrypoint paths. The precedence
+is `plugin.json`, then `copse-plugin.json`, then `copse-pack.json`. A present but
+invalid portable manifest fails instead of falling back to a different format.
 
 Minimal manifest:
 
 ```json
 {
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "personal.example",
   "version": "0.1.0",
   "description": "A personal review plugin",
-  "tools": {
-    "provides": ["personal_judge"]
-  },
-  "models": {
-    "provides": [
-      {
-        "id": "reference-judge",
-        "label": "Reference judge",
-        "group": "Personal models",
-        "supportsImages": true
+  "extensions": {
+    "dev.copse": {
+      "tools": {
+        "provides": ["personal_judge"]
+      },
+      "models": {
+        "provides": [
+          {
+            "id": "reference-judge",
+            "label": "Reference judge",
+            "group": "Personal models",
+            "supportsImages": true
+          }
+        ]
+      },
+      "browser": {
+        "origins": ["https://example.test"]
+      },
+      "runtime": {
+        "entrypoint": "./dev.copse/dist/index.mjs",
+        "apiVersion": 1
       }
-    ]
-  },
-  "browser": {
-    "origins": ["https://example.test"]
-  },
-  "runtime": {
-    "entrypoint": "dist/index.mjs",
-    "apiVersion": 1
+    }
   }
 }
 ```
@@ -254,66 +268,39 @@ For a privileged in-process tool without standing up MCP, drop a module under
 the app's userData `tools/` directory. See
 [`docs/custom-tools.md`](./custom-tools.md).
 
-## Authoring a plugin manifest (for when user plugins land)
+## Copse-specific declarations
 
-The declarative plugin manifest **extends** `plugin.json` with the remaining
-slots. JSON Schema:
-[`schemas/copse-pack.schema.json`](../schemas/copse-pack.schema.json).
+Use `extensions["dev.copse"]` for Copse-only hooks, prompt blocks, UI declarations,
+settings, storage, and isolated executable behavior. Keep portable skills in
+`skills/` and MCP configuration in root `mcp.json`; neither location can be
+changed by the manifest. Other clients can ignore the Copse extension and load
+the portable components.
 
-```
-plugin manifest
-├── name / version / description
-├── stability   stable | experimental (omitted user values are experimental)
-├── skills      relative skills directory (same as plugin.json)
-├── tools       MCP config and/or selected-plugin tool ids
-├── models      selected-plugin whole-thread model routes
-├── browser     exact visible-browser origins for selected-plugin model routes
-├── runtime     shared isolated worker entrypoint for executable behavior
-├── hooks       [ { "event", "command" }, … ]   # command hooks
-├── prompt      steering blocks (always treated as untrusted for user plugins)
-├── ui          level-1 cards / level-2 list|tree panels
-├── settings    plugin-scoped fields rendered in Settings
-└── storage     namespaced bag that survives disable
-```
-
-Example sketch (valid against the schema; **not** registered as a Plugins row
-until host discovery lands):
+For example, the following is discoverable as a disabled Settings row. Enabling
+it loads portable skills/MCP; its command hook and prompt remain declarations
+until those Copse-specific activation paths land:
 
 ```json
 {
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "example.notes",
-  "version": "0.1.0",
-  "description": "Example user plugin",
-  "stability": "experimental",
-  "skills": "skills",
-  "tools": { "mcpServers": ".mcp.json" },
-  "hooks": [{ "event": "stop", "command": "./hooks/on-stop.sh" }],
-  "prompt": [
-    {
-      "id": "notes-steering",
-      "text": "Prefer capturing durable notes when the user finishes a task.",
-      "trust": "untrusted"
+  "extensions": {
+    "dev.copse": {
+      "stability": "experimental",
+      "hooks": [{ "event": "stop", "command": "./dev.copse/hooks/on-stop.sh" }],
+      "prompt": [{ "id": "notes-steering", "text": "Capture durable notes after a task." }],
+      "settings": {
+        "captureEnabled": { "kind": "boolean", "title": "Capture notes", "default": true }
+      },
+      "storage": { "namespace": "example.notes" }
     }
-  ],
-  "ui": [
-    {
-      "id": "notes",
-      "level": 2,
-      "slot": "conversation-panel",
-      "title": "Notes",
-      "panel": { "kind": "list", "header": "Notes", "ariaLabel": "Notes" }
-    }
-  ],
-  "settings": {
-    "captureEnabled": {
-      "kind": "boolean",
-      "title": "Capture notes on stop",
-      "default": true
-    }
-  },
-  "storage": { "namespace": "example.notes" }
+  }
 }
 ```
+
+The old [`copse-pack.schema.json`](../schemas/copse-pack.schema.json) describes
+legacy Copse manifests, not the standard envelope. Do not use it to author root
+`plugin.json` or add new portable fields to it.
 
 ### Trust boundaries (user plugins)
 
@@ -321,7 +308,7 @@ until host discovery lands):
   `first-party`.
 - Prompt blocks from a user plugin are forced to **untrusted** (delimited as data),
   even if the file says `"trust": "trusted"`.
-- User plugins may declare **command** hooks and MCP config paths. They cannot
+- User plugins may declare **command** hooks in the Copse extension and MCP servers in root `mcp.json`. They cannot
   ship in-process function hooks, native Copse tools, or level-3 renderer views
   — those stay first-party only.
 
@@ -331,27 +318,28 @@ Electron authority from the manifest.
 
 ## Status: user plugins
 
-| Piece                                                | Status                       |
-| ---------------------------------------------------- | ---------------------------- |
-| Manifest types + JSON schema                         | Landed                       |
-| `pluginManifestFromCursorJson()` mapper              | Landed                       |
-| Settings → Customise list + enable/disable           | Landed (first-party plugins) |
-| Explicit selected-plugin tools and model routes      | Landed                       |
-| Isolated executable behavior                         | Landed (macOS P2/P3 slice)   |
-| Bounded image/transcript handoff + thread sessions   | Landed                       |
-| Origin-scoped visible browser tabs + image upload    | Landed (macOS P4 slice)      |
-| Direct network or generic host gateway               | Intentionally unavailable    |
-| User-plugin renderer code                            | **Not wired**                |
-| Host disk discovery → register user plugins          | Landed (Agent Plugins)       |
-| Runtime wiring of user-plugin hooks/MCP via registry | **Not wired**                |
-| Install records, pinning, update, rollback           | **Not wired** (#1082 P2–P5)  |
+| Piece                                                  | Status                                   |
+| ------------------------------------------------------ | ---------------------------------------- |
+| Manifest types + JSON schema                           | Landed                                   |
+| `pluginManifestFromCursorJson()` mapper                | Landed                                   |
+| Settings → Customise list + enable/disable             | Landed (first-party plugins)             |
+| Explicit selected-plugin tools and model routes        | Landed; Agent Plugins + legacy manifests |
+| Isolated executable behavior                           | Landed (macOS P2/P3 slice)               |
+| Bounded image/transcript handoff + thread sessions     | Landed                                   |
+| Origin-scoped visible browser tabs + image upload      | Landed (macOS P4 slice)                  |
+| Direct network or generic host gateway                 | Intentionally unavailable                |
+| User-plugin renderer code                              | **Not wired**                            |
+| Host disk discovery → register user plugins            | Landed (Agent Plugins)                   |
+| Portable skills + stdio/Streamable HTTP MCP activation | Landed                                   |
+| Copse extension command-hook activation                | **Not wired**                            |
+| Install records, pinning, update, rollback             | **Not wired** (#1082 P2–P5)              |
 
-Discovery landed as Stage A of
+Discovery and portable activation landed as Stage A of
 [`docs/plans/agent-plugins-migration.md`](plans/agent-plugins-migration.md): a
 package under the plugin root gets a **Plugins** row and the enable/disable
-lifecycle. Its hooks and MCP servers are validated and held but not yet
-registered into the live agent loop — until that lands, put skills/MCP in a
-Cursor plugin (above) and hooks in the dialect files if you need them to run.
+lifecycle. Enabling it loads immediate-child Agent Skills and its valid stdio or
+Streamable HTTP MCP servers. Copse-specific command hooks are still declarations;
+use the existing hook dialect files if you need them to run today.
 
 ## Contributing a first-party plugin (Copse developers)
 
@@ -366,7 +354,7 @@ Shipped plugins live in `packages/agent/src/plugins/`, are listed from
    native-loop-only state; registration enforces that each entry is also in
    `tools.native` and has a runtime tool contribution.
 2. Register in `FIRST_PARTY_PLUGINS`.
-3. Gate any host-side tool registration on `getDefaultPackRegistry().isEnabled(id)`.
+3. Gate any host-side tool registration on `getDefaultPluginRegistry().isEnabled(id)`.
 4. Add Settings / e2e coverage for the new row and default enablement.
 5. Keep history rendering independent of live enablement (disabled plugins must
    not break old threads).

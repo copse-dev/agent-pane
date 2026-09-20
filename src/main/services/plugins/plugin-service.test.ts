@@ -45,6 +45,7 @@ import {
   setPluginToolRuntimeController,
   type PluginToolRuntimeController,
 } from './plugin-tool-controller.ts'
+import { agentPluginMcpServerName } from './agent-plugin-mcp-runtime.ts'
 
 const PLUGIN_DISABLED_KEY = 'pluginDisabled'
 const AUTOMATIONS_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.automationsEnablement'
@@ -292,6 +293,23 @@ describe('PluginService', () => {
     assert.ok(plugin?.source)
     assert.equal(plugin.source.path, await realpath(selectedSource))
     assert.deepEqual(plugin.contributions.toolNames, ['personal_judge'])
+  })
+
+  it('lets a selected source replace a passive candidate discovered first', async () => {
+    const id = 'personal.late-selected'
+    const selectedSource = await makeToolPlugin(id)
+    storageSet(PLUGIN_SOURCES_KEY, [selectedSource])
+    process.env['COPSE_PLUGINS_DIR'] = await makeAgentPluginRoot(id)
+
+    const service = createPluginService(makeRegistry())
+    await service.refreshUserPlugins()
+    assert.equal(service.list().find((candidate) => candidate.id === id)?.source, undefined)
+
+    await service.refreshPluginSources()
+    const selected = service.list().find((candidate) => candidate.id === id)
+    assert.ok(selected?.source)
+    assert.equal(selected.source.path, await realpath(selectedSource))
+    assert.deepEqual(selected.contributions.toolNames, ['personal_judge'])
   })
 
   it('starts selected tool behavior on add and stops it before disabling the plugin', async () => {
@@ -574,7 +592,9 @@ describe('migratePackKeysToPlugin', () => {
 
     getPluginService()
 
-    assert.deepEqual(storageGet('plugin.demo.plugin.settings'), { strictness: 4 })
+    assert.deepEqual(storageGet('plugin.demo.plugin.settings'), {
+      strictness: 4,
+    })
   })
 
   // The case above passes for a reason that does not hold on disk. This shim
@@ -615,7 +635,10 @@ describe('migratePackKeysToPlugin', () => {
     // the sibling. Both have to survive.
     storageSet('packDisabled', [])
     storageSet('pack', {
-      demo: { one: { settings: { strictness: 4 } }, two: { settings: { verbose: true } } },
+      demo: {
+        one: { settings: { strictness: 4 } },
+        two: { settings: { verbose: true } },
+      },
     })
     storageSet('plugin', { demo: { one: { settings: { strictness: 9 } } } })
 
@@ -722,7 +745,7 @@ describe('declaredMcpServers', () => {
     // this list: the server is not running because the plugin is not.
     assert.deepEqual(service.declaredMcpServers(), [
       {
-        name: 'reviewer',
+        name: agentPluginMcpServerName('acme.declarer', 'reviewer'),
         transport: 'stdio',
         pluginId: 'acme.declarer',
         pluginEnabled: false,
@@ -731,7 +754,7 @@ describe('declaredMcpServers', () => {
     ])
   })
 
-  it('keeps reporting the server once the user turns the plugin on', async () => {
+  it('moves a supported server out of the inert declarations once enabled', async () => {
     process.env['COPSE_PLUGINS_DIR'] = await seedPlugin('acme.declarer', {
       reviewer: { type: 'stdio', command: './bin/reviewer' },
     })
@@ -740,13 +763,31 @@ describe('declaredMcpServers', () => {
     await service.refreshUserPlugins()
     await service.setEnabled('acme.declarer', true)
 
-    // Enabling a plugin does not start its MCP servers, so the row has to stay —
-    // dropping it here would read as "now running", which is the one thing it
-    // must never imply.
-    const [declared] = service.declaredMcpServers()
-    assert.ok(declared)
-    assert.equal(declared.pluginEnabled, true)
-    assert.match(declared.reason, /does not start plugin MCP servers yet/)
+    assert.deepEqual(service.declaredMcpServers(), [])
+    assert.deepEqual(
+      service.enabledUserPlugins().map((plugin) => plugin.manifest.name),
+      ['acme.declarer'],
+    )
+  })
+
+  it('reports unsupported SSE after the plugin is enabled', async () => {
+    process.env['COPSE_PLUGINS_DIR'] = await seedPlugin('acme.legacy', {
+      events: { type: 'sse', url: 'https://example.com/events' },
+    })
+
+    const service = createPluginService(makeRegistry())
+    await service.refreshUserPlugins()
+    await service.setEnabled('acme.legacy', true)
+
+    assert.deepEqual(service.declaredMcpServers(), [
+      {
+        name: agentPluginMcpServerName('acme.legacy', 'events'),
+        transport: 'http',
+        pluginId: 'acme.legacy',
+        pluginEnabled: true,
+        reason: 'Copse does not support the legacy HTTP+SSE transport declared by this server.',
+      },
+    ])
   })
 
   it('is empty when no discovered plugin declares any', async () => {

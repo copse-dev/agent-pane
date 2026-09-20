@@ -128,8 +128,9 @@ export async function runAcpAgentMode(): Promise<void> {
   // plugin service must be up before createRegistry() so `syncModelComparisonTools`
   // reads the persisted `pluginDisabled` state (not a fresh fallback).
   await checkToolAvailability()
-  getPluginService()
+  const pluginService = getPluginService()
   const registry = createRegistry()
+  await pluginService.refreshInstalledPlugins()
   await initSkillsRegistry()
   registerSkillTools(registry)
   await loadMcpServers(registry)

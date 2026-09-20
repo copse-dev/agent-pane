@@ -182,7 +182,7 @@ revisiting this document, not silently diverging in an implementation PR.
 14. **Payloads are treated as stable now; stability is _declared_ at publish time.**
     Pre-v1 with zero consumers we don't version payloads, but every dialect wire payload
     is snapshot-tested (G4) so the publish-time stability audit is a diff review.
-15. **Feature packs are the end state; behavior declarations, one lifecycle.** Following
+15. **Plugins are the end state; behavior declarations, one lifecycle.** Following
     VS Code's built-in-extensions model: first-party packs and user packs share the
     manifest, registry, Settings surface, and disable semantics; first-party packs
     additionally get typed `AgentStreamChunk` emission, typed loop-state access, and
@@ -379,6 +379,18 @@ revisiting this document, not silently diverging in an implementation PR.
     Operation authority for the Copse panel remains process-lifetime scoped: recovery after a host
     restart blocks before relaunch because the prior Xcode process may still be alive.
 
+27. **Agent Plugins is the package format; packs are compatibility vocabulary.**
+    New distributed and explicitly selected packages use root `plugin.json`
+    with the Agent Plugins v1.0.0 envelope. Copse-specific declarations are
+    additive under `extensions["dev.copse"]`, with files under `dev.copse/`;
+    they never override portable skills/MCP locations or core fields. The selected
+    runtime retains `copse-plugin.json` and `copse-pack.json` only as legacy
+    fallbacks when root `plugin.json` is absent. Cursor manifests keep their
+    existing import contract. Keep the shared registry, compiled first-party
+    contributions, persisted state migrations, and historical transcript data;
+    retiring the old package format does not remove those behaviors. See
+    [`agent-plugins-migration.md`](agent-plugins-migration.md) and #1082.
+
 ## Target architecture
 
 ```mermaid
@@ -541,8 +553,10 @@ interface HookOutcome {
 
 ## Feature packs
 
-A pack is a manifest-bundled feature. It extends the `plugin.json` shape Copse already
-loads (skills + MCP) with the remaining slots:
+A pack (now called a plugin) is a manifest-bundled feature. The slots below are
+the internal runtime representation. Under decision 27, portable `plugin.json`
+keeps the standard envelope and places Copse-only declarations under
+`extensions["dev.copse"]`; these are not additional top-level core fields:
 
 ```
 pack manifest

@@ -22,6 +22,7 @@
 // Electron-free: nothing here spawns a process or touches disk.
 import { z } from 'zod'
 import { AGENT_PLUGINS_SPEC_VERSION } from './agent-plugin-manifest.ts'
+import { isRecord } from '@copse/std/unknown-value.ts'
 
 /** Canonical `$schema` identifier for `mcp.json` (§7.2.1). */
 export const AGENT_PLUGIN_MCP_SCHEMA_ID = 'https://agent-plugins.org/schemas/1.0.0/mcp.schema.json'
@@ -71,25 +72,52 @@ export class AgentPluginMcpError extends Error {
   }
 }
 
+// z.record discards __proto__. These are opaque user-provided names, so validate
+// own entries and construct string maps without invoking Object's setters.
+const zRecord = z.unknown().transform((value, ctx) => {
+  if (!isRecord(value)) {
+    ctx.issues.push({ code: 'custom', message: 'Expected an object.', input: value })
+    return z.NEVER
+  }
+  return value
+})
+
+const zStringRecord = zRecord.transform((value, ctx) => {
+  const entries: [string, string][] = []
+  for (const [key, entry] of Object.entries(value)) {
+    if (typeof entry !== 'string') {
+      ctx.issues.push({
+        code: 'custom',
+        message: 'Expected a string value.',
+        path: [key],
+        input: entry,
+      })
+      return z.NEVER
+    }
+    entries.push([key, entry])
+  }
+  return Object.fromEntries(entries)
+})
+
 const zStdio = z.strictObject({
   type: z.literal('stdio'),
-  command: z.string().min(1).max(1_000),
-  args: z.array(z.string().max(4_000)).max(256).optional(),
-  env: z.record(z.string().min(1).max(256), z.string().max(8_000)).optional(),
-  cwd: z.string().min(1).max(1_000).optional(),
+  command: z.string().min(1),
+  args: z.array(z.string()).optional(),
+  env: zStringRecord.optional(),
+  cwd: z.string().optional(),
 })
 
 const zHttp = z.strictObject({
   type: z.union([z.literal('streamable-http'), z.literal('sse')]),
-  url: z.string().min(1).max(2_048),
-  headers: z.record(z.string().min(1).max(256), z.string().max(8_000)).optional(),
+  url: z.string().min(1),
+  headers: zStringRecord.optional(),
 })
 
 const zServer = z.union([zStdio, zHttp])
 
 const zMcpFile = z.strictObject({
   $schema: z.string(),
-  mcpServers: z.record(z.string().min(1).max(256), z.unknown()),
+  mcpServers: zRecord,
 })
 
 /**
@@ -129,7 +157,7 @@ function isValidHeaderName(name: string): boolean {
 function isValidHeaderValue(value: string): boolean {
   // A header value carrying CR or LF is a response-splitting shape, not a
   // configuration mistake, so control characters are refused outright.
-  return !/[\u0000-\u0008\u000A-\u001F\u007F]/.test(value)
+  return /^[\u0009\u0020-\u007E\u0080-\u00FF]*$/.test(value)
 }
 
 /**
@@ -162,13 +190,24 @@ function validateStdio(name: string, server: z.infer<typeof zStdio>): AgentPlugi
   // a shell string, so the client never has to parse or escape user-authored
   // shell syntax. No placeholder expansion happens here, by design.
   const command = server.command
+  if (
+    command.includes('\0') ||
+    (!command.startsWith('./') && (/\s/.test(command) || /^[a-z]:/i.test(command)))
+  ) {
+    throw new AgentPluginMcpError(
+      `server ${JSON.stringify(name)}: \`command\` must be a single executable token, not a shell command.`,
+    )
+  }
   if (command.startsWith('${')) {
     throw new AgentPluginMcpError(
       `server ${JSON.stringify(name)}: \`command\` does not expand placeholders.`,
     )
   }
   const looksRelative = command.includes('/') || command.includes('\\')
-  if (looksRelative && !isPluginRelativePath(command.split('\\').join('/'))) {
+  if (
+    looksRelative &&
+    (!command.startsWith('./') || !isPluginRelativePath(command.split('\\').join('/')))
+  ) {
     throw new AgentPluginMcpError(
       `server ${JSON.stringify(name)}: \`command\` must be a bare executable name or a "./" plugin-relative path.`,
     )
@@ -216,7 +255,7 @@ function validateHttp(name: string, server: z.infer<typeof zHttp>): AgentPluginH
       `server ${JSON.stringify(name)}: \`url\` must not carry user information.`,
     )
   }
-  if (url.hash !== '') {
+  if (server.url.includes('#')) {
     throw new AgentPluginMcpError(
       `server ${JSON.stringify(name)}: \`url\` must not carry a fragment.`,
     )
@@ -227,7 +266,7 @@ function validateHttp(name: string, server: z.infer<typeof zHttp>): AgentPluginH
     )
   }
 
-  const headers: Record<string, string> = {}
+  const headers: [string, string][] = []
   const seen = new Set<string>()
   for (const [key, value] of Object.entries(server.headers ?? {})) {
     if (!isValidHeaderName(key) || !isValidHeaderValue(value)) {
@@ -242,10 +281,10 @@ function validateHttp(name: string, server: z.infer<typeof zHttp>): AgentPluginH
       )
     }
     seen.add(lower)
-    headers[key] = value
+    headers.push([key, value])
   }
 
-  return { type: server.type, url: url.toString(), headers }
+  return { type: server.type, url: url.toString(), headers: Object.fromEntries(headers) }
 }
 
 /**
@@ -305,10 +344,9 @@ export function resolveStdioServer(
   readonly env: Readonly<Record<string, string>>
   readonly cwd: string
 } {
-  const env: Record<string, string> = {}
-  for (const [key, value] of Object.entries(server.env)) {
-    env[key] = expandPluginPlaceholders(value, vars)
-  }
+  const env = Object.fromEntries(
+    Object.entries(server.env).map(([key, value]) => [key, expandPluginPlaceholders(value, vars)]),
+  )
   // §9.1: the client sets the reserved variables *after* applying configured
   // `env`, so a plugin can never shadow them.
   env[PLUGIN_ROOT_VAR] = vars.pluginRoot
