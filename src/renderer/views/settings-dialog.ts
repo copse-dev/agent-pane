@@ -3287,6 +3287,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         title: contributions.capabilities.map((c) => `${c.title} (${c.name})`).join(', '),
       })
     }
+    if (contributions.instructionSources.length > 0) {
+      chips.push({
+        label: 'Instruction sources',
+        count: contributions.instructionSources.length,
+        title: contributions.instructionSources
+          .map((source) => `${source.title} (${source.name})`)
+          .join(', '),
+      })
+    }
     if (contributions.permissions.length > 0) {
       chips.push({
         label: 'Permissions',

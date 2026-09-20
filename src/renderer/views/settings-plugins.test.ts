@@ -89,6 +89,7 @@ const demoPlugin: PluginSummary = {
     ui: [{ id: 'demo-panel', level: 2, slot: 'sidebar', title: 'Demo panel', panelKind: 'list' }],
     followUps: [],
     capabilities: [],
+    instructionSources: [],
     permissions: [],
     storageNamespace: 'copse.demo',
   },
@@ -127,6 +128,7 @@ const modelFieldPlugin: PluginSummary = {
     ui: [],
     followUps: [],
     capabilities: [],
+    instructionSources: [],
     permissions: [],
   },
   settings: [
@@ -157,6 +159,7 @@ const disabledUserPlugin: PluginSummary = {
     ui: [],
     followUps: [],
     capabilities: [],
+    instructionSources: [],
     permissions: [],
   },
   settings: [],
@@ -194,6 +197,7 @@ const selectedToolPlugin: PluginSummary = {
     ui: [],
     followUps: [],
     capabilities: [],
+    instructionSources: [],
     permissions: [],
     storageNamespace: 'personal.local-model',
   },
@@ -381,6 +385,7 @@ describe('settings → plugins list', () => {
         ui: [],
         followUps: [],
         capabilities: [{ name: 'mcp-ui-canvas', title: 'MCP-UI canvas rendering' }],
+        instructionSources: [],
         permissions: [],
       },
       settings: [],
@@ -390,6 +395,34 @@ describe('settings → plugins list', () => {
     assert.deepEqual(chipTexts, ['Capabilities × 1'])
     // A capability-only plugin contributes something — no skeleton note.
     assert.doesNotMatch(list.textContent, /Contributes nothing yet/)
+  })
+
+  it('enumerates a first-party instruction source without granting it to user plugins', async () => {
+    const instructionPlugin: PluginSummary = {
+      id: 'copse.agents-md',
+      trust: 'first-party',
+      stability: 'stable',
+      name: 'copse.agents-md',
+      enabled: true,
+      contributions: {
+        toolNames: [],
+        modelRoutes: [],
+        browserOrigins: [],
+        blockingHooks: [],
+        asyncHooks: [],
+        commandHooks: [],
+        promptBlocks: [],
+        ui: [],
+        followUps: [],
+        capabilities: [],
+        instructionSources: [{ name: 'agents-md', title: 'AGENTS.md instructions' }],
+        permissions: [],
+      },
+      settings: [],
+    }
+    const list = await openPlugins({ plugins: [instructionPlugin] }, spy)
+    const chipTexts = Array.from(list.querySelectorAll('.plugin-chip')).map((el) => el.textContent)
+    assert.deepEqual(chipTexts, ['Instruction sources × 1'])
   })
 
   it('enumerates a declared permission / sandbox relaxation as a Permissions chip', async () => {
@@ -410,6 +443,7 @@ describe('settings → plugins list', () => {
         ui: [],
         followUps: [],
         capabilities: [],
+        instructionSources: [],
         permissions: [{ name: 'loopback-bind', title: 'Bind a loopback port', scope: 'project' }],
       },
       settings: [],
@@ -434,6 +468,7 @@ describe('settings → plugins list', () => {
         ui: [],
         followUps: [],
         capabilities: [],
+        instructionSources: [],
         permissions: [],
       },
       settings: [],

@@ -15,6 +15,7 @@ import { ToolRegistry } from './tool-registry.ts'
 import { runWithActiveRunIdentity } from './thread-models.ts'
 import { runWithThreadExecutionContext } from './thread-execution-context.ts'
 import { PluginRegistry } from '@copse/agent/plugins/plugin-registry.ts'
+import { agentsMdPlugin } from '@copse/agent/plugins/agents-md-plugin.ts'
 import { definePlugin } from '@copse/agent/plugins/plugin-manifest.ts'
 import { setDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import {
@@ -405,7 +406,9 @@ describe('runAgent AgentHost decoupling', () => {
         yield { type: 'text' as const, text: 'Done.' }
       },
     }
-    setDefaultPluginRegistry(new PluginRegistry())
+    const plugins = new PluginRegistry()
+    plugins.register(agentsMdPlugin)
+    setDefaultPluginRegistry(plugins)
     await setSetting('subagentsEnabled', false)
     await setSetting('skillsEnabled', false)
 
@@ -522,7 +525,9 @@ describe('runAgent AgentHost decoupling', () => {
       },
     }
     const received: StreamChunk[] = []
-    setDefaultPluginRegistry(new PluginRegistry())
+    const plugins = new PluginRegistry()
+    plugins.register(agentsMdPlugin)
+    setDefaultPluginRegistry(plugins)
     await setSetting('subagentsEnabled', false)
     await setSetting('skillsEnabled', false)
 

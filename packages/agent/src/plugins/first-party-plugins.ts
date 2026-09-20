@@ -110,6 +110,9 @@ import { darkFactoryPlugin } from './dark-factory-plugin.ts'
 import { siteBuildingPlugin } from './site-building-plugin.ts'
 import { artifactCheckpointPlugin } from './artifact-checkpoint-plugin.ts'
 import { appleDevelopmentPlugin } from './apple-development-plugin.ts'
+import { claudeMdPlugin } from './claude-md-plugin.ts'
+import { agentsMdPlugin } from './agents-md-plugin.ts'
+import { cursorRulesPlugin } from './cursor-rules-plugin.ts'
 
 /**
  * Every plugin Copse ships. Order is preserved as the Settings plugin-list
@@ -123,6 +126,9 @@ import { appleDevelopmentPlugin } from './apple-development-plugin.ts'
  * the artifact-checkpoint experiment, and the stable site-building steering plugin.
  */
 export const FIRST_PARTY_PLUGINS: readonly RegisteredPlugin[] = [
+  claudeMdPlugin,
+  agentsMdPlugin,
+  cursorRulesPlugin,
   todosPlugin,
   appleDevelopmentPlugin,
   postTurnReviewPlugin,

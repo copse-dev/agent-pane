@@ -38,6 +38,10 @@ import {
 } from '@copse/agent/plugins/first-party-plugins.ts'
 import { ARTIFACT_CHECKPOINT_PLUGIN_ID } from '@copse/agent/plugins/artifact-checkpoint-plugin.ts'
 import { APPLE_DEVELOPMENT_PLUGIN_ID } from '@copse/agent/plugins/apple-development-plugin.ts'
+import {
+  AGENTS_MD_INSTRUCTION_FILES_SETTING_ID,
+  AGENTS_MD_PLUGIN_ID,
+} from '@copse/agent/plugins/agents-md-plugin.ts'
 import { setDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { summarizePlugins, type PluginSummaryOut } from '@copse/agent/plugins/plugin-summary.ts'
 import {
@@ -132,6 +136,9 @@ const ARTIFACT_CHECKPOINT_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.artifactCh
 
 /** One-time default-off seed for Apple Development on upgraded profiles. */
 const APPLE_DEVELOPMENT_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.appleDevelopmentEnablement'
+
+/** Preserve the pre-plugin behavior for upgraded profiles while fresh installs use fallback. */
+const AGENTS_MD_MODE_MIGRATION_KEY = 'pluginMigration.agentsMdInstructionFiles'
 
 /** Storage key holding one plugin's settings values (`pluginId` scoped). */
 function pluginSettingsKey(pluginId: string): string {
@@ -320,6 +327,26 @@ function migrateAppleDevelopmentEnablement(): void {
   disabled.add(APPLE_DEVELOPMENT_PLUGIN_ID)
   storageSet(PLUGIN_DISABLED_KEY, [...disabled].sort())
   storageSet(APPLE_DEVELOPMENT_ENABLEMENT_MIGRATION_KEY, true)
+}
+
+/**
+ * Before instruction sources became plugins, Copse always combined AGENTS.md
+ * and CLAUDE.md when both existed. Claude-compatible fallback is the new-plugin
+ * default, but silently changing an established profile would drop instructions
+ * on its next message. Existing plugin-era profiles therefore receive the
+ * explicit combined mode once; a genuinely fresh profile keeps the manifest's
+ * `claude-md-or-agents-md` default.
+ */
+function migrateAgentsMdInstructionFiles(existingPluginProfile: boolean): void {
+  if (storageGet(AGENTS_MD_MODE_MIGRATION_KEY) === true) return
+  if (existingPluginProfile) {
+    const bag = { ...readPluginSettings(AGENTS_MD_PLUGIN_ID) }
+    if (bag[AGENTS_MD_INSTRUCTION_FILES_SETTING_ID] === undefined) {
+      bag[AGENTS_MD_INSTRUCTION_FILES_SETTING_ID] = 'claude-md-and-agents-md'
+      storageSet(pluginSettingsKey(AGENTS_MD_PLUGIN_ID), bag)
+    }
+  }
+  storageSet(AGENTS_MD_MODE_MIGRATION_KEY, true)
 }
 
 /** Read one plugin's persisted settings bag (`{}` when nothing stored). */
@@ -828,7 +855,9 @@ export function getPluginService(): PluginService {
   // choices with the shipped defaults, and the old key would still be sitting
   // there unread.
   migratePackKeysToPlugin()
+  const existingPluginProfile = storageGet(PLUGIN_DISABLED_KEY) !== undefined
   seedDefaultDisabledPlugins()
+  migrateAgentsMdInstructionFiles(existingPluginProfile)
   migrateBackgroundTasksStable()
   migratePluginModelSettings()
   migrateAutomationsEnablement()
