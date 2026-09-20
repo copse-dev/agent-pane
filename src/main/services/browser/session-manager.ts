@@ -47,6 +47,13 @@ export interface NavigateResult {
   url: string
 }
 
+export interface BrowserNavigateOptions {
+  newTab?: boolean | undefined
+  viewId?: string | undefined
+  /** Backdrop used when a page leaves its root transparent. */
+  backgroundColor?: string | undefined
+}
+
 export interface TabInfo {
   viewId: string
   title: string
@@ -69,7 +76,7 @@ export class BrowserSessionManager {
   private lastActiveId: string | null = null
   private counter = 0
 
-  private createTab(): Tab {
+  private createTab(backgroundColor?: string): Tab {
     if (this.tabs.length >= MAX_TABS) {
       throw new Error(`browser tab limit reached (${String(MAX_TABS)}); close a tab first`)
     }
@@ -79,6 +86,7 @@ export class BrowserSessionManager {
       show: false,
       width: DEFAULT_WIDTH,
       height: DEFAULT_HEIGHT,
+      ...(backgroundColor ? { backgroundColor } : {}),
       webPreferences: {
         // Dedicated agent browser profile, isolated from the user's interactive
         // browser pane, so automation never inherits the user's logged-in
@@ -116,12 +124,10 @@ export class BrowserSessionManager {
     return this.createTab()
   }
 
-  async navigate(
-    url: string,
-    opts?: { newTab?: boolean | undefined; viewId?: string | undefined },
-  ): Promise<NavigateResult> {
-    const tab = opts?.newTab ? this.createTab() : this.resolveTab(opts?.viewId)
+  async navigate(url: string, opts?: BrowserNavigateOptions): Promise<NavigateResult> {
+    const tab = opts?.newTab ? this.createTab(opts.backgroundColor) : this.resolveTab(opts?.viewId)
     this.lastActiveId = tab.id
+    if (opts?.backgroundColor) tab.window.setBackgroundColor(opts.backgroundColor)
     try {
       await tab.window.webContents.loadURL(url)
     } catch (err) {

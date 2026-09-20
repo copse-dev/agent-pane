@@ -29,6 +29,7 @@ import {
 import { attachBrowserGuestContextMenu } from './windows/browser-context-menu.ts'
 import { applyAppIcon } from './app-icon.ts'
 import type { LLMMessage, StreamChunk } from '@shared/types'
+import { THEME_BACKGROUND } from '@shared/theme.ts'
 import {
   assertPrimaryMainWindow,
   beginMainWindowQuit,
@@ -37,6 +38,7 @@ import {
   getMainWindow,
   getRestorableMainWindowRecords,
 } from './windows/create-main-window.ts'
+import { readBootTheme } from './windows/boot-theme.ts'
 import { setShellOutputSink } from './services/exec/shell-output-context.ts'
 import { setSecretCipher } from './services/storage/secret-cipher.ts'
 import { createKeyringCipher, createMigratingCipher } from './services/storage/keyring-cipher.ts'
@@ -301,9 +303,39 @@ setCanvasArtefactSink((artefact) => {
   })
 })
 
+async function currentCanvasBackgroundColor(): Promise<string> {
+  const fallback = THEME_BACKGROUND[readBootTheme()]
+  const win = getMainWindow()
+  if (!win || win.isDestroyed()) return fallback
+  try {
+    const value: unknown = await win.webContents.executeJavaScript(
+      `(() => {
+        const canvas = document.createElement('canvas')
+        canvas.width = 1
+        canvas.height = 1
+        const context = canvas.getContext('2d')
+        if (!context) return ''
+        context.fillStyle = getComputedStyle(document.body).backgroundColor
+        context.fillRect(0, 0, 1, 1)
+        const [red, green, blue, alpha] = context.getImageData(0, 0, 1, 1).data
+        if (alpha === 0) return ''
+        return 'rgba(' + [red, green, blue, alpha / 255].join(', ') + ')'
+      })()`,
+      true,
+    )
+    return typeof value === 'string' && value.trim() ? value : fallback
+  } catch {
+    return fallback
+  }
+}
+
 // Load every artefact into the headless agent session as well, so the model can
 // snapshot and screenshot the canvas it just rendered instead of working blind.
-setCanvasArtefactMirror((artefact) => mirrorArtefactToAgent(artefact, getBrowserSession()))
+// The preview window is otherwise white by default, while the visible webview
+// exposes Copse's theme through a transparent artefact.
+setCanvasArtefactMirror(async (artefact) =>
+  mirrorArtefactToAgent(artefact, getBrowserSession(), await currentCanvasBackgroundColor()),
+)
 
 setContextEstimateRefreshSink(() => {
   const win = getMainWindow()

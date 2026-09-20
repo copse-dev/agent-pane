@@ -2052,6 +2052,9 @@
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
+  /* Transparent canvas artefacts expose this surface. The headless mirror
+     captures against the resolved value of the same token. */
+  background: var(--bg-base);
   -webkit-app-region: no-drag;
   position: relative;
 }
