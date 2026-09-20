@@ -10,6 +10,88 @@ const THREAD_ID = 'e2e-inline-visualization-thread'
 const REFERENCE =
   '\u{e200}visualize\u{e202}{"path":"/workspace/tool-rollup-approaches.html","mode":"wide","title":"Tool rollup approaches"}\u{e201}'
 
+const INLINE_PROTOTYPE_HTML = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    * { box-sizing: border-box; }
+    :root { color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+    body { margin: 0; min-height: 100vh; background: #f5f2eb; color: #18211e; }
+    button { font: inherit; }
+    .shell { min-height: 100vh; padding: 20px; }
+    .topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+    .brand { display: flex; align-items: center; gap: 9px; font-size: 12px; font-weight: 750; letter-spacing: .04em; }
+    .mark { width: 24px; height: 24px; display: grid; place-items: center; border-radius: 7px; background: #153b36; color: #a9ffca; }
+    .live { display: flex; align-items: center; gap: 6px; color: #61706a; font-size: 11px; }
+    .live::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: #36c977; box-shadow: 0 0 0 3px #d9f1e2; }
+    .intro { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin-bottom: 16px; }
+    .eyebrow { margin: 0 0 5px; color: #8a5e72; font-size: 10px; font-weight: 750; letter-spacing: .12em; text-transform: uppercase; }
+    h1 { margin: 0; max-width: 540px; font: 500 clamp(23px, 4vw, 34px)/1.06 Georgia, serif; letter-spacing: -.025em; }
+    .choices { display: flex; gap: 6px; }
+    .choice { min-width: 34px; height: 30px; border: 1px solid #cbc7be; border-radius: 8px; background: #fffdf8; color: #5d6662; cursor: pointer; }
+    .choice:hover, .choice:focus-visible { border-color: #93667b; outline: none; }
+    .choice[aria-pressed='true'] { border-color: #153b36; background: #153b36; color: #fff; }
+    .board { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(190px, .75fr); gap: 12px; }
+    .panel { border: 1px solid #d8d3c8; border-radius: 13px; background: #fffdf8; box-shadow: 0 10px 26px rgba(28, 44, 38, .06); }
+    .timeline { padding: 14px; }
+    .row { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid #ebe7de; }
+    .row:last-child { border-bottom: 0; }
+    .icon { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 8px; background: #e7f0eb; color: #285f51; font-size: 12px; font-weight: 800; }
+    .row strong { display: block; font-size: 12px; }
+    .row small { display: block; margin-top: 2px; color: #7a827e; font-size: 10px; }
+    .time { color: #8a928e; font-size: 10px; }
+    .recommendation { display: flex; flex-direction: column; justify-content: space-between; padding: 16px; background: #153b36; color: #f8fff9; }
+    .recommendation .label { color: #9fe4b9; font-size: 10px; font-weight: 750; letter-spacing: .11em; text-transform: uppercase; }
+    .recommendation h2 { margin: 12px 0 8px; font: 500 24px/1.05 Georgia, serif; }
+    .recommendation p { margin: 0; color: #c7d8d1; font-size: 11px; line-height: 1.45; }
+    .selection { margin-top: 18px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.16); color: #fff; font-size: 11px; }
+    .selection strong { color: #ffb5d4; }
+    @media (max-width: 520px) {
+      .shell { padding: 14px; }
+      .intro { align-items: start; flex-direction: column; }
+      .board { grid-template-columns: 1fr; }
+      .recommendation { min-height: 160px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <div class="topbar">
+      <div class="brand"><span class="mark">R</span> Rollup studio</div>
+      <div class="live">Interactive prototype</div>
+    </div>
+    <div class="intro">
+      <div><p class="eyebrow">Conversation design</p><h1>Choose how work folds into the thread</h1></div>
+      <div class="choices" aria-label="Rollup approach">
+        <button class="choice" data-choice="A" aria-pressed="false">A</button>
+        <button class="choice" data-choice="B" aria-pressed="false">B</button>
+        <button class="choice" data-choice="C" aria-pressed="true">C</button>
+      </div>
+    </div>
+    <section class="board">
+      <div class="panel timeline">
+        <div class="row"><span class="icon">1</span><span><strong>Read the renderer</strong><small>Source and styles stay in chronological order</small></span><span class="time">0:08</span></div>
+        <div class="row"><span class="icon">2</span><span><strong>Build focused change</strong><small>Related calls fold into one quiet step</small></span><span class="time">0:24</span></div>
+        <div class="row"><span class="icon">3</span><span><strong>Validate visually</strong><small>The result remains beside the explanation</small></span><span class="time">0:41</span></div>
+      </div>
+      <aside class="panel recommendation">
+        <div><span class="label">Recommended</span><h2>Approach C</h2><p>Compact at rest, chronological when expanded, and easy to scan.</p></div>
+        <div class="selection">Selected: <strong id="selection">Approach C</strong></div>
+      </aside>
+    </section>
+  </main>
+  <script>
+    const choices = [...document.querySelectorAll('[data-choice]')];
+    choices.forEach((choice) => choice.addEventListener('click', () => {
+      choices.forEach((item) => item.setAttribute('aria-pressed', String(item === choice)));
+      document.querySelector('#selection').textContent = 'Approach ' + choice.dataset.choice;
+    }));
+  </script>
+</body>
+</html>`
+
 describe('ACP inline visualization reference', () => {
   before(async () => {
     const now = Date.now()
@@ -49,11 +131,13 @@ describe('ACP inline visualization reference', () => {
         },
       ],
     })
-    const preview = readFileSync(join(process.cwd(), 'tests/e2e/fixtures/git-changes-blue.png'))
+    const preview = readFileSync(
+      join(process.cwd(), 'tests/e2e/fixtures/inline-rollup-prototype.png'),
+    )
     await rememberCanvasArtefact(PROJECT_ID, THREAD_ID, {
       title: 'Tool rollup approaches',
       mimeType: 'text/html',
-      body: '<!doctype html><title>Tool rollup approaches</title><h1>Approach C</h1>',
+      body: INLINE_PROTOTYPE_HTML,
       threadId: THREAD_ID,
       preview: `data:image/png;base64,${preview.toString('base64')}`,
     })
@@ -76,18 +160,58 @@ describe('ACP inline visualization reference', () => {
     const card = $('.message-canvas-previews .canvas-preview-card')
     await card.waitForExist({ timeout: 20_000 })
     await expect(card.$('.canvas-preview-title')).toHaveText('Tool rollup approaches')
-    expect(await card.$('.canvas-preview-image').getAttribute('src')).toContain(
-      'data:image/png;base64,',
+    await browser.waitUntil(
+      async () => (await card.getAttribute('data-canvas-state')) === 'interactive',
+      { timeout: 20_000, timeoutMsg: 'expected the inline canvas guest to become interactive' },
     )
-    await expect(card.$('button')).toHaveText('Open')
+    await expect(card.$('.canvas-inline-status')).toHaveText('Interactive')
+    await expect(card.$('.canvas-preview-open')).toHaveText('Open canvas')
+    expect(await card.$('.canvas-inline-webview').getAttribute('partition')).toContain(THREAD_ID)
+    expect(
+      await browser.execute(() => {
+        const webview = document.querySelector('.canvas-inline-webview')
+        return webview ? getComputedStyle(webview).display : null
+      }),
+    ).toEqual('flex')
     expect(await $('.messages-list').getText()).not.toContain('visualize')
     expect(await $('.messages-list').getText()).not.toContain(
       '/workspace/tool-rollup-approaches.html',
     )
+    expect(await $('#pane-files').getAttribute('hidden')).not.toEqual(null)
+
+    const selected = await browser.execute(async () => {
+      const webview = document.querySelector('.canvas-inline-webview') as {
+        executeJavaScript?: (source: string) => Promise<unknown>
+      } | null
+      await webview?.executeJavaScript?.(`document.querySelector('[data-choice="A"]')?.click()`)
+      return await webview?.executeJavaScript?.(
+        `document.querySelector('#selection')?.textContent ?? null`,
+      )
+    })
+    expect(selected).toEqual('Approach A')
+
+    await browser.execute(async () => {
+      const webview = document.querySelector('.canvas-inline-webview') as {
+        executeJavaScript?: (source: string) => Promise<unknown>
+      } | null
+      await webview?.executeJavaScript?.(`document.querySelector('[data-choice="C"]')?.click()`)
+    })
+
+    // ChromeDriver screenshots omit the out-of-process guest surface on macOS.
+    // Reveal the matching captured frame underneath for the visual reference;
+    // the live guest and its interaction were asserted immediately above.
+    await browser.execute(() => {
+      const webview = document.querySelector<HTMLElement>('.canvas-inline-webview')
+      const preview = document.querySelector<HTMLElement>(
+        '.canvas-inline-stage .canvas-preview-image',
+      )
+      if (webview) webview.style.opacity = '0'
+      if (preview) preview.style.visibility = 'visible'
+    })
 
     await savePreparedElementScreenshot('.messages-list', 'acp-inline-visualization-reference.png')
 
-    await card.$('button').click()
+    await card.$('.canvas-preview-open').click()
     await browser.waitUntil(
       async () =>
         (await browser.execute(

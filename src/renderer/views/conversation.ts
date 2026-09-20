@@ -35,6 +35,7 @@ import {
   getArtefactPreview,
   requestArtefactShow,
 } from '../canvas/artefact-previews.ts'
+import { createInlineArtefact } from '../canvas/inline-artefact.ts'
 import { artefactTitleFromUri } from '@shared/canvas/artefact.ts'
 import { getThreadById, getActiveThread, setQueuePaused } from '@shared/store/thread-helpers.ts'
 import { CONTAINER_RUN_ADOPT_EVENT } from '@shared/store/container-run-card.ts'
@@ -350,13 +351,21 @@ function syncToolRunMemberVisibility(msgEl: HTMLElement): void {
   msgEl.hidden = !hasVisibleBodyChild && !hasVisibleDirectChild
 }
 
-function syncMessageCanvasPreviews(msgEl: HTMLElement, msg: Message, threadId: string): void {
+function syncMessageCanvasPreviews(
+  msgEl: HTMLElement,
+  msg: Message,
+  projectId: string | null,
+  threadId: string,
+  api: ApiClient,
+): void {
   const body = msgEl.querySelector<HTMLElement>(':scope > .message-body')
   if (!body) return
   body.querySelector(':scope > .message-canvas-previews')?.remove()
 
   const cards = (msg.canvasArtefacts ?? []).flatMap((artefact) => {
-    const card = createCanvasPreviewCard(threadId, artefact.title)
+    const card = projectId
+      ? createInlineArtefact(api, projectId, threadId, artefact.title)
+      : createCanvasPreviewCard(threadId, artefact.title)
     return card ? [card] : []
   })
   if (cards.length > 0) {
@@ -2812,7 +2821,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       ...messageToolCardOpts(msg),
       ...(run ? { run, liveStepId: liveStepMessageId(thread) } : {}),
     })
-    syncMessageCanvasPreviews(msgEl, msg, threadId)
+    syncMessageCanvasPreviews(msgEl, msg, store.getState().activeProjectId, threadId, api)
     // A run's rollup lives on its anchor, so inserting one message changes what
     // a *different* message renders: a member joining gives the anchor a new
     // step, and an anchor arriving during the newest-first backfill takes back
@@ -3329,7 +3338,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       const msg = thread?.messages.find((message) => message.id === mid)
       const msgEl = list.querySelector<HTMLElement>(`[data-message-id="${mid}"]`)
       if (thread && msg?.role === 'assistant' && msgEl) {
-        syncMessageCanvasPreviews(msgEl, msg, thread.id)
+        syncMessageCanvasPreviews(msgEl, msg, store.getState().activeProjectId, thread.id, api)
         scrollToBottom()
       }
     }),
