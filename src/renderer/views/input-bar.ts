@@ -1632,8 +1632,7 @@ export function mountInputBar(
         return
       }
     }
-    const branchStatus = await api.git.branchStatus(projectId, id)
-    const currentBranch = branchStatus.currentBranch
+    const currentBranch = await api.git.currentBranch(projectId, id)
     const thread = getThreadById(store, id)
     const threadBranch = thread?.gitBranch
     const isolatedWorktree = thread !== undefined && thread.worktree !== undefined

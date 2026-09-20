@@ -1365,6 +1365,8 @@ const api: ApiClient = {
       ipcRenderer.invoke('git:committed-changes', projectId, threadId),
     committedFileDiff: (projectId: string, threadId: string, path: string) =>
       ipcRenderer.invoke('git:committed-file-diff', projectId, threadId, path),
+    currentBranch: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('git:current-branch', projectId, threadId),
     branchStatus: (projectId: string, threadId: string, forBranch?: string) =>
       ipcRenderer.invoke('git:branch-status', projectId, threadId, forBranch),
     promptState: (projectId: string, threadId: string) =>

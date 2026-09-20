@@ -276,6 +276,7 @@ import {
   getBranches,
   getCommittedChanges,
   getCommittedFileDiff,
+  getCurrentBranchName,
   getDefaultBranch,
   getGitChangeStats,
   getGitFileDiff,
@@ -2543,6 +2544,11 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const [projectId, threadId, filePath] = parseIpcArgs(threadPathArgs, rawArgs)
     const root = await resolveWatchedGitRoot(projectId, threadId)
     return getGitWorkingFileDiff(filePath, root)
+  })
+  ipcMain.handle('git:current-branch', async (event, ...rawArgs) => {
+    assertMainFrameSender(event, win)
+    const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
+    return getCurrentBranchName(await resolveWatchedGitRoot(projectId, threadId))
   })
   ipcMain.handle('git:branch-status', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
