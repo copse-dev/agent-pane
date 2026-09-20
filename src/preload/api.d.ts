@@ -451,6 +451,12 @@ export interface ApiClient {
     onShowArtefact: (handler: (identity: CanvasArtefactIdentity) => void) => () => void
     /** Artefacts this thread saved in any session, newest last. */
     listArtefacts: (projectId: string, threadId: string) => Promise<CanvasArtefactSummary[]>
+    /** Read one saved artefact without opening it in the Browser pane. */
+    readArtefact: (
+      projectId: string,
+      threadId: string,
+      title: string,
+    ) => Promise<CanvasArtefact | null>
     /**
      * Render a saved artefact again; it arrives on {@link onArtefact} like a
      * fresh one. False when nothing is stored under that title any more.

@@ -1750,6 +1750,17 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     return loadCanvasArtefactSummaries(id, thread)
   })
   ipcMain.handle(
+    'canvas:read-artefact',
+    (event, projectId: unknown, threadId: unknown, title: unknown) => {
+      assertMainFrameSender(event, win)
+      const [id, thread, name] = parseIpcArgs(
+        z.tuple([zProjectId, zThreadId, z.string().trim().min(1).max(200)]),
+        [projectId, threadId, title],
+      )
+      return readStoredCanvasArtefact(id, thread, name)
+    },
+  )
+  ipcMain.handle(
     'canvas:reopen-artefact',
     async (event, projectId: unknown, threadId: unknown, title: unknown) => {
       assertMainFrameSender(event, win)
