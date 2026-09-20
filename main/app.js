@@ -27506,6 +27506,7 @@ var init_demo_api = __esm({
       ui: [],
       followUps: [],
       capabilities: [],
+      instructionSources: [],
       permissions: []
     };
     DEMO_PLUGINS = [
@@ -29274,6 +29275,7 @@ var init_plugin_manifest = __esm({
       uiContributions: [],
       followUps: [],
       capabilities: [],
+      instructionSources: [],
       permissions: []
     };
   }
@@ -61074,6 +61076,13 @@ function mountSettingsDialog(store2, api2) {
         label: "Capabilities",
         count: contributions.capabilities.length,
         title: contributions.capabilities.map((c2) => `${c2.title} (${c2.name})`).join(", ")
+      });
+    }
+    if (contributions.instructionSources.length > 0) {
+      chips.push({
+        label: "Instruction sources",
+        count: contributions.instructionSources.length,
+        title: contributions.instructionSources.map((source) => `${source.title} (${source.name})`).join(", ")
       });
     }
     if (contributions.permissions.length > 0) {
