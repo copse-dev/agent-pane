@@ -304,6 +304,27 @@ describe('ask_user dialog (component)', () => {
     assert.equal(dialog().open, false)
   })
 
+  it('responds with blank answers and advances the queue on Escape', () => {
+    const { api, harness } = stubApi()
+    mount(api)
+    harness.emit({
+      id: 'q-escape',
+      questions: [{ question: 'Which DB?' }, { question: 'Async?' }],
+    })
+    harness.emit({ id: 'q-next', questions: [{ question: 'Next?' }] })
+
+    // happy-dom does not synthesize the native `cancel` event from an Escape
+    // keydown (it has no top-layer/dialog implementation at all — see the
+    // file header), so dispatch the event <dialog> fires itself directly,
+    // the same way the real Escape path reaches the app's listener.
+    dialog().dispatchEvent(new Event('cancel', { cancelable: true }))
+
+    assert.deepEqual(harness.responses, [{ id: 'q-escape', answers: ['', ''] }])
+    // The agent is not left hanging, and the next queued question surfaces.
+    assert.equal(dialog().open, true)
+    assert.equal(document.querySelector('.ask-user-question')?.textContent, 'Next?')
+  })
+
   it('queues a second request and shows it after the first is answered', () => {
     const { api, harness } = stubApi()
     mount(api)
