@@ -4,6 +4,7 @@ import { mkdtempSync, realpathSync, writeFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { localWorkspaceFs } from './local-workspace-fs.ts'
+import { WorkspaceFileTooLargeError } from './workspace-fs.ts'
 import {
   proposedRasterBytes,
   readWorkspaceFileContent,
@@ -48,6 +49,22 @@ describe('localWorkspaceFs', () => {
     const entries = await localWorkspaceFs.readdirWithTypes(dir)
     assert.deepEqual(entries.map((e) => e.name).sort(), ['f.ts'])
     assert.equal(entries[0]?.isDir, false)
+  })
+
+  it('checks a binary size before reading it', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'copse-wfs-'))
+    const file = join(dir, 'capture.mp4')
+    writeFileSync(file, 'video bytes')
+
+    assert.equal(await localWorkspaceFs.sizeOf(file), 11)
+    assert.deepEqual(await localWorkspaceFs.materializeToLocal(file), {
+      path: file,
+      sizeBytes: 11,
+    })
+    await assert.rejects(
+      () => localWorkspaceFs.readFileBytes(file, { maxBytes: 10 }),
+      WorkspaceFileTooLargeError,
+    )
   })
 
   it('realpath and exists agree for a normal file', async () => {
