@@ -21787,6 +21787,7 @@ function getToolDisplayName(name, tense = "done") {
   const known = TOOL_DISPLAY_NAMES[name];
   if (known) return pickLabel(known, tense);
   const mcp = parseMcp(name);
+  if (mcp?.tool === "startup") return `${mcp.server} startup`;
   if (mcp) return formatToolNameFallback(mcp.tool);
   const stripped = name.replace(/^(?:Mcp\.[^.]+\.|mcp__[^_]+__)/i, "");
   if (stripped !== name) return formatToolNameFallback(stripped);
@@ -102695,6 +102696,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     sessionWriter?.schedule();
   }
   const pendingProjectWaits = /* @__PURE__ */ new Set();
+  const pendingArtefactReopens = /* @__PURE__ */ new Map();
   function closeAllMenus() {
     for (const tab of tabs.values()) tab.closeMenu();
   }
@@ -102944,17 +102946,23 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
   }
   function showArtefact(title, threadId) {
     const tab = artefactTabFor(title, threadId);
-    if (!tab) return false;
+    if (!tab) return void 0;
     openRightPanel(store2, "browser");
-    tab.pendingUrl = null;
+    if (tab.artefactContentReady) tab.pendingUrl = null;
     setActiveTab(tab.id);
-    return true;
+    return tab;
   }
-  async function reopenStoredArtefact(title, threadId) {
-    const projectId = store2.getState().activeProjectId;
-    if (!api2 || !threadId || !projectId) return;
-    const reopened = await api2.canvas.reopenArtefact(projectId, threadId, title).catch(() => false);
-    if (!reopened) showToast(`"${title}" is no longer available`);
+  function reopenStoredArtefact(title, threadId, projectId) {
+    if (!api2) return Promise.resolve(false);
+    const key = JSON.stringify([projectId, threadId, title]);
+    const pending = pendingArtefactReopens.get(key);
+    if (pending) return pending;
+    const request = api2.canvas.reopenArtefact(projectId, threadId, title).catch(() => false);
+    pendingArtefactReopens.set(key, request);
+    void request.finally(() => {
+      if (pendingArtefactReopens.get(key) === request) pendingArtefactReopens.delete(key);
+    });
+    return request;
   }
   function urlTabFor(url2, partition) {
     for (const tab of tabs.values()) {
@@ -103012,6 +103020,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     tab.artefactTitle = artefact.title;
     tab.artefactThreadId = artefact.owner?.threadId ?? artefact.threadId ?? null;
     tab.artefactProjectId = artefact.owner?.projectId ?? store2.getState().activeProjectId;
+    tab.artefactContentReady = true;
     tab.urlInput.value = "";
     tab.urlInput.placeholder = artefact.title;
     syncTabLabel(tab);
@@ -103173,6 +103182,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       artefactTitle: null,
       artefactThreadId: null,
       artefactProjectId: null,
+      artefactContentReady: false,
       closeMenu: () => {
         setMenuOpen(false);
       }
@@ -103392,6 +103402,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
         tab.artefactTitle = entry.artefactTitle;
         tab.artefactThreadId = entry.artefactThreadId ?? null;
         tab.artefactProjectId = entry.artefactProjectId ?? null;
+        tab.artefactContentReady = Boolean(entry.url && entry.url !== "about:blank");
         tab.urlInput.placeholder = entry.artefactTitle;
       }
       if (entry.url && entry.url !== "about:blank") {
@@ -103441,7 +103452,9 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     }
     if (!await whenProjectActive()) return;
     const projectId = entry.artefactProjectId ?? store2.getState().activeProjectId;
-    const reopened = projectId ? await api2.canvas.reopenArtefact(projectId, threadId, title).catch(() => false) : false;
+    const tab = tabs.get(tabId);
+    if (projectId && tab && !tab.artefactProjectId) tab.artefactProjectId = projectId;
+    const reopened = projectId ? await reopenStoredArtefact(title, threadId, projectId) : false;
     if (!reopened) removeTab(tabId);
   }
   function applyStoredSession(session) {
@@ -103518,8 +103531,16 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     store2.on("browser_url_bar_focus_requested", focusUrlBar),
     store2.on("canvas_artefact_requested", openArtefact),
     store2.on("canvas_artefact_show_requested", (identity) => {
-      if (showArtefact(identity.title, identity.threadId)) return;
-      void reopenStoredArtefact(identity.title, identity.threadId);
+      const tab = showArtefact(identity.title, identity.threadId);
+      if (tab?.artefactContentReady) return;
+      const projectId = tab?.artefactProjectId ?? store2.getState().activeProjectId;
+      if (!identity.threadId || !projectId) return;
+      if (tab && !tab.artefactProjectId) tab.artefactProjectId = projectId;
+      void reopenStoredArtefact(identity.title, identity.threadId, projectId).then((reopened) => {
+        if (reopened) return;
+        if (tab && !tab.artefactContentReady) removeTab(tab.id);
+        showToast(`"${identity.title}" is no longer available`);
+      });
     }),
     // cmd/ctrl click and target=_blank links inside a guide open as a new
     // background tab (main blocks the popup window and forwards the URL here).
