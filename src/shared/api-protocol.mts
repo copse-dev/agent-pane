@@ -36,4 +36,5 @@
 // v9 versions Android device kinds and input in the simulator desktop API.
 // v10 conservatively versions optional local-device presentation intent.
 // v11 versions the instruction-source contributions exposed in plugin summaries.
-export const API_PROTOCOL_VERSION = 11 as const
+// v12 conservatively versions optional tier-pricing fallback metadata in usage summaries.
+export const API_PROTOCOL_VERSION = 12 as const
