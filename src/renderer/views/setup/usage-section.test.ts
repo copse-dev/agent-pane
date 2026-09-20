@@ -283,6 +283,19 @@ describe('renderModelTable alignment', () => {
     // would map to the wrong columns.
     assert.equal(cloud.querySelectorAll('thead th').length, cloudCols.length)
   })
+
+  it('labels a standard-rate estimate when the used tier has no catalog rate', () => {
+    const host = document.createElement('div')
+    renderModelTable(
+      host,
+      'Cloud models',
+      [row('gpt-4o', { estimatedCostUsd: 0, tierPricingFallback: true })],
+      'none',
+    )
+    const estimate = host.querySelector('.usage-estimated')
+    assert.equal(estimate?.textContent, '(standard rate)')
+    assert.match(estimate.getAttribute('title') ?? '', /no published catalog rate/)
+  })
 })
 
 describe('renderPlanWorthItSection', () => {

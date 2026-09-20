@@ -48,7 +48,7 @@ const TRACKED_MODELS = [
 // LiteLLM entries have many optional fields; we only validate what the catalog
 // needs. `litellm_provider` is checked separately because the allowed set is
 // id-specific (claude-* → 'anthropic', gpt-* → 'openai').
-const LitellmEntry = z.object({
+const LitellmEntry = z.looseObject({
   input_cost_per_token: z.number().positive(),
   output_cost_per_token: z.number().positive(),
   max_input_tokens: z.number().int().positive(),
@@ -58,6 +58,15 @@ const LitellmEntry = z.object({
   cache_creation_input_token_cost: z.number().positive().optional(),
 })
 
+const TierRate = z.number().nonnegative()
+
+interface TierPricing {
+  inputPricePerMTok: number
+  outputPricePerMTok: number
+  cacheReadPricePerMTok?: number
+  cacheCreationPricePerMTok?: number
+}
+
 const LitellmCatalog = z.record(z.string(), z.unknown())
 
 interface ResolvedEntry {
@@ -65,6 +74,7 @@ interface ResolvedEntry {
   outputPricePerMTok: number
   cacheReadPricePerMTok?: number
   cacheCreationPricePerMTok?: number
+  serviceTierPricing?: Partial<Record<'flex' | 'priority', TierPricing>>
   contextWindow: number
   maxOutputTokens: number
 }
@@ -82,6 +92,52 @@ function expectedProviderFor(model: string): 'anthropic' | 'openai' {
 // quoted precision on every public price sheet (cents per MTok, ~2-3 decimals).
 function perMTok(perToken: number): number {
   return Number((perToken * 1_000_000).toPrecision(6))
+}
+
+export function resolveTierPricing(
+  input: number | undefined,
+  output: number | undefined,
+  cacheRead: number | undefined,
+  cacheCreation: number | undefined,
+): TierPricing | undefined {
+  // A half-published tier rate cannot estimate a call accurately. Omit the
+  // whole tier so the runtime falls back to standard and reports that fact.
+  if (input === undefined || output === undefined) return undefined
+  return {
+    inputPricePerMTok: perMTok(input),
+    outputPricePerMTok: perMTok(output),
+    ...(cacheRead !== undefined ? { cacheReadPricePerMTok: perMTok(cacheRead) } : {}),
+    ...(cacheCreation !== undefined ? { cacheCreationPricePerMTok: perMTok(cacheCreation) } : {}),
+  }
+}
+
+function optionalTierRate(entry: Record<string, unknown>, field: string): number | undefined {
+  const parsed = TierRate.safeParse(entry[field])
+  return parsed.success ? parsed.data : undefined
+}
+
+/** Decode optional tier fields independently so malformed tier metadata never drops standard rates. */
+export function tierPricingFromEntry(
+  entry: Record<string, unknown>,
+): ResolvedEntry['serviceTierPricing'] {
+  const flex = resolveTierPricing(
+    optionalTierRate(entry, 'input_cost_per_token_flex'),
+    optionalTierRate(entry, 'output_cost_per_token_flex'),
+    optionalTierRate(entry, 'cache_read_input_token_cost_flex'),
+    optionalTierRate(entry, 'cache_creation_input_token_cost_flex'),
+  )
+  const priority = resolveTierPricing(
+    optionalTierRate(entry, 'input_cost_per_token_priority'),
+    optionalTierRate(entry, 'output_cost_per_token_priority'),
+    optionalTierRate(entry, 'cache_read_input_token_cost_priority'),
+    optionalTierRate(entry, 'cache_creation_input_token_cost_priority'),
+  )
+  return flex || priority
+    ? {
+        ...(flex ? { flex } : {}),
+        ...(priority ? { priority } : {}),
+      }
+    : undefined
 }
 
 async function fetchCatalog(): Promise<unknown> {
@@ -119,6 +175,7 @@ function resolveEntries(raw: unknown): Record<string, ResolvedEntry> {
       )
       continue
     }
+    const serviceTierPricing = tierPricingFromEntry(parsed.data)
     out[model] = {
       inputPricePerMTok: perMTok(parsed.data.input_cost_per_token),
       outputPricePerMTok: perMTok(parsed.data.output_cost_per_token),
@@ -128,6 +185,7 @@ function resolveEntries(raw: unknown): Record<string, ResolvedEntry> {
       ...(parsed.data.cache_creation_input_token_cost !== undefined
         ? { cacheCreationPricePerMTok: perMTok(parsed.data.cache_creation_input_token_cost) }
         : {}),
+      ...(serviceTierPricing !== undefined ? { serviceTierPricing } : {}),
       contextWindow: parsed.data.max_input_tokens,
       maxOutputTokens: parsed.data.max_output_tokens,
     }
@@ -162,7 +220,10 @@ function renderFile(entries: Record<string, ResolvedEntry>, today: string): stri
         e.cacheCreationPricePerMTok !== undefined
           ? `, cacheCreationPricePerMTok: ${String(e.cacheCreationPricePerMTok)}`
           : ''
-      return `  '${key}': { inputPricePerMTok: ${String(e.inputPricePerMTok)}, outputPricePerMTok: ${String(e.outputPricePerMTok)}${cacheRead}${cacheCreation}, contextWindow: ${String(e.contextWindow)}, maxOutputTokens: ${String(e.maxOutputTokens)} },`
+      const tierPricing = e.serviceTierPricing
+        ? `, serviceTierPricing: ${JSON.stringify(e.serviceTierPricing)}`
+        : ''
+      return `  '${key}': { inputPricePerMTok: ${String(e.inputPricePerMTok)}, outputPricePerMTok: ${String(e.outputPricePerMTok)}${cacheRead}${cacheCreation}${tierPricing}, contextWindow: ${String(e.contextWindow)}, maxOutputTokens: ${String(e.maxOutputTokens)} },`
     })
     .join('\n')
   return `// AUTO-GENERATED by scripts/sync-model-catalog.mts. Do not edit by hand.
@@ -174,6 +235,7 @@ export interface CatalogEntry {
   outputPricePerMTok: number
   cacheReadPricePerMTok?: number
   cacheCreationPricePerMTok?: number
+  serviceTierPricing?: Partial<Record<'flex' | 'priority', { inputPricePerMTok: number; outputPricePerMTok: number; cacheReadPricePerMTok?: number; cacheCreationPricePerMTok?: number }>>
   contextWindow: number
   maxOutputTokens: number
 }
@@ -204,7 +266,9 @@ async function main(): Promise<void> {
   )
 }
 
-main().catch((err: unknown) => {
-  console.error(err instanceof Error ? err.message : String(err))
-  process.exit(1)
-})
+if (process.argv[1]?.endsWith('sync-model-catalog.mts')) {
+  main().catch((err: unknown) => {
+    console.error(err instanceof Error ? err.message : String(err))
+    process.exit(1)
+  })
+}

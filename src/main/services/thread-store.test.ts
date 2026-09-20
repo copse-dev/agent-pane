@@ -132,6 +132,28 @@ describe('thread-store', () => {
     assert.deepEqual(loaded[0], t)
   })
 
+  it('round-trips tier buckets in per-model usage metadata', async () => {
+    const t = thread('tiered', {
+      usage: {
+        inputTokens: 600,
+        outputTokens: 60,
+        byModel: {
+          'gpt-4o': {
+            inputTokens: 600,
+            outputTokens: 60,
+            serviceTierUsage: {
+              flex: { inputTokens: 100, outputTokens: 10 },
+              priority: { inputTokens: 200, outputTokens: 20 },
+            },
+          },
+        },
+      },
+    })
+    await saveProjectThread('proj-1', t)
+    const [loaded] = await loadProjectThreads('proj-1')
+    assert.deepEqual(loaded?.usage.byModel, t.usage.byModel)
+  })
+
   it('round-trips optional worktree metadata while legacy threads remain shared', async () => {
     await saveProjectThread('proj-1', thread('legacy'))
     const isolated = thread('isolated', {

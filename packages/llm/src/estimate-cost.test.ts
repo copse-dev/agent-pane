@@ -1,6 +1,11 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { estimateUsageCost, formatThreadUsageCost, costForModelUsage } from './estimate-cost.ts'
+import {
+  estimateUsageCost,
+  formatThreadUsageCost,
+  costForModelUsage,
+  costForModelUsageWithDetails,
+} from './estimate-cost.ts'
 
 describe('estimateUsageCost', () => {
   it('prices cloud models only', () => {
@@ -144,5 +149,106 @@ describe('estimateUsageCost', () => {
       ),
       '~$10.00',
     )
+  })
+
+  it('prices mixed standard, flex, and priority turns for one model independently', () => {
+    const cost = costForModelUsage(
+      'openrouter:vendor/tiered',
+      {
+        inputTokens: 3_000_000,
+        outputTokens: 3_000_000,
+        serviceTierUsage: {
+          flex: { inputTokens: 1_000_000, outputTokens: 1_000_000 },
+          priority: { inputTokens: 1_000_000, outputTokens: 1_000_000 },
+        },
+      },
+      {
+        'openrouter:vendor/tiered': {
+          inputPricePerMTok: 10,
+          outputPricePerMTok: 20,
+          serviceTierPricing: {
+            flex: { inputPricePerMTok: 5, outputPricePerMTok: 10 },
+            priority: { inputPricePerMTok: 20, outputPricePerMTok: 40 },
+          },
+        },
+      },
+    )
+    // Standard: $30, flex: $15, priority: $60. Applying one latest tier to
+    // all 3M tokens would be materially wrong.
+    assert.equal(cost, 105)
+  })
+
+  it('uses tier cache rates rather than falling back to standard cache prices', () => {
+    const cost = costForModelUsage(
+      'openrouter:vendor/tiered-cache',
+      {
+        inputTokens: 1_000_000,
+        outputTokens: 0,
+        cacheReadTokens: 1_000_000,
+        serviceTierUsage: {
+          flex: { inputTokens: 1_000_000, outputTokens: 0, cacheReadTokens: 1_000_000 },
+        },
+      },
+      {
+        'openrouter:vendor/tiered-cache': {
+          inputPricePerMTok: 10,
+          outputPricePerMTok: 20,
+          cacheReadPricePerMTok: 1,
+          serviceTierPricing: {
+            flex: { inputPricePerMTok: 5, outputPricePerMTok: 10, cacheReadPricePerMTok: 0.5 },
+          },
+        },
+      },
+    )
+    assert.equal(cost, 0.5)
+  })
+
+  it('marks a missing tier price when explicitly falling back to standard pricing', () => {
+    const result = costForModelUsageWithDetails(
+      'openrouter:vendor/no-flex-price',
+      {
+        inputTokens: 1_000_000,
+        outputTokens: 1_000_000,
+        serviceTierUsage: { flex: { inputTokens: 1_000_000, outputTokens: 1_000_000 } },
+      },
+      {
+        'openrouter:vendor/no-flex-price': { inputPricePerMTok: 10, outputPricePerMTok: 20 },
+      },
+    )
+    assert.deepEqual(result, { costUsd: 30, tierPricingFallback: true })
+    assert.equal(
+      estimateUsageCost(
+        {
+          'openrouter:vendor/no-flex-price': {
+            inputTokens: 1_000_000,
+            outputTokens: 1_000_000,
+            serviceTierUsage: { flex: { inputTokens: 1_000_000, outputTokens: 1_000_000 } },
+          },
+        },
+        {
+          'openrouter:vendor/no-flex-price': { inputPricePerMTok: 10, outputPricePerMTok: 20 },
+        },
+      ),
+      '~$30.00 (standard tier fallback)',
+    )
+  })
+
+  it('keeps a published zero tier rate distinct from a missing tier price', () => {
+    const result = costForModelUsageWithDetails(
+      'openrouter:vendor/free-flex',
+      {
+        inputTokens: 1_000_000,
+        outputTokens: 1_000_000,
+        serviceTierUsage: { flex: { inputTokens: 1_000_000, outputTokens: 1_000_000 } },
+      },
+      {
+        'openrouter:vendor/free-flex': {
+          inputPricePerMTok: 10,
+          outputPricePerMTok: 20,
+          serviceTierPricing: { flex: { inputPricePerMTok: 0, outputPricePerMTok: 0 } },
+        },
+      },
+    )
+    assert.deepEqual(result, { costUsd: 0, tierPricingFallback: false })
   })
 })

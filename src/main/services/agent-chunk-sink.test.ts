@@ -62,6 +62,26 @@ describe('createAgentChunkSink', () => {
     assert.equal(event['model'], 'claude-opus-4-8')
   })
 
+  it('persists requested and actual service-tier evidence for ledger pricing', () => {
+    storageSet(USAGE_EVENTS_STORAGE_KEY, [])
+    const host: AgentHost<StreamChunk> = { emit: () => undefined }
+    const sink = createAgentChunkSink('thread-tier', host)
+
+    sink({
+      type: 'usage',
+      model: 'gpt-4o',
+      inputTokens: 100,
+      outputTokens: 20,
+      requestedServiceTier: 'flex',
+      responseServiceTier: 'priority',
+    })
+
+    const [event] = recordArrayOrEmpty(storageGet(USAGE_EVENTS_STORAGE_KEY))
+    if (event === undefined) assert.fail('expected a persisted usage event')
+    assert.equal(event['requestedServiceTier'], 'flex')
+    assert.equal(event['responseServiceTier'], 'priority')
+  })
+
   it('records usage against the execution context project for background runs', () => {
     storageSet(USAGE_EVENTS_STORAGE_KEY, [])
     storageSet('activeProjectId', 'project-being-viewed')

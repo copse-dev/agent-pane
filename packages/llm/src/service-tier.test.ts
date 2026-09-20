@@ -5,6 +5,7 @@ import {
   SERVICE_TIER_CHOICES,
   isServiceTier,
   serviceTierBody,
+  usageServiceTierForCall,
 } from './service-tier.ts'
 
 describe('serviceTierBody', () => {
@@ -44,6 +45,17 @@ describe('isServiceTier', () => {
     assert.equal(isServiceTier(''), false)
     // The API is case-sensitive.
     assert.equal(isServiceTier('FLEX'), false)
+  })
+})
+
+describe('usageServiceTierForCall', () => {
+  it('uses the completed response tier over the requested tier', () => {
+    assert.equal(usageServiceTierForCall('flex', 'priority'), 'priority')
+  })
+
+  it('uses the requested tier only when the response did not report one', () => {
+    assert.equal(usageServiceTierForCall('flex', undefined), 'flex')
+    assert.equal(usageServiceTierForCall('priority', 'default'), undefined)
   })
 })
 

@@ -347,6 +347,15 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
           ...(chunk.cacheCreationTokens !== undefined
             ? { cacheCreationTokens: chunk.cacheCreationTokens }
             : {}),
+          ...(chunk.requestedServiceTier !== undefined
+            ? { requestedServiceTier: chunk.requestedServiceTier }
+            : {}),
+          ...(chunk.responseServiceTier !== undefined
+            ? { responseServiceTier: chunk.responseServiceTier }
+            : {}),
+          ...(chunk.serviceTierUsage !== undefined
+            ? { serviceTierUsage: chunk.serviceTierUsage }
+            : {}),
         }
         addUsageDelta(store, threadId, delta)
         break
