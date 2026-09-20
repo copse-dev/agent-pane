@@ -63,6 +63,40 @@ describe('PR panel (mock gh)', () => {
     // would falsely couple backend files to this spec.
     await expect(await $('.pr-list-title*=Tidy up workspace status polling')).toBeDisplayed()
 
+    // Issue #2482: a free-text filter narrows the visible groups. The workspace
+    // PR's branch name hides the now-empty "From chat" group entirely, leaving
+    // only the matching row.
+    const filterInput = await $('.pr-pane-filter')
+    await expect(filterInput).toHaveAttribute('placeholder', 'Filter pull requests')
+    await filterInput.click()
+    await filterInput.setValue('chore/workspace-status')
+    await browser.waitUntil(async () => (await $$('.pr-list-row')).length === 1, {
+      timeout: 10_000,
+      timeoutMsg: 'expected the filter to narrow to a single matching row',
+    })
+    await expect(await $('.pr-list-title*=Tidy up workspace status polling')).toBeDisplayed()
+    await expect(await $('.git-changes-section-title*=From chat')).not.toBeExisting()
+    await saveElementScreenshot('#pane-files', 'pr-panel-filter-match.png')
+
+    // A query matching nothing shows the empty state instead of any group.
+    await filterInput.setValue('zzz-nonexistent-pr-999')
+    await browser.waitUntil(
+      async () => /no pull requests match/i.test(await (await $('.pr-list-body')).getText()),
+      { timeout: 10_000, timeoutMsg: 'expected the no-matches empty state' },
+    )
+    await expect(await $$('.pr-list-row')).toBeElementsArrayOfSize(0)
+    await saveElementScreenshot('#pane-files', 'pr-panel-filter-empty.png')
+
+    // Escape clears the filter and restores every group, keeping focus on the
+    // input, so the rest of this test continues against the unfiltered list.
+    await browser.keys('Escape')
+    await expect(filterInput).toHaveValue('')
+    await browser.waitUntil(async () => (await $$('.pr-list-row')).length >= 2, {
+      timeout: 10_000,
+      timeoutMsg: 'expected rows to return after clearing the filter',
+    })
+    await expect(filterInput).toBeFocused()
+
     // CI rollup dots ride along with the workspace listing: #88 fails, the
     // chat-linked #42 passes — both shown without a per-row query.
     await expect(await $('.pr-list-ci-failure')).toBeDisplayed()

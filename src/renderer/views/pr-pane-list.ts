@@ -33,6 +33,20 @@ export function prListDisplayTitle(pr: GhPrSummary): string {
 }
 
 /**
+ * Whether `pr` matches a user-typed filter query (issue #2482). Case-insensitive
+ * against the PR number (with or without a leading `#`), title, head branch name,
+ * and author login. An empty/whitespace-only query matches everything.
+ */
+export function prMatchesFilter(pr: GhPrSummary, query: string): boolean {
+  const trimmed = query.trim()
+  if (!trimmed) return true
+  const needle = (trimmed.startsWith('#') ? trimmed.slice(1) : trimmed).toLocaleLowerCase()
+  if (!needle) return true
+  const haystacks = [String(pr.number), pr.title, pr.headRefName, pr.authorLogin]
+  return haystacks.some((value) => value?.toLocaleLowerCase().includes(needle) ?? false)
+}
+
+/**
  * Merge chat-linked refs with fetched PR pools into one de-duplicated list.
  * Linked refs lead (enriched from the pools when present, else a placeholder
  * summary); remaining pool PRs follow in order.
