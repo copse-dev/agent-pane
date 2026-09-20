@@ -1659,7 +1659,7 @@ jobs:
   screenshot-artifacts:
     needs: [build, e2e]
     if: >-
-      always() && needs.build.result == 'success' && needs.e2e.result == 'success' &&
+      !cancelled() && needs.build.result == 'success' && needs.e2e.result == 'success' &&
       github.event_name == 'pull_request'
     runs-on: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
     # Raised from 10 to cover the checkout + dependency install that the noise
@@ -1767,40 +1767,12 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  # Single aggregate gate. Require ONLY this check in branch protection: it
-  # `needs` every other job (and e2e's result aggregates all 8 shards), so it
-  # turns the whole pipeline into one green/red status. New jobs or e2e shard
-  # counts can change without touching the required-checks list — just add the
-  # job to `needs` here. `if: !cancelled()` so this runs even when an upstream
-  # job fails/is skipped; we then assert none failed or were cancelled. Fork PRs
-  # have their own explicit safe-tier result below: they may pass only after
-  # `precheck` actually ran on a GitHub-hosted runner, never merely because all
-  # code-executing jobs were skipped.
-  #
-  # Concurrency supersession: top-level `cancel-in-progress` cancels in-flight
-  # jobs when a newer push/sync arrives on the same ref. Those cancelled jobs
-  # must not paint the superseded SHA's `CI Passed` red — tip CI is the gate
-  # that matters. Two different mechanisms cover that, and which one applies
-  # depends on whether the RUN was cancelled or only some of its JOBS were:
-  #
-  #   - Whole run cancelled (concurrency supersession, manual cancel): this job
-  #     is SKIPPED by the `if:` below and never reports. The superseding run's
-  #     own `CI Passed` is the one that counts.
-  #   - Individual jobs cancelled while the run itself lives on (skip-mode's
-  #     check/build/e2e — issue #609 — matrix cancels, a runner losing
-  #     communication): this job still runs, and the `ANY_CANCELLED` branch in
-  #     the step below decides. It detects supersession by (1) comparing this
-  #     run's head SHA to the live tip, and (2) looking for a newer CI run on
-  #     the same head SHA (e.g. a delayed nightly schedule sharing
-  #     `ci-refs/heads/main` with a tip push). A job-level cancel still at tip
-  #     with no newer run fails. Sibling-matrix cancels after a real shard
-  #     failure fail because `ANY_FAILURE` is true first.
-  #
-  # KNOWN CONSEQUENCE of the first bullet: a skipped required check satisfies
-  # branch protection, so a manually cancelled run now reads as satisfied rather
-  # than red. That is a deliberate trade for unwedging the concurrency group
-  # (see the `if:` below); the case it costs is a human cancelling a run they
-  # do not intend to re-run, which the next push re-gates anyway.
+  # Required aggregate: cancellation must produce failure/cancelled, never
+  # skipped (GitHub accepts skipped required checks). Keep this tiny job on
+  # hosted runners, independent of SELF_HOSTED_CHECKS: the former always()
+  # gate wedged canceled runs behind the offline/saturated fleet (#1669).
+  # No checkout, dependencies, network lookups or token are needed here.
+  # See docs/plans/ci-cancellation-gate.md for the acceptance evidence (#2520).
   ci-passed:
     # A push to trunk (`main`) intentionally skips the expensive tier. Give that
     # run a distinct check context so its green result on the same head SHA
@@ -1832,155 +1804,69 @@ jobs:
       github.event.pull_request.head.repo.full_name != github.repository) && 'Fork CI Passed' ||
       github.event_name == 'push' && github.ref == 'refs/heads/main' && 'Develop CI Passed' ||
       'CI Passed' }}
-    # NOT `always()`. That is true even when the RUN is cancelled, so GitHub
-    # still creates and queues this job on a run that is being torn down — and
-    # `runs-on` below prefers the self-hosted fleet, where it can then wait for
-    # a runner that is never coming. A queued job keeps its run out of a
-    # terminal state, the run keeps holding the `ci-<pr>` concurrency group, and
-    # the run that superseded it therefore never starts: it sits `pending` with
-    # zero jobs created. Observed on #1669, where promoting a draft cancelled
-    # the in-flight run and CI was wedged for 114 minutes — until a fleet runner
-    # freed up and the orphan finally ran, correctly reporting "superseded" in
-    # about five seconds. That is the point: the job was never broken, it just
-    # should not have been queued for a runner at all on a run nobody was
-    # waiting for. Meanwhile a normal cancel is accepted (202) but does not
-    # dequeue it, and `force-cancel` is the only manual way out.
-    #
-    # `!cancelled()` keeps everything `always()` was buying — this still runs
-    # when an upstream job FAILS or is SKIPPED, which the default `success()`
-    # would not — and differs only on a cancelled run, where being skipped is
-    # what lets the run finish and release the group. GitHub documents this
-    # exact substitution as the fix for `always()` hangs.
-    if: ${{ !cancelled() }}
+    # Evaluate even after cancellation, including cancellation while upstream
+    # jobs are queued. The first step turns that state into an explicit failure.
+    if: ${{ always() }}
     needs: [precheck, check, bench, build, e2e, screenshot-artifacts]
-    # Tiny aggregate gate. Hosted by default; SELF_HOSTED_CHECKS=copse-checks
-    # opts it onto the self-hosted check fleet. Fails closed either way: if the fleet
-    # is saturated this stays pending (never green), so it can't wave a run
-    # through without its required status check.
-    #
-    # "Stays pending" is the right answer for a LIVE run and the wrong one for a
-    # cancelled run, where it wedges the concurrency group — which is why the
-    # `if:` above must never go back to `always()` while this prefers the fleet.
-    # Pinning this one job to `ubuntu-latest` is the other way to buy that (it
-    # would start in seconds and could never queue behind the fleet), at roughly
-    # one billed hosted minute per run; deliberately not taken.
-    #
-    # Fork PRs go to GitHub-hosted regardless: fork runs must stay off the
-    # fleet entirely, and the fleet's runner group should not serve public-repo
-    # jobs anyway — routing there would queue this gate forever.
-    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-latest' || vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
-    timeout-minutes: 15
-    permissions:
-      contents: read
-      pull-requests: read
-      actions: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
     steps:
-      - name: Check upstream job results
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
-          EVENT_NAME: ${{ github.event_name }}
-          REF_NAME: ${{ github.ref_name }}
-          RUN_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          PR_NUMBER: ${{ github.event.pull_request.number || '' }}
-          CURRENT_RUN_ID: ${{ github.run_id }}
-          # Self-hosted check-fleet images ship curl+jq but not the gh CLI
-          # (ci-runners/Dockerfile). #1017 moved this gate back onto that fleet,
-          # so tip/supersession lookups must use the REST API — `gh api` fails
-          # with `gh: command not found` and the gate fail-closes on every
-          # concurrency cancel (false red on main).
-          GITHUB_API_URL: ${{ github.api_url }}
+      - name: Reject canceled workflow
+        if: ${{ cancelled() }}
         run: |
-          # Thin REST helper — curl+jq are on both hosted and self-hosted images.
-          api_get() {
-            curl -fsS \
-              -H "Authorization: Bearer ${GH_TOKEN}" \
-              -H "Accept: application/vnd.github+json" \
-              -H "X-GitHub-Api-Version: 2022-11-28" \
-              "${GITHUB_API_URL}/$1"
-          }
-          FORK_PR=${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
-          if $FORK_PR; then
-            if [ "${{ needs.precheck.result }}" != "success" ]; then
-              echo "Fork PR safe check tier was not executed successfully."
-              echo '${{ toJSON(needs) }}'
-              exit 1
-            fi
-            echo "Fork PR safe check tier passed (typecheck, lint, format, API protocol)."
-            echo "Unit tests, build and e2e were intentionally not dispatched: fork code"
-            echo "must not run on this repository's runners. This run therefore reports as"
-            echo "'Fork CI Passed', not 'CI Passed' — it is not evidence the change is tested."
+          echo "CI was cancelled; this run cannot authorize a merge."
+          exit 1
+      - name: Check upstream job results
+        if: ${{ !cancelled() }}
+        env:
+          FORK_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+          MODE: ${{ needs.precheck.outputs.mode }}
+          ANY_FAILURE: ${{ contains(needs.*.result, 'failure') }}
+          ANY_CANCELLED: ${{ contains(needs.*.result, 'cancelled') }}
+          PRECHECK_RESULT: ${{ needs.precheck.result }}
+          CHECK_RESULT: ${{ needs.check.result }}
+          E2E_REQUIRED: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && (github.event.pull_request.draft == false || contains(github.event.pull_request.labels.*.name, 'ci-full')) }}
+          E2E_SHARD_TOTAL: ${{ needs.precheck.outputs.e2e_shard_total }}
+          E2E_RESULT: ${{ needs.e2e.result }}
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          set -eu
+          # Supersession explains why work was canceled; it is never evidence
+          # that THIS run passed. The new run must earn its own green check.
+          # This guard precedes fork and skip-mode acceptance deliberately.
+          if [ "$ANY_CANCELLED" = "true" ]; then
+            echo "CI was cancelled or contains cancelled jobs; this run cannot authorize a merge."
+            printf '%s\n' "$NEEDS_JSON"
+            exit 1
+          fi
+          if [ "$ANY_FAILURE" = "true" ] || [ "$PRECHECK_RESULT" != "success" ]; then
+            echo "CI has failed jobs or no successful precheck."
+            printf '%s\n' "$NEEDS_JSON"
+            exit 1
+          fi
+          if [ "$FORK_PR" = "true" ]; then
+            echo "Fork safe tier passed. Fork CI Passed does not satisfy CI Passed."
             exit 0
           fi
-          MODE="${{ needs.precheck.outputs.mode }}"
-          ANY_FAILURE=${{ contains(needs.*.result, 'failure') }}
-          ANY_CANCELLED=${{ contains(needs.*.result, 'cancelled') }}
-          CORE_OK=${{ needs.precheck.result == 'success' }}
-          # Skip-mode runs (human-reviewed screenshot-only commits) intentionally
-          # do not execute check/build/e2e;
-          # those jobs surface as 'cancelled', which must not fail the gate —
-          # that painted every bot push red and blocked auto-merge (issue
-          # #609). Genuine failures still fail even in skip mode.
+          if [ "$CHECK_RESULT" != "success" ]; then
+            echo "Required unit check did not complete successfully."
+            printf '%s\n' "$NEEDS_JSON"
+            exit 1
+          fi
+          case "$MODE" in
+            full|subset|skip) ;;
+            *) echo "Missing or invalid CI plan: $MODE"; exit 1 ;;
+          esac
+          # Zero-shard / screenshot-only plans intentionally SKIP heavy jobs
+          # (#1233). They may not disguise failures or cancellations above.
           if [ "$MODE" = "skip" ]; then
-            if $ANY_FAILURE || ! $CORE_OK; then
-              echo "Skip-mode run has a genuine failure:"
-              echo '${{ toJSON(needs) }}'
-              exit 1
-            fi
-            echo "All CI jobs passed (heavy jobs intentionally skipped: mode=skip)."
+            echo "CI passed (heavy jobs intentionally skipped: mode=skip)."
             exit 0
           fi
-          # Demand e2e whenever the job's own dispatch contract says a
-          # merge-eligible same-repository PR must run it. Mirroring the draft
-          # and zero-shard guards avoids demanding a deliberately skipped job.
-          E2E_REQUIRED=${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && (github.event.pull_request.draft == false || contains(github.event.pull_request.labels.*.name, 'ci-full')) }}
-          if $E2E_REQUIRED && [ "${{ needs.precheck.outputs.e2e_shard_total }}" != "0" ] && [ "${{ needs.e2e.result }}" != "success" ]; then
-            echo "Required PR e2e did not complete successfully (result=${{ needs.e2e.result }})."
-            echo '${{ toJSON(needs) }}'
-            exit 1
-          fi
-          if $ANY_FAILURE; then
-            echo "One or more CI jobs failed:"
-            echo '${{ toJSON(needs) }}'
-            exit 1
-          fi
-          if $ANY_CANCELLED; then
-            # Fail closed if we cannot resolve tip — a tip cancel must stay red.
-            if [ -n "$PR_NUMBER" ]; then
-              TIP_SHA=$(api_get "repos/${REPOSITORY}/pulls/${PR_NUMBER}" | jq -er .head.sha) || {
-                echo "Could not resolve PR tip SHA; treating cancel as failure."
-                echo '${{ toJSON(needs) }}'
-                exit 1
-              }
-            else
-              ENC_REF=$(printf '%s' "$REF_NAME" | jq -sRr @uri)
-              TIP_SHA=$(api_get "repos/${REPOSITORY}/commits/${ENC_REF}" | jq -er .sha) || {
-                echo "Could not resolve branch tip SHA; treating cancel as failure."
-                echo '${{ toJSON(needs) }}'
-                exit 1
-              }
-            fi
-            if [ -n "$TIP_SHA" ] && [ "$TIP_SHA" != "$RUN_HEAD_SHA" ]; then
-              echo "Run superseded by newer tip ${TIP_SHA} (this SHA=${RUN_HEAD_SHA}); cancelled jobs are concurrency noise."
-              echo '${{ toJSON(needs) }}'
-              exit 0
-            fi
-            # Same tip, but a newer CI run on this SHA may have taken the
-            # concurrency slot (delayed schedule, re-run, workflow_dispatch).
-            NEWER_RUN_ID=$(api_get \
-              "repos/${REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${RUN_HEAD_SHA}&per_page=20" \
-              | jq -r "[.workflow_runs[] | select(.id > ${CURRENT_RUN_ID}) | .id][0] // empty") || {
-              echo "Could not resolve newer workflow runs; treating cancel as failure."
-              echo '${{ toJSON(needs) }}'
-              exit 1
-            }
-            if [ -n "$NEWER_RUN_ID" ]; then
-              echo "Run superseded by newer CI run ${NEWER_RUN_ID} on tip ${RUN_HEAD_SHA}; cancelled jobs are concurrency noise."
-              echo '${{ toJSON(needs) }}'
-              exit 0
-            fi
-            echo "One or more CI jobs were cancelled while still at tip (${RUN_HEAD_SHA}):"
-            echo '${{ toJSON(needs) }}'
+          if [ "$E2E_REQUIRED" = "true" ] && [ "$E2E_SHARD_TOTAL" != "0" ] && [ "$E2E_RESULT" != "success" ]; then
+            echo "Required PR e2e did not complete successfully (result=$E2E_RESULT)."
+            printf '%s\n' "$NEEDS_JSON"
             exit 1
           fi
           echo "All CI jobs passed (or were intentionally skipped)."
