@@ -1,8 +1,8 @@
 import { errorMessage } from '@shared/errors.ts'
 import { z } from 'zod'
 import { defineTool } from '@shared/types'
+import { appendCommitAttribution } from '@shared/git/commit-attribution.ts'
 import {
-  commitWithAttribution,
   getGitDiffText,
   getGitLogText,
   getGitShowText,
@@ -11,6 +11,16 @@ import {
 import { resolvePathWithinRoot } from '../services/workspace.ts'
 import { getAgentExecutionRoot } from '../services/execution-root.ts'
 import { getActiveRunThread, getThreadModels } from '../services/thread-models.ts'
+import { isGitAvailableForTarget } from '../services/tool-availability.ts'
+import { ensureGitCommitPermitted } from '../services/security/permission-gate.ts'
+import { posixQuote } from '../services/security/safe-install.ts'
+import { isProjectSandboxEnabled } from '../project-sandbox/index.ts'
+import {
+  isActiveSshWorkspace,
+  resolveSshExecutionTargetForCwd,
+} from '../services/ssh-workspace/execution-target.ts'
+import { runCommand } from '../services/exec/command-runner.ts'
+import { leaseGitSigningBroker } from '../services/security/git-signing-broker.ts'
 
 /** Reject paths that escape the workspace (absolute, `..`, symlink-out) before handing them to git. */
 async function validateGitPath(
@@ -75,10 +85,55 @@ export const gitCommitTool = defineTool({
         'Run `git add -A` to stage all changes before committing. Omit to commit only what is already staged.',
       ),
   }),
-  execute: async ({ message, stage_all }) => {
+  execute: async ({ message, stage_all }, signal) => {
+    const root = getAgentExecutionRoot()
+    if (!root) return 'No workspace open.'
+    if (!(await isGitAvailableForTarget())) return 'git is not available on this system.'
+
     const threadId = getActiveRunThread()
     const models = threadId ? getThreadModels(threadId) : []
-    return commitWithAttribution(message, models, stage_all, getAgentExecutionRoot())
+    const fullMessage = appendCommitAttribution(message, models)
+    const commit = `git commit -m ${posixQuote(fullMessage)}`
+    const command = stage_all ? `git add -A && ${commit}` : commit
+
+    // A requested commit must honor hooks/signing, unlike automatic snapshots.
+    // Apply shell authorization before staging. Execution still uses literal
+    // argv on every platform, retains the sandbox, and never retries unsigned
+    // or silently escapes confinement when a configured helper fails.
+    const remote = isActiveSshWorkspace() || resolveSshExecutionTargetForCwd(root) !== null
+    const sandboxEnabled = isProjectSandboxEnabled() && !remote
+    const permitted = await ensureGitCommitPermitted(command, root, sandboxEnabled, signal)
+    if (!permitted) return 'User rejected git commit.'
+    const steps = stage_all
+      ? [
+          ['add', '-A'],
+          ['commit', '-m', fullMessage],
+        ]
+      : [['commit', '-m', fullMessage]]
+    const signing = sandboxEnabled ? await leaseGitSigningBroker(root, signal) : null
+    let output = ''
+    try {
+      for (const args of steps) {
+        const result = await runCommand('git', args, {
+          cwd: root,
+          signal,
+          requireSandbox: sandboxEnabled,
+          gitConfig: 'user-command',
+          ...(signing ? { gitSigning: signing.signing, sandboxConfig: signing.sandboxConfig } : {}),
+        })
+        if (result.code !== 0) {
+          throw new Error(
+            result.stderr.trim() ||
+              result.stdout.trim() ||
+              `Git exited with code ${String(result.code)}`,
+          )
+        }
+        output = result.stdout.trim()
+      }
+      return output || '(committed)'
+    } finally {
+      await signing?.release()
+    }
   },
 })
 

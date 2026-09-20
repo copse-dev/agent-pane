@@ -33,6 +33,11 @@ const REMOTE_EXPLICIT_ENV_ALLOW = new Set([
   'GIT_AUTHOR_EMAIL',
   'GIT_COMMITTER_NAME',
   'GIT_COMMITTER_EMAIL',
+  'GIT_ALLOW_PROTOCOL',
+  'GIT_NO_LAZY_FETCH',
+  'GIT_OPTIONAL_LOCKS',
+  'GIT_PAGER',
+  'GIT_TERMINAL_PROMPT',
 ])
 
 /** Env keys safe to inject into an interactive remote login shell. */
