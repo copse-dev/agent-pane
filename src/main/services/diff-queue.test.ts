@@ -251,6 +251,7 @@ describe('applyOrStageDiff direct-apply policy', () => {
   })
 
   afterEach(async () => {
+    mock.restoreAll()
     clearDiffQueueForTest()
     resetSessionBackup(TEST_THREAD_OWNER)
     setGitAvailableForTest(null)
@@ -783,6 +784,43 @@ describe('adoptWorktreeChangesSince (agent-triggered shell edits)', () => {
     assert.match(result, /backed up to refs\/copse\/backups\//)
     // The manual edit is preserved on disk (and recoverable from the backup ref).
     assert.equal(await readFile(join(workspaceRoot, 'manual.txt'), 'utf-8'), 'user edit\n')
+  })
+
+  ownedIt('captures dirty-file contents with bounded parallel reads', async () => {
+    const fileNames = Array.from(
+      { length: 12 },
+      (_, index) => `dirty-${String(index).padStart(2, '0')}.txt`,
+    )
+    for (const [index, name] of fileNames.entries()) {
+      await writeFile(join(workspaceRoot, name), `base ${String(index)}\n`, 'utf-8')
+    }
+    git(tempRoot, ['add', '.'])
+    git(tempRoot, ['commit', '-m', 'add dirty-file fixture'])
+    for (const [index, name] of fileNames.entries()) {
+      await writeFile(join(workspaceRoot, name), `changed ${String(index)}\n`, 'utf-8')
+    }
+
+    const readFile = localWorkspaceFs.readFile.bind(localWorkspaceFs)
+    let activeReads = 0
+    let peakReads = 0
+    mock.method(localWorkspaceFs, 'readFile', async (path: string, encoding: 'utf-8') => {
+      activeReads += 1
+      peakReads = Math.max(peakReads, activeReads)
+      await new Promise<void>((resolve) => setImmediate(resolve))
+      try {
+        return await readFile(path, encoding)
+      } finally {
+        activeReads -= 1
+      }
+    })
+
+    const baseline = await captureWorktreeBaseline()
+
+    assert.equal(peakReads, 8)
+    assert.deepEqual([...baseline.keys()], fileNames)
+    for (const [index, name] of fileNames.entries()) {
+      assert.equal(baseline.get(name), `changed ${String(index)}\n`)
+    }
   })
 
   ownedIt(
