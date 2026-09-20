@@ -18,6 +18,17 @@
 /** A permission-style verdict on the action a blocking hook is gating. */
 export type HookDecision = 'allow' | 'deny' | 'ask'
 
+/** Why the loop entered (or re-entered) its synthetic final-answer turn. */
+export type FinalizeNudgeReason = 'step-budget-exhausted' | 'pending-tool-calls'
+
+/** Budget snapshot captured when a finalize nudge was applied. */
+export interface FinalizeNudgeBudget {
+  steps: number
+  maxSteps: number
+  llmCalls: number
+  maxLlmCalls: number
+}
+
 /** A programmatic stop (`continue: false`); outranks every other field. */
 export interface HookHaltRun {
   reason: string
@@ -118,6 +129,10 @@ export interface HookRunDecision {
    * the nudge effect line.
    */
   nudgeMechanism?: 'tool-enabled-message' | 'text-only-turn'
+  /** Why the synthetic final-answer turn was entered or re-entered. */
+  finalizeReason?: FinalizeNudgeReason
+  /** Running loop budget when the synthetic final-answer turn was applied. */
+  finalizeBudget?: FinalizeNudgeBudget
   /** Character counts of text channels (full text: stdout blob / applied context). */
   injectContextChars?: number
   agentMessageChars?: number
