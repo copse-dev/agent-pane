@@ -66818,8 +66818,8 @@ function dataUrlToBlob(dataUrl) {
   const comma = dataUrl.indexOf(",");
   if (comma < 0) throw new Error("Not a data URL");
   const header = dataUrl.slice(5, comma);
-  const mime = header.split(";")[0];
-  const mimeType = mime ? mime : "application/octet-stream";
+  const mime = header.split(";")[0] ?? "";
+  const mimeType = mime === "" ? "application/octet-stream" : mime;
   const binary = atob(dataUrl.slice(comma + 1));
   const bytes = Uint8Array.from(binary, (c2) => c2.charCodeAt(0));
   return new Blob([bytes], { type: mimeType });
