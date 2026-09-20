@@ -225,10 +225,10 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // through to a guaranteed 400 at request time, which is a worse failure than
   // refusing the write.
   //
-  // NOTE: the usage ledger prices turns from the standard-tier catalog, so a
-  // non-default tier makes those figures wrong (flex overstates, priority
-  // understates) — see #1543. Tier-aware pricing is a follow-up; LiteLLM already
-  // publishes `input_cost_per_token_flex` / `_priority` for these models.
+  // The usage ledger preserves per-tier token buckets and prices flex/priority
+  // turns from LiteLLM's published tier catalog (#1543). When a tier has no
+  // complete published rate (including scale), it intentionally uses and labels
+  // a standard-rate fallback instead of presenting that estimate as exact.
   openAiServiceTier: z.enum(['', ...SERVICE_TIERS]),
   // Pin reasoning-capable OpenAI models (gpt-5*, o-series) back to
   // /v1/chat/completions instead of /v1/responses. Default OFF.
