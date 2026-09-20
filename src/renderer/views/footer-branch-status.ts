@@ -15,6 +15,7 @@ import { getActiveThreadOwner } from '../controller/active-thread-owner.ts'
 
 const COPIED_BRANCH_TOAST = 'Copied branch name'
 const COPY_FEEDBACK_MS = 1600
+let nextPickerId = 0
 
 /**
  * Branch lookups fail for a legitimately broken worktree, so they never toast —
@@ -59,6 +60,7 @@ export function mountFooterBranchStatus(
   /** The branch a blank thread was told to start from, if the user picked one. */
   pendingBaseBranch: (threadId: string) => string | undefined
 } {
+  const listId = `branch-picker-list-${String(++nextPickerId)}`
   const wrap = el('div', { class: 'branch-picker', hidden: '' })
   const trigger = el('button', {
     type: 'button',
@@ -78,9 +80,18 @@ export function mountFooterBranchStatus(
     class: 'branch-picker-filter',
     placeholder: 'Filter branches...',
     'aria-label': 'Filter branches',
+    role: 'combobox',
+    'aria-autocomplete': 'list',
+    'aria-controls': listId,
+    'aria-expanded': 'false',
     autocomplete: 'off',
   })
-  const list = el('div', { class: 'branch-picker-list', role: 'listbox', 'aria-label': 'Branches' })
+  const list = el('div', {
+    id: listId,
+    class: 'branch-picker-list',
+    role: 'listbox',
+    'aria-label': 'Branches',
+  })
   menu.append(filterInput, list)
   wrap.append(trigger, menu)
   host.append(wrap)
@@ -152,12 +163,14 @@ export function mountFooterBranchStatus(
   function setOpen(next: boolean): void {
     open = next
     trigger.setAttribute('aria-expanded', String(next))
+    filterInput.setAttribute('aria-expanded', String(next))
     if (next) {
       menu.removeAttribute('hidden')
     } else {
       menu.setAttribute('hidden', '')
       filterInput.value = ''
       activeIndex = 0
+      filterInput.removeAttribute('aria-activedescendant')
     }
   }
 
@@ -268,6 +281,7 @@ export function mountFooterBranchStatus(
   /** Select the branch a thread will start from. Recording only — see the click handler below. */
   function selectBranch(name: string): void {
     setOpen(false)
+    trigger.focus()
     const thread = getActiveThread()
     if (!thread) return
     // Record the choice only. Checking out here would move the user's
@@ -283,6 +297,7 @@ export function mountFooterBranchStatus(
     const { pr, matches } = filteredRows()
     if (pr && index === 0) {
       setOpen(false)
+      trigger.focus()
       openBrowserUrl(store, pr.url)
       return
     }
@@ -299,6 +314,7 @@ export function mountFooterBranchStatus(
 
   function renderMenu(): void {
     clear(list)
+    filterInput.removeAttribute('aria-activedescendant')
     if (!isPickerMode()) return
 
     const selected = activeBaseBranch() ?? status?.currentBranch ?? null
@@ -312,12 +328,17 @@ export function mountFooterBranchStatus(
         {
           type: 'button',
           class: 'branch-picker-option branch-picker-action',
+          id: `${listId}-option-${String(rowIndex)}`,
+          role: 'option',
+          tabindex: '-1',
+          'aria-selected': rowIndex === activeIndex ? 'true' : 'false',
         },
         `Open PR #${String(pr.number)}`,
       )
       if (rowIndex === activeIndex) prItem.classList.add('is-active')
       prItem.addEventListener('click', () => {
         setOpen(false)
+        trigger.focus()
         openBrowserUrl(store, pr.url)
       })
       list.append(prItem)
@@ -331,8 +352,13 @@ export function mountFooterBranchStatus(
         {
           type: 'button',
           class: 'branch-picker-option',
+          id: `${listId}-option-${String(rowIndex)}`,
+          tabindex: '-1',
           role: 'option',
-          'aria-selected': branch.name === selected ? 'true' : 'false',
+          // The listbox selection follows the keyboard highlight. Keep the
+          // committed branch separately marked with `is-selected` below so a
+          // pending choice remains visible while the user explores options.
+          'aria-selected': rowIndex === activeIndex ? 'true' : 'false',
         },
         nameEl,
       )
@@ -356,6 +382,8 @@ export function mountFooterBranchStatus(
         list.append(el('div', { class: 'branch-picker-empty' }, 'No branches found.'))
       }
     }
+    const active = list.querySelector<HTMLElement>('.branch-picker-option.is-active')
+    if (open && active) filterInput.setAttribute('aria-activedescendant', active.id)
     scrollActiveRowIntoView()
   }
 

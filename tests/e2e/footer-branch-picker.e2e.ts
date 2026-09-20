@@ -117,9 +117,24 @@ describe('footer branch picker', () => {
       timeoutMsg: 'branch picker did not restore the full list',
     })
     await browser.keys('ArrowDown')
+    const activeId = await filter.getAttribute('aria-activedescendant')
+    assert.ok(activeId, 'the filter exposes the keyboard-highlighted option')
+    const activeOption = await browser.execute((id: string) => {
+      const option = document.getElementById(id)
+      return { role: option?.getAttribute('role'), active: option?.classList.contains('is-active') }
+    }, activeId)
+    assert.deepEqual(activeOption, { role: 'option', active: true })
+    await expect(filter).toBeFocused()
     await browser.keys('Enter')
     await expect(menu).not.toBeDisplayed()
     await expect(trigger.$('.branch-picker-label')).toHaveText(seed.currentBranch)
+    await expect(trigger).toBeFocused()
+    // The app-shell screenshot helper dispatches resize, which returns focus
+    // to the composer. The viewport was already pinned by the preceding
+    // capture, so take this frame directly while the real trigger focus is
+    // still present.
+    await browser.pause(100)
+    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'footer-branch-picker-keyboard-focus.png'))
 
     // A query matching nothing reports an empty state instead of a blank menu.
     await trigger.click()
