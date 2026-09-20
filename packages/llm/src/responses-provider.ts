@@ -134,7 +134,7 @@ export class ResponsesProvider implements LLMProvider {
           yield* streamEventChunks(event, self.model, self, turnReasoning)
         }
       },
-      { ...(signal ? { signal } : {}) },
+      { modelId: self.model, ...(signal ? { signal } : {}) },
     )
   }
 

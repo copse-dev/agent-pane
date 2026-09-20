@@ -170,7 +170,7 @@ export class LMStudioProvider implements LLMProvider {
       async function* () {
         yield* self.streamOnce(messages, tools, signal)
       },
-      { ...(signal ? { signal } : {}) },
+      { modelId: self.modelName, ...(signal ? { signal } : {}) },
     )
   }
 

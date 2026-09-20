@@ -180,7 +180,7 @@ export class AnthropicProvider implements LLMProvider {
         }
         yield stopReason ? { type: 'done', stopReason } : { type: 'done' }
       },
-      { ...(signal ? { signal } : {}) },
+      { modelId: model, ...(signal ? { signal } : {}) },
     )
   }
 }

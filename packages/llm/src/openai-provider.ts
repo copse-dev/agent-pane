@@ -349,7 +349,7 @@ export class OpenAIProvider implements LLMProvider {
         reportCache(streamUsage)
         yield finishReason ? { type: 'done', stopReason: finishReason } : { type: 'done' }
       },
-      { ...(signal ? { signal } : {}) },
+      { modelId: model, ...(signal ? { signal } : {}) },
     )
   }
 }

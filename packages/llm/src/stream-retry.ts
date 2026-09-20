@@ -2,8 +2,19 @@ import Anthropic from '@anthropic-ai/sdk'
 import { ToolCallRequestError } from '@lmstudio/sdk'
 import OpenAI from 'openai'
 import { isRecord } from '@copse/std/unknown-value.ts'
+import { errorMessage } from '@copse/std/errors.ts'
+import { dataPolicyForProvider } from './data-policies.ts'
 
 export const DEFAULT_STREAM_MAX_ATTEMPTS = 4
+
+/**
+ * Delay before the single, dedicated retry of a routing-policy failure (see
+ * {@link isRoutingPolicyError}). Independent of {@link streamRetryDelayMs}'s
+ * exponential backoff: the counterexample that motivated retrying these at all
+ * (#1876) recovered in well under this on an identical, byte-for-byte replay,
+ * so there is no reason to back off harder than a plain fixed pause.
+ */
+export const ROUTING_POLICY_RETRY_DELAY_MS = 1500
 
 /**
  * A connection-level failure from LM Studio's native SDK transport.
@@ -67,16 +78,21 @@ function errorHeaders(err: unknown): Headers | undefined {
 }
 
 /**
- * OpenRouter's routing-policy failure: no endpoint satisfies the request's
+ * OpenRouter's routing-policy failure: no endpoint satisfied the request's
  * provider constraints (e.g. ZDR-only routing via `provider.zdr`, or
- * `data_collection: "deny"`). Usually this means no configured endpoint can
- * serve the request, but OpenRouter can also return it transiently while its
- * eligible endpoint set changes. The stream runner therefore gives it one
- * bounded retry rather than the full generic retry budget. Served as a 503
- * ("There is no available model provider that meets your routing
- * requirements"); older responses used a 404 "No endpoints found matching
- * your data policy" form. Matched on message because the legacy 404 would not
- * otherwise enter the retry path.
+ * `data_collection: "deny"`) *at the moment OpenRouter routed it*. Served as a
+ * 503 ("There is no available model provider that meets your routing
+ * requirements"); older responses used a 404 "No endpoints found matching your
+ * data policy" form. Matched on message because it would otherwise fall into
+ * the retryable-5xx bucket below.
+ *
+ * Not actually deterministic: which upstream endpoints currently qualify for a
+ * model shifts as OpenRouter's own endpoint pool and load balancing change, so
+ * a byte-identical retry can succeed seconds later even though nothing about
+ * the request changed (#1876 — a turn failed in ~1.5s and the same request
+ * succeeded on a resend 16s after). `isRetryableStreamError` therefore excludes
+ * it from the blind, unbounded retry loop below, but `yieldStreamWithRetry`
+ * gives it exactly one dedicated retry of its own.
  */
 export function isRoutingPolicyError(err: unknown): boolean {
   if (!(err instanceof Error)) return false
@@ -147,6 +163,9 @@ export function isStreamAbortError(err: unknown): boolean {
 export function isRetryableStreamError(err: unknown): boolean {
   if (isStreamAbortError(err)) return false
 
+  // Excluded from the blind, unbounded retry loop below — it gets exactly one
+  // dedicated retry instead, handled directly in `yieldStreamWithRetry` (see
+  // isRoutingPolicyError's doc comment).
   if (isRoutingPolicyError(err)) return false
 
   // Preserve the OpenAI SDK's explicit server override now that its internal
@@ -237,14 +256,55 @@ export function sleepMs(ms: number, signal?: AbortSignal): Promise<void> {
   })
 }
 
+/** One retry attempt taken by {@link yieldStreamWithRetry}, for logging/diagnostics. */
+export interface StreamRetryEvent {
+  err: unknown
+  /** 0-based index into the generic retry budget; always 0 for a routing-policy retry. */
+  attempt: number
+  delayMs: number
+  kind: 'transient' | 'routing-policy'
+}
+
+/**
+ * Build the error thrown once a routing-policy failure (see
+ * {@link isRoutingPolicyError}) survives its one dedicated retry: names the
+ * model and the settings that can cause OpenRouter to have no qualifying
+ * endpoint, and links its documented policy page, rather than surfacing the
+ * raw provider string verbatim. `modelId` is best-effort — every caller of
+ * `yieldStreamWithRetry` has one, but the message still reads clearly without
+ * it.
+ */
+function routingPolicyExhaustedError(err: unknown, modelId?: string): Error {
+  const policyUrl =
+    dataPolicyForProvider({ id: 'openrouter' })?.policyUrl ??
+    'https://openrouter.ai/docs/guides/features/zdr'
+  const model = modelId ? `\`${modelId}\`` : 'the selected model'
+  const message =
+    `No OpenRouter endpoint for ${model} satisfies the current privacy routing, even after a ` +
+    `retry. This happens when the "ZDR only" and/or "No training" routing filters rule out ` +
+    `every endpoint that serves this model. Turn off one of those routing filters, or ` +
+    `pick a different model. See ${policyUrl}.\n\nProvider said: ${errorMessage(err)}`
+  return new Error(message, { cause: err })
+}
+
 export async function* yieldStreamWithRetry<T>(
   run: () => AsyncIterable<T>,
-  opts: { signal?: AbortSignal; maxAttempts?: number } = {},
+  opts: {
+    signal?: AbortSignal
+    maxAttempts?: number
+    /** Model id, used only to name the model in a routing-policy terminal error. */
+    modelId?: string
+    onRetry?: (event: StreamRetryEvent) => void
+  } = {},
 ): AsyncGenerator<T, void, unknown> {
   const maxAttempts = opts.maxAttempts ?? DEFAULT_STREAM_MAX_ATTEMPTS
-  let routingPolicyRetryUsed = false
+  // Counts only the generic, blind-replay retries (rate limits, 5xx, overload,
+  // …) against `maxAttempts`. The routing-policy retry below is a separate,
+  // one-shot budget that does not consume or extend this one, per #1876.
+  let genericAttempt = 0
+  let routingPolicyRetried = false
   let reportingRoutingPolicyOutcome = false
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+  for (;;) {
     // Progress-only items do not commit the stream: nothing user-visible has
     // been produced, so replaying from scratch after a retryable failure is
     // safe and loses no output. Content (text/tool calls) still pins the
@@ -273,24 +333,34 @@ export async function* yieldStreamWithRetry<T>(
       }
       if (opts.signal?.aborted) throw err
       const routingPolicyFailure = isRoutingPolicyError(err)
-      const canRetryRoutingPolicy = routingPolicyFailure && !routingPolicyRetryUsed
       const retry =
         !committed &&
-        (canRetryRoutingPolicy || isRetryableStreamError(err)) &&
-        attempt < maxAttempts - 1
-      const delayMs = retry ? streamRetryDelayMs(err, attempt) : 0
+        (routingPolicyFailure
+          ? !routingPolicyRetried
+          : isRetryableStreamError(err) && genericAttempt < maxAttempts - 1)
+      const delayMs = retry
+        ? routingPolicyFailure
+          ? ROUTING_POLICY_RETRY_DELAY_MS
+          : streamRetryDelayMs(err, genericAttempt)
+        : 0
       const streamedStatus = streamedErrorStatus(err)
       if (streamedStatus !== undefined) {
         // No request, body, headers, or provider message: enough to distinguish
         // exhaustion from a committed stream without logging private content.
         console.warn(
-          `[llm] streamed API error code=${String(streamedStatus)} attempt=${String(attempt + 1)}/${String(maxAttempts)} committed=${String(committed)} retry=${String(retry)} delayMs=${String(Math.round(delayMs))}`,
+          `[llm] streamed API error code=${String(streamedStatus)} attempt=${String(genericAttempt + 1)}/${String(maxAttempts)} committed=${String(committed)} retry=${String(retry)} delayMs=${String(Math.round(delayMs))}`,
         )
       }
-      if (!retry) throw err
       if (routingPolicyFailure) {
-        routingPolicyRetryUsed = true
+        if (committed) throw err
+        if (routingPolicyRetried) throw routingPolicyExhaustedError(err, opts.modelId)
+        routingPolicyRetried = true
         reportingRoutingPolicyOutcome = true
+        opts.onRetry?.({ err, attempt: 0, delayMs, kind: 'routing-policy' })
+      } else {
+        if (!retry) throw err
+        opts.onRetry?.({ err, attempt: genericAttempt, delayMs, kind: 'transient' })
+        genericAttempt++
       }
       try {
         await sleepMs(delayMs, opts.signal)

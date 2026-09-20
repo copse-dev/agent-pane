@@ -4,13 +4,33 @@ import { ToolCallRequestError } from '@lmstudio/sdk'
 import OpenAI from 'openai'
 import {
   DEFAULT_STREAM_MAX_ATTEMPTS,
+  ROUTING_POLICY_RETRY_DELAY_MS,
   isImageUnsupportedError,
   isOutputCeilingRejectedError,
   isRetryableStreamError,
   streamRetryDelayMs,
   sleepMs,
   yieldStreamWithRetry,
+  type StreamRetryEvent,
 } from './stream-retry.ts'
+
+/** The 404/503 message shapes OpenRouter uses for a routing-policy failure. */
+function routingPolicyMessageError(variant: 'current' | 'legacy' = 'current'): Error {
+  if (variant === 'legacy') {
+    return Object.assign(
+      new Error(
+        '404 {"error":{"message":"No endpoints found matching your data policy (Zero data retention: true)","code":404}}',
+      ),
+      { status: 404 },
+    )
+  }
+  return Object.assign(
+    new Error(
+      '503 {"error":{"message":"There is no available model provider that meets your routing requirements.","code":503}}',
+    ),
+    { status: 503 },
+  )
+}
 
 /** An Error carrying an HTTP status, matching the duck-typed retry path. */
 function httpError(status: number): Error {
@@ -175,7 +195,7 @@ describe('isRetryableStreamError', () => {
     assert.equal(isRetryableStreamError(new Error('LM Studio: model failed to load')), false)
   })
 
-  it('keeps OpenRouter routing-policy failures out of the generic retry bucket', () => {
+  it('excludes an OpenRouter routing-policy failure from the blind retry loop, even as a 5xx (it gets its own dedicated retry instead — see the yieldStreamWithRetry tests below)', () => {
     const current = Object.assign(
       new Error(
         '503 {"error":{"message":"There is no available model provider that meets your routing requirements.","code":503}}',
@@ -394,7 +414,7 @@ describe('yieldStreamWithRetry', () => {
         for await (const _ of yieldStreamWithRetry(run, { maxAttempts: 4 })) {
           // Drain until the second policy failure terminates the stream.
         }
-      }, routingPolicyError(503))
+      }, /No OpenRouter endpoint/)
 
       assert.equal(attempts, 2)
       assert.equal(warn.mock.callCount(), 1)
@@ -449,7 +469,7 @@ describe('yieldStreamWithRetry', () => {
     assert.equal(genericAttempts, 4)
   })
 
-  it('lets the global attempt limit win over the routing-policy allowance', async () => {
+  it('allows the dedicated policy retry at the generic attempt limit', async () => {
     let attempts = 0
     const run = failingStream(() => {
       attempts++
@@ -458,14 +478,14 @@ describe('yieldStreamWithRetry', () => {
 
     await assert.rejects(async () => {
       for await (const _ of yieldStreamWithRetry(run, { maxAttempts: 1 })) {
-        // Drain until the first failure reaches the global attempt cap.
+        // The policy replay has a separate budget from generic retries.
       }
     })
 
-    assert.equal(attempts, 1)
+    assert.equal(attempts, 2)
   })
 
-  it('allows one policy replay after a generic failure without exceeding maxAttempts', async () => {
+  it('allows one policy replay after a generic failure on its separate budget', async () => {
     const errors = [
       providerError(503, 'temporary provider failure'),
       routingPolicyError(),
@@ -484,10 +504,9 @@ describe('yieldStreamWithRetry', () => {
       for await (const _ of yieldStreamWithRetry(run, { maxAttempts: 6 })) {
         // Drain until the second policy failure terminates the stream.
       }
-    }, errors[3])
+    }, /No OpenRouter endpoint/)
 
-    // The second policy failure is terminal even though two global attempts
-    // remain. The one policy-triggered replay still counted toward maxAttempts.
+    // The second policy failure is terminal even though generic retries remain.
     assert.equal(attempts, 4)
   })
 
@@ -516,7 +535,7 @@ describe('yieldStreamWithRetry', () => {
     }
   })
 
-  it('keeps generic failures during the policy replay inside the global cap', async () => {
+  it('keeps generic failures during the policy replay within their own cap', async () => {
     const warn = mock.method(console, 'warn', () => {})
     try {
       let attempts = 0
@@ -532,7 +551,7 @@ describe('yieldStreamWithRetry', () => {
         }
       }, /temporary provider failure/)
 
-      assert.equal(attempts, 4)
+      assert.equal(attempts, 5)
       assert.deepEqual(
         warn.mock.calls.map((call) => call.arguments),
         [['[llm] routing-policy retry failed']],
@@ -701,6 +720,144 @@ describe('yieldStreamWithRetry', () => {
 
   it('defaults to DEFAULT_STREAM_MAX_ATTEMPTS', () => {
     assert.equal(DEFAULT_STREAM_MAX_ATTEMPTS, 4)
+  })
+})
+
+describe('yieldStreamWithRetry — routing-policy failure (#1876)', () => {
+  it('retries a routing-policy failure exactly once, after a delay, then succeeds', async () => {
+    let attempts = 0
+    async function* run(): AsyncGenerator<string> {
+      attempts++
+      if (attempts === 1) throw routingPolicyMessageError()
+      yield 'ok'
+    }
+    const start = Date.now()
+    const out: string[] = []
+    for await (const v of yieldStreamWithRetry(run)) out.push(v)
+    assert.deepEqual(out, ['ok'])
+    assert.equal(attempts, 2)
+    assert.ok(Date.now() - start >= ROUTING_POLICY_RETRY_DELAY_MS - 5)
+  })
+
+  it('retries the legacy 404 "no endpoints found" form the same way', async () => {
+    let attempts = 0
+    async function* run(): AsyncGenerator<string> {
+      attempts++
+      if (attempts === 1) throw routingPolicyMessageError('legacy')
+      yield 'ok'
+    }
+    const out: string[] = []
+    for await (const v of yieldStreamWithRetry(run)) out.push(v)
+    assert.deepEqual(out, ['ok'])
+    assert.equal(attempts, 2)
+  })
+
+  it('gives up after the one retry: exactly 2 attempts total, never an unbounded loop', async () => {
+    let attempts = 0
+    const run = failingStream(() => {
+      attempts++
+      throw routingPolicyMessageError()
+    })
+    await assert.rejects(async () => {
+      for await (const _ of yieldStreamWithRetry(run)) {
+        // Drain until the terminal error is thrown.
+      }
+    })
+    assert.equal(attempts, 2)
+  })
+
+  it('the terminal error names the model and the conflicting settings, not just the raw provider string', async () => {
+    const run = failingStream(() => {
+      throw routingPolicyMessageError()
+    })
+    await assert.rejects(
+      async () => {
+        for await (const _ of yieldStreamWithRetry(run, {
+          modelId: 'meta-llama/llama-3.1-70b-instruct:free',
+        })) {
+          // Drain until the terminal error is thrown.
+        }
+      },
+      (err: unknown) => {
+        assert.ok(err instanceof Error)
+        assert.match(err.message, /meta-llama\/llama-3\.1-70b-instruct:free/)
+        assert.match(err.message, /ZDR only/)
+        assert.match(err.message, /No training/)
+        assert.ok(err.cause instanceof Error)
+        return true
+      },
+    )
+  })
+
+  it('does not let the dedicated routing-policy retry consume or extend the generic retry budget', async () => {
+    let attempts = 0
+    const run = failingStream(() => {
+      attempts++
+      throw routingPolicyMessageError()
+    })
+    // A generic budget of 1 permits zero generic retries, yet the dedicated
+    // routing-policy retry still fires exactly once — the two budgets are
+    // independent.
+    await assert.rejects(async () => {
+      for await (const _ of yieldStreamWithRetry(run, { maxAttempts: 1 })) {
+        // Drain until the terminal error is thrown.
+      }
+    })
+    assert.equal(attempts, 2)
+  })
+
+  it('does not retry a routing-policy failure once content has been committed', async () => {
+    let attempts = 0
+    async function* run(): AsyncGenerator<string> {
+      attempts++
+      yield 'partial'
+      throw routingPolicyMessageError()
+    }
+    const out: string[] = []
+    await assert.rejects(async () => {
+      for await (const v of yieldStreamWithRetry(run)) out.push(v)
+    })
+    assert.deepEqual(out, ['partial'])
+    assert.equal(attempts, 1)
+  })
+
+  it('reports the retry through onRetry before sleeping, with the routing-policy kind and delay', async () => {
+    let attempts = 0
+    const events: StreamRetryEvent[] = []
+    async function* run(): AsyncGenerator<string> {
+      attempts++
+      if (attempts === 1) throw routingPolicyMessageError()
+      yield 'ok'
+    }
+    for await (const _ of yieldStreamWithRetry(run, { onRetry: (e) => events.push(e) })) {
+      // Drain the successful retry.
+    }
+    assert.equal(events.length, 1)
+    assert.equal(events[0]?.kind, 'routing-policy')
+    assert.equal(events[0].delayMs, ROUTING_POLICY_RETRY_DELAY_MS)
+  })
+
+  it('leaves generic retryable errors retrying exactly as before, unaffected by the routing-policy path', async () => {
+    let attempts = 0
+    async function* run(): AsyncGenerator<string> {
+      attempts++
+      if (attempts < 3) throw httpError(503)
+      yield 'ok'
+    }
+    const events: StreamRetryEvent[] = []
+    const out: string[] = []
+    for await (const v of yieldStreamWithRetry(run, {
+      maxAttempts: 4,
+      onRetry: (e) => events.push(e),
+    })) {
+      out.push(v)
+    }
+    assert.deepEqual(out, ['ok'])
+    assert.equal(attempts, 3)
+    assert.deepEqual(
+      events.map((e) => e.kind),
+      ['transient', 'transient'],
+    )
   })
 })
 
