@@ -122,6 +122,24 @@ function submitForm(): void {
   form.requestSubmit()
 }
 
+/** Dispatch a keydown on the given element (defaults to the form) with the given modifiers. */
+function pressEnter(
+  opts: { metaKey?: boolean; ctrlKey?: boolean; shiftKey?: boolean },
+  target?: HTMLElement,
+): void {
+  const form = document.querySelector<HTMLFormElement>('#ask-user-form')
+  if (!form) throw new Error('ask-user form not mounted')
+  const event = new window.KeyboardEvent('keydown', {
+    key: 'Enter',
+    bubbles: true,
+    cancelable: true,
+    metaKey: opts.metaKey ?? false,
+    ctrlKey: opts.ctrlKey ?? false,
+    shiftKey: opts.shiftKey ?? false,
+  })
+  ;(target ?? form).dispatchEvent(event)
+}
+
 describe('ask_user dialog (component)', () => {
   beforeEach(() => {
     document.body.innerHTML = ''
@@ -205,6 +223,69 @@ describe('ask_user dialog (component)', () => {
     submitForm()
 
     assert.deepEqual(harness.responses, [{ id: 'q3', answers: ['Postgres', 'Yes'] }])
+  })
+
+  it('focuses the first answer textarea when the dialog opens', () => {
+    const { api, harness } = stubApi()
+    mount(api)
+    harness.emit({
+      id: 'q-focus',
+      questions: [{ question: 'Which DB?' }, { question: 'Async?' }],
+    })
+
+    assert.equal(document.activeElement, at(inputs(), 0))
+  })
+
+  it('submits the typed answer on Cmd+Enter from the answer textarea', () => {
+    const { api, harness } = stubApi()
+    mount(api)
+    harness.emit({ id: 'q-cmd-enter', questions: [{ question: 'Which DB?' }] })
+
+    const input = at(inputs(), 0)
+    input.value = 'Postgres'
+    pressEnter({ metaKey: true }, input)
+
+    assert.deepEqual(harness.responses, [{ id: 'q-cmd-enter', answers: ['Postgres'] }])
+    assert.equal(dialog().open, false)
+  })
+
+  it('submits the typed answer on Ctrl+Enter from the answer textarea', () => {
+    const { api, harness } = stubApi()
+    mount(api)
+    harness.emit({ id: 'q-ctrl-enter', questions: [{ question: 'Which DB?' }] })
+
+    const input = at(inputs(), 0)
+    input.value = 'SQLite'
+    pressEnter({ ctrlKey: true }, input)
+
+    assert.deepEqual(harness.responses, [{ id: 'q-ctrl-enter', answers: ['SQLite'] }])
+    assert.equal(dialog().open, false)
+  })
+
+  it('does not submit on plain Enter, leaving it to insert a newline', () => {
+    const { api, harness } = stubApi()
+    mount(api)
+    harness.emit({ id: 'q-plain-enter', questions: [{ question: 'Which DB?' }] })
+
+    const input = at(inputs(), 0)
+    input.value = 'Postgres'
+    pressEnter({}, input)
+
+    assert.deepEqual(harness.responses, [])
+    assert.equal(dialog().open, true)
+  })
+
+  it('does not submit on Shift+Enter', () => {
+    const { api, harness } = stubApi()
+    mount(api)
+    harness.emit({ id: 'q-shift-enter', questions: [{ question: 'Which DB?' }] })
+
+    const input = at(inputs(), 0)
+    input.value = 'Postgres'
+    pressEnter({ shiftKey: true }, input)
+
+    assert.deepEqual(harness.responses, [])
+    assert.equal(dialog().open, true)
   })
 
   it('returns blank answers when the user cancels', () => {

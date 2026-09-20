@@ -119,7 +119,15 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): void {
         'div',
         { class: 'ask-user-buttons' },
         cancelBtn,
-        el('button', { type: 'submit', class: 'ask-user-submit' }, 'Send answer'),
+        el(
+          'button',
+          {
+            type: 'submit',
+            class: 'ask-user-submit',
+            title: 'Send answer (⌘Enter or Ctrl+Enter)',
+          },
+          'Send answer',
+        ),
       ),
     )
     dialog.showModal()
@@ -175,6 +183,17 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): void {
   form.addEventListener('submit', (event) => {
     event.preventDefault()
     submit()
+  })
+
+  // Cmd/Ctrl+Enter submits from any answer textarea, matching the shortcut
+  // the roadmap editor uses to save from an input field. Plain Enter keeps
+  // its native <textarea> behaviour (a newline), since an answer can be
+  // multi-line.
+  form.addEventListener('keydown', (event) => {
+    if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+      event.preventDefault()
+      submit()
+    }
   })
 
   api.agent.onAskUserRequest((req) => {
