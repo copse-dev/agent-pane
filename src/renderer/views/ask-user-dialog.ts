@@ -189,11 +189,22 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): void {
   // the roadmap editor uses to save from an input field. Plain Enter keeps
   // its native <textarea> behaviour (a newline), since an answer can be
   // multi-line.
-  form.addEventListener('keydown', (event) => {
-    if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
-      event.preventDefault()
-      submit()
+  dialog.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      // Keep the app-level stop shortcut from preventing the native dialog
+      // cancel event. The cancel listener below owns the response and close.
+      event.stopPropagation()
+      return
     }
+    if (!(event.metaKey || event.ctrlKey) || event.key !== 'Enter') return
+
+    // A held chord must not answer the next queued question, and composition
+    // commit events must remain available to the IME. Stop both from reaching
+    // the app-level Enter shortcut while the ask dialog owns the key.
+    event.stopPropagation()
+    if (event.isComposing || event.repeat) return
+    event.preventDefault()
+    submit()
   })
 
   // Escape fires the native <dialog> `cancel` event before it closes the top

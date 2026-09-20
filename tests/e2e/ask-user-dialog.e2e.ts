@@ -102,4 +102,30 @@ describe('ask_user dialog', () => {
       timeoutMsg: 'expected assistant reply after ask_user keyboard answer',
     })
   })
+
+  it('answers the waiting ask_user request when Escape is pressed', async () => {
+    const assistantCount = (await $$('.msg.msg-assistant')).length
+    await setComposerValue(
+      '[[mcp:ask_user {"questions":[{"question":"Should Escape dismiss this question?"}]}]]',
+    )
+    await $('.submit-btn').click()
+
+    const dialog = await $('#ask-user-dialog')
+    await dialog.waitForDisplayed({ timeout: 30_000 })
+    await saveElementScreenshot('#ask-user-dialog', 'ask-user-dialog-escape-cancel.png')
+
+    await browser.keys('Escape')
+    await dialog.waitForDisplayed({ reverse: true, timeout: 10_000 })
+    await browser.waitUntil(
+      async () => (await browser.execute(() => window.api.agent.runningThreadIds())).length === 0,
+      {
+        timeout: 10_000,
+        timeoutMsg: 'expected ask_user run to finish after Escape cancellation',
+      },
+    )
+    await browser.waitUntil(async () => (await $$('.msg.msg-assistant')).length > assistantCount, {
+      timeout: 30_000,
+      timeoutMsg: 'expected assistant reply after Escape answered ask_user',
+    })
+  })
 })
