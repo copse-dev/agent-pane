@@ -4,6 +4,27 @@ Operational reference for running, seeding, and validating Copse. The rules that
 change stay in [`AGENTS.md`](../AGENTS.md); this guide holds environment-specific mechanics that are
 useful only when that workflow needs them.
 
+## Task brief and completion evidence
+
+Before implementation, record a short brief in the owning issue or task:
+
+- the user problem and observable acceptance examples;
+- scope, exclusions, and the current base revision;
+- risk and applicable contracts, especially permissions, persistence, auth/billing, and CI/release controls;
+- the smallest validation that can establish the outcome, plus required broader gates.
+
+Use the [product definition of done](product-definition-of-done-audit.md#definition-of-done).
+At handoff, state what changed, the exact checks and results (or immutable run links), independent
+review evidence when it exists, and anything unverified. Link remaining work instead of closing an
+issue based only on a related implementation. The PR template asks for the same evidence; do not
+paste an entire task transcript into it.
+
+Keep a small active queue with an accountable owner for each commitment. Historical plans remain
+design references. The [SDLC roadmap](plans/sdlc-improvement-roadmap.md) is tracked in
+[#1373](https://github.com/copse-dev/agent-pane/issues/1373); task-evidence adoption remains open in
+[#2718](https://github.com/copse-dev/agent-pane/issues/2718) until five completed changes demonstrate
+the convention. These records do not establish or change branch-review requirements.
+
 ## Runtime and standard scripts
 
 Copse is an Electron desktop app with no backend service. `make run` is the normal entry point: it

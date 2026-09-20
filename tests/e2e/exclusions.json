@@ -1,0 +1,243 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "spec": "tests/e2e/agent-eval-drive.e2e.ts",
+      "category": "external-service",
+      "reason": "Real-model evaluation is deliberately excluded from default and CI suites.",
+      "tracker": "https://github.com/copse-dev/agent-pane/issues/1371",
+      "ownerRole": "Agent evaluation maintainer (person assignment pending in #2719)",
+      "recordedOn": "2026-09-20",
+      "reviewBy": "2026-09-27",
+      "coverage": "Mock agent tests exercise deterministic flows; accepted real-model quality evidence remains outstanding under #1371.",
+      "markers": ["wdio.ci.conf.ts: exclude", "wdio.conf.ts: exclude"]
+    },
+    {
+      "spec": "tests/e2e/agent-tasks-terminal.e2e.ts",
+      "category": "quarantine",
+      "reason": "CI-only skip after Electron session death in the shell approval/tool-output path; cause still needs current reproduction.",
+      "tracker": "https://github.com/copse-dev/agent-pane/issues/1680",
+      "ownerRole": "Electron runtime maintainer (person assignment pending in #2719)",
+      "recordedOn": "2026-09-20",
+      "reviewBy": "2026-09-27",
+      "coverage": "Policy and shell unit tests do not replace terminal IPC and approval behavior in Electron. Local spec remains runnable; fresh successful evidence is not recorded here.",
+      "markers": ["describeSkipInCi: agent tasks in terminal tab"]
+    },
+    {
+      "spec": "tests/e2e/apple-development-panel.e2e.ts",
+      "category": "platform",
+      "reason": "Suite runs only on macOS, where the Apple Development panel is supported.",
+      "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
+      "ownerRole": "Apple development maintainer (person assignment pending in #2719)",
+      "recordedOn": "2026-09-20",
+      "reviewBy": "2026-09-27",
+      "coverage": "macOS spec remains runnable. This inventory does not record a recent macOS run.",
+      "markers": ["describe.skip"]
+    },
+    {
+      "spec": "tests/e2e/browser-display.e2e.ts",
+      "category": "external-service",
+      "reason": "CI config excludes the webview spec, which navigates to https://example.com.",
+      "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
+      "ownerRole": "Browser maintainer (person assignment pending in #2719)",
+      "recordedOn": "2026-09-20",
+      "reviewBy": "2026-09-27",
+      "coverage": "Component tests cannot prove live Electron webview navigation. A controlled runtime fixture or explicit live-service run is still needed.",
+      "markers": ["wdio.ci.conf.ts: exclude"]
+    },
+    {
+      "spec": "tests/e2e/browser-link-chat.e2e.ts",
+      "category": "external-service",
+      "reason": "CI config excludes the chat-link webview spec, which navigates to https://example.com.",
+      "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
+      "ownerRole": "Browser maintainer (person assignment pending in #2719)",
+      "recordedOn": "2026-09-20",
+      "reviewBy": "2026-09-27",
+      "coverage": "The live chat-link-to-webview journey lacks CI acceptance while this spec is excluded.",
+      "markers": ["wdio.ci.conf.ts: exclude"]
+    },
+    {
+      "spec": "tests/e2e/composer-branch-warning.e2e.ts",
+      "category": "quarantine",
+      "reason": "Excluded by the CI config among branch/environment-dependent specs; individual cause and current reproducibility need review.",
+      "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
+      "ownerRole": "Renderer and Git maintainer (person assignment pending in #2719)",
+      "recordedOn": "2026-09-20",
+      "reviewBy": "2026-09-27",
+      "coverage": "No equivalent full runtime evidence is established by this inventory.",
+      "markers": ["wdio.ci.conf.ts: exclude"]
+    },
+    {
+      "spec": "tests/e2e/context-wheel.e2e.ts",
+      "category": "quarantine",
+      "reason": "Both suites skip in CI; source comments report historical runner memory/session failure with the heavy seeded fixture.",
+      "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
+      "ownerRole": "Renderer and CI maintainer (person assignment pending in #2719)",
+      "recordedOn": "2026-09-20",
+      "reviewBy": "2026-09-27",
+      "coverage": "Seeded and live mock specs remain runnable locally; current runtime stability and equivalent coverage need review.",
+      "markers": [
+        "describeSkipInCi: context wheel footer live mock",
+        "describeSkipInCi: context wheel footer seeded"
+      ]
+    },
+    {
+      "spec": "tests/e2e/explorer-reload-spaced-path.e2e.ts",
+      "category": "platform",
+      "reason": "Suite targets the macOS seatbelt filesystem worker and skips other platforms.",
+      "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
+      "ownerRole": "Sandbox maintainer (person assignment pending in #2719)",
+      "recordedOn": "2026-09-20",
+      "reviewBy": "2026-09-27",
+      "coverage": "Non-macOS filesystem behavior does not exercise this sandbox regression. A macOS run remains required for relevant changes.",
+      "markers": ["describe.skip"]
+    },
+    {
+      "spec": "tests/e2e/follow-up-suggestions.e2e.ts",
+      "category": "quarantine",
+      "reason": "Excluded by CI config; streaming/timing and environment rationale must be confirmed for this spec.",
+      "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
+      "ownerRole": "Renderer and CI maintainer (person assignment pending in #2719)",
+      "recordedOn": "2026-09-20",
+      "reviewBy": "2026-09-27",
+      "coverage": "No equivalent full runtime evidence is established by this inventory.",
+      "markers": ["wdio.ci.conf.ts: exclude"]
+    },
+    {
+      "spec": "tests/e2e/footer-branch-picker.e2e.ts",
+      "category": "quarantine",
+      "reason": "Excluded by CI config among branch/environment-dependent specs; individual cause needs current review.",
+      "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
+      "ownerRole": "Renderer and Git maintainer (person assignment pending in #2719)",
+      "recordedOn": "2026-09-20",
+      "reviewBy": "2026-09-27",
+      "coverage": "No equivalent full runtime evidence is established by this inventory.",
+      "markers": ["wdio.ci.conf.ts: exclude"]
+    },
+    {
+      "spec": "tests/e2e/footer-branch-status.e2e.ts",
+      "category": "quarantine",
+      "reason": "Whole spec is excluded by CI config; the mismatch suite also has an in-spec CI skip.",
+      "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
+      "ownerRole": "Renderer and Git maintainer (person assignment pending in #2719)",
+      "recordedOn": "2026-09-20",
+      "reviewBy": "2026-09-27",
+      "coverage": "src/renderer/views/footer-branch-status.test.ts covers component behavior, not the complete Electron/Git fixture.",
+      "markers": ["describeSkipInCi: footer branch status mismatch", "wdio.ci.conf.ts: exclude"]
+    },
+    {
+      "spec": "tests/e2e/github-write-approval.e2e.ts",
+      "category": "quarantine",
+      "reason": "CI-only skip after approval-path Electron session death; retain as an unresolved critical runtime coverage gap.",
+      "tracker": "https://github.com/copse-dev/agent-pane/issues/1680",
+      "ownerRole": "Permissions and Electron runtime maintainer (person assignment pending in #2719)",
+      "recordedOn": "2026-09-20",
+      "reviewBy": "2026-09-27",
+      "coverage": "Permission policy/gate tests do not replace live approval UI, permission routing, and Electron lifecycle evidence.",
+      "markers": ["describeSkipInCi: GitHub write approval"]
+    },
+    {
+      "spec": "tests/e2e/guarded-yolo.e2e.ts",
+      "category": "quarantine",
+      "reason": "CI-only skip after approval dialog/session failures. End-to-end catastrophic-command denial remains unproven in this CI path.",
+      "tracker": "https://github.com/copse-dev/agent-pane/issues/1680",
+      "ownerRole": "Permissions and Electron runtime maintainer (person assignment pending in #2719)",
+      "recordedOn": "2026-09-20",
+      "reviewBy": "2026-09-27",
+      "coverage": "Guarded-YOLO and permission policy unit tests exist; they do not replace the real runtime approve/deny journey. No waiver is granted.",
+      "markers": ["describeSkipInCi: Guarded YOLO shell mode"]
+    },
+    {
+      "spec": "tests/e2e/onboarding.e2e.ts",
+      "category": "environment",
+      "reason": "Fallback test skips when a detected local server changes onboarding to checklist mode.",
+      "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
+      "ownerRole": "Onboarding maintainer (person assignment pending in #2719)",
+      "recordedOn": "2026-09-20",
+      "reviewBy": "2026-09-27",
+      "coverage": "onboarding-scan-import.e2e.ts covers deterministic scan/checklist paths; the fallback run remains dependent on host detections.",
+      "markers": ["this.skip"]
+    },
+    {
+      "spec": "tests/e2e/plugin-hook-loading.e2e.ts",
+      "category": "platform",
+      "reason": "Before hook skips non-macOS hosts for the seatbelt-backed plugin hook loading scenario.",
+      "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
+      "ownerRole": "Plugin and sandbox maintainer (person assignment pending in #2719)",
+      "recordedOn": "2026-09-20",
+      "reviewBy": "2026-09-27",
+      "coverage": "A real macOS sandbox run is necessary for this journey; Linux CI does not supply equivalent evidence.",
+      "markers": ["this.skip"]
+    },
+    {
+      "spec": "tests/e2e/portrait-right-panel.e2e.ts",
+      "category": "quarantine",
+      "reason": "Excluded by CI config; the specific historical reason and current reproduction need review.",
+      "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
+      "ownerRole": "Renderer and CI maintainer (person assignment pending in #2719)",
+      "recordedOn": "2026-09-20",
+      "reviewBy": "2026-09-27",
+      "coverage": "No equivalent layout/runtime evidence is established by this inventory.",
+      "markers": ["wdio.ci.conf.ts: exclude"]
+    },
+    {
+      "spec": "tests/e2e/queued-pinned.e2e.ts",
+      "category": "quarantine",
+      "reason": "CI config documents timing/scroll-pinning instability; this remaining runtime spec has not migrated with the other queue tests.",
+      "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
+      "ownerRole": "Renderer and CI maintainer (person assignment pending in #2719)",
+      "recordedOn": "2026-09-20",
+      "reviewBy": "2026-09-27",
+      "coverage": "message-queue, queued-send-now, and queued-message-edit component tests cover related behaviors, not the remaining scroll geometry.",
+      "markers": ["wdio.ci.conf.ts: exclude"]
+    },
+    {
+      "spec": "tests/e2e/scroll-to-bottom.e2e.ts",
+      "category": "quarantine",
+      "reason": "CI config excludes the entire spec for historical renderer crash/timeouts; two streaming cases also skip in-spec.",
+      "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
+      "ownerRole": "Renderer and CI maintainer (person assignment pending in #2719)",
+      "recordedOn": "2026-09-20",
+      "reviewBy": "2026-09-27",
+      "coverage": "No equivalent Electron streaming/scroll geometry evidence is established by this inventory.",
+      "markers": [
+        "itSkipInCi: hides scroll-to-bottom while auto-scrolling during streaming",
+        "itSkipInCi: keeps the view pinned when the user scrolls up during streaming",
+        "wdio.ci.conf.ts: exclude"
+      ]
+    },
+    {
+      "spec": "tests/e2e/settings-plaintext-secret-storage.e2e.ts",
+      "category": "platform",
+      "reason": "Test targets the opt-in plaintext secret-storage fallback on Linux and skips other platforms.",
+      "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
+      "ownerRole": "Settings and security maintainer (person assignment pending in #2719)",
+      "recordedOn": "2026-09-20",
+      "reviewBy": "2026-09-27",
+      "coverage": "The Linux Settings spec remains enabled there; this inventory is not evidence of a current successful run.",
+      "markers": ["this.skip"]
+    },
+    {
+      "spec": "tests/e2e/skills.e2e.ts",
+      "category": "quarantine",
+      "reason": "Excluded by CI config; exact current reason and any replacement coverage need review.",
+      "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
+      "ownerRole": "Skills UI and CI maintainer (person assignment pending in #2719)",
+      "recordedOn": "2026-09-20",
+      "reviewBy": "2026-09-27",
+      "coverage": "No equivalent complete composer/skills runtime evidence is established by this inventory.",
+      "markers": ["wdio.ci.conf.ts: exclude"]
+    },
+    {
+      "spec": "tests/e2e/staged-diff-ui.e2e.ts",
+      "category": "quarantine",
+      "reason": "CI config describes heavy multi-turn mock/Monaco diff-approval IPC after session reload as slow or unstable on constrained runners.",
+      "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
+      "ownerRole": "Diff UI and CI maintainer (person assignment pending in #2719)",
+      "recordedOn": "2026-09-20",
+      "reviewBy": "2026-09-27",
+      "coverage": "Unit/component assertions do not replace Monaco approval IPC. Current runtime reproduction and successful evidence remain outstanding.",
+      "markers": ["wdio.ci.conf.ts: exclude"]
+    }
+  ]
+}

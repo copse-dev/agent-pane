@@ -79,6 +79,11 @@ scope analysis, sandboxing, escalation, or approval copy.
 
 ## Validation workflow
 
+Record the task's observable acceptance criteria before editing, and hand off exact validation
+results plus remaining gaps. Use the short
+[task brief and completion evidence](docs/agent-development.md#task-brief-and-completion-evidence)
+convention and the PR template; a related implementation alone does not close an owning issue.
+
 ### Choose the lowest useful test tier
 
 Prefer unit/component tests. Use browser geometry for deterministic renderer layout and Electron e2e
