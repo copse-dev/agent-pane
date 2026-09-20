@@ -1429,7 +1429,6 @@ export function mountInputBar(
     }
     const projectId = store.getState().activeProjectId
     if (!projectId) return
-    perfMark('ttft:composer-submit')
     const seq = ++estimateSeq
     const estimatedModel = footerChatModel()
     const payload = composeEstimatePayload()
@@ -1596,6 +1595,7 @@ export function mountInputBar(
   }
 
   async function performSubmit(): Promise<void> {
+    perfMark('ttft:composer-submit')
     followUps.clearSuggestions()
     nextStepHint.clear()
     updateComposerPlaceholder()
