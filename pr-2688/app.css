@@ -2722,6 +2722,7 @@ copse-ui-field input[type=password],
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
+  background: var(--bg-base);
   -webkit-app-region: no-drag;
   position: relative;
 }
