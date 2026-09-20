@@ -723,26 +723,42 @@ export async function validateThreadWorktree(
   assertWorktreeMetadata(input.worktree)
   const location = await repositoryLocation(input.projectRoot)
   const projectRoot = location.repositoryRoot
-  await assertBranchName(projectRoot, input.worktree.baseBranch, 'Base branch')
   if (!/^[0-9a-f]{40,64}$/i.test(input.worktree.baseCommit)) {
     throw new Error('Thread worktree base commit is malformed')
-  }
-  const baseCommit = await requireGitValue(
-    projectRoot,
-    ['rev-parse', '--verify', `${input.worktree.baseCommit}^{commit}`],
-    'Cannot resolve thread worktree base commit',
-  )
-  if (baseCommit.toLowerCase() !== input.worktree.baseCommit.toLowerCase()) {
-    throw new Error('Thread worktree base commit does not resolve exactly')
   }
   const expected = expectedThreadWorktreePath(input.projectId, input.threadId)
   if (!sameWorktreePath(input.worktree.path, expected)) {
     throw new Error('Persisted worktree path does not match the configured thread path')
   }
 
-  const canonicalPath = await realpath(expected).catch(() => null)
+  // These checks share no mutable state. Worktree validation sits on every
+  // agent dispatch, so paying for independent Git subprocesses serially adds
+  // directly to time-to-first-token.
+  const [branchCheck, baseCommitCheck, canonicalPathCheck] = await Promise.allSettled([
+    assertBranchName(projectRoot, input.worktree.baseBranch, 'Base branch'),
+    requireGitValue(
+      projectRoot,
+      ['rev-parse', '--verify', `${input.worktree.baseCommit}^{commit}`],
+      'Cannot resolve thread worktree base commit',
+    ),
+    realpath(expected),
+  ])
+  if (branchCheck.status === 'rejected') throw branchCheck.reason
+  if (baseCommitCheck.status === 'rejected') throw baseCommitCheck.reason
+  const baseCommit = baseCommitCheck.value
+  if (baseCommit.toLowerCase() !== input.worktree.baseCommit.toLowerCase()) {
+    throw new Error('Thread worktree base commit does not resolve exactly')
+  }
+  const canonicalPath = canonicalPathCheck.status === 'fulfilled' ? canonicalPathCheck.value : null
   if (!canonicalPath) throw new Error('Thread worktree is missing')
-  const record = (await listRecords(projectRoot)).find((asyncRecord) => {
+  const [recordsCheck, liveBranchCheck, executionRootCheck] = await Promise.allSettled([
+    listRecords(projectRoot),
+    symbolicHeadBranch(canonicalPath),
+    realpath(resolve(canonicalPath, location.projectRelativePath)),
+  ])
+  if (recordsCheck.status === 'rejected') throw recordsCheck.reason
+  const records = recordsCheck.value
+  const record = records.find((asyncRecord) => {
     try {
       return sameWorktreePath(asyncRecord.path, canonicalPath)
     } catch {
@@ -754,19 +770,24 @@ export async function validateThreadWorktree(
   // linked checkout; read that checkout's HEAD directly and adopt its live
   // branch. The repository-wide worktree inventory above proves registration,
   // but a missing branch field there is not evidence that this HEAD detached.
-  const liveBranch = await symbolicHeadBranch(canonicalPath)
+  if (liveBranchCheck.status === 'rejected') throw liveBranchCheck.reason
+  const liveBranch = liveBranchCheck.value
   if (!liveBranch) throw new ThreadWorktreeDetachedError(input.worktree.branch)
   await assertBranchName(projectRoot, liveBranch, 'Thread branch')
   if (liveBranch === input.worktree.baseBranch) {
     throw new Error('Thread worktree branch must differ from its recorded base branch')
   }
 
-  const executionRoot = await realpath(resolve(canonicalPath, location.projectRelativePath)).catch(
-    () => null,
-  )
+  const executionRoot = executionRootCheck.status === 'fulfilled' ? executionRootCheck.value : null
   if (!executionRoot) throw new Error('Thread worktree project root is missing')
-  const registration = await registerInternalWorkspaceRoot(canonicalPath, executionRoot)
-  const projectCommonGitDir = await commonGitDir(projectRoot)
+  const [registrationCheck, commonGitDirCheck] = await Promise.allSettled([
+    registerInternalWorkspaceRoot(canonicalPath, executionRoot),
+    commonGitDir(projectRoot),
+  ])
+  if (registrationCheck.status === 'rejected') throw registrationCheck.reason
+  if (commonGitDirCheck.status === 'rejected') throw commonGitDirCheck.reason
+  const registration = registrationCheck.value
+  const projectCommonGitDir = commonGitDirCheck.value
   if (registration.commonGitDir !== projectCommonGitDir) {
     releaseWorktreeRoot(executionRoot)
     throw new Error('Thread worktree belongs to a different repository')
