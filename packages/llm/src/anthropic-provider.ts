@@ -7,17 +7,28 @@ import { anthropicParameterFields, type ModelParameters } from './model-paramete
 import { yieldStreamWithRetry } from './stream-retry.ts'
 import { parseToolArgs } from './parse-tool-args.ts'
 import { toolResultContentBlocks } from './tool-result-images.ts'
+import { PromptCacheDiagnostics } from './prompt-cache-diagnostics.ts'
 
 export class AnthropicProvider implements LLMProvider {
   private client: Anthropic
   private readonly model: string
   /** User-tuned generation parameters, already sanitized for this model. */
   private readonly params: ModelParameters
+  private readonly cacheDiagnostics: PromptCacheDiagnostics
   lastUsage: { inputTokens: number; outputTokens: number } | null = null
 
-  constructor(model: string, opts: { apiKey?: string; params?: ModelParameters } = {}) {
+  constructor(
+    model: string,
+    opts: { apiKey?: string; params?: ModelParameters; promptCacheKey?: string } = {},
+  ) {
     this.model = model
     this.params = opts.params ?? {}
+    this.cacheDiagnostics = new PromptCacheDiagnostics(
+      'anthropic',
+      model,
+      'https://api.anthropic.com',
+      opts.promptCacheKey,
+    )
     this.client = new Anthropic({
       apiKey: opts.apiKey ?? process.env['ANTHROPIC_API_KEY'],
       defaultHeaders: withAppAttribution(),
@@ -51,34 +62,33 @@ export class AnthropicProvider implements LLMProvider {
 
     return yieldStreamWithRetry(
       async function* () {
-        const stream = client.messages.stream(
-          {
-            model,
-            max_tokens: maxTokens,
-            ...tuned,
-            ...(systemPrompt !== undefined
-              ? {
-                  system: [
-                    {
-                      type: 'text' as const,
-                      text: systemPrompt,
-                      cache_control: { type: 'ephemeral' as const },
-                    },
-                  ],
-                }
-              : {}),
-            messages: apiMessages,
-            // The last tool gets a cache breakpoint so the (large, stable) tool
-            // schemas are cached instead of re-sent every loop iteration (#582).
-            tools: tools.map((t, i): Anthropic.Messages.Tool => ({
-              name: t.name,
-              description: t.description,
-              input_schema: { ...t.parameters, type: 'object' },
-              ...(i === tools.length - 1 ? { cache_control: { type: 'ephemeral' as const } } : {}),
-            })),
-          },
-          { signal },
-        )
+        const request = {
+          model,
+          max_tokens: maxTokens,
+          ...tuned,
+          ...(systemPrompt !== undefined
+            ? {
+                system: [
+                  {
+                    type: 'text' as const,
+                    text: systemPrompt,
+                    cache_control: { type: 'ephemeral' as const },
+                  },
+                ],
+              }
+            : {}),
+          messages: apiMessages,
+          // The last tool gets a cache breakpoint so the (large, stable) tool
+          // schemas are cached instead of re-sent every loop iteration (#582).
+          tools: tools.map((t, i): Anthropic.Messages.Tool => ({
+            name: t.name,
+            description: t.description,
+            input_schema: { ...t.parameters, type: 'object' },
+            ...(i === tools.length - 1 ? { cache_control: { type: 'ephemeral' as const } } : {}),
+          })),
+        }
+        const reportCache = self.cacheDiagnostics.begin(request.system, request.tools)
+        const stream = client.messages.stream(request, { signal })
 
         let currentToolId = ''
         let currentToolName = ''
@@ -91,9 +101,11 @@ export class AnthropicProvider implements LLMProvider {
         let outputTokens = 0
         let cacheReadTokens = 0
         let cacheCreationTokens = 0
+        let receivedUsage = false
 
         for await (const event of stream) {
           if (event.type === 'message_start') {
+            receivedUsage = true
             const u = event.message.usage
             cacheReadTokens = u.cache_read_input_tokens ?? 0
             cacheCreationTokens = u.cache_creation_input_tokens ?? 0
@@ -147,6 +159,7 @@ export class AnthropicProvider implements LLMProvider {
         }
         const usage = { inputTokens, outputTokens }
         self.lastUsage = usage
+        reportCache(receivedUsage ? { ...usage, cacheReadTokens, cacheCreationTokens } : null)
         // Emit usage per-stream so consumers can attribute it to this exact
         // stream rather than racing on the shared lastUsage field (#112).
         if (inputTokens || outputTokens) {

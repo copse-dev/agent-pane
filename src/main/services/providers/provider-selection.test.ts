@@ -18,6 +18,8 @@ import { createProvider } from '@copse/llm/create-provider.ts'
 import { AnthropicProvider } from '@copse/llm/anthropic-provider.ts'
 import type { LLMProvider } from '@shared/types'
 import { expectStringRecord } from '@shared/unknown-value.ts'
+import { isRecord } from '@copse/std/unknown-value.ts'
+import { safeJsonParse } from '@copse/std/safe-json.ts'
 import { jsonResponse } from './test-response.ts'
 
 const SOURCE_PATH = resolve(process.cwd(), 'src/main/services/providers/lm-studio-models.ts')
@@ -329,15 +331,31 @@ describe('buildProvider', () => {
     }
   })
 
-  it('builds a DeepSeek provider from the env key', async () => {
+  it('builds a DeepSeek provider from the env key and forwards the thread cache key', async (t) => {
     const prevMock = process.env['COPSE_PANEL_MOCK_LLM']
     const prevKey = process.env['DEEPSEEK_API_KEY']
     delete process.env['COPSE_PANEL_MOCK_LLM']
     process.env['DEEPSEEK_API_KEY'] = 'sk-deepseek-test'
+    let requests = 0
+    t.mock.method(globalThis, 'fetch', async (_input: unknown, init: RequestInit) => {
+      assert.ok(typeof init.body === 'string')
+      const request = safeJsonParse(init.body)
+      assert.ok(isRecord(request))
+      assert.equal(request['prompt_cache_key'], 'thread-deepseek')
+      requests++
+      return new Response(
+        'data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n',
+        { headers: { 'content-type': 'text/event-stream' } },
+      )
+    })
     try {
-      const provider = await buildProvider('deepseek:deepseek-chat')
+      const provider = await buildProvider('deepseek:deepseek-chat', 'thread-deepseek')
       assert.ok(provider)
       assert.equal(typeof provider.stream, 'function')
+      for await (const _ of provider.stream([{ role: 'user', content: 'hi' }], [])) {
+        // Exercise the remote redaction wrapper and actual SDK with an intercepted HTTP response.
+      }
+      assert.equal(requests, 1)
     } finally {
       if (prevMock === undefined) delete process.env['COPSE_PANEL_MOCK_LLM']
       else process.env['COPSE_PANEL_MOCK_LLM'] = prevMock
