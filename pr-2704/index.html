@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!--
+      style-src keeps 'unsafe-inline' on purpose. Our own code never emits
+      markup-level inline styles (no style="" attributes, no <style> blocks —
+      all dynamic styling goes through the CSSOM, which CSP does not govern).
+      The requirement comes from a bundled library that injects styles at
+      runtime and offers no CSP nonce hook:
+        - monaco-editor injects <style> elements (and uses innerHTML) for its
+          theming; content is dynamic per load, so nonce/hash do not apply.
+          This is unfixed upstream since 2016 (microsoft/monaco-editor#271),
+          and VS Code itself ships style-src 'unsafe-inline' for the same
+          reason (src/vs/code/electron-browser/workbench/workbench.html).
+      Mermaid runs in a separate opaque-origin frame with its own CSP.
+      Dropping 'unsafe-inline' here would break the editor.
+      img-src excludes remote HTTP(S) images in this document, including
+      CSS image loads. This restriction is not an app-wide network boundary.
+
+      Untrusted markdown and diagram rendering:
+        - @copse/streaming-markdown prefers the native Sanitizer API
+          (Element.setHTML). markdown/sanitizer-backend.ts installs its
+          DOMPurify backend only when the native backend is unavailable;
+          main.ts awaits backend readiness before the first render.
+        - mermaid runs with securityLevel:'strict' inside mermaid-frame.html.
+          Parsing, sanitization, and SVG insertion stay in that frame, including
+          expansion. Only source text and bounded dimensions cross the boundary.
+          Its source fallback uses textContent (markdown/mermaid-fallback.ts).
+        - script-src 'self' blocks inline and remote scripts. The
+          'unsafe-inline' allowance above applies only to styles.
+        - This policy does not enforce Trusted Types: it has neither
+          require-trusted-types-for 'script' nor a trusted-types allowlist.
+          Using the native Sanitizer API does not enforce other DOM sinks.
+
+      Scope: this CSP governs the app renderer document. Artifact-image
+      hydration calls main-process IPC to download images and then sets data:
+      URLs (markdown/remote-artifact-images.ts); those native downloads are not
+      governed by this CSP. Generated HTML canvas artifacts load in separate
+      browser contexts and need their own content and network restrictions.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none';"
+    />
+    <title>Copse</title>
+    <script src="./theme-boot.js"></script>
+    <link rel="icon" type="image/png" href="./favicon.png" />
+    <link rel="stylesheet" href="./app.css" />
+    <link rel="stylesheet" href="../vendor/monaco/0.56.0/vs/editor/browser/widget/diffEditor/style.css" />
+    <meta name="copse-monaco-base" content="../vendor/monaco/0.56.0/" />
+    <meta name="robots" content="noindex, nofollow" />
+  </head>
+  <body>
+    <div id="app">
+      <div id="titlebar"></div>
+      <div id="body" class="three-pane">
+        <div id="pane-projects" class="pane-projects"></div>
+        <div id="resizer-projects" class="pane-resizer" aria-hidden="true"></div>
+        <div id="pane-chat" class="pane-chat">
+          <div id="conversation" class="conversation"></div>
+          <div id="input-bar"></div>
+        </div>
+        <div id="resizer-files" class="pane-resizer" aria-hidden="true" hidden></div>
+        <div id="pane-files" class="pane-files" hidden>
+          <div class="pane-files-body">
+            <div id="right-sidebar" class="right-sidebar">
+              <div id="file-tree-host" class="file-tree-host"></div>
+              <div id="terminals-list-host" class="terminals-list-host" hidden></div>
+              <div id="git-changes-host" class="git-changes-host" hidden></div>
+              <div id="pr-list-host" class="git-changes-host pr-list-host" hidden></div>
+              <div id="memories-host" class="git-changes-host memories-host" hidden></div>
+              <div
+                id="roadmap-host"
+                class="git-changes-host memories-host roadmap-host"
+                hidden
+              ></div>
+              <div id="browser-tabs-host" class="browser-tabs-host" hidden></div>
+              <div id="vnc-controls-host" class="git-changes-host vnc-controls-host" hidden></div>
+            </div>
+            <div id="resizer-tree" class="pane-resizer" aria-hidden="true"></div>
+            <div id="file-viewer" class="file-viewer"></div>
+            <div id="terminals-viewer-host" class="terminals-viewer-host" hidden>
+              <div id="agent-tasks-host" class="agent-tasks-host"></div>
+            </div>
+            <div id="git-diff-viewer-host" class="git-diff-viewer-host" hidden></div>
+            <div id="pr-viewer-host" class="git-diff-viewer-host pr-viewer-host" hidden></div>
+            <div
+              id="memories-viewer-host"
+              class="git-diff-viewer-host memories-viewer-host"
+              hidden
+            ></div>
+            <div
+              id="roadmap-viewer-host"
+              class="git-diff-viewer-host memories-viewer-host roadmap-viewer-host"
+              hidden
+            ></div>
+            <div id="browser-viewer-host" class="browser-viewer-host" hidden></div>
+            <div id="vnc-viewer-host" class="vnc-viewer-host" hidden></div>
+          </div>
+        </div>
+      </div>
+      <div id="welcome"></div>
+    </div>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

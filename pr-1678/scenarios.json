@@ -1,0 +1,42 @@
+[
+  {
+    "id": "landing",
+    "label": "Builds a cupcake site"
+  },
+  {
+    "id": "proposed-diff",
+    "label": "Agent-proposed edits open the Changes panel"
+  },
+  {
+    "id": "markdown-list-indent",
+    "label": "Markdown list indentation"
+  },
+  {
+    "id": "footer-compact",
+    "label": "Responsive composer footer"
+  },
+  {
+    "id": "subagent-display",
+    "label": "Subagent display visual reference"
+  },
+  {
+    "id": "subagent-ungrouped",
+    "label": "Subagent stays ungrouped beside reading tools"
+  },
+  {
+    "id": "semantic-search-markdown",
+    "label": "Semantic search subagent markdown"
+  },
+  {
+    "id": "settings-footer",
+    "label": "Settings scroll + sticky footer geometry"
+  },
+  {
+    "id": "model-parameters",
+    "label": "Per-model reasoning / temperature / top-p"
+  },
+  {
+    "id": "chat-layout-styling",
+    "label": "Chat layout styling"
+  }
+]
