@@ -110,6 +110,23 @@ describe('git changes image preview', function () {
     await expect($('#git-diff-viewer-host .monaco-diff-editor')).not.toBeDisplayed()
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-image-staged.png'))
 
+    const stagedAfter = await $(
+      '#git-diff-viewer-host .git-image-diff-img[alt="staged.png (after)"]',
+    )
+    const stagedAfterSrc = await stagedAfter.getAttribute('src')
+    await stagedAfter.click()
+    const expandDialog = $('dialog.attachment-preview-dialog[open]')
+    await expandDialog.waitForExist({ timeout: 5_000 })
+    const expandedImg = await $('.image-expand-image')
+    await expect(expandedImg).toExist()
+    await expect(expandedImg).toHaveAttribute('src', stagedAfterSrc ?? '')
+    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-image-expand.png'))
+    await $('.attachment-preview-close').click()
+    await browser.waitUntil(
+      async () => !(await $('dialog.attachment-preview-dialog[open]').isExisting()),
+      { timeout: 5_000, timeoutMsg: 'expand modal did not close' },
+    )
+
     await clickChange('unstaged.png')
     await $('#git-diff-viewer-host .git-image-diff').waitForDisplayed({ timeout: 30_000 })
     await expect($$('#git-diff-viewer-host .git-image-diff-img')).toBeElementsArrayOfSize({
