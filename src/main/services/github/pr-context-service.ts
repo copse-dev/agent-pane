@@ -161,6 +161,7 @@ async function runGit(
  */
 export async function getPrWorkspaceContext(
   root: string | null = getWorkspaceRoot(),
+  dependencies: { runGh: typeof runGh } = { runGh },
 ): Promise<PrWorkspaceContext> {
   const empty: PrWorkspaceContext = {
     branch: null,
@@ -182,13 +183,11 @@ export async function getPrWorkspaceContext(
   const hasLocalConflicts =
     statusResult.code === 0 && porcelainHasMergeConflicts(statusResult.stdout)
 
-  const changeStats = await getGitChangeStats(root)
-
   let hasOpenPr = false
   let hasMergeConflicts = hasLocalConflicts
   let hasCiFailures = false
 
-  const ghResult = await runGh(
+  const ghResult = await dependencies.runGh(
     ['pr', 'view', '--json', 'state,mergeable,mergeStateStatus,statusCheckRollup'],
     { cwd: root },
   )
@@ -200,6 +199,11 @@ export async function getPrWorkspaceContext(
       hasCiFailures = ghPrHasCiFailures(pr)
     }
   }
+
+  const changeStats = await getGitChangeStats(root, {
+    includeCommitted: true,
+    hasOpenPr: (candidate) => Promise.resolve(candidate === branch && hasOpenPr),
+  })
 
   return {
     branch,
