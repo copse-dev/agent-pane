@@ -1,37 +1,15 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
 import { $, $$, browser } from '@wdio/globals'
-import { PNG } from 'pngjs'
-import type { MockScriptStep } from '../../src/shared/llm/mock-script.ts'
+import type { MockScriptStep } from '@copse/llm/mock-script'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
-import { waitForAgentIdle, waitForPromptReady } from './helpers.ts'
+import { waitForPromptReady } from './helpers.ts'
 import { setComposerValue } from './helpers/composer.ts'
-import { saveThreePaneScreenshot } from './helpers/screenshot.ts'
+import { saveElementScreenshot } from './helpers/screenshot.ts'
 
 const PROJECT_ID = 'e2e-canvas-background-parity'
-const TITLE = 'Transparent canvas parity'
-const OVERRIDE_TITLE = 'Explicit canvas background'
-const FIXTURE_PATH = join(process.cwd(), '.tmp', 'canvas-transparent-background.html')
-const OVERRIDE_FIXTURE_PATH = join(process.cwd(), '.tmp', 'canvas-explicit-background.html')
-const REFERENCE =
-  '\u{e200}visualize\u{e202}' +
-  JSON.stringify({ path: FIXTURE_PATH, title: TITLE, mode: 'wide' }) +
-  '\u{e201}'
-const OVERRIDE_REFERENCE =
-  '\u{e200}visualize\u{e202}' +
-  JSON.stringify({ path: OVERRIDE_FIXTURE_PATH, title: OVERRIDE_TITLE, mode: 'wide' }) +
-  '\u{e201}'
-const SCRIPT = [
-  {
-    when: 'render the transparent canvas',
-    text: REFERENCE,
-  },
-  {
-    when: 'render the explicit canvas background',
-    text: OVERRIDE_REFERENCE,
-  },
-] satisfies MockScriptStep[]
+const TITLE = 'Transparent Canvas Parity'
+const OVERRIDE_TITLE = 'Explicit Canvas Background'
+const CANVAS_TOOL = 'mcp__copse-canvas__render_html_artefact'
 
 const EXPLICIT_BACKGROUND = [226, 166, 58, 255]
 
@@ -75,6 +53,19 @@ const OVERRIDDEN_ARTEFACT = `<div id="canvas-background-probe">
 </style>
 `
 
+// The local mock provider renders through MCP; inline visualization control
+// frames are handled by the ACP executor only.
+const SCRIPT = [
+  {
+    when: 'render the transparent canvas',
+    tool: { name: CANVAS_TOOL, args: { title: TITLE, html: TRANSPARENT_ARTEFACT } },
+  },
+  {
+    when: 'render the explicit canvas background',
+    tool: { name: CANVAS_TOOL, args: { title: OVERRIDE_TITLE, html: OVERRIDDEN_ARTEFACT } },
+  },
+] satisfies MockScriptStep[]
+
 async function installMockScript(): Promise<void> {
   const status = await browser.execute(async (script) => {
     const bridge = (
@@ -101,18 +92,63 @@ async function resolvedBodyBackgroundPixel(): Promise<number[]> {
   })
 }
 
+async function previewCornerPixel(title: string): Promise<number[]> {
+  return browser.execute((expectedTitle) => {
+    const card = Array.from(document.querySelectorAll('.canvas-preview-card')).find(
+      (candidate) =>
+        candidate.querySelector('.canvas-preview-title')?.textContent === expectedTitle,
+    )
+    const image = card?.querySelector<HTMLImageElement>('.canvas-preview-image')
+    if (!image?.complete || !image.naturalWidth) throw new Error('canvas preview is not ready')
+    const canvas = document.createElement('canvas')
+    canvas.width = 1
+    canvas.height = 1
+    const context = canvas.getContext('2d')
+    if (!context) throw new Error('2D canvas context unavailable')
+    // Honor the capture's embedded display profile (e.g. Display P3 on macOS)
+    // before comparing its pixel with the CSS color resolved in sRGB.
+    context.drawImage(image, 0, 0, 1, 1, 0, 0, 1, 1)
+    return Array.from(context.getImageData(0, 0, 1, 1).data)
+  }, title)
+}
+
+async function renderCanvas(prompt: string, expectedToolCount: number): Promise<void> {
+  await setComposerValue(prompt)
+  await $('.submit-btn').click()
+  await browser.waitUntil(
+    async () =>
+      browser.execute(
+        (count) =>
+          !document.querySelector('.submit-btn')?.classList.contains('with-stop') &&
+          document.querySelectorAll('.tool-card[data-tool-id][data-status="done"]').length ===
+            count,
+        expectedToolCount,
+      ),
+    { timeout: 30_000, timeoutMsg: 'expected the canvas render tool to finish' },
+  )
+  // MCP previews are built lazily inside the completed tool's disclosure.
+  await browser.execute(() => {
+    for (const rollup of document.querySelectorAll<HTMLDetailsElement>('.tool-card-rollup')) {
+      if (!rollup.open) rollup.querySelector('summary')?.click()
+    }
+  })
+  await browser.execute(() => {
+    for (const tool of document.querySelectorAll<HTMLDetailsElement>('.tool-card[data-tool-id]')) {
+      if (!tool.open) tool.querySelector('summary')?.click()
+    }
+  })
+}
+
 describe('canvas background parity', () => {
   before(async () => {
     process.env.COPSE_PANEL_MOCK_LLM = '1'
     process.env.ANTHROPIC_API_KEY = ''
     process.env.OPENAI_API_KEY = ''
 
-    mkdirSync(dirname(FIXTURE_PATH), { recursive: true })
-    writeFileSync(FIXTURE_PATH, TRANSPARENT_ARTEFACT)
-    writeFileSync(OVERRIDE_FIXTURE_PATH, OVERRIDDEN_ARTEFACT)
     resetUserData()
     seedEmptyProject(process.cwd(), PROJECT_ID, {
       model: 'claude-sonnet-4-6',
+      mcpUiCanvasEnabled: true,
       theme: 'dark',
       uiTintColor: '#244c25',
       uiTintStrength: 'strong',
@@ -129,8 +165,6 @@ describe('canvas background parity', () => {
       ).__copseE2e?.clearMockScript?.()
     })
     resetUserData()
-    rmSync(FIXTURE_PATH, { force: true })
-    rmSync(OVERRIDE_FIXTURE_PATH, { force: true })
   })
 
   it('matches a transparent preview to the live dark canvas', async function () {
@@ -138,11 +172,9 @@ describe('canvas background parity', () => {
     await waitForPromptReady()
     await installMockScript()
 
-    await setComposerValue('Please render the transparent canvas.')
-    await $('.submit-btn').click()
-    await waitForAgentIdle(45_000)
+    await renderCanvas('Please render the transparent canvas.', 1)
 
-    const card = $('.message-canvas-previews .canvas-preview-card')
+    const card = $('.canvas-preview-card')
     await card.waitForExist({ timeout: 20_000 })
     const image = card.$('.canvas-preview-image')
     await browser.waitUntil(
@@ -150,18 +182,22 @@ describe('canvas background parity', () => {
         browser.execute((selector) => {
           const candidate = document.querySelector<HTMLImageElement>(selector)
           return candidate?.complete === true && candidate.naturalWidth > 0
-        }, '.message-canvas-previews .canvas-preview-image'),
+        }, '.canvas-preview-image'),
       { timeout: 20_000, timeoutMsg: 'expected canvas preview image to load' },
     )
 
     const preview = await image.getAttribute('src')
     assert.ok(preview?.startsWith('data:image/png;base64,'))
-    const comma = preview.indexOf(',')
-    assert.ok(comma >= 0)
-    const png = PNG.sync.read(Buffer.from(preview.slice(comma + 1), 'base64'))
-    const previewCorner = Array.from(png.data.subarray(0, 4))
+    const previewCorner = await previewCornerPixel(TITLE)
     const themePixel = await resolvedBodyBackgroundPixel()
-    assert.deepEqual(previewCorner, themePixel)
+    // An 8-bit display-profile round trip can round an RGB channel by one.
+    assert.equal(previewCorner.length, themePixel.length)
+    for (const [channel, expected] of themePixel.entries()) {
+      assert.ok(
+        Math.abs((previewCorner[channel] ?? -255) - expected) <= (channel === 3 ? 0 : 1),
+        `preview ${JSON.stringify(previewCorner)} should match theme ${JSON.stringify(themePixel)}`,
+      )
+    }
 
     await card.$('button').click()
     await $('.browser-tab-panel.is-active .browser-webview').waitForExist({ timeout: 20_000 })
@@ -177,28 +213,14 @@ describe('canvas background parity', () => {
     })
     assert.equal(surfaces.canvas, surfaces.app)
 
-    await browser.execute(() => {
-      document
-        .querySelector('.message-canvas-previews .canvas-preview-card')
-        ?.scrollIntoView({ block: 'center' })
-    })
-    await saveThreePaneScreenshot('canvas-transparent-background-dark.png', {
-      filesPaneWidth: 600,
-    })
+    await saveElementScreenshot('.canvas-preview-card', 'canvas-transparent-background-dark.png')
   })
 
   it('lets an artefact override the default canvas background', async function () {
     this.timeout(90_000)
 
-    await setComposerValue('Please render the explicit canvas background.')
-    await $('.submit-btn').click()
-    await waitForAgentIdle(45_000)
+    await renderCanvas('Please render the explicit canvas background.', 2)
 
-    const cards = await $$('.message-canvas-previews .canvas-preview-card')
-    const card = cards.at(-1)
-    assert.ok(card)
-    await card.waitForExist({ timeout: 20_000 })
-    const image = card.$('.canvas-preview-image')
     await browser.waitUntil(
       async () =>
         browser.execute((title) => {
@@ -211,11 +233,12 @@ describe('canvas background parity', () => {
       { timeout: 20_000, timeoutMsg: 'expected explicit canvas preview image to load' },
     )
 
+    const cards = await $$('.canvas-preview-card')
+    const card = cards.at(-1)
+    assert.ok(card)
+    const image = card.$('.canvas-preview-image')
     const preview = await image.getAttribute('src')
     assert.ok(preview?.startsWith('data:image/png;base64,'))
-    const comma = preview.indexOf(',')
-    assert.ok(comma >= 0)
-    const png = PNG.sync.read(Buffer.from(preview.slice(comma + 1), 'base64'))
-    assert.deepEqual(Array.from(png.data.subarray(0, 4)), EXPLICIT_BACKGROUND)
+    assert.deepEqual(await previewCornerPixel(OVERRIDE_TITLE), EXPLICIT_BACKGROUND)
   })
 })
