@@ -1,4 +1,5 @@
-import { describe, it } from 'node:test'
+import { createServer, type ServerResponse } from 'node:http'
+import { describe, it, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { at } from '@copse/std/array-utils.ts'
 import type { ImageDetail, LLMTool, ProviderStreamChunk } from './wire-types.ts'
@@ -87,6 +88,132 @@ async function collect(
   }
   return out
 }
+
+function sendChatCompletion(res: ServerResponse): void {
+  res.writeHead(200, { 'content-type': 'text/event-stream' })
+  res.end(
+    'data: {"id":"chatcmpl_test","object":"chat.completion.chunk","created":0,"model":"test","choices":[{"index":0,"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\n' +
+      'data: [DONE]\n\n',
+  )
+}
+
+async function withRoutingPolicyServer<T>(
+  status: 404 | 503,
+  failures: number,
+  run: (provider: OpenAIProvider, requestBodies: readonly string[]) => Promise<T>,
+): Promise<T> {
+  const requestBodies: string[] = []
+  const server = createServer((req, res) => {
+    let body = ''
+    req.setEncoding('utf8')
+    req.on('data', (chunk: string) => {
+      body += chunk
+    })
+    req.on('end', () => {
+      requestBodies.push(body)
+      if (requestBodies.length <= failures) {
+        const message =
+          status === 404
+            ? 'No endpoints found matching your data policy (Zero data retention).'
+            : 'There is no available model provider that meets your routing requirements.'
+        res.writeHead(status, {
+          'content-type': 'application/json',
+          'retry-after': '0',
+        })
+        res.end(JSON.stringify({ error: { message, code: status } }))
+        return
+      }
+      sendChatCompletion(res)
+    })
+  })
+  await new Promise<void>((resolve, reject) => {
+    const onError = (err: Error): void => {
+      reject(err)
+    }
+    server.once('error', onError)
+    server.listen(0, '127.0.0.1', () => {
+      server.off('error', onError)
+      resolve()
+    })
+  })
+  const address = server.address()
+  if (address === null || typeof address === 'string') {
+    server.close()
+    throw new Error('Routing-policy test server did not bind a TCP port')
+  }
+  const provider = new OpenAIProvider('openrouter/test-model', {
+    baseURL: `http://127.0.0.1:${String(address.port)}/v1`,
+    apiKey: 'test-key',
+    extraBody: {
+      provider: { zdr: true, data_collection: 'deny' },
+    },
+  })
+  try {
+    return await run(provider, requestBodies)
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      server.close((err) => {
+        if (err) reject(err)
+        else resolve()
+      })
+    })
+  }
+}
+
+describe('OpenAIProvider routing-policy retry budget', () => {
+  it('replays legacy 404 and current 503 policy failures once with the same privacy body', async () => {
+    const warn = mock.method(console, 'warn', () => {})
+    try {
+      for (const status of [404, 503] as const) {
+        await withRoutingPolicyServer(status, 1, async (provider, requestBodies) => {
+          const chunks = await collect(provider)
+
+          assert.equal(requestBodies.length, 2)
+          assert.equal(requestBodies[1], requestBodies[0])
+          assert.match(requestBodies[0] ?? '', /"zdr":true/)
+          assert.match(requestBodies[0] ?? '', /"data_collection":"deny"/)
+          assert.equal(
+            chunks
+              .filter(
+                (chunk): chunk is Extract<ProviderStreamChunk, { type: 'text' }> =>
+                  chunk.type === 'text',
+              )
+              .map((chunk) => chunk.text)
+              .join(''),
+            'ok',
+          )
+        })
+      }
+
+      assert.deepEqual(
+        warn.mock.calls.map((call) => call.arguments),
+        [['[llm] routing-policy retry succeeded'], ['[llm] routing-policy retry succeeded']],
+      )
+    } finally {
+      warn.mock.restore()
+    }
+  })
+
+  it('limits a repeated policy 503 to two HTTP requests', async () => {
+    const warn = mock.method(console, 'warn', () => {})
+    try {
+      await withRoutingPolicyServer(503, Number.POSITIVE_INFINITY, async (provider, bodies) => {
+        await assert.rejects(
+          collect(provider),
+          /no available model provider that meets your routing requirements/i,
+        )
+        assert.equal(bodies.length, 2)
+        assert.equal(bodies[1], bodies[0])
+      })
+      assert.deepEqual(
+        warn.mock.calls.map((call) => call.arguments),
+        [['[llm] routing-policy retry failed']],
+      )
+    } finally {
+      warn.mock.restore()
+    }
+  })
+})
 
 /**
  * Every `image_url` object anywhere in a chat-completions request, in document

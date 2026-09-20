@@ -135,6 +135,10 @@ export class OpenAIProvider implements LLMProvider {
       apiKey: opts.apiKey ?? process.env['OPENAI_API_KEY'] ?? 'not-needed',
       ...(opts.baseURL ? { baseURL: opts.baseURL } : {}),
       defaultHeaders: withAppAttribution(opts.defaultHeaders),
+      // yieldStreamWithRetry owns the request budget. Leaving the SDK's two
+      // retries enabled would multiply that outer budget — most importantly,
+      // one routing-policy replay could become six HTTP requests for a 503.
+      maxRetries: 0,
     })
   }
 
