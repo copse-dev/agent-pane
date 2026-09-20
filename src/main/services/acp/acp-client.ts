@@ -773,7 +773,10 @@ function captureAcpChildStderr(
   const faults = watchAgentStderr(child.stderr, {
     prefix: `acp:${command}`,
     command,
-    limitLabel: localOpenFileLimitLabel(),
+    // Building Node's diagnostic report can synchronously block Electron's
+    // main thread. Read the inherited limit only if stderr actually reports
+    // descriptor exhaustion, not on every fresh ACP transport.
+    limitLabel: localOpenFileLimitLabel,
     onText: (text) => {
       tail = appendStderrTail(tail, text)
     },
