@@ -1773,6 +1773,15 @@ jobs:
   # gate wedged canceled runs behind the offline/saturated fleet (#1669).
   # No checkout, dependencies, network lookups or token are needed here.
   # See docs/plans/ci-cancellation-gate.md for the acceptance evidence (#2520).
+  #
+  # Consequence: a superseded run — a newer push, a same-SHA re-trigger such as
+  # `labeled` / `ready_for_review`, or a trunk push cancelling the nightly —
+  # now leaves a red `CI Passed` on the SHA it was evaluating instead of a
+  # skipped one. That is intended: only the replacement run's own green
+  # counts. Branch protection reads the newest check run of that name and
+  # release-mac.yml polls the latest-started `CI Passed`; the concurrency
+  # group serialises runs, so the replacement's gate always starts after the
+  # cancelled gate has finished and its result is the one that wins.
   ci-passed:
     # A push to trunk (`main`) intentionally skips the expensive tier. Give that
     # run a distinct check context so its green result on the same head SHA
