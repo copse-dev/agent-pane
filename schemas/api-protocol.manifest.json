@@ -717,6 +717,13 @@
           3
         ]
       },
+      "git:current-branch": {
+        "api": "git.currentBranch",
+        "args": [
+          2,
+          2
+        ]
+      },
       "git:file-diff": {
         "api": "git.fileDiff",
         "args": [

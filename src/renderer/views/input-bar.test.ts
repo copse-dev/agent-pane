@@ -58,6 +58,7 @@ function thread(branch?: string): Thread {
 function createApi(options: {
   currentBranch: string
   getCurrentBranch?: () => string
+  branchStatusCurrentBranch?: string
   branches?: Awaited<ReturnType<ApiClient['git']['listBranches']>>
   onAbort?: () => Promise<void>
   onRun?: () => Promise<void>
@@ -134,8 +135,12 @@ function createApi(options: {
       },
       git: {
         ...base['git'],
+        currentBranch: async () => options.getCurrentBranch?.() ?? options.currentBranch,
         branchStatus: async () => ({
-          currentBranch: options.getCurrentBranch?.() ?? options.currentBranch,
+          currentBranch:
+            options.branchStatusCurrentBranch ??
+            options.getCurrentBranch?.() ??
+            options.currentBranch,
           pr: null,
         }),
         promptState: async () =>
@@ -1103,6 +1108,41 @@ describe('input bar debug trace', () => {
 })
 
 describe('input bar branch mismatch warning', () => {
+  it('checks the local branch without waiting for pull-request status', async () => {
+    let runs = 0
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread('feature/thread-branch')],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'feature/thread-branch',
+        branchStatusCurrentBranch: 'main',
+        onRun: async () => {
+          runs += 1
+        },
+      }),
+    )
+    await settle()
+
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    const submitBtn = host.querySelector<HTMLButtonElement>('.submit-btn')
+    assert.ok(composer)
+    assert.ok(submitBtn)
+    composer.textContent = 'Continue'
+    submitBtn.click()
+    await flush()
+
+    assert.equal(runs, 1)
+  })
+
   it('does not block submit when an isolated worktree binds a different branch', async () => {
     let runs = 0
     const store = createStore({

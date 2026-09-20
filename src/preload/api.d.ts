@@ -1135,6 +1135,8 @@ export interface ApiClient {
       threadId: string,
       path: string,
     ) => Promise<GitFileDiff | null>
+    /** Current checked-out branch, without a remote pull-request lookup. */
+    currentBranch: (projectId: string, threadId: string) => Promise<string | null>
     branchStatus: (
       projectId: string,
       threadId: string,
