@@ -47,6 +47,10 @@ const successfulPr = {
 }
 
 function gate(overrides: Record<string, string> = {}): number | null {
+  // The child environment is exactly the Actions bindings: no PATH, no
+  // inherited variables. The script therefore only works while it uses shell
+  // built-ins (echo, printf, [, case, exit), which is also what keeps the
+  // hosted gate free of checkout, install and network dependencies.
   const result = spawnSync('bash', ['-e', '-o', 'pipefail', '-c', script], {
     encoding: 'utf8',
     env: { ...successfulPr, ...overrides },
