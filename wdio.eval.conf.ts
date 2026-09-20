@@ -5,6 +5,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { assertNoErrorToasts } from './tests/e2e/helpers/assert-no-error-toasts.ts'
+import { resolveElectronBrowserVersion } from './tests/e2e/helpers/electron-browser-version.ts'
 import {
   createEvalProject,
   loadEvalScenario,
@@ -41,6 +42,7 @@ const chromedriverBinary = join(
   'bin',
   'chromedriver',
 )
+const electronBrowserVersion = resolveElectronBrowserVersion(electronBinary, chromedriverBinary)
 
 let evalUserDataDir: string | null = null
 let evalChromeProfileDir: string | null = null
@@ -72,8 +74,9 @@ export const config: Options.Testrunner = {
   capabilities: [
     {
       browserName: 'chrome',
-      // Must match Chromium in the pinned Electron 43 runtime (see wdio.conf.ts).
-      browserVersion: '150.0.7871.46',
+      // Read from the pinned Electron binary and checked against ChromeDriver
+      // before WebDriver launches the app.
+      browserVersion: electronBrowserVersion,
       'wdio:chromedriverOptions': { binary: chromedriverBinary },
       'wdio:enforceWebDriverClassic': true,
       'goog:chromeOptions': {
