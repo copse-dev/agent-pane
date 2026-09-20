@@ -402,6 +402,13 @@
           2
         ]
       },
+      "canvas:read-artefact": {
+        "api": "canvas.readArtefact",
+        "args": [
+          3,
+          3
+        ]
+      },
       "canvas:reopen-artefact": {
         "api": "canvas.reopenArtefact",
         "args": [

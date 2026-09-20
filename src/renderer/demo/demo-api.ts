@@ -583,6 +583,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       // The demo has no canvas store behind it: nothing was ever saved, so
       // nothing can be listed or reopened.
       listArtefacts: () => resolved([]),
+      readArtefact: () => resolved(null),
       reopenArtefact: () => resolved(false),
     },
     storage: {

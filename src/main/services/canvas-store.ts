@@ -172,9 +172,10 @@ export async function rememberCanvasArtefact(
 }
 
 /**
- * The saved artefacts a transcript needs to draw its preview cards. Bodies are
- * left on disk — a card shows a thumbnail and an Open button, and reading back
- * every artefact's HTML to render one would put the whole canvas history in the
+ * The saved artefacts a transcript needs to discover its canvas cards. Bodies
+ * stay on disk during hydration: each visible inline presentation reads its
+ * exact document lazily, while ordinary history cards need only a thumbnail
+ * and Open button. This avoids putting the whole canvas history in the
  * renderer's heap on every thread switch.
  */
 export async function loadCanvasArtefactSummaries(

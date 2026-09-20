@@ -46,7 +46,7 @@ function mountWithUserMessage(
 }
 
 function mountWithAssistantMessage(content: string, canvasTitle?: string): string {
-  const store = createStore()
+  const store = createStore({ activeProjectId: 'project-1' })
   const threadId = createThread(store)
   const messageId = addMessage(store, threadId, 'assistant', content)
   if (canvasTitle) {
@@ -292,7 +292,7 @@ describe('assistant inline visualization references', () => {
     assert.equal(document.querySelector('.tool-card'), null)
   })
 
-  it('shows the existing canvas preview card directly beneath an assistant answer', () => {
+  it('shows an inline canvas surface directly beneath an assistant answer', () => {
     let opened: { threadId: string; title: string } | null = null
     setArtefactShowHandler((threadId, title) => {
       opened = { threadId, title }
@@ -303,8 +303,11 @@ describe('assistant inline visualization references', () => {
       '.msg-assistant > .message-body > .message-canvas-previews .canvas-preview-card',
     )
     assert.ok(card)
+    assert.equal(card.tagName, 'FIGURE')
     assert.equal(card.querySelector('.canvas-preview-title')?.textContent, 'Chart')
     assert.match(card.querySelector('img')?.getAttribute('src') ?? '', /^data:image\/png/)
+    assert.ok(card.querySelector('.canvas-inline-stage'))
+    assert.equal(card.querySelector('.canvas-preview-open')?.textContent, 'Open canvas')
     assert.equal(document.querySelector('.tool-card'), null)
 
     card.querySelector<HTMLButtonElement>('button')?.click()

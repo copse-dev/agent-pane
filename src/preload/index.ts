@@ -666,6 +666,8 @@ const api: ApiClient = {
     },
     listArtefacts: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('canvas:list-artefacts', projectId, threadId),
+    readArtefact: (projectId: string, threadId: string, title: string) =>
+      ipcRenderer.invoke('canvas:read-artefact', projectId, threadId, title),
     reopenArtefact: (projectId: string, threadId: string, title: string) =>
       ipcRenderer.invoke('canvas:reopen-artefact', projectId, threadId, title),
   },

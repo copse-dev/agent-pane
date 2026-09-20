@@ -14,14 +14,39 @@
  */
 
 import type { ApiClient } from '../../preload/api.d.ts'
+import type { CanvasArtefact } from '@shared/types/canvas.ts'
 
 /** Thread + artefact title -> PNG `data:` URL captured from the agent browser session. */
 const previews = new Map<string, string>()
+
+/**
+ * A small LRU of complete documents that have just crossed the live artefact
+ * channel or were requested for an inline card. The canvas store remains the
+ * source of truth; this cache closes the short race where the renderer receives
+ * a live artefact just before main's best-effort disk write completes.
+ */
+const artefacts = new Map<string, CanvasArtefact>()
+const artefactReads = new Map<string, Promise<CanvasArtefact | null>>()
+const MAX_CACHED_ARTEFACTS = 20
 
 let showHandler: ((threadId: string, title: string) => void) | null = null
 
 function previewKey(threadId: string, title: string): string {
   return JSON.stringify([threadId, title])
+}
+
+function artefactKey(projectId: string, threadId: string, title: string): string {
+  return JSON.stringify([projectId, threadId, title])
+}
+
+function cacheArtefact(key: string, artefact: CanvasArtefact): void {
+  artefacts.delete(key)
+  artefacts.set(key, artefact)
+  while (artefacts.size > MAX_CACHED_ARTEFACTS) {
+    const oldest = artefacts.keys().next().value
+    if (oldest === undefined) break
+    artefacts.delete(oldest)
+  }
 }
 
 /**
@@ -39,6 +64,59 @@ export function setArtefactPreview(
 
 export function getArtefactPreview(threadId: string, title: string): string | undefined {
   return previews.get(previewKey(threadId, title))
+}
+
+/** Remember a live artefact so its presentation reference can render immediately. */
+export function setArtefactContent(
+  projectId: string,
+  threadId: string,
+  artefact: CanvasArtefact,
+): void {
+  cacheArtefact(artefactKey(projectId, threadId, artefact.title), artefact)
+  setArtefactPreview(threadId, artefact.title, artefact.preview)
+}
+
+export function getArtefactContent(
+  projectId: string,
+  threadId: string,
+  title: string,
+): CanvasArtefact | undefined {
+  const key = artefactKey(projectId, threadId, title)
+  const artefact = artefacts.get(key)
+  if (artefact) cacheArtefact(key, artefact)
+  return artefact
+}
+
+/**
+ * Lazily read one referenced document. Concurrent transcript rebuilds share the
+ * same request, while a failed/missing read is not cached so a later disk write
+ * or source-file edit can be observed.
+ */
+export function loadArtefactContent(
+  api: ApiClient,
+  projectId: string,
+  threadId: string,
+  title: string,
+): Promise<CanvasArtefact | null> {
+  const cached = getArtefactContent(projectId, threadId, title)
+  if (cached) return Promise.resolve(cached)
+
+  const key = artefactKey(projectId, threadId, title)
+  const existing = artefactReads.get(key)
+  if (existing) return existing
+
+  const request = api.canvas
+    .readArtefact(projectId, threadId, title)
+    .then((artefact) => {
+      if (artefact?.title === title) setArtefactContent(projectId, threadId, artefact)
+      return artefact?.title === title ? artefact : null
+    })
+    .catch(() => null)
+    .finally(() => {
+      artefactReads.delete(key)
+    })
+  artefactReads.set(key, request)
+  return request
 }
 
 /**
@@ -80,6 +158,8 @@ export function requestArtefactShow(threadId: string, title: string): void {
 /** @internal test helper — drop previews and the handler. */
 export function resetArtefactPreviewsForTest(): void {
   previews.clear()
+  artefacts.clear()
+  artefactReads.clear()
   showHandler = null
 }
 

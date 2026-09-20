@@ -744,3 +744,81 @@
   font-size: 12px;
   color: var(--text-muted, var(--text));
 }
+
+/* Assistant presentation references are live, process-isolated canvas guests.
+   The captured image remains underneath while Electron creates the guest, so
+   the transcript never flashes through a blank rectangle. */
+.canvas-inline-artefact {
+  margin-block: var(--spacing-sm) var(--spacing-xs);
+}
+.canvas-inline-stage {
+  position: relative;
+  width: 100%;
+  min-height: 280px;
+  max-height: min(440px, 56vh);
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: var(--bg-base);
+}
+.canvas-inline-stage .canvas-preview-image {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+}
+.canvas-inline-webview {
+  position: absolute;
+  inset: 0;
+  /* Electron's custom element uses a flex shadow host to stretch its internal
+     OOPIF. Overriding that default with block leaves the guest at 300×150 even
+     when the outer element fills this stage. */
+  display: flex;
+  border: 0;
+  opacity: 0;
+  background: var(--bg-base);
+}
+.canvas-inline-artefact[data-canvas-state='interactive'] .canvas-inline-webview {
+  opacity: 1;
+}
+.canvas-inline-artefact[data-canvas-state='interactive']
+  :is(.canvas-preview-image, .canvas-inline-placeholder) {
+  visibility: hidden;
+}
+.canvas-inline-placeholder {
+  display: flex;
+  height: 100%;
+  min-height: inherit;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm);
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+.canvas-inline-placeholder-icon {
+  animation: ui-inline-status-spin 0.9s linear infinite;
+}
+.canvas-inline-artefact[data-canvas-state='unavailable'] .canvas-inline-placeholder-icon {
+  display: none;
+}
+.canvas-preview-heading {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+.canvas-inline-status {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.canvas-preview-open {
+  flex: none;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  color: var(--text-secondary);
+}
+.canvas-inline-artefact:focus-within {
+  border-color: var(--border-strong);
+}
+@media (prefers-reduced-motion: reduce) {
+  .canvas-inline-placeholder-icon {
+    animation: none;
+  }
+}
