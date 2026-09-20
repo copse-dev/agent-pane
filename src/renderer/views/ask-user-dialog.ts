@@ -196,6 +196,17 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): void {
     }
   })
 
+  // Escape fires the native <dialog> `cancel` event before it closes the top
+  // layer. Without this, that native close left `active` set and never called
+  // `api.ask.respond` — the agent loop stayed blocked forever on a question
+  // the user had already dismissed. `preventDefault` stops the native close so
+  // `cancel()` (via `respond()`) stays the single path that closes the dialog
+  // and advances the queue.
+  dialog.addEventListener('cancel', (event) => {
+    event.preventDefault()
+    cancel()
+  })
+
   api.agent.onAskUserRequest((req) => {
     queue.push({ id: req.id, threadId: req.threadId, questions: req.questions })
     showNext()
