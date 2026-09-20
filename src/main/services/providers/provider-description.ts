@@ -156,6 +156,7 @@ export function buildProviderFromDescription(
         apiKey,
         options.approvedHosts ?? [],
         description.params,
+        options.promptCacheKey,
       )
     case 'openrouter':
       if (!apiKey) {
@@ -172,7 +173,7 @@ export function buildProviderFromDescription(
       return createProvider(
         description.model,
         apiKey ? { anthropicApiKey: apiKey } : {},
-        undefined,
+        options.promptCacheKey,
         { params: description.params },
       )
     case 'openai':
