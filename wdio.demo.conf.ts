@@ -12,6 +12,13 @@ const AFTER_TEST_SESSION_BUDGET_MS = 5_000
 
 const DEMO_PORT = 4173
 const DEMO_ROOT = resolve('dist/demo')
+const PROTOTYPE_ROOT = resolve('prototypes')
+const PROTOTYPE_MOUNT = '/prototypes'
+// Static workshops reuse the shipped theme tokens and local fonts.
+const PROTOTYPE_ASSETS = [
+  { mount: '/src/renderer/styles', root: resolve('src/renderer/styles') },
+  { mount: '/assets/fonts', root: resolve('assets/fonts') },
+]
 const MARKETING_ROOT = resolve('site')
 const MARKETING_MOUNT = '/marketing'
 const MARKETING_DEMO_MOUNT = `${MARKETING_MOUNT}/demo/main`
@@ -34,8 +41,26 @@ async function startDemoServer(): Promise<void> {
     const pathname = decodeURIComponent(requestUrl.pathname)
     const marketingDemoPath = mountedPath(pathname, MARKETING_DEMO_MOUNT)
     const marketingPath = mountedPath(pathname, MARKETING_MOUNT)
-    const root = marketingDemoPath ? DEMO_ROOT : marketingPath ? MARKETING_ROOT : DEMO_ROOT
-    const relativePath = marketingDemoPath ?? marketingPath ?? normalizedPath(pathname)
+    const prototypePath = mountedPath(pathname, PROTOTYPE_MOUNT)
+    const sharedAsset = PROTOTYPE_ASSETS.map(({ mount, root }) => ({
+      root,
+      path: mountedPath(pathname, mount),
+    })).find((asset) => asset.path !== null)
+    const root = sharedAsset
+      ? sharedAsset.root
+      : prototypePath
+        ? PROTOTYPE_ROOT
+        : marketingDemoPath
+          ? DEMO_ROOT
+          : marketingPath
+            ? MARKETING_ROOT
+            : DEMO_ROOT
+    const relativePath =
+      sharedAsset?.path ??
+      prototypePath ??
+      marketingDemoPath ??
+      marketingPath ??
+      normalizedPath(pathname)
     const path = resolve(root, `.${relativePath}`)
     if (path !== root && !path.startsWith(`${root}${sep}`)) {
       response.writeHead(403).end('Forbidden')

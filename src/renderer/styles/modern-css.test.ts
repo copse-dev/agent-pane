@@ -31,7 +31,7 @@ function declares(css: string, selector: string, prop: RegExp): boolean {
 }
 
 describe('modern CSS adoptions', () => {
-  it('uses one inherited line height throughout the renderer', () => {
+  it('keeps chrome on the shared rhythm and scopes Reading to assistant prose', () => {
     const tokens = readFileSync(resolve(process.cwd(), 'src/renderer/styles/tokens.css'), 'utf8')
     const base = read('base.css')
     assert.match(
@@ -41,7 +41,7 @@ describe('modern CSS adoptions', () => {
     )
     assert.ok(
       declares(base, 'body', /line-height:\s*var\(--line-height-base\)/),
-      'body must establish the shared line height for every renderer surface',
+      'body must establish the default line height for renderer surfaces',
     )
     for (const [file, selector] of [
       ['forms.css', 'button'],
@@ -55,6 +55,17 @@ describe('modern CSS adoptions', () => {
       )
     }
 
+    const readingSelector = '.msg-assistant > .message-body > .message-text'
+    assert.ok(
+      declares(read('conversation.css'), readingSelector, /--sm-line-height:\s*1\.65;/),
+      'assistant prose must define the Reading rhythm for pending and completed markdown',
+    )
+    assert.ok(
+      declares(read('conversation.css'), readingSelector, /line-height:\s*var\(--sm-line-height\)/),
+      'assistant prose must use its markdown reading rhythm',
+    )
+    const readingRule = /\.msg-assistant\s*>\s*\.message-body\s*>\s*\.message-text\s*\{[^}]*\}/g
+
     const allowedCompactValues = new Set([
       '1',
       '1.2',
@@ -66,24 +77,24 @@ describe('modern CSS adoptions', () => {
     ])
     const nonUniform: string[] = []
     for (const file of readdirSync(STYLES).filter((name) => name.endsWith('.css'))) {
-      read(file)
-        .split('\n')
-        .forEach((line, index) => {
-          const value = line.match(/line-height:\s*([^;]+);/)?.[1]?.trim()
-          if (
-            value &&
-            value !== 'inherit' &&
-            value !== 'var(--line-height-base)' &&
-            !allowedCompactValues.has(value)
-          ) {
-            nonUniform.push(`${file}:${String(index + 1)}: ${value}`)
-          }
-        })
+      const css = read(file)
+      const chrome = file === 'conversation.css' ? css.replace(readingRule, '') : css
+      chrome.split('\n').forEach((line, index) => {
+        const value = line.match(/line-height:\s*([^;]+);/)?.[1]?.trim()
+        if (
+          value &&
+          value !== 'inherit' &&
+          value !== 'var(--line-height-base)' &&
+          !allowedCompactValues.has(value)
+        ) {
+          nonUniform.push(`${file}:${String(index + 1)}: ${value}`)
+        }
+      })
     }
     assert.deepEqual(
       nonUniform,
       [],
-      `text line-height overrides must use --line-height-base; only compact chrome may opt out:\n${nonUniform.join('\n')}`,
+      `outside assistant Reading prose, text must use --line-height-base; only compact chrome may opt out:\n${nonUniform.join('\n')}`,
     )
   })
 

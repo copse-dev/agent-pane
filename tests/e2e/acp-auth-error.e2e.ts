@@ -3,7 +3,9 @@ import { resetUserData, seedAcpAuthErrorFixture } from './helpers/seed-config.ts
 import { savePreparedElementScreenshot } from './helpers/screenshot.ts'
 
 describe('ACP authentication error presentation', () => {
-  before(async () => {
+  // Screenshot preparation changes the frame and overflow. Each recovery path
+  // needs a fresh viewport so one capture cannot clip the next message's prose.
+  beforeEach(async () => {
     process.env.COPSE_PANEL_MOCK_LLM = '1'
     process.env.ANTHROPIC_API_KEY = ''
     process.env.OPENAI_API_KEY = ''
