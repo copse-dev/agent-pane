@@ -454,6 +454,149 @@ description: Bundled skill for tests
     )
   })
 
+  it('suggests a close available skill name for a near-miss typo', async () => {
+    await refreshSkillsRegistry()
+    await assert.rejects(
+      () => readSkill('demo-skil'), // missing trailing "l"
+      (error) => {
+        assert.ok(error instanceof Error)
+        assert.match(error.message, /Did you mean "demo-skill"\?/)
+        return true
+      },
+    )
+    await assert.rejects(
+      () => readSkill('dem0-skill'), // "0" for "o"
+      (error) => {
+        assert.ok(error instanceof Error)
+        assert.match(error.message, /Did you mean "demo-skill"\?/)
+        return true
+      },
+    )
+  })
+
+  it('omits the did-you-mean hint when nothing available is close', async () => {
+    await refreshSkillsRegistry()
+    await assert.rejects(
+      () => readSkill('pstack'),
+      (error) => {
+        assert.ok(error instanceof Error)
+        assert.ok(
+          !error.message.includes('Did you mean'),
+          `unrelated name should not get a suggestion: ${error.message}`,
+        )
+        return true
+      },
+    )
+  })
+
+  it('caps the available-skills list and reports the remainder', async () => {
+    for (let i = 0; i < 35; i++) {
+      await seedSkillAt(tempRoot, `skill-${String(i).padStart(2, '0')}`)
+    }
+    await refreshSkillsRegistry()
+    const total = listSkills().length
+    assert.ok(total > 30, 'fixture should exceed the cap')
+
+    await assert.rejects(
+      () => readSkill('totally-unknown-skill'),
+      (error) => {
+        assert.ok(error instanceof Error)
+        const shown = error.message.match(/Available skills: (.+?)(?: \(\+|\.$)/)?.[1]
+        assert.ok(shown, 'expected an "Available skills:" list in the message')
+        const shownCount = shown.split(', ').length
+        assert.equal(shownCount, 30, 'lists at most 30 names')
+        assert.match(
+          error.message,
+          new RegExp(`\\(\\+${String(total - 30)} more; see the Skills catalog\\)`),
+        )
+        return true
+      },
+    )
+  })
+
+  it('distinguishes a broken registry entry from a genuinely unknown skill', async () => {
+    // Frontmatter name deliberately does not match its folder, so discovery
+    // finds the SKILL.md but refuses to register it — a registry bug, not a
+    // missing skill (issue #1438: "unknown skill pstack ... or
+    // advertised-but-unloadable").
+    await mkdir(join(tempRoot, '.cursor', 'skills', 'renamed-folder'), { recursive: true })
+    await writeFile(
+      join(tempRoot, '.cursor', 'skills', 'renamed-folder', 'SKILL.md'),
+      `---
+name: original-name
+description: Broken — folder was renamed after install
+---
+
+# Broken`,
+      'utf-8',
+    )
+    await refreshSkillsRegistry()
+
+    assert.equal(getSkill('original-name'), null, 'the broken entry never registers')
+    assert.equal(
+      listSkills().some((s) => s.name === 'original-name' || s.name === 'renamed-folder'),
+      false,
+    )
+
+    for (const attempted of ['original-name', 'renamed-folder']) {
+      await assert.rejects(
+        () => readSkill(attempted),
+        (error) => {
+          assert.ok(error instanceof Error)
+          assert.match(error.message, /installed but failed to load/)
+          assert.match(error.message, /registry bug, not a missing skill/)
+          assert.match(error.message, /does not match its folder "renamed-folder"/)
+          assert.ok(
+            !error.message.includes('Available skills:'),
+            'a broken entry should not be told apart as a plain unknown-name guess',
+          )
+          return true
+        },
+      )
+    }
+  })
+
+  it('flags a skill whose SKILL.md references a missing bundle file', async () => {
+    const skillRoot = join(tempRoot, '.cursor', 'skills', 'linky-refs')
+    await mkdir(join(skillRoot, 'references'), { recursive: true })
+    // One reference exists, one does not — only the missing one should be flagged.
+    await writeFile(join(skillRoot, 'references', 'exists.md'), 'present', 'utf-8')
+    await writeFile(
+      join(skillRoot, 'SKILL.md'),
+      `---
+name: linky-refs
+description: References a file that is not in the bundle
+---
+
+See \`references/patterns.md\` for detail, and references/exists.md for background.`,
+      'utf-8',
+    )
+
+    const originalWarn = console.warn
+    const warnings: string[] = []
+    console.warn = (...args: unknown[]): void => {
+      warnings.push(args.map(String).join(' '))
+    }
+    try {
+      await refreshSkillsRegistry()
+    } finally {
+      console.warn = originalWarn
+    }
+
+    const meta = getSkill('linky-refs')
+    assert.ok(meta)
+    assert.deepEqual(meta.missingReferences, ['references/patterns.md'])
+    assert.ok(
+      warnings.some(
+        (line) => line.includes('linky-refs') && line.includes('references/patterns.md'),
+      ),
+      'expected a load-time diagnostic naming the missing reference',
+    )
+
+    const result = await readSkill('linky-refs')
+    assert.deepEqual(result.missingReferences, ['references/patterns.md'])
+  })
+
   it('rejects symlink escape outside skill root', async () => {
     await refreshSkillsRegistry()
     const demo = getSkill('demo-skill')
