@@ -25,11 +25,19 @@ let dismissOpenContextMenu: (() => void) | null = null
 /**
  * Fixed-position right-click menu. One menu at a time — opening another
  * (or clicking outside / Escape / blur) dismisses the current one.
+ *
+ * Appends into `document.body` by default. A menu opened from inside an
+ * open `<dialog>` (e.g. the attachment preview) must instead append inside
+ * that dialog: the UA renders a modal dialog in the top layer, above every
+ * sibling of `<body>` regardless of z-index, so a body-level menu would be
+ * painted underneath it and unclickable. Pass any node inside that dialog
+ * as `withinDialog` to opt in.
  */
 export function showContextMenu(
   clientX: number,
   clientY: number,
   items: readonly ContextMenuEntry[],
+  withinDialog?: Element,
 ): void {
   dismissOpenContextMenu?.()
   if (items.every(isHeading)) return
@@ -95,7 +103,8 @@ export function showContextMenu(
     if (e.key === 'Escape') dismiss()
   }
 
-  document.body.append(menu)
+  const dialog = withinDialog?.closest('dialog')
+  ;(dialog ?? document.body).append(menu)
   dismissOpenContextMenu = dismiss
   document.addEventListener('pointerdown', onPointerDown, true)
   document.addEventListener('keydown', onKeyDown, true)
