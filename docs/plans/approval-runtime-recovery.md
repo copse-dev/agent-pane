@@ -39,6 +39,9 @@ Remove the three CI quarantine wrappers, reconcile the PR-creation copy assertio
 shipped behavior, and wait for rejected GitHub turns to settle before proceeding. Seed the
 existing `autoRunSandboxCommands: false` setting in the terminal test and require its approval
 dialog; the previous optional prompt check could pass without exercising approval at all.
+Also require the shell task to finish successfully and render a standalone stdout line. The
+previous substring assertion matched the command header/arguments before execution; Linux
+screenshot inspection exposed this false positive after the initial green validation run.
 
 ## Validation and remaining evidence
 
@@ -53,7 +56,10 @@ dialog; the previous optional prompt check could pass without exercising approva
   [GitHub creation](../../tests/e2e/screenshots/github-write-approval-create-dialog.png).
 - The oracle selects the three changed runtime suites (`mode=subset`) and the full unit tier.
 - `pnpm run check` passed: all static checks and 9,396 unit tests, zero failures or skips.
-- Linux PR CI remains pending; its immutable results will be recorded on the PR and #1680.
+- Initial [Linux CI](https://github.com/copse-dev/agent-pane/actions/runs/35538044046) passed all
+  seven restored tests on their first test attempt. Its visual evidence exposed the premature
+  terminal-output assertion above. Final-head results for the stricter assertion are recorded on
+  [PR #2731](https://github.com/copse-dev/agent-pane/pull/2731) and #1680.
 
 Keep #1680 open until review, merge, and a full production CI run establish reinstatement;
 do not claim this PR diagnoses the old runner's memory pressure. If foundations PR #2720 lands

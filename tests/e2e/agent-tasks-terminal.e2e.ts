@@ -5,6 +5,7 @@ import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { setComposerValue } from './helpers/composer.ts'
 import { approveUnsandboxedTerminalIfPrompted } from './helpers/terminal-approval.ts'
 import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
+import { waitForAgentIdle } from './helpers.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
@@ -62,10 +63,15 @@ describe('agent tasks in terminal tab', () => {
     const panel = await $('.terminals-viewer-host.showing-agent-task .agent-task-output-panel')
     await panel.waitForDisplayed({ timeout: 10_000 })
 
-    await browser.waitUntil(async () => (await panel.getText()).includes('agent-task-hello'), {
+    // The command header and Arguments block already contain this token before
+    // execution. Require completion and a standalone stdout line so those
+    // echoes cannot masquerade as captured shell output.
+    await expect(taskTab).toHaveAttribute('data-status', 'done', { wait: 30_000 })
+    await browser.waitUntil(async () => /\nagent-task-hello(?:\n|$)/.test(await panel.getText()), {
       timeout: 30_000,
-      timeoutMsg: 'expected the selected agent task panel to capture the command output',
+      timeoutMsg: 'expected the completed agent task panel to capture the shell stdout line',
     })
+    await waitForAgentIdle()
 
     // The panel echoes the initial command at the top, the way a real terminal
     // shows the typed line before its output (issue #503).
