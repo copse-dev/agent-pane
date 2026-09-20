@@ -7,6 +7,8 @@ Tracking: [#1680](https://github.com/copse-dev/agent-pane/issues/1680), SDLC roa
 
 - GitHub write approval, agent-task shell approval, and Guarded YOLO execute in CI.
 - Shell approval is observed and answered even on a host with an active OS sandbox.
+- The approved shell task finishes successfully and renders a standalone stdout line, independently
+  of the echoed command and Arguments block.
 - Guarded YOLO still asks for bounded destructive work and hard-denies catastrophic deletion.
 - Focused Electron runs save visual evidence and exercise real main/renderer IPC with mock model/GitHub services.
 - Validate the default Linux CI environment as well as macOS before accepting reinstatement.
