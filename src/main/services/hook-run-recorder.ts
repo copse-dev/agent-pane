@@ -1,7 +1,11 @@
 import { createHash, randomUUID } from 'node:crypto'
 import type { LLMTool } from '@shared/types'
 import type { HookRunRecord } from '@copse/agent/hooks/canonical-events.ts'
-import type { BlockingHookOutcome } from '@copse/agent/hooks/hook-outcome.ts'
+import type {
+  BlockingHookOutcome,
+  FinalizeNudgeBudget,
+  FinalizeNudgeReason,
+} from '@copse/agent/hooks/hook-outcome.ts'
 import type { FileToWrite } from '@shared/threads/fold.ts'
 import {
   SPINE_SCHEMA_VERSION,
@@ -430,6 +434,8 @@ export function recordAppliedNudgeRun(
     hookId: string
     mechanism: 'tool-enabled-message' | 'text-only-turn'
     text: string
+    finalizeReason?: FinalizeNudgeReason
+    budget?: FinalizeNudgeBudget
   },
   snapshot: HookRunRecordingSnapshot | null = current,
 ): void {
@@ -459,6 +465,8 @@ export function recordAppliedNudgeRun(
       nudgeApplied: true,
       nudgeMechanism: input.mechanism,
       injectContextChars: input.text.length,
+      ...(input.finalizeReason !== undefined ? { finalizeReason: input.finalizeReason } : {}),
+      ...(input.budget !== undefined ? { finalizeBudget: input.budget } : {}),
     },
     ...refs,
   }

@@ -1020,6 +1020,7 @@ src/renderer/views/projects-pane.ts
 
   it('recovers phantom read_file XML from finalize text-only turn', async () => {
     const readPaths: string[] = []
+    const applied: import('./run-agent-loop.ts').AppliedNudgeRecord[] = []
     let textOnlyCalls = 0
     const provider: LLMProvider = {
       async *stream(_messages, tools) {
@@ -1042,6 +1043,7 @@ src/renderer/views/projects-pane.ts
       messages: [{ role: 'user', content: 'verify settings icons' }],
       tools: [{ name: 'list_dir', description: '', parameters: {} }],
       maxSteps: 1,
+      recordAppliedNudge: (record) => applied.push(record),
       onChunk: (c) => chunks.push(c),
       coerceTextToolCallArgs: (name, args) => {
         if (name === 'read_file' && typeof args['path'] === 'string' && args['path'].trim()) {
@@ -1062,6 +1064,23 @@ src/renderer/views/projects-pane.ts
     ])
     assert.ok(chunks.some((c) => c.type === 'text_replace'))
     assert.ok(chunks.some((c) => c.type === 'text' && c.text.includes('Icons look good')))
+    const finalize = applied.filter((record) => record.hookId === 'finalize-nudge')
+    assert.deepEqual(
+      finalize.map((record) => record.finalizeReason),
+      ['step-budget-exhausted', 'pending-tool-calls'],
+    )
+    assert.deepEqual(finalize[0]?.budget, {
+      steps: 1,
+      maxSteps: 1,
+      llmCalls: 1,
+      maxLlmCalls: 4,
+    })
+    assert.deepEqual(finalize[1]?.budget, {
+      steps: 1,
+      maxSteps: 1,
+      llmCalls: 2,
+      maxLlmCalls: 4,
+    })
   })
 
   it('recovers phantom read_file XML from forced text-only turn', async () => {
@@ -1394,6 +1413,17 @@ src/renderer/views/projects-pane.ts
     assert.ok(closeout[0])
     assert.equal(closeout[0].mechanism, 'tool-enabled-message')
     assert.ok(closeout[0].text.length > 0)
+    const finalize = applied.filter((record) => record.hookId === 'finalize-nudge')
+    assert.equal(finalize.length, 1)
+    const finalizeRecord = finalize[0]
+    assert.ok(finalizeRecord)
+    assert.equal(finalizeRecord.finalizeReason, 'step-budget-exhausted')
+    assert.deepEqual(finalizeRecord.budget, {
+      steps: 1,
+      maxSteps: 1,
+      llmCalls: 2,
+      maxLlmCalls: 4,
+    })
   })
 
   it('surfaces a note when todos stay open after closeout attempts', async () => {
@@ -1877,6 +1907,13 @@ src/renderer/views/projects-pane.ts
     assert.ok(finalize[0])
     assert.equal(finalize[0].mechanism, 'text-only-turn')
     assert.match(finalize[0].text, /write a clear final answer/)
+    assert.equal(finalize[0].finalizeReason, 'step-budget-exhausted')
+    assert.deepEqual(finalize[0].budget, {
+      steps: 1,
+      maxSteps: 1,
+      llmCalls: 1,
+      maxLlmCalls: 4,
+    })
   })
 
   it('prefers per-stream usage chunks over the shared lastUsage field (#112)', async () => {

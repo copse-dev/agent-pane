@@ -57,6 +57,7 @@ import {
   TRUNCATION_CONTINUE_HOOK_ID,
 } from './hooks/step-boundary-hooks.ts'
 import type { ContinuationGrant } from './hooks/continuation-budget.ts'
+import type { FinalizeNudgeBudget, FinalizeNudgeReason } from './hooks/hook-outcome.ts'
 import type { StreamCutRecord } from './stream-cut-record.ts'
 import { ARTIFACT_CHECKPOINT_HOOK_ID } from './artifact-checkpoint.ts'
 import { truncateStreamCutReasoning } from './stream-cut-record.ts'
@@ -110,6 +111,8 @@ export interface AppliedNudgeRecord {
   hookId: string
   mechanism: 'tool-enabled-message' | 'text-only-turn'
   text: string
+  finalizeReason?: FinalizeNudgeReason
+  budget?: FinalizeNudgeBudget
 }
 
 function recordAppliedNudge(
@@ -1722,8 +1725,27 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         : {}),
     }
 
-    if (getOpenTodos && hasOpenTodos(getOpenTodos())) {
-      const closed = await closeOpenTodosBeforeFinalize(stepCtx, getOpenTodos)
+    const finalizeBudget = (): FinalizeNudgeBudget => ({
+      steps,
+      maxSteps: maxStepsRef.value,
+      llmCalls: budget.llmCalls,
+      maxLlmCalls: budget.maxLlmCalls,
+    })
+    const recordFinalizeNudge = (reason: FinalizeNudgeReason): void => {
+      recordAppliedNudge(appliedNudgeSink, {
+        step: budget.llmCalls,
+        hookId: FINALIZE_NUDGE_ID,
+        mechanism: 'text-only-turn',
+        text: FINALIZE_NUDGE,
+        finalizeReason: reason,
+        budget: finalizeBudget(),
+      })
+    }
+
+    const openTodosReader = getOpenTodos
+    const openTodos = openTodosReader?.() ?? []
+    if (openTodosReader && hasOpenTodos(openTodos)) {
+      const closed = await closeOpenTodosBeforeFinalize(stepCtx, openTodosReader)
       if (!closed && !signal?.aborted) {
         onChunk({ type: 'text', text: OPEN_TODOS_STILL_OPEN_MESSAGE })
         messages.push({ role: 'assistant', content: OPEN_TODOS_STILL_OPEN_MESSAGE })
@@ -1731,12 +1753,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     }
 
     if (!hasOpenTodos(getOpenTodos?.() ?? [])) {
-      recordAppliedNudge(appliedNudgeSink, {
-        step: budget.llmCalls,
-        hookId: FINALIZE_NUDGE_ID,
-        mechanism: 'text-only-turn',
-        text: FINALIZE_NUDGE,
-      })
+      recordFinalizeNudge('step-budget-exhausted')
       let finalResult = await streamTextOnlyTurn(
         provider,
         messages,
@@ -1769,12 +1786,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         // A truncation retry already ends in its own nudge (recorded when the
         // hook applied it); anything else re-applies the finalize nudge.
         if (!retryingTruncation) {
-          recordAppliedNudge(appliedNudgeSink, {
-            step: budget.llmCalls,
-            hookId: FINALIZE_NUDGE_ID,
-            mechanism: 'text-only-turn',
-            text: FINALIZE_NUDGE,
-          })
+          recordFinalizeNudge('pending-tool-calls')
         }
         finalResult = await streamTextOnlyTurn(
           provider,
