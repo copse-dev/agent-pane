@@ -1020,23 +1020,32 @@ async function sumUntrackedAdditions(root: string): Promise<number> {
 }
 
 /**
- * Live add/delete line totals across the working tree (staged + unstaged +
- * untracked text files), or null when there is nothing to show. Cheap enough to
- * call on every filesystem change so the "Changes" follow-up chip stays current
- * instead of freezing on a per-turn snapshot.
+ * Live staged, unstaged and untracked totals, optionally including the Changes
+ * pane's committed section. The chip opts into that review scope; PR drafting
+ * and advisor context still describe only uncommitted work by default. Review
+ * totals sum the separate layers rather than a single net diff.
  */
-export async function getGitChangeStats(root: string | null = getAgentExecutionRoot()): Promise<{
+export async function getGitChangeStats(
+  root: string | null = getAgentExecutionRoot(),
+  options: CommittedChangesOptions & { includeCommitted?: boolean } = {},
+): Promise<{
   additions: number
   deletions: number
 } | null> {
   if (!(await isGitAvailableForTarget()) || !root || !(await isInsideGitWorkTree(root))) return null
-  const unstaged = await runGit(['diff', '--numstat'], root)
-  const staged = await runGit(['diff', '--cached', '--numstat'], root)
+  const base = options.includeCommitted ? await resolveCommittedBase(root, options) : null
+  const unstaged = await runGitRead(['diff', '--numstat', '--', '.'], root)
+  const staged = await runGitRead(['diff', '--cached', '--numstat', '--', '.'], root)
+  const committed = base
+    ? await runGitRead(['diff', '--numstat', base.commit, 'HEAD', '--', '.'], root)
+    : null
   const u = unstaged.code === 0 ? sumDiffNumstat(unstaged.stdout) : { additions: 0, deletions: 0 }
   const s = staged.code === 0 ? sumDiffNumstat(staged.stdout) : { additions: 0, deletions: 0 }
+  const c =
+    committed?.code === 0 ? sumDiffNumstat(committed.stdout) : { additions: 0, deletions: 0 }
   const untrackedAdditions = await sumUntrackedAdditions(root)
-  const additions = u.additions + s.additions + untrackedAdditions
-  const deletions = u.deletions + s.deletions
+  const additions = c.additions + u.additions + s.additions + untrackedAdditions
+  const deletions = c.deletions + u.deletions + s.deletions
   return additions + deletions > 0 ? { additions, deletions } : null
 }
 
