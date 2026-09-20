@@ -877,6 +877,8 @@ export function seedProjectSwitchFixture(
   options?: {
     activeProjectId?: 'project-a' | 'project-b'
     windowBounds?: { width: number; height: number }
+    /** Show the Roadmap pane while exercising a project switch. */
+    roadmapPlansEnabled?: boolean
   },
 ): { projectAId: string; projectBId: string } {
   const projectAId = 'e2e-project-switch-a'
@@ -892,6 +894,7 @@ export function seedProjectSwitchFixture(
     ...(options?.windowBounds ? { windowBounds: options.windowBounds } : {}),
     [`threads:${projectAId}`]: [],
     [`threads:${projectBId}`]: [],
+    pluginDisabled: pluginDisabledSeed(options?.roadmapPlansEnabled ? ['copse.roadmap-plans'] : []),
   })
   writeSettings({})
   return { projectAId, projectBId }
