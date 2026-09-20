@@ -2225,6 +2225,10 @@ export function mountRoadmapPane(
     }),
     store.on('workspace_changed', () => {
       // The roadmap is per-project; drop the previous workspace's selection.
+      // Invalidate in-flight reads even when the pane is hidden and no new
+      // refresh will replace them. Paint the cleared editor before awaiting IPC.
+      loadToken++
+      loading = false
       cancelResolutionCheckUi()
       selectedId = null
       creating = false
@@ -2235,11 +2239,9 @@ export function mountRoadmapPane(
       autoSaveToken.clear()
       resetAttachmentEdits()
       attachmentDataCache.clear()
+      renderList()
+      renderEditor()
       if (roadmapModeActive(store)) void refresh()
-      else {
-        renderList()
-        renderEditor()
-      }
     }),
   ]
 
