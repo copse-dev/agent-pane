@@ -38,7 +38,7 @@ import type {
 import { acpConfigCategory, acpConfigCategoryLabel } from '@shared/acp.ts'
 import { isRecord, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import type { McpServerConfig } from '@shared/types/mcp.ts'
-import { sessionUpdateToStreamChunk } from './session-update-adapter.ts'
+import { sessionUpdateToStreamChunks } from './session-update-adapter.ts'
 import { tapAcpWireStream, type AcpWireSink } from './acp-wire-tap.ts'
 import { cancelApprovalsForAcpToolCall } from './acp-permission-registry.ts'
 import { acpSshTarget, spawnRemoteAcpTransport } from './acp-ssh-transport.ts'
@@ -871,8 +871,9 @@ function startAcpUpdatePump(open: OpenAcpSession): void {
         ) {
           cancelApprovalsForAcpToolCall(update.toolCallId)
         }
-        const chunk = sessionUpdateToStreamChunk(update)
-        if (chunk) open.handlers.current?.onChunk(chunk)
+        for (const chunk of sessionUpdateToStreamChunks(update)) {
+          open.handlers.current?.onChunk(chunk)
+        }
       } catch {
         // A sink failure must not kill the pump: turn-stop routing (and every
         // future turn on this session) depends on the loop staying alive.
@@ -900,7 +901,7 @@ export async function openAcpSession(
   const transport = await createTransport(config, signal)
   // Opt-in diagnostic (`COPSE_DEBUG_ACP_UPDATES=1`): record every inbound
   // JSON-RPC message verbatim, before the SDK's schema parse strips unmodelled
-  // fields and before `sessionUpdateToStreamChunk` normalizes what survives.
+  // fields and before `sessionUpdateToStreamChunks` normalizes what survives.
   // `null` (the default, and always when the flag is off) returns the
   // transport's own stream, so the untraced path is unchanged.
   const stream = tapAcpWireStream(transport.stream, trace)

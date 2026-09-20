@@ -8,7 +8,7 @@ import { client, methods, ndJsonStream, PROTOCOL_VERSION } from '@agentclientpro
 import * as v2 from '@agentclientprotocol/sdk/experimental/v2'
 import type { StreamChunk } from '@shared/types'
 import { nodeReadableStream } from './node-readable-stream.ts'
-import { sessionUpdateToStreamChunk } from './session-update-adapter.ts'
+import { sessionUpdateToStreamChunks } from './session-update-adapter.ts'
 
 /**
  * Conformance against a **real external ACP agent**, in both protocol versions.
@@ -82,8 +82,7 @@ describe('external ACP agent conformance (v1)', () => {
             for (;;) {
               const message = await session.nextUpdate()
               if (message.kind === 'stop') return message.response
-              const chunk = sessionUpdateToStreamChunk(message.update)
-              if (chunk) chunks.push(chunk)
+              chunks.push(...sessionUpdateToStreamChunks(message.update))
             }
           })
         },
