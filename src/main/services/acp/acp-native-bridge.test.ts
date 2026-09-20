@@ -31,6 +31,11 @@ import {
   type ThreadExecutionOwner,
 } from '../thread-execution-context.ts'
 import { getAgentExecutionRoot } from '../execution-root.ts'
+import { setSetting } from '../storage/settings.test-shim.ts'
+import {
+  clearMcpToolPermissionTargets,
+  registerMcpToolPermissionTarget,
+} from '../security/tool-permissions.ts'
 
 /**
  * The native-tool MCP bridge (issue #602, tier 2) exposes a curated slice of
@@ -158,6 +163,8 @@ describe('startAcpNativeBridge', () => {
     setDefaultPluginRegistry(null)
     setApprovalHandler(null)
     clearAbandonedVerdictsForTest()
+    setSetting('toolPermissionOverrides', {})
+    clearMcpToolPermissionTargets()
     await bridge?.close()
     bridge = null
   })
@@ -340,6 +347,49 @@ describe('startAcpNativeBridge', () => {
     assert.equal(contentText(shellCall), 'ran npm test')
     assert.deepEqual(executed, ['staged_diffs', 'run_shell:npm test'])
     assert.deepEqual(permissionChecks, ['staged_diffs', 'run_shell'])
+  })
+
+  it('mediates connected MCP tools through the registry permission gate', async () => {
+    let executed = false
+    const registry = testRegistry([])
+    registry.register({
+      name: 'mcp__mail__list_messages',
+      description: 'List messages through the connected mail server',
+      parameters: z.object({}),
+      execute: () => {
+        executed = true
+        return Promise.resolve('message list')
+      },
+    })
+    const permissionId = registerMcpToolPermissionTarget({
+      serverName: 'mail',
+      toolName: 'list_messages',
+      origin: 'user',
+    })
+    setSetting('toolPermissionOverrides', { [permissionId]: 'block' })
+    bridge = await startAcpNativeBridge(registry, new AbortController().signal, {
+      threadId: 'bridge-mcp-policy',
+    })
+    assert.ok(bridge)
+    bridge.setExecutionContext(worktreeContext('bridge-mcp-policy', '/worktrees/bridge-mcp-policy'))
+
+    for (const init of initialized()) await rpc(bridge, init)
+    const listed = await rpc(bridge, LIST_TOOLS)
+    assert.ok(
+      recordArrayOrEmpty(rpcResult(listed)['tools']).some(
+        (tool) => tool['name'] === 'mcp__mail__list_messages',
+      ),
+    )
+    assert.ok(isBridgedNativeToolTitle('copse-mcp__mail__list_messages'))
+
+    const denied = await rpc(bridge, {
+      jsonrpc: '2.0',
+      id: 9,
+      method: 'tools/call',
+      params: { name: 'mcp__mail__list_messages', arguments: {} },
+    })
+    assert.equal(contentText(denied), 'User rejected the mcp__mail__list_messages tool call.')
+    assert.equal(executed, false, 'a denied bridged MCP call must not reach its handler')
   })
 
   it('attributes successful bridged writes to the current turn', async () => {

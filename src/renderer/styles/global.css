@@ -26,6 +26,7 @@
 @import './global/comparison-model-dialog.css';
 @import './global/create-pr-dialog.css';
 @import './global/mcp.css';
+@import './global/tool-permissions.css';
 @import './global/composer-extras.css';
 @import './global/attachment-preview.css';
 @import './global/image-expand.css';
