@@ -62,6 +62,7 @@ import { isProjectSandboxEnabled } from '../../project-sandbox/enabled.ts'
 import { isSpawnableWorkingDirectory } from '../../project-sandbox/spawn-cwd.ts'
 import { withSandboxTmpEnv } from '../../project-sandbox/tmp-env.ts'
 import { terminateProcessTree } from '../exec/subprocess-kill.ts'
+import { perfSpan } from '../diagnostics/perf-trace.ts'
 import { spawnSandboxedAcpSessionHost } from './acp-session-host.ts'
 
 export type { AcpAgentProbe, AcpModeChoice, AcpModeSelector, AcpModelChoice, AcpModelSelector }
@@ -885,7 +886,7 @@ export async function openAcpSession(
   trace: AcpWireSink | null = null,
   signal?: AbortSignal,
 ): Promise<OpenAcpSession> {
-  const transport = await createTransport(config, signal)
+  const transport = await perfSpan('ttft:acp-transport-open', () => createTransport(config, signal))
   // Opt-in diagnostic (`COPSE_DEBUG_ACP_UPDATES=1`): record every inbound
   // JSON-RPC message verbatim, before the SDK's schema parse strips unmodelled
   // fields and before `sessionUpdateToStreamChunks` normalizes what survives.
@@ -972,10 +973,12 @@ export async function openAcpSession(
   }
 
   try {
-    const initResponse = await connection.agent.request(methods.agent.initialize, {
-      protocolVersion: PROTOCOL_VERSION,
-      clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
-    })
+    const initResponse = await perfSpan('ttft:acp-initialize', () =>
+      connection.agent.request(methods.agent.initialize, {
+        protocolVersion: PROTOCOL_VERSION,
+        clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
+      }),
+    )
     const mcpCapabilities = initResponse.agentCapabilities?.mcpCapabilities
     const canResume = Boolean(initResponse.agentCapabilities?.sessionCapabilities?.resume)
     const promptImage = initResponse.agentCapabilities?.promptCapabilities?.image === true
@@ -1002,9 +1005,12 @@ export async function openAcpSession(
     let resumed = false
     if (resumeSessionId && canResume) {
       try {
-        const response: ResumeSessionResponse = await connection.agent.request(
-          methods.agent.session.resume,
-          { sessionId: resumeSessionId, cwd: config.cwd, mcpServers },
+        const response: ResumeSessionResponse = await perfSpan('ttft:acp-session-resume', () =>
+          connection.agent.request(methods.agent.session.resume, {
+            sessionId: resumeSessionId,
+            cwd: config.cwd,
+            mcpServers,
+          }),
         )
         session = { sessionId: resumeSessionId, response }
         resumed = true
@@ -1014,10 +1020,12 @@ export async function openAcpSession(
       }
     }
     if (!session) {
-      const response = await connection.agent.request(methods.agent.session.new, {
-        cwd: config.cwd,
-        mcpServers,
-      })
+      const response = await perfSpan('ttft:acp-session-new', () =>
+        connection.agent.request(methods.agent.session.new, {
+          cwd: config.cwd,
+          mcpServers,
+        }),
+      )
       session = { sessionId: response.sessionId, response }
     }
     const updates = new AcpUpdateQueue()
@@ -1028,12 +1036,16 @@ export async function openAcpSession(
     // (issue #607) — e.g. a sandboxed Claude preset runs in `acceptEdits` since
     // the seatbelt already contains writes. Applied here, before the first
     // prompt, so the session's first tool call already honors the mode.
-    await applySessionMode(connection, session, config.permissionMode)
+    await perfSpan('ttft:acp-session-mode', () =>
+      applySessionMode(connection, session, config.permissionMode),
+    )
     // Everything else the agent lets us configure (reasoning level, and any
     // other selector it advertises) is applied the same way, before the first
     // prompt. Unlike the mode this is not baked into the session fingerprint —
     // a later change re-applies live at the start of the next turn.
-    const appliedConfigOptions = await applyConfigOptions(connection, session, config.configOptions)
+    const appliedConfigOptions = await perfSpan('ttft:acp-session-config', () =>
+      applyConfigOptions(connection, session, config.configOptions),
+    )
 
     const open: OpenAcpSession = {
       session,

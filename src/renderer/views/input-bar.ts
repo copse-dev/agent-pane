@@ -112,6 +112,7 @@ import { contextFitAdvice } from '@shared/context-window-advice.ts'
 import { isLocalModel } from '@copse/llm/estimate-cost.ts'
 import type { ReasoningLevel } from '@copse/llm/model-parameters.ts'
 import { commitThreadModelSelection } from '../controller/model-selection.ts'
+import { mark as perfMark } from '../perf.ts'
 
 interface MountInputBarOptions {
   /**
@@ -1594,6 +1595,7 @@ export function mountInputBar(
   }
 
   async function performSubmit(): Promise<void> {
+    perfMark('ttft:composer-submit')
     followUps.clearSuggestions()
     nextStepHint.clear()
     updateComposerPlaceholder()

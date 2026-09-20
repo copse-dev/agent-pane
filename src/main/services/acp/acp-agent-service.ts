@@ -65,6 +65,7 @@ import {
   stageDiff,
 } from '../diff-queue.ts'
 import { networkDenialMarker, networkDenialsSince } from '../../project-sandbox/network-scope.ts'
+import { perfMark, perfSpan } from '../diagnostics/perf-trace.ts'
 import {
   ACP_SANDBOX_GITHUB_STEER,
   SANDBOX_NETWORK_AUDIT_BLOCKED_ARG,
@@ -364,6 +365,7 @@ export async function runWithAcpRetry<T>(
 export async function runAcpAgentFromSettings(
   options: RunAcpAgentOptions,
 ): Promise<RunAcpAgentResult> {
+  perfMark('ttft:acp-preflight-start')
   // On an SSH workspace, ACP is blocked unless the user opted into remote ACP
   // (docs/plans/acp-over-ssh.md), in which case the agent spawns on the remote
   // host via the SSH-aware transport.
@@ -414,7 +416,9 @@ export async function runAcpAgentFromSettings(
   // exposed through Copse's authenticated native bridge so every call returns
   // through ToolRegistry and the host permission gate. Best-effort config reads
   // still degrade the turn to no mediated MCP tools instead of failing it.
-  const mcpServers = await listForwardableMcpServers(executionContext?.projectId).catch(() => [])
+  const mcpServers = await perfSpan('ttft:acp-mcp-config', () =>
+    listForwardableMcpServers(executionContext?.projectId).catch(() => []),
+  )
   // No `model` and no `nativeBridge` here: the session pool owns the bridge
   // (it must exist before spawn for the seatbelt's loopback), and the model
   // switches live via session/set_config_option so it never forces a respawn.
@@ -438,7 +442,9 @@ export async function runAcpAgentFromSettings(
   // Provider keys configured for this agent cross to a remote SSH host only
   // with the user's consent; on denial the agent runs with whatever
   // credentials already live on that host. No-op for local workspaces.
-  await gateRemoteAcpEnvForward(agent.id, spawnConfig, options.signal)
+  await perfSpan('ttft:acp-env-forward', () =>
+    gateRemoteAcpEnvForward(agent.id, spawnConfig, options.signal),
+  )
 
   // Accumulate streamed assistant text so the turn contributes to thread history
   // (the external agent owns the model loop, so this is the only transcript we
@@ -458,6 +464,7 @@ export async function runAcpAgentFromSettings(
     options.onChunk({ type: 'text', text: flush })
   }
   const onChunk = (chunk: StreamChunk): void => {
+    if (!sawChunk) perfMark('ttft:acp-first-activity', { kind: chunk.type })
     sawChunk = true
     if (chunk.type === 'tool_result') {
       // Agent finished/failed this tool without waiting for our permission answer
@@ -497,7 +504,7 @@ export async function runAcpAgentFromSettings(
   // New turn: reset the restore point so this turn's first file-write approval
   // snapshots the user's current uncommitted work (see respondToPermission).
   resetSessionBackup()
-  const baseline = await captureWorktreeBaseline()
+  const baseline = await perfSpan('ttft:acp-worktree-baseline', captureWorktreeBaseline)
   const denialMark = networkDenialMarker()
 
   // Resolve the invoked skills' full instructions here, in the GUI process,
@@ -507,13 +514,15 @@ export async function runAcpAgentFromSettings(
   // receives Copse's, so shipping the SKILL.md body with the turn is the only
   // way the agent gets the instructions. Sent every turn a skill is invoked
   // (not gated on session freshness): the agent does not retain it across turns.
-  const skillsBlock = await buildInvokedSkillsBlock(options.invokedSkills ?? [], {
-    sandboxActive: sandboxed,
-    // Also grants this thread read-only run_shell access to the skill's
-    // directory: bridged run_shell is the ACP agent's only route into Copse's
-    // tools, and read_skill is not bridged.
-    threadId: options.threadId,
-  })
+  const skillsBlock = await perfSpan('ttft:acp-skills', () =>
+    buildInvokedSkillsBlock(options.invokedSkills ?? [], {
+      sandboxActive: sandboxed,
+      // Also grants this thread read-only run_shell access to the skill's
+      // directory: bridged run_shell is the ACP agent's only route into Copse's
+      // tools, and read_skill is not bridged.
+      threadId: options.threadId,
+    }),
+  )
 
   // One attempt = acquire (reuse the thread's live session, or open a fresh
   // one), install this turn's handlers, prompt. History is replayed only into
@@ -522,13 +531,18 @@ export async function runAcpAgentFromSettings(
   // for the retry/next turn; all other failures reopen with a full replay.
   let lastPrompt = ''
   const attempt = async (): Promise<{ stopReason: StopReason; usage?: Usage | null }> => {
-    const { entry, fresh } = await acquireAcpSession({
-      ...(executionContext ? { projectId: executionContext.projectId } : {}),
-      threadId: options.threadId,
-      config: spawnConfig,
-      registry: options.registry,
-      signal: options.signal,
-    })
+    const { entry, fresh } = await perfSpan(
+      'ttft:acp-session-acquire',
+      () =>
+        acquireAcpSession({
+          ...(executionContext ? { projectId: executionContext.projectId } : {}),
+          threadId: options.threadId,
+          config: spawnConfig,
+          registry: options.registry,
+          signal: options.signal,
+        }),
+      (acquired) => ({ fresh: acquired?.fresh ?? false }),
+    )
     entry.bridge?.setAdvisorContext(options.advisorContext ?? null)
     entry.bridge?.setExecutionContext(executionContext)
     entry.bridge?.setTurnSignal(options.bridgeTurnSignal ?? options.signal)
@@ -559,6 +573,7 @@ export async function runAcpAgentFromSettings(
     )
     lastPrompt = promptBlocks.map((block) => (block.type === 'text' ? block.text : '')).join('')
     try {
+      perfMark('ttft:acp-prompt-start', { fresh })
       return await runAcpSessionPrompt(entry.open, promptBlocks, model, options.signal)
     } catch (err) {
       await disposeAcpSession(options.threadId, {

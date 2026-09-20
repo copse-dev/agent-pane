@@ -492,8 +492,11 @@ async function run(store: AppStore): Promise<void> {
   })
 
   const endTotal = begin('autopilot:total')
-  const endFirstToken = begin('autopilot:ttft')
-  const endFirstReasoning = begin('autopilot:ttfr')
+  // Armed immediately before the click below. Starting these alongside the
+  // diagnostic probes would silently add animation/frame sampling time to TTFT.
+  let endFirstActivity: ReturnType<typeof begin> = () => undefined
+  let endFirstToken: ReturnType<typeof begin> = () => undefined
+  let endFirstReasoning: ReturnType<typeof begin> = () => undefined
   // A container, not a `let`: TypeScript's control-flow analysis does not track
   // assignments made inside a callback, so a plain binding narrows to `null` at
   // the use site below and `endStream?.()` becomes a call on `never`.
@@ -502,10 +505,20 @@ async function run(store: AppStore): Promise<void> {
   // A container for the same reason `endStream` is one: control-flow analysis
   // does not see assignments made inside store callbacks, so a plain `let`
   // narrows to `false` at the race below and the guard is compiled away.
-  const activity = { any: false }
-  const offReasoning = store.on('message_reasoning', () => {
+  const activity = { any: false, reasoning: false }
+  const recordFirstActivity = (kind: 'reasoning' | 'text' | 'tool'): void => {
     if (activity.any) return
     activity.any = true
+    endFirstActivity({ kind })
+    const endPaint = begin('autopilot:first-activity-paint')
+    void afterNextFrame().then(() => {
+      endPaint({ kind })
+    })
+  }
+  const offReasoning = store.on('message_reasoning', () => {
+    recordFirstActivity('reasoning')
+    if (activity.reasoning) return
+    activity.reasoning = true
     endFirstReasoning()
   })
 
@@ -514,8 +527,12 @@ async function run(store: AppStore): Promise<void> {
     tokens++
     if (!firstTokenSeen) {
       firstTokenSeen = true
-      activity.any = true
+      recordFirstActivity('text')
       endFirstToken()
+      const endPaint = begin('autopilot:first-token-paint')
+      void afterNextFrame().then(() => {
+        endPaint()
+      })
       endStream.close = begin('autopilot:stream')
     }
     // Sample paint cost rather than timing every token: at a few hundred tokens
@@ -529,6 +546,10 @@ async function run(store: AppStore): Promise<void> {
       paints.push(performance.now() - started)
       paintSampling = false
     })
+  })
+
+  const offTool = store.on('tool_call_started', () => {
+    recordFirstActivity('tool')
   })
 
   const offDone = store.on('message_done', () => {
@@ -578,11 +599,14 @@ async function run(store: AppStore): Promise<void> {
     mark('autopilot:frame-interval', { medianMs: Math.round(frameInterval * 100) / 100 })
   }
 
-  mark('autopilot:send')
   typeInto(composer.input, PROMPT)
   // A frame between typing and clicking, so the composer's input handler has
   // enabled Send before the click lands.
   await afterNextFrame()
+  endFirstActivity = begin('autopilot:ttfa')
+  endFirstToken = begin('autopilot:ttft')
+  endFirstReasoning = begin('autopilot:ttfr')
+  mark('autopilot:send')
   composer.submit.click()
 
   // Which animations are actually *applied* while the model is thinking?
@@ -641,6 +665,7 @@ async function run(store: AppStore): Promise<void> {
 
   offToken()
   offReasoning()
+  offTool()
   offDone()
 
   if (outcome === 'timeout') {
