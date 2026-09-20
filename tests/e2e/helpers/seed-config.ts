@@ -1645,6 +1645,52 @@ export function seedUserPromptFoldFixture(workspaceRoot: string): void {
   })
 }
 
+/**
+ * Enough short back-and-forth to make the transcript taller than the app
+ * window before the spec submits anything live through the composer — the
+ * repro shape for #2457 (scroll the composer to the prompt on submit).
+ */
+export function seedLongPromptScrollFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-long-prompt-scroll-project'
+  const threadId = 'e2e-long-prompt-scroll-thread'
+  const now = Date.now()
+  const messages: Record<string, unknown>[] = []
+  for (let i = 0; i < 8; i++) {
+    messages.push({
+      id: `msg-scroll-user-${String(i)}`,
+      role: 'user',
+      content: `Question ${String(i + 1)}: what changed in the build pipeline this week?`,
+      toolCalls: [],
+      createdAt: now + i * 2,
+    })
+    messages.push({
+      id: `msg-scroll-assistant-${String(i)}`,
+      role: 'assistant',
+      content: `Answer ${String(i + 1)}: the pipeline now caches the dependency graph between runs, which cuts incremental build time roughly in half for most workspaces.`,
+      toolCalls: [],
+      createdAt: now + i * 2 + 1,
+    })
+  }
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    expandedProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Long prompt scroll on submit',
+        status: 'idle',
+        messages,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+  })
+}
+
 /** A representative completed coding turn for conversation hierarchy visual evaluation. */
 export function seedConversationVisualHierarchyFixture(workspaceRoot: string): void {
   const projectId = 'e2e-conversation-hierarchy-project'

@@ -2734,6 +2734,44 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     updateScrollButton()
   }
 
+  /**
+   * scrollToBottom(true) flushes the transcript's bottom edge against the
+   * viewport, which is right for a short prompt but hides the start of one
+   * taller than the visible list: the reader only ever sees its tail (#2457).
+   * Nudge the scroll position, on top of scrollToBottom's, just enough to
+   * bring the whole row into view — or, when it can't fit, to show its top
+   * rather than its bottom, mirroring `scrollIntoView({ block: 'nearest' })`.
+   * Computed from rects (like captureReadingAnchor/restoreReadingAnchor above)
+   * and applied through setScrollTopProgrammatically so the programmatic-echo
+   * bookkeeping stays consistent with every other scroll in this module.
+   *
+   * When a correction was needed, this also un-pins autoscroll: otherwise the
+   * very next unforced scrollToBottom() (e.g. the reply's first token, which a
+   * mock model can emit before this function returns) would hug the tail
+   * again and immediately undo the correction. A pane wide enough to keep the
+   * prompt sticky-to-top never takes this branch, so this only affects the
+   * narrow layout where CSS stops anchoring it (`@container chat-pane
+   * (max-width: 360px)`) — the same layout the fold's own hand-off already
+   * treats as ordinary, unpinned transcript content.
+   */
+  function scrollUserPromptIntoView(msgEl: HTMLElement): void {
+    const listRect = list.getBoundingClientRect()
+    const msgRect = msgEl.getBoundingClientRect()
+    let delta = 0
+    if (msgRect.top < listRect.top) {
+      delta = msgRect.top - listRect.top
+    } else if (msgRect.bottom > listRect.bottom) {
+      delta =
+        msgRect.height > listRect.height
+          ? msgRect.top - listRect.top
+          : msgRect.bottom - listRect.bottom
+    }
+    if (delta === 0) return
+    setScrollTopProgrammatically(list.scrollTop + delta)
+    pinnedToBottom = false
+    updateScrollButton()
+  }
+
   function applyRollupSummaries(
     item: ToolCallDisplayItem,
     opts: { commandSummary?: string; toolSummary?: string },
@@ -3258,6 +3296,10 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     syncModelLabels()
     syncUserActions()
     scrollToBottom(msg.role === 'user')
+    // Correct for a prompt taller than the viewport: scrollToBottom above
+    // hugs the transcript's tail, which can scroll the top of a long prompt
+    // out of view the moment it's submitted (#2457).
+    if (msg.role === 'user') scrollUserPromptIntoView(msgEl)
   }
 
   /**
