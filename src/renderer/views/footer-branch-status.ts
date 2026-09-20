@@ -72,7 +72,16 @@ export function mountFooterBranchStatus(
     chevronDownIcon('ui-icon ui-icon-sm'),
   )
   trigger.append(label, chevron)
-  const menu = el('div', { class: 'branch-picker-menu', role: 'listbox', hidden: '' })
+  const menu = el('div', { class: 'branch-picker-menu', hidden: '' })
+  const filterInput = el('input', {
+    type: 'search',
+    class: 'branch-picker-filter',
+    placeholder: 'Filter branches...',
+    'aria-label': 'Filter branches',
+    autocomplete: 'off',
+  })
+  const list = el('div', { class: 'branch-picker-list', role: 'listbox', 'aria-label': 'Branches' })
+  menu.append(filterInput, list)
   wrap.append(trigger, menu)
   host.append(wrap)
 
@@ -83,6 +92,8 @@ export function mountFooterBranchStatus(
   let defaultBranch: string | null = null
   let open = false
   let refreshToken = 0
+  /** Index of the keyboard-highlighted row among the PR action (if any) plus the filtered branches. */
+  let activeIndex = 0
   /**
    * Branch selections made in picker mode, per thread. A selection is a
    * statement about the thread that is about to start, not a command to move
@@ -141,8 +152,13 @@ export function mountFooterBranchStatus(
   function setOpen(next: boolean): void {
     open = next
     trigger.setAttribute('aria-expanded', String(next))
-    if (next) menu.removeAttribute('hidden')
-    else menu.setAttribute('hidden', '')
+    if (next) {
+      menu.removeAttribute('hidden')
+    } else {
+      menu.setAttribute('hidden', '')
+      filterInput.value = ''
+      activeIndex = 0
+    }
   }
 
   function renderTrigger(): void {
@@ -216,28 +232,99 @@ export function mountFooterBranchStatus(
     }
   }
 
+  /** The PR action row (if any) plus the branches matching the current filter, default first. */
+  function filteredRows(): { pr: GitOpenPr | null; matches: GitBranchInfo[] } {
+    const pr = getVisiblePr()
+    const ordered = orderBranchesWithDefaultFirst(branches, defaultBranch)
+    const query = filterInput.value.trim().toLocaleLowerCase()
+    const matches = query
+      ? ordered.filter((branch) => branch.name.toLocaleLowerCase().includes(query))
+      : ordered
+    return { pr, matches }
+  }
+
+  function rowCount(): number {
+    const { pr, matches } = filteredRows()
+    return (pr ? 1 : 0) + matches.length
+  }
+
+  function clampActiveIndex(): void {
+    const count = rowCount()
+    activeIndex = count === 0 ? 0 : Math.max(0, Math.min(count - 1, activeIndex))
+  }
+
+  function scrollActiveRowIntoView(): void {
+    const active = list.querySelector<HTMLElement>('.branch-picker-option.is-active')
+    if (!active) return
+    const activeBounds = active.getBoundingClientRect()
+    const listBounds = list.getBoundingClientRect()
+    if (activeBounds.top < listBounds.top) {
+      list.scrollTop += activeBounds.top - listBounds.top
+    } else if (activeBounds.bottom > listBounds.bottom) {
+      list.scrollTop += activeBounds.bottom - listBounds.bottom
+    }
+  }
+
+  /** Select the branch a thread will start from. Recording only — see the click handler below. */
+  function selectBranch(name: string): void {
+    setOpen(false)
+    const thread = getActiveThread()
+    if (!thread) return
+    // Record the choice only. Checking out here would move the user's
+    // project checkout for a thread they may never send — and, when the
+    // branch is held by another worktree, fail with nothing to show for it.
+    baseBranchByThread.set(thread.id, name)
+    renderTrigger()
+    renderMenu()
+  }
+
+  /** Activate whichever row is currently keyboard-highlighted (PR action or a branch). */
+  function activateRow(index: number): void {
+    const { pr, matches } = filteredRows()
+    if (pr && index === 0) {
+      setOpen(false)
+      openBrowserUrl(store, pr.url)
+      return
+    }
+    const branch = matches[pr ? index - 1 : index]
+    if (branch) selectBranch(branch.name)
+  }
+
+  function moveActive(direction: -1 | 1): void {
+    const count = rowCount()
+    if (count === 0) return
+    activeIndex = Math.max(0, Math.min(count - 1, activeIndex + direction))
+    renderMenu()
+  }
+
   function renderMenu(): void {
-    clear(menu)
+    clear(list)
     if (!isPickerMode()) return
 
     const selected = activeBaseBranch() ?? status?.currentBranch ?? null
-    const pr = getVisiblePr()
+    const { pr, matches } = filteredRows()
+    clampActiveIndex()
+    let rowIndex = 0
 
     if (pr) {
       const prItem = el(
         'button',
-        { type: 'button', class: 'branch-picker-option branch-picker-action' },
+        {
+          type: 'button',
+          class: 'branch-picker-option branch-picker-action',
+        },
         `Open PR #${String(pr.number)}`,
       )
+      if (rowIndex === activeIndex) prItem.classList.add('is-active')
       prItem.addEventListener('click', () => {
         setOpen(false)
         openBrowserUrl(store, pr.url)
       })
-      menu.append(prItem)
+      list.append(prItem)
+      rowIndex++
     }
 
-    const ordered = orderBranchesWithDefaultFirst(branches, defaultBranch)
-    for (const branch of ordered) {
+    for (const branch of matches) {
       const nameEl = el('span', { class: 'branch-picker-option-label' }, branch.name)
       const item = el(
         'button',
@@ -253,23 +340,23 @@ export function mountFooterBranchStatus(
         item.append(el('span', { class: 'branch-picker-default-badge' }, 'default'))
       }
       if (branch.name === selected) item.classList.add('is-selected')
+      if (rowIndex === activeIndex) item.classList.add('is-active')
       item.addEventListener('click', () => {
-        setOpen(false)
-        const thread = getActiveThread()
-        if (!thread) return
-        // Record the choice only. Checking out here would move the user's
-        // project checkout for a thread they may never send — and, when the
-        // branch is held by another worktree, fail with nothing to show for it.
-        baseBranchByThread.set(thread.id, branch.name)
-        renderTrigger()
-        renderMenu()
+        selectBranch(branch.name)
       })
-      menu.append(item)
+      list.append(item)
+      rowIndex++
     }
 
-    if (ordered.length === 0 && !pr) {
-      menu.append(el('div', { class: 'branch-picker-empty' }, 'No branches found.'))
+    if (matches.length === 0) {
+      const query = filterInput.value.trim()
+      if (query) {
+        list.append(el('div', { class: 'branch-picker-empty' }, `No branches match "${query}".`))
+      } else if (!pr) {
+        list.append(el('div', { class: 'branch-picker-empty' }, 'No branches found.'))
+      }
     }
+    scrollActiveRowIntoView()
   }
 
   /**
@@ -382,6 +469,10 @@ export function mountFooterBranchStatus(
     const next = !open
     setOpen(next)
     if (next) {
+      // Render immediately from whatever branches are already cached so the
+      // filter is usable (and focusable) before the refresh below resolves.
+      renderMenu()
+      filterInput.focus()
       void (async (): Promise<void> => {
         const token = refreshToken
         try {
@@ -392,6 +483,30 @@ export function mountFooterBranchStatus(
         if (token !== refreshToken) return
         renderMenu()
       })()
+    }
+  })
+
+  filterInput.addEventListener('input', () => {
+    activeIndex = 0
+    renderMenu()
+  })
+
+  menu.addEventListener('keydown', (e) => {
+    if (e.isComposing) return
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      moveActive(1)
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      moveActive(-1)
+    } else if (e.key === 'Enter' && e.target === filterInput) {
+      e.preventDefault()
+      activateRow(activeIndex)
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      e.stopPropagation()
+      setOpen(false)
+      trigger.focus()
     }
   })
 
