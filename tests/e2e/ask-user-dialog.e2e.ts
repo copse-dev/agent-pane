@@ -110,4 +110,32 @@ describe('ask_user dialog', () => {
     await expect(dialog).not.toBeDisplayed()
     await saveAppScreenshot('ask-user-dialog-cancelled.png')
   })
+
+  it('submits an answer with the Cmd/Ctrl+Enter keyboard shortcut', async () => {
+    await setComposerValue(
+      '[[mcp:ask_user {"questions":[{"question":"What is your favorite color?"}]}]]',
+    )
+    await $('.submit-btn').click()
+
+    const dialog = await $('#ask-user-dialog')
+    await dialog.waitForDisplayed({ timeout: 30_000 })
+
+    const input = await dialog.$('.ask-user-input')
+    await input.click()
+    await input.setValue('Green')
+    await saveElementScreenshot('#ask-user-dialog', 'ask-user-dialog-keyboard-submit.png')
+
+    // Ctrl+Enter submits regardless of platform — the handler accepts either
+    // Cmd or Ctrl, and Linux CI has no Meta key to press.
+    await browser.keys(['Control', 'Enter'])
+
+    await dialog.waitForDisplayed({ reverse: true, timeout: 10_000 })
+    await expect(dialog).not.toBeDisplayed()
+
+    // Tool finished — the mock turn completes and an assistant message appears.
+    await browser.waitUntil(async () => (await $$('.msg.msg-assistant')).length >= 1, {
+      timeout: 30_000,
+      timeoutMsg: 'expected assistant reply after ask_user keyboard answer',
+    })
+  })
 })
