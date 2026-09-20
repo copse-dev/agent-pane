@@ -169,6 +169,68 @@ const semanticSearchSummary = [
   '- Search for `classifySearchQuery`',
 ].join('\n')
 
+// Authored layout fixture, not a recorded claim about work performed.
+const readingLayoutContent = [
+  'A response should be comfortable to read from the first streamed sentence through the final answer. The prose stays within a readable measure while the surrounding chat can still hold wider tool output.',
+  '',
+  'This second paragraph checks the separation between ideas. Short answers should keep their natural height, and longer explanations should wrap without pushing the chat pane sideways.',
+  '',
+  '## What changed',
+  '',
+  '- A readable column keeps long lines from crossing the entire window.',
+  '- Paragraphs and sections have enough separation to scan.',
+  '  - Nested details retain their indentation.',
+  '  - A second nested item checks the list rhythm.',
+  '- Pending markdown uses the same text size as the completed answer.',
+  '',
+  '### Review the details',
+  '',
+  'Inline paths such as `src/renderer/styles/global/conversation.css` remain selectable. A long command below scrolls within its code block.',
+  '',
+  '```sh',
+  'pnpm run test:demo --spec tests/demo/chat-reading-layout.demo.ts --spec tests/demo/markdown-list-indent.demo.ts --spec tests/demo/chat-layout-styling.demo.ts',
+  '```',
+  '',
+  '| Surface | Expected behavior |',
+  '| --- | --- |',
+  '| Prose | Wrap to the available reading width |',
+  '| Code | Scroll inside the fenced block |',
+  '| Tool output | Keep the existing trace typography |',
+  '',
+  '> A quote remains part of the response and keeps its own visual treatment.',
+  '',
+  '## Limits',
+  '',
+  'This is a deterministic layout fixture. It does not claim that an agent inspected files or ran these checks.',
+].join('\n')
+
+const READING_LAYOUT_TRACE: DemoTrace = {
+  id: 'chat-reading-layout',
+  label: 'Reading layout with a tool and streamed markdown',
+  prompt: 'Show the reading layout with a streamed response.',
+  steps: [
+    { chunk: { type: 'text', text: 'I will inspect the sample before explaining it.\n\n' } },
+    {
+      chunk: {
+        type: 'tool_call',
+        toolCall: { id: 'reading-layout-read', name: 'read_file', args: { path: 'sample.ts' } },
+      },
+      delayMs: 800,
+    },
+    {
+      chunk: {
+        type: 'tool_result',
+        toolCallId: 'reading-layout-read',
+        result: 'export const sample = true',
+        isError: false,
+      },
+      delayMs: 800,
+    },
+    { chunk: { type: 'text', text: readingLayoutContent } },
+    { chunk: { type: 'done', stopReason: 'end_turn' } },
+  ],
+}
+
 const PROPOSED_INDEX_HTML = [
   '<!doctype html>',
   '<html lang="en">',
@@ -319,6 +381,43 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       },
     ],
     trace: PROPOSED_DIFF_TRACE,
+  },
+  {
+    id: 'chat-reading-layout',
+    label: 'Readable assistant responses',
+    project: project('demo-reading-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+    },
+    threads: [
+      {
+        id: 'demo-reading-thread',
+        title: 'Readable assistant responses',
+        status: 'idle',
+        messages: [
+          {
+            id: 'demo-reading-user',
+            role: 'user',
+            content: 'Show an answer with paragraphs, lists, and code.',
+            toolCalls: [],
+            createdAt: FIXED_TIME,
+          },
+          {
+            id: 'demo-reading-assistant',
+            role: 'assistant',
+            content: readingLayoutContent,
+            toolCalls: [],
+            createdAt: FIXED_TIME,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+    trace: READING_LAYOUT_TRACE,
   },
   {
     id: 'markdown-list-indent',
