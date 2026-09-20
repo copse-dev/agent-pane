@@ -466,21 +466,22 @@ export function renderModelTable(
     const modelLabel = row.estimatedTokens
       ? `${model} <span class="usage-estimated" title="Estimated locally, because the agent did not report usage">(est.)</span>`
       : model
+    const costLabel = row.isLocal
+      ? 'free (local)'
+      : !row.pricingKnown
+        ? 'unpriced'
+        : `${row.estimatedCostUsd === 0 ? 'free' : formatUsd(row.estimatedCostUsd)}${
+            row.tierPricingFallback
+              ? ' <span class="usage-estimated" title="This service tier has no published catalog rate; shown at the standard rate.">(standard rate)</span>'
+              : ''
+          }`
     tr.innerHTML = `
       <td><code>${modelLabel}</code></td>
       <td>${approx}${formatTokenCount(row.inputTokens)}</td>
       <td>${approx}${formatTokenCount(row.outputTokens)}</td>
       <td>${row.cacheReadTokens ? formatTokenCount(row.cacheReadTokens) : '-'}</td>
       <td>${row.cacheCreationTokens ? formatTokenCount(row.cacheCreationTokens) : '-'}</td>
-      <td>${
-        row.isLocal
-          ? 'free (local)'
-          : !row.pricingKnown
-            ? 'unpriced'
-            : row.estimatedCostUsd === 0
-              ? 'free'
-              : formatUsd(row.estimatedCostUsd)
-      }</td>
+      <td>${costLabel}</td>
     `
     tbody.append(tr)
   }

@@ -33,6 +33,7 @@ type TestEvent =
   | {
       type: 'response.completed'
       response: {
+        service_tier?: string
         output: Array<{ type: string }>
         usage: {
           input_tokens: number
@@ -280,6 +281,33 @@ describe('ResponsesProvider streaming', () => {
       { type: 'done', stopReason: 'tool_calls' },
     ])
     assert.deepEqual(provider.lastUsage, { inputTokens: 120, outputTokens: 18 })
+  })
+
+  it('carries requested and actual service tiers with completed usage', async () => {
+    const provider = new ResponsesProvider('gpt-test', {
+      apiKey: 'test-key',
+      serviceTier: 'flex',
+    })
+    withFakeStream(provider, () => undefined, [
+      {
+        type: 'response.completed',
+        response: {
+          service_tier: 'priority',
+          output: [],
+          usage: {
+            input_tokens: 120,
+            output_tokens: 8,
+            input_tokens_details: { cached_tokens: 0 },
+          },
+        },
+      },
+    ])
+
+    const chunks = await collect(provider)
+    const usage = chunks.find((chunk) => chunk.type === 'usage')
+    assert.ok(usage)
+    assert.equal(usage.requestedServiceTier, 'flex')
+    assert.equal(usage.responseServiceTier, 'priority')
   })
 
   it('synthesizes a tool-call id when a Responses endpoint omits call_id', async () => {

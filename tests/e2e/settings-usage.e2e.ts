@@ -19,6 +19,16 @@ describe('settings usage panel', function () {
       usageEvents: [
         {
           at: now,
+          model: 'gpt-4o',
+          source: 'agent',
+          inputTokens: 1_000_000,
+          outputTokens: 1_000_000,
+          threadId: 'thread-1',
+          projectId: 'e2e-usage-panel',
+          requestedServiceTier: 'flex',
+        },
+        {
+          at: now,
           model: 'claude-sonnet-4-6',
           source: 'agent',
           inputTokens: 500,
@@ -74,8 +84,8 @@ describe('settings usage panel', function () {
         localModels: Array<{ model: string }>
       }
     }
-    assert.equal(summary.ledgerEventCount, 4)
-    assert.ok(summary.day.totalInputTokens >= 3700)
+    assert.equal(summary.ledgerEventCount, 5)
+    assert.ok(summary.day.totalInputTokens >= 1_003_700)
     assert.ok(summary.day.cloudModels.some((m) => m.model === 'claude-sonnet-4-6'))
     assert.ok(summary.day.localModels.some((m) => m.model.startsWith('lmstudio:')))
 
@@ -88,7 +98,7 @@ describe('settings usage panel', function () {
     const config = JSON.parse(readFileSync(join(getCopseUserDataDir(), 'config.json'), 'utf8')) as {
       usageEvents?: unknown[]
     }
-    assert.equal(config.usageEvents?.length, 4)
+    assert.equal(config.usageEvents?.length, 5)
 
     await $('[aria-label="Settings"]').click()
     await $('.settings-nav-btn[data-section="usage"]').click()
@@ -152,6 +162,10 @@ describe('settings usage panel', function () {
         (row) => row.includes('openrouter:vendor/unknown') && row.includes('unpriced'),
       ),
       'unknown route should render as unpriced',
+    )
+    assert.ok(
+      cloudRows.some((row) => row.includes('gpt-4o') && row.includes('(standard rate)')),
+      'a missing tier catalog rate should say that the standard rate was used',
     )
 
     await prepareE2eScreenshot()

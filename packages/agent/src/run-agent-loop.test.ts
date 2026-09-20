@@ -1892,7 +1892,14 @@ src/renderer/views/projects-pane.ts
       lastUsage: { inputTokens: 99999, outputTokens: 88888 },
       async *stream(): AsyncIterable<ProviderStreamChunk> {
         yield { type: 'text', text: 'answer' }
-        yield { type: 'usage', model: 'real-model', inputTokens: 321, outputTokens: 12 }
+        yield {
+          type: 'usage',
+          model: 'real-model',
+          inputTokens: 321,
+          outputTokens: 12,
+          requestedServiceTier: 'flex',
+          responseServiceTier: 'priority',
+        }
         yield { type: 'done' }
       },
     }
@@ -1911,6 +1918,8 @@ src/renderer/views/projects-pane.ts
     assert.equal(usage.inputTokens, 321)
     assert.equal(usage.outputTokens, 12)
     assert.equal(usage.model, 'attributed-model')
+    assert.equal(usage.requestedServiceTier, 'flex')
+    assert.equal(usage.responseServiceTier, 'priority')
   })
 
   it('falls back to getLastUsage when the stream emits no usage chunk', async () => {

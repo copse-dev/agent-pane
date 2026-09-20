@@ -21,6 +21,44 @@ export type ServiceTier = (typeof SERVICE_TIERS)[number]
 /** Narrow an arbitrary stored string to a tier the API will accept. */
 export const isServiceTier: (value: string) => value is ServiceTier = memberOf(SERVICE_TIERS)
 
+/**
+ * Non-standard processing modes that need their own usage bucket. Standard
+ * processing remains the unbucketed portion of a model's usage, which keeps
+ * data written before tier-aware pricing valid.
+ */
+export const USAGE_SERVICE_TIERS = ['flex', 'priority', 'scale'] as const
+
+export type UsageServiceTier = (typeof USAGE_SERVICE_TIERS)[number]
+
+/** Convert OpenAI's response spelling into the bucket used for pricing. */
+export function usageServiceTierFor(value: ServiceTier): UsageServiceTier | undefined {
+  switch (value) {
+    case 'flex':
+    case 'priority':
+    case 'scale':
+      return value
+    case 'auto':
+    case 'default':
+      return undefined
+  }
+}
+
+/**
+ * Choose a pricing bucket from evidence recorded for one call. A response tier
+ * wins whenever OpenAI supplied one: it is the processing mode actually used,
+ * whereas the request can be routed differently by the service.
+ */
+export function usageServiceTierForCall(
+  requested: ServiceTier | undefined,
+  response: ServiceTier | undefined,
+): UsageServiceTier | undefined {
+  return response === undefined
+    ? requested === undefined
+      ? undefined
+      : usageServiceTierFor(requested)
+    : usageServiceTierFor(response)
+}
+
 /** One offerable tier: the stored value, plus how to describe it to a user. */
 export interface ServiceTierChoice {
   /** Stored value. `''` means "send no `service_tier`" — standard processing. */

@@ -15,19 +15,12 @@
 
 import { MODEL_CATALOG } from './model-catalog.generated.ts'
 import { canonicalModelLabel } from './model-label.ts'
+import type { ModelPricing } from './model-pricing.ts'
 // A leaf module — safe here, where importing `extra-providers.ts` for the same
 // parsing (→ pareto-frontier.ts → this module) would cycle.
 import { parseModelSelection, type ModelNamespace } from './model-selection.ts'
 
-export interface ModelInfo {
-  /** USD per million input tokens. */
-  inputPricePerMTok: number
-  /** USD per million output tokens. */
-  outputPricePerMTok: number
-  /** USD per million cache-read input tokens (Anthropic prompt caching). */
-  cacheReadPricePerMTok?: number
-  /** USD per million cache-creation input tokens (Anthropic prompt caching). */
-  cacheCreationPricePerMTok?: number
+export interface ModelInfo extends ModelPricing {
   /** Max input tokens (context window) at standard pricing. */
   contextWindow: number
   /** Max output tokens per response (Anthropic `max_tokens`, OpenAI completion cap). */

@@ -1,6 +1,8 @@
 // Use the Web Crypto API available in both browsers and Node 19+
 const randomUUID = (): string => globalThis.crypto.randomUUID()
 import type { ModelParameters } from '@copse/llm/model-parameters.ts'
+import { mergeModelUsage, usageAtServiceTier } from '@copse/llm/model-usage.ts'
+import { usageServiceTierForCall } from '@copse/llm/service-tier.ts'
 import type { AppStore } from './store.ts'
 import { at } from '@shared/array-utils.ts'
 import type {
@@ -686,15 +688,14 @@ export function addUsageDelta(store: AppStore, threadId: string, delta: UsageDel
   if (!thread) return
   const byModel = { ...(thread.usage.byModel ?? {}) }
   const prev = byModel[delta.model] ?? { inputTokens: 0, outputTokens: 0 }
-  byModel[delta.model] = addCacheTokens(
-    {
-      inputTokens: prev.inputTokens + delta.inputTokens,
-      outputTokens: prev.outputTokens + delta.outputTokens,
-    },
-    prev.cacheReadTokens,
-    prev.cacheCreationTokens,
-    delta,
-  )
+  const usage =
+    delta.serviceTierUsage !== undefined
+      ? delta
+      : usageAtServiceTier(
+          delta,
+          usageServiceTierForCall(delta.requestedServiceTier, delta.responseServiceTier),
+        )
+  byModel[delta.model] = mergeModelUsage(prev, usage)
   updateUsage(
     store,
     threadId,
