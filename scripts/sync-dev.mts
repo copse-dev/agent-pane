@@ -59,7 +59,14 @@ function sweepOldInstalledTrees(root: string): void {
   if (!existsSync(temporaryRoot)) return
   for (const entry of readdirSync(temporaryRoot)) {
     if (!entry.startsWith('node_modules-old.')) continue
-    rmSync(resolve(temporaryRoot, entry), { recursive: true, force: true })
+    const trash = resolve(temporaryRoot, entry)
+    try {
+      rmSync(trash, { recursive: true, force: true, maxRetries: 2, retryDelay: 100 })
+    } catch {
+      // These trees are already outside the install destination. A persistent
+      // metadata writer must not turn deferred cleanup into a startup blocker.
+      console.warn(`==> Some of ${trash} survived deletion; a later run will sweep it.`)
+    }
   }
 }
 
