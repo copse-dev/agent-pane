@@ -4,8 +4,7 @@ import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { setComposerValue } from './helpers/composer.ts'
 import { approveUnsandboxedTerminalIfPrompted } from './helpers/terminal-approval.ts'
-import { saveAppScreenshot } from './helpers/screenshot.ts'
-import { describeSkipInCi } from './helpers/ci-gate.ts'
+import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
@@ -13,16 +12,16 @@ const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 // as an "Agent tasks" entry in the Terminal tab's left rail; selecting it shows
 // the command's output as a full panel on the right. Exercises the full path:
 // agent loop → tagged agent:shell-output IPC → renderer agent-tasks view.
-// Quarantined in CI by #1680 — the third spec sharing that fault, and the one
-// it was originally filed for. See `github-write-approval.e2e.ts` for the
-// evidence. It still runs locally; only the CI gate skips it.
-describeSkipInCi('agent tasks in terminal tab', () => {
+// Approval is required through the supported auto-run setting, so a missing
+// dialog fails on every platform instead of silently skipping that assertion.
+describe('agent tasks in terminal tab', () => {
   before(async () => {
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     seedEmptyProject(process.cwd(), 'e2e-agent-tasks-project', {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
+      autoRunSandboxCommands: false,
     })
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
@@ -46,17 +45,13 @@ describeSkipInCi('agent tasks in terminal tab', () => {
     await setComposerValue('[[mcp:run_shell {"command":"echo agent-task-hello"}]]')
     await $('.submit-btn').click()
 
-    // A plain command still prompts for approval on platforms without an OS
-    // sandbox (Linux CI); approve it so the command runs.
+    // The seeded setting requires approval even when an OS sandbox is active.
     const dialog = await $('#approval-dialog')
-    const approvalShown = await dialog
-      .waitForDisplayed({ timeout: 10_000 })
-      .then(() => true)
-      .catch(() => false)
-    if (approvalShown) {
-      await dialog.$('.approval-approve').click()
-      await dialog.waitForDisplayed({ reverse: true, timeout: 10_000 })
-    }
+    await dialog.waitForDisplayed({ timeout: 10_000 })
+    expect(await dialog.$('.approval-body').getText()).toContain('echo agent-task-hello')
+    await saveElementScreenshot('#approval-dialog', 'agent-tasks-shell-approval.png')
+    await dialog.$('.approval-approve').click()
+    await dialog.waitForDisplayed({ reverse: true, timeout: 10_000 })
 
     // The command appears as an entry in the left rail's Agent tasks section.
     const taskTab = await $('.agent-task-tab')
