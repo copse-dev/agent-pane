@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Copse — response readability workshop</title>
+    <link rel="stylesheet" href="../../src/renderer/styles/tokens.css" />
+    <link rel="stylesheet" href="../../src/renderer/styles/themes.css" />
+    <link rel="stylesheet" href="prototype.css" />
+    <script src="prototype.js" defer></script>
+  </head>
+  <body data-view="reading" data-width="wide">
+    <header class="workshop-header">
+      <div>
+        <span class="eyebrow">Copse · design exploration</span>
+        <h1>A clearer answer.</h1>
+      </div>
+      <button id="theme-toggle" class="quiet-button" aria-pressed="false">Light theme</button>
+    </header>
+    <main>
+      <section class="controls" aria-label="Prototype controls">
+        <div class="view-options" role="group" aria-label="Response presentation">
+          <button data-view="baseline" aria-pressed="false"><span>01</span> Current-style</button>
+          <button data-view="reading" aria-pressed="true"><span>02</span> Reading</button>
+          <button data-view="structured" aria-pressed="false"><span>03</span> Structured</button>
+        </div>
+        <label class="width-control"
+          >Chat width
+          <select id="width-select">
+            <option value="wide">Full panel</option>
+            <option value="narrow">Narrow split</option>
+          </select>
+        </label>
+      </section>
+      <p id="view-description" class="view-description" aria-live="polite"></p>
+      <div class="workbench">
+        <aside class="examples" aria-label="Example responses">
+          <span class="eyebrow">Try an answer</span>
+          <button data-example="change" aria-pressed="true">
+            <span class="example-number">01</span
+            ><span>Code change<small>Outcome, files, checks</small></span>
+          </button>
+          <button data-example="explain" aria-pressed="false">
+            <span class="example-number">02</span
+            ><span>How it works<small>Sequence and tradeoffs</small></span>
+          </button>
+          <button data-example="review" aria-pressed="false">
+            <span class="example-number">03</span
+            ><span>Code review<small>Findings and severity</small></span>
+          </button>
+          <p>Illustrative responses.<br />No live agent or file changes.</p>
+        </aside>
+        <section class="chat-panel" aria-label="Example chat">
+          <header class="chat-header">
+            <span id="thread-title"></span><span class="example-label">Example conversation</span>
+          </header>
+          <div class="transcript" tabindex="0" aria-label="Scrollable conversation">
+            <div class="reading-column">
+              <div class="user-message" id="user-message"></div>
+              <details class="activity">
+                <summary>
+                  <span class="activity-status" aria-hidden="true">✓</span
+                  ><span id="activity-summary"></span
+                  ><span class="disclosure-label">View activity</span>
+                </summary>
+                <ol id="activity-list"></ol>
+              </details>
+              <article class="response" aria-label="Agent answer">
+                <div class="answer-meta"><span>Answer</span><span>Illustrative content</span></div>
+                <div id="answer"></div>
+              </article>
+            </div>
+          </div>
+          <footer class="chat-footer">
+            <span class="footer-dot" aria-hidden="true"></span><span id="presentation-note"></span>
+          </footer>
+        </section>
+      </div>
+      <p class="workshop-note">
+        Current-style is a static approximation of the chat CSS. Reading keeps its words and order.
+        Structured is a separately authored presentation of the same facts.
+      </p>
+    </main>
+  </body>
+</html>

@@ -88,6 +88,21 @@ terminal chrome, and diff viewers.
 The workbench continues to favour thin dividers, restrained radii, flat list selections, quiet tool
 output, and content density.
 
+## Assistant reading rhythm
+
+Primary assistant prose uses a 720px maximum width, the scaled 16px type token,
+and 1.65 line-height inside the existing chat column. Paragraph and section
+spacing use the markdown package's tokens so pending and committed text share
+the same rhythm. Keep this treatment on text that shares a message with tools
+as well; adding a tool must not change the prose size or wrapping. Tool output
+and reasoning disclosures keep their own density. Display headings use the same
+family and weight while pending and after completion.
+
+The browser fixture and real renderer interaction checks live in
+`tests/demo/chat-reading-layout.demo.ts`. It covers long markdown, code overflow,
+nested lists, narrow/light layouts, interface scale, and submitting a streamed
+response through the composer.
+
 ## Attached screenshot expand
 
 Thread message images (`.message-image`), composer image/video chips (empty-thread

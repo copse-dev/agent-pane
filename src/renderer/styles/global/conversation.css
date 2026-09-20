@@ -519,11 +519,31 @@
   border-top: 1px solid var(--border-subtle);
   border-radius: 0;
 }
-.msg-assistant:has(.message-text:not(:empty)):not(:has(.tool-card))
+/* Keep the same reading rhythm while text streams and when tools share its
+   message. Constrain prose inside the existing chat column so inserting a tool
+   does not move the text or narrow the execution trace. Package spacing tokens
+   cover both committed markdown and its pending streaming blocks. */
+.msg-assistant > .message-body > .message-text {
+  --sm-line-height: 1.65;
+  --sm-space-xs: var(--spacing-sm);
+  --sm-space-sm: var(--spacing-lg);
+  --sm-space-md: var(--spacing-xl);
+  max-width: 720px;
+  font-size: var(--font-size-lg);
+  line-height: var(--sm-line-height);
+}
+.msg-assistant > .message-body > .message-text :is(li + li) {
+  margin-top: var(--spacing-xs);
+}
+/* The display tier must keep its typeface and weight when a pending heading
+   becomes a real heading; otherwise its wrapping can change at completion. */
+.msg-assistant
   > .message-body
-  > .message-text {
-  font-size: var(--font-size-md);
-  line-height: var(--line-height-base);
+  > .message-text
+  :is(h1, h2, h3, .stream-pending-h1, .stream-pending-h2, .stream-pending-h3) {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: -0.02em;
 }
 /* Markdown content styling lives in @copse/streaming-markdown's default.css,
    scoped under `.streaming-markdown` (added to every render sink). Map the
