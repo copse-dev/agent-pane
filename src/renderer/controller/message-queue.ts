@@ -15,6 +15,7 @@ import {
 import { syncAgentActivity } from '../agent-activity.ts'
 import { canContinue, DEFAULT_CONTINUATION_BUDGET } from '@copse/agent/hooks/continuation-budget.ts'
 import { ensureThreadMessages } from './thread-hydration.ts'
+import { mark as perfMark } from '../perf.ts'
 
 /**
  * A **held** queued message (decisions 5 & 16): `autoDispatch: false` means the
@@ -190,6 +191,7 @@ export function dispatchAgentRun(
   clearContextSnapshot(store, threadId)
   setThreadStatus(store, threadId, 'running')
   syncAgentActivity(store, threadId, false)
+  perfMark('ttft:renderer-dispatch')
   void api.agent.run(projectId, threadId, JSON.stringify(refreshPayload(store, threadId, payload)))
 }
 

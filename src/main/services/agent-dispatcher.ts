@@ -29,6 +29,7 @@ import {
   type AgentTurnEpoch,
 } from './thread-store.ts'
 import type { ToolRegistry } from './tool-registry.ts'
+import { perfMark } from './diagnostics/perf-trace.ts'
 
 export interface AgentDispatchPayload {
   userContent: UserContent
@@ -210,6 +211,7 @@ export class AgentDispatcher {
   }
 
   async dispatch(request: AgentDispatchRequest): Promise<void> {
+    perfMark('ttft:main-dispatch')
     const key = dispatchKey(request.projectId, request.threadId)
     const epochWrite = this.observeRendererEpoch(key, request)
     this.epochWrites.set(key, epochWrite)
@@ -439,6 +441,7 @@ export class AgentDispatcher {
       this.host,
     )
     if (!executionContext) return undefined
+    perfMark('ttft:dispatch-preflight-complete')
 
     // Reports on the pre-turn state, so it runs before the checkpoint writer
     // starts moving that state on.
