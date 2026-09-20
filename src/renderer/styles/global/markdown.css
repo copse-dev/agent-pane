@@ -1,3 +1,20 @@
+/* Balance prose wrapping so a paragraph's last line does not strand a single
+   short "orphan" word (#2461). `text-wrap` is inherited, so setting it once at
+   the shared `.streaming-markdown` host boundary — the class every render sink
+   (chat, subagent timeline, file preview) adds — reaches every prose block:
+   paragraphs, list items, headings, and blockquotes.
+   Code and tables are reset back to the initial `wrap` value: `pretty`'s
+   look-ahead relaxes which break opportunity it picks, which is wrong for
+   monospace/tabular content where a wrap point (or the lack of one) needs to
+   stay literal. Without the reset, `pre`/`code`/`table` would silently inherit
+   `pretty` from the host. */
+.streaming-markdown {
+  text-wrap: pretty;
+}
+.streaming-markdown :is(pre, code, table) {
+  text-wrap: initial;
+}
+
 /* Base table styling (borders, padding, header, zebra stripe, cell wrapping)
    comes from @copse/streaming-markdown's default.css. The rules below are
    agent-pane refinements layered on top of that base. */
