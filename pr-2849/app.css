@@ -11056,7 +11056,6 @@ dialog.settings-overlay::backdrop {
   --finding-sev: var(--text-secondary);
   border-radius: var(--radius);
   background: color-mix(in srgb, var(--bg-primary) 70%, transparent);
-  border-left: 3px solid var(--finding-sev);
 }
 .review-finding[data-severity=critical],
 .review-finding[data-severity=high] {
