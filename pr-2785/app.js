@@ -203,6 +203,14 @@ function titleCaseSegment(segment) {
     return `${lower.charAt(0).toUpperCase()}${lower.slice(1)}`;
   }).join(" ");
 }
+function canonicalGrokLabel(labelOrId) {
+  const match = GROK_NAME.exec(labelOrId.trim());
+  if (!match?.[2]) return null;
+  const rest = match[3] ?? "";
+  if (rest !== "" && !/^\s/.test(rest)) return null;
+  const family = match[1] ? "Grok Build" : "Grok";
+  return `${family} ${match[2].replace(/-/g, ".")}${rest}`;
+}
 function canonicalVendorLabel(labelOrId) {
   const trimmed2 = labelOrId.trim();
   const gemini = GEMINI_NAME.exec(trimmed2);
@@ -288,14 +296,14 @@ function canonicalModelLabel(labelOrId) {
     const family = `${parsed2.family.charAt(0).toUpperCase()}${parsed2.family.slice(1)}`;
     return `Claude ${family} ${parsed2.version}${parsed2.rest}`;
   }
-  return canonicalGptLabel(labelOrId) ?? canonicalVendorLabel(labelOrId) ?? labelOrId;
+  return canonicalGptLabel(labelOrId) ?? canonicalVendorLabel(labelOrId) ?? canonicalGrokLabel(labelOrId) ?? labelOrId;
 }
 function claudeModelIdFromLabel(labelOrId) {
   const parsed2 = parseClaudeName(labelOrId);
   if (!parsed2 || parsed2.rest.trim() !== "") return null;
   return `claude-${parsed2.family}-${parsed2.version.replace(/\./g, "-")}`;
 }
-var CLAUDE_FAMILIES, FAMILY_PATTERN, VERSION_PATTERN, VERSION_FIRST, FAMILY_FIRST, GPT_NAME, GEMINI_NAME, GLM_NAME, DEEPSEEK_NAME, MISTRAL_NAME, MODELLED_VENDORS, DATED_SNAPSHOT, OPTION_SUFFIX, TOKEN_SPELLING, PARAM_COUNT, SHORT_CODE;
+var CLAUDE_FAMILIES, FAMILY_PATTERN, VERSION_PATTERN, VERSION_FIRST, FAMILY_FIRST, GPT_NAME, GEMINI_NAME, GLM_NAME, DEEPSEEK_NAME, MISTRAL_NAME, GROK_NAME, MODELLED_VENDORS, DATED_SNAPSHOT, OPTION_SUFFIX, TOKEN_SPELLING, PARAM_COUNT, SHORT_CODE;
 var init_model_label = __esm({
   "packages/llm/src/model-label.ts"() {
     CLAUDE_FAMILIES = ["opus", "sonnet", "haiku", "fable"];
@@ -314,7 +322,8 @@ var init_model_label = __esm({
     GLM_NAME = /^glm-(\d+(?:\.\d+)?)(?:-([a-z].*))?$/;
     DEEPSEEK_NAME = /^deepseek-([a-z]+)(?:-v(\d+(?:\.\d+)?))?$/;
     MISTRAL_NAME = /^mistral-([a-z]+)(?:-([a-z]+))?$/;
-    MODELLED_VENDORS = ["claude", "gpt", "gemini", "glm", "deepseek", "mistral"];
+    GROK_NAME = /^(?:(?:xai|spacexai):\s*)?grok[\s-]+(?:(build)[\s-]+)?(\d+(?:[.-]\d+)?)(.*)$/i;
+    MODELLED_VENDORS = ["claude", "gpt", "gemini", "glm", "deepseek", "mistral", "grok"];
     DATED_SNAPSHOT = /-(?:\d{8}|\d{4}-\d{2}-\d{2})$/;
     OPTION_SUFFIX = /\[[^\]]*\]$/;
     TOKEN_SPELLING = {
@@ -24767,6 +24776,140 @@ var init_panels = __esm({
   }
 });
 
+// src/shared/fs/image-path.ts
+function imageMimeType(path) {
+  const name = path.split("/").pop()?.toLowerCase() ?? "";
+  const ext = name.split(".").pop() ?? "";
+  return IMAGE_MIME_BY_EXT[ext] ?? null;
+}
+function isImagePath(path) {
+  return imageMimeType(path) !== null;
+}
+function isRasterImagePath(path) {
+  const mime = imageMimeType(path);
+  return mime !== null && mime !== "image/svg+xml";
+}
+var IMAGE_MIME_BY_EXT;
+var init_image_path = __esm({
+  "src/shared/fs/image-path.ts"() {
+    IMAGE_MIME_BY_EXT = {
+      avif: "image/avif",
+      bmp: "image/bmp",
+      gif: "image/gif",
+      ico: "image/x-icon",
+      jpeg: "image/jpeg",
+      jpg: "image/jpeg",
+      png: "image/png",
+      svg: "image/svg+xml",
+      webp: "image/webp"
+    };
+  }
+});
+
+// src/renderer/attachments/attachment-preview.ts
+function releaseCurrent() {
+  const cleanup = currentCleanup;
+  currentCleanup = null;
+  cleanup?.();
+  bodyEl?.replaceChildren();
+}
+function ensureDialog3() {
+  if (dialog) {
+    if (!dialog.isConnected) {
+      if (dialog.open) dialog.close();
+      document.body.append(dialog);
+    }
+    return dialog;
+  }
+  dialog = document.createElement("dialog");
+  dialog.className = "attachment-preview-dialog";
+  titleEl = el("div", { class: "attachment-preview-title" });
+  bodyEl = el("div", { class: "attachment-preview-body" });
+  const closeBtn = el(
+    "button",
+    { type: "button", class: "attachment-preview-close", "aria-label": "Close" },
+    "\xD7"
+  );
+  const header = el("div", { class: "attachment-preview-header" }, titleEl, closeBtn);
+  dialog.append(header, bodyEl);
+  document.body.append(dialog);
+  closeBtn.addEventListener("click", () => dialog?.close());
+  dialog.addEventListener("click", (event) => {
+    if (event.target === dialog) dialog?.close();
+  });
+  dialog.addEventListener("close", () => {
+    activeToken += 1;
+    releaseCurrent();
+  });
+  return dialog;
+}
+function statusNode(message2) {
+  return el("p", { class: "attachment-preview-status" }, message2);
+}
+function openAttachmentPreview(options) {
+  const previewDialog = ensureDialog3();
+  const previewBody = bodyEl;
+  const previewTitle = titleEl;
+  if (!previewBody || !previewTitle) throw new Error("Attachment preview dialog failed to mount");
+  activeToken += 1;
+  const token = activeToken;
+  releaseCurrent();
+  currentCleanup = options.onClose ?? null;
+  previewDialog.dataset["previewKind"] = options.kind;
+  previewDialog.setAttribute(
+    "aria-label",
+    options.ariaLabel ?? `Attachment preview: ${options.title}`
+  );
+  previewTitle.textContent = options.title;
+  if (options.content) previewBody.replaceChildren(options.content);
+  else previewBody.replaceChildren(statusNode(options.status ?? `Loading ${options.title}\u2026`));
+  if (!previewDialog.open) previewDialog.showModal();
+  const isActive = () => token === activeToken && previewDialog.open;
+  return {
+    isActive,
+    setContent(content) {
+      if (!isActive()) return false;
+      previewBody.replaceChildren(content);
+      return true;
+    },
+    setStatus(message2) {
+      if (!isActive()) return false;
+      previewBody.replaceChildren(statusNode(message2));
+      return true;
+    },
+    close() {
+      if (isActive()) previewDialog.close();
+    }
+  };
+}
+var dialog, titleEl, bodyEl, currentCleanup, activeToken;
+var init_attachment_preview = __esm({
+  "src/renderer/attachments/attachment-preview.ts"() {
+    init_helpers();
+    dialog = null;
+    titleEl = null;
+    bodyEl = null;
+    currentCleanup = null;
+    activeToken = 0;
+  }
+});
+
+// packages/std/src/errors.ts
+function errorMessage(err2) {
+  return err2 instanceof Error ? err2.message : String(err2);
+}
+var init_errors3 = __esm({
+  "packages/std/src/errors.ts"() {
+  }
+});
+
+// src/shared/errors.ts
+var init_errors4 = __esm({
+  "src/shared/errors.ts"() {
+    init_errors3();
+  }
+});
+
 // src/renderer/controller/files.ts
 function detectLanguage(filePath) {
   const lower = filePath.split("/").pop()?.toLowerCase() ?? "";
@@ -24776,6 +24919,47 @@ function detectLanguage(filePath) {
 }
 async function openWorkspaceFile(store2, api2, path, reveal) {
   const { projectId, threadId } = requireActiveThreadOwner(store2);
+  if (isImagePath(path) && (!reveal || isRasterImagePath(path))) {
+    const unsubs = [];
+    const preview = openAttachmentPreview({
+      kind: "image",
+      title: path,
+      ariaLabel: `Image preview: ${path}`,
+      onClose: () => {
+        for (const unsubscribe of unsubs) unsubscribe();
+      }
+    });
+    const isOwner = () => {
+      const current = getActiveThreadOwner(store2);
+      return current?.projectId === projectId && current.threadId === threadId;
+    };
+    const checkOwner = () => {
+      if (!isOwner()) preview.close();
+    };
+    unsubs.push(
+      store2.on("panel_changed", checkOwner),
+      store2.on("threads_changed", checkOwner),
+      store2.on("workspace_changed", checkOwner),
+      store2.on("thread_checkout_changed", (changedThreadId) => {
+        if (changedThreadId === threadId) preview.close();
+      })
+    );
+    try {
+      const src = await api2.fs.readImage(projectId, threadId, path);
+      if (!isOwner()) {
+        preview.close();
+        return;
+      }
+      preview.setContent(el("img", { class: "image-expand-image", src, alt: path }));
+    } catch (error61) {
+      if (!isOwner()) {
+        preview.close();
+        return;
+      }
+      preview.setStatus(`Could not preview ${path}: ${errorMessage(error61)}`);
+    }
+    return;
+  }
   const content = await api2.fs.readFile(projectId, threadId, path);
   const currentOwner = getActiveThreadOwner(store2);
   if (currentOwner?.projectId !== projectId || currentOwner.threadId !== threadId) return;
@@ -24827,6 +25011,10 @@ var init_files = __esm({
   "src/renderer/controller/files.ts"() {
     init_active_thread_owner();
     init_panels();
+    init_image_path();
+    init_attachment_preview();
+    init_helpers();
+    init_errors4();
     LANG = {
       ts: "typescript",
       tsx: "typescript",
@@ -26811,6 +26999,7 @@ function createDemoApi(scenario, options = {}) {
     },
     fs: {
       readFile: (_projectId, _threadId, path) => resolved(writtenFiles.get(path) ?? ""),
+      readImage: () => Promise.reject(new Error("Workspace images are unavailable in this demo")),
       writeFile: resolvedVoid,
       readdir: () => resolved(["src", "tests", "package.json"]),
       listDir: () => resolved([
@@ -27105,6 +27294,7 @@ This response is streamed through the real renderer event path.`
       downloadArtifact: unsupported,
       artifactImageDataUrl: unsupported,
       models: emptyArray,
+      refreshImportedThread: () => resolved(null),
       discoverExternal: (_projectId) => resolved({
         imported: [],
         scanned: 0,
@@ -30179,22 +30369,6 @@ var RENAME_BLUR_GRACE_MS;
 var init_rename_blur = __esm({
   "src/renderer/dom/rename-blur.ts"() {
     RENAME_BLUR_GRACE_MS = 200;
-  }
-});
-
-// packages/std/src/errors.ts
-function errorMessage(err2) {
-  return err2 instanceof Error ? err2.message : String(err2);
-}
-var init_errors3 = __esm({
-  "packages/std/src/errors.ts"() {
-  }
-});
-
-// src/shared/errors.ts
-var init_errors4 = __esm({
-  "src/shared/errors.ts"() {
-    init_errors3();
   }
 });
 
@@ -40186,8 +40360,9 @@ var init_model_intellect_generated = __esm({
       "GPT-5.6 Terra": "gpt-5.6-terra",
       "GPT-5.6-Terra": "gpt-5.6-terra",
       "Grok 4.5": "grok-4.5",
+      "Grok Build 0.1": "grok-build-0-1-06-16",
       "grok-4-5": "grok-4.5",
-      "grok-build-0.1": "grok-4.5",
+      "grok-build-0.1": "grok-build-0-1-06-16",
       "Haiku 4.5": "claude-haiku-4-5",
       "Kimi K2.6": "moonshotai/kimi-k2.6",
       "Kimi K3": "moonshotai/kimi-k3",
@@ -40224,7 +40399,10 @@ var init_model_intellect_generated = __esm({
       "qwen3.6-35b-a3b": "qwen/qwen3.6-35b-a3b",
       "Sonnet 4.6": "claude-sonnet-4-6",
       "Sonnet 5": "claude-sonnet-5",
+      "SpaceXAI: Grok Build 0.1": "grok-build-0-1-06-16",
       "x-ai/grok-4.5": "grok-4.5",
+      "x-ai/grok-build-0.1": "grok-build-0-1-06-16",
+      "xAI: Grok Build 0.1": "grok-build-0-1-06-16",
       "xai/grok-4.5": "grok-4.5",
       "z-ai/glm-5.2": "zai-org/GLM-5.2",
       "zai/glm-5.2": "zai-org/GLM-5.2"
@@ -41607,94 +41785,6 @@ function formatByteSize(bytes) {
 }
 var init_file_bytes = __esm({
   "src/shared/file-bytes.ts"() {
-  }
-});
-
-// src/renderer/attachments/attachment-preview.ts
-function releaseCurrent() {
-  const cleanup = currentCleanup;
-  currentCleanup = null;
-  cleanup?.();
-  bodyEl?.replaceChildren();
-}
-function ensureDialog3() {
-  if (dialog) {
-    if (!dialog.isConnected) {
-      if (dialog.open) dialog.close();
-      document.body.append(dialog);
-    }
-    return dialog;
-  }
-  dialog = document.createElement("dialog");
-  dialog.className = "attachment-preview-dialog";
-  titleEl = el("div", { class: "attachment-preview-title" });
-  bodyEl = el("div", { class: "attachment-preview-body" });
-  const closeBtn = el(
-    "button",
-    { type: "button", class: "attachment-preview-close", "aria-label": "Close" },
-    "\xD7"
-  );
-  const header = el("div", { class: "attachment-preview-header" }, titleEl, closeBtn);
-  dialog.append(header, bodyEl);
-  document.body.append(dialog);
-  closeBtn.addEventListener("click", () => dialog?.close());
-  dialog.addEventListener("click", (event) => {
-    if (event.target === dialog) dialog?.close();
-  });
-  dialog.addEventListener("close", () => {
-    activeToken += 1;
-    releaseCurrent();
-  });
-  return dialog;
-}
-function statusNode(message2) {
-  return el("p", { class: "attachment-preview-status" }, message2);
-}
-function openAttachmentPreview(options) {
-  const previewDialog = ensureDialog3();
-  const previewBody = bodyEl;
-  const previewTitle = titleEl;
-  if (!previewBody || !previewTitle) throw new Error("Attachment preview dialog failed to mount");
-  activeToken += 1;
-  const token = activeToken;
-  releaseCurrent();
-  currentCleanup = options.onClose ?? null;
-  previewDialog.dataset["previewKind"] = options.kind;
-  previewDialog.setAttribute(
-    "aria-label",
-    options.ariaLabel ?? `Attachment preview: ${options.title}`
-  );
-  previewTitle.textContent = options.title;
-  if (options.content) previewBody.replaceChildren(options.content);
-  else previewBody.replaceChildren(statusNode(options.status ?? `Loading ${options.title}\u2026`));
-  if (!previewDialog.open) previewDialog.showModal();
-  const isActive = () => token === activeToken && previewDialog.open;
-  return {
-    isActive,
-    setContent(content) {
-      if (!isActive()) return false;
-      previewBody.replaceChildren(content);
-      return true;
-    },
-    setStatus(message2) {
-      if (!isActive()) return false;
-      previewBody.replaceChildren(statusNode(message2));
-      return true;
-    },
-    close() {
-      if (isActive()) previewDialog.close();
-    }
-  };
-}
-var dialog, titleEl, bodyEl, currentCleanup, activeToken;
-var init_attachment_preview = __esm({
-  "src/renderer/attachments/attachment-preview.ts"() {
-    init_helpers();
-    dialog = null;
-    titleEl = null;
-    bodyEl = null;
-    currentCleanup = null;
-    activeToken = 0;
   }
 });
 
@@ -54470,22 +54560,12 @@ function resolvePlanInclusion(provider, modelId, snapshot) {
     exhausted: binding.usedPercent >= 100
   };
 }
-function planProviderForModel(id) {
-  const rid = (resolveIntellectModelId(id) ?? id).toLowerCase();
-  if (rid.includes("claude") || /\b(opus|sonnet|haiku|fable)\b/.test(rid)) return "claude";
-  if (rid.includes("grok")) return "cursor";
-  return null;
-}
 function applyPlanCoverage(candidate, snapshot, options = {}) {
   const mode = options.mode ?? "plan";
   if (mode === "inference" || !snapshot) return candidate;
-  const provider = candidate.planAccess?.provider ?? planProviderForModel(candidate.id);
-  if (!provider) return candidate;
-  const inclusion = resolvePlanInclusion(
-    provider,
-    candidate.planAccess?.modelId ?? candidate.id,
-    snapshot
-  );
+  const access = candidate.planAccess;
+  if (!access) return candidate;
+  const inclusion = resolvePlanInclusion(access.provider, access.modelId, snapshot);
   if (!inclusion) return candidate;
   const exhaustion = options.windowExhaustion?.get(inclusion.windowId);
   const expectedExhausted = mode === "expected" && exhaustion !== void 0 && exhaustion.total > 0 && exhaustion.hit / exhaustion.total >= EXPECTED_PLAN_EXHAUSTION_THRESHOLD;
@@ -54515,7 +54595,6 @@ function applyPlanCoverage(candidate, snapshot, options = {}) {
 var EXPECTED_PLAN_EXHAUSTION_THRESHOLD;
 var init_plan_inclusion = __esm({
   "src/shared/plan-inclusion.ts"() {
-    init_model_intellect();
     EXPECTED_PLAN_EXHAUSTION_THRESHOLD = 0.5;
   }
 });
@@ -59331,15 +59410,15 @@ function mountSettingsDialog(store2, api2) {
               <legend>Commit signing</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="gitCommitSshAgentSocketAccess" />
-                Let Copse's git commit tool use your ssh-agent (macOS)
+                Enable scoped SSH signing approvals (macOS)
               </label>
               <p class="field-hint">
-                Off by default. Turn this on when Git uses a passphrase-protected SSH key and signed
-                commits fail inside Copse's sandbox. The grant applies only to Copse's native
-                <code>git_commit</code> subprocess, but Git hooks run inside that process and can
-                also ask ssh-agent to use <strong>any key it holds</strong>. The private key remains
-                unreadable. Pair this with <code>ssh-add -c</code> to confirm each use. macOS only:
-                Linux cannot admit one socket without admitting every Unix socket.
+                Off by default. Copse asks before its system SSH signer uses your configured key
+                through ssh-agent. You can remember the signer, key and socket for this project
+                until Copse restarts. Changed configuration requires approval again. Git hooks
+                keep their project sandbox; they receive no ssh-agent access. Turning this off
+                prevents further brokered signing. Private keys remain unreadable. Custom signing
+                programs run with ordinary project access. Scoped socket access is macOS only.
               </p>
             </fieldset>
           </section>
@@ -66412,6 +66491,9 @@ function bindWorkspaceLinkClicks(root, store2, api2) {
     event.preventDefault();
     event.stopPropagation();
     void api2.index.resolveFileReferences([resolutionCandidate], owner ?? void 0).then((resolved3) => {
+      const currentOwner = getActiveThreadOwner(store2);
+      if (currentOwner?.projectId !== owner?.projectId || currentOwner?.threadId !== owner?.threadId)
+        return;
       const match = resolved3.find((entry) => entry.candidate === resolutionCandidate);
       if (!match) {
         showErrorToast(`Could not find ${parsed2.candidate} in the workspace`, "not in index");
@@ -66423,6 +66505,9 @@ function bindWorkspaceLinkClicks(root, store2, api2) {
       } : void 0;
       return activateWorkspaceReference(store2, api2, match.path, match.kind, reveal);
     }).catch((error61) => {
+      const currentOwner = getActiveThreadOwner(store2);
+      if (currentOwner?.projectId !== owner?.projectId || currentOwner?.threadId !== owner?.threadId)
+        return;
       showErrorToast(`Failed to open ${parsed2.candidate}`, error61);
     });
   };
@@ -68477,6 +68562,160 @@ var init_resend_message = __esm({
   }
 });
 
+// src/renderer/controller/model-selection.ts
+function commitThreadModelSelection(store2, api2, threadId, by, from, to) {
+  if (from === to) return;
+  store2.setState({
+    threads: store2.getState().threads.map(
+      (thread) => thread.id === threadId ? { ...thread, model: to, updatedAt: Date.now() } : thread
+    )
+  });
+  store2.emit("threads_changed");
+  const projectId = store2.getState().activeProjectId;
+  if (!projectId) return;
+  void api2.threads.recordModelSelection(projectId, threadId, by, from, to).then((selection2) => {
+    store2.setState({
+      threads: store2.getState().threads.map((thread) => {
+        if (thread.id !== threadId) return thread;
+        if (thread.modelSelections?.some((candidate) => candidate.id === selection2.id)) {
+          return thread;
+        }
+        return {
+          ...thread,
+          modelSelections: [...thread.modelSelections ?? [], selection2]
+        };
+      })
+    });
+    store2.emit("threads_changed");
+  }).catch((error61) => {
+    console.error("[models] could not record thread model selection", error61);
+  });
+}
+var init_model_selection2 = __esm({
+  "src/renderer/controller/model-selection.ts"() {
+  }
+});
+
+// src/renderer/controller/turn-recovery.ts
+function turnRecoveryForMessage(thread, failedMessageId) {
+  if (!thread || thread.messagesLoaded === false) return null;
+  if (thread.status !== "idle" && thread.status !== "error") return null;
+  if ((thread.pendingMessages?.length ?? 0) > 0) return null;
+  const failedIndex = thread.messages.length - 1;
+  const failed = thread.messages[failedIndex];
+  if (!failed || failed.id !== failedMessageId || failed.role !== "assistant" || failed.turnOutcome?.status !== "failed") {
+    return null;
+  }
+  if (failed.turnOutcome.source !== "provider") return {};
+  for (let index = failedIndex - 1; index >= 0; index -= 1) {
+    const candidate = thread.messages[index];
+    if (candidate?.role === "assistant" && candidate.turnOutcome?.status === "completed") {
+      if (candidate.model === void 0) continue;
+      return candidate.model !== failed.turnOutcome.model ? { lastKnownGoodModel: candidate.model } : {};
+    }
+  }
+  return {};
+}
+function recoverFailedTurn(store2, api2, projectId, threadId, failedMessageId, mode) {
+  const state = store2.getState();
+  if (state.activeProjectId !== projectId || state.activeThreadId !== threadId || !state.threads.some((thread2) => thread2.id === threadId)) {
+    return false;
+  }
+  const thread = state.threads.find((candidate) => candidate.id === threadId);
+  const recovery = turnRecoveryForMessage(thread, failedMessageId);
+  if (!thread || !recovery) return false;
+  if (mode === "last-known-good") {
+    const fallback = recovery.lastKnownGoodModel;
+    if (fallback === void 0) return false;
+    commitThreadModelSelection(store2, api2, threadId, "user", thread.model, fallback);
+  }
+  const payload = {
+    content: INTERRUPTED_TURN_CONTINUATION,
+    invokedSkills: [],
+    priorTodos: thread.todos ?? [],
+    ...thread.workingBrief !== void 0 ? { workingBrief: thread.workingBrief } : {}
+  };
+  addMessage(store2, threadId, "user", INTERRUPTED_TURN_CONTINUATION);
+  startHumanTurnTree(store2, threadId);
+  dispatchAgentRun(store2, api2, threadId, payload);
+  return true;
+}
+var INTERRUPTED_TURN_CONTINUATION;
+var init_turn_recovery = __esm({
+  "src/renderer/controller/turn-recovery.ts"() {
+    init_thread_helpers();
+    init_model_selection2();
+    init_message_queue();
+    INTERRUPTED_TURN_CONTINUATION = "Continue the interrupted turn from the persisted history. Do not repeat completed tool calls. Inspect the current state before taking further action, then finish the request.";
+  }
+});
+
+// src/renderer/views/turn-recovery-card.ts
+function createTurnRecoveryCard(options) {
+  const actions = el("div", { class: "turn-recovery-actions" });
+  const buttons = [];
+  const action = (label, callback) => {
+    const button = el(
+      "button",
+      { class: "ui-btn ui-btn-secondary turn-recovery-button", type: "button" },
+      refreshIcon("ui-icon ui-icon-sm"),
+      el("span", {}, label)
+    );
+    button.addEventListener("click", () => {
+      buttons.forEach((candidate) => candidate.disabled = true);
+      if (callback()) button.closest(".turn-recovery-card")?.remove();
+      else buttons.forEach((candidate) => candidate.disabled = false);
+    });
+    buttons.push(button);
+    actions.append(button);
+    return button;
+  };
+  action("Retry this turn", options.onRetry);
+  if (options.lastKnownGoodLabel !== void 0 && options.onRetryWithLastKnownGood !== void 0) {
+    action(`Use ${options.lastKnownGoodLabel} and retry`, options.onRetryWithLastKnownGood);
+  }
+  const body = el(
+    "div",
+    { class: "turn-recovery-body" },
+    el("div", { class: "turn-recovery-title" }, "Turn interrupted"),
+    el(
+      "div",
+      { class: "turn-recovery-detail" },
+      "Continue from the saved progress. Completed tool calls stay in the history and are not replayed automatically."
+    )
+  );
+  if (options.lastKnownGoodLabel !== void 0) {
+    body.append(
+      el(
+        "div",
+        { class: "turn-recovery-model-note" },
+        `An earlier turn completed with ${options.lastKnownGoodLabel}.`
+      )
+    );
+  }
+  return el(
+    "section",
+    {
+      class: "turn-recovery-card",
+      "data-turn-recovery-card": "",
+      "aria-label": "Interrupted turn recovery"
+    },
+    el(
+      "span",
+      { class: "turn-recovery-icon", "aria-hidden": "true" },
+      warningIcon("ui-icon ui-icon-sm")
+    ),
+    body,
+    actions
+  );
+}
+var init_turn_recovery_card = __esm({
+  "src/renderer/views/turn-recovery-card.ts"() {
+    init_helpers();
+    init_icons();
+  }
+});
+
 // src/shared/image-input-support.ts
 function isImageInputUnsupportedMessage(text2) {
   return text2.startsWith(IMAGE_INPUT_UNSUPPORTED_MESSAGE);
@@ -70331,6 +70570,7 @@ function mountConversation(root, store2, api2) {
     if (run2) syncRunLayout(thread, run2, msgId);
     if (msg.review) renderMessageReview(threadId, msgId);
     renderMessageHookCards(threadId, msgId);
+    renderMessageTurnRecovery(threadId, msgId);
   }
   function appendMessageEl(threadId, msgId, batched = false) {
     if (threadId !== store2.getState().activeThreadId) return;
@@ -70497,6 +70737,26 @@ function mountConversation(root, store2, api2) {
     });
     card.setAttribute("data-review-card", "");
     card.setAttribute("data-review-for", messageId);
+    msgEl.after(card);
+  }
+  function renderMessageTurnRecovery(threadId, messageId) {
+    if (threadId !== store2.getState().activeThreadId) return;
+    list.querySelector(`[data-turn-recovery-for="${messageId}"]`)?.remove();
+    const state = store2.getState();
+    const projectId = state.activeProjectId;
+    const thread = state.threads.find((candidate) => candidate.id === threadId);
+    const msgEl = list.querySelector(`[data-message-id="${messageId}"]`);
+    const recovery = turnRecoveryForMessage(thread, messageId);
+    if (!projectId || !msgEl || !recovery) return;
+    const fallback = recovery.lastKnownGoodModel;
+    const card = createTurnRecoveryCard({
+      ...fallback !== void 0 ? { lastKnownGoodLabel: displayModelLabel(fallback) } : {},
+      onRetry: () => recoverFailedTurn(store2, api2, projectId, threadId, messageId, "current-model"),
+      ...fallback !== void 0 ? {
+        onRetryWithLastKnownGood: () => recoverFailedTurn(store2, api2, projectId, threadId, messageId, "last-known-good")
+      } : {}
+    });
+    card.setAttribute("data-turn-recovery-for", messageId);
     msgEl.after(card);
   }
   function syncComparisonPanel() {
@@ -70757,7 +71017,16 @@ function mountConversation(root, store2, api2) {
     store2.on("thread_status_changed", (tid, status) => {
       if (status === "running") cancelThreadCompaction(tid);
       else scheduleThreadCompaction(tid);
-      if (tid === store2.getState().activeThreadId && status !== "running") setActivity(null);
+      if (tid !== store2.getState().activeThreadId) return;
+      if (status === "running") {
+        list.querySelectorAll("[data-turn-recovery-card]").forEach((card) => {
+          card.remove();
+        });
+      } else {
+        setActivity(null);
+        const last = getThreadById(store2, tid)?.messages.at(-1);
+        if (last?.role === "assistant") renderMessageTurnRecovery(tid, last.id);
+      }
     }),
     store2.on("agent_activity", (tid, label) => {
       if (tid !== store2.getState().activeThreadId) return;
@@ -70853,6 +71122,8 @@ var init_conversation = __esm({
     init_message_queue();
     init_fork_thread3();
     init_resend_message();
+    init_turn_recovery();
+    init_turn_recovery_card();
     init_image_input_support();
     init_toast();
     lazyToolCardBodies = /* @__PURE__ */ new WeakMap();
@@ -85454,40 +85725,6 @@ var init_container_run_control = __esm({
   }
 });
 
-// src/renderer/controller/model-selection.ts
-function commitThreadModelSelection(store2, api2, threadId, by, from, to) {
-  if (from === to) return;
-  store2.setState({
-    threads: store2.getState().threads.map(
-      (thread) => thread.id === threadId ? { ...thread, model: to, updatedAt: Date.now() } : thread
-    )
-  });
-  store2.emit("threads_changed");
-  const projectId = store2.getState().activeProjectId;
-  if (!projectId) return;
-  void api2.threads.recordModelSelection(projectId, threadId, by, from, to).then((selection2) => {
-    store2.setState({
-      threads: store2.getState().threads.map((thread) => {
-        if (thread.id !== threadId) return thread;
-        if (thread.modelSelections?.some((candidate) => candidate.id === selection2.id)) {
-          return thread;
-        }
-        return {
-          ...thread,
-          modelSelections: [...thread.modelSelections ?? [], selection2]
-        };
-      })
-    });
-    store2.emit("threads_changed");
-  }).catch((error61) => {
-    console.error("[models] could not record thread model selection", error61);
-  });
-}
-var init_model_selection2 = __esm({
-  "src/renderer/controller/model-selection.ts"() {
-  }
-});
-
 // src/renderer/views/input-bar.ts
 function mountInputBar(root, store2, api2, opts = {}) {
   const chips = el("div", { class: "attachment-chips" });
@@ -98535,33 +98772,6 @@ var init_git_image_diff = __esm({
   }
 });
 
-// src/shared/fs/image-path.ts
-function imageMimeType(path) {
-  const name = path.split("/").pop()?.toLowerCase() ?? "";
-  const ext = name.split(".").pop() ?? "";
-  return IMAGE_MIME_BY_EXT[ext] ?? null;
-}
-function isRasterImagePath(path) {
-  const mime = imageMimeType(path);
-  return mime !== null && mime !== "image/svg+xml";
-}
-var IMAGE_MIME_BY_EXT;
-var init_image_path = __esm({
-  "src/shared/fs/image-path.ts"() {
-    IMAGE_MIME_BY_EXT = {
-      avif: "image/avif",
-      bmp: "image/bmp",
-      gif: "image/gif",
-      ico: "image/x-icon",
-      jpeg: "image/jpeg",
-      jpg: "image/jpeg",
-      png: "image/png",
-      svg: "image/svg+xml",
-      webp: "image/webp"
-    };
-  }
-});
-
 // src/renderer/views/git-changes-pane.ts
 function bytesToBase64(bytes) {
   const chunks = [];
@@ -99458,13 +99668,40 @@ var init_git_changes_pane = __esm({
 });
 
 // packages/thread-store/src/remote-agent-link.ts
+function isImportedCursorAgentNotice(thread, messageIndex, link) {
+  const message2 = thread.messages[messageIndex];
+  if (!message2 || message2.role !== "assistant" || message2.toolCalls.length !== 0) return false;
+  const match = LEGACY_IMPORTED_CURSOR_AGENT_NOTICE.exec(message2.content);
+  return match !== null && thread.model === "remote-agent:cursor" && thread.title === match[1] && thread.createdAt === link.createdAt && message2.createdAt === link.createdAt;
+}
+function isImportedCursorAgentThread(thread, expectedResultId) {
+  const link = thread.remoteAgentLink;
+  if (link?.provider !== "cursor") return false;
+  if (link.imported === true) {
+    const isResult2 = (messageIndex) => {
+      const message2 = thread.messages[messageIndex];
+      if (!message2) return false;
+      return (expectedResultId ? message2.id === expectedResultId : IMPORTED_CURSOR_AGENT_RESULT_ID.test(message2.id)) && message2.role === "assistant" && message2.toolCalls.length === 0;
+    };
+    return thread.messages.length === 0 || thread.messages.length === 1 && (isImportedCursorAgentNotice(thread, 0, link) || isResult2(0)) || thread.messages.length === 2 && isImportedCursorAgentNotice(thread, 0, link) && isResult2(1);
+  }
+  const isResult = (messageIndex) => {
+    const message2 = thread.messages[messageIndex];
+    if (!message2) return false;
+    return (expectedResultId ? message2.id === expectedResultId : IMPORTED_CURSOR_AGENT_RESULT_ID.test(message2.id)) && message2.role === "assistant" && message2.toolCalls.length === 0;
+  };
+  return thread.messages.length === 1 && isImportedCursorAgentNotice(thread, 0, link) || thread.messages.length === 2 && isImportedCursorAgentNotice(thread, 0, link) && isResult(1);
+}
 function remoteAgentPrIndexKey(prUrl) {
   const ref = parseGithubPrUrl(prUrl);
   return ref ? githubPrKey(ref) : null;
 }
+var LEGACY_IMPORTED_CURSOR_AGENT_NOTICE, IMPORTED_CURSOR_AGENT_RESULT_ID;
 var init_remote_agent_link = __esm({
   "packages/thread-store/src/remote-agent-link.ts"() {
     init_github_pr_url();
+    LEGACY_IMPORTED_CURSOR_AGENT_NOTICE = /^_Imported Cursor cloud agent — \[([^\]\n]+)]\(([^()\n]+)\)\. Send a message here to continue that run from Copse\._$/;
+    IMPORTED_CURSOR_AGENT_RESULT_ID = /^remote-cursor-run-[a-f0-9]{64}$/;
   }
 });
 
@@ -124664,6 +124901,69 @@ var init_perf_autopilot = __esm({
   }
 });
 
+// src/renderer/controller/imported-cursor-agent-refresh.ts
+function refreshKey(projectId, thread) {
+  const link = thread.remoteAgentLink;
+  if (thread.status !== "idle" || thread.queuePaused === true || (thread.pendingMessages?.length ?? 0) > 0 || thread.messagesLoaded === false || link?.provider !== "cursor" || !isImportedCursorAgentThread(thread) || !link.runId) {
+    return null;
+  }
+  return `${projectId}:${thread.id}:${link.agentId}:${link.runId}`;
+}
+function mergeImportedCursorResult(thread, message2) {
+  if (thread.messages.some((current) => current.id === message2.id)) return thread;
+  return {
+    ...thread,
+    messages: [...thread.messages, message2],
+    updatedAt: Math.max(thread.updatedAt, message2.createdAt)
+  };
+}
+function attachImportedCursorAgentRefresh(store2, api2) {
+  let lastAttemptKey = null;
+  const refreshActive = () => {
+    const initial = store2.getState();
+    const projectId = initial.activeProjectId;
+    const threadId = initial.activeThreadId;
+    const thread = threadId ? initial.threads.find((candidate) => candidate.id === threadId) : void 0;
+    const key = projectId && thread ? refreshKey(projectId, thread) : null;
+    if (!projectId || !threadId || !thread || !key) {
+      lastAttemptKey = null;
+      return;
+    }
+    if (lastAttemptKey === key) return;
+    lastAttemptKey = key;
+    void api2.remoteAgent.refreshImportedThread(projectId, threadId).then((message2) => {
+      if (!message2) return;
+      const current = store2.getState();
+      if (current.activeProjectId !== projectId || current.activeThreadId !== threadId) return;
+      const active2 = current.threads.find((candidate) => candidate.id === threadId);
+      if (!active2 || refreshKey(projectId, active2) !== key) return;
+      const merged = mergeImportedCursorResult(active2, message2);
+      if (merged === active2) return;
+      store2.setState({
+        threads: current.threads.map(
+          (candidate) => candidate.id === threadId ? merged : candidate
+        )
+      });
+      store2.emit("threads_changed");
+    }).catch((err2) => {
+      console.debug("[imported-cursor-agent-refresh] skipped:", err2);
+      if (lastAttemptKey === key) lastAttemptKey = null;
+    });
+  };
+  const offThreads = store2.on("threads_changed", refreshActive);
+  const offWorkspace = store2.on("workspace_changed", refreshActive);
+  refreshActive();
+  return () => {
+    offThreads();
+    offWorkspace();
+  };
+}
+var init_imported_cursor_agent_refresh = __esm({
+  "src/renderer/controller/imported-cursor-agent-refresh.ts"() {
+    init_remote_agent_link2();
+  }
+});
+
 // src/renderer/controller/pr-panel-follow.ts
 function attachPrPanelFollow(store2, api2) {
   return api2.threads.onPrCreated((projectId, threadId, ref) => {
@@ -134069,6 +134369,7 @@ async function boot() {
   }
   attachProjectThreadCache(store);
   attachThreadHydration(store, api);
+  if (!popoutMode) attachImportedCursorAgentRefresh(store, api);
   mountTitlebar(requireElement("titlebar"), store, api);
   api.menu.onSettings(() => {
     if (!isSettingsDialogOpen()) openSettingsDialog();
@@ -134427,6 +134728,7 @@ var init_main = __esm({
     init_perf();
     init_perf_autopilot();
     init_thread_hydration();
+    init_imported_cursor_agent_refresh();
     init_pr_panel_follow();
     init_external_cursor_agent_sync();
     init_startup_settings();
