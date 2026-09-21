@@ -40,6 +40,12 @@ export function bindWorkspaceLinkClicks(
     void api.index
       .resolveFileReferences([resolutionCandidate], owner ?? undefined)
       .then((resolved) => {
+        const currentOwner = getActiveThreadOwner(store)
+        if (
+          currentOwner?.projectId !== owner?.projectId ||
+          currentOwner?.threadId !== owner?.threadId
+        )
+          return
         const match = resolved.find((entry) => entry.candidate === resolutionCandidate)
         if (!match) {
           showErrorToast(`Could not find ${parsed.candidate} in the workspace`, 'not in index')
@@ -55,6 +61,12 @@ export function bindWorkspaceLinkClicks(
         return activateWorkspaceReference(store, api, match.path, match.kind, reveal)
       })
       .catch((error: unknown) => {
+        const currentOwner = getActiveThreadOwner(store)
+        if (
+          currentOwner?.projectId !== owner?.projectId ||
+          currentOwner?.threadId !== owner?.threadId
+        )
+          return
         showErrorToast(`Failed to open ${parsed.candidate}`, error)
       })
   }

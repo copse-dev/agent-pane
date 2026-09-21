@@ -12,6 +12,7 @@ import {
   isSshExecutionTarget,
 } from '../services/ssh-workspace/execution-target.ts'
 import { getActiveWorkspaceFs } from '../services/workspace-fs/get-workspace-fs.ts'
+import { readWorkspaceImage } from '../services/workspace-fs/image-content.ts'
 import { runCommand } from '../services/exec/command-runner.ts'
 import { fsWorkerSandboxOverlay } from './config.ts'
 import { isProjectSandboxEnabled } from './spawn.ts'
@@ -206,6 +207,20 @@ export async function gatewayReadFile(absPath: string, root?: string): Promise<s
   }
   const res = await invokeWorker({ op: 'readFile', path: absPath, encoding: 'utf-8' }, root)
   if (typeof res['data'] !== 'string') throw new Error('readFile: missing data')
+  return res['data']
+}
+
+/** Read preview bytes through the same sandbox/SSH boundary as text-file reads. */
+export async function gatewayReadImage(
+  absPath: string,
+  root: string,
+  displayPath: string,
+): Promise<string> {
+  if (!useSandboxFsGateway()) {
+    return readWorkspaceImage(getActiveWorkspaceFs(), absPath, displayPath)
+  }
+  const res = await invokeWorker({ op: 'readImage', path: absPath, displayPath }, root)
+  if (typeof res['data'] !== 'string') throw new Error('readImage: missing data')
   return res['data']
 }
 

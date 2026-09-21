@@ -393,6 +393,7 @@ import { listActiveProjectAgentPrLinks } from '../services/remote/remote-agent-l
 import {
   gatewayListDir,
   gatewayReadFile,
+  gatewayReadImage,
   gatewayReaddir,
   gatewayWriteFile,
 } from '../project-sandbox/sandbox-fs-client.ts'
@@ -730,6 +731,14 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const { root } = await resolveThreadExecutionContext(projectId, threadId)
     const abs = await resolvePathWithinRoot(relPath, root)
     return gatewayReadFile(abs, root)
+  })
+
+  ipcMain.handle('fs:read-image', async (event, ...rawArgs) => {
+    assertMainFrameSender(event, win)
+    const [projectId, threadId, relPath] = parseIpcArgs(threadPathArgs, rawArgs)
+    const { root } = await resolveThreadExecutionContext(projectId, threadId)
+    const abs = await resolvePathWithinRoot(relPath, root)
+    return gatewayReadImage(abs, root, relPath)
   })
 
   ipcMain.handle('fs:write-file', async (event, ...rawArgs) => {

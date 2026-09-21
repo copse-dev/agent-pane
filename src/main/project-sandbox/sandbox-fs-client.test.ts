@@ -18,6 +18,7 @@ import {
 } from '../services/exec/subprocess-output-cap.ts'
 import {
   gatewayReadFile,
+  gatewayReadImage,
   gatewayWriteFile,
   SANDBOX_FS_WORKER_STDOUT_MAX_BYTES,
   gatewayListDir,
@@ -32,6 +33,25 @@ describe('sandbox-fs-client', () => {
     setSandboxFsOneShotInvokerForTest(null)
     setWorkerSpawnerForTest(null)
     shutdownSandboxFsServer()
+  })
+
+  it('keeps image previews in the requested sandbox root and uses the binary operation', async () => {
+    setSandboxFsGatewayEnabledForTest(true)
+    setWorkerSpawnerForTest(() => Promise.reject(new Error('force the one-shot fallback')))
+    const image = 'data:image/png;base64,iVBORw0KGgo='
+    setSandboxFsOneShotInvokerForTest(async (request, requestedRoot) => {
+      assert.equal(requestedRoot, '/task/worktree')
+      assert.deepEqual(request, {
+        op: 'readImage',
+        path: '/task/worktree/opaque-target',
+        displayPath: 'chart.png',
+      })
+      return { ok: true, data: image }
+    })
+    assert.equal(
+      await gatewayReadImage('/task/worktree/opaque-target', '/task/worktree', 'chart.png'),
+      image,
+    )
   })
 
   it('reads via direct fs when project sandbox is inactive', async () => {
