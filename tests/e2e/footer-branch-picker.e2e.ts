@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
+import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedFooterBranchPickerFixture } from './helpers/seed-config.ts'
 import { seedBranchWorkspace } from './helpers/branch-workspace.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
+
+const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
 describe('footer branch picker', () => {
   let seed: ReturnType<typeof seedFooterBranchPickerFixture>
@@ -114,15 +117,31 @@ describe('footer branch picker', () => {
     await saveAppScreenshot('footer-branch-picker-filtered.png')
 
     // Clearing the filter restores the full list; keyboard nav plus Enter selects.
-    await filter.setValue('')
+    await filter.click()
+    await browser.keys(Array(seed.currentBranch.length).fill('Backspace'))
     await browser.waitUntil(async () => (await menu.$$('.branch-picker-option')).length === 2, {
       timeout: 2_000,
       timeoutMsg: 'branch picker did not restore the full list',
     })
     await browser.keys('ArrowDown')
+    const activeId = await filter.getAttribute('aria-activedescendant')
+    assert.ok(activeId, 'the filter exposes the keyboard-highlighted option')
+    const activeOption = await browser.execute((id: string) => {
+      const option = document.getElementById(id)
+      return { role: option?.getAttribute('role'), active: option?.classList.contains('is-active') }
+    }, activeId)
+    assert.deepEqual(activeOption, { role: 'option', active: true })
+    await expect(filter).toBeFocused()
     await browser.keys('Enter')
     await expect(menu).not.toBeDisplayed()
     await expect(trigger.$('.branch-picker-label')).toHaveText(seed.currentBranch)
+    await expect(trigger).toBeFocused()
+    // The app-shell screenshot helper dispatches resize, which returns focus
+    // to the composer. The viewport was already pinned by the preceding
+    // capture, so take this frame directly while the real trigger focus is
+    // still present.
+    await browser.pause(100)
+    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'footer-branch-picker-keyboard-focus.png'))
 
     // A query matching nothing reports an empty state instead of a blank menu.
     await trigger.click()
