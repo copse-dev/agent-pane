@@ -13,6 +13,7 @@ import {
   READ_TERMINAL_ENABLED_DEFAULT,
   READ_TERMINAL_ENABLED_SETTING,
 } from '@shared/terminal/read-terminal.ts'
+import { imageMimeType, isRasterImagePath } from '@shared/fs/image-path.ts'
 
 // A past conversation thread reference. Rendered as a `currentColor` outline
 // icon (matching the titlebar/attach chrome) instead of a 🧵 emoji so it stays
@@ -46,6 +47,7 @@ export interface MentionPickerOptions {
   store: AppStore
   api: ApiClient
   onAttach: (file: { path: string; content: string }) => void
+  onAttachImage: (dataUrl: string, mimeType: string) => void
   onAttachThread: (thread: AttachedThreadRef) => void
   onAttachShell: (shell: AttachedShellRef) => void
 }
@@ -75,7 +77,8 @@ function matchesQuery(label: string, query: string): boolean {
 }
 
 export function initMentionPicker(opts: MentionPickerOptions): () => void {
-  const { input, inputBar, store, api, onAttach, onAttachThread, onAttachShell } = opts
+  const { input, inputBar, store, api, onAttach, onAttachImage, onAttachThread, onAttachShell } =
+    opts
 
   const picker = document.createElement('div')
   picker.className = 'mention-picker'
@@ -200,11 +203,15 @@ export function initMentionPicker(opts: MentionPickerOptions): () => void {
     try {
       const { activeProjectId, activeThreadId } = store.getState()
       if (!activeProjectId || !activeThreadId) return
-      const content = await api.fs.readFile(activeProjectId, activeThreadId, item.path)
+      const imageMime = isRasterImagePath(item.path) ? imageMimeType(item.path) : null
+      const content = imageMime
+        ? await api.fs.readImage(activeProjectId, activeThreadId, item.path)
+        : await api.fs.readFile(activeProjectId, activeThreadId, item.path)
       const current = store.getState()
       if (current.activeProjectId !== activeProjectId || current.activeThreadId !== activeThreadId)
         return
-      onAttach({ path: item.path, content })
+      if (imageMime) onAttachImage(content, imageMime)
+      else onAttach({ path: item.path, content })
     } catch {
       /* ignore read errors */
     }

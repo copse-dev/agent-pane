@@ -2249,6 +2249,7 @@ export function mountInputBar(
     store,
     api,
     onAttach: addChip,
+    onAttachImage: addImageChip,
     onAttachThread: addThreadChip,
     onAttachShell: addShellChip,
   })

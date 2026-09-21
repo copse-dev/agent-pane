@@ -5,9 +5,11 @@ import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedE2eViewport, writeSeedConfig } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { assertNoErrorToasts } from './helpers/assert-no-error-toasts.ts'
+import { setComposerValue } from './helpers/composer.ts'
 
 const projectId = 'image-link-project'
 const threadId = 'image-link-thread'
+const WORKSPACE_PATH_MIME = 'application/x-copse-panel-path'
 
 describe('transcript workspace image links', () => {
   let parent = ''
@@ -115,5 +117,60 @@ describe('transcript workspace image links', () => {
     await $('.message-text a[href="/README.md"]').click()
     await $('.file-tree .tree-row[title="README.md"]').waitForDisplayed({ timeout: 15_000 })
     await assertNoErrorToasts('image and text workspace links')
+  })
+
+  it('attaches workspace images from mentions and explorer drags without reading text', async () => {
+    await setComposerValue('@chart')
+    const mention = await $('.mention-picker .mention-item')
+    await mention.waitForDisplayed({ timeout: 15_000 })
+    await expect(mention).toHaveText('chart.png')
+    await mention.click()
+
+    const imageChip = await $('.attachment-chip.image-chip')
+    await imageChip.waitForDisplayed({ timeout: 15_000 })
+    await expect($('.attachment-chip.image-chip img')).toHaveAttribute(
+      'src',
+      expect.stringContaining('data:image/png;base64,'),
+    )
+    await expect($('.attachment-chip:not(.image-chip)')).not.toBeExisting()
+    await $('.attachment-chip.image-chip button').click()
+    await expect(imageChip).not.toBeExisting()
+
+    await setComposerValue('@diagram')
+    const svgMention = await $('.mention-picker .mention-item')
+    await svgMention.waitForDisplayed({ timeout: 15_000 })
+    await expect(svgMention).toHaveText('diagram.svg')
+    await svgMention.click()
+
+    const svgChip = await $('.attachment-chip:not(.image-chip)')
+    await svgChip.waitForDisplayed({ timeout: 15_000 })
+    await expect(svgChip).toHaveText(expect.stringContaining('diagram.svg'))
+    await expect($('.attachment-chip.image-chip')).not.toBeExisting()
+    await svgChip.$('button').click()
+    await expect(svgChip).not.toBeExisting()
+
+    await browser.execute(
+      ({ mime, path }) => {
+        const dataTransfer = new DataTransfer()
+        dataTransfer.setData(mime, path)
+        document.getElementById('input-bar')?.dispatchEvent(
+          new DragEvent('drop', {
+            bubbles: true,
+            cancelable: true,
+            dataTransfer,
+          }),
+        )
+      },
+      { mime: WORKSPACE_PATH_MIME, path: 'chart.png' },
+    )
+
+    await $('.attachment-chip.image-chip').waitForDisplayed({ timeout: 15_000 })
+    await expect($('.attachment-chip.image-chip img')).toHaveAttribute(
+      'src',
+      expect.stringContaining('data:image/png;base64,'),
+    )
+    await expect($('.attachment-chip:not(.image-chip)')).not.toBeExisting()
+    await saveAppScreenshot('workspace-image-attachments.png')
+    await assertNoErrorToasts('workspace image attachments')
   })
 })
