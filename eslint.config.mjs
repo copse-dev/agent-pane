@@ -169,6 +169,53 @@ export default ts.config(
     },
   },
   {
+    // Plan-usage credential discovery runs from the Settings IPC handler on the
+    // Electron main thread. Keep file reads awaitable so a credential file cannot
+    // block the renderer while the five-minute usage cache is cold. This block
+    // follows the broad agent-path import rule because ESLint replaces rule
+    // options instead of merging them.
+    files: ['src/main/services/plan-usage-bridge.ts'],
+    rules: {
+      '@typescript-eslint/no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            NO_ELECTRON,
+            {
+              name: 'node:fs',
+              importNames: ['readFileSync'],
+              message:
+                'Settings plan-usage discovery runs on the main thread; use node:fs/promises readFile instead.',
+            },
+            {
+              name: 'fs',
+              importNames: ['readFileSync'],
+              message:
+                'Settings plan-usage discovery runs on the main thread; use node:fs/promises readFile instead.',
+            },
+          ],
+        },
+      ],
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "BinaryExpression[operator='in'][left.type!='Literal']",
+          message:
+            'A dynamic key with `in` also matches inherited members (toString, constructor, ' +
+            '__proto__, and five more). Use Object.hasOwn(record, key) — or keyOf(record) from ' +
+            "@copse/std when you want a type predicate. A literal key (`'kind' in value`) is " +
+            'fine and is not restricted.',
+        },
+        {
+          selector:
+            "CallExpression[callee.type='MemberExpression'][callee.property.name='readFileSync']",
+          message:
+            'Settings plan-usage discovery runs on the main thread; use node:fs/promises readFile instead.',
+        },
+      ],
+    },
+  },
+  {
     // The renderer runs in a browser context: no Node builtins, ever. Nothing imports one
     // today, which is exactly why this is cheap to add — a rule with no violations costs
     // nothing and prevents the FIRST one, which is the only cheap moment to prevent it.
