@@ -1,0 +1,440 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Running-thread dots — size variants</title>
+    <style>
+      :root {
+        --font-sm: 12.5px;
+      }
+      [data-theme='dark'] {
+        --app-bg: #17171b;
+        --sidebar-bg: #1f1f24;
+        --sidebar-border: #2c2c33;
+        --row-hover: rgba(255, 255, 255, 0.045);
+        --row-selected: #533c50;
+        --text-primary: #ececef;
+        --text-secondary: #c9c9cf;
+        --text-muted: #8b8b94;
+        --accent: #93a5ff;
+        --card-bg: #202027;
+        --card-border: #30303a;
+        --chip-bg: #26262e;
+        --badge-bg: #2f4034;
+        --badge-text: #7fd6a0;
+        color-scheme: dark;
+      }
+      [data-theme='light'] {
+        --app-bg: #f4f4f6;
+        --sidebar-bg: #ececef;
+        --sidebar-border: #d8d8de;
+        --row-hover: rgba(0, 0, 0, 0.045);
+        --row-selected: #dcc3d8;
+        --text-primary: #1d1d22;
+        --text-secondary: #3c3c44;
+        --text-muted: #77777f;
+        --accent: #5a6cf0;
+        --card-bg: #ffffff;
+        --card-border: #dddde3;
+        --chip-bg: #f0f0f4;
+        --badge-bg: #e0f2e7;
+        --badge-text: #1e7a44;
+        color-scheme: light;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+        background: var(--app-bg);
+        color: var(--text-primary);
+        padding: 28px;
+      }
+      header {
+        max-width: 1180px;
+        margin: 0 auto 20px;
+      }
+      h1 {
+        font-size: 18px;
+        margin: 0 0 6px;
+      }
+      .sub {
+        color: var(--text-muted);
+        font-size: 13px;
+        margin: 0 0 16px;
+        max-width: 72ch;
+      }
+      .controls {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .controls button {
+        font: inherit;
+        font-size: 12.5px;
+        color: var(--text-secondary);
+        background: var(--chip-bg);
+        border: 1px solid var(--card-border);
+        border-radius: 6px;
+        padding: 5px 10px;
+        cursor: pointer;
+      }
+      .controls button[aria-pressed='true'] {
+        color: var(--text-primary);
+        border-color: var(--accent);
+      }
+      .grid {
+        max-width: 1180px;
+        margin: 0 auto;
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: 18px;
+      }
+      .card {
+        background: var(--card-bg);
+        border: 1px solid var(--card-border);
+        border-radius: 10px;
+        padding: 14px;
+      }
+      .card-head {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 4px;
+      }
+      .card-head h2 {
+        font-size: 13.5px;
+        margin: 0;
+        flex: 1;
+      }
+      .badge {
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--badge-text);
+        background: var(--badge-bg);
+        border-radius: 999px;
+        padding: 2px 8px;
+      }
+      .badge.current {
+        background: var(--chip-bg);
+        color: var(--text-muted);
+      }
+      .meta {
+        font-size: 11.5px;
+        color: var(--text-muted);
+        margin: 0 0 12px;
+      }
+      .note {
+        font-size: 12px;
+        color: var(--text-muted);
+        margin: 10px 2px 0;
+        line-height: 1.45;
+      }
+      .stage {
+        display: flex;
+        gap: 14px;
+        align-items: flex-start;
+      }
+
+      /* Sidebar mock — mirrors .chat-row / .chat-running-status from layout.css */
+      .sidebar {
+        flex: 1;
+        min-width: 0;
+        background: var(--sidebar-bg);
+        border: 1px solid var(--sidebar-border);
+        border-radius: 8px;
+        overflow: hidden;
+        padding: 4px 0;
+      }
+      .sidebar-label {
+        font-size: 10.5px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--text-muted);
+        padding: 6px 14px 4px;
+      }
+      .chat-row {
+        position: relative;
+        display: flex;
+        align-items: center;
+        padding: 5px 10px 5px 28px; /* 28px running-status gutter, as in layout.css */
+        font-size: var(--font-sm);
+        color: var(--text-secondary);
+        white-space: nowrap;
+        cursor: default;
+        user-select: none;
+      }
+      .chat-row:hover {
+        background: var(--row-hover);
+      }
+      .chat-row.selected {
+        background: var(--row-selected);
+        color: var(--text-primary);
+        font-weight: 600;
+      }
+      .chat-title {
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .chat-running-status {
+        position: absolute;
+        left: 8px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--accent);
+        pointer-events: none;
+        display: inline-flex;
+      }
+      .run-dots {
+        display: inline-block;
+      }
+      .run-dots path {
+        animation: walk 1.2s ease-in-out infinite;
+      }
+      .run-dots path:nth-child(2) {
+        animation-delay: 0.2s;
+      }
+      .run-dots path:nth-child(3) {
+        animation-delay: 0.4s;
+      }
+      @keyframes walk {
+        0%,
+        80%,
+        100% {
+          opacity: 0.25;
+        }
+        40% {
+          opacity: 1;
+        }
+      }
+      body.no-motion .run-dots path {
+        animation: none;
+        opacity: 0.7;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .run-dots path {
+          animation: none;
+          opacity: 0.7;
+        }
+      }
+
+      /* Magnified inspection chip — same glyph, fixed 44px render */
+      .zoom {
+        flex-shrink: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+        background: var(--chip-bg);
+        border: 1px solid var(--card-border);
+        border-radius: 8px;
+        padding: 10px 12px;
+        color: var(--accent);
+      }
+      .zoom span {
+        font-size: 10.5px;
+        color: var(--text-muted);
+      }
+
+      footer {
+        max-width: 1180px;
+        margin: 22px auto 0;
+        color: var(--text-muted);
+        font-size: 12px;
+        line-height: 1.5;
+      }
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 11.5px;
+        background: var(--chip-bg);
+        border-radius: 4px;
+        padding: 1px 5px;
+      }
+    </style>
+  </head>
+  <body data-theme="dark">
+    <header>
+      <h1>Running-thread indicator — size &amp; weight variants</h1>
+      <p class="sub">
+        The animated <code>…</code> in the sidebar thread-row gutter, reproduced with the same SVG
+        (<code>more-horizontal</code> paths on a 24×24 viewBox), the same walking-opacity animation
+        (1.2s, staggered 0.2s), and the same 28px gutter as <code>layout.css</code>. Only the render
+        size and stroke-width change between cards.
+      </p>
+      <div class="controls">
+        <button id="theme-toggle" aria-pressed="true">Dark theme</button>
+        <button id="motion-toggle" aria-pressed="true">Animation on</button>
+      </div>
+    </header>
+
+    <div class="grid" id="grid"></div>
+
+    <footer>
+      Row markup mirrors <code>projects-pane.ts</code>: the icon is absolutely positioned in the
+      row's left gutter, so no variant shifts thread titles. The selected row uses the mauve
+      selection fill from the current theme, which is why the dots on it pick up a pink cast in dark
+      mode.
+    </footer>
+
+    <script>
+      const THREADS = [
+        { title: 'Debug worktree sandbox escapes', running: true },
+        { title: 'Fix input bar overflow in portrait', running: true },
+        { title: 'In thread proposals: staged diffs', running: true, selected: true },
+        { title: 'Why does CI flake on macOS runners', running: true },
+        { title: 'Nightly eval harness for skills', running: false },
+      ]
+
+      const VARIANTS = [
+        {
+          name: 'Current',
+          size: 12,
+          stroke: 2,
+          badge: 'ships today',
+          badgeClass: 'current',
+          note: 'What you screenshotted. Resting dots are ~2px at 25% opacity — the subtlety is the stroke, not the animation.',
+        },
+        {
+          name: 'Recommended',
+          size: 16,
+          stroke: 2,
+          badge: 'recommended',
+          badgeClass: '',
+          note: 'Base ui-icon size inside the unchanged 28px gutter. Dots read at a glance; weight stays quiet.',
+        },
+        {
+          name: 'Bigger + heavier',
+          size: 16,
+          stroke: 3,
+          badge: null,
+          note: 'Same 16px bump with a modestly thicker stroke. A middle step if 16/2 still reads faint on non-selected rows.',
+        },
+        {
+          name: 'Chunky at current size',
+          size: 12,
+          stroke: 8,
+          badge: null,
+          note: 'ui-icon-dot weight without the size bump. The dots merge into blobs and start colliding with the title.',
+        },
+        {
+          name: 'Chunky + bigger',
+          size: 16,
+          stroke: 8,
+          badge: null,
+          note: 'Loudest option. Highly visible, but it competes with the selected-row fill and the unread dot nearby.',
+        },
+      ]
+
+      const SVG_NS = 'http://www.w3.org/2000/svg'
+
+      function dotsIcon(size, stroke) {
+        const svg = document.createElementNS(SVG_NS, 'svg')
+        svg.setAttribute('viewBox', '0 0 24 24')
+        svg.setAttribute('width', size)
+        svg.setAttribute('height', size)
+        svg.setAttribute('fill', 'none')
+        svg.setAttribute('stroke', 'currentColor')
+        svg.setAttribute('stroke-width', stroke)
+        svg.setAttribute('stroke-linecap', 'round')
+        svg.setAttribute('stroke-linejoin', 'round')
+        svg.setAttribute('aria-hidden', 'true')
+        svg.classList.add('run-dots')
+        for (const d of ['M5 12h.01', 'M12 12h.01', 'M19 12h.01']) {
+          const path = document.createElementNS(SVG_NS, 'path')
+          path.setAttribute('d', d)
+          svg.append(path)
+        }
+        return svg
+      }
+
+      function buildSidebar(variant) {
+        const sidebar = document.createElement('div')
+        sidebar.className = 'sidebar'
+        const label = document.createElement('div')
+        label.className = 'sidebar-label'
+        label.textContent = 'e2e-mermaid-project'
+        sidebar.append(label)
+        for (const thread of THREADS) {
+          const row = document.createElement('div')
+          row.className = 'chat-row' + (thread.selected ? ' selected' : '')
+          if (thread.running) {
+            const status = document.createElement('span')
+            status.className = 'chat-running-status'
+            status.append(dotsIcon(variant.size, variant.stroke))
+            row.append(status)
+          }
+          const title = document.createElement('span')
+          title.className = 'chat-title'
+          title.textContent = thread.title
+          row.append(title)
+          sidebar.append(row)
+        }
+        return sidebar
+      }
+
+      function buildCard(variant) {
+        const card = document.createElement('section')
+        card.className = 'card'
+
+        const head = document.createElement('div')
+        head.className = 'card-head'
+        const h2 = document.createElement('h2')
+        h2.textContent = variant.name
+        head.append(h2)
+        if (variant.badge) {
+          const badge = document.createElement('span')
+          badge.className = 'badge' + (variant.badgeClass ? ' ' + variant.badgeClass : '')
+          badge.textContent = variant.badge
+          head.append(badge)
+        }
+        card.append(head)
+
+        const meta = document.createElement('p')
+        meta.className = 'meta'
+        meta.textContent = variant.size + 'px render · stroke-width ' + variant.stroke
+        card.append(meta)
+
+        const stage = document.createElement('div')
+        stage.className = 'stage'
+        stage.append(buildSidebar(variant))
+
+        const zoom = document.createElement('div')
+        zoom.className = 'zoom'
+        zoom.append(dotsIcon(44, variant.stroke))
+        const zoomLabel = document.createElement('span')
+        zoomLabel.textContent = '×3.7'
+        zoom.append(zoomLabel)
+        stage.append(zoom)
+        card.append(stage)
+
+        const note = document.createElement('p')
+        note.className = 'note'
+        note.textContent = variant.note
+        card.append(note)
+
+        return card
+      }
+
+      const grid = document.getElementById('grid')
+      for (const variant of VARIANTS) grid.append(buildCard(variant))
+
+      const themeBtn = document.getElementById('theme-toggle')
+      themeBtn.addEventListener('click', () => {
+        const body = document.body
+        const dark = body.dataset.theme === 'dark'
+        body.dataset.theme = dark ? 'light' : 'dark'
+        themeBtn.textContent = dark ? 'Light theme' : 'Dark theme'
+        themeBtn.setAttribute('aria-pressed', String(!dark))
+      })
+
+      const motionBtn = document.getElementById('motion-toggle')
+      motionBtn.addEventListener('click', () => {
+        const paused = document.body.classList.toggle('no-motion')
+        motionBtn.textContent = paused ? 'Animation off' : 'Animation on'
+        motionBtn.setAttribute('aria-pressed', String(!paused))
+      })
+    </script>
+  </body>
+</html>
