@@ -43,7 +43,7 @@ already do this by hand.** [`../../AGENTS.md`](../../AGENTS.md) line 29 tells an
 agent that "the Cloud VM exposes a VNC desktop on `DISPLAY=:1`", documents the
 idle screen-blanker workaround (`xdotool key F15` in a loop), and
 [`../ui-taste.md`](../ui-taste.md) warns against trusting "a manual VNC glance"
-as proof of a visual change. The e2e stack runs Chromium-under-Xvfb on a remote
+as proof of a visual change. The e2e stack runs headless Chromium/Electron on a remote
 host provisioned by `scripts/remote-e2e.mts`. So the first user of a viewer pane
 is the person reading this document, watching an e2e run they already pay to
 provision.

@@ -152,7 +152,7 @@ if ! node scripts/build.mts; then
 fi
 
 # Same retry shape as the CI e2e shard step: the Electron/Chromedriver session
-# occasionally wedges on startup and only a fresh xvfb+Electron launch
+# occasionally wedges on startup and only a fresh headless Electron launch
 # recovers, so cap each attempt with `timeout` and retry the whole run.
 TIMEOUT="$(command -v timeout || true)"
 for attempt in 1 2 3; do

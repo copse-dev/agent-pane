@@ -102,6 +102,8 @@ green subset is never a substitute for the pre-commit gate. Full guidance is in
   configured; continue editing, then use `e2e:remote -- wait <run-id>`. Use local Electron e2e for
   macOS-specific behavior or when no remote host is available. See
   [`ci-runners/README.md`](ci-runners/README.md#remote-e2e-dev-hosts-npm-run-e2eremote).
+- Electron e2e runs headlessly by default. Set `COPSE_E2E_HEADLESS=0` for an intentionally visible
+  debugging run; display-less Linux hosts use Xvfb only for that opt-out.
 - Use a spare macOS GUI machine when validation needs the real product and a real agent: authenticated
   ACP inference, native macOS UI, GUI-only reproduction, or real-model demo recording. Follow
   [`docs/remote-agent-demo-debugging.md`](docs/remote-agent-demo-debugging.md), isolate the app profile

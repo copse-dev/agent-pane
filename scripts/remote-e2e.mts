@@ -11,7 +11,7 @@
  *      (/srv/remote-e2e/repo.git, refs/runs/<run-id>).
  *   3. Each shard starts a fresh one-shot container from the copse-ci-runner
  *      image (ci-runners/exec-run.sh): checkout → install from package inputs → build →
- *      wdio under Xvfb → collect artifacts.
+ *      headless wdio → collect artifacts.
  *   4. Results come back as files: .tmp/remote-e2e/runs/<run-id>/ holds the
  *      log and artifacts (changed reference screenshots, run info).
  *

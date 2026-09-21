@@ -210,7 +210,8 @@ new tests should keep that trend:
   while iterating when a host or `COPSE_CI_REGISTRY` is available (see
   [`ci-runners/README.md`](../ci-runners/README.md#remote-e2e-dev-hosts-npm-run-e2eremote)).
   Local `test:e2e` stays for macOS-specific behaviour and machines without cloud
-  access.
+  access. It runs Electron headlessly by default; set `COPSE_E2E_HEADLESS=0`
+  for an intentionally visible local debugging run.
 - Don't reintroduce per-spec rebuilds or hosted-runner e2e for ordinary
   changes; the shared `dist` artifact + self-hosted PR/push runners exist to
   avoid that cost.

@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { assertNoErrorToasts } from './tests/e2e/helpers/assert-no-error-toasts.ts'
 import { resolveElectronBrowserVersion } from './tests/e2e/helpers/electron-browser-version.ts'
+import { shouldRunE2eHeadless } from './tests/e2e/helpers/display-mode.mts'
 import {
   createEvalProject,
   loadEvalScenario,
@@ -43,6 +44,7 @@ const chromedriverBinary = join(
   'chromedriver',
 )
 const electronBrowserVersion = resolveElectronBrowserVersion(electronBinary, chromedriverBinary)
+const runHeadless = shouldRunE2eHeadless()
 
 let evalUserDataDir: string | null = null
 let evalChromeProfileDir: string | null = null
@@ -70,7 +72,7 @@ export const config: Options.Testrunner = {
   logLevel: 'warn',
   waitforTimeout: 30_000,
   connectionRetryTimeout: 120_000,
-  autoXvfb: !process.env.DISPLAY,
+  autoXvfb: !runHeadless && process.platform === 'linux' && !process.env.DISPLAY,
   capabilities: [
     {
       browserName: 'chrome',
@@ -85,6 +87,7 @@ export const config: Options.Testrunner = {
         excludeSwitches: ['enable-automation'],
         args: [
           `--app=${electronShell}`,
+          ...(runHeadless ? ['--headless=new'] : []),
           '--disable-gpu',
           '--no-sandbox',
           '--disable-dev-shm-usage',
