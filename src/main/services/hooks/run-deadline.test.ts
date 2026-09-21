@@ -22,7 +22,7 @@ import {
   setCursorHookTimeoutForTest,
 } from './cursor-adapter.ts'
 
-/** A deadline stub that records pause/resume calls and the max simultaneous depth. */
+/** A deadline stub that records host-wait pauses and the max simultaneous depth. */
 function countingDeadline(): PausableRunDeadline & {
   pauses: number
   resumes: number
@@ -34,12 +34,12 @@ function countingDeadline(): PausableRunDeadline & {
     resumes: 0,
     depth: 0,
     maxDepth: 0,
-    pause(): void {
+    pauseForHostWait(): void {
       this.pauses += 1
       this.depth += 1
       this.maxDepth = Math.max(this.maxDepth, this.depth)
     },
-    resume(): void {
+    resumeForHostWait(): void {
       this.resumes += 1
       this.depth -= 1
     },

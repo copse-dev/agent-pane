@@ -1509,19 +1509,12 @@ export async function runAgent(
     sendChunk({ type: 'hook_run', card })
   }
   setHookRunLiveSink(hookCardSink)
-  // Mirror the ACP branch (#2332): host-side blocking waits — approval modals,
-  // ask_user, the headless launch gate — pause the deadline via
-  // `withRunDeadlinePaused` (H4, decision 13), and time blocked on a human must
-  // not spend the runaway-work budget either. The cap stays armed over
-  // *unpaused* time, so a run that never pauses is bounded exactly as before.
-  const runAbort = createAgentRunAbortScheduler(
-    controller,
-    new AgentRunDeadline(AGENT_RUN_IDLE_TIMEOUT_MS, AGENT_RUN_HARD_MAX_MS, Date.now(), Date.now, {
-      excludePausesFromHardMax: true,
-    }),
-  )
+  // Host-side blocking waits use the deadline's dedicated host-wait pause, so
+  // approvals and ask_user do not spend the hard cap while ordinary model
+  // streaming and tool execution remain bounded by it.
+  const runAbort = createAgentRunAbortScheduler(controller)
   runAbort.schedule()
-  // H4 (decision 13): register this run's idle deadline so host-side blocking
+  // H4 (decision 13): register this run's deadline so host-side blocking
   // hook fire sites (tool gate, subagent spawn gate, afterFileEdit formatter)
   // can pause it while a blocking hook is awaited — "the same way tool execution
   // does". Cleared in the finally, guarded on the same deadline object.

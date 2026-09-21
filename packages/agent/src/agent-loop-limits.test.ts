@@ -186,6 +186,21 @@ describe('agent-loop-limits', () => {
     assert.equal(deadline.isHardExpired(start + 1_000), true)
   })
 
+  it('excludes only explicit host waits from the local hard cap', () => {
+    const start = 1_000
+    const deadline = new AgentRunDeadline(AGENT_RUN_IDLE_TIMEOUT_MS, 150, start)
+    deadline.pause(start + 10) // model stream or tool execution
+    deadline.pauseForHostWait(start + 20) // approval nested inside the tool pause
+    deadline.resumeForHostWait(start + 120)
+    deadline.resume(start + 130)
+
+    // Only the 100ms host wait is discounted. The surrounding ordinary pause
+    // still spends the runaway-work budget.
+    assert.equal(deadline.elapsedWallTimeMs(start + 200), 100)
+    assert.equal(deadline.isHardExpired(start + 249), false)
+    assert.equal(deadline.isHardExpired(start + 250), true)
+  })
+
   it('reports ms until the nearest expiry, clamped at zero', () => {
     const deadline = new AgentRunDeadline(1_000, 10_000, 0)
     // Idle is the binding constraint early on.
@@ -267,22 +282,19 @@ describe('agent-loop-limits', () => {
     }
   })
 
-  it('with pauses excluded, a long host-side wait (approval modal) no longer trips the hard cap', () => {
+  it('a long explicit host wait (approval modal) does not trip the hard cap', () => {
     mock.timers.enable({ apis: ['setTimeout', 'Date'] })
     try {
       const controller = new AbortController()
-      // Idle 1s, hard cap 5s. The local loop now runs with
-      // `excludePausesFromHardMax: true`, so a run parked on an approval modal
-      // for the whole cap survives — the prompt is answered, not timed out.
-      const deadline = new AgentRunDeadline(1_000, 5_000, Date.now(), Date.now, {
-        excludePausesFromHardMax: true,
-      })
+      // Idle 1s, hard cap 5s. A run parked on an approval modal for the whole
+      // cap survives — the prompt is answered, not timed out.
+      const deadline = new AgentRunDeadline(1_000, 5_000)
       const scheduler = createAgentRunAbortScheduler(controller, deadline)
       scheduler.schedule()
-      deadline.pause() // approval modal opens
+      deadline.pauseForHostWait() // approval modal opens
       mock.timers.tick(60_000)
       assert.equal(controller.signal.aborted, false, 'an hour of modal wait is not runaway work')
-      deadline.resume() // user answers; the tool executes
+      deadline.resumeForHostWait() // user answers; the tool executes
       // Unpaused time is still bounded: after the resume, the armed cap (idle
       // window 1s, hard cap 5s of unpaused time) fires as usual.
       mock.timers.tick(1_000)
@@ -294,7 +306,7 @@ describe('agent-loop-limits', () => {
     }
   })
 
-  it('survives a long pause until the hard cap fires (slow tool / permission wait)', () => {
+  it('survives the idle window during a slow tool but still reaches the hard cap', () => {
     mock.timers.enable({ apis: ['setTimeout', 'Date'] })
     try {
       const controller = new AbortController()
@@ -302,7 +314,7 @@ describe('agent-loop-limits', () => {
       const deadline = new AgentRunDeadline(1_000, 5_000)
       const scheduler = createAgentRunAbortScheduler(controller, deadline)
       scheduler.schedule()
-      deadline.pause() // a tool starts / we wait on permission approval
+      deadline.pause() // a slow tool starts
       // Advance well past the idle window; paused time must not count.
       for (let i = 1; i <= 4; i++) {
         mock.timers.tick(1_000)

@@ -261,14 +261,14 @@ describe('requestApproval pluggable transport', () => {
     assert.deepEqual(await second, { approved: true, remember: true })
   })
 
-  it('pauses the active run idle deadline while the prompt is open', async () => {
+  it('pauses the active run deadlines while the prompt is open', async () => {
     const threadId = 'approval-pause-thread'
     const events: string[] = []
     const deadline = {
-      pause: (): void => {
+      pauseForHostWait: (): void => {
         events.push('pause')
       },
-      resume: (): void => {
+      resumeForHostWait: (): void => {
         events.push('resume')
       },
     }
