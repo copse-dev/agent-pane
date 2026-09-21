@@ -1473,6 +1473,309 @@ describe('input bar branch mismatch warning', () => {
   })
 })
 
+describe('input bar dirty checkout warning', () => {
+  it('warns instead of sending when the first prompt would land on a dirty shared checkout', async () => {
+    const order: string[] = []
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        promptState: { startingCommit: 'a'.repeat(40), dirty: true },
+        onPrepareCheckout: async () => {
+          order.push('prepare')
+          return { checkoutMode: 'shared', choice: 'automatic', branch: 'main' }
+        },
+        onRun: async () => {
+          order.push('run')
+        },
+      }),
+    )
+    await settle()
+
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    const submit = host.querySelector<HTMLButtonElement>('.submit-btn')
+    assert.ok(composer)
+    assert.ok(submit)
+    composer.textContent = 'Refactor the parser'
+    submit.click()
+    await flush()
+
+    assert.deepEqual(order, [])
+    assert.equal(store.getState().threads[0]?.messages.length, 0)
+    const warning = host.querySelector<HTMLElement>('.composer-dirty-warning')
+    assert.ok(warning)
+    assert.equal(warning.hidden, false)
+    assert.match(warning.textContent, /uncommitted changes/)
+  })
+
+  it('lets "Use an isolated worktree" switch the checkout mode and send', async () => {
+    const order: string[] = []
+    const choices: string[] = []
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        promptState: { startingCommit: 'a'.repeat(40), dirty: true },
+        onPrepareCheckout: async (_projectId, _threadId, _prompt, choice) => {
+          choices.push(choice)
+          order.push('prepare')
+          return {
+            checkoutMode: 'worktree',
+            choice: 'worktree',
+            branch: 'copse/first-message',
+            worktree: {
+              path: '/worktrees/thread-1',
+              branch: 'copse/first-message',
+              baseBranch: 'main',
+              baseCommit: 'a'.repeat(40),
+              createdAt: 2,
+              seededFromDirtyProject: false,
+            },
+          }
+        },
+        onRun: async () => {
+          order.push('run')
+        },
+      }),
+    )
+    await settle()
+
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    const submit = host.querySelector<HTMLButtonElement>('.submit-btn')
+    assert.ok(composer)
+    assert.ok(submit)
+    composer.textContent = 'Refactor the parser'
+    submit.click()
+    await flush()
+
+    const useWorktree = host.querySelector<HTMLButtonElement>('.composer-dirty-worktree-btn')
+    assert.ok(useWorktree)
+    useWorktree.click()
+    await flush()
+
+    assert.deepEqual(choices, ['worktree'])
+    assert.deepEqual(order, ['prepare', 'run'])
+    const warning = host.querySelector<HTMLElement>('.composer-dirty-warning')
+    assert.ok(warning)
+    assert.equal(warning.hidden, true)
+    const prepared = store.getState().threads[0]
+    assert.ok(prepared)
+    assert.equal(prepared.worktreeChoice, 'worktree')
+    assert.equal(prepared.messages[0]?.content, 'Refactor the parser')
+  })
+
+  it('lets "Send anyway" send on the shared checkout', async () => {
+    const order: string[] = []
+    const choices: string[] = []
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        promptState: { startingCommit: 'a'.repeat(40), dirty: true },
+        onPrepareCheckout: async (_projectId, _threadId, _prompt, choice) => {
+          choices.push(choice)
+          order.push('prepare')
+          return { checkoutMode: 'shared', choice: 'automatic', branch: 'main' }
+        },
+        onRun: async () => {
+          order.push('run')
+        },
+      }),
+    )
+    await settle()
+
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    const submit = host.querySelector<HTMLButtonElement>('.submit-btn')
+    assert.ok(composer)
+    assert.ok(submit)
+    composer.textContent = 'Refactor the parser'
+    submit.click()
+    await flush()
+
+    const sendAnyway = host.querySelector<HTMLButtonElement>('.composer-dirty-send-btn')
+    assert.ok(sendAnyway)
+    sendAnyway.click()
+    await flush()
+
+    assert.deepEqual(choices, ['automatic'])
+    assert.deepEqual(order, ['prepare', 'run'])
+    const warning = host.querySelector<HTMLElement>('.composer-dirty-warning')
+    assert.ok(warning)
+    assert.equal(warning.hidden, true)
+    assert.equal(store.getState().threads[0]?.messages[0]?.content, 'Refactor the parser')
+  })
+
+  it('does not warn on a clean checkout', async () => {
+    const order: string[] = []
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        promptState: { startingCommit: 'a'.repeat(40), dirty: false },
+        onRun: async () => {
+          order.push('run')
+        },
+      }),
+    )
+    await settle()
+
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    const submit = host.querySelector<HTMLButtonElement>('.submit-btn')
+    assert.ok(composer)
+    assert.ok(submit)
+    composer.textContent = 'Refactor the parser'
+    submit.click()
+    await flush()
+
+    assert.deepEqual(order, ['run'])
+    const warning = host.querySelector<HTMLElement>('.composer-dirty-warning')
+    assert.ok(warning)
+    assert.equal(warning.hidden, true)
+  })
+
+  it('does not warn when the thread already picked an isolated worktree', async () => {
+    const order: string[] = []
+    const choices: string[] = []
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        promptState: { startingCommit: 'a'.repeat(40), dirty: true },
+        onPrepareCheckout: async (_projectId, _threadId, _prompt, choice) => {
+          choices.push(choice)
+          order.push('prepare')
+          return {
+            checkoutMode: 'worktree',
+            choice: 'worktree',
+            branch: 'copse/first-message',
+            worktree: {
+              path: '/worktrees/thread-1',
+              branch: 'copse/first-message',
+              baseBranch: 'main',
+              baseCommit: 'a'.repeat(40),
+              createdAt: 2,
+              seededFromDirtyProject: false,
+            },
+          }
+        },
+        onRun: async () => {
+          order.push('run')
+        },
+      }),
+    )
+    await settle()
+
+    const choiceBtn = host.querySelector<HTMLButtonElement>('.footer-checkout-btn')
+    const isolated = host.querySelector<HTMLButtonElement>('[data-checkout-choice="worktree"]')
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    const submit = host.querySelector<HTMLButtonElement>('.submit-btn')
+    assert.ok(choiceBtn)
+    assert.ok(isolated)
+    assert.ok(composer)
+    assert.ok(submit)
+    choiceBtn.click()
+    isolated.click()
+    composer.textContent = 'Refactor the parser'
+    submit.click()
+    await flush()
+
+    assert.deepEqual(choices, ['worktree'])
+    assert.deepEqual(order, ['prepare', 'run'])
+    const warning = host.querySelector<HTMLElement>('.composer-dirty-warning')
+    assert.ok(warning)
+    assert.equal(warning.hidden, true)
+  })
+
+  it('does not warn on a second prompt in an already-started thread', async () => {
+    const order: string[] = []
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [{ ...thread('main'), worktreeChoice: 'automatic' }],
+    })
+    addMessage(store, 'thread-1', 'user', 'first message')
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        promptState: { startingCommit: 'a'.repeat(40), dirty: true },
+        onRun: async () => {
+          order.push('run')
+        },
+      }),
+    )
+    await settle()
+
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    const submit = host.querySelector<HTMLButtonElement>('.submit-btn')
+    assert.ok(composer)
+    assert.ok(submit)
+    composer.textContent = 'Follow-up prompt'
+    submit.click()
+    await flush()
+
+    assert.deepEqual(order, ['run'])
+    const warning = host.querySelector<HTMLElement>('.composer-dirty-warning')
+    assert.ok(warning)
+    assert.equal(warning.hidden, true)
+  })
+})
+
 describe('input bar attachments across a thread switch', () => {
   /**
    * An attachment is bound to the thread that was active when it was attached:
@@ -2834,12 +3137,13 @@ describe('input bar stacking order', () => {
     // bar, the mention pickers) are overlays parked on the same host.
     const order = Array.from(host.children)
       .map((child) => child.className.split(' ')[0])
-      .slice(0, 10)
+      .slice(0, 11)
 
     assert.deepEqual(order, [
       'guarded-yolo-banner',
       'container-run-banner',
       'composer-branch-warning',
+      'composer-dirty-warning',
       'composer-checkout-error',
       'composer-image-warning',
       'composer-context-warning',

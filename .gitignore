@@ -34,6 +34,9 @@ tests/fixtures/git-changes-repo/.git/
 # put the file in the fixture's baseline commit, leaving the branch with nothing
 # committed for the Changes panel to list.
 tests/fixtures/git-changes-repo/committed.ts
+# Fully disposable: created lazily by seedComposerDirtyWarningFixture and left
+# dirty on purpose, so none of it belongs in the outer repo's history.
+tests/fixtures/composer-dirty-warning-repo/
 .wdio-eval-profile-*/
 .wdio-eval-userdata-*/
 .wdio-eval-chrome-*/

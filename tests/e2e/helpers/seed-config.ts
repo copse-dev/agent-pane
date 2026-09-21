@@ -3207,6 +3207,80 @@ export function cleanupGitChangesFixture(repoRoot: string): void {
   rmSync(repoRoot, { recursive: true, force: true })
 }
 
+const COMPOSER_DIRTY_WARNING_FIXTURE_ROOT = join(
+  process.cwd(),
+  'tests/fixtures/composer-dirty-warning-repo',
+)
+
+function initComposerDirtyWarningFixtureRepo(): void {
+  const repoRoot = COMPOSER_DIRTY_WARNING_FIXTURE_ROOT
+  mkdirSync(repoRoot, { recursive: true })
+  writeFileSync(join(repoRoot, 'README.md'), '# fixture\n', 'utf8')
+  const git = (...args: string[]) => execFileSync('git', args, { cwd: repoRoot, stdio: 'pipe' })
+  git('init', '-q')
+  git('config', 'user.email', 'e2e@example.com')
+  git('config', 'user.name', 'E2E')
+  git('config', 'commit.gpgsign', 'false')
+  // With no remote, the default branch is read from init.defaultBranch, which
+  // otherwise varies by host git config.
+  git('config', 'init.defaultBranch', 'main')
+  git('add', '.')
+  git('commit', '-q', '-m', 'baseline')
+  git('branch', '-M', 'main')
+}
+
+/**
+ * Seeds a blank thread against a real repo that has an uncommitted (unstaged)
+ * edit, for the composer's dirty-shared-checkout advisory (#2503). The thread
+ * has no messages and no `worktreeChoice` yet — the state the composer's
+ * first-message checkout gate looks for.
+ */
+export function seedComposerDirtyWarningFixture(): {
+  projectId: string
+  threadId: string
+  repoRoot: string
+} {
+  const repoRoot = COMPOSER_DIRTY_WARNING_FIXTURE_ROOT
+  if (!existsSync(join(repoRoot, '.git'))) {
+    initComposerDirtyWarningFixtureRepo()
+  } else {
+    execFileSync('git', ['checkout', '-f', 'HEAD'], { cwd: repoRoot, stdio: 'pipe' })
+    execFileSync('git', ['clean', '-fd'], { cwd: repoRoot, stdio: 'pipe' })
+  }
+  // Leave an uncommitted edit so the shared checkout is dirty.
+  writeFileSync(join(repoRoot, 'README.md'), '# fixture\n\nuncommitted edit\n', 'utf8')
+
+  const projectId = 'e2e-composer-dirty-warning-project'
+  const threadId = 'e2e-composer-dirty-warning-thread'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: repoRoot, name: 'dirty-workspace' }],
+    activeProjectId: projectId,
+    workspaceRoot: repoRoot,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'New Thread',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+    activeThreadId: threadId,
+  })
+
+  return { projectId, threadId, repoRoot }
+}
+
+export function cleanupComposerDirtyWarningFixture(): void {
+  const repoRoot = COMPOSER_DIRTY_WARNING_FIXTURE_ROOT
+  execFileSync('git', ['checkout', '-f', 'HEAD'], { cwd: repoRoot, stdio: 'pipe' })
+  execFileSync('git', ['clean', '-fd'], { cwd: repoRoot, stdio: 'pipe' })
+}
+
 const GIT_IMAGE_FIXTURES = join(process.cwd(), 'tests/e2e/fixtures')
 
 /**
