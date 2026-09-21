@@ -31,7 +31,7 @@ import type { HookDecision } from '@copse/agent/hooks/hook-outcome.ts'
 import type { ShellPermissionDecision, ShellPromptParts } from './permission-policy.ts'
 import { errorMessage } from '@shared/errors.ts'
 import type { PromptCause } from '@shared/threads/prompt-cause.ts'
-import { nonEmptyStringOr } from '@shared/unknown-value.ts'
+import { isRecord, nonEmptyStringOr } from '@shared/unknown-value.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
 import { isProjectSandboxPlatform, projectSandboxInitFailure } from '../../project-sandbox/state.ts'
 import {
@@ -498,6 +498,46 @@ export async function promptExpectedSandboxBlock(
       subject: SHELL_DECISION_SUBJECT,
       scope: 'external',
       cause: 'shell-expected-sandbox-block',
+    },
+    signal,
+  )
+  return approved
+}
+
+/**
+ * Prompt before launching a host GUI app via Launch Services. Always asks —
+ * there is no auto-approve path, because the action leaves the sandbox and
+ * puts a visible window on the user's desktop. Declining cancels the launch.
+ */
+export async function promptGuiAppLaunch(
+  target: string,
+  detail: { args?: readonly string[]; envKeys?: readonly string[] },
+  signal?: AbortSignal,
+): Promise<boolean> {
+  const lines = [
+    'Launch this macOS app through Launch Services (outside the project sandbox)?',
+    '',
+    target,
+  ]
+  if (detail.args?.length) {
+    lines.push('', 'App arguments:', detail.args.map((a) => `  ${a}`).join('\n'))
+  }
+  if (detail.envKeys?.length) {
+    lines.push('', `Environment: ${detail.envKeys.join(', ')}`)
+  }
+  lines.push(
+    '',
+    'The app will appear on your desktop. Prefer an isolated profile (COPSE_PANEL_USER_DATA) when launching another Copse instance so it does not share the live session.',
+  )
+  const { approved } = await requestApproval(
+    {
+      title: 'Launch GUI app?',
+      type: 'shell',
+      body: lines.join('\n'),
+      subject: target,
+      scope: 'external',
+      cause: 'gui-app-launch',
+      allowRemember: false,
     },
     signal,
   )
@@ -1767,6 +1807,26 @@ export async function ensureToolPermitted(
       originalShellCommand ?? undefined,
       signal,
       explicitPolicy,
+    )
+  } else if (toolName === 'launch_gui_app') {
+    // Always prompt — GUI launch leaves the sandbox and puts a window on the
+    // desktop. A stale stored allow is coerced to ask by tool-permissions.ts;
+    // block is handled above via initialOverride's early return.
+    const record = isRecord(args) ? args : null
+    const target = typeof record?.['target'] === 'string' ? record['target'] : '(unknown app)'
+    const rawArgs = record?.['args']
+    const appArgs = Array.isArray(rawArgs)
+      ? rawArgs.flatMap((a) => (typeof a === 'string' ? [a] : []))
+      : undefined
+    const envValue = record?.['env']
+    const envKeys = isRecord(envValue) ? Object.keys(envValue) : undefined
+    permitted = await promptGuiAppLaunch(
+      target,
+      {
+        ...(appArgs?.length ? { args: appArgs } : {}),
+        ...(envKeys?.length ? { envKeys } : {}),
+      },
+      signal,
     )
   } else {
     permitted =

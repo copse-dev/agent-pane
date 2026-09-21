@@ -32,6 +32,7 @@ const ALWAYS_ASK_TOOLS = new Set([
   'gh_pr_enable_auto_merge',
   'gh_pr_mark_ready',
   'gh_pr_rerun_failed_ci',
+  'launch_gui_app',
 ])
 
 const UNCONDITIONALLY_ASK_TOOLS = new Map<string, string>([
@@ -47,6 +48,7 @@ const UNCONDITIONALLY_ASK_TOOLS = new Map<string, string>([
   ],
   ['gh_pr_mark_ready', 'This action changes pull request state and must be approved each time.'],
   ['gh_pr_rerun_failed_ci', 'This action changes remote CI state and must be approved each time.'],
+  ['launch_gui_app', 'Launching a host GUI app leaves the sandbox and must be approved each time.'],
 ])
 
 export interface McpPermissionTarget {

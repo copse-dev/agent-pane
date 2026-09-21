@@ -89,7 +89,12 @@ import {
   isBillableModel,
   isLocalChatModel,
 } from './providers/provider-selection.ts'
-import { requestApproval, cancelApprovalsForThread } from './approval.ts'
+import {
+  requestApproval,
+  cancelApprovalsForThread,
+  pendingApprovalParkedToolCallIds,
+  releaseParkedApprovalsForThread,
+} from './approval.ts'
 import {
   reviewSpendApprovalBody,
   runParentContinuationTurn,
@@ -1064,9 +1069,15 @@ export async function runAgent(
     // a spinner (or the agent's own bogus terminal update) into history (#2332).
     const toolCalls = createAcpToolCallTracker()
     const settleOpenToolCalls = (): void => {
+      // A call parked in an approval prompt is not dead: the user may still
+      // answer, and the agent's identical retry completes the run (approval.ts
+      // abandoned-verdict parking). Settling it "interrupted" would write a
+      // false terminal verdict over a live question — so it stays open, and
+      // `parkedApprovalsForThread` re-detaches it once the prompt settles.
+      const parked = pendingApprovalParkedToolCallIds(threadId)
       // sendChunk, not acpChunkSink: these are the host's own bookkeeping, so
       // they must not record deadline activity or move the turn's `lastEvent`.
-      for (const cancelled of toolCalls.settle()) sendChunk(cancelled)
+      for (const cancelled of toolCalls.settle(parked)) sendChunk(cancelled)
     }
     // Settled at the abort site rather than once the turn has unwound, because
     // the agent goes on streaming for as long as its own wind-down takes.
@@ -1321,6 +1332,11 @@ export async function runAgent(
       fireStopHook(threadId, controller.signal.aborted ? 'aborted' : 'completed', turnTreeId)
       bridgeTurn.abort()
       cancelApprovalsForThread(threadId)
+      // Approvals that survived the turn (parked when the agent abandoned the
+      // bridged call, then kept by the skips above) are re-detached from the
+      // turn's identity once their prompt settles, so a verdict answered after
+      // this finally is never attributed to the finished run.
+      releaseParkedApprovalsForThread(threadId)
       runAbort.clear()
       clearRunDeadline(threadId, runAbort.deadline)
       clearHookRunLiveSink(acpHookCardSink)

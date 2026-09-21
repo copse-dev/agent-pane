@@ -16,6 +16,7 @@ import {
   parseIpcArgs,
 } from '../ipc/ipc-guards.ts'
 import { getActiveRunThread } from './thread-models.ts'
+import { getApprovalToolCallId } from './approval-tool-call-context.ts'
 import { withRunDeadlinePaused } from './hooks/run-deadline.ts'
 import { recordDecision } from './security/decision-log-store.ts'
 import type { PromptCause } from '@shared/threads/prompt-cause.ts'
@@ -163,6 +164,12 @@ export interface ApprovalRequest {
    * it secret-free at the call site anyway.
    */
   reasons?: string[]
+  /**
+   * Bridged ACP tool call this prompt gates, when the caller knows it. Kept on
+   * the in-flight waiter so turn bookkeeping can leave that tool call open
+   * while a prompt that outlived the turn is still answerable. Never rendered.
+   */
+  toolCallId?: string
 }
 
 export interface ApprovalResponse {
@@ -258,6 +265,12 @@ interface InflightWaiter {
    * this key instead of returning it to anyone. Never a real caller.
    */
   ledgerKey?: string
+  /**
+   * Bridged ACP tool call whose approval this waiter opened, when known. Turn
+   * bookkeeping uses it to leave the tool call open — rather than settling it
+   * "interrupted" — while the prompt that outlived the turn is still up.
+   */
+  toolCallId?: string
 }
 
 const inflight = new Map<string, InflightApproval>()
@@ -408,12 +421,25 @@ function settleInflight(
  * stopped the turn, leaving Copse's "Run outside sandbox?" modal orphaned.
  * Detectable in the UI as completed turn output (incl. Sandbox Network Audit)
  * behind a still-modal approval.
+ *
+ * Real waiters keep their old verdict: turn end is a cancel. Parked stand-ins
+ * (`ledgerKey` set) keep the prompt open so the user can still answer and the
+ * agent's identical retry can reuse that verdict — turn end must not invent a
+ * denial underneath a still-open dialog. Aborted waiters already ran onAbort
+ * (park, ledger, or denial); looping them here only double-records, so they
+ * are skipped too.
  */
 export function cancelApprovalsForThread(threadId: string): number {
   let cancelled = 0
   for (const entry of [...inflight.values()]) {
     for (const waiter of [...entry.waiters]) {
       if (waiter.threadId !== threadId) continue
+      // Parked stand-in: the caller is gone, the prompt is for the retry. Leave
+      // it alone — releaseParkedApprovalsForThread detaches the thread id after.
+      if (waiter.ledgerKey !== undefined) continue
+      // Aborted waiters already ran onAbort (park, ledger, or denial); running
+      // it again would double-record and misreport the dialog as dismissed.
+      if (waiter.signal?.aborted) continue
       waiter.onAbort()
       cancelled++
     }
@@ -559,6 +585,11 @@ function requestApprovalUnpaused(
 ): Promise<ApprovalResponse> {
   if (signal?.aborted) return Promise.resolve(DENIED)
 
+  // An explicit id on the request wins; otherwise inherit the bridged ACP call
+  // this execution serves (approval-tool-call-context.ts) so every gate the
+  // call passes through — shell escalation, MCP, origin — attributes to it.
+  const toolCallId = req.toolCallId ?? getApprovalToolCallId()
+
   const key = `${dedupePrefix}:${approvalDedupeKey(req)}`
   // Only a thread-attributed request can be parked and replayed: the ledger is
   // keyed by thread, and a headless/untracked caller has no retry to serve.
@@ -612,6 +643,7 @@ function requestApprovalUnpaused(
       resolve,
       signal,
       threadId,
+      ...(toolCallId !== undefined ? { toolCallId } : {}),
       onAbort: () => {
         if (!active.waiters.has(waiter)) return
         active.waiters.delete(waiter)
@@ -621,7 +653,9 @@ function requestApprovalUnpaused(
           // with a stand-in waiter that files the answer for the caller's
           // retry, and tell the caller so — this is not a denial.
           if (![...active.waiters].some((other) => other.ledgerKey === ledgerKey)) {
-            active.waiters.add(parkedWaiter(ledgerKey, threadId, active, teardownIfIdle))
+            active.waiters.add(
+              parkedWaiter(ledgerKey, threadId, active, teardownIfIdle, toolCallId),
+            )
           }
           reject(new ApprovalPendingError(req.title))
           return
@@ -667,11 +701,13 @@ function parkedWaiter(
   threadId: string | null,
   entry: InflightApproval,
   teardownIfIdle: () => void,
+  toolCallId?: string,
 ): InflightWaiter {
   const waiter: InflightWaiter = {
     threadId,
     signal: undefined,
     ledgerKey,
+    ...(toolCallId !== undefined ? { toolCallId } : {}),
     resolve: (response) => {
       storeAbandonedVerdict(ledgerKey, response)
     },
@@ -682,6 +718,40 @@ function parkedWaiter(
     },
   }
   return waiter
+}
+
+/**
+ * Bridged ACP tool-call ids whose approval prompts are still answerable for
+ * `threadId` — parked stand-ins from abandoned calls. Turn bookkeeping leaves
+ * those calls open instead of settling them "interrupted" (#2332): the user
+ * may still answer, and the agent's identical retry then completes the run.
+ */
+export function pendingApprovalParkedToolCallIds(threadId: string): Set<string> {
+  const ids = new Set<string>()
+  for (const entry of inflight.values()) {
+    for (const waiter of entry.waiters) {
+      if (waiter.threadId !== threadId) continue
+      if (waiter.ledgerKey === undefined || waiter.toolCallId === undefined) continue
+      ids.add(waiter.toolCallId)
+    }
+  }
+  return ids
+}
+
+/**
+ * Detach `threadId` from parked waiters whose prompts outlived its turn. The
+ * turn's identity is gone by the time the user answers, so a verdict recorded
+ * then must not attribute to it. The ledger key embeds the same thread id, so
+ * an identical retry still claims the stored answer.
+ */
+export function releaseParkedApprovalsForThread(threadId: string): void {
+  for (const entry of inflight.values()) {
+    for (const waiter of entry.waiters) {
+      if (waiter.threadId !== threadId) continue
+      if (waiter.ledgerKey === undefined) continue
+      waiter.threadId = null
+    }
+  }
 }
 
 export function initApproval(
