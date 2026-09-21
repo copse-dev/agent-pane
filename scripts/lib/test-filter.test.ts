@@ -151,4 +151,11 @@ describe('testOutputPath', () => {
       'dist-test/packages/agent/src/agent-loop-limits.test.mjs',
     )
   })
+
+  it('accepts an isolated output root without changing the source-relative layout', () => {
+    assert.equal(
+      testOutputPath('src/shared/threads/thread-store.test.ts', '.tmp/test-run-123'),
+      '.tmp/test-run-123/src/shared/threads/thread-store.test.mjs',
+    )
+  })
 })

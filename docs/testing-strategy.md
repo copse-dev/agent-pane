@@ -105,6 +105,18 @@ their common application graph once as split ESM chunks rather than inlining it
 into every entry, and the runner caps file concurrency at four so subprocess-heavy
 suites do not miss fixed safety deadlines under host load.
 
+Normal runner invocations use an independent `.tmp/test-run-*` output directory,
+so concurrent processes cannot delete one another's bundles or chunks. CI keeps
+each run's TAP and metadata; the root `unit-tests.tap` is atomically updated to
+the last completed report, including failed test runs, while failed bundles are
+retained for diagnosis. The explicit `--bundle-only` / `--test-only` coverage
+pair continues to use shared `dist-test` bundles and must remain sequential.
+Its test phase also writes a private report and publishes it only on completion,
+so nested runners cannot replace an in-progress coverage report. Fixed bundles
+remain available for c8's source-map processing after the tests exit.
+The CI `unit-tests-tap` artifact contains the canonical TAP plus only the
+per-run TAP and metadata files under `.tmp/test-run-*`.
+
 ### Before believing it works: the oracle
 
 The [test oracle](../scripts/test-oracle.mts) maps your diff to the tests that
