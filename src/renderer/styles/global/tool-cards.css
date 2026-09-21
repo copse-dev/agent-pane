@@ -362,6 +362,20 @@
   max-height: 240px;
   overflow: auto;
 }
+/* A subagent's row otherwise reads exactly like a parent tool row ("Explored
+   files", "Ran security-reviewer") — this leading glyph is the only thing that
+   marks it as delegated work once it settles collapsed, which is the state
+   most subagent rows are ever seen in (#2452). Lives in the `<summary>` itself,
+   never a separate element, so it survives collapse. */
+.tool-subagent-marker {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+.tool-card-subagent > .tool-card-header:hover .tool-subagent-marker {
+  color: var(--text-secondary);
+}
 .tool-card-subagent .subagent-summary-preview {
   font-size: var(--font-size-sm);
   color: var(--text-secondary);
