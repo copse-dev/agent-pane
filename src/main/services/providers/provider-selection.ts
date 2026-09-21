@@ -351,7 +351,7 @@ export async function describeProvider(
   // unrelated provider using the deleted route as its model id.
   if (isExtraProviderModel(model) && !extra) {
     throw new Error(
-      `The provider for ${model} is no longer configured. Choose a configured model in Settings.`,
+      `The provider for ${model} is no longer configured. Choose a configured model using the model picker.`,
     )
   }
   if (extra) {
