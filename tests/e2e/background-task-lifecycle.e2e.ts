@@ -3,11 +3,16 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
 import type { MockScriptStep } from '../../src/shared/llm/mock-script.ts'
-import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
+import {
+  E2E_WORKSPACE_ROOT,
+  resetUserData,
+  seedEmptyProject,
+  seedStableWorkspace,
+} from './helpers/seed-config.ts'
 import { setComposerValue } from './helpers/composer.ts'
 import { waitForAgentIdle } from './helpers.ts'
 
-const COMPLETION_SIGNAL = join(process.cwd(), '.tmp', 'e2e-background-task-complete')
+const COMPLETION_SIGNAL = join(E2E_WORKSPACE_ROOT, '.e2e-background-task-complete')
 const COMMAND = `node -e "const fs=require('node:fs');const timer=setInterval(()=>{if(fs.existsSync(process.argv[1])){clearInterval(timer);console.log('background-complete')}},50)" ${JSON.stringify(COMPLETION_SIGNAL)}`
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 const WAKE_SCRIPT = [
@@ -92,7 +97,6 @@ describe('session-scoped background task lifecycle', function () {
 
   before(async () => {
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
-    mkdirSync(join(process.cwd(), '.tmp'), { recursive: true })
     rmSync(COMPLETION_SIGNAL, { force: true })
     resetUserData()
     seedEmptyProject(seedStableWorkspace(), 'e2e-background-task-lifecycle', {
