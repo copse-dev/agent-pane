@@ -885,6 +885,10 @@ async function respondToPermission(
         cause: 'acp-permission',
         allowRemember: true,
         rememberLabel: `Always allow ${agent.title} ${permissionKindLabel(kind)}`,
+        // Lets turn bookkeeping leave this tool call open while its prompt
+        // outlives the turn (approval parking), instead of stamping it
+        // "interrupted" underneath a question the user can still answer.
+        ...(toolCallId ? { toolCallId } : {}),
       },
       approvalSignal,
     )

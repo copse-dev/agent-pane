@@ -505,6 +505,46 @@ export async function promptExpectedSandboxBlock(
 }
 
 /**
+ * Prompt before launching a host GUI app via Launch Services. Always asks —
+ * there is no auto-approve path, because the action leaves the sandbox and
+ * puts a visible window on the user's desktop. Declining cancels the launch.
+ */
+export async function promptGuiAppLaunch(
+  target: string,
+  detail: { args?: readonly string[]; envKeys?: readonly string[] },
+  signal?: AbortSignal,
+): Promise<boolean> {
+  const lines = [
+    'Launch this macOS app through Launch Services (outside the project sandbox)?',
+    '',
+    target,
+  ]
+  if (detail.args?.length) {
+    lines.push('', 'App arguments:', detail.args.map((a) => `  ${a}`).join('\n'))
+  }
+  if (detail.envKeys?.length) {
+    lines.push('', `Environment: ${detail.envKeys.join(', ')}`)
+  }
+  lines.push(
+    '',
+    'The app will appear on your desktop. Prefer an isolated profile (COPSE_PANEL_USER_DATA) when launching another Copse instance so it does not share the live session.',
+  )
+  const { approved } = await requestApproval(
+    {
+      title: 'Launch GUI app?',
+      type: 'shell',
+      body: lines.join('\n'),
+      subject: target,
+      scope: 'external',
+      cause: 'gui-app-launch',
+      allowRemember: false,
+    },
+    signal,
+  )
+  return approved
+}
+
+/**
  * Prompt to install Socket Firewall before running a package install. Declining
  * cancels the install rather than running it unscanned.
  */
@@ -1768,6 +1808,46 @@ export async function ensureToolPermitted(
       signal,
       explicitPolicy,
     )
+  } else if (toolName === 'launch_gui_app') {
+    // Always prompt — GUI launch leaves the sandbox and puts a window on the
+    // desktop. explicitPolicy === 'allow' is still honoured for tests / forced
+    // allow-lists; 'ask' and the default both go through the same dialog.
+    if (explicitPolicy === 'allow') {
+      permitted = true
+    } else if (explicitPolicy === 'block') {
+      permitted = false
+    } else {
+      const target =
+        typeof args === 'object' &&
+        args !== null &&
+        'target' in args &&
+        typeof (args as { target?: unknown }).target === 'string'
+          ? (args as { target: string }).target
+          : '(unknown app)'
+      const appArgs =
+        typeof args === 'object' &&
+        args !== null &&
+        'args' in args &&
+        Array.isArray((args as { args?: unknown }).args)
+          ? ((args as { args: unknown[] }).args.filter((a) => typeof a === 'string') as string[])
+          : undefined
+      const envKeys =
+        typeof args === 'object' &&
+        args !== null &&
+        'env' in args &&
+        typeof (args as { env?: unknown }).env === 'object' &&
+        (args as { env?: object }).env !== null
+          ? Object.keys((args as { env: Record<string, unknown> }).env)
+          : undefined
+      permitted = await promptGuiAppLaunch(
+        target,
+        {
+          ...(appArgs?.length ? { args: appArgs } : {}),
+          ...(envKeys?.length ? { envKeys } : {}),
+        },
+        signal,
+      )
+    }
   } else {
     permitted =
       explicitPolicy === 'ask' ? await promptExplicitToolAsk(toolName, args, signal) : true
