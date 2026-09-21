@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
@@ -108,5 +109,24 @@ describe('ACP permission-mode settings', () => {
     await browser.pause(200)
 
     await saveElementScreenshot('.acp-permission-mode-field', 'settings-acp-permission-mode.png')
+
+    // #2437 ("Dropdown chevrons have no right-hand padding"): forms.css draws
+    // every <select>'s chevron inset --spacing-sm off the control's right
+    // edge and widens padding-right to match, so it never sits flush against
+    // the border. happy-dom cannot compute backgrounds/geometry, so pin the
+    // real Chromium computed value here and capture the control itself as
+    // visual evidence. (A `.settings-content label select` rule once won this
+    // cascade with a plain `padding-inline` and silently undid it — see the
+    // fix alongside this test.)
+    const chevronPaddingRight = await browser.execute(() => {
+      const select = document.querySelector('.acp-permission-mode-field select')
+      return select ? getComputedStyle(select).paddingRight : null
+    })
+    assert.equal(
+      chevronPaddingRight,
+      '28px',
+      'a Settings select must reserve padding-right for its chevron so it never sits flush against the edge (#2437)',
+    )
+    await saveElementScreenshot('.acp-permission-mode-field select', 'settings-select-chevron.png')
   })
 })
