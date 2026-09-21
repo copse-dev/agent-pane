@@ -98906,12 +98906,74 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     console.warn(`[git-changes-pane] ${scope} failed:`, error61);
   }
   let seededProposedPath = null;
+  const snapshotsByOwner = /* @__PURE__ */ new Map();
+  let displayedOwnerKey = activeOwnerKey();
+  let ownerNeedsRefresh = false;
   function activeOwner2() {
     const { activeProjectId, activeThreadId } = store2.getState();
     return activeProjectId && activeThreadId ? { projectId: activeProjectId, threadId: activeThreadId } : null;
   }
+  function activeOwnerKey() {
+    const owner = activeOwner2();
+    return owner ? checkoutOwnerKey(owner.projectId, owner.threadId) : null;
+  }
+  function checkoutOwnerKey(projectId, threadId) {
+    const { activeProjectId, workspaceRoot, threads } = store2.getState();
+    const currentProject = projectId === activeProjectId;
+    const thread = currentProject ? threads.find((candidate) => candidate.id === threadId) : void 0;
+    const worktree = thread?.worktree;
+    return JSON.stringify([
+      projectId,
+      threadId,
+      currentProject ? workspaceRoot : null,
+      thread?.gitBranch,
+      worktree?.path,
+      worktree?.branch,
+      worktree?.baseCommit,
+      worktree?.createdAt,
+      worktree?.retiredAt
+    ]);
+  }
+  function adoptActiveOwner() {
+    const nextKey = activeOwnerKey();
+    if (nextKey === displayedOwnerKey) return false;
+    if (displayedOwnerKey && loaded && gitAvailable) {
+      snapshotsByOwner.delete(displayedOwnerKey);
+      snapshotsByOwner.set(displayedOwnerKey, {
+        status,
+        committed,
+        sessionBackup,
+        // Proposed changes already have their own owner-scoped content cache.
+        selection: selection2?.kind === "proposed" ? null : selection2
+      });
+      if (snapshotsByOwner.size > 20) {
+        const oldest = snapshotsByOwner.keys().next().value;
+        if (oldest !== void 0) snapshotsByOwner.delete(oldest);
+      }
+    }
+    displayedOwnerKey = nextKey;
+    ownerNeedsRefresh = true;
+    refreshRequestId++;
+    selectRequestId++;
+    const known = nextKey ? snapshotsByOwner.get(nextKey) : void 0;
+    loaded = known !== void 0;
+    gitAvailable = loaded;
+    status = known?.status ?? null;
+    committed = known?.committed ?? null;
+    sessionBackup = known?.sessionBackup ?? null;
+    selection2 = known?.selection ?? null;
+    pendingNavigate = null;
+    pendingProposedNavigate = null;
+    seededProposedPath = null;
+    conflictBanner.hidden = true;
+    renderRestoreBanner();
+    clearViewer();
+    renderList();
+    if (loaded && changesModeActive(store2)) void syncSelection();
+    return true;
+  }
   function proposedDiffCacheFor(projectId, threadId) {
-    const key = JSON.stringify([projectId, threadId]);
+    const key = checkoutOwnerKey(projectId, threadId);
     let cache = proposedDiffCachesByOwner.get(key);
     if (!cache) {
       cache = /* @__PURE__ */ new Map();
@@ -99465,6 +99527,8 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     }
   }
   async function refresh() {
+    adoptActiveOwner();
+    ownerNeedsRefresh = false;
     const requestId = ++refreshRequestId;
     const owner = activeOwner2();
     if (!owner) {
@@ -99486,6 +99550,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
       return;
     gitAvailable = available;
     if (!gitAvailable) {
+      if (displayedOwnerKey) snapshotsByOwner.delete(displayedOwnerKey);
       if (!availabilityFailed) gitFailureLogged = false;
       loaded = true;
       status = null;
@@ -99509,6 +99574,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     } catch (error61) {
       markGitUnavailable("git status read", error61);
       if (requestId !== refreshRequestId) return;
+      if (displayedOwnerKey) snapshotsByOwner.delete(displayedOwnerKey);
       status = null;
       committed = null;
       sessionBackup = null;
@@ -99529,6 +99595,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     await syncSelection();
   }
   async function syncFromStore() {
+    adoptActiveOwner();
     renderList();
     await syncSelection();
   }
@@ -99557,6 +99624,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
       if (changesModeActive(store2)) void refresh();
     }),
     store2.on("git_change_navigate", (path) => {
+      adoptActiveOwner();
       pendingNavigate = path;
       if (changesModeActive(store2)) void refresh();
     }),
@@ -99564,29 +99632,12 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
       if (changesModeActive(store2)) void refresh();
     }),
     store2.on("workspace_changed", () => {
-      loaded = false;
-      status = null;
-      committed = null;
-      sessionBackup = null;
-      renderRestoreBanner();
-      pendingProposedNavigate = null;
-      seededProposedPath = null;
-      clearSelection();
-      conflictBanner.hidden = true;
+      adoptActiveOwner();
       if (changesModeActive(store2)) void refresh();
-      else renderList();
     }),
     store2.on("threads_changed", () => {
-      refreshRequestId++;
-      selectRequestId++;
-      loaded = false;
-      status = null;
-      committed = null;
-      sessionBackup = null;
-      selection2 = null;
-      seededProposedPath = null;
+      if (!adoptActiveOwner() && !ownerNeedsRefresh) return;
       if (changesModeActive(store2)) void refresh();
-      else renderList();
     }),
     store2.on("theme_changed", (theme) => {
       monaco?.editor.setTheme(theme === "dark" ? "vs-dark" : "vs");
