@@ -4,14 +4,15 @@ import { isArchiveFile } from '@shared/archive/archive-media.ts'
 import type { PromptAttachmentHandlers } from './prompt-attachments.ts'
 import type { ActiveThreadOwner } from '../controller/active-thread-owner.ts'
 import { expectString } from '@shared/unknown-value.ts'
+import { imageMimeType, isRasterImagePath } from '@shared/fs/image-path.ts'
 
 export const WORKSPACE_PATH_MIME = 'application/x-copse-panel-path'
 
 type ElectronFile = File & { path?: string }
 
-/** Only `fs.readFile` is used for workspace-path drops; keep the surface narrow for tests. */
+/** Keep workspace-path drop tests on the two reads this adapter can perform. */
 export type FileDropApi = {
-  fs: Pick<ApiClient['fs'], 'readFile'>
+  fs: Pick<ApiClient['fs'], 'readFile' | 'readImage'>
 }
 
 /** Structural drop event so tests can pass a plain object without `as DragEvent`. */
@@ -67,6 +68,12 @@ async function attachWorkspacePath(
   }
   if (!owner) return
   try {
+    const imageMime = isRasterImagePath(name) ? imageMimeType(name) : null
+    if (imageMime) {
+      const dataUrl = await api.fs.readImage(owner.projectId, owner.threadId, path)
+      handlers.attachImage(dataUrl, imageMime)
+      return
+    }
     const content = await api.fs.readFile(owner.projectId, owner.threadId, path)
     handlers.attachFile({ path: relativeWorkspacePath(path, workspaceRoot) || path, content })
   } catch {
@@ -81,9 +88,14 @@ async function attachDroppedFile(
   workspaceRoot: string | null,
   owner: ActiveThreadOwner | null = null,
 ): Promise<void> {
-  if (file.type.startsWith('image/')) {
+  const imageMime = file.type.startsWith('image/') ? file.type : imageMimeType(file.name)
+  if (imageMime) {
     const dataUrl = await readAsDataUrl(file)
-    handlers.attachImage(dataUrl, file.type)
+    const separator = dataUrl.indexOf(',')
+    handlers.attachImage(
+      separator === -1 ? dataUrl : `data:${imageMime};base64,${dataUrl.slice(separator + 1)}`,
+      imageMime,
+    )
     return
   }
 
