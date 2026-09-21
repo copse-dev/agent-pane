@@ -118,12 +118,9 @@ describe('isolated mermaid diagram rendering', () => {
     expect(toolbarGeometry).toHaveLength(3)
     const toolbarHeights = toolbarGeometry.map(({ height }) => height)
     expect(Math.max(...toolbarHeights) - Math.min(...toolbarHeights)).toBeLessThanOrEqual(1)
-    for (const { label, iconCenterOffset } of toolbarGeometry) {
+    for (const { iconCenterOffset } of toolbarGeometry) {
       if (iconCenterOffset === null) continue
-      expect(
-        Math.abs(iconCenterOffset),
-        `${label ?? 'Mermaid toolbar icon'} must be vertically centred in its control`,
-      ).toBeLessThanOrEqual(1)
+      expect(Math.abs(iconCenterOffset)).toBeLessThanOrEqual(1)
     }
 
     await saveAppScreenshot('mermaid-diagram-agent-loop.png')
