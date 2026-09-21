@@ -19,7 +19,8 @@ import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
-import { createHostProcessBackend } from './host-process-backend.ts'
+import { detectContainerBackend } from './container-backend.ts'
+import { createEphemeralRunnerBackend, createHostProcessBackend } from './host-process-backend.ts'
 import { cellEnvironment, type CellCommandResult, type IsolationBackend } from './isolation.ts'
 import { REVIEW_CONFIG_FILENAME } from './project-commands.ts'
 import { runStage0, type Stage0Report } from './stage0.ts'
@@ -27,6 +28,14 @@ import { createTestRepo, type TestRepo } from './test-repo.ts'
 
 const CANARY_TOKEN = 'ghp_CANARYCANARYCANARYCANARYCANARYCANARY01'
 const CANARY_PLAIN = 'plain-canary-value-that-is-long-enough'
+
+/**
+ * The real container backend needs a daemon and a built worker image, which
+ * the unit tier does not have; `COPSE_REVIEW_CONTAINER_E2E=1` opts in where
+ * both exist (`COPSE_REVIEW_IMAGE` names another image than the app's).
+ */
+const CONTAINER_E2E = process.env['COPSE_REVIEW_CONTAINER_E2E'] === '1'
+const CONTAINER_IMAGE = process.env['COPSE_REVIEW_IMAGE'] ?? 'copse-worker:local'
 
 const README = `# widget
 
@@ -135,7 +144,66 @@ describe('hostile fixture conformance', () => {
     await rm(orchestratorDir, { recursive: true, force: true })
   })
 
-  for (const backend of [createHostProcessBackend()]) {
+  const backends: IsolationBackend[] = [createHostProcessBackend(), createEphemeralRunnerBackend()]
+
+  describe('container backend', { skip: !CONTAINER_E2E }, () => {
+    let backend: IsolationBackend
+    before(async () => {
+      const detection = await detectContainerBackend({ image: CONTAINER_IMAGE })
+      assert.ok(detection.backend, `no container backend: ${detection.reason ?? ''}`)
+      backend = detection.backend
+    })
+    it('keeps the cell off the host filesystem and the network', async () => {
+      const scratch = await mkdtemp(join(tmpdir(), 'review-conformance-'))
+      try {
+        const result = await rawCellRun(backend, scratch, repo.root, hostEnv)
+        assert.equal(result.exitCode, 0, result.output)
+        const probe = parseProbe(result.output)
+        assert.equal(probe.wroteOutside, 'ENOENT', 'the cell reached a host path')
+        assert.equal(probe.secretsFile, 'ENOENT')
+        const network = await backend
+          .createCell({
+            checkouts: { base: repo.root, head: repo.root },
+            scratchDir: scratch,
+            readOnlyPaths: [],
+            env: cellEnvironment(hostEnv),
+          })
+          .then(async (cell) => {
+            try {
+              return await cell.run({
+                target: 'head',
+                argv: [
+                  'node',
+                  '-e',
+                  "require('node:dns').promises.lookup('example.com').then(() => { console.log('resolved'); process.exit(0) }, (err) => { console.log(err.code); process.exit(0) })",
+                ],
+                timeoutMs: 30_000,
+                maxOutputBytes: 4096,
+              })
+            } finally {
+              await cell.destroy()
+            }
+          })
+        assert.doesNotMatch(network.output, /resolved/, 'the cell reached the network')
+      } finally {
+        await rm(scratch, { recursive: true, force: true })
+      }
+    })
+    it('is what a foreign diff executes in', async () => {
+      const report = await runStage0({
+        repoRoot: repo.root,
+        baseRef: 'main',
+        backend,
+        diffOrigin: 'foreign',
+        hostEnv,
+      })
+      assert.equal(report.execution.decision.execute, true)
+      assert.equal(report.execution.strength, 'container')
+      assert.doesNotMatch(JSON.stringify(report), /CANARY/)
+    })
+  })
+
+  for (const backend of backends) {
     describe(`backend ${backend.id}`, () => {
       it('gives the cell an environment with none of the orchestrator variables', async () => {
         assert.equal(backend.capabilities.secretFreeEnvironment, true)
@@ -199,8 +267,7 @@ describe('hostile fixture conformance', () => {
         assert.equal(await readFile(secretsFile, 'utf8'), `STRIPE_KEY=${CANARY_PLAIN}\n`)
       })
 
-      it('is refused a foreign diff outright', async () => {
-        assert.notEqual(backend.strength, 'container')
+      it('executes a foreign diff only at container strength, consent or not', async () => {
         const report = await runStage0({
           repoRoot: repo.root,
           baseRef: 'main',
@@ -209,7 +276,7 @@ describe('hostile fixture conformance', () => {
           unisolatedConsent: true,
           hostEnv,
         })
-        assert.equal(report.execution.decision.execute, false)
+        assert.equal(report.execution.decision.execute, backend.strength === 'container')
       })
     })
   }

@@ -43,7 +43,7 @@ import { buildReviewContext } from '@copse/review/context.ts'
 import { discoverPnpmStore, reviewPermissionProfile } from '@copse/review/cli.ts'
 import type { Finding } from '@copse/review/finding.ts'
 import { createHostProcessBackend } from '@copse/review/host-process-backend.ts'
-import { serializeCell } from '@copse/review/isolation.ts'
+import { serializeCell, type IsolationBackend } from '@copse/review/isolation.ts'
 import { resolveLenses } from '@copse/review/lenses.ts'
 import { renderReviewReport } from '@copse/review/report-text.ts'
 import {
@@ -112,6 +112,11 @@ export interface ReviewHostServices {
     req: { title: string; body: string },
     signal: AbortSignal,
   ) => Promise<{ approved: boolean; remember: boolean }>
+  /** The container backend over the thread-container runtime, or `null` with the reason. */
+  readonly containerBackend: () => Promise<{
+    readonly backend: IsolationBackend | null
+    readonly reason: string | null
+  }>
 }
 
 let appServices: Promise<ReviewHostServices> | null = null
@@ -123,7 +128,9 @@ function appHostServices(): Promise<ReviewHostServices> {
     import('../providers/dynamic-model.ts'),
     import('../providers/model-pricing-store.ts'),
     import('../approval.ts'),
-  ]).then(([providers, dynamic, pricing, approval]): ReviewHostServices => ({
+    import('./container-backend.ts'),
+  ]).then(([providers, dynamic, pricing, approval, container]): ReviewHostServices => ({
+    containerBackend: () => container.createReviewContainerBackend(),
     providerFor: (model, threadId): Promise<LLMProvider> =>
       providers.buildProvider(model, threadId),
     isBillable: (model): boolean => providers.isBillableModel(model),
@@ -469,7 +476,14 @@ export async function runThreadReview(options: ReviewRunOptions): Promise<Review
       return { report, summary: report.note ?? '' }
     }
 
-    const backend = createOsSandboxBackend() ?? createHostProcessBackend()
+    // The OS sandbox for the author's own tree (enough per B3, and lighter);
+    // the container over the thread-container runtime where there is none but
+    // Docker is up; otherwise the host process, which below is never consented
+    // to, so the review is read-only.
+    const backend =
+      createOsSandboxBackend() ??
+      (await services.containerBackend()).backend ??
+      createHostProcessBackend()
     ground = await openReviewGround({
       repoRoot: options.root,
       baseRef,

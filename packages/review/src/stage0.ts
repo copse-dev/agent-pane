@@ -54,6 +54,8 @@ export const STAGE0_EXCERPT_BYTES = 4 * 1024
 export interface Stage0Options {
   readonly repoRoot: string
   readonly baseRef: string
+  /** The change under review; default `HEAD`. See `MaterialiseCheckoutsInput.headRef`. */
+  readonly headRef?: string
   readonly backend: IsolationBackend
   readonly diffOrigin: DiffOrigin
   /** See {@link decideExecution}; ignored for a foreign diff. */
@@ -421,6 +423,7 @@ export async function openReviewGround(options: Stage0Options): Promise<ReviewGr
     checkouts = await materialiseCheckouts({
       repoRoot: options.repoRoot,
       baseRef: options.baseRef,
+      ...(options.headRef !== undefined ? { headRef: options.headRef } : {}),
       scratchDir,
       includeWorkingTree: options.includeWorkingTree ?? options.diffOrigin === 'own',
       ...(options.git ? { git: options.git } : {}),

@@ -121,6 +121,7 @@ describe('review service', () => {
       resolveDistinctModels: (values) => Promise.resolve([...values]),
       estimateCost: () => '~$0.00',
       requestSpendApproval: () => Promise.resolve({ approved: true, remember: false }),
+      containerBackend: () => Promise.resolve({ backend: null, reason: 'no docker in tests' }),
     }
     const registry = createFirstPartyPluginRegistry()
     if (options.registryEnabled === false) registry.disable(REVIEW_PLUGIN_ID)

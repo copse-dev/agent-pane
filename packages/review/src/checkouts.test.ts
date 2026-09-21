@@ -79,6 +79,38 @@ describe('materialiseCheckouts', () => {
     }
   })
 
+  it('reviews another ref as committed, never overlaying the working tree on it', async () => {
+    // A contributor's branch: fetched under its own ref, HEAD stays on feature.
+    repo.git('branch', 'contrib', headCommit)
+    repo.git('update-ref', 'refs/pull/7/head', 'contrib')
+    const checkouts = await materialiseCheckouts({
+      repoRoot: repo.root,
+      baseRef: 'main',
+      headRef: 'refs/pull/7/head',
+      scratchDir: scratch,
+      includeWorkingTree: true,
+    })
+    try {
+      assert.equal(checkouts.headCommit, headCommit)
+      assert.equal(checkouts.mergeBase, baseCommit)
+      assert.equal(checkouts.dirty, false)
+      assert.equal(await readFile(join(checkouts.head, 'a.txt'), 'utf8'), 'two\n')
+      assert.equal(await exists(join(checkouts.head, 'new')), false)
+    } finally {
+      await checkouts.cleanup()
+    }
+    await assert.rejects(
+      materialiseCheckouts({
+        repoRoot: repo.root,
+        baseRef: 'main',
+        headRef: 'refs/pull/8/head',
+        scratchDir: scratch,
+        includeWorkingTree: false,
+      }),
+      /Cannot resolve refs\/pull\/8\/head/,
+    )
+  })
+
   it('never runs a repository hook on the host', async () => {
     // A hook the repository controls, wired through its own config the way a
     // hostile checkout would do it. Materialising must not run it.

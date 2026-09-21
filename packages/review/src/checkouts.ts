@@ -79,8 +79,15 @@ async function requireGit(
 export interface MaterialiseCheckoutsInput {
   /** Any directory inside the repository. */
   readonly repoRoot: string
-  /** The ref the change is against; the merge-base with HEAD is what gets checked out. */
+  /** The ref the change is against; the merge-base with the head is what gets checked out. */
   readonly baseRef: string
+  /**
+   * The change under review. Default `HEAD`: the author's own tree. A
+   * contributor's branch is any other ref the repository holds — a fetched
+   * `refs/pull/<n>/head`, say — and is reviewed as committed: the working
+   * tree is never overlaid on a head that is not HEAD.
+   */
+  readonly headRef?: string
   /** Created by the caller; the checkouts land in `base/` and `head/` beneath it. */
   readonly scratchDir: string
   /** Include the working tree's uncommitted changes in the head checkout. */
@@ -123,18 +130,20 @@ export async function materialiseCheckouts(
     ['rev-parse', '--show-toplevel'],
     'Cannot resolve repository root',
   )
+  const headRef = input.headRef ?? 'HEAD'
   const headCommit = await requireGit(
     git,
     repositoryRoot,
-    ['rev-parse', 'HEAD'],
-    'Cannot resolve HEAD',
+    ['rev-parse', '--verify', `${headRef}^{commit}`],
+    `Cannot resolve ${headRef}`,
   )
   const mergeBase = await requireGit(
     git,
     repositoryRoot,
-    ['merge-base', input.baseRef, 'HEAD'],
-    `Cannot find the merge-base of ${input.baseRef} and HEAD`,
+    ['merge-base', input.baseRef, headCommit],
+    `Cannot find the merge-base of ${input.baseRef} and ${headRef}`,
   )
+  const includeWorkingTree = input.includeWorkingTree && headRef === 'HEAD'
   const gitCommonDir = resolve(
     repositoryRoot,
     await requireGit(
@@ -173,7 +182,7 @@ export async function materialiseCheckouts(
     worktrees.push(head)
 
     let dirty = false
-    if (input.includeWorkingTree) {
+    if (includeWorkingTree) {
       // Tracked changes, staged or not, as one binary patch applied to the head
       // worktree. `git diff HEAD` covers both the index and the working tree.
       const patch = await git(repositoryRoot, ['diff', '--binary', 'HEAD'])

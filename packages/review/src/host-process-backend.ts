@@ -72,6 +72,14 @@ class HostProcessCell implements ExecutionCell {
   }
 }
 
+async function createHostProcessCell(spec: CellSpec): Promise<ExecutionCell> {
+  const homeDir = join(spec.scratchDir, 'home')
+  const tmpDir = join(spec.scratchDir, 'tmp')
+  await mkdir(homeDir, { recursive: true })
+  await mkdir(tmpDir, { recursive: true })
+  return new HostProcessCell(spec, homeDir, tmpDir)
+}
+
 export function createHostProcessBackend(): IsolationBackend {
   return {
     id: HOST_PROCESS_BACKEND_ID,
@@ -82,12 +90,36 @@ export function createHostProcessBackend(): IsolationBackend {
       networkDenied: false,
       ephemeral: true,
     },
-    async createCell(spec: CellSpec): Promise<ExecutionCell> {
-      const homeDir = join(spec.scratchDir, 'home')
-      const tmpDir = join(spec.scratchDir, 'tmp')
-      await mkdir(homeDir, { recursive: true })
-      await mkdir(tmpDir, { recursive: true })
-      return new HostProcessCell(spec, homeDir, tmpDir)
+    createCell: createHostProcessCell,
+  }
+}
+
+export const EPHEMERAL_RUNNER_BACKEND_ID = 'ephemeral-runner'
+
+/**
+ * The host process again, on a machine that IS the cell: a CI runner created
+ * for one job and discarded after it, holding no secrets (§Execution
+ * isolation, "Backend per shell — CI", job A). The wall is the runner's, not
+ * this process's — the same strength as a container, which is what lets a
+ * foreign diff execute here (B3) — so declaring it is the caller's assertion
+ * about where it runs, never a detection. The CLI takes it only from an
+ * explicit `--backend ephemeral-runner`; the workflows that pass it are the
+ * ones built to the plan's job-A shape: the `pull_request` event, no secrets,
+ * `permissions: {}`, a fresh hosted runner. Inside the process it guarantees
+ * what the host-process backend guarantees (a scrubbed environment, `HOME`
+ * and `TMPDIR` inside the cell) and declares nothing more, so the conformance
+ * test holds it to exactly that.
+ */
+export function createEphemeralRunnerBackend(): IsolationBackend {
+  return {
+    id: EPHEMERAL_RUNNER_BACKEND_ID,
+    strength: 'container',
+    capabilities: {
+      filesystemConfined: false,
+      secretFreeEnvironment: true,
+      networkDenied: false,
+      ephemeral: true,
     },
+    createCell: createHostProcessCell,
   }
 }

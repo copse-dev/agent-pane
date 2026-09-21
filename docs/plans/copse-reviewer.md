@@ -1,17 +1,20 @@
 # Copse Reviewer
 
-Status: **Active — Phases 0 to 3 landed.** `@copse/review` is a workspace package on
+Status: **Active — Phases 0 to 4 landed.** `@copse/review` is a workspace package on
 `main` with the finding schema, Stage 0 (the base-versus-head build and test delta), the
-`IsolationBackend` contract with the host-process and OS-sandbox backends, the
+`IsolationBackend` contract with the host-process, OS-sandbox and container backends, the
 hostile-fixture conformance test, and the `copse-review` CLI: Stage 1 context, models ×
 lenses with brokered tools, Stage 3 clustering, Stage 4 verification by reproducer and
 adversarial challenge, the ranked report, SARIF export and the headless event envelope.
-`pnpm run review -- --allow-unisolated` runs it over this repository's own working tree.
+`pnpm run review -- --allow-unisolated` runs it over this repository's own working tree;
+`--head <ref> --foreign` reviews a contributor's branch, executing only in a container.
 In the app, the `copse.review` plugin has replaced `copse.model-comparison`: "Review" in
 the Changes view, the "Review changes" bubble and the `review_changes` tool run the same
 pipeline over the thread's checkout and render a findings card, with dismissals persisted
-to the knowledge store (see §What Phase 3 delivered). Phases 4–5 remain proposed. See also
-§What Phase 0 delivered, §What Phase 1 delivered and §What Phase 2 delivered.
+to the knowledge store (see §What Phase 3 delivered). In CI, the `copse-review` label on a
+pull request runs Stage 0 on a secret-free runner and posts the findings as one review
+from a second, read-only job (see §What Phase 4 delivered). Phase 5 remains proposed. See
+also §What Phase 0 delivered, §What Phase 1 delivered and §What Phase 2 delivered.
 Binding decisions B1 (execution isolation, 2026-09-03), B2–B6 (packaging, backend
 sequencing, scope, ecosystem, customer; 2026-09-04) and B7–B9 (name, precision aim, SARIF
 export; 2026-09-04) are recorded. Problems are numbered P1–P9 in §What needs to be solved,
@@ -359,9 +362,10 @@ scope.
   is the backend; the reviewer is a consumer of that runtime, not a second implementation.
 - **CLI:** an `IsolationBackend` abstraction from day one — the OS sandbox first (B3), then
   Docker/Podman or a microVM — detected at start. With none present the CLI runs the
-  read-only pipeline and prints why. Until the container backend lands, the CLI reviews
-  only the user's own working tree. There is no flag that executes a foreign diff
-  unisolated.
+  read-only pipeline and prints why. Since Phase 4 the container backend
+  (`container-backend.ts`, Docker or Podman over a pinned image, never pulled) is what a
+  `--foreign` diff executes in; without it the CLI reviews a foreign diff read-only and
+  says so. There is no flag that executes a foreign diff unisolated.
 - **CI:** a GitHub-hosted runner is ephemeral but not secret-free, so the workflow is two
   jobs. **Job A** checks out the PR head on the `pull_request` event — never
   `pull_request_target` — with `permissions: {}` and no secrets, runs Stage 0 and the
@@ -717,6 +721,85 @@ Not in Phase 3: a container backend and foreign diffs (Phase 4), the CI action (
 `bench:review` (Phase 5), and the per-finding inline anchor in the Changes view's diff
 (the card links by `path:line`; jumping the diff editor to it is a follow-up).
 
+## What Phase 4 delivered
+
+On `main`: the container backend (`packages/review/src/container-backend.ts`), its app
+adapter over the thread-in-container runtime (`src/main/services/review/container-backend.ts`),
+foreign-diff review in the CLI (`--head`, `--foreign`, `--backend`), the two hand-offs the
+CI shell needs (`stage0-report.ts`, `forge-review.ts`) and the workflows
+(`.github/workflows/review-ground.yml`, `review-findings.yml`, `.forgejo/workflows/review.yml`).
+
+- **One container per command.** The backend runs every cell command in its own
+  throwaway container from a pinned image with the hardening the thread-in-container
+  runtime settled on (read-only root, every capability dropped, no new privileges, pid /
+  memory / cpu limits, an exec-able private `/tmp`) and **no network interface at all**.
+  The two checkouts and the scratch directory are bind-mounted read-write at their host
+  paths, the declared read-only paths (dependency store, corepack cache, the repository's
+  git directory) read-only at theirs, so an argv, a cwd, `npm_config_store_dir` and a
+  reproducer's relative path mean the same on both sides and the orchestrator's reads of
+  head see what the cell wrote. The host `PATH` is dropped for the image's; `HOME` and
+  `TMPDIR` live in scratch. A timed-out or cancelled command is ended by `<engine> kill`,
+  which takes everything it forked. Every wall the capabilities declare is a flag pinned
+  by a unit test; the plumbing is exercised over a fake engine that runs the argv on the
+  host, and the real engine by the hostile-fixture conformance test behind
+  `COPSE_REVIEW_CONTAINER_E2E=1` (a daemon and the image required). Not a second runtime:
+  the image is never pulled or built here, and the app adapter reuses the runtime's image,
+  fingerprint check (a stale image is never run), daemon probe, container name and labels,
+  so its orphan sweep covers review cells too.
+- **The app's backend order.** OS sandbox for the author's own tree (enough per B3, and
+  lighter); the container where no OS sandbox is active but Docker is; read-only review
+  where neither is. There is still no consent path in the app.
+- **Foreign diffs.** `materialiseCheckouts` takes a `headRef`; another ref is reviewed as
+  committed and the working tree is never overlaid on it. `--foreign` declares the diff a
+  contributor's: `decideExecution` lets it run only at container strength, `auto` looks
+  for the container (`--image`, default the app's worker image) and, finding none, the
+  pipeline degrades to read-only lenses plus the challenger pass and says so — the trust
+  table's bottom-right cell. `--allow-unisolated` is not consent for a foreign diff (B3).
+- **The runner as the cell.** `--backend ephemeral-runner` is the host-process backend
+  declared at container strength for the one place that is true: a CI job created for one
+  run, holding no secrets, discarded after. It is an assertion the caller makes about
+  where it runs, never a detection, and the conformance test holds it to what it
+  guarantees inside the process (a scrubbed environment, `HOME` and `TMPDIR` in the cell).
+- **The CI shell, in two jobs.** `review-ground.yml` runs on `pull_request` (never
+  `pull_request_target`), only for a pull request carrying the `copse-review` label, with
+  `permissions: {}` and no secrets: it installs only the reviewer's workspace subtree with
+  scripts off, runs Stage 0 on the head with the runner as the cell, and uploads the
+  report. `review-findings.yml` runs on that workflow's completion in the base
+  repository's context with the model key and a token that can write a review; it resolves
+  the pull request from the event's head commit (never from the artefact), fetches the head
+  to read it, imports the Stage 0 report through `--stage0-json` — which makes the run
+  read-only whatever else is asked, and refuses a report for another commit — runs the
+  reviewers and the challenger over the checkouts, and posts one review. The Forgejo
+  workflow is the same split as two jobs of one workflow (Forgejo Actions has no
+  `workflow_run`), with the secret-holding job gated to same-repository pull requests and
+  a note that its runners must be ephemeral.
+- **The Stage 0 report is a decoder.** Between the jobs it is an artefact a runner wrote
+  after executing the pull request's own code, so `stage0-report.ts` validates every
+  shape of it — findings included — before a field reaches a model or a comment.
+- **One review on the pull request.** `forge-review.ts` projects a report onto a review
+  (`COMMENT`, never a request for changes): each surfaced finding with a line is an inline
+  comment on the head commit — its class, severity, confidence, claim, verdict, evidence and
+  provenance — and the rest (the ground, what was not checked, findings without a line,
+  the appendix and refuted counts) is the body. GitHub anchors by `line`/`side`, Forgejo
+  by `new_position`; both refuse a line outside the diff, so a 422 is retried once with
+  every inline comment folded into the body rather than lost. `--post-review github|forgejo`
+  with `--repo` and `--pr`; the token from `COPSE_REVIEW_FORGE_TOKEN`, else `GITHUB_TOKEN`
+  (Forgejo: `FORGEJO_TOKEN` too); a review that could not be posted is exit 1.
+- **Known limit: reproducers in CI.** The findings job has no cell, so Stage 4 there is
+  the challenger only; a reproducer needs execution, which belongs to the secret-free job,
+  and a job-crossing loop for it is a follow-up. The reports say "unverified" or "survived
+  challenge" accordingly, never "confirmed" without execution.
+- **Known limit: the dependency store across platforms.** The cell resolves the offline
+  install from the host's pnpm store, which holds the host platform's packages. On a Linux
+  host (CI, a Linux desktop) that is the guest's platform too; on macOS the Linux guest
+  finds no Linux binaries for native packages and the prepare step fails, which Stage 0
+  reports as "not checked" rather than pretending. Pointing the cell at the runtime's
+  shared store volume, populated by an installing container run, is the follow-up.
+
+Not in Phase 4: reproducers in CI (above), `bench:review` (Phase 5), and a foreign-diff
+gesture in the app (the app reviews the thread's own tree; a "review this pull request"
+gesture is a product question for later).
+
 ## Phases
 
 - **Phase 0 — Findings schema + Stage 0 + OS-sandbox backend.** ✅ Landed; see above. `@copse/review` as a
@@ -740,11 +823,12 @@ Not in Phase 3: a container backend and foreign diffs (Phase 4), the CI action (
   log bound here: decision 15 for the typed chunk the findings card consumes, decision 5 for
   any machine turn a review starts (none does: every review is a human gesture or an agent
   tool call inside an existing turn).
-- **Phase 4 — Container backend + foreign diffs + CI shell.** The container/VM
-  `IsolationBackend`, consuming the local-docker runtime proposed in
-  [`copse-cloud-workspaces.md`](copse-cloud-workspaces.md) C1, which unlocks foreign-diff
-  review (B3); then the GitHub Action with inline comments, opt-in by label, and the Forgejo
-  equivalent.
+- **Phase 4 — Container backend + foreign diffs + CI shell.** ✅ Landed, except
+  reproducers in CI; see above. The container `IsolationBackend`, consuming the
+  thread-in-container runtime's image and naming in the app (the local-docker provider
+  [`copse-cloud-workspaces.md`](copse-cloud-workspaces.md) C1 proposed), which unlocks
+  foreign-diff review (B3); then the GitHub workflows with inline comments, opt-in by label,
+  and the Forgejo equivalent.
 - **Phase 5 — Eval.** `bench:review` and a precision gate. Arguably belongs at Phase 2;
   listed last only because it needs a corpus that Phases 1–2 generate.
 

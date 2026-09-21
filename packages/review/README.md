@@ -6,12 +6,13 @@ behind. An Electron-free workspace package from its first commit (binding decisi
 depending only on `@copse/std`, `@copse/llm` and zod, so the same core can serve a CLI, the
 app and a CI action.
 
-Phases 0 to 2 are here: the finding schema, Stage 0 (the base-versus-head build and test
-delta), the isolation-backend contract and the conformance test that holds a backend to
-what it declares (Phase 0); the `copse-review` CLI with Stage 1 context, brokered tools,
-the ranked report and SARIF export (Phase 1); and the fan-out over models and lenses,
-Stage 3 clustering, and Stage 4 verification by reproducer and adversarial challenge
-(Phase 2).
+Phases 0 to 2 and the core of Phase 4 are here: the finding schema, Stage 0 (the
+base-versus-head build and test delta), the isolation-backend contract and the conformance
+test that holds a backend to what it declares (Phase 0); the `copse-review` CLI with Stage 1
+context, brokered tools, the ranked report and SARIF export (Phase 1); the fan-out over
+models and lenses, Stage 3 clustering, and Stage 4 verification by reproducer and
+adversarial challenge (Phase 2); and the container backend, foreign-diff review and the CI
+shell's hand-offs (Phase 4).
 
 ## What's in it
 
@@ -32,7 +33,18 @@ Stage 3 clustering, and Stage 4 verification by reproducer and adversarial chall
   environment and a `HOME`/`TMPDIR` inside the cell. It builds no filesystem or network
   wall and says so, which is what limits it to consented own-tree runs. The app's
   OS-sandbox backend (`src/main/services/review/os-sandbox-backend.ts`) is the first real
-  one.
+  one. `createEphemeralRunnerBackend` is the same cell declared at container strength, for
+  the one place that is true — a secret-free CI runner created for one job — and only ever
+  chosen by an explicit `--backend ephemeral-runner`.
+- **`container-backend.ts`** — the strength a foreign diff needs (B3): every cell command
+  in its own throwaway Docker or Podman container from a pinned image, never pulled, with
+  the thread-in-container runtime's hardening (read-only root, all capabilities dropped,
+  no new privileges, pid / memory / cpu limits, an exec-able private `/tmp`) and no network
+  interface. Checkouts and scratch are bind-mounted read-write at their host paths, the
+  declared read-only paths read-only at theirs; the host `PATH` gives way to the image's;
+  `<engine> kill` ends a timed-out command with everything it forked. `containerRunArgs` is
+  pure and pinned by a test; `detectContainerBackend` says why there is no backend rather
+  than guessing.
 - **`checkouts.ts`** — materialises the merge-base and head as detached worktrees under
   the review's scratch directory, with the working tree's uncommitted changes overlaid on
   head. Git runs on the host with hooks disabled; nothing from a checkout is executed
@@ -84,10 +96,19 @@ Stage 3 clustering, and Stage 4 verification by reproducer and adversarial chall
   Keys come from the environment only; remote providers get the diff with secrets
   redacted; `--provider mock` plays a scripted reviewer for harness self-tests.
 - **`report-text.ts`** — the terminal projection. "Clean." is a complete answer.
+- **`stage0-report.ts`** — the Stage 0 report as a decoder, for the file the CI shell's
+  secret-free job hands to the job with the model key: untrusted input, validated shape by
+  shape (findings included) before a field of it reaches a model or a comment.
+- **`forge-review.ts`** — the pull-request projection: one review (`COMMENT`, never a
+  request for changes), each surfaced finding with a line an inline comment on the head
+  commit, the rest in the body. GitHub and Forgejo; a line the forge refuses is folded
+  into the body rather than lost.
 - **`hostile-fixture.test.ts`** — the conformance test: a hostile repository reviewed with
   canary secrets in the orchestrator's environment. No canary may appear in any cell
   output or finding, and each capability a backend declares is checked against what the
-  fixture managed to do.
+  fixture managed to do. The container backend joins it with
+  `COPSE_REVIEW_CONTAINER_E2E=1` (a daemon and the image, `COPSE_REVIEW_IMAGE` to name
+  another, required); the unit tier covers its plumbing over a fake engine.
 
 ## Running it on this repository
 
@@ -101,11 +122,36 @@ pnpm run review --allow-unisolated --json report.json --sarif report.sarif --eve
 pnpm run review --help
 ```
 
-`--allow-unisolated` is the consent the trust table requires outside the app, where the
-only backend is the host process. Findings are the output, never the exit code; the exit
-codes are the headless contract's: `0` the reviewer looked, `1` the model turn failed, `2`
-bad usage or an undetectable project, `3` execution was refused for want of consent or
-isolation, `130` cancelled.
+`--allow-unisolated` is the consent the trust table requires for your own tree when no
+container answers. Findings are the output, never the exit code; the exit codes are the
+headless contract's: `0` the reviewer looked, `1` the model turn failed or the review
+could not be posted, `2` bad usage or an undetectable project, `3` execution was refused
+for want of consent or isolation, `130` cancelled.
+
+## Reviewing a contributor's branch
+
+```bash
+git fetch origin refs/pull/123/head:refs/remotes/pr/123
+pnpm run review --foreign --head refs/remotes/pr/123 --base origin/main --model claude-sonnet-5
+pnpm run review --foreign --head refs/remotes/pr/123 --backend container --image copse-worker:local
+```
+
+`--foreign` says the change is not yours: it executes only in a container (B3), which
+`auto` looks for by image — the app's worker image by default, built by the first
+container run in Copse — and, finding none, the pipeline reviews read-only (the reviewers
+and the challenger over the checkouts, no `run_command`) and says so with exit `3`.
+`--allow-unisolated` is not consent for a foreign diff.
+
+## In CI
+
+Two workflows, the plan's job A and job B (`.github/workflows/review-ground.yml` and
+`review-findings.yml`; `.forgejo/workflows/review.yml` for Forgejo), opt-in by the
+`copse-review` label on a pull request. Job A runs Stage 0 on the head with the runner as
+the cell (`--backend ephemeral-runner`) and no secrets, and uploads the report; job B, on
+the base ref with the model key, imports it (`--stage0-json`, which makes the run
+read-only and refuses a report for another commit), reviews the head without executing it,
+and posts one review (`--post-review github --repo owner/name --pr n`). The token is
+`COPSE_REVIEW_FORGE_TOKEN`, else `GITHUB_TOKEN`; the model key `COPSE_REVIEW_API_KEY`.
 
 The CLI discovers the standard host pnpm store (or the absolute
 `npm_config_store_dir` / `PNPM_HOME` environment setting) without running pnpm
@@ -123,5 +169,6 @@ app uses to review without executing.
 
 ## Not yet here
 
-Phase 4 is the container backend, foreign diffs and the CI action; Phase 5 the
-`bench:review` precision measurement. See the plan's §Phases.
+Reproducers in CI (job B has no cell, so Stage 4 there is the challenger only) and Phase 5,
+the `bench:review` precision measurement. See the plan's §Phases and §What Phase 4
+delivered.

@@ -24,11 +24,15 @@ export * from './stage5.ts'
 export * from './report-text.ts'
 export * from './sarif.ts'
 
-// The CLI and the provider door it opens.
+// The CLI, the provider door it opens, and the CI shell's two hand-offs: the
+// Stage 0 report between jobs, and the review onto the pull request.
 export * from './provider-selection.ts'
 export * from './scripted-provider.ts'
 export * from './cli.ts'
+export * from './stage0-report.ts'
+export * from './forge-review.ts'
 
 // Backends and the helper every backend shares.
 export * from './host-process-backend.ts'
+export * from './container-backend.ts'
 export * from './process-collect.ts'

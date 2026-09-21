@@ -315,6 +315,187 @@ describe('copse-review CLI', () => {
     assert.match(forwarded, /^usage: copse-review/)
   })
 
+  it('reviews a foreign ref read-only when no container answers, and says so', async () => {
+    const repo = await fixture({ test: { exit: 1 } })
+    const dir = await mkdtemp(join(tmpdir(), 'review-cli-'))
+    scratch.push(dir)
+    // The contributor's branch: HEAD stays elsewhere, the ref is what is reviewed.
+    const contributed = repo.git('rev-parse', 'HEAD')
+    repo.git('update-ref', 'refs/pull/7/head', contributed)
+    repo.git('checkout', '-q', 'main')
+    const script = join(dir, 'script.json')
+    await writeFile(
+      script,
+      JSON.stringify([
+        { type: 'tool_call', name: 'run_command', args: { argv: [process.execPath, '-e', '1'] } },
+        {
+          type: 'tool_call',
+          name: 'report_finding',
+          args: {
+            path: 'src/math.ts',
+            startLine: 1,
+            class: 'contract',
+            severity: 'high',
+            confidence: 'high',
+            claim: 'add subtracts its second argument.',
+            reason: 'The body is a - b.',
+          },
+        },
+        { type: 'text', text: 'Looked without running anything.' },
+      ]),
+    )
+    // `--allow-unisolated` is not consent for a foreign diff (B3); the image
+    // named here exists nowhere, so `auto` finds no container.
+    const result = await run(repo, [
+      '--base',
+      'main',
+      '--head',
+      'refs/pull/7/head',
+      '--foreign',
+      '--allow-unisolated',
+      '--image',
+      'copse-review-test:never-built',
+      '--provider',
+      'mock',
+      '--mock-script',
+      script,
+      '--no-verify',
+      '--json',
+      join(dir, 'report.json'),
+    ])
+    assert.equal(result.code, HEADLESS_EXIT.APPROVAL_REQUIRED, result.err)
+    assert.match(result.err, /a foreign diff is reviewed read-only/)
+    assert.match(result.out, /Not executed: a foreign diff/)
+    // The reviewer still ran over the checkouts, but its run_command was denied.
+    assert.match(result.out, /reviewer mock under correctness — completed/)
+    assert.match(result.out, /1\. \[contract · high · high\] src\/math\.ts:1 — add subtracts/)
+    const report: unknown = JSON.parse(await readFile(join(dir, 'report.json'), 'utf8'))
+    assert.ok(typeof report === 'object' && report !== null)
+    const stage0: unknown = Reflect.get(report, 'stage0')
+    assert.ok(typeof stage0 === 'object' && stage0 !== null)
+    assert.equal(Reflect.get(stage0, 'headCommit'), contributed)
+    assert.equal(Reflect.get(stage0, 'dirtyWorkingTree'), false)
+  })
+
+  it('executes a foreign ref on the ephemeral-runner backend, whose report another run can import', async () => {
+    const repo = await fixture({ test: { exit: 1 } })
+    const dir = await mkdtemp(join(tmpdir(), 'review-cli-'))
+    scratch.push(dir)
+    const contributed = repo.git('rev-parse', 'HEAD')
+    repo.git('update-ref', 'refs/pull/7/head', contributed)
+    repo.git('checkout', '-q', 'main')
+    const ground = join(dir, 'ground.json')
+    // Job A: the runner is the cell; Stage 0 only, report to a file.
+    const first = await run(repo, [
+      '--base',
+      'main',
+      '--head',
+      'refs/pull/7/head',
+      '--foreign',
+      '--backend',
+      'ephemeral-runner',
+      '--no-model',
+      '--json',
+      ground,
+      '--quiet',
+    ])
+    assert.equal(first.code, HEADLESS_EXIT.SUCCESS, first.err)
+
+    // Job B: the model stages over the same ref, executing nothing, and one
+    // review posted on the pull request through an injected client.
+    const script = join(dir, 'script.json')
+    await writeFile(script, JSON.stringify([{ type: 'text', text: 'Nothing beyond Stage 0.' }]))
+    const posts: { url: string; body: string }[] = []
+    let out = ''
+    let err = ''
+    const code = await main(
+      [
+        '--base',
+        'main',
+        '--head',
+        'refs/pull/7/head',
+        '--foreign',
+        '--stage0-json',
+        ground,
+        '--provider',
+        'mock',
+        '--mock-script',
+        script,
+        '--no-verify',
+        '--post-review',
+        'github',
+        '--repo',
+        'copse-dev/fixture',
+        '--pr',
+        '7',
+      ],
+      {
+        stdout: (text) => {
+          out += text
+        },
+        stderr: (text) => {
+          err += text
+        },
+        env: { PATH: process.env['PATH'], GITHUB_TOKEN: 'ghs_test' },
+        cwd: repo.root,
+        fetch: (url, init) => {
+          posts.push({ url, body: init.body })
+          return Promise.resolve({ status: 200, text: () => Promise.resolve('') })
+        },
+      },
+    )
+    assert.equal(code, HEADLESS_EXIT.SUCCESS, err)
+    assert.match(out, /Copse Reviewer · Stage 0 · ephemeral-runner \(container\)/)
+    assert.match(out, /test ✗ regressed/)
+    assert.match(out, /1 finding\(s\):\n1\. \[test/)
+    assert.match(err, /posted the review on copse-dev\/fixture#7/)
+    const [post] = posts
+    assert.ok(post)
+    assert.equal(post.url, 'https://api.github.com/repos/copse-dev/fixture/pulls/7/reviews')
+    assert.match(post.body, /Executed in the `ephemeral-runner` backend/)
+    assert.match(post.body, /pnpm run test|check\.cjs/)
+
+    // A report for another commit is refused before any model is called.
+    const mismatch = await run(repo, [
+      '--base',
+      'main',
+      '--head',
+      'main',
+      '--stage0-json',
+      ground,
+      '--no-model',
+    ])
+    assert.equal(mismatch.code, HEADLESS_EXIT.USAGE)
+    assert.match(mismatch.err, /is a Stage 0 report for/)
+  })
+
+  it('rejects a bad backend, forge or repository before doing anything', async () => {
+    const repo = await fixture({})
+    const backend = await run(repo, ['--backend', 'vm'])
+    assert.equal(backend.code, HEADLESS_EXIT.USAGE)
+    assert.match(backend.err, /unknown backend vm/)
+    const forge = await run(repo, ['--post-review', 'gitlab', '--repo', 'a/b', '--pr', '1'])
+    assert.equal(forge.code, HEADLESS_EXIT.USAGE)
+    assert.match(forge.err, /--post-review must be one of github, forgejo/)
+    const noRepo = await run(repo, ['--post-review', 'github', '--pr', '1'])
+    assert.match(noRepo.err, /needs --repo/)
+    const noToken = await run(repo, ['--post-review', 'github', '--repo', 'a/b', '--pr', '1'])
+    assert.match(noToken.err, /needs a token/)
+    const noUrl = await run(repo, ['--post-review', 'forgejo', '--repo', 'a/b', '--pr', '1'], {
+      FORGEJO_TOKEN: 'x',
+    })
+    assert.match(noUrl.err, /needs --forge-url/)
+    const container = await run(repo, [
+      '--backend',
+      'container',
+      '--image',
+      'copse-review-test:never-built',
+      '--no-model',
+    ])
+    assert.equal(container.code, HEADLESS_EXIT.APPROVAL_REQUIRED)
+    assert.match(container.err, /no container backend for copse-review-test:never-built/)
+  })
+
   it('cancels Stage 0 without running the next check', { timeout: 15000 }, async () => {
     const repo = await fixture({})
     const ready = join(repo.root, 'cancel-ready')
