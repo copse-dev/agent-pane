@@ -527,6 +527,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     fs: {
       readFile: (_projectId: string, _threadId: string, path: string) =>
         resolved(writtenFiles.get(path) ?? ''),
+      readImage: () => Promise.reject(new Error('Workspace images are unavailable in this demo')),
       writeFile: resolvedVoid,
       readdir: () => resolved(['src', 'tests', 'package.json']),
       listDir: () =>

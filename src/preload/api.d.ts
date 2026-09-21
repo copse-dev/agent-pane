@@ -216,6 +216,8 @@ export interface ApiClient {
   }
   fs: {
     readFile: (projectId: string, threadId: string, path: string) => Promise<string>
+    /** A contained image preview, capped at 15 MiB and encoded as a data URL. */
+    readImage: (projectId: string, threadId: string, path: string) => Promise<string>
     writeFile: (projectId: string, threadId: string, path: string, content: string) => Promise<void>
     readdir: (projectId: string, threadId: string, path: string) => Promise<string[]>
     listDir: (

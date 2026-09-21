@@ -30,6 +30,67 @@ function apiWithFileReferences(
 }
 
 describe('markdown workspace links', () => {
+  it('does not show a stale lookup error after leaving its task', async () => {
+    const root = document.createElement('div')
+    root.innerHTML = renderMarkdown('[Private chart](/private-chart.png)')
+    const store = createStore({ activeProjectId: 'project-1', activeThreadId: 'thread-1' })
+    const base = createFakeApi()
+    let reject: (error: Error) => void = () => undefined
+    const pending = new Promise<never>((_resolve, fail) => {
+      reject = fail
+    })
+    const api = {
+      ...base,
+      index: { ...base.index, resolveFileReferences: (): Promise<never> => pending },
+    }
+    const unbind = bindWorkspaceLinkClicks(root, store, api)
+    root
+      .querySelector('a')
+      ?.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }))
+    store.setState({ activeThreadId: 'thread-2' })
+    reject(new Error('private old task lookup failed'))
+    await new Promise((done) => setTimeout(done, 0))
+    unbind()
+    assert.doesNotMatch(
+      document.body.textContent,
+      /private old task lookup failed|Failed to open private-chart/,
+    )
+  })
+
+  it('does not open a resolved link in a different task after navigation', async () => {
+    const root = document.createElement('div')
+    root.innerHTML = renderMarkdown('[Chart](/chart.png)')
+    const store = createStore({ activeProjectId: 'project-1', activeThreadId: 'thread-1' })
+    const base = createFakeApi()
+    let resolve: (files: { candidate: string; path: string; kind: 'file' }[]) => void = () =>
+      undefined
+    const resolved = new Promise<{ candidate: string; path: string; kind: 'file' }[]>((done) => {
+      resolve = done
+    })
+    let reads = 0
+    const api = {
+      ...base,
+      index: { ...base.index, resolveFileReferences: (): typeof resolved => resolved },
+      fs: {
+        ...base.fs,
+        readImage: async (): Promise<string> => {
+          reads += 1
+          return ''
+        },
+      },
+    }
+    const unbind = bindWorkspaceLinkClicks(root, store, api)
+    root
+      .querySelector('a')
+      ?.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }))
+    store.setState({ activeThreadId: 'thread-2' })
+    resolve([{ candidate: '/chart.png', path: 'chart.png', kind: 'file' }])
+    await new Promise((done) => setTimeout(done, 0))
+    unbind()
+    assert.equal(reads, 0)
+    assert.equal(store.getState().openFile, null)
+  })
+
   it('renders root-relative markdown links as workspace links', () => {
     const html = renderMarkdown('[Experiment Framework v2](/docs/experiments/v2.md)')
     assert.match(html, /data-workspace-link="true"/)
