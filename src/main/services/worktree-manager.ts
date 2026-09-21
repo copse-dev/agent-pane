@@ -645,8 +645,16 @@ export async function allocateThreadWorktree(
     )
     if (existing) throw new Error(`Thread worktree is already registered: ${target}`)
 
-    await assertBranchName(projectRoot, input.baseBranch, 'Base branch')
-    const defaultBranch = await getDefaultBranch(projectRoot)
+    // None of these probes mutates repository state or depends on another.
+    // Each Git invocation pays the sandbox/process startup cost, so keep them
+    // concurrent on the first-submit path instead of serializing that overhead.
+    const [, defaultBranch, dirtyProject, headResult, branch] = await Promise.all([
+      assertBranchName(projectRoot, input.baseBranch, 'Base branch'),
+      getDefaultBranch(projectRoot),
+      repositoryIsDirty(projectRoot),
+      git(projectRoot, ['rev-parse', 'HEAD']),
+      chooseBranch(projectRoot, input.prompt, input.threadId),
+    ])
     const isDefaultBranch = defaultBranch !== null && defaultBranch === input.baseBranch
     if (isDefaultBranch) await fetchDefaultBranch(projectRoot, input.baseBranch)
     const remoteRef = `refs/remotes/origin/${input.baseBranch}`
@@ -660,14 +668,13 @@ export async function allocateThreadWorktree(
       ['rev-parse', '--verify', `${baseRef}^{commit}`],
       `Cannot resolve base branch ${input.baseBranch}`,
     )
-    const dirtyProject = await repositoryIsDirty(projectRoot)
     // Seeding restores the snapshot over the worktree wholesale rather than
     // merging it, so it only means anything when both start from the same
     // commit. A base that moved — a fetched `origin/<default>`, or a project
     // checkout parked on another branch — would have those edits pasted onto an
     // unrelated tree, silently mixing two states. Start clean instead; the
     // user's own checkout still holds the work, untouched.
-    const headCommit = (await git(projectRoot, ['rev-parse', 'HEAD'])).stdout.trim()
+    const headCommit = headResult.stdout.trim()
     const seedable = (input.seedFromDirtyProject ?? true) && headCommit === baseCommit
     if (dirtyProject && !seedable) {
       console.info(
@@ -687,7 +694,6 @@ export async function allocateThreadWorktree(
       )
     }
 
-    const branch = await chooseBranch(projectRoot, input.prompt, input.threadId)
     const createdTarget = await prepareManagedWorktreeDestination(input.projectId, target)
     const add = await git(
       projectRoot,
