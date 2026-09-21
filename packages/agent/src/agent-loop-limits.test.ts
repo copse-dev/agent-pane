@@ -179,7 +179,7 @@ describe('agent-loop-limits', () => {
     assert.equal(deadline.isHardExpired(start + 1_191), true)
   })
 
-  it('keeps counting paused time toward the hard cap by default (the local loop)', () => {
+  it('keeps counting paused time toward the hard cap by default', () => {
     const start = 1_000
     const deadline = new AgentRunDeadline(AGENT_RUN_IDLE_TIMEOUT_MS, 200, start)
     deadline.pause(start + 10)
@@ -258,6 +258,33 @@ describe('agent-loop-limits', () => {
       // 4s of wall-clock elapsed, far past the idle window, yet still alive.
       assert.equal(controller.signal.aborted, false)
       // Once activity stops, the idle window finally elapses and aborts.
+      mock.timers.tick(1_000)
+      assert.equal(controller.signal.aborted, true)
+      assert.equal(controller.signal.reason, AGENT_RUN_ABORT_REASON_TIMEOUT)
+      scheduler.clear()
+    } finally {
+      mock.timers.reset()
+    }
+  })
+
+  it('with pauses excluded, a long host-side wait (approval modal) no longer trips the hard cap', () => {
+    mock.timers.enable({ apis: ['setTimeout', 'Date'] })
+    try {
+      const controller = new AbortController()
+      // Idle 1s, hard cap 5s. The local loop now runs with
+      // `excludePausesFromHardMax: true`, so a run parked on an approval modal
+      // for the whole cap survives — the prompt is answered, not timed out.
+      const deadline = new AgentRunDeadline(1_000, 5_000, Date.now(), Date.now, {
+        excludePausesFromHardMax: true,
+      })
+      const scheduler = createAgentRunAbortScheduler(controller, deadline)
+      scheduler.schedule()
+      deadline.pause() // approval modal opens
+      mock.timers.tick(60_000)
+      assert.equal(controller.signal.aborted, false, 'an hour of modal wait is not runaway work')
+      deadline.resume() // user answers; the tool executes
+      // Unpaused time is still bounded: after the resume, the armed cap (idle
+      // window 1s, hard cap 5s of unpaused time) fires as usual.
       mock.timers.tick(1_000)
       assert.equal(controller.signal.aborted, true)
       assert.equal(controller.signal.reason, AGENT_RUN_ABORT_REASON_TIMEOUT)
