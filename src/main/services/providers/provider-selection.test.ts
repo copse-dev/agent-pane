@@ -608,7 +608,7 @@ describe('buildProvider refuses host-routed selections (issue #2478)', () => {
         await setSetting('extraProviders', [])
         await assert.rejects(
           () => describeProvider('acme:model-1'),
-          /provider for acme:model-1 is no longer configured.*Choose a configured model in Settings/i,
+          /provider for acme:model-1 is no longer configured.*Choose a configured model using the model picker/i,
         )
       } finally {
         setApiKey('acme', '')

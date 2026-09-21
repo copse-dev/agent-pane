@@ -57,7 +57,7 @@ describe('stale custom-provider model selection', () => {
 
     const transcript = await assistantTranscript()
     assert.match(transcript, new RegExp(`provider for ${STALE_ROUTE} is no longer configured`, 'i'))
-    assert.match(transcript, /Choose a configured model in Settings/i)
+    assert.match(transcript, /Choose a configured model using the model picker/i)
     // A response or usage chunk would mean the turn escaped the main-process
     // provider-selection guard. This error-only transcript is the live boundary
     // before any provider client is asked to stream a model response.
