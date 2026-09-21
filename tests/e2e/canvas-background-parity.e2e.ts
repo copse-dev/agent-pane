@@ -177,23 +177,37 @@ async function renderCanvas(prompt: string, expectedToolCount: number): Promise<
   })
 }
 
-async function saveCanvasPreviewScreenshot(filename: string): Promise<void> {
+async function saveCanvasPreviewScreenshot(filename: string, title: string): Promise<void> {
   // The fixed-size preparation dispatches a resize, which rebuilds the transcript
   // and restores completed rollups to their collapsed state. Prepare first, then
   // reveal the preview in the final layout that will actually be captured.
   await prepareE2eScreenshot()
+  // Flipping `details.open` directly records no preference, so a rebuild that
+  // lands after the visibility check (seen on Electron 44.3 / Chromium
+  // 152.0.7977.78) collapses the rollup again and chromedriver measures a 0x0
+  // card. Open the rollup through its real summary handler, which records the
+  // choice, and do the same for any other collapsed ancestor.
+  await pinPreviewRollupOpen(title)
   await browser.waitUntil(
     async () =>
-      browser.execute(() => {
-        const card = document.querySelector<HTMLElement>('.canvas-preview-card')
+      browser.execute((expectedTitle) => {
+        const card = Array.from(
+          document.querySelectorAll<HTMLElement>('.canvas-preview-card'),
+        ).find(
+          (candidate) =>
+            candidate.querySelector('.canvas-preview-title')?.textContent === expectedTitle,
+        )
         if (!card) return false
         for (let ancestor = card.parentElement; ancestor; ancestor = ancestor.parentElement) {
-          if (ancestor instanceof HTMLDetailsElement) ancestor.open = true
+          if (ancestor instanceof HTMLDetailsElement && !ancestor.open) {
+            ancestor.querySelector<HTMLElement>(':scope > summary')?.click()
+            return false
+          }
         }
         card.scrollIntoView({ block: 'center', inline: 'nearest' })
         const rect = card.getBoundingClientRect()
         return rect.width > 0 && rect.height > 0
-      }),
+      }, title),
     { timeout: 15_000, timeoutMsg: 'expected the expanded canvas preview to be visible' },
   )
   await waitForSettledLayout('.canvas-preview-card')
@@ -278,9 +292,8 @@ describe('canvas background parity', () => {
         `preview ${JSON.stringify(previewCorner)} should match theme ${JSON.stringify(themePixel)}`,
       )
     }
-    await saveCanvasPreviewScreenshot('canvas-transparent-background-dark.png')
+    await saveCanvasPreviewScreenshot('canvas-transparent-background-dark.png', TITLE)
 
-    await pinPreviewRollupOpen(TITLE)
     await browser.execute((title) => {
       const candidate = Array.from(
         document.querySelectorAll<HTMLElement>('.canvas-preview-card'),
