@@ -144,13 +144,18 @@ describe('git changes image preview', function () {
     const stopButton = await $('.stop-btn')
     await stopButton.waitForDisplayed({ timeout: 15_000 })
 
-    await browser.execute(() => {
-      document
-        .querySelector<HTMLElement>(
-          '#git-diff-viewer-host .git-image-diff-img[alt="staged.png (before)"]',
-        )
-        ?.focus()
-    })
+    await browser.waitUntil(
+      () =>
+        browser.execute(() => {
+          const target = document.querySelector<HTMLElement>(
+            '#git-diff-viewer-host .git-image-diff-img[alt="staged.png (before)"]',
+          )
+          if (!target) return false
+          target.focus()
+          return document.activeElement === target
+        }),
+      { timeout: 5_000, timeoutMsg: 'expected the current before image to receive focus' },
+    )
     await browser.keys('Enter')
     const preview = await $('dialog.attachment-preview-dialog[open]')
     await preview.waitForDisplayed({ timeout: 5_000 })
