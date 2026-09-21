@@ -208,7 +208,13 @@ export async function recoverUnpersistedWorktree(input: {
   // checkout to reclaim. Prove that locally before paying for repository-root
   // resolution plus `git worktree list`; allocation still performs Git's
   // authoritative registration check, including for missing/prunable records.
-  const canonicalPath = await realpath(target).catch(() => null)
+  const canonicalPath = await realpath(target).catch((error: unknown) => {
+    if (isRecord(error)) {
+      const code = error['code']
+      if (code === 'ENOENT' || code === 'ENOTDIR') return null
+    }
+    throw error
+  })
   if (!canonicalPath) return null
   const records = await listProjectWorktrees(input.projectRoot)
   const existing = records.find((record) => sameWorktreePath(record.path, target))
