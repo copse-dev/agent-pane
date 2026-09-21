@@ -203,6 +203,14 @@ function titleCaseSegment(segment) {
     return `${lower.charAt(0).toUpperCase()}${lower.slice(1)}`;
   }).join(" ");
 }
+function canonicalGrokLabel(labelOrId) {
+  const match = GROK_NAME.exec(labelOrId.trim());
+  if (!match?.[2]) return null;
+  const rest = match[3] ?? "";
+  if (rest !== "" && !/^\s/.test(rest)) return null;
+  const family = match[1] ? "Grok Build" : "Grok";
+  return `${family} ${match[2].replace(/-/g, ".")}${rest}`;
+}
 function canonicalVendorLabel(labelOrId) {
   const trimmed2 = labelOrId.trim();
   const gemini = GEMINI_NAME.exec(trimmed2);
@@ -288,14 +296,14 @@ function canonicalModelLabel(labelOrId) {
     const family = `${parsed2.family.charAt(0).toUpperCase()}${parsed2.family.slice(1)}`;
     return `Claude ${family} ${parsed2.version}${parsed2.rest}`;
   }
-  return canonicalGptLabel(labelOrId) ?? canonicalVendorLabel(labelOrId) ?? labelOrId;
+  return canonicalGptLabel(labelOrId) ?? canonicalVendorLabel(labelOrId) ?? canonicalGrokLabel(labelOrId) ?? labelOrId;
 }
 function claudeModelIdFromLabel(labelOrId) {
   const parsed2 = parseClaudeName(labelOrId);
   if (!parsed2 || parsed2.rest.trim() !== "") return null;
   return `claude-${parsed2.family}-${parsed2.version.replace(/\./g, "-")}`;
 }
-var CLAUDE_FAMILIES, FAMILY_PATTERN, VERSION_PATTERN, VERSION_FIRST, FAMILY_FIRST, GPT_NAME, GEMINI_NAME, GLM_NAME, DEEPSEEK_NAME, MISTRAL_NAME, MODELLED_VENDORS, DATED_SNAPSHOT, OPTION_SUFFIX, TOKEN_SPELLING, PARAM_COUNT, SHORT_CODE;
+var CLAUDE_FAMILIES, FAMILY_PATTERN, VERSION_PATTERN, VERSION_FIRST, FAMILY_FIRST, GPT_NAME, GEMINI_NAME, GLM_NAME, DEEPSEEK_NAME, MISTRAL_NAME, GROK_NAME, MODELLED_VENDORS, DATED_SNAPSHOT, OPTION_SUFFIX, TOKEN_SPELLING, PARAM_COUNT, SHORT_CODE;
 var init_model_label = __esm({
   "packages/llm/src/model-label.ts"() {
     CLAUDE_FAMILIES = ["opus", "sonnet", "haiku", "fable"];
@@ -314,7 +322,8 @@ var init_model_label = __esm({
     GLM_NAME = /^glm-(\d+(?:\.\d+)?)(?:-([a-z].*))?$/;
     DEEPSEEK_NAME = /^deepseek-([a-z]+)(?:-v(\d+(?:\.\d+)?))?$/;
     MISTRAL_NAME = /^mistral-([a-z]+)(?:-([a-z]+))?$/;
-    MODELLED_VENDORS = ["claude", "gpt", "gemini", "glm", "deepseek", "mistral"];
+    GROK_NAME = /^(?:(?:xai|spacexai):\s*)?grok[\s-]+(?:(build)[\s-]+)?(\d+(?:[.-]\d+)?)(.*)$/i;
+    MODELLED_VENDORS = ["claude", "gpt", "gemini", "glm", "deepseek", "mistral", "grok"];
     DATED_SNAPSHOT = /-(?:\d{8}|\d{4}-\d{2}-\d{2})$/;
     OPTION_SUFFIX = /\[[^\]]*\]$/;
     TOKEN_SPELLING = {
@@ -40186,8 +40195,9 @@ var init_model_intellect_generated = __esm({
       "GPT-5.6 Terra": "gpt-5.6-terra",
       "GPT-5.6-Terra": "gpt-5.6-terra",
       "Grok 4.5": "grok-4.5",
+      "Grok Build 0.1": "grok-build-0-1-06-16",
       "grok-4-5": "grok-4.5",
-      "grok-build-0.1": "grok-4.5",
+      "grok-build-0.1": "grok-build-0-1-06-16",
       "Haiku 4.5": "claude-haiku-4-5",
       "Kimi K2.6": "moonshotai/kimi-k2.6",
       "Kimi K3": "moonshotai/kimi-k3",
@@ -40224,7 +40234,10 @@ var init_model_intellect_generated = __esm({
       "qwen3.6-35b-a3b": "qwen/qwen3.6-35b-a3b",
       "Sonnet 4.6": "claude-sonnet-4-6",
       "Sonnet 5": "claude-sonnet-5",
+      "SpaceXAI: Grok Build 0.1": "grok-build-0-1-06-16",
       "x-ai/grok-4.5": "grok-4.5",
+      "x-ai/grok-build-0.1": "grok-build-0-1-06-16",
+      "xAI: Grok Build 0.1": "grok-build-0-1-06-16",
       "xai/grok-4.5": "grok-4.5",
       "z-ai/glm-5.2": "zai-org/GLM-5.2",
       "zai/glm-5.2": "zai-org/GLM-5.2"
@@ -54470,22 +54483,12 @@ function resolvePlanInclusion(provider, modelId, snapshot) {
     exhausted: binding.usedPercent >= 100
   };
 }
-function planProviderForModel(id) {
-  const rid = (resolveIntellectModelId(id) ?? id).toLowerCase();
-  if (rid.includes("claude") || /\b(opus|sonnet|haiku|fable)\b/.test(rid)) return "claude";
-  if (rid.includes("grok")) return "cursor";
-  return null;
-}
 function applyPlanCoverage(candidate, snapshot, options = {}) {
   const mode = options.mode ?? "plan";
   if (mode === "inference" || !snapshot) return candidate;
-  const provider = candidate.planAccess?.provider ?? planProviderForModel(candidate.id);
-  if (!provider) return candidate;
-  const inclusion = resolvePlanInclusion(
-    provider,
-    candidate.planAccess?.modelId ?? candidate.id,
-    snapshot
-  );
+  const access = candidate.planAccess;
+  if (!access) return candidate;
+  const inclusion = resolvePlanInclusion(access.provider, access.modelId, snapshot);
   if (!inclusion) return candidate;
   const exhaustion = options.windowExhaustion?.get(inclusion.windowId);
   const expectedExhausted = mode === "expected" && exhaustion !== void 0 && exhaustion.total > 0 && exhaustion.hit / exhaustion.total >= EXPECTED_PLAN_EXHAUSTION_THRESHOLD;
@@ -54515,7 +54518,6 @@ function applyPlanCoverage(candidate, snapshot, options = {}) {
 var EXPECTED_PLAN_EXHAUSTION_THRESHOLD;
 var init_plan_inclusion = __esm({
   "src/shared/plan-inclusion.ts"() {
-    init_model_intellect();
     EXPECTED_PLAN_EXHAUSTION_THRESHOLD = 0.5;
   }
 });
@@ -68477,6 +68479,160 @@ var init_resend_message = __esm({
   }
 });
 
+// src/renderer/controller/model-selection.ts
+function commitThreadModelSelection(store2, api2, threadId, by, from, to) {
+  if (from === to) return;
+  store2.setState({
+    threads: store2.getState().threads.map(
+      (thread) => thread.id === threadId ? { ...thread, model: to, updatedAt: Date.now() } : thread
+    )
+  });
+  store2.emit("threads_changed");
+  const projectId = store2.getState().activeProjectId;
+  if (!projectId) return;
+  void api2.threads.recordModelSelection(projectId, threadId, by, from, to).then((selection2) => {
+    store2.setState({
+      threads: store2.getState().threads.map((thread) => {
+        if (thread.id !== threadId) return thread;
+        if (thread.modelSelections?.some((candidate) => candidate.id === selection2.id)) {
+          return thread;
+        }
+        return {
+          ...thread,
+          modelSelections: [...thread.modelSelections ?? [], selection2]
+        };
+      })
+    });
+    store2.emit("threads_changed");
+  }).catch((error61) => {
+    console.error("[models] could not record thread model selection", error61);
+  });
+}
+var init_model_selection2 = __esm({
+  "src/renderer/controller/model-selection.ts"() {
+  }
+});
+
+// src/renderer/controller/turn-recovery.ts
+function turnRecoveryForMessage(thread, failedMessageId) {
+  if (!thread || thread.messagesLoaded === false) return null;
+  if (thread.status !== "idle" && thread.status !== "error") return null;
+  if ((thread.pendingMessages?.length ?? 0) > 0) return null;
+  const failedIndex = thread.messages.length - 1;
+  const failed = thread.messages[failedIndex];
+  if (!failed || failed.id !== failedMessageId || failed.role !== "assistant" || failed.turnOutcome?.status !== "failed") {
+    return null;
+  }
+  if (failed.turnOutcome.source !== "provider") return {};
+  for (let index = failedIndex - 1; index >= 0; index -= 1) {
+    const candidate = thread.messages[index];
+    if (candidate?.role === "assistant" && candidate.turnOutcome?.status === "completed") {
+      if (candidate.model === void 0) continue;
+      return candidate.model !== failed.turnOutcome.model ? { lastKnownGoodModel: candidate.model } : {};
+    }
+  }
+  return {};
+}
+function recoverFailedTurn(store2, api2, projectId, threadId, failedMessageId, mode) {
+  const state = store2.getState();
+  if (state.activeProjectId !== projectId || state.activeThreadId !== threadId || !state.threads.some((thread2) => thread2.id === threadId)) {
+    return false;
+  }
+  const thread = state.threads.find((candidate) => candidate.id === threadId);
+  const recovery = turnRecoveryForMessage(thread, failedMessageId);
+  if (!thread || !recovery) return false;
+  if (mode === "last-known-good") {
+    const fallback = recovery.lastKnownGoodModel;
+    if (fallback === void 0) return false;
+    commitThreadModelSelection(store2, api2, threadId, "user", thread.model, fallback);
+  }
+  const payload = {
+    content: INTERRUPTED_TURN_CONTINUATION,
+    invokedSkills: [],
+    priorTodos: thread.todos ?? [],
+    ...thread.workingBrief !== void 0 ? { workingBrief: thread.workingBrief } : {}
+  };
+  addMessage(store2, threadId, "user", INTERRUPTED_TURN_CONTINUATION);
+  startHumanTurnTree(store2, threadId);
+  dispatchAgentRun(store2, api2, threadId, payload);
+  return true;
+}
+var INTERRUPTED_TURN_CONTINUATION;
+var init_turn_recovery = __esm({
+  "src/renderer/controller/turn-recovery.ts"() {
+    init_thread_helpers();
+    init_model_selection2();
+    init_message_queue();
+    INTERRUPTED_TURN_CONTINUATION = "Continue the interrupted turn from the persisted history. Do not repeat completed tool calls. Inspect the current state before taking further action, then finish the request.";
+  }
+});
+
+// src/renderer/views/turn-recovery-card.ts
+function createTurnRecoveryCard(options) {
+  const actions = el("div", { class: "turn-recovery-actions" });
+  const buttons = [];
+  const action = (label, callback) => {
+    const button = el(
+      "button",
+      { class: "ui-btn ui-btn-secondary turn-recovery-button", type: "button" },
+      refreshIcon("ui-icon ui-icon-sm"),
+      el("span", {}, label)
+    );
+    button.addEventListener("click", () => {
+      buttons.forEach((candidate) => candidate.disabled = true);
+      if (callback()) button.closest(".turn-recovery-card")?.remove();
+      else buttons.forEach((candidate) => candidate.disabled = false);
+    });
+    buttons.push(button);
+    actions.append(button);
+    return button;
+  };
+  action("Retry this turn", options.onRetry);
+  if (options.lastKnownGoodLabel !== void 0 && options.onRetryWithLastKnownGood !== void 0) {
+    action(`Use ${options.lastKnownGoodLabel} and retry`, options.onRetryWithLastKnownGood);
+  }
+  const body = el(
+    "div",
+    { class: "turn-recovery-body" },
+    el("div", { class: "turn-recovery-title" }, "Turn interrupted"),
+    el(
+      "div",
+      { class: "turn-recovery-detail" },
+      "Continue from the saved progress. Completed tool calls stay in the history and are not replayed automatically."
+    )
+  );
+  if (options.lastKnownGoodLabel !== void 0) {
+    body.append(
+      el(
+        "div",
+        { class: "turn-recovery-model-note" },
+        `An earlier turn completed with ${options.lastKnownGoodLabel}.`
+      )
+    );
+  }
+  return el(
+    "section",
+    {
+      class: "turn-recovery-card",
+      "data-turn-recovery-card": "",
+      "aria-label": "Interrupted turn recovery"
+    },
+    el(
+      "span",
+      { class: "turn-recovery-icon", "aria-hidden": "true" },
+      warningIcon("ui-icon ui-icon-sm")
+    ),
+    body,
+    actions
+  );
+}
+var init_turn_recovery_card = __esm({
+  "src/renderer/views/turn-recovery-card.ts"() {
+    init_helpers();
+    init_icons();
+  }
+});
+
 // src/shared/image-input-support.ts
 function isImageInputUnsupportedMessage(text2) {
   return text2.startsWith(IMAGE_INPUT_UNSUPPORTED_MESSAGE);
@@ -70331,6 +70487,7 @@ function mountConversation(root, store2, api2) {
     if (run2) syncRunLayout(thread, run2, msgId);
     if (msg.review) renderMessageReview(threadId, msgId);
     renderMessageHookCards(threadId, msgId);
+    renderMessageTurnRecovery(threadId, msgId);
   }
   function appendMessageEl(threadId, msgId, batched = false) {
     if (threadId !== store2.getState().activeThreadId) return;
@@ -70497,6 +70654,26 @@ function mountConversation(root, store2, api2) {
     });
     card.setAttribute("data-review-card", "");
     card.setAttribute("data-review-for", messageId);
+    msgEl.after(card);
+  }
+  function renderMessageTurnRecovery(threadId, messageId) {
+    if (threadId !== store2.getState().activeThreadId) return;
+    list.querySelector(`[data-turn-recovery-for="${messageId}"]`)?.remove();
+    const state = store2.getState();
+    const projectId = state.activeProjectId;
+    const thread = state.threads.find((candidate) => candidate.id === threadId);
+    const msgEl = list.querySelector(`[data-message-id="${messageId}"]`);
+    const recovery = turnRecoveryForMessage(thread, messageId);
+    if (!projectId || !msgEl || !recovery) return;
+    const fallback = recovery.lastKnownGoodModel;
+    const card = createTurnRecoveryCard({
+      ...fallback !== void 0 ? { lastKnownGoodLabel: displayModelLabel(fallback) } : {},
+      onRetry: () => recoverFailedTurn(store2, api2, projectId, threadId, messageId, "current-model"),
+      ...fallback !== void 0 ? {
+        onRetryWithLastKnownGood: () => recoverFailedTurn(store2, api2, projectId, threadId, messageId, "last-known-good")
+      } : {}
+    });
+    card.setAttribute("data-turn-recovery-for", messageId);
     msgEl.after(card);
   }
   function syncComparisonPanel() {
@@ -70757,7 +70934,16 @@ function mountConversation(root, store2, api2) {
     store2.on("thread_status_changed", (tid, status) => {
       if (status === "running") cancelThreadCompaction(tid);
       else scheduleThreadCompaction(tid);
-      if (tid === store2.getState().activeThreadId && status !== "running") setActivity(null);
+      if (tid !== store2.getState().activeThreadId) return;
+      if (status === "running") {
+        list.querySelectorAll("[data-turn-recovery-card]").forEach((card) => {
+          card.remove();
+        });
+      } else {
+        setActivity(null);
+        const last = getThreadById(store2, tid)?.messages.at(-1);
+        if (last?.role === "assistant") renderMessageTurnRecovery(tid, last.id);
+      }
     }),
     store2.on("agent_activity", (tid, label) => {
       if (tid !== store2.getState().activeThreadId) return;
@@ -70853,6 +71039,8 @@ var init_conversation = __esm({
     init_message_queue();
     init_fork_thread3();
     init_resend_message();
+    init_turn_recovery();
+    init_turn_recovery_card();
     init_image_input_support();
     init_toast();
     lazyToolCardBodies = /* @__PURE__ */ new WeakMap();
@@ -85451,40 +85639,6 @@ var init_container_run_control = __esm({
       finished: "Finished",
       failed: "Failed"
     };
-  }
-});
-
-// src/renderer/controller/model-selection.ts
-function commitThreadModelSelection(store2, api2, threadId, by, from, to) {
-  if (from === to) return;
-  store2.setState({
-    threads: store2.getState().threads.map(
-      (thread) => thread.id === threadId ? { ...thread, model: to, updatedAt: Date.now() } : thread
-    )
-  });
-  store2.emit("threads_changed");
-  const projectId = store2.getState().activeProjectId;
-  if (!projectId) return;
-  void api2.threads.recordModelSelection(projectId, threadId, by, from, to).then((selection2) => {
-    store2.setState({
-      threads: store2.getState().threads.map((thread) => {
-        if (thread.id !== threadId) return thread;
-        if (thread.modelSelections?.some((candidate) => candidate.id === selection2.id)) {
-          return thread;
-        }
-        return {
-          ...thread,
-          modelSelections: [...thread.modelSelections ?? [], selection2]
-        };
-      })
-    });
-    store2.emit("threads_changed");
-  }).catch((error61) => {
-    console.error("[models] could not record thread model selection", error61);
-  });
-}
-var init_model_selection2 = __esm({
-  "src/renderer/controller/model-selection.ts"() {
   }
 });
 
