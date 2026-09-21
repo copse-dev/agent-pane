@@ -7,8 +7,7 @@
 # (.github/runner = copse-e2e, .github/runner-checks = copse-checks) into ONE
 # superset image that any repo in the org can share:
 #
-#   * It carries the FULL e2e stack (Chromium/Electron + emoji font, with Xvfb
-#     retained for explicit headed debugging), so
+#   * It carries the FULL e2e stack (Chromium/Electron/Xvfb + emoji font), so
 #     it can run the heavy e2e tier. The check tier (typecheck/lint/unit) is a
 #     strict subset of what's installed here, so the SAME container also serves
 #     the light jobs — no second image, no static label partition. One pool

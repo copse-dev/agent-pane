@@ -52,7 +52,7 @@ today the choices are "block the machine" or "push and wait for CI".
 Meanwhile we now have a working way to spin up containers on cloud machines:
 
 - **`ci-runners/`** — a single superset Docker image that runs the full e2e
-  stack (headless Chromium/Electron, baked `node_modules` at `/opt/deps/tree` gated by
+  stack (Chromium-under-Xvfb, baked `node_modules` at `/opt/deps/tree` gated by
   `.lockhash`), currently used only as a GitHub Actions self-hosted runner.
 - **`scripts/burst-runners.mts`** — a provisioning CLI (AWS + Scaleway) that
   launches Ubuntu hosts, waits for SSH, uploads `ci-runners/`, writes a remote
@@ -66,9 +66,9 @@ local machine stays free while the suite runs.
 ## Decisions
 
 1. **One image, new mode — not a second image.** The `ci-runners` image
-   already carries everything e2e needs (Electron deps, baked node_modules,
-   and optional Xvfb for headed debugging). Add a non-registering **exec mode**
-   to `ci-runners/entrypoint.sh` (`RUNNER_MODE=exec`, or an alternate compose
+   already carries everything e2e needs (Electron deps, Xvfb, baked
+   node_modules). Add a non-registering **exec mode** to
+   `ci-runners/entrypoint.sh` (`RUNNER_MODE=exec`, or an alternate compose
    service): instead of registering with GitHub and taking jobs, the container
    starts `sshd`-less and idles, and work arrives via `docker exec` over the
    host's SSH connection. No GitHub runner registration means the dev flow
@@ -147,7 +147,7 @@ semantics: TTL is the safety net, `down` is the real cleanup).
   the baked-in token _only_ when the lockfile changed — surfacing that as a
   warning beats hiding it) → `node scripts/build.mts` → `wdio run
 wdio.ci.conf.ts` (or `wdio.conf.ts` under `--all`) with the requested specs
-  headlessly → tar artifacts back over the same SSH channel.
+  under Xvfb → tar artifacts back over the same SSH channel.
 - Runs are serialized per container, parallel across containers. `--shard N`
   can split a spec list across containers exactly as CI shards do.
 

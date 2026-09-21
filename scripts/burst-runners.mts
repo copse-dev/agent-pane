@@ -71,7 +71,7 @@ const DEFAULT_GITHUB_URL = 'https://github.com/copse-dev'
 const DEFAULT_NAME = 'copse-burst'
 const DEFAULT_RUNNER_GROUP = 'default'
 // One e2e runner per host. The prior default packed TWO e2e-capable runners on
-// a 16 GiB host (#1016); under load two Electron suites + Docker + page
+// a 16 GiB host (#1016); under load two Electron suites + Docker + Xvfb + page
 // cache oversubscribed the swapless box, so the HOST OOM-killer — not the 6 GiB
 // container cap — killed WebDriver sessions mid-run (the timeout-clustered burst
 // failures, diagnosed per runner_name). Dropping to one e2e runner gives that

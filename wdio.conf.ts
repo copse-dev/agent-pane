@@ -16,7 +16,7 @@ import { assertNoErrorToasts } from './tests/e2e/helpers/assert-no-error-toasts.
 import { resolveElectronBrowserVersion } from './tests/e2e/helpers/electron-browser-version.ts'
 import { assignDebugPort, type ChromeCapabilities } from './tests/e2e/helpers/debug-port.ts'
 import { driverVerboseOptions } from './tests/e2e/helpers/driver-verbose.ts'
-import { shouldRunE2eHeadless } from './tests/e2e/helpers/display-mode.mts'
+import { shouldUseChromiumHeadless } from './tests/e2e/helpers/display-mode.mts'
 import { E2E_GIT_BRANCH, E2E_SHELL } from './tests/e2e/helpers/e2e-env.ts'
 import { installE2eProfileCleanup } from './tests/e2e/helpers/profile-cleanup.ts'
 import {
@@ -38,7 +38,7 @@ const chromedriverBinary =
     'chromedriver',
   )
 const electronBrowserVersion = resolveElectronBrowserVersion(electronBinary, chromedriverBinary)
-const runHeadless = shouldRunE2eHeadless()
+const useChromiumHeadless = shouldUseChromiumHeadless()
 
 let e2eUserDataDir: string | null = null
 let cleanupE2eUserDataDir: (() => void) | null = null
@@ -90,7 +90,7 @@ export const config: Options.Testrunner = {
         excludeSwitches: ['enable-automation'],
         args: [
           `--app=${electronShell}`,
-          ...(runHeadless ? ['--headless=new'] : []),
+          ...(useChromiumHeadless ? ['--headless=new'] : []),
           // Reference PNGs are reviewed at 2x on every host; without this,
           // Chromium inherits the display's DPR and the baselines resize when
           // they move between Retina macOS and Linux CI.

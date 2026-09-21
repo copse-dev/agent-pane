@@ -10,7 +10,7 @@
 #
 # Works unchanged on Linux, macOS (Docker Desktop/OrbStack/Colima), and Windows
 # (Docker Desktop in Linux-containers mode). Scale `runner` to your core/RAM
-# budget — this superset image runs headless Chromium/Electron for e2e, so size for the
+# budget — this superset image runs Chromium-under-Xvfb for e2e, so size for the
 # heavy tier: ~4-6 GB + ~2 cores per concurrent runner.
 services:
   runner:
@@ -92,7 +92,7 @@ services:
       - seccomp=unconfined
       - apparmor=unconfined
       - systempaths=unconfined
-    # Superset image runs the memory-hungry headless Chromium/Electron e2e suite, so
+    # Superset image runs the memory-hungry Chromium-under-Xvfb e2e suite, so
     # size for the heavy tier even though light jobs also land here. ~4-6 GB per
     # concurrent runner; cap so one shard can't take the host down.
     mem_limit: 6g
