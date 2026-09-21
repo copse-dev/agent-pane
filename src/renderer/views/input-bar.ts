@@ -3,6 +3,7 @@ import { outlineIcon } from '../dom/outline-icon.ts'
 import { closeIcon } from '../dom/icons.ts'
 import { attachmentIcon } from '../dom/attachment-icons.ts'
 import { showContextMenu } from '../dom/context-menu.ts'
+import { formatMarkdownQuote } from '../dom/markdown-quote.ts'
 import { attachImageExpand } from '../attachments/image-expand.ts'
 import { attachTextExpand } from '../attachments/text-expand.ts'
 import { attachVideoExpand } from '../attachments/video-expand.ts'
@@ -2414,6 +2415,16 @@ export function mountInputBar(
     // the reference sits inside the sentence the user is writing.
     attachTextBlock: (content: string, label?: string): void => {
       composer.insertPasteChip(content, label)
+    },
+    // Unlike attachTextBlock, a quote lands as literal editable text so the
+    // user can trim or edit it inline before sending, matching how a reply
+    // quote behaves everywhere else.
+    quoteText: (content: string): void => {
+      const quote = formatMarkdownQuote(content)
+      const caret = composer.selectionStart
+      const prevChar = caret > 0 ? composer.value[caret - 1] : undefined
+      const needsLeadingBreak = prevChar !== undefined && prevChar !== '\n'
+      composer.insertText(`${needsLeadingBreak ? '\n\n' : ''}${quote}\n\n`)
     },
     attachImage: addImageChip,
     attachVideo: addVideoChip,

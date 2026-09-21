@@ -42,12 +42,17 @@ export function findMatchOffsets(haystack: string, needle: string): number[] {
   return offsets
 }
 
-let openImpl: (() => void) | null = null
+let openImpl: ((query?: string) => void) | null = null
 let closeImpl: (() => void) | null = null
 let isOpenImpl: (() => boolean) | null = null
 
-export function openConversationSearch(): void {
-  openImpl?.()
+/**
+ * Open the find bar. With `query`, prefills it and runs the search — used by
+ * the transcript's "Search" context menu action to reuse this bar instead of
+ * inventing a second search surface.
+ */
+export function openConversationSearch(query?: string): void {
+  openImpl?.(query)
 }
 
 export function closeConversationSearch(): void {
@@ -248,9 +253,10 @@ export function mountConversationSearch(root: HTMLElement): void {
     close()
   })
 
-  function open(): void {
+  function open(query?: string): void {
     const alreadyOpen = !bar.hidden
     bar.hidden = false
+    if (query !== undefined) input.value = query
     if (!alreadyOpen) {
       // Re-run after the transcript rebuilds (streaming tokens, tool updates,
       // thread switches) so highlighted ranges never point at detached nodes.

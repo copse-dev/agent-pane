@@ -36,6 +36,7 @@ function recordingHandlers(): { handlers: PromptAttachmentHandlers; recorded: Re
         recorded.files.push(f)
       },
       attachTextBlock: (): void => {},
+      quoteText: (): void => {},
       attachImage: (dataUrl, mimeType): void => {
         recorded.images.push({ dataUrl, mimeType })
       },
