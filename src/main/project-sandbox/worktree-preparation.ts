@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
-import { lstatSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
+import { lstatSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { wrapCommandWithSandboxMacOS } from '@anthropic-ai/sandbox-runtime/dist/sandbox/macos-sandbox-utils.js'
 import {
   cleanupBwrapMountPoints,
@@ -29,12 +29,60 @@ export function requirePreparationSandbox(): void {
 }
 
 /** Reject redirected cache grants before ASRT can resolve a symlink into a broader write root. */
-export function preparationCacheRoots(env: NodeJS.ProcessEnv, create: boolean): string[] {
+export function preparationCacheRoots(
+  env: NodeJS.ProcessEnv,
+  create: boolean,
+  cargoAdapter = false,
+): string[] {
   const cache = resolve(copseCacheDir(env))
-  const paths = [cache, ...copseManagedPreparationCacheDirs(env).map((path) => resolve(path))]
+  const cargo = join(cache, 'cargo')
+  const paths = [
+    cache,
+    ...copseManagedPreparationCacheDirs(env)
+      .map((path) => resolve(path))
+      .filter((path) => cargoAdapter || path !== cargo),
+  ]
   for (const path of paths) {
     if (lstatSync(path, { throwIfNoEntry: false })?.isSymbolicLink()) {
       throw new Error(`Preparation cache must not be a symlink: ${path}`)
+    }
+  }
+  for (const name of ['config', 'config.toml', 'credentials', 'credentials.toml']) {
+    const path = join(cargo, name)
+    if (cargoAdapter && lstatSync(path, { throwIfNoEntry: false })) {
+      throw new Error(
+        `Automatic Cargo cache must not contain configuration or credentials: ${path}`,
+      )
+    }
+  }
+  const cargoStructures = cargoAdapter
+    ? [
+        join(cargo, 'git'),
+        join(cargo, 'git', 'db'),
+        join(cargo, 'git', 'checkouts'),
+        join(cargo, 'registry'),
+        join(cargo, 'registry', 'cache'),
+        join(cargo, 'registry', 'index'),
+        join(cargo, 'registry', 'src'),
+      ]
+    : []
+  for (const path of cargoStructures) {
+    const structure = lstatSync(path, { throwIfNoEntry: false })
+    if (!structure) continue
+    if (structure.isSymbolicLink()) {
+      throw new Error(`Cargo preparation cache structure must not be a symlink: ${path}`)
+    }
+    if (!structure.isDirectory())
+      throw new Error(`Cargo preparation cache structure must be a directory: ${path}`)
+    // Cargo chooses the immediate repository/index directory names. Reject a
+    // pre-positioned redirect there while allowing dependency-owned symlinks
+    // within checked-out source trees.
+    for (const entry of readdirSync(path, { withFileTypes: true, recursive: false })) {
+      if (entry.isSymbolicLink()) {
+        throw new Error(
+          `Cargo preparation cache structure must not be a symlink: ${join(path, entry.name)}`,
+        )
+      }
     }
   }
   // The profile root is host-configured; canonicalize that root, but never a
@@ -52,7 +100,17 @@ export function preparationCacheRoots(env: NodeJS.ProcessEnv, create: boolean): 
 }
 
 /** Executable files and known runtime installations, never the entire user profile. */
-function preparationExecutableReadPaths(command: string, env: NodeJS.ProcessEnv): string[] {
+export function legacyPreparationRuntimeReadPaths(automaticCargo: boolean): string[] {
+  return automaticCargo
+    ? []
+    : ['.cargo/bin', '.rustup/toolchains'].map((path) => join(homedir(), path))
+}
+
+function preparationExecutableReadPaths(
+  command: string,
+  env: NodeJS.ProcessEnv,
+  automaticCargo: boolean,
+): string[] {
   const paths: string[] = []
   for (const candidate of command.includes('/')
     ? [resolve(command)]
@@ -61,19 +119,67 @@ function preparationExecutableReadPaths(command: string, env: NodeJS.ProcessEnv)
         .filter(Boolean)
         .map((directory) => join(directory, command))) {
     try {
-      paths.push(candidate, realpathSync(candidate))
+      const executable = realpathSync(candidate)
+      paths.push(candidate, executable)
+      if (basename(command) === 'go' && basename(dirname(executable)) === 'bin') {
+        const toolchain = dirname(dirname(executable))
+        // A PATH wrapper named `go` must not turn its grandparent (often HOME)
+        // into a read grant. Recognise a real distribution by its compiler,
+        // then grant only Go-owned subtrees rather than the whole toolchain root.
+        const goArch =
+          process.arch === 'x64' ? 'amd64' : process.arch === 'ia32' ? '386' : process.arch
+        const compiler = join(toolchain, 'pkg', 'tool', `${process.platform}_${goArch}`, 'compile')
+        const containedRuntimePath = (path: string): string | null => {
+          if (!lstatSync(path, { throwIfNoEntry: false })) return null
+          const canonical = realpathSync(path)
+          const rel = relative(toolchain, canonical)
+          return rel.length === 0 || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)
+            ? null
+            : canonical
+        }
+        const version = containedRuntimePath(join(toolchain, 'VERSION'))
+        if (version && containedRuntimePath(compiler)) {
+          for (const path of ['bin', 'lib', 'pkg', 'src']) {
+            const absolute = join(toolchain, path)
+            const canonical = containedRuntimePath(absolute)
+            if (canonical) paths.push(absolute, canonical)
+          }
+          paths.push(join(toolchain, 'VERSION'), version)
+        }
+      }
+      if (
+        (basename(command) === 'cargo' || basename(command) === 'rustc') &&
+        basename(dirname(executable)) === 'bin'
+      ) {
+        const toolchain = dirname(dirname(executable))
+        const containedRuntimePath = (path: string): string | null => {
+          if (!lstatSync(path, { throwIfNoEntry: false })) return null
+          const canonical = realpathSync(path)
+          const rel = relative(toolchain, canonical)
+          return rel.length === 0 || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)
+            ? null
+            : canonical
+        }
+        const cargo = containedRuntimePath(join(toolchain, 'bin', 'cargo'))
+        const rustc = containedRuntimePath(join(toolchain, 'bin', 'rustc'))
+        if (cargo && rustc) {
+          for (const path of ['bin', 'lib']) {
+            const absolute = join(toolchain, path)
+            const canonical = containedRuntimePath(absolute)
+            if (canonical) paths.push(absolute, canonical)
+          }
+        }
+      }
     } catch {
       /* Not an installed executable. */
     }
   }
-  for (const path of [
-    '.bun/bin',
-    '.cargo/bin',
-    '.rustup/toolchains',
-    '.pyenv/versions',
-    '.local/share/uv/python',
+  for (const absolute of [
+    ...legacyPreparationRuntimeReadPaths(automaticCargo),
+    ...['.bun/bin', '.pyenv/versions', '.local/share/uv/python'].map((path) =>
+      join(homedir(), path),
+    ),
   ]) {
-    const absolute = join(homedir(), path)
     if (lstatSync(absolute, { throwIfNoEntry: false })) paths.push(absolute)
   }
   return paths
@@ -87,6 +193,12 @@ interface PreparationProcessOptions {
   signal?: AbortSignal
   output?: (text: string) => void
   additionalExecutables?: string[]
+  /** Private automatic-adapter control; declarations cannot request this grant shape. */
+  projectWritable?: boolean
+  /** Give automatic Go commands disposable build bookkeeping, never shared writes. */
+  goBookkeeping?: boolean
+  /** Private automatic Cargo adapter cache/config boundary. */
+  cargoAdapter?: boolean
 }
 
 /**
@@ -103,16 +215,38 @@ export async function runWorktreePreparationProcess(
 ): Promise<string> {
   requirePreparationSandbox()
   options.signal?.throwIfAborted()
+  const root = realpathSync(options.root)
   // Some read-only manager checks need temporary bookkeeping. Give each probe
   // private, disposable scratch; never make the project or shared caches writable.
-  const scratch =
-    options.mode === 'preflight'
-      ? realpathSync(mkdtempSync(join(tmpdir(), 'copse-preflight-')))
-      : join(realpathSync(options.root), '.tmp', 'worktree-preparation')
+  // Linux read grants are mounted after write grants. A scratch nested under a
+  // read-only project would therefore be shadowed by the later project bind.
+  const disposableScratch = options.mode === 'preflight' || options.projectWritable === false
+  let scratch: string
+  if (disposableScratch) {
+    const prefix = options.mode === 'preflight' ? 'copse-preflight-' : 'copse-prepare-'
+    scratch = realpathSync(mkdtempSync(join(tmpdir(), prefix)))
+  } else {
+    const scratchParent = join(root, '.tmp')
+    const candidate = join(scratchParent, 'worktree-preparation')
+    for (const path of [scratchParent, candidate]) {
+      if (lstatSync(path, { throwIfNoEntry: false })?.isSymbolicLink()) {
+        throw new Error(`Preparation scratch must not be a symlink: ${path}`)
+      }
+    }
+    // Linux bwrap only binds write allow-list entries that already exist. Create
+    // and canonicalize stable scratch before constructing the writable project's
+    // exact bind, rejecting redirected `.tmp` paths before granting access.
+    mkdirSync(candidate, { recursive: true })
+    scratch = realpathSync(candidate)
+    const rel = relative(root, scratch)
+    if (rel.length === 0 || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+      throw new Error(`Preparation scratch escaped the worktree: ${scratch}`)
+    }
+  }
   try {
     return await runContainedPreparationProcess(command, args, options, scratch)
   } finally {
-    if (options.mode === 'preflight') rmSync(scratch, { recursive: true, force: true })
+    if (disposableScratch) rmSync(scratch, { recursive: true, force: true })
   }
 }
 
@@ -123,8 +257,41 @@ async function runContainedPreparationProcess(
   scratch: string,
 ): Promise<string> {
   const root = realpathSync(options.root)
-  const caches = preparationCacheRoots(options.env, options.mode === 'prepare')
-  const writable = options.mode === 'prepare'
+  if (options.cargoAdapter) {
+    for (let directory = root; ; directory = dirname(directory)) {
+      if (directory !== root) {
+        const manifest = join(directory, 'Cargo.toml')
+        if (lstatSync(manifest, { throwIfNoEntry: false })) {
+          throw new Error(
+            `Automatic Cargo preparation does not use an enclosing workspace manifest: ${manifest}`,
+          )
+        }
+      }
+      for (const name of ['config.toml', 'config']) {
+        const path = join(directory, '.cargo', name)
+        if (lstatSync(path, { throwIfNoEntry: false })) {
+          throw new Error(
+            `Automatic Cargo preparation does not load project or ancestor configuration: ${path}`,
+          )
+        }
+      }
+      if (dirname(directory) === directory) break
+    }
+  }
+  const caches = preparationCacheRoots(
+    options.env,
+    options.mode === 'prepare',
+    options.cargoAdapter === true,
+  )
+  const preparing = options.mode === 'prepare'
+  const projectWritable = preparing && options.projectWritable !== false
+  if (options.goBookkeeping) {
+    options.env = {
+      ...options.env,
+      GOCACHE: join(scratch, 'go-build'),
+      GOTMPDIR: scratch,
+    }
+  }
   const env = withSandboxShellPath(
     withSandboxTmpEnv(envForRendererChildProcess(options.env), scratch),
   )
@@ -144,7 +311,7 @@ async function runContainedPreparationProcess(
       ...args,
     ]),
     binShell: '/bin/bash',
-    needsNetworkRestriction: options.offline || !writable,
+    needsNetworkRestriction: options.offline || !preparing,
     allowAllUnixSockets: false,
     allowGitConfig: false,
     readConfig: {
@@ -158,15 +325,17 @@ async function runContainedPreparationProcess(
           (path) => path !== homedir() && path !== `${homedir()}/**`,
         ),
         ...electronRuntimeAllowReadPaths(),
-        ...preparationExecutableReadPaths(command, env),
+        ...preparationExecutableReadPaths(command, env, options.cargoAdapter === true),
         ...(options.additionalExecutables ?? []).flatMap((executable) =>
-          preparationExecutableReadPaths(executable, env),
+          preparationExecutableReadPaths(executable, env, options.cargoAdapter === true),
         ),
         ...sandboxRuntimeHelperAllowReadPaths(),
       ],
     },
     writeConfig: {
-      allowOnly: writable ? ['/dev/null', root, ...caches] : ['/dev/null', scratch],
+      allowOnly: preparing
+        ? ['/dev/null', scratch, ...caches, ...(projectWritable ? [root] : [])]
+        : ['/dev/null', scratch],
       denyWithinAllow: [],
       // Package tarballs contain inert .idea/.vscode metadata. Protect the
       // checkout's configuration rather than denying those names in every
@@ -174,7 +343,7 @@ async function runContainedPreparationProcess(
       // The whole .git path also covers hooks. Emitting both .git/hooks and an
       // absent .git makes bwrap create a directory and then try to mask it as a
       // file, aborting before execution on a fresh Linux project.
-      mandatoryDenyPaths: writable
+      mandatoryDenyPaths: projectWritable
         ? [
             ...workspaceMandatoryWriteDenyPaths(root).filter(
               (path) => !path.includes('*') && !path.startsWith(`${join(root, '.git')}/`),
@@ -188,7 +357,7 @@ async function runContainedPreparationProcess(
   if (process.platform === 'darwin') {
     wrapped = wrapCommandWithSandboxMacOS({
       ...params,
-      allowLocalBinding: writable && !options.offline,
+      allowLocalBinding: preparing && !options.offline,
     })
   } else {
     wrapped = await wrapCommandWithSandboxLinux({
@@ -213,7 +382,7 @@ async function runContainedPreparationProcess(
       const abort = (): void => {
         stopKill ??= terminateProcessTree(child)
       }
-      const timeout = setTimeout(abort, writable ? 10 * 60_000 : 5_000)
+      const timeout = setTimeout(abort, preparing ? 10 * 60_000 : 5_000)
       options.signal?.addEventListener('abort', abort, { once: true })
       if (options.signal?.aborted) abort()
       child.stdout.on('data', (data: Buffer) => {

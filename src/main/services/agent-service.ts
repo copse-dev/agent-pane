@@ -150,6 +150,10 @@ import {
   getAgentRunTodos,
   setAgentRunTodos,
 } from './agent-run-todos.ts'
+import {
+  continuationBudgetExhaustedSummary,
+  type ContinuationGrantCounts,
+} from './continuation-budget-summary.ts'
 import { getGithubRepoSlug, getGitDiffText, countDiffChangedLines } from './github/git-service.ts'
 import { getAgentExecutionRoot, getAgentProjectRoot } from './execution-root.ts'
 import { isWorkspaceTrusted } from './security/workspace-trust.ts'
@@ -165,7 +169,10 @@ import {
 } from './hooks/run-deadline.ts'
 import { fireSessionStartHook } from './hooks/session-start.ts'
 import { asTurnTreeId, type TurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
-import type { ContinuationGrant } from '@copse/agent/hooks/continuation-budget.ts'
+import type {
+  ContinuationGrant,
+  ContinuationGrantReason,
+} from '@copse/agent/hooks/continuation-budget.ts'
 import { currentAgentSessionInfo } from './hooks/agent-session.ts'
 import { getContinuationLedger } from './hooks/continuation-ledger.ts'
 import { isGitAvailable } from './tool-availability.ts'
@@ -202,6 +209,7 @@ import {
 import { parseAcpModelSelection } from '@shared/acp.ts'
 import { AcpTurnFailure, runAcpAgentFromSettings } from './acp/acp-agent-service.ts'
 import {
+  ACP_UNFINISHED_TURN_BUDGET_FALLBACK,
   ACP_UNFINISHED_TURN_FALLBACK,
   ACP_UNFINISHED_TURN_RECOVERY_OPERATION_ID,
   ACP_UNFINISHED_TURN_RECOVERY_PROMPT,
@@ -220,6 +228,7 @@ import { isRecord } from '@shared/unknown-value.ts'
 import { parsePluginModelSelection } from '@shared/plugin-model.ts'
 import { getPluginToolRuntimeController } from './plugins/plugin-tool-controller.ts'
 import { buildPluginModelTurn } from './plugins/plugin-model-turn.ts'
+import { perfMark, perfSpan } from './diagnostics/perf-trace.ts'
 
 // Re-export the public surface so existing IPC/test imports stay stable while the
 // implementation lives in focused modules.
@@ -729,12 +738,13 @@ export async function runAgent(
   registry: ToolRegistry,
   options?: RunAgentOptions,
 ): Promise<RunAgentResult> {
+  perfMark('ttft:agent-run-start')
   // A new turn: drop last turn's restore point so the next dirty-worktree edit
   // snapshots the user's current uncommitted work before applying over it.
   resetSessionBackup()
 
   const requestedModel = options?.model ?? getSetting<string>('model', DEFAULT_APP_CHAT_MODEL)
-  const resolved = await resolveAgentChatModel(requestedModel)
+  const resolved = await perfSpan('ttft:model-resolve', () => resolveAgentChatModel(requestedModel))
   const model = resolved.model
   recordThreadModel(threadId, model)
   // Persist the resolved model so a turn that fails before any usage (e.g. a
@@ -766,8 +776,17 @@ export async function runAgent(
   let pendingTurnOutcome: Omit<TurnOutcome, 'endedAt' | 'lastEvent'> | null = null
   let terminalOutcomeSent = false
   let terminalOutcome: TurnOutcome | undefined
+  let firstActivitySent = false
 
   const sendChunk = (chunk: StreamChunk): void => {
+    const firstVisibleActivity =
+      chunk.type === 'tool_call' ||
+      (chunk.type === 'text' && chunk.text.trim() !== '') ||
+      (chunk.type === 'reasoning' && chunk.text.trim() !== '')
+    if (firstVisibleActivity && !firstActivitySent) {
+      firstActivitySent = true
+      perfMark('ttft:main-first-activity', { kind: chunk.type })
+    }
     if (chunk.type === 'text' && chunk.text.trim()) lastTurnEvent = 'text'
     else if (chunk.type === 'reasoning' && chunk.text.trim()) lastTurnEvent = 'reasoning'
     else if (
@@ -971,6 +990,7 @@ export async function runAgent(
     acpRunModel: string | undefined,
     executorModel: string,
   ): Promise<RunAgentResult> => {
+    perfMark('ttft:acp-route-start')
     terminalContext = { executor: 'acp', provider: acpRunAgentId, model: executorModel }
     const controller = new AbortController()
     abortMap.set(threadId, controller)
@@ -1090,16 +1110,18 @@ export async function runAgent(
       // receives the same active first-party plugin hooks as the built-in loop.
       // Only Copse's bridged tools are listed because the host cannot inspect
       // the external agent's private tool catalogue.
-      const operatorInstructions = await assembleAcpTurnStart({
-        userText: promptTextForSubmit(userPrompt),
-        priorTodos: options?.priorTodos ?? [],
-        model: executorModel,
-        registry,
-        signal: controller.signal,
-        resolveGithubRepoSlug: () => getGithubRepoSlug(),
-        resolvePluginSetting,
-        recordHookRun: recordFunctionHookRun,
-      })
+      const operatorInstructions = await perfSpan('ttft:acp-turn-assembly', () =>
+        assembleAcpTurnStart({
+          userText: promptTextForSubmit(userPrompt),
+          priorTodos: options?.priorTodos ?? [],
+          model: executorModel,
+          registry,
+          signal: controller.signal,
+          resolveGithubRepoSlug: () => getGithubRepoSlug(),
+          resolvePluginSetting,
+          recordHookRun: recordFunctionHookRun,
+        }),
+      )
       let result = await runAcpAgentFromSettings({
         threadId,
         agentId: acpRunAgentId,
@@ -1171,8 +1193,11 @@ export async function runAgent(
       settleOpenToolCalls()
 
       if (endedAfterTools && !recoverySucceeded) {
-        sendChunk({ type: 'text', text: `\n\n${ACP_UNFINISHED_TURN_FALLBACK}` })
-        messages.push({ role: 'assistant', content: ACP_UNFINISHED_TURN_FALLBACK })
+        const fallback = recoveryAttempted
+          ? ACP_UNFINISHED_TURN_FALLBACK
+          : ACP_UNFINISHED_TURN_BUDGET_FALLBACK
+        sendChunk({ type: 'text', text: `\n\n${fallback}` })
+        messages.push({ role: 'assistant', content: fallback })
       }
 
       messages = messages.map((message): LLMMessage => {
@@ -1505,8 +1530,17 @@ export async function runAgent(
   // the renderer re-seeds the spent count on the next run of the same turn tree.
   const budgetLedger = getContinuationLedger()
   budgetLedger.seed(turnTreeId, options?.continuationBudgetUsed ?? 0)
+  const continuationGrants: ContinuationGrantCounts = {
+    'todo-closeout': 0,
+    'pre-review-todo': 0,
+    'post-review-remediation': 0,
+  }
   const continuationBudget: ContinuationGrant = {
-    tryGrant: () => budgetLedger.tryGrant(turnTreeId),
+    tryGrant: (reason: ContinuationGrantReason) => {
+      const granted = budgetLedger.tryGrant(turnTreeId)
+      if (granted) continuationGrants[reason] += 1
+      return granted
+    },
     remaining: () => budgetLedger.remaining(turnTreeId),
   }
 
@@ -2352,6 +2386,16 @@ export async function runAgent(
           loopStopReason !== undefined
             ? { type: 'done', stopReason: loopStopReason }
             : { type: 'done' }
+        const summary = continuationBudgetExhaustedSummary(getAgentRunTodos(), continuationGrants, {
+          remaining: continuationBudget.remaining(),
+          aborted: controller.signal.aborted,
+          failed: loopStopReason !== undefined,
+        })
+        if (summary !== null) {
+          const separatedSummary = `\n\n${summary}`
+          sendChunk({ type: 'text', text: separatedSummary })
+          trimmed.push({ role: 'assistant', content: separatedSummary })
+        }
         // C3 run→drain fold-back (E3): report the machine turns this run spent
         // in-process (closeout / pre-review / remediation) so the renderer folds them
         // back onto the turn tree's counter and its *next* queue drain respects the

@@ -1,7 +1,19 @@
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { chmod, mkdtemp, mkdir, readFile, rename, rm, unlink, writeFile } from 'node:fs/promises'
+import {
+  chmod,
+  lstat,
+  mkdtemp,
+  mkdir,
+  readFile,
+  realpath,
+  rename,
+  rm,
+  symlink,
+  unlink,
+  writeFile,
+} from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { threadWorktreeBranchName } from '@shared/git/worktree-policy.ts'
@@ -19,6 +31,7 @@ import {
   parseWorktreePorcelain,
   pruneSafeOrphans,
   readThreadWorktreeRecoveryMetadata,
+  removeRegisteredWorktreeCheckout,
   restoreRetiredThreadWorktree,
   retireThreadWorktree,
   sameWorktreePath,
@@ -173,6 +186,20 @@ describe('worktree manager', () => {
     assert.ok(!(await listProjectWorktrees(repo)).some((record) => record.path === worktree.path))
   })
 
+  it('removes an empty checkout root left after Git has finished its bookkeeping', async () => {
+    const { temp, repo } = await setup()
+    const path = join(temp, 'leftover-checkout')
+    git(repo, ['worktree', 'add', '-q', '-b', 'cleanup-leftover', path])
+    const canonicalPath = await realpath(path)
+    git(repo, ['worktree', 'remove', canonicalPath])
+    await mkdir(canonicalPath)
+
+    const removed = await removeRegisteredWorktreeCheckout(repo, canonicalPath)
+
+    assert.equal(removed.code, 0)
+    await assert.rejects(lstat(canonicalPath), /ENOENT/)
+  })
+
   it('parks a clean pushed PR branch and restores it without deleting the branch', async () => {
     const { temp, repo } = await setup()
     const remote = join(temp, 'remote.git')
@@ -228,6 +255,37 @@ describe('worktree manager', () => {
     assert.equal(restored.retiredAt, undefined)
   })
 
+  it('rejects symlinks that would redirect a managed checkout sandbox grant', async () => {
+    const { temp, repo } = await setup()
+    const managedRoot = join(temp, 'worktrees')
+    const outside = join(temp, 'outside')
+    await mkdir(managedRoot)
+    await mkdir(outside)
+    await symlink(outside, join(managedRoot, 'redirected-project'), 'dir')
+    await assert.rejects(
+      allocateThreadWorktree({
+        projectId: 'redirected-project',
+        threadId: 'thread',
+        projectRoot: repo,
+        prompt: 'Reject redirected parent',
+        baseBranch: 'main',
+      }),
+      /parent is redirected/,
+    )
+    await mkdir(join(managedRoot, 'project'))
+    await symlink(outside, join(managedRoot, 'project', 'thread'), 'dir')
+    await assert.rejects(
+      allocateThreadWorktree({
+        projectId: 'project',
+        threadId: 'thread',
+        projectRoot: repo,
+        prompt: 'Reject redirected checkout',
+        baseBranch: 'main',
+      }),
+      /must not be a symlink/,
+    )
+  })
+
   it('preserves a project subdirectory as the effective execution root', async () => {
     const { repo } = await setup()
     const projectRoot = join(repo, 'packages', 'app')
@@ -264,7 +322,7 @@ describe('worktree manager', () => {
   })
 
   it(
-    'does not execute repository hooks while creating a managed checkout',
+    'does not execute repository hooks or fsmonitor while creating a managed checkout',
     { skip: process.platform === 'win32' },
     async () => {
       const { temp, repo } = await setup()
@@ -272,6 +330,7 @@ describe('worktree manager', () => {
       const hook = join(repo, '.git', 'hooks', 'post-checkout')
       await writeFile(hook, `#!/bin/sh\nprintf ran > '${marker}'\n`)
       await chmod(hook, 0o755)
+      git(repo, ['config', 'core.fsmonitor', hook])
 
       await allocateThreadWorktree({
         projectId: 'project-1',

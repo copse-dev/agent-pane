@@ -145,24 +145,35 @@ The in-memory grant disappears on restart. The decision record does not: an answ
 `decision` spine event at `scope: external-read`, including the paths and whether the grant was
 remembered. Each later allowed command records a verdict sourced to `read-outside-grant`.
 
-## Native commit signing
+## Native commits and signing
 
-Copse's native `git_commit` tool honours the repository's Git signing configuration while keeping
-the commit subprocess inside the project sandbox. On macOS, Settings › Permissions offers an
-off-by-default grant that lets only that commit subprocess connect to the single Unix socket named
-by `SSH_AUTH_SOCK`. The path must be absolute, normalised, and a socket at the time of use. Internet
-access remains denied.
+`git_commit` runs fixed add/commit argv, preserving hooks and signing. Local commands
+stay inside the available project sandbox even when `git` has a remembered shell
+bypass. Without containment, each commit prompts before staging. Auto-run disabled
+also prompts. An unsuccessful helper never triggers an unsigned or unsandboxed retry.
 
-The grant is explicit because ssh-agent has no commit-only operation: Git hooks inherit the commit
-sandbox and can ask the agent to use any loaded key. Recommend `ssh-add -c` when enabling it. Linux
-does not receive the grant because seccomp cannot restrict Unix sockets by path; Windows has no
-project sandbox.
+On macOS, Settings → Permissions → Commit signing enables **scoped SSH signing
+approvals**, off by default. After a trusted sandboxed socket probe receives an OS
+permission denial, Copse asks to use the system SSH signer, one configured public key
+and the exact agent socket. Remembering covers that project and identity until app
+restart. Changes to the config, key, signer binary or socket require new approval.
+Always ask suppresses remembering; turning off the setting blocks further brokered
+signing. Config supplied by the repository never grants authority on its own.
 
-When `user.signingKey` names a private-key path, Copse reads only its non-symlink `.pub` sibling
-in the trusted main process and passes the public identity to Git as an inline `key::` value. The
-sandbox never gains read access to the private key or the `.ssh` directory. A small pinned patch to
-`@anthropic-ai/sandbox-runtime` makes its documented per-spawn `allowUnixSockets` option reach the
-macOS seatbelt profile; remove that patch once upstream ships the equivalent fix.
+The socket is available only to a separately sandboxed `/usr/bin/ssh-keygen`, with
+fixed arguments selecting that public key and the `git` signing namespace. Git and
+its hooks receive a single-use commit-signing endpoint; they cannot talk to ssh-agent
+directly. The configured private key remains unreadable. The helper and key are
+pinned through command-line config, so changing Git config during approval cannot
+replace the approved executable. The broker accepts bounded commit objects, not
+commands or arbitrary SSH authentication requests.
+
+The setting supports the default/system SSH signer. Custom signing programs and
+other configured helpers keep ordinary project sandbox access. Linux does not get a
+socket grant because its backend cannot restrict Unix sockets by path; Windows has
+no project sandbox. No global socket/network allowlist is widened. The existing
+pinned ASRT patch provides per-spawn macOS socket permissions for these isolated
+processes. See [the threat model](threat-model.md#scoped-ssh-signing) for exact limits.
 
 ## What an approval prompt says
 

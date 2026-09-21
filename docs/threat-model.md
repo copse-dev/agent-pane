@@ -97,6 +97,74 @@ project-defined MCP servers are gated behind workspace trust, the
    runtime alive. _Backstop target:_ persisted desired/observed state, idempotent
    reconciliation, TTL/idle reap, and complete-only checkpoints.
 
+## Internal Git execution
+
+Git status/diff and worktree bookkeeping are automatic app operations.
+`services/security/git-invocation.ts` centralizes their execution policy, including
+binary image previews. Only enumerated built-in operations are accepted. Repository
+aliases, external `git-*` commands and executable config overrides are refused;
+the shared snapshot builder can supply only `user.name` and `user.email` overrides.
+
+Execution-time overrides disable fsmonitor (GitSpawn), hooks, automatic maintenance,
+submodule recursion, signing and signature display. Diff/log/show request raw output
+without external diff or textconv. Included and worktree configuration cannot undo
+these overrides. Inherited Git config/executable injection is removed. Implicit
+partial-clone fetches are disabled. Explicit fetch/push retain their existing caller
+authorization and only built-in HTTP(S), SSH and file transports are enabled.
+Configuration inspection reads real values without invoking the configured helpers.
+
+Worktree bookkeeping uses the available project sandbox, with grants for Git
+administration, the selected destination and temporary indexes. Metadata and checkout
+redirections are rejected. Config writes are limited to branch recovery metadata and
+branch deletion; other calls protect config and hooks. There is no automatic
+unsandboxed retry. Windows and sandbox initialization failures retain the execution
+overrides without OS containment.
+
+The native `git_commit` tool preserves configured helpers and passes literal argv.
+When containment is available, a remembered shell basename cannot make it escape.
+With no sandbox (including SSH), each native commit requires authorization before
+staging. Disabling auto-run also prompts. Failed hooks or signatures never trigger
+an unsigned commit or an automatic unsandboxed retry. Custom fsmonitor, hooks and
+signers work within this boundary; external diff/textconv remain available through
+explicit shell commands while automatic previews need raw Git output.
+
+### Scoped SSH signing
+
+On macOS, the opt-in signing setting enables a separate broker for the system
+`/usr/bin/ssh-keygen`. A trusted sandboxed socket probe must receive EPERM/EACCES
+before Copse offers additional access. Git stderr and model hints are not evidence.
+Approval identifies the project, helper, public-key fingerprint and socket. Optional
+remembering lasts until app restart and is bound to the project path, signing config,
+public key, executable hash and socket inode. A changed identity requires approval;
+Always ask bypasses remembered grants. Disabling the setting prevents further signing.
+
+Only the separately sandboxed system signer gets the agent socket. Its fixed argv
+forces agent use, selects the approved public key and signs in the `git` namespace.
+It receives a clean environment and a bounded commit payload through stdin. Git and
+its hooks get a private, single-use broker endpoint, not the agent socket. The
+broker accepts commit objects, never paths, executables, permission requests or raw
+ssh-agent messages. The configured private key is explicitly unreadable even if it
+is stored outside the home directory. Execution-time overrides pin the approved
+signer and key against later config edits. Failure never downgrades the signature.
+
+Hooks can influence a commit or consume its one signing request, just as they can
+change a commit message or fail a commit. This grant permits Git commit signatures
+with the selected key; it does not authenticate to an SSH server or expose arbitrary
+loaded keys. Custom signers (including GPG), other helpers needing additional access,
+and platforms without socket-level confinement get no scoped escalation. They keep
+ordinary project access; deliberate host execution remains a separate shell approval.
+
+This is not a general allowlist of every Git configuration key or helper. Content
+filters such as Git LFS retain Git's normal conversion semantics and rely on the
+available sandbox; automatic Git without OS containment still has that residual
+risk. Silently bypassing filters would corrupt committed/restored content. Background
+operations do not acquire helper grants from repository-supplied configuration.
+
+Regression tests cover hostile fsmonitor, included config, diff/textconv, hooks and
+signing with the sandbox disabled; real seatbelt tests cover worktree lifecycle,
+scoped SSH signatures, remembered/changed approvals, denial before staging/hooks,
+config mutation while prompting, private-key and agent isolation, and forged errors.
+
 ## Design principles
 
 1. **Least privilege.** The agent starts with no ability to touch the host or

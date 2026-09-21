@@ -277,6 +277,7 @@ import {
   getBranches,
   getCommittedChanges,
   getCommittedFileDiff,
+  getCurrentBranchName,
   getDefaultBranch,
   getGitChangeStats,
   getGitFileDiff,
@@ -380,6 +381,7 @@ import {
 } from '../services/providers/model-card-resolver.ts'
 import {
   fetchRemoteArtifactImageDataUrl,
+  refreshImportedCursorAgentThread,
   resolveRemoteArtifactDownloadUrl,
 } from '../services/remote/remote-agent-client.ts'
 import {
@@ -392,6 +394,7 @@ import { listActiveProjectAgentPrLinks } from '../services/remote/remote-agent-l
 import {
   gatewayListDir,
   gatewayReadFile,
+  gatewayReadImage,
   gatewayReaddir,
   gatewayWriteFile,
 } from '../project-sandbox/sandbox-fs-client.ts'
@@ -449,7 +452,11 @@ you want the coding agent to follow on every turn.
   intent is ambiguous.
 `
 
-export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry): void {
+export function registerAllHandlers(
+  win: BrowserWindow,
+  registry: ToolRegistry,
+  isDispatcherThreadActive: (projectId: string, threadId: string) => boolean = () => false,
+): void {
   const reloadMcpForWorkspace = (): void => {
     void reloadMcpServers(registry)
       .then((statuses) => {
@@ -729,6 +736,14 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const { root } = await resolveThreadExecutionContext(projectId, threadId)
     const abs = await resolvePathWithinRoot(relPath, root)
     return gatewayReadFile(abs, root)
+  })
+
+  ipcMain.handle('fs:read-image', async (event, ...rawArgs) => {
+    assertMainFrameSender(event, win)
+    const [projectId, threadId, relPath] = parseIpcArgs(threadPathArgs, rawArgs)
+    const { root } = await resolveThreadExecutionContext(projectId, threadId)
+    const abs = await resolvePathWithinRoot(relPath, root)
+    return gatewayReadImage(abs, root, relPath)
   })
 
   ipcMain.handle('fs:write-file', async (event, ...rawArgs) => {
@@ -1750,6 +1765,17 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     return loadCanvasArtefactSummaries(id, thread)
   })
   ipcMain.handle(
+    'canvas:read-artefact',
+    (event, projectId: unknown, threadId: unknown, title: unknown) => {
+      assertMainFrameSender(event, win)
+      const [id, thread, name] = parseIpcArgs(
+        z.tuple([zProjectId, zThreadId, z.string().trim().min(1).max(200)]),
+        [projectId, threadId, title],
+      )
+      return readStoredCanvasArtefact(id, thread, name)
+    },
+  )
+  ipcMain.handle(
     'canvas:reopen-artefact',
     async (event, projectId: unknown, threadId: unknown, title: unknown) => {
       assertMainFrameSender(event, win)
@@ -2533,7 +2559,11 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('git:change-stats', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
-    return getGitChangeStats(await resolveWatchedGitRoot(projectId, threadId))
+    const root = await resolveWatchedGitRoot(projectId, threadId)
+    return getGitChangeStats(root, {
+      includeCommitted: true,
+      hasOpenPr: (branch) => branchHasOpenPr(projectId, branch, root),
+    })
   })
   ipcMain.handle('git:file-diff', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
@@ -2565,6 +2595,11 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const [projectId, threadId, filePath] = parseIpcArgs(threadPathArgs, rawArgs)
     const root = await resolveWatchedGitRoot(projectId, threadId)
     return getGitWorkingFileDiff(filePath, root)
+  })
+  ipcMain.handle('git:current-branch', async (event, ...rawArgs) => {
+    assertMainFrameSender(event, win)
+    const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
+    return getCurrentBranchName(await resolveWatchedGitRoot(projectId, threadId))
   })
   ipcMain.handle('git:branch-status', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
@@ -2773,6 +2808,19 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const id = parseIpcArgs(zProjectId, [projectId])
     return discoverExternalCursorAgents({ projectId: id })
   })
+  ipcMain.handle(
+    'remote-agent:refresh-imported-thread',
+    (event, projectId: unknown, threadId: unknown) => {
+      assertMainFrameSender(event, win)
+      const [id, thread] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
+      return refreshImportedCursorAgentThread({
+        projectId: id,
+        threadId: thread,
+        isThreadRunning: (candidateId) =>
+          isDispatcherThreadActive(id, candidateId) || listRunningThreadIds().includes(candidateId),
+      })
+    },
+  )
   ipcMain.handle('acp:detect-agents', (event) => {
     assertMainFrameSender(event, win)
     return detectAcpAgents()

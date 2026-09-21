@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, realpath, rm } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, realpath, rm, rmdir } from 'node:fs/promises'
 import { realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
@@ -15,9 +15,12 @@ import {
 } from './github/git-service.ts'
 import { registerInternalWorkspaceRoot, unregisterInternalWorkspaceRoot } from './workspace.ts'
 import { stopExecutionRootIndexing } from './search/workspace-indexing.ts'
+import {
+  worktreeManagerSandboxOverlay,
+  worktreeReadOnlySandboxOverlay,
+} from '../project-sandbox/worktree-config.ts'
 
 const OWNER_ID = /^[\w-]{1,128}$/
-const DISABLE_GIT_HOOKS = ['-c', 'core.hooksPath=/dev/null']
 
 export interface WorktreeRecord {
   path: string
@@ -333,27 +336,121 @@ export function expectedThreadWorktreePath(projectId: string, threadId: string):
   return target
 }
 
+/** A repo-controlled symlink must not turn a checkout grant into a host-directory grant. */
+async function assertManagedWorktreePath(projectId: string, path: string): Promise<void> {
+  const expectedParent = join(worktreesRoot(), projectId)
+  if ((await realpath(dirname(path))) !== expectedParent) {
+    throw new Error('Managed worktree parent is redirected outside its configured project path')
+  }
+  const stat = await lstat(path).catch((error: unknown) => {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return null
+    throw error
+  })
+  if (stat?.isSymbolicLink()) throw new Error('Managed worktree path must not be a symlink')
+}
+
+function ownErrorCode(error: unknown): unknown {
+  if (typeof error !== 'object' || error === null || !Object.hasOwn(error, 'code')) return undefined
+  return Object.getOwnPropertyDescriptor(error, 'code')?.value
+}
+
 /**
- * Worktree bookkeeping `git`: repository hooks disabled (a checkout's own hooks
- * must never run because Copse listed or removed it) and unsandboxed, because
- * it operates on the linked-checkout root rather than the project sandbox.
- * Shared with `worktree-inventory.ts`, which manages the same checkouts.
+ * Linux bind-mount sandboxes can grant an existing directory, but cannot make
+ * a missing nested path writable through its read-only parent. Materialize the
+ * exact manager-owned destination before Git enters the sandbox; never widen
+ * the grant to the shared project worktree directory.
  */
+async function prepareManagedWorktreeDestination(
+  projectId: string,
+  path: string,
+): Promise<boolean> {
+  await mkdir(dirname(path), { recursive: true })
+  await assertManagedWorktreePath(projectId, path)
+  let created = false
+  try {
+    await mkdir(path)
+    created = true
+  } catch (error) {
+    if (ownErrorCode(error) !== 'EEXIST') throw error
+    if (!(await lstat(path)).isDirectory()) {
+      throw new Error('Managed worktree destination is not a directory', { cause: error })
+    }
+  }
+  await assertManagedWorktreePath(projectId, path)
+  return created
+}
+
 export async function runWorktreeGit(
   cwd: string,
   args: string[],
   env?: NodeJS.ProcessEnv,
+  extraWritePaths: string[] = [],
 ): Promise<{ stdout: string; stderr: string; code: number }> {
-  return runCommand('git', [...DISABLE_GIT_HOOKS, ...args], {
+  // These host-owned bookkeeping operations update branch metadata. Config
+  // inspection/updates do not execute repository helpers; hooks remain off for
+  // branch deletion. No general Git invocation receives writable configuration.
+  const writeConfig =
+    (args[0] === 'config' &&
+      args[1] === '--local' &&
+      /^branch\..+\.copse-worktree-recovery$/.test(args[2] ?? '') &&
+      args.length === 4) ||
+    (args[0] === 'branch' && args[1] === '-d' && args.length === 3)
+  const readOnly =
+    ['check-ignore', 'check-ref-format', 'merge-base', 'rev-parse', 'show-ref', 'status'].includes(
+      args[0] ?? '',
+    ) ||
+    (args[0] === 'config' && args[1] === '--local' && args[2] === '--get' && args.length === 4) ||
+    (args[0] === 'symbolic-ref' &&
+      args[1] === '--quiet' &&
+      args[2] === '--short' &&
+      args[3] === 'HEAD' &&
+      args.length === 4) ||
+    (args[0] === 'worktree' && args[1] === 'list')
+  return runCommand('git', args, {
     cwd,
     ...(env ? { env } : {}),
-    unsandboxed: true,
+    sandboxConfig: readOnly
+      ? await worktreeReadOnlySandboxOverlay(cwd, extraWritePaths)
+      : await worktreeManagerSandboxOverlay(cwd, extraWritePaths, writeConfig),
     timeout_ms: 60_000,
   })
 }
 
 /** Local shorthand: every call in this module goes through the exported helper above. */
 const git = runWorktreeGit
+
+/**
+ * Remove a checkout after its caller has matched the path to Git's worktree
+ * inventory. Linux bind mounts cannot remove their own mount point: Git can
+ * finish its bookkeeping and empty the checkout, then exit with EBUSY while
+ * deleting the final directory. Accept that narrow partial success only after
+ * Git confirms the checkout is no longer registered, and remove the empty
+ * directory on the host. `rmdir` will not follow a swapped symlink or delete
+ * newly-created content.
+ */
+export async function removeRegisteredWorktreeCheckout(
+  repositoryRoot: string,
+  path: string,
+  force = false,
+): Promise<{ stdout: string; stderr: string; code: number }> {
+  const removed = await git(
+    repositoryRoot,
+    ['worktree', 'remove', ...(force ? ['--force'] : []), path],
+    undefined,
+    [path],
+  )
+  if (removed.code === 0) return removed
+  const remainsRegistered = (await listRecords(repositoryRoot)).some((record) =>
+    sameWorktreePath(record.path, path),
+  )
+  if (remainsRegistered) return removed
+  try {
+    await rmdir(path)
+  } catch (error) {
+    if (ownErrorCode(error) !== 'ENOENT') return removed
+  }
+  return { stdout: removed.stdout, stderr: '', code: 0 }
+}
 
 function commandFailure(
   action: string,
@@ -476,16 +573,23 @@ async function deleteRef(projectRoot: string, ref: string): Promise<void> {
 }
 
 async function verifySnapshotContent(worktreePath: string, snapshotRef: string): Promise<boolean> {
-  const temp = await mkdtemp(join(tmpdir(), 'copse-worktree-index-'))
+  const temp = await realpath(await mkdtemp(join(tmpdir(), 'copse-worktree-index-')))
   try {
     const env = { GIT_INDEX_FILE: join(temp, 'index') }
-    const add = await git(worktreePath, ['add', '-A'], env)
-    if (add.code !== 0) return false
-    const actual = await git(worktreePath, ['write-tree'], env)
-    const expected = await git(worktreePath, ['rev-parse', `${snapshotRef}^{tree}`])
-    return (
-      actual.code === 0 && expected.code === 0 && actual.stdout.trim() === expected.stdout.trim()
-    )
+    const sandboxConfig = await worktreeReadOnlySandboxOverlay(worktreePath, [temp])
+    const run = (args: string[]): ReturnType<typeof runCommand> =>
+      runCommand('git', args, {
+        cwd: worktreePath,
+        env,
+        sandboxConfig,
+        timeout_ms: 60_000,
+      })
+    const expected = await run(['read-tree', snapshotRef])
+    if (expected.code !== 0) return false
+    const trackedDifference = await run(['diff', '--quiet', '--'])
+    if (trackedDifference.code !== 0) return false
+    const extra = await run(['ls-files', '--others', '--exclude-standard', '-z'])
+    return extra.code === 0 && extra.stdout.length === 0
   } finally {
     await rm(temp, { recursive: true, force: true })
   }
@@ -572,9 +676,15 @@ export async function allocateThreadWorktree(
     }
 
     const branch = await chooseBranch(projectRoot, input.prompt, input.threadId)
-    await mkdir(dirname(target), { recursive: true })
-    const add = await git(projectRoot, ['worktree', 'add', '-b', branch, target, baseCommit])
+    const createdTarget = await prepareManagedWorktreeDestination(input.projectId, target)
+    const add = await git(
+      projectRoot,
+      ['worktree', 'add', '-b', branch, target, baseCommit],
+      undefined,
+      [target],
+    )
     if (add.code !== 0) {
+      if (createdTarget) await rm(target, { recursive: true, force: true })
       if (snapshotRef) await deleteRef(projectRoot, snapshotRef).catch(() => undefined)
       throw commandFailure('Cannot create linked worktree', add)
     }
@@ -588,7 +698,7 @@ export async function allocateThreadWorktree(
     try {
       await writeThreadWorktreeRecoveryMetadata(projectRoot, branch, recoveryMetadata)
     } catch (error) {
-      await git(projectRoot, ['worktree', 'remove', target]).catch(() => undefined)
+      await removeRegisteredWorktreeCheckout(projectRoot, target).catch(() => undefined)
       if (snapshotRef) await deleteRef(projectRoot, snapshotRef).catch(() => undefined)
       throw error
     }
@@ -616,7 +726,7 @@ export async function allocateThreadWorktree(
           snapshotRef,
         })
       }
-      await git(projectRoot, ['worktree', 'remove', canonicalPath]).catch(() => undefined)
+      await removeRegisteredWorktreeCheckout(projectRoot, canonicalPath).catch(() => undefined)
       releaseWorktreeRoot(executionRoot)
       throw error
     }
@@ -700,9 +810,15 @@ export async function restoreRetiredThreadWorktree(
       ) {
         throw new Error('Retired worktree branch changed since retirement')
       }
-      await mkdir(dirname(target), { recursive: true })
-      const add = await git(projectRoot, ['worktree', 'add', target, input.worktree.branch])
+      const createdTarget = await prepareManagedWorktreeDestination(input.projectId, target)
+      const add = await git(
+        projectRoot,
+        ['worktree', 'add', target, input.worktree.branch],
+        undefined,
+        [target],
+      )
       if (add.code !== 0) {
+        if (createdTarget) await rm(target, { recursive: true, force: true })
         // A retired thread's branch can be checked out elsewhere by the time it
         // is reopened, and "already checked out at …" is unrecoverable without
         // knowing which checkout to free.
@@ -723,26 +839,44 @@ export async function validateThreadWorktree(
   assertWorktreeMetadata(input.worktree)
   const location = await repositoryLocation(input.projectRoot)
   const projectRoot = location.repositoryRoot
-  await assertBranchName(projectRoot, input.worktree.baseBranch, 'Base branch')
   if (!/^[0-9a-f]{40,64}$/i.test(input.worktree.baseCommit)) {
     throw new Error('Thread worktree base commit is malformed')
-  }
-  const baseCommit = await requireGitValue(
-    projectRoot,
-    ['rev-parse', '--verify', `${input.worktree.baseCommit}^{commit}`],
-    'Cannot resolve thread worktree base commit',
-  )
-  if (baseCommit.toLowerCase() !== input.worktree.baseCommit.toLowerCase()) {
-    throw new Error('Thread worktree base commit does not resolve exactly')
   }
   const expected = expectedThreadWorktreePath(input.projectId, input.threadId)
   if (!sameWorktreePath(input.worktree.path, expected)) {
     throw new Error('Persisted worktree path does not match the configured thread path')
   }
 
-  const canonicalPath = await realpath(expected).catch(() => null)
+  await assertManagedWorktreePath(input.projectId, expected)
+
+  // These checks share no mutable state. Worktree validation sits on every
+  // agent dispatch, so paying for independent Git subprocesses serially adds
+  // directly to time-to-first-token.
+  const [branchCheck, baseCommitCheck, canonicalPathCheck] = await Promise.allSettled([
+    assertBranchName(projectRoot, input.worktree.baseBranch, 'Base branch'),
+    requireGitValue(
+      projectRoot,
+      ['rev-parse', '--verify', `${input.worktree.baseCommit}^{commit}`],
+      'Cannot resolve thread worktree base commit',
+    ),
+    realpath(expected),
+  ])
+  if (branchCheck.status === 'rejected') throw branchCheck.reason
+  if (baseCommitCheck.status === 'rejected') throw baseCommitCheck.reason
+  const baseCommit = baseCommitCheck.value
+  if (baseCommit.toLowerCase() !== input.worktree.baseCommit.toLowerCase()) {
+    throw new Error('Thread worktree base commit does not resolve exactly')
+  }
+  const canonicalPath = canonicalPathCheck.status === 'fulfilled' ? canonicalPathCheck.value : null
   if (!canonicalPath) throw new Error('Thread worktree is missing')
-  const record = (await listRecords(projectRoot)).find((asyncRecord) => {
+  const [recordsCheck, liveBranchCheck, executionRootCheck] = await Promise.allSettled([
+    listRecords(projectRoot),
+    symbolicHeadBranch(canonicalPath),
+    realpath(resolve(canonicalPath, location.projectRelativePath)),
+  ])
+  if (recordsCheck.status === 'rejected') throw recordsCheck.reason
+  const records = recordsCheck.value
+  const record = records.find((asyncRecord) => {
     try {
       return sameWorktreePath(asyncRecord.path, canonicalPath)
     } catch {
@@ -754,19 +888,24 @@ export async function validateThreadWorktree(
   // linked checkout; read that checkout's HEAD directly and adopt its live
   // branch. The repository-wide worktree inventory above proves registration,
   // but a missing branch field there is not evidence that this HEAD detached.
-  const liveBranch = await symbolicHeadBranch(canonicalPath)
+  if (liveBranchCheck.status === 'rejected') throw liveBranchCheck.reason
+  const liveBranch = liveBranchCheck.value
   if (!liveBranch) throw new ThreadWorktreeDetachedError(input.worktree.branch)
   await assertBranchName(projectRoot, liveBranch, 'Thread branch')
   if (liveBranch === input.worktree.baseBranch) {
     throw new Error('Thread worktree branch must differ from its recorded base branch')
   }
 
-  const executionRoot = await realpath(resolve(canonicalPath, location.projectRelativePath)).catch(
-    () => null,
-  )
+  const executionRoot = executionRootCheck.status === 'fulfilled' ? executionRootCheck.value : null
   if (!executionRoot) throw new Error('Thread worktree project root is missing')
-  const registration = await registerInternalWorkspaceRoot(canonicalPath, executionRoot)
-  const projectCommonGitDir = await commonGitDir(projectRoot)
+  const [registrationCheck, commonGitDirCheck] = await Promise.allSettled([
+    registerInternalWorkspaceRoot(canonicalPath, executionRoot),
+    commonGitDir(projectRoot),
+  ])
+  if (registrationCheck.status === 'rejected') throw registrationCheck.reason
+  if (commonGitDirCheck.status === 'rejected') throw commonGitDirCheck.reason
+  const registration = registrationCheck.value
+  const projectCommonGitDir = commonGitDirCheck.value
   if (registration.commonGitDir !== projectCommonGitDir) {
     releaseWorktreeRoot(executionRoot)
     throw new Error('Thread worktree belongs to a different repository')
@@ -831,7 +970,7 @@ export async function retireThreadWorktree(
     }
   }
 
-  const remove = await git(input.projectRoot, ['worktree', 'remove', validated.path])
+  const remove = await removeRegisteredWorktreeCheckout(input.projectRoot, validated.path)
   if (remove.code !== 0) throw commandFailure('Cannot retire thread worktree', remove)
   releaseWorktreeRoot(validated.root)
   return { status: 'removed', branch: validated.branch }
@@ -874,7 +1013,7 @@ export async function parkThreadWorktree(
     return { status: 'blocked-unpushed', branch: validated.branch }
   }
 
-  const remove = await git(input.projectRoot, ['worktree', 'remove', validated.path])
+  const remove = await removeRegisteredWorktreeCheckout(input.projectRoot, validated.path)
   if (remove.code !== 0) throw commandFailure('Cannot park thread worktree', remove)
   releaseWorktreeRoot(validated.root)
   return { status: 'removed', branch: validated.branch, head, upstreamRef }
@@ -907,6 +1046,17 @@ export async function pruneSafeOrphans(
     for (const record of await listRecords(projectRoot)) {
       const threadId = managedThreadIdForPath(input.projectId, record.path)
       if (!threadId || input.knownThreadIds.has(threadId)) continue
+      try {
+        await assertManagedWorktreePath(input.projectId, record.path)
+      } catch {
+        report.retained.push({
+          threadId,
+          path: record.path,
+          branch: record.branch,
+          reason: 'unavailable',
+        })
+        continue
+      }
       if (!record.branch || record.detached) {
         report.retained.push({
           threadId,
@@ -959,7 +1109,7 @@ export async function pruneSafeOrphans(
         continue
       }
 
-      const remove = await git(projectRoot, ['worktree', 'remove', record.path])
+      const remove = await removeRegisteredWorktreeCheckout(projectRoot, record.path)
       if (remove.code !== 0) {
         report.retained.push({
           threadId,

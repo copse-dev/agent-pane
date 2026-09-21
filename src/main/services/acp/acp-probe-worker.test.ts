@@ -13,9 +13,11 @@ import { ACP_PROBE_REQUEST_ENV, parseProbeRequest } from './acp-probe-worker.ts'
  * cannot widen the app's process-global network allowlist.
  */
 
-// The test runner compiles to `dist-test/` and runs node from the repo root, so
-// `import.meta.dirname` is undefined under CJS — use the runner's cwd instead.
+// The test runner compiles to its per-run output directory and runs node from
+// the repo root, so `import.meta.dirname` is undefined under CJS — use the
+// runner-provided directory and cwd fallback instead.
 const REPO_ROOT = process.cwd()
+const TEST_OUTPUT_DIR = process.env['COPSE_TEST_OUTPUT_DIR'] ?? join(REPO_ROOT, 'dist-test')
 
 /**
  * Bundle into the repo, not the system temp dir: the worker externalizes ASRT
@@ -24,7 +26,7 @@ const REPO_ROOT = process.cwd()
  * `dist/main/` sits beside the app's node_modules.
  */
 function makeBundleDir(prefix: string): string {
-  const base = join(REPO_ROOT, 'dist-test', 'acp-probe-fixtures')
+  const base = join(TEST_OUTPUT_DIR, 'acp-probe-fixtures')
   mkdirSync(base, { recursive: true })
   return mkdtempSync(join(base, prefix))
 }

@@ -62,6 +62,38 @@ flag set, click between projects, then quit and report: `switch:activate` and it
 three children (`switch:workspace-set`, `switch:load-threads`,
 `switch:apply-state`) bracket exactly one click.
 
+## Measuring time to first activity and first token
+
+The same trace can drive a fixed real chat turn and break ACP latency into host
+preflight, session startup, provider wait, renderer delivery, and first paint:
+
+```bash
+COPSE_PERF=1 COPSE_PERF_AUTOPILOT=1 \
+  COPSE_PERF_OUT=/tmp/copse-ttft.ndjson pnpm start
+node scripts/perf-report.mts /tmp/copse-ttft.ndjson
+```
+
+Read the `ttft:*` records between `autopilot:send` and the first renderer span:
+
+- `composer-submit`, `renderer-dispatch`, `main-dispatch`, and
+  `dispatch-preflight-complete` bracket renderer-side gates, IPC delivery, and
+  trusted execution-context/history setup.
+- `acp-turn-assembly`, `acp-mcp-config`, `acp-env-forward`,
+  `acp-worktree-baseline`, and `acp-skills` identify host-side setup costs.
+- `acp-session-acquire` reports whether the session was fresh; compare fresh and
+  reused turns before attributing startup time to the model.
+- `acp-prompt-start` to `acp-first-activity` is the external agent/provider wait.
+- `main-first-activity` to `renderer-first-activity` isolates chunk delivery and
+  store/controller work from provider latency.
+- `autopilot:ttfa`, `autopilot:ttfr`, and `autopilot:ttft` distinguish any visible
+  activity, reasoning, and answer text. A tool call can therefore satisfy TTFA
+  without being mislabeled as a text token.
+- `autopilot:first-activity-paint` and `autopilot:first-token-paint` measure the
+  renderer delay from store delivery through the frame after the DOM update.
+
+Every record contains phase names, durations, booleans, and chunk kinds only;
+prompts, file contents, thread ids, and workspace paths are not recorded.
+
 ## Reading the report
 
 - **Timeline** — named phases in order. `renderer:boot` is the end-to-end open.

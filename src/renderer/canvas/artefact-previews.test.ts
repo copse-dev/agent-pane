@@ -1,13 +1,16 @@
 import assert from 'node:assert/strict'
 import { beforeEach, describe, it } from 'node:test'
-import type { CanvasArtefactSummary } from '@shared/types/canvas.ts'
+import type { CanvasArtefact, CanvasArtefactSummary } from '@shared/types/canvas.ts'
 import { createPendingApi } from '../fake-api.test-support.ts'
 import {
   artefactUriFromToolResult,
+  getArtefactContent,
   getArtefactPreview,
   hydrateArtefactPreviews,
+  loadArtefactContent,
   requestArtefactShow,
   resetArtefactPreviewsForTest,
+  setArtefactContent,
   setArtefactPreview,
   setArtefactShowHandler,
 } from './artefact-previews.ts'
@@ -43,6 +46,50 @@ describe('artefact preview registry', () => {
 
   it('returns undefined for a title never rendered', () => {
     assert.equal(getArtefactPreview('thread-a', 'Nothing Here'), undefined)
+  })
+
+  it('keeps complete artefacts scoped by project and thread', () => {
+    const artefact: CanvasArtefact = {
+      title: 'Sales Dashboard',
+      mimeType: 'text/html',
+      body: '<h1>Sales</h1>',
+      preview: 'data:image/png;base64,LIVE',
+    }
+    setArtefactContent('project-a', 'thread-a', artefact)
+
+    assert.equal(
+      getArtefactContent('project-a', 'thread-a', 'Sales Dashboard')?.body,
+      artefact.body,
+    )
+    assert.equal(getArtefactContent('project-b', 'thread-a', 'Sales Dashboard'), undefined)
+    assert.equal(getArtefactContent('project-a', 'thread-b', 'Sales Dashboard'), undefined)
+    assert.equal(getArtefactPreview('thread-a', 'Sales Dashboard'), artefact.preview)
+  })
+
+  it('shares concurrent reads of one saved artefact', async () => {
+    let reads = 0
+    const artefact: CanvasArtefact = {
+      title: 'Sales Dashboard',
+      mimeType: 'text/html',
+      body: '<h1>Sales</h1>',
+    }
+    const api = createPendingApi({
+      'canvas.readArtefact': async (): Promise<CanvasArtefact> => {
+        reads += 1
+        await Promise.resolve()
+        return artefact
+      },
+    })
+
+    const [first, second] = await Promise.all([
+      loadArtefactContent(api, 'project-a', 'thread-a', artefact.title),
+      loadArtefactContent(api, 'project-a', 'thread-a', artefact.title),
+    ])
+
+    assert.equal(reads, 1)
+    assert.equal(first, artefact)
+    assert.equal(second, artefact)
+    assert.equal(getArtefactContent('project-a', 'thread-a', artefact.title), artefact)
   })
 
   it('routes a show request to the registered handler', () => {

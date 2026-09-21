@@ -216,6 +216,8 @@ export interface ApiClient {
   }
   fs: {
     readFile: (projectId: string, threadId: string, path: string) => Promise<string>
+    /** A contained image preview, capped at 15 MiB and encoded as a data URL. */
+    readImage: (projectId: string, threadId: string, path: string) => Promise<string>
     writeFile: (projectId: string, threadId: string, path: string, content: string) => Promise<void>
     readdir: (projectId: string, threadId: string, path: string) => Promise<string[]>
     listDir: (
@@ -451,6 +453,12 @@ export interface ApiClient {
     onShowArtefact: (handler: (identity: CanvasArtefactIdentity) => void) => () => void
     /** Artefacts this thread saved in any session, newest last. */
     listArtefacts: (projectId: string, threadId: string) => Promise<CanvasArtefactSummary[]>
+    /** Read one saved artefact without opening it in the Browser pane. */
+    readArtefact: (
+      projectId: string,
+      threadId: string,
+      title: string,
+    ) => Promise<CanvasArtefact | null>
     /**
      * Render a saved artefact again; it arrives on {@link onArtefact} like a
      * fresh one. False when nothing is stored under that title any more.
@@ -672,6 +680,11 @@ export interface ApiClient {
       skippedWrongRepo: number
       skippedInactive: number
     }>
+    /** Fetch one selected imported Cursor agent's terminal run snapshot. */
+    refreshImportedThread: (
+      projectId: string,
+      threadId: string,
+    ) => Promise<import('@shared/types').Message | null>
   }
   acp: {
     /** Detect known ACP agents installed/running on this device (for the Settings panel). */
@@ -1135,6 +1148,8 @@ export interface ApiClient {
       threadId: string,
       path: string,
     ) => Promise<GitFileDiff | null>
+    /** Current checked-out branch, without a remote pull-request lookup. */
+    currentBranch: (projectId: string, threadId: string) => Promise<string | null>
     branchStatus: (
       projectId: string,
       threadId: string,

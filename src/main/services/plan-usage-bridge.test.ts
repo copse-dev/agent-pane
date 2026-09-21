@@ -198,6 +198,29 @@ describe('discoverPlanUsageCredentials', () => {
     assert.equal(creds.huggingfaceToken, undefined)
     assert.equal(creds.cursorSessionToken, undefined)
   })
+
+  it('keeps scanning asynchronous file sources when optional credential files are malformed', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'copse-plan-usage-malformed-'))
+    mkdirSync(join(home, '.claude'), { recursive: true })
+    mkdirSync(join(home, '.codex'), { recursive: true })
+    mkdirSync(join(home, '.cache', 'huggingface'), { recursive: true })
+    writeFileSync(join(home, '.claude', '.credentials.json'), '{not-json')
+    writeFileSync(join(home, '.codex', 'auth.json'), '[not-an-object]')
+    writeFileSync(join(home, '.cache', 'huggingface', 'token'), 'hf_after_bad_files\n')
+
+    const creds = await discoverPlanUsageCredentials(
+      home,
+      {},
+      noKeychain,
+      noStoredHf,
+      noCursorKeychain,
+      noCursorDb,
+    )
+
+    assert.deepEqual(creds.claudeOAuthTokens, [])
+    assert.equal(creds.codex, undefined)
+    assert.equal(creds.huggingfaceToken, 'hf_after_bad_files')
+  })
 })
 
 describe('updateClaudeOAuthJson', () => {

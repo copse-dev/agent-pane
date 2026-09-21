@@ -124,6 +124,28 @@ describe('watchAgentStderr', () => {
     assert.ok(watcher.current()?.detail.includes('too many open files'))
   })
 
+  it('resolves an expensive local limit label only after a fault is detected', () => {
+    const stderr = source()
+    let reads = 0
+    const watcher = watchAgentStderr(stderr, {
+      prefix: 'acp:test-agent',
+      command: 'test-agent',
+      limitLabel: () => {
+        reads += 1
+        return 'inherited open-file limit 256 soft / 256 hard'
+      },
+    })
+
+    assert.equal(reads, 0)
+    stderr.emit('data', Buffer.from('ordinary diagnostic output\n'))
+    assert.equal(reads, 0)
+    stderr.emit('data', Buffer.from('EMFILE: too many open files, watch\n'))
+    assert.equal(reads, 1)
+    assert.equal(watcher.current()?.limitLabel, 'inherited open-file limit 256 soft / 256 hard')
+    stderr.emit('data', Buffer.from('EMFILE: too many open files, open\n'))
+    assert.equal(reads, 1)
+  })
+
   it("labels a remote fault with the remote login's limit", () => {
     const stderr = source()
     const watcher = watchAgentStderr(stderr, {

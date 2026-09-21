@@ -1,32 +1,38 @@
 import type { LLMProvider, LLMMessage, ModelUsage } from '@shared/types'
 import type { StreamChunk } from '@shared/types/stream.ts'
 import { hasLastUsage } from '@copse/llm/provider-usage.ts'
+import { mergeModelUsage, usageAtServiceTier } from '@copse/llm/model-usage.ts'
+import { usageServiceTierForCall } from '@copse/llm/service-tier.ts'
 
 const EMPTY_USAGE: ModelUsage = { inputTokens: 0, outputTokens: 0 }
 
 function mergeUsage(prev: ModelUsage, delta: ModelUsage): ModelUsage {
-  const next: ModelUsage = {
-    inputTokens: prev.inputTokens + delta.inputTokens,
-    outputTokens: prev.outputTokens + delta.outputTokens,
-  }
-  if (delta.cacheReadTokens !== undefined || prev.cacheReadTokens !== undefined) {
-    next.cacheReadTokens = (prev.cacheReadTokens ?? 0) + (delta.cacheReadTokens ?? 0)
-  }
-  if (delta.cacheCreationTokens !== undefined || prev.cacheCreationTokens !== undefined) {
-    next.cacheCreationTokens = (prev.cacheCreationTokens ?? 0) + (delta.cacheCreationTokens ?? 0)
-  }
-  return next
+  return mergeModelUsage(prev, delta)
 }
 
 function usageFromChunk(chunk: Extract<StreamChunk, { type: 'usage' }>): ModelUsage {
-  return {
-    inputTokens: chunk.inputTokens,
-    outputTokens: chunk.outputTokens,
-    ...(chunk.cacheReadTokens !== undefined ? { cacheReadTokens: chunk.cacheReadTokens } : {}),
-    ...(chunk.cacheCreationTokens !== undefined
-      ? { cacheCreationTokens: chunk.cacheCreationTokens }
-      : {}),
+  if (chunk.serviceTierUsage !== undefined) {
+    return {
+      inputTokens: chunk.inputTokens,
+      outputTokens: chunk.outputTokens,
+      ...(chunk.cacheReadTokens !== undefined ? { cacheReadTokens: chunk.cacheReadTokens } : {}),
+      ...(chunk.cacheCreationTokens !== undefined
+        ? { cacheCreationTokens: chunk.cacheCreationTokens }
+        : {}),
+      serviceTierUsage: chunk.serviceTierUsage,
+    }
   }
+  return usageAtServiceTier(
+    {
+      inputTokens: chunk.inputTokens,
+      outputTokens: chunk.outputTokens,
+      ...(chunk.cacheReadTokens !== undefined ? { cacheReadTokens: chunk.cacheReadTokens } : {}),
+      ...(chunk.cacheCreationTokens !== undefined
+        ? { cacheCreationTokens: chunk.cacheCreationTokens }
+        : {}),
+    },
+    usageServiceTierForCall(chunk.requestedServiceTier, chunk.responseServiceTier),
+  )
 }
 
 /** Run a one-shot provider stream and return text plus accumulated token usage. */

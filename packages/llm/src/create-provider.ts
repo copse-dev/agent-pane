@@ -150,12 +150,13 @@ export function createProvider(
         'Anthropic is not configured. Add ANTHROPIC_API_KEY in Settings or choose an OpenAI or LM Studio model.',
       )
     }
-    return new AnthropicProvider(m, { apiKey: anthropicApiKey, ...paramsOpt })
+    return new AnthropicProvider(m, { apiKey: anthropicApiKey, ...paramsOpt, ...cacheKeyOpt })
   }
   if (anthropicApiKey) {
     return new AnthropicProvider(model ?? process.env['ANTHROPIC_MODEL'] ?? DEFAULT_CLOUD_MODEL, {
       apiKey: anthropicApiKey,
       ...paramsOpt,
+      ...cacheKeyOpt,
     })
   }
   if (openAiApiKey) {
@@ -269,6 +270,7 @@ export function createOpenRouterProvider(
     params: sampling,
     ...(ceiling === undefined ? {} : { maxOutputTokens: ceiling }),
     baseURL: OPENROUTER_BASE_URL,
+    openRouterCache: model.startsWith('anthropic/claude-'),
     apiKey,
     includeUsage: true,
     defaultHeaders: OPENROUTER_ATTRIBUTION_HEADERS,
@@ -300,9 +302,11 @@ export function createExtraCloudProvider(
   apiKey: string,
   approvedHosts: readonly string[] = [],
   params: ModelParameters = {},
+  promptCacheKey?: string,
 ): LLMProvider {
   validateCredentialBaseUrl(provider.baseUrl, 'Provider base URL')
   assertProviderHostAllowed(provider.baseUrl, approvedHosts)
+  const cacheKeyOpt = !provider.local && promptCacheKey ? { promptCacheKey } : {}
   if (provider.apiStyle === 'responses') {
     // No output ceiling on this transport: the cards we hold were written
     // against Chat Completions endpoints, and this path has no drop-and-retry
@@ -314,6 +318,7 @@ export function createExtraCloudProvider(
       apiKey,
       serverTools,
       params,
+      ...cacheKeyOpt,
       ...(Object.keys(extraBody).length ? { extraBody } : {}),
     })
   }
@@ -324,6 +329,7 @@ export function createExtraCloudProvider(
     // (many reject a blank Authorization header), mirroring createLocalOpenAIProvider.
     apiKey: provider.local ? apiKey || 'lm-studio' : apiKey,
     includeUsage: provider.includeUsage ?? !provider.local,
+    ...cacheKeyOpt,
     params,
     ...(ceiling === undefined ? {} : { maxOutputTokens: ceiling }),
     ...(provider.extraBody ? { extraBody: provider.extraBody } : {}),

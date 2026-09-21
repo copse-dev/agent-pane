@@ -11,7 +11,10 @@
  */
 import { randomUUID } from 'node:crypto'
 import type { Message, Thread } from '@shared/types'
-import type { RemoteAgentLink } from '@shared/remote-agent-link.ts'
+import {
+  IMPORTED_CURSOR_AGENT_NOTICE_PREFIX,
+  type RemoteAgentLink,
+} from '@shared/remote-agent-link.ts'
 import {
   DEFAULT_CURSOR_AGENT_BASE_URL,
   REMOTE_AGENT_PROVIDER_CURSOR,
@@ -253,6 +256,7 @@ export function buildExternalCursorAgentStub(input: {
     provider: REMOTE_AGENT_PROVIDER_CURSOR,
     agentId: input.agent.id,
     createdAt,
+    imported: true,
     ...(input.agent.latestRunId ? { runId: input.agent.latestRunId } : {}),
     ...(matchedRepo?.startingRef ? { branch: matchedRepo.startingRef } : {}),
     ...(repoSlug ? { repo: `${repoSlug.owner}/${repoSlug.repo}` } : {}),
@@ -261,7 +265,7 @@ export function buildExternalCursorAgentStub(input: {
     id: input.messageId,
     role: 'assistant',
     content:
-      `_Imported Cursor cloud agent — [${input.agent.name}](${input.agent.url}). ` +
+      `${IMPORTED_CURSOR_AGENT_NOTICE_PREFIX}[${input.agent.name}](${input.agent.url}). ` +
       `Send a message here to continue that run from Copse._`,
     toolCalls: [],
     createdAt,

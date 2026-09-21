@@ -8,6 +8,7 @@ import {
 } from './acp-resource-fault.ts'
 import type { ToolRegistry } from '../tool-registry.ts'
 import { notifyThreadResourceFinished } from '../worktree-parking-events.ts'
+import { perfSpan } from '../diagnostics/perf-trace.ts'
 
 /**
  * Per-thread pool of persistent ACP sessions (issue #605).
@@ -224,18 +225,21 @@ export async function acquireAcpSession(
   // indistinguishable from an agent that simply was not offered one — the
   // failure mode behind #1430's "the agent ignored the attached archive".
   // Startup still must not abort the turn, so the error is logged, not thrown.
-  const bridge = opts.registry
-    ? await startAcpNativeBridge(opts.registry, bridgeAbort.signal, {
-        networkScopeAlreadyApplies: shareNetworkScope,
-        ...(opts.projectId ? { projectId: opts.projectId } : {}),
-        threadId: opts.threadId,
-      }).catch((err: unknown) => {
-        console.error(
-          `[acp-bridge] failed to start for thread ${opts.threadId}; native tools will be unavailable this session:`,
-          err instanceof Error ? err.message : String(err),
-        )
-        return null
-      })
+  const registry = opts.registry
+  const bridge = registry
+    ? await perfSpan('ttft:acp-bridge-start', () =>
+        startAcpNativeBridge(registry, bridgeAbort.signal, {
+          networkScopeAlreadyApplies: shareNetworkScope,
+          ...(opts.projectId ? { projectId: opts.projectId } : {}),
+          threadId: opts.threadId,
+        }).catch((err: unknown) => {
+          console.error(
+            `[acp-bridge] failed to start for thread ${opts.threadId}; native tools will be unavailable this session:`,
+            err instanceof Error ? err.message : String(err),
+          )
+          return null
+        }),
+      )
     : null
   if (!opts.registry) {
     console.warn(
@@ -267,13 +271,18 @@ export async function acquireAcpSession(
 
   let open: OpenAcpSession
   try {
-    open = await openAcpSession(
-      config,
-      { current: null },
-      opts.createTransport,
-      resumeSessionId,
-      trace,
-      opts.signal,
+    open = await perfSpan(
+      'ttft:acp-open-session',
+      () =>
+        openAcpSession(
+          config,
+          { current: null },
+          opts.createTransport,
+          resumeSessionId,
+          trace,
+          opts.signal,
+        ),
+      (value) => ({ resumed: value?.resumed ?? false }),
     )
   } catch (err) {
     bridgeAbort.abort()

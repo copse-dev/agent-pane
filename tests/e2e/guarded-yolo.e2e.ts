@@ -5,7 +5,6 @@ import { $, $$, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { setComposerValue } from './helpers/composer.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
-import { describeSkipInCi } from './helpers/ci-gate.ts'
 import { waitForAgentIdle } from './helpers.ts'
 
 const PROJECT_ID = 'e2e-guarded-yolo-project'
@@ -38,17 +37,9 @@ async function enableGuardedYolo(captureWarning = false): Promise<void> {
   await expect(banner).toHaveAttribute('data-phase', 'armed')
 }
 
-// Quarantined in CI by #1680 — see the note on `github-write-approval.e2e.ts`
-// for the shared fault. Same signature every run: `#approval-dialog` never
-// appears, then `invalid session id` once the session is gone.
-//
-// **Be uncomfortable about this one.** #1680 says so directly: while it is
-// skipped, the hard-deny for catastrophic deletion is not being exercised in
-// CI at all. Today's evidence points at the runner's memory ceiling rather
-// than the product, so the deny itself is very likely intact — but "very
-// likely" is the whole reason this is a quarantine with an open issue and not
-// a deletion. It still runs locally.
-describeSkipInCi('Guarded YOLO shell mode', function () {
+// These confirmations and hard denials must execute in CI. #1680 retains the
+// historical session-death investigation; a skip is not compensating coverage.
+describe('Guarded YOLO shell mode', function () {
   this.timeout(120_000)
   before(async () => {
     workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-guarded-yolo-'))

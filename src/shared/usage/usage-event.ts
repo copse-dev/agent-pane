@@ -1,4 +1,5 @@
 import type { ModelUsage } from '@shared/types'
+import type { ServiceTier } from '@copse/llm/service-tier.ts'
 
 export const USAGE_EVENTS_STORAGE_KEY = 'usageEvents'
 
@@ -15,6 +16,10 @@ export interface UsageEvent extends ModelUsage {
   threadId?: string
   /** Token counts are a local estimate (agent didn't report usage), not exact. */
   estimated?: boolean
+  /** The first-party OpenAI tier Copse asked for on this call. */
+  requestedServiceTier?: ServiceTier
+  /** The OpenAI tier the completed response reports it actually used. */
+  responseServiceTier?: ServiceTier
 }
 
 export interface UsageRecordInput extends ModelUsage {
@@ -25,4 +30,6 @@ export interface UsageRecordInput extends ModelUsage {
   at?: number
   /** Token counts are a local estimate (agent didn't report usage), not exact. */
   estimated?: boolean
+  requestedServiceTier?: ServiceTier
+  responseServiceTier?: ServiceTier
 }

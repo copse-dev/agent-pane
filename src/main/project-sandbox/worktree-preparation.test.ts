@@ -96,6 +96,60 @@ describe('real worktree preparation containment', { skip: process.platform === '
     setProjectSandboxEnabled(true)
   })
 
+  it('uses disposable scratch for a read-only prepare and cleans it on success and failure', async () => {
+    const symlinkRoot = join(parent, 'scratch-symlink-worktree')
+    const outside = join(parent, 'scratch-symlink-target')
+    mkdirSync(symlinkRoot)
+    mkdirSync(outside)
+    symlinkSync(outside, join(symlinkRoot, '.tmp'), 'dir')
+
+    const success = await runWorktreePreparationProcess(
+      process.execPath,
+      [
+        '-e',
+        `const fs=require('node:fs'),path=require('node:path');
+fs.writeFileSync(path.join(process.env.TMPDIR,'bookkeeping'),'ok');
+try{fs.writeFileSync('project-write','bad');console.log('project:writable')}catch{console.log('project:blocked')}
+console.log(process.env.TMPDIR)`,
+      ],
+      {
+        root: symlinkRoot,
+        env,
+        mode: 'prepare',
+        offline: true,
+        projectWritable: false,
+      },
+    )
+    const [projectResult, successScratch] = success.split('\n')
+    assert.equal(projectResult, 'project:blocked')
+    const prepareScratchPrefix = join(realpathSync(tmpdir()), 'copse-prepare-')
+    assert.ok(successScratch)
+    assert.ok(successScratch.startsWith(prepareScratchPrefix))
+    assert.equal(existsSync(successScratch), false)
+    assert.equal(existsSync(join(symlinkRoot, 'project-write')), false)
+    assert.equal(existsSync(join(outside, 'worktree-preparation')), false)
+
+    let failureOutput = ''
+    await assert.rejects(
+      runWorktreePreparationProcess(
+        process.execPath,
+        ['-e', 'console.log(process.env.TMPDIR);process.exit(7)'],
+        {
+          root: symlinkRoot,
+          env,
+          mode: 'prepare',
+          offline: true,
+          projectWritable: false,
+          output: (text) => (failureOutput += text),
+        },
+      ),
+      /failed \(7\)/,
+    )
+    const failureScratch = failureOutput.trim()
+    assert.ok(failureScratch.startsWith(prepareScratchPrefix))
+    assert.equal(existsSync(failureScratch), false)
+  })
+
   it('allows preparation writes only in the worktree and managed caches, including through symlinks', async () => {
     const outside = join(parent, 'outside-write')
     const startup = join(root, 'startup.sh')

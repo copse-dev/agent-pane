@@ -527,6 +527,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     fs: {
       readFile: (_projectId: string, _threadId: string, path: string) =>
         resolved(writtenFiles.get(path) ?? ''),
+      readImage: () => Promise.reject(new Error('Workspace images are unavailable in this demo')),
       writeFile: resolvedVoid,
       readdir: () => resolved(['src', 'tests', 'package.json']),
       listDir: () =>
@@ -724,6 +725,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       // The demo has no canvas store behind it: nothing was ever saved, so
       // nothing can be listed or reopened.
       listArtefacts: () => resolved([]),
+      readArtefact: () => resolved(null),
       reopenArtefact: () => resolved(false),
     },
     storage: {
@@ -845,6 +847,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       downloadArtifact: unsupported,
       artifactImageDataUrl: unsupported,
       models: emptyArray,
+      refreshImportedThread: () => resolved(null),
       discoverExternal: (_projectId?: string) =>
         resolved({
           imported: [],
@@ -1174,6 +1177,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       workingFileDiff: () => resolved(null),
       committedChanges: () => resolved(null),
       committedFileDiff: () => resolved(null),
+      currentBranch: () => resolved(currentBranch),
       // These take (projectId, threadId, …) — dropping the leading two made
       // `branchStatus` answer with the *project id* as the current branch, which
       // reads as a branch mismatch and blocks every send behind the composer's

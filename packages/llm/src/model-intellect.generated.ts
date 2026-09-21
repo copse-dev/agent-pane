@@ -3,7 +3,7 @@
 // cross-version equating maps. Source of truth: scripts/data/intellect-scores.json.
 // Absent models mean "no sourced measurement yet", not zero.
 // Intelligence Index data from Artificial Analysis (https://artificialanalysis.ai)
-// Last synced: 2026-09-15
+// Last synced: 2026-09-21
 
 import type { EquatingMap } from './intellect-equating.ts'
 
@@ -9479,8 +9479,9 @@ export const INTELLECT_ALIASES: Record<string, string> = {
   'GPT-5.6 Terra': 'gpt-5.6-terra',
   'GPT-5.6-Terra': 'gpt-5.6-terra',
   'Grok 4.5': 'grok-4.5',
+  'Grok Build 0.1': 'grok-build-0-1-06-16',
   'grok-4-5': 'grok-4.5',
-  'grok-build-0.1': 'grok-4.5',
+  'grok-build-0.1': 'grok-build-0-1-06-16',
   'Haiku 4.5': 'claude-haiku-4-5',
   'Kimi K2.6': 'moonshotai/kimi-k2.6',
   'Kimi K3': 'moonshotai/kimi-k3',
@@ -9517,7 +9518,10 @@ export const INTELLECT_ALIASES: Record<string, string> = {
   'qwen3.6-35b-a3b': 'qwen/qwen3.6-35b-a3b',
   'Sonnet 4.6': 'claude-sonnet-4-6',
   'Sonnet 5': 'claude-sonnet-5',
+  'SpaceXAI: Grok Build 0.1': 'grok-build-0-1-06-16',
   'x-ai/grok-4.5': 'grok-4.5',
+  'x-ai/grok-build-0.1': 'grok-build-0-1-06-16',
+  'xAI: Grok Build 0.1': 'grok-build-0-1-06-16',
   'xai/grok-4.5': 'grok-4.5',
   'z-ai/glm-5.2': 'zai-org/GLM-5.2',
   'zai/glm-5.2': 'zai-org/GLM-5.2',

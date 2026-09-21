@@ -15,6 +15,9 @@ export const ACP_UNFINISHED_TURN_RECOVERY_PROMPT = [
 export const ACP_UNFINISHED_TURN_FALLBACK =
   'The external agent stopped after using its tools without providing a final result. Send “continue” to resume.'
 
+export const ACP_UNFINISHED_TURN_BUDGET_FALLBACK =
+  'Copse could not request a final response automatically because this turn reached its continuation limit. Send “continue” to resume.'
+
 /**
  * Result written onto a tool call the turn ended on top of (#2332). `ToolCall`
  * has no `cancelled` status, so this reuses `error` and says so in the payload.

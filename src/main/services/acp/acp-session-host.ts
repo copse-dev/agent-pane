@@ -4,6 +4,7 @@ import { errorMessage } from '@shared/errors.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { recordNetworkDenial } from '../../project-sandbox/network-scope.ts'
 import { detachForGroupKill } from '../../project-sandbox/sandbox-argv.ts'
+import { perfMark } from '../diagnostics/perf-trace.ts'
 import { terminateProcessTree } from '../exec/subprocess-kill.ts'
 import type { AcpAgentSpawnConfig } from './acp-client.ts'
 import {
@@ -59,6 +60,7 @@ export function spawnSandboxedAcpSessionHost(config: AcpAgentSpawnConfig): Promi
       },
       allowLocalhost: Boolean(config.nativeBridge),
     }
+    perfMark('ttft:acp-host-spawn-start')
     const child = spawn(process.execPath, [acpSessionHostWorkerPath()], {
       cwd: config.cwd,
       env: {
@@ -69,6 +71,7 @@ export function spawnSandboxedAcpSessionHost(config: AcpAgentSpawnConfig): Promi
       stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
       detached: detachForGroupKill,
     })
+    perfMark('ttft:acp-host-spawn-returned')
     let settled = false
     const finish = (fn: () => void): void => {
       if (settled) return
@@ -105,6 +108,7 @@ export function spawnSandboxedAcpSessionHost(config: AcpAgentSpawnConfig): Promi
         return
       }
       finish(() => {
+        perfMark('ttft:acp-host-ready')
         resolve(child)
       })
     })

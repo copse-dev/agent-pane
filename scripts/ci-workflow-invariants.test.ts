@@ -125,24 +125,14 @@ describe('ci.yml workflow invariants', () => {
     assert.ok(promotionGate < oracle, 'promotion PRs must bypass oracle thinning')
   })
 
-  it('never gates the aggregate on always(), which wedges the concurrency group', () => {
-    // `always()` is true even when the RUN is cancelled, so GitHub creates and
-    // queues `ci-passed` on a run being torn down. It prefers the self-hosted
-    // fleet, so it can then wait for a runner that never arrives — and a queued
-    // job keeps its run non-terminal, keeps the `ci-<pr>` concurrency group
-    // held, and leaves the superseding run `pending` with zero jobs. #1669 sat
-    // wedged for 114 minutes that way, with `force-cancel` the only manual exit.
-    // `!cancelled()` runs in every case `always()` did except a cancelled run.
-    const aggregate = workflow.match(/^ {2}ci-passed:\n[\s\S]*$/m)?.[0]
-    assert.ok(aggregate, 'expected the `ci-passed` job in ci.yml')
-    const jobIf = aggregate.match(/^ {4}if: (.+)$/m)?.[1]
-    assert.ok(jobIf, 'expected a job-level `if:` on ci-passed')
-    assert.match(jobIf, /!cancelled\(\)/, 'the aggregate must skip itself on a cancelled run')
-    assert.doesNotMatch(
-      jobIf,
-      /(^|[^!])always\(\)/,
-      'always() on the aggregate wedges the concurrency group; use !cancelled()',
-    )
+  it('runs the cancellation gate on hosted capacity without checkout or network dependencies', () => {
+    const aggregate = jobBlock('ci-passed')
+    assert.match(aggregate, /^ {4}if: \$\{\{ always\(\) \}\}$/m)
+    assert.match(aggregate, /^ {4}runs-on: ubuntu-latest$/m)
+    assert.match(aggregate, /^ {4}timeout-minutes: 5$/m)
+    assert.match(aggregate, /^ {4}permissions: \{\}$/m)
+    assert.doesNotMatch(aggregate, /SELF_HOSTED_CHECKS|uses:|api_get|curl |gh api|GH_TOKEN/)
+    assert.match(aggregate, /- name: Reject canceled workflow\n {8}if: \$\{\{ cancelled\(\) \}\}/)
   })
 
   it('does not let a cheap trunk push satisfy the promotion aggregate gate', () => {
@@ -174,12 +164,12 @@ describe('ci.yml workflow invariants', () => {
     )
     assert.match(
       aggregate,
-      /E2E_REQUIRED=\$\{\{ github\.event_name == 'pull_request' && github\.event\.pull_request\.head\.repo\.full_name == github\.repository/,
+      /E2E_REQUIRED: \$\{\{ github\.event_name == 'pull_request' && github\.event\.pull_request\.head\.repo\.full_name == github\.repository/,
       'the aggregate must identify same-repository PRs whose e2e job dispatched',
     )
     assert.match(
       aggregate,
-      /\$E2E_REQUIRED && \[ "\$\{\{ needs\.precheck\.outputs\.e2e_shard_total \}\}" != "0" \] && \[ "\$\{\{ needs\.e2e\.result \}\}" != "success" \]/,
+      /\[ "\$E2E_REQUIRED" = "true" \] && \[ "\$E2E_SHARD_TOTAL" != "0" \] && \[ "\$E2E_RESULT" != "success" \]/,
       'merge-eligible same-repository PRs must fail closed unless required e2e succeeds',
     )
   })
@@ -194,12 +184,12 @@ describe('ci.yml workflow invariants', () => {
     assert.ok(aggregate, 'expected the `ci-passed` job in ci.yml')
     assert.match(
       aggregate,
-      /E2E_REQUIRED=[^\n]*github\.event\.pull_request\.draft == false \|\| contains\(github\.event\.pull_request\.labels\.\*\.name, 'ci-full'\)/,
+      /E2E_REQUIRED: [^\n]*github\.event\.pull_request\.draft == false \|\| contains\(github\.event\.pull_request\.labels\.\*\.name, 'ci-full'\)/,
       'a draft skips e2e, so the gate must not demand it',
     )
     assert.match(
       aggregate,
-      /\[ "\$\{\{ needs\.precheck\.outputs\.e2e_shard_total \}\}" != "0" \]/,
+      /\[ "\$E2E_SHARD_TOTAL" != "0" \]/,
       'a zero-shard plan skips e2e, so the gate must not demand it',
     )
   })
@@ -268,6 +258,8 @@ describe('ci.yml workflow invariants', () => {
   it('publishes screenshot candidates without mutating the PR branch', () => {
     const job = jobBlock('screenshot-artifacts')
     assert.match(job, /permissions:\n {6}contents: read/)
+    assert.match(job, /!cancelled\(\) && needs\.build\.result == 'success'/)
+    assert.doesNotMatch(job.slice(0, job.indexOf('    steps:')), /always\(\)/)
     assert.match(job, /name: reference-screenshot-candidates-\$\{\{ github\.run_id \}\}/)
     assert.match(job, /retention-days: 14/)
     assert.doesNotMatch(job, /contents: write|pull-requests: write/)

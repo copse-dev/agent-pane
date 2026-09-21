@@ -448,7 +448,8 @@ export function classifyAgentError(err: unknown, ctx?: ClassifyAgentErrorContext
 
   // OpenRouter routing-policy failure: with ZDR-only routing (Copse's default)
   // or training exclusion active, a model with no compliant endpoint fails
-  // deterministically. Point at the toggles rather than surfacing the raw 503.
+  // after its bounded transport retry. Point at the toggles rather than
+  // surfacing the raw 503.
   if (
     /no available model provider that meets your routing requirements|no endpoints found matching your data policy/i.test(
       detail,

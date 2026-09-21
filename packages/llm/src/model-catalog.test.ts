@@ -49,6 +49,19 @@ describe('model catalog', () => {
     }
   })
 
+  it('keeps every published service-tier price as a complete nonnegative rate pair', () => {
+    const tieredModels = Object.entries(MODEL_CATALOG).filter(
+      ([, info]) => info.serviceTierPricing !== undefined,
+    )
+    assert.ok(tieredModels.length > 0, 'the generated LiteLLM artifact should retain tier prices')
+    for (const [model, info] of tieredModels) {
+      for (const [tier, pricing] of Object.entries(info.serviceTierPricing ?? {})) {
+        assert.ok(pricing.inputPricePerMTok >= 0, `${model} ${tier}: input rate`)
+        assert.ok(pricing.outputPricePerMTok >= 0, `${model} ${tier}: output rate`)
+      }
+    }
+  })
+
   it('getModelInfo returns null for unknown models without throwing', () => {
     assert.equal(getModelInfo('not-a-real-model'), null)
     assert.equal(getModelInfo(''), null)

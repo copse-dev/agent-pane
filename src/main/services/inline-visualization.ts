@@ -40,6 +40,7 @@ export async function dispatchInlineVisualization(
     title,
     mimeType: 'text/html',
     body: html,
+    presentation: 'inline',
     threadId: context.threadId,
     sourcePath: relative(canonicalRoot, absolutePath),
   })

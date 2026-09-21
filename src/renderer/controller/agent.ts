@@ -47,6 +47,7 @@ import { backgroundProjectOf, dropBackgroundThread } from './background-threads.
 import type { UsageDelta } from '@shared/types'
 import type { ModelParameters } from '@copse/llm/model-parameters.ts'
 import { userContentToText } from '@shared/remote-agent-stream.ts'
+import { mark as perfMark } from '../perf.ts'
 
 /**
  * Resolved generation parameters, resolved model, and requested model for the
@@ -112,6 +113,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
     // Every emit below records it: a key that only tracked progress would go
     // stale behind an intervening label and suppress the emit that restores it.
     lastActivityLabel: string | null
+    firstActivityTraced: boolean
   }
   const state = new Map<string, ThreadStreamState>()
   const get = (tid: string): ThreadStreamState => {
@@ -129,6 +131,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         runSummaryAnchorId: null,
         runSummaryCount: 0,
         lastActivityLabel: null,
+        firstActivityTraced: false,
       }
       state.set(tid, st)
     }
@@ -149,8 +152,17 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
 
   const unsub = api.agent.onChunk((threadId, chunk) => {
     const st = get(threadId)
+    const firstVisibleActivity =
+      chunk.type === 'tool_call' ||
+      (chunk.type === 'text' && chunk.text.trim() !== '') ||
+      (chunk.type === 'reasoning' && chunk.text.trim() !== '')
+    if (firstVisibleActivity && !st.firstActivityTraced) {
+      st.firstActivityTraced = true
+      perfMark('ttft:renderer-first-activity', { kind: chunk.type })
+    }
     switch (chunk.type) {
       case 'machine_turn_start': {
+        st.firstActivityTraced = false
         setThreadStatus(store, threadId, 'running')
         addMessage(
           store,
@@ -334,6 +346,15 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
             : {}),
           ...(chunk.cacheCreationTokens !== undefined
             ? { cacheCreationTokens: chunk.cacheCreationTokens }
+            : {}),
+          ...(chunk.requestedServiceTier !== undefined
+            ? { requestedServiceTier: chunk.requestedServiceTier }
+            : {}),
+          ...(chunk.responseServiceTier !== undefined
+            ? { responseServiceTier: chunk.responseServiceTier }
+            : {}),
+          ...(chunk.serviceTierUsage !== undefined
+            ? { serviceTierUsage: chunk.serviceTierUsage }
             : {}),
         }
         addUsageDelta(store, threadId, delta)

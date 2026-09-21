@@ -41,6 +41,7 @@ describe('dispatchInlineVisualization', () => {
         title: 'Tool rollup approaches',
         mimeType: 'text/html',
         body: '<!doctype html><h1>Chart</h1>',
+        presentation: 'inline',
         threadId: 'thread-a',
         sourcePath: 'visualizations/chart.html',
       },

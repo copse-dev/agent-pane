@@ -113,11 +113,21 @@ export async function spawnInProjectSandbox(
     env?: NodeJS.ProcessEnv
     signal?: AbortSignal
     unsandboxed?: boolean
+    /** Refuse fallback if authorization depended on local OS containment. */
+    requireSandbox?: boolean
     sandboxConfig?: Partial<SandboxRuntimeConfig>
     executionTarget?: ExecutionTarget
   } & Pick<SpawnOptionsWithoutStdio, 'stdio'>,
 ): Promise<ChildProcess> {
   const target = resolveSpawnTarget(opts.executionTarget, opts.cwd)
+  if (
+    opts.requireSandbox &&
+    (isSshExecutionTarget(target) || opts.unsandboxed || !isProjectSandboxEnabled())
+  ) {
+    throw new Error(
+      'This command requires an active local project sandbox. Request authorization again.',
+    )
+  }
   if (isSshExecutionTarget(target)) {
     const command = shellCommand(executable, args)
     return spawnRemoteShellCommand(command, {
@@ -131,6 +141,11 @@ export async function spawnInProjectSandbox(
   await requireLocalWorkingDirectory(opts.cwd)
 
   if (!isProjectSandboxEnabled() || opts.unsandboxed) {
+    if (opts.requireSandbox) {
+      throw new Error(
+        'The project sandbox became unavailable before execution. Request authorization again.',
+      )
+    }
     return spawn(executable, args, {
       cwd: opts.cwd,
       env: mergeSpawnEnv(strippedBaseEnv(), opts.env),
@@ -149,6 +164,12 @@ export async function spawnInProjectSandbox(
     customConfig,
     opts.signal,
   )
+
+  if (opts.requireSandbox && !isProjectSandboxEnabled()) {
+    throw new Error(
+      'The project sandbox became unavailable before execution. Request authorization again.',
+    )
+  }
 
   const file = argv[0]
   if (!file) throw new Error('sandbox wrap produced empty argv')
