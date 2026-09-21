@@ -111,6 +111,8 @@ each run's TAP and metadata; the root `unit-tests.tap` is atomically updated to
 the last completed report, including failed test runs, while failed bundles are
 retained for diagnosis. The explicit `--bundle-only` / `--test-only` coverage
 pair continues to use shared `dist-test` and must remain sequential.
+The CI `unit-tests-tap` artifact contains the canonical TAP plus only the
+per-run TAP and metadata files under `.tmp/test-run-*`.
 
 ### Before believing it works: the oracle
 

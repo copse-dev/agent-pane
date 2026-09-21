@@ -652,7 +652,11 @@ jobs:
         continue-on-error: true
         with:
           name: unit-tests-tap
-          path: unit-tests.tap
+          path: |
+            unit-tests.tap
+            .tmp/test-run-*/unit-tests.tap
+            .tmp/test-run-*/run-meta.json
+          include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 7
       # Diagnostic HTML only — coverage:ci / coverage-gate already decided pass/fail.
