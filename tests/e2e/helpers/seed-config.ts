@@ -1654,19 +1654,61 @@ export function seedLongPromptScrollFixture(workspaceRoot: string): void {
   const projectId = 'e2e-long-prompt-scroll-project'
   const threadId = 'e2e-long-prompt-scroll-thread'
   const now = Date.now()
+  const history = [
+    {
+      user: 'Which changes are candidates for Friday’s release?',
+      assistant:
+        'The desktop sync fix, the account-recovery copy update, and the queue monitoring dashboard are ready for release review; the search experiment remains behind its feature flag.',
+    },
+    {
+      user: 'Has the migration been rehearsed on staging?',
+      assistant:
+        'Yes. The migration completed against the staging snapshot, and the team recorded a backup identifier plus the query that verifies the new index after deployment.',
+    },
+    {
+      user: 'Who still needs to sign off on the user-facing changes?',
+      assistant:
+        'Design needs to verify the recovery screen at narrow widths, accessibility is checking the new error announcement, and Support is reviewing the revised escalation wording.',
+    },
+    {
+      user: 'What should on-call monitor after the rollout begins?',
+      assistant:
+        'Keep the error-rate, login completion, queue latency, and payment reconciliation dashboards open, with the incident lead paged if error rate or queue lag crosses the agreed threshold.',
+    },
+    {
+      user: 'Are older clients safe while the new service version is rolling out?',
+      assistant:
+        'The API remains backward compatible for one release cycle, and the server accepts both payload shapes until the mobile adoption metric clears the retirement threshold.',
+    },
+    {
+      user: 'What is the rollback path if the queue begins to fall behind?',
+      assistant:
+        'Pause the feature flag first, return the service to the prior version, preserve the queue samples for diagnosis, and reverse the migration only if the compatibility check fails.',
+    },
+    {
+      user: 'Do we need any customer communication before the release window?',
+      assistant:
+        'Publish the maintenance note, prepare the status-page update, and give Support the incident reference and expected recovery language before the release captain starts the deployment.',
+    },
+    {
+      user: 'What should we cover in the post-release review?',
+      assistant:
+        'Compare the observed metrics with the launch thresholds, record any manual steps that surprised on-call, and assign follow-up owners for gaps in the checklist or dashboards.',
+    },
+  ]
   const messages: Record<string, unknown>[] = []
-  for (let i = 0; i < 8; i++) {
+  for (const [i, entry] of history.entries()) {
     messages.push({
       id: `msg-scroll-user-${String(i)}`,
       role: 'user',
-      content: `Question ${String(i + 1)}: what changed in the build pipeline this week?`,
+      content: entry.user,
       toolCalls: [],
       createdAt: now + i * 2,
     })
     messages.push({
       id: `msg-scroll-assistant-${String(i)}`,
       role: 'assistant',
-      content: `Answer ${String(i + 1)}: the pipeline now caches the dependency graph between runs, which cuts incremental build time roughly in half for most workspaces.`,
+      content: entry.assistant,
       toolCalls: [],
       createdAt: now + i * 2 + 1,
     })
