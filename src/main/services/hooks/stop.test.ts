@@ -117,34 +117,46 @@ describe('stop (turn-end / abort fire site — B3)', () => {
     assert.equal(stdin['status'], 'aborted')
   })
 
-  it('is detached — a slow stop hook does not block the caller (no drain barrier, decision 3)', async () => {
-    const marker = join(tempHome, 'slow.marker')
-    const script = join(tempHome, 'slow-stop.sh')
-    // Sleep well past the synchronous window, then drop the marker: if the
-    // caller had awaited the hook the marker would exist before we do.
-    await writeFile(script, `#!/bin/sh\ncat > /dev/null\nsleep 0.6\n: > '${marker}'\n`, 'utf-8')
-    await chmod(script, 0o755)
-    await writeUserHooks({ hooks: { stop: [{ command: script }] } })
+  it(
+    'is detached — completion waits for the caller to release the hook (decision 3)',
+    { timeout: 15_000 },
+    async () => {
+      const marker = join(tempHome, 'completed.marker')
+      const release = join(tempHome, 'release.marker')
+      const script = join(tempHome, 'gated-hook.sh')
+      // Completion is controlled by the caller, not a race between a short
+      // sleep and process scheduling under load. This timeout is only a bound
+      // for a broken implementation that incorrectly waits for the hook.
+      setCursorHookTimeoutForTest(10_000)
+      await writeFile(
+        script,
+        `#!/bin/sh\ncat > /dev/null\nwhile [ ! -f '${release}' ]; do sleep 0.02; done\n: > '${marker}'\n`,
+        'utf-8',
+      )
+      await chmod(script, 0o755)
+      await writeUserHooks({ hooks: { stop: [{ command: script }] } })
 
-    const t0 = Date.now()
-    // Mirror the production call site: dispatch without awaiting the hook.
-    // `runStopHooks` resolves after discovery + scheduling, never after the
-    // hook completes (decision 3), so awaiting it is prompt.
-    const result = await fireStop('completed')
-    const elapsedAfterDispatch = Date.now() - t0
-
-    // The dispatch returned promptly; the slow hook is still running.
-    assert.equal(result.ran, 1)
-    assert.ok(
-      elapsedAfterDispatch < 300,
-      `dispatch must not block on the hook; it took ${String(elapsedAfterDispatch)}ms`,
-    )
-    assert.equal(existsSync(marker), false)
-
-    // `settled` is a test affordance to await the detached hook's completion.
-    await result.settled
-    assert.equal(existsSync(marker), true)
-  })
+      const result = await fireStop('completed')
+      let completed = false
+      const settled = result.settled.then(() => {
+        completed = true
+      })
+      try {
+        // Flush a settled promise's reaction: an implementation that awaited
+        // the child (including its timeout) must fail this ordering assertion.
+        await Promise.resolve()
+        assert.equal(result.ran, 1)
+        assert.equal(completed, false, 'dispatch must return before the hook settles')
+        assert.equal(existsSync(marker), false)
+      } finally {
+        // Release even after an assertion failure so no live child outlasts
+        // its fixture or observes the next test's temporary home.
+        await writeFile(release, '')
+        await settled
+      }
+      assert.equal(existsSync(marker), true, 'the released hook must actually complete')
+    },
+  )
 
   it('is notification-only — a crashing hook never throws or blocks', async () => {
     const path = join(tempHome, 'crash.sh')
