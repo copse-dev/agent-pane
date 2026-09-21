@@ -48,3 +48,16 @@ export function attachImageExpand(img: HTMLImageElement, alt?: string): void {
     open()
   })
 }
+
+/**
+ * Wire every `<img>` rendered inside markdown (agent prose, tool output) to the
+ * same lightbox a pasted/attached image opens — regardless of whether it came
+ * from `![]()` syntax or a host-approved raw `<img>` (e.g. a remote artifact).
+ * Idempotent per image via `attachImageExpand`, so re-running after async src
+ * hydration (remote artifacts) is safe.
+ */
+export function attachImageExpandToRenderedImages(root: HTMLElement): void {
+  for (const img of root.querySelectorAll('img')) {
+    attachImageExpand(img, img.alt || 'Image')
+  }
+}

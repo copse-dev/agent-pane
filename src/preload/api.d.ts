@@ -216,6 +216,8 @@ export interface ApiClient {
   }
   fs: {
     readFile: (projectId: string, threadId: string, path: string) => Promise<string>
+    /** Image files only: bytes read directly and returned as a `data:` URL, or null for a non-image path. */
+    readImage: (projectId: string, threadId: string, path: string) => Promise<string | null>
     writeFile: (projectId: string, threadId: string, path: string, content: string) => Promise<void>
     readdir: (projectId: string, threadId: string, path: string) => Promise<string[]>
     listDir: (

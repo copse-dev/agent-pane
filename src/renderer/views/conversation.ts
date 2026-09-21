@@ -66,7 +66,10 @@ import {
 } from '@shared/threads/message-model.ts'
 import { displayModelLabel } from '@shared/model-display.ts'
 import { attachmentIcon } from '../dom/attachment-icons.ts'
-import { attachImageExpand } from '../attachments/image-expand.ts'
+import {
+  attachImageExpand,
+  attachImageExpandToRenderedImages,
+} from '../attachments/image-expand.ts'
 import { attachTextExpand } from '../attachments/text-expand.ts'
 import { attachVideoExpand } from '../attachments/video-expand.ts'
 import { CHIP_CHAR } from './composer-editor.ts'
@@ -156,6 +159,7 @@ function createToolResultSection(
     const wrap = el('div', { class: 'tool-result tool-result-markdown message-text' })
     wrap.innerHTML = renderMarkdown(result)
     attachCodeBlockCopyButtons(wrap)
+    attachImageExpandToRenderedImages(wrap)
     return wrap
   }
   return el('div', { class: 'tool-result' }, el('pre', {}, renderToolArgs(result)))
@@ -515,6 +519,7 @@ function setAssistantMarkdown(
   attachTableCopyButtons(el)
   void annotateFileReferences(el, api)
   hydrateRemoteArtifactImages(el, api)
+  attachImageExpandToRenderedImages(el)
   void renderMermaidIn(el)
   syncAcpTransportNoiseDisclosure(el, transportNoise)
 }
@@ -549,6 +554,7 @@ function paintUserMarkdown(el: HTMLElement, content: string): void {
   // elements and the command vanishes from the transcript.
   el.innerHTML = renderMarkdown(userPromptMarkdown(content), { htmlPolicy: 'escape-all' })
   attachCodeBlockCopyButtons(el)
+  attachImageExpandToRenderedImages(el)
 }
 
 /**

@@ -13,6 +13,7 @@ import { detectLanguage } from '../controller/files.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { demoScenarioPrompt } from '@shared/demo-scenarios.ts'
 import { maximizeIcon, minimizeIcon } from '../dom/icons.ts'
+import { isImagePath } from '@shared/fs/image-path.ts'
 
 const DEMO_MODEL = 'mock:demo'
 const DEMO_TIME = '2026-07-17T09:00:00.000Z'
@@ -319,6 +320,11 @@ function resolvedVoid(): Promise<void> {
 
 const emptyArray = (): Promise<never[]> => Promise.resolve([])
 
+// A 1x1 transparent PNG: no demo scenario ships real workspace image bytes, so
+// this stands in for `fs:read-image` wherever a scenario references one.
+const DEMO_IMAGE_DATA_URL =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
+
 function resolved<T>(value: T): Promise<T> {
   return Promise.resolve(value)
 }
@@ -527,6 +533,8 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     fs: {
       readFile: (_projectId: string, _threadId: string, path: string) =>
         resolved(writtenFiles.get(path) ?? ''),
+      readImage: (_projectId: string, _threadId: string, path: string) =>
+        resolved(isImagePath(path) ? DEMO_IMAGE_DATA_URL : null),
       writeFile: resolvedVoid,
       readdir: () => resolved(['src', 'tests', 'package.json']),
       listDir: () =>

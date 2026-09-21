@@ -1,7 +1,9 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
+import { isImagePath } from '@shared/fs/image-path.ts'
 import { getActiveThreadOwner, requireActiveThreadOwner } from './active-thread-owner.ts'
 import { openBrowserUrl } from './panels.ts'
+import { openImageExpand } from '../attachments/image-expand.ts'
 
 const LANG: Record<string, string> = {
   ts: 'typescript',
@@ -73,6 +75,24 @@ export async function openWorkspaceFile(
   store.emit('files_pane_changed')
 }
 
+/**
+ * Open a workspace image in the shared image lightbox rather than the (text-only)
+ * file viewer. `fs.readFile` decodes bytes as utf-8 and would silently corrupt a
+ * raster/vector image, so this reads through the image-specific IPC path instead.
+ */
+export async function openWorkspaceImage(
+  store: AppStore,
+  api: ApiClient,
+  path: string,
+): Promise<void> {
+  const { projectId, threadId } = requireActiveThreadOwner(store)
+  const dataUrl = await api.fs.readImage(projectId, threadId, path)
+  const currentOwner = getActiveThreadOwner(store)
+  if (currentOwner?.projectId !== projectId || currentOwner.threadId !== threadId) return
+  if (!dataUrl) throw new Error(`Could not read image: ${path}`)
+  openImageExpand(dataUrl, path.split('/').pop() ?? path)
+}
+
 /** Open a local workspace file using the user's global browser preference. */
 export async function openWorkspaceFileInBrowser(
   store: AppStore,
@@ -118,6 +138,10 @@ export async function activateWorkspaceReference(
 ): Promise<void> {
   if (kind === 'directory') {
     revealWorkspaceDirectory(store, path)
+    return
+  }
+  if (isImagePath(path)) {
+    await openWorkspaceImage(store, api, path)
     return
   }
   await openWorkspaceFile(store, api, path, reveal)

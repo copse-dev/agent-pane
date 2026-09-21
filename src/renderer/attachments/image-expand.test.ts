@@ -1,7 +1,11 @@
 import '../../../tests/setup-dom.ts'
 import { describe, it, before } from 'node:test'
 import assert from 'node:assert/strict'
-import { attachImageExpand, openImageExpand } from './image-expand.ts'
+import {
+  attachImageExpand,
+  attachImageExpandToRenderedImages,
+  openImageExpand,
+} from './image-expand.ts'
 import { qs, qsRequired } from '../dom/helpers.ts'
 import { patchPreviewDialog } from './preview-dialog.test-support.ts'
 
@@ -81,5 +85,22 @@ describe('image expand lightbox', () => {
     // Backdrop handler closes when the click target is the dialog itself.
     dialog.click()
     assert.equal(dialog.open, false)
+  })
+
+  it('wires every rendered markdown <img> to the lightbox, not just pasted attachments', () => {
+    const root = document.createElement('div')
+    // The shape `renderMarkdown` produces for `![alt](src)`.
+    root.innerHTML = `<p>See <img src="${PNG}" alt="chart.png" data-md-rendered="1"></p>`
+    document.body.append(root)
+
+    attachImageExpandToRenderedImages(root)
+    const img = qsRequired<HTMLImageElement>(root, 'img')
+    mouseClick(img)
+
+    const dialog = qsRequired(document, '.attachment-preview-dialog')
+    const expanded = qsRequired<HTMLImageElement>(dialog, '.image-expand-image')
+    assert.equal(expanded.src, PNG)
+    assert.equal(expanded.alt, 'chart.png')
+    root.remove()
   })
 })

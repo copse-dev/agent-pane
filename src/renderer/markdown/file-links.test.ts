@@ -1,5 +1,5 @@
 import '../../../tests/setup-dom.ts'
-import { describe, it } from 'node:test'
+import { before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -9,6 +9,8 @@ import {
   findFileReferenceCandidates,
 } from './file-links.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
+import { qsRequired } from '../dom/helpers.ts'
+import { patchPreviewDialog } from '../attachments/preview-dialog.test-support.ts'
 
 function apiWithFileReferences(
   resolutions: { candidate: string; path: string; kind?: 'file' | 'directory' }[],
@@ -32,7 +34,14 @@ function apiWithFileReferences(
   })()
 }
 
+const PNG =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg=='
+
 describe('markdown file links', () => {
+  before(() => {
+    patchPreviewDialog()
+  })
+
   it('collects file-like references outside pre blocks and existing links', () => {
     const root = document.createElement('div')
     root.innerHTML = [
@@ -132,5 +141,47 @@ describe('markdown file links', () => {
     assert.equal(store.getState().rightPanelMode, 'explorer')
     assert.equal(store.getState().openFile?.path, 'src/main/index.ts')
     assert.equal(store.getState().openFile?.content, 'export {}\n')
+  })
+
+  it('clicking an image path the agent mentioned in tool output opens the image lightbox', async () => {
+    // Mirrors how a tool result / assistant message referencing an image
+    // (`Saved screenshot to screenshot.png`) gets turned into a clickable
+    // file-reference link by `annotateFileReferences`.
+    const root = document.createElement('div')
+    root.innerHTML = '<div class="tool-result"><pre>Saved screenshot to screenshot.png</pre></div>'
+    const api = ((): ApiClient => {
+      const base = apiWithFileReferences([{ candidate: 'screenshot.png', path: 'screenshot.png' }])
+      return {
+        ...base,
+        fs: {
+          ...base['fs'],
+          readFile: async (): Promise<string> => {
+            throw new Error('an image reference must not be read as text')
+          },
+          readImage: async () => PNG,
+        },
+      } satisfies ApiClient
+    })()
+
+    await annotateFileReferences(root, api)
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      filesPaneOpen: false,
+      rightPanelMode: 'terminal',
+    })
+    const unbind = bindFileReferenceClicks(root, store, api)
+
+    const link = qsRequired<HTMLAnchorElement>(root, 'a.file-reference-link')
+    link.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    unbind()
+
+    // The text/Monaco file viewer never opens for an image.
+    assert.equal(store.getState().openFile, null)
+    const dialog = qsRequired<HTMLDialogElement>(document, '.attachment-preview-dialog')
+    assert.equal(dialog.open, true)
+    assert.equal(qsRequired<HTMLImageElement>(dialog, '.image-expand-image').src, PNG)
+    dialog.close()
   })
 })

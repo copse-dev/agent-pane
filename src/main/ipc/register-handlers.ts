@@ -396,6 +396,8 @@ import {
   gatewayReaddir,
   gatewayWriteFile,
 } from '../project-sandbox/sandbox-fs-client.ts'
+import { getActiveWorkspaceFs } from '../services/workspace-fs/get-workspace-fs.ts'
+import { imageMimeType } from '@shared/fs/image-path.ts'
 import { requestApproval } from '../services/approval.ts'
 import {
   armGuardedYolo,
@@ -730,6 +732,21 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const { root } = await resolveThreadExecutionContext(projectId, threadId)
     const abs = await resolvePathWithinRoot(relPath, root)
     return gatewayReadFile(abs, root)
+  })
+
+  // A raster/vector image read as text (the `fs:read-file` path above) mangles
+  // its bytes, and the sandbox worker only speaks utf-8. Read bytes directly
+  // (same pattern as the git image-diff reader) and hand back a self-describing
+  // data URL so a viewer never needs its own extension-to-MIME table.
+  ipcMain.handle('fs:read-image', async (event, ...rawArgs) => {
+    assertMainFrameSender(event, win)
+    const [projectId, threadId, relPath] = parseIpcArgs(threadPathArgs, rawArgs)
+    const mime = imageMimeType(relPath)
+    if (!mime) return null
+    const { root } = await resolveThreadExecutionContext(projectId, threadId)
+    const abs = await resolvePathWithinRoot(relPath, root)
+    const buf = await getActiveWorkspaceFs().readFileBytes(abs)
+    return `data:${mime};base64,${buf.toString('base64')}`
   })
 
   ipcMain.handle('fs:write-file', async (event, ...rawArgs) => {

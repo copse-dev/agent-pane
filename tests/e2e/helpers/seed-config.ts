@@ -1170,6 +1170,45 @@ export function seedJobDescriptionMetadataFixture(workspaceRoot: string): void {
 }
 
 /** Assistant message with a root-relative markdown link to a real workspace file. */
+/**
+ * An assistant message that mentions a real image file living in the workspace
+ * by its plain-text path (the shape tool output/markdown prose takes — see
+ * `@shared/fs/file-reference.ts`). `annotateFileReferences` turns the mention
+ * into a `.file-reference-link`; clicking it must open the image lightbox, not
+ * the text/Monaco file viewer (#2500).
+ */
+export function seedImageFileReferenceFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-image-file-reference-project'
+  const threadId = 'e2e-image-file-reference-thread'
+  copyFileSync(
+    join(GIT_IMAGE_FIXTURES, 'git-changes-red.png'),
+    join(workspaceRoot, 'screenshot.png'),
+  )
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Image file reference',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-assistant-image-reference',
+            role: 'assistant',
+            content: 'Saved the failing UI to screenshot.png for review.',
+            createdAt: Date.now(),
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    ],
+  })
+}
+
 export function seedMarkdownWorkspaceLinkFixture(workspaceRoot: string): void {
   const projectId = 'e2e-markdown-workspace-link-project'
   const threadId = 'e2e-markdown-workspace-link-thread'
