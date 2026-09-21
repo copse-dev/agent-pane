@@ -69852,7 +69852,7 @@ function hookCardDetailLines(card) {
   if (card.status === "halted") lines.push("Stopped the agent run");
   if (card.updatedInput) lines.push("Rewrote the tool input");
   if (card.nudgeApplied) {
-    const via = card.nudgeMechanism === "text-only-turn" ? "as a forced text-only turn" : "appended to the next turn";
+    const via = card.nudgeMechanism === "text-only-turn" ? "as a forced text-only turn" : card.nudgeMechanism === "tool-enabled-turn" ? "as a tool-enabled finalization turn" : "appended to the next turn";
     lines.push(`Applied this nudge to the conversation \u2014 ${via}`);
   }
   if (card.injectContextChars !== void 0 && card.injectContextChars > 0) {
@@ -84794,9 +84794,9 @@ async function createPrFromBubble(store2, api2, threadId, onConfirmed) {
     ...bodyPromise ? { bodyPromise } : {}
   });
   if (!picked) return;
-  onConfirmed();
   const request = { title: picked.title, body: picked.body, draft: picked.draft };
   const card = openPrCardInTranscript(store2, threadId, request);
+  onConfirmed();
   try {
     const result = await api2.gh.createPrForThread(activeProjectId, threadId, request);
     settlePrCard(store2, card, result.ok ? "done" : "error", result.message);
@@ -84836,14 +84836,22 @@ function mountFollowUpSuggestions(store2, api2, onSelect) {
     fetchTokens.set(threadId, token);
     return token;
   };
+  const changesRefreshTokens = /* @__PURE__ */ new Map();
+  const nextChangesRefreshToken = (threadId) => {
+    const token = (changesRefreshTokens.get(threadId) ?? 0) + 1;
+    changesRefreshTokens.set(threadId, token);
+    return token;
+  };
   let changesRefreshTimer = null;
   let displayedThreadId = null;
   const suggestionsByThread = /* @__PURE__ */ new Map();
-  const consumedThreads = /* @__PURE__ */ new Set();
+  const consumedTurnKeys = /* @__PURE__ */ new Map();
   function consumeSuggestions(threadId) {
-    consumedThreads.add(threadId);
+    const exchange = lastExchange(store2, threadId);
+    if (exchange) consumedTurnKeys.set(threadId, exchange.turnKey);
     suggestionsByThread.delete(threadId);
     nextFetchToken(threadId);
+    nextChangesRefreshToken(threadId);
     if (store2.getState().activeThreadId === threadId) clearSuggestions();
   }
   function clearSuggestions() {
@@ -84911,13 +84919,15 @@ function mountFollowUpSuggestions(store2, api2, onSelect) {
     displayedThreadId = threadId;
   }
   async function maybeFetchSuggestions(threadId) {
-    if (consumedThreads.has(threadId)) return;
     const exchange = lastExchange(store2, threadId);
     if (!exchange) {
       suggestionsByThread.delete(threadId);
       if (store2.getState().activeThreadId === threadId) clearSuggestions();
       return;
     }
+    const consumedTurnKey = consumedTurnKeys.get(threadId);
+    if (consumedTurnKey === exchange.turnKey) return;
+    if (consumedTurnKey) consumedTurnKeys.delete(threadId);
     const cached2 = suggestionsByThread.get(threadId);
     if (cached2?.turnKey === exchange.turnKey) {
       if (store2.getState().activeThreadId === threadId) {
@@ -84951,12 +84961,16 @@ function mountFollowUpSuggestions(store2, api2, onSelect) {
     if (!activeProjectId || !activeId) return;
     const cached2 = suggestionsByThread.get(activeId);
     if (!cached2) return;
+    const token = nextChangesRefreshToken(activeId);
     let stats;
     try {
       stats = await api2.git.changeStats(activeProjectId, activeId);
     } catch {
       return;
     }
+    if (token !== changesRefreshTokens.get(activeId)) return;
+    if (consumedTurnKeys.has(activeId)) return;
+    if (suggestionsByThread.get(activeId) !== cached2) return;
     const next = reconcileChangesSuggestion(cached2.suggestions, stats);
     if (next === cached2.suggestions) return;
     suggestionsByThread.set(activeId, { turnKey: cached2.turnKey, suggestions: next });
@@ -84972,16 +84986,18 @@ function mountFollowUpSuggestions(store2, api2, onSelect) {
       clearSuggestions();
       return;
     }
-    if (consumedThreads.has(activeId)) {
-      clearSuggestions();
-      return;
-    }
     if (displayedThreadId === activeId) return;
     const exchange = lastExchange(store2, activeId);
     if (!exchange) {
       clearSuggestions();
       return;
     }
+    const consumedTurnKey = consumedTurnKeys.get(activeId);
+    if (consumedTurnKey === exchange.turnKey) {
+      clearSuggestions();
+      return;
+    }
+    if (consumedTurnKey) consumedTurnKeys.delete(activeId);
     const cached2 = suggestionsByThread.get(activeId);
     if (cached2?.turnKey === exchange.turnKey) {
       renderSuggestions(activeId, cached2.suggestions);
@@ -84992,8 +85008,8 @@ function mountFollowUpSuggestions(store2, api2, onSelect) {
   const unsubs = [
     store2.on("thread_status_changed", (tid, status) => {
       if (status === "running") {
-        consumedThreads.delete(tid);
         suggestionsByThread.delete(tid);
+        nextChangesRefreshToken(tid);
         if (tid === store2.getState().activeThreadId) {
           nextFetchToken(tid);
           clearSuggestions();
@@ -85017,11 +85033,13 @@ function mountFollowUpSuggestions(store2, api2, onSelect) {
     clearSuggestions,
     destroy: () => {
       fetchTokens.clear();
+      changesRefreshTokens.clear();
       if (changesRefreshTimer) clearTimeout(changesRefreshTimer);
       unsubs.forEach((u) => {
         u();
       });
       suggestionsByThread.clear();
+      consumedTurnKeys.clear();
       clearSuggestions();
     }
   };
