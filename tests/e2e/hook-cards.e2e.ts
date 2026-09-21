@@ -28,8 +28,7 @@ describe('hook cards in the transcript', function () {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
     // Executions + deny decision folded from the spine hook_run records.
-    const cards = await $$('.hook-card')
-    await browser.waitUntil(async () => (await cards.length) >= 3, { timeout: 10_000 })
+    await browser.waitUntil(async () => (await $$('.hook-card')).length >= 3, { timeout: 10_000 })
 
     await expect($('.hook-card[data-status="allow"]')).toBeExisting()
     await expect($('.hook-card[data-hook-kind="decision"][data-status="deny"]')).toBeExisting()
