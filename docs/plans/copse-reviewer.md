@@ -1,8 +1,13 @@
 # Copse Reviewer
 
-Status: **Proposed** — design only. Nothing in this document is on `main`. It supersedes
-the surfacing and validation gaps in the existing `copse.model-comparison` plugin, which
-stays as-is until Phase 2 retires its judge and Phase 3 replaces it with `copse.review`.
+Status: **Active — Phase 0 landed.** `@copse/review` is a workspace package on `main`
+with the finding schema, Stage 0 (the base-versus-head build and test delta), the
+`IsolationBackend` contract with the host-process and OS-sandbox backends, and the
+hostile-fixture conformance test; `pnpm run review:stage0` runs it over this repository's
+own working tree. Phases 1–5 remain proposed. See §What Phase 0 delivered. The plan
+supersedes the surfacing and validation gaps in the existing `copse.model-comparison`
+plugin, which stays as-is until Phase 2 retires its judge and Phase 3 replaces it with
+`copse.review`.
 Binding decisions B1 (execution isolation, 2026-09-03), B2–B6 (packaging, backend
 sequencing, scope, ecosystem, customer; 2026-09-04) and B7–B9 (name, precision aim, SARIF
 export; 2026-09-04) are recorded. Problems are numbered P1–P9 in §What needs to be solved,
@@ -479,9 +484,67 @@ Ordered by how likely each is to sink the thing.
    it needs a design pass against [`../ui-taste.md`](../ui-taste.md) and, per
    [`../../AGENTS.md`](../../AGENTS.md), visual evidence.
 
+## What Phase 0 delivered
+
+On `main` under `packages/review/` (README there), with the app-side adapter under
+`src/main/services/review/` and the dogfood entry `scripts/run-review-stage0.mts`:
+
+- **The finding schema** (`finding.ts`), as zod, with the content-derived identity of P2's
+  starting proposal: SHA-256 of class, path, the normalised anchored source and the
+  normalised claim — never a line number.
+- **Stage 0** (`stage0.ts`, `checkouts.ts`, `project-commands.ts`, `tsc-diagnostics.ts`).
+  Decisions made while building it, recorded so the next phase does not re-derive them:
+  - **Head runs first; base runs only for the checks that failed on head.** A passing
+    head check can produce no finding, so the clean case costs one pass, not two. The
+    "fixed" verdict is therefore only ever observed incidentally.
+  - **A lint regression is a failed check, never a finding.** The Stage 0 text above
+    lists `lint` beside `build` and `type`, and B4's class list does not include it; B4
+    is binding, and §The quality bar already says a lint failure "is a lint failure, not
+    a finding". The report shows it as `lint ✗ regressed`.
+  - **The default `prepare` is `pnpm install --frozen-lockfile --offline --ignore-scripts`**,
+    with pnpm's content-addressed store passed in read-only. `--ignore-scripts` because a
+    repo-controlled `postinstall` is the CodeRabbit incident; a repository whose native
+    modules need their build step says so in `review.config.json`. The host's pnpm store
+    and corepack cache are mounted read-only and corepack is pinned offline
+    (`COREPACK_ENABLE_NETWORK=0`), since a cell with its own `HOME` would otherwise try to
+    download the pinned package manager. This is P1's "read-only dependency cache" in its
+    simplest form; a registry allowlist stays open.
+  - **`review.config.json`** is the §Configuration file, Phase 0 subset: an argv per
+    command, `null` to disable one, and per-command timeouts. It is repo-controlled, so
+    its argv only ever runs inside the cell; the orchestrator reads it as data.
+  - **A `tsc` regression is one finding per new diagnostic**, keyed on path, code and
+    message (not line), anchored at the file and line. Build and test regressions are one
+    finding per check, anchored at the script line in `package.json`, until Phase 2's
+    reproducers give them a finer anchor.
+  - **A timeout claims nothing.** A check that timed out on head is `undetermined` and
+    listed under "not checked", never a finding.
+  - **The repository's git common directory is readable in the cell**, read-only, so a
+    build that stamps the commit or a test that shells out to git works. Both checkouts
+    are detached worktrees of it.
+- **The `IsolationBackend` contract** (`isolation.ts`) with `decideExecution`, the
+  trust × isolation table as a function, tested exhaustively. Two backends: the
+  **host process** with a scrubbed environment (strength `none`, so own diffs with
+  consent only), and the app's **OS sandbox** (`os-sandbox-backend.ts`, strength
+  `os-sandbox`), which spawns ASRT's wrapped argv itself rather than through
+  `spawnInProjectSandbox` because that path layers the app's own environment underneath
+  the caller's, and a review cell's environment must be exactly the allowlist.
+- **The conformance test** (`hostile-fixture.test.ts`): a hostile repository — a prepare
+  step that dumps its environment, a build that reads `$HOME/.copse` and the
+  orchestrator's secrets file, a test that writes outside the cell, a README aimed at an
+  agent — reviewed with canary secrets in the orchestrator's environment. Each declared
+  capability is checked against what the fixture managed. The README criterion is
+  vacuous until Stage 2 puts a model in the loop and is re-armed then.
+- **Secret scrubbing** of every retained output through `@copse/llm`'s `redactSecrets`,
+  with every environment value the allowlist dropped passed as a literal secret — a
+  second line behind the backend's wall, not a substitute for it.
+
+Not in Phase 0, by design: any model call, the CLI shell and SARIF (Phase 1), the app
+gesture (Phase 3), and the container backend that a foreign diff needs (Phase 4). Outside
+the app there is no OS sandbox, so `pnpm run review:stage0` needs `--allow-unisolated`.
+
 ## Phases
 
-- **Phase 0 — Findings schema + Stage 0 + OS-sandbox backend.** `@copse/review` as a
+- **Phase 0 — Findings schema + Stage 0 + OS-sandbox backend.** ✅ Landed; see above. `@copse/review` as a
   workspace package (B2) with the finding type, the build/test baseline diff for
   TypeScript/pnpm repositories (B5), the `IsolationBackend` abstraction with the existing OS
   sandbox as its first backend (B3), and the hostile-fixture conformance test. No models at
