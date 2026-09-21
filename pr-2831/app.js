@@ -83926,7 +83926,7 @@ function buildChangesSuggestion(stats) {
   return {
     id: DETERMINISTIC_FOLLOW_UP_IDS.changes,
     label: "Changes",
-    prompt: "Review the uncommitted changes in this workspace and suggest any fixes or improvements.",
+    prompt: "Review the changes shown in the Changes pane and suggest any fixes or improvements.",
     additions: stats.additions,
     deletions: stats.deletions
   };
@@ -103511,6 +103511,8 @@ Notes: ${notes}` : prompt;
       renderEditor({ preserveDirty: true });
     }),
     store2.on("workspace_changed", () => {
+      loadToken++;
+      loading = false;
       cancelResolutionCheckUi();
       selectedId = null;
       creating = false;
@@ -103521,11 +103523,9 @@ Notes: ${notes}` : prompt;
       autoSaveToken.clear();
       resetAttachmentEdits();
       attachmentDataCache.clear();
+      renderList();
+      renderEditor();
       if (roadmapModeActive(store2)) void refresh();
-      else {
-        renderList();
-        renderEditor();
-      }
     })
   ];
   renderList();
