@@ -257,9 +257,16 @@ describe('runPostTurnReviewCycle (E3)', () => {
 
   it('stops remediating when the shared budget is exhausted (decision 5)', async () => {
     const h = newHarness()
+    const grantReasons: string[] = []
     await runPostTurnReviewCycle(
       baseOptions(h, {
-        continuationBudget: grantBudget(0),
+        continuationBudget: {
+          tryGrant: (reason) => {
+            grantReasons.push(reason)
+            return false
+          },
+          remaining: () => 0,
+        },
         runReviewOnce: () => {
           h.reviews += 1
           return Promise.resolve(outcome(verdict({ requestFollowUp: true })))
@@ -270,6 +277,7 @@ describe('runPostTurnReviewCycle (E3)', () => {
     // remediation, only the one review.
     assert.equal(h.reviews, 1)
     assert.equal(h.remediations.length, 0)
+    assert.deepEqual(grantReasons, ['post-review-remediation'])
   })
 
   it('stops when a remediation turn makes no edits', async () => {

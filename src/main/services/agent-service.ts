@@ -150,6 +150,10 @@ import {
   getAgentRunTodos,
   setAgentRunTodos,
 } from './agent-run-todos.ts'
+import {
+  continuationBudgetExhaustedSummary,
+  type ContinuationGrantCounts,
+} from './continuation-budget-summary.ts'
 import { getGithubRepoSlug, getGitDiffText, countDiffChangedLines } from './github/git-service.ts'
 import { getAgentExecutionRoot, getAgentProjectRoot } from './execution-root.ts'
 import { isWorkspaceTrusted } from './security/workspace-trust.ts'
@@ -165,7 +169,10 @@ import {
 } from './hooks/run-deadline.ts'
 import { fireSessionStartHook } from './hooks/session-start.ts'
 import { asTurnTreeId, type TurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
-import type { ContinuationGrant } from '@copse/agent/hooks/continuation-budget.ts'
+import type {
+  ContinuationGrant,
+  ContinuationGrantReason,
+} from '@copse/agent/hooks/continuation-budget.ts'
 import { currentAgentSessionInfo } from './hooks/agent-session.ts'
 import { getContinuationLedger } from './hooks/continuation-ledger.ts'
 import { isGitAvailable } from './tool-availability.ts'
@@ -1519,8 +1526,17 @@ export async function runAgent(
   // the renderer re-seeds the spent count on the next run of the same turn tree.
   const budgetLedger = getContinuationLedger()
   budgetLedger.seed(turnTreeId, options?.continuationBudgetUsed ?? 0)
+  const continuationGrants: ContinuationGrantCounts = {
+    'todo-closeout': 0,
+    'pre-review-todo': 0,
+    'post-review-remediation': 0,
+  }
   const continuationBudget: ContinuationGrant = {
-    tryGrant: () => budgetLedger.tryGrant(turnTreeId),
+    tryGrant: (reason: ContinuationGrantReason) => {
+      const granted = budgetLedger.tryGrant(turnTreeId)
+      if (granted) continuationGrants[reason] += 1
+      return granted
+    },
     remaining: () => budgetLedger.remaining(turnTreeId),
   }
 
@@ -2366,6 +2382,16 @@ export async function runAgent(
           loopStopReason !== undefined
             ? { type: 'done', stopReason: loopStopReason }
             : { type: 'done' }
+        const summary = continuationBudgetExhaustedSummary(getAgentRunTodos(), continuationGrants, {
+          remaining: continuationBudget.remaining(),
+          aborted: controller.signal.aborted,
+          failed: loopStopReason !== undefined,
+        })
+        if (summary !== null) {
+          const separatedSummary = `\n\n${summary}`
+          sendChunk({ type: 'text', text: separatedSummary })
+          trimmed.push({ role: 'assistant', content: separatedSummary })
+        }
         // C3 run→drain fold-back (E3): report the machine turns this run spent
         // in-process (closeout / pre-review / remediation) so the renderer folds them
         // back onto the turn tree's counter and its *next* queue drain respects the
