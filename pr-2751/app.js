@@ -122129,11 +122129,16 @@ function mountAskUserDialog(api2, store2) {
     event.preventDefault();
     submit();
   });
-  form.addEventListener("keydown", (event) => {
-    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
-      event.preventDefault();
-      submit();
+  dialog2.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.stopPropagation();
+      return;
     }
+    if (!(event.metaKey || event.ctrlKey) || event.key !== "Enter") return;
+    event.stopPropagation();
+    if (event.isComposing || event.repeat) return;
+    event.preventDefault();
+    submit();
   });
   dialog2.addEventListener("cancel", (event) => {
     event.preventDefault();
