@@ -1,14 +1,35 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  attachBrowserGuestShareShortcut,
   buildBrowserContextMenuTemplate,
   createBrowserGuestInspectionController,
   inspectBrowserGuestElement,
+  isBrowserShareShortcutInput,
   suggestedImageFilename,
   type BrowserContextMenuActions,
   type BrowserContextMenuParams,
   type BrowserGuestInspector,
+  type BrowserGuestShortcutContents,
+  type BrowserGuestShortcutWindow,
 } from './browser-context-menu.ts'
+
+function keyInput(overrides: Partial<Electron.Input> = {}): Electron.Input {
+  return {
+    type: 'keyDown',
+    key: 'l',
+    code: 'KeyL',
+    isAutoRepeat: false,
+    isComposing: false,
+    shift: false,
+    control: false,
+    alt: false,
+    meta: false,
+    location: 0,
+    modifiers: [],
+    ...overrides,
+  }
+}
 
 function baseParams(overrides: Partial<BrowserContextMenuParams> = {}): BrowserContextMenuParams {
   const params: BrowserContextMenuParams = {
@@ -62,6 +83,9 @@ function recordingActions(): BrowserContextMenuActions & {
     shareSelection: (text: string, pageUrl: string): void => {
       calls.push(`shareSelection:${pageUrl}:${text}`)
     },
+    shareScreenshot: (): void => {
+      calls.push('shareScreenshot')
+    },
     saveImageAs: (srcURL: string): void => {
       calls.push(`saveImageAs:${srcURL}`)
     },
@@ -88,9 +112,13 @@ function invokeItemClick(template: Electron.MenuItemConstructorOptions[], label:
 }
 
 describe('buildBrowserContextMenuTemplate', () => {
-  it('always includes Inspect Element', () => {
-    const template = buildBrowserContextMenuTemplate(baseParams(), recordingActions())
-    assert.deepEqual(labels(template), ['Inspect Element'])
+  it('always includes Share Screenshot and Inspect Element', () => {
+    const actions = recordingActions()
+    const template = buildBrowserContextMenuTemplate(baseParams(), actions)
+    assert.deepEqual(labels(template), ['Share Screenshot with Thread', 'Inspect Element'])
+
+    invokeItemClick(template, 'Share Screenshot with Thread')
+    assert.deepEqual(actions.calls, ['shareScreenshot'])
   })
 
   it('offers open/copy for http(s) links', () => {
@@ -102,6 +130,7 @@ describe('buildBrowserContextMenuTemplate', () => {
     assert.deepEqual(labels(template), [
       'Open Link in New Tab',
       'Copy Link Address',
+      'Share Screenshot with Thread',
       'Inspect Element',
     ])
 
@@ -118,7 +147,7 @@ describe('buildBrowserContextMenuTemplate', () => {
       baseParams({ linkURL: 'javascript:alert(1)' }),
       recordingActions(),
     )
-    assert.deepEqual(labels(template), ['Inspect Element'])
+    assert.deepEqual(labels(template), ['Share Screenshot with Thread', 'Inspect Element'])
   })
 
   it('offers copy/save image actions for images', () => {
@@ -137,6 +166,7 @@ describe('buildBrowserContextMenuTemplate', () => {
       'Copy Image',
       'Copy Image Address',
       'Save Image As…',
+      'Share Screenshot with Thread',
       'Inspect Element',
     ])
 
@@ -163,7 +193,14 @@ describe('buildBrowserContextMenuTemplate', () => {
       }),
       recordingActions(),
     )
-    assert.deepEqual(labels(template), ['Cut', 'Copy', 'Paste', 'Select All', 'Inspect Element'])
+    assert.deepEqual(labels(template), [
+      'Cut',
+      'Copy',
+      'Paste',
+      'Select All',
+      'Share Screenshot with Thread',
+      'Inspect Element',
+    ])
   })
 
   it('shows Copy for a non-editable text selection', () => {
@@ -184,6 +221,7 @@ describe('buildBrowserContextMenuTemplate', () => {
       'Copy',
       'Share Selection with Thread',
       'Select All',
+      'Share Screenshot with Thread',
       'Inspect Element',
     ])
 
@@ -268,6 +306,127 @@ describe('inspectBrowserGuestElement', () => {
     recording.announceOpened()
 
     assert.deepEqual(recording.calls, ['open'])
+  })
+})
+
+describe('isBrowserShareShortcutInput', () => {
+  it('matches a plain Ctrl+L keydown', () => {
+    assert.equal(isBrowserShareShortcutInput(keyInput({ control: true })), true)
+  })
+
+  it('matches Cmd (meta)+L too, for macOS', () => {
+    assert.equal(isBrowserShareShortcutInput(keyInput({ meta: true })), true)
+  })
+
+  it('ignores keyup — only the keydown fires the share', () => {
+    assert.equal(isBrowserShareShortcutInput(keyInput({ control: true, type: 'keyUp' })), false)
+  })
+
+  it('ignores L without a modifier', () => {
+    assert.equal(isBrowserShareShortcutInput(keyInput()), false)
+  })
+
+  it('ignores Ctrl+Shift+L and Ctrl+Alt+L', () => {
+    assert.equal(isBrowserShareShortcutInput(keyInput({ control: true, shift: true })), false)
+    assert.equal(isBrowserShareShortcutInput(keyInput({ control: true, alt: true })), false)
+  })
+
+  it('ignores a different key entirely', () => {
+    assert.equal(
+      isBrowserShareShortcutInput(keyInput({ control: true, code: 'KeyK', key: 'k' })),
+      false,
+    )
+  })
+})
+
+function fakeShortcutContents(selection: string): {
+  contents: BrowserGuestShortcutContents
+  fire: (input: Electron.Input) => { prevented: boolean }
+} {
+  let handler: ((event: Electron.Event, input: Electron.Input) => void) | null = null
+  const contents: BrowserGuestShortcutContents = {
+    on: (_event, listener): void => {
+      handler = listener
+    },
+    isDestroyed: () => false,
+    executeJavaScript: () => Promise.resolve(selection),
+    capturePage: () => Promise.resolve({ toDataURL: () => 'data:image/png;base64,SHOT' }),
+    getTitle: () => 'Guest page',
+    getURL: () => 'https://example.com/guest',
+  }
+  return {
+    contents,
+    fire: (input): { prevented: boolean } => {
+      let prevented = false
+      assert.ok(
+        handler,
+        'attachBrowserGuestShareShortcut must register a before-input-event listener',
+      )
+      const event: Electron.Event = {
+        preventDefault: (): void => {
+          prevented = true
+        },
+        defaultPrevented: false,
+      }
+      handler(event, input)
+      return { prevented }
+    },
+  }
+}
+
+function fakeWindow(sent: [string, unknown][]): BrowserGuestShortcutWindow {
+  return {
+    isDestroyed: () => false,
+    webContents: {
+      send: (channel, payload): void => {
+        sent.push([channel, payload])
+      },
+    },
+  }
+}
+
+describe('attachBrowserGuestShareShortcut', () => {
+  it('shares the selection and suppresses the menu accelerator when the guest has one', async () => {
+    const sent: [string, unknown][] = []
+    const { contents, fire } = fakeShortcutContents('the selected sentence')
+    attachBrowserGuestShareShortcut(contents, () => fakeWindow(sent))
+
+    const { prevented } = fire(keyInput({ control: true }))
+    assert.equal(prevented, true)
+    await new Promise((resolve) => setImmediate(resolve))
+
+    assert.deepEqual(sent, [
+      [
+        'browser:share-text',
+        {
+          label: 'Browser selection — Guest page',
+          content: 'Source: https://example.com/guest\n\nthe selected sentence',
+        },
+      ],
+    ])
+  })
+
+  it('shares a screenshot when the guest has no selection', async () => {
+    const sent: [string, unknown][] = []
+    const { contents, fire } = fakeShortcutContents('')
+    attachBrowserGuestShareShortcut(contents, () => fakeWindow(sent))
+
+    fire(keyInput({ meta: true }))
+    await new Promise((resolve) => setImmediate(resolve))
+
+    assert.deepEqual(sent, [
+      ['browser:share-image', { dataUrl: 'data:image/png;base64,SHOT', mimeType: 'image/png' }],
+    ])
+  })
+
+  it('ignores non-matching input — the global accelerator keeps it', () => {
+    const { contents, fire } = fakeShortcutContents('irrelevant')
+    attachBrowserGuestShareShortcut(contents, () => {
+      assert.fail('must not resolve a window for input that does not match the shortcut')
+    })
+
+    const { prevented } = fire(keyInput())
+    assert.equal(prevented, false)
   })
 })
 

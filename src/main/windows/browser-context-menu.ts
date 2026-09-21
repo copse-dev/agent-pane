@@ -10,7 +10,11 @@ import {
 import { basename, extname } from 'node:path'
 import { getMainWindow } from './create-main-window.ts'
 import { isExternalHttpUrl } from './web-contents-lockdown.ts'
-import { browserSelectionShare } from '../services/browser/browser-share.ts'
+import {
+  browserSelectionShare,
+  captureBrowserScreenshot,
+  shareBrowserGuestContent,
+} from '../services/browser/browser-share.ts'
 
 /**
  * Subset of Electron's context-menu params that decide which browser-guest items
@@ -39,6 +43,7 @@ export type BrowserContextMenuActions = {
   writeClipboardText: (text: string) => void
   openTab: (url: string) => void
   shareSelection: (text: string, pageUrl: string) => void
+  shareScreenshot: () => void | Promise<void>
   saveImageAs: (srcURL: string) => void | Promise<void>
   inspectElement: (x: number, y: number) => void
 }
@@ -224,6 +229,15 @@ export function buildBrowserContextMenuTemplate(
 
   pushGroup(template, [
     {
+      label: 'Share Screenshot with Thread',
+      click: (): void => {
+        void actions.shareScreenshot()
+      },
+    },
+  ])
+
+  pushGroup(template, [
+    {
       label: 'Inspect Element',
       click: (): void => {
         actions.inspectElement(params.x, params.y)
@@ -327,6 +341,12 @@ export function attachBrowserGuestContextMenu(contents: WebContents): void {
         if (!win || win.isDestroyed()) return
         win.webContents.send('browser:share-text', browserSelectionShare(contents, text, pageUrl))
       },
+      shareScreenshot: async () => {
+        const win = getMainWindow()
+        if (!win || win.isDestroyed()) return
+        const share = await captureBrowserScreenshot(contents)
+        if (!win.isDestroyed()) win.webContents.send('browser:share-image', share)
+      },
       saveImageAs: (srcURL) => saveImageAs(contents, srcURL),
       inspectElement: inspection.selectElement,
     })
@@ -340,5 +360,75 @@ export function attachBrowserGuestContextMenu(contents: WebContents): void {
     if (params.frame) popupOptions.frame = params.frame
     if (owner && !owner.isDestroyed()) popupOptions.window = owner
     Menu.buildFromTemplate(template).popup(popupOptions)
+  })
+}
+
+/**
+ * Cmd/Ctrl+L (no alt/shift) on a keydown — matches the terminal and Monaco
+ * selection-to-chat shortcut. `code` rather than `key` so a non-US keyboard
+ * layout still matches the physical L key.
+ */
+export function isBrowserShareShortcutInput(
+  input: Pick<Electron.Input, 'alt' | 'code' | 'control' | 'meta' | 'shift' | 'type'>,
+): boolean {
+  if (input.type !== 'keyDown') return false
+  const modifier = input.control || input.meta
+  if (!modifier || input.alt || input.shift) return false
+  return input.code === 'KeyL'
+}
+
+/**
+ * The slice of a browser guest's `WebContents` that the share shortcut needs —
+ * narrow enough that a test double can implement it directly instead of
+ * casting past the real, much larger `WebContents` type.
+ */
+export interface BrowserGuestShortcutContents {
+  on(
+    event: 'before-input-event',
+    listener: (event: Electron.Event, input: Electron.Input) => void,
+  ): void
+  isDestroyed(): boolean
+  executeJavaScript(code: string, userGesture?: boolean): Promise<unknown>
+  capturePage(): Promise<{ toDataURL(): string }>
+  getTitle(): string
+  getURL(): string
+}
+
+/**
+ * The slice of the main `BrowserWindow` the share shortcut needs, for the same
+ * reason as `BrowserGuestShortcutContents` above.
+ */
+export interface BrowserGuestShortcutWindow {
+  isDestroyed(): boolean
+  webContents: { send(channel: string, payload: unknown): void }
+}
+
+/**
+ * Attach the browser guest's own Cmd/Ctrl+L: share its current text selection
+ * with the thread, or a screenshot when nothing is selected. Scoped to this
+ * one guest's `WebContents`, so it only ever fires while that tab's page has
+ * OS keyboard focus — the moment it doesn't (address bar, composer, another
+ * pane), the key event never reaches here and the global "Focus Address Bar"
+ * accelerator (`CmdOrCtrl+L` in app-menu.ts) still owns it, unchanged.
+ *
+ * `event.preventDefault()` on Electron's `before-input-event` suppresses both
+ * the page's own keydown handling *and* the menu accelerator for that one
+ * keystroke, which is what keeps the two bindings from firing together.
+ *
+ * `getWindow` defaults to the real main window and exists so a test can hand
+ * in a fake one instead of reaching for module mocking.
+ */
+export function attachBrowserGuestShareShortcut(
+  contents: BrowserGuestShortcutContents,
+  getWindow: () => BrowserGuestShortcutWindow | null = getMainWindow,
+): void {
+  contents.on('before-input-event', (event, input) => {
+    if (!isBrowserShareShortcutInput(input)) return
+    event.preventDefault()
+    void shareBrowserGuestContent(contents).then((result) => {
+      const win = getWindow()
+      if (!win || win.isDestroyed() || contents.isDestroyed()) return
+      win.webContents.send(result.channel, result.share)
+    })
   })
 }

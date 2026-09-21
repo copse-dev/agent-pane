@@ -14,6 +14,18 @@ interface BrowserSelectionContents {
   getURL(): string
 }
 
+interface BrowserGuestShareContents
+  extends BrowserSelectionContents, BrowserScreenshotContents, BrowserPageTextContents {}
+
+export type BrowserGuestShareResult =
+  | { channel: 'browser:share-text'; share: BrowserTextShare }
+  | { channel: 'browser:share-image'; share: BrowserImageShare }
+
+const SELECTION_SCRIPT = `(() => {
+  const selection = window.getSelection();
+  return selection ? selection.toString() : '';
+})()`
+
 interface BrowserPdfContents {
   getTitle(): string
   getURL(): string
@@ -113,6 +125,31 @@ export async function exportBrowserPagePdf(
   const data = await contents.printToPDF({ printBackground: true })
   await writePdf(filePath, data)
   return filePath
+}
+
+/**
+ * Share whatever the browser guest currently shows: its live text selection
+ * when there is one, otherwise a screenshot of the viewport. Backs the
+ * Cmd/Ctrl+L shortcut, which — unlike the context menu — has no
+ * `selectionText` param handed to it, so it asks the page directly.
+ */
+export async function shareBrowserGuestContent(
+  contents: BrowserGuestShareContents,
+): Promise<BrowserGuestShareResult> {
+  const selection = await readGuestSelectionText(contents)
+  if (selection) {
+    return { channel: 'browser:share-text', share: browserSelectionShare(contents, selection) }
+  }
+  return { channel: 'browser:share-image', share: await captureBrowserScreenshot(contents) }
+}
+
+async function readGuestSelectionText(contents: BrowserPageTextContents): Promise<string> {
+  try {
+    const result = await contents.executeJavaScript(SELECTION_SCRIPT, true)
+    return typeof result === 'string' ? result.trim() : ''
+  } catch {
+    return ''
+  }
 }
 
 /** Build a source-labelled attachment from the native guest context-menu selection. */
