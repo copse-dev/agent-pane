@@ -6,7 +6,6 @@ import {
   applyPlanCoverage,
   claudeGoverningWindowIds,
   planInclusionHint,
-  planProviderForModel,
   resolvePlanInclusion,
 } from './plan-inclusion.ts'
 
@@ -126,20 +125,13 @@ describe('resolvePlanInclusion', () => {
   })
 })
 
-describe('planProviderForModel', () => {
-  it('maps Claude models to the Claude plan and Grok to Cursor', () => {
-    assert.equal(planProviderForModel('claude-fable-5'), 'claude')
-    assert.equal(planProviderForModel('anthropic/claude-opus-4-8'), 'claude')
-    assert.equal(planProviderForModel('grok-4.5'), 'cursor')
-  })
-  it('leaves unmapped models with no plan provider', () => {
-    assert.equal(planProviderForModel('gpt-5.6'), null)
-    assert.equal(planProviderForModel('lmstudio:qwen/qwen2.5-coder-32b'), null)
-  })
-})
-
 describe('applyPlanCoverage', () => {
-  const candidate: FrontierCandidate = { id: 'claude-fable-5', intellect: 60, costPerMTok: 12 }
+  const candidate: FrontierCandidate = {
+    id: 'acp:claude-acp#fable',
+    intellect: 60,
+    costPerMTok: 12,
+    planAccess: { provider: 'claude', modelId: 'claude-fable-5' },
+  }
 
   it('drops a covered model to $0 with a plan badge, keeping the off-plan price', () => {
     const snap = snapshot('claude', [
@@ -159,6 +151,22 @@ describe('applyPlanCoverage', () => {
       apiPricePerMTok: 12,
     })
     assert.equal(out.planLimitReached, undefined)
+  })
+
+  it('never reprices a paid route from its model name alone', () => {
+    const claude = snapshot('claude', [{ id: 'seven_day', label: 'Weekly', usedPercent: 20 }])
+    const cursor = snapshot('cursor', [{ id: 'total', label: 'Included', usedPercent: 20 }])
+    for (const id of [
+      'claude-fable-5',
+      'openrouter:anthropic/claude-fable-5',
+      'custom:claude-fable-5',
+      'openrouter:x-ai/grok-4.5',
+    ]) {
+      const paid: FrontierCandidate = { id, intellect: 60, costPerMTok: 30 }
+      const plans = id.includes('grok') ? cursor : claude
+      assert.equal(applyPlanCoverage(paid, plans), paid, id)
+      assert.equal(applyPlanCoverage(paid, plans, { mode: 'expected' }), paid, id)
+    }
   })
 
   it('uses explicit Codex ACP plan access without treating every GPT route as included', () => {
