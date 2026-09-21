@@ -48,6 +48,32 @@ function gatedDeps(options: { ghAvailable?: boolean } = {}): {
   }
 }
 
+/** Hold only the optional semantic probe so tool-specific readiness can complete. */
+function slowSemanticDeps(): {
+  deps: ToolAvailabilityDeps
+  release: () => void
+} {
+  let open: (() => void) | null = null
+  const semanticGate = new Promise<void>((resolve) => {
+    open = resolve
+  })
+  return {
+    deps: {
+      probeRg: () => Promise.resolve(true),
+      probeGit: () => Promise.resolve(true),
+      probeGh: () => Promise.resolve(false),
+      probeGrepBackend: () => Promise.resolve('rg'),
+      probeSemanticBackend: async (): Promise<'gortex'> => {
+        await semanticGate
+        return 'gortex'
+      },
+    },
+    release: (): void => {
+      open?.()
+    },
+  }
+}
+
 describe('probe readiness', () => {
   beforeEach(() => {
     resetToolAvailabilityProbeForTest()
@@ -118,6 +144,23 @@ describe('probe readiness', () => {
     const status = await pending
     assert.equal(status.installed, false)
     assert.equal(status.authenticated, false)
+  })
+
+  it('does not hold git, ripgrep, or GitHub behind an unrelated semantic probe', async () => {
+    const { deps, release } = slowSemanticDeps()
+    const probe = checkToolAvailability(deps)
+
+    const [git, rg, ghStatus] = await Promise.all([
+      isGitAvailableForTarget({ kind: 'local' }),
+      isRgAvailableForTarget({ kind: 'local' }),
+      ghCliBackend.getStatus(),
+    ])
+
+    assert.equal(git, true)
+    assert.equal(rg, true)
+    assert.equal(ghStatus.installed, false)
+    release()
+    await probe
   })
 
   // Unit tests (and the ACP headless path) never run the startup probe. They
