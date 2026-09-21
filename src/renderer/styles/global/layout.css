@@ -746,6 +746,11 @@
   box-shadow:
     0 0 0 1px var(--border),
     var(--shadow-lg);
+  /* Centered on both axes rather than pinned to the bottom, so the even margin
+     this variant wants is --spacing-xl top and bottom, not the docked card's
+     --spacing-md (titlebar.css). Same reasoning as #2489 there: cap the whole
+     card so a long draft can't push past the pane's edges. */
+  max-height: calc(100% - 2 * var(--spacing-xl));
 }
 .pane-chat.composer-centered .prompt-input {
   border-top: none;

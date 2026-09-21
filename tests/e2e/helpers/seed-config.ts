@@ -4604,6 +4604,61 @@ export function seedComposerBranchWarningFixture(workspaceRoot: string): {
   return { projectId, threadId, mismatchBranch }
 }
 
+/**
+ * One settled exchange so the composer docks at the pane bottom (#2489) —
+ * `chat-layout.ts` centers `#input-bar` only for a thread with zero messages —
+ * plus a saved multi-line `draftPrompt`, restored into the composer via the
+ * real `syncComposerThread` path once the store hydrates after launch (the
+ * same path a genuinely long draft takes on reopening a thread).
+ */
+export function seedComposerLongPromptFixture(
+  workspaceRoot: string,
+  draftPrompt: string,
+): {
+  projectId: string
+  threadId: string
+} {
+  const projectId = 'e2e-composer-long-prompt-project'
+  const threadId = 'e2e-composer-long-prompt-thread'
+  const now = Date.now()
+
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Long prompt cap',
+        status: 'idle',
+        draftPrompt,
+        messages: [
+          {
+            id: 'msg-user-long-prompt-seed',
+            role: 'user',
+            content: 'Hello',
+            toolCalls: [],
+            createdAt: now,
+          },
+          {
+            id: 'msg-assistant-long-prompt-seed',
+            role: 'assistant',
+            content: 'Hi — what would you like to work on?',
+            toolCalls: [],
+            createdAt: now,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+    activeThreadId: threadId,
+  })
+
+  return { projectId, threadId }
+}
+
 /** Table with glob paths in inline code + architecture list (Repo Core Files repro). */
 export function seedMarkdownBoldGlobFixture(workspaceRoot: string): void {
   const projectId = 'e2e-markdown-bold-glob-project'

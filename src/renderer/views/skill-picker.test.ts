@@ -4,6 +4,18 @@ import assert from 'node:assert/strict'
 import { mountComposerEditor } from './composer-editor.ts'
 import { findSkillTriggerIndex, initSkillPicker } from './skill-picker.ts'
 
+// happy-dom does not expose `ResizeObserver` as a global on its own; see the
+// same stub in composer-editor.test.ts for why `mountComposerEditor()` needs it.
+class TestResizeObserver {
+  observe(): void {}
+  disconnect(): void {}
+}
+
+Object.defineProperty(globalThis, 'ResizeObserver', {
+  configurable: true,
+  value: TestResizeObserver,
+})
+
 async function settle(): Promise<void> {
   await Promise.resolve()
   await Promise.resolve()
