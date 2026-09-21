@@ -98,6 +98,31 @@ describe('isolated mermaid diagram rendering', () => {
     expect(expandedFont.family).toContain('Pliant')
     expect(expandedFont.loaded).toBe(2)
     await browser.switchToParentFrame()
+
+    const toolbarGeometry = await browser.execute(() => {
+      const controls = Array.from(
+        document.querySelectorAll<HTMLButtonElement>('.mermaid-expand-tool'),
+      )
+      return controls.map((control) => {
+        const controlRect = control.getBoundingClientRect()
+        const iconRect = control.querySelector('svg')?.getBoundingClientRect()
+        return {
+          label: control.getAttribute('aria-label'),
+          height: controlRect.height,
+          iconCenterOffset: iconRect
+            ? iconRect.top + iconRect.height / 2 - (controlRect.top + controlRect.height / 2)
+            : null,
+        }
+      })
+    })
+    expect(toolbarGeometry).toHaveLength(3)
+    const toolbarHeights = toolbarGeometry.map(({ height }) => height)
+    expect(Math.max(...toolbarHeights) - Math.min(...toolbarHeights)).toBeLessThanOrEqual(1)
+    for (const { iconCenterOffset } of toolbarGeometry) {
+      if (iconCenterOffset === null) continue
+      expect(Math.abs(iconCenterOffset)).toBeLessThanOrEqual(1)
+    }
+
     await saveAppScreenshot('mermaid-diagram-agent-loop.png')
     await $('.mermaid-expand-close').click()
     await $('dialog .mermaid-frame').waitForExist({ reverse: true })
