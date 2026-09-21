@@ -401,13 +401,13 @@ export async function runWorktreeGit(
 ): Promise<{ stdout: string; stderr: string; code: number }> {
   // These host-owned bookkeeping operations update branch metadata. Config
   // inspection/updates do not execute repository helpers; hooks remain off for
-  // branch deletion. No general Git invocation receives writable configuration.
+  // branch deletion and rename. No general Git invocation receives writable configuration.
   const writeConfig =
     (args[0] === 'config' &&
       args[1] === '--local' &&
       /^branch\..+\.copse-worktree-recovery$/.test(args[2] ?? '') &&
       args.length === 4) ||
-    (args[0] === 'branch' && args[1] === '-d' && args.length === 3)
+    (args[0] === 'branch' && (args[1] === '-d' || args[1] === '-m') && args.length === 3)
   const readOnly =
     ['check-ignore', 'check-ref-format', 'merge-base', 'rev-parse', 'show-ref', 'status'].includes(
       args[0] ?? '',

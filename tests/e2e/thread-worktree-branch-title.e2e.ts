@@ -4,9 +4,16 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject, writeSeedConfig } from './helpers/seed-config.ts'
+import {
+  readSeededSettings,
+  resetUserData,
+  seedEmptyProject,
+  writeSeedConfig,
+  writeSettings,
+} from './helpers/seed-config.ts'
 import { setComposerValue } from './helpers/composer.ts'
 import { waitForAgentIdle, waitForPromptReady } from './helpers.ts'
+import { startConversationServer, type ConversationServer } from './helpers/conversation-server.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 
 const PROJECT_ID = 'e2e-worktree-branch-title-project'
@@ -20,15 +27,13 @@ function git(cwd: string, args: string[]): string {
 describe('automatic worktree branch naming', () => {
   let projectRoot = ''
   let worktreeRoot = ''
-
-  beforeEach(() => {
-    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
-    process.env['ANTHROPIC_API_KEY'] = ''
-    process.env['OPENAI_API_KEY'] = ''
-  })
+  let server: ConversationServer
 
   before(async function () {
     this.timeout(120_000)
+    server = await startConversationServer({ title: 'Auth Session Repair' })
+    // Assert the actual renamed Git branch rather than the screenshot harness's fixed branch.
+    server.configureEnvironment({ COPSE_PANEL_MOCK_BRANCH: '' })
     resetUserData()
     const worktreesRoot = process.env['COPSE_WORKTREES_DIR']
     if (!worktreesRoot) throw new Error('COPSE_WORKTREES_DIR is not configured for e2e')
@@ -44,11 +49,10 @@ describe('automatic worktree branch naming', () => {
     git(projectRoot, ['commit', '-qm', 'seed'])
 
     seedEmptyProject(projectRoot, PROJECT_ID, {
-      model: 'claude-sonnet-4-6',
-      smallTasksModel: 'claude-sonnet-4-6',
       subagentsEnabled: false,
       nextStepSuggestionEnabled: false,
     })
+    writeSettings({ ...readSeededSettings(), ...server.settings })
     const now = Date.now()
     writeSeedConfig({
       projects: [{ id: PROJECT_ID, path: projectRoot, name: 'workspace', worktreeMode: 'always' }],
@@ -68,31 +72,19 @@ describe('automatic worktree branch naming', () => {
     await browser.reloadSession()
   })
 
-  after(() => {
+  after(async () => {
     resetUserData()
     if (worktreeRoot) rmSync(worktreeRoot, { recursive: true, force: true })
     if (projectRoot) rmSync(projectRoot, { recursive: true, force: true })
-    delete process.env['COPSE_PANEL_MOCK_LLM']
-    delete process.env['ANTHROPIC_API_KEY']
-    delete process.env['OPENAI_API_KEY']
+    await server.close()
   })
 
   it('starts anonymous and adopts the first generated title after the turn', async function () {
     this.timeout(120_000)
     await waitForPromptReady()
-    await browser.execute(async () => {
-      const bridge = (
-        window as unknown as {
-          __copseE2e: { setMockScript: (script: unknown) => Promise<unknown> }
-        }
-      ).__copseE2e
-      await bridge.setMockScript([
-        { when: 'Repair the authentication session flow', text: 'The repair is ready.' },
-        { when: 'Reply with ONLY a concise 3-5 word title', text: 'Auth Session Repair' },
-      ])
-    })
-
-    await setComposerValue('Repair the authentication session flow.')
+    const prompt = 'Repair the authentication session flow.'
+    server.enqueue({ user: prompt, text: 'The repair is ready.' })
+    await setComposerValue(prompt)
     await $('.submit-btn').click()
     await waitForAgentIdle()
 
@@ -100,6 +92,8 @@ describe('automatic worktree branch naming', () => {
     await expect(branchLabel).toHaveText(TITLED_BRANCH, { wait: 30_000 })
     await expect($('.chat-row.selected .chat-title')).toHaveText('Auth Session Repair')
     assert.equal(git(worktreeRoot, ['branch', '--show-current']), TITLED_BRANCH)
+    server.assertTitleRequested(prompt)
+    server.assertComplete()
     await saveAppScreenshot('thread-worktree-branch-auto-named.png')
   })
 })

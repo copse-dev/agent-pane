@@ -73,6 +73,13 @@
           0
         ]
       },
+      "agent:rename-checkout-branch": {
+        "api": "agent.renameCheckoutBranch",
+        "args": [
+          3,
+          3
+        ]
+      },
       "agent:reset-default-branch-cache": {
         "api": "agent.resetDefaultBranchCache",
         "args": [

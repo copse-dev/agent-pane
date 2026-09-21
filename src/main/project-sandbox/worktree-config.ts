@@ -98,9 +98,10 @@ export async function worktreeManagerSandboxOverlay(
     // Git updates config by writing config.lock and renaming it over config.
     // On Linux, binding the individual config file makes it a mount point and
     // that rename fails with EBUSY. The only callers that enable writeConfig
-    // are pinned `git config --local branch.*.copse-worktree-recovery …` and
-    // `git branch -d …` commands; grant their validated common admin directory
-    // while the deny list below continues to protect hooks/config.worktree.
+    // are pinned `git config --local branch.*.copse-worktree-recovery …`,
+    // `git branch -d …`, and manager-owned `git branch -m …` commands; grant
+    // their validated common admin directory while the deny list below
+    // continues to protect hooks/config.worktree.
     if (writeConfig) writes.push(repository.commonDir)
     for (const path of writes) {
       if ((await canonicalFuturePath(path)) !== path)
