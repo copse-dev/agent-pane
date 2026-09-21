@@ -4,27 +4,69 @@ import { memberOf } from '@copse/std/member-of.ts'
  * OpenAI's `service_tier` request field.
  *
  * The tier chooses how OpenAI processes a request: `flex` is slower and
- * cheaper, `priority` is quicker at a higher per-token price, `scale` is
- * committed reserved throughput, and omitting the field entirely means
- * standard processing. Which tiers a given model accepts still varies by
- * model — this is what the API recognises, not what every model allows.
+ * cheaper, `fast` / `priority` are quicker at a higher per-token price,
+ * `scale` is committed reserved throughput, and omitting the field follows the
+ * OpenAI Project tier (`auto`). Which tiers a given model accepts still varies
+ * by model — this is what the API recognises, not what every model allows.
  *
- * These are the values OpenAI documents, and they match the SDK's own union.
- * Note that OpenAI markets Priority processing as **"Fast mode"** — a product
- * name, not a request value. `llm`'s `-o service_tier fast` is that tool's own
- * shorthand; sending `fast` to the API is a 400.
+ * These are the values OpenAI's public API reference documents. The SDK can
+ * carry additional unreleased spellings; those do not become product choices
+ * until the public contract describes their behavior and pricing.
+ * OpenAI renamed Priority processing to **Fast mode** in July 2026. The API
+ * accepts both spellings; completed responses can still report `priority`, so
+ * usage accounting normalizes both to the same bucket.
  */
-export const SERVICE_TIERS = ['auto', 'default', 'flex', 'priority', 'scale'] as const
+export const SERVICE_TIERS = ['auto', 'default', 'flex', 'fast', 'priority', 'scale'] as const
 
 export type ServiceTier = (typeof SERVICE_TIERS)[number]
 
 /** Narrow an arbitrary stored string to a tier the API will accept. */
 export const isServiceTier: (value: string) => value is ServiceTier = memberOf(SERVICE_TIERS)
 
+/**
+ * Non-standard processing modes that need their own usage bucket. Standard
+ * processing remains the unbucketed portion of a model's usage, which keeps
+ * data written before tier-aware pricing valid.
+ */
+export const USAGE_SERVICE_TIERS = ['flex', 'priority', 'scale'] as const
+
+export type UsageServiceTier = (typeof USAGE_SERVICE_TIERS)[number]
+
+/** Convert OpenAI's response spelling into the bucket used for pricing. */
+export function usageServiceTierFor(value: ServiceTier): UsageServiceTier | undefined {
+  switch (value) {
+    case 'flex':
+    case 'priority':
+    case 'scale':
+      return value
+    case 'fast':
+      return 'priority'
+    case 'auto':
+    case 'default':
+      return undefined
+  }
+}
+
+/**
+ * Choose a pricing bucket from evidence recorded for one call. A response tier
+ * wins whenever OpenAI supplied one: it is the processing mode actually used,
+ * whereas the request can be routed differently by the service.
+ */
+export function usageServiceTierForCall(
+  requested: ServiceTier | undefined,
+  response: ServiceTier | undefined,
+): UsageServiceTier | undefined {
+  return response === undefined
+    ? requested === undefined
+      ? undefined
+      : usageServiceTierFor(requested)
+    : usageServiceTierFor(response)
+}
+
 /** One offerable tier: the stored value, plus how to describe it to a user. */
 export interface ServiceTierChoice {
-  /** Stored value. `''` means "send no `service_tier`" — standard processing. */
-  value: '' | ServiceTier
+  /** Stored request value. */
+  value: ServiceTier
   label: string
   description: string
 }
@@ -38,9 +80,8 @@ export interface ServiceTierChoice {
  * - `scale` is omitted — it bills against committed reserved throughput bought
  *   on a ≥30-day contract, so presenting it as a per-chat toggle would offer a
  *   capacity most accounts do not have.
- * - `auto` and `default` are omitted — both mean "standard processing", which
- *   the empty value already expresses by sending no field at all. Listing three
- *   spellings of the same outcome invites the question of how they differ.
+ * - `priority` is omitted — it is the legacy spelling of Fast mode. Existing
+ *   stored values remain valid, while a new selection writes `fast`.
  *
  * Shaped like ACP's `AcpConfigChoice` so one picker can render both, but the
  * source differs and that matters: ACP options are *advertised* by the agent at
@@ -49,9 +90,14 @@ export interface ServiceTierChoice {
  */
 export const SERVICE_TIER_CHOICES: readonly ServiceTierChoice[] = [
   {
-    value: '',
+    value: 'auto',
+    label: 'Project default',
+    description: 'Follow the service tier configured for this OpenAI Project.',
+  },
+  {
+    value: 'default',
     label: 'Standard',
-    description: 'Default pay-as-you-go processing. Sends no service_tier field.',
+    description: 'Use standard pay-as-you-go pricing and performance.',
   },
   {
     value: 'flex',
@@ -59,9 +105,9 @@ export const SERVICE_TIER_CHOICES: readonly ServiceTierChoice[] = [
     description: 'Cheaper per token, slower, and may queue or fail under load. Suits batch work.',
   },
   {
-    value: 'priority',
-    label: 'Priority',
-    description: 'Faster and more consistent, at a higher per-token price. Marketed as Fast mode.',
+    value: 'fast',
+    label: 'Fast',
+    description: 'Faster and more consistent, at a higher per-token price.',
   },
 ]
 

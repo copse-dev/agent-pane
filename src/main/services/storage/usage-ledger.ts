@@ -16,7 +16,18 @@ import {
 import { getThreadExecutionContext } from '../thread-execution-context.ts'
 
 function toUsageEvent(input: UsageRecordInput): UsageEvent {
-  const { model, source, projectId, threadId, at, estimated, ...usage } = input
+  const {
+    model,
+    source,
+    projectId,
+    threadId,
+    at,
+    estimated,
+    requestedServiceTier,
+    responseServiceTier,
+    serviceTierUsage,
+    ...usage
+  } = input
   if (!usage.inputTokens && !usage.outputTokens) {
     throw new Error('Usage record must include at least one non-zero token count')
   }
@@ -33,6 +44,9 @@ function toUsageEvent(input: UsageRecordInput): UsageEvent {
     ...(projectId ? { projectId } : {}),
     ...(threadId ? { threadId } : {}),
     ...(estimated ? { estimated: true } : {}),
+    ...(requestedServiceTier !== undefined ? { requestedServiceTier } : {}),
+    ...(responseServiceTier !== undefined ? { responseServiceTier } : {}),
+    ...(serviceTierUsage !== undefined ? { serviceTierUsage } : {}),
   }
 }
 
@@ -67,6 +81,13 @@ export function recordAgentUsageChunk(
       ? { cacheCreationTokens: chunk.cacheCreationTokens }
       : {}),
     ...(chunk.estimated ? { estimated: true } : {}),
+    ...(chunk.requestedServiceTier !== undefined
+      ? { requestedServiceTier: chunk.requestedServiceTier }
+      : {}),
+    ...(chunk.responseServiceTier !== undefined
+      ? { responseServiceTier: chunk.responseServiceTier }
+      : {}),
+    ...(chunk.serviceTierUsage !== undefined ? { serviceTierUsage: chunk.serviceTierUsage } : {}),
   })
 }
 

@@ -1,9 +1,69 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import type { LLMProvider } from '@shared/types'
+import type { ProviderWithUsage } from '@copse/llm/provider-usage.ts'
 import { completeMessagesWithUsage } from './llm-complete-text.ts'
 
 describe('completeMessagesWithUsage', () => {
+  it('retains mixed tier buckets while accumulating provider usage chunks', async () => {
+    const provider: LLMProvider = {
+      async *stream() {
+        yield {
+          type: 'usage' as const,
+          model: 'gpt-4o',
+          inputTokens: 100,
+          outputTokens: 10,
+          requestedServiceTier: 'flex' as const,
+        }
+        yield {
+          type: 'usage' as const,
+          model: 'gpt-4o',
+          inputTokens: 200,
+          outputTokens: 20,
+          requestedServiceTier: 'flex' as const,
+          responseServiceTier: 'priority' as const,
+        }
+        yield {
+          type: 'usage' as const,
+          model: 'gpt-4o',
+          inputTokens: 300,
+          outputTokens: 30,
+          requestedServiceTier: 'fast' as const,
+        }
+        yield {
+          type: 'usage' as const,
+          model: 'gpt-4o',
+          inputTokens: 400,
+          outputTokens: 40,
+          requestedServiceTier: 'fast' as const,
+          responseServiceTier: 'default' as const,
+        }
+        yield { type: 'done' as const }
+      },
+    }
+
+    const result = await completeMessagesWithUsage(provider, [], 60_000)
+    assert.deepEqual(result.usage, {
+      inputTokens: 1_000,
+      outputTokens: 100,
+      serviceTierUsage: {
+        flex: { inputTokens: 100, outputTokens: 10 },
+        priority: { inputTokens: 500, outputTokens: 50 },
+      },
+    })
+  })
+
+  it('keeps provider.lastUsage as the standard fallback when no chunk has usage', async () => {
+    const provider: LLMProvider & ProviderWithUsage = {
+      lastUsage: { inputTokens: 100, outputTokens: 10 },
+      async *stream() {
+        yield { type: 'done' as const }
+      },
+    }
+    const result = await completeMessagesWithUsage(provider, [], 60_000)
+    assert.deepEqual(result.usage, { inputTokens: 100, outputTokens: 10 })
+  })
+
   it('aborts the provider stream when the caller aborts', { timeout: 500 }, async () => {
     let providerSignal: AbortSignal | undefined
     let markStarted!: () => void

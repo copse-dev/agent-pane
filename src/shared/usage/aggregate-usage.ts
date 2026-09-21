@@ -1,8 +1,20 @@
 import type { ModelUsage, Thread } from '@shared/types'
-import { isLocalModel, costForModelUsage, hasModelPricing } from '@copse/llm/estimate-cost.ts'
+import type { TokenUsage } from '@copse/llm/wire-types.ts'
+import {
+  isLocalModel,
+  costForModelUsageWithDetails,
+  hasModelPricing,
+} from '@copse/llm/estimate-cost.ts'
 import type { ModelPricingMap } from '@copse/llm/model-pricing.ts'
 import type { UsageEvent } from './usage-event.ts'
 import { isRecord } from '@shared/unknown-value.ts'
+import {
+  isServiceTier,
+  USAGE_SERVICE_TIERS,
+  usageServiceTierForCall,
+  type UsageServiceTier,
+} from '@copse/llm/service-tier.ts'
+import { mergeModelUsage, usageAtServiceTier } from '@copse/llm/model-usage.ts'
 
 export const DAY_MS = 24 * 60 * 60 * 1000
 export const MONTH_MS = 30 * DAY_MS
@@ -18,6 +30,8 @@ export interface ModelUsageBreakdown {
   isLocal: boolean
   /** True for catalogued routes, including routes whose published rate is zero. */
   pricingKnown: boolean
+  /** A used non-standard tier has no complete catalog rate; shown at standard price. */
+  tierPricingFallback?: boolean
   /** Some contributing events used estimated (not agent-reported) token counts. */
   estimatedTokens?: boolean
 }
@@ -43,20 +57,6 @@ export interface UsageSummary {
   ledgerEventCount: number
 }
 
-function mergeModelUsage(prev: ModelUsage, delta: ModelUsage): ModelUsage {
-  const next: ModelUsage = {
-    inputTokens: prev.inputTokens + delta.inputTokens,
-    outputTokens: prev.outputTokens + delta.outputTokens,
-  }
-  if (delta.cacheReadTokens !== undefined || prev.cacheReadTokens !== undefined) {
-    next.cacheReadTokens = (prev.cacheReadTokens ?? 0) + (delta.cacheReadTokens ?? 0)
-  }
-  if (delta.cacheCreationTokens !== undefined || prev.cacheCreationTokens !== undefined) {
-    next.cacheCreationTokens = (prev.cacheCreationTokens ?? 0) + (delta.cacheCreationTokens ?? 0)
-  }
-  return next
-}
-
 export function mergeUsageByModel(
   base: Record<string, ModelUsage>,
   model: string,
@@ -75,7 +75,14 @@ export function aggregateEventsByModel(
   let byModel: Record<string, ModelUsage> = {}
   for (const event of events) {
     if (event.at < cutoff) continue
-    byModel = mergeUsageByModel(byModel, event.model, event)
+    const usage =
+      event.serviceTierUsage !== undefined
+        ? event
+        : usageAtServiceTier(
+            event,
+            usageServiceTierForCall(event.requestedServiceTier, event.responseServiceTier),
+          )
+    byModel = mergeUsageByModel(byModel, event.model, usage)
   }
   return byModel
 }
@@ -114,6 +121,9 @@ function toBreakdown(
 ): ModelUsageBreakdown {
   const isLocal = isLocalModel(model)
   const pricingKnown = isLocal || hasModelPricing(model, pricing)
+  const cost = isLocal
+    ? { costUsd: 0, tierPricingFallback: false }
+    : costForModelUsageWithDetails(model, usage, pricing)
   return {
     model,
     inputTokens: usage.inputTokens,
@@ -122,9 +132,10 @@ function toBreakdown(
     ...(usage.cacheCreationTokens !== undefined
       ? { cacheCreationTokens: usage.cacheCreationTokens }
       : {}),
-    estimatedCostUsd: isLocal ? 0 : costForModelUsage(model, usage, pricing),
+    estimatedCostUsd: cost.costUsd,
     isLocal,
     pricingKnown,
+    ...(!isLocal && cost.tierPricingFallback ? { tierPricingFallback: true } : {}),
     ...(estimatedTokens ? { estimatedTokens: true } : {}),
   }
 }
@@ -205,6 +216,52 @@ export function pruneUsageEvents(events: UsageEvent[], now = Date.now()): UsageE
   return events.filter((e) => e.at >= cutoff)
 }
 
+function parseTokenUsage(value: unknown): TokenUsage | null {
+  if (!isRecord(value)) return null
+  const inputTokens = value['inputTokens']
+  const outputTokens = value['outputTokens']
+  if (typeof inputTokens !== 'number' || !Number.isFinite(inputTokens) || inputTokens < 0)
+    return null
+  if (typeof outputTokens !== 'number' || !Number.isFinite(outputTokens) || outputTokens < 0)
+    return null
+  const cacheReadTokens = value['cacheReadTokens']
+  const cacheCreationTokens = value['cacheCreationTokens']
+  if (
+    cacheReadTokens !== undefined &&
+    (typeof cacheReadTokens !== 'number' ||
+      !Number.isFinite(cacheReadTokens) ||
+      cacheReadTokens < 0)
+  ) {
+    return null
+  }
+  if (
+    cacheCreationTokens !== undefined &&
+    (typeof cacheCreationTokens !== 'number' ||
+      !Number.isFinite(cacheCreationTokens) ||
+      cacheCreationTokens < 0)
+  ) {
+    return null
+  }
+  return {
+    inputTokens,
+    outputTokens,
+    ...(typeof cacheReadTokens === 'number' ? { cacheReadTokens } : {}),
+    ...(typeof cacheCreationTokens === 'number' ? { cacheCreationTokens } : {}),
+  }
+}
+
+function parseServiceTierUsage(
+  value: unknown,
+): Partial<Record<UsageServiceTier, TokenUsage>> | undefined {
+  if (!isRecord(value)) return undefined
+  const serviceTierUsage: Partial<Record<UsageServiceTier, TokenUsage>> = {}
+  for (const tier of USAGE_SERVICE_TIERS) {
+    const usage = parseTokenUsage(value[tier])
+    if (usage) serviceTierUsage[tier] = usage
+  }
+  return Object.keys(serviceTierUsage).length > 0 ? serviceTierUsage : undefined
+}
+
 /** Parse persisted ledger JSON; drops malformed entries. */
 export function parseUsageEvents(raw: unknown): UsageEvent[] {
   if (!Array.isArray(raw)) return []
@@ -223,6 +280,7 @@ export function parseUsageEvents(raw: unknown): UsageEvent[] {
     ) {
       continue
     }
+    const serviceTierUsage = parseServiceTierUsage(rec['serviceTierUsage'])
     out.push({
       at: rec['at'],
       model: rec['model'],
@@ -238,6 +296,15 @@ export function parseUsageEvents(raw: unknown): UsageEvent[] {
       ...(typeof rec['projectId'] === 'string' ? { projectId: rec['projectId'] } : {}),
       ...(typeof rec['threadId'] === 'string' ? { threadId: rec['threadId'] } : {}),
       ...(rec['estimated'] === true ? { estimated: true } : {}),
+      ...(typeof rec['requestedServiceTier'] === 'string' &&
+      isServiceTier(rec['requestedServiceTier'])
+        ? { requestedServiceTier: rec['requestedServiceTier'] }
+        : {}),
+      ...(typeof rec['responseServiceTier'] === 'string' &&
+      isServiceTier(rec['responseServiceTier'])
+        ? { responseServiceTier: rec['responseServiceTier'] }
+        : {}),
+      ...(serviceTierUsage !== undefined ? { serviceTierUsage } : {}),
     })
   }
   return out

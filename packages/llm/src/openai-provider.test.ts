@@ -19,6 +19,7 @@ interface CapturedChatCompletionRequest {
 }
 
 interface ChatCompletionChunk {
+  service_tier?: string
   choices: Array<{
     delta?: {
       content?: string
@@ -465,6 +466,24 @@ describe('OpenAIProvider stream parsing', () => {
       outputTokens: 8,
       cacheReadTokens: 96,
     })
+  })
+
+  it('carries requested and actual service tiers with the usage chunk', async () => {
+    const provider = new OpenAIProvider('gpt-test', { serviceTier: 'flex' })
+    withFakeStream(provider, [
+      { choices: [{ delta: { content: 'done' }, finish_reason: 'stop' }] },
+      {
+        service_tier: 'priority',
+        choices: [],
+        usage: { prompt_tokens: 120, completion_tokens: 8 },
+      },
+    ])
+
+    const chunks = await collect(provider)
+    const usage = chunks.find((chunk) => chunk.type === 'usage')
+    assert.ok(usage)
+    assert.equal(usage.requestedServiceTier, 'flex')
+    assert.equal(usage.responseServiceTier, 'priority')
   })
 
   it('assembles tool-call argument fragments into a single tool_call chunk', async () => {

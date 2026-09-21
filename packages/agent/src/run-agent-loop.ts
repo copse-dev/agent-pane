@@ -6,6 +6,7 @@ import type {
   ToolCallChunk,
   ToolResult,
 } from '@copse/llm/wire-types.ts'
+import type { ServiceTier } from '@copse/llm/service-tier.ts'
 import type { AgentStreamChunk, ToolExecuteResult } from './wire-types.ts'
 import { normalizeToolExecuteResult } from './wire-types.ts'
 import {
@@ -384,6 +385,8 @@ type StepUsage = {
   outputTokens: number
   cacheReadTokens?: number
   cacheCreationTokens?: number
+  requestedServiceTier?: ServiceTier
+  responseServiceTier?: ServiceTier
 }
 
 /**
@@ -411,6 +414,12 @@ function emitStepUsage(
       ...(usage.cacheReadTokens !== undefined ? { cacheReadTokens: usage.cacheReadTokens } : {}),
       ...(usage.cacheCreationTokens !== undefined
         ? { cacheCreationTokens: usage.cacheCreationTokens }
+        : {}),
+      ...(usage.requestedServiceTier !== undefined
+        ? { requestedServiceTier: usage.requestedServiceTier }
+        : {}),
+      ...(usage.responseServiceTier !== undefined
+        ? { responseServiceTier: usage.responseServiceTier }
         : {}),
     })
   }
@@ -525,6 +534,12 @@ async function streamTextOnlyTurn(
             : {}),
           ...(chunk.cacheCreationTokens !== undefined
             ? { cacheCreationTokens: chunk.cacheCreationTokens }
+            : {}),
+          ...(chunk.requestedServiceTier !== undefined
+            ? { requestedServiceTier: chunk.requestedServiceTier }
+            : {}),
+          ...(chunk.responseServiceTier !== undefined
+            ? { responseServiceTier: chunk.responseServiceTier }
             : {}),
         }
       }
@@ -657,6 +672,12 @@ async function runToolEnabledNudgeTurn(
             : {}),
           ...(chunk.cacheCreationTokens !== undefined
             ? { cacheCreationTokens: chunk.cacheCreationTokens }
+            : {}),
+          ...(chunk.requestedServiceTier !== undefined
+            ? { requestedServiceTier: chunk.requestedServiceTier }
+            : {}),
+          ...(chunk.responseServiceTier !== undefined
+            ? { responseServiceTier: chunk.responseServiceTier }
             : {}),
         }
       }
@@ -1349,6 +1370,12 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
               : {}),
             ...(chunk.cacheCreationTokens !== undefined
               ? { cacheCreationTokens: chunk.cacheCreationTokens }
+              : {}),
+            ...(chunk.requestedServiceTier !== undefined
+              ? { requestedServiceTier: chunk.requestedServiceTier }
+              : {}),
+            ...(chunk.responseServiceTier !== undefined
+              ? { responseServiceTier: chunk.responseServiceTier }
               : {}),
           }
         }

@@ -2,6 +2,8 @@ import type { ApiClient } from '../../../preload/api.d.ts'
 import { el, clear } from '../../dom/helpers.ts'
 import { createCustomProvidersSection, type NativeProvider } from './custom-providers-section.ts'
 import { createAcpAgentsSection } from './acp-agents-section.ts'
+import { SERVICE_TIER_CHOICES } from '@copse/llm/service-tier.ts'
+import { uiField } from '../../ui/index.ts'
 
 // The one "Providers" panel in Settings > General. A provider is a company, not
 // a wiring mechanism: picking Cursor shows everything Cursor can do here (its
@@ -78,6 +80,8 @@ export function createProvidersPanel(
     cloudAgents?: readonly CloudAgentPanel[]
     /** Options that apply to whichever cloud agent runs, shown with them. */
     cloudAgentOptions?: HTMLElement
+    /** Settings-only global request tier for first-party OpenAI API models. */
+    showOpenAiServiceTier?: boolean
     /**
      * Whether picking a provider may run ACP auto-setup (which can install
      * adapter packages). Defaults to true (Settings). Onboarding mounts with
@@ -152,7 +156,87 @@ export function createProvidersPanel(
   let providerPicked = false
   let autoSetupRun = false
 
+  // The picker presents semantic choices while preserving the stored bytes
+  // until the user actually changes one. In particular, an old blank value is
+  // equivalent to `auto`, and `priority` is the legacy spelling of Fast mode.
+  let initialOpenAiTierChoice = 'auto'
+  let pendingOpenAiTierChoice = 'auto'
+  let openAiTierDirty = false
+
   const deviceAutoSetup = opts.deviceAutoSetup ?? true
+
+  const offeredOpenAiTier = new Set<string>(SERVICE_TIER_CHOICES.map((choice) => choice.value))
+
+  function openAiTierChoiceForStored(value: string): string {
+    if (value === '') return 'auto'
+    if (value === 'priority') return 'fast'
+    return value
+  }
+
+  function retainedOpenAiTierLabel(value: string): string {
+    if (value === 'scale') return 'Scale — current advanced value'
+    const visible = value.length > 80 ? `${value.slice(0, 79)}…` : value
+    return `Current advanced value — ${visible || '(empty)'}`
+  }
+
+  function openAiTierDescription(value: string): string {
+    const choice = SERVICE_TIER_CHOICES.find((entry) => entry.value === value)
+    if (choice) return choice.description
+    if (value === 'scale') {
+      return 'Uses committed Scale Tier capacity. It remains selected until you choose another tier.'
+    }
+    return 'This value is not offered by this version. It remains selected until you choose another tier.'
+  }
+
+  async function refreshOpenAiTier(): Promise<void> {
+    if (!opts.showOpenAiServiceTier) return
+    const raw = await api.settings.get('openAiServiceTier')
+    const stored = typeof raw === 'string' ? raw : ''
+    initialOpenAiTierChoice = openAiTierChoiceForStored(stored)
+    pendingOpenAiTierChoice = initialOpenAiTierChoice
+    openAiTierDirty = false
+  }
+
+  function openAiTierBlock(): HTMLElement {
+    const picker = el('select', {
+      name: 'openAiServiceTier',
+      'data-testid': 'openai-service-tier',
+    })
+    for (const choice of SERVICE_TIER_CHOICES) {
+      picker.append(el('option', { value: choice.value }, choice.label))
+    }
+    if (!offeredOpenAiTier.has(pendingOpenAiTierChoice)) {
+      picker.append(
+        el(
+          'option',
+          { value: pendingOpenAiTierChoice },
+          retainedOpenAiTierLabel(pendingOpenAiTierChoice),
+        ),
+      )
+    }
+    picker.value = pendingOpenAiTierChoice
+    const field = uiField({
+      label: 'Global OpenAI service tier',
+      control: picker,
+      hint: openAiTierDescription(pendingOpenAiTierChoice),
+    })
+    picker.addEventListener('change', () => {
+      pendingOpenAiTierChoice = picker.value
+      openAiTierDirty = pendingOpenAiTierChoice !== initialOpenAiTierChoice
+      field.setAttribute('hint', openAiTierDescription(pendingOpenAiTierChoice))
+    })
+    const tierBlock = block(
+      'Request processing',
+      field,
+      el(
+        'p',
+        { class: 'field-hint openai-service-tier-scope' },
+        'Applies to every first-party OpenAI model request. Copse records the tier OpenAI reports for each response, including a downgrade to Standard, and uses it when estimating cost.',
+      ),
+    )
+    tierBlock.dataset['testid'] = 'openai-service-tier-block'
+    return tierBlock
+  }
 
   function loadDeviceInfoOnce(): void {
     if (deviceAutoSetup && providerPicked && !autoSetupRun) {
@@ -332,6 +416,9 @@ export function createProvidersPanel(
         body.append(block('API key', apiPanel.root))
       }
     }
+    if (vendor.id === 'openai' && opts.showOpenAiServiceTier) {
+      body.append(openAiTierBlock())
+    }
     if (caps.cloud) {
       body.append(block('Cloud agent', caps.cloud.element))
       if (cloudAgentOptions) cloudAgentOptions.hidden = false
@@ -369,6 +456,7 @@ export function createProvidersPanel(
     await localPanel.refresh()
     await agentsPanel.reload()
     await refreshCloudAgentKeys()
+    await refreshOpenAiTier()
     // A provider that has gone away closes back to the list rather than
     // handing the selection to an unrelated one.
     if (selected !== ADD_KEY && !vendors().some((vendor) => vendor.id === selected)) {
@@ -379,7 +467,13 @@ export function createProvidersPanel(
 
   async function saveKeys(): Promise<boolean> {
     const [apiSaved, localSaved] = await Promise.all([apiPanel.saveKeys(), localPanel.saveKeys()])
-    return apiSaved && localSaved
+    if (!apiSaved || !localSaved) return false
+    if (openAiTierDirty) {
+      await api.settings.set('openAiServiceTier', pendingOpenAiTierChoice)
+      initialOpenAiTierChoice = pendingOpenAiTierChoice
+      openAiTierDirty = false
+    }
+    return true
   }
 
   return { root: fieldset, refresh, saveKeys }

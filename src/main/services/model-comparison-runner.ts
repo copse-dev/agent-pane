@@ -6,6 +6,7 @@ import { resolveContextWindow } from './providers/resolve-context-window.ts'
 import { completeTextWithUsage } from './providers/llm-complete-text.ts'
 import { resolveModelPricing } from './providers/model-pricing-store.ts'
 import { estimateUsageCost } from '@copse/llm/estimate-cost.ts'
+import { mergeModelUsage } from '@copse/llm/model-usage.ts'
 import { getSetting } from './storage/settings.ts'
 import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import {
@@ -243,15 +244,19 @@ export async function runModelComparison(
     (model: string) =>
     (usage: ModelUsage): void => {
       const prev = usageByModel[model] ?? { inputTokens: 0, outputTokens: 0 }
-      usageByModel[model] = {
-        inputTokens: prev.inputTokens + usage.inputTokens,
-        outputTokens: prev.outputTokens + usage.outputTokens,
-      }
+      usageByModel[model] = mergeModelUsage(prev, usage)
       ctx.onChunk({
         type: 'usage',
         model,
         inputTokens: usage.inputTokens,
         outputTokens: usage.outputTokens,
+        ...(usage.cacheReadTokens !== undefined ? { cacheReadTokens: usage.cacheReadTokens } : {}),
+        ...(usage.cacheCreationTokens !== undefined
+          ? { cacheCreationTokens: usage.cacheCreationTokens }
+          : {}),
+        ...(usage.serviceTierUsage !== undefined
+          ? { serviceTierUsage: usage.serviceTierUsage }
+          : {}),
       })
     }
 

@@ -98,6 +98,11 @@ describe('resolveContainerProvider', () => {
     assert.equal(plan.provider.serviceTier, 'flex')
     assert.deepEqual(plan.egress, ['api.openai.com:443'])
     assert.equal(plan.apiKey, 'sk-test')
+    await setSetting('openAiServiceTier', 'fast')
+    const fastPlan = await resolveContainerProvider('gpt-5')
+    assert.equal(fastPlan.mode, 'provider')
+    assert.equal(fastPlan.provider.kind, 'openai')
+    assert.equal(fastPlan.provider.serviceTier, 'fast')
     await setSetting('openAiServiceTier', '')
   })
 
