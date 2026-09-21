@@ -1254,7 +1254,7 @@ jobs:
       # The Electron/Chromedriver e2e session occasionally fails to start on the
       # runner ("DevToolsActivePort file doesn't exist" / "POST /session" timeout).
       # The hang wedges the whole wdio run, so in-process retries don't recover —
-      # only a fresh headless Electron launch does. Retry the entire shard, cleaning
+      # only a fresh xvfb+Electron launch does. Retry the entire shard, cleaning
       # orphaned session processes before each attempt and when the step exits.
       # The runners are one job per PID-isolated container, so this cannot touch
       # another job. Wrap each attempt in `timeout` so a plain hang cannot stall

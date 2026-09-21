@@ -28,7 +28,7 @@ export const DEFAULT_AWS_INSTANCE_TYPE = 'c7i.2xlarge'
 export const DEFAULT_AWS_REMOTE_USER = 'ubuntu'
 export const DEFAULT_SCW_IMAGE = 'ubuntu_noble'
 export const DEFAULT_SCW_REMOTE_USER = 'root'
-// The e2e tier is CPU-bound (headless Chromium/Electron) and wants ~4 vCPU + ~6 GiB per
+// The e2e tier is CPU-bound (Chromium-under-Xvfb) and wants ~4 vCPU + ~6 GiB per
 // runner (~1.5 GiB/vCPU). The High-CPU POP2-HC line (2 GiB/vCPU) matches that
 // profile at ~half the €/vCPU of the general PRO2 line (4 GiB/vCPU), whose extra
 // RAM the runner never uses. 8C-16G plugins two runners (4 vCPU + a 6 GiB
