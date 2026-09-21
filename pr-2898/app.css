@@ -4382,6 +4382,7 @@ label {
 }
 .mermaid-expand-tool {
   min-width: 32px;
+  min-height: var(--action-min-height);
   display: inline-flex;
   align-items: center;
   justify-content: center;
