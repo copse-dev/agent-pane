@@ -2559,7 +2559,11 @@ export function registerAllHandlers(
   ipcMain.handle('git:change-stats', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
-    return getGitChangeStats(await resolveWatchedGitRoot(projectId, threadId))
+    const root = await resolveWatchedGitRoot(projectId, threadId)
+    return getGitChangeStats(root, {
+      includeCommitted: true,
+      hasOpenPr: (branch) => branchHasOpenPr(projectId, branch, root),
+    })
   })
   ipcMain.handle('git:file-diff', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
