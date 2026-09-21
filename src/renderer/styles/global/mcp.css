@@ -14,7 +14,11 @@
   align-items: center;
   gap: var(--spacing-sm);
 }
-.mcp-server-toggle {
+.mcp-server-header .mcp-server-toggle {
+  /* A server toggle is an inline switch, not a stacked settings field. The
+     scoped selector must outrank `.settings-content label`; otherwise that
+     rule's bottom margin makes the label's flex box taller than its visible
+     track and leaves the track above the rest of the header. */
   margin: 0;
 }
 .mcp-server-header .mcp-server-summary {
@@ -120,7 +124,9 @@
   padding: var(--spacing-sm);
 }
 .mcp-curated-row .mcp-server-toggle {
-  margin-top: 2px;
+  /* Preserve the small first-line optical nudge while resetting the stacked
+     field margin for this second MCP switch layout too. */
+  margin: 2px 0 0;
 }
 .mcp-curated-body {
   flex: 1;
