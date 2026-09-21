@@ -231,14 +231,7 @@
       "indexVersion": "v4.1",
       "source": "Artificial Analysis API (index v4.1), model 'grok-4-5', fetched 2026-08-13",
       "asOf": "2026-08-13",
-      "aliases": [
-        "grok-4-5",
-        "Grok 4.5",
-        "x-ai/grok-4.5",
-        "xai/grok-4.5",
-        "Cursor Grok 4.5",
-        "grok-build-0.1"
-      ]
+      "aliases": ["grok-4-5", "Grok 4.5", "x-ai/grok-4.5", "xai/grok-4.5", "Cursor Grok 4.5"]
     },
     {
       "modelId": "glm-4-5v",
@@ -483,7 +476,14 @@
       "value": 40.7,
       "indexVersion": "v4.1",
       "source": "Artificial Analysis API (index v4.1), model 'grok-build-0-1-06-16', fetched 2026-08-13",
-      "asOf": "2026-08-13"
+      "asOf": "2026-08-13",
+      "aliases": [
+        "grok-build-0.1",
+        "x-ai/grok-build-0.1",
+        "Grok Build 0.1",
+        "xAI: Grok Build 0.1",
+        "SpaceXAI: Grok Build 0.1"
+      ]
     },
     {
       "modelId": "nova-2-0-pro-reasoning-medium",
@@ -4646,7 +4646,14 @@
       "value": 27.2,
       "indexVersion": "v4.3",
       "source": "Artificial Analysis API (index v4.3), model 'grok-build-0-1-06-16', fetched 2026-09-11",
-      "asOf": "2026-09-11"
+      "asOf": "2026-09-11",
+      "aliases": [
+        "grok-build-0.1",
+        "x-ai/grok-build-0.1",
+        "Grok Build 0.1",
+        "xAI: Grok Build 0.1",
+        "SpaceXAI: Grok Build 0.1"
+      ]
     },
     {
       "modelId": "granite-4-2-3b",
@@ -6649,14 +6656,7 @@
       "indexVersion": "v4.3",
       "source": "Artificial Analysis API (index v4.3), model 'grok-4-5', fetched 2026-09-11",
       "asOf": "2026-09-11",
-      "aliases": [
-        "grok-4-5",
-        "Grok 4.5",
-        "x-ai/grok-4.5",
-        "xai/grok-4.5",
-        "Cursor Grok 4.5",
-        "grok-build-0.1"
-      ]
+      "aliases": ["grok-4-5", "Grok 4.5", "x-ai/grok-4.5", "xai/grok-4.5", "Cursor Grok 4.5"]
     },
     {
       "modelId": "mistral-saba",

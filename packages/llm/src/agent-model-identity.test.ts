@@ -23,6 +23,27 @@ describe('resolveAgentModelIdentity', () => {
     assert.equal(resolveAgentModelIdentity('Claude 5 Sonnet', 'claude-opus-5'), 'claude-opus-5')
   })
 
+  it('resolves Grok Build routes to their own measurement, not Grok 4.5', () => {
+    const measured = 'grok-build-0-1-06-16'
+    for (const form of [
+      'grok-build-0.1',
+      'x-ai/grok-build-0.1',
+      'Grok Build 0.1',
+      'xAI: Grok Build 0.1',
+      'SpaceXAI: Grok Build 0.1',
+      'acp:cursor#grok-build-0.1',
+      'openrouter:x-ai/grok-build-0.1',
+    ]) {
+      assert.equal(resolveAgentModelIdentity(form), measured, form)
+      assert.deepEqual(getIntellectScore(form), getIntellectScore(measured), form)
+    }
+    assert.equal(resolveAgentModelIdentity('grok-4.5'), 'grok-4.5')
+    assert.notDeepEqual(getIntellectScore(measured), getIntellectScore('grok-4.5'))
+    // A model name alone does not tell us which configurable reasoning effort
+    // was used; do not silently attach the high-effort measurement.
+    assert.equal(resolveAgentModelIdentity('grok-4.3'), null)
+  })
+
   it('returns null for names that denote no measured model', () => {
     // Family alone names no version, so there is nothing to resolve to.
     assert.equal(resolveAgentModelIdentity('opus', 'Opus'), null)
