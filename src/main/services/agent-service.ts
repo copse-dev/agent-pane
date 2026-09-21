@@ -1509,9 +1509,12 @@ export async function runAgent(
     sendChunk({ type: 'hook_run', card })
   }
   setHookRunLiveSink(hookCardSink)
+  // Host-side blocking waits use the deadline's dedicated host-wait pause, so
+  // approvals and ask_user do not spend the hard cap while ordinary model
+  // streaming and tool execution remain bounded by it.
   const runAbort = createAgentRunAbortScheduler(controller)
   runAbort.schedule()
-  // H4 (decision 13): register this run's idle deadline so host-side blocking
+  // H4 (decision 13): register this run's deadline so host-side blocking
   // hook fire sites (tool gate, subagent spawn gate, afterFileEdit formatter)
   // can pause it while a blocking hook is awaited — "the same way tool execution
   // does". Cleared in the finally, guarded on the same deadline object.

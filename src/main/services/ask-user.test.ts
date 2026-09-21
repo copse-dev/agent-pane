@@ -41,10 +41,10 @@ describe('requestUserAnswers pluggable transport', () => {
 })
 
 // #2332: a question waiting on a human is a host-side wait, and the run's
-// sliding idle deadline must not advance while one is on screen — otherwise a
+// idle and hard deadlines must not advance while one is on screen — otherwise a
 // user who thinks for longer than the 15-minute idle budget has the turn
 // aborted underneath a dialog that is still asking them for an answer.
-describe('requestUserAnswers idle-deadline pause', () => {
+describe('requestUserAnswers host-wait deadline pause', () => {
   afterEach(() => {
     setAskUserHandler(null)
     resetRunDeadlinesForTest()
@@ -55,8 +55,8 @@ describe('requestUserAnswers idle-deadline pause', () => {
     return {
       log,
       deadline: {
-        pause: () => log.push('pause'),
-        resume: () => log.push('resume'),
+        pauseForHostWait: () => log.push('pause'),
+        resumeForHostWait: () => log.push('resume'),
       },
     }
   }
