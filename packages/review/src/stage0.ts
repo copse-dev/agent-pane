@@ -15,7 +15,7 @@ import { access, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { redactSecrets } from '@copse/llm/redact-secrets.ts'
-import { materialiseCheckouts, type GitRunner } from './checkouts.ts'
+import { materialiseCheckouts, type GitRunner, type MaterialisedCheckouts } from './checkouts.ts'
 import {
   findingId,
   type CheckoutTarget,
@@ -342,47 +342,69 @@ function checkKinds(project: ProjectCommands | UnsupportedProject): CheckKind[] 
   return project.commands.map((command) => command.kind).filter((kind) => kind !== 'prepare')
 }
 
-export async function runStage0(options: Stage0Options): Promise<Stage0Report> {
-  const now = options.now ?? Date.now
-  const started = now()
+/**
+ * Everything the stages after Stage 0 share: the two checkouts, the cell (when
+ * execution was allowed), the detected commands, and the scrubber. Opened once
+ * per review and closed once, so Stage 2's reviewer reads the same head
+ * checkout Stage 0 built and runs its commands in the same cell.
+ */
+export interface ReviewGround {
+  readonly options: Stage0Options
+  readonly hostEnv: Readonly<Record<string, string | undefined>>
+  readonly decision: ExecutionDecision
+  readonly scratchDir: string | null
+  readonly checkouts: MaterialisedCheckouts | null
+  readonly cell: ExecutionCell | null
+  readonly project: {
+    readonly head: ProjectCommands | UnsupportedProject | null
+    readonly base: ProjectCommands | UnsupportedProject | null
+  }
+  /** Redacts every host secret the cell environment dropped. */
+  scrub(text: string): string
+  /** Destroy the cell, remove the worktrees and the scratch directory. Idempotent. */
+  close(): Promise<void>
+}
+
+/**
+ * Decide, materialise and build the cell. Never executes anything from the
+ * repository: on a refused decision or an undetectable project the ground has
+ * no cell, and `runStage0Checks` reports why.
+ */
+export async function openReviewGround(options: Stage0Options): Promise<ReviewGround> {
   const hostEnv = options.hostEnv ?? process.env
   const decision = decideExecution({
     diffOrigin: options.diffOrigin,
     strength: options.backend.strength,
     unisolatedConsent: options.unisolatedConsent ?? false,
   })
-  const execution = {
-    backend: options.backend.id,
-    strength: options.backend.strength,
-    decision,
-  }
-  const skeleton = {
-    version: STAGE0_REPORT_VERSION,
-    repositoryRoot: options.repoRoot,
-    baseRef: options.baseRef,
-    mergeBase: null,
-    headCommit: null,
-    dirtyWorkingTree: false,
-    execution,
-    project: { head: null, base: null },
-    preparation: { head: null, base: null },
-    checks: [],
-    findings: [],
-  } as const
-
-  if (!decision.execute) {
-    return {
-      ...skeleton,
-      coverage: { checked: [], notChecked: [{ kind: 'all', reason: decision.reason }] },
-      durationMs: now() - started,
-    }
-  }
-
-  const scratchDir = await mkdtemp(join(options.scratchParent ?? tmpdir(), 'copse-review-'))
   const secrets = droppedHostSecrets(hostEnv)
   const scrub = (text: string): string => redactSecrets(text, secrets)
+  let closed = false
+  let scratchDir: string | null = null
+  let checkouts: MaterialisedCheckouts | null = null
   let cell: ExecutionCell | null = null
-  let checkouts: Awaited<ReturnType<typeof materialiseCheckouts>> | null = null
+  const close = async (): Promise<void> => {
+    if (closed) return
+    closed = true
+    if (cell !== null) await cell.destroy()
+    if (checkouts !== null) await checkouts.cleanup()
+    if (scratchDir !== null) await rm(scratchDir, { recursive: true, force: true })
+  }
+  const ground = (project: ReviewGround['project']): ReviewGround => ({
+    options,
+    hostEnv,
+    decision,
+    scratchDir,
+    checkouts,
+    cell,
+    project,
+    scrub,
+    close,
+  })
+
+  if (!decision.execute) return ground({ head: null, base: null })
+
+  scratchDir = await mkdtemp(join(options.scratchParent ?? tmpdir(), 'copse-review-'))
   try {
     checkouts = await materialiseCheckouts({
       repoRoot: options.repoRoot,
@@ -391,25 +413,11 @@ export async function runStage0(options: Stage0Options): Promise<Stage0Report> {
       includeWorkingTree: options.includeWorkingTree ?? options.diffOrigin === 'own',
       ...(options.git ? { git: options.git } : {}),
     })
-    const headProject = await detectProjectCommands(checkouts.head)
-    const baseProject = await detectProjectCommands(checkouts.base)
-    const project = { head: headProject, base: baseProject }
-    const ground = {
-      ...skeleton,
-      repositoryRoot: checkouts.repositoryRoot,
-      mergeBase: checkouts.mergeBase,
-      headCommit: checkouts.headCommit,
-      dirtyWorkingTree: checkouts.dirty,
-      project,
+    const project = {
+      head: await detectProjectCommands(checkouts.head),
+      base: await detectProjectCommands(checkouts.base),
     }
-
-    if (headProject.ecosystem === 'unsupported') {
-      return {
-        ...ground,
-        coverage: { checked: [], notChecked: [{ kind: 'all', reason: headProject.reason }] },
-        durationMs: now() - started,
-      }
-    }
+    if (project.head.ecosystem === 'unsupported') return ground(project)
 
     const corepackHome = await resolveCorepackHome(options.corepackHome, hostEnv)
     cell = await options.backend.createCell({
@@ -422,91 +430,150 @@ export async function runStage0(options: Stage0Options): Promise<Stage0Report> {
       ],
       env: cellEnvironment(hostEnv, { dependencyStore: options.dependencyStore, corepackHome }),
     })
+    return ground(project)
+  } catch (err) {
+    await close()
+    throw err
+  }
+}
 
-    const headKinds = new Set(checkKinds(headProject))
-    const headRuns = await runTarget(cell, 'head', headProject.commands, headKinds, scrub)
+/** Run the checks on an open ground and compute the delta. Leaves the ground open. */
+export async function runStage0Checks(ground: ReviewGround): Promise<Stage0Report> {
+  const { options, decision } = ground
+  const now = options.now ?? Date.now
+  const started = now()
+  const skeleton = {
+    version: STAGE0_REPORT_VERSION,
+    repositoryRoot: ground.checkouts?.repositoryRoot ?? options.repoRoot,
+    baseRef: options.baseRef,
+    mergeBase: ground.checkouts?.mergeBase ?? null,
+    headCommit: ground.checkouts?.headCommit ?? null,
+    dirtyWorkingTree: ground.checkouts?.dirty ?? false,
+    execution: { backend: options.backend.id, strength: options.backend.strength, decision },
+    project: ground.project,
+    preparation: { head: null, base: null },
+    checks: [],
+    findings: [],
+  } as const
 
-    const failedOnHead = new Set<CheckKind>()
-    for (const [kind, run] of headRuns.runs) {
-      if (kind !== 'prepare' && run.status === 'failed') failedOnHead.add(kind)
-    }
-    const baseKinds = new Set(checkKinds(baseProject).filter((kind) => failedOnHead.has(kind)))
-    const baseRuns =
-      baseKinds.size > 0 && baseProject.ecosystem !== 'unsupported'
-        ? await runTarget(cell, 'base', baseProject.commands, baseKinds, scrub)
-        : { runs: new Map<CheckKind, CheckRun>(), prepareFailure: null }
-
-    const checks: CheckOutcome[] = []
-    const findings: Finding[] = []
-    const checked: CheckKind[] = []
-    const notChecked: CoverageNote[] = []
-    for (const kind of headKinds) {
-      const head = headRuns.runs.get(kind) ?? null
-      const base = baseRuns.runs.get(kind) ?? null
-      if (head === null) {
-        const reason = headRuns.prepareFailure ?? 'not run'
-        checks.push({ kind, verdict: 'not-run', head, base, reason })
-        notChecked.push({ kind, reason })
-        continue
-      }
-      if (head.status === 'timed-out') {
-        const reason = `timed out on head after ${String(head.durationMs)} ms; nothing is claimed`
-        checks.push({ kind, verdict: 'undetermined', head, base, reason })
-        notChecked.push({ kind, reason })
-        continue
-      }
-      checked.push(kind)
-      if (head.status === 'passed') {
-        checks.push({ kind, verdict: base?.status === 'failed' ? 'fixed' : 'clean', head, base })
-        continue
-      }
-      if (base === null) {
-        const reason =
-          baseRuns.prepareFailure ??
-          (baseProject.ecosystem === 'unsupported'
-            ? `base: ${baseProject.reason}`
-            : `no ${kind} command on base`)
-        checks.push({ kind, verdict: 'undetermined', head, base, reason })
-        notChecked.push({ kind, reason: `failed on head, but ${reason}` })
-        continue
-      }
-      if (base.status === 'passed') {
-        const outcome: CheckOutcome = { kind, verdict: 'regressed', head, base }
-        checks.push(outcome)
-        findings.push(
-          ...(await findingsFor({
-            headCheckout: checkouts.head,
-            outcome,
-            headRun: head,
-            baseRun: base,
-          })),
-        )
-        continue
-      }
-      if (base.status === 'failed') {
-        const reason = `already failing on base (exit ${String(base.exitCode)})`
-        checks.push({ kind, verdict: 'failing-on-base', head, base, reason })
-        continue
-      }
-      const reason = `failed on head, but timed out on base after ${String(base.durationMs)} ms`
-      checks.push({ kind, verdict: 'undetermined', head, base, reason })
-      notChecked.push({ kind, reason })
-    }
-
+  if (!decision.execute) {
     return {
-      ...ground,
-      preparation: {
-        head: headRuns.runs.get('prepare') ?? null,
-        base: baseRuns.runs.get('prepare') ?? null,
-      },
-      checks,
-      findings,
-      coverage: { checked, notChecked },
+      ...skeleton,
+      coverage: { checked: [], notChecked: [{ kind: 'all', reason: decision.reason }] },
       durationMs: now() - started,
     }
+  }
+  const { checkouts, cell } = ground
+  const headProject = ground.project.head
+  const baseProject = ground.project.base
+  if (
+    checkouts === null ||
+    cell === null ||
+    headProject === null ||
+    baseProject === null ||
+    headProject.ecosystem === 'unsupported'
+  ) {
+    const reason =
+      headProject !== null && headProject.ecosystem === 'unsupported'
+        ? headProject.reason
+        : 'the review ground has no execution cell'
+    return {
+      ...skeleton,
+      coverage: { checked: [], notChecked: [{ kind: 'all', reason }] },
+      durationMs: now() - started,
+    }
+  }
+  const scrub = (text: string): string => ground.scrub(text)
+
+  const headKinds = new Set(checkKinds(headProject))
+  const headRuns = await runTarget(cell, 'head', headProject.commands, headKinds, scrub)
+
+  const failedOnHead = new Set<CheckKind>()
+  for (const [kind, run] of headRuns.runs) {
+    if (kind !== 'prepare' && run.status === 'failed') failedOnHead.add(kind)
+  }
+  const baseKinds = new Set(checkKinds(baseProject).filter((kind) => failedOnHead.has(kind)))
+  const baseRuns =
+    baseKinds.size > 0 && baseProject.ecosystem !== 'unsupported'
+      ? await runTarget(cell, 'base', baseProject.commands, baseKinds, scrub)
+      : { runs: new Map<CheckKind, CheckRun>(), prepareFailure: null }
+
+  const checks: CheckOutcome[] = []
+  const findings: Finding[] = []
+  const checked: CheckKind[] = []
+  const notChecked: CoverageNote[] = []
+  for (const kind of headKinds) {
+    const head = headRuns.runs.get(kind) ?? null
+    const base = baseRuns.runs.get(kind) ?? null
+    if (head === null) {
+      const reason = headRuns.prepareFailure ?? 'not run'
+      checks.push({ kind, verdict: 'not-run', head, base, reason })
+      notChecked.push({ kind, reason })
+      continue
+    }
+    if (head.status === 'timed-out') {
+      const reason = `timed out on head after ${String(head.durationMs)} ms; nothing is claimed`
+      checks.push({ kind, verdict: 'undetermined', head, base, reason })
+      notChecked.push({ kind, reason })
+      continue
+    }
+    checked.push(kind)
+    if (head.status === 'passed') {
+      checks.push({ kind, verdict: base?.status === 'failed' ? 'fixed' : 'clean', head, base })
+      continue
+    }
+    if (base === null) {
+      const reason =
+        baseRuns.prepareFailure ??
+        (baseProject.ecosystem === 'unsupported'
+          ? `base: ${baseProject.reason}`
+          : `no ${kind} command on base`)
+      checks.push({ kind, verdict: 'undetermined', head, base, reason })
+      notChecked.push({ kind, reason: `failed on head, but ${reason}` })
+      continue
+    }
+    if (base.status === 'passed') {
+      const outcome: CheckOutcome = { kind, verdict: 'regressed', head, base }
+      checks.push(outcome)
+      findings.push(
+        ...(await findingsFor({
+          headCheckout: checkouts.head,
+          outcome,
+          headRun: head,
+          baseRun: base,
+        })),
+      )
+      continue
+    }
+    if (base.status === 'failed') {
+      const reason = `already failing on base (exit ${String(base.exitCode)})`
+      checks.push({ kind, verdict: 'failing-on-base', head, base, reason })
+      continue
+    }
+    const reason = `failed on head, but timed out on base after ${String(base.durationMs)} ms`
+    checks.push({ kind, verdict: 'undetermined', head, base, reason })
+    notChecked.push({ kind, reason })
+  }
+
+  return {
+    ...skeleton,
+    preparation: {
+      head: headRuns.runs.get('prepare') ?? null,
+      base: baseRuns.runs.get('prepare') ?? null,
+    },
+    checks,
+    findings,
+    coverage: { checked, notChecked },
+    durationMs: now() - started,
+  }
+}
+
+/** Stage 0 as a one-shot: open the ground, run the checks, close it. */
+export async function runStage0(options: Stage0Options): Promise<Stage0Report> {
+  const ground = await openReviewGround(options)
+  try {
+    return await runStage0Checks(ground)
   } finally {
-    if (cell !== null) await cell.destroy()
-    if (checkouts !== null) await checkouts.cleanup()
-    await rm(scratchDir, { recursive: true, force: true })
+    await ground.close()
   }
 }

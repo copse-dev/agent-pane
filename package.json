@@ -49,7 +49,7 @@
     "bench:thread-store": "node scripts/bench-thread-store.mts",
     "validate:local-agent": "node scripts/run-validate-local-agent.mts",
     "bench:agent": "node scripts/run-bench-agent.mts",
-    "review:stage0": "node scripts/run-review-stage0.mts",
+    "review": "copse-review",
     "eval:doctrine": "node scripts/run-doctrine-eval.mts",
     "eval:steer": "node scripts/run-steer-eval.mts",
     "bench:terminal": "node scripts/run-terminal-bench.mts",

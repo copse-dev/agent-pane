@@ -1,7 +1,9 @@
 // The terminal projection of a Stage 0 report. "Clean" is a complete answer
 // and is one line; a finding shows its anchor, its claim and the exit codes
 // that back it; and what was NOT checked is always said (§The quality bar).
+import type { Finding } from './finding.ts'
 import type { CheckOutcome, Stage0Report } from './stage0.ts'
+import type { ReviewReport } from './stage5.ts'
 
 const MARK: Record<CheckOutcome['verdict'], string> = {
   clean: '✓',
@@ -57,6 +59,64 @@ export function renderStage0Report(report: Stage0Report): string {
     if (prepare === null || prepare.status === 'passed') continue
     lines.push(`prepare on ${target} ${prepare.status} (exit ${String(prepare.exitCode)}):`)
     for (const line of lastLines(prepare.output, 8)) lines.push(`  ${line}`)
+  }
+  return lines.join('\n')
+}
+
+function findingLines(finding: Finding, index: number): string[] {
+  const where =
+    finding.anchor.startLine === undefined
+      ? finding.anchor.path
+      : `${finding.anchor.path}:${String(finding.anchor.startLine)}`
+  const raised = finding.provenance.raisedBy
+    .map((ref) =>
+      ref.kind === 'stage0' ? 'stage 0' : `${ref.id}${ref.lens ? ` / ${ref.lens}` : ''}`,
+    )
+    .join(', ')
+  const corroborated =
+    finding.provenance.corroboratedBy.length > 0
+      ? `; corroborated by ${finding.provenance.corroboratedBy.map((ref) => ref.id).join(', ')}`
+      : ''
+  const executed = finding.evidence.filter((evidence) => evidence.kind === 'command').length
+  return [
+    `${String(index + 1)}. [${finding.class} · ${finding.severity} · ${finding.confidence}] ${where} — ${finding.claim}`,
+    `   ${finding.verdict.status}: ${finding.verdict.reason}`,
+    `   raised by ${raised}${corroborated}${executed > 0 ? `; ${String(executed)} command(s) as evidence` : ''} (id ${finding.id})`,
+  ]
+}
+
+/** The terminal projection of a full review: Stage 0, the model turn, the ranked list. */
+export function renderReviewReport(report: ReviewReport): string {
+  const lines: string[] = [renderStage0Report(report.stage0)]
+  if (report.review !== null) {
+    const { review } = report
+    const usage = `${String(review.usage.inputTokens)} in / ${String(review.usage.outputTokens)} out${review.usage.estimated ? ' (estimated)' : ''}`
+    lines.push('')
+    lines.push(
+      `model review: ${review.model} under ${review.lens} — ${review.outcome} (${review.stopReason}), ${String(review.toolCalls)} tool call(s), ${String(review.candidates)} candidate(s), ${usage}`,
+    )
+    if (review.error !== undefined) lines.push(`model review error: ${review.error}`)
+    if (review.summary.length > 0) lines.push(`reviewer: ${review.summary.replace(/\s+/g, ' ')}`)
+  }
+  if (report.context !== null) {
+    const { context } = report
+    const notes: string[] = []
+    if (context.dropped.length > 0) {
+      notes.push(`${String(context.dropped.length)} low-signal file(s) omitted from the diff`)
+    }
+    if (context.truncated.length > 0)
+      notes.push(`${String(context.truncated.length)} file diff(s) truncated`)
+    if (notes.length > 0) lines.push(`context: ${notes.join('; ')}`)
+  }
+  lines.push('')
+  if (report.findings.length === 0) {
+    lines.push(report.review === null ? 'No findings from Stage 0.' : 'No findings.')
+  } else {
+    lines.push(`${String(report.findings.length)} finding(s):`)
+    report.findings.forEach((finding, index) => lines.push(...findingLines(finding, index)))
+  }
+  if (report.appendix.length > 0) {
+    lines.push(`${String(report.appendix.length)} more below the cap, in the JSON appendix.`)
   }
   return lines.join('\n')
 }

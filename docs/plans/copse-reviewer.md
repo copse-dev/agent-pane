@@ -1,10 +1,13 @@
 # Copse Reviewer
 
-Status: **Active — Phase 0 landed.** `@copse/review` is a workspace package on `main`
-with the finding schema, Stage 0 (the base-versus-head build and test delta), the
-`IsolationBackend` contract with the host-process and OS-sandbox backends, and the
-hostile-fixture conformance test; `pnpm run review:stage0` runs it over this repository's
-own working tree. Phases 1–5 remain proposed. See §What Phase 0 delivered. The plan
+Status: **Active — Phases 0 and 1 landed.** `@copse/review` is a workspace package on
+`main` with the finding schema, Stage 0 (the base-versus-head build and test delta), the
+`IsolationBackend` contract with the host-process and OS-sandbox backends, the
+hostile-fixture conformance test, and the `copse-review` CLI: Stage 1 context, one model
+under one lens with brokered tools, the ranked report, SARIF export and the headless event
+envelope. `pnpm run review -- --allow-unisolated` runs it over this repository's own
+working tree. Phases 2–5 remain proposed. See §What Phase 0 delivered and §What Phase 1
+delivered. The plan
 supersedes the surfacing and validation gaps in the existing `copse.model-comparison`
 plugin, which stays as-is until Phase 2 retires its judge and Phase 3 replaces it with
 `copse.review`.
@@ -542,6 +545,49 @@ Not in Phase 0, by design: any model call, the CLI shell and SARIF (Phase 1), th
 gesture (Phase 3), and the container backend that a foreign diff needs (Phase 4). Outside
 the app there is no OS sandbox, so `pnpm run review:stage0` needs `--allow-unisolated`.
 
+## What Phase 1 delivered
+
+The CLI shell (Shell A), on `main` in the same package, as `copse-review` (the package's
+`bin`; `pnpm run review` in this repository). Decisions made while building it:
+
+- **Candidates arrive through a tool, not prose.** The reviewer reports each defect with
+  `report_finding`, whose arguments are validated against the finding vocabulary and
+  anchored to real lines at report time (the tool reads the anchored source and rejects an
+  out-of-range anchor), so Problem 3 never re-enters through the model's output. Stage 5
+  mints the content-derived id from that anchored source.
+- **The reviewer's tools are brokered, not the loop.** Reads are served over the head
+  checkout as data, jailed to it. `run_command` is the only executing tool: it runs argv
+  (never a shell string) in the cell, is gated by the run's permission profile, and its
+  output comes back secret-scrubbed and wrapped as external content (P7).
+- **Headless conformance.** The model turn is projected onto the headless contract's event
+  envelope live (`--events`), validated against the schema; permissions come from a
+  declared profile derived from `CI_DENY_BY_DEFAULT_PROFILE` with shell allowed only when
+  the execution decision allowed it, resolved non-interactively so `ask` fails closed; exit
+  codes are the contract's, with a refused execution reported as `APPROVAL_REQUIRED`.
+  The CLI does not consume `headlessRunRequestSchema` on stdin: its request is the
+  repository and the base ref, not a prompt. That reading is recorded here rather than
+  forced.
+- **Per-file diff budgeting** replaces the flat 12k truncation: lockfiles, generated files,
+  build output and binaries are dropped (and listed), then every remaining file keeps a
+  proportional share cut at a line boundary. The reviewer reads the rest through its tools.
+- **Ranking** is severity × confidence, plus a bonus for executable evidence and a confirmed
+  verdict, minus a penalty for a finding one reviewer raised, nobody corroborated and
+  nothing verified; refuted findings never reach the list; seven are surfaced and the rest
+  go to the appendix. Merging is by identical id or same class on overlapping lines — a
+  stand-in for Phase 2's clustering, not the answer to P2.
+- **Provider-agnostic by construction.** `--provider` selects among Anthropic, OpenAI,
+  OpenRouter, LM Studio and any OpenAI-compatible endpoint through `@copse/llm`'s
+  factories; keys come from the environment only; remote providers are wrapped in secret
+  redaction. `--provider mock` plays a scripted reviewer, which is how the pipeline is
+  tested end to end without a model.
+- **The bin is a one-line shim** over the TypeScript source, which Node strips on load.
+  Publishing to npm needs a bundle step; nothing in this repository publishes yet, so that
+  is left with D4.
+
+Not in Phase 1: any second model or lens, clustering, the challenger, reproducers (Phase 2),
+the app gesture (Phase 3), the container backend and CI action (Phase 4), and the
+`bench:review` precision measurement (Phase 5) — so B8's 85% is still unmeasured.
+
 ## Phases
 
 - **Phase 0 — Findings schema + Stage 0 + OS-sandbox backend.** ✅ Landed; see above. `@copse/review` as a
@@ -551,7 +597,7 @@ the app there is no OS sandbox, so `pnpm run review:stage0` needs `--allow-uniso
   all; the user's own working tree only. Ships value immediately ("this doesn't compile /
   this test regressed"). Stage 0 _is_ execution, so this is where B1 is proven, before any
   model spend.
-- **Phase 1 — CLI shell.** `copse review` over a single model, one lens, Stage 0 + 1 + 2 + 5,
+- **Phase 1 — CLI shell.** ✅ Landed; see above. `copse review` over a single model, one lens, Stage 0 + 1 + 2 + 5,
   bugs and regressions only (B4), findings JSON and SARIF out (B9). Dogfood on this
   repository's own PRs (B6), reviewing the author's own tree.
 - **Phase 2 — Multi-model + verification.** Lenses, fan-out, clustering, the challenger
