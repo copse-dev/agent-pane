@@ -55,6 +55,7 @@ describe('ACP tool-result images', () => {
                     {
                       dataUrl: `data:image/png;base64,${image.toString('base64')}`,
                       name: 'tool-rollup-options.png',
+                      kind: 'screenshot',
                     },
                   ],
                 },
@@ -91,7 +92,7 @@ describe('ACP tool-result images', () => {
     resetUserData()
   })
 
-  it('shows a persisted tool image outside the collapsed rollup and expands it', async () => {
+  it('previews a persisted tool image inline outside the collapsed rollup and expands it', async () => {
     const rollup = $(`[data-message-id="${TOOL_MESSAGE_ID}"] > .tool-card-rollup`)
     await rollup.waitForDisplayed({ timeout: 30_000 })
     assert.equal(await rollup.getAttribute('open'), null)
@@ -102,13 +103,23 @@ describe('ACP tool-result images', () => {
     await expect(
       $$(`[data-message-id="${TOOL_MESSAGE_ID}"] > .tool-result-images img`),
     ).toBeElementsArrayOfSize(1)
-    await expect(rollup.$$('.tool-result-image')).toBeElementsArrayOfSize(0)
+    await expect(rollup.$$('.tool-result-preview')).toBeElementsArrayOfSize(0)
 
-    const thumbnail = imageHost.$('.tool-result-image.image-expandable')
+    const preview = imageHost.$('.tool-result-preview')
+    await expect(preview.$('.tool-result-preview-caption')).toHaveText('tool-rollup-options.png')
+    const thumbnail = preview.$('.tool-result-preview-image.image-expandable')
     await expect(thumbnail).toHaveAttribute('alt', 'tool-rollup-options.png')
     await expect(thumbnail).toHaveAttribute('role', 'button')
     await expect(thumbnail).toHaveAttribute('aria-label', 'Expand tool-rollup-options.png')
     assert.match(await thumbnail.getAttribute('src'), /^data:image\/png;base64,/)
+    const previewHeight = await browser.execute(
+      (el) => el.getBoundingClientRect().height,
+      thumbnail,
+    )
+    assert.ok(
+      previewHeight > 240,
+      `expected the inline preview to exceed thumbnail height, got ${String(previewHeight)}`,
+    )
     await expect($(`[data-message-id="${ANSWER_MESSAGE_ID}"] .message-text`)).toHaveText(
       expect.stringContaining('Approach C'),
     )

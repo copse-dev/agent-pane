@@ -112,6 +112,65 @@ describe('collapsed tool card bodies render lazily', () => {
     assert.equal(image.getAttribute('aria-label'), 'Expand generated-concept.png')
   })
 
+  it('previews a screenshot-kind tool image inline at reading size', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    const messageId = addMessage(store, threadId, 'assistant', '')
+    addToolCall(store, messageId, {
+      ...doneCall,
+      images: [
+        {
+          dataUrl: 'data:image/png;base64,aW1hZ2U=',
+          name: 'generated-concept.png',
+          kind: 'screenshot',
+        },
+      ],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+
+    const message = host.querySelector(`[data-message-id="${messageId}"]`)
+    assert.ok(message)
+    const preview = message.querySelector<HTMLElement>(':scope .tool-result-preview')
+    assert.ok(preview, 'a screenshot-kind image renders as an inline preview figure')
+    const image = preview.querySelector<HTMLImageElement>('.tool-result-preview-image')
+    assert.ok(image)
+    assert.equal(image.alt, 'generated-concept.png')
+    assert.equal(image.getAttribute('role'), 'button')
+    assert.equal(image.getAttribute('aria-label'), 'Expand generated-concept.png')
+    assert.equal(
+      preview.querySelector('.tool-result-preview-caption')?.textContent,
+      'generated-concept.png',
+    )
+    assert.equal(
+      message.querySelector('.tool-result-image'),
+      null,
+      'a previewed image does not also render as a thumbnail',
+    )
+  })
+
+  it('keeps frame batches as thumbnails when no image is screenshot-kind', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    const messageId = addMessage(store, threadId, 'assistant', '')
+    addToolCall(store, messageId, {
+      ...doneCall,
+      images: [
+        { dataUrl: 'data:image/png;base64,ZnJhbWUtMQ==', name: 'frame-1.png', kind: 'frames' },
+        { dataUrl: 'data:image/png;base64,ZnJhbWUtMg==', name: 'frame-2.png', kind: 'frames' },
+      ],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+
+    const message = host.querySelector(`[data-message-id="${messageId}"]`)
+    assert.ok(message)
+    assert.equal(message.querySelector('.tool-result-preview'), null)
+    assert.equal(message.querySelectorAll('.tool-result-image').length, 2)
+  })
+
   it('builds the body the first time the card is opened', () => {
     const store = createStore()
     const threadId = createThread(store)
