@@ -846,6 +846,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       downloadArtifact: unsupported,
       artifactImageDataUrl: unsupported,
       models: emptyArray,
+      refreshImportedThread: () => resolved(null),
       discoverExternal: (_projectId?: string) =>
         resolved({
           imported: [],

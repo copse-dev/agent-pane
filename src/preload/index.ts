@@ -925,6 +925,8 @@ const api: ApiClient = {
     /** Import outside Cursor cloud agents as local thread stubs for a project. */
     discoverExternal: (projectId?: string) =>
       ipcRenderer.invoke('remote-agent:discover-external', projectId),
+    refreshImportedThread: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('remote-agent:refresh-imported-thread', projectId, threadId),
   },
   acp: {
     detectAgents: () => ipcRenderer.invoke('acp:detect-agents'),

@@ -192,7 +192,7 @@ function createHistoryCheckpointWriter(
 /** Main-process authority for starting primary agent turns and committing provider history. */
 export class AgentDispatcher {
   private readonly histories = new Map<string, LLMMessage[]>()
-  private readonly active = new Map<string, Promise<TurnOutcome | undefined>>()
+  private readonly active = new Map<string, Promise<unknown>>()
   private readonly epochs = new Map<string, { turnTreeId: string; continuationUsed: number }>()
   private readonly epochWrites = new Map<string, Promise<void>>()
   private readonly machineOperations = new Map<string, Promise<MachineDispatchResult>>()
@@ -213,6 +213,23 @@ export class AgentDispatcher {
   async dispatch(request: AgentDispatchRequest): Promise<void> {
     perfMark('ttft:main-dispatch')
     const key = dispatchKey(request.projectId, request.threadId)
+    const existing = this.active.get(key)
+    if (existing) {
+      throw new Error(`An agent turn is already running for thread "${request.threadId}"`)
+    }
+    // Claim the thread before the renderer epoch sidecar is written. That
+    // write can await disk, but an accepted local dispatch already owns the
+    // conversation and must block an imported cloud snapshot from committing.
+    const running = this.dispatchAccepted(request, key)
+    this.active.set(key, running)
+    try {
+      await running
+    } finally {
+      if (this.active.get(key) === running) this.active.delete(key)
+    }
+  }
+
+  private async dispatchAccepted(request: AgentDispatchRequest, key: string): Promise<void> {
     const epochWrite = this.observeRendererEpoch(key, request)
     this.epochWrites.set(key, epochWrite)
     try {
@@ -220,7 +237,7 @@ export class AgentDispatcher {
     } finally {
       if (this.epochWrites.get(key) === epochWrite) this.epochWrites.delete(key)
     }
-    await this.dispatchInternal(request)
+    await this.execute(request, key)
   }
 
   dispatchMachine(request: MachineAgentDispatchRequest): Promise<MachineDispatchResult> {

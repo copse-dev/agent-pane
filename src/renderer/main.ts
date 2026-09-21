@@ -103,6 +103,7 @@ import {
 import { begin as perfBegin, mark as perfMark } from './perf.ts'
 import { startPerfAutopilot } from './perf-autopilot.ts'
 import { attachThreadHydration } from './controller/thread-hydration.ts'
+import { attachImportedCursorAgentRefresh } from './controller/imported-cursor-agent-refresh.ts'
 import { attachPrPanelFollow } from './controller/pr-panel-follow.ts'
 import { startExternalCursorAgentSync } from './controller/external-cursor-agent-sync.ts'
 import { loadStartupSettings } from './controller/startup-settings.ts'
@@ -360,6 +361,7 @@ async function boot(): Promise<void> {
   // PROTOTYPE (lazy thread loading): no-op unless main returned metadata-only
   // threads, i.e. unless COPSE_LAZY_THREADS=1.
   attachThreadHydration(store, api)
+  if (!popoutMode) attachImportedCursorAgentRefresh(store, api)
 
   mountTitlebar(requireElement('titlebar'), store, api)
 
