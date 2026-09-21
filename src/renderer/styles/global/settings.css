@@ -2326,7 +2326,7 @@ dialog.settings-overlay::backdrop {
   font-size: 11px;
   color: var(--text-secondary);
 }
-.automation-row-meta code {
+.automation-row-schedule {
   color: var(--accent);
 }
 .automation-row-actions,
@@ -2372,6 +2372,7 @@ dialog.settings-overlay::backdrop {
   font-size: var(--font-size-sm);
 }
 .automation-label:has(.automation-prompt-input),
+.automation-schedule-fields,
 .automation-worktree-limit-label,
 .automation-enabled-label,
 .automation-form-actions {
@@ -2390,6 +2391,30 @@ dialog.settings-overlay::backdrop {
 .automation-prompt-input {
   min-height: 88px;
   resize: vertical;
+}
+.automation-schedule-fields {
+  min-inline-size: 0;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--spacing-sm);
+}
+.automation-schedule-fields legend {
+  padding: 0 var(--spacing-xs);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+}
+.automation-schedule-controls {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) minmax(130px, 0.8fr) minmax(110px, 0.6fr);
+  gap: var(--spacing-sm);
+}
+.automation-schedule-controls > [hidden] {
+  display: none;
+}
+.automation-schedule-summary {
+  display: block;
+  margin-top: var(--spacing-sm);
 }
 .automation-enabled-label {
   display: flex;
@@ -2457,6 +2482,9 @@ dialog.settings-overlay::backdrop {
 }
 @media (max-width: 600px) {
   #automation-dialog .automation-form {
+    grid-template-columns: 1fr;
+  }
+  #automation-dialog .automation-schedule-controls {
     grid-template-columns: 1fr;
   }
   #automation-dialog .automation-row {
