@@ -110,7 +110,10 @@ so concurrent processes cannot delete one another's bundles or chunks. CI keeps
 each run's TAP and metadata; the root `unit-tests.tap` is atomically updated to
 the last completed report, including failed test runs, while failed bundles are
 retained for diagnosis. The explicit `--bundle-only` / `--test-only` coverage
-pair continues to use shared `dist-test` and must remain sequential.
+pair continues to use shared `dist-test` bundles and must remain sequential.
+Its test phase also writes a private report and publishes it only on completion,
+so nested runners cannot replace an in-progress coverage report. Fixed bundles
+remain available for c8's source-map processing after the tests exit.
 The CI `unit-tests-tap` artifact contains the canonical TAP plus only the
 per-run TAP and metadata files under `.tmp/test-run-*`.
 

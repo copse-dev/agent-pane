@@ -266,6 +266,7 @@ async function hasNonemptyFile(path: string): Promise<boolean> {
 }
 
 async function writeRunMetadata(
+  reportDir: string,
   outputDir: string,
   tapLog: string,
   status: number | null,
@@ -275,7 +276,7 @@ async function writeRunMetadata(
   startedAt: string,
 ): Promise<void> {
   await writeFile(
-    join(outputDir, 'run-meta.json'),
+    join(reportDir, 'run-meta.json'),
     `${JSON.stringify(
       {
         completedAt: new Date().toISOString(),
@@ -322,7 +323,13 @@ async function runTests(testFiles: string[], outputDir: string): Promise<number>
     filters.length === 0
       ? [`${outputDir.replace(/\\/g, '/')}/**/*.test.mjs`]
       : testFiles.map((f) => testOutputPath(f, outputDir))
-  const tapLog = isolatedRun ? join(outputDir, 'unit-tests.tap') : rootUnitTapLog
+  // Coverage keeps fixed bundles for c8's later source-map pass, but its report
+  // still needs a private inode: a nested runner can publish the canonical TAP
+  // while this test process is writing. Publish this run only after it exits.
+  await mkdir(join(repoRoot, '.tmp'), { recursive: true })
+  const reportDir = isolatedRun ? outputDir : await mkdtemp(join(repoRoot, '.tmp/test-run-'))
+  const tapLog = join(reportDir, 'unit-tests.tap')
+  if (!isolatedRun) console.log(`[run-tests] report directory: ${reportDir}`)
   const startedAt = new Date().toISOString()
   const result = spawnSync(
     'node',
@@ -338,8 +345,6 @@ async function runTests(testFiles: string[], outputDir: string): Promise<number>
     },
   )
   const status = result.status ?? 1
-  if (!isolatedRun) return status
-
   if (result.error) {
     console.error(`[run-tests] failed to launch test process: ${result.error.message}`)
   }
@@ -347,6 +352,7 @@ async function runTests(testFiles: string[], outputDir: string): Promise<number>
   const reportPublished = Boolean(process.env['CI']) && reportAvailable
   if (reportPublished) await publishLastCompletedTap(tapLog)
   await writeRunMetadata(
+    reportDir,
     outputDir,
     tapLog,
     result.status,
@@ -357,10 +363,10 @@ async function runTests(testFiles: string[], outputDir: string): Promise<number>
   )
   if (status === 0) {
     if (process.env['COPSE_TEST_KEEP_OUTPUT'] !== '1') {
-      await cleanSuccessfulOutput(outputDir, Boolean(process.env['CI']))
+      await cleanSuccessfulOutput(reportDir, Boolean(process.env['CI']))
     }
   } else {
-    console.error(`[run-tests] retained output after failure: ${outputDir}`)
+    console.error(`[run-tests] retained output after failure: ${outputDir}; reports: ${reportDir}`)
   }
   return status
 }
