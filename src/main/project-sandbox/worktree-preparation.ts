@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { lstatSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
+import { lstatSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { wrapCommandWithSandboxMacOS } from '@anthropic-ai/sandbox-runtime/dist/sandbox/macos-sandbox-utils.js'
@@ -29,12 +29,60 @@ export function requirePreparationSandbox(): void {
 }
 
 /** Reject redirected cache grants before ASRT can resolve a symlink into a broader write root. */
-export function preparationCacheRoots(env: NodeJS.ProcessEnv, create: boolean): string[] {
+export function preparationCacheRoots(
+  env: NodeJS.ProcessEnv,
+  create: boolean,
+  cargoAdapter = false,
+): string[] {
   const cache = resolve(copseCacheDir(env))
-  const paths = [cache, ...copseManagedPreparationCacheDirs(env).map((path) => resolve(path))]
+  const cargo = join(cache, 'cargo')
+  const paths = [
+    cache,
+    ...copseManagedPreparationCacheDirs(env)
+      .map((path) => resolve(path))
+      .filter((path) => cargoAdapter || path !== cargo),
+  ]
   for (const path of paths) {
     if (lstatSync(path, { throwIfNoEntry: false })?.isSymbolicLink()) {
       throw new Error(`Preparation cache must not be a symlink: ${path}`)
+    }
+  }
+  for (const name of ['config', 'config.toml', 'credentials', 'credentials.toml']) {
+    const path = join(cargo, name)
+    if (cargoAdapter && lstatSync(path, { throwIfNoEntry: false })) {
+      throw new Error(
+        `Automatic Cargo cache must not contain configuration or credentials: ${path}`,
+      )
+    }
+  }
+  const cargoStructures = cargoAdapter
+    ? [
+        join(cargo, 'git'),
+        join(cargo, 'git', 'db'),
+        join(cargo, 'git', 'checkouts'),
+        join(cargo, 'registry'),
+        join(cargo, 'registry', 'cache'),
+        join(cargo, 'registry', 'index'),
+        join(cargo, 'registry', 'src'),
+      ]
+    : []
+  for (const path of cargoStructures) {
+    const structure = lstatSync(path, { throwIfNoEntry: false })
+    if (!structure) continue
+    if (structure.isSymbolicLink()) {
+      throw new Error(`Cargo preparation cache structure must not be a symlink: ${path}`)
+    }
+    if (!structure.isDirectory())
+      throw new Error(`Cargo preparation cache structure must be a directory: ${path}`)
+    // Cargo chooses the immediate repository/index directory names. Reject a
+    // pre-positioned redirect there while allowing dependency-owned symlinks
+    // within checked-out source trees.
+    for (const entry of readdirSync(path, { withFileTypes: true, recursive: false })) {
+      if (entry.isSymbolicLink()) {
+        throw new Error(
+          `Cargo preparation cache structure must not be a symlink: ${join(path, entry.name)}`,
+        )
+      }
     }
   }
   // The profile root is host-configured; canonicalize that root, but never a
@@ -52,7 +100,17 @@ export function preparationCacheRoots(env: NodeJS.ProcessEnv, create: boolean): 
 }
 
 /** Executable files and known runtime installations, never the entire user profile. */
-function preparationExecutableReadPaths(command: string, env: NodeJS.ProcessEnv): string[] {
+export function legacyPreparationRuntimeReadPaths(automaticCargo: boolean): string[] {
+  return automaticCargo
+    ? []
+    : ['.cargo/bin', '.rustup/toolchains'].map((path) => join(homedir(), path))
+}
+
+function preparationExecutableReadPaths(
+  command: string,
+  env: NodeJS.ProcessEnv,
+  automaticCargo: boolean,
+): string[] {
   const paths: string[] = []
   for (const candidate of command.includes('/')
     ? [resolve(command)]
@@ -89,18 +147,39 @@ function preparationExecutableReadPaths(command: string, env: NodeJS.ProcessEnv)
           paths.push(join(toolchain, 'VERSION'), version)
         }
       }
+      if (
+        (basename(command) === 'cargo' || basename(command) === 'rustc') &&
+        basename(dirname(executable)) === 'bin'
+      ) {
+        const toolchain = dirname(dirname(executable))
+        const containedRuntimePath = (path: string): string | null => {
+          if (!lstatSync(path, { throwIfNoEntry: false })) return null
+          const canonical = realpathSync(path)
+          const rel = relative(toolchain, canonical)
+          return rel.length === 0 || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)
+            ? null
+            : canonical
+        }
+        const cargo = containedRuntimePath(join(toolchain, 'bin', 'cargo'))
+        const rustc = containedRuntimePath(join(toolchain, 'bin', 'rustc'))
+        if (cargo && rustc) {
+          for (const path of ['bin', 'lib']) {
+            const absolute = join(toolchain, path)
+            const canonical = containedRuntimePath(absolute)
+            if (canonical) paths.push(absolute, canonical)
+          }
+        }
+      }
     } catch {
       /* Not an installed executable. */
     }
   }
-  for (const path of [
-    '.bun/bin',
-    '.cargo/bin',
-    '.rustup/toolchains',
-    '.pyenv/versions',
-    '.local/share/uv/python',
+  for (const absolute of [
+    ...legacyPreparationRuntimeReadPaths(automaticCargo),
+    ...['.bun/bin', '.pyenv/versions', '.local/share/uv/python'].map((path) =>
+      join(homedir(), path),
+    ),
   ]) {
-    const absolute = join(homedir(), path)
     if (lstatSync(absolute, { throwIfNoEntry: false })) paths.push(absolute)
   }
   return paths
@@ -118,6 +197,8 @@ interface PreparationProcessOptions {
   projectWritable?: boolean
   /** Give automatic Go commands disposable build bookkeeping, never shared writes. */
   goBookkeeping?: boolean
+  /** Private automatic Cargo adapter cache/config boundary. */
+  cargoAdapter?: boolean
 }
 
 /**
@@ -176,7 +257,32 @@ async function runContainedPreparationProcess(
   scratch: string,
 ): Promise<string> {
   const root = realpathSync(options.root)
-  const caches = preparationCacheRoots(options.env, options.mode === 'prepare')
+  if (options.cargoAdapter) {
+    for (let directory = root; ; directory = dirname(directory)) {
+      if (directory !== root) {
+        const manifest = join(directory, 'Cargo.toml')
+        if (lstatSync(manifest, { throwIfNoEntry: false })) {
+          throw new Error(
+            `Automatic Cargo preparation does not use an enclosing workspace manifest: ${manifest}`,
+          )
+        }
+      }
+      for (const name of ['config.toml', 'config']) {
+        const path = join(directory, '.cargo', name)
+        if (lstatSync(path, { throwIfNoEntry: false })) {
+          throw new Error(
+            `Automatic Cargo preparation does not load project or ancestor configuration: ${path}`,
+          )
+        }
+      }
+      if (dirname(directory) === directory) break
+    }
+  }
+  const caches = preparationCacheRoots(
+    options.env,
+    options.mode === 'prepare',
+    options.cargoAdapter === true,
+  )
   const preparing = options.mode === 'prepare'
   const projectWritable = preparing && options.projectWritable !== false
   if (options.goBookkeeping) {
@@ -219,9 +325,9 @@ async function runContainedPreparationProcess(
           (path) => path !== homedir() && path !== `${homedir()}/**`,
         ),
         ...electronRuntimeAllowReadPaths(),
-        ...preparationExecutableReadPaths(command, env),
+        ...preparationExecutableReadPaths(command, env, options.cargoAdapter === true),
         ...(options.additionalExecutables ?? []).flatMap((executable) =>
-          preparationExecutableReadPaths(executable, env),
+          preparationExecutableReadPaths(executable, env, options.cargoAdapter === true),
         ),
         ...sandboxRuntimeHelperAllowReadPaths(),
       ],
