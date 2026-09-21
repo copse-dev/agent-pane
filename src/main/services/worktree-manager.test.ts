@@ -186,6 +186,29 @@ describe('worktree manager', () => {
     assert.ok(!(await listProjectWorktrees(repo)).some((record) => record.path === worktree.path))
   })
 
+  it('validates a managed checkout when the project is itself a linked checkout', async () => {
+    const { temp, repo } = await setup()
+    const linkedProject = join(temp, 'linked-project')
+    git(repo, ['worktree', 'add', '-q', '-b', 'project-root', linkedProject])
+
+    const worktree = await allocateThreadWorktree({
+      projectId: 'project-linked',
+      threadId: 'thread-1',
+      projectRoot: linkedProject,
+      prompt: 'Validate the fallback',
+      baseBranch: 'project-root',
+    })
+    const validated = await validateThreadWorktree({
+      projectId: 'project-linked',
+      threadId: 'thread-1',
+      projectRoot: linkedProject,
+      worktree,
+    })
+
+    assert.equal(validated.root, worktree.path)
+    assert.equal(validated.commonGitDir, await realpath(join(repo, '.git')))
+  })
+
   it('removes an empty checkout root left after Git has finished its bookkeeping', async () => {
     const { temp, repo } = await setup()
     const path = join(temp, 'leftover-checkout')
@@ -599,6 +622,23 @@ describe('worktree manager', () => {
       },
     )
     git(worktree.path, ['checkout', '-q', worktree.branch])
+
+    const headPath = git(worktree.path, ['rev-parse', '--git-path', 'HEAD']).trim()
+    const validHead = await readFile(headPath, 'utf8')
+    await writeFile(headPath, 'ref: refs/heads/-invalid..branch\n')
+    try {
+      await assert.rejects(
+        validateThreadWorktree({
+          projectId: 'project-1',
+          threadId: 'thread-1',
+          projectRoot: repo,
+          worktree,
+        }),
+        /Cannot (inspect thread worktree HEAD|list Git worktrees)/,
+      )
+    } finally {
+      await writeFile(headPath, validHead)
+    }
 
     await assert.rejects(
       validateThreadWorktree({
