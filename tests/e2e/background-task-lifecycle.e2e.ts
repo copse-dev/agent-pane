@@ -53,17 +53,28 @@ async function runBackgroundDirective(args: Record<string, unknown>): Promise<vo
 }
 
 async function latestToolResult(): Promise<WebdriverIO.Element> {
-  const cards = await $$('.tool-card')
+  const rollups = await $$('.tool-card-rollup')
+  const rollup = rollups.at(-1)
+  assert.ok(rollup, 'expected a background tool rollup')
+  if ((await rollup.getAttribute('open')) === null) {
+    await rollup.scrollIntoView({ block: 'center', inline: 'nearest' })
+    await rollup.$('summary.tool-card-header').click()
+  }
+  await expect(rollup).toHaveAttribute('open')
+
+  const cards = await rollup.$$('.tool-card[data-tool-id]')
   const card = cards.at(-1)
   assert.ok(card, 'expected a background tool card')
+  await card.waitForDisplayed({ timeout: 10_000 })
   if ((await card.getAttribute('open')) === null) {
-    // The completion continuation can move the original card above the
-    // viewport while this helper resolves. Chrome refuses to click an
-    // off-screen <summary>, so bring the card back into view first.
     await card.scrollIntoView({ block: 'center', inline: 'nearest' })
     await card.$('summary.tool-card-header').click()
   }
-  return card.$('.tool-result')
+  await expect(card).toHaveAttribute('open')
+
+  const result = card.$('.tool-result')
+  await result.waitForExist({ timeout: 10_000 })
+  return result
 }
 
 describe('session-scoped background task lifecycle', function () {
