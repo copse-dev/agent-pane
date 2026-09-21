@@ -13,17 +13,6 @@
       "markers": ["wdio.ci.conf.ts: exclude", "wdio.conf.ts: exclude"]
     },
     {
-      "spec": "tests/e2e/agent-tasks-terminal.e2e.ts",
-      "category": "quarantine",
-      "reason": "CI-only skip after Electron session death in the shell approval/tool-output path; cause still needs current reproduction.",
-      "tracker": "https://github.com/copse-dev/agent-pane/issues/1680",
-      "ownerRole": "Electron runtime maintainer (person assignment pending in #2719)",
-      "recordedOn": "2026-09-20",
-      "reviewBy": "2026-09-27",
-      "coverage": "Policy and shell unit tests do not replace terminal IPC and approval behavior in Electron. Local spec remains runnable; fresh successful evidence is not recorded here.",
-      "markers": ["describeSkipInCi: agent tasks in terminal tab"]
-    },
-    {
       "spec": "tests/e2e/apple-development-panel.e2e.ts",
       "category": "platform",
       "reason": "Suite runs only on macOS, where the Apple Development panel is supported.",
@@ -126,26 +115,15 @@
       "markers": ["describeSkipInCi: footer branch status mismatch", "wdio.ci.conf.ts: exclude"]
     },
     {
-      "spec": "tests/e2e/github-write-approval.e2e.ts",
-      "category": "quarantine",
-      "reason": "CI-only skip after approval-path Electron session death; retain as an unresolved critical runtime coverage gap.",
-      "tracker": "https://github.com/copse-dev/agent-pane/issues/1680",
-      "ownerRole": "Permissions and Electron runtime maintainer (person assignment pending in #2719)",
-      "recordedOn": "2026-09-20",
+      "spec": "tests/e2e/git-signing-helper-approval.e2e.ts",
+      "category": "platform",
+      "reason": "Test drives the macOS scoped SSH signing helper approval flow and skips other platforms.",
+      "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
+      "ownerRole": "Git and security maintainer (person assignment pending in #2719)",
+      "recordedOn": "2026-09-21",
       "reviewBy": "2026-09-27",
-      "coverage": "Permission policy/gate tests do not replace live approval UI, permission routing, and Electron lifecycle evidence.",
-      "markers": ["describeSkipInCi: GitHub write approval"]
-    },
-    {
-      "spec": "tests/e2e/guarded-yolo.e2e.ts",
-      "category": "quarantine",
-      "reason": "CI-only skip after approval dialog/session failures. End-to-end catastrophic-command denial remains unproven in this CI path.",
-      "tracker": "https://github.com/copse-dev/agent-pane/issues/1680",
-      "ownerRole": "Permissions and Electron runtime maintainer (person assignment pending in #2719)",
-      "recordedOn": "2026-09-20",
-      "reviewBy": "2026-09-27",
-      "coverage": "Guarded-YOLO and permission policy unit tests exist; they do not replace the real runtime approve/deny journey. No waiver is granted.",
-      "markers": ["describeSkipInCi: Guarded YOLO shell mode"]
+      "coverage": "The spec runs on the macOS e2e shard; Linux CI has no coverage of the signing helper approval UI.",
+      "markers": ["this.skip"]
     },
     {
       "spec": "tests/e2e/onboarding.e2e.ts",
