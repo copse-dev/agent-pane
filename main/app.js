@@ -24776,6 +24776,140 @@ var init_panels = __esm({
   }
 });
 
+// src/shared/fs/image-path.ts
+function imageMimeType(path) {
+  const name = path.split("/").pop()?.toLowerCase() ?? "";
+  const ext = name.split(".").pop() ?? "";
+  return IMAGE_MIME_BY_EXT[ext] ?? null;
+}
+function isImagePath(path) {
+  return imageMimeType(path) !== null;
+}
+function isRasterImagePath(path) {
+  const mime = imageMimeType(path);
+  return mime !== null && mime !== "image/svg+xml";
+}
+var IMAGE_MIME_BY_EXT;
+var init_image_path = __esm({
+  "src/shared/fs/image-path.ts"() {
+    IMAGE_MIME_BY_EXT = {
+      avif: "image/avif",
+      bmp: "image/bmp",
+      gif: "image/gif",
+      ico: "image/x-icon",
+      jpeg: "image/jpeg",
+      jpg: "image/jpeg",
+      png: "image/png",
+      svg: "image/svg+xml",
+      webp: "image/webp"
+    };
+  }
+});
+
+// src/renderer/attachments/attachment-preview.ts
+function releaseCurrent() {
+  const cleanup = currentCleanup;
+  currentCleanup = null;
+  cleanup?.();
+  bodyEl?.replaceChildren();
+}
+function ensureDialog3() {
+  if (dialog) {
+    if (!dialog.isConnected) {
+      if (dialog.open) dialog.close();
+      document.body.append(dialog);
+    }
+    return dialog;
+  }
+  dialog = document.createElement("dialog");
+  dialog.className = "attachment-preview-dialog";
+  titleEl = el("div", { class: "attachment-preview-title" });
+  bodyEl = el("div", { class: "attachment-preview-body" });
+  const closeBtn = el(
+    "button",
+    { type: "button", class: "attachment-preview-close", "aria-label": "Close" },
+    "\xD7"
+  );
+  const header = el("div", { class: "attachment-preview-header" }, titleEl, closeBtn);
+  dialog.append(header, bodyEl);
+  document.body.append(dialog);
+  closeBtn.addEventListener("click", () => dialog?.close());
+  dialog.addEventListener("click", (event) => {
+    if (event.target === dialog) dialog?.close();
+  });
+  dialog.addEventListener("close", () => {
+    activeToken += 1;
+    releaseCurrent();
+  });
+  return dialog;
+}
+function statusNode(message2) {
+  return el("p", { class: "attachment-preview-status" }, message2);
+}
+function openAttachmentPreview(options) {
+  const previewDialog = ensureDialog3();
+  const previewBody = bodyEl;
+  const previewTitle = titleEl;
+  if (!previewBody || !previewTitle) throw new Error("Attachment preview dialog failed to mount");
+  activeToken += 1;
+  const token = activeToken;
+  releaseCurrent();
+  currentCleanup = options.onClose ?? null;
+  previewDialog.dataset["previewKind"] = options.kind;
+  previewDialog.setAttribute(
+    "aria-label",
+    options.ariaLabel ?? `Attachment preview: ${options.title}`
+  );
+  previewTitle.textContent = options.title;
+  if (options.content) previewBody.replaceChildren(options.content);
+  else previewBody.replaceChildren(statusNode(options.status ?? `Loading ${options.title}\u2026`));
+  if (!previewDialog.open) previewDialog.showModal();
+  const isActive = () => token === activeToken && previewDialog.open;
+  return {
+    isActive,
+    setContent(content) {
+      if (!isActive()) return false;
+      previewBody.replaceChildren(content);
+      return true;
+    },
+    setStatus(message2) {
+      if (!isActive()) return false;
+      previewBody.replaceChildren(statusNode(message2));
+      return true;
+    },
+    close() {
+      if (isActive()) previewDialog.close();
+    }
+  };
+}
+var dialog, titleEl, bodyEl, currentCleanup, activeToken;
+var init_attachment_preview = __esm({
+  "src/renderer/attachments/attachment-preview.ts"() {
+    init_helpers();
+    dialog = null;
+    titleEl = null;
+    bodyEl = null;
+    currentCleanup = null;
+    activeToken = 0;
+  }
+});
+
+// packages/std/src/errors.ts
+function errorMessage(err2) {
+  return err2 instanceof Error ? err2.message : String(err2);
+}
+var init_errors3 = __esm({
+  "packages/std/src/errors.ts"() {
+  }
+});
+
+// src/shared/errors.ts
+var init_errors4 = __esm({
+  "src/shared/errors.ts"() {
+    init_errors3();
+  }
+});
+
 // src/renderer/controller/files.ts
 function detectLanguage(filePath) {
   const lower = filePath.split("/").pop()?.toLowerCase() ?? "";
@@ -24785,6 +24919,47 @@ function detectLanguage(filePath) {
 }
 async function openWorkspaceFile(store2, api2, path, reveal) {
   const { projectId, threadId } = requireActiveThreadOwner(store2);
+  if (isImagePath(path) && (!reveal || isRasterImagePath(path))) {
+    const unsubs = [];
+    const preview = openAttachmentPreview({
+      kind: "image",
+      title: path,
+      ariaLabel: `Image preview: ${path}`,
+      onClose: () => {
+        for (const unsubscribe of unsubs) unsubscribe();
+      }
+    });
+    const isOwner = () => {
+      const current = getActiveThreadOwner(store2);
+      return current?.projectId === projectId && current.threadId === threadId;
+    };
+    const checkOwner = () => {
+      if (!isOwner()) preview.close();
+    };
+    unsubs.push(
+      store2.on("panel_changed", checkOwner),
+      store2.on("threads_changed", checkOwner),
+      store2.on("workspace_changed", checkOwner),
+      store2.on("thread_checkout_changed", (changedThreadId) => {
+        if (changedThreadId === threadId) preview.close();
+      })
+    );
+    try {
+      const src = await api2.fs.readImage(projectId, threadId, path);
+      if (!isOwner()) {
+        preview.close();
+        return;
+      }
+      preview.setContent(el("img", { class: "image-expand-image", src, alt: path }));
+    } catch (error61) {
+      if (!isOwner()) {
+        preview.close();
+        return;
+      }
+      preview.setStatus(`Could not preview ${path}: ${errorMessage(error61)}`);
+    }
+    return;
+  }
   const content = await api2.fs.readFile(projectId, threadId, path);
   const currentOwner = getActiveThreadOwner(store2);
   if (currentOwner?.projectId !== projectId || currentOwner.threadId !== threadId) return;
@@ -24836,6 +25011,10 @@ var init_files = __esm({
   "src/renderer/controller/files.ts"() {
     init_active_thread_owner();
     init_panels();
+    init_image_path();
+    init_attachment_preview();
+    init_helpers();
+    init_errors4();
     LANG = {
       ts: "typescript",
       tsx: "typescript",
@@ -26820,6 +26999,7 @@ function createDemoApi(scenario, options = {}) {
     },
     fs: {
       readFile: (_projectId, _threadId, path) => resolved(writtenFiles.get(path) ?? ""),
+      readImage: () => Promise.reject(new Error("Workspace images are unavailable in this demo")),
       writeFile: resolvedVoid,
       readdir: () => resolved(["src", "tests", "package.json"]),
       listDir: () => resolved([
@@ -30188,22 +30368,6 @@ var RENAME_BLUR_GRACE_MS;
 var init_rename_blur = __esm({
   "src/renderer/dom/rename-blur.ts"() {
     RENAME_BLUR_GRACE_MS = 200;
-  }
-});
-
-// packages/std/src/errors.ts
-function errorMessage(err2) {
-  return err2 instanceof Error ? err2.message : String(err2);
-}
-var init_errors3 = __esm({
-  "packages/std/src/errors.ts"() {
-  }
-});
-
-// src/shared/errors.ts
-var init_errors4 = __esm({
-  "src/shared/errors.ts"() {
-    init_errors3();
   }
 });
 
@@ -41620,94 +41784,6 @@ function formatByteSize(bytes) {
 }
 var init_file_bytes = __esm({
   "src/shared/file-bytes.ts"() {
-  }
-});
-
-// src/renderer/attachments/attachment-preview.ts
-function releaseCurrent() {
-  const cleanup = currentCleanup;
-  currentCleanup = null;
-  cleanup?.();
-  bodyEl?.replaceChildren();
-}
-function ensureDialog3() {
-  if (dialog) {
-    if (!dialog.isConnected) {
-      if (dialog.open) dialog.close();
-      document.body.append(dialog);
-    }
-    return dialog;
-  }
-  dialog = document.createElement("dialog");
-  dialog.className = "attachment-preview-dialog";
-  titleEl = el("div", { class: "attachment-preview-title" });
-  bodyEl = el("div", { class: "attachment-preview-body" });
-  const closeBtn = el(
-    "button",
-    { type: "button", class: "attachment-preview-close", "aria-label": "Close" },
-    "\xD7"
-  );
-  const header = el("div", { class: "attachment-preview-header" }, titleEl, closeBtn);
-  dialog.append(header, bodyEl);
-  document.body.append(dialog);
-  closeBtn.addEventListener("click", () => dialog?.close());
-  dialog.addEventListener("click", (event) => {
-    if (event.target === dialog) dialog?.close();
-  });
-  dialog.addEventListener("close", () => {
-    activeToken += 1;
-    releaseCurrent();
-  });
-  return dialog;
-}
-function statusNode(message2) {
-  return el("p", { class: "attachment-preview-status" }, message2);
-}
-function openAttachmentPreview(options) {
-  const previewDialog = ensureDialog3();
-  const previewBody = bodyEl;
-  const previewTitle = titleEl;
-  if (!previewBody || !previewTitle) throw new Error("Attachment preview dialog failed to mount");
-  activeToken += 1;
-  const token = activeToken;
-  releaseCurrent();
-  currentCleanup = options.onClose ?? null;
-  previewDialog.dataset["previewKind"] = options.kind;
-  previewDialog.setAttribute(
-    "aria-label",
-    options.ariaLabel ?? `Attachment preview: ${options.title}`
-  );
-  previewTitle.textContent = options.title;
-  if (options.content) previewBody.replaceChildren(options.content);
-  else previewBody.replaceChildren(statusNode(options.status ?? `Loading ${options.title}\u2026`));
-  if (!previewDialog.open) previewDialog.showModal();
-  const isActive = () => token === activeToken && previewDialog.open;
-  return {
-    isActive,
-    setContent(content) {
-      if (!isActive()) return false;
-      previewBody.replaceChildren(content);
-      return true;
-    },
-    setStatus(message2) {
-      if (!isActive()) return false;
-      previewBody.replaceChildren(statusNode(message2));
-      return true;
-    },
-    close() {
-      if (isActive()) previewDialog.close();
-    }
-  };
-}
-var dialog, titleEl, bodyEl, currentCleanup, activeToken;
-var init_attachment_preview = __esm({
-  "src/renderer/attachments/attachment-preview.ts"() {
-    init_helpers();
-    dialog = null;
-    titleEl = null;
-    bodyEl = null;
-    currentCleanup = null;
-    activeToken = 0;
   }
 });
 
@@ -66414,6 +66490,9 @@ function bindWorkspaceLinkClicks(root, store2, api2) {
     event.preventDefault();
     event.stopPropagation();
     void api2.index.resolveFileReferences([resolutionCandidate], owner ?? void 0).then((resolved3) => {
+      const currentOwner = getActiveThreadOwner(store2);
+      if (currentOwner?.projectId !== owner?.projectId || currentOwner?.threadId !== owner?.threadId)
+        return;
       const match = resolved3.find((entry) => entry.candidate === resolutionCandidate);
       if (!match) {
         showErrorToast(`Could not find ${parsed2.candidate} in the workspace`, "not in index");
@@ -66425,6 +66504,9 @@ function bindWorkspaceLinkClicks(root, store2, api2) {
       } : void 0;
       return activateWorkspaceReference(store2, api2, match.path, match.kind, reveal);
     }).catch((error61) => {
+      const currentOwner = getActiveThreadOwner(store2);
+      if (currentOwner?.projectId !== owner?.projectId || currentOwner?.threadId !== owner?.threadId)
+        return;
       showErrorToast(`Failed to open ${parsed2.candidate}`, error61);
     });
   };
@@ -98625,33 +98707,6 @@ function renderImageDiff(container, diff) {
 var init_git_image_diff = __esm({
   "src/renderer/views/git-image-diff.ts"() {
     init_helpers();
-  }
-});
-
-// src/shared/fs/image-path.ts
-function imageMimeType(path) {
-  const name = path.split("/").pop()?.toLowerCase() ?? "";
-  const ext = name.split(".").pop() ?? "";
-  return IMAGE_MIME_BY_EXT[ext] ?? null;
-}
-function isRasterImagePath(path) {
-  const mime = imageMimeType(path);
-  return mime !== null && mime !== "image/svg+xml";
-}
-var IMAGE_MIME_BY_EXT;
-var init_image_path = __esm({
-  "src/shared/fs/image-path.ts"() {
-    IMAGE_MIME_BY_EXT = {
-      avif: "image/avif",
-      bmp: "image/bmp",
-      gif: "image/gif",
-      ico: "image/x-icon",
-      jpeg: "image/jpeg",
-      jpg: "image/jpeg",
-      png: "image/png",
-      svg: "image/svg+xml",
-      webp: "image/webp"
-    };
   }
 });
 
