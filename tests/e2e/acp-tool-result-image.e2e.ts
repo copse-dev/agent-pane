@@ -112,10 +112,7 @@ describe('ACP tool-result images', () => {
     await expect(thumbnail).toHaveAttribute('role', 'button')
     await expect(thumbnail).toHaveAttribute('aria-label', 'Expand tool-rollup-options.png')
     assert.match(await thumbnail.getAttribute('src'), /^data:image\/png;base64,/)
-    const previewHeight = await browser.execute(
-      (el) => el.getBoundingClientRect().height,
-      thumbnail,
-    )
+    const previewHeight = await thumbnail.getSize('height')
     assert.ok(
       previewHeight > 240,
       `expected the inline preview to exceed thumbnail height, got ${String(previewHeight)}`,
