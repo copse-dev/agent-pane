@@ -85,6 +85,7 @@ describe('continuation budget exhaustion summary', () => {
     await installMockScript()
     await setComposerValue('Finish the parser task')
     await $('.submit-btn').click()
+    await $('.msg-user*=Finish the parser task').waitForExist({ timeout: 15_000 })
     await waitForAgentIdle(60_000)
 
     const summary = $(
