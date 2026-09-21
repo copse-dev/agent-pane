@@ -11,6 +11,10 @@ describe('shouldShowNativeWindows', () => {
     assert.equal(shouldShowNativeWindows(commandLineWith()), true)
   })
 
+  it('shows windows in the Electron-compatible sidecar shim', () => {
+    assert.equal(shouldShowNativeWindows(undefined), true)
+  })
+
   it('keeps BrowserWindows hidden when Chromium owns a headless session', () => {
     assert.equal(shouldShowNativeWindows(commandLineWith('headless')), false)
   })
