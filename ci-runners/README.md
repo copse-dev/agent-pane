@@ -163,7 +163,7 @@ Scaleway sizing guidance:
   Warsaw → Milan AZs (Scaleway quotas are per-AZ). Partial creates are kept
   when an AZ hits quota; the remainder is requested in the next AZ. Pass
   `--zone` to pin. `status`/`down` without `--zone` scan all.
-- The e2e tier is CPU-bound (Chromium-under-Xvfb) and wants ~4 vCPU + ~6 GiB per
+- The e2e tier is CPU-bound (headless Chromium/Electron) and wants ~4 vCPU + ~6 GiB per
   runner, i.e. ~1.5 GiB/vCPU. The High-CPU `POP2-HC` line (2 GiB/vCPU) matches
   that profile at ~half the €/vCPU of the general `PRO2` line (4 GiB/vCPU), whose
   extra RAM the runner never uses.
@@ -335,8 +335,7 @@ Each run pushes a snapshot commit (staged + unstaged + untracked) to a bare
 repo on the host and starts a fresh one-shot container from this image with
 [`exec-run.sh`](exec-run.sh) as the entrypoint override: checkout → copy baked
 package inputs and perform a clean install (the setup action's `.lockhash`
-contract) → build → wdio
-under Xvfb → collect logs + changed reference screenshots. Results land in
+contract) → build → headless wdio → collect logs + changed reference screenshots. Results land in
 `.tmp/remote-e2e/runs/<run-id>/` locally; the exit code mirrors wdio's.
 
 Dev hosts carry their own tag namespace (`copse-remote-e2e` /
@@ -398,7 +397,7 @@ trees and lifecycle outputs are never shared between jobs.
 
 ## Sizing
 
-The superset image runs Chromium-under-Xvfb for e2e, so size for the heavy tier
+The superset image runs headless Chromium/Electron for e2e, so size for the heavy tier
 even though light jobs share the box: **~4-6 GB + ~2 cores per concurrent
 runner**. Both `docker-compose.yml` and the Apple supervisor cap each at 6 GB
 with a 2 GB

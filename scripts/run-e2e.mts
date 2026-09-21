@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process'
 import { join } from 'node:path'
+import { shouldRunE2eHeadless } from '../tests/e2e/helpers/display-mode.mts'
 
 const [, , configFile, ...args] = process.argv
 if (!configFile) throw new Error('Usage: run-e2e.mts <wdio-config> [...wdio args]')
@@ -13,7 +14,8 @@ const wdioBinary = join(
 )
 const wdioArgs = ['run', configFile, ...forwardedArgs]
 
-const needsVirtualDisplay = process.platform === 'linux' && !process.env['DISPLAY']
+const runHeadless = shouldRunE2eHeadless()
+const needsVirtualDisplay = !runHeadless && process.platform === 'linux' && !process.env['DISPLAY']
 const command = needsVirtualDisplay ? 'xvfb-run' : wdioBinary
 const commandArgs = needsVirtualDisplay
   ? [

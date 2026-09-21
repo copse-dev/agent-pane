@@ -107,10 +107,13 @@ Changes to the Electron UI should also be built and covered by a focused end-to-
 | `pnpm run build`    | Create the application bundle in `dist/`                     |
 | `pnpm start`        | Launch an existing build                                     |
 | `pnpm test`         | Run unit and component tests                                 |
-| `pnpm run test:e2e` | Run Electron end-to-end tests                                |
+| `pnpm run test:e2e` | Run Electron end-to-end tests headlessly                     |
 | `pnpm run check`    | Run typecheck, lint, formatting, dead-code checks, and tests |
 
 </details>
+
+Electron e2e and agent-eval runs are headless by default. Set `COPSE_E2E_HEADLESS=0` when you
+intentionally want a visible window for local debugging.
 
 <details>
 <summary><strong>Install troubleshooting</strong></summary>
