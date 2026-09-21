@@ -126,8 +126,8 @@ runs:
         path: |
           ~/.cache/electron
           ~/Library/Caches/electron
-          vendor/gortex
-        key: ${{ runner.os }}-${{ runner.arch }}-runtime-inputs-v1-${{ hashFiles('pnpm-lock.yaml', 'scripts/fetch-gortex.mts') }}
+          ~/.copse/cache/gortex
+        key: ${{ runner.os }}-${{ runner.arch }}-runtime-inputs-v2-${{ hashFiles('pnpm-lock.yaml', 'scripts/fetch-gortex.mts') }}
 
     - name: Install a clean dependency tree
       shell: bash

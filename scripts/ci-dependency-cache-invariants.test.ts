@@ -26,7 +26,9 @@ describe('CI dependency cache boundary', () => {
       assert.doesNotMatch(cache, /^\s+node_modules\/?$/m)
     }
     assert.match(pnpmCache, /pnpm-store-v1/)
-    assert.match(runtimeCache, /runtime-inputs-v1/)
+    assert.match(runtimeCache, /runtime-inputs-v2/)
+    assert.match(runtimeCache, /~\/\.copse\/cache\/gortex/)
+    assert.doesNotMatch(runtimeCache, /^\s+vendor\/gortex\/?$/m)
   })
 
   it('materializes a clean locked install on every job', () => {
