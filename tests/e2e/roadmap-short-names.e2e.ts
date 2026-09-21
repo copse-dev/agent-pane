@@ -3,7 +3,14 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, $$, browser } from '@wdio/globals'
-import { resetUserData, seedEmptyProject, seedRoadmapNotes } from './helpers/seed-config.ts'
+import {
+  readSeededSettings,
+  resetUserData,
+  seedEmptyProject,
+  seedRoadmapNotes,
+  writeSettings,
+} from './helpers/seed-config.ts'
+import { startConversationServer, type ConversationServer } from './helpers/conversation-server.ts'
 import { E2E_SCREENSHOT_DIR, pinTextForCapture, saveAppScreenshot } from './helpers/screenshot.ts'
 
 /**
@@ -17,7 +24,7 @@ import { E2E_SCREENSHOT_DIR, pinTextForCapture, saveAppScreenshot } from './help
  * a row seeded with the persisted short name already stamped, another seeded
  * with only the truncation fallback, and (below) a freshly created item that
  * gets its short name from a real create → background stamp round trip
- * through the e2e mock model.
+ * through an OpenAI-compatible fixture at the provider boundary.
  */
 describe('roadmap AI-generated short names', () => {
   describe('persisted rows', () => {
@@ -93,42 +100,29 @@ describe('roadmap AI-generated short names', () => {
 
   describe('generated on create', () => {
     let workspaceRoot: string
+    let server: ConversationServer
 
     before(async () => {
       mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
+      server = await startConversationServer({ title: 'Split Settings Into Panels' })
+      server.configureEnvironment()
       resetUserData()
       workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-panel-roadmap-short-name-gen-'))
       seedEmptyProject(workspaceRoot, 'e2e-roadmap-short-name-gen', {
-        model: 'claude-sonnet-4-6',
         roadmapPlansEnabled: true,
       })
+      writeSettings({ ...readSeededSettings(), ...server.settings })
       await browser.reloadSession()
     })
 
-    after(() => {
+    after(async () => {
       resetUserData()
       rmSync(workspaceRoot, { recursive: true, force: true })
+      await server.close()
     })
 
     it('replaces the truncation title with the model-generated short name', async () => {
       await $('.prompt-input').waitForExist({ timeout: 30_000 })
-
-      // roadmap-title.ts sends `roadmapTitlePrompt(prompt)`, which opens with
-      // this instruction — match on it so the mock script answers only the
-      // title-generation call, not the chat turn itself.
-      await browser.execute(async () => {
-        const bridge = (
-          window as unknown as {
-            __copseE2e: { setMockScript: (script: unknown) => Promise<unknown> }
-          }
-        ).__copseE2e
-        await bridge.setMockScript([
-          {
-            when: 'Reply with ONLY a concise 3-6 word title in Title Case',
-            text: 'Split Settings Into Panels',
-          },
-        ])
-      })
 
       const roadmapButton = $('.titlebar-text-btn[aria-label="Open roadmap"]')
       await roadmapButton.waitForDisplayed({ timeout: 10_000 })
@@ -141,9 +135,9 @@ describe('roadmap AI-generated short names', () => {
       await $('.roadmap-save-btn').click()
 
       // Saving is immediate under the truncation title; the AI-generated name
-      // lands once the background stamp's model round trip resolves. The mock
-      // model can answer fast enough that the truncation is never observed, so
-      // only the settled state is asserted.
+      // lands once the background stamp's model round trip resolves. The
+      // fixture can answer fast enough that the truncation is never observed,
+      // so only the settled state is asserted.
       await $('.roadmap-row-title').waitForExist({ timeout: 20_000 })
 
       await browser.waitUntil(
@@ -153,6 +147,8 @@ describe('roadmap AI-generated short names', () => {
           timeoutMsg: 'expected the roadmap row to pick up the model-generated short name',
         },
       )
+      server.assertTitleRequested(prompt)
+      server.assertComplete()
 
       // The open editor's meta line stamps the note's real `updatedAt` (wall
       // clock, from the save that just ran) — nothing seeded can stand in for
