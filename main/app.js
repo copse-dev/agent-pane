@@ -103508,6 +103508,8 @@ Notes: ${notes}` : prompt;
       renderEditor({ preserveDirty: true });
     }),
     store2.on("workspace_changed", () => {
+      loadToken++;
+      loading = false;
       cancelResolutionCheckUi();
       selectedId = null;
       creating = false;
@@ -103518,11 +103520,9 @@ Notes: ${notes}` : prompt;
       autoSaveToken.clear();
       resetAttachmentEdits();
       attachmentDataCache.clear();
+      renderList();
+      renderEditor();
       if (roadmapModeActive(store2)) void refresh();
-      else {
-        renderList();
-        renderEditor();
-      }
     })
   ];
   renderList();
