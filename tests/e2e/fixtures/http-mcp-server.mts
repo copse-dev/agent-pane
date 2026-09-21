@@ -15,30 +15,56 @@ import { z } from 'zod'
 const token = process.env.MCP_HTTP_TOKEN ?? ''
 const port = Number(process.env.MCP_HTTP_PORT ?? '0')
 
-const server = new McpServer({ name: 'http-mock', version: '0.0.1' })
+function createServer(): McpServer {
+  const server = new McpServer({ name: 'http-mock', version: '0.0.1' })
 
-server.registerTool(
-  'whoami',
-  {
-    description: 'Returns the authenticated caller identity',
-    inputSchema: {},
-    annotations: { readOnlyHint: true },
-  },
-  async () => ({ content: [{ type: 'text', text: 'authenticated-user' }] }),
-)
+  server.registerTool(
+    'whoami',
+    {
+      description: 'Returns the authenticated caller identity',
+      inputSchema: {},
+      annotations: { readOnlyHint: true },
+    },
+    async () => ({ content: [{ type: 'text', text: 'authenticated-user' }] }),
+  )
 
-server.registerTool(
-  'add',
-  {
-    description: 'Add two numbers',
-    inputSchema: { a: z.number(), b: z.number() },
-    annotations: { readOnlyHint: true },
-  },
-  async ({ a, b }) => ({ content: [{ type: 'text', text: String(a + b) }] }),
-)
+  server.registerTool(
+    'add',
+    {
+      description: 'Add two numbers',
+      inputSchema: { a: z.number(), b: z.number() },
+      annotations: { readOnlyHint: true },
+    },
+    async ({ a, b }) => ({ content: [{ type: 'text', text: String(a + b) }] }),
+  )
+  return server
+}
 
-const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: () => randomUUID() })
-await server.connect(transport)
+// Reloading the app creates another MCP session. Give each client its own
+// transport; a previously initialized transport cannot accept another initialize.
+const transports = new Map<string, StreamableHTTPServerTransport>()
+
+async function handleAuthenticatedRequest(req: http.IncomingMessage, res: http.ServerResponse) {
+  const sessionId = req.headers['mcp-session-id']
+  let transport = typeof sessionId === 'string' ? transports.get(sessionId) : undefined
+  if (!transport) {
+    if (sessionId || req.method !== 'POST') {
+      res.writeHead(404)
+      res.end()
+      return
+    }
+    const next = new StreamableHTTPServerTransport({
+      sessionIdGenerator: () => randomUUID(),
+      onsessioninitialized: (id) => transports.set(id, next),
+    })
+    next.onclose = () => {
+      if (next.sessionId) transports.delete(next.sessionId)
+    }
+    await createServer().connect(next)
+    transport = next
+  }
+  await transport.handleRequest(req, res)
+}
 
 const httpServer = http.createServer((req, res) => {
   const auth = req.headers['authorization']
@@ -47,7 +73,11 @@ const httpServer = http.createServer((req, res) => {
     res.end(JSON.stringify({ error: 'unauthorized' }))
     return
   }
-  void transport.handleRequest(req, res)
+  void handleAuthenticatedRequest(req, res).catch((error: unknown) => {
+    console.error(error)
+    if (!res.headersSent) res.writeHead(500)
+    res.end()
+  })
 })
 
 httpServer.listen(port, () => {

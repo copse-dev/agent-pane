@@ -113,10 +113,10 @@ faster — measure, don't assume.
   no-CSP tauri.html for _unpatched_-engine runs; with the patch series applied
   leave it unset so both stacks run with a real CSP.
 - **Leave `COPSE_RELEASE` unset for perf runs.** `scripts/build.mts` defines
-  `__COPSE_TEST_DIRECTIVES__` as `String(!isRelease)`, but
+  `__COPSE_TEST_SCENARIOS__` as `String(!isRelease)`, but
   `scripts/build-tauri.mts` hardcodes it to `'true'`. A `COPSE_RELEASE=1 pnpm
 build` therefore gives the Electron main process a mock provider with the
-  `[[mock:…]]` directive parser stripped and the sidecar one with it compiled
+  test conversation runner stripped and the sidecar one with it compiled
   in — the two mains stop being the same code, which is the assumption the
   whole comparison rests on. (`--release` in §2.2 is the _cargo_ profile; that
   one is mandatory.)

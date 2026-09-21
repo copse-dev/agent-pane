@@ -139,12 +139,12 @@ function gitOutput(args: string[]): string | null {
   return result.status === 0 ? result.stdout.trim() : null
 }
 
-// Dev builds always keep the MockLLMProvider test directives (never shipped),
+// Dev builds always keep the MockLLMProvider test scenarios (never shipped),
 // while still identifying the source revision behind Debug trace exports.
 const devBuildCommit = gitOutput(['rev-parse', 'HEAD']) ?? 'unknown'
 const devBuildStatus = gitOutput(['status', '--porcelain', '--untracked-files=normal'])
 const define = {
-  __COPSE_TEST_DIRECTIVES__: 'true',
+  __COPSE_TEST_SCENARIOS__: 'true',
   __COPSE_BUILD_COMMIT__: JSON.stringify(devBuildCommit),
   __COPSE_BUILD_DIRTY__: JSON.stringify(devBuildStatus === null ? null : devBuildStatus.length > 0),
 }

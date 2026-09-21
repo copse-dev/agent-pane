@@ -3,6 +3,7 @@ import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { setComposerValue } from './helpers/composer.ts'
+import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 
 describe('tool call display live mock', () => {
@@ -53,7 +54,24 @@ describe('tool call display live mock', () => {
       })
     })
 
-    await setComposerValue('list files please')
+    const prompt = 'List the top-level files in this workspace.'
+    const scenario = await installMockScenario({
+      title: 'List workspace files',
+      turns: [
+        {
+          user: prompt,
+          responses: [
+            { toolCalls: [{ name: 'list_dir', args: { path: '.' } }] },
+            {
+              text: 'The workspace root contains the application source, tests, and project configuration.',
+              expectToolResults: [{ name: 'list_dir', includes: 'src' }],
+            },
+          ],
+        },
+      ],
+    })
+
+    await setComposerValue(prompt)
     await $('.submit-btn').click()
 
     await browser.waitUntil(
@@ -86,6 +104,10 @@ describe('tool call display live mock', () => {
     )
     expect((trace?.transitions ?? []).join(',')).not.toContain('closed,open')
 
+    await expectAssistantReply(
+      'The workspace root contains the application source, tests, and project configuration.',
+    )
+    await scenario.assertComplete()
     await saveAppScreenshot('tool-display-live-mock.png')
   })
 })

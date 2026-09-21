@@ -1,10 +1,15 @@
-import { mkdirSync } from 'node:fs'
-import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedScrollStreamingFixture } from './helpers/seed-config.ts'
 import { setComposerValue } from './helpers/composer.ts'
+import { waitForAgentIdle } from './helpers.ts'
+import { installMockScenario } from './helpers/mock-scenario.ts'
+import { saveAppScreenshot } from './helpers/screenshot.ts'
 
-const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
+const FIRST_PROMPT = 'Suggest how to make this module’s error handling clearer.'
+const QUEUED_PROMPTS = [
+  'Which unit tests should cover that change?',
+  'What should the README explain about it?',
+] as const
 
 describe('queued chats stay pinned to the bottom', function () {
   this.timeout(90_000)
@@ -21,18 +26,44 @@ describe('queued chats stay pinned to the bottom', function () {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await $('.messages-list .msg-assistant').waitForExist({ timeout: 30_000 })
 
-    // Kick off a slow turn so the agent stays running while we queue follow-ups.
-    await setComposerValue('Please refactor this module [[mock:delay_ms 15000]]')
-    await $('.submit-btn').click()
-    await browser.waitUntil(async () => (await $('.stop-btn').getProperty('hidden')) !== true, {
-      timeout: 10_000,
+    const scenario = await installMockScenario({
+      title: 'Clarify module errors',
+      turns: [
+        {
+          user: FIRST_PROMPT,
+          responses: [
+            {
+              waitFor: 'module-refactor',
+              text: 'Use one error-normalization helper at the module boundary so callers receive the same shape from every failure path.',
+            },
+          ],
+        },
+        {
+          user: QUEUED_PROMPTS[0],
+          responses: [
+            {
+              text: 'Test a malformed request, a dependency failure, and a successful request to confirm the helper preserves each outcome.',
+            },
+          ],
+        },
+        {
+          user: QUEUED_PROMPTS[1],
+          responses: [
+            {
+              text: 'Document the normalized error fields, when callers can retry, and one short example of handling a validation failure.',
+            },
+          ],
+        },
+      ],
     })
 
+    // Keep a normal request running while follow-ups are queued.
+    await setComposerValue(FIRST_PROMPT)
+    await $('.submit-btn').click()
+    await scenario.waitForHold('module-refactor')
+
     // Queue two follow-ups while the agent is busy.
-    for (const [index, text] of [
-      'Also add unit tests for it.',
-      'Then update the README.',
-    ].entries()) {
+    for (const [index, text] of QUEUED_PROMPTS.entries()) {
       await setComposerValue(text)
       await $('.submit-btn').click()
       await browser.waitUntil(
@@ -60,7 +91,9 @@ describe('queued chats stay pinned to the bottom', function () {
     })
     await expect(panelVisibleAfterScroll).toBe(true)
 
-    mkdirSync(SCREENSHOT_DIR, { recursive: true })
-    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'queued-pinned-scrolled-top.png'))
+    await saveAppScreenshot('queued-pinned-scrolled-top.png')
+    await scenario.release('module-refactor')
+    await waitForAgentIdle(60_000)
+    await scenario.assertComplete()
   })
 })

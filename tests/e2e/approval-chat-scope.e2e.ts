@@ -1,8 +1,8 @@
+import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
 import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
-import { setComposerValue } from './helpers/composer.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 import { waitForActiveThreadTitle } from './helpers.ts'
 import { approveUnsandboxedTerminalIfPrompted } from './helpers/terminal-approval.ts'
@@ -45,7 +45,11 @@ describe('chat-scoped approval', () => {
     await terminalInput.click()
     await browser.keys(['clear', '\uE007'])
 
-    await setComposerValue('[[mcp:run_shell {"command":"npm install"}]]')
+    await prepareMockToolTurn(
+      'Install the project dependencies.',
+      { name: 'run_shell', args: { command: 'npm install' } },
+      'The dependency installation was declined.',
+    )
     await $('.submit-btn').click()
 
     const dialog = $('#approval-dialog')

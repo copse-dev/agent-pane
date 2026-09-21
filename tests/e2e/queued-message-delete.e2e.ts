@@ -1,12 +1,12 @@
-import { mkdirSync } from 'node:fs'
-import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { setComposerValue } from './helpers/composer.ts'
-import { saveElementScreenshot } from './helpers/screenshot.ts'
+import { waitForAgentIdle } from './helpers.ts'
+import { installMockScenario } from './helpers/mock-scenario.ts'
+import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 
-const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
-const QUEUED_TEXT = 'Then add unit tests for the parser.'
+const QUEUED_TEXT = 'Which unit tests should cover the parser refactor?'
+const FIRST_PROMPT = 'Suggest a safe refactor for the JSON parser error paths.'
 const ROW_SELECTOR = '.conversation-queued .message-queued-actions'
 
 describe('queued message delete', function () {
@@ -26,11 +26,24 @@ describe('queued message delete', function () {
 
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
-    await setComposerValue('Refactor the JSON parser. [[mock:delay_ms 6000]]')
-    await $('.submit-btn').click()
-    await browser.waitUntil(async () => (await $('.stop-btn').getProperty('hidden')) !== true, {
-      timeout: 10_000,
+    const scenario = await installMockScenario({
+      title: 'Refactor JSON parser',
+      turns: [
+        {
+          user: FIRST_PROMPT,
+          responses: [
+            {
+              waitFor: 'parser-refactor',
+              text: 'Extract the repeated error conversion into a small helper and leave the parsing branches otherwise unchanged.',
+            },
+          ],
+        },
+      ],
     })
+
+    await setComposerValue(FIRST_PROMPT)
+    await $('.submit-btn').click()
+    await scenario.waitForHold('parser-refactor')
 
     await browser.execute((value: string) => {
       const input = document.querySelector('.prompt-input') as HTMLElement | null
@@ -43,8 +56,7 @@ describe('queued message delete', function () {
     await expect($('.conversation-queued .message-text')).toHaveText(QUEUED_TEXT)
     await expect($('.queued-delete')).toExist()
 
-    mkdirSync(SCREENSHOT_DIR, { recursive: true })
-    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'queued-message-delete-before.png'))
+    await saveAppScreenshot('queued-message-delete-before.png')
 
     // The outlined chips carry almost no fill contrast, so the border is the only
     // thing marking where the button ends. Measure it against the surface behind
@@ -121,8 +133,11 @@ describe('queued message delete', function () {
 
     const userMessages = await $$('.messages-list .msg-user .message-text')
     await expect(userMessages).toHaveLength(1)
-    await expect(userMessages[0]).toHaveText('Refactor the JSON parser. [[mock:delay_ms 6000]]')
+    await expect(userMessages[0]).toHaveText(FIRST_PROMPT)
 
-    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'queued-message-delete-after.png'))
+    await saveAppScreenshot('queued-message-delete-after.png')
+    await scenario.release('parser-refactor')
+    await waitForAgentIdle()
+    await scenario.assertComplete()
   })
 })

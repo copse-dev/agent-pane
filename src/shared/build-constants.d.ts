@@ -5,10 +5,10 @@
 
 /**
  * True in dev/test/e2e builds, false in release builds (`COPSE_RELEASE=1`).
- * Gates the `MockLLMProvider` test directives (`[[mcp:…]]`, `[[mock:…]]`) so the
- * directive parser is stripped from packaged apps rather than merely unreachable.
+ * Gates scripted model scenarios and their test-only IPC controls so neither
+ * the runner nor the bridge ships in packaged apps.
  */
-declare const __COPSE_TEST_DIRECTIVES__: boolean
+declare const __COPSE_TEST_SCENARIOS__: boolean
 
 /** Exact Git commit embedded in desktop bundles; absent for unversioned test builds. */
 declare const __COPSE_BUILD_COMMIT__: string

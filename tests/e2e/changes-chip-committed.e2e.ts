@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { prepareMockTurn } from './helpers/mock-scenario.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
 
@@ -45,7 +45,9 @@ describe('Changes chip includes committed branch work', () => {
 
   it('keeps accurate totals as edits move from the working tree into commits', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    await setComposerValue('Review the committed change.')
+    await prepareMockTurn('Review the committed change.', [
+      { text: 'The committed change replaces one line with two in example.txt.' },
+    ])
     await $('.submit-btn').click()
     await waitForAgentIdle(20_000)
 

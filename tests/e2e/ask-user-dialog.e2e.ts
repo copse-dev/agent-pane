@@ -1,11 +1,14 @@
+import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { setComposerValue } from './helpers/composer.ts'
 import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
+import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
+import { waitForAgentIdle } from './helpers.ts'
 
 // Visual eval for #515: the ask_user tool blocks the agent loop on a modal dialog
 // until the user answers. Component tests cover DOM behaviour; this spec exercises
-// the full Electron path (mock directive → tool → IPC → dialog → respond).
+// the full Electron path from a natural request through tool, IPC, dialog, and response.
 describe('ask_user dialog', () => {
   before(async () => {
     resetUserData()
@@ -22,9 +25,37 @@ describe('ask_user dialog', () => {
   })
 
   it('shows the modal with options and returns the answer to the agent', async () => {
-    await setComposerValue(
-      '[[mcp:ask_user {"questions":[{"question":"Claude is not signed in. Run `claude /login` in a terminal, then re-send your message.","options":["Run `claude /login`","Not now"]}]}]]',
-    )
+    const scenario = await installMockScenario({
+      title: 'Sign in to Claude',
+      turns: [
+        {
+          user: 'Help me sign in to Claude.',
+          responses: [
+            {
+              toolCalls: [
+                {
+                  name: 'ask_user',
+                  args: {
+                    questions: [
+                      {
+                        question:
+                          'Claude is not signed in. Run `claude /login` in a terminal, then re-send your message.',
+                        options: ['Run `claude /login`', 'Not now'],
+                      },
+                    ],
+                  },
+                },
+              ],
+            },
+            {
+              text: 'Run the login command in your terminal, then send your message again.',
+              expectToolResults: [{ name: 'ask_user', includes: 'Run claude /login' }],
+            },
+          ],
+        },
+      ],
+    })
+    await setComposerValue('Help me sign in to Claude.')
     await $('.submit-btn').click()
 
     const dialog = await $('#ask-user-dialog')
@@ -44,16 +75,21 @@ describe('ask_user dialog', () => {
     await dialog.$('.ask-user-submit').click()
     await dialog.waitForDisplayed({ reverse: true, timeout: 10_000 })
 
-    // Tool finished — the mock turn completes and an assistant message appears.
-    await browser.waitUntil(async () => (await $$('.msg.msg-assistant')).length >= 1, {
-      timeout: 30_000,
-      timeoutMsg: 'expected assistant reply after ask_user answer',
-    })
+    // The selected option is returned through the real tool result before the
+    // scripted continuation is emitted.
+    await waitForAgentIdle(30_000)
+    await expectAssistantReply(
+      'Run the login command in your terminal, then send your message again.',
+    )
+    await scenario.assertComplete()
   })
 
   it('dismisses the modal when the originating run is stopped', async () => {
-    await setComposerValue(
-      '[[mcp:ask_user {"questions":[{"question":"Should this run keep waiting?"}]}]]',
+    await prepareMockToolTurn(
+      'Ask whether we should keep waiting.',
+      { name: 'ask_user', args: { questions: [{ question: 'Should this run keep waiting?' }] } },
+      'The waiting decision is recorded above.',
+      true,
     )
     await $('.submit-btn').click()
 

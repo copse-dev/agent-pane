@@ -1,11 +1,17 @@
+import {
+  expectAssistantReply,
+  installMockScenario,
+  prepareMockTurn,
+  prepareMockToolTurn,
+} from './helpers/mock-scenario.ts'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
-import { setComposerValue } from './helpers/composer.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
+import { setComposerValue } from './helpers/composer.ts'
 
 const PROJECT_ID = 'e2e-guarded-yolo-project'
 let workspaceRoot = ''
@@ -68,7 +74,10 @@ describe('Guarded YOLO shell mode', function () {
   it('requires explicit opt-in and stays active for the thread across turns', async () => {
     await enableGuardedYolo(true)
 
-    await setComposerValue('[[mock:delay_ms 3000]] [[mcp:run_shell {"command":"cat /etc/hosts"}]]')
+    await prepareMockTurn('Show the local host mappings.', [
+      { delayMs: 3000, toolCalls: [{ name: 'run_shell', args: { command: 'cat /etc/hosts' } }] },
+      { text: 'The host mappings are shown in the command output.' },
+    ])
     await $('.submit-btn').click()
 
     const banner = await $('.guarded-yolo-banner')
@@ -84,7 +93,10 @@ describe('Guarded YOLO shell mode', function () {
     await expect(banner).toHaveAttribute('data-phase', 'active')
     await expect($('#approval-dialog')).not.toBeDisplayed()
 
-    await setComposerValue('[[mock:delay_ms 1000]] [[mcp:run_shell {"command":"pwd"}]]')
+    await prepareMockTurn('Show the current working directory.', [
+      { delayMs: 1000, toolCalls: [{ name: 'run_shell', args: { command: 'pwd' } }] },
+      { text: 'The working directory is shown in the command output.' },
+    ])
     await $('.submit-btn').click()
     await expect(banner).toHaveAttribute('data-phase', 'active', { wait: 10_000 })
     await waitForAgentIdle()
@@ -95,8 +107,10 @@ describe('Guarded YOLO shell mode', function () {
   it('keeps a non-bypassable confirmation for bounded destructive work', async () => {
     const banner = await $('.guarded-yolo-banner')
     await expect(banner).toHaveAttribute('data-phase', 'active')
-    await setComposerValue(
-      '[[mcp:run_shell {"command":"rm -rf tests/e2e/.bounded-delete-missing"}]]',
+    await prepareMockToolTurn(
+      'Remove the unused bounded-delete fixture directory.',
+      { name: 'run_shell', args: { command: 'rm -rf tests/e2e/.bounded-delete-missing' } },
+      'The directory removal was declined.',
     )
     await $('.submit-btn').click()
 
@@ -130,8 +144,24 @@ describe('Guarded YOLO shell mode', function () {
       ].join('\n'),
     )
     const command = 'node shutdown-report.mts'
+    const prompt = 'Run the shutdown report script.'
+    const replies = [
+      'The report was not run because you declined this request.',
+      'The report script finished.',
+      'The report was not run again because you declined this request.',
+    ]
+    await installMockScenario({
+      title: 'Run the shutdown report',
+      turns: replies.map((reply) => ({
+        user: prompt,
+        responses: [
+          { toolCalls: [{ name: 'run_shell', args: { command } }] },
+          { text: reply, expectToolResults: [{ name: 'run_shell' }] },
+        ],
+      })),
+    })
     const submitCommand = async (): Promise<void> => {
-      await setComposerValue(`[[mcp:run_shell ${JSON.stringify({ command })}]]`)
+      await setComposerValue(prompt)
       await $('.submit-btn').click()
       await $('#approval-dialog').waitForDisplayed({ timeout: 30_000 })
     }
@@ -148,11 +178,13 @@ describe('Guarded YOLO shell mode', function () {
     expect(existsSync(marker)).toBe(false)
     await saveElementScreenshot('#approval-dialog', 'guarded-yolo-uncertain-power-prompt.png')
     await dialog.$('.approval-reject').click()
+    await expectAssistantReply('The report was not run because you declined this request.')
     await waitForAgentIdle()
     expect(existsSync(marker)).toBe(false)
 
     await submitCommand()
     await $('#approval-dialog .approval-approve').click()
+    await expectAssistantReply('The report script finished.')
     await waitForAgentIdle()
     expect(readFileSync(marker, 'utf8')).toBe('ran\n')
 
@@ -160,13 +192,18 @@ describe('Guarded YOLO shell mode', function () {
     await submitCommand()
     expect(readFileSync(marker, 'utf8')).toBe('ran\n')
     await $('#approval-dialog .approval-reject').click()
+    await expectAssistantReply('The report was not run again because you declined this request.')
     await waitForAgentIdle()
     expect(readFileSync(marker, 'utf8')).toBe('ran\n')
   })
 
   it('hard-denies catastrophic deletion without offering approval', async () => {
     await expect($('.guarded-yolo-banner')).toHaveAttribute('data-phase', 'active')
-    await setComposerValue('[[mcp:run_shell {"command":"rm -rf /"}]]')
+    await prepareMockToolTurn(
+      'Remove the root filesystem.',
+      { name: 'run_shell', args: { command: 'rm -rf /' } },
+      'The destructive command was blocked.',
+    )
     await $('.submit-btn').click()
     // Idle can still describe the previous turn until the new tool is rendered.
     await browser.waitUntil(

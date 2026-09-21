@@ -1,10 +1,10 @@
+import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { readWorktreePreparationPlan } from '../../src/main/services/worktree-preparation-plan.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
-import { setComposerValue } from './helpers/composer.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 
 const root = mkdtempSync(join(tmpdir(), 'project-preparation-approval-'))
@@ -35,8 +35,10 @@ describe('project preparation approval', () => {
   })
   it('names the actual install and declared setup before asking for approval', async () => {
     const planFingerprint = readWorktreePreparationPlan(root).fingerprint
-    await setComposerValue(
-      `[[mcp:prepare_worktree ${JSON.stringify({ planFingerprint, offline: true })}]]`,
+    await prepareMockToolTurn(
+      'Prepare this worktree using its locked dependencies.',
+      { name: 'prepare_worktree', args: { planFingerprint, offline: true } },
+      'The worktree preparation request was declined.',
     )
     await $('.submit-btn').click()
     const dialog = $('#approval-dialog')

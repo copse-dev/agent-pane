@@ -1,37 +1,51 @@
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { collectErrorToasts } from './helpers/assert-no-error-toasts.ts'
 import { setComposerValue } from './helpers/composer.ts'
+import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { waitForAgentIdle } from './helpers.ts'
 
-const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 const PROJECT_ID = 'e2e-staged-diff-project'
-const DIRTY_TREE_SENTINEL = join(process.cwd(), 'tests/e2e/.staged-diff-dirty')
+// Without git, file writes take the supported proposed-diff path. Keep this
+// fixture outside the source checkout so accepted edits cannot pollute it.
+let workspaceRoot = ''
 
-async function waitForAgentIdle(timeoutMs = 60_000): Promise<void> {
-  await browser.waitUntil(async () => (await $('.submit-btn').getText()) === 'Send', {
-    timeout: timeoutMs,
-    interval: 500,
-    timeoutMsg: 'Agent did not return to idle (submit button Send)',
+async function writeProposedFile(
+  title: string,
+  user: string,
+  path: string,
+  content: string,
+  reply: string,
+): Promise<void> {
+  const scenario = await installMockScenario({
+    title,
+    turns: [
+      {
+        user,
+        responses: [
+          { toolCalls: [{ name: 'write_file', args: { path, content } }] },
+          { text: reply, expectToolResults: [{ name: 'write_file' }] },
+        ],
+      },
+    ],
   })
-}
-
-async function runWriteFileDirective(path: string, content: string): Promise<void> {
-  const args = JSON.stringify({ path, content })
-  await setComposerValue(`[[mcp:write_file ${args}]]`)
+  await setComposerValue(user)
   await $('.submit-btn').click()
-  await waitForAgentIdle()
+  await waitForAgentIdle(60_000)
+  await expectAssistantReply(reply)
+  await scenario.assertComplete()
 }
 
 describe('staged diff approval UI', () => {
   before(async function () {
     this.timeout(120_000)
-    mkdirSync(SCREENSHOT_DIR, { recursive: true })
-    writeFileSync(DIRTY_TREE_SENTINEL, 'force staged-diff approval path\n')
+    workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-staged-diff-'))
     resetUserData()
-    seedEmptyProject(process.cwd(), PROJECT_ID, {
+    seedEmptyProject(workspaceRoot, PROJECT_ID, {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
     })
@@ -39,7 +53,7 @@ describe('staged diff approval UI', () => {
   })
 
   after(() => {
-    rmSync(DIRTY_TREE_SENTINEL, { force: true })
+    if (workspaceRoot) rmSync(workspaceRoot, { recursive: true, force: true })
     resetUserData()
   })
 
@@ -47,7 +61,13 @@ describe('staged diff approval UI', () => {
     this.timeout(120_000)
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
-    await runWriteFileDirective('src/e2e-staged-a.ts', 'export const a = 1\n')
+    await writeProposedFile(
+      'Propose the first staged TypeScript file',
+      'Create src/e2e-staged-a.ts with a constant named a set to 1.',
+      'src/e2e-staged-a.ts',
+      'export const a = 1\n',
+      'I prepared the proposed change for src/e2e-staged-a.ts.',
+    )
 
     await browser.waitUntil(
       async () =>
@@ -87,9 +107,15 @@ describe('staged diff approval UI', () => {
     if (!editorRect || !acceptRect) throw new Error('missing diff editor or accept button rect')
     await expect(acceptRect.top >= editorRect.bottom).toBe(true)
 
-    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'staged-diff-single.png'))
+    await saveAppScreenshot('staged-diff-single.png')
 
-    await runWriteFileDirective('src/e2e-staged-b.ts', 'export const b = 2\n')
+    await writeProposedFile(
+      'Propose the second staged TypeScript file',
+      'Create src/e2e-staged-b.ts with a constant named b set to 2.',
+      'src/e2e-staged-b.ts',
+      'export const b = 2\n',
+      'I prepared the proposed change for src/e2e-staged-b.ts.',
+    )
 
     await browser.waitUntil(async () => (await $$('.git-change-row-proposed')).length === 2, {
       timeout: 30_000,
@@ -112,7 +138,7 @@ describe('staged diff approval UI', () => {
     await second.click()
     await expect(second).toHaveElementClass('is-selected')
 
-    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'staged-diff-multi.png'))
+    await saveAppScreenshot('staged-diff-multi.png')
 
     // Rapid selection used to start overlapping Monaco view-model computations;
     // the slower, stale request could win and leave the viewer blank or showing
@@ -179,9 +205,12 @@ describe('staged diff approval UI', () => {
       )
     }
 
-    await runWriteFileDirective(
+    await writeProposedFile(
+      'Propose a staged CSS change',
+      'Create src/e2e-staged-layout.css with a muted projects settings button colour.',
       'src/e2e-staged-layout.css',
       ['.projects-settings-btn {', '  color: var(--text-muted);', '}', ''].join('\n'),
+      'I prepared the proposed CSS change for src/e2e-staged-layout.css.',
     )
 
     await $('.git-changes-section-proposed').waitForDisplayed({ timeout: 15_000 })
@@ -197,14 +226,20 @@ describe('staged diff approval UI', () => {
     })
 
     await browser.pause(3_000)
-    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'staged-diff-css-accept-no-error.png'))
+    await saveAppScreenshot('staged-diff-css-accept-no-error.png')
     await expect(await collectErrorToasts()).toEqual([])
   })
 
   it('shows Proposed rows in the Changes pop-out (#1718)', async function () {
     this.timeout(120_000)
 
-    await runWriteFileDirective('src/e2e-staged-popout.ts', 'export const popout = true\n')
+    await writeProposedFile(
+      'Propose a pop-out change',
+      'Create a TypeScript file for the pop-out example.',
+      'src/e2e-staged-popout.ts',
+      'export const popout = true\n',
+      'The pop-out example is ready for review.',
+    )
     await $('.git-changes-section-proposed').waitForDisplayed({ timeout: 30_000 })
 
     const before = await browser.getWindowHandles()
@@ -235,5 +270,7 @@ describe('staged diff approval UI', () => {
       'src/e2e-staged-popout.ts',
     )
     await saveAppScreenshot('staged-diff-popout-proposed.png')
+    await browser.closeWindow()
+    await browser.switchToWindow(before[0])
   })
 })

@@ -90,7 +90,7 @@ describe('matchOpenIssuesToRoadmapItems', () => {
     })
     const matches = await matchOpenIssuesToRoadmapItems(
       [{ number: 1, title: 'Anything', body: '' }],
-      async () => 'Mock response to: coverage',
+      async () => 'I could not determine which issues are covered.',
     )
     assert.deepEqual(matches, [])
   })

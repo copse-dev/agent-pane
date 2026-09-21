@@ -1,8 +1,8 @@
+import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
-import { setComposerValue } from './helpers/composer.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveThreePaneScreenshot } from './helpers/screenshot.ts'
 
@@ -32,7 +32,11 @@ describe('browser preview tool', () => {
   })
 
   it('serves the project and opens the visible Browser panel without approval', async () => {
-    await setComposerValue('[[mcp:browser_preview {}]]')
+    await prepareMockToolTurn(
+      'Open the application preview in the browser.',
+      { name: 'browser_preview', args: {} },
+      'The browser preview result is available above.',
+    )
     await $('.submit-btn').click()
 
     await expect($('.tool-card .tool-name')).toHaveText('Opened preview', { wait: 30_000 })

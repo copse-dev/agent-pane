@@ -231,6 +231,16 @@ async function collectConfigs(): Promise<{
   return { active, untrusted: [] }
 }
 
+async function collectE2eMcpFixtureConfig(): Promise<{
+  active: McpServerConfig[]
+  untrusted: McpServerConfig[]
+}> {
+  return {
+    active: await readConfigFile(join(getElectronUserDataPath(), 'mcp.json')),
+    untrusted: [],
+  }
+}
+
 // Project/workspace configs are attacker-controlled (a cloned repo can ship a
 // `.mcp.json`), so they may not read process env into server url/headers/args/
 // env — an empty allowlist. User-controlled config locations expand freely.
@@ -617,6 +627,10 @@ async function teardown(registry: ToolRegistry): Promise<void> {
 
 export async function loadMcpServers(registry: ToolRegistry): Promise<void> {
   const generation = ++loadGeneration
+  const e2eMcpFixture =
+    __COPSE_TEST_SCENARIOS__ &&
+    process.env['COPSE_E2E'] === '1' &&
+    process.env['COPSE_E2E_MCP_FIXTURE'] === '1'
   // Bundled in-process servers (e.g. the canvas) are always considered, even with
   // no user config, so the feature "just works" once the experimental flag is on.
   // They connect ahead of the eval/e2e bail below: that bail exists to keep those
@@ -625,21 +639,26 @@ export async function loadMcpServers(registry: ToolRegistry): Promise<void> {
   // make the canvas untestable in the only tier that can render it — and the gate
   // above still applies, so a run whose profile leaves the plugin off connects
   // nothing at all.
-  const bundledStatuses = await connectBundledServers(registry, generation)
+  const bundledStatuses = e2eMcpFixture ? [] : await connectBundledServers(registry, generation)
   // Skip *configured* MCP server connections under agent-eval and e2e. e2e mocks
   // the LLM and must not reach the network — a curated HTTP server (e.g. the MDN
   // server at https://mcp.mdn.mozilla.net/) would block the awaited startup
   // connect for CONNECT_TIMEOUT_MS on a runner with no egress, wedging the whole
   // app and hanging every workspace-loading spec. (Onboarding has no active
   // servers, so it was unaffected.)
-  if (process.env['COPSE_AGENT_EVAL'] === '1' || process.env['COPSE_E2E'] === '1') {
+  if (
+    process.env['COPSE_AGENT_EVAL'] === '1' ||
+    (process.env['COPSE_E2E'] === '1' && !e2eMcpFixture)
+  ) {
     if (generation === loadGeneration) {
       serverStatuses = bundledStatuses
       await migrateLegacyMcpToolGrants()
     }
     return
   }
-  const { active, untrusted } = await collectConfigs()
+  const { active, untrusted } = e2eMcpFixture
+    ? await collectE2eMcpFixtureConfig()
+    : await collectConfigs()
   if (generation !== loadGeneration) return // superseded while reading config
   const userDisabled = getUserDisabledServerNames()
   if (active.length === 0 && untrusted.length === 0 && bundledStatuses.length === 0) {

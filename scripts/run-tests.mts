@@ -121,8 +121,8 @@ async function bundleTests(testFiles: string[], outputDir: string): Promise<void
     alias: {
       '@shared': resolve('./src/shared'),
     },
-    // Unit tests cover the directive parser, so they always build with it enabled.
-    define: { __COPSE_TEST_DIRECTIVES__: 'true' },
+    // Unit tests exercise scripted model scenarios with the test-only runner enabled.
+    define: { __COPSE_TEST_SCENARIOS__: 'true' },
     plugins: [
       {
         name: 'electron-esm-interop',

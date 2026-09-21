@@ -10,16 +10,48 @@ import {
 } from './helpers/seed-config.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { setComposerValue } from './helpers/composer.ts'
+import { installMockScenario } from './helpers/mock-scenario.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 
-async function completeMockTurn(): Promise<void> {
+async function completeMockTurn(includeDebugCiFollowUp = false) {
   await $('.prompt-input').waitForExist({ timeout: 30_000 })
-  await setComposerValue('review my changes')
+  const prompt = 'Review my uncommitted changes and suggest any improvements.'
+  const scenario = await installMockScenario({
+    title: 'Review uncommitted changes',
+    turns: [
+      {
+        user: prompt,
+        responses: [
+          {
+            text: 'Start by checking the diff summary, then run the relevant tests before merging.',
+          },
+        ],
+      },
+      ...(includeDebugCiFollowUp
+        ? [
+            {
+              user: 'The pull request for this branch has failing CI checks. Investigate the failures and fix them.',
+              responses: [
+                {
+                  text: 'Start with the first failing CI job, compare its logs with the changed files, and isolate the earliest failing command.',
+                },
+              ],
+            },
+          ]
+        : []),
+    ],
+  })
+  await setComposerValue(prompt)
   await $('.submit-btn').click()
 
   await waitForAgentIdle(20_000)
+  await expect($('.msg-assistant .message-text')).toHaveText(
+    'Start by checking the diff summary, then run the relevant tests before merging.',
+    { containing: true },
+  )
 
   await $('.follow-up-bubble').waitForExist({ timeout: 30_000 })
+  return scenario
 }
 
 describe('follow-up suggestion bubbles', () => {
@@ -44,7 +76,7 @@ describe('follow-up suggestion bubbles', () => {
     })
 
     it('shows demo bubbles after a turn completes', async () => {
-      await completeMockTurn()
+      const scenario = await completeMockTurn()
       await expect($$('.follow-up-bubble')).toBeElementsArrayOfSize(4)
       await expect($('.follow-up-bubble-changes')).not.toExist()
 
@@ -65,26 +97,56 @@ describe('follow-up suggestion bubbles', () => {
       await expect($('.prompt-input')).toHaveAttribute('data-placeholder', 'Send follow-up')
 
       await saveAppScreenshot('follow-up-suggestions-demo.png')
+      await scenario.assertComplete()
     })
 
-    it('restores follow-ups when returning to a completed thread', async () => {
-      await completeMockTurn()
+    it('restores follow-ups when returning to a thread and sends the selected prompt', async function () {
+      this.timeout(60_000)
+      const scenario = await completeMockTurn(true)
+      const originalThreadTitle = await $('.chat-row.selected .chat-title').getText()
 
       await $('.project-new-thread-btn').click()
       await expect($('.follow-up-suggestions')).not.toBeDisplayed()
 
-      const showMore = await $('.chats-show-more')
-      if (await showMore.isExisting()) await showMore.click()
-
-      await browser.execute(() => {
-        const rows = [...document.querySelectorAll('.chats-list .chat-row')]
-        const previous = rows.find((row) => !row.classList.contains('selected'))
-        previous?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-      })
+      await browser.waitUntil(
+        async () =>
+          browser.execute((expectedTitle) => {
+            const row = [...document.querySelectorAll<HTMLElement>('.chats-list .chat-row')].find(
+              (candidate) =>
+                !candidate.classList.contains('selected') &&
+                candidate.querySelector('.chat-title')?.textContent === expectedTitle,
+            )
+            if (row) {
+              row.click()
+              return true
+            }
+            document.querySelector<HTMLElement>('.chats-show-more')?.click()
+            return false
+          }, originalThreadTitle),
+        {
+          timeout: 10_000,
+          interval: 100,
+          timeoutMsg: 'expected the completed thread in the sidebar',
+        },
+      )
+      await expect($('.chat-row.selected .chat-title')).toHaveText(originalThreadTitle)
       await $('.follow-up-bubble').waitForDisplayed({ timeout: 10_000 })
       await expect($('.follow-up-bubble[data-id="continue-plan"]')).toHaveText(
         'Continue: Run the test suite',
       )
+
+      await $('.follow-up-bubble[data-id="debug-ci"]').click()
+      await expect($('.chat-row.selected .chat-title')).toHaveText(originalThreadTitle)
+      await expect($('.messages-list .msg-user')).toBeDisplayed()
+      await waitForAgentIdle()
+      const assistantMessages = await $$('.messages-list .msg-assistant .message-text')
+      const finalReply = assistantMessages.at(-1)
+      if (!finalReply) throw new Error('expected the Debug CI follow-up reply')
+      await expect(finalReply).toHaveText(
+        'Start with the first failing CI job, compare its logs with the changed files, and isolate the earliest failing command.',
+        { containing: true },
+      )
+      await scenario.assertComplete()
     })
   })
 
@@ -103,7 +165,7 @@ describe('follow-up suggestion bubbles', () => {
     })
 
     it('shows a Changes bubble from real git diff stats', async () => {
-      await completeMockTurn()
+      const scenario = await completeMockTurn()
 
       const changesBubble = await $('.follow-up-bubble-changes')
       await expect(changesBubble).toBeDisplayed()
@@ -115,6 +177,7 @@ describe('follow-up suggestion bubbles', () => {
       await expect(delText.startsWith('-')).toBe(true)
 
       await saveAppScreenshot('follow-up-suggestions-git-changes.png')
+      await scenario.assertComplete()
     })
   })
 })

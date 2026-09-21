@@ -1,7 +1,7 @@
 {
   "id": "mock-smoke",
   "description": "Deterministic harness smoke task used by CI; excluded from real-model matrices.",
-  "prompt": "Create solution.txt containing doctrine harness smoke. [[mcp:write_file {\"path\":\"solution.txt\",\"content\":\"doctrine harness smoke\"}]]",
+  "prompt": "Create solution.txt containing doctrine harness smoke.",
   "userIntent": "request",
   "inScopePaths": ["solution.txt"],
   "mockOnly": true,
@@ -11,5 +11,34 @@
     "needle": "doctrine harness smoke"
   },
   "maxSteps": 4,
-  "timeoutMs": 60000
+  "timeoutMs": 60000,
+  "mockScenario": {
+    "title": "Create solution.txt containing doctrine harness smoke.",
+    "turns": [
+      {
+        "user": "Create solution.txt containing doctrine harness smoke.",
+        "responses": [
+          {
+            "toolCalls": [
+              {
+                "name": "write_file",
+                "args": {
+                  "path": "solution.txt",
+                  "content": "doctrine harness smoke"
+                }
+              }
+            ]
+          },
+          {
+            "text": "The requested operation completed.",
+            "expectToolResults": [
+              {
+                "name": "write_file"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
 }

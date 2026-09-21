@@ -1,5 +1,3 @@
-import { mkdirSync } from 'node:fs'
-import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import {
   resetUserData,
@@ -9,10 +7,16 @@ import {
 import { waitForAgentIdle, waitForPromptReady } from './helpers.ts'
 import { itSkipInCi } from './helpers/ci-gate.ts'
 import { setComposerValue } from './helpers/composer.ts'
-
-const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
+import { installMockScenario } from './helpers/mock-scenario.ts'
+import { saveAppScreenshot } from './helpers/screenshot.ts'
 
 const SCROLL_PIN_THRESHOLD_PX = 48
+const STREAMING_PROMPT = 'Please write a detailed follow-up about the implementation plan.'
+const STREAMING_RESPONSE = [
+  'The implementation plan starts by mapping the current behavior and naming the smallest change that improves it without widening the API surface.',
+  'Next, update the affected module and its focused tests together so the new behavior is documented by an executable example.',
+  'Finally, run the relevant checks, review the diff for unintended changes, and record any follow-up work that needs a separate decision.',
+].join('\n\n')
 
 async function getScrollMetrics(): Promise<{
   scrollTop: number
@@ -56,10 +60,6 @@ async function isScrollToBottomVisible(): Promise<boolean> {
 }
 
 describe('scroll to bottom', () => {
-  before(async () => {
-    mkdirSync(SCREENSHOT_DIR, { recursive: true })
-  })
-
   afterEach(() => {
     resetUserData()
   })
@@ -74,7 +74,7 @@ describe('scroll to bottom', () => {
 
     await expect(await isScrollToBottomVisible()).toBe(true)
     await expect(await isNearBottom()).toBe(false)
-    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'scroll-to-bottom-scrolled-up.png'))
+    await saveAppScreenshot('scroll-to-bottom-scrolled-up.png')
   })
 
   it('clicking scroll-to-bottom scrolls the view to the bottom', async () => {
@@ -103,7 +103,7 @@ describe('scroll to bottom', () => {
     })
     await expect(lastMessageVisible).toBe(true)
 
-    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'scroll-to-bottom-at-bottom.png'))
+    await saveAppScreenshot('scroll-to-bottom-at-bottom.png')
   })
 
   itSkipInCi('hides scroll-to-bottom while auto-scrolling during streaming', async () => {
@@ -113,7 +113,16 @@ describe('scroll to bottom', () => {
 
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await waitForPromptReady()
-    await setComposerValue('Please write a longer follow-up answer')
+    const scenario = await installMockScenario({
+      title: 'Implementation plan follow-up',
+      turns: [
+        {
+          user: STREAMING_PROMPT,
+          responses: [{ text: STREAMING_RESPONSE, chunkDelayMs: 8 }],
+        },
+      ],
+    })
+    await setComposerValue(STREAMING_PROMPT)
     await $('.submit-btn').click()
 
     await browser.waitUntil(
@@ -123,7 +132,7 @@ describe('scroll to bottom', () => {
           const last = nodes[nodes.length - 1]
           return last?.textContent ?? ''
         })
-        return lastAssistant.includes('Mock response')
+        return lastAssistant.includes('The implementation plan starts')
       },
       { timeout: 30_000, interval: 50 },
     )
@@ -138,6 +147,7 @@ describe('scroll to bottom', () => {
     await expect(await isScrollToBottomVisible()).toBe(false)
 
     await waitForAgentIdle()
+    await scenario.assertComplete()
   })
 
   itSkipInCi('keeps the view pinned when the user scrolls up during streaming', async () => {
@@ -148,7 +158,16 @@ describe('scroll to bottom', () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await waitForPromptReady()
 
-    await setComposerValue('Please write a longer follow-up answer')
+    const scenario = await installMockScenario({
+      title: 'Implementation plan follow-up',
+      turns: [
+        {
+          user: STREAMING_PROMPT,
+          responses: [{ text: STREAMING_RESPONSE, chunkDelayMs: 8 }],
+        },
+      ],
+    })
+    await setComposerValue(STREAMING_PROMPT)
     await $('.submit-btn').click()
 
     await browser.waitUntil(
@@ -158,7 +177,7 @@ describe('scroll to bottom', () => {
           const last = nodes[nodes.length - 1]
           return last?.textContent ?? ''
         })
-        return lastAssistant.includes('Mock response')
+        return lastAssistant.includes('The implementation plan starts')
       },
       { timeout: 30_000, interval: 50 },
     )
@@ -180,7 +199,8 @@ describe('scroll to bottom', () => {
     })
     await expect(firstQuestionVisible).toBe(true)
 
-    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'scroll-to-bottom-streaming-scrolled-up.png'))
+    await saveAppScreenshot('scroll-to-bottom-streaming-scrolled-up.png')
     await waitForAgentIdle()
+    await scenario.assertComplete()
   })
 })

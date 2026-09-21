@@ -29,7 +29,7 @@ export async function bundleThreadContainerWorker(outfile: string): Promise<stri
         Object.entries(bundle.alias ?? {}).map(([from, to]) => [from, resolve(to)]),
       ),
     },
-    define: { __COPSE_TEST_DIRECTIVES__: 'false' },
+    define: { __COPSE_TEST_SCENARIOS__: 'false' },
     logLevel: 'warning',
   })
   return outfile

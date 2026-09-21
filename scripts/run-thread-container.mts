@@ -30,7 +30,7 @@ await esbuild.build({
   target: 'node22',
   external: [...MAIN_EXTERNALS],
   alias: { '@shared': resolve('./src/shared') },
-  define: { __COPSE_TEST_DIRECTIVES__: 'false' },
+  define: { __COPSE_TEST_SCENARIOS__: 'false' },
   logLevel: 'warning',
 })
 await bundleThreadContainerWorker(workerBundle)

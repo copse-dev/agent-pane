@@ -1,3 +1,4 @@
+import { installMockScenario, prepareMockTurn } from './helpers/mock-scenario.ts'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject, writeSeedConfig } from './helpers/seed-config.ts'
 import { setComposerValue } from './helpers/composer.ts'
@@ -65,16 +66,14 @@ describe('automatic thread re-titling', () => {
     await $('.chat-row*=Initial UI Investigation').waitForExist({ timeout: 30_000 })
     await $('.chat-row*=Initial UI Investigation').click()
     await waitForPromptReady()
-    await browser.execute(async () => {
-      const bridge = (
-        window as unknown as {
-          __copseE2e: { setMockScript: (script: unknown) => Promise<unknown> }
-        }
-      ).__copseE2e
-      await bridge.setMockScript([
-        { when: 'Explain the session repair', text: 'The session repair is ready to review.' },
-        { when: 'Reply with ONLY a concise 3-5 word title', text: 'Authentication Session Repair' },
-      ])
+    await installMockScenario({
+      title: 'Authentication Session Repair',
+      turns: [
+        {
+          user: 'Explain the session repair.',
+          responses: [{ text: 'The session repair is ready to review.' }],
+        },
+      ],
     })
     await setComposerValue('Explain the session repair.')
     await $('.submit-btn').click()
@@ -101,7 +100,9 @@ describe('automatic thread re-titling', () => {
     // Grow past the final auto-title threshold after a manual rename.
     for (let turn = 4; turn <= 8; turn++) {
       await waitForPromptReady()
-      await setComposerValue(`Review session detail ${String(turn)}.`)
+      await prepareMockTurn(`Review session detail ${String(turn)}.`, [
+        { text: `Session detail ${String(turn)} has been reviewed.` },
+      ])
       await $('.submit-btn').click()
       await browser.waitUntil(async () =>
         browser.execute(
@@ -109,7 +110,7 @@ describe('automatic thread re-titling', () => {
             [...document.querySelectorAll('.msg-assistant .message-text')].some((element) =>
               element.textContent?.includes(text),
             ),
-          `Mock response to: Review session detail ${String(turn)}.`,
+          `Session detail ${String(turn)} has been reviewed.`,
         ),
       )
       await waitForAgentIdle()

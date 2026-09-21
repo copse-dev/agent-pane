@@ -1,8 +1,8 @@
+import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
-import { setComposerValue } from './helpers/composer.ts'
 import { resetUserData, seedCanvasArtefactThreadFixture } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 
@@ -12,19 +12,13 @@ const HISTORY_THREAD_ID = 'e2e-canvas-history-thread'
 const CANVAS_TOOL = 'mcp__copse-canvas__render_html_artefact'
 let projectRoot = ''
 
-/**
- * Render one version of the "Sales Dashboard" prototype through the bundled
- * canvas server. The `[[mcp:…]]` directive drives the mock model to call the real
- * tool, so this exercises the production path end to end: MCP result → UI
- * resource extraction → canvas dispatch → Browser pane.
- *
- * The markup deliberately carries no `{`/`}` — the directive's JSON argument is
- * matched only as far as its first closing brace.
- */
+/** Render a dashboard through the real bundled canvas server and Browser pane. */
 async function renderVersion(heading: string): Promise<void> {
   const html = `<!doctype html><title>Sales Dashboard</title><h1 id="version">${heading}</h1>`
-  await setComposerValue(
-    `[[mcp:${CANVAS_TOOL} ${JSON.stringify({ title: 'Sales Dashboard', html })}]]`,
+  await prepareMockToolTurn(
+    'Render the sales dashboard.',
+    { name: CANVAS_TOOL, args: { title: 'Sales Dashboard', html } },
+    'The sales dashboard is ready in the Browser pane.',
   )
   await $('.submit-btn').click()
   await browser.waitUntil(
@@ -51,7 +45,11 @@ async function activeArtefactHeading(): Promise<string | null> {
 
 /** Drive a built-in tool through the mock model, the same way renderVersion does. */
 async function runTool(name: string, args: Record<string, unknown>): Promise<void> {
-  await setComposerValue(`[[mcp:${name} ${JSON.stringify(args)}]]`)
+  await prepareMockToolTurn(
+    'Update the sales dashboard in the browser.',
+    { name, args },
+    'The browser tool result is available above.',
+  )
   await $('.submit-btn').click()
   await browser.waitUntil(
     () =>

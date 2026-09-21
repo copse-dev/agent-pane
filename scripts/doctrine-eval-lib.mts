@@ -1,3 +1,10 @@
+import {
+  setMockScenario,
+  parseMockScenario,
+  assertMockScenarioComplete,
+  clearMockScenarios,
+  type MockScenario,
+} from '@copse/llm/mock-script.ts'
 // Model-backed prompt-section ablation harness (#744).
 //
 // Holds the task and model constant, varies one named base-prompt section at a
@@ -61,6 +68,7 @@ export interface DoctrineEvalTask {
   id: string
   description?: string | undefined
   prompt: string
+  mockScenario?: MockScenario | undefined
   fixture?: string | undefined
   userIntent: UserIntent
   inScopePaths?: string[] | undefined
@@ -170,6 +178,7 @@ const doctrineTaskSchema: z.ZodType<DoctrineEvalTask> = z.object({
   id: z.string(),
   description: z.string().optional(),
   prompt: z.string(),
+  mockScenario: z.unknown().transform(parseMockScenario).optional(),
   fixture: z.string().optional(),
   userIntent: z.enum(['question', 'request', 'unknown']),
   inScopePaths: z.array(z.string()).optional(),
@@ -517,6 +526,12 @@ async function runAttempt(
   outDir: string,
   keepWorkspace: boolean,
 ): Promise<DoctrineEvalAttempt> {
+  const mock = provider instanceof MockLLMProvider
+  if (mock) {
+    if (!task.mockScenario) throw new Error(`No conversation scenario for ${task.id}`)
+    setMockScenario(task.id, task.mockScenario, task.id)
+    provider = new MockLLMProvider(task.id)
+  }
   const workspace = prepareWorkspace(task)
   const tracePath = join(outDir, `${task.id}--${arm.id}--${String(attempt)}.jsonl`)
   const traceLines: string[] = []
@@ -578,9 +593,11 @@ async function runAttempt(
         }
       },
     })
+    if (mock) assertMockScenarioComplete(task.id)
   } catch (caught) {
     error = caught instanceof Error ? caught.message : String(caught)
   } finally {
+    if (mock) clearMockScenarios()
     clearTimeout(timer)
   }
 

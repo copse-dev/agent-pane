@@ -1,9 +1,9 @@
+import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
 import { mkdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
-import { setComposerValue } from './helpers/composer.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 const PROJECT_ID = 'e2e-popout-proposed-project'
@@ -25,9 +25,13 @@ async function waitForAgentIdle(timeoutMs = 60_000): Promise<void> {
   })
 }
 
-async function runWriteFileDirective(path: string, content: string): Promise<void> {
-  const args = JSON.stringify({ path, content })
-  await setComposerValue(`[[mcp:write_file ${args}]]`)
+async function proposeFileChange(path: string, content: string): Promise<void> {
+  const args = { path, content }
+  await prepareMockToolTurn(
+    `Propose an update to ${path}.`,
+    { name: 'write_file', args },
+    'The proposed file change is ready for review.',
+  )
   await $('.submit-btn').click()
   await waitForAgentIdle()
 }
@@ -84,7 +88,7 @@ describe('proposed diffs across embed and pop-out (#1753)', function () {
 
   it('keeps the embed coloured through proposals and pop-out approvals', async () => {
     // First proposal opens the Changes panel and stages the diff.
-    await runWriteFileDirective('src/e2e-popout-a.ts', 'export const a = 1\n')
+    await proposeFileChange('src/e2e-popout-a.ts', 'export const a = 1\n')
     await $('#git-changes-host').waitForDisplayed({ timeout: 30_000 })
     await $('.git-changes-section-proposed').waitForDisplayed({ timeout: 30_000 })
     await $('#git-diff-viewer-host .monaco-diff-editor').waitForDisplayed({ timeout: 30_000 })
@@ -112,7 +116,7 @@ describe('proposed diffs across embed and pop-out (#1753)', function () {
 
     // Second proposal from the main window while the pop-out is open.
     await browser.switchToWindow(mainHandle)
-    await runWriteFileDirective('src/e2e-popout-b.ts', 'export const b = 2\n')
+    await proposeFileChange('src/e2e-popout-b.ts', 'export const b = 2\n')
     await browser.waitUntil(async () => (await $$('.git-change-row-proposed')).length === 2, {
       timeout: 30_000,
       timeoutMsg: 'expected two proposed rows in the embed',
@@ -172,7 +176,7 @@ describe('proposed diffs across embed and pop-out (#1753)', function () {
       })
     }
 
-    await runWriteFileDirective('src/e2e-popout-c.ts', 'export const c = 3\n')
+    await proposeFileChange('src/e2e-popout-c.ts', 'export const c = 3\n')
     await $('#git-changes-host').waitForDisplayed({ timeout: 30_000 })
     await $('#git-diff-viewer-host .monaco-diff-editor').waitForDisplayed({ timeout: 30_000 })
     await browser.waitUntil(hasDecorations, {

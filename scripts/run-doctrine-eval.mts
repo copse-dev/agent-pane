@@ -1,5 +1,5 @@
 // Bundle + run the doctrine eval so native TypeScript, workspace aliases, and
-// the test-only mock directives behave consistently with the other headless
+// the test-only mock scenarios behave consistently with the other headless
 // benchmark launchers.
 import * as esbuild from 'esbuild'
 import { spawnSync } from 'node:child_process'
@@ -16,7 +16,7 @@ await esbuild.build({
   alias: {
     '@shared': resolve('./src/shared'),
   },
-  define: { __COPSE_TEST_DIRECTIVES__: 'true' },
+  define: { __COPSE_TEST_SCENARIOS__: 'true' },
 })
 
 const result = spawnSync('node', [output, ...process.argv.slice(2)], {

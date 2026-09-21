@@ -1,6 +1,8 @@
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
 import { setComposerValue } from './helpers/composer.ts'
+import { waitForAgentIdle } from './helpers.ts'
+import { installMockScenario } from './helpers/mock-scenario.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedThreadRunningStatusFixture } from './helpers/seed-config.ts'
 
@@ -43,10 +45,26 @@ describe('thread running status dots', () => {
     await $(`.chat-row*=${runningThreadTitle}`).click()
     await expect($('.chat-row.selected .chat-title')).toHaveText(runningThreadTitle)
 
-    // Persisted `running` is cleared on load (resumePendingQueues), so drive a
-    // live mock turn to put the selected thread into a real running state.
-    await setComposerValue('Keep going. [[mock:delay_ms 8000]]')
+    // Persisted `running` is cleared on load (resumePendingQueues), so hold a
+    // live normal request to put the selected thread into a real running state.
+    const scenario = await installMockScenario({
+      title: runningThreadTitle,
+      turns: [
+        {
+          user: 'Continue the refactor and call out any risky changes.',
+          responses: [
+            {
+              waitFor: 'refactor-status',
+              text: 'I am reviewing the refactor now and will flag risky changes before applying them.',
+            },
+          ],
+          allowAbort: true,
+        },
+      ],
+    })
+    await setComposerValue('Continue the refactor and call out any risky changes.')
     await $('.submit-btn').click()
+    await scenario.waitForHold('refactor-status')
 
     const runningRow = await $('.chat-row.is-running')
     await runningRow.waitForExist({ timeout: 15_000 })
@@ -94,6 +112,7 @@ describe('thread running status dots', () => {
     await idleRow.click()
     await expect($('.chat-row.selected .chat-title')).toHaveText(idleThreadTitle)
 
+    await scenario.release('refactor-status')
     const unreadRow = await $(`.chat-row*=${runningThreadTitle}`)
     await unreadRow.$('.chat-unread-dot').waitForExist({ timeout: 15_000 })
     await expect(unreadRow).toHaveElementClass('is-unread')
@@ -124,5 +143,7 @@ describe('thread running status dots', () => {
     await unreadRow.click()
     await expect($('.chat-row.selected .chat-title')).toHaveText(runningThreadTitle)
     await unreadRow.$('.chat-unread-dot').waitForExist({ reverse: true, timeout: 5_000 })
+    await waitForAgentIdle()
+    await scenario.assertComplete()
   })
 })

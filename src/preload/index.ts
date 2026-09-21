@@ -1472,7 +1472,7 @@ const api: ApiClient = {
 }
 contextBridge.exposeInMainWorld('api', api)
 
-if (process.env['COPSE_E2E'] === '1') {
+if (__COPSE_TEST_SCENARIOS__ && process.env['COPSE_E2E'] === '1') {
   const errorToasts: string[] = []
   contextBridge.exposeInMainWorld('__copseE2e', {
     pushErrorToast(message: string) {
@@ -1481,11 +1481,20 @@ if (process.env['COPSE_E2E'] === '1') {
     getErrorToasts() {
       return [...errorToasts]
     },
-    setMockScript(script: unknown) {
-      return ipcRenderer.invoke('test:setMockScript', script)
+    setMockScenario(id: string, scenario: unknown, scope?: string) {
+      return ipcRenderer.invoke('test:setMockScenario', id, scenario, scope)
     },
-    clearMockScript() {
-      return ipcRenderer.invoke('test:clearMockScript')
+    mockScenarioStatus(id: string) {
+      return ipcRenderer.invoke('test:mockScenarioStatus', id)
+    },
+    releaseMockScenario(id: string, hold: string) {
+      return ipcRenderer.invoke('test:releaseMockScenario', id, hold)
+    },
+    assertMockScenarioComplete(id: string) {
+      return ipcRenderer.invoke('test:assertMockScenarioComplete', id)
+    },
+    clearMockScenarios() {
+      return ipcRenderer.invoke('test:clearMockScenarios')
     },
     requestSshPrompt(prompt: string, kind: 'confirm' | 'secret') {
       return ipcRenderer.invoke('test:requestSshPrompt', prompt, kind)

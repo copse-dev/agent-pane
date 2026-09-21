@@ -1,3 +1,4 @@
+import { installMockScenario } from './helpers/mock-scenario.ts'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
@@ -156,6 +157,18 @@ describe('cron automation trigger', function () {
 
   it('submits the scheduled prompt and completes a real mock agent turn', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
+    await installMockScenario(
+      {
+        title: 'CI review',
+        turns: [
+          {
+            user: PROMPT,
+            responses: [{ text: 'The CI review is complete; no failures were found.' }],
+          },
+        ],
+      },
+      null,
+    )
 
     const automationGroup = $('.automation-threads-toggle')
     await automationGroup.waitForExist({
@@ -230,7 +243,7 @@ describe('cron automation trigger', function () {
       )
     }
 
-    const expectedResponse = `Mock response to: ${PROMPT}`
+    const expectedResponse = 'The CI review is complete; no failures were found.'
     await browser.waitUntil(
       async () => {
         const assistantMessages = await $$('.msg-assistant .message-text')
