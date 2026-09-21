@@ -5520,6 +5520,8 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   font-size: 11px;
   color: var(--text-muted);
   white-space: nowrap;
+  padding-right: var(--spacing-sm);
+  border-right: 1px solid var(--border-strong);
 }
 .footer-indexing[data-state=error] {
   color: var(--danger);
