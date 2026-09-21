@@ -102,7 +102,12 @@ revisiting this document, not silently diverging in an implementation PR.
    observed from renderer dispatches. A stale or exhausted wake never runs; its
    completed process state and logs remain available for explicit human inspection.
    The background operation id deduplicates delivery, so recovery cannot execute the
-   same machine turn twice.
+   same machine turn twice. Each in-run grant carries its bounded mechanism reason
+   (`todo-closeout`, `pre-review-todo`, or `post-review-remediation`) for reporting;
+   the reason does not change first-come ordering or the shared count. When the limit
+   is reached and todos remain open, the host emits and persists one deterministic
+   terminal summary containing the live open plan plus allowances granted by reason.
+   It makes no extra model call and does not describe a grant as a completed attempt.
 6. **Spine recording is always-on.** Every hook execution writes a `hook_run` event to
    the thread spine (event name, hook id, emitting step, wall-clock duration, exit code,
    `parse_ok`, normalized decision) with raw stdout **and stderr** as blobs (stderr is
