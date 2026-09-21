@@ -1,76 +1,70 @@
 # Surfacing the OpenAI service tier
 
-Design only — the request side ships in #1526, the choice data ships here, the
-picker itself is deliberately deferred (see **Sequencing**).
+The first-party OpenAI request path reads the global `openAiServiceTier`
+setting. Settings → Providers → OpenAI owns its user-facing control, while the
+usage ledger records the tier OpenAI actually reports for each response.
 
-## Why a surface is needed
+## Current OpenAI semantics
 
-#1526 adds `service_tier` to first-party OpenAI requests, fed by an
-`openAiServiceTier` setting. Nothing writes that setting: it is in
-`RENDERER_WRITABLE_SETTING_SCHEMAS` and read in `provider-selection.ts`, but no
-UI offers it. As shipped, the tier is unreachable without editing stored
-settings by hand — the feature exists end to end except for the one step a user
-would take.
+OpenAI's current [Chat API reference](https://developers.openai.com/api/reference/resources/chat)
+distinguishes the two defaults:
 
-## What lands in this change
+- an omitted `service_tier` behaves as `auto` and follows the OpenAI Project's
+  configured tier (normally `default`);
+- `default` explicitly requests Standard pricing and performance;
+- `flex` requests cheaper processing that can be slower or unavailable;
+- `fast` requests Fast mode. The legacy `priority` spelling has the same
+  behavior and completed responses can report `priority`;
+- `scale` uses contract-managed reserved capacity.
 
-`SERVICE_TIER_CHOICES` in `packages/llm/src/service-tier.ts`: the tiers worth
-offering, each with a label and a one-line description, shaped like ACP's
-`AcpConfigChoice` so a single picker can render either.
+OpenAI's [Fast mode guide](https://developers.openai.com/api/docs/guides/fast-mode)
+also documents that a Fast request can be served as `default`. The response
+tier is therefore authoritative for pricing; the request tier is only the
+fallback when a provider omits the response field.
 
-It is deliberately a **subset** of `SERVICE_TIERS`, because "what the API
-accepts" and "what a person should be offered" are different questions:
+## Offered choices
 
-| Tier              | Offered | Why                                                                                                                                             |
-| ----------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `''` (omit field) | yes     | Standard processing — the default                                                                                                               |
-| `flex`            | yes     | Cheaper, slower, may queue under load                                                                                                           |
-| `priority`        | yes     | Faster, pricier. OpenAI markets it as "Fast mode"                                                                                               |
-| `scale`           | **no**  | Bills against committed reserved throughput on a ≥30-day contract; offering it as a per-chat toggle presents capacity most accounts do not have |
-| `auto`, `default` | **no**  | Both mean standard processing, which `''` already expresses by sending no field. Three spellings of one outcome invites "how do these differ?"  |
+`SERVICE_TIER_CHOICES` is a maintained product list rather than a discovery
+response from OpenAI:
 
-## The surface
+| Stored request value | Label            | Offered | Reason                                               |
+| -------------------- | ---------------- | ------- | ---------------------------------------------------- |
+| `auto`               | Project default  | yes     | Follows the OpenAI Project setting                   |
+| `default`            | Standard         | yes     | Explicit standard pricing and performance            |
+| `flex`               | Flex             | yes     | Cheaper, slower, and may queue or fail under load    |
+| `fast`               | Fast             | yes     | Faster and more consistent at a per-token premium    |
+| `priority`           | Fast             | no      | Preserved legacy spelling; new selections use `fast` |
+| `scale`              | retained current | no      | Contract-managed capacity is not a general default   |
 
-Mirror the ACP config-option picker (#1493): a context menu off the model
-picker, one row per selector, current value ticked.
+Blank values written by older versions still mean omission and display as
+Project default. A stored `priority` value displays as Fast. Settings does not
+rewrite either spelling until the user selects a different semantic choice.
+`scale` and unrecognized stored strings remain visible as retained advanced
+values and are likewise left untouched until an offered choice is selected.
 
-**One structural difference is worth writing down.** ACP options are
-_advertised_ — the agent reports `availableConfigOptions` when probed, and
-`acpOptionGroupsFor()` renders whatever it is told, so the list self-updates as
-agents change. OpenAI advertises nothing. `SERVICE_TIER_CHOICES` is Copse's own
-list and must be maintained by hand when OpenAI's tiers change. Anyone reading
-the picker code will reasonably assume a discovery call exists; there isn't one.
+## Surface and scope
 
-## Scope question: global or per-chat
+The picker is a **Global OpenAI service tier** control in Settings → Providers
+→ OpenAI, under Request processing. It applies only to first-party OpenAI model
+requests. It does not appear in onboarding and never reaches custom providers,
+including third-party endpoints that share the Responses transport.
 
-The setting is currently global (`openAiServiceTier`). The ACP surface it would
-sit beside is per-agent. Worth deciding deliberately rather than by default —
-"cheap and slow for this batch job, fast for this one" is per-chat by nature,
-which argues for a per-thread override on top of a global default.
+This remains a global default because that is the existing setting contract.
+A per-thread override would require separate persistence and is outside this
+surface.
 
-## Sequencing
+## Accounting contract
 
-Deferred until #1493 lands: the context-menu and model-picker styling this
-would extend live on that branch, so building against it now would either
-duplicate the substrate or guess at an API still in review.
-
-## Watch out for, when wiring it up
-
-`ResponsesProvider` accepts a `serviceTier` option that **nothing currently
-supplies**, and that is correct today: its only construction site is
-`createExtraCloudProvider`, which serves third-party `apiStyle: 'responses'`
-providers such as Perplexity. `service_tier` is an OpenAI field — sending it
-there would earn a 400.
-
-It becomes live only when first-party OpenAI models are routed through the
-Responses API, which is what **#1527** does. Whoever wires that must pass the
-tier on the first-party path **only**, and must not let it reach extra providers
-sharing the same class.
+Both first-party OpenAI transports attach the requested and reported response
+tier to usage chunks. `fast` and `priority` normalize into the same priority
+pricing bucket. A response of `default` overrides a Fast request and remains in
+the standard bucket. Where a model has no complete published tier price, the
+usage view retains the existing labelled standard-rate fallback rather than
+inventing a premium.
 
 ## Related
 
-- #1526 — the request-side support and the pinned tier enum
-- #1543 — the usage ledger prices every turn at the standard tier, so a
-  non-default tier is mispriced
-- #1493 — the ACP config-option picker this surface would mirror
-- #1527 — routes reasoning-capable OpenAI models through the Responses API
+- #1526 — first-party OpenAI request support
+- #1543 / #2759 — tier-aware usage accounting and pricing
+- #1590 — user-facing provider capability surface
+- #1527 — first-party reasoning models on the Responses transport

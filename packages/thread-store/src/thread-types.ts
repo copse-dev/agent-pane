@@ -12,6 +12,7 @@ export type { HookCard } from './hook-card.ts'
 // the contract). Imported for use by the thread types below and re-exported so
 // `@shared/types` consumers are unchanged.
 import type { ModelUsage, ThreadUsage } from '@copse/llm/wire-types.ts'
+import type { ServiceTier } from '@copse/llm/service-tier.ts'
 export type { ModelUsage, ThreadUsage } from '@copse/llm/wire-types.ts'
 // The subagent session/tool-call record and the context-breakdown shapes are
 // owned by the agent module (the loop constructs sessions and reports the
@@ -486,6 +487,8 @@ export interface Message {
 
 export interface UsageDelta extends ModelUsage {
   model: string
+  requestedServiceTier?: ServiceTier
+  responseServiceTier?: ServiceTier
 }
 
 /**

@@ -2,7 +2,7 @@ import '../../../tests/setup-dom.ts'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
-import { openBrowserUrl, openCanvasArtefact } from '../controller/panels.ts'
+import { openBrowserUrl, openCanvasArtefact, showCanvasArtefact } from '../controller/panels.ts'
 import { mountBrowserPane } from './browser-pane.ts'
 import { createPendingApi } from '../fake-api.test-support.ts'
 import { BROWSER_SESSION_SAVE_DEBOUNCE_MS } from '../controller/browser-pane-session.ts'
@@ -91,6 +91,21 @@ const storedSession: BrowserPaneSession = {
   paneOpen: true,
 }
 
+/** The same record as written before canvas tabs persisted their owning project. */
+const legacyStoredSession: BrowserPaneSession = {
+  tabs: [
+    { url: 'http://localhost:4173/', label: 'localhost' },
+    {
+      url: '',
+      label: 'Sales Dashboard',
+      artefactTitle: 'Sales Dashboard',
+      artefactThreadId: 'thread-a',
+    },
+  ],
+  activeTabIndex: 1,
+  paneOpen: true,
+}
+
 interface Restored {
   api: ApiClient
   reopenCalls: Array<[string, string, string]>
@@ -100,7 +115,7 @@ interface Restored {
 function restoringApi(
   store: AppStore,
   session: BrowserPaneSession | null,
-  options?: { reopenSucceeds?: boolean },
+  options?: { reopenSucceeds?: boolean; skipDeliveries?: number; deliveryDelayMs?: number },
 ): Restored {
   const reopenCalls: Array<[string, string, string]> = []
   const saved: BrowserPaneSession[] = []
@@ -118,15 +133,28 @@ function restoringApi(
     ): Promise<boolean> => {
       reopenCalls.push([projectId, threadId, title])
       if (options?.reopenSucceeds === false) return Promise.resolve(false)
+      if (reopenCalls.length <= (options?.skipDeliveries ?? 0)) return Promise.resolve(true)
+
       // Main answers on the ordinary artefact channel, which `main.ts` hands
       // straight to `openCanvasArtefact` — the same path a fresh render takes.
-      openCanvasArtefact(store, {
-        title,
-        mimeType: 'text/html',
-        body: '<!doctype html><h1>restored</h1>',
-        threadId,
+      const deliver = (): void => {
+        openCanvasArtefact(store, {
+          title,
+          mimeType: 'text/html',
+          body: '<!doctype html><h1>restored</h1>',
+          threadId,
+        })
+      }
+      if (options?.deliveryDelayMs === undefined) {
+        deliver()
+        return Promise.resolve(true)
+      }
+      return new Promise((resolve) => {
+        setTimeout(() => {
+          deliver()
+          resolve(true)
+        }, options.deliveryDelayMs)
       })
-      return Promise.resolve(true)
     },
     'fs.readFile': (): Promise<string> => Promise.resolve(''),
   })
@@ -172,6 +200,65 @@ describe('browser pane session restore', () => {
         // The page tab is queued, not loaded: it is not the tab in front.
         const inputs = [...viewer.querySelectorAll<HTMLInputElement>('.browser-url-input')]
         assert.equal(inputs[0]?.value, 'http://localhost:4173/')
+      } finally {
+        unmount()
+      }
+    })
+  })
+
+  it('retries a restored placeholder when Open is requested before it received content', async () => {
+    await withPaneGlobals(async () => {
+      const { list, viewer } = mountBrowserHosts()
+      const store = createStore({
+        activeProjectId: 'project-1',
+        activeThreadId: 'thread-a',
+        filesPaneOpen: false,
+        rightPanelMode: 'explorer',
+      })
+      const { api, reopenCalls } = restoringApi(store, legacyStoredSession, {
+        // The launch-time IPC reports success but its artefact event never lands,
+        // leaving the exact titled, blank placeholder seen in the regression.
+        skipDeliveries: 1,
+        // Keep the user-triggered retry pending long enough to prove two quick
+        // Open requests share one canvas-store read.
+        deliveryDelayMs: 0,
+      })
+      const unmount = mountBrowserPane(list, viewer, store, api)
+
+      try {
+        await settled()
+
+        assert.deepEqual(reopenCalls, [['project-1', 'thread-a', 'Sales Dashboard']])
+        assert.equal(activeLabel(list), 'Sales Dashboard')
+        const blank = viewer.querySelector<HTMLElement & { src: string }>(
+          '.browser-tab-panel.is-active .browser-webview',
+        )
+        assert.ok(blank)
+        assert.equal(blank.src, 'about:blank')
+
+        // The transcript card emits this request. A metadata match must retry,
+        // and repeated clicks while it is pending must not stack reads or tabs.
+        showCanvasArtefact(store, { title: 'Sales Dashboard', threadId: 'thread-a' })
+        showCanvasArtefact(store, { title: 'Sales Dashboard', threadId: 'thread-a' })
+        await settled()
+
+        assert.deepEqual(reopenCalls, [
+          ['project-1', 'thread-a', 'Sales Dashboard'],
+          ['project-1', 'thread-a', 'Sales Dashboard'],
+        ])
+        assert.equal(
+          tabLabels(list).filter((label) => label === 'Sales Dashboard').length,
+          1,
+          'the retry fills the restored placeholder instead of adding a duplicate',
+        )
+        const activePanel = viewer.querySelector('.browser-tab-panel.is-active')
+        assert.ok(activePanel)
+        const webview = activePanel.querySelector<HTMLElement & { src: string }>('.browser-webview')
+        assert.ok(webview)
+        const decoded = Buffer.from(webview.src.split('base64,')[1] ?? '', 'base64').toString(
+          'utf8',
+        )
+        assert.match(decoded, /<h1>restored<\/h1>/)
       } finally {
         unmount()
       }

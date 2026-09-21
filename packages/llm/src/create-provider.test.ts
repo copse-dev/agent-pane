@@ -230,7 +230,7 @@ describe('createProvider service tier', () => {
     assert.equal(request.service_tier, 'flex')
   })
 
-  it('omits service_tier entirely by default, keeping standard processing', async () => {
+  it('omits service_tier entirely by default, leaving OpenAI on the Project tier', async () => {
     const provider = expectOpenAIProvider(createProvider('gpt-4o', { openAiApiKey: 'test-openai' }))
     const request = await captureRequest(provider)
     assert.equal(request.service_tier, undefined)

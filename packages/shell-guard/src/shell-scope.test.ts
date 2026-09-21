@@ -32,6 +32,29 @@ describe('analyzeShellCommand', () => {
     assert.equal(r.verdict, 'external')
   })
 
+  it('flags Apple container operations that may pull, publish, or run images', () => {
+    for (const command of [
+      'container run alpine echo ok',
+      'container image pull alpine',
+      'container image push registry.example.test/image',
+    ]) {
+      const result = analyzeShellCommand(command, root)
+      assert.equal(result.verdict, 'external', command)
+      assert.ok(result.reasons.includes('apple container network/container operation'), command)
+    }
+  })
+
+  it('keeps read-only Apple container inspection commands sandbox-scoped', () => {
+    for (const command of [
+      'container --version',
+      'container list --all',
+      'container image inspect alpine',
+      'container system status',
+    ]) {
+      assert.equal(analyzeShellCommand(command, root).verdict, 'sandbox', command)
+    }
+  })
+
   it('flags a writing gh CLI subcommand as ambiguous (auto-runs inside seatbelt, escalates on block)', () => {
     const r = analyzeShellCommand('gh pr create --fill', root)
     assert.equal(r.verdict, 'ambiguous')
@@ -276,6 +299,18 @@ describe('analyzeShellCommand', () => {
     for (const cmd of ['node ./evil.js', 'bash deploy.sh', 'python script.py', 'ruby task.rb']) {
       assert.equal(analyzeShellCommand(cmd, root).verdict, 'external', `expected external: ${cmd}`)
     }
+  })
+
+  it('routes the direct local Electron e2e runner through host approval', () => {
+    const command = 'node scripts/run-e2e.mts wdio.conf.ts --spec tests/e2e/example.e2e.ts'
+    const result = analyzeShellCommand(command, root)
+
+    assert.equal(result.verdict, 'external')
+    assert.ok(
+      result.reasons.includes(
+        'runs a local script via an interpreter (contents opaque to analysis)',
+      ),
+    )
   })
 
   it('runs heredoc scripts inside the sandbox before offering an escape', () => {

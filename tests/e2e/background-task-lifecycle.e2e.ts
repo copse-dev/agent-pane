@@ -53,13 +53,37 @@ async function runBackgroundDirective(args: Record<string, unknown>): Promise<vo
 }
 
 async function latestToolResult(): Promise<WebdriverIO.Element> {
-  const cards = await $$('.tool-card')
+  const rollups = await $$('.tool-card-rollup')
+  const rollup = rollups.at(-1)
+  assert.ok(rollup, 'expected a background tool rollup')
+  if ((await rollup.getAttribute('open')) === null) {
+    await rollup.scrollIntoView({ block: 'center', inline: 'nearest' })
+    await rollup.$('summary.tool-card-header').click()
+  }
+  await expect(rollup).toHaveAttribute('open')
+
+  const cards = await rollup.$$('.tool-card[data-tool-id]')
   const card = cards.at(-1)
   assert.ok(card, 'expected a background tool card')
+  await card.waitForDisplayed({ timeout: 10_000 })
   if ((await card.getAttribute('open')) === null) {
-    await card.$('summary.tool-card-header').click()
+    const toolId = await card.getAttribute('data-tool-id')
+    assert.ok(toolId, 'expected the background tool card to have an id')
+    const opened = await browser.execute((id: string) => {
+      const rollups = document.querySelectorAll<HTMLDetailsElement>('.tool-card-rollup')
+      const rollup = rollups.item(rollups.length - 1)
+      const cards = rollup?.querySelectorAll<HTMLDetailsElement>('.tool-card[data-tool-id]')
+      const target = [...(cards ?? [])].find((candidate) => candidate.dataset['toolId'] === id)
+      target?.querySelector<HTMLElement>('summary.tool-card-header')?.click()
+      return target?.open ?? false
+    }, toolId)
+    assert.equal(opened, true, 'expected the background tool card to open')
   }
-  return card.$('.tool-result')
+  await expect(card).toHaveAttribute('open')
+
+  const result = card.$('.tool-result')
+  await result.waitForExist({ timeout: 10_000 })
+  return result
 }
 
 describe('session-scoped background task lifecycle', function () {

@@ -43,6 +43,56 @@ export type BrowserContextMenuActions = {
   inspectElement: (x: number, y: number) => void
 }
 
+export type BrowserGuestInspector = {
+  isDestroyed: () => boolean
+  isDevToolsOpened: () => boolean
+  onceDevToolsOpened: (listener: () => void) => void
+  openDevTools: () => void
+  inspectElement: (x: number, y: number) => void
+}
+
+/** Open a guest's DevTools first, then target the element once the tools are ready. */
+export function inspectBrowserGuestElement(
+  inspector: BrowserGuestInspector,
+  x: number,
+  y: number,
+): void {
+  if (inspector.isDestroyed()) return
+  if (inspector.isDevToolsOpened()) {
+    inspector.inspectElement(x, y)
+    return
+  }
+  inspector.onceDevToolsOpened(() => {
+    if (!inspector.isDestroyed()) inspector.inspectElement(x, y)
+  })
+  inspector.openDevTools()
+}
+
+export type BrowserGuestInspectionController = {
+  selectElement: (x: number, y: number) => void
+  menuClosed: () => void
+}
+
+/**
+ * Keep the selected point while Electron's native context menu owns its modal
+ * loop, then open and target DevTools only after Menu.popup reports it closed.
+ */
+export function createBrowserGuestInspectionController(
+  inspector: BrowserGuestInspector,
+): BrowserGuestInspectionController {
+  let selectedPoint: { x: number; y: number } | null = null
+  return {
+    selectElement: (x, y): void => {
+      selectedPoint = { x, y }
+    },
+    menuClosed: (): void => {
+      const point = selectedPoint
+      selectedPoint = null
+      if (point) inspectBrowserGuestElement(inspector, point.x, point.y)
+    },
+  }
+}
+
 function pushGroup(
   template: MenuItemConstructorOptions[],
   items: MenuItemConstructorOptions[],
@@ -231,6 +281,19 @@ async function saveImageAs(contents: WebContents, srcURL: string): Promise<void>
  */
 export function attachBrowserGuestContextMenu(contents: WebContents): void {
   contents.on('context-menu', (_event, params) => {
+    const inspection = createBrowserGuestInspectionController({
+      isDestroyed: () => contents.isDestroyed(),
+      isDevToolsOpened: () => contents.isDevToolsOpened(),
+      onceDevToolsOpened: (listener) => {
+        contents.once('devtools-opened', listener)
+      },
+      openDevTools: () => {
+        contents.openDevTools({ mode: 'detach', activate: true })
+      },
+      inspectElement: (x, y) => {
+        contents.inspectElement(x, y)
+      },
+    })
     const template = buildBrowserContextMenuTemplate(params, {
       cut: () => {
         contents.cut()
@@ -265,11 +328,17 @@ export function attachBrowserGuestContextMenu(contents: WebContents): void {
         win.webContents.send('browser:share-text', browserSelectionShare(contents, text, pageUrl))
       },
       saveImageAs: (srcURL) => saveImageAs(contents, srcURL),
-      inspectElement: (x, y) => {
-        contents.inspectElement(x, y)
-      },
+      inspectElement: inspection.selectElement,
     })
     if (template.length === 0) return
-    Menu.buildFromTemplate(template).popup()
+
+    const owner = BrowserWindow.fromWebContents(contents) ?? getMainWindow()
+    const popupOptions: Electron.PopupOptions = {
+      sourceType: params.menuSourceType,
+      callback: inspection.menuClosed,
+    }
+    if (params.frame) popupOptions.frame = params.frame
+    if (owner && !owner.isDestroyed()) popupOptions.window = owner
+    Menu.buildFromTemplate(template).popup(popupOptions)
   })
 }

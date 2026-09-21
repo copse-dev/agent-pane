@@ -10,7 +10,13 @@ import {
   COMMAND_RUNNER_DEFAULT_TIMEOUT_MS,
 } from './subprocess-output-cap.ts'
 import { terminateProcessTree } from './subprocess-kill.ts'
-import { leaseGitSshEnv, withGitInvocationArgs } from '../ssh-workspace/git-ssh-env.ts'
+import { leaseGitSshEnv } from '../ssh-workspace/git-ssh-env.ts'
+import {
+  internalGitEnv,
+  withGitInvocationArgs,
+  type GitConfigPolicy,
+  type GitSigningBridge,
+} from '../security/git-invocation.ts'
 
 export interface CommandResult {
   stdout: string
@@ -33,8 +39,12 @@ export interface RunCommandOptions {
   cwd?: string
   signal?: AbortSignal
   unsandboxed?: boolean
+  /** Fail closed if the local sandbox authorized at the gate is no longer available. */
+  requireSandbox?: boolean
   /** Extra env vars merged on top of the stripped base env (and any built-in tweaks like git's). */
   env?: NodeJS.ProcessEnv
+  /** Bounded caller-owned input for a fixed subprocess (e.g. a signing broker). */
+  stdin?: Buffer
   /** Defaults to {@link COMMAND_RUNNER_DEFAULT_TIMEOUT_MS}; pass `0` to disable. */
   timeout_ms?: number
   /**
@@ -49,6 +59,13 @@ export interface RunCommandOptions {
   stdoutMaxBytes?: number
   /** Overrides workspace seatbelt rules for this spawn (e.g. sandbox-fs worker). */
   sandboxConfig?: Partial<SandboxRuntimeConfig>
+  /**
+   * Defaults to internal hardening. `user-command` preserves configured helpers
+   * for an explicit add/commit only; the caller MUST pass the shell permission
+   * gate first, including on hosts without a sandbox. Never derive from tool args.
+   */
+  gitConfig?: GitConfigPolicy
+  gitSigning?: GitSigningBridge
 }
 
 /**
@@ -76,10 +93,18 @@ export const isCommandTimeoutError: (err: unknown) => err is CommandTimeoutError
 function prepareGitInvocation(
   args: string[],
   env: NodeJS.ProcessEnv,
+  policy: GitConfigPolicy,
+  signing?: GitSigningBridge,
 ): { args: string[]; env: NodeJS.ProcessEnv; releaseGitSsh?: () => void } {
-  const gitSsh = leaseGitSshEnv(env)
+  const preparedArgs = withGitInvocationArgs(args, policy, signing)
+  const transport = policy === 'internal' && ['fetch', 'push'].includes(args[0] ?? '')
+  // Remove ambient Git/SSH executable injection before installing Copse's own
+  // askpass and host-key policy. Scrubbing after the lease would also delete
+  // those trusted bridge variables and break authenticated fetch/push.
+  const preparedEnv = policy === 'internal' ? internalGitEnv(env, transport) : env
+  const gitSsh = leaseGitSshEnv(preparedEnv)
   return {
-    args: withGitInvocationArgs(args),
+    args: preparedArgs,
     env: gitSsh.env,
     releaseGitSsh: gitSsh.release,
   }
@@ -101,14 +126,14 @@ export function runCommand(
   // a secret can pass it explicitly via `opts.env`.
   let spawnEnv: NodeJS.ProcessEnv = envForRendererChildProcess()
   let releaseGitSsh: (() => void) | undefined
+  if (opts.env) {
+    spawnEnv = { ...spawnEnv, ...opts.env }
+  }
   if (cmd === 'git') {
-    const git = prepareGitInvocation(args, spawnEnv)
+    const git = prepareGitInvocation(args, spawnEnv, opts.gitConfig ?? 'internal', opts.gitSigning)
     spawnArgs = git.args
     spawnEnv = git.env
     releaseGitSsh = git.releaseGitSsh
-  }
-  if (opts.env) {
-    spawnEnv = { ...spawnEnv, ...opts.env }
   }
 
   return new Promise((resolve, reject) => {
@@ -121,9 +146,15 @@ export function runCommand(
           stdio: 'pipe',
         }
         if (opts.unsandboxed !== undefined) spawnOpts.unsandboxed = opts.unsandboxed
+        if (opts.requireSandbox !== undefined) spawnOpts.requireSandbox = opts.requireSandbox
         if (opts.sandboxConfig) spawnOpts.sandboxConfig = opts.sandboxConfig
         if (opts.signal) spawnOpts.signal = opts.signal
         proc = await spawnInProjectSandbox(cmd, spawnArgs, spawnOpts)
+        if (opts.stdin) {
+          // A signer can reject input and close its pipe before it is drained.
+          proc.stdin?.on('error', () => {})
+          proc.stdin?.end(opts.stdin)
+        }
         if (opts.lowPriority && typeof proc.pid === 'number') {
           // nice 19: keep a CPU-heavy background job from starving the UI (#517).
           try {
@@ -133,6 +164,7 @@ export function runCommand(
           }
         }
       } catch (err) {
+        releaseGitSsh?.()
         reject(err instanceof Error ? err : new Error(String(err)))
         return
       }

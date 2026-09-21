@@ -34,6 +34,15 @@ turn asking why it cannot.
 
 Deleting the thread deletes its stored videos with it.
 
+For a video referenced from an SSH workspace, the reference remains a remote
+path. Copse checks its size on the host before transferring it, streams allowed
+bytes into a private local cache, and reuses that copy for follow-up frame reads
+for no more than five minutes. A desktop-dropped attachment stays in the local
+thread store even when its workspace is remote; Copse does not mistakenly ask
+the SSH host for that local path. The cache is bounded at 512 MB and removed when
+the app exits normally. This binary path is separate from shell results, whose
+100 KiB output cap remains unchanged.
+
 ### Over ACP
 
 `video_frames` is offered to external ACP agents through the

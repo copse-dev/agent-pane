@@ -14,7 +14,7 @@ import { isRecord } from '@shared/unknown-value.ts'
  *   {@link streamChunkToSessionUpdate} turns chunks emitted by the agent loop
  *   into updates we notify the client with.
  * - **Client role** (Copse drives an external ACP agent):
- *   {@link sessionUpdateToStreamChunk} turns updates received from the agent
+ *   {@link sessionUpdateToStreamChunks} turns updates received from the agent
  *   back into chunks the renderer already knows how to display.
  *
  * Chunks/updates without a clean counterpart (turn token accounting, outbound
@@ -171,7 +171,31 @@ function preferredAcpToolLabel(
   return programmaticName ?? displayTitle
 }
 
-export function sessionUpdateToStreamChunk(update: SessionUpdate): StreamChunk | null {
+/**
+ * A tool announcement may already contain output and a terminal status (Codex
+ * reports MCP startup failures this way). Create its card first, then apply
+ * that state through the ordinary patch path; no later notification is owed.
+ */
+export function sessionUpdateToStreamChunks(update: SessionUpdate): StreamChunk[] {
+  const chunk = sessionUpdateToStreamChunk(update)
+  if (!chunk) return []
+  if (update.sessionUpdate !== 'tool_call') return [chunk]
+
+  const initialState = sessionUpdateToStreamChunk({
+    sessionUpdate: 'tool_call_update',
+    toolCallId: update.toolCallId,
+    // New cards already start running. Only emit a status patch when the
+    // announcement says they have settled; output is useful in any state.
+    ...(update.status === 'completed' || update.status === 'failed'
+      ? { status: update.status }
+      : {}),
+    ...(update.content !== undefined ? { content: update.content } : {}),
+    ...(update.rawOutput !== undefined ? { rawOutput: update.rawOutput } : {}),
+  })
+  return initialState ? [chunk, initialState] : [chunk]
+}
+
+function sessionUpdateToStreamChunk(update: SessionUpdate): StreamChunk | null {
   switch (update.sessionUpdate) {
     case 'agent_message_chunk':
       return update.content.type === 'text' ? { type: 'text', text: update.content.text } : null

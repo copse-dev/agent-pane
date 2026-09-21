@@ -8,10 +8,10 @@ import type { StreamChunk } from '@shared/types'
 
 /**
  * PROTOTYPE — translating ACP **v2** session updates into Copse's `StreamChunk`
- * stream, alongside the shipping v1 `sessionUpdateToStreamChunk`.
+ * stream, alongside the shipping v1 `sessionUpdateToStreamChunks`.
  *
- * The v1 adapter is a pure function: one update in, at most one chunk out. v2
- * cannot be that, and this module exists to show exactly why and what it costs.
+ * The v1 adapter is a stateless function. v2 cannot be that, and this module
+ * exists to show exactly why and what it costs.
  *
  * Three v2 changes force state:
  *

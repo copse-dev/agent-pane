@@ -29,6 +29,7 @@ import {
   type AgentTurnEpoch,
 } from './thread-store.ts'
 import type { ToolRegistry } from './tool-registry.ts'
+import { perfMark } from './diagnostics/perf-trace.ts'
 
 export interface AgentDispatchPayload {
   userContent: UserContent
@@ -191,7 +192,7 @@ function createHistoryCheckpointWriter(
 /** Main-process authority for starting primary agent turns and committing provider history. */
 export class AgentDispatcher {
   private readonly histories = new Map<string, LLMMessage[]>()
-  private readonly active = new Map<string, Promise<TurnOutcome | undefined>>()
+  private readonly active = new Map<string, Promise<unknown>>()
   private readonly epochs = new Map<string, { turnTreeId: string; continuationUsed: number }>()
   private readonly epochWrites = new Map<string, Promise<void>>()
   private readonly machineOperations = new Map<string, Promise<MachineDispatchResult>>()
@@ -210,7 +211,21 @@ export class AgentDispatcher {
   }
 
   async dispatch(request: AgentDispatchRequest): Promise<void> {
+    perfMark('ttft:main-dispatch')
     const key = dispatchKey(request.projectId, request.threadId)
+    // Claim the thread before the renderer epoch sidecar is written. That
+    // write can await disk, but an accepted local dispatch already owns the
+    // conversation and must block an imported cloud snapshot from committing.
+    await this.dispatchExclusively(request, key, (host) =>
+      this.dispatchAccepted(request, key, host),
+    )
+  }
+
+  private async dispatchAccepted(
+    request: AgentDispatchRequest,
+    key: string,
+    host: AgentHost<StreamChunk>,
+  ): Promise<void> {
     const epochWrite = this.observeRendererEpoch(key, request)
     this.epochWrites.set(key, epochWrite)
     try {
@@ -218,7 +233,7 @@ export class AgentDispatcher {
     } finally {
       if (this.epochWrites.get(key) === epochWrite) this.epochWrites.delete(key)
     }
-    await this.dispatchInternal(request)
+    await this.execute(request, key, host)
   }
 
   dispatchMachine(request: MachineAgentDispatchRequest): Promise<MachineDispatchResult> {
@@ -382,17 +397,59 @@ export class AgentDispatcher {
 
   private async dispatchInternal(request: AgentDispatchRequest): Promise<TurnOutcome | undefined> {
     const key = dispatchKey(request.projectId, request.threadId)
+    return this.dispatchExclusively(request, key, (host) => this.execute(request, key, host))
+  }
+
+  /**
+   * Keep a turn's ownership through the final history commit, but publish its
+   * terminal outcome and `done` only after that ownership releases. The renderer
+   * treats `done` as permission to submit the next turn; publishing it while the
+   * active map still owns the thread turns an immediate follow-up into a false
+   * "already running" rejection. Deferring those terminal records does not defer
+   * post-turn work: `execute` has already awaited it and persisted history.
+   */
+  private async dispatchExclusively<T>(
+    request: AgentDispatchRequest,
+    key: string,
+    run: (host: AgentHost<StreamChunk>) => Promise<T>,
+  ): Promise<T> {
     const existing = this.active.get(key)
     if (existing) {
       throw new Error(`An agent turn is already running for thread "${request.threadId}"`)
     }
 
-    const running = this.execute(request, key)
+    let terminalOutcome: Extract<StreamChunk, { type: 'turn_outcome' }> | undefined
+    let terminalDone: Extract<StreamChunk, { type: 'done' }> | undefined
+    const terminalDeferringHost: AgentHost<StreamChunk> = {
+      emit: (threadId, chunk): void => {
+        if (threadId === request.threadId && chunk.type === 'turn_outcome') {
+          terminalOutcome ??= chunk
+          return
+        }
+        if (threadId === request.threadId && chunk.type === 'done') {
+          terminalDone ??= chunk
+          return
+        }
+        this.host.emit(threadId, chunk)
+      },
+    }
+    const running = run(terminalDeferringHost)
     this.active.set(key, running)
+    let committed = false
     try {
-      return await running
+      const result = await running
+      committed = true
+      return result
     } finally {
       if (this.active.get(key) === running) this.active.delete(key)
+      // A terminal chunk means the provider work ended, not that its history
+      // reached disk. Do not tell the renderer the turn succeeded when the
+      // final commit failed; a retry must start from the still-authoritative
+      // persisted history instead.
+      if (committed && terminalDone !== undefined) {
+        if (terminalOutcome !== undefined) this.host.emit(request.threadId, terminalOutcome)
+        this.host.emit(request.threadId, terminalDone)
+      }
     }
   }
 
@@ -430,15 +487,17 @@ export class AgentDispatcher {
   private async execute(
     request: AgentDispatchRequest,
     key: string,
+    host: AgentHost<StreamChunk>,
   ): Promise<TurnOutcome | undefined> {
     const { projectId, threadId, payload } = request
     const priorMessages = await this.history(projectId, threadId)
     const executionContext = await this.dependencies.prepareExecutionContext(
       projectId,
       threadId,
-      this.host,
+      host,
     )
     if (!executionContext) return undefined
+    perfMark('ttft:dispatch-preflight-complete')
 
     // Reports on the pre-turn state, so it runs before the checkpoint writer
     // starts moving that state on.
@@ -449,8 +508,8 @@ export class AgentDispatcher {
     // on the pre-turn history while the sidecar has moved on would hand the next
     // turn a context that disagrees with disk.
     const checkpoints = createHistoryCheckpointWriter(async (messages) => {
-      this.histories.set(key, messages)
       await this.dependencies.saveHistory(projectId, threadId, messages)
+      this.histories.set(key, messages)
     })
 
     const options: RunAgentOptions = {
@@ -474,7 +533,7 @@ export class AgentDispatcher {
             threadId,
             payload.userContent,
             priorMessages,
-            this.host,
+            host,
             this.registry,
             options,
           ),
@@ -485,8 +544,16 @@ export class AgentDispatcher {
       // turn's authoritative history.
       await checkpoints.close()
     }
-    this.histories.set(key, result.messages)
-    await this.dependencies.saveHistory(projectId, threadId, result.messages)
-    return result.turnOutcome
+    try {
+      await this.dependencies.saveHistory(projectId, threadId, result.messages)
+      this.histories.set(key, result.messages)
+      return result.turnOutcome
+    } catch (error) {
+      // The final write can fail after a successful checkpoint. Forget the
+      // cache so the next turn reloads the authoritative sidecar rather than
+      // reusing an uncommitted final snapshot.
+      this.histories.delete(key)
+      throw error
+    }
   }
 }

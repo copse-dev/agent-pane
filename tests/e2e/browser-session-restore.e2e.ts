@@ -112,6 +112,30 @@ describe('browser session restore', function () {
       timeout: 20_000,
       timeoutMsg: 'expected the restored tab to render the saved artefact',
     })
+
+    // Exercise the transcript entry point after relaunch too. Closing the live
+    // tab leaves only the durable card; Open must re-read the saved artefact and
+    // return it to one active tab rather than selecting an empty shell.
+    await $('.browser-tabs-tab.is-active .browser-tabs-tab-close').click()
+    await browser.waitUntil(async () => !(await tabLabels()).includes('Sales Dashboard'), {
+      timeout: 10_000,
+      timeoutMsg: 'expected the restored canvas tab to close',
+    })
+    await browser.execute(() => {
+      for (const card of document.querySelectorAll('details.tool-card')) {
+        ;(card as HTMLDetailsElement).open = true
+        card.querySelector('summary')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      }
+    })
+    const open = await $('.canvas-preview-card button')
+    await open.waitForDisplayed({ timeout: 20_000 })
+    await open.click()
+
+    await browser.waitUntil(async () => (await activeArtefactHeading()) === 'restored', {
+      timeout: 20_000,
+      timeoutMsg: 'expected preview Open to re-render the saved artefact after relaunch',
+    })
+    expect((await tabLabels()).filter((label) => label === 'Sales Dashboard')).toHaveLength(1)
     await saveAppScreenshot('browser-session-restore-after-relaunch.png')
   })
 })

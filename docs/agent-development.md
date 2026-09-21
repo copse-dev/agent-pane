@@ -50,6 +50,47 @@ With fnm, run `fnm install && fnm use` from the repository root instead.
 
 Confirm with `node -v` before debugging a tooling failure.
 
+## Container engines on macOS
+
+Container-backed development scripts use a small engine boundary instead of assuming
+the Docker CLI. `COPSE_CONTAINER_ENGINE` accepts `auto`, `apple`, or `docker`:
+
+- `auto` (the default) prefers a ready Apple container service on an Apple silicon
+  Mac, then falls back to Docker before starting any build or container.
+- `apple` requires Apple silicon, macOS 26 or newer, the signed
+  [Apple container](https://apple.github.io/container/documentation/) package, and a
+  running service (`container system start`). It never silently falls back.
+- `docker` requires a reachable Docker daemon and preserves the previous commands.
+
+The autonomy regression is portable across those engines:
+
+```bash
+COPSE_CONTAINER_ENGINE=apple pnpm run eval:autonomy
+COPSE_CONTAINER_ENGINE=docker pnpm run eval:autonomy
+```
+
+For a model server bound to loopback, Apple container resolves
+`host.container.internal`; create Apple's localhost DNS entry once as documented by
+the project:
+
+```bash
+sudo container system dns create host.container.internal --localhost 203.0.113.113
+```
+
+The Apple mapping preserves the read-only root, dropped capabilities, resource
+limits, tmpfs work areas, and artifact mount. It uses an `nproc` ulimit in place of
+Docker's PID-limit flag because Apple container does not expose a direct equivalent.
+Do not treat Apple container's `--internal` network as an egress security boundary;
+the runtime's [host-only network issue](https://github.com/apple/container/issues/2062)
+remains open. These development/eval workloads retain the same network access their
+Docker versions had.
+
+The shared CI runner image can also run on Apple container without Compose. See
+[`ci-runners/README.md`](../ci-runners/README.md#apple-container--apple-silicon-macs)
+and `pnpm run runners:apple -- --help`. Linux/cloud fleets, remote e2e hosts, and
+third-party benchmark harnesses stay on Docker where they rely on Compose, Docker
+sockets, or Linux host provisioning.
+
 ## Headless GUI development
 
 The Cloud VM exposes a VNC desktop on `DISPLAY=:1`, so launch the app with
@@ -94,14 +135,14 @@ one-shot steering.
 
 Everything Copse persists lives under one root, `~/.copse/` (`COPSE_DIR` moves the whole profile):
 
-| Path                                                                                 | Contents                                                                 |
-| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------ |
-| `user-data/config.json`                                                              | projects, `activeProjectId`, workspace root, pack settings, usage ledger |
-| `user-data/settings.json`                                                            | settings, including encrypted API keys                                   |
-| `user-data/` (rest)                                                                  | `mcp.json`, `tools/`, browser profiles, `gortex/` semantic index         |
-| `workspace/<projectId>/<threadId>/`                                                  | threads, tasks, decision log, deferred approvals                         |
-| `worktrees/`                                                                         | Copse-managed Git worktrees                                              |
-| `knowledge/`, `long-tasks/`, `roadmap-review/`, `pack-tool-snapshots/`, `hooks.json` | per-feature stores                                                       |
+| Path                                                                                 | Contents                                                                   |
+| ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------- |
+| `user-data/config.json`                                                              | projects, `activeProjectId`, workspace root, plugin settings, usage ledger |
+| `user-data/settings.json`                                                            | settings, including encrypted API keys                                     |
+| `user-data/` (rest)                                                                  | `mcp.json`, `tools/`, browser profiles, `gortex/` semantic index           |
+| `workspace/<projectId>/<threadId>/`                                                  | threads, tasks, decision log, deferred approvals                           |
+| `worktrees/`                                                                         | Copse-managed Git worktrees                                                |
+| `knowledge/`, `long-tasks/`, `roadmap-review/`, `pack-tool-snapshots/`, `hooks.json` | per-feature stores                                                         |
 
 Electron's `userData` used to default to `<appData>/copse-panel` (`~/Library/Application Support/`
 on macOS), which split the profile across two unrelated directories. `app-init.ts` now points it at
@@ -159,6 +200,17 @@ Results land in `.tmp/remote-e2e/runs/<run-id>/`. With `COPSE_CI_REGISTRY`, `e2e
 pre-baked image. Use local `test:e2e` for macOS-specific behavior, where no remote host is available,
 or when a skill requires an on-machine display. For native GUI behavior or authenticated real-agent
 runs, use the isolated workflow in [`remote-agent-demo-debugging.md`](remote-agent-demo-debugging.md).
+
+Inside a Copse agent session, send local Electron e2e through Copse's `run_shell` host path with the
+same wrapper used by `test:e2e`:
+
+```bash
+node scripts/run-e2e.mts wdio.conf.ts --spec tests/e2e/example.e2e.ts
+```
+
+The direct script form lets the permission gate ask before launching it outside the project sandbox.
+Electron and ChromeDriver then have the macOS host temp directories and services they need. The ACP
+process's own shell remains nested inside its session sandbox and cannot provide that host access.
 
 ## Visual validation
 

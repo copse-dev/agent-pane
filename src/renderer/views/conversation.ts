@@ -35,6 +35,7 @@ import {
   getArtefactPreview,
   requestArtefactShow,
 } from '../canvas/artefact-previews.ts'
+import { createInlineArtefact } from '../canvas/inline-artefact.ts'
 import { artefactTitleFromUri } from '@shared/canvas/artefact.ts'
 import { getThreadById, getActiveThread, setQueuePaused } from '@shared/store/thread-helpers.ts'
 import { CONTAINER_RUN_ADOPT_EVENT } from '@shared/store/container-run-card.ts'
@@ -114,6 +115,8 @@ import {
 } from '../controller/message-queue.ts'
 import { forkThread } from '../controller/fork-thread.ts'
 import { lastResendableMessage, resendLastMessage } from '../controller/resend-message.ts'
+import { recoverFailedTurn, turnRecoveryForMessage } from '../controller/turn-recovery.ts'
+import { createTurnRecoveryCard } from './turn-recovery-card.ts'
 import { isImageInputUnsupportedMessage } from '@shared/image-input-support.ts'
 import { showToast } from './toast.ts'
 import type { QueuedUserMessage } from '@shared/types'
@@ -350,13 +353,21 @@ function syncToolRunMemberVisibility(msgEl: HTMLElement): void {
   msgEl.hidden = !hasVisibleBodyChild && !hasVisibleDirectChild
 }
 
-function syncMessageCanvasPreviews(msgEl: HTMLElement, msg: Message, threadId: string): void {
+function syncMessageCanvasPreviews(
+  msgEl: HTMLElement,
+  msg: Message,
+  projectId: string | null,
+  threadId: string,
+  api: ApiClient,
+): void {
   const body = msgEl.querySelector<HTMLElement>(':scope > .message-body')
   if (!body) return
   body.querySelector(':scope > .message-canvas-previews')?.remove()
 
   const cards = (msg.canvasArtefacts ?? []).flatMap((artefact) => {
-    const card = createCanvasPreviewCard(threadId, artefact.title)
+    const card = projectId
+      ? createInlineArtefact(api, projectId, threadId, artefact.title)
+      : createCanvasPreviewCard(threadId, artefact.title)
     return card ? [card] : []
   })
   if (cards.length > 0) {
@@ -1183,7 +1194,9 @@ function hookCardDetailLines(card: HookCard): string[] {
     const via =
       card.nudgeMechanism === 'text-only-turn'
         ? 'as a forced text-only turn'
-        : 'appended to the next turn'
+        : card.nudgeMechanism === 'tool-enabled-turn'
+          ? 'as a tool-enabled finalization turn'
+          : 'appended to the next turn'
     lines.push(`Applied this nudge to the conversation — ${via}`)
   }
   if (card.injectContextChars !== undefined && card.injectContextChars > 0) {
@@ -2812,7 +2825,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       ...messageToolCardOpts(msg),
       ...(run ? { run, liveStepId: liveStepMessageId(thread) } : {}),
     })
-    syncMessageCanvasPreviews(msgEl, msg, threadId)
+    syncMessageCanvasPreviews(msgEl, msg, store.getState().activeProjectId, threadId, api)
     // A run's rollup lives on its anchor, so inserting one message changes what
     // a *different* message renders: a member joining gives the anchor a new
     // step, and an anchor arriving during the newest-first backfill takes back
@@ -2822,6 +2835,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     if (msg.review) renderMessageReview(threadId, msgId)
     // Render any hook cards folded onto this message's turn (decision 10).
     renderMessageHookCards(threadId, msgId)
+    renderMessageTurnRecovery(threadId, msgId)
   }
 
   /**
@@ -3082,6 +3096,33 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     msgEl.after(card)
   }
 
+  function renderMessageTurnRecovery(threadId: string, messageId: string): void {
+    if (threadId !== store.getState().activeThreadId) return
+    list.querySelector(`[data-turn-recovery-for="${messageId}"]`)?.remove()
+    const state = store.getState()
+    const projectId = state.activeProjectId
+    const thread = state.threads.find((candidate) => candidate.id === threadId)
+    const msgEl = list.querySelector(`[data-message-id="${messageId}"]`)
+    const recovery = turnRecoveryForMessage(thread, messageId)
+    if (!projectId || !msgEl || !recovery) return
+
+    const fallback = recovery.lastKnownGoodModel
+    const card = createTurnRecoveryCard({
+      ...(fallback !== undefined ? { lastKnownGoodLabel: displayModelLabel(fallback) } : {}),
+      onRetry: () => recoverFailedTurn(store, api, projectId, threadId, messageId, 'current-model'),
+      ...(fallback !== undefined
+        ? {
+            onRetryWithLastKnownGood: (): boolean =>
+              recoverFailedTurn(store, api, projectId, threadId, messageId, 'last-known-good'),
+          }
+        : {}),
+    })
+    card.setAttribute('data-turn-recovery-for', messageId)
+    // Insert last so this action remains the failed message's immediate sibling;
+    // review and hook cards for the same turn follow it in their established order.
+    msgEl.after(card)
+  }
+
   function syncComparisonPanel(): void {
     // Render the comparison card inline as the last child of the message list,
     // after the review card, so it joins the transcript flow. Replace on sync.
@@ -3329,7 +3370,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       const msg = thread?.messages.find((message) => message.id === mid)
       const msgEl = list.querySelector<HTMLElement>(`[data-message-id="${mid}"]`)
       if (thread && msg?.role === 'assistant' && msgEl) {
-        syncMessageCanvasPreviews(msgEl, msg, thread.id)
+        syncMessageCanvasPreviews(msgEl, msg, store.getState().activeProjectId, thread.id, api)
         scrollToBottom()
       }
     }),
@@ -3425,7 +3466,16 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     store.on('thread_status_changed', (tid, status) => {
       if (status === 'running') cancelThreadCompaction(tid)
       else scheduleThreadCompaction(tid)
-      if (tid === store.getState().activeThreadId && status !== 'running') setActivity(null)
+      if (tid !== store.getState().activeThreadId) return
+      if (status === 'running') {
+        list.querySelectorAll('[data-turn-recovery-card]').forEach((card) => {
+          card.remove()
+        })
+      } else {
+        setActivity(null)
+        const last = getThreadById(store, tid)?.messages.at(-1)
+        if (last?.role === 'assistant') renderMessageTurnRecovery(tid, last.id)
+      }
     }),
     store.on('agent_activity', (tid, label) => {
       if (tid !== store.getState().activeThreadId) return

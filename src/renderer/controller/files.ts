@@ -2,6 +2,10 @@ import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { getActiveThreadOwner, requireActiveThreadOwner } from './active-thread-owner.ts'
 import { openBrowserUrl } from './panels.ts'
+import { isImagePath, isRasterImagePath } from '@shared/fs/image-path.ts'
+import { openAttachmentPreview } from '../attachments/attachment-preview.ts'
+import { el } from '../dom/helpers.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 const LANG: Record<string, string> = {
   ts: 'typescript',
@@ -59,6 +63,47 @@ export async function openWorkspaceFile(
   reveal?: { line: number; column?: number },
 ): Promise<void> {
   const { projectId, threadId } = requireActiveThreadOwner(store)
+  if (isImagePath(path) && (!reveal || isRasterImagePath(path))) {
+    const unsubs: (() => void)[] = []
+    const preview = openAttachmentPreview({
+      kind: 'image',
+      title: path,
+      ariaLabel: `Image preview: ${path}`,
+      onClose: () => {
+        for (const unsubscribe of unsubs) unsubscribe()
+      },
+    })
+    const isOwner = (): boolean => {
+      const current = getActiveThreadOwner(store)
+      return current?.projectId === projectId && current.threadId === threadId
+    }
+    const checkOwner = (): void => {
+      if (!isOwner()) preview.close()
+    }
+    unsubs.push(
+      store.on('panel_changed', checkOwner),
+      store.on('threads_changed', checkOwner),
+      store.on('workspace_changed', checkOwner),
+      store.on('thread_checkout_changed', (changedThreadId) => {
+        if (changedThreadId === threadId) preview.close()
+      }),
+    )
+    try {
+      const src = await api.fs.readImage(projectId, threadId, path)
+      if (!isOwner()) {
+        preview.close()
+        return
+      }
+      preview.setContent(el('img', { class: 'image-expand-image', src, alt: path }))
+    } catch (error) {
+      if (!isOwner()) {
+        preview.close()
+        return
+      }
+      preview.setStatus(`Could not preview ${path}: ${errorMessage(error)}`)
+    }
+    return
+  }
   const content = await api.fs.readFile(projectId, threadId, path)
   const currentOwner = getActiveThreadOwner(store)
   if (currentOwner?.projectId !== projectId || currentOwner.threadId !== threadId) return

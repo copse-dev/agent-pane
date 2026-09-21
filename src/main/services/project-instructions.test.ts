@@ -15,12 +15,23 @@ import {
 import { setWorkspaceRootForTest } from './workspace.ts'
 import { runWithWorkspaceTrust } from './security/workspace-trust.ts'
 import { runWithThreadExecutionContext } from './thread-execution-context.ts'
+import { storageDelete, storageSet } from './storage/storage.ts'
+import {
+  AGENTS_MD_INSTRUCTION_FILES_SETTING_ID,
+  AGENTS_MD_PLUGIN_ID,
+  type AgentsMdInstructionFilesMode,
+} from '@copse/agent/plugins/agents-md-plugin.ts'
+import { CLAUDE_MD_PLUGIN_ID } from '@copse/agent/plugins/claude-md-plugin.ts'
+import { CURSOR_RULES_PLUGIN_ID } from '@copse/agent/plugins/cursor-rules-plugin.ts'
+import { createFirstPartyPluginRegistry } from '@copse/agent/plugins/first-party-plugins.ts'
+import { runWithDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 
 describe('project-instructions', () => {
   let projectRoot = ''
   let homeRoot = ''
   let restoreWorkspace: (() => void) | null = null
   let originalHome: string | undefined
+  const agentsMdSettingsKey = `plugin.${AGENTS_MD_PLUGIN_ID}.settings`
 
   beforeEach(async () => {
     projectRoot = await mkdtemp(join(tmpdir(), 'copse-panel-instructions-'))
@@ -28,6 +39,7 @@ describe('project-instructions', () => {
     restoreWorkspace = setWorkspaceRootForTest(projectRoot)
     originalHome = process.env['HOME']
     process.env['HOME'] = homeRoot
+    storageDelete(agentsMdSettingsKey)
   })
 
   afterEach(async () => {
@@ -35,6 +47,7 @@ describe('project-instructions', () => {
     restoreWorkspace = null
     if (originalHome !== undefined) process.env['HOME'] = originalHome
     else delete process.env['HOME']
+    storageDelete(agentsMdSettingsKey)
     await rm(projectRoot, { recursive: true, force: true })
     await rm(homeRoot, { recursive: true, force: true })
   })
@@ -42,6 +55,11 @@ describe('project-instructions', () => {
   /** Run a loader with the test workspace explicitly trusted / untrusted. */
   const withTrust = <T>(trusted: boolean, fn: () => Promise<T>): Promise<T> =>
     runWithWorkspaceTrust(projectRoot, trusted, fn)
+
+  const withMode = <T>(mode: AgentsMdInstructionFilesMode, fn: () => Promise<T>): Promise<T> => {
+    storageSet(agentsMdSettingsKey, { [AGENTS_MD_INSTRUCTION_FILES_SETTING_ID]: mode })
+    return fn()
+  }
 
   it('returns empty when no instruction files exist', async () => {
     assert.deepEqual(await withTrust(true, () => loadInstructionLayers()), {
@@ -107,14 +125,14 @@ describe('project-instructions', () => {
     await mkdir(join(homeRoot, '.claude'), { recursive: true })
     await writeFile(join(homeRoot, '.claude', 'CLAUDE.md'), 'Global C')
     const layers = await withTrust(false, () => loadInstructionLayers())
-    assert.equal(layers.global, 'Global A\n\nGlobal C')
+    assert.equal(layers.global, 'Global C\n\nGlobal A')
     assert.doesNotMatch(layers.global, /<project_instructions/)
     const sources = await withTrust(false, () => loadProjectInstructionSources())
     assert.deepEqual(
       sources.map((s) => ({ name: s.name, scope: s.scope, active: s.active })),
       [
-        { name: 'AGENTS.md', scope: 'global', active: true },
         { name: join('.claude', 'CLAUDE.md'), scope: 'global', active: true },
+        { name: 'AGENTS.md', scope: 'global', active: true },
       ],
     )
   })
@@ -137,12 +155,38 @@ describe('project-instructions', () => {
     }
   })
 
-  it('concatenates distinct project files in precedence order', async () => {
+  it('loads both families in Claude-first precedence in combined mode', async () => {
     await writeFile(join(projectRoot, 'AGENT.md'), 'First')
     await writeFile(join(projectRoot, 'CLAUDE.md'), 'Second')
-    const layers = await withTrust(true, () => loadInstructionLayers())
-    assert.ok(layers.project.indexOf('First') < layers.project.indexOf('Second'))
+    const layers = await withMode('claude-md-and-agents-md', () =>
+      withTrust(true, () => loadInstructionLayers()),
+    )
+    assert.ok(layers.project.indexOf('Second') < layers.project.indexOf('First'))
     assert.equal(layers.project.match(/<project_instructions /g)?.length, 2)
+  })
+
+  it('uses AGENTS.md only as fallback when the project has no CLAUDE.md of its own', async () => {
+    await writeFile(join(projectRoot, 'AGENTS.md'), 'Agent rules')
+    await writeFile(join(projectRoot, 'CLAUDE.local.md'), 'Private Claude rules')
+
+    const layers = await withTrust(true, () => loadInstructionLayers())
+
+    assert.match(layers.project, /Private Claude rules/)
+    assert.doesNotMatch(layers.project, /Agent rules/)
+  })
+
+  it('supports .claude project files for both source families', async () => {
+    await mkdir(join(projectRoot, '.claude'), { recursive: true })
+    await writeFile(join(projectRoot, '.claude', 'CLAUDE.md'), 'Claude config rules')
+    await writeFile(join(projectRoot, '.claude', 'AGENTS.md'), 'Agent config rules')
+
+    const layers = await withMode('claude-md-and-agents-md', () =>
+      withTrust(true, () => loadInstructionLayers()),
+    )
+
+    assert.ok(
+      layers.project.indexOf('Claude config rules') < layers.project.indexOf('Agent config rules'),
+    )
   })
 
   it('skips empty / whitespace-only files', async () => {
@@ -213,16 +257,52 @@ describe('project-instructions', () => {
     assert.ok(forward.indexOf('api rules') < forward.indexOf('web rules'))
   })
 
-  it('keeps nested AGENT.md and CLAUDE.md root-only', async () => {
+  it('keeps singular AGENT.md root-only and activates nested CLAUDE.md', async () => {
     await mkdir(join(projectRoot, 'packages', 'api'), { recursive: true })
     await writeFile(join(projectRoot, 'packages', 'api', 'AGENT.md'), 'Nested singular')
     await writeFile(join(projectRoot, 'packages', 'api', 'CLAUDE.md'), 'Nested Claude')
-    assert.deepEqual(
-      await withTrust(true, () =>
-        loadProjectInstructionSources({ nestedContextPaths: ['packages/api/file.ts'] }),
-      ),
-      [],
+    const sources = await withTrust(true, () =>
+      loadProjectInstructionSources({ nestedContextPaths: ['packages/api/file.ts'] }),
     )
+    assert.deepEqual(
+      sources.map((source) => source.name),
+      ['packages/api/CLAUDE.md'],
+    )
+  })
+
+  it('loads .claude/AGENTS.md as the owning directory scope', async () => {
+    await mkdir(join(projectRoot, 'packages', 'api', '.claude'), { recursive: true })
+    await writeFile(
+      join(projectRoot, 'packages', 'api', '.claude', 'AGENTS.md'),
+      'Nested agent config',
+    )
+    const sources = await withTrust(true, () =>
+      loadProjectInstructionSources({ nestedContextPaths: ['packages/api/file.ts'] }),
+    )
+    assert.deepEqual(
+      sources.map((source) => ({ name: source.name, scopePath: source.scopePath })),
+      [
+        {
+          name: 'packages/api/.claude/AGENTS.md',
+          scopePath: 'packages/api',
+        },
+      ],
+    )
+  })
+
+  it('lets a nested CLAUDE.md claim its directory in fallback mode', async () => {
+    await mkdir(join(projectRoot, 'packages', 'api'), { recursive: true })
+    await writeFile(join(projectRoot, 'packages', 'AGENTS.md'), 'Parent agents')
+    await writeFile(join(projectRoot, 'packages', 'api', 'AGENTS.md'), 'API agents')
+    await writeFile(join(projectRoot, 'packages', 'api', 'CLAUDE.md'), 'API Claude')
+
+    const layers = await withTrust(true, () =>
+      loadInstructionLayers({ nestedContextPaths: ['packages/api/file.ts'] }),
+    )
+
+    assert.match(layers.project, /Parent agents/)
+    assert.match(layers.project, /API Claude/)
+    assert.doesNotMatch(layers.project, /API agents/)
   })
 
   it('ignores generated trees and symlink escapes for discovery and activation', async () => {
@@ -546,6 +626,74 @@ describe('project-instructions', () => {
     assert.match(trusted, /API conventions/)
     const untrusted = await withTrust(false, () => loadAgentRequestedRulesCatalog())
     assert.equal(untrusted, '')
+  })
+
+  it('managed-only suppresses user, workspace, and Cursor instruction sources', async () => {
+    await writeFile(join(homeRoot, 'AGENTS.md'), 'Global agents')
+    await mkdir(join(homeRoot, '.claude'), { recursive: true })
+    await writeFile(join(homeRoot, '.claude', 'CLAUDE.md'), 'Global Claude')
+    await writeFile(join(projectRoot, 'AGENTS.md'), 'Project agents')
+    await writeFile(join(projectRoot, 'CLAUDE.md'), 'Project Claude')
+    await mkdir(join(projectRoot, '.cursor', 'rules'), { recursive: true })
+    await writeFile(
+      join(projectRoot, '.cursor', 'rules', 'style.mdc'),
+      '---\nalwaysApply: true\n---\nCursor rule',
+    )
+
+    const layers = await withMode('managed-only', () =>
+      withTrust(true, () => loadInstructionLayers()),
+    )
+
+    assert.deepEqual(layers, { project: '', global: '' })
+    assert.equal(
+      await withMode('managed-only', () => withTrust(true, () => loadAgentRequestedRulesCatalog())),
+      '',
+    )
+  })
+
+  it('disabling AGENTS.md restores CLAUDE.md-only behavior', async () => {
+    await writeFile(join(projectRoot, 'AGENTS.md'), 'Agent rules')
+    await writeFile(join(projectRoot, 'CLAUDE.md'), 'Claude rules')
+    const registry = createFirstPartyPluginRegistry()
+    registry.disable(AGENTS_MD_PLUGIN_ID)
+
+    const layers = await runWithDefaultPluginRegistry(registry, () =>
+      withMode('claude-md-and-agents-md', () => withTrust(true, () => loadInstructionLayers())),
+    )
+
+    assert.match(layers.project, /Claude rules/)
+    assert.doesNotMatch(layers.project, /Agent rules/)
+  })
+
+  it('disabling CLAUDE.md lets AGENTS.md fallback load even when a CLAUDE.md exists', async () => {
+    await writeFile(join(projectRoot, 'AGENTS.md'), 'Agent rules')
+    await writeFile(join(projectRoot, 'CLAUDE.md'), 'Dormant Claude rules')
+    const registry = createFirstPartyPluginRegistry()
+    registry.disable(CLAUDE_MD_PLUGIN_ID)
+
+    const layers = await runWithDefaultPluginRegistry(registry, () =>
+      withTrust(true, () => loadInstructionLayers()),
+    )
+
+    assert.match(layers.project, /Agent rules/)
+    assert.doesNotMatch(layers.project, /Dormant Claude rules/)
+  })
+
+  it('disabling Cursor rules removes both automatic rules and the request catalog', async () => {
+    await mkdir(join(projectRoot, '.cursor', 'rules'), { recursive: true })
+    await writeFile(
+      join(projectRoot, '.cursor', 'rules', 'api.mdc'),
+      '---\ndescription: API conventions\nalwaysApply: true\n---\nUse the v2 client.',
+    )
+    const registry = createFirstPartyPluginRegistry()
+    registry.disable(CURSOR_RULES_PLUGIN_ID)
+
+    await runWithDefaultPluginRegistry(registry, () =>
+      withTrust(true, async () => {
+        assert.deepEqual(await loadInstructionLayers(), { project: '', global: '' })
+        assert.equal(await loadAgentRequestedRulesCatalog(), '')
+      }),
+    )
   })
 
   it('loads global files even with no workspace open', async () => {

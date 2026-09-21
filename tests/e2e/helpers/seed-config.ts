@@ -220,7 +220,10 @@ function pinSeededProjectCheckouts(projects: unknown): void {
   }
 }
 
-export function writeSeedConfig(config: Record<string, unknown>): void {
+export function writeSeedConfig(
+  config: Record<string, unknown>,
+  options: { preserveProductWorktreeDefault?: boolean } = {},
+): void {
   mkdirSync(USER_DATA, { recursive: true })
   const remaining: Record<string, unknown> = {}
   const seededProjectIds = new Set<string>()
@@ -232,7 +235,9 @@ export function writeSeedConfig(config: Record<string, unknown>): void {
         seedThreadDir(match[1], thread as Record<string, unknown>)
       }
     } else {
-      if (key === 'projects') pinSeededProjectCheckouts(value)
+      if (key === 'projects' && options.preserveProductWorktreeDefault !== true) {
+        pinSeededProjectCheckouts(value)
+      }
       remaining[key] = value
     }
   }
@@ -595,9 +600,9 @@ export function seedEmptyProject(
     modelComparisonEnabled?: boolean
     /**
      * Per-project checkout isolation. Left unset, `writeSeedConfig` pins the
-     * project to the shared checkout; pass `always` to exercise isolation.
+     * project to the shared checkout; `default` preserves the product default.
      */
-    worktreeMode?: 'always' | 'never'
+    worktreeMode?: 'always' | 'never' | 'default'
   },
 ): void {
   mkdirSync(USER_DATA, { recursive: true })
@@ -606,7 +611,9 @@ export function seedEmptyProject(
     path: workspaceRoot,
     name: 'workspace',
   }
-  if (options?.worktreeMode) project.worktreeMode = options.worktreeMode
+  if (options?.worktreeMode && options.worktreeMode !== 'default') {
+    project.worktreeMode = options.worktreeMode
+  }
   if (options?.sshHost) project.sshHost = options.sshHost
   const seedConfig: Record<string, unknown> = {
     projects: [project],
@@ -632,7 +639,9 @@ export function seedEmptyProject(
   if (options?.usageEvents) {
     seedConfig.usageEvents = [...options.usageEvents]
   }
-  writeSeedConfig(seedConfig)
+  writeSeedConfig(seedConfig, {
+    preserveProductWorktreeDefault: options?.worktreeMode === 'default',
+  })
   const settings: Record<string, unknown> = {}
   if (options?.webAllowedOrigins !== undefined) {
     settings.webAllowedOrigins = options.webAllowedOrigins
@@ -877,6 +886,8 @@ export function seedProjectSwitchFixture(
   options?: {
     activeProjectId?: 'project-a' | 'project-b'
     windowBounds?: { width: number; height: number }
+    /** Show the Roadmap pane while exercising a project switch. */
+    roadmapPlansEnabled?: boolean
   },
 ): { projectAId: string; projectBId: string } {
   const projectAId = 'e2e-project-switch-a'
@@ -892,6 +903,7 @@ export function seedProjectSwitchFixture(
     ...(options?.windowBounds ? { windowBounds: options.windowBounds } : {}),
     [`threads:${projectAId}`]: [],
     [`threads:${projectBId}`]: [],
+    pluginDisabled: pluginDisabledSeed(options?.roadmapPlansEnabled ? ['copse.roadmap-plans'] : []),
   })
   writeSettings({})
   return { projectAId, projectBId }
@@ -2038,6 +2050,16 @@ export function seedHookCardsFixture(workspaceRoot: string): void {
   const runsByAnchor: Record<string, SpineHookRunLine[]> = {
     'msg-assistant-hook': [
       hookRun({ id: 'hr-allow', decision: { permission: 'allow' } }),
+      hookRun({
+        id: 'hr-finalize',
+        event: 'stepBoundary',
+        hookId: 'finalize-nudge',
+        decision: {
+          nudgeApplied: true,
+          nudgeMechanism: 'tool-enabled-turn',
+          injectContextChars: 72,
+        },
+      }),
       hookRun({
         id: 'hr-deny',
         hookId: 'block-prod.sh',

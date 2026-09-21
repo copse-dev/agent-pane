@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { client, methods, ndJsonStream, PROTOCOL_VERSION } from '@agentclientprotocol/sdk'
 import type { StreamChunk } from '@shared/types'
 import { buildAcpAgentApp, type AcpTurnRunner } from './acp-agent-server.ts'
-import { sessionUpdateToStreamChunk } from './session-update-adapter.ts'
+import { sessionUpdateToStreamChunks } from './session-update-adapter.ts'
 
 /**
  * End-to-end check that Copse's ACP **agent** and **client** halves interoperate
@@ -61,8 +61,7 @@ describe('ACP agent <-> client loopback', () => {
           for (;;) {
             const message = await session.nextUpdate()
             if (message.kind === 'stop') return message.response
-            const chunk = sessionUpdateToStreamChunk(message.update)
-            if (chunk) chunks.push(chunk)
+            chunks.push(...sessionUpdateToStreamChunks(message.update))
           }
         })
       })

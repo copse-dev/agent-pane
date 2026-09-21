@@ -31,10 +31,10 @@ describe('native git commit signing permission', function () {
 
     expect(await $(TOGGLE).isSelected()).toBe(false)
     const copy = await $(FIELDSET).getText()
-    expect(copy).toContain("Copse's native git_commit subprocess")
+    expect(copy).toContain('system SSH signer')
     expect(copy).toContain('Git hooks')
-    expect(copy).toContain('any key it holds')
-    expect(copy).toContain('ssh-add -c')
+    expect(copy).toContain('no ssh-agent access')
+    expect(copy).toContain('until Copse restarts')
 
     await saveElementScreenshot(FIELDSET, 'git-commit-signing-permission.png')
   })

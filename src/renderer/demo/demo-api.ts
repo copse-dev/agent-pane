@@ -1,6 +1,8 @@
 import type { ActiveDiff, StreamChunk, Thread } from '@shared/types'
 import type { PluginContributionsSummary, PluginSummary } from '@shared/types/plugins.ts'
 import type { AppleProjectState } from '@shared/types/apple-development.ts'
+import type { McpServerStatus } from '@shared/types/mcp.ts'
+import type { ToolPermissionCatalog, ToolPermissionPolicy } from '@shared/types/tool-permissions.ts'
 import { parseAgentRunPayload } from '@copse/agent/parse-agent-run-payload.ts'
 import { workingBriefFromUserContent } from '@copse/agent/working-brief.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -14,6 +16,128 @@ import { maximizeIcon, minimizeIcon } from '../dom/icons.ts'
 
 const DEMO_MODEL = 'mock:demo'
 const DEMO_TIME = '2026-07-17T09:00:00.000Z'
+
+const DEMO_MCP_STATUSES: McpServerStatus[] = [
+  {
+    name: 'proton-mcp',
+    transport: 'stdio',
+    state: 'connected',
+    toolCount: 4,
+    tools: ['list_mail', 'get_mail_body', 'send_mail', 'delete_mail'],
+    source: '/demo/copse/.mcp.json',
+    origin: 'project',
+    originDetail: '.mcp.json',
+    userEnabled: true,
+    configDisabled: false,
+  },
+]
+
+const DEMO_TOOL_PERMISSIONS: ToolPermissionCatalog = {
+  groups: [
+    {
+      id: 'copse',
+      name: 'Copse tools',
+      kind: 'copse',
+      tools: [
+        {
+          id: 'copse:read-file',
+          executionName: 'read_file',
+          name: 'Read file',
+          description: 'Read a file in the active project.',
+          policy: 'allow',
+          defaultPolicy: 'allow',
+          overridden: false,
+        },
+        {
+          id: 'copse:run-shell',
+          executionName: 'run_shell',
+          name: 'Run shell command',
+          description: 'Run a command in the project sandbox.',
+          policy: 'ask',
+          defaultPolicy: 'ask',
+          overridden: true,
+        },
+        {
+          id: 'copse:prepare-worktree',
+          executionName: 'prepare_worktree',
+          name: 'Prepare worktree',
+          description: 'Create an isolated checkout for a new thread.',
+          policy: 'ask',
+          defaultPolicy: 'ask',
+          overridden: false,
+          disabledPolicies: ['allow'],
+          disabledReason: 'Worktree preparation always requires approval.',
+        },
+      ],
+    },
+    {
+      id: 'mcp:project:proton-mcp',
+      name: 'proton-mcp',
+      kind: 'mcp',
+      origin: 'project',
+      originDetail: '/demo/copse/.mcp.json',
+      status: 'connected',
+      tools: [
+        {
+          id: 'mcp:project:proton-mcp:list-mail',
+          executionName: 'mcp__proton__list_mail',
+          name: 'List mail',
+          description: 'List messages in a mail folder.',
+          policy: 'allow',
+          defaultPolicy: 'ask',
+          overridden: true,
+        },
+        {
+          id: 'mcp:project:proton-mcp:get-mail-body',
+          executionName: 'mcp__proton__get_mail_body',
+          name: 'Get mail body',
+          description: 'Read the complete body of one message.',
+          policy: 'ask',
+          defaultPolicy: 'ask',
+          overridden: false,
+        },
+        {
+          id: 'mcp:project:proton-mcp:send-mail',
+          executionName: 'mcp__proton__send_mail',
+          name: 'Send mail',
+          description: 'Send a new mail message.',
+          policy: 'ask',
+          defaultPolicy: 'ask',
+          overridden: false,
+        },
+        {
+          id: 'mcp:project:proton-mcp:delete-mail',
+          executionName: 'mcp__proton__delete_mail',
+          name: 'Delete mail',
+          description: 'Delete a message from a mailbox.',
+          policy: 'block',
+          defaultPolicy: 'ask',
+          overridden: true,
+        },
+      ],
+    },
+  ],
+}
+
+function updateDemoToolPermissions(
+  catalog: ToolPermissionCatalog,
+  toolIds: readonly string[],
+  policy?: ToolPermissionPolicy,
+): ToolPermissionCatalog {
+  const selected = new Set(toolIds)
+  return {
+    groups: catalog.groups.map((group) => ({
+      ...group,
+      tools: group.tools.map((tool) =>
+        selected.has(tool.id)
+          ? policy
+            ? { ...tool, policy, overridden: true }
+            : { ...tool, policy: tool.defaultPolicy, overridden: false }
+          : tool,
+      ),
+    })),
+  }
+}
 
 /**
  * Plugins shown in the browser demo's Settings → Plugins list. The real list comes
@@ -32,6 +156,7 @@ const DEMO_PLUGIN_CONTRIBUTIONS: PluginContributionsSummary = {
   ui: [],
   followUps: [],
   capabilities: [],
+  instructionSources: [],
   permissions: [],
 }
 
@@ -208,6 +333,7 @@ function unsupported(): Promise<never> {
 
 export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = {}): ApiClient {
   const settings = new Map(Object.entries(scenario.settings))
+  let toolPermissionCatalog = structuredClone(DEMO_TOOL_PERMISSIONS)
   const storage = new Map<string, unknown>([
     ['projects', [scenario.project]],
     ['activeProjectId', scenario.project.id],
@@ -401,6 +527,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     fs: {
       readFile: (_projectId: string, _threadId: string, path: string) =>
         resolved(writtenFiles.get(path) ?? ''),
+      readImage: () => Promise.reject(new Error('Workspace images are unavailable in this demo')),
       writeFile: resolvedVoid,
       readdir: () => resolved(['src', 'tests', 'package.json']),
       listDir: () =>
@@ -569,7 +696,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       onConnectionChanged: subscribe,
     },
     mcp: {
-      list: emptyArray,
+      list: () => resolved(structuredClone(DEMO_MCP_STATUSES)),
       reload: emptyArray,
       setEnabled: emptyArray,
       listCurated: emptyArray,
@@ -577,12 +704,28 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       setCuratedEnabled: emptyArray,
       onStatusChanged: subscribe,
     },
+    toolPermissions: {
+      list: () => resolved(structuredClone(toolPermissionCatalog)),
+      set: (update) => {
+        toolPermissionCatalog = updateDemoToolPermissions(
+          toolPermissionCatalog,
+          update.toolIds,
+          update.policy,
+        )
+        return resolved(structuredClone(toolPermissionCatalog))
+      },
+      reset: (reset) => {
+        toolPermissionCatalog = updateDemoToolPermissions(toolPermissionCatalog, reset.toolIds)
+        return resolved(structuredClone(toolPermissionCatalog))
+      },
+    },
     canvas: {
       onArtefact: subscribe,
       onShowArtefact: subscribe,
       // The demo has no canvas store behind it: nothing was ever saved, so
       // nothing can be listed or reopened.
       listArtefacts: () => resolved([]),
+      readArtefact: () => resolved(null),
       reopenArtefact: () => resolved(false),
     },
     storage: {
@@ -704,6 +847,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       downloadArtifact: unsupported,
       artifactImageDataUrl: unsupported,
       models: emptyArray,
+      refreshImportedThread: () => resolved(null),
       discoverExternal: (_projectId?: string) =>
         resolved({
           imported: [],
@@ -1033,6 +1177,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       workingFileDiff: () => resolved(null),
       committedChanges: () => resolved(null),
       committedFileDiff: () => resolved(null),
+      currentBranch: () => resolved(currentBranch),
       // These take (projectId, threadId, …) — dropping the leading two made
       // `branchStatus` answer with the *project id* as the current branch, which
       // reads as a branch mismatch and blocks every send behind the composer's

@@ -93,6 +93,13 @@ type ChangeSelection =
   | { kind: 'git'; path: string; staged: boolean }
   | { kind: 'committed'; path: string }
 
+interface GitChangesSnapshot {
+  status: GitStatusResult | null
+  committed: GitCommittedChanges | null
+  sessionBackup: SessionBackup | null
+  selection: ChangeSelection | null
+}
+
 /** Validates a pop-out seed before it drives selection. The previous assertion
  * trusted the shape outright, so a malformed seed reached selectGitChange with
  * `staged` undefined. */
@@ -238,6 +245,9 @@ export function mountGitChangesPane(
   // the seeded path across that window. One-shot: dropped as soon as this pane
   // has a queue to judge against, whether or not the path survived in it.
   let seededProposedPath: string | null = null
+  const snapshotsByOwner = new Map<string, GitChangesSnapshot>()
+  let displayedOwnerKey = activeOwnerKey()
+  let ownerNeedsRefresh = false
 
   function activeOwner(): { projectId: string; threadId: string } | null {
     const { activeProjectId, activeThreadId } = store.getState()
@@ -246,8 +256,75 @@ export function mountGitChangesPane(
       : null
   }
 
+  function activeOwnerKey(): string | null {
+    const owner = activeOwner()
+    return owner ? checkoutOwnerKey(owner.projectId, owner.threadId) : null
+  }
+
+  function checkoutOwnerKey(projectId: string, threadId: string): string {
+    const { activeProjectId, workspaceRoot, threads } = store.getState()
+    // Other projects' pushes can arrive while their metadata is unloaded. That
+    // provisional cache must not masquerade as a validated active checkout.
+    const currentProject = projectId === activeProjectId
+    const thread = currentProject
+      ? threads.find((candidate) => candidate.id === threadId)
+      : undefined
+    const worktree = thread?.worktree
+    return JSON.stringify([
+      projectId,
+      threadId,
+      currentProject ? workspaceRoot : null,
+      thread?.gitBranch,
+      worktree?.path,
+      worktree?.branch,
+      worktree?.baseCommit,
+      worktree?.createdAt,
+      worktree?.retiredAt,
+    ])
+  }
+
+  /** Keep known rows per checkout, never carry another thread's rows or viewer. */
+  function adoptActiveOwner(): boolean {
+    const nextKey = activeOwnerKey()
+    if (nextKey === displayedOwnerKey) return false
+    if (displayedOwnerKey && loaded && gitAvailable) {
+      snapshotsByOwner.delete(displayedOwnerKey)
+      snapshotsByOwner.set(displayedOwnerKey, {
+        status,
+        committed,
+        sessionBackup,
+        // Proposed changes already have their own owner-scoped content cache.
+        selection: selection?.kind === 'proposed' ? null : selection,
+      })
+      if (snapshotsByOwner.size > 20) {
+        const oldest = snapshotsByOwner.keys().next().value
+        if (oldest !== undefined) snapshotsByOwner.delete(oldest)
+      }
+    }
+    displayedOwnerKey = nextKey
+    ownerNeedsRefresh = true
+    refreshRequestId++
+    selectRequestId++
+    const known = nextKey ? snapshotsByOwner.get(nextKey) : undefined
+    loaded = known !== undefined
+    gitAvailable = loaded
+    status = known?.status ?? null
+    committed = known?.committed ?? null
+    sessionBackup = known?.sessionBackup ?? null
+    selection = known?.selection ?? null
+    pendingNavigate = null
+    pendingProposedNavigate = null
+    seededProposedPath = null
+    conflictBanner.hidden = true
+    renderRestoreBanner()
+    clearViewer()
+    renderList()
+    if (loaded && changesModeActive(store)) void syncSelection()
+    return true
+  }
+
   function proposedDiffCacheFor(projectId: string, threadId: string): Map<string, ActiveDiff> {
-    const key = JSON.stringify([projectId, threadId])
+    const key = checkoutOwnerKey(projectId, threadId)
     let cache = proposedDiffCachesByOwner.get(key)
     if (!cache) {
       cache = new Map()
@@ -938,6 +1015,8 @@ export function mountGitChangesPane(
   }
 
   async function refresh(): Promise<void> {
+    adoptActiveOwner()
+    ownerNeedsRefresh = false
     const requestId = ++refreshRequestId
     const owner = activeOwner()
     if (!owner) {
@@ -966,6 +1045,7 @@ export function mountGitChangesPane(
       return
     gitAvailable = available
     if (!gitAvailable) {
+      if (displayedOwnerKey) snapshotsByOwner.delete(displayedOwnerKey)
       if (!availabilityFailed) gitFailureLogged = false
       loaded = true
       status = null
@@ -989,6 +1069,7 @@ export function mountGitChangesPane(
     } catch (error) {
       markGitUnavailable('git status read', error)
       if (requestId !== refreshRequestId) return
+      if (displayedOwnerKey) snapshotsByOwner.delete(displayedOwnerKey)
       status = null
       committed = null
       sessionBackup = null
@@ -1014,6 +1095,8 @@ export function mountGitChangesPane(
   }
 
   async function syncFromStore(): Promise<void> {
+    // switchThread can emit panel_changed before threads_changed.
+    adoptActiveOwner()
     renderList()
     await syncSelection()
   }
@@ -1050,6 +1133,7 @@ export function mountGitChangesPane(
       if (changesModeActive(store)) void refresh()
     }),
     store.on('git_change_navigate', (path) => {
+      adoptActiveOwner()
       pendingNavigate = path
       if (changesModeActive(store)) void refresh()
     }),
@@ -1057,31 +1141,16 @@ export function mountGitChangesPane(
       if (changesModeActive(store)) void refresh()
     }),
     store.on('workspace_changed', () => {
-      // The new workspace's git state is unknown until the refresh below lands;
-      // holding `loaded` true would show the previous repo's answer as this one's.
-      loaded = false
-      status = null
-      committed = null
-      sessionBackup = null
-      renderRestoreBanner()
-      pendingProposedNavigate = null
-      seededProposedPath = null
-      clearSelection()
-      conflictBanner.hidden = true
+      adoptActiveOwner()
       if (changesModeActive(store)) void refresh()
-      else renderList()
     }),
     store.on('threads_changed', () => {
-      refreshRequestId++
-      selectRequestId++
-      loaded = false
-      status = null
-      committed = null
-      sessionBackup = null
-      selection = null
-      seededProposedPath = null
+      // Titles, hydration, and updates to other threads do not change this
+      // checkout. Preserve its DOM/selection and avoid redundant Git IPC.
+      if (!adoptActiveOwner() && !ownerNeedsRefresh) return
+      // Inactive worktrees are not continuously watched. Revalidate on return
+      // while showing their last known rows, rather than flashing Loading.
       if (changesModeActive(store)) void refresh()
-      else renderList()
     }),
     store.on('theme_changed', (theme) => {
       monaco?.editor.setTheme(theme === 'dark' ? 'vs-dark' : 'vs')

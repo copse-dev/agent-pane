@@ -11,6 +11,13 @@ export interface CanvasArtefact {
   mimeType: string
   /** The artefact body: an HTML document, or a URL for `text/uri-list`. */
   body: string
+  /**
+   * Ask the renderer to keep this artefact in the conversation instead of
+   * opening the Browser pane as soon as it arrives. Provider presentation
+   * references use this; ordinary MCP-UI tool results retain the canvas-pane
+   * behaviour when the field is absent.
+   */
+  presentation?: 'inline'
   /** Thread that rendered this artefact; scopes tabs and previews with common titles. */
   threadId?: string
   /**

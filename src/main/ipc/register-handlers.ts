@@ -1,4 +1,5 @@
 import { containerRunRequestSchema } from '@shared/container-run-schema.ts'
+import { TOOL_PERMISSION_POLICIES } from '@shared/types/tool-permissions.ts'
 import { app, BrowserWindow, dialog, ipcMain, shell, webContents, type WebContents } from 'electron'
 import { mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
@@ -276,6 +277,7 @@ import {
   getBranches,
   getCommittedChanges,
   getCommittedFileDiff,
+  getCurrentBranchName,
   getDefaultBranch,
   getGitChangeStats,
   getGitFileDiff,
@@ -335,6 +337,11 @@ import {
   setWorkspaceTrustAndReload,
 } from '../services/mcp/mcp-registry.ts'
 import { getCuratedServerStatuses, setCuratedServerEnabled } from '../services/mcp/mcp-curated.ts'
+import {
+  listToolPermissionCatalog,
+  resetToolPermissions,
+  updateToolPermissions,
+} from '../services/security/tool-permissions.ts'
 import { isWorkspaceTrusted } from '../services/security/workspace-trust.ts'
 import {
   setMockScript,
@@ -374,6 +381,7 @@ import {
 } from '../services/providers/model-card-resolver.ts'
 import {
   fetchRemoteArtifactImageDataUrl,
+  refreshImportedCursorAgentThread,
   resolveRemoteArtifactDownloadUrl,
 } from '../services/remote/remote-agent-client.ts'
 import {
@@ -386,6 +394,7 @@ import { listActiveProjectAgentPrLinks } from '../services/remote/remote-agent-l
 import {
   gatewayListDir,
   gatewayReadFile,
+  gatewayReadImage,
   gatewayReaddir,
   gatewayWriteFile,
 } from '../project-sandbox/sandbox-fs-client.ts'
@@ -443,7 +452,11 @@ you want the coding agent to follow on every turn.
   intent is ambiguous.
 `
 
-export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry): void {
+export function registerAllHandlers(
+  win: BrowserWindow,
+  registry: ToolRegistry,
+  isDispatcherThreadActive: (projectId: string, threadId: string) => boolean = () => false,
+): void {
   const reloadMcpForWorkspace = (): void => {
     void reloadMcpServers(registry)
       .then((statuses) => {
@@ -461,9 +474,15 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   const pluginService = getPluginService()
   setPluginBrowserService(createPluginBrowserPanelService(win))
   setPluginToolRuntimeController(new ToolingPluginToolRuntimeController(registry))
-  void pluginService.refreshInstalledPlugins().catch((error: unknown) => {
-    console.warn('[plugins] startup reconciliation failed:', error)
-  })
+  void pluginService
+    .refreshInstalledPlugins()
+    // The first startup pass may have run before this handler installed the
+    // selected-plugin runtime controller. Reconcile selected sources once more
+    // so their behavior starts after the controller is available.
+    .then(() => pluginService.refreshPluginSources())
+    .catch((error: unknown) => {
+      console.warn('[plugins] startup reconciliation failed:', error)
+    })
   // Register the DevTools shortcut at boot iff the `copse.devtools-shortcut`
   // plugin is enabled. The plugin ships off (`defaultEnabled: false`) and
   // getPluginService() has already layered the user's explicit choices on top, so
@@ -717,6 +736,14 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const { root } = await resolveThreadExecutionContext(projectId, threadId)
     const abs = await resolvePathWithinRoot(relPath, root)
     return gatewayReadFile(abs, root)
+  })
+
+  ipcMain.handle('fs:read-image', async (event, ...rawArgs) => {
+    assertMainFrameSender(event, win)
+    const [projectId, threadId, relPath] = parseIpcArgs(threadPathArgs, rawArgs)
+    const { root } = await resolveThreadExecutionContext(projectId, threadId)
+    const abs = await resolvePathWithinRoot(relPath, root)
+    return gatewayReadImage(abs, root, relPath)
   })
 
   ipcMain.handle('fs:write-file', async (event, ...rawArgs) => {
@@ -1738,6 +1765,17 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     return loadCanvasArtefactSummaries(id, thread)
   })
   ipcMain.handle(
+    'canvas:read-artefact',
+    (event, projectId: unknown, threadId: unknown, title: unknown) => {
+      assertMainFrameSender(event, win)
+      const [id, thread, name] = parseIpcArgs(
+        z.tuple([zProjectId, zThreadId, z.string().trim().min(1).max(200)]),
+        [projectId, threadId, title],
+      )
+      return readStoredCanvasArtefact(id, thread, name)
+    },
+  )
+  ipcMain.handle(
     'canvas:reopen-artefact',
     async (event, projectId: unknown, threadId: unknown, title: unknown) => {
       assertMainFrameSender(event, win)
@@ -2082,7 +2120,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   // write plugin-scoped settings values under the manifest's declared schema.
   ipcMain.handle('plugins:list', async (event) => {
     assertMainFrameSender(event, win)
-    await getPluginService().refreshPluginSources()
+    await getPluginService().refreshInstalledPlugins()
     return { plugins: getPluginService().list() }
   })
   ipcMain.handle('supervisor:list', async (event, rawProjectId: unknown) => {
@@ -2149,7 +2187,17 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zNonEmptyString.max(128), [rawId])
     const enabled = parseIpcArgs(z.boolean(), [rawEnabled])
-    await getPluginService().setEnabled(id, enabled)
+    const pluginService = getPluginService()
+    await pluginService.setEnabled(id, enabled)
+    if (pluginService.hasUserPlugin(id)) {
+      // The plugin toggle is the portable component consent boundary. Refresh
+      // both registries immediately so skills and MCP disappear atomically on
+      // disable and become available without a restart on enable.
+      await initSkillsRegistry()
+      registerSkillTools(registry)
+      const statuses = await reloadMcpServers(registry)
+      win.webContents.send('mcp:status-changed', statuses)
+    }
     // P5: toggling the model-comparison plugin adds/removes its `compare_models`
     // tool on the live registry so the atomic plugin-disable also drops the tool
     // from the model tool list without an app restart (mirrors the setting
@@ -2282,7 +2330,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     },
   )
 
-  // Apple Development first-party pack. Renderer requests carry only project/thread
+  // Apple Development first-party plugin. Renderer requests carry only project/thread
   // identities; main resolves and validates the checkout before every operation.
   const appleInvocation = (
     projectId: string,
@@ -2511,7 +2559,11 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('git:change-stats', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
-    return getGitChangeStats(await resolveWatchedGitRoot(projectId, threadId))
+    const root = await resolveWatchedGitRoot(projectId, threadId)
+    return getGitChangeStats(root, {
+      includeCommitted: true,
+      hasOpenPr: (branch) => branchHasOpenPr(projectId, branch, root),
+    })
   })
   ipcMain.handle('git:file-diff', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
@@ -2543,6 +2595,11 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const [projectId, threadId, filePath] = parseIpcArgs(threadPathArgs, rawArgs)
     const root = await resolveWatchedGitRoot(projectId, threadId)
     return getGitWorkingFileDiff(filePath, root)
+  })
+  ipcMain.handle('git:current-branch', async (event, ...rawArgs) => {
+    assertMainFrameSender(event, win)
+    const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
+    return getCurrentBranchName(await resolveWatchedGitRoot(projectId, threadId))
   })
   ipcMain.handle('git:branch-status', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
@@ -2751,6 +2808,19 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const id = parseIpcArgs(zProjectId, [projectId])
     return discoverExternalCursorAgents({ projectId: id })
   })
+  ipcMain.handle(
+    'remote-agent:refresh-imported-thread',
+    (event, projectId: unknown, threadId: unknown) => {
+      assertMainFrameSender(event, win)
+      const [id, thread] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
+      return refreshImportedCursorAgentThread({
+        projectId: id,
+        threadId: thread,
+        isThreadRunning: (candidateId) =>
+          isDispatcherThreadActive(id, candidateId) || listRunningThreadIds().includes(candidateId),
+      })
+    },
+  )
   ipcMain.handle('acp:detect-agents', (event) => {
     assertMainFrameSender(event, win)
     return detectAcpAgents()
@@ -2823,6 +2893,30 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       [mode],
     )
     return takePopoutSeed(parsed)
+  })
+
+  ipcMain.handle('tool-permissions:list', (event) => {
+    assertMainFrameSender(event, win)
+    return listToolPermissionCatalog(registry, getMcpServerStatuses())
+  })
+  ipcMain.handle('tool-permissions:set', async (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    const update = parseIpcArgs(
+      z.object({
+        toolIds: z.array(z.string().min(1).max(8192)).max(2_000),
+        policy: z.enum(TOOL_PERMISSION_POLICIES),
+      }),
+      [raw],
+    )
+    return updateToolPermissions(registry, getMcpServerStatuses(), update)
+  })
+  ipcMain.handle('tool-permissions:reset', async (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    const reset = parseIpcArgs(
+      z.object({ toolIds: z.array(z.string().min(1).max(8192)).max(2_000) }),
+      [raw],
+    )
+    return resetToolPermissions(registry, getMcpServerStatuses(), reset)
   })
 
   ipcMain.handle('mcp:list', (event) => {

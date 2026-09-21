@@ -490,14 +490,28 @@ async function canApplyFileOpDirectly(
  * this baseline by {@link adoptWorktreeChangesSince} so only paths the command
  * actually changed are adopted.
  */
+const WORKTREE_BASELINE_READ_CONCURRENCY = 8
+
 export async function captureWorktreeBaseline(): Promise<Map<string, string>> {
   const state = stateFor()
   const baseline = new Map<string, string>()
   const status = await getGitStatus(executionRootFor(state), { untrackedFiles: 'all' })
   if (!status) return baseline
-  const paths = new Set([...status.staged, ...status.unstaged].map((c) => c.path))
+  const paths = [...new Set([...status.staged, ...status.unstaged].map((c) => c.path))]
   const root = executionRootFor(state)
-  for (const path of paths) baseline.set(ownedKey(path), await readCurrentContent(path, root))
+  // Local files are independent reads, and remote/sandboxed workspaces can add
+  // meaningful latency to each one. Bound the fan-out so a very dirty tree
+  // cannot flood the filesystem transport, then insert each completed batch in
+  // git-status order to keep the returned Map deterministic.
+  for (let offset = 0; offset < paths.length; offset += WORKTREE_BASELINE_READ_CONCURRENCY) {
+    const batch = paths.slice(offset, offset + WORKTREE_BASELINE_READ_CONCURRENCY)
+    const entries = await Promise.all(
+      batch.map(async (path) => [path, await readCurrentContent(path, root)] as const),
+    )
+    for (const [path, content] of entries) {
+      baseline.set(ownedKey(path), content)
+    }
+  }
   return baseline
 }
 

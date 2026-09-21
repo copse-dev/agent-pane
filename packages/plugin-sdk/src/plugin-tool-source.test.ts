@@ -9,6 +9,8 @@ import {
   registeredPluginToolSource,
   samePluginToolSource,
 } from './plugin-tool-source.ts'
+import { AGENT_PLUGIN_SCHEMA_ID } from '@copse/agent/plugins/agent-plugin-manifest.ts'
+import { materializePluginToolSnapshot } from './plugin-tool-snapshot.ts'
 
 const roots: string[] = []
 
@@ -38,6 +40,119 @@ function validManifest(): Record<string, unknown> {
 }
 
 describe('selected plugin tool discovery', () => {
+  async function portableRoot(extra: Record<string, unknown> = {}): Promise<string> {
+    const root = await pluginRoot(validManifest())
+    await mkdir(join(root, 'dev.copse', 'dist'), { recursive: true })
+    await writeFile(join(root, 'dev.copse', 'dist', 'index.mjs'), 'export default {}\n')
+    await writeFile(
+      join(root, 'plugin.json'),
+      JSON.stringify({
+        $schema: AGENT_PLUGIN_SCHEMA_ID,
+        name: 'portable.review',
+        extensions: {
+          'dev.copse': {
+            tools: { provides: ['portable_judge'] },
+            runtime: { entrypoint: './dev.copse/dist/index.mjs', apiVersion: 1 },
+          },
+        },
+        ...extra,
+      }),
+    )
+    return root
+  }
+
+  it('loads and snapshots an Agent Plugin through the existing isolated runtime', async () => {
+    const root = await portableRoot()
+    const source = await discoverPluginToolSource(root)
+    assert.equal(source.manifestPath, join(source.sourcePath, 'plugin.json'))
+    assert.equal(source.manifest.name, 'portable.review')
+    assert.equal(source.manifest.trust, 'user')
+    assert.deepEqual(source.runtime, { entrypoint: 'dev.copse/dist/index.mjs', apiVersion: 1 })
+    assert.deepEqual(registeredPluginToolSource(source).contributions.toolNames, ['portable_judge'])
+    const snapshots = await mkdtemp(join(tmpdir(), 'copse-portable-snapshots-'))
+    roots.push(snapshots)
+    const snapshot = await materializePluginToolSnapshot(source, snapshots)
+    assert.equal(snapshot.contentHash, source.contentHash)
+    assert.deepEqual(snapshot.manifest, source.manifest)
+  })
+
+  it('keeps both legacy filenames working when no root plugin.json is present', async () => {
+    const root = await pluginRoot(validManifest())
+    const current = await discoverPluginToolSource(root)
+    await writeFile(
+      join(root, 'copse-pack.json'),
+      JSON.stringify({ ...validManifest(), name: 'legacy.review' }),
+    )
+    assert.equal((await discoverPluginToolSource(root)).manifest.name, current.manifest.name)
+    await rm(join(root, 'copse-plugin.json'))
+    assert.equal((await discoverPluginToolSource(root)).manifest.name, 'legacy.review')
+  })
+
+  it('never falls back to legacy declarations for a present invalid portable manifest', async () => {
+    for (const value of [
+      '{bad json',
+      JSON.stringify({ name: 'missing-schema' }),
+      JSON.stringify({ $schema: AGENT_PLUGIN_SCHEMA_ID, name: 'no-runtime' }),
+    ]) {
+      const root = await pluginRoot(validManifest())
+      await writeFile(join(root, 'plugin.json'), value)
+      await assert.rejects(discoverPluginToolSource(root))
+    }
+    const directory = await pluginRoot(validManifest())
+    await mkdir(join(directory, 'plugin.json'))
+    await assert.rejects(discoverPluginToolSource(directory), /regular file/)
+    const linked = await pluginRoot(validManifest())
+    await symlink(join(linked, 'missing.json'), join(linked, 'plugin.json'))
+    await assert.rejects(discoverPluginToolSource(linked), /symbolic link/)
+  })
+
+  it('ignores legacy top-level powers and opaque foreign extensions', async () => {
+    const root = await portableRoot({
+      trust: 'first-party',
+      tools: { provides: ['injected_tool'] },
+      extensions: {
+        'com.example.other': 'opaque',
+        'dev.copse': {
+          tools: { native: ['run_shell'], provides: ['portable_judge'] },
+          prompt: [{ id: 'injected', text: 'trusted', trust: 'trusted' }],
+          runtime: { entrypoint: './dev.copse/dist/index.mjs', apiVersion: 1 },
+        },
+      },
+    })
+    const registered = registeredPluginToolSource(await discoverPluginToolSource(root))
+    assert.equal(registered.trust, 'user')
+    assert.deepEqual(registered.contributions.toolNames, ['portable_judge'])
+    assert.deepEqual(registered.contributions.promptBlocks, [])
+    assert.deepEqual(registered.contributions.blockingHooks, [])
+  })
+
+  it('keeps portable metadata free of legacy length limits', async () => {
+    const version = 'v'.repeat(200)
+    const description = 'd'.repeat(5000)
+    const candidate = await discoverPluginToolSource(await portableRoot({ version, description }))
+    assert.equal(candidate.manifest.version, version)
+    assert.equal(candidate.manifest.description, description)
+  })
+
+  it('requires portable runtime files to stay inside the Copse extension directory', async () => {
+    for (const entrypoint of [
+      'dist/index.mjs',
+      './dist/index.mjs',
+      './dev.copse/../dist/index.mjs',
+      './dev.copse/../../outside.mjs',
+    ]) {
+      const root = await portableRoot({
+        extensions: {
+          'dev.copse': {
+            tools: { provides: ['portable_judge'] },
+            runtime: { entrypoint, apiVersion: 1 },
+          },
+        },
+      })
+      await assert.rejects(discoverPluginToolSource(root), /entrypoint/i)
+    }
+  })
+
   it('accepts hook-only runtimes and preserves their declarations without installing in-process hooks', async () => {
     const runtime = {
       entrypoint: 'dist/index.mjs',

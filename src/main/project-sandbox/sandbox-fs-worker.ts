@@ -15,13 +15,16 @@ import { errorMessage } from '@shared/errors.ts'
 import * as fsp from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { isRecord, parseJsonUnknown } from '@shared/unknown-value.ts'
+import { localWorkspaceFs } from '../services/workspace-fs/local-workspace-fs.ts'
+import { readWorkspaceImage } from '../services/workspace-fs/image-content.ts'
 
 type ReadFileReq = { op: 'readFile'; path: string; encoding: 'utf-8' }
+type ReadImageReq = { op: 'readImage'; path: string; displayPath: string }
 type WriteFileReq = { op: 'writeFile'; path: string; content: string; encoding: 'utf-8' }
 type ReaddirReq = { op: 'readdir'; path: string }
 type StatEntryReq = { op: 'statDir'; path: string }
 
-type Request = ReadFileReq | WriteFileReq | ReaddirReq | StatEntryReq
+type Request = ReadFileReq | ReadImageReq | WriteFileReq | ReaddirReq | StatEntryReq
 
 type ResponseBody =
   | { ok: true; data?: string; entries?: string[]; dirents?: { name: string; isDir: boolean }[] }
@@ -33,6 +36,10 @@ const SERVER_ENV = 'COPSE_SANDBOX_FS_SERVER'
 function parseRequest(value: unknown): Request | null {
   if (!isRecord(value) || typeof value['path'] !== 'string') return null
   switch (value['op']) {
+    case 'readImage':
+      return typeof value['displayPath'] === 'string'
+        ? { op: value['op'], path: value['path'], displayPath: value['displayPath'] }
+        : null
     case 'readFile':
       return value['encoding'] === 'utf-8'
         ? { op: value['op'], path: value['path'], encoding: value['encoding'] }
@@ -56,6 +63,11 @@ function parseRequest(value: unknown): Request | null {
 
 async function handle(req: Request): Promise<ResponseBody> {
   switch (req.op) {
+    case 'readImage':
+      return {
+        ok: true,
+        data: await readWorkspaceImage(localWorkspaceFs, req.path, req.displayPath),
+      }
     case 'readFile': {
       const data = await fsp.readFile(req.path, req.encoding)
       return { ok: true, data }

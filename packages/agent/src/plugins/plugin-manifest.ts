@@ -71,6 +71,25 @@ export interface PluginCapabilityDecl {
 }
 
 /**
+ * A first-party instruction-source adapter owned by a plugin.
+ *
+ * The declaration is intentionally metadata-only. Source-specific policy lives
+ * with the first-party plugin in `packages/agent`; filesystem reads, workspace
+ * trust, symlink containment, byte limits, and prompt rendering remain in the
+ * host instruction engine. User plugins cannot contribute this kind: allowing a
+ * repository manifest to rewrite the always-on instruction stream would be a
+ * prompt-injection privilege escalation.
+ */
+export interface PluginInstructionSourceDecl {
+  /** Stable source id read through `PluginRegistry.isInstructionSourceActive`. */
+  name: string
+  /** Human title shown in Settings contribution enumeration. */
+  title: string
+  /** Optional explanation of the files and activation policy this source owns. */
+  description?: string
+}
+
+/**
  * A permission / sandbox relaxation a plugin DECLARES it may request — the missing
  * "what authority does this plugin open" contribution kind (issue #1190). Some
  * features are, in essence, a sandbox relaxation gated by a permission prompt:
@@ -103,7 +122,7 @@ export interface PluginPermissionDecl {
 /**
  * What clicking a plugin-contributed follow-up bubble does.
  *  - `prompt` — send the decl's `prompt` to the agent, exactly what every
- *    follow-up bubble did before packs could contribute one.
+ *    follow-up bubble did before plugins could contribute one.
  *  - `model-compare` — open the comparison model picker, then run the
  *    comparison with what the user chose.
  *
@@ -123,7 +142,7 @@ export type PluginFollowUpAction = 'prompt' | 'model-compare'
  * context) instead of shipping code that runs at the end of every turn.
  *
  * `workspace-changes` — only when the working tree has uncommitted changes.
- * `always` — whenever the pack is enabled (the default).
+ * `always` — whenever the plugin is enabled (the default).
  */
 export type PluginFollowUpCondition = 'always' | 'workspace-changes'
 
@@ -326,7 +345,7 @@ export interface PluginContributions {
   /**
    * Follow-up bubbles offered above the composer while enabled. Like every other
    * contribution kind these are consulted only for *new* work — a bubble already
-   * on screen when the pack is disabled is stale UI, not history, and clears on
+   * on screen when the plugin is disabled is stale UI, not history, and clears on
    * the next turn.
    */
   readonly followUps: readonly PluginFollowUpDecl[]
@@ -337,6 +356,12 @@ export interface PluginContributions {
    * contribution kinds.
    */
   readonly capabilities: readonly PluginCapabilityDecl[]
+  /**
+   * First-party instruction sources active while their owning plugin is enabled.
+   * The host instruction engine is the only consumer and retains all I/O and
+   * trust enforcement.
+   */
+  readonly instructionSources: readonly PluginInstructionSourceDecl[]
   /**
    * Permission / sandbox relaxations the plugin may request while enabled. A
    * relaxation is grantable iff some enabled plugin declares it (see
@@ -358,6 +383,7 @@ export const EMPTY_PLUGIN_CONTRIBUTIONS: PluginContributions = {
   uiContributions: [],
   followUps: [],
   capabilities: [],
+  instructionSources: [],
   permissions: [],
 }
 
@@ -469,7 +495,7 @@ export function pluginManifestFromPluginJson(
   // blocks (decision 15's capability tiering applied to prompt).
   if (raw.prompt) manifest.prompt = raw.prompt.map((b) => ({ ...b, trust: 'untrusted' }))
   if (raw.ui) manifest.ui = raw.ui
-  // A discovered pack may *suggest* a follow-up, never bind one to a host action:
+  // A discovered plugin may *suggest* a follow-up, never bind one to a host action:
   // `model-compare` opens a picker that spends money, and the rest of the action
   // vocabulary drives app UI outside the agent. Force every declared action back
   // to `prompt` here (the same self-grant this function denies prompt blocks), so

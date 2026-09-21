@@ -28,8 +28,7 @@ describe('hook cards in the transcript', function () {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
     // Executions + deny decision folded from the spine hook_run records.
-    const cards = await $$('.hook-card')
-    await browser.waitUntil(async () => (await cards.length) >= 3, { timeout: 10_000 })
+    await browser.waitUntil(async () => (await $$('.hook-card')).length >= 3, { timeout: 10_000 })
 
     await expect($('.hook-card[data-status="allow"]')).toBeExisting()
     await expect($('.hook-card[data-hook-kind="decision"][data-status="deny"]')).toBeExisting()
@@ -56,7 +55,7 @@ describe('hook cards in the transcript', function () {
     await expect(group).toHaveAttribute('data-status', 'deny')
     const summary = await group.$(':scope > .hook-card-header .hook-card-status')
     await expect(summary).toHaveText(expect.stringMatching(/^1 blocked/))
-    await expect(summary).toHaveText(expect.stringMatching(/3 ran/))
+    await expect(summary).toHaveText(expect.stringMatching(/4 ran/))
 
     // Once the user expands the group, allow-only/no-op hooks remain contracted
     // while a hook that applied a deny is already open with its effect first.
@@ -69,6 +68,11 @@ describe('hook cards in the transcript', function () {
     await expect(deny).toHaveAttribute('open')
     await expect(deny.$('.hook-card-status')).toHaveText('Blocked action')
     await expect(deny.$('.hook-card-detail')).toHaveText(expect.stringMatching(/gated action/))
+    const finalize = await group.$('.hook-card[data-hook-run="hr-finalize"]')
+    await expect(finalize).toHaveAttribute('open')
+    await expect(finalize.$('.hook-card-detail')).toHaveText(
+      expect.stringMatching(/tool-enabled finalization turn/),
+    )
 
     // The hook-originated follow-up turn is marked, not shown as a plain user msg.
     const originTurn = await $('.msg-hook-origin[data-hook-id="todo-closeout"]')

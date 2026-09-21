@@ -13,6 +13,7 @@ import {
 } from './tests/e2e/helpers/after-test-safety.ts'
 import { installSettingsActionBarClickSafety } from './tests/e2e/helpers/settings-action-bar-click.ts'
 import { assertNoErrorToasts } from './tests/e2e/helpers/assert-no-error-toasts.ts'
+import { resolveElectronBrowserVersion } from './tests/e2e/helpers/electron-browser-version.ts'
 import { assignDebugPort, type ChromeCapabilities } from './tests/e2e/helpers/debug-port.ts'
 import { driverVerboseOptions } from './tests/e2e/helpers/driver-verbose.ts'
 import { E2E_GIT_BRANCH, E2E_SHELL } from './tests/e2e/helpers/e2e-env.ts'
@@ -35,6 +36,7 @@ const chromedriverBinary =
     'bin',
     'chromedriver',
   )
+const electronBrowserVersion = resolveElectronBrowserVersion(electronBinary, chromedriverBinary)
 
 let e2eUserDataDir: string | null = null
 let cleanupE2eUserDataDir: (() => void) | null = null
@@ -63,9 +65,9 @@ export const config: Options.Testrunner = {
   capabilities: [
     {
       browserName: 'chrome',
-      // Must match the Chromium shipped by the pinned Electron (electron ^43 →
-      // Chromium 150); the session reports 150.0.7871.46 at runtime.
-      browserVersion: '150.0.7871.46',
+      // Read from the pinned Electron binary and checked against ChromeDriver
+      // before WebDriver launches the app.
+      browserVersion: electronBrowserVersion,
       // `verbose` is forwarded to the driver as `--verbose` (@wdio/utils turns
       // every chromedriverOptions key into a CLI flag). On by default in CI,
       // because the session-handshake evidence that diagnosed #1606 was only
@@ -236,7 +238,7 @@ export const config: Options.Testrunner = {
       // Agent Plugins discovery root. Isolating it matters beyond the discovery
       // spec: without the override the app would walk the *developer's* real
       // ~/.copse/plugins, so whatever they happen to have installed would leak
-      // into every Settings → Packs assertion and screenshot.
+      // into every Settings → Plugins assertion and screenshot.
       COPSE_PLUGINS_DIR: join(e2eUserDataDir, 'plugins'),
       // Blank every provider key the app recognises so e2e is deterministic:
       // the mock LLM is used (no real key), and the env-key-detection scan

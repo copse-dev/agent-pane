@@ -131,9 +131,51 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
   'browser_tabs',
 ]
 
-/** Core tools plus ACP-safe tools declared by currently enabled first-party plugins. */
-export function activeBridgeToolNames(_projectId?: string): readonly string[] {
-  return [...new Set([...BRIDGE_TOOL_NAMES, ...getDefaultPluginRegistry().activeAcpToolNames()])]
+/**
+ * Core/plugin tools plus connected MCP tools that Copse can mediate per call.
+ *
+ * Configured MCP servers used to be handed straight to the external agent in
+ * `session/new`. That made their calls invisible to the host, so a per-tool
+ * allow/ask/block policy could not be enforced. Advertising the registered
+ * `mcp__...` tools through this bridge keeps their execution in ToolRegistry,
+ * alongside the existing hooks, read-only checks, and permission gate.
+ */
+export function activeBridgeToolNames(
+  _projectId?: string,
+  registry?: ToolRegistry,
+): readonly string[] {
+  const mcpTools = registry?.names().filter((name) => name.startsWith('mcp__')) ?? []
+  return [
+    ...new Set([
+      ...BRIDGE_TOOL_NAMES,
+      ...getDefaultPluginRegistry().activeAcpToolNames(),
+      ...mcpTools,
+    ]),
+  ]
+}
+
+// Permission requests arrive on the ACP client channel without a reference to
+// the bridge instance that offered the tool. Keep a process-local refcount of
+// the MCP names live bridges advertised so title recognition can suppress only
+// the external agent's duplicate prompt; the bridged call itself still enters
+// ToolRegistry and must pass Copse's gate.
+const activeMediatedMcpTools = new Map<string, number>()
+
+function retainMediatedMcpTools(names: readonly string[]): void {
+  for (const name of names) {
+    if (!name.startsWith('mcp__')) continue
+    activeMediatedMcpTools.set(name, (activeMediatedMcpTools.get(name) ?? 0) + 1)
+  }
+}
+
+function releaseMediatedMcpTools(names: readonly string[]): void {
+  for (const name of names) {
+    if (!name.startsWith('mcp__')) continue
+    const count = activeMediatedMcpTools.get(name)
+    if (count === undefined) continue
+    if (count <= 1) activeMediatedMcpTools.delete(name)
+    else activeMediatedMcpTools.set(name, count - 1)
+  }
 }
 
 /**
@@ -168,9 +210,10 @@ export function activeBridgeToolNames(_projectId?: string): readonly string[] {
 export function isBridgedNativeToolTitle(title: string | null | undefined): boolean {
   if (!title) return false
   const text = unwrapInlineCode(title)
-  return activeBridgeToolNames(getThreadExecutionContext()?.projectId).some((tool) =>
-    matchesBridgedToolName(text, tool),
-  )
+  return [
+    ...activeBridgeToolNames(getThreadExecutionContext()?.projectId),
+    ...activeMediatedMcpTools.keys(),
+  ].some((tool) => matchesBridgedToolName(text, tool))
 }
 
 export interface AcpNativeBridge {
@@ -210,7 +253,7 @@ function bridgedTools(
   registry: ToolRegistry,
   projectId?: string,
 ): { name: string; description: string; inputSchema: Record<string, unknown> }[] {
-  const offered = new Set(activeBridgeToolNames(projectId))
+  const offered = new Set(activeBridgeToolNames(projectId, registry))
   // toMcpTools, not toLLMTools: the agent forwards these schemas to the
   // Anthropic API, which validates them as JSON Schema draft 2020-12 and
   // 400s the whole request on the openapi-3.0 flavor.
@@ -338,7 +381,7 @@ function buildMcpServer(
   })
   server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     const name = request.params.name
-    if (!activeBridgeToolNames(ctx.projectId).includes(name) || !registry.has(name)) {
+    if (!activeBridgeToolNames(ctx.projectId, registry).includes(name) || !registry.has(name)) {
       return {
         content: [{ type: 'text', text: `Tool "${name}" is not offered by this bridge.` }],
         isError: true,
@@ -575,10 +618,13 @@ export async function startAcpNativeBridge(
     })
     throw new Error('ACP native bridge did not bind a TCP port')
   }
+  const offeredToolNames = bridgedTools(registry, opts.projectId).map((tool) => tool.name)
+  retainMediatedMcpTools(offeredToolNames)
+  let closed = false
   return {
     url: `http://127.0.0.1:${String(address.port)}/mcp`,
     token,
-    toolNames: bridgedTools(registry).map((tool) => tool.name),
+    toolNames: offeredToolNames,
     setAdvisorContext: (context): void => {
       advisorContext.current = context
     },
@@ -591,13 +637,17 @@ export async function startAcpNativeBridge(
     setWorkspaceWriteObserver: (observer): void => {
       workspaceWriteObserver = observer
     },
-    close: () =>
-      new Promise<void>((resolve) => {
+    close: (): Promise<void> => {
+      if (closed) return Promise.resolve()
+      closed = true
+      releaseMediatedMcpTools(offeredToolNames)
+      return new Promise<void>((resolve) => {
         httpServer.close(() => {
           resolve()
         })
         // Turn teardown must not hang on a stuck stream from the dead agent.
         httpServer.closeAllConnections()
-      }),
+      })
+    },
   }
 }

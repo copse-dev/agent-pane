@@ -35,6 +35,10 @@ import { DARK_FACTORY_PLUGIN_ID } from '@copse/agent/plugins/dark-factory-plugin
 import { PARALLEL_SEARCH_PLUGIN_ID } from '@copse/agent/plugins/parallel-search-plugin.ts'
 import { ARTIFACT_CHECKPOINT_PLUGIN_ID } from '@copse/agent/plugins/artifact-checkpoint-plugin.ts'
 import { APPLE_DEVELOPMENT_PLUGIN_ID } from '@copse/agent/plugins/apple-development-plugin.ts'
+import {
+  AGENTS_MD_INSTRUCTION_FILES_SETTING_ID,
+  AGENTS_MD_PLUGIN_ID,
+} from '@copse/agent/plugins/agents-md-plugin.ts'
 import { storageDelete, storageGet, storageSet } from '../storage/storage.ts'
 import {
   __resetPluginServiceForTests,
@@ -45,6 +49,7 @@ import {
   setPluginToolRuntimeController,
   type PluginToolRuntimeController,
 } from './plugin-tool-controller.ts'
+import { agentPluginMcpServerName } from './agent-plugin-mcp-runtime.ts'
 
 const PLUGIN_DISABLED_KEY = 'pluginDisabled'
 const AUTOMATIONS_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.automationsEnablement'
@@ -52,6 +57,7 @@ const PARALLEL_SEARCH_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.parallelSearch
 const ARTIFACT_CHECKPOINT_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.artifactCheckpointEnablement'
 const BACKGROUND_TASKS_STABLE_MIGRATION_KEY = 'pluginMigration.backgroundTasksStable'
 const APPLE_DEVELOPMENT_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.appleDevelopmentEnablement'
+const AGENTS_MD_MODE_MIGRATION_KEY = 'pluginMigration.agentsMdInstructionFiles'
 const PLUGIN_SOURCES_KEY = 'pluginSources'
 const pluginSettingsKey = (id: string): string => `plugin.${id}.settings`
 const localPluginRoots: string[] = []
@@ -128,6 +134,7 @@ function clearStorage(): void {
   storageSet(ARTIFACT_CHECKPOINT_ENABLEMENT_MIGRATION_KEY, true)
   storageSet(BACKGROUND_TASKS_STABLE_MIGRATION_KEY, true)
   storageSet(APPLE_DEVELOPMENT_ENABLEMENT_MIGRATION_KEY, true)
+  storageSet(AGENTS_MD_MODE_MIGRATION_KEY, true)
   storageSet(PLUGIN_SOURCES_KEY, [])
   storageSet(pluginSettingsKey('demo.plugin'), {})
   storageSet(pluginSettingsKey('copse.other'), {})
@@ -292,6 +299,23 @@ describe('PluginService', () => {
     assert.ok(plugin?.source)
     assert.equal(plugin.source.path, await realpath(selectedSource))
     assert.deepEqual(plugin.contributions.toolNames, ['personal_judge'])
+  })
+
+  it('lets a selected source replace a passive candidate discovered first', async () => {
+    const id = 'personal.late-selected'
+    const selectedSource = await makeToolPlugin(id)
+    storageSet(PLUGIN_SOURCES_KEY, [selectedSource])
+    process.env['COPSE_PLUGINS_DIR'] = await makeAgentPluginRoot(id)
+
+    const service = createPluginService(makeRegistry())
+    await service.refreshUserPlugins()
+    assert.equal(service.list().find((candidate) => candidate.id === id)?.source, undefined)
+
+    await service.refreshPluginSources()
+    const selected = service.list().find((candidate) => candidate.id === id)
+    assert.ok(selected?.source)
+    assert.equal(selected.source.path, await realpath(selectedSource))
+    assert.deepEqual(selected.contributions.toolNames, ['personal_judge'])
   })
 
   it('starts selected tool behavior on add and stops it before disabling the plugin', async () => {
@@ -574,7 +598,9 @@ describe('migratePackKeysToPlugin', () => {
 
     getPluginService()
 
-    assert.deepEqual(storageGet('plugin.demo.plugin.settings'), { strictness: 4 })
+    assert.deepEqual(storageGet('plugin.demo.plugin.settings'), {
+      strictness: 4,
+    })
   })
 
   // The case above passes for a reason that does not hold on disk. This shim
@@ -615,7 +641,10 @@ describe('migratePackKeysToPlugin', () => {
     // the sibling. Both have to survive.
     storageSet('packDisabled', [])
     storageSet('pack', {
-      demo: { one: { settings: { strictness: 4 } }, two: { settings: { verbose: true } } },
+      demo: {
+        one: { settings: { strictness: 4 } },
+        two: { settings: { verbose: true } },
+      },
     })
     storageSet('plugin', { demo: { one: { settings: { strictness: 9 } } } })
 
@@ -661,6 +690,44 @@ describe('migratePackKeysToPlugin', () => {
     // default-off set, exactly as a fresh install gets.
     assert.equal(parseStringList(storageGet('pluginDisabled')).length > 0, true)
     assert.equal(storageGet('packDisabled'), undefined)
+  })
+})
+
+describe('AGENTS.md instruction mode migration', () => {
+  beforeEach(() => {
+    __resetPluginServiceForTests()
+    clearStorage()
+    storageDelete(AGENTS_MD_MODE_MIGRATION_KEY)
+    storageDelete(pluginSettingsKey(AGENTS_MD_PLUGIN_ID))
+  })
+
+  afterEach(() => {
+    __resetPluginServiceForTests()
+    clearStorage()
+  })
+
+  it('preserves combined AGENTS.md + CLAUDE.md behavior for an existing profile', () => {
+    storageSet(PLUGIN_DISABLED_KEY, [])
+
+    getPluginService()
+
+    assert.deepEqual(storageGet(pluginSettingsKey(AGENTS_MD_PLUGIN_ID)), {
+      [AGENTS_MD_INSTRUCTION_FILES_SETTING_ID]: 'claude-md-and-agents-md',
+    })
+  })
+
+  it('keeps the fallback manifest default for a fresh profile', () => {
+    storageDelete(PLUGIN_DISABLED_KEY)
+
+    const service = getPluginService()
+
+    const agents = service.list().find((plugin) => plugin.id === AGENTS_MD_PLUGIN_ID)
+    assert.equal(
+      agents?.settings.find((setting) => setting.id === AGENTS_MD_INSTRUCTION_FILES_SETTING_ID)
+        ?.value,
+      'claude-md-or-agents-md',
+    )
+    assert.equal(storageGet(pluginSettingsKey(AGENTS_MD_PLUGIN_ID)), undefined)
   })
 })
 
@@ -722,7 +789,7 @@ describe('declaredMcpServers', () => {
     // this list: the server is not running because the plugin is not.
     assert.deepEqual(service.declaredMcpServers(), [
       {
-        name: 'reviewer',
+        name: agentPluginMcpServerName('acme.declarer', 'reviewer'),
         transport: 'stdio',
         pluginId: 'acme.declarer',
         pluginEnabled: false,
@@ -731,7 +798,7 @@ describe('declaredMcpServers', () => {
     ])
   })
 
-  it('keeps reporting the server once the user turns the plugin on', async () => {
+  it('moves a supported server out of the inert declarations once enabled', async () => {
     process.env['COPSE_PLUGINS_DIR'] = await seedPlugin('acme.declarer', {
       reviewer: { type: 'stdio', command: './bin/reviewer' },
     })
@@ -740,13 +807,31 @@ describe('declaredMcpServers', () => {
     await service.refreshUserPlugins()
     await service.setEnabled('acme.declarer', true)
 
-    // Enabling a plugin does not start its MCP servers, so the row has to stay —
-    // dropping it here would read as "now running", which is the one thing it
-    // must never imply.
-    const [declared] = service.declaredMcpServers()
-    assert.ok(declared)
-    assert.equal(declared.pluginEnabled, true)
-    assert.match(declared.reason, /does not start plugin MCP servers yet/)
+    assert.deepEqual(service.declaredMcpServers(), [])
+    assert.deepEqual(
+      service.enabledUserPlugins().map((plugin) => plugin.manifest.name),
+      ['acme.declarer'],
+    )
+  })
+
+  it('reports unsupported SSE after the plugin is enabled', async () => {
+    process.env['COPSE_PLUGINS_DIR'] = await seedPlugin('acme.legacy', {
+      events: { type: 'sse', url: 'https://example.com/events' },
+    })
+
+    const service = createPluginService(makeRegistry())
+    await service.refreshUserPlugins()
+    await service.setEnabled('acme.legacy', true)
+
+    assert.deepEqual(service.declaredMcpServers(), [
+      {
+        name: agentPluginMcpServerName('acme.legacy', 'events'),
+        transport: 'http',
+        pluginId: 'acme.legacy',
+        pluginEnabled: true,
+        reason: 'Copse does not support the legacy HTTP+SSE transport declared by this server.',
+      },
+    ])
   })
 
   it('is empty when no discovered plugin declares any', async () => {

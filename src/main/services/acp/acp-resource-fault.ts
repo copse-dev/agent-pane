@@ -77,7 +77,9 @@ export interface StderrFaultWatcher {
  * Shared by every transport that captures stderr — local, sandboxed and SSH —
  * so remote agents are diagnosed as precisely as local ones.
  */
-export function createStderrFaultWatcher(limitLabel: string): StderrFaultWatcher {
+type LimitLabel = string | (() => string)
+
+export function createStderrFaultWatcher(limitLabel: LimitLabel): StderrFaultWatcher {
   let window = ''
   let fault: AcpAgentResourceFault | null = null
   return {
@@ -86,7 +88,10 @@ export function createStderrFaultWatcher(limitLabel: string): StderrFaultWatcher
       window = (window + chunk).slice(-STDERR_WINDOW)
       const found = detectAcpResourceFault(window)
       if (!found) return null
-      fault = { ...found, limitLabel }
+      fault = {
+        ...found,
+        limitLabel: typeof limitLabel === 'function' ? limitLabel() : limitLabel,
+      }
       // The window has served its purpose; the first fault is the one reported.
       window = ''
       return fault
@@ -104,8 +109,12 @@ export interface AgentStderrWatchOptions {
   /** Log prefix identifying the agent and how it was reached, e.g. `acp-ssh:codex`. */
   prefix: string
   command: string
-  /** The ceiling this agent runs under — see {@link AcpAgentResourceFault}. */
-  limitLabel: string
+  /**
+   * The ceiling this agent runs under — see {@link AcpAgentResourceFault}.
+   * Local transports pass a lazy reader because Node's diagnostic report is
+   * expensive and the value is only needed after an EMFILE/ENFILE report.
+   */
+  limitLabel: LimitLabel
   /** Called with every raw chunk, for a caller that keeps its own stderr tail. */
   onText?: (text: string) => void
 }

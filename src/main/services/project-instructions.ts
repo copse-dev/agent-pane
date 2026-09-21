@@ -2,6 +2,24 @@ import * as fsp from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { InstructionScope } from '@shared/types/instructions.ts'
+import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
+import {
+  AGENTS_MD_GLOBAL_FILES,
+  AGENTS_MD_INSTRUCTION_FILES_SETTING_ID,
+  AGENTS_MD_INSTRUCTION_SOURCE,
+  AGENTS_MD_NESTED_FILES,
+  AGENTS_MD_PLUGIN_ID,
+  AGENTS_MD_PROJECT_FILES,
+  resolveInstructionSourceSelection,
+  type InstructionSourceSelection,
+} from '@copse/agent/plugins/agents-md-plugin.ts'
+import {
+  CLAUDE_MD_GLOBAL_FILES,
+  CLAUDE_MD_INSTRUCTION_SOURCE,
+  CLAUDE_MD_NESTED_FILES,
+  CLAUDE_MD_PROJECT_FILES,
+} from '@copse/agent/plugins/claude-md-plugin.ts'
+import { CURSOR_RULES_INSTRUCTION_SOURCE } from '@copse/agent/plugins/cursor-rules-plugin.ts'
 import {
   buildAgentRequestedRulesCatalog,
   discoverCursorRules,
@@ -11,20 +29,10 @@ import {
 import { getAgentExecutionRoot, getAgentProjectRoot } from './execution-root.ts'
 import { isWorkspaceTrusted } from './security/workspace-trust.ts'
 import { getThreadExecutionContext } from './thread-execution-context.ts'
+import { readPluginSettingValue } from './plugins/plugin-service.ts'
 
-/**
- * Project-root instruction files, in precedence order.
- *
- * Identical content is loaded once. Only `AGENTS.md` receives nested,
- * directory-scoped semantics: `AGENT.md` and `CLAUDE.md` remain root-only
- * compatibility formats.
- */
-export const PROJECT_INSTRUCTION_FILES = ['AGENT.md', 'AGENTS.md', 'CLAUDE.md'] as const
-
-/** User-global instruction files, relative to the home directory, in precedence order. */
-export const GLOBAL_INSTRUCTION_FILES = ['AGENTS.md', join('.claude', 'CLAUDE.md')] as const
-
-const NESTED_INSTRUCTION_FILE = 'AGENTS.md'
+type InstructionSourceFamily = 'claude-md' | 'agents-md'
+const NESTED_INSTRUCTION_BASENAMES = new Set(['AGENTS.md', 'CLAUDE.md', 'CLAUDE.local.md'])
 const MAX_NESTED_DISCOVERY_DEPTH = 16
 const MAX_NESTED_DISCOVERY_DIRECTORIES = 10_000
 const MAX_NESTED_DISCOVERED_FILES = 200
@@ -56,6 +64,7 @@ const NESTED_SKIP_DIRS = new Set([
   '.svelte-kit',
   '.turbo',
   '.cache',
+  '.claude',
   '.venv',
   'venv',
   '__pycache__',
@@ -94,9 +103,10 @@ interface NestedInstructionSource {
   name: string
   content: string
   scopePath: string
+  family: InstructionSourceFamily
 }
 
-/** One walk of the execution root for nested AGENTS.md files. */
+/** One walk of the execution root for nested project-instruction files. */
 export interface NestedInstructionDiscovery {
   sources: NestedInstructionSource[]
   /** Directories visited. */
@@ -113,7 +123,7 @@ interface NestedDiscoveryState {
 
 interface NestedInstructionDirectory {
   descend: boolean
-  source?: NestedInstructionSource
+  sources: NestedInstructionSource[]
 }
 
 /**
@@ -234,11 +244,35 @@ function displayPath(root: string, path: string): string {
   return relative(root, path).split(sep).join('/')
 }
 
+function nestedFilesForFamily(family: InstructionSourceFamily): readonly string[] {
+  return family === 'claude-md' ? CLAUDE_MD_NESTED_FILES : AGENTS_MD_NESTED_FILES
+}
+
+async function readNestedInstructionFiles(
+  root: string,
+  dir: string,
+  scopePath: string,
+  families: ReadonlySet<InstructionSourceFamily>,
+): Promise<NestedInstructionSource[]> {
+  const sources: NestedInstructionSource[] = []
+  for (const family of ['claude-md', 'agents-md'] as const) {
+    if (!families.has(family)) continue
+    for (const rel of nestedFilesForFamily(family)) {
+      const path = join(dir, rel)
+      const content = await readProjectTrimmed(path, root, MAX_NESTED_FILE_BYTES)
+      if (!content) continue
+      sources.push({ path, name: displayPath(root, path), content, scopePath, family })
+    }
+  }
+  return sources
+}
+
 async function walkNestedInstructionFiles(
   root: string,
   dir: string,
   depth: number,
   state: NestedDiscoveryState,
+  families: ReadonlySet<InstructionSourceFamily>,
 ): Promise<void> {
   if (
     depth > MAX_NESTED_DISCOVERY_DEPTH ||
@@ -263,19 +297,13 @@ async function walkNestedInstructionFiles(
   if (depth > 0 && entries.some((entry) => entry.name === '.git')) return
 
   if (depth > 0) {
-    const instruction = entries.find((entry) => entry.name === NESTED_INSTRUCTION_FILE)
-    if (instruction?.isFile() || instruction?.isSymbolicLink()) {
-      const path = join(dir, instruction.name)
-      const content = await readProjectTrimmed(path, root, MAX_NESTED_FILE_BYTES)
-      if (content) {
-        state.sources.push({
-          path,
-          name: displayPath(root, path),
-          content,
-          scopePath: displayPath(root, dir),
-        })
-      }
-    }
+    const remaining = MAX_NESTED_DISCOVERED_FILES - state.sources.length
+    state.sources.push(
+      ...(await readNestedInstructionFiles(root, dir, displayPath(root, dir), families)).slice(
+        0,
+        remaining,
+      ),
+    )
   }
 
   for (const entry of entries) {
@@ -287,16 +315,17 @@ async function walkNestedInstructionFiles(
       state.truncated = true
       break
     }
-    await walkNestedInstructionFiles(root, join(dir, entry.name), depth + 1, state)
+    await walkNestedInstructionFiles(root, join(dir, entry.name), depth + 1, state, families)
   }
 }
 
 async function walkNestedInstructionTree(
   key: string,
   root: string,
+  families: ReadonlySet<InstructionSourceFamily>,
 ): Promise<NestedInstructionDiscovery> {
   const state: NestedDiscoveryState = { directories: 0, sources: [], truncated: false }
-  await walkNestedInstructionFiles(root, root, 0, state)
+  await walkNestedInstructionFiles(root, root, 0, state, families)
   const discovery: NestedInstructionDiscovery = {
     sources: state.sources.sort((a, b) => a.name.localeCompare(b.name)),
     directories: state.directories,
@@ -304,7 +333,7 @@ async function walkNestedInstructionTree(
   }
   if (discovery.truncated) {
     console.warn(
-      `[instructions] nested AGENTS.md discovery under ${root} stopped early ` +
+      `[instructions] nested instruction discovery under ${root} stopped early ` +
         `(${String(discovery.directories)} directories, ${String(discovery.sources.length)} files): ` +
         'nested instruction files beyond the cap are not loaded.',
     )
@@ -314,6 +343,7 @@ async function walkNestedInstructionTree(
 }
 
 interface NestedDiscoveryOptions {
+  families: ReadonlySet<InstructionSourceFamily>
   /** Read referenced ancestor scopes once per turn. */
   turn?: NestedInstructionTurn | undefined
   contextPaths?: readonly string[] | undefined
@@ -323,38 +353,45 @@ interface NestedDiscoveryOptions {
 
 async function discoverNestedInstructionSources(
   root: string,
-  opts: NestedDiscoveryOptions = {},
+  opts: NestedDiscoveryOptions,
 ): Promise<NestedInstructionDiscovery> {
-  const key = resolve(root)
+  const familyKey = [...opts.families].sort().join(',')
+  const key = `${resolve(root)}\0${familyKey}`
   if (opts.turn) {
     let scopes = opts.turn.discoveries.get(key)
     if (!scopes) {
       scopes = new Map()
       opts.turn.discoveries.set(key, scopes)
     }
-    return discoverReferencedAncestors(root, opts.contextPaths ?? [], scopes)
+    return discoverReferencedAncestors(root, opts.contextPaths ?? [], scopes, opts.families)
   }
   const cached = nestedDiscoveryCache.get(key)
   if (!opts.refresh && cached && cached.expiresAt > Date.now()) return cached.discovery
-  return walkNestedInstructionTree(key, root)
+  return walkNestedInstructionTree(key, root, opts.families)
 }
 
 /**
  * Forget the current execution root's discovery after the agent wrote, moved,
- * or removed a nested AGENTS.md, so the next tool call re-reads its ancestors.
- * Only file paths named AGENTS.md count; other writes keep the memo. Returns
- * whether anything was invalidated.
+ * or removed a nested project-instruction file, so the next tool call re-reads its ancestors.
+ * Only recognized nested instruction basenames count; other writes keep the
+ * memo. Returns whether anything was invalidated.
  */
 export function invalidateNestedInstructionDiscoveryForWrite(
   writtenPaths: readonly string[],
   turn?: NestedInstructionTurn,
 ): boolean {
-  if (!writtenPaths.some((path) => basename(path.trim()) === NESTED_INSTRUCTION_FILE)) return false
+  if (!writtenPaths.some((path) => NESTED_INSTRUCTION_BASENAMES.has(basename(path.trim())))) {
+    return false
+  }
   const root = getAgentExecutionRoot()
   if (!root) return false
-  const key = resolve(root)
-  nestedDiscoveryCache.delete(key)
-  turn?.discoveries.delete(key)
+  const rootKey = `${resolve(root)}\0`
+  for (const key of nestedDiscoveryCache.keys()) {
+    if (key.startsWith(rootKey)) nestedDiscoveryCache.delete(key)
+  }
+  for (const key of turn?.discoveries.keys() ?? []) {
+    if (key.startsWith(rootKey)) turn?.discoveries.delete(key)
+  }
   return true
 }
 
@@ -390,25 +427,25 @@ async function normalizeContextPathWithinRoot(
 async function readInstructionDirectory(
   root: string,
   scopePath: string,
+  families: ReadonlySet<InstructionSourceFamily>,
 ): Promise<NestedInstructionDirectory> {
   const dir = join(root, scopePath)
   try {
-    if (!(await fsp.lstat(dir)).isDirectory()) return { descend: false }
+    if (!(await fsp.lstat(dir)).isDirectory()) return { descend: false, sources: [] }
     try {
       await fsp.lstat(join(dir, '.git'))
-      return { descend: false }
+      return { descend: false, sources: [] }
     } catch (err) {
       if (!(err instanceof Error && 'code' in err && err.code === 'ENOENT')) {
-        return { descend: false }
+        return { descend: false, sources: [] }
       }
     }
-    const path = join(dir, NESTED_INSTRUCTION_FILE)
-    const content = await readProjectTrimmed(path, root, MAX_NESTED_FILE_BYTES)
-    return content
-      ? { descend: true, source: { path, name: displayPath(root, path), content, scopePath } }
-      : { descend: true }
+    return {
+      descend: true,
+      sources: await readNestedInstructionFiles(root, dir, scopePath, families),
+    }
   } catch {
-    return { descend: false }
+    return { descend: false, sources: [] }
   }
 }
 
@@ -417,6 +454,7 @@ async function discoverReferencedAncestors(
   root: string,
   contextPaths: readonly string[],
   scopes: Map<string, Promise<NestedInstructionDirectory>>,
+  families: ReadonlySet<InstructionSourceFamily>,
 ): Promise<NestedInstructionDiscovery> {
   const uniquePaths = [...new Set(contextPaths)]
   let truncated = uniquePaths.length > MAX_NESTED_CONTEXT_PATHS
@@ -442,12 +480,12 @@ async function discoverReferencedAncestors(
             truncated = true
             break
           }
-          pending = readInstructionDirectory(root, scopePath)
+          pending = readInstructionDirectory(root, scopePath, families)
           scopes.set(scopePath, pending)
         }
         const directory = await pending
         if (!directory.descend) break
-        if (directory.source) sources.set(directory.source.path, directory.source)
+        for (const source of directory.sources) sources.set(source.path, source)
       }
     }),
   )
@@ -464,7 +502,13 @@ function scopeDepth(scopePath: string): number {
 }
 
 function instructionPrecedence(a: NestedInstructionSource, b: NestedInstructionSource): number {
-  return scopeDepth(a.scopePath) - scopeDepth(b.scopePath) || a.name.localeCompare(b.name)
+  const familyPrecedence = (family: InstructionSourceFamily): number =>
+    family === 'claude-md' ? 0 : 1
+  return (
+    scopeDepth(a.scopePath) - scopeDepth(b.scopePath) ||
+    familyPrecedence(a.family) - familyPrecedence(b.family) ||
+    a.name.localeCompare(b.name)
+  )
 }
 
 async function selectNestedInstructionSources(
@@ -499,6 +543,29 @@ async function selectNestedInstructionSources(
     retainedBytes += bytes
   }
   return retained.sort(instructionPrecedence)
+}
+
+function nestedFamiliesForSelection(
+  selection: InstructionSourceSelection,
+): ReadonlySet<InstructionSourceFamily> {
+  const families = new Set<InstructionSourceFamily>()
+  if (selection.claudeMd) families.add('claude-md')
+  if (selection.agentsMd) families.add('agents-md')
+  return families
+}
+
+/** In fallback mode a directory's CLAUDE.md family claims that directory. */
+function applyNestedInstructionMode(
+  sources: NestedInstructionSource[],
+  selection: InstructionSourceSelection,
+): NestedInstructionSource[] {
+  if (selection.mode !== 'claude-md-or-agents-md') return sources
+  const claimedScopes = new Set(
+    sources.filter((source) => source.family === 'claude-md').map((source) => source.scopePath),
+  )
+  return sources.filter(
+    (source) => source.family === 'claude-md' || !claimedScopes.has(source.scopePath),
+  )
 }
 
 /**
@@ -548,53 +615,90 @@ export interface ProjectInstructionOptions {
   nestedInstructionTurn?: NestedInstructionTurn
 }
 
+async function readInstructionFiles(
+  root: string,
+  files: readonly string[],
+  scope: InstructionScope,
+  trusted: boolean,
+): Promise<ProjectInstructionSource[]> {
+  const sources: ProjectInstructionSource[] = []
+  for (const name of files) {
+    const path = join(root, name)
+    const content =
+      scope === 'global' ? await readTrimmed(path) : await readProjectTrimmed(path, root)
+    if (!content) continue
+    sources.push({ path, name, scope, content, active: scope === 'global' || trusted, trusted })
+  }
+  return sources
+}
+
+function instructionSourceState(): {
+  agentsMdPluginEnabled: boolean
+  claudeMdPluginEnabled: boolean
+  cursorRulesEnabled: boolean
+  instructionFiles: unknown
+} {
+  const registry = getDefaultPluginRegistry()
+  const agentsMdPluginEnabled = registry.isInstructionSourceActive(AGENTS_MD_INSTRUCTION_SOURCE)
+  return {
+    agentsMdPluginEnabled,
+    claudeMdPluginEnabled: registry.isInstructionSourceActive(CLAUDE_MD_INSTRUCTION_SOURCE),
+    cursorRulesEnabled: registry.isInstructionSourceActive(CURSOR_RULES_INSTRUCTION_SOURCE),
+    instructionFiles: agentsMdPluginEnabled
+      ? readPluginSettingValue(AGENTS_MD_PLUGIN_ID, AGENTS_MD_INSTRUCTION_FILES_SETTING_ID)
+      : undefined,
+  }
+}
+
 /** Discover instruction sources, global layer first then project. */
 export async function loadProjectInstructionSources(
   opts: ProjectInstructionOptions = {},
 ): Promise<ProjectInstructionSource[]> {
   const home = homedir()
   const resolved: ProjectInstructionSource[] = []
-
-  for (const rel of GLOBAL_INSTRUCTION_FILES) {
-    const path = join(home, rel)
-    const content = await readTrimmed(path)
-    if (content) {
-      resolved.push({
-        path,
-        name: rel,
-        scope: 'global',
-        content,
-        active: true,
-        trusted: true,
-      })
-    }
-  }
-
   const root = getAgentExecutionRoot()
   const projectRoot = getAgentProjectRoot()
+  const sourceState = instructionSourceState()
+  const initialSelection = resolveInstructionSourceSelection({
+    ...sourceState,
+    hasProjectClaudeMd: false,
+  })
+  const trusted = projectRoot ? isWorkspaceTrusted(projectRoot) : false
+  const projectClaude =
+    root && initialSelection.claudeMd
+      ? await readInstructionFiles(root, CLAUDE_MD_PROJECT_FILES, 'project', trusted)
+      : []
+  const selection = resolveInstructionSourceSelection({
+    ...sourceState,
+    hasProjectClaudeMd: projectClaude.length > 0,
+  })
+
+  if (selection.claudeMd) {
+    resolved.push(...(await readInstructionFiles(home, CLAUDE_MD_GLOBAL_FILES, 'global', true)))
+  }
+  if (selection.agentsMd) {
+    resolved.push(...(await readInstructionFiles(home, AGENTS_MD_GLOBAL_FILES, 'global', true)))
+  }
+
   if (root && projectRoot) {
-    const trusted = isWorkspaceTrusted(projectRoot)
-    for (const name of PROJECT_INSTRUCTION_FILES) {
-      const path = join(root, name)
-      const content = await readProjectTrimmed(path, root)
-      if (content) {
-        resolved.push({
-          path,
-          name,
-          scope: 'project',
-          content,
-          active: trusted,
-          trusted,
-        })
-      }
+    if (selection.claudeMd) resolved.push(...projectClaude)
+    if (selection.agentsMd) {
+      resolved.push(
+        ...(await readInstructionFiles(root, AGENTS_MD_PROJECT_FILES, 'project', trusted)),
+      )
     }
 
-    const discovery = await discoverNestedInstructionSources(root, {
-      turn: opts.nestedInstructionTurn,
-      contextPaths: opts.nestedContextPaths,
-      refresh: opts.refreshNestedDiscovery,
-    })
-    const nested = discovery.sources
+    const families = nestedFamiliesForSelection(selection)
+    const discovery =
+      families.size > 0
+        ? await discoverNestedInstructionSources(root, {
+            families,
+            turn: opts.nestedInstructionTurn,
+            contextPaths: opts.nestedContextPaths,
+            refresh: opts.refreshNestedDiscovery,
+          })
+        : { sources: [], directories: 0, truncated: false }
+    const nested = applyNestedInstructionMode(discovery.sources, selection)
     const explicitlyActive =
       opts.nestedContextPaths !== undefined
         ? new Set(
@@ -608,7 +712,10 @@ export async function loadProjectInstructionSources(
       : new Set<string>()
     for (const source of nested) {
       resolved.push({
-        ...source,
+        path: source.path,
+        name: source.name,
+        content: source.content,
+        scopePath: source.scopePath,
         scope: 'project',
         active: trusted && (explicitlyActive?.has(source.path) ?? latestActive.has(source.name)),
         trusted,
@@ -623,16 +730,19 @@ export async function loadProjectInstructionSources(
       }
     }
 
-    // Cursor project rules are applied after AGENTS.md layers.
-    for (const rule of await loadCursorRuleSources(root, opts.cursorRuleContext ?? {})) {
-      resolved.push({
-        path: rule.path,
-        name: rule.name,
-        scope: 'project',
-        content: rule.content,
-        active: trusted,
-        trusted,
-      })
+    // Cursor project rules are an independent plugin source, but managed-only
+    // promises no user/workspace instruction files at all.
+    if (sourceState.cursorRulesEnabled && !selection.managedOnly) {
+      for (const rule of await loadCursorRuleSources(root, opts.cursorRuleContext ?? {})) {
+        resolved.push({
+          path: rule.path,
+          name: rule.name,
+          scope: 'project',
+          content: rule.content,
+          active: trusted,
+          trusted,
+        })
+      }
     }
   }
 
@@ -782,9 +892,33 @@ export async function activateNestedInstructionSources(
   const projectRoot = getAgentProjectRoot()
   if (!root || !projectRoot || !isWorkspaceTrusted(projectRoot)) return NO_ACTIVATION
 
+  const sourceState = instructionSourceState()
+  const initialSelection = resolveInstructionSourceSelection({
+    ...sourceState,
+    hasProjectClaudeMd: false,
+  })
+  const projectClaude = initialSelection.claudeMd
+    ? await readInstructionFiles(root, CLAUDE_MD_PROJECT_FILES, 'project', true)
+    : []
+  const selection = resolveInstructionSourceSelection({
+    ...sourceState,
+    hasProjectClaudeMd: projectClaude.length > 0,
+  })
+  const families = nestedFamiliesForSelection(selection)
+  if (families.size === 0) return NO_ACTIVATION
+
   const selected = await selectNestedInstructionSources(
     root,
-    (await discoverNestedInstructionSources(root, { turn, contextPaths })).sources,
+    applyNestedInstructionMode(
+      (
+        await discoverNestedInstructionSources(root, {
+          families,
+          turn,
+          contextPaths,
+        })
+      ).sources,
+      selection,
+    ),
     contextPaths,
   )
   const candidates = selected.filter(
@@ -824,7 +958,10 @@ export async function activateNestedInstructionSources(
 
   if (fresh.length === 0) return { ...NO_ACTIVATION, activatedPaths }
   const promptSources: ProjectInstructionSource[] = fresh.map((source) => ({
-    ...source,
+    path: source.path,
+    name: source.name,
+    content: source.content,
+    scopePath: source.scopePath,
     scope: 'project',
     active: true,
     trusted: true,
@@ -843,6 +980,12 @@ export async function loadAgentRequestedRulesCatalog(): Promise<string> {
   const root = getAgentExecutionRoot()
   const projectRoot = getAgentProjectRoot()
   if (!root || !projectRoot || !isWorkspaceTrusted(projectRoot)) return ''
+  const sourceState = instructionSourceState()
+  const selection = resolveInstructionSourceSelection({
+    ...sourceState,
+    hasProjectClaudeMd: false,
+  })
+  if (!sourceState.cursorRulesEnabled || selection.managedOnly) return ''
   const rules = await discoverCursorRules(root)
   return buildAgentRequestedRulesCatalog(rules)
 }

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import * as fsp from 'node:fs/promises'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, relative } from 'node:path'
 import {
   AGENT_PLUGIN_SCHEMA_ID,
   COPSE_EXTENSION_NAMESPACE,
@@ -30,7 +30,9 @@ async function writePlugin(
     typeof manifest === 'string' ? manifest : JSON.stringify(manifest),
   )
   if (extras.skills) {
-    await fsp.mkdir(join(pluginRoot, 'skills', 'summarize'), { recursive: true })
+    await fsp.mkdir(join(pluginRoot, 'skills', 'summarize'), {
+      recursive: true,
+    })
     await fsp.writeFile(join(pluginRoot, 'skills', 'summarize', 'SKILL.md'), '# summarize')
   }
   if (extras.mcp !== undefined) await fsp.writeFile(join(pluginRoot, 'mcp.json'), extras.mcp)
@@ -82,8 +84,39 @@ describe('discoverUserPlugins', () => {
     const alpha = plugins.find((plugin) => plugin.manifest.name === 'alpha')
     assert.ok(alpha)
     assert.ok(alpha.skillsDir?.endsWith('skills'))
+    assert.equal(alpha.skillFiles.length, 1)
+    assert.ok(alpha.skillFiles[0]?.endsWith(join('summarize', 'SKILL.md')))
     assert.ok(alpha.mcpConfigPath?.endsWith('mcp.json'))
     assert.equal(alpha.manifest.trust, 'user')
+  })
+
+  it('discovers only immediate-child skills and isolates an escaping sibling (§7.1)', async () => {
+    const pluginRoot = await writePlugin('skill-boundaries', manifest('skill-boundaries'))
+    await fsp.mkdir(join(pluginRoot, 'skills', 'direct'), { recursive: true })
+    await fsp.writeFile(join(pluginRoot, 'skills', 'direct', 'SKILL.md'), '# direct')
+    await fsp.mkdir(join(pluginRoot, 'skills', 'group', 'nested'), {
+      recursive: true,
+    })
+    await fsp.writeFile(join(pluginRoot, 'skills', 'group', 'nested', 'SKILL.md'), '# nested')
+    const outside = join(root, 'outside-skill.md')
+    await fsp.writeFile(outside, '# outside')
+    await fsp.mkdir(join(pluginRoot, 'skills', 'escaping'), {
+      recursive: true,
+    })
+    await fsp.symlink(outside, join(pluginRoot, 'skills', 'escaping', 'SKILL.md'))
+
+    const { plugins } = await discoverUserPlugins(root)
+    const found = plugins.find((plugin) => plugin.manifest.name === 'skill-boundaries')
+    assert.ok(found)
+    assert.deepEqual(
+      found.skillFiles.map((path) => relative(found.pluginRoot, path)),
+      [join('skills', 'direct', 'SKILL.md')],
+    )
+    assert.ok(found.warnings.some((warning) => warning.includes('escaping')))
+    assert.equal(
+      found.skillFiles.some((path) => path.includes('nested')),
+      false,
+    )
   })
 
   it('treats a missing component location as absent, not an error (§6.2)', async () => {

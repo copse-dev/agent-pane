@@ -89,6 +89,7 @@ const automationsPlugin: PluginSummary = {
     ],
     followUps: [],
     capabilities: [],
+    instructionSources: [],
     permissions: [],
     storageNamespace: AUTOMATIONS_PLUGIN_ID,
   },

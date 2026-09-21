@@ -559,6 +559,45 @@ export async function getChatStoreRoot(
 }
 
 /**
+ * Resolve an existing attachment in the app-owned, local chat store.
+ *
+ * The active workspace backend may be SSH, but the thread store always lives on
+ * the machine running Copse. Keep this probe explicitly local and require an
+ * exact realpath so a renderer- or model-supplied symlink cannot escape the
+ * store between the lexical check and the read.
+ */
+export async function resolveLocalChatStorePath(path: string): Promise<string | null> {
+  if (!isAbsolute(path)) return null
+  const root = await getChatStoreRoot(localWorkspaceFs)
+  if (!root) return null
+  try {
+    const candidate = await localWorkspaceFs.realpath(resolve(path))
+    return isPathInsideRoot(candidate, root) ? candidate : null
+  } catch {
+    return null
+  }
+}
+
+export interface ResolvedReadableFile {
+  path: string
+  source: 'local-chat-store' | 'workspace'
+}
+
+/** Resolve a binary/file read to the local chat store or the active workspace backend. */
+export async function resolveReadableFileWithinRoot(
+  path: string,
+  root: string,
+  backend: PathBackend = getActivePathBackend(),
+): Promise<ResolvedReadableFile> {
+  const chatStorePath = await resolveLocalChatStorePath(path)
+  if (chatStorePath) return { path: chatStorePath, source: 'local-chat-store' }
+  return {
+    path: await resolveReadablePathWithinRoot(path, root, backend),
+    source: 'workspace',
+  }
+}
+
+/**
  * True when a resolved absolute path lives inside the chat store — used by the
  * read tools to route chat-store targets down their non-workspace-indexed path
  * (the workspace file-index/`toRelativePath` are workspace-only).

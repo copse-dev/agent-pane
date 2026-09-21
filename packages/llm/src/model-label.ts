@@ -85,9 +85,8 @@ function canonicalGptLabel(labelOrId: string): string | null {
 // - Mistral is `mistral-<tier>[-<qualifier>]` → `Mistral Small Latest`.
 //
 // Each recognises only its own prefix; an unknown name is left alone, so a
-// local weight id (`qwen3.6-35b-a3b`) or another vendor's model ("Composer 2",
-// "Grok 4.5") passes through untouched — the same contract the Claude/GPT
-// branches keep. `modelDisplayName` is what spells those for a picker row.
+// local weight id (`qwen3.6-35b-a3b`) or another vendor's model ("Composer 2")
+// passes through untouched — the same contract the Claude/GPT branches keep. `modelDisplayName` is what spells those for a picker row.
 
 /** Title-case a hyphen- or space-separated segment, preserving `mini`/`nano`. */
 function titleCaseSegment(segment: string): string {
@@ -106,6 +105,19 @@ const GEMINI_NAME = /^gemini-(\d+(?:\.\d+)?)(?:-([a-z].*))?$/
 const GLM_NAME = /^glm-(\d+(?:\.\d+)?)(?:-([a-z].*))?$/
 const DEEPSEEK_NAME = /^deepseek-([a-z]+)(?:-v(\d+(?:\.\d+)?))?$/
 const MISTRAL_NAME = /^mistral-([a-z]+)(?:-([a-z]+))?$/
+
+// The vendor prefix is display metadata, while a qualifier still describes
+// the selected configuration. Only rewrite the complete known name shape.
+const GROK_NAME = /^(?:(?:xai|spacexai):\s*)?grok[\s-]+(?:(build)[\s-]+)?(\d+(?:[.-]\d+)?)(.*)$/i
+
+function canonicalGrokLabel(labelOrId: string): string | null {
+  const match = GROK_NAME.exec(labelOrId.trim())
+  if (!match?.[2]) return null
+  const rest = match[3] ?? ''
+  if (rest !== '' && !/^\s/.test(rest)) return null
+  const family = match[1] ? 'Grok Build' : 'Grok'
+  return `${family} ${match[2].replace(/-/g, '.')}${rest}`
+}
 
 function canonicalVendorLabel(labelOrId: string): string | null {
   const trimmed = labelOrId.trim()
@@ -143,7 +155,7 @@ function canonicalVendorLabel(labelOrId: string): string | null {
 
 // Vendors whose id shapes this module models. Used only to decide whose
 // `-latest` is an alias worth preserving (see `keepsDeclinedTail`).
-const MODELLED_VENDORS = ['claude', 'gpt', 'gemini', 'glm', 'deepseek', 'mistral'] as const
+const MODELLED_VENDORS = ['claude', 'gpt', 'gemini', 'glm', 'deepseek', 'mistral', 'grok'] as const
 
 /** A dated snapshot: `-20251001` or `-2025-08-07`. */
 const DATED_SNAPSHOT = /-(?:\d{8}|\d{4}-\d{2}-\d{2})$/
@@ -295,7 +307,12 @@ export function canonicalModelLabel(labelOrId: string): string {
     const family = `${parsed.family.charAt(0).toUpperCase()}${parsed.family.slice(1)}`
     return `Claude ${family} ${parsed.version}${parsed.rest}`
   }
-  return canonicalGptLabel(labelOrId) ?? canonicalVendorLabel(labelOrId) ?? labelOrId
+  return (
+    canonicalGptLabel(labelOrId) ??
+    canonicalVendorLabel(labelOrId) ??
+    canonicalGrokLabel(labelOrId) ??
+    labelOrId
+  )
 }
 
 /**

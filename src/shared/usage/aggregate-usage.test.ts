@@ -74,6 +74,58 @@ describe('aggregate usage', () => {
     })
   })
 
+  it('keeps mixed tier calls separate and uses the actual response tier', () => {
+    const usage = aggregateEventsByModel(
+      [
+        event({
+          model: 'openrouter:vendor/tiered',
+          inputTokens: 100,
+          outputTokens: 10,
+          requestedServiceTier: 'flex',
+          responseServiceTier: 'priority',
+        }),
+        event({
+          model: 'openrouter:vendor/tiered',
+          inputTokens: 200,
+          outputTokens: 20,
+          requestedServiceTier: 'flex',
+        }),
+        event({ model: 'openrouter:vendor/tiered', inputTokens: 300, outputTokens: 30 }),
+      ],
+      DAY_MS,
+      NOW,
+    )
+    assert.deepEqual(usage['openrouter:vendor/tiered'], {
+      inputTokens: 600,
+      outputTokens: 60,
+      serviceTierUsage: {
+        flex: { inputTokens: 200, outputTokens: 20 },
+        priority: { inputTokens: 100, outputTokens: 10 },
+      },
+    })
+  })
+
+  it('preserves a persisted tier bucket and its fallback notice', () => {
+    const summary = buildUsageSummary(
+      [
+        event({
+          model: 'openrouter:vendor/no-tier-rate',
+          inputTokens: 1_000_000,
+          outputTokens: 1_000_000,
+          requestedServiceTier: 'flex',
+        }),
+      ],
+      [],
+      NOW,
+      {
+        'openrouter:vendor/no-tier-rate': { inputPricePerMTok: 10, outputPricePerMTok: 20 },
+      },
+    )
+    const row = summary.day.cloudModels[0]
+    assert.equal(row?.estimatedCostUsd, 30)
+    assert.equal(row.tierPricingFallback, true)
+  })
+
   it('aggregateEventsByModel filters by rolling window', () => {
     const events: UsageEvent[] = [
       event({
@@ -175,6 +227,35 @@ describe('aggregate usage', () => {
       null,
     ])
     assert.equal(parsed.length, 1)
+  })
+
+  it('drops malformed persisted tier buckets without discarding usable standard usage', () => {
+    const [parsed] = parseUsageEvents([
+      {
+        at: NOW,
+        model: 'gpt-4o',
+        source: 'agent',
+        inputTokens: 100,
+        outputTokens: 10,
+        serviceTierUsage: { flex: null },
+      },
+    ])
+    assert.equal(parsed?.inputTokens, 100)
+    assert.equal(parsed.serviceTierUsage, undefined)
+  })
+
+  it('drops negative persisted tier buckets instead of creating a negative cost path', () => {
+    const [parsed] = parseUsageEvents([
+      {
+        at: NOW,
+        model: 'gpt-4o',
+        source: 'agent',
+        inputTokens: 100,
+        outputTokens: 10,
+        serviceTierUsage: { flex: { inputTokens: -1, outputTokens: 1 } },
+      },
+    ])
+    assert.equal(parsed?.serviceTierUsage, undefined)
   })
 
   it('pruneUsageEvents removes entries older than 90 days', () => {

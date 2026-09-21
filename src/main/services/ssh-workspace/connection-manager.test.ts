@@ -85,6 +85,10 @@ describe('SshConnectionManager', () => {
         closeForward: async (): Promise<void> => {
           await Promise.resolve()
         },
+        fetchFile: async (): Promise<void> => {
+          await Promise.resolve()
+        },
+        sizeOf: async (): Promise<number> => Promise.resolve(0),
         execArgv: async (): Promise<{ stdout: string; stderr: string; code: number }> => ({
           stdout: '',
           stderr: '',

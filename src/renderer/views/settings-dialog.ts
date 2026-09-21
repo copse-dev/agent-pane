@@ -59,6 +59,7 @@ import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.t
 import { createAutomationPluginSettings } from './automation-plugin-settings.ts'
 import { PARALLEL_SEARCH_PLUGIN_ID } from '@copse/agent/plugins/parallel-search-plugin.ts'
 import { createParallelSearchPluginSettings } from './parallel-search-plugin-settings.ts'
+import { createToolPermissionsPanel } from './tool-permissions-panel.ts'
 import { APPLE_DEVELOPMENT_PLUGIN_ID } from '@copse/agent/plugins/apple-development-plugin.ts'
 import { createAppleDevelopmentPanel } from './apple-development-panel.ts'
 import {
@@ -764,6 +765,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               What the agent is allowed to do without stopping to ask you.
             </p>
 
+            <fieldset id="tool-permissions-fieldset">
+              <legend>Tool permissions</legend>
+              <p class="settings-fieldset-desc">
+                Choose whether each Copse or MCP tool runs automatically, asks every time, or is
+                blocked. These choices apply to future calls; they do not interrupt completed work.
+              </p>
+              <div id="tool-permissions-host"></div>
+            </fieldset>
+
             <fieldset>
               <legend>Shell commands</legend>
               <label class="checkbox-label">
@@ -930,15 +940,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               <legend>Commit signing</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="gitCommitSshAgentSocketAccess" />
-                Let Copse's git commit tool use your ssh-agent (macOS)
+                Enable scoped SSH signing approvals (macOS)
               </label>
               <p class="field-hint">
-                Off by default. Turn this on when Git uses a passphrase-protected SSH key and signed
-                commits fail inside Copse's sandbox. The grant applies only to Copse's native
-                <code>git_commit</code> subprocess, but Git hooks run inside that process and can
-                also ask ssh-agent to use <strong>any key it holds</strong>. The private key remains
-                unreadable. Pair this with <code>ssh-add -c</code> to confirm each use. macOS only:
-                Linux cannot admit one socket without admitting every Unix socket.
+                Off by default. Copse asks before its system SSH signer uses your configured key
+                through ssh-agent. You can remember the signer, key and socket for this project
+                until Copse restarts. Changed configuration requires approval again. Git hooks
+                keep their project sandbox; they receive no ssh-agent access. Turning this off
+                prevents further brokered signing. Private keys remain unreadable. Custom signing
+                programs run with ordinary project access. Scoped socket access is macOS only.
               </p>
             </fieldset>
           </section>
@@ -1542,6 +1552,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         refresh: (): Promise<void> => lmStudioSection.refreshDetection(),
       },
     ],
+    showOpenAiServiceTier: true,
     cloudAgents: [
       {
         vendor: 'cursor',
@@ -1560,6 +1571,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
   const ghCliSection = createGhCliSection(api)
   qsRequired(overlay, '#settings-gh-cli-host').append(ghCliSection.root)
+
+  const toolPermissionsPanel = createToolPermissionsPanel(api.toolPermissions)
+  qsRequired(overlay, '#tool-permissions-host').append(toolPermissionsPanel.root)
 
   const modelRoutingSection = createModelRoutingSection(api, { modelScope: 'all' })
   qsRequired(overlay, '#settings-model-routing-host').append(modelRoutingSection.root)
@@ -1888,6 +1902,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         }
         showSection(id)
         if (id === 'usage') void usageSection.refresh()
+        if (id === 'permissions') void toolPermissionsPanel.refresh()
         // Defer disk scans until each tab is opened, so users who never visit them
         // don't trigger an fs walk (Sources) on open. The Providers panel defers
         // its own device scan until an agent block is actually shown.
@@ -3273,6 +3288,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         title: contributions.capabilities.map((c) => `${c.title} (${c.name})`).join(', '),
       })
     }
+    if (contributions.instructionSources.length > 0) {
+      chips.push({
+        label: 'Instruction sources',
+        count: contributions.instructionSources.length,
+        title: contributions.instructionSources
+          .map((source) => `${source.title} (${source.name})`)
+          .join(', '),
+      })
+    }
     if (contributions.permissions.length > 0) {
       chips.push({
         label: 'Permissions',
@@ -3952,6 +3976,20 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       title.append(`${s.name} (${s.transport}): `, badge)
 
       header.append(toggleLabel, title, mcpOriginChip(s))
+      const permissionsButton = document.createElement('button')
+      permissionsButton.type = 'button'
+      permissionsButton.className = 'ui-btn ui-btn-secondary mcp-permissions-btn'
+      permissionsButton.textContent = 'Manage permissions'
+      permissionsButton.setAttribute('aria-label', `Manage permissions for ${s.name}`)
+      permissionsButton.addEventListener('click', () => {
+        showSection('permissions')
+        // The permissions catalog reads the current registry/status snapshot. It
+        // never connects or reloads an inactive server just to show this view.
+        void toolPermissionsPanel.refresh().then(() => {
+          qsRequired(overlay, '#tool-permissions-fieldset').scrollIntoView({ block: 'start' })
+        })
+      })
+      header.append(permissionsButton)
       row.append(header)
 
       let detailText =
@@ -4247,10 +4285,11 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     pendingSection = null
     pluginDetail = pendingPluginDetail
     pendingPluginDetail = null
-    // Deep-links (e.g. status banner → SSH, an automation heading → Packs) skip
+    // Deep-links (e.g. status banner → SSH, an automation heading → Plugins) skip
     // the nav click path, so refresh lazy section content here too.
     if (openedSection === 'ssh') void sshWorkspaceSection.refresh()
     if (openedSection === 'usage') void usageSection.refresh()
+    if (openedSection === 'permissions') void toolPermissionsPanel.refresh()
     if (openedSection === 'customise') {
       void refreshSources()
       void revealPluginDetail()

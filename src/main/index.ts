@@ -29,6 +29,7 @@ import {
 import { attachBrowserGuestContextMenu } from './windows/browser-context-menu.ts'
 import { applyAppIcon } from './app-icon.ts'
 import type { LLMMessage, StreamChunk } from '@shared/types'
+import { THEME_BACKGROUND } from '@shared/theme.ts'
 import {
   assertPrimaryMainWindow,
   beginMainWindowQuit,
@@ -37,6 +38,7 @@ import {
   getMainWindow,
   getRestorableMainWindowRecords,
 } from './windows/create-main-window.ts'
+import { readBootTheme } from './windows/boot-theme.ts'
 import { setShellOutputSink } from './services/exec/shell-output-context.ts'
 import { setSecretCipher } from './services/storage/secret-cipher.ts'
 import { createKeyringCipher, createMigratingCipher } from './services/storage/keyring-cipher.ts'
@@ -76,6 +78,7 @@ import { setTerminalCommandLauncher } from './services/exec/terminal-launch.ts'
 import { initSshPrompt } from './services/ssh-workspace/ssh-prompt.ts'
 import { initSshAskpassServer } from './services/ssh-workspace/askpass.ts'
 import { initSshWorkspaceIpc } from './services/ssh-workspace/ssh-workspace-ipc.ts'
+import { clearSshWorkspaceFsCache } from './services/workspace-fs/ssh-workspace-fs.ts'
 import { initDiffQueue } from './services/diff-queue.ts'
 import { initFsWatcher, closeAllWatchers } from './ipc/fs-watcher.ts'
 import { stopWorkspaceIndexWatcher } from './services/search/workspace-index-watcher.ts'
@@ -301,9 +304,39 @@ setCanvasArtefactSink((artefact) => {
   })
 })
 
+async function currentCanvasBackgroundColor(): Promise<string> {
+  const fallback = THEME_BACKGROUND[readBootTheme()]
+  const win = getMainWindow()
+  if (!win || win.isDestroyed()) return fallback
+  try {
+    const value: unknown = await win.webContents.executeJavaScript(
+      `(() => {
+        const canvas = document.createElement('canvas')
+        canvas.width = 1
+        canvas.height = 1
+        const context = canvas.getContext('2d')
+        if (!context) return ''
+        context.fillStyle = getComputedStyle(document.body).backgroundColor
+        context.fillRect(0, 0, 1, 1)
+        const [red, green, blue, alpha] = context.getImageData(0, 0, 1, 1).data
+        if (alpha === 0) return ''
+        return 'rgba(' + [red, green, blue, alpha / 255].join(', ') + ')'
+      })()`,
+      true,
+    )
+    return typeof value === 'string' && value.trim() ? value : fallback
+  } catch {
+    return fallback
+  }
+}
+
 // Load every artefact into the headless agent session as well, so the model can
 // snapshot and screenshot the canvas it just rendered instead of working blind.
-setCanvasArtefactMirror((artefact) => mirrorArtefactToAgent(artefact, getBrowserSession()))
+// The preview window is otherwise white by default, while the visible webview
+// exposes Copse's theme through a transparent artefact.
+setCanvasArtefactMirror(async (artefact) =>
+  mirrorArtefactToAgent(artefact, getBrowserSession(), await currentCanvasBackgroundColor()),
+)
 
 setContextEstimateRefreshSink(() => {
   const win = getMainWindow()
@@ -471,13 +504,16 @@ app
     // `syncModelComparisonTools` reads it — otherwise the fallback fresh
     // first-party registry (all plugins enabled) would register the tool for a
     // plugin the user turned off in a previous session.
-    getPluginService()
+    const pluginService = getPluginService()
     const registry = createRegistry()
     // Start skill discovery while the rest of main-process boot and the tool
     // availability probe continue. The renderer can become interactive before
     // that probe finishes; skills:list waits for this in-flight scan so the
     // first slash-picker open cannot observe the initial empty cache.
-    const skillsReady = initSkillsRegistry()
+    // Portable skills are gated by the plugin registry. Reconcile Agent
+    // Plugins before the first skill scan so enabled packages contribute on
+    // startup while newly discovered packages remain off until consent.
+    const skillsReady = pluginService.refreshInstalledPlugins().then(initSkillsRegistry)
     // Same for agents: `agents:list` is registered with the other handlers well
     // before the gate below, so the scan has to be in flight by then for the
     // handler's wait to have anything to join.
@@ -522,11 +558,13 @@ app
     const disposeSimulatorDesktopHandlers = initSimulatorDesktop(win)
     recordStartupPhase('register-handlers')
     perfMark('main:register-handlers')
-    registerAllHandlers(win, registry)
+    const agentDispatcher = new AgentDispatcher(agentHost, registry)
+    registerAllHandlers(win, registry, (projectId, threadId) =>
+      agentDispatcher.isActive(projectId, threadId),
+    )
     getAutomationService().start((event) => {
       if (!win.isDestroyed()) win.webContents.send('automations:triggered', event)
     })
-    const agentDispatcher = new AgentDispatcher(agentHost, registry)
     // A container run is a turn on its thread but never passes through the
     // dispatcher; write it into the thread's model history when it settles
     // (A14), so the next message to the thread knows what the run did.
@@ -837,7 +875,7 @@ app
     )
 
     // Defaults for the "Compare models" bubble's picker. Read-only: it resolves
-    // the pack's own settings and starts nothing, so unlike the run below it
+    // the plugin's own settings and starts nothing, so unlike the run below it
     // needs no execution context.
     ipcMain.handle('agent:comparison-models', async (event, payload: unknown) => {
       assertMainFrameSender(event, win)
@@ -1046,6 +1084,7 @@ async function cleanupBeforeQuit(): Promise<void> {
   disposeSimulatorDesktop = undefined
   closeAllWatchers()
   stopWorkspaceIndexWatcher()
+  await clearSshWorkspaceFsCache()
   shutdownBrowserSession()
   await shutdownStaticPreviewServers()
   await drainWriteQueue()

@@ -149,11 +149,17 @@ describe('landing cupcake walkthrough', () => {
     expect(transcriptState.text).toContain('Built and previewed a polished')
     expect(transcriptState.userPosition).toBe('relative')
     expect(transcriptState.overlap).toBe(0)
-    // The recorded final response is slightly taller than the narrow chat
-    // viewport. Bound either edge to one wrapped line; the URL has already
-    // been asserted visible and the messages must still never overlap.
-    expect(transcriptState.top).toBeGreaterThanOrEqual(transcriptState.visibleTop - 24)
-    expect(transcriptState.bottom).toBeLessThanOrEqual(transcriptState.visibleBottom + 24)
+    // Reading typography can make this answer taller than the narrow viewport.
+    // Require the available viewport to show the answer, allowing one line of
+    // breathing room; the URL must remain visible and messages must not overlap.
+    const visibleHeight =
+      Math.min(transcriptState.bottom, transcriptState.visibleBottom) -
+      Math.max(transcriptState.top, transcriptState.visibleTop)
+    const availableHeight = Math.min(
+      transcriptState.bottom - transcriptState.top,
+      transcriptState.visibleBottom - transcriptState.visibleTop,
+    )
+    expect(visibleHeight).toBeGreaterThanOrEqual(availableHeight - 27)
     const layoutSize = await browser.execute(() => {
       const paneRect = document.getElementById('pane-files')?.getBoundingClientRect()
       const chatRect = document.getElementById('pane-chat')?.getBoundingClientRect()

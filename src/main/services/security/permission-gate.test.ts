@@ -23,6 +23,11 @@ import {
 } from './web-origin-policy.ts'
 import { detectSandboxFailure } from './sandbox-failure.ts'
 import { REASON_RECURSIVE_DELETE } from './shell-scope.ts'
+import {
+  clearMcpToolPermissionTargets,
+  copseToolPermissionId,
+  registerMcpToolPermissionTarget,
+} from './tool-permissions.ts'
 import { setPermissionGateForTests } from '../tool-registry.ts'
 import {
   ensureShellCommandPermitted,
@@ -141,12 +146,139 @@ describe('ensureToolPermitted', () => {
     )
   })
 
+  it('blocks an explicit tool policy before prompts or auto-allow branches', async () => {
+    setPermissionGateForTests(null)
+    setSetting('toolPermissionOverrides', { [copseToolPermissionId('read_skill')]: 'block' })
+    let prompted = false
+    setApprovalHandler(async () => {
+      prompted = true
+      return { approved: true, remember: false }
+    })
+    try {
+      assert.equal(
+        await ensureToolPermitted({ toolName: 'read_skill', args: { name: 'demo-skill' } }),
+        false,
+      )
+      assert.equal(prompted, false)
+    } finally {
+      setApprovalHandler(null)
+      setSetting('toolPermissionOverrides', {})
+    }
+  })
+
+  it('asks on every invocation even for a normally auto-allowed tool', async () => {
+    setPermissionGateForTests(null)
+    setSetting('toolPermissionOverrides', { [copseToolPermissionId('read_skill')]: 'ask' })
+    let prompts = 0
+    setApprovalHandler(async (request) => {
+      prompts++
+      assert.equal(request.allowRemember, false)
+      return { approved: true, remember: false }
+    })
+    try {
+      const check = { toolName: 'read_skill', args: { name: 'demo-skill' } }
+      assert.equal(await ensureToolPermitted(check), true)
+      assert.equal(await ensureToolPermitted(check), true)
+      assert.equal(prompts, 2)
+    } finally {
+      setApprovalHandler(null)
+      setSetting('toolPermissionOverrides', {})
+    }
+  })
+
+  it('allows an MCP tool without its ordinary approval prompt', async () => {
+    setPermissionGateForTests(null)
+    const toolName = 'mcp__mail__send_mail'
+    const id = registerMcpToolPermissionTarget({
+      serverName: 'mail',
+      toolName: 'send_mail',
+      origin: 'user',
+    })
+    setSetting('toolPermissionOverrides', { [id]: 'allow' })
+    let prompted = false
+    setApprovalHandler(async () => {
+      prompted = true
+      return { approved: false, remember: false }
+    })
+    try {
+      assert.equal(await ensureToolPermitted({ toolName, args: { to: 'a@example.com' } }), true)
+      assert.equal(prompted, false)
+    } finally {
+      setApprovalHandler(null)
+      setSetting('toolPermissionOverrides', {})
+      clearMcpToolPermissionTargets()
+    }
+  })
+
+  it('rechecks block after a pending approval resolves', async () => {
+    setPermissionGateForTests(null)
+    const id = copseToolPermissionId('read_skill')
+    setSetting('toolPermissionOverrides', { [id]: 'ask' })
+    let release: (() => void) | undefined
+    let started: (() => void) | undefined
+    const promptStarted = new Promise<void>((resolve) => {
+      started = resolve
+    })
+    setApprovalHandler(
+      () =>
+        new Promise((resolve) => {
+          started?.()
+          release = (): void => {
+            resolve({ approved: true, remember: false })
+          }
+        }),
+    )
+    try {
+      const pending = ensureToolPermitted({
+        toolName: 'read_skill',
+        args: { name: 'demo-skill' },
+      })
+      await promptStarted
+      setSetting('toolPermissionOverrides', { [id]: 'block' })
+      release?.()
+      assert.equal(await pending, false)
+    } finally {
+      setApprovalHandler(null)
+      setSetting('toolPermissionOverrides', {})
+    }
+  })
+
   it('auto-allows gh_pr_list without prompting', async () => {
     setPermissionGateForTests(null)
     assert.equal(
       await ensureToolPermitted({ toolName: 'gh_pr_list', args: { state: 'open', limit: 20 } }),
       true,
     )
+  })
+
+  it('always allow grants fetch_url access at the network boundary', async () => {
+    setPermissionGateForTests(null)
+    const id = copseToolPermissionId('fetch_url')
+    const url = new URL('https://example.com/resource')
+    const { assertWebOriginAllowed, clearWebOriginGrant, webOriginKey } =
+      await import('./web-origin-policy.ts')
+    setSetting(WEB_ALLOWED_ORIGINS_SETTING, [])
+    setSetting('toolPermissionOverrides', { [id]: 'allow' })
+    let prompts = 0
+    setApprovalHandler(async () => {
+      prompts++
+      return { approved: false, remember: false }
+    })
+    try {
+      assert.equal(
+        await ensureToolPermitted({ toolName: 'fetch_url', args: { url: url.toString() } }),
+        true,
+      )
+      assert.doesNotThrow(() => {
+        assertWebOriginAllowed(url, [])
+      })
+      assert.equal(prompts, 0)
+    } finally {
+      clearWebOriginGrant(webOriginKey(url))
+      setApprovalHandler(null)
+      setSetting('toolPermissionOverrides', {})
+      setSetting(WEB_ALLOWED_ORIGINS_SETTING, DEFAULT_WEB_ALLOWED_ORIGINS)
+    }
   })
 
   it('routes XcodeBuildMCP execution through the MCP approval gate', async () => {
@@ -2212,6 +2344,44 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
 
 // Browser one-time grants belong to the running task, never to a global browser profile.
 describe('browser network approvals', () => {
+  it('always allow grants browser navigation access without an approval prompt', async () => {
+    const { browserAllowedOrigins, currentBrowserScope } =
+      await import('../browser/browser-network-grants.ts')
+    const context = {
+      projectId: 'browser-project',
+      threadId: 'always-allow',
+      projectRoot: '/tmp',
+      root: '/tmp',
+      checkoutMode: 'shared' as const,
+      branch: null,
+    }
+    const id = copseToolPermissionId('browser_navigate')
+    setSetting(WEB_ALLOWED_ORIGINS_SETTING, [])
+    setSetting('toolPermissionOverrides', { [id]: 'allow' })
+    let prompts = 0
+    setApprovalHandler(async () => {
+      prompts++
+      return { approved: false, remember: false }
+    })
+    try {
+      await runWithThreadExecutionContext(context, async () => {
+        assert.equal(
+          await ensureToolPermitted({
+            toolName: 'browser_navigate',
+            args: { url: 'https://example.com' },
+          }),
+          true,
+        )
+        assert.deepEqual(browserAllowedOrigins(currentBrowserScope()), ['https://example.com:443'])
+      })
+      assert.equal(prompts, 0)
+    } finally {
+      setApprovalHandler(null)
+      setSetting('toolPermissionOverrides', {})
+      setSetting(WEB_ALLOWED_ORIGINS_SETTING, DEFAULT_WEB_ALLOWED_ORIGINS)
+    }
+  })
+
   it('uses the network allowlist and scopes one-time navigation approval to its task', async () => {
     const { runWithThreadExecutionContext } = await import('../thread-execution-context.ts')
     const { setSetting } = await import('../storage/settings.ts')

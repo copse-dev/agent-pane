@@ -167,8 +167,8 @@ servers from Settings after changing plugin MCP configs.
 
 ## Related files
 
-- [`docs/adding-a-plugin.md`](adding-a-plugin.md) — practical guide for installing / authoring a pack (plugins are the skills+MCP path today)
-- [`docs/plugins.md`](plugins.md) — the feature-pack manifest that **extends** this plugin.json shape with hooks/prompt/ui/settings/storage slots + the pack lifecycle
+- [`docs/adding-a-plugin.md`](adding-a-plugin.md) — practical guide for installing or authoring a plugin
+- [`docs/plugins.md`](plugins.md) — the Copse extension manifest that **extends** this plugin.json shape with hooks/prompt/ui/settings/storage slots and the plugin lifecycle
 - `src/main/services/cursor-plugins.ts` — discovery and manifest parsing
 - `src/main/services/skills-registry.ts` — skill indexing
 - `src/main/services/mcp-registry.ts` — MCP spawn and tool registration

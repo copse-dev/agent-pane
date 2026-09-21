@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
-import { existsSync, lstatSync, readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { delimiter, dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { satisfies, valid, validRange } from 'semver'
 import { errorMessage } from '@shared/errors.ts'
 import { copseCacheDir } from './storage/copse-paths.ts'
@@ -57,11 +58,15 @@ type ProcessProbe = (
   args: readonly string[],
   env: NodeJS.ProcessEnv,
 ) => string | null | Promise<string | null>
+const cargoExecutableEnv = 'CARGO'
+const rustcExecutableEnv = 'RUSTC'
 
 function sandboxProbe(
   root: string,
   signal?: AbortSignal,
   onFailure?: (message: string) => void,
+  goBookkeeping = false,
+  cargoAdapter = false,
 ): ProcessProbe {
   return async (command, args, env) => {
     try {
@@ -70,6 +75,8 @@ function sandboxProbe(
         env,
         mode: 'preflight',
         offline: true,
+        goBookkeeping,
+        cargoAdapter,
         ...(signal ? { signal } : {}),
       })
     } catch (error) {
@@ -92,10 +99,136 @@ function preparationCacheEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv 
     YARN_GLOBAL_FOLDER: join(root, 'yarn', 'global'),
     BUN_INSTALL_CACHE_DIR: join(root, 'bun'),
     UV_CACHE_DIR: join(root, 'uv'),
+    GOMODCACHE: join(root, 'go', 'mod'),
+    GOCACHE: join(root, 'go', 'build'),
+    GOPATH: join(root, 'go', 'path'),
     electron_config_cache: join(root, 'electron-downloads'),
     COPSE_ELECTRON_DIST_CACHE: join(root, 'electron-dist'),
     COPSE_GORTEX_CACHE: join(root, 'gortex'),
   }
+}
+
+function boundedFile(path: string): string | null {
+  try {
+    const entry = lstatSync(path)
+    if (!entry.isFile() || entry.isSymbolicLink() || entry.size > 64 * 1024) return null
+    return readFileSync(path, 'utf8')
+  } catch {
+    return null
+  }
+}
+
+function containedToolchainFile(toolchain: string, path: string): string | null {
+  try {
+    if (!statSync(path).isFile()) return null
+    const canonical = realpathSync(path)
+    const rel = relative(toolchain, canonical)
+    return rel.length === 0 || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)
+      ? null
+      : canonical
+  } catch {
+    return null
+  }
+}
+
+export function selectInstalledRustupToolchainName(
+  requested: string,
+  defaultName: string | undefined,
+  defaultHost: string | undefined,
+  installedNames: readonly string[],
+): string | null {
+  if (installedNames.includes(requested)) return requested
+  if (
+    defaultName &&
+    (defaultName === requested || defaultName.startsWith(`${requested}-`)) &&
+    installedNames.includes(defaultName)
+  )
+    return defaultName
+  const hostQualified = defaultHost ? `${requested}-${defaultHost}` : null
+  if (hostQualified && installedNames.includes(hostQualified)) return hostQualified
+  const matches = installedNames.filter((name) => name.startsWith(`${requested}-`))
+  return matches.length === 1 ? (matches[0] ?? null) : null
+}
+
+/** Select an already-installed Cargo toolchain without invoking rustup or allowing downloads. */
+export function resolveInstalledRustToolchainBin(
+  root: string,
+  env: NodeJS.ProcessEnv,
+): string | null {
+  if (lstatSync(join(root, 'rust-toolchain.toml'), { throwIfNoEntry: false })) return null
+  const selectedToolchainFile = lstatSync(join(root, 'rust-toolchain'), {
+    throwIfNoEntry: false,
+  })
+    ? 'rust-toolchain'
+    : undefined
+  const toolchainText = selectedToolchainFile
+    ? boundedFile(join(root, selectedToolchainFile))
+    : null
+  if (selectedToolchainFile && toolchainText === null) return null
+  const projectRequest = toolchainText?.trim()
+  if (selectedToolchainFile && !projectRequest) return null
+  if (projectRequest && !/^[A-Za-z0-9._-]+$/.test(projectRequest)) return null
+  const resolveRustupToolchain = (requestedProject: string | undefined): string | null => {
+    try {
+      const rustup = join(homedir(), '.rustup')
+      const settings = boundedFile(join(rustup, 'settings.toml'))
+      const defaultName = settings?.match(/^default_toolchain\s*=\s*["']([^"']+)["']/m)?.[1]
+      const defaultHost = settings?.match(/^default_host_triple\s*=\s*["']([^"']+)["']/m)?.[1]
+      const requested = requestedProject ?? defaultName
+      if (!requested || !/^[A-Za-z0-9._-]+$/.test(requested)) return null
+      const toolchains = join(rustup, 'toolchains')
+      const installedName = selectInstalledRustupToolchainName(
+        requested,
+        defaultName,
+        defaultHost,
+        readdirSync(toolchains),
+      )
+      if (!installedName) return null
+      const toolchain = realpathSync(join(toolchains, installedName))
+      const rel = relative(toolchains, toolchain)
+      if (rel.length === 0 || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel))
+        return null
+      const bin = join(toolchain, 'bin')
+      return containedToolchainFile(toolchain, join(bin, 'cargo')) &&
+        containedToolchainFile(toolchain, join(bin, 'rustc'))
+        ? bin
+        : null
+    } catch {
+      return null
+    }
+  }
+  // A project pin is authoritative. Resolve it from the fixed installed
+  // toolchain store before considering PATH, and never fall back to system Cargo.
+  if (projectRequest) return resolveRustupToolchain(projectRequest)
+  const pathCandidates = (env['PATH'] ?? '')
+    .split(delimiter)
+    .filter(Boolean)
+    .map((directory) => join(directory, 'cargo'))
+  for (const candidate of pathCandidates) {
+    try {
+      const cargo = realpathSync(candidate)
+      if (!statSync(cargo).isFile()) continue
+      if (basenameWithoutExtension(cargo) !== 'rustup') {
+        const trustedRoot = ['/usr', '/usr/local', '/opt/homebrew'].find((prefix) => {
+          const rel = relative(prefix, cargo)
+          return rel.length > 0 && rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel)
+        })
+        if (!trustedRoot) continue
+        const bin = dirname(cargo)
+        if (containedToolchainFile(dirname(bin), join(bin, 'rustc'))) return bin
+        continue
+      }
+      return resolveRustupToolchain(undefined)
+    } catch {
+      /* Try another PATH entry. */
+    }
+  }
+  return null
+}
+
+function basenameWithoutExtension(path: string): string {
+  const name = path.slice(path.lastIndexOf(sep) + 1)
+  return process.platform === 'win32' ? name.replace(/\.exe$/i, '') : name
 }
 
 export function worktreePreparationShellEnvironment(
@@ -105,7 +238,11 @@ export function worktreePreparationShellEnvironment(
   if (!existsSync(root)) return env
   try {
     const plan = readWorktreePreparationPlan(root)
-    return plan.problems.length === 0 ? preparationCacheEnvironment(env) : env
+    if (plan.problems.length !== 0) return env
+    const result = preparationCacheEnvironment(env)
+    return plan.ecosystem === 'cargo'
+      ? { ...result, CARGO_HOME: join(copseCacheDir(env), 'cargo') }
+      : result
   } catch {
     return env
   }
@@ -131,8 +268,14 @@ function environmentForPlan(
   plan: WorktreePreparationPlan,
   offline: boolean,
 ): NodeJS.ProcessEnv {
-  return {
-    ...env,
+  const inherited =
+    plan.ecosystem === 'cargo'
+      ? Object.fromEntries(Object.entries(env).filter(([key]) => !/^(?:CARGO|RUST)/.test(key)))
+      : { ...env }
+  const rustBin =
+    plan.ecosystem === 'cargo' ? resolveInstalledRustToolchainBin(plan.root, env) : null
+  const result: NodeJS.ProcessEnv = {
+    ...inherited,
     // Explicit versions are selected through Corepack; do not rewrite package.json.
     COREPACK_ENABLE_AUTO_PIN: '0',
     COREPACK_ENABLE_NETWORK: offline ? '0' : '1',
@@ -144,6 +287,32 @@ function environmentForPlan(
           PYTHONDONTWRITEBYTECODE: '1',
         }
       : {}),
+    ...(plan.ecosystem === 'go'
+      ? {
+          GOENV: 'off',
+          GOTOOLCHAIN: 'local',
+          GOFLAGS: '-mod=readonly',
+          GOWORK: existsSync(join(plan.root, 'go.work')) ? join(plan.root, 'go.work') : 'off',
+          GOPROXY: offline ? 'off' : (env['GOPROXY'] ?? 'https://proxy.golang.org,direct'),
+        }
+      : {}),
+    ...(plan.ecosystem === 'cargo'
+      ? {
+          CARGO_HOME: join(copseCacheDir(env), 'cargo'),
+          CARGO_NET_OFFLINE: offline ? 'true' : 'false',
+          CARGO_CACHE_AUTO_CLEAN_FREQUENCY: 'never',
+          RUSTUP_AUTO_INSTALL: '0',
+          // Exclude rustup proxies and project/ambient wrappers. The adapter
+          // uses only the canonical, already-installed toolchain resolved above.
+          PATH: rustBin ?? '',
+          ...(rustBin
+            ? {
+                [cargoExecutableEnv]: join(rustBin, 'cargo'),
+                [rustcExecutableEnv]: join(rustBin, 'rustc'),
+              }
+            : {}),
+        }
+      : {}),
     ...(plan.manager?.name === 'yarn' && plan.manager.modernYarn
       ? {
           YARN_ENABLE_NETWORK: offline ? 'false' : 'true',
@@ -152,6 +321,18 @@ function environmentForPlan(
         }
       : {}),
   }
+  return result
+}
+
+function executableForPlan(
+  plan: WorktreePreparationPlan,
+  command: string,
+  env: NodeJS.ProcessEnv,
+): string | null {
+  if (plan.ecosystem !== 'cargo') return command
+  if (command === 'cargo') return env[cargoExecutableEnv] ?? null
+  if (command === 'rustc') return env[rustcExecutableEnv] ?? null
+  return command
 }
 
 function readStamp(root: string): string | null {
@@ -174,9 +355,15 @@ async function inspectPlan(
   const probeFailures: string[] = []
   const probe =
     options.probe ??
-    sandboxProbe(plan.root, undefined, (message) => {
-      probeFailures.push(message)
-    })
+    sandboxProbe(
+      plan.root,
+      undefined,
+      (message) => {
+        probeFailures.push(message)
+      },
+      plan.ecosystem === 'go',
+      plan.ecosystem === 'cargo',
+    )
   const components: WorktreePreparationComponent[] = []
   const identity: string[] = [plan.fingerprint, process.platform, process.arch]
   if (plan.manager) {
@@ -263,9 +450,13 @@ async function inspectPlan(
   for (const check of plan.checks) {
     probeFailures.length = 0
     const pathReady = check.path === undefined || existsSync(join(plan.root, check.path))
-    const output = check.command
-      ? await probe(check.command.command, check.command.args, env)
+    const checkExecutable = check.command
+      ? executableForPlan(plan, check.command.command, env)
       : null
+    const output =
+      check.command && checkExecutable
+        ? await probe(checkExecutable, check.command.args, env)
+        : null
     if (check.fingerprintOutput) identity.push(check.name, output ?? 'unavailable')
     const commandReady =
       !check.command ||
@@ -352,8 +543,10 @@ export async function prepareWorktree(
   ): Promise<void> => {
     options.signal.throwIfAborted()
     assertPreparationPlan(root, options.planFingerprint)
+    const executable = executableForPlan(plan, step.command, childEnv)
+    if (!executable) throw new Error('The selected installed Cargo toolchain is unavailable.')
     emitShellOutput(`[prepare-worktree] ${JSON.stringify([step.command, ...step.args])}\n`)
-    await runWorktreePreparationProcess(step.command, step.args, {
+    await runWorktreePreparationProcess(executable, step.args, {
       root,
       env: childEnv,
       mode: 'prepare',
@@ -361,6 +554,11 @@ export async function prepareWorktree(
       signal: options.signal,
       output: emitShellOutput,
       additionalExecutables,
+      ...(plan.ecosystem === 'go' && step.command === 'go' ? { projectWritable: false } : {}),
+      ...(plan.ecosystem === 'cargo' && step.command === 'cargo'
+        ? { projectWritable: false, cargoAdapter: true }
+        : {}),
+      goBookkeeping: plan.ecosystem === 'go' && step.command === 'go',
     })
   }
   // Host runtime is only used for fixed file operations; non-Node projects need no Node install.

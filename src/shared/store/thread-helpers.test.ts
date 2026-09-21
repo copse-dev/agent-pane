@@ -383,6 +383,35 @@ describe('blank thread reuse', () => {
     assert.equal('cacheCreationTokens' in usage, false)
   })
 
+  it('retains tier buckets across mixed calls for one model', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    addUsageDelta(store, threadId, {
+      model: 'gpt-4o',
+      inputTokens: 100,
+      outputTokens: 10,
+      requestedServiceTier: 'flex',
+    })
+    addUsageDelta(store, threadId, {
+      model: 'gpt-4o',
+      inputTokens: 200,
+      outputTokens: 20,
+      requestedServiceTier: 'flex',
+      responseServiceTier: 'priority',
+    })
+    addUsageDelta(store, threadId, { model: 'gpt-4o', inputTokens: 300, outputTokens: 30 })
+
+    const thread = getThreadById(store, threadId)
+    assert.deepEqual(thread?.usage.byModel?.['gpt-4o'], {
+      inputTokens: 600,
+      outputTokens: 60,
+      serviceTierUsage: {
+        flex: { inputTokens: 100, outputTokens: 10 },
+        priority: { inputTokens: 200, outputTokens: 20 },
+      },
+    })
+  })
+
   it('normalizeBlankThreads keeps blank threads that have draft prompts', () => {
     const store = createStore()
     const draftBlank = createThread(store)

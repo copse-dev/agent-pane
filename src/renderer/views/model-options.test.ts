@@ -117,6 +117,7 @@ function mockApi(opts: MockOpts = {}): ApiClient {
                       ui: [],
                       followUps: [],
                       capabilities: [],
+                      instructionSources: [],
                       permissions: [],
                     },
                     settings: [],
@@ -373,6 +374,43 @@ describe('fetchModelOptions visibility', () => {
     )
     // The bare "acp:cursor" (agent default) entry is intentionally omitted.
     assert.ok(!acp.some((o) => o.value === 'acp:cursor'))
+  })
+
+  it('gives the same Grok model one label and measured score across providers', async () => {
+    const options = await fetchModelOptions(
+      mockApi({
+        available: { openrouter: true, cursor: true },
+        openRouterModels: [
+          { id: 'x-ai/grok-build-0.1', name: 'xAI: Grok Build 0.1' },
+          { id: 'x-ai/grok-4.3', name: 'SpaceXAI: Grok 4.3' },
+        ],
+        cursorCloudModels: [
+          { id: 'grok-build-0.1', label: 'grok-build-0.1' },
+          { id: 'grok-4.3', label: 'grok-4.3' },
+        ],
+        acpAgents: [
+          {
+            id: 'cursor',
+            title: 'Cursor',
+            command: 'cursor-agent',
+            enabled: true,
+            availableModels: [
+              { value: 'grok-build-0.1', label: 'grok-build-0.1' },
+              { value: 'grok-4.3', label: 'grok-4.3' },
+            ],
+          },
+        ],
+      }),
+      '',
+    )
+    const buildRoutes = options.filter((option) => option.value.endsWith('grok-build-0.1'))
+    assert.equal(buildRoutes.length, 3)
+    for (const route of buildRoutes) {
+      assert.equal(route.label, `Grok Build 0.1${intellectSuffix('grok-build-0-1-06-16')}`)
+    }
+    const grok43Routes = options.filter((option) => option.value.endsWith('grok-4.3'))
+    assert.equal(grok43Routes.length, 3)
+    assert.ok(grok43Routes.every((route) => route.label === 'Grok 4.3'))
   })
 
   it('normalises raw GPT model ids advertised by an ACP agent', async () => {

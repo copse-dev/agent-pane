@@ -186,6 +186,8 @@ const api: ApiClient = {
   fs: {
     readFile: (projectId: string, threadId: string, path: string) =>
       ipcRenderer.invoke('fs:read-file', projectId, threadId, path),
+    readImage: (projectId: string, threadId: string, path: string) =>
+      ipcRenderer.invoke('fs:read-image', projectId, threadId, path),
     writeFile: (projectId: string, threadId: string, path: string, content: string) =>
       ipcRenderer.invoke('fs:write-file', projectId, threadId, path, content),
     readdir: (projectId: string, threadId: string, path: string) =>
@@ -637,6 +639,11 @@ const api: ApiClient = {
       }
     },
   },
+  toolPermissions: {
+    list: () => ipcRenderer.invoke('tool-permissions:list'),
+    set: (update) => ipcRenderer.invoke('tool-permissions:set', update),
+    reset: (reset) => ipcRenderer.invoke('tool-permissions:reset', reset),
+  },
   canvas: {
     onArtefact: (handler: (artefact: import('@shared/types/canvas.ts').CanvasArtefact) => void) => {
       const listener = (
@@ -666,6 +673,8 @@ const api: ApiClient = {
     },
     listArtefacts: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('canvas:list-artefacts', projectId, threadId),
+    readArtefact: (projectId: string, threadId: string, title: string) =>
+      ipcRenderer.invoke('canvas:read-artefact', projectId, threadId, title),
     reopenArtefact: (projectId: string, threadId: string, title: string) =>
       ipcRenderer.invoke('canvas:reopen-artefact', projectId, threadId, title),
   },
@@ -918,6 +927,8 @@ const api: ApiClient = {
     /** Import outside Cursor cloud agents as local thread stubs for a project. */
     discoverExternal: (projectId?: string) =>
       ipcRenderer.invoke('remote-agent:discover-external', projectId),
+    refreshImportedThread: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('remote-agent:refresh-imported-thread', projectId, threadId),
   },
   acp: {
     detectAgents: () => ipcRenderer.invoke('acp:detect-agents'),
@@ -1365,6 +1376,8 @@ const api: ApiClient = {
       ipcRenderer.invoke('git:committed-changes', projectId, threadId),
     committedFileDiff: (projectId: string, threadId: string, path: string) =>
       ipcRenderer.invoke('git:committed-file-diff', projectId, threadId, path),
+    currentBranch: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('git:current-branch', projectId, threadId),
     branchStatus: (projectId: string, threadId: string, forBranch?: string) =>
       ipcRenderer.invoke('git:branch-status', projectId, threadId, forBranch),
     promptState: (projectId: string, threadId: string) =>

@@ -89,23 +89,47 @@ describe('sessionStart fire site (H4)', () => {
     assert.equal(stdin['is_background_agent'], false)
   })
 
-  it('is detached — a slow sessionStart hook does not block the caller (decision 3)', async () => {
-    const threadId = `ss-slow-${String(threadCounter++)}`
-    const marker = join(tempHome, 'ss-slow.marker')
-    const script = join(tempHome, 'ss-slow.sh')
-    await writeFile(script, `#!/bin/sh\ncat > /dev/null\nsleep 0.5\n: > '${marker}'\n`, 'utf-8')
-    await chmod(script, 0o755)
-    await writeUserHooks({ hooks: { sessionStart: [{ command: script }] } })
+  it(
+    'is detached — completion waits for the caller to release the hook (decision 3)',
+    { timeout: 15_000 },
+    async () => {
+      const threadId = `ss-gated-${String(threadCounter++)}`
+      const marker = join(tempHome, 'completed.marker')
+      const release = join(tempHome, 'release.marker')
+      const script = join(tempHome, 'gated-hook.sh')
+      // Completion is controlled by the caller, not a race between a short
+      // sleep and process scheduling under load. This timeout is only a bound
+      // for a broken implementation that incorrectly waits for the hook.
+      setCursorHookTimeoutForTest(10_000)
+      await writeFile(
+        script,
+        `#!/bin/sh\ncat > /dev/null\nwhile [ ! -f '${release}' ]; do sleep 0.02; done\n: > '${marker}'\n`,
+        'utf-8',
+      )
+      await chmod(script, 0o755)
+      await writeUserHooks({ hooks: { sessionStart: [{ command: script }] } })
 
-    const t0 = Date.now()
-    const result = await fire(threadId)
-    const elapsed = Date.now() - t0
-    assert.equal(result.ran, 1)
-    assert.ok(elapsed < 300, `dispatch must not block on the hook; took ${String(elapsed)}ms`)
-    assert.equal(existsSync(marker), false)
-    await result.settled
-    assert.equal(existsSync(marker), true)
-  })
+      const result = await fire(threadId)
+      let completed = false
+      const settled = result.settled.then(() => {
+        completed = true
+      })
+      try {
+        // Flush a settled promise's reaction: an implementation that awaited
+        // the child (including its timeout) must fail this ordering assertion.
+        await Promise.resolve()
+        assert.equal(result.ran, 1)
+        assert.equal(completed, false, 'dispatch must return before the hook settles')
+        assert.equal(existsSync(marker), false)
+      } finally {
+        // Release even after an assertion failure so no live child outlasts
+        // its fixture or observes the next test's temporary home.
+        await writeFile(release, '')
+        await settled
+      }
+      assert.equal(existsSync(marker), true, 'the released hook must actually complete')
+    },
+  )
 
   it("collects a hook's `env` output into the session env store", async () => {
     const threadId = `ss-env-${String(threadCounter++)}`

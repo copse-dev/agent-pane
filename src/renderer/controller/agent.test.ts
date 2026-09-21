@@ -9,6 +9,7 @@ import { getThreadById } from '@shared/store/thread-helpers.ts'
 import type { Message, Thread, StreamChunk } from '@shared/types'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { markQuietRun } from './quiet-runs.ts'
+import { sessionUpdateToStreamChunks } from '../../main/services/acp/session-update-adapter.ts'
 
 function at<T>(arr: readonly T[], i: number): T {
   const value = arr[i]
@@ -391,6 +392,31 @@ test('tool_call_update patches ACP arguments, output, and status in place', () =
   tc = at(at(messages(), 0).toolCalls, 0)
   assert.equal(tc.status, 'done')
   assert.equal(tc.result, 'starting')
+})
+
+test('an ACP startup failure settles with its error before any later notification', () => {
+  const { send, messages } = setup()
+  const error = 'MCP server `docs` failed to start: connection refused'
+  for (const chunk of sessionUpdateToStreamChunks({
+    sessionUpdate: 'tool_call',
+    toolCallId: 'startup-docs',
+    title: 'mcp__docs__startup',
+    kind: 'other',
+    status: 'failed',
+    content: [{ type: 'content', content: { type: 'text', text: error } }],
+  }))
+    send(chunk)
+
+  const calls = messages().flatMap((message) => message.toolCalls)
+  assert.equal(calls.length, 1)
+  assert.deepEqual(calls[0], {
+    id: 'startup-docs',
+    name: 'mcp__docs__startup',
+    args: {},
+    status: 'error',
+    result: error,
+    resultFormat: 'markdown',
+  })
 })
 
 // #2332 defect 3. The ACP update pump is per *session*, not per turn, and the

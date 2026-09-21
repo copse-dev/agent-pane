@@ -15,6 +15,7 @@ import { ToolRegistry } from './tool-registry.ts'
 import { runWithActiveRunIdentity } from './thread-models.ts'
 import { runWithThreadExecutionContext } from './thread-execution-context.ts'
 import { PluginRegistry } from '@copse/agent/plugins/plugin-registry.ts'
+import { agentsMdPlugin } from '@copse/agent/plugins/agents-md-plugin.ts'
 import { definePlugin } from '@copse/agent/plugins/plugin-manifest.ts'
 import { setDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import {
@@ -405,7 +406,9 @@ describe('runAgent AgentHost decoupling', () => {
         yield { type: 'text' as const, text: 'Done.' }
       },
     }
-    setDefaultPluginRegistry(new PluginRegistry())
+    const plugins = new PluginRegistry()
+    plugins.register(agentsMdPlugin)
+    setDefaultPluginRegistry(plugins)
     await setSetting('subagentsEnabled', false)
     await setSetting('skillsEnabled', false)
 
@@ -522,7 +525,9 @@ describe('runAgent AgentHost decoupling', () => {
       },
     }
     const received: StreamChunk[] = []
-    setDefaultPluginRegistry(new PluginRegistry())
+    const plugins = new PluginRegistry()
+    plugins.register(agentsMdPlugin)
+    setDefaultPluginRegistry(plugins)
     await setSetting('subagentsEnabled', false)
     await setSetting('skillsEnabled', false)
 
@@ -675,5 +680,124 @@ describe('runAgent AgentHost decoupling', () => {
     assert.equal(terminal.outcome.stopReason, 'max_steps')
     assert.equal(terminal.outcome.rawStopReason, 'max_steps')
     assert.deepEqual(received.at(-1), { type: 'done', stopReason: 'max_steps' })
+  })
+
+  it('explains an exhausted continuation budget with the remaining plan', async () => {
+    const received: StreamChunk[] = []
+    let providerCalls = 0
+    const provider: LLMProvider = {
+      stream: async function* () {
+        providerCalls++
+        yield { type: 'text' as const, text: 'I could not finish the remaining work.' }
+        yield { type: 'done' as const }
+      },
+    }
+
+    const result = await runWithThreadExecutionContext(
+      {
+        projectId: 'project-1',
+        threadId: 'thread-continuation-limit',
+        projectRoot: '/workspace',
+        root: '/workspace',
+        checkoutMode: 'shared',
+        branch: null,
+      },
+      () =>
+        runWithActiveRunIdentity('thread-continuation-limit', () =>
+          agentService.runAgent(
+            'thread-continuation-limit',
+            'keep working',
+            [],
+            { emit: (_threadId, chunk) => received.push(chunk) },
+            new ToolRegistry(),
+            {
+              model: 'claude-sonnet-4-6',
+              provider,
+              contextWindow: 100_000,
+              turnTreeId: 'tree-continuation-limit',
+              continuationBudgetUsed: 5,
+              priorTodos: [
+                { id: 'implement', content: 'Implement the parser', status: 'in_progress' },
+                { id: 'test', content: 'Add the regression tests', status: 'pending' },
+              ],
+            },
+          ),
+        ),
+    )
+
+    assert.equal(providerCalls, 1, 'the summary must not start another model turn')
+    const summaries = received.filter(
+      (chunk) => chunk.type === 'text' && chunk.text.includes('automatic continuation limit'),
+    )
+    assert.equal(summaries.length, 1)
+    const summary = summaries[0]
+    assert.ok(summary?.type === 'text')
+    assert.match(summary.text, /^\n\nCopse reached/)
+    assert.match(summary.text, /In progress: Implement the parser/)
+    assert.match(summary.text, /Pending: Add the regression tests/)
+    assert.match(summary.text, /already at its limit/)
+    assert.ok(
+      result.messages.some(
+        (message) =>
+          message.role === 'assistant' &&
+          typeof message.content === 'string' &&
+          message.content === summary.text,
+      ),
+      'the streamed explanation must also be persisted in provider history',
+    )
+    assert.ok(received.at(-1)?.type === 'done')
+  })
+
+  it('reports granted allowance reasons without calling them completed attempts', async () => {
+    const received: StreamChunk[] = []
+    let providerCalls = 0
+    const provider: LLMProvider = {
+      stream: async function* () {
+        providerCalls++
+        yield { type: 'text' as const, text: 'The plan item remains open.' }
+        yield { type: 'done' as const }
+      },
+    }
+
+    await runWithThreadExecutionContext(
+      {
+        projectId: 'project-1',
+        threadId: 'thread-continuation-grants',
+        projectRoot: '/workspace',
+        root: '/workspace',
+        checkoutMode: 'shared',
+        branch: null,
+      },
+      () =>
+        runWithActiveRunIdentity('thread-continuation-grants', () =>
+          agentService.runAgent(
+            'thread-continuation-grants',
+            'keep working',
+            [],
+            { emit: (_threadId, chunk) => received.push(chunk) },
+            new ToolRegistry(),
+            {
+              model: 'claude-sonnet-4-6',
+              provider,
+              contextWindow: 100_000,
+              turnTreeId: 'tree-continuation-grants',
+              continuationBudgetUsed: 4,
+              priorTodos: [
+                { id: 'remaining', content: 'Resolve the parser ambiguity', status: 'pending' },
+              ],
+            },
+          ),
+        ),
+    )
+
+    assert.equal(providerCalls, 2, 'one granted pre-review continuation plus the original turn')
+    const summary = received.find(
+      (chunk) => chunk.type === 'text' && chunk.text.includes('automatic continuation limit'),
+    )
+    assert.ok(summary?.type === 'text')
+    assert.match(summary.text, /Continuation allowances granted during this run:/)
+    assert.match(summary.text, /pre-review plan reconciliation: 1/)
+    assert.doesNotMatch(summary.text, /todo closeout/)
+    assert.doesNotMatch(summary.text, /attempt/)
   })
 })

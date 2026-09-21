@@ -11,6 +11,30 @@ to start, has no containment: every command prompts. The optional LM Studio clas
 authorization boundary. The deterministic auto-approval classifier may skip a prompt only while the
 project sandbox is active.
 
+## Per-tool permission settings
+
+Settings → Permissions lists registered Copse, custom, and connected MCP tools. Each tool can keep
+its inherited default or receive one explicit override:
+
+- **Always allow** skips the tool's ordinary approval prompt. It does not bypass tool-gate hooks,
+  read-only mode, diff approval, workspace trust, the OS sandbox, hard web/browser denials, or
+  separate operation-specific approval such as a sandbox escape or background port binding.
+- **Always ask** requires approval for every invocation. It disables remembered grants,
+  annotation-based/read-only auto-allow, shell auto-approval, trusted-command routing, replay
+  leases, and standing outside-project read grants for that tool.
+- **Blocked** rejects before hooks, prompts, cache lookup, or handler execution. If the setting
+  changes to Blocked while an approval is pending, the gate rechecks it before execution.
+
+Resetting a row removes its override and restores the existing policy behavior. Group actions store
+only the explicit tool ids currently shown in that group, so tools discovered later inherit their
+own defaults. Stable MCP identities include origin, source, server, and tool name; an ambiguous
+legacy execution name fails closed rather than inheriting another server's grant.
+
+Always allow is unavailable where the product contract requires a fresh operation-specific
+approval: worktree preparation, mutating GitHub actions, and custom tools declared with
+`requiresApproval`. An approval prompt's existing “remember” action writes the same explicit
+Always allow policy when that policy is available.
+
 ## Platform matrix
 
 | Situation                                | Sandbox-contained command                                                    | Hard-external command (network download, `git push`, install, `~/...`)                                                               | Ambiguous “may reach” command (`gh`, `nc`, cloud CLIs, `open <url>`)                                                                                                                                                             |
@@ -34,7 +58,7 @@ The process runs with normal host access. The generic project sandbox is not a f
 for Xcode's package resolution, caches, Keychain and signing services, CoreSimulator, devices, and
 project-controlled build phases.
 
-The agent receives the pinned XcodeBuildMCP server only while the first-party pack is enabled and
+The agent receives the pinned XcodeBuildMCP server only while the first-party plugin is enabled and
 the active local macOS project is enrolled. All upstream workflows are available. Each call passes
 through the normal MCP permission gate, including its per-tool remembered grants and corroborated
 read-only auto-run option; enrollment alone does not approve agent execution. XcodeBuildMCP runs
@@ -47,18 +71,30 @@ products remain in Copse-owned per-operation scratch directories, with ownership
 duration, and log bounds enforced. A host restart invalidates the panel operation authority epoch,
 so a recovered task cannot launch a second Xcode process whose predecessor may still be alive.
 
+## ACP MCP mediation
+
+Configured MCP servers are never handed directly to an external ACP agent. Direct forwarding lets
+the agent call a server without a host callback, which would bypass Copse's hooks, read-only mode,
+and per-tool permission policy. Copse instead advertises the connected server's registered
+`mcp__...` tools through its authenticated native-tool HTTP bridge. Each call returns through
+`ToolRegistry` and the normal permission gate before cache lookup or handler execution.
+
+An ACP agent that does not advertise MCP-over-HTTP support cannot mount that bridge and receives no
+configured MCP tools. This is deliberately fail-closed: ACP provides no per-call host enforcement
+point for a stdio or HTTP MCP server the external agent mounts itself.
+
 ## Shared Run app workflow
 
 The titlebar/project-menu **Run app…** flow is available for detected local Apple and Android
-projects independently of agent-pack enrollment. Opening the picker authorizes loading the project
+projects independently of agent-plugin enrollment. Opening the picker authorizes loading the project
 configuration (including Gradle configuration or Xcode metadata). Clicking Build, Test, or Run
 authorizes the selected workflow and its project-controlled build scripts with normal host access.
 The main process resolves the selected project/thread checkout and validates the discovered app,
 variant, and device. It never receives arbitrary command lines from the renderer. This workflow does
-not enable agent packs or create remembered agent-tool permissions.
+not enable agent plugins or create remembered agent-tool permissions.
 
 The shared Apple picker defaults signing-profile updates off. Its explicit per-run checkbox adds
-`-allowProvisioningUpdates` only to that operation; the existing Apple pack/MCP behavior described
+`-allowProvisioningUpdates` only to that operation; the existing Apple plugin/MCP behavior described
 above is preserved. Creating a device uses an installed runtime. Downloading an iOS runtime or an
 Android system image is a separate labeled action. Android license agreements are not silently
 accepted. External setup links open only the fixed Xcode/Android Studio destinations.
@@ -109,24 +145,35 @@ The in-memory grant disappears on restart. The decision record does not: an answ
 `decision` spine event at `scope: external-read`, including the paths and whether the grant was
 remembered. Each later allowed command records a verdict sourced to `read-outside-grant`.
 
-## Native commit signing
+## Native commits and signing
 
-Copse's native `git_commit` tool honours the repository's Git signing configuration while keeping
-the commit subprocess inside the project sandbox. On macOS, Settings › Permissions offers an
-off-by-default grant that lets only that commit subprocess connect to the single Unix socket named
-by `SSH_AUTH_SOCK`. The path must be absolute, normalised, and a socket at the time of use. Internet
-access remains denied.
+`git_commit` runs fixed add/commit argv, preserving hooks and signing. Local commands
+stay inside the available project sandbox even when `git` has a remembered shell
+bypass. Without containment, each commit prompts before staging. Auto-run disabled
+also prompts. An unsuccessful helper never triggers an unsigned or unsandboxed retry.
 
-The grant is explicit because ssh-agent has no commit-only operation: Git hooks inherit the commit
-sandbox and can ask the agent to use any loaded key. Recommend `ssh-add -c` when enabling it. Linux
-does not receive the grant because seccomp cannot restrict Unix sockets by path; Windows has no
-project sandbox.
+On macOS, Settings → Permissions → Commit signing enables **scoped SSH signing
+approvals**, off by default. After a trusted sandboxed socket probe receives an OS
+permission denial, Copse asks to use the system SSH signer, one configured public key
+and the exact agent socket. Remembering covers that project and identity until app
+restart. Changes to the config, key, signer binary or socket require new approval.
+Always ask suppresses remembering; turning off the setting blocks further brokered
+signing. Config supplied by the repository never grants authority on its own.
 
-When `user.signingKey` names a private-key path, Copse reads only its non-symlink `.pub` sibling
-in the trusted main process and passes the public identity to Git as an inline `key::` value. The
-sandbox never gains read access to the private key or the `.ssh` directory. A small pinned patch to
-`@anthropic-ai/sandbox-runtime` makes its documented per-spawn `allowUnixSockets` option reach the
-macOS seatbelt profile; remove that patch once upstream ships the equivalent fix.
+The socket is available only to a separately sandboxed `/usr/bin/ssh-keygen`, with
+fixed arguments selecting that public key and the `git` signing namespace. Git and
+its hooks receive a single-use commit-signing endpoint; they cannot talk to ssh-agent
+directly. The configured private key remains unreadable. The helper and key are
+pinned through command-line config, so changing Git config during approval cannot
+replace the approved executable. The broker accepts bounded commit objects, not
+commands or arbitrary SSH authentication requests.
+
+The setting supports the default/system SSH signer. Custom signing programs and
+other configured helpers keep ordinary project sandbox access. Linux does not get a
+socket grant because its backend cannot restrict Unix sockets by path; Windows has
+no project sandbox. No global socket/network allowlist is widened. The existing
+pinned ASRT patch provides per-spawn macOS socket permissions for these isolated
+processes. See [the threat model](threat-model.md#scoped-ssh-signing) for exact limits.
 
 ## What an approval prompt says
 
@@ -239,7 +286,9 @@ writable roots or change the approval policy.
   `gh-argv.ts` (GitHub CLI shapes), `command-routing.ts` (trusted-command routing). The
   `src/main/services/security/` files of the same names re-export them and bind the two facts
   only the app knows through `shell-guard-environment.ts`: the read-only chat-store mount and
-  the scratch directories configured ACP agents declare.
+  the scratch directories configured ACP agents declare. Docker run/pull/push and Apple
+  container run/image pull/image push are hard-external; read-only list/inspect/status commands
+  remain sandbox-scoped.
 - `read-outside-grant.ts`: the thread-scoped read grant; the approval-prompt copy for it stays in
   `read-outside-project.ts` beside the other prompt formatters.
 - `safety-classifier.ts`: optional LM Studio classifier used only when the OS sandbox is unavailable.

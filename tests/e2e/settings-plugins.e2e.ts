@@ -179,6 +179,45 @@ describe('settings plugins (about:addons)', function () {
       'settings-site-building-plugin.png',
     )
 
+    // Project-instruction compatibility is now represented by three ordinary,
+    // stable first-party plugins. The Agents row owns the four-mode policy;
+    // existing seeded profiles migrate to the historical combined behavior.
+    const agentsMdRow = plugins.$('.plugin-row[data-plugin-id="copse.agents-md"]')
+    await expect(agentsMdRow).toBeDisplayed()
+    await expect(agentsMdRow.$('.plugin-badge-stable')).toHaveText('Stable')
+    assert.equal(await agentsMdRow.getAttribute('data-enabled'), 'true')
+    assert.match(await agentsMdRow.getText(), /Instruction sources × 1/)
+    await agentsMdRow.$('.plugin-settings-summary').click()
+    const instructionMode = agentsMdRow.$(
+      'select.plugin-setting-enum[data-setting-key="instructionFiles"]',
+    )
+    await expect(instructionMode).toBeDisplayed()
+    assert.equal(await instructionMode.getValue(), 'claude-md-and-agents-md')
+    // Frame the setting above the sticky Save/Cancel footer. Native
+    // scrollIntoView centres against the whole scrollport, including the
+    // translucent area occupied by that footer, so the control can otherwise
+    // be legible to WebDriver but obscured in the visual proof.
+    await browser.execute(() => {
+      const target = document.querySelector(
+        '.plugin-row[data-plugin-id="copse.agents-md"] select.plugin-setting-enum[data-setting-key="instructionFiles"]',
+      )
+      const scroller = target?.closest('.settings-content')
+      if (!(target instanceof HTMLElement) || !(scroller instanceof HTMLElement)) return
+      const targetRect = target.getBoundingClientRect()
+      const scrollerRect = scroller.getBoundingClientRect()
+      const desiredTop = scrollerRect.top + scrollerRect.height * 0.4
+      scroller.scrollTop += targetRect.top - desiredTop
+    })
+    await browser.pause(100)
+    await saveElementScreenshot('#settings-dialog', 'settings-agents-md-plugin.png')
+
+    for (const pluginId of ['copse.claude-md', 'copse.cursor-rules']) {
+      const instructionRow = plugins.$(`.plugin-row[data-plugin-id="${pluginId}"]`)
+      await expect(instructionRow).toBeDisplayed()
+      assert.equal(await instructionRow.getAttribute('data-enabled'), 'true')
+      assert.match(await instructionRow.getText(), /Instruction sources × 1/)
+    }
+
     // Local cron automations are a new, explicit opt-in. Upgrading
     // must not arm a clock-driven feature until the user enables the plugin.
     const automationsRow = plugins.$('.plugin-row[data-plugin-id="copse.automations"]')

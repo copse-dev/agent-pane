@@ -103,6 +103,7 @@ import {
 import { begin as perfBegin, mark as perfMark } from './perf.ts'
 import { startPerfAutopilot } from './perf-autopilot.ts'
 import { attachThreadHydration } from './controller/thread-hydration.ts'
+import { attachImportedCursorAgentRefresh } from './controller/imported-cursor-agent-refresh.ts'
 import { attachPrPanelFollow } from './controller/pr-panel-follow.ts'
 import { startExternalCursorAgentSync } from './controller/external-cursor-agent-sync.ts'
 import { loadStartupSettings } from './controller/startup-settings.ts'
@@ -120,7 +121,12 @@ import {
   showCanvasArtefact,
 } from './controller/panels.ts'
 import type { RightPanelMode } from '@shared/types/state.ts'
-import { setArtefactPreview, setArtefactShowHandler } from './canvas/artefact-previews.ts'
+import {
+  getArtefactContent,
+  setArtefactContent,
+  setArtefactPreview,
+  setArtefactShowHandler,
+} from './canvas/artefact-previews.ts'
 import { loadMonaco } from './monaco/setup.ts'
 import { mountPaneResizers, parseSavedLayout } from './views/pane-resizer.ts'
 import { bindChatComposerLayout } from './views/chat-layout.ts'
@@ -355,6 +361,7 @@ async function boot(): Promise<void> {
   // PROTOTYPE (lazy thread loading): no-op unless main returned metadata-only
   // threads, i.e. unless COPSE_LAZY_THREADS=1.
   attachThreadHydration(store, api)
+  if (!popoutMode) attachImportedCursorAgentRefresh(store, api)
 
   mountTitlebar(requireElement('titlebar'), store, api)
 
@@ -418,8 +425,9 @@ async function boot(): Promise<void> {
     void resetUiScale(store, api)
   })
 
-  // MCP-UI canvas: an artefact from a (bundled or external) MCP server opens in
-  // the Browser pane, rendered fully sandboxed.
+  // MCP-UI canvas: ordinary resources open in the Browser pane. Provider
+  // presentation references stay in the transcript and mount their own
+  // process-isolated preview there.
   api.canvas.onArtefact((artefact) => {
     ensureLayout()
     // Record the thumbnail before the pane reacts, so a card rendered for this
@@ -433,13 +441,20 @@ async function boot(): Promise<void> {
     // to prevent. An unattributed artefact simply gets no thumbnail: every other
     // unattributed path here fails closed the same way (the mirror keys under
     // `''`, tabs under `null`).
-    if (artefact.threadId) {
-      setArtefactPreview(artefact.threadId, artefact.title, artefact.preview)
+    const threadId = artefact.owner?.threadId ?? artefact.threadId
+    if (threadId) {
+      setArtefactPreview(threadId, artefact.title, artefact.preview)
     }
-    openCanvasArtefact(store, artefact)
+    if (artefact.owner) {
+      setArtefactContent(artefact.owner.projectId, artefact.owner.threadId, artefact)
+    }
+    if (artefact.presentation !== 'inline') openCanvasArtefact(store, artefact)
   })
   setArtefactShowHandler((threadId, title) => {
-    showCanvasArtefact(store, { threadId, title })
+    const projectId = store.getState().activeProjectId
+    const cached = projectId ? getArtefactContent(projectId, threadId, title) : undefined
+    if (cached) openCanvasArtefact(store, cached)
+    else showCanvasArtefact(store, { threadId, title })
   })
 
   // The agent promoting an artefact it is happy with (browser_show).

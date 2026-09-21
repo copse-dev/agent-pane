@@ -27,7 +27,7 @@ landing page's decorative density.
   app-wide at weight 400 (Averia ships one weight; asking for 600 only gets Chromium's synthetic
   bold, which smears the serifs). Treat that as the rule it implies: **`h1`–`h3` are the display
   tier**. A heading that should not be in the serif is not an `h1`–`h3` — reach for `h4`+ or a
-  styled `<span>`, as Packs' Active/Inactive headings do. Group headings on a destination surface
+  styled `<span>`, as Plugins' Active/Inactive headings do. Group headings on a destination surface
   may opt in explicitly (Settings' top-level `<legend>`s), but utility headings, field labels, and
   nested card titles stay in Pliant, so the serif marks the top two tiers of a page rather than
   every heading on it.
@@ -49,7 +49,7 @@ such as `--bg-base`, `--accent`, `--text-primary`, and `--border`.
   warnings, success, or routine headings; those keep their semantic/text tokens. The five callout
   severities have their own hues — see "Callout severities" below.
   - **Exception — "experimental".** Where a surface asks you to opt into something unfinished, the
-    experimental marker takes the accent (`.pack-badge-experimental` in Settings → Packs). It is not
+    experimental marker takes the accent (`.plugin-badge-experimental` in Settings → Plugins). It is not
     reporting that anything has gone wrong; it is the one thing on the card you must read before
     flipping the switch, which is emphasis, not status. Keep it to that meaning: `--warning` still
     owns "this needs your attention because something is off".
@@ -87,6 +87,21 @@ terminal chrome, and diff viewers.
 
 The workbench continues to favour thin dividers, restrained radii, flat list selections, quiet tool
 output, and content density.
+
+## Assistant reading rhythm
+
+Primary assistant prose uses a 720px maximum width, the scaled 16px type token,
+and 1.65 line-height inside the existing chat column. Paragraph and section
+spacing use the markdown package's tokens so pending and committed text share
+the same rhythm. Keep this treatment on text that shares a message with tools
+as well; adding a tool must not change the prose size or wrapping. Tool output
+and reasoning disclosures keep their own density. Display headings use the same
+family and weight while pending and after completion.
+
+The browser fixture and real renderer interaction checks live in
+`tests/demo/chat-reading-layout.demo.ts`. It covers long markdown, code overflow,
+nested lists, narrow/light layouts, interface scale, and submitting a streamed
+response through the composer.
 
 ## Attached screenshot expand
 
@@ -396,7 +411,7 @@ light-theme text). So:
 ## Responsive titlebar chrome
 
 Titlebar compactness follows the space its rendered contents actually need, not the window's aspect
-ratio or a fixed viewport breakpoint. Workspace names, branches, enabled panel packs, editor labels,
+ratio or a fixed viewport breakpoint. Workspace names, branches, enabled panel plugins, editor labels,
 and UI scale all change that width. Measure the full label state and collapse secondary labels only
 when it would overflow; expand them again when room returns.
 
@@ -466,7 +481,7 @@ It fills the window and its sections run several screens, so it is typed and spa
 
 - **Two heading tiers in the display face** — the section `<h3>` and its top-level group `<legend>`s
   (`--font-display`, weight 400: Averia ships one weight and synthetic bold smears it). Everything
-  below that — field labels, nested card titles inside a group, list headings such as Packs'
+  below that — field labels, nested card titles inside a group, list headings such as Plugins'
   Active / Inactive — stays in the interface family, so the serif marks structure and not decoration.
 - **Group gaps are the page's punctuation.** Top-level groups clear `calc(var(--spacing-xl) * 2)`;
   a field and its own hint stay tight while the gap lives _between_ fields.
@@ -489,13 +504,13 @@ It fills the window and its sections run several screens, so it is typed and spa
   group that is hidden (developer-only) or mounted by a panel needs no second place to be declared.
   Search clears the list — its results are lifted out of their sections, so the contents no longer
   describe what is on screen.
-- **A pack row is a card** (elevated surface, `--radius-lg`, `--spacing-lg` padding): its mark, then
+- **A plugin row is a card** (elevated surface, `--radius-lg`, `--spacing-lg` padding): its mark, then
   the publisher as a tracked-caps eyebrow over the name, and the switch flanked by Off / On whose
   live side is picked out in CSS from `:checked` — no second copy of the state to keep in sync.
-  Everything configurable folds into one closed `Pack settings` disclosure, so a list of packs stays
-  a list of packs; the credential gate stays outside it, because it explains a switch you can see is
-  locked. Only **first-party** packs wear the Copse mark (`assets/brand-mark.svg`, copied to the
-  renderer by `build.mts`) — a user-installed pack gets a neutral initial tile, or a sideloaded pack
+  Everything configurable folds into one closed `Plugin settings` disclosure, so a list of plugins stays
+  a list of plugins; the credential gate stays outside it, because it explains a switch you can see is
+  locked. Only **first-party** plugins wear the Copse mark (`assets/brand-mark.svg`, copied to the
+  renderer by `build.mts`) — a user-installed plugin gets a neutral initial tile, or a sideloaded plugin
   would be wearing our badge of trust.
 
 Visual eval: [`tests/e2e/settings-styling.e2e.ts`](../tests/e2e/settings-styling.e2e.ts).

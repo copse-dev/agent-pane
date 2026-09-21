@@ -46,6 +46,20 @@ wrong. Prefer the typed alternative:
 > `satisfies`, or a schema at the boundary — see
 > [Boundary parsing](#boundary-parsing-decoders-not-type-arguments).
 
+### Use function properties for adapter contracts
+
+An adapter implementation must accept every input its interface permits. TypeScript's
+`strictFunctionTypes` checks parameter variance for function properties, but exempts method
+signatures. Write `readFile: (path: string) => Promise<string>` rather than
+`readFile(path: string): Promise<string>` at these shared boundaries; the property form rejects an
+implementation that only accepts one specific path.
+
+`@typescript-eslint/method-signature-style` enforces this for `DialectAdapter`, `GitHubBackend`,
+and the interfaces in `workspace-fs.ts` (#1323). Existing object and class implementations keep
+their method syntax: the check applies when they satisfy the shared interface. This is an
+incremental rule, not a repository-wide rewrite. Review overload sets separately before extending
+it, since a function property must retain every supported call signature.
+
 ### Never use a dynamic key with `in`
 
 `in` walks the prototype chain, so `key in RECORD` — where `key` did not come from a literal —
@@ -55,7 +69,7 @@ answers **true** for the eight members every object literal inherits: `toString`
 
 That is not a hypothetical. It was the body of both key allowlists the renderer can reach:
 `settings:set`'s writability gate, and `plugins:setSetting`, which took its key straight off the
-renderer and then wrote it into the pack's settings bag — defeating a check whose own comment said
+renderer and then wrote it into the plugin's settings bag — defeating a check whose own comment said
 it existed to stop exactly that.
 
 `no-restricted-syntax` bans it (`eslint.config.mjs`). Use **`Object.hasOwn(record, key)`**, or

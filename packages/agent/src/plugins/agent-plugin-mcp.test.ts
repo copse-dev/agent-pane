@@ -55,6 +55,20 @@ describe('isLoopbackUrlHost', () => {
 })
 
 describe('parseAgentPluginMcp — file level', () => {
+  it('preserves opaque server names and validates every map entry', () => {
+    const { servers } = parseAgentPluginMcp(
+      mcp({
+        ['__proto__']: { type: 'stdio', command: 'node' },
+        badEnv: { type: 'stdio', command: 'node', env: { ['__proto__']: 1 } },
+        badHeaders: { type: 'sse', url: 'https://example.com/mcp', headers: [] },
+      }),
+    )
+    assert.deepEqual([...servers.keys()], ['__proto__'])
+    assert.throws(
+      () => parseAgentPluginMcp({ $schema: AGENT_PLUGIN_MCP_SCHEMA_ID, mcpServers: [] }),
+      AgentPluginMcpError,
+    )
+  })
   it('accepts an empty server map', () => {
     const { servers, warnings } = parseAgentPluginMcp(mcp({}))
     assert.equal(servers.size, 0)
@@ -71,6 +85,33 @@ describe('parseAgentPluginMcp — file level', () => {
 })
 
 describe('parseAgentPluginMcp — stdio (§7.2.1)', () => {
+  it('uses portable JSON types without adding client-specific length limits', () => {
+    const { servers, warnings } = parseAgentPluginMcp(
+      mcp({
+        '': {
+          type: 'stdio',
+          command: 'node',
+          args: Array.from({ length: 300 }, () => 'x'.repeat(5000)),
+          env: { PAYLOAD: 'v'.repeat(9000) },
+        },
+      }),
+    )
+    assert.equal(servers.size, 1)
+    assert.deepEqual(warnings, [])
+  })
+
+  it('rejects shell strings and drive-relative commands while allowing spaces in a bundled path', () => {
+    const { servers } = parseAgentPluginMcp(
+      mcp({
+        shell: { type: 'stdio', command: 'node --inspect' },
+        drive: { type: 'stdio', command: 'C:server.exe' },
+        nonportable: { type: 'stdio', command: '.\\bin\\server.exe' },
+        nul: { type: 'stdio', command: './bin/server\0' },
+        path: { type: 'stdio', command: './bin/my server' },
+      }),
+    )
+    assert.deepEqual([...servers.keys()], ['path'])
+  })
   it('accepts a bare command and a plugin-relative command', () => {
     const { servers } = parseAgentPluginMcp(
       mcp({
@@ -151,6 +192,7 @@ describe('parseAgentPluginMcp — remote transports', () => {
       mcp({
         creds: { type: 'sse', url: 'https://user:pw@example.com/mcp' },
         fragment: { type: 'sse', url: 'https://example.com/mcp#section' },
+        emptyFragment: { type: 'sse', url: 'https://example.com/mcp#' },
       }),
     )
     assert.equal(servers.size, 0)
@@ -169,9 +211,38 @@ describe('parseAgentPluginMcp — remote transports', () => {
     assert.equal(servers.size, 0)
     assert.ok(warnings[0]?.includes('casing'))
   })
+
+  it('rejects invalid HTTP value bytes and preserves prototype-named headers', () => {
+    const { servers } = parseAgentPluginMcp(
+      mcp({
+        invalid: {
+          type: 'streamable-http',
+          url: 'https://example.com/mcp',
+          headers: { 'X-Name': '\u0100' },
+        },
+        valid: {
+          type: 'streamable-http',
+          url: 'https://example.com/mcp',
+          headers: { ['__proto__']: 'literal', 'X-Name': '\u00e9' },
+        },
+      }),
+    )
+    assert.deepEqual([...servers.keys()], ['valid'])
+    const server = servers.get('valid')
+    assert.ok(server && server.type === 'streamable-http')
+    assert.equal(server.headers['__proto__'], 'literal')
+  })
 })
 
 describe('resolveStdioServer', () => {
+  it('preserves every opaque env key, including prototype names', () => {
+    const { servers } = parseAgentPluginMcp(
+      mcp({ s: { type: 'stdio', command: 'node', env: { ['__proto__']: '${PLUGIN_ROOT}' } } }),
+    )
+    const server = servers.get('s')
+    assert.ok(server && server.type === 'stdio')
+    assert.equal(resolveStdioServer(server, VARS).env['__proto__'], VARS.pluginRoot)
+  })
   it('expands args, env values, and cwd — but never the command', () => {
     const { servers } = parseAgentPluginMcp(
       mcp({

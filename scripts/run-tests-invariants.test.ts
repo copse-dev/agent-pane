@@ -18,7 +18,9 @@ describe('unit test runner build contract', () => {
   })
 
   it('runs only emitted test entries, never shared chunks', () => {
-    assert.match(runner, /dist-test\/\*\*\/\*\.test\.mjs/)
+    assert.match(runner, /outputDir\.replace/)
+    assert.match(runner, /\*\*\/\*\.test\.mjs/)
+    assert.match(runner, /const fixedOutputDir = 'dist-test'/)
     assert.doesNotMatch(runner, /dist-test\/\*\*\/\*\.mjs'/)
   })
 

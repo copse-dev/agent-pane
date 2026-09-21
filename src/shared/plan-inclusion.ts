@@ -20,7 +20,6 @@
 
 import type { PlanProviderId, PlanUsageSnapshot, PlanWindow } from '@copse/plan-usage'
 import type { FrontierCandidate } from '@copse/llm/pareto-frontier.ts'
-import { resolveIntellectModelId } from '@copse/llm/model-intellect.ts'
 
 export interface PlanInclusion {
   provider: PlanProviderId
@@ -132,20 +131,6 @@ export function resolvePlanInclusion(
 }
 
 /**
- * Which subscription plan (if any) can bill a model, keyed off the model's
- * identity. Conservative on purpose — only the paths the user confirmed run on a
- * plan: Claude models on the Claude plan, and Grok on the Cursor plan (Cursor
- * includes it). The mapping only ever *activates* when the snapshot actually
- * carries that provider's windows, so an unused mapping is harmless.
- */
-export function planProviderForModel(id: string): PlanProviderId | null {
-  const rid = (resolveIntellectModelId(id) ?? id).toLowerCase()
-  if (rid.includes('claude') || /\b(opus|sonnet|haiku|fable)\b/.test(rid)) return 'claude'
-  if (rid.includes('grok')) return 'cursor'
-  return null
-}
-
-/**
  * Re-price one grouped frontier candidate against the live plan snapshot.
  *
  * - `plan` (default): included → $0; live-exhausted → API price.
@@ -163,13 +148,11 @@ export function applyPlanCoverage(
 ): FrontierCandidate {
   const mode = options.mode ?? 'plan'
   if (mode === 'inference' || !snapshot) return candidate
-  const provider = candidate.planAccess?.provider ?? planProviderForModel(candidate.id)
-  if (!provider) return candidate
-  const inclusion = resolvePlanInclusion(
-    provider,
-    candidate.planAccess?.modelId ?? candidate.id,
-    snapshot,
-  )
+  // Coverage belongs to an explicit billing route, never the model's name.
+  // A Claude subscription does not cover the same weights via an API key.
+  const access = candidate.planAccess
+  if (!access) return candidate
+  const inclusion = resolvePlanInclusion(access.provider, access.modelId, snapshot)
   if (!inclusion) return candidate
 
   const exhaustion = options.windowExhaustion?.get(inclusion.windowId)

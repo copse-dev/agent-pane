@@ -14,10 +14,12 @@ import {
   yieldStreamWithRetry,
 } from './stream-retry.ts'
 import { parseToolArgs } from './parse-tool-args.ts'
-import { serviceTierBody, type ServiceTier } from './service-tier.ts'
+import { isServiceTier, serviceTierBody, type ServiceTier } from './service-tier.ts'
 import { toolCallIdOrSynthesized } from './tool-call-id.ts'
 import { dropImageContent, toolResultImageFollowUp } from './tool-result-images.ts'
 import { openAiParameterFields, type ModelParameters } from './model-parameters.ts'
+import { markOpenRouterCacheBreakpoints } from './openrouter-prompt-cache.ts'
+import { PromptCacheDiagnostics } from './prompt-cache-diagnostics.ts'
 
 type ToolCallBuilder = { id: string; name: string; argsJson: string }
 
@@ -109,14 +111,23 @@ export class OpenAIProvider implements LLMProvider {
       serviceTier?: ServiceTier
       params?: ModelParameters
       maxOutputTokens?: number
+      /** Explicit block caching, enabled only for Claude through OpenRouter. */
+      openRouterCache?: boolean
     } = {},
   ) {
     this.model = model
     this.includeUsage = opts.includeUsage ?? !opts.baseURL
     this.extraBody = opts.extraBody
     this.promptCacheKey = opts.promptCacheKey
+    this.cacheDiagnostics = new PromptCacheDiagnostics(
+      'chat-completions',
+      model,
+      opts.baseURL ?? 'https://api.openai.com/v1',
+      opts.promptCacheKey,
+    )
     this.serviceTier = opts.serviceTier
     this.maxOutputTokens = opts.maxOutputTokens
+    this.openRouterCache = opts.openRouterCache ?? false
     // Already sanitized for the selected model by the caller; empty unless the
     // user tuned this model, so an untouched request body is unchanged.
     this.tuned = openAiParameterFields(opts.params ?? {})
@@ -128,6 +139,8 @@ export class OpenAIProvider implements LLMProvider {
   }
 
   private readonly includeUsage: boolean
+  private readonly cacheDiagnostics: PromptCacheDiagnostics
+  private readonly openRouterCache: boolean
   private readonly extraBody: Record<string, unknown> | undefined
   private readonly promptCacheKey: string | undefined
   private readonly serviceTier: ServiceTier | undefined
@@ -150,13 +163,16 @@ export class OpenAIProvider implements LLMProvider {
     return yieldStreamWithRetry(
       async function* () {
         const mappedTools = tools.length
-          ? tools.map((t) => ({
+          ? tools.map((t, i) => ({
               type: 'function' as const,
               function: {
                 name: t.name,
                 description: t.description,
                 parameters: normalizeOpenAIToolSchema(t.parameters),
               },
+              ...(self.openRouterCache && i === tools.length - 1
+                ? { cache_control: { type: 'ephemeral' as const } }
+                : {}),
             }))
           : undefined
         // Two request-changing retries, each taken at most once. Deliberately
@@ -175,25 +191,31 @@ export class OpenAIProvider implements LLMProvider {
         let droppedImages = false
         let droppedCeiling = false
         let stream
+        let reportCache: ((usage: ModelUsage | null) => void) | undefined
         for (;;) {
           try {
-            stream = await client.chat.completions.create(
-              {
-                model,
-                stream: true,
-                messages: toOpenAIMessages(outbound),
-                ...(self.includeUsage ? { stream_options: { include_usage: true } } : {}),
-                ...(mappedTools ? { tools: mappedTools } : {}),
-                ...(self.promptCacheKey ? { prompt_cache_key: self.promptCacheKey } : {}),
-                ...serviceTierBody(self.serviceTier),
-                ...(ceiling === undefined ? {} : { max_tokens: ceiling }),
-                // Last, so an explicit extraBody entry still wins — that field is
-                // the user's own escape hatch for provider-specific overrides.
-                ...self.tuned,
-                ...(self.extraBody ?? {}),
-              },
-              { signal },
+            const request = {
+              model,
+              stream: true as const,
+              messages: self.openRouterCache
+                ? markOpenRouterCacheBreakpoints(toOpenAIMessages(outbound))
+                : toOpenAIMessages(outbound),
+              ...(self.includeUsage ? { stream_options: { include_usage: true } } : {}),
+              ...(mappedTools ? { tools: mappedTools } : {}),
+              ...(self.promptCacheKey ? { prompt_cache_key: self.promptCacheKey } : {}),
+              ...serviceTierBody(self.serviceTier),
+              ...(ceiling === undefined ? {} : { max_tokens: ceiling }),
+              // Last, so an explicit extraBody entry still wins — that field is
+              // the user's own escape hatch for provider-specific overrides.
+              ...self.tuned,
+              ...(self.extraBody ?? {}),
+            }
+            const leading = request.messages[0]
+            reportCache = self.cacheDiagnostics.begin(
+              leading?.role === 'system' || leading?.role === 'developer' ? leading : null,
+              request.tools,
             )
+            stream = await client.chat.completions.create(request, { signal })
             break
           } catch (err) {
             if (!droppedImages && isImageUnsupportedError(err)) {
@@ -213,14 +235,26 @@ export class OpenAIProvider implements LLMProvider {
         const toolCallBuilders = new Map<number, { id: string; name: string; argsJson: string }>()
         let finishReason: string | undefined
         let streamUsage: ModelUsage | null = null
+        let responseServiceTier: ServiceTier | undefined
 
         for await (const event of stream) {
+          if (typeof event.service_tier === 'string' && isServiceTier(event.service_tier)) {
+            responseServiceTier = event.service_tier
+          }
           if (event.usage) {
             const cacheReadTokens = event.usage.prompt_tokens_details?.cached_tokens
+            const details = event.usage.prompt_tokens_details
+            const cacheCreationTokens =
+              details && 'cache_write_tokens' in details ? details.cache_write_tokens : undefined
             streamUsage = {
               inputTokens: event.usage.prompt_tokens,
               outputTokens: event.usage.completion_tokens,
               ...(typeof cacheReadTokens === 'number' ? { cacheReadTokens } : {}),
+              ...(typeof cacheCreationTokens === 'number' &&
+              Number.isFinite(cacheCreationTokens) &&
+              cacheCreationTokens >= 0
+                ? { cacheCreationTokens }
+                : {}),
             }
             self.lastUsage = streamUsage
           }
@@ -279,8 +313,14 @@ export class OpenAIProvider implements LLMProvider {
             ...(streamUsage.cacheReadTokens !== undefined
               ? { cacheReadTokens: streamUsage.cacheReadTokens }
               : {}),
+            ...(streamUsage.cacheCreationTokens !== undefined
+              ? { cacheCreationTokens: streamUsage.cacheCreationTokens }
+              : {}),
+            ...(self.serviceTier !== undefined ? { requestedServiceTier: self.serviceTier } : {}),
+            ...(responseServiceTier !== undefined ? { responseServiceTier } : {}),
           }
         }
+        reportCache(streamUsage)
         yield finishReason ? { type: 'done', stopReason: finishReason } : { type: 'done' }
       },
       { ...(signal ? { signal } : {}) },

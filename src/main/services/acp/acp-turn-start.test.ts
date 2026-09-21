@@ -51,6 +51,12 @@ describe('ACP turnStart assembly (decision 20)', () => {
       execute: () => 'ok',
     })
     registry.register({
+      name: 'mcp__docs__search',
+      description: 'connected MCP tool',
+      parameters: z.object({ query: z.string() }),
+      execute: () => 'ok',
+    })
+    registry.register({
       name: 'ask_user',
       description: 'not bridged',
       parameters: z.object({ question: z.string() }),
@@ -74,7 +80,7 @@ describe('ACP turnStart assembly (decision 20)', () => {
       priorTodos: [],
       executor: 'acp',
       model: 'acp:codex',
-      toolNames: ['read_file'],
+      toolNames: ['read_file', 'mcp__docs__search'],
     })
   })
 })

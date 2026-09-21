@@ -78,6 +78,8 @@ interface BrowserTab {
   artefactThreadId: string | null
   /** Project the artefact was rendered under, so a restore reads the right store. */
   artefactProjectId: string | null
+  /** Whether this tab has canvas content, rather than only restored identity metadata. */
+  artefactContentReady: boolean
   /** Collapse this tab's overflow ("…") menu, if open. */
   closeMenu: () => void
 }
@@ -434,6 +436,8 @@ export function mountBrowserPane(
 
   /** Cancels for artefact restores still waiting on a project; run at unmount. */
   const pendingProjectWaits = new Set<() => void>()
+  /** One canvas-store read per artefact while a restore request is in flight. */
+  const pendingArtefactReopens = new Map<string, Promise<boolean>>()
 
   function closeAllMenus(): void {
     for (const tab of tabs.values()) tab.closeMenu()
@@ -768,30 +772,40 @@ export function mountBrowserPane(
   }
 
   /**
-   * Bring the tab already showing `title` to the front, opening the Browser
-   * pane if it is closed. The promote half of render-then-show: the agent (via
-   * `browser_show`) or the transcript's preview card calls this once a
-   * prototype is worth looking at. Returns false when no such tab is open.
+   * Bring the matching artefact tab to the front. The tab may still be a
+   * metadata-only placeholder created during session restore, so callers must
+   * inspect `artefactContentReady` before deciding that nothing needs re-read.
    */
-  function showArtefact(title: string, threadId: string | undefined): boolean {
+  function showArtefact(title: string, threadId: string | undefined): BrowserTab | undefined {
     const tab = artefactTabFor(title, threadId)
-    if (!tab) return false
+    if (!tab) return undefined
     openRightPanel(store, 'browser')
-    tab.pendingUrl = null
+    if (tab.artefactContentReady) tab.pendingUrl = null
     setActiveTab(tab.id)
-    return true
+    return tab
   }
 
   /**
-   * Render a saved artefact again after its tab is gone — the app was quit, or
-   * the tab closed. The artefact returns through `canvas_artefact_requested`,
-   * so `openArtefact` below is still the only code that opens a canvas tab.
+   * Render a saved artefact again after its tab is gone or only its restored
+   * identity remains. The artefact returns through `canvas_artefact_requested`,
+   * so `openArtefact` below is still the only code that applies canvas content.
    */
-  async function reopenStoredArtefact(title: string, threadId: string | undefined): Promise<void> {
-    const projectId = store.getState().activeProjectId
-    if (!api || !threadId || !projectId) return
-    const reopened = await api.canvas.reopenArtefact(projectId, threadId, title).catch(() => false)
-    if (!reopened) showToast(`"${title}" is no longer available`)
+  function reopenStoredArtefact(
+    title: string,
+    threadId: string,
+    projectId: string,
+  ): Promise<boolean> {
+    if (!api) return Promise.resolve(false)
+    const key = JSON.stringify([projectId, threadId, title])
+    const pending = pendingArtefactReopens.get(key)
+    if (pending) return pending
+
+    const request = api.canvas.reopenArtefact(projectId, threadId, title).catch(() => false)
+    pendingArtefactReopens.set(key, request)
+    void request.finally(() => {
+      if (pendingArtefactReopens.get(key) === request) pendingArtefactReopens.delete(key)
+    })
+    return request
   }
 
   /**
@@ -910,6 +924,7 @@ export function mountBrowserPane(
     // `browser-pane-session.ts`), rather than assuming whatever is active when
     // the window is next opened.
     tab.artefactProjectId = artefact.owner?.projectId ?? store.getState().activeProjectId
+    tab.artefactContentReady = true
     tab.urlInput.value = ''
     tab.urlInput.placeholder = artefact.title
     syncTabLabel(tab)
@@ -1083,6 +1098,7 @@ export function mountBrowserPane(
       artefactTitle: null,
       artefactThreadId: null,
       artefactProjectId: null,
+      artefactContentReady: false,
       closeMenu: () => {
         setMenuOpen(false)
       },
@@ -1347,6 +1363,7 @@ export function mountBrowserPane(
         tab.artefactTitle = entry.artefactTitle
         tab.artefactThreadId = entry.artefactThreadId ?? null
         tab.artefactProjectId = entry.artefactProjectId ?? null
+        tab.artefactContentReady = Boolean(entry.url && entry.url !== 'about:blank')
         tab.urlInput.placeholder = entry.artefactTitle
       }
       if (entry.url && entry.url !== 'about:blank') {
@@ -1430,9 +1447,9 @@ export function mountBrowserPane(
     }
     if (!(await whenProjectActive())) return
     const projectId = entry.artefactProjectId ?? store.getState().activeProjectId
-    const reopened = projectId
-      ? await api.canvas.reopenArtefact(projectId, threadId, title).catch(() => false)
-      : false
+    const tab = tabs.get(tabId)
+    if (projectId && tab && !tab.artefactProjectId) tab.artefactProjectId = projectId
+    const reopened = projectId ? await reopenStoredArtefact(title, threadId, projectId) : false
     if (!reopened) removeTab(tabId)
   }
 
@@ -1524,11 +1541,20 @@ export function mountBrowserPane(
     store.on('browser_url_bar_focus_requested', focusUrlBar),
     store.on('canvas_artefact_requested', openArtefact),
     store.on('canvas_artefact_show_requested', (identity) => {
-      if (showArtefact(identity.title, identity.threadId)) return
-      // Nothing is showing it, so this is a card whose tab died with a previous
-      // window. Ask main for the saved copy; it comes back on the ordinary
-      // artefact channel and opens a tab exactly like a fresh render.
-      void reopenStoredArtefact(identity.title, identity.threadId)
+      const tab = showArtefact(identity.title, identity.threadId)
+      if (tab?.artefactContentReady) return
+
+      // A matching tab can be only restored identity metadata: selecting that
+      // blank placeholder is not enough. Re-read it from the project that made
+      // the tab; a missing tab uses the active project, as before.
+      const projectId = tab?.artefactProjectId ?? store.getState().activeProjectId
+      if (!identity.threadId || !projectId) return
+      if (tab && !tab.artefactProjectId) tab.artefactProjectId = projectId
+      void reopenStoredArtefact(identity.title, identity.threadId, projectId).then((reopened) => {
+        if (reopened) return
+        if (tab && !tab.artefactContentReady) removeTab(tab.id)
+        showToast(`"${identity.title}" is no longer available`)
+      })
     }),
     // cmd/ctrl click and target=_blank links inside a guide open as a new
     // background tab (main blocks the popup window and forwards the URL here).

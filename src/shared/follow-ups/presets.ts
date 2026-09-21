@@ -88,8 +88,7 @@ export function buildChangesSuggestion(stats: { additions: number; deletions: nu
   return {
     id: DETERMINISTIC_FOLLOW_UP_IDS.changes,
     label: 'Changes',
-    prompt:
-      'Review the uncommitted changes in this workspace and suggest any fixes or improvements.',
+    prompt: 'Review the changes shown in the Changes pane and suggest any fixes or improvements.',
     additions: stats.additions,
     deletions: stats.deletions,
   }

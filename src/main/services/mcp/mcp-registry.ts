@@ -50,9 +50,18 @@ import {
   XCODEBUILD_MCP_SERVER_NAME,
 } from '../apple-development/xcodebuildmcp.ts'
 import { isAppleDevelopmentProjectEnrolled } from '../apple-development/apple-development-service.ts'
+import { getPluginService } from '../plugins/plugin-service.ts'
+import { prepareAgentPluginMcpConfigs } from '../plugins/agent-plugin-mcp-runtime.ts'
+import {
+  clearMcpToolPermissionTargets,
+  migrateLegacyMcpToolGrants,
+  registerMcpToolPermissionTarget,
+  resolveToolPermission,
+  setToolPermissionForExecution,
+  type McpPermissionTarget,
+} from '../security/tool-permissions.ts'
 
 const CONNECT_TIMEOUT_MS = 30_000
-const GRANTS_STORAGE_KEY = 'mcp-remembered-grants'
 const USER_DISABLED_KEY = 'mcpDisabledServers'
 
 function getUserDisabledServerNames(): Set<string> {
@@ -108,19 +117,15 @@ export function getMcpToolMeta(toolName: string): McpToolMeta | undefined {
 }
 
 export function isMcpToolRemembered(toolName: string): boolean {
-  return parseStringList(storageGet(GRANTS_STORAGE_KEY)).includes(toolName)
+  return resolveToolPermission(toolName)?.policy === 'allow'
 }
 
-/**
- * Persist a remembered permission grant. Serialized read-modify-write so two
- * tools granted at once can't drop one grant; the validated read also discards
- * any corrupt/non-string entries already on disk.
- */
-export function rememberMcpTool(toolName: string): Promise<void> {
-  return storageUpdate(GRANTS_STORAGE_KEY, (raw) => {
-    const list = parseStringList(raw)
-    return list.includes(toolName) ? list : [...list, toolName]
-  })
+/** Persist a remembered approval as the tool's explicit allow override. */
+export async function rememberMcpTool(toolName: string): Promise<void> {
+  const stored = await setToolPermissionForExecution(toolName, 'allow')
+  if (!stored) {
+    console.warn(`[MCP] Could not remember an ambiguous tool identity: ${toolName}`)
+  }
 }
 
 async function readConfigFile(path: string): Promise<McpServerConfig[]> {
@@ -155,6 +160,23 @@ async function readPluginMcpConfigs(): Promise<McpServerConfig[]> {
   return mergeMcpConfigs(perPlugin)
 }
 
+async function readAgentPluginMcpConfigs(): Promise<McpServerConfig[]> {
+  const prepared = await Promise.all(
+    getPluginService().enabledUserPlugins().map(prepareAgentPluginMcpConfigs),
+  )
+  for (const result of prepared) {
+    for (const warning of result.warnings) console.warn(`[MCP] Agent Plugin: ${warning}`)
+  }
+  return mergeMcpConfigs(prepared.map((result) => [...result.configs]))
+}
+
+function agentPluginIdForMcpSource(source: string | undefined): string | undefined {
+  if (source === undefined) return undefined
+  return getPluginService()
+    .enabledUserPlugins()
+    .find((plugin) => plugin.mcpConfigPath === source)?.manifest.name
+}
+
 /**
  * Gather and merge MCP server definitions from all known config locations.
  *
@@ -174,17 +196,19 @@ async function collectConfigs(): Promise<{
   const projectSources = workspace ? projectMcpSourcePaths(workspace) : []
   const userSources = userMcpSourcePaths()
 
-  const [projectPerSource, userPerSource, pluginMerged] = await Promise.all([
-    Promise.all(projectSources.map(readConfigFile)),
-    Promise.all(userSources.map(readConfigFile)),
-    readPluginMcpConfigs(),
-  ])
+  const [projectPerSource, userPerSource, cursorPluginMerged, agentPluginMerged] =
+    await Promise.all([
+      Promise.all(projectSources.map(readConfigFile)),
+      Promise.all(userSources.map(readConfigFile)),
+      readPluginMcpConfigs(),
+      readAgentPluginMcpConfigs(),
+    ])
 
   // App-level servers the user trusts implicitly: their own/global/plugin configs
   // plus any enabled "Copse reviewed" catalog entries. User/global and plugins win
   // over the curated catalog on name collisions, so a user can override a curated
   // definition in their own mcp.json.
-  const userMerged = mergeMcpConfigs([...userPerSource, pluginMerged])
+  const userMerged = mergeMcpConfigs([...userPerSource, cursorPluginMerged, agentPluginMerged])
   const xcodeBuildMcp = getXcodeBuildMcpConfig()
   // The bundled first-party definition owns its reserved server name. A
   // workspace or user config cannot shadow the executable Copse reviewed.
@@ -218,6 +242,7 @@ function isUserMcpSource(source: string | undefined): boolean {
     source === CURATED_MCP_SOURCE ||
     source === join(homedir(), '.cursor', 'mcp.json') ||
     source === join(getElectronUserDataPath(), 'mcp.json') ||
+    agentPluginIdForMcpSource(source) !== undefined ||
     isCursorPluginMcpSource(source)
   )
 }
@@ -235,6 +260,7 @@ function isUserMcpSource(source: string | undefined): boolean {
 function classifyMcpOrigin(source: string | undefined): McpServerOrigin {
   if (source === CURATED_MCP_SOURCE) return 'curated'
   if (source === undefined) return 'built-in'
+  if (agentPluginIdForMcpSource(source) !== undefined) return 'plugin'
   if (isCursorPluginMcpSource(source)) return 'plugin'
   if (source === join(homedir(), '.cursor', 'mcp.json')) return 'user'
   if (source === join(getElectronUserDataPath(), 'mcp.json')) return 'user'
@@ -244,6 +270,8 @@ function classifyMcpOrigin(source: string | undefined): McpServerOrigin {
 /** The short label shown beside the origin — the file or plugin it came from. */
 function mcpOriginDetail(source: string | undefined): string | undefined {
   if (source === undefined || source === CURATED_MCP_SOURCE) return undefined
+  const agentPluginId = agentPluginIdForMcpSource(source)
+  if (agentPluginId !== undefined) return agentPluginId
   if (!isCursorPluginMcpSource(source)) return source
   // `<cursor plugins root>/<publisher>/<plugin>/…/.mcp.json` — the segment
   // under the root is what a user recognises, not the config filename.
@@ -291,10 +319,16 @@ function createTransport(cfg: McpServerConfig): CreatedTransport {
     if (cfg.url === undefined) {
       throw new Error(`MCP server "${cfg.name}" uses http transport but has no url`)
     }
-    const transport = new StreamableHTTPClientTransport(
-      new URL(cfg.url),
-      cfg.headers ? { requestInit: { headers: cfg.headers } } : undefined,
-    )
+    const agentPluginSource = agentPluginIdForMcpSource(cfg.source) !== undefined
+    const transport = new StreamableHTTPClientTransport(new URL(cfg.url), {
+      requestInit: {
+        ...(cfg.headers ? { headers: cfg.headers } : {}),
+        // Configured Agent Plugin headers are scoped to the declared origin.
+        // Refusing redirects prevents fetch from forwarding them to another
+        // origin without the explicit authorization §7.2.1 requires.
+        ...(agentPluginSource ? { redirect: 'error' as const } : {}),
+      },
+    })
     const compatible: Transport = {
       start: () => transport.start(),
       send: (message, options) => transport.send(message, options),
@@ -358,15 +392,16 @@ function createTransport(cfg: McpServerConfig): CreatedTransport {
 async function registerClientTools(
   registry: ToolRegistry,
   client: Client,
-  serverName: string,
+  server: Omit<McpPermissionTarget, 'toolName'>,
   bundled = false,
 ): Promise<string[]> {
   const { tools } = await client.listTools()
   const toolNames: string[] = []
   for (const tool of tools) {
-    const fullName = mcpToolName(serverName, tool.name)
+    const fullName = mcpToolName(server.serverName, tool.name)
+    registerMcpToolPermissionTarget({ ...server, toolName: tool.name })
     toolNames.push(tool.name)
-    const meta: McpToolMeta = { server: serverName }
+    const meta: McpToolMeta = { server: server.serverName }
     if (bundled) meta.bundled = true
     if (tool.annotations) {
       const annotations: McpToolAnnotations = {}
@@ -388,7 +423,7 @@ async function registerClientTools(
     toolMeta.set(fullName, meta)
     registry.register({
       name: fullName,
-      description: `[MCP:${serverName}] ${tool.description ?? ''}`.trim(),
+      description: `[MCP:${server.serverName}] ${tool.description ?? ''}`.trim(),
       // MCP servers are untrusted (see mcp-schema.ts); their results carry the
       // external-content provenance envelope.
       provenance: 'external',
@@ -396,11 +431,14 @@ async function registerClientTools(
       rawParameters: sanitizeMcpInputSchema(tool.inputSchema),
       async execute(args, signal) {
         const preparedArgs =
-          serverName === XCODEBUILD_MCP_SERVER_NAME
+          server.serverName === XCODEBUILD_MCP_SERVER_NAME
             ? prepareXcodeBuildMcpArguments(tool.name, args)
             : args
         const result = await client.callTool(
-          { name: tool.name, arguments: isRecord(preparedArgs) ? preparedArgs : {} },
+          {
+            name: tool.name,
+            arguments: isRecord(preparedArgs) ? preparedArgs : {},
+          },
           undefined,
           { signal },
         )
@@ -449,7 +487,12 @@ async function connectBundledServers(
   for (const { name, client } of bundled) {
     try {
       activeServers.push({ config: { name, transport: 'in-process' }, client })
-      const tools = await registerClientTools(registry, client, name, true)
+      const tools = await registerClientTools(
+        registry,
+        client,
+        { serverName: name, origin: 'built-in' },
+        true,
+      )
       statuses.push({
         name,
         transport: 'in-process',
@@ -488,7 +531,13 @@ async function connectServer(
   userDisabled: ReadonlySet<string>,
   generation: number,
 ): Promise<McpServerStatus> {
-  const cfg = interpolateServerConfig(rawCfg, process.env, envAllowlistFor(rawCfg))
+  // Agent Plugins performs exactly the two portable placeholder expansions in
+  // its adapter. Running the native env interpolator afterwards would violate
+  // §9.2 by expanding arbitrary `${VAR}` strings.
+  const cfg =
+    agentPluginIdForMcpSource(rawCfg.source) === undefined
+      ? interpolateServerConfig(rawCfg, process.env, envAllowlistFor(rawCfg))
+      : rawCfg
   const configDisabled = rawCfg.disabled === true
   const userEnabled = !userDisabled.has(cfg.name)
   const base: McpServerStatus = {
@@ -527,12 +576,22 @@ async function connectServer(
     }
     activeServers.push({ config: cfg, client })
 
-    const toolNames = await registerClientTools(registry, client, cfg.name)
+    const toolNames = await registerClientTools(registry, client, {
+      serverName: cfg.name,
+      origin: base.origin,
+      ...(base.source === undefined ? {} : { source: base.source }),
+      ...(base.originDetail === undefined ? {} : { originDetail: base.originDetail }),
+    })
 
     console.log(
       `[MCP] Connected to "${cfg.name}" (${cfg.transport}) — ${String(toolNames.length)} tool(s)`,
     )
-    return { ...base, state: 'connected', toolCount: toolNames.length, tools: toolNames }
+    return {
+      ...base,
+      state: 'connected',
+      toolCount: toolNames.length,
+      tools: toolNames,
+    }
   } catch (err) {
     const stderr = stderrOutput()
     const message = errorMessage(err)
@@ -551,6 +610,7 @@ async function teardown(registry: ToolRegistry): Promise<void> {
     if (name.startsWith(MCP_TOOL_PREFIX)) registry.unregister(name)
   }
   toolMeta.clear()
+  clearMcpToolPermissionTargets()
   await Promise.allSettled(activeServers.map((s) => s.client.close()))
   activeServers.length = 0
 }
@@ -573,7 +633,10 @@ export async function loadMcpServers(registry: ToolRegistry): Promise<void> {
   // app and hanging every workspace-loading spec. (Onboarding has no active
   // servers, so it was unaffected.)
   if (process.env['COPSE_AGENT_EVAL'] === '1' || process.env['COPSE_E2E'] === '1') {
-    if (generation === loadGeneration) serverStatuses = bundledStatuses
+    if (generation === loadGeneration) {
+      serverStatuses = bundledStatuses
+      await migrateLegacyMcpToolGrants()
+    }
     return
   }
   const { active, untrusted } = await collectConfigs()
@@ -581,6 +644,7 @@ export async function loadMcpServers(registry: ToolRegistry): Promise<void> {
   const userDisabled = getUserDisabledServerNames()
   if (active.length === 0 && untrusted.length === 0 && bundledStatuses.length === 0) {
     serverStatuses = []
+    await migrateLegacyMcpToolGrants()
     return
   }
   const connected = await Promise.all(
@@ -592,6 +656,7 @@ export async function loadMcpServers(registry: ToolRegistry): Promise<void> {
   // Only publish statuses if a newer load hasn't started in the meantime.
   if (generation === loadGeneration) {
     serverStatuses = [...bundledStatuses, ...connected, ...untrustedStatuses]
+    await migrateLegacyMcpToolGrants()
   }
 }
 
@@ -624,7 +689,11 @@ export async function listForwardableMcpServers(projectId?: string): Promise<Mcp
     )
     .filter((cfg) => !isMcpServerEffectivelyDisabled(cfg, userDisabled))
     .filter((cfg) => cfg.transport === 'stdio' || cfg.transport === 'http')
-    .map((cfg) => interpolateServerConfig(cfg, process.env, envAllowlistFor(cfg)))
+    .map((cfg) =>
+      agentPluginIdForMcpSource(cfg.source) === undefined
+        ? interpolateServerConfig(cfg, process.env, envAllowlistFor(cfg))
+        : cfg,
+    )
 }
 
 function untrustedStatus(cfg: McpServerConfig, userDisabled: ReadonlySet<string>): McpServerStatus {
@@ -664,6 +733,7 @@ export async function shutdownMcpServers(): Promise<void> {
   await Promise.allSettled(activeServers.map((s) => s.client.close()))
   activeServers.length = 0
   toolMeta.clear()
+  clearMcpToolPermissionTargets()
   serverStatuses = []
 }
 

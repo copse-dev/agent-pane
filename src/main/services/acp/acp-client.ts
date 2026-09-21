@@ -38,7 +38,7 @@ import type {
 import { acpConfigCategory, acpConfigCategoryLabel } from '@shared/acp.ts'
 import { isRecord, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import type { McpServerConfig } from '@shared/types/mcp.ts'
-import { sessionUpdateToStreamChunk } from './session-update-adapter.ts'
+import { sessionUpdateToStreamChunks } from './session-update-adapter.ts'
 import { tapAcpWireStream, type AcpWireSink } from './acp-wire-tap.ts'
 import { cancelApprovalsForAcpToolCall } from './acp-permission-registry.ts'
 import { acpSshTarget, spawnRemoteAcpTransport } from './acp-ssh-transport.ts'
@@ -62,6 +62,7 @@ import { isProjectSandboxEnabled } from '../../project-sandbox/enabled.ts'
 import { isSpawnableWorkingDirectory } from '../../project-sandbox/spawn-cwd.ts'
 import { withSandboxTmpEnv } from '../../project-sandbox/tmp-env.ts'
 import { terminateProcessTree } from '../exec/subprocess-kill.ts'
+import { perfSpan } from '../diagnostics/perf-trace.ts'
 import { spawnSandboxedAcpSessionHost } from './acp-session-host.ts'
 
 export type { AcpAgentProbe, AcpModeChoice, AcpModeSelector, AcpModelChoice, AcpModelSelector }
@@ -122,10 +123,9 @@ export interface AcpAgentSpawnConfig {
    */
   configOptions?: Record<string, string>
   /**
-   * Copse-configured MCP servers to hand the agent via `session/new`
-   * (`mcpServers`), so the external agent can mount the user's servers itself.
-   * Filtered against the agent's advertised `mcpCapabilities` before sending
-   * (stdio is baseline; http needs the capability flag).
+   * Connected Copse MCP server configs. They are retained in the session key,
+   * but are not handed to the agent directly: registered MCP tools are exposed
+   * through {@link nativeBridge} so Copse can enforce per-call permissions.
    */
   mcpServers?: McpServerConfig[]
   /**
@@ -534,35 +534,20 @@ export function terminateAcpChild(child: ChildProcess): void {
 }
 
 /**
- * Convert Copse MCP server configs to the ACP `session/new` `mcpServers` shape,
- * keeping only what the agent said it supports in `initialize`: stdio is the
- * protocol baseline, http needs `mcpCapabilities.http`. Unsupported transports
- * are dropped rather than failing the session — the agent just doesn't get that
- * server this turn.
+ * Configured servers must not be handed straight to an external agent. Direct
+ * forwarding makes each call invisible to Copse, so hooks, read-only mode and
+ * per-tool allow/ask/block policies cannot be enforced. Their registered tools
+ * are exposed through Copse's authenticated HTTP bridge instead.
+ *
+ * ACP agents that cannot mount that bridge receive no configured MCP servers.
+ * This closed fallback is intentional: ACP has no host-side per-call callback
+ * for a server the agent mounts itself.
  */
 export function toAcpMcpServers(
-  configs: readonly McpServerConfig[],
-  capabilities: McpCapabilities | undefined,
+  _configs: readonly McpServerConfig[],
+  _capabilities: McpCapabilities | undefined,
 ): McpServer[] {
-  const servers: McpServer[] = []
-  for (const cfg of configs) {
-    if (cfg.transport === 'stdio' && cfg.command !== undefined) {
-      servers.push({
-        name: cfg.name,
-        command: cfg.command,
-        args: cfg.args ?? [],
-        env: Object.entries(cfg.env ?? {}).map(([name, value]) => ({ name, value })),
-      })
-    } else if (cfg.transport === 'http' && cfg.url !== undefined && capabilities?.http === true) {
-      servers.push({
-        type: 'http',
-        name: cfg.name,
-        url: cfg.url,
-        headers: Object.entries(cfg.headers ?? {}).map(([name, value]) => ({ name, value })),
-      })
-    }
-  }
-  return servers
+  return []
 }
 
 /**
@@ -789,7 +774,10 @@ function captureAcpChildStderr(
   const faults = watchAgentStderr(child.stderr, {
     prefix: `acp:${command}`,
     command,
-    limitLabel: localOpenFileLimitLabel(),
+    // Building Node's diagnostic report can synchronously block Electron's
+    // main thread. Read the inherited limit only if stderr actually reports
+    // descriptor exhaustion, not on every fresh ACP transport.
+    limitLabel: localOpenFileLimitLabel,
     onText: (text) => {
       tail = appendStderrTail(tail, text)
     },
@@ -871,8 +859,9 @@ function startAcpUpdatePump(open: OpenAcpSession): void {
         ) {
           cancelApprovalsForAcpToolCall(update.toolCallId)
         }
-        const chunk = sessionUpdateToStreamChunk(update)
-        if (chunk) open.handlers.current?.onChunk(chunk)
+        for (const chunk of sessionUpdateToStreamChunks(update)) {
+          open.handlers.current?.onChunk(chunk)
+        }
       } catch {
         // A sink failure must not kill the pump: turn-stop routing (and every
         // future turn on this session) depends on the loop staying alive.
@@ -897,10 +886,10 @@ export async function openAcpSession(
   trace: AcpWireSink | null = null,
   signal?: AbortSignal,
 ): Promise<OpenAcpSession> {
-  const transport = await createTransport(config, signal)
+  const transport = await perfSpan('ttft:acp-transport-open', () => createTransport(config, signal))
   // Opt-in diagnostic (`COPSE_DEBUG_ACP_UPDATES=1`): record every inbound
   // JSON-RPC message verbatim, before the SDK's schema parse strips unmodelled
-  // fields and before `sessionUpdateToStreamChunk` normalizes what survives.
+  // fields and before `sessionUpdateToStreamChunks` normalizes what survives.
   // `null` (the default, and always when the flag is off) returns the
   // transport's own stream, so the untraced path is unchanged.
   const stream = tapAcpWireStream(transport.stream, trace)
@@ -984,10 +973,12 @@ export async function openAcpSession(
   }
 
   try {
-    const initResponse = await connection.agent.request(methods.agent.initialize, {
-      protocolVersion: PROTOCOL_VERSION,
-      clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
-    })
+    const initResponse = await perfSpan('ttft:acp-initialize', () =>
+      connection.agent.request(methods.agent.initialize, {
+        protocolVersion: PROTOCOL_VERSION,
+        clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
+      }),
+    )
     const mcpCapabilities = initResponse.agentCapabilities?.mcpCapabilities
     const canResume = Boolean(initResponse.agentCapabilities?.sessionCapabilities?.resume)
     const promptImage = initResponse.agentCapabilities?.promptCapabilities?.image === true
@@ -1014,9 +1005,12 @@ export async function openAcpSession(
     let resumed = false
     if (resumeSessionId && canResume) {
       try {
-        const response: ResumeSessionResponse = await connection.agent.request(
-          methods.agent.session.resume,
-          { sessionId: resumeSessionId, cwd: config.cwd, mcpServers },
+        const response: ResumeSessionResponse = await perfSpan('ttft:acp-session-resume', () =>
+          connection.agent.request(methods.agent.session.resume, {
+            sessionId: resumeSessionId,
+            cwd: config.cwd,
+            mcpServers,
+          }),
         )
         session = { sessionId: resumeSessionId, response }
         resumed = true
@@ -1026,10 +1020,12 @@ export async function openAcpSession(
       }
     }
     if (!session) {
-      const response = await connection.agent.request(methods.agent.session.new, {
-        cwd: config.cwd,
-        mcpServers,
-      })
+      const response = await perfSpan('ttft:acp-session-new', () =>
+        connection.agent.request(methods.agent.session.new, {
+          cwd: config.cwd,
+          mcpServers,
+        }),
+      )
       session = { sessionId: response.sessionId, response }
     }
     const updates = new AcpUpdateQueue()
@@ -1040,12 +1036,16 @@ export async function openAcpSession(
     // (issue #607) — e.g. a sandboxed Claude preset runs in `acceptEdits` since
     // the seatbelt already contains writes. Applied here, before the first
     // prompt, so the session's first tool call already honors the mode.
-    await applySessionMode(connection, session, config.permissionMode)
+    await perfSpan('ttft:acp-session-mode', () =>
+      applySessionMode(connection, session, config.permissionMode),
+    )
     // Everything else the agent lets us configure (reasoning level, and any
     // other selector it advertises) is applied the same way, before the first
     // prompt. Unlike the mode this is not baked into the session fingerprint —
     // a later change re-applies live at the start of the next turn.
-    const appliedConfigOptions = await applyConfigOptions(connection, session, config.configOptions)
+    const appliedConfigOptions = await perfSpan('ttft:acp-session-config', () =>
+      applyConfigOptions(connection, session, config.configOptions),
+    )
 
     const open: OpenAcpSession = {
       session,
