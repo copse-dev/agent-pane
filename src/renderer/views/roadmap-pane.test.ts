@@ -2029,6 +2029,39 @@ describe('roadmap pane', () => {
     }
   })
 
+  it('reveals the bulk review actions as soon as a review run completes', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api } = makeApi([
+      makeItem('a', 'Fix startup flash', 'ready', undefined, '#41'),
+      makeItem('b', 'Terminal shortcut', 'ready', undefined, '#42'),
+    ])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      const markResolved = viewer.querySelector<HTMLButtonElement>('.roadmap-review-mark-resolved')
+      const archiveResolved = viewer.querySelector<HTMLButtonElement>(
+        '.roadmap-review-archive-resolved',
+      )
+      assert.ok(markResolved)
+      assert.ok(archiveResolved)
+
+      list.querySelector<HTMLButtonElement>('.roadmap-review-btn')?.click()
+      await flush()
+      assert.match(viewer.querySelector('.roadmap-review-status')?.textContent ?? '', /complete/i)
+      assert.equal(viewer.querySelectorAll('.roadmap-review-row').length, 2)
+      // No opening a row and coming back: the buttons appear with the
+      // "complete" status, straight after the run.
+      assert.equal(markResolved.hidden, false)
+      assert.equal(markResolved.disabled, false)
+      assert.equal(archiveResolved.hidden, false)
+      assert.equal(archiveResolved.disabled, false)
+      assert.ok(viewer.querySelector<HTMLElement>('.roadmap-review-stop[hidden]'))
+    } finally {
+      unmount()
+    }
+  })
+
   it('marks a likely review row done from triage actions', async () => {
     const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
     const { api, calls, items } = makeApi([
