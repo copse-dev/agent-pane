@@ -31,7 +31,7 @@ import type { HookDecision } from '@copse/agent/hooks/hook-outcome.ts'
 import type { ShellPermissionDecision, ShellPromptParts } from './permission-policy.ts'
 import { errorMessage } from '@shared/errors.ts'
 import type { PromptCause } from '@shared/threads/prompt-cause.ts'
-import { nonEmptyStringOr } from '@shared/unknown-value.ts'
+import { isRecord, nonEmptyStringOr } from '@shared/unknown-value.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
 import { isProjectSandboxPlatform, projectSandboxInitFailure } from '../../project-sandbox/state.ts'
 import {
@@ -1816,28 +1816,14 @@ export async function ensureToolPermitted(
     if (explicitPolicy === 'allow') {
       permitted = true
     } else {
-      const target =
-        typeof args === 'object' &&
-        args !== null &&
-        'target' in args &&
-        typeof (args as { target?: unknown }).target === 'string'
-          ? (args as { target: string }).target
-          : '(unknown app)'
-      const appArgs =
-        typeof args === 'object' &&
-        args !== null &&
-        'args' in args &&
-        Array.isArray((args as { args?: unknown }).args)
-          ? (args as { args: unknown[] }).args.filter((a) => typeof a === 'string')
-          : undefined
-      const envKeys =
-        typeof args === 'object' &&
-        args !== null &&
-        'env' in args &&
-        typeof (args as { env?: unknown }).env === 'object' &&
-        (args as { env?: object }).env !== null
-          ? Object.keys((args as { env: Record<string, unknown> }).env)
-          : undefined
+      const record = isRecord(args) ? args : null
+      const target = typeof record?.['target'] === 'string' ? record['target'] : '(unknown app)'
+      const rawArgs = record?.['args']
+      const appArgs = Array.isArray(rawArgs)
+        ? rawArgs.filter((a): a is string => typeof a === 'string')
+        : undefined
+      const envValue = record?.['env']
+      const envKeys = isRecord(envValue) ? Object.keys(envValue) : undefined
       permitted = await promptGuiAppLaunch(
         target,
         {
