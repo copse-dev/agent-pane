@@ -556,6 +556,13 @@
           3
         ]
       },
+      "fs:read-image": {
+        "api": "fs.readImage",
+        "args": [
+          3,
+          3
+        ]
+      },
       "fs:readdir": {
         "api": "fs.readdir",
         "args": [
