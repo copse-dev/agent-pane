@@ -111,6 +111,9 @@ var init_model_catalog_generated = __esm({
         inputPricePerMTok: 2.5,
         outputPricePerMTok: 10,
         cacheReadPricePerMTok: 1.25,
+        serviceTierPricing: {
+          priority: { inputPricePerMTok: 4.25, outputPricePerMTok: 17, cacheReadPricePerMTok: 2.125 }
+        },
         contextWindow: 128e3,
         maxOutputTokens: 16384
       },
@@ -118,6 +121,9 @@ var init_model_catalog_generated = __esm({
         inputPricePerMTok: 0.15,
         outputPricePerMTok: 0.6,
         cacheReadPricePerMTok: 0.075,
+        serviceTierPricing: {
+          priority: { inputPricePerMTok: 0.25, outputPricePerMTok: 1, cacheReadPricePerMTok: 0.125 }
+        },
         contextWindow: 128e3,
         maxOutputTokens: 16384
       },
@@ -125,6 +131,10 @@ var init_model_catalog_generated = __esm({
         inputPricePerMTok: 1.25,
         outputPricePerMTok: 10,
         cacheReadPricePerMTok: 0.125,
+        serviceTierPricing: {
+          flex: { inputPricePerMTok: 0.625, outputPricePerMTok: 5, cacheReadPricePerMTok: 0.0625 },
+          priority: { inputPricePerMTok: 2.5, outputPricePerMTok: 20, cacheReadPricePerMTok: 0.25 }
+        },
         contextWindow: 272e3,
         maxOutputTokens: 128e3
       },
@@ -132,6 +142,10 @@ var init_model_catalog_generated = __esm({
         inputPricePerMTok: 0.25,
         outputPricePerMTok: 2,
         cacheReadPricePerMTok: 0.025,
+        serviceTierPricing: {
+          flex: { inputPricePerMTok: 0.125, outputPricePerMTok: 1, cacheReadPricePerMTok: 0.0125 },
+          priority: { inputPricePerMTok: 0.45, outputPricePerMTok: 3.6, cacheReadPricePerMTok: 0.045 }
+        },
         contextWindow: 272e3,
         maxOutputTokens: 128e3
       },
@@ -139,6 +153,9 @@ var init_model_catalog_generated = __esm({
         inputPricePerMTok: 0.05,
         outputPricePerMTok: 0.4,
         cacheReadPricePerMTok: 5e-3,
+        serviceTierPricing: {
+          flex: { inputPricePerMTok: 0.025, outputPricePerMTok: 0.2, cacheReadPricePerMTok: 25e-4 }
+        },
         contextWindow: 272e3,
         maxOutputTokens: 128e3
       },
@@ -146,6 +163,10 @@ var init_model_catalog_generated = __esm({
         inputPricePerMTok: 5,
         outputPricePerMTok: 30,
         cacheReadPricePerMTok: 0.5,
+        serviceTierPricing: {
+          flex: { inputPricePerMTok: 2.5, outputPricePerMTok: 15, cacheReadPricePerMTok: 0.25 },
+          priority: { inputPricePerMTok: 12.5, outputPricePerMTok: 75, cacheReadPricePerMTok: 1.25 }
+        },
         contextWindow: 105e4,
         maxOutputTokens: 128e3
       },
@@ -154,6 +175,20 @@ var init_model_catalog_generated = __esm({
         outputPricePerMTok: 1.2,
         cacheReadPricePerMTok: 0.02,
         cacheCreationPricePerMTok: 0.25,
+        serviceTierPricing: {
+          flex: {
+            inputPricePerMTok: 0.1,
+            outputPricePerMTok: 0.6,
+            cacheReadPricePerMTok: 0.01,
+            cacheCreationPricePerMTok: 0.125
+          },
+          priority: {
+            inputPricePerMTok: 0.4,
+            outputPricePerMTok: 2.4,
+            cacheReadPricePerMTok: 0.04,
+            cacheCreationPricePerMTok: 0.5
+          }
+        },
         contextWindow: 922e3,
         maxOutputTokens: 128e3
       },
@@ -162,6 +197,20 @@ var init_model_catalog_generated = __esm({
         outputPricePerMTok: 20,
         cacheReadPricePerMTok: 0.4,
         cacheCreationPricePerMTok: 5,
+        serviceTierPricing: {
+          flex: {
+            inputPricePerMTok: 2,
+            outputPricePerMTok: 10,
+            cacheReadPricePerMTok: 0.2,
+            cacheCreationPricePerMTok: 2.5
+          },
+          priority: {
+            inputPricePerMTok: 8,
+            outputPricePerMTok: 40,
+            cacheReadPricePerMTok: 0.8,
+            cacheCreationPricePerMTok: 10
+          }
+        },
         contextWindow: 922e3,
         maxOutputTokens: 128e3
       },
@@ -170,6 +219,20 @@ var init_model_catalog_generated = __esm({
         outputPricePerMTok: 12,
         cacheReadPricePerMTok: 0.2,
         cacheCreationPricePerMTok: 2.5,
+        serviceTierPricing: {
+          flex: {
+            inputPricePerMTok: 1,
+            outputPricePerMTok: 6,
+            cacheReadPricePerMTok: 0.1,
+            cacheCreationPricePerMTok: 1.25
+          },
+          priority: {
+            inputPricePerMTok: 4,
+            outputPricePerMTok: 24,
+            cacheReadPricePerMTok: 0.4,
+            cacheCreationPricePerMTok: 5
+          }
+        },
         contextWindow: 922e3,
         maxOutputTokens: 128e3
       },
@@ -178,6 +241,20 @@ var init_model_catalog_generated = __esm({
         outputPricePerMTok: 50,
         cacheReadPricePerMTok: 1,
         cacheCreationPricePerMTok: 12.5,
+        serviceTierPricing: {
+          flex: {
+            inputPricePerMTok: 5,
+            outputPricePerMTok: 25,
+            cacheReadPricePerMTok: 0.5,
+            cacheCreationPricePerMTok: 6.25
+          },
+          priority: {
+            inputPricePerMTok: 20,
+            outputPricePerMTok: 100,
+            cacheReadPricePerMTok: 2,
+            cacheCreationPricePerMTok: 25
+          }
+        },
         contextWindow: 922e3,
         maxOutputTokens: 128e3
       }
@@ -20657,6 +20734,194 @@ var init_active_thread_owner = __esm({
   }
 });
 
+// packages/llm/src/service-tier.ts
+function usageServiceTierFor(value) {
+  switch (value) {
+    case "flex":
+    case "priority":
+    case "scale":
+      return value;
+    case "fast":
+      return "priority";
+    case "auto":
+    case "default":
+      return void 0;
+  }
+}
+function usageServiceTierForCall(requested, response) {
+  return response === void 0 ? requested === void 0 ? void 0 : usageServiceTierFor(requested) : usageServiceTierFor(response);
+}
+var SERVICE_TIERS, isServiceTier, USAGE_SERVICE_TIERS, SERVICE_TIER_CHOICES;
+var init_service_tier = __esm({
+  "packages/llm/src/service-tier.ts"() {
+    init_member_of();
+    SERVICE_TIERS = ["auto", "default", "flex", "fast", "priority", "scale"];
+    isServiceTier = memberOf(SERVICE_TIERS);
+    USAGE_SERVICE_TIERS = ["flex", "priority", "scale"];
+    SERVICE_TIER_CHOICES = [
+      {
+        value: "auto",
+        label: "Project default",
+        description: "Follow the service tier configured for this OpenAI Project."
+      },
+      {
+        value: "default",
+        label: "Standard",
+        description: "Use standard pay-as-you-go pricing and performance."
+      },
+      {
+        value: "flex",
+        label: "Flex",
+        description: "Cheaper per token, slower, and may queue or fail under load. Suits batch work."
+      },
+      {
+        value: "fast",
+        label: "Fast",
+        description: "Faster and more consistent, at a higher per-token price."
+      }
+    ];
+  }
+});
+
+// packages/llm/src/model-usage.ts
+function nonNegative(value) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0;
+}
+function tokenUsageOrNull(value) {
+  if (!isRecord(value)) return null;
+  const usage = value;
+  if (typeof usage["inputTokens"] !== "number" || typeof usage["outputTokens"] !== "number") {
+    return null;
+  }
+  if (!Number.isFinite(usage["inputTokens"]) || !Number.isFinite(usage["outputTokens"])) return null;
+  const cacheReadTokens = usage["cacheReadTokens"];
+  const cacheCreationTokens = usage["cacheCreationTokens"];
+  if (cacheReadTokens !== void 0 && (typeof cacheReadTokens !== "number" || !Number.isFinite(cacheReadTokens))) {
+    return null;
+  }
+  if (cacheCreationTokens !== void 0 && (typeof cacheCreationTokens !== "number" || !Number.isFinite(cacheCreationTokens))) {
+    return null;
+  }
+  return {
+    inputTokens: usage["inputTokens"],
+    outputTokens: usage["outputTokens"],
+    ...typeof cacheReadTokens === "number" ? { cacheReadTokens } : {},
+    ...typeof cacheCreationTokens === "number" ? { cacheCreationTokens } : {}
+  };
+}
+function cappedTierUsage(requested, remaining) {
+  const inputTokens = Math.min(nonNegative(requested.inputTokens), remaining.inputTokens);
+  const outputTokens = Math.min(nonNegative(requested.outputTokens), remaining.outputTokens);
+  const availableCachedInput = inputTokens;
+  const cacheReadTokens = Math.min(
+    nonNegative(requested.cacheReadTokens),
+    remaining.cacheReadTokens ?? 0,
+    availableCachedInput
+  );
+  const cacheCreationTokens = Math.min(
+    nonNegative(requested.cacheCreationTokens),
+    remaining.cacheCreationTokens ?? 0,
+    availableCachedInput - cacheReadTokens
+  );
+  return {
+    inputTokens,
+    outputTokens,
+    ...requested.cacheReadTokens !== void 0 ? { cacheReadTokens } : {},
+    ...requested.cacheCreationTokens !== void 0 ? { cacheCreationTokens } : {}
+  };
+}
+function remainingAfter(remaining, used) {
+  const inputTokens = remaining.inputTokens - used.inputTokens;
+  const outputTokens = remaining.outputTokens - used.outputTokens;
+  const cacheReadTokens = Math.min(
+    remaining.cacheReadTokens === void 0 ? 0 : Math.max(0, remaining.cacheReadTokens - (used.cacheReadTokens ?? 0)),
+    inputTokens
+  );
+  const cacheCreationTokens = Math.min(
+    remaining.cacheCreationTokens === void 0 ? 0 : Math.max(0, remaining.cacheCreationTokens - (used.cacheCreationTokens ?? 0)),
+    inputTokens - cacheReadTokens
+  );
+  return {
+    inputTokens,
+    outputTokens,
+    ...remaining.cacheReadTokens !== void 0 ? { cacheReadTokens } : {},
+    ...remaining.cacheCreationTokens !== void 0 ? { cacheCreationTokens } : {}
+  };
+}
+function addTokens(prev, delta) {
+  const next = {
+    inputTokens: prev.inputTokens + delta.inputTokens,
+    outputTokens: prev.outputTokens + delta.outputTokens
+  };
+  if (delta.cacheReadTokens !== void 0 || prev.cacheReadTokens !== void 0) {
+    next.cacheReadTokens = (prev.cacheReadTokens ?? 0) + (delta.cacheReadTokens ?? 0);
+  }
+  if (delta.cacheCreationTokens !== void 0 || prev.cacheCreationTokens !== void 0) {
+    next.cacheCreationTokens = (prev.cacheCreationTokens ?? 0) + (delta.cacheCreationTokens ?? 0);
+  }
+  return next;
+}
+function mergeModelUsage(prev, delta) {
+  const next = addTokens(prev, delta);
+  const tiers = USAGE_SERVICE_TIERS.filter(
+    (tier) => prev.serviceTierUsage?.[tier] !== void 0 || delta.serviceTierUsage?.[tier] !== void 0
+  );
+  if (tiers.length > 0) {
+    const serviceTierUsage = {};
+    for (const tier of tiers) {
+      const before = prev.serviceTierUsage?.[tier];
+      const addition = delta.serviceTierUsage?.[tier];
+      if (before && addition) serviceTierUsage[tier] = addTokens(before, addition);
+      else if (before) serviceTierUsage[tier] = before;
+      else if (addition) serviceTierUsage[tier] = addition;
+    }
+    next.serviceTierUsage = serviceTierUsage;
+  }
+  return next;
+}
+function usageAtServiceTier(usage, tier) {
+  const base = {
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+    ...usage.cacheReadTokens !== void 0 ? { cacheReadTokens: usage.cacheReadTokens } : {},
+    ...usage.cacheCreationTokens !== void 0 ? { cacheCreationTokens: usage.cacheCreationTokens } : {}
+  };
+  if (tier !== void 0) {
+    base.serviceTierUsage = {
+      [tier]: {
+        inputTokens: base.inputTokens,
+        outputTokens: base.outputTokens,
+        ...base.cacheReadTokens !== void 0 ? { cacheReadTokens: base.cacheReadTokens } : {},
+        ...base.cacheCreationTokens !== void 0 ? { cacheCreationTokens: base.cacheCreationTokens } : {}
+      }
+    };
+  }
+  return base;
+}
+function splitServiceTierUsage(usage) {
+  let remaining = {
+    inputTokens: nonNegative(usage.inputTokens),
+    outputTokens: nonNegative(usage.outputTokens),
+    ...usage.cacheReadTokens !== void 0 ? { cacheReadTokens: nonNegative(usage.cacheReadTokens) } : {},
+    ...usage.cacheCreationTokens !== void 0 ? { cacheCreationTokens: nonNegative(usage.cacheCreationTokens) } : {}
+  };
+  const tiers = {};
+  for (const tier of USAGE_SERVICE_TIERS) {
+    const bucket = tokenUsageOrNull(usage.serviceTierUsage?.[tier]);
+    if (!bucket) continue;
+    const capped = cappedTierUsage(bucket, remaining);
+    tiers[tier] = capped;
+    remaining = remainingAfter(remaining, capped);
+  }
+  return { standard: remaining, tiers };
+}
+var init_model_usage = __esm({
+  "packages/llm/src/model-usage.ts"() {
+    init_unknown_value();
+    init_service_tier();
+  }
+});
+
 // packages/std/src/array-utils.ts
 function at(array2, index) {
   const value = array2[index];
@@ -21178,15 +21443,11 @@ function addUsageDelta(store2, threadId, delta) {
   if (!thread) return;
   const byModel = { ...thread.usage.byModel ?? {} };
   const prev = byModel[delta.model] ?? { inputTokens: 0, outputTokens: 0 };
-  byModel[delta.model] = addCacheTokens(
-    {
-      inputTokens: prev.inputTokens + delta.inputTokens,
-      outputTokens: prev.outputTokens + delta.outputTokens
-    },
-    prev.cacheReadTokens,
-    prev.cacheCreationTokens,
-    delta
+  const usage = delta.serviceTierUsage !== void 0 ? delta : usageAtServiceTier(
+    delta,
+    usageServiceTierForCall(delta.requestedServiceTier, delta.responseServiceTier)
   );
+  byModel[delta.model] = mergeModelUsage(prev, usage);
   updateUsage(
     store2,
     threadId,
@@ -21371,6 +21632,8 @@ function applyPreparedThreadCheckout(store2, threadId, prepared) {
 var randomUUID, messageIndexByStore;
 var init_thread_helpers = __esm({
   "src/shared/store/thread-helpers.ts"() {
+    init_model_usage();
+    init_service_tier();
     init_array_utils2();
     init_thread_proposal2();
     init_thread_sort();
@@ -31326,11 +31589,16 @@ function pricingForModel(model, pricing) {
   if (!info) return null;
   return info;
 }
+function pricingForTier(model, tier, pricing) {
+  const standard = pricingForModel(model, pricing);
+  if (!standard) return { pricing: null, fallback: false };
+  const tierPricing = standard.serviceTierPricing?.[tier];
+  return tierPricing ? { pricing: tierPricing, fallback: false } : { pricing: standard, fallback: true };
+}
 function hasModelPricing(model, pricing) {
   return pricingForModel(model, pricing) !== null;
 }
-function costForModelUsage(model, usage, pricing) {
-  const info = pricingForModel(model, pricing);
+function costForUsage(usage, info) {
   if (!info) return 0;
   const cacheRead = usage.cacheReadTokens ?? 0;
   const cacheCreation = usage.cacheCreationTokens ?? 0;
@@ -31341,6 +31609,23 @@ function costForModelUsage(model, usage, pricing) {
   const cacheCreationRate = info.cacheCreationPricePerMTok ?? inputRate;
   return freshInput / 1e6 * inputRate + cacheRead / 1e6 * cacheReadRate + cacheCreation / 1e6 * cacheCreationRate + usage.outputTokens / 1e6 * info.outputPricePerMTok;
 }
+function costForModelUsageWithDetails(model, usage, pricing) {
+  const standard = pricingForModel(model, pricing);
+  const split = splitServiceTierUsage(usage);
+  let costUsd = costForUsage(split.standard, standard);
+  let tierPricingFallback = false;
+  for (const tier of USAGE_SERVICE_TIERS) {
+    const tierUsage = split.tiers[tier];
+    if (!tierUsage) continue;
+    const resolved3 = pricingForTier(model, tier, pricing);
+    costUsd += costForUsage(tierUsage, resolved3.pricing);
+    tierPricingFallback ||= resolved3.fallback;
+  }
+  return { costUsd, tierPricingFallback };
+}
+function costForModelUsage(model, usage, pricing) {
+  return costForModelUsageWithDetails(model, usage, pricing).costUsd;
+}
 function estimateUsageCost(byModel, pricing) {
   const entries2 = Object.entries(byModel).filter(([, u]) => u.inputTokens > 0 || u.outputTokens > 0);
   if (entries2.length === 0) return "";
@@ -31348,6 +31633,7 @@ function estimateUsageCost(byModel, pricing) {
   let hasLocal = false;
   let hasPricedCloud = false;
   let hasUnpricedCloud = false;
+  let hasTierPricingFallback = false;
   for (const [model, usage] of entries2) {
     if (isLocalModel(model)) {
       hasLocal = true;
@@ -31355,18 +31641,20 @@ function estimateUsageCost(byModel, pricing) {
     }
     if (hasModelPricing(model, pricing)) hasPricedCloud = true;
     else hasUnpricedCloud = true;
-    const cost = costForModelUsage(model, usage, pricing);
-    totalCost += cost;
+    const cost = costForModelUsageWithDetails(model, usage, pricing);
+    totalCost += cost.costUsd;
+    hasTierPricingFallback ||= cost.tierPricingFallback;
   }
   if (totalCost === 0) {
     if (hasUnpricedCloud) return "";
-    if (hasPricedCloud) return "free";
+    if (hasPricedCloud) return hasTierPricingFallback ? "free (standard tier fallback)" : "free";
     if (hasLocal) return "free (local)";
     return "";
   }
   const costStr = totalCost < 0.01 ? "<$0.01" : `~$${totalCost.toFixed(2)}`;
-  if (hasUnpricedCloud) return `${costStr} (partial)`;
-  return hasLocal ? `${costStr} (+ local free)` : costStr;
+  const qualifiedCost = hasUnpricedCloud ? `${costStr} (partial)` : costStr;
+  const tierQualifiedCost = hasTierPricingFallback ? `${qualifiedCost} (standard tier fallback)` : qualifiedCost;
+  return hasLocal ? `${tierQualifiedCost} (+ local free)` : tierQualifiedCost;
 }
 function formatThreadUsageCost(usage, fallbackChatModel, pricing) {
   if (usage.byModel && Object.keys(usage.byModel).length > 0) {
@@ -31383,6 +31671,8 @@ function formatThreadUsageCost(usage, fallbackChatModel, pricing) {
 var init_estimate_cost = __esm({
   "packages/llm/src/estimate-cost.ts"() {
     init_model_catalog();
+    init_model_usage();
+    init_service_tier();
   }
 });
 
@@ -45031,7 +45321,77 @@ function createProvidersPanel(api2, opts = {}) {
   let deviceScanned = false;
   let providerPicked = false;
   let autoSetupRun = false;
+  let initialOpenAiTierChoice = "auto";
+  let pendingOpenAiTierChoice = "auto";
+  let openAiTierDirty = false;
   const deviceAutoSetup = opts.deviceAutoSetup ?? true;
+  const offeredOpenAiTier = new Set(SERVICE_TIER_CHOICES.map((choice) => choice.value));
+  function openAiTierChoiceForStored(value) {
+    if (value === "") return "auto";
+    if (value === "priority") return "fast";
+    return value;
+  }
+  function retainedOpenAiTierLabel(value) {
+    if (value === "scale") return "Scale \u2014 current advanced value";
+    const visible = value.length > 80 ? `${value.slice(0, 79)}\u2026` : value;
+    return `Current advanced value \u2014 ${visible || "(empty)"}`;
+  }
+  function openAiTierDescription(value) {
+    const choice = SERVICE_TIER_CHOICES.find((entry) => entry.value === value);
+    if (choice) return choice.description;
+    if (value === "scale") {
+      return "Uses committed Scale Tier capacity. It remains selected until you choose another tier.";
+    }
+    return "This value is not offered by this version. It remains selected until you choose another tier.";
+  }
+  async function refreshOpenAiTier() {
+    if (!opts.showOpenAiServiceTier) return;
+    const raw = await api2.settings.get("openAiServiceTier");
+    const stored = typeof raw === "string" ? raw : "";
+    initialOpenAiTierChoice = openAiTierChoiceForStored(stored);
+    pendingOpenAiTierChoice = initialOpenAiTierChoice;
+    openAiTierDirty = false;
+  }
+  function openAiTierBlock() {
+    const picker = el("select", {
+      name: "openAiServiceTier",
+      "data-testid": "openai-service-tier"
+    });
+    for (const choice of SERVICE_TIER_CHOICES) {
+      picker.append(el("option", { value: choice.value }, choice.label));
+    }
+    if (!offeredOpenAiTier.has(pendingOpenAiTierChoice)) {
+      picker.append(
+        el(
+          "option",
+          { value: pendingOpenAiTierChoice },
+          retainedOpenAiTierLabel(pendingOpenAiTierChoice)
+        )
+      );
+    }
+    picker.value = pendingOpenAiTierChoice;
+    const field = uiField({
+      label: "Global OpenAI service tier",
+      control: picker,
+      hint: openAiTierDescription(pendingOpenAiTierChoice)
+    });
+    picker.addEventListener("change", () => {
+      pendingOpenAiTierChoice = picker.value;
+      openAiTierDirty = pendingOpenAiTierChoice !== initialOpenAiTierChoice;
+      field.setAttribute("hint", openAiTierDescription(pendingOpenAiTierChoice));
+    });
+    const tierBlock = block(
+      "Request processing",
+      field,
+      el(
+        "p",
+        { class: "field-hint openai-service-tier-scope" },
+        "Applies to every first-party OpenAI model request. Copse records the tier OpenAI reports for each response, including a downgrade to Standard, and uses it when estimating cost."
+      )
+    );
+    tierBlock.dataset["testid"] = "openai-service-tier-block";
+    return tierBlock;
+  }
   function loadDeviceInfoOnce() {
     if (deviceAutoSetup && providerPicked && !autoSetupRun) {
       autoSetupRun = true;
@@ -45187,6 +45547,9 @@ function createProvidersPanel(api2, opts = {}) {
         body.append(block("API key", apiPanel.root));
       }
     }
+    if (vendor.id === "openai" && opts.showOpenAiServiceTier) {
+      body.append(openAiTierBlock());
+    }
     if (caps.cloud) {
       body.append(block("Cloud agent", caps.cloud.element));
       if (cloudAgentOptions) cloudAgentOptions.hidden = false;
@@ -45218,6 +45581,7 @@ function createProvidersPanel(api2, opts = {}) {
     await localPanel.refresh();
     await agentsPanel.reload();
     await refreshCloudAgentKeys();
+    await refreshOpenAiTier();
     if (selected !== ADD_KEY && !vendors().some((vendor) => vendor.id === selected)) {
       selected = "";
     }
@@ -45225,7 +45589,13 @@ function createProvidersPanel(api2, opts = {}) {
   }
   async function saveKeys() {
     const [apiSaved, localSaved] = await Promise.all([apiPanel.saveKeys(), localPanel.saveKeys()]);
-    return apiSaved && localSaved;
+    if (!apiSaved || !localSaved) return false;
+    if (openAiTierDirty) {
+      await api2.settings.set("openAiServiceTier", pendingOpenAiTierChoice);
+      initialOpenAiTierChoice = pendingOpenAiTierChoice;
+      openAiTierDirty = false;
+    }
+    return true;
   }
   return { root: fieldset, refresh, saveKeys };
 }
@@ -45235,6 +45605,8 @@ var init_providers_section = __esm({
     init_helpers();
     init_custom_providers_section();
     init_acp_agents_section();
+    init_service_tier();
+    init_ui();
     MERGED_VENDORS = [
       {
         id: "anthropic",
@@ -56823,13 +57195,14 @@ function renderModelTable(host, title, rows, emptyText) {
     const approx = row2.estimatedTokens ? "~" : "";
     const model = escapeHtml(row2.model);
     const modelLabel2 = row2.estimatedTokens ? `${model} <span class="usage-estimated" title="Estimated locally, because the agent did not report usage">(est.)</span>` : model;
+    const costLabel = row2.isLocal ? "free (local)" : !row2.pricingKnown ? "unpriced" : `${row2.estimatedCostUsd === 0 ? "free" : formatUsd(row2.estimatedCostUsd)}${row2.tierPricingFallback ? ' <span class="usage-estimated" title="This service tier has no published catalog rate; shown at the standard rate.">(standard rate)</span>' : ""}`;
     tr2.innerHTML = `
       <td><code>${modelLabel2}</code></td>
       <td>${approx}${formatTokenCount(row2.inputTokens)}</td>
       <td>${approx}${formatTokenCount(row2.outputTokens)}</td>
       <td>${row2.cacheReadTokens ? formatTokenCount(row2.cacheReadTokens) : "-"}</td>
       <td>${row2.cacheCreationTokens ? formatTokenCount(row2.cacheCreationTokens) : "-"}</td>
-      <td>${row2.isLocal ? "free (local)" : !row2.pricingKnown ? "unpriced" : row2.estimatedCostUsd === 0 ? "free" : formatUsd(row2.estimatedCostUsd)}</td>
+      <td>${costLabel}</td>
     `;
     tbody.append(tr2);
   }
@@ -60002,6 +60375,7 @@ function mountSettingsDialog(store2, api2) {
         refresh: () => lmStudioSection.refreshDetection()
       }
     ],
+    showOpenAiServiceTier: true,
     cloudAgents: [
       {
         vendor: "cursor",
@@ -124102,7 +124476,10 @@ function startAgentController(store2, api2) {
           inputTokens: chunk.inputTokens,
           outputTokens: chunk.outputTokens,
           ...chunk.cacheReadTokens !== void 0 ? { cacheReadTokens: chunk.cacheReadTokens } : {},
-          ...chunk.cacheCreationTokens !== void 0 ? { cacheCreationTokens: chunk.cacheCreationTokens } : {}
+          ...chunk.cacheCreationTokens !== void 0 ? { cacheCreationTokens: chunk.cacheCreationTokens } : {},
+          ...chunk.requestedServiceTier !== void 0 ? { requestedServiceTier: chunk.requestedServiceTier } : {},
+          ...chunk.responseServiceTier !== void 0 ? { responseServiceTier: chunk.responseServiceTier } : {},
+          ...chunk.serviceTierUsage !== void 0 ? { serviceTierUsage: chunk.serviceTierUsage } : {}
         };
         addUsageDelta(store2, threadId, delta);
         break;
