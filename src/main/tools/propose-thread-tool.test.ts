@@ -32,6 +32,12 @@ describe('proposeThreadTool', () => {
     assert.equal(proposeThreadTool.parameters.safeParse({ ...args, title: '' }).success, false)
   })
 
+  it('supports explicit thread requests while keeping the card as the approval boundary', () => {
+    assert.match(proposeThreadTool.description, /user explicitly asks/i)
+    assert.match(proposeThreadTool.description, /must approve by clicking Start this thread/i)
+    assert.match(proposeThreadTool.description, /does not create the thread or run its prompt/i)
+  })
+
   it('returns immediately, telling the agent the offer stands on its own', async () => {
     const result = await resultText(args)
     assert.match(result, /Migrate the settings store to Zod/)

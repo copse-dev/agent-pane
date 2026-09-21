@@ -1,14 +1,15 @@
 /**
- * Model-proposed threads: the agent can offer a follow-up run it thinks is worth
- * doing *somewhere else* — a refactor it spotted mid-task, a test gap, a
- * migration — instead of quietly widening the turn it is on.
+ * Thread offers: the agent can offer a separate run when the user explicitly
+ * asks for one, or when it spots worthwhile follow-up work — a refactor, a test
+ * gap, a migration — instead of quietly widening the turn it is on.
  *
  * The offer is not a gate. A permission prompt interrupts because the action is
  * already happening and cannot proceed without an answer; this is the opposite
  * shape — nothing is running, nothing is blocked, and ignoring the card forever
  * is a perfectly good outcome. So the proposal is recorded as ordinary tool-call
  * data, rendered inline in the transcript, and only becomes a thread when the
- * user says so. Two consequences the wording and the types both have to keep:
+ * user approves it from the card. Two consequences the wording and the types
+ * both have to keep:
  *
  * 1. **The model never learns whether it was accepted.** The tool returns
  *    immediately (see {@link threadProposalAcknowledgement}) so the agent loop
