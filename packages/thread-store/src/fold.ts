@@ -21,6 +21,7 @@ import {
   type SpineMessageLine,
   type SpineSubagentRef,
   type SpineToolCall,
+  type SpineToolResultImage,
   type ThreadMeta,
   SPINE_SCHEMA_VERSION,
   isContentRef,
@@ -116,6 +117,18 @@ function explodeToolCall(
     result = contentRef(ref, tc.result, hash)
   }
 
+  let images: SpineToolResultImage[] | undefined
+  if (tc.images !== undefined && tc.images.length > 0) {
+    images = tc.images.map((image, i) => {
+      const ref = `blobs/${tc.id}-img-${String(i)}.dataurl`
+      files.push({ ref, contents: image.dataUrl })
+      return {
+        dataUrl: { ref, sha256: hash(image.dataUrl) },
+        ...(image.name !== undefined ? { name: image.name } : {}),
+      }
+    })
+  }
+
   const argsJson = serializeToolArgsJson(tc.args)
   let args: unknown = tc.args
   if (utf8ByteLength(argsJson) > TOOL_ARGS_INLINE_MAX_BYTES) {
@@ -136,6 +149,7 @@ function explodeToolCall(
     // through the Markdown pipeline after a reload instead of a raw <pre>.
     ...(tc.kind !== undefined ? { kind: tc.kind } : {}),
     ...(tc.resultFormat !== undefined ? { resultFormat: tc.resultFormat } : {}),
+    ...(images !== undefined ? { images } : {}),
   }
 
   if (tc.subagent) {
@@ -295,6 +309,7 @@ export function refsOfLine(line: SpineMessageLine): {
   }
   for (const tc of line.toolCalls) {
     if (tc.result !== null) files.push(tc.result.ref)
+    if (tc.images) for (const image of tc.images) files.push(image.dataUrl.ref)
     if (isToolArgsBlobRef(tc.id, tc.args)) files.push(tc.args.ref)
     if (tc.subagent) subagentDirs.push(tc.subagent.ref)
   }
@@ -332,6 +347,15 @@ function foldToolCall(
     args = parseToolArgsJson(raw)
   }
 
+  const images = spine.images?.map((image) => {
+    const dataUrl = resolve(image.dataUrl.ref)
+    verify(image.dataUrl, dataUrl, hash)
+    return {
+      dataUrl,
+      ...(image.name !== undefined ? { name: image.name } : {}),
+    }
+  })
+
   const tc: ToolCall = {
     id: spine.id,
     name: spine.name,
@@ -341,6 +365,7 @@ function foldToolCall(
     ...(spine.editStats !== undefined ? { editStats: spine.editStats } : {}),
     ...(spine.kind !== undefined ? { kind: spine.kind } : {}),
     ...(spine.resultFormat !== undefined ? { resultFormat: spine.resultFormat } : {}),
+    ...(images !== undefined ? { images } : {}),
   }
 
   if (spine.subagent) {

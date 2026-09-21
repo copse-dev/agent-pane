@@ -58,6 +58,7 @@ import type {
   SubagentSession,
   Thread,
   ToolCall,
+  ToolResultImage,
   TranscriptAttachment,
 } from '@shared/types'
 import {
@@ -333,6 +334,35 @@ function createCanvasPreviewSection(tc: ToolCall, threadId: string): HTMLElement
   if (tc.status !== 'done') return null
   const uri = artefactUriFromToolResult(tc.result)
   return uri ? createCanvasPreviewCard(threadId, artefactTitleFromUri(uri)) : null
+}
+
+const toolResultImageSignatures = new WeakMap<HTMLElement, string>()
+
+/** Keep tool-returned images beside the collapsed card that represents them. */
+function syncToolResultImages(msgEl: HTMLElement, toolCalls: readonly ToolCall[]): void {
+  const images = toolCalls.flatMap((toolCall) => toolCall.images ?? [])
+  const current = msgEl.querySelector<HTMLElement>(':scope > .tool-result-images')
+  if (images.length === 0) {
+    current?.remove()
+    return
+  }
+
+  const signature = renderSignature(images)
+  let rendered = current
+  if (!rendered || toolResultImageSignatures.get(rendered) !== signature) {
+    rendered = createToolResultImages(images)
+    toolResultImageSignatures.set(rendered, signature)
+    if (current) current.replaceWith(rendered)
+    else msgEl.append(rendered)
+  }
+
+  const toolCards = Array.from(msgEl.children).filter((node) =>
+    node.classList.contains('tool-card'),
+  )
+  const lastToolCard = toolCards.at(-1)
+  if (lastToolCard && lastToolCard.nextElementSibling !== rendered) {
+    msgEl.insertBefore(rendered, lastToolCard.nextSibling)
+  }
 }
 
 /**
@@ -1163,6 +1193,25 @@ function createMessageImages(images: string[]): HTMLElement {
       loading: 'lazy',
     })
     attachImageExpand(img, 'Attached image')
+    wrap.append(img)
+  }
+  return wrap
+}
+
+function createToolResultImages(images: readonly ToolResultImage[]): HTMLElement {
+  const wrap = el('div', {
+    class: 'message-images tool-result-images',
+    'data-tool-result-image-count': String(images.length),
+  })
+  for (const image of images) {
+    const label = image.name ?? 'Tool result image'
+    const img = el('img', {
+      class: 'message-image tool-result-image',
+      src: image.dataUrl,
+      alt: label,
+      loading: 'lazy',
+    })
+    attachImageExpand(img, label)
     wrap.append(img)
   }
   return wrap
@@ -2653,6 +2702,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         msgEl.insertBefore(node, msgEl.children[base + i] ?? null)
       }
     }
+    syncToolResultImages(msgEl, run ? (isRunMember ? [] : run.toolCalls) : toolCalls)
     registerReasoningDisclosures(msgEl)
     syncToolRunMemberVisibility(msgEl)
   }

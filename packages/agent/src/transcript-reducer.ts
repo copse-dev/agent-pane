@@ -59,6 +59,7 @@ export class TranscriptReducer {
         if (chunk.status !== undefined) call.status = chunk.status
         if (chunk.result !== undefined) call.result = chunk.result
         if (chunk.resultFormat !== undefined) call.resultFormat = chunk.resultFormat
+        if (chunk.images !== undefined) call.images = chunk.images
         return entry.message
       }
       default:
