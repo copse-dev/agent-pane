@@ -54,6 +54,17 @@ describe('provider selection', () => {
     assert.equal(compatibleRemote.remote, true)
   })
 
+  it('accepts the CI model key for each hosted provider', () => {
+    const env = { COPSE_REVIEW_API_KEY: 'offline-ci-key' }
+    for (const model of ['claude-sonnet-5', 'gpt-5', 'anthropic/claude-sonnet-5']) {
+      assert.equal(selectProvider({ model }, env).model, model)
+    }
+    assert.throws(
+      () => selectProvider({ model: 'claude-sonnet-5' }, { COPSE_REVIEW_API_KEY: '  ' }),
+      /ANTHROPIC_API_KEY is not set/,
+    )
+  })
+
   it('builds the scripted provider for mock', () => {
     const selected = selectProvider({ kind: 'mock', script: [{ type: 'text', text: 'hi' }] }, {})
     assert.ok(selected.provider instanceof ScriptedProvider)

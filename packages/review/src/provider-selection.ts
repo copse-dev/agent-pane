@@ -60,7 +60,8 @@ export function inferProviderKind(model: string | undefined): ProviderKind {
 }
 
 function required(env: Readonly<Record<string, string | undefined>>, name: string): string {
-  const value = env[name]?.trim()
+  const specific = env[name]?.trim() ?? ''
+  const value = specific.length > 0 ? specific : env['COPSE_REVIEW_API_KEY']?.trim()
   if (!value) throw new Error(`${name} is not set`)
   return value
 }

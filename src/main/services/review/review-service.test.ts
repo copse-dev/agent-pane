@@ -100,10 +100,13 @@ describe('review service', () => {
     readSetting?: (key: string) => unknown
     initiator?: 'user' | 'agent'
     registryEnabled?: boolean
+    reviewer?: LLMProvider
+    signal?: AbortSignal
   }): Promise<Run> {
     const chunks: StreamChunk[] = []
     const providers = new Map<string, LLMProvider>()
     const providerFor = (model: string): Promise<LLMProvider> => {
+      if (model === 'reviewer-model' && options.reviewer) return Promise.resolve(options.reviewer)
       const script =
         model === 'challenger-model'
           ? (options.challenger ?? challengerScript('stands'))
@@ -131,7 +134,7 @@ describe('review service', () => {
         root: repo.root,
         chatModel: 'chat-model',
         onChunk: (chunk) => chunks.push(chunk),
-        signal: new AbortController().signal,
+        signal: options.signal ?? new AbortController().signal,
         initiator: options.initiator ?? 'user',
         readSetting: options.readSetting ?? settings({ challengerModel: 'challenger-model' }),
         services,
@@ -184,6 +187,32 @@ describe('review service', () => {
     assert.deepEqual([...new Set(usage)].sort(), ['challenger-model', 'reviewer-model'])
     // The ground is closed: no worktree is left behind.
     assert.doesNotMatch(repo.git('worktree', 'list'), /copse-review/)
+  })
+
+  it('reports a provider failure instead of a clean review', async () => {
+    const reviewer: LLMProvider = {
+      async *stream() {
+        yield { type: 'text', text: '' }
+        throw new Error('Provider authentication failed')
+      },
+    }
+    const { result } = await run({ reviewer })
+    assert.equal(result.report.status, 'error')
+    assert.match(result.report.error ?? '', /Provider authentication failed/)
+    assert.equal(result.report.reviewers[0]?.outcome, 'failed')
+  })
+
+  it('reports cancellation during the model stage instead of success', async () => {
+    const controller = new AbortController()
+    const reviewer: LLMProvider = {
+      async *stream() {
+        controller.abort(new Error('stop review'))
+        yield { type: 'text', text: '' }
+      },
+    }
+    const { result } = await run({ reviewer, signal: controller.signal })
+    assert.equal(result.report.status, 'error')
+    assert.equal(result.report.error, 'Review cancelled.')
   })
 
   it('drops a finding the challenger refutes, and counts it', async () => {

@@ -90,7 +90,7 @@ async function rawCellRun(
   try {
     return await cell.run({
       target: 'head',
-      argv: [process.execPath, 'hostile.cjs', 'build'],
+      argv: ['node', 'hostile.cjs', 'build'],
       timeoutMs: 30_000,
       maxOutputBytes: 256 * 1024,
     })
@@ -128,9 +128,9 @@ describe('hostile fixture conformance', () => {
       'hostile.cjs': HOSTILE_SCRIPT,
       [REVIEW_CONFIG_FILENAME]: JSON.stringify({
         commands: {
-          prepare: [process.execPath, 'hostile.cjs', 'prepare'],
-          build: [process.execPath, 'hostile.cjs', 'build'],
-          test: [process.execPath, 'hostile.cjs', 'test'],
+          prepare: ['node', 'hostile.cjs', 'prepare'],
+          build: ['node', 'hostile.cjs', 'build'],
+          test: ['node', 'hostile.cjs', 'test'],
         },
       }),
     })
@@ -199,6 +199,8 @@ describe('hostile fixture conformance', () => {
       })
       assert.equal(report.execution.decision.execute, true)
       assert.equal(report.execution.strength, 'container')
+      assert.equal(report.preparation.head?.status, 'passed')
+      assert.equal(report.checks.find((check) => check.kind === 'test')?.verdict, 'failing-on-base')
       assert.doesNotMatch(JSON.stringify(report), /CANARY/)
     })
   })

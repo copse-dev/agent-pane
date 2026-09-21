@@ -115,7 +115,8 @@ never the exit code.
 
 Keys are read from the environment only: ANTHROPIC_API_KEY, OPENAI_API_KEY,
 OPENROUTER_API_KEY, LM_STUDIO_URL / LM_STUDIO_MODEL / LM_STUDIO_API_KEY,
-COPSE_REVIEW_API_KEY. The forge token is COPSE_REVIEW_FORGE_TOKEN, else GITHUB_TOKEN
+COPSE_REVIEW_API_KEY (also the fallback for hosted providers when their own key is unset).
+The forge token is COPSE_REVIEW_FORGE_TOKEN, else GITHUB_TOKEN
 (Forgejo: also FORGEJO_TOKEN). Remote providers receive the diff with secrets redacted.
 
 Exit codes follow the headless contract: 0 the reviewer looked (findings or not),

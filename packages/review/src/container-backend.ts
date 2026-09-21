@@ -14,7 +14,7 @@
 // orchestrator's reads of the head checkout see exactly what the cell wrote.
 //
 // One container per command rather than one per cell: a container is cheap to
-// start, `<engine> kill` ends a timed-out command and everything it forked in
+// start, `<engine> rm --force` ends a timed-out command and everything it forked in
 // one stroke, and nothing in the cell survives between commands except what it
 // wrote to its mounted checkouts and scratch — which is the plan's "lifetime"
 // row. The engine is Docker by default; Podman speaks the same argv.
@@ -83,7 +83,7 @@ export interface ContainerBackendOptions {
   readonly spawn?: SpawnEngine
 }
 
-/** Everything `containerRunArgs` needs; pure in these values. */
+/** Everything `containerCreateArgs` needs; pure in these values. */
 export interface ContainerRunInput {
   readonly name: string
   readonly image: string
@@ -101,12 +101,12 @@ export interface ContainerRunInput {
 }
 
 /**
- * The `run` argv for one command. Every wall the backend claims through its
+ * The `create` argv for one command. Every wall the backend claims through its
  * capabilities is a flag here and nowhere else, pinned by a unit test, so the
  * declaration and the container cannot drift apart.
  */
-export function containerRunArgs(input: ContainerRunInput): string[] {
-  const args = ['run', '--rm', '--name', input.name]
+export function containerCreateArgs(input: ContainerRunInput): string[] {
+  const args = ['create', '--rm', '--pull=never', '--name', input.name]
   for (const [key, value] of Object.entries(input.labels)) args.push('--label', `${key}=${value}`)
   args.push(
     '--init',
@@ -122,10 +122,10 @@ export function containerRunArgs(input: ContainerRunInput): string[] {
     '--network=none',
   )
   if (input.user !== null) args.push(`--user=${String(input.user.uid)}:${String(input.user.gid)}`)
-  for (const path of input.writable) {
+  for (const path of new Set(input.writable)) {
     args.push(`--mount=type=bind,source=${path},target=${path}`)
   }
-  for (const path of input.readOnly) {
+  for (const path of new Set(input.readOnly)) {
     args.push(`--mount=type=bind,source=${path},target=${path},readonly`)
   }
   args.push('--workdir', input.cwd)
@@ -135,11 +135,12 @@ export function containerRunArgs(input: ContainerRunInput): string[] {
     if (key === 'PATH') continue
     args.push('--env', `${key}=${value}`)
   }
-  args.push(input.image, ...input.argv)
+  const [executable, ...argv] = input.argv
+  args.push('--entrypoint', executable, input.image, ...argv)
   return args
 }
 
-/** How long the engine's kill gets before the client process is killed as a fallback. */
+/** Maximum time to remove a container before terminating the attach client too. */
 const KILL_GRACE_MS = 5_000
 
 class ContainerCell implements ExecutionCell {
@@ -151,7 +152,13 @@ class ContainerCell implements ExecutionCell {
   private readonly homeDir: string
   private readonly tmpDir: string
   private readonly env: Readonly<Record<string, string>>
-  private readonly live = new Map<string, ChildProcess>()
+  private readonly live = new Map<
+    string,
+    {
+      controller: AbortController
+      done: Promise<CellCommandResult>
+    }
+  >()
   private sequence = 0
   private destroyed = false
 
@@ -187,22 +194,67 @@ class ContainerCell implements ExecutionCell {
     }
   }
 
-  /**
-   * End a command: ask the engine to kill its container (which ends every
-   * process in it and, with `--rm`, removes it), and if the client has not
-   * followed within the grace period, kill the client too. A client that has
-   * already exited needs neither.
-   */
-  private kill(name: string, child: ChildProcess): void {
-    if (child.exitCode !== null || child.signalCode !== null) return
-    const [file, args] = this.engineArgv(['kill', '--signal', 'KILL', name])
-    const killer = this.spawn(file, args, { stdio: 'ignore' })
-    killer.on('error', () => {
-      // The engine itself is gone; the client kill below is what is left.
-    })
-    setTimeout(() => {
-      if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
-    }, KILL_GRACE_MS).unref()
+  private async remove(name: string): Promise<void> {
+    const [file, args] = this.engineArgv(['rm', '--force', name])
+    const result = await probeEngine(this.spawn, file, args, KILL_GRACE_MS)
+    // --rm may already have removed a naturally completed container.
+    if (!result.ok && !/no such container|no container with (?:name|ID)/i.test(result.reason)) {
+      throw new Error(`Could not remove review container ${name}: ${result.reason}`)
+    }
+  }
+
+  private async execute(
+    input: ContainerRunInput,
+    command: CellCommand,
+  ): Promise<CellCommandResult> {
+    const started = Date.now()
+    const [file, args] = this.engineArgv(containerCreateArgs(input))
+    let removal: Promise<void> | undefined
+    const remove = (): Promise<void> => (removal ??= this.remove(input.name))
+    try {
+      // Creating a container cannot execute the checkout. Let creation settle
+      // before cancellation removes it, so an early abort cannot miss a name
+      // that a still-running engine client creates later.
+      const created = await collectProcess(
+        this.spawn(file, args, { stdio: ['ignore', 'pipe', 'pipe'] }),
+        {
+          ...command,
+          signal: undefined,
+          timeoutMs: Math.min(command.timeoutMs || DETECT_TIMEOUT_MS, DETECT_TIMEOUT_MS),
+        },
+      )
+      command.signal?.throwIfAborted()
+      if (created.exitCode !== 0 || created.timedOut) return created
+      const remaining = command.timeoutMs - (Date.now() - started)
+      if (command.timeoutMs > 0 && remaining <= 0) {
+        return { ...created, exitCode: null, timedOut: true }
+      }
+      const [startFile, startArgs] = this.engineArgv(['start', '--attach', input.name])
+      const child = this.spawn(startFile, startArgs, { stdio: ['ignore', 'pipe', 'pipe'] })
+      const result = await collectProcess(
+        child,
+        {
+          ...command,
+          timeoutMs: command.timeoutMs > 0 ? remaining : 0,
+        },
+        {
+          kill: () => {
+            // Cleanup is awaited below even if the client has already exited.
+            // A daemon failure must also stop the attach client from hanging.
+            void remove().catch(() => undefined)
+            if (child.exitCode !== null || child.signalCode !== null) return
+            const timer = setTimeout(() => child.kill('SIGKILL'), KILL_GRACE_MS)
+            timer.unref()
+            child.once('close', () => {
+              clearTimeout(timer)
+            })
+          },
+        },
+      )
+      return { ...result, durationMs: Date.now() - started }
+    } finally {
+      await remove()
+    }
   }
 
   async run(command: CellCommand): Promise<CellCommandResult> {
@@ -210,19 +262,15 @@ class ContainerCell implements ExecutionCell {
     if (this.destroyed) throw new Error('Review cell has been destroyed')
     const commandId = `${this.cellId}-${String(++this.sequence)}`
     const input = this.runInput(command, commandId)
-    const [file, args] = this.engineArgv(containerRunArgs(input))
-    const child = this.spawn(file, args, { stdio: ['ignore', 'pipe', 'pipe'] })
-    this.live.set(input.name, child)
+    const controller = new AbortController()
+    const signal =
+      command.signal === undefined
+        ? controller.signal
+        : AbortSignal.any([controller.signal, command.signal])
+    const done = this.execute(input, { ...command, signal })
+    this.live.set(input.name, { controller, done })
     try {
-      const result = await collectProcess(child, command, {
-        kill: (client) => {
-          this.kill(input.name, client)
-        },
-      })
-      // The engine's own failures (125: the daemon refused the run; 126/127:
-      // the entrypoint could not run) come back as the command's exit code,
-      // so a check that could not even start is a failed check, never a pass.
-      return result
+      return await done
     } finally {
       this.live.delete(input.name)
     }
@@ -230,20 +278,9 @@ class ContainerCell implements ExecutionCell {
 
   async destroy(): Promise<void> {
     this.destroyed = true
-    const closed = [...this.live.values()].map(
-      (child) =>
-        new Promise<void>((resolve) => {
-          if (child.exitCode !== null || child.signalCode !== null) {
-            resolve()
-            return
-          }
-          child.once('close', () => {
-            resolve()
-          })
-        }),
-    )
-    for (const [name, child] of this.live) this.kill(name, child)
-    await Promise.all(closed)
+    const commands = [...this.live.values()]
+    for (const { controller } of commands) controller.abort(new Error('Review cell destroyed'))
+    await Promise.all(commands.map(({ done }) => done.catch(() => undefined)))
     this.live.clear()
     await rm(this.homeDir, { recursive: true, force: true })
     await rm(this.tmpDir, { recursive: true, force: true })

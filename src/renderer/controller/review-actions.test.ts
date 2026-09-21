@@ -74,7 +74,7 @@ interface Calls {
 function setup(
   activeProjectId: string | null,
   overrides: Partial<Thread> = {},
-  behaviour: { dismissFails?: boolean } = {},
+  behaviour: { dismissFails?: boolean; startFails?: boolean } = {},
 ): { store: AppStore; api: ApiClient; calls: Calls } {
   const store = createStore({
     activeProjectId,
@@ -96,7 +96,9 @@ function setup(
       review: {
         run: (...args: unknown[]): Promise<void> => {
           calls.runs.push(args)
-          return Promise.resolve()
+          return behaviour.startFails
+            ? Promise.reject(new Error('Model resolution failed'))
+            : Promise.resolve()
         },
         dismissFinding: (input: unknown): Promise<void> => {
           calls.dismissed.push(input)
@@ -153,6 +155,19 @@ test('startReview does nothing while the thread is already running', () => {
   startReview(store, api, 't1')
   assert.equal(calls.runs.length, 0)
   assert.equal(threadState(store).reviewReport, undefined)
+})
+
+test('a rejected startup restores idle state and permits retry', async () => {
+  const { store, api, calls } = setup('project-1', {}, { startFails: true })
+  startReview(store, api, 't1')
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(threadState(store).status, 'idle')
+  assert.equal(threadState(store).reviewReport?.status, 'error')
+  assert.equal(threadState(store).reviewReport?.error, 'Model resolution failed')
+  assert.equal(takeQuietRun('t1'), false)
+  startReview(store, api, 't1')
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(calls.runs.length, 2)
 })
 
 test('review actions no-op when no project is active rather than send an unresolvable request', () => {

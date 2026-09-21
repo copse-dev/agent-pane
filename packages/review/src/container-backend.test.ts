@@ -1,12 +1,12 @@
 import { after, before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { access, mkdtemp, mkdir, readFile, rm } from 'node:fs/promises'
+import { access, mkdtemp, mkdir, readFile, realpath, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { z } from 'zod'
 import {
-  containerRunArgs,
+  containerCreateArgs,
   createContainerBackend,
   detectContainerBackend,
   DEFAULT_CONTAINER_LIMITS,
@@ -46,8 +46,14 @@ describe('container backend', () => {
     }
 
     it('pins every wall the backend declares as a flag', () => {
-      const args = containerRunArgs(input)
-      assert.deepEqual(args.slice(0, 4), ['run', '--rm', '--name', 'copse-review-abc-1'])
+      const args = containerCreateArgs(input)
+      assert.deepEqual(args.slice(0, 5), [
+        'create',
+        '--rm',
+        '--pull=never',
+        '--name',
+        'copse-review-abc-1',
+      ])
       for (const flag of [
         '--init',
         '--read-only',
@@ -67,7 +73,7 @@ describe('container backend', () => {
     })
 
     it('mounts checkouts and scratch read-write and the declared paths read-only, all at their host paths', () => {
-      const args = containerRunArgs(input)
+      const args = containerCreateArgs(input)
       assert.ok(args.includes('--mount=type=bind,source=/scratch/head,target=/scratch/head'))
       assert.ok(args.includes('--mount=type=bind,source=/scratch,target=/scratch'))
       assert.ok(
@@ -79,8 +85,8 @@ describe('container backend', () => {
       assert.equal(args[args.indexOf('--workdir') + 1], '/scratch/head')
     })
 
-    it('passes the cell environment minus PATH and ends with the image and the argv', () => {
-      const args = containerRunArgs(input)
+    it('passes the cell environment minus PATH and overrides the image entrypoint', () => {
+      const args = containerCreateArgs(input)
       assert.ok(args.includes('CI=1'))
       assert.ok(args.includes('npm_config_store_dir=/x'))
       assert.equal(
@@ -88,14 +94,29 @@ describe('container backend', () => {
         false,
         'the host PATH must not reach the container',
       )
-      assert.deepEqual(args.slice(-4), ['copse-worker:local', 'pnpm', 'run', 'test'])
+      assert.deepEqual(args.slice(-5), [
+        '--entrypoint',
+        'pnpm',
+        'copse-worker:local',
+        'run',
+        'test',
+      ])
     })
 
     it('leaves the user to the image when none is given', () => {
-      const args = containerRunArgs({ ...input, user: null })
+      const args = containerCreateArgs({ ...input, user: null })
       assert.equal(
         args.some((arg) => arg.startsWith('--user=')),
         false,
+      )
+    })
+
+    it('mounts a shared base and head checkout only once', () => {
+      const args = containerCreateArgs({ ...input, writable: ['/scratch/head', '/scratch/head'] })
+      assert.equal(
+        args.filter((arg) => arg === '--mount=type=bind,source=/scratch/head,target=/scratch/head')
+          .length,
+        1,
       )
     })
   })
@@ -120,7 +141,7 @@ describe('container backend', () => {
     const commandIds: string[] = []
 
     before(async () => {
-      scratch = await mkdtemp(join(tmpdir(), 'review-container-backend-'))
+      scratch = await realpath(await mkdtemp(join(tmpdir(), 'review-container-backend-')))
       registry = join(scratch, 'registry')
       await mkdir(registry)
       const base = join(scratch, 'base')
@@ -208,11 +229,11 @@ describe('container backend', () => {
       assert.equal((await lastRecord()).cwd, spec.checkouts.base)
     })
 
-    it('ends a command that overruns its timeout through the engine kill and says so', async () => {
+    it('ends a command that overruns its timeout through the engine and says so', async () => {
       const result = await cell.run({
         target: 'head',
         argv: [process.execPath, '-e', 'setTimeout(() => {}, 60_000)'],
-        timeoutMs: 300,
+        timeoutMs: 1_000,
         maxOutputBytes: 1024,
       })
       assert.equal(result.timedOut, true)
@@ -268,6 +289,53 @@ describe('container backend', () => {
         await other.destroy()
       }
     })
+
+    for (const action of ['abort', 'destroy']) {
+      it(`waits for container creation before cleanup on ${action}`, async () => {
+        const slowRegistry = join(scratch, `slow-${action}`)
+        await mkdir(slowRegistry)
+        const other = await createContainerBackend({
+          image: FAKE_IMAGE,
+          engine: await writeFakeContainerEngine(slowRegistry, 500),
+          containerName: () => 'delayed',
+        }).createCell(spec)
+        const controller = new AbortController()
+        const marker = join(scratch, `must-not-run-${action}`)
+        try {
+          const running = other.run({
+            target: 'head',
+            argv: [
+              process.execPath,
+              '-e',
+              `require('fs').writeFileSync(${JSON.stringify(marker)}, 'ran')`,
+            ],
+            signal: controller.signal,
+            timeoutMs: 10_000,
+            maxOutputBytes: 1024,
+          })
+          const rejected = assert.rejects(running, /cancel review|destroyed/)
+          for (let i = 0; i < 500; i++) {
+            if (
+              await access(join(slowRegistry, 'delayed.creating')).then(
+                () => true,
+                () => false,
+              )
+            )
+              break
+            await delay(10)
+          }
+          await access(join(slowRegistry, 'delayed.creating'))
+          if (action === 'abort') controller.abort(new Error('cancel review'))
+          else await other.destroy()
+          await rejected
+          await access(join(slowRegistry, 'delayed.removed'))
+          await assert.rejects(access(join(slowRegistry, 'delayed.active')), /ENOENT/)
+          await assert.rejects(access(marker), /ENOENT/)
+        } finally {
+          await other.destroy()
+        }
+      })
+    }
   })
 
   describe('detection', () => {

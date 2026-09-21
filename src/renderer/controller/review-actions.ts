@@ -9,8 +9,9 @@ import {
   setThreadStatus,
 } from '@shared/store/thread-helpers.ts'
 import { syncAgentActivity } from '../agent-activity.ts'
-import { markQuietRun } from './quiet-runs.ts'
+import { markQuietRun, takeQuietRun } from './quiet-runs.ts'
 import { showErrorToast } from '../views/toast.ts'
+import { errorMessage } from '@copse/std/errors.ts'
 
 // Payload for the standalone review runs and retries. Mirrors the fields the
 // full run sends (see message-queue's refreshPayload) so the run happens against
@@ -88,6 +89,18 @@ export function startReview(store: AppStore, api: ApiClient, threadId: string): 
   syncAgentActivity(store, threadId, false)
   markQuietRun(threadId)
   void api.review.run(projectId, threadId, reviewPayload(store, threadId)).catch((err: unknown) => {
+    const report = store.getState().threads.find((t) => t.id === threadId)?.reviewReport
+    if (report?.status === 'running') {
+      setThreadReviewReport(store, threadId, {
+        ...report,
+        status: 'error',
+        error: errorMessage(err),
+        durationMs: Date.now() - report.startedAt,
+      })
+      setThreadStatus(store, threadId, 'idle')
+      syncAgentActivity(store, threadId, false)
+      takeQuietRun(threadId)
+    }
     showErrorToast('Review could not start', err)
   })
 }

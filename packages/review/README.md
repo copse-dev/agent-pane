@@ -42,7 +42,9 @@ shell's hand-offs (Phase 4).
   no new privileges, pid / memory / cpu limits, an exec-able private `/tmp`) and no network
   interface. Checkouts and scratch are bind-mounted read-write at their host paths, the
   declared read-only paths read-only at theirs; the host `PATH` gives way to the image's;
-  `<engine> kill` ends a timed-out command with everything it forked. `containerRunArgs` is
+  containers are created before starting, with the requested executable as their entrypoint,
+  so cancelling during creation cannot start a command after cleanup. `<engine> rm --force`
+  ends a timed-out command with everything it forked. `containerCreateArgs` is
   pure and pinned by a test; `detectContainerBackend` says why there is no backend rather
   than guessing.
 - **`checkouts.ts`** — materialises the merge-base and head as detached worktrees under
@@ -158,6 +160,8 @@ the base ref with the model key, imports it (`--stage0-json`, which makes the ru
 read-only and refuses a report for another commit), reviews the head without executing it,
 and posts one review (`--post-review github --repo owner/name --pr n`). The token is
 `COPSE_REVIEW_FORGE_TOKEN`, else `GITHUB_TOKEN`; the model key `COPSE_REVIEW_API_KEY`.
+Provider-specific keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`)
+take precedence over that shared model key when set.
 
 The CLI discovers the standard host pnpm store (or the absolute
 `npm_config_store_dir` / `PNPM_HOME` environment setting) without running pnpm

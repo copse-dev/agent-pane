@@ -106,7 +106,7 @@ export interface BenchProfile {
   readonly reviewerModels: readonly string[]
   readonly challengerModel: string
   /** A provider for one role of one case; `review:<lens>`, `reproduce`, `challenge`. */
-  providerFor(role: string, reviewCase: ReviewCase): LLMProvider
+  providerFor(role: string, reviewCase: ReviewCase, reviewerModel?: string): LLMProvider
 }
 
 export interface RunOptions {
@@ -261,13 +261,11 @@ export function modelProfile(options: ModelProfileOptions): BenchProfile {
     id: selections.map((selection) => selection.model).join('+'),
     reviewerModels: selections.map((selection) => selection.model),
     challengerModel: challenger.model,
-    providerFor: (role): LLMProvider => {
-      // `reviewer:<model>:review:<lens>` for a reviewer, else the challenger's roles.
-      const [prefix, model] = role.split(':')
-      if (prefix === 'reviewer' && model !== undefined) {
-        const selection = byModel.get(model)
-        if (selection === undefined) throw new Error(`no provider for ${model}`)
-        return selection.providerFor(role.slice(`reviewer:${model}:`.length))
+    providerFor: (role, _reviewCase, reviewerModel): LLMProvider => {
+      if (reviewerModel !== undefined) {
+        const selection = byModel.get(reviewerModel)
+        if (selection === undefined) throw new Error(`no provider for ${reviewerModel}`)
+        return selection.providerFor(role)
       }
       return challenger.providerFor(role)
     },
@@ -319,12 +317,7 @@ export async function runCase(reviewCase: ReviewCase, options: RunOptions): Prom
         reviewers: options.profile.reviewerModels.map((model) => ({
           model,
           providerFor: (lens): LLMProvider =>
-            options.profile.providerFor(
-              options.profile.id === MOCK_PROFILE
-                ? `review:${lens.id}`
-                : `reviewer:${model}:review:${lens.id}`,
-              reviewCase,
-            ),
+            options.profile.providerFor(`review:${lens.id}`, reviewCase, model),
         })),
         lenses,
         threadId,

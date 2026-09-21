@@ -17,6 +17,7 @@ import {
   loadCases,
   main,
   mockProfile,
+  modelProfile,
   readBaselines,
   runBench,
   type BenchSummary,
@@ -25,6 +26,25 @@ import {
 describe('bench:review over the committed corpus', () => {
   let outDir = ''
   let summary: BenchSummary
+
+  it('routes reviewer model IDs containing colons without truncation', () => {
+    const [reviewCase] = loadCases(DEFAULT_CASES_DIR)
+    assert.ok(reviewCase)
+    const model = 'qwen/qwen3-235b-a22b:free'
+    const profile = modelProfile({
+      provider: 'openrouter',
+      models: [model],
+      challenger: 'anthropic/claude-sonnet-5',
+      env: { OPENROUTER_API_KEY: 'offline-test-key' },
+    })
+    const reviewer = profile.providerFor('review:correctness', reviewCase, model)
+    assert.equal(profile.providerFor('review:security', reviewCase, model), reviewer)
+    assert.notEqual(profile.providerFor('challenge', reviewCase), reviewer)
+    assert.throws(
+      () => profile.providerFor('review:correctness', reviewCase, 'missing'),
+      /no provider/,
+    )
+  })
 
   before(async () => {
     outDir = await mkdtemp(join(tmpdir(), 'bench-review-'))

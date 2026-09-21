@@ -327,8 +327,16 @@ export function projectReviewReport(input: ProjectReportInput): ThreadReviewRepo
   const { report, models } = input
   const stage0 = report.stage0
   const execution = stage0.execution
+  const failed = report.reviews.filter((review) => review.outcome !== 'completed')
+  const error = failed
+    .map(
+      (review) =>
+        `${review.model} (${review.lens}): ${review.error ?? (review.outcome === 'cancelled' ? 'Review cancelled.' : 'Review failed.')}`,
+    )
+    .join('\n')
   return {
-    status: 'done',
+    status: failed.length > 0 ? 'error' : 'done',
+    ...(error !== '' ? { error } : {}),
     startedAt: input.startedAt,
     models: { reviewer: models.reviewer, challenger: models.challenger },
     lenses: [...input.lenses],
@@ -561,6 +569,7 @@ export async function runThreadReview(options: ReviewRunOptions): Promise<Review
       }
     }
 
+    options.signal.throwIfAborted()
     const assembled = assembleReviewReport({
       stage0,
       context,
