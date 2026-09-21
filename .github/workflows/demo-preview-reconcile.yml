@@ -1,0 +1,129 @@
+name: Reconcile historical demo previews
+
+# Repairs preview directories that predate the close-event cleanup workflow.
+# It preserves every currently open PR and the persistent main/release/vendor
+# trees. This reclaims stale preview bytes but does not guarantee a Pages
+# artifact below 1 GiB: the dry-run plan reports the exact preview-tree byte
+# estimate before an administrator chooses to apply it.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Report the exact stale targets and byte estimate without changing demo-previews.
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+  pull-requests: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: demo-preview-reconcile
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    runs-on: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
+    outputs:
+      changed: ${{ steps.reconcile.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: '.nvmrc'
+          package-manager-cache: false
+      - id: reconcile
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          remote="https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git"
+          work="${RUNNER_TEMP}/demo-preview-reconcile"
+          root="$GITHUB_WORKSPACE"
+          applied=false
+          rm -rf "$work"
+
+          if git ls-remote --exit-code --heads "$remote" demo-previews >/dev/null 2>&1; then
+            :
+          else
+            remote_status=$?
+            if [ "$remote_status" -ne 2 ]; then
+              echo "Could not determine whether demo-previews exists (git ls-remote exited ${remote_status})." >&2
+              exit "$remote_status"
+            fi
+            echo "No demo-previews branch — nothing to reconcile."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! git clone --depth=1 --branch demo-previews "$remote" "$work/previews"; then
+            echo "Could not clone the existing demo-previews branch." >&2
+            exit 1
+          fi
+
+          for attempt in 1 2 3; do
+            cd "$work/previews"
+            old_sha="$(git rev-parse HEAD)"
+            git ls-tree -d --name-only HEAD > "$work/directories.txt"
+            git ls-tree -rlz HEAD > "$work/tree.txt"
+            # `--paginate --slurp` is required: an incomplete inventory could
+            # incorrectly classify a still-open PR as stale, so API errors and
+            # malformed pages fail the plan before any `git rm` is attempted.
+            gh api --paginate --slurp "/repos/${REPO}/pulls?state=open&per_page=100" > "$work/open-pulls.json"
+            node "$root/scripts/demo-preview-reconcile.mts" \
+              --directories "$work/directories.txt" \
+              --open-pulls "$work/open-pulls.json" \
+              --tree "$work/tree.txt" \
+              --targets-out "$work/closed-targets.txt" \
+              --changed-out "$work/changed.txt" \
+              --applied-before "$applied" > "$work/plan.json"
+            echo "Reconciliation plan (preview-directory bytes only; site/vendor are excluded):"
+            cat "$work/plan.json"
+
+            if [ ! -s "$work/closed-targets.txt" ]; then
+              echo "No historical closed-PR preview directories found."
+              changed="$(cat "$work/changed.txt")"
+              echo "changed=$changed" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            if [ "$DRY_RUN" = true ]; then
+              echo "Dry run only; demo-previews was not modified."
+              echo "changed=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            while IFS= read -r target; do
+              git rm -r -- "$target"
+            done < "$work/closed-targets.txt"
+            git commit -m "demo preview: reconcile historical closed PRs"
+            applied=true
+
+            # First verify the expected tip, then use a normal fast-forward
+            # push. A concurrent preview publish rejects this push rather than
+            # overwriting it; the next attempt resets to the new tip and obtains
+            # a fresh exhaustive open-PR inventory before reconstructing a plan.
+            current_sha="$(git ls-remote "$remote" refs/heads/demo-previews | awk '{print $1}')"
+            if [ "$current_sha" = "$old_sha" ] && git push origin HEAD:demo-previews; then
+              echo "changed=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "demo-previews changed during attempt ${attempt}; rebuilding from its latest tip."
+            git fetch --depth=1 origin demo-previews
+            git reset --hard FETCH_HEAD
+          done
+
+          echo "demo-previews changed repeatedly; no reconciliation was pushed." >&2
+          exit 1
+
+  deploy:
+    needs: reconcile
+    if: needs.reconcile.outputs.changed == 'true'
+    uses: ./.github/workflows/pages.yml
+    secrets: inherit
