@@ -61,23 +61,34 @@ const defaultDeps: ToolAvailabilityDeps = {
  * already loading and would otherwise invoke unregistered channels), which means
  * a first-paint git or search request can land while the probe is still out. The
  * synchronous getters collapse `null` to false, so without this those requests
- * would get a durable false "git is not available". Stays null until the first
- * `checkToolAvailability()` call, so unit tests that never probe are unaffected.
+ * would get a durable false "git is not available". Each consumer waits only
+ * for its own probe, so an optional backend cannot hold the first checkout or
+ * search behind an unrelated slow process. Stays null until the first probe so
+ * unit tests that never start one are unaffected.
  */
-let probing: Promise<void> | null = null
+interface ToolProbeReadiness {
+  readonly all: Promise<void>
+  readonly rg: Promise<boolean>
+  readonly git: Promise<boolean>
+  readonly gh: Promise<boolean>
+}
+
+let probing: ToolProbeReadiness | null = null
 
 /** Resolve once the startup probe has answered — a no-op if none was started. */
-export async function whenToolAvailabilityProbed(): Promise<void> {
+export async function whenToolAvailabilityProbed(
+  tool: 'all' | 'rg' | 'git' | 'gh' = 'all',
+): Promise<void> {
   if (explicitAvailability.getStore()) return
-  if (probing) await probing
+  if (probing) await probing[tool]
 }
 
 export function checkToolAvailability(deps: ToolAvailabilityDeps = defaultDeps): Promise<void> {
-  probing = runToolAvailabilityProbes(deps)
-  return probing
+  probing = startToolAvailabilityProbes(deps)
+  return probing.all
 }
 
-async function runToolAvailabilityProbes(deps: ToolAvailabilityDeps): Promise<void> {
+function startToolAvailabilityProbes(deps: ToolAvailabilityDeps): ToolProbeReadiness {
   // The e2e app relaunches Electron once per spec (~47×/full run); these probes
   // run before the window opens on every launch. Under e2e, skip them: ripgrep
   // and git are provisioned in the e2e environment, so assume them present (the
@@ -93,41 +104,59 @@ async function runToolAvailabilityProbes(deps: ToolAvailabilityDeps): Promise<vo
     rgAvail = true
     gitAvail = true
     ghAvail = false
-    return
+    const rg = Promise.resolve(true)
+    const git = Promise.resolve(true)
+    const gh = Promise.resolve(false)
+    return { all: Promise.resolve(), rg, git, gh }
   }
   // Five independent probes, so run them concurrently rather than paying the sum
   // of their process spawns. (`probeIndexedGrepBackends` and
   // `probeSemanticBackends` still walk their own candidate lists in order —
   // each picks the first backend that answers, so that part is inherently
   // sequential.) `gh auth status` is the slow one: it makes a network call.
-  const [rg, git, gh, grepBackend, semanticBackend] = await Promise.all([
-    deps.probeRg(),
-    deps.probeGit(),
-    deps.probeGh(),
-    deps.probeGrepBackend(),
-    deps.probeSemanticBackend(),
-  ])
-  rgAvail = rg
-  gitAvail = git
-  ghAvail = gh
-  if (!rgAvail)
-    console.warn('[copse-panel] ripgrep (rg) not found — search_code will use slow fallback')
-  else if (grepBackend !== 'rg')
-    console.info(`[copse-panel] search_code will prefer indexed grep backend: ${grepBackend}`)
-  if (semanticBackend)
-    console.info(
-      `[copse-panel] semantic search will use native backend: ${semanticBackend}` +
-        (isSemanticBackendBundled() ? ' (bundled)' : ''),
-    )
-  else
-    console.warn(
-      '[copse-panel] gortex/vera not found — semantic search disabled (run npm install or add CLI to PATH)',
-    )
-  if (!gitAvail) console.warn('[copse-panel] git not found — git tools will be unavailable')
-  if (!ghAvail)
-    console.warn(
-      '[copse-panel] gh not found or not authenticated — GitHub read-only tools will be unavailable',
-    )
+  const rg = Promise.resolve()
+    .then(() => deps.probeRg())
+    .then((available) => {
+      rgAvail = available
+      return available
+    })
+  const git = Promise.resolve()
+    .then(() => deps.probeGit())
+    .then((available) => {
+      gitAvail = available
+      return available
+    })
+  const gh = Promise.resolve()
+    .then(() => deps.probeGh())
+    .then((available) => {
+      ghAvail = available
+      return available
+    })
+  const grepBackend = Promise.resolve().then(() => deps.probeGrepBackend())
+  const semanticBackend = Promise.resolve().then(() => deps.probeSemanticBackend())
+  const all = Promise.all([rg, git, gh, grepBackend, semanticBackend]).then(
+    ([rgAvailable, gitAvailable, ghAvailable, grep, semantic]) => {
+      if (!rgAvailable)
+        console.warn('[copse-panel] ripgrep (rg) not found — search_code will use slow fallback')
+      else if (grep !== 'rg')
+        console.info(`[copse-panel] search_code will prefer indexed grep backend: ${grep}`)
+      if (semantic)
+        console.info(
+          `[copse-panel] semantic search will use native backend: ${semantic}` +
+            (isSemanticBackendBundled() ? ' (bundled)' : ''),
+        )
+      else
+        console.warn(
+          '[copse-panel] gortex/vera not found — semantic search disabled (run npm install or add CLI to PATH)',
+        )
+      if (!gitAvailable) console.warn('[copse-panel] git not found — git tools will be unavailable')
+      if (!ghAvailable)
+        console.warn(
+          '[copse-panel] gh not found or not authenticated — GitHub read-only tools will be unavailable',
+        )
+    },
+  )
+  return { all, rg, git, gh }
 }
 
 export const isRgAvailable = (): boolean => explicitAvailability.getStore()?.rg ?? rgAvail === true
@@ -144,7 +173,7 @@ export async function isGitAvailableForTarget(
   target: ExecutionTarget = getActiveExecutionTarget(),
 ): Promise<boolean> {
   if (!isSshExecutionTarget(target)) {
-    await whenToolAvailabilityProbed()
+    await whenToolAvailabilityProbed('git')
     return isGitAvailable()
   }
   if (!isSshWorkspaceExecutionEnabled()) return false
@@ -168,7 +197,7 @@ export async function isRgAvailableForTarget(
   target: ExecutionTarget = getActiveExecutionTarget(),
 ): Promise<boolean> {
   if (!isSshExecutionTarget(target)) {
-    await whenToolAvailabilityProbed()
+    await whenToolAvailabilityProbed('rg')
     return isRgAvailable()
   }
   if (!isSshWorkspaceExecutionEnabled()) return false
