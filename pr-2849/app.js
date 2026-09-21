@@ -68712,6 +68712,18 @@ function startReview(store2, api2, threadId) {
   syncAgentActivity(store2, threadId, false);
   markQuietRun(threadId);
   void api2.review.run(projectId, threadId, reviewPayload(store2, threadId)).catch((err2) => {
+    const report = store2.getState().threads.find((t) => t.id === threadId)?.reviewReport;
+    if (report?.status === "running") {
+      setThreadReviewReport(store2, threadId, {
+        ...report,
+        status: "error",
+        error: errorMessage(err2),
+        durationMs: Date.now() - report.startedAt
+      });
+      setThreadStatus(store2, threadId, "idle");
+      syncAgentActivity(store2, threadId, false);
+      takeQuietRun(threadId);
+    }
     showErrorToast("Review could not start", err2);
   });
 }
@@ -68743,6 +68755,7 @@ var init_review_actions = __esm({
     init_agent_activity();
     init_quiet_runs();
     init_toast();
+    init_errors3();
   }
 });
 
