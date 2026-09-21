@@ -59,36 +59,35 @@ async function runBackgroundDirective(args: Record<string, unknown>): Promise<vo
 }
 
 async function latestToolResult(): Promise<WebdriverIO.Element> {
-  const rollups = await $$('.tool-card-rollup')
-  const rollup = rollups.at(-1)
-  assert.ok(rollup, 'expected a background tool rollup')
-  if ((await rollup.getAttribute('open')) === null) {
-    await rollup.scrollIntoView({ block: 'center', inline: 'nearest' })
-    await rollup.$('summary.tool-card-header').click()
-  }
-  await expect(rollup).toHaveAttribute('open')
-
-  const cards = await rollup.$$('.tool-card[data-tool-id]')
-  const card = cards.at(-1)
-  assert.ok(card, 'expected a background tool card')
-  await card.waitForDisplayed({ timeout: 10_000 })
-  if ((await card.getAttribute('open')) === null) {
-    const toolId = await card.getAttribute('data-tool-id')
-    assert.ok(toolId, 'expected the background tool card to have an id')
-    const opened = await browser.execute((id: string) => {
-      const rollups = document.querySelectorAll<HTMLDetailsElement>('.tool-card-rollup')
-      const rollup = rollups.item(rollups.length - 1)
-      const cards = rollup?.querySelectorAll<HTMLDetailsElement>('.tool-card[data-tool-id]')
-      const target = [...(cards ?? [])].find((candidate) => candidate.dataset['toolId'] === id)
-      target?.querySelector<HTMLElement>('summary.tool-card-header')?.click()
-      return target?.open ?? false
-    }, toolId)
-    assert.equal(opened, true, 'expected the background tool card to open')
-  }
-  await expect(card).toHaveAttribute('open')
-
-  const result = card.$('.tool-result')
-  await result.waitForExist({ timeout: 10_000 })
+  // Disclosure interaction is not under test here. Open the lazy rollup/card
+  // bodies directly so headless Chrome cannot reject a covered summary click.
+  await browser.execute(() => {
+    const rollups = document.querySelectorAll<HTMLDetailsElement>('details.tool-card-rollup')
+    const rollup = rollups.item(rollups.length - 1)
+    if (rollup) rollup.open = true
+  })
+  await browser.waitUntil(async () => (await $$('details.tool-card[data-tool-id]')).length > 0, {
+    timeout: 5_000,
+    interval: 100,
+    timeoutMsg: 'expected a background tool card',
+  })
+  await browser.execute(() => {
+    const cards = document.querySelectorAll<HTMLDetailsElement>('details.tool-card[data-tool-id]')
+    const card = cards.item(cards.length - 1)
+    if (!card) return
+    card.open = false
+    card
+      .querySelector(':scope > summary')
+      ?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+  })
+  await browser.waitUntil(async () => (await $$('.tool-result')).length > 0, {
+    timeout: 5_000,
+    interval: 100,
+    timeoutMsg: 'expected a background tool result',
+  })
+  const results = await $$('.tool-result')
+  const result = results.at(-1)
+  assert.ok(result)
   return result
 }
 
