@@ -65,6 +65,53 @@ describe('collapsed tool card bodies render lazily', () => {
     assert.equal(card.querySelector('.tool-args'), null, 'args body should not exist yet')
   })
 
+  it('keeps tool-result images after a card that becomes a collapsed rollup', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    const messageId = addMessage(store, threadId, 'assistant', '')
+    addToolCall(store, messageId, {
+      ...doneCall,
+      images: [
+        {
+          dataUrl: 'data:image/png;base64,aW1hZ2U=',
+          name: 'generated-concept.png',
+        },
+      ],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+
+    const message = host.querySelector(`[data-message-id="${messageId}"]`)
+    assert.ok(message)
+    const initialCard = message.querySelector<HTMLDetailsElement>(':scope > .tool-card')
+    const initialImages = message.querySelector<HTMLElement>(':scope > .tool-result-images')
+    assert.ok(initialCard)
+    assert.ok(initialImages)
+    assert.strictEqual(initialCard.nextElementSibling, initialImages)
+
+    addToolCall(store, messageId, {
+      id: 'tc-done-2',
+      name: 'read_file',
+      args: { path: 'notes.md' },
+      status: 'done',
+      result: 'notes',
+    })
+
+    const rollup = message.querySelector<HTMLDetailsElement>(':scope > .tool-card-rollup')
+    const images = message.querySelector<HTMLElement>(':scope > .tool-result-images')
+    const image = images?.querySelector<HTMLImageElement>('.tool-result-image')
+    assert.ok(rollup)
+    assert.equal(rollup.open, false)
+    assert.ok(images, 'tool-result images render outside the collapsed rollup')
+    assert.equal(rollup.contains(images), false)
+    assert.strictEqual(rollup.nextElementSibling, images)
+    assert.ok(image)
+    assert.equal(image.alt, 'generated-concept.png')
+    assert.equal(image.getAttribute('role'), 'button')
+    assert.equal(image.getAttribute('aria-label'), 'Expand generated-concept.png')
+  })
+
   it('builds the body the first time the card is opened', () => {
     const store = createStore()
     const threadId = createThread(store)

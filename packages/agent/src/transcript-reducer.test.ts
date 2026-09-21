@@ -26,6 +26,7 @@ describe('transcript reducer', () => {
         args: { path: 'a' },
         result: 'streamed',
         status: 'done',
+        images: [{ dataUrl: 'data:image/png;base64,cGl4ZWxz' }],
       },
       () => second,
     )
@@ -37,6 +38,7 @@ describe('transcript reducer', () => {
       args: { path: 'a' },
       status: 'done',
       result: 'streamed',
+      images: [{ dataUrl: 'data:image/png;base64,cGl4ZWxz' }],
     })
     assert.equal(second.content, 'Next step')
     assert.deepEqual(second.toolCalls, [])

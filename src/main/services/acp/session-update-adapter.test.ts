@@ -248,6 +248,38 @@ describe('sessionUpdateToStreamChunks (client role)', () => {
     ])
   })
 
+  it('preserves image content from an initially completed tool call', () => {
+    assert.deepEqual(
+      sessionUpdateToStreamChunks({
+        sessionUpdate: 'tool_call',
+        toolCallId: 'generated-image',
+        title: 'Generate image',
+        status: 'completed',
+        content: [
+          { type: 'content', content: { type: 'text', text: 'Created the image.' } },
+          {
+            type: 'content',
+            content: { type: 'image', data: 'base64-payload', mimeType: 'image/webp' },
+          },
+        ],
+      }),
+      [
+        {
+          type: 'tool_call',
+          toolCall: { id: 'generated-image', name: 'Generate image', args: {} },
+        },
+        {
+          type: 'tool_call_update',
+          toolCallId: 'generated-image',
+          status: 'done',
+          result: 'Created the image.',
+          resultFormat: 'markdown',
+          images: [{ dataUrl: 'data:image/webp;base64,base64-payload' }],
+        },
+      ],
+    )
+  })
+
   it('maps an agent_message_chunk to text', () => {
     const update: SessionUpdate = {
       sessionUpdate: 'agent_message_chunk',
@@ -495,38 +527,81 @@ describe('sessionUpdateToStreamChunks (client role)', () => {
     assert.equal(chunk.result, JSON.stringify(rawOutput, null, 2))
   })
 
-  it('preserves structured and mixed-media MCP results', () => {
-    const rawOutputs: unknown[] = [
-      {
-        result: {
-          content: [{ type: 'text', text: 'summary' }],
-          structuredContent: { changedFiles: 2 },
-        },
-        error: null,
+  it('preserves structured MCP results instead of hiding their details', () => {
+    const rawOutput = {
+      result: {
+        content: [{ type: 'text', text: 'summary' }],
+        structuredContent: { changedFiles: 2 },
       },
-      {
+      error: null,
+    }
+    const update: SessionUpdate = {
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 't9',
+      status: 'completed',
+      rawOutput,
+    }
+    const [chunk] = sessionUpdateToStreamChunks(update)
+    assert.ok(chunk?.type === 'tool_call_update')
+    assert.equal(chunk.result, JSON.stringify(rawOutput, null, 2))
+  })
+
+  it('extracts images from a mixed-media MCP raw-output envelope', () => {
+    const update: SessionUpdate = {
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 't9',
+      status: 'completed',
+      rawOutput: {
         result: {
           content: [
             { type: 'text', text: 'caption' },
-            { type: 'image', data: 'encoded-image' },
+            { type: 'image', data: 'encoded-image', mimeType: 'image/png' },
           ],
           structuredContent: null,
         },
         error: null,
       },
-    ]
-
-    for (const rawOutput of rawOutputs) {
-      const update: SessionUpdate = {
-        sessionUpdate: 'tool_call_update',
-        toolCallId: 't9',
-        status: 'completed',
-        rawOutput,
-      }
-      const [chunk] = sessionUpdateToStreamChunks(update)
-      assert.ok(chunk?.type === 'tool_call_update')
-      assert.equal(chunk.result, JSON.stringify(rawOutput, null, 2))
     }
+    assert.deepEqual(sessionUpdateToStreamChunks(update), [
+      {
+        type: 'tool_call_update',
+        toolCallId: 't9',
+        status: 'done',
+        result: 'caption',
+        resultFormat: 'markdown',
+        images: [{ dataUrl: 'data:image/png;base64,encoded-image' }],
+      },
+    ])
+  })
+
+  it('keeps an image-only MCP result out of Markdown', () => {
+    const rawOutput = {
+      result: {
+        content: [{ type: 'image', data: 'encoded-image', mimeType: 'image/png' }],
+        structuredContent: null,
+      },
+      error: null,
+    }
+    const update: SessionUpdate = {
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'generated-image',
+      status: 'completed',
+      content: [
+        {
+          type: 'content',
+          content: { type: 'text', text: JSON.stringify(rawOutput) },
+        },
+      ],
+      rawOutput,
+    }
+    assert.deepEqual(sessionUpdateToStreamChunks(update), [
+      {
+        type: 'tool_call_update',
+        toolCallId: 'generated-image',
+        status: 'done',
+        images: [{ dataUrl: 'data:image/png;base64,encoded-image' }],
+      },
+    ])
   })
 
   it('ignores an empty tool_call_update', () => {
