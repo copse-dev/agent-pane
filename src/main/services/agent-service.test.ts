@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { randomUUID } from 'node:crypto'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -28,6 +29,99 @@ import { runWithWorkspaceTrust } from './security/workspace-trust.ts'
 import { buildAcpAgentApp, type AcpTurnRunner } from './acp/acp-agent-server.ts'
 import { acquireAcpSession, disposeAllAcpSessions } from './acp/acp-session-pool.ts'
 import { ACP_CANCELLED_TOOL_CALL_RESULT } from './acp/acp-turn-recovery.ts'
+import { DEFAULT_CONTINUATION_BUDGET } from '@copse/agent/hooks/continuation-budget.ts'
+
+async function runSilentAcpToolTurn(continuationBudgetUsed: number): Promise<{
+  chunks: StreamChunk[]
+  invocationCount: number
+  result: agentService.RunAgentResult
+}> {
+  const root = await mkdtemp(join(tmpdir(), 'copse-agent-acp-recovery-budget-'))
+  const suffix = randomUUID()
+  const threadId = `thread-acp-recovery-${suffix}`
+  const projectId = `project-acp-recovery-${suffix}`
+  const agentId = `silent-tool-agent-${suffix}`
+  const command = `unused-silent-tool-agent-${suffix}`
+  const previousAgents = getSetting('registeredAcpAgents', [])
+  const chunks: StreamChunk[] = []
+  const registry = new ToolRegistry()
+  let invocationCount = 0
+  const runner: AcpTurnRunner = async (ctx) => {
+    invocationCount++
+    const toolCallId = `search-${String(invocationCount)}`
+    await ctx.emit({
+      type: 'tool_call',
+      toolCall: { id: toolCallId, name: 'web_search', args: { query: 'latest PRs' } },
+    })
+    await ctx.emit({
+      type: 'tool_result',
+      toolCallId,
+      result: 'Five matching pull requests',
+      isError: false,
+    })
+    return { stopReason: 'end_turn' }
+  }
+  const createTransport = (): Promise<{
+    stream: ReturnType<typeof ndJsonStream>
+    dispose: () => void
+  }> => {
+    const clientToAgent = new TransformStream<Uint8Array, Uint8Array>()
+    const agentToClient = new TransformStream<Uint8Array, Uint8Array>()
+    const connection = buildAcpAgentApp(runner, { name: 'silent-tool-test-agent' }).connect(
+      ndJsonStream(agentToClient.writable, clientToAgent.readable),
+    )
+    return Promise.resolve({
+      stream: ndJsonStream(clientToAgent.writable, agentToClient.readable),
+      dispose: (): void => {
+        connection.close()
+      },
+    })
+  }
+
+  try {
+    await setSetting('registeredAcpAgents', [
+      { id: agentId, title: 'Silent tool test agent', command, enabled: true },
+    ])
+    await acquireAcpSession({
+      threadId,
+      config: { command, cwd: root },
+      createTransport,
+    })
+    const host: AgentHost<StreamChunk> = {
+      emit: (_threadId, chunk) => chunks.push(chunk),
+    }
+    const result = await runWithThreadExecutionContext(
+      {
+        projectId,
+        threadId,
+        projectRoot: root,
+        root,
+        checkoutMode: 'shared',
+        branch: null,
+      },
+      () =>
+        runWithActiveRunIdentity(threadId, () =>
+          agentService.runAgent(
+            threadId,
+            'Summarize the matching pull requests.',
+            [],
+            host,
+            registry,
+            {
+              model: `acp:${agentId}`,
+              turnTreeId: `tree-${suffix}`,
+              continuationBudgetUsed,
+            },
+          ),
+        ),
+    )
+    return { chunks, invocationCount, result }
+  } finally {
+    await disposeAllAcpSessions()
+    await setSetting('registeredAcpAgents', previousAgents)
+    await rm(root, { recursive: true, force: true })
+  }
+}
 
 // agent-service is now an orchestrator that re-exports the public surface from the
 // focused modules it composes. These tests pin that public surface so IPC callers
@@ -149,6 +243,42 @@ describe('runAgent AgentHost decoupling', () => {
       await setSetting('registeredAcpAgents', previousAgents)
       await rm(root, { recursive: true, force: true })
     }
+  })
+
+  it('names the continuation limit when the real recovery grant is denied', async () => {
+    const { chunks, invocationCount, result } = await runSilentAcpToolTurn(
+      DEFAULT_CONTINUATION_BUDGET,
+    )
+
+    assert.equal(invocationCount, 1, 'a denied grant must not start a recovery turn')
+    assert.ok(
+      chunks.some(
+        (chunk) =>
+          chunk.type === 'text' &&
+          chunk.text.includes(
+            'Copse could not request a final response automatically because this turn reached its continuation limit.',
+          ),
+      ),
+    )
+    assert.equal(result.turnOutcome?.recovery?.attempted, false)
+    assert.equal(result.turnOutcome.recovery.recovered, false)
+  })
+
+  it('keeps failed recovery distinct from a denied recovery grant', async () => {
+    const { chunks, invocationCount, result } = await runSilentAcpToolTurn(0)
+
+    assert.equal(invocationCount, 2, 'an available grant should run one recovery turn')
+    assert.ok(
+      chunks.some(
+        (chunk) =>
+          chunk.type === 'text' &&
+          chunk.text.includes(
+            'The external agent stopped after using its tools without providing a final result.',
+          ),
+      ),
+    )
+    assert.equal(result.turnOutcome?.recovery?.attempted, true)
+    assert.equal(result.turnOutcome.recovery.recovered, false)
   })
 
   it('streams a fallback notice when a remote agent is selected without a valid key', async () => {

@@ -209,6 +209,7 @@ import {
 import { parseAcpModelSelection } from '@shared/acp.ts'
 import { AcpTurnFailure, runAcpAgentFromSettings } from './acp/acp-agent-service.ts'
 import {
+  ACP_UNFINISHED_TURN_BUDGET_FALLBACK,
   ACP_UNFINISHED_TURN_FALLBACK,
   ACP_UNFINISHED_TURN_RECOVERY_OPERATION_ID,
   ACP_UNFINISHED_TURN_RECOVERY_PROMPT,
@@ -1192,8 +1193,11 @@ export async function runAgent(
       settleOpenToolCalls()
 
       if (endedAfterTools && !recoverySucceeded) {
-        sendChunk({ type: 'text', text: `\n\n${ACP_UNFINISHED_TURN_FALLBACK}` })
-        messages.push({ role: 'assistant', content: ACP_UNFINISHED_TURN_FALLBACK })
+        const fallback = recoveryAttempted
+          ? ACP_UNFINISHED_TURN_FALLBACK
+          : ACP_UNFINISHED_TURN_BUDGET_FALLBACK
+        sendChunk({ type: 'text', text: `\n\n${fallback}` })
+        messages.push({ role: 'assistant', content: fallback })
       }
 
       messages = messages.map((message): LLMMessage => {
