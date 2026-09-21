@@ -237,20 +237,31 @@ export async function suggestFollowUps(
     return mockFollowUpSuggestions()
   }
   const workspaceCtx = await getPrWorkspaceContext(root)
-  const deterministic = buildDeterministicFollowUps(workspaceCtx, context)
-  const modelPicks = await pickModelFollowUps(context)
+  const prioritized = [
+    ...buildDeterministicFollowUps(workspaceCtx, context),
+    ...buildPluginFollowUps(workspaceCtx),
+  ]
+  return fillFollowUpSuggestions(prioritized, () => pickModelFollowUps(context))
+}
 
-  // Order: deterministic git/PR signals, then plugin offers, then the small
-  // model's picks. A merge conflict or red CI is a fact about the branch and
-  // outranks an offer; an offer outranks a guess.
-  const seen = new Set(deterministic.map((s) => s.id))
-  const merged = [...deterministic]
-  for (const suggestion of [...buildPluginFollowUps(workspaceCtx), ...modelPicks]) {
-    if (seen.has(suggestion.id)) continue
-    seen.add(suggestion.id)
-    merged.push(suggestion)
-    if (merged.length >= MAX_SUGGESTIONS) break
+/** Only ask the model when its suggestions can occupy a visible slot. */
+export async function fillFollowUpSuggestions(
+  prioritized: readonly FollowUpSuggestion[],
+  pickModel: () => Promise<FollowUpSuggestion[]>,
+): Promise<FollowUpSuggestion[]> {
+  // Facts outrank plugin offers, which outrank model picks. Deduplicate before
+  // deciding whether there is room, so repeated ids do not consume a slot.
+  const seen = new Set<string>()
+  const merged: FollowUpSuggestion[] = []
+  const append = (suggestions: readonly FollowUpSuggestion[]): void => {
+    for (const suggestion of suggestions) {
+      if (merged.length >= MAX_SUGGESTIONS) break
+      if (seen.has(suggestion.id)) continue
+      seen.add(suggestion.id)
+      merged.push(suggestion)
+    }
   }
-
-  return merged.slice(0, MAX_SUGGESTIONS)
+  append(prioritized)
+  if (merged.length < MAX_SUGGESTIONS) append(await pickModel())
+  return merged
 }
