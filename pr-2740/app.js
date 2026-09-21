@@ -203,6 +203,14 @@ function titleCaseSegment(segment) {
     return `${lower.charAt(0).toUpperCase()}${lower.slice(1)}`;
   }).join(" ");
 }
+function canonicalGrokLabel(labelOrId) {
+  const match = GROK_NAME.exec(labelOrId.trim());
+  if (!match?.[2]) return null;
+  const rest = match[3] ?? "";
+  if (rest !== "" && !/^\s/.test(rest)) return null;
+  const family = match[1] ? "Grok Build" : "Grok";
+  return `${family} ${match[2].replace(/-/g, ".")}${rest}`;
+}
 function canonicalVendorLabel(labelOrId) {
   const trimmed2 = labelOrId.trim();
   const gemini = GEMINI_NAME.exec(trimmed2);
@@ -288,14 +296,14 @@ function canonicalModelLabel(labelOrId) {
     const family = `${parsed2.family.charAt(0).toUpperCase()}${parsed2.family.slice(1)}`;
     return `Claude ${family} ${parsed2.version}${parsed2.rest}`;
   }
-  return canonicalGptLabel(labelOrId) ?? canonicalVendorLabel(labelOrId) ?? labelOrId;
+  return canonicalGptLabel(labelOrId) ?? canonicalVendorLabel(labelOrId) ?? canonicalGrokLabel(labelOrId) ?? labelOrId;
 }
 function claudeModelIdFromLabel(labelOrId) {
   const parsed2 = parseClaudeName(labelOrId);
   if (!parsed2 || parsed2.rest.trim() !== "") return null;
   return `claude-${parsed2.family}-${parsed2.version.replace(/\./g, "-")}`;
 }
-var CLAUDE_FAMILIES, FAMILY_PATTERN, VERSION_PATTERN, VERSION_FIRST, FAMILY_FIRST, GPT_NAME, GEMINI_NAME, GLM_NAME, DEEPSEEK_NAME, MISTRAL_NAME, MODELLED_VENDORS, DATED_SNAPSHOT, OPTION_SUFFIX, TOKEN_SPELLING, PARAM_COUNT, SHORT_CODE;
+var CLAUDE_FAMILIES, FAMILY_PATTERN, VERSION_PATTERN, VERSION_FIRST, FAMILY_FIRST, GPT_NAME, GEMINI_NAME, GLM_NAME, DEEPSEEK_NAME, MISTRAL_NAME, GROK_NAME, MODELLED_VENDORS, DATED_SNAPSHOT, OPTION_SUFFIX, TOKEN_SPELLING, PARAM_COUNT, SHORT_CODE;
 var init_model_label = __esm({
   "packages/llm/src/model-label.ts"() {
     CLAUDE_FAMILIES = ["opus", "sonnet", "haiku", "fable"];
@@ -314,7 +322,8 @@ var init_model_label = __esm({
     GLM_NAME = /^glm-(\d+(?:\.\d+)?)(?:-([a-z].*))?$/;
     DEEPSEEK_NAME = /^deepseek-([a-z]+)(?:-v(\d+(?:\.\d+)?))?$/;
     MISTRAL_NAME = /^mistral-([a-z]+)(?:-([a-z]+))?$/;
-    MODELLED_VENDORS = ["claude", "gpt", "gemini", "glm", "deepseek", "mistral"];
+    GROK_NAME = /^(?:(?:xai|spacexai):\s*)?grok[\s-]+(?:(build)[\s-]+)?(\d+(?:[.-]\d+)?)(.*)$/i;
+    MODELLED_VENDORS = ["claude", "gpt", "gemini", "glm", "deepseek", "mistral", "grok"];
     DATED_SNAPSHOT = /-(?:\d{8}|\d{4}-\d{2}-\d{2})$/;
     OPTION_SUFFIX = /\[[^\]]*\]$/;
     TOKEN_SPELLING = {
@@ -22330,11 +22339,48 @@ var init_perf = __esm({
 function previewKey(threadId, title) {
   return JSON.stringify([threadId, title]);
 }
+function artefactKey(projectId, threadId, title) {
+  return JSON.stringify([projectId, threadId, title]);
+}
+function cacheArtefact(key, artefact) {
+  artefacts.delete(key);
+  artefacts.set(key, artefact);
+  while (artefacts.size > MAX_CACHED_ARTEFACTS) {
+    const oldest = artefacts.keys().next().value;
+    if (oldest === void 0) break;
+    artefacts.delete(oldest);
+  }
+}
 function setArtefactPreview(threadId, title, preview) {
   if (preview) previews.set(previewKey(threadId, title), preview);
 }
 function getArtefactPreview(threadId, title) {
   return previews.get(previewKey(threadId, title));
+}
+function setArtefactContent(projectId, threadId, artefact) {
+  cacheArtefact(artefactKey(projectId, threadId, artefact.title), artefact);
+  setArtefactPreview(threadId, artefact.title, artefact.preview);
+}
+function getArtefactContent(projectId, threadId, title) {
+  const key = artefactKey(projectId, threadId, title);
+  const artefact = artefacts.get(key);
+  if (artefact) cacheArtefact(key, artefact);
+  return artefact;
+}
+function loadArtefactContent(api2, projectId, threadId, title) {
+  const cached2 = getArtefactContent(projectId, threadId, title);
+  if (cached2) return Promise.resolve(cached2);
+  const key = artefactKey(projectId, threadId, title);
+  const existing = artefactReads.get(key);
+  if (existing) return existing;
+  const request = api2.canvas.readArtefact(projectId, threadId, title).then((artefact) => {
+    if (artefact?.title === title) setArtefactContent(projectId, threadId, artefact);
+    return artefact?.title === title ? artefact : null;
+  }).catch(() => null).finally(() => {
+    artefactReads.delete(key);
+  });
+  artefactReads.set(key, request);
+  return request;
 }
 async function hydrateArtefactPreviews(api2, projectId, threadId) {
   const saved = await api2.canvas.listArtefacts(projectId, threadId).catch(() => []);
@@ -22357,10 +22403,13 @@ function artefactUriFromToolResult(result) {
   const match = /\bui:\/\/[^\s)\]]+/.exec(result);
   return match ? match[0] : null;
 }
-var previews, showHandler;
+var previews, artefacts, artefactReads, MAX_CACHED_ARTEFACTS, showHandler;
 var init_artefact_previews = __esm({
   "src/renderer/canvas/artefact-previews.ts"() {
     previews = /* @__PURE__ */ new Map();
+    artefacts = /* @__PURE__ */ new Map();
+    artefactReads = /* @__PURE__ */ new Map();
+    MAX_CACHED_ARTEFACTS = 20;
     showHandler = null;
   }
 });
@@ -22582,6 +22631,7 @@ function dispatchAgentRun(store2, api2, threadId, payload) {
   clearContextSnapshot(store2, threadId);
   setThreadStatus(store2, threadId, "running");
   syncAgentActivity(store2, threadId, false);
+  mark("ttft:renderer-dispatch");
   void api2.agent.run(projectId, threadId, JSON.stringify(refreshPayload(store2, threadId, payload)));
 }
 function enqueueUserMessage(store2, threadId, item) {
@@ -22819,6 +22869,7 @@ var init_message_queue = __esm({
     init_agent_activity();
     init_continuation_budget();
     init_thread_hydration();
+    init_perf();
   }
 });
 
@@ -25373,7 +25424,7 @@ url: http://localhost:61025/index.html
 function demoScenarioPrompt(scenario) {
   return scenario.trace?.prompt ?? "";
 }
-var FIXED_TIME, FOOTER_INPUT_TOKENS, FOOTER_OUTPUT_TOKENS, DEMO_CODEX_ACP_AGENT, FOOTER_COMPACT_EXPECTATIONS, markdownContent, syntaxContrastContent, project, semanticSearchSummary, PROPOSED_INDEX_HTML, PROPOSED_STYLES_CSS, PROPOSED_DIFF_TRACE, DEMO_SCENARIOS;
+var FIXED_TIME, FOOTER_INPUT_TOKENS, FOOTER_OUTPUT_TOKENS, DEMO_CODEX_ACP_AGENT, FOOTER_COMPACT_EXPECTATIONS, markdownContent, syntaxContrastContent, project, semanticSearchSummary, readingLayoutContent, READING_LAYOUT_TRACE, PROPOSED_INDEX_HTML, PROPOSED_STYLES_CSS, PROPOSED_DIFF_TRACE, DEMO_SCENARIOS;
 var init_demo_scenarios = __esm({
   "src/shared/demo-scenarios.ts"() {
     init_landing();
@@ -25455,6 +25506,65 @@ var init_demo_scenarios = __esm({
       "- Read `search-routing.ts`",
       "- Search for `classifySearchQuery`"
     ].join("\n");
+    readingLayoutContent = [
+      "A response should be comfortable to read from the first streamed sentence through the final answer. The prose stays within a readable measure while the surrounding chat can still hold wider tool output.",
+      "",
+      "This second paragraph checks the separation between ideas. Short answers should keep their natural height, and longer explanations should wrap without pushing the chat pane sideways.",
+      "",
+      "## What changed",
+      "",
+      "- A readable column keeps long lines from crossing the entire window.",
+      "- Paragraphs and sections have enough separation to scan.",
+      "  - Nested details retain their indentation.",
+      "  - A second nested item checks the list rhythm.",
+      "- Pending markdown uses the same text size as the completed answer.",
+      "",
+      "### Review the details",
+      "",
+      "Inline paths such as `src/renderer/styles/global/conversation.css` remain selectable. A long command below scrolls within its code block.",
+      "",
+      "```sh",
+      "pnpm run test:demo --spec tests/demo/chat-reading-layout.demo.ts --spec tests/demo/markdown-list-indent.demo.ts --spec tests/demo/chat-layout-styling.demo.ts",
+      "```",
+      "",
+      "| Surface | Expected behavior |",
+      "| --- | --- |",
+      "| Prose | Wrap to the available reading width |",
+      "| Code | Scroll inside the fenced block |",
+      "| Tool output | Keep the existing trace typography |",
+      "",
+      "> A quote remains part of the response and keeps its own visual treatment.",
+      "",
+      "## Limits",
+      "",
+      "This is a deterministic layout fixture. It does not claim that an agent inspected files or ran these checks."
+    ].join("\n");
+    READING_LAYOUT_TRACE = {
+      id: "chat-reading-layout",
+      label: "Reading layout with a tool and streamed markdown",
+      prompt: "Show the reading layout with a streamed response.",
+      steps: [
+        { chunk: { type: "text", text: "I will inspect the sample before explaining it.\n\n" } },
+        {
+          chunk: {
+            type: "tool_call",
+            toolCall: { id: "reading-layout-read", name: "read_file", args: { path: "sample.ts" } }
+          },
+          delayMs: 800
+        },
+        {
+          chunk: {
+            type: "tool_result",
+            toolCallId: "reading-layout-read",
+            result: "export const sample = true",
+            isError: false
+          },
+          delayMs: 800
+        },
+        { chunk: { type: "text", text: readingLayoutContent } },
+        { chunk: { type: "done", stopReason: "end_turn" } }
+      ]
+    };
     PROPOSED_INDEX_HTML = [
       "<!doctype html>",
       '<html lang="en">',
@@ -25598,6 +25708,43 @@ var init_demo_scenarios = __esm({
           }
         ],
         trace: PROPOSED_DIFF_TRACE
+      },
+      {
+        id: "chat-reading-layout",
+        label: "Readable assistant responses",
+        project: project("demo-reading-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off"
+        },
+        threads: [
+          {
+            id: "demo-reading-thread",
+            title: "Readable assistant responses",
+            status: "idle",
+            messages: [
+              {
+                id: "demo-reading-user",
+                role: "user",
+                content: "Show an answer with paragraphs, lists, and code.",
+                toolCalls: [],
+                createdAt: FIXED_TIME
+              },
+              {
+                id: "demo-reading-assistant",
+                role: "assistant",
+                content: readingLayoutContent,
+                toolCalls: [],
+                createdAt: FIXED_TIME
+              }
+            ],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ],
+        trace: READING_LAYOUT_TRACE
       },
       {
         id: "markdown-list-indent",
@@ -26863,6 +27010,7 @@ This response is streamed through the real renderer event path.`
       // The demo has no canvas store behind it: nothing was ever saved, so
       // nothing can be listed or reopened.
       listArtefacts: () => resolved([]),
+      readArtefact: () => resolved(null),
       reopenArtefact: () => resolved(false)
     },
     storage: {
@@ -27275,6 +27423,7 @@ This response is streamed through the real renderer event path.`
       workingFileDiff: () => resolved(null),
       committedChanges: () => resolved(null),
       committedFileDiff: () => resolved(null),
+      currentBranch: () => resolved(currentBranch),
       // These take (projectId, threadId, …) — dropping the leading two made
       // `branchStatus` answer with the *project id* as the current branch, which
       // reads as a branch mismatch and blocks every send behind the composer's
@@ -40046,8 +40195,9 @@ var init_model_intellect_generated = __esm({
       "GPT-5.6 Terra": "gpt-5.6-terra",
       "GPT-5.6-Terra": "gpt-5.6-terra",
       "Grok 4.5": "grok-4.5",
+      "Grok Build 0.1": "grok-build-0-1-06-16",
       "grok-4-5": "grok-4.5",
-      "grok-build-0.1": "grok-4.5",
+      "grok-build-0.1": "grok-build-0-1-06-16",
       "Haiku 4.5": "claude-haiku-4-5",
       "Kimi K2.6": "moonshotai/kimi-k2.6",
       "Kimi K3": "moonshotai/kimi-k3",
@@ -40084,7 +40234,10 @@ var init_model_intellect_generated = __esm({
       "qwen3.6-35b-a3b": "qwen/qwen3.6-35b-a3b",
       "Sonnet 4.6": "claude-sonnet-4-6",
       "Sonnet 5": "claude-sonnet-5",
+      "SpaceXAI: Grok Build 0.1": "grok-build-0-1-06-16",
       "x-ai/grok-4.5": "grok-4.5",
+      "x-ai/grok-build-0.1": "grok-build-0-1-06-16",
+      "xAI: Grok Build 0.1": "grok-build-0-1-06-16",
       "xai/grok-4.5": "grok-4.5",
       "z-ai/glm-5.2": "zai-org/GLM-5.2",
       "zai/glm-5.2": "zai-org/GLM-5.2"
@@ -59191,15 +59344,15 @@ function mountSettingsDialog(store2, api2) {
               <legend>Commit signing</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="gitCommitSshAgentSocketAccess" />
-                Let Copse's git commit tool use your ssh-agent (macOS)
+                Enable scoped SSH signing approvals (macOS)
               </label>
               <p class="field-hint">
-                Off by default. Turn this on when Git uses a passphrase-protected SSH key and signed
-                commits fail inside Copse's sandbox. The grant applies only to Copse's native
-                <code>git_commit</code> subprocess, but Git hooks run inside that process and can
-                also ask ssh-agent to use <strong>any key it holds</strong>. The private key remains
-                unreadable. Pair this with <code>ssh-add -c</code> to confirm each use. macOS only:
-                Linux cannot admit one socket without admitting every Unix socket.
+                Off by default. Copse asks before its system SSH signer uses your configured key
+                through ssh-agent. You can remember the signer, key and socket for this project
+                until Copse restarts. Changed configuration requires approval again. Git hooks
+                keep their project sandbox; they receive no ssh-agent access. Turning this off
+                prevents further brokered signing. Private keys remain unreadable. Custom signing
+                programs run with ordinary project access. Scoped socket access is macOS only.
               </p>
             </fieldset>
           </section>
@@ -65159,6 +65312,204 @@ var init_artefact = __esm({
   }
 });
 
+// src/shared/browser-session.ts
+function browserThreadScope(projectId, threadId) {
+  return projectId && threadId ? `thread:${encodeURIComponent(JSON.stringify([projectId, threadId]))}` : "";
+}
+function browserSessionPartition(base, scope) {
+  return scope ? `${base}:${scope}` : base;
+}
+var BROWSER_SESSION_PARTITION;
+var init_browser_session = __esm({
+  "src/shared/browser-session.ts"() {
+    BROWSER_SESSION_PARTITION = "persist:copse-browser";
+  }
+});
+
+// src/renderer/canvas/inline-artefact.ts
+function supportsElectronWebview(element) {
+  return typeof Reflect.get(element, "getURL") === "function";
+}
+function syncWebviewSize(stage, webview) {
+  const { width, height } = stage.getBoundingClientRect();
+  if (width <= 0 || height <= 0) return;
+  webview.style.width = `${String(Math.round(width))}px`;
+  webview.style.height = `${String(Math.round(height))}px`;
+}
+function createInlineWebview(stage, artefact, projectId, threadId, onReady, onFailure) {
+  if (artefact.mimeType !== "text/html") return null;
+  const webview = document.createElement("webview");
+  if (!supportsElectronWebview(webview)) return null;
+  webview.className = "canvas-inline-webview";
+  webview.setAttribute(
+    "partition",
+    browserSessionPartition(BROWSER_SESSION_PARTITION, browserThreadScope(projectId, threadId))
+  );
+  webview.setAttribute("webpreferences", WEBVIEW_PREFS);
+  webview.setAttribute("allowpopups", "false");
+  webview.setAttribute("aria-label", `Interactive prototype: ${artefact.title}`);
+  let loadingArtefact = false;
+  let settled = false;
+  let wasConnected = false;
+  let timer = null;
+  let observer = null;
+  const syncSize = () => {
+    if (webview.isConnected && stage.isConnected) {
+      wasConnected = true;
+      syncWebviewSize(stage, webview);
+      return;
+    }
+    if (wasConnected) {
+      observer?.disconnect();
+      observer = null;
+    }
+  };
+  const finish = (ready3) => {
+    if (settled) return;
+    settled = true;
+    if (timer) clearTimeout(timer);
+    if (ready3) onReady();
+    else onFailure();
+  };
+  webview.addEventListener("dom-ready", () => {
+    syncSize();
+    if (!loadingArtefact) {
+      loadingArtefact = true;
+      timer = setTimeout(() => {
+        finish(false);
+      }, LOAD_TIMEOUT_MS);
+      webview.setAttribute("src", artefactUrl(artefact));
+      return;
+    }
+    finish(true);
+  });
+  webview.addEventListener("did-fail-load", () => {
+    if (loadingArtefact) finish(false);
+  });
+  observer = new ResizeObserver(syncSize);
+  observer.observe(stage);
+  webview.addEventListener("destroyed", () => {
+    observer?.disconnect();
+    observer = null;
+  });
+  webview.setAttribute("src", "about:blank");
+  requestAnimationFrame(syncSize);
+  return webview;
+}
+function canvasStage(title, preview) {
+  const children = [];
+  if (preview) {
+    children.push(
+      el("img", {
+        class: "canvas-preview-image",
+        src: preview,
+        alt: `Preview of ${title}`
+      })
+    );
+  } else {
+    children.push(
+      el(
+        "div",
+        { class: "canvas-inline-placeholder" },
+        spinnerIcon("ui-icon canvas-inline-placeholder-icon"),
+        el("span", {}, "Preparing interactive preview\u2026")
+      )
+    );
+  }
+  return el("div", { class: "canvas-inline-stage" }, ...children);
+}
+function createInlineArtefact(api2, projectId, threadId, title) {
+  const preview = getArtefactPreview(threadId, title);
+  const stage = canvasStage(title, preview);
+  const status = el(
+    "span",
+    { class: "canvas-inline-status", "aria-live": "polite" },
+    "Loading preview"
+  );
+  const open2 = el(
+    "button",
+    {
+      type: "button",
+      class: "ui-btn ui-btn-ghost canvas-preview-open",
+      "aria-label": `Open ${title} in canvas`
+    },
+    maximizeIcon("ui-icon ui-icon-sm"),
+    "Open canvas"
+  );
+  open2.addEventListener("click", () => {
+    requestArtefactShow(threadId, title);
+  });
+  const card = el(
+    "figure",
+    {
+      class: "canvas-preview-card canvas-inline-artefact",
+      "data-canvas-state": "loading"
+    },
+    stage,
+    el(
+      "figcaption",
+      { class: "canvas-preview-footer" },
+      el(
+        "span",
+        { class: "canvas-preview-heading" },
+        el("span", { class: "canvas-preview-title" }, title),
+        status
+      ),
+      open2
+    )
+  );
+  const showFallback = () => {
+    card.dataset["canvasState"] = preview ? "snapshot" : "unavailable";
+    status.textContent = preview ? "Preview" : "Open in canvas to view";
+    stage.querySelector(".canvas-inline-webview")?.remove();
+    const placeholder = stage.querySelector(".canvas-inline-placeholder");
+    if (placeholder) placeholder.textContent = "Preview unavailable";
+  };
+  const mount = (artefact) => {
+    if (!artefact || !card.isConnected) {
+      if (card.isConnected) showFallback();
+      return;
+    }
+    const webview = createInlineWebview(
+      stage,
+      artefact,
+      projectId,
+      threadId,
+      () => {
+        card.dataset["canvasState"] = "interactive";
+        status.textContent = "Interactive";
+      },
+      showFallback
+    );
+    if (!webview) {
+      showFallback();
+      return;
+    }
+    stage.append(webview);
+  };
+  const cached2 = getArtefactContent(projectId, threadId, title);
+  if (cached2) {
+    queueMicrotask(() => {
+      mount(cached2);
+    });
+  } else {
+    void loadArtefactContent(api2, projectId, threadId, title).then(mount);
+  }
+  return card;
+}
+var WEBVIEW_PREFS, LOAD_TIMEOUT_MS;
+var init_inline_artefact = __esm({
+  "src/renderer/canvas/inline-artefact.ts"() {
+    init_artefact();
+    init_browser_session();
+    init_helpers();
+    init_icons();
+    init_artefact_previews();
+    WEBVIEW_PREFS = "contextIsolation=true";
+    LOAD_TIMEOUT_MS = 3e4;
+  }
+});
+
 // src/shared/store/container-run-card.ts
 function argsOf(toolCall) {
   const record2 = toolCall.args;
@@ -68306,12 +68657,12 @@ function syncToolRunMemberVisibility(msgEl) {
   const hasVisibleDirectChild = [...msgEl.children].some((child) => child !== body);
   msgEl.hidden = !hasVisibleBodyChild && !hasVisibleDirectChild;
 }
-function syncMessageCanvasPreviews(msgEl, msg, threadId) {
+function syncMessageCanvasPreviews(msgEl, msg, projectId, threadId, api2) {
   const body = msgEl.querySelector(":scope > .message-body");
   if (!body) return;
   body.querySelector(":scope > .message-canvas-previews")?.remove();
   const cards = (msg.canvasArtefacts ?? []).flatMap((artefact) => {
-    const card = createCanvasPreviewCard(threadId, artefact.title);
+    const card = projectId ? createInlineArtefact(api2, projectId, threadId, artefact.title) : createCanvasPreviewCard(threadId, artefact.title);
     return card ? [card] : [];
   });
   if (cards.length > 0) {
@@ -69989,7 +70340,7 @@ function mountConversation(root, store2, api2) {
       ...messageToolCardOpts(msg),
       ...run2 ? { run: run2, liveStepId: liveStepMessageId(thread) } : {}
     });
-    syncMessageCanvasPreviews(msgEl, msg, threadId);
+    syncMessageCanvasPreviews(msgEl, msg, store2.getState().activeProjectId, threadId, api2);
     if (run2) syncRunLayout(thread, run2, msgId);
     if (msg.review) renderMessageReview(threadId, msgId);
     renderMessageHookCards(threadId, msgId);
@@ -70332,7 +70683,7 @@ function mountConversation(root, store2, api2) {
       const msg = thread?.messages.find((message2) => message2.id === mid);
       const msgEl = list.querySelector(`[data-message-id="${mid}"]`);
       if (thread && msg?.role === "assistant" && msgEl) {
-        syncMessageCanvasPreviews(msgEl, msg, thread.id);
+        syncMessageCanvasPreviews(msgEl, msg, store2.getState().activeProjectId, thread.id, api2);
         scrollToBottom();
       }
     }),
@@ -70473,6 +70824,7 @@ var init_conversation = __esm({
     init_hook_card2();
     init_hook_run_detail2();
     init_artefact_previews();
+    init_inline_artefact();
     init_artefact();
     init_thread_helpers();
     init_container_run_card();
@@ -86245,6 +86597,7 @@ ${description}
     }
   }
   async function performSubmit() {
+    mark("ttft:composer-submit");
     followUps.clearSuggestions();
     nextStepHint.clear();
     updateComposerPlaceholder();
@@ -86269,8 +86622,7 @@ ${description}
         return;
       }
     }
-    const branchStatus = await api2.git.branchStatus(projectId, id);
-    const currentBranch = branchStatus.currentBranch;
+    const currentBranch = await api2.git.currentBranch(projectId, id);
     const thread = getThreadById(store2, id);
     const threadBranch = thread?.gitBranch;
     const isolatedWorktree = thread !== void 0 && thread.worktree !== void 0;
@@ -86950,6 +87302,7 @@ var init_input_bar = __esm({
     init_context_window_advice();
     init_estimate_cost();
     init_model_selection2();
+    init_perf();
     IMAGE_DETAIL_LABELS = {
       auto: "Auto detail (provider decides)",
       low: "Low detail \u2014 cheapest, text may be unreadable",
@@ -102893,20 +103246,6 @@ var init_roadmap_pane = __esm({
   }
 });
 
-// src/shared/browser-session.ts
-function browserThreadScope(projectId, threadId) {
-  return projectId && threadId ? `thread:${encodeURIComponent(JSON.stringify([projectId, threadId]))}` : "";
-}
-function browserSessionPartition(base, scope) {
-  return scope ? `${base}:${scope}` : base;
-}
-var BROWSER_SESSION_PARTITION;
-var init_browser_session = __esm({
-  "src/shared/browser-session.ts"() {
-    BROWSER_SESSION_PARTITION = "persist:copse-browser";
-  }
-});
-
 // src/shared/types/main-window.ts
 var MAX_RESTORED_BROWSER_TABS;
 var init_main_window = __esm({
@@ -103150,7 +103489,7 @@ async function workspacePreviewHtml(rawUrl, store2, api2) {
   return { html: `<!doctype html>
 ${previewDocument.documentElement.outerHTML}` };
 }
-function supportsElectronWebview(element) {
+function supportsElectronWebview2(element) {
   return typeof element.getURL === "function";
 }
 function createIframeWebview(resolveWorkspacePreview) {
@@ -103235,10 +103574,10 @@ function createIframeWebview(resolveWorkspacePreview) {
 }
 function createWebview(partition, resolveWorkspacePreview) {
   const webview = document.createElement("webview");
-  if (!supportsElectronWebview(webview)) return createIframeWebview(resolveWorkspacePreview);
+  if (!supportsElectronWebview2(webview)) return createIframeWebview(resolveWorkspacePreview);
   const guest = webview;
   guest.setAttribute("partition", partition);
-  guest.setAttribute("webpreferences", WEBVIEW_PREFS);
+  guest.setAttribute("webpreferences", WEBVIEW_PREFS2);
   guest.setAttribute("allowpopups", "false");
   guest.className = "browser-webview";
   guest.src = "about:blank";
@@ -103333,7 +103672,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     updateNavButtons(tab);
     syncTabLabel(tab);
   }
-  function syncWebviewSize(tab) {
+  function syncWebviewSize2(tab) {
     const webview = tab.webview;
     if (!webview || !tab.panel.classList.contains("is-active")) return;
     const { width, height } = tab.webviewHost.getBoundingClientRect();
@@ -103343,7 +103682,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
   }
   function syncActiveWebviewSize() {
     const tab = activeTabId ? tabs.get(activeTabId) : null;
-    if (tab) syncWebviewSize(tab);
+    if (tab) syncWebviewSize2(tab);
   }
   function ensureBrowserResizeObserver() {
     resizeObserver ??= new ResizeObserver(() => {
@@ -103380,7 +103719,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       tab.pendingUrl = null;
       if (current === url2 && url2 !== "about:blank") webview.reload();
       else webview.src = url2;
-      syncWebviewSize(tab);
+      syncWebviewSize2(tab);
     });
   }
   function ensureWebview(tab) {
@@ -103399,7 +103738,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     webview.addEventListener("dom-ready", () => {
       tab.webviewReady = true;
       syncAddressBar(tab);
-      syncWebviewSize(tab);
+      syncWebviewSize2(tab);
       if (tab.pendingUrl) {
         const url2 = tab.pendingUrl;
         tab.pendingUrl = null;
@@ -103448,7 +103787,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
   }
   function revealActiveTab(tab) {
     requestAnimationFrame(() => {
-      syncWebviewSize(tab);
+      syncWebviewSize2(tab);
       tab.urlInput.focus({ preventScroll: true });
     });
   }
@@ -104149,7 +104488,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     tabs.clear();
   };
 }
-var WEBVIEW_PREFS;
+var WEBVIEW_PREFS2;
 var init_browser_pane = __esm({
   "src/renderer/views/browser-pane.ts"() {
     init_helpers();
@@ -104165,7 +104504,7 @@ var init_browser_pane = __esm({
     init_browser_pane_session();
     init_prompt_attachments();
     init_toast();
-    WEBVIEW_PREFS = "contextIsolation=true";
+    WEBVIEW_PREFS2 = "contextIsolation=true";
   }
 });
 
@@ -123253,7 +123592,8 @@ function startAgentController(store2, api2) {
         toolSummaryCount: 0,
         runSummaryAnchorId: null,
         runSummaryCount: 0,
-        lastActivityLabel: null
+        lastActivityLabel: null,
+        firstActivityTraced: false
       };
       state.set(tid, st2);
     }
@@ -123270,8 +123610,14 @@ function startAgentController(store2, api2) {
   const detachDiffState = attachDiffState(store2, api2, { revealOnShowDiff: true });
   const unsub = api2.agent.onChunk((threadId, chunk) => {
     const st2 = get(threadId);
+    const firstVisibleActivity = chunk.type === "tool_call" || chunk.type === "text" && chunk.text.trim() !== "" || chunk.type === "reasoning" && chunk.text.trim() !== "";
+    if (firstVisibleActivity && !st2.firstActivityTraced) {
+      st2.firstActivityTraced = true;
+      mark("ttft:renderer-first-activity", { kind: chunk.type });
+    }
     switch (chunk.type) {
       case "machine_turn_start": {
+        st2.firstActivityTraced = false;
         setThreadStatus(store2, threadId, "running");
         addMessage(
           store2,
@@ -123696,6 +124042,7 @@ var init_agent = __esm({
     init_quiet_runs();
     init_background_threads();
     init_remote_agent_stream();
+    init_perf();
     pendingTurn = /* @__PURE__ */ new Map();
   }
 });
@@ -124062,13 +124409,24 @@ async function run(store2) {
     resolveDone = resolve;
   });
   const endTotal = begin("autopilot:total");
-  const endFirstToken = begin("autopilot:ttft");
-  const endFirstReasoning = begin("autopilot:ttfr");
+  let endFirstActivity = () => void 0;
+  let endFirstToken = () => void 0;
+  let endFirstReasoning = () => void 0;
   const endStream = { close: null };
-  const activity = { any: false };
-  const offReasoning = store2.on("message_reasoning", () => {
+  const activity = { any: false, reasoning: false };
+  const recordFirstActivity = (kind) => {
     if (activity.any) return;
     activity.any = true;
+    endFirstActivity({ kind });
+    const endPaint = begin("autopilot:first-activity-paint");
+    void afterNextFrame().then(() => {
+      endPaint({ kind });
+    });
+  };
+  const offReasoning = store2.on("message_reasoning", () => {
+    recordFirstActivity("reasoning");
+    if (activity.reasoning) return;
+    activity.reasoning = true;
     endFirstReasoning();
   });
   const offToken = store2.on("message_token", (_messageId, text2) => {
@@ -124076,8 +124434,12 @@ async function run(store2) {
     tokens++;
     if (!firstTokenSeen) {
       firstTokenSeen = true;
-      activity.any = true;
+      recordFirstActivity("text");
       endFirstToken();
+      const endPaint = begin("autopilot:first-token-paint");
+      void afterNextFrame().then(() => {
+        endPaint();
+      });
       endStream.close = begin("autopilot:stream");
     }
     if (paintSampling || tokens % 8 !== 0) return;
@@ -124087,6 +124449,9 @@ async function run(store2) {
       paints.push(performance.now() - started);
       paintSampling = false;
     });
+  });
+  const offTool = store2.on("tool_call_started", () => {
+    recordFirstActivity("tool");
   });
   const offDone = store2.on("message_done", () => {
     resolveDone("done");
@@ -124125,9 +124490,12 @@ async function run(store2) {
   if (frameInterval !== null) {
     mark("autopilot:frame-interval", { medianMs: Math.round(frameInterval * 100) / 100 });
   }
-  mark("autopilot:send");
   typeInto(composer.input, PROMPT);
   await afterNextFrame();
+  endFirstActivity = begin("autopilot:ttfa");
+  endFirstToken = begin("autopilot:ttft");
+  endFirstReasoning = begin("autopilot:ttfr");
+  mark("autopilot:send");
   composer.submit.click();
   void sleep2(3e3).then(() => {
     const running = [];
@@ -124171,6 +124539,7 @@ async function run(store2) {
   ]);
   offToken();
   offReasoning();
+  offTool();
   offDone();
   if (outcome === "timeout") {
     mark("autopilot:failed", {
@@ -133700,13 +134069,20 @@ async function boot() {
   });
   api.canvas.onArtefact((artefact) => {
     ensureLayout();
-    if (artefact.threadId) {
-      setArtefactPreview(artefact.threadId, artefact.title, artefact.preview);
+    const threadId = artefact.owner?.threadId ?? artefact.threadId;
+    if (threadId) {
+      setArtefactPreview(threadId, artefact.title, artefact.preview);
     }
-    openCanvasArtefact(store, artefact);
+    if (artefact.owner) {
+      setArtefactContent(artefact.owner.projectId, artefact.owner.threadId, artefact);
+    }
+    if (artefact.presentation !== "inline") openCanvasArtefact(store, artefact);
   });
   setArtefactShowHandler((threadId, title) => {
-    showCanvasArtefact(store, { threadId, title });
+    const projectId = store.getState().activeProjectId;
+    const cached2 = projectId ? getArtefactContent(projectId, threadId, title) : void 0;
+    if (cached2) openCanvasArtefact(store, cached2);
+    else showCanvasArtefact(store, { threadId, title });
   });
   api.canvas.onShowArtefact((identity) => {
     ensureLayout();
