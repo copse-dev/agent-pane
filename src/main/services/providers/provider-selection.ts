@@ -406,15 +406,12 @@ function openAiTransport(): Pick<
 }
 
 /**
- * The per-request OpenAI knobs read from settings: processing tier and
- * transport.
- *
-/**
  * Per-request OpenAI options resolved from settings.
  *
- * `serviceTier` is trimmed and dropped when blank, so a cleared field means
- * "standard processing" (omitted) rather than `service_tier: ""`, which OpenAI
- * rejects. `forceChatCompletions` pins reasoning-capable models back to
+ * `serviceTier` is trimmed and dropped when blank, so a legacy cleared field
+ * means OpenAI's project default (`auto`, via omission) rather than
+ * `service_tier: ""`, which OpenAI rejects. `forceChatCompletions` pins
+ * reasoning-capable models back to
  * /v1/chat/completions; off by default, since the Responses path is what
  * surfaces their reasoning at all. `createProvider` forwards both only to its
  * OpenAI branches.

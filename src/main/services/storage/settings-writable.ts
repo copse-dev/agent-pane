@@ -216,12 +216,13 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   modelParameters: modelParametersMapSchema,
   openRouterModel: z.string().max(256),
   // OpenAI `service_tier` for first-party gpt-* models: 'flex' for slower and
-  // cheaper, 'priority' for quicker at a higher price. Empty (the default) omits
-  // the field, leaving OpenAI on standard processing.
+  // cheaper, 'fast' / 'priority' for quicker at a higher price. Empty (the
+  // legacy default) omits the field, which OpenAI treats as 'auto' and resolves
+  // through the Project service-tier setting.
   //
   // Pinned to the documented tiers. `SERVICE_TIERS` matches OpenAI's set exactly
-  // — including that Priority is marketed as "Fast mode" but is never sent as
-  // `fast`. Accepting arbitrary strings here would let a plausible-looking value
+  // — including both the current `fast` spelling and legacy `priority` spelling.
+  // Accepting arbitrary strings here would let a plausible-looking value
   // through to a guaranteed 400 at request time, which is a worse failure than
   // refusing the write.
   //
