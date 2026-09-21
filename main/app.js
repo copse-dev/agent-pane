@@ -85808,6 +85808,13 @@ function mountInputBar(root, store2, api2, opts = {}) {
     { type: "button", class: "composer-image-describe-btn", hidden: "" },
     "Describe image"
   );
+  const descriptionPickerHost = el("span", { class: "composer-image-description-picker" });
+  const descriptionActions = el(
+    "fieldset",
+    { class: "composer-image-description-actions", "aria-label": "Image description", hidden: "" },
+    describeImagesBtn,
+    descriptionPickerHost
+  );
   const sendWithoutImagesBtn = el(
     "button",
     { type: "button", class: "composer-image-without-btn" },
@@ -85824,7 +85831,7 @@ function mountInputBar(root, store2, api2, opts = {}) {
     el("span", { class: "composer-image-warning-icon", "aria-hidden": "true" }, "!"),
     imageCompatibilityText,
     useImageModelBtn,
-    describeImagesBtn,
+    descriptionActions,
     sendWithoutImagesBtn
   );
   const contextFitText = el("span", { class: "composer-context-warning-text" });
@@ -86146,6 +86153,10 @@ function mountInputBar(root, store2, api2, opts = {}) {
   let recommendedImageModel = null;
   let recommendedDescriptionModel = null;
   let imageDescriptionInProgress = false;
+  let imageDescriptionSeq = 0;
+  let selectedDescriptionModel = null;
+  let descriptionModels = [];
+  let descriptionPicker = null;
   const checkoutChoices = /* @__PURE__ */ new Map();
   let checkoutPreparationInProgress = false;
   let automaticCheckoutMode = "shared";
@@ -86189,7 +86200,8 @@ ${description}
       recommended: recentRecommendation ?? supported.find((option) => option.value !== model) ?? null,
       // Prefer a local vision model for the image→text handoff. It keeps the
       // image on-device even when the final text-only model is remote.
-      descriptionModel: supported.find((option) => option.value.startsWith("lmstudio:")) ?? recentRecommendation ?? supported.find((option) => option.value !== model) ?? null
+      descriptionModels: supported,
+      descriptionModel: supported.find((option) => option.value === selectedDescriptionModel) ?? supported.find((option) => option.value.startsWith("lmstudio:")) ?? recentRecommendation ?? supported.find((option) => option.value !== model) ?? null
     };
   }
   function hideImageCompatibilityWarning() {
@@ -86197,21 +86209,55 @@ ${description}
     recommendedImageModel = null;
     recommendedDescriptionModel = null;
     imageCompatibilityWarning.hidden = true;
+    descriptionPicker?.destroy();
+    descriptionPicker = null;
+  }
+  function updateDescriptionControl() {
+    const descriptor = recommendedDescriptionModel;
+    descriptionActions.hidden = descriptor === null;
+    describeImagesBtn.hidden = descriptor === null;
+    if (!descriptor) {
+      descriptionPicker?.destroy();
+      descriptionPicker = null;
+      return;
+    }
+    const local = descriptor.value.startsWith("lmstudio:");
+    describeImagesBtn.textContent = `${local ? "Describe locally with" : "Describe with"} ${shortModelLabel(descriptor)}`;
+    if (!descriptionPicker) {
+      descriptionPicker = mountModelPicker(
+        descriptionPickerHost,
+        () => recommendedDescriptionModel?.value ?? "",
+        (value) => {
+          const option = descriptionModels.find((candidate) => candidate.value === value);
+          if (!option || imageDescriptionInProgress) return;
+          selectedDescriptionModel = value;
+          recommendedDescriptionModel = option;
+          updateDescriptionControl();
+        },
+        () => Promise.resolve(descriptionModels),
+        {
+          enableShortcut: false,
+          ariaLabel: "Choose image description model",
+          onClose: () => {
+            describeImagesBtn.focus();
+          }
+        }
+      );
+    } else {
+      void descriptionPicker.refresh();
+    }
   }
   async function refreshImageCompatibilityWarning() {
+    if (imageDescriptionInProgress) return;
     const seq = ++imageCompatibilitySeq;
     if (attachedImages.length === 0) {
-      imageCompatibilityWarning.hidden = true;
-      recommendedImageModel = null;
-      recommendedDescriptionModel = null;
+      hideImageCompatibilityWarning();
       return;
     }
     const result = await incompatibleImageModel();
     if (seq !== imageCompatibilitySeq) return;
     if (!result) {
-      imageCompatibilityWarning.hidden = true;
-      recommendedImageModel = null;
-      recommendedDescriptionModel = null;
+      hideImageCompatibilityWarning();
       return;
     }
     const count = attachedImages.length;
@@ -86222,11 +86268,8 @@ ${description}
       useImageModelBtn.textContent = `Use ${shortModelLabel(result.recommended)}`;
     }
     recommendedDescriptionModel = result.descriptionModel;
-    describeImagesBtn.hidden = result.descriptionModel === null;
-    if (result.descriptionModel) {
-      const local = result.descriptionModel.value.startsWith("lmstudio:");
-      describeImagesBtn.textContent = `${local ? "Describe locally with" : "Describe with"} ${shortModelLabel(result.descriptionModel)}`;
-    }
+    descriptionModels = result.descriptionModels;
+    updateDescriptionControl();
     sendWithoutImagesBtn.textContent = count === 1 ? "Send without image" : "Send without images";
     imageCompatibilityWarning.hidden = false;
   }
@@ -86246,8 +86289,10 @@ ${description}
     });
   }
   function setImageDescriptionBusy(busy, label) {
+    if (busy) imageCompatibilitySeq++;
     imageDescriptionInProgress = busy;
     imageCompatibilityWarning.setAttribute("aria-busy", String(busy));
+    descriptionActions.disabled = busy;
     describeImagesBtn.disabled = busy;
     useImageModelBtn.disabled = busy;
     sendWithoutImagesBtn.disabled = busy;
@@ -86260,22 +86305,31 @@ ${description}
     const projectId = store2.getState().activeProjectId;
     const threadId = getActiveThreadId();
     if (!projectId || !threadId) return;
+    const seq = ++imageDescriptionSeq;
     const descriptor = recommendedDescriptionModel;
     const modelLabel2 = shortModelLabel(descriptor);
-    const images = attachedImages.map((image) => image.dataUrl);
+    const describedImages = [...attachedImages];
+    const images = describedImages.map((image) => image.dataUrl);
     const userPrompt = composer.expandedValue().trim();
     setImageDescriptionBusy(true, modelLabel2);
-    void api2.agent.describeImages(projectId, threadId, descriptor.value, userPrompt, images).then(async ({ text: text2 }) => {
-      if (getActiveThreadId() !== threadId) return;
+    void api2.agent.describeImages(projectId, threadId, descriptor.value, userPrompt, images).then(({ text: text2 }) => {
+      if (seq !== imageDescriptionSeq || getActiveThreadId() !== threadId || store2.getState().activeProjectId !== projectId)
+        return;
+      const remainingImages = attachedImages.filter((image) => !describedImages.includes(image));
       removeAttachedImages();
+      for (const image of remainingImages) {
+        addImageChip(image.dataUrl, image.mimeType, image.detail);
+      }
       composer.value = appendImageDescription(composer.value, modelLabel2, text2);
       composer.el.dispatchEvent(new Event("input", { bubbles: true }));
       hideImageCompatibilityWarning();
       scheduleContextEstimate();
-      await submit();
+      composer.focus();
     }).catch((error61) => {
+      if (seq !== imageDescriptionSeq) return;
       showErrorToast(`Could not describe the image with ${modelLabel2}`, error61);
     }).finally(() => {
+      if (seq !== imageDescriptionSeq) return;
       setImageDescriptionBusy(false);
       if (getActiveThreadId() === threadId && attachedImages.length > 0) {
         void refreshImageCompatibilityWarning();
@@ -86467,6 +86521,9 @@ ${description}
       setThreadDraftPrompt(store2, activeComposerThreadId, composer.expandedValue());
       stashDraftAttachments(activeComposerThreadId);
     }
+    imageDescriptionSeq++;
+    selectedDescriptionModel = null;
+    if (imageDescriptionInProgress) setImageDescriptionBusy(false);
     clearAttachments();
     const thread = getThreadById(store2, id);
     composer.value = thread?.draftPrompt ?? "";
@@ -86812,7 +86869,7 @@ ${description}
   });
   let submitInProgress = false;
   async function submit() {
-    if (submitInProgress) return;
+    if (submitInProgress || imageDescriptionInProgress) return;
     submitInProgress = true;
     try {
       await performSubmit();
@@ -87396,6 +87453,7 @@ ${description}
     store2.on("settings_changed", () => {
       void refreshContainerRunsSetting();
       modelPicker.refresh();
+      void refreshImageCompatibilityWarning();
       refreshModelPricing();
       updateFooter();
       scheduleContextEstimate(0);
@@ -87459,6 +87517,8 @@ ${description}
       nextStepHint.destroy();
       unbindDrop();
       unregisterAttachments();
+      imageDescriptionSeq++;
+      descriptionPicker?.destroy();
       modelPicker.destroy();
       footerOverflow.destroy();
       guardedYolo.destroy();
@@ -87496,6 +87556,7 @@ var init_input_bar = __esm({
     init_parse_invocation();
     init_build_skill_user_content();
     init_footer_model_picker();
+    init_model_picker();
     init_footer_branch_status();
     init_context_wheel();
     init_footer_compact();
