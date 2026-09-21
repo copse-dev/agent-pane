@@ -138,6 +138,7 @@ function clearStorage(): void {
   storageSet(AUTOMATIONS_ENABLEMENT_MIGRATION_KEY, true)
   storageSet(PARALLEL_SEARCH_ENABLEMENT_MIGRATION_KEY, true)
   storageSet(ARTIFACT_CHECKPOINT_ENABLEMENT_MIGRATION_KEY, true)
+  storageSet(REVIEW_PLUGIN_MIGRATION_KEY, true)
   storageSet(BACKGROUND_TASKS_STABLE_MIGRATION_KEY, true)
   storageSet(APPLE_DEVELOPMENT_ENABLEMENT_MIGRATION_KEY, true)
   storageSet(AGENTS_MD_MODE_MIGRATION_KEY, true)
@@ -490,6 +491,7 @@ describe('PluginService', () => {
     // from its list) and chosen reviewer A and a judge. The replacement starts
     // on, with those two as its reviewer and challenger, and the retired id is
     // gone from the list. A later opt-out is the user's and survives a restart.
+    storageDelete(REVIEW_PLUGIN_MIGRATION_KEY)
     storageSet(PLUGIN_DISABLED_KEY, [LONG_HORIZON_TASKS_PLUGIN_ID])
     storageSet(`plugin.${RETIRED_MODEL_COMPARISON_PLUGIN_ID}.settings`, {
       comparisonModelA: 'gpt-5',
@@ -517,6 +519,9 @@ describe('PluginService', () => {
   })
 
   it('keeps the review plugin off for a profile that had the comparison off', () => {
+    storageDelete(REVIEW_PLUGIN_MIGRATION_KEY)
+    storageDelete(`plugin.${REVIEW_PLUGIN_ID}.settings`)
+    storageDelete(`plugin.${RETIRED_MODEL_COMPARISON_PLUGIN_ID}.settings`)
     storageSet(PLUGIN_DISABLED_KEY, [
       RETIRED_MODEL_COMPARISON_PLUGIN_ID,
       LONG_HORIZON_TASKS_PLUGIN_ID,
@@ -530,6 +535,16 @@ describe('PluginService', () => {
     assert.ok(!disabled.includes(RETIRED_MODEL_COMPARISON_PLUGIN_ID))
     // Nothing to carry: the review bag stays empty rather than gaining a key.
     assert.equal(service.getSetting(REVIEW_PLUGIN_ID, REVIEWER_MODEL_SETTING_ID), undefined)
+  })
+
+  it('leaves a seeded review entry alone when the retired id was never listed', () => {
+    // A profile written after the rename (an e2e seed, a fresh install that
+    // later upgrades) lists `copse.review` off and never knew the comparison.
+    // The absence of the retired id is not an opt-in there.
+    storageDelete(REVIEW_PLUGIN_MIGRATION_KEY)
+    storageSet(PLUGIN_DISABLED_KEY, [REVIEW_PLUGIN_ID, LONG_HORIZON_TASKS_PLUGIN_ID])
+    const service = getPluginService()
+    assert.equal(service.registry.isEnabled(REVIEW_PLUGIN_ID), false)
   })
 
   it('never re-seeds over a plugin list the user already owns', () => {

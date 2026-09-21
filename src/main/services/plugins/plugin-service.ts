@@ -319,9 +319,10 @@ function migrateArtifactCheckpointEnablement(): void {
 /**
  * `copse.review` replaced `copse.model-comparison` (docs/plans/copse-reviewer.md,
  * Phase 3). On a profile that owns its disable list, carry the user's choice
- * across once: a comparison the user had switched on becomes a review that is
- * on; one left off (the shipped default) stays off; the retired id leaves the
- * list. The reviewer and challenger models start from the old reviewer A and
+ * across once: a comparison left off (the shipped default) becomes a review
+ * that is off and the retired id leaves the list; one the user had switched on
+ * leaves the review's own entry untouched, so a pre-rename profile starts with
+ * the review on and a post-rename seed keeps whatever it says. The reviewer and challenger models start from the old reviewer A and
  * judge selections when the new bag has nothing for them yet — copy-if-absent,
  * like `migratePluginModelSettings`. A fresh profile never gets here with a
  * disable list, and derives the default-off state from the manifest instead.
@@ -331,10 +332,11 @@ function migrateReviewPluginFromModelComparison(): void {
   const raw = storageGet(PLUGIN_DISABLED_KEY)
   if (raw !== undefined) {
     const disabled = readDisabledIds()
-    const comparisonWasOff = disabled.has(RETIRED_MODEL_COMPARISON_PLUGIN_ID)
-    disabled.delete(RETIRED_MODEL_COMPARISON_PLUGIN_ID)
-    if (comparisonWasOff) disabled.add(REVIEW_PLUGIN_ID)
-    else disabled.delete(REVIEW_PLUGIN_ID)
+    // Off stays off. An opt-in (the retired id absent) carries across only by
+    // leaving the new id alone: a profile that already lists `copse.review`
+    // (seeded after the rename) keeps that answer, and one written before the
+    // rename has no entry, so the replacement starts on as the comparison was.
+    if (disabled.delete(RETIRED_MODEL_COMPARISON_PLUGIN_ID)) disabled.add(REVIEW_PLUGIN_ID)
     storageSet(PLUGIN_DISABLED_KEY, [...disabled].sort())
   }
   const legacy = readPluginSettings(RETIRED_MODEL_COMPARISON_PLUGIN_ID)
