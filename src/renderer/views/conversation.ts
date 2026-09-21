@@ -115,6 +115,8 @@ import {
 } from '../controller/message-queue.ts'
 import { forkThread } from '../controller/fork-thread.ts'
 import { lastResendableMessage, resendLastMessage } from '../controller/resend-message.ts'
+import { recoverFailedTurn, turnRecoveryForMessage } from '../controller/turn-recovery.ts'
+import { createTurnRecoveryCard } from './turn-recovery-card.ts'
 import { isImageInputUnsupportedMessage } from '@shared/image-input-support.ts'
 import { showToast } from './toast.ts'
 import type { QueuedUserMessage } from '@shared/types'
@@ -2831,6 +2833,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     if (msg.review) renderMessageReview(threadId, msgId)
     // Render any hook cards folded onto this message's turn (decision 10).
     renderMessageHookCards(threadId, msgId)
+    renderMessageTurnRecovery(threadId, msgId)
   }
 
   /**
@@ -3088,6 +3091,33 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     })
     card.setAttribute('data-review-card', '')
     card.setAttribute('data-review-for', messageId)
+    msgEl.after(card)
+  }
+
+  function renderMessageTurnRecovery(threadId: string, messageId: string): void {
+    if (threadId !== store.getState().activeThreadId) return
+    list.querySelector(`[data-turn-recovery-for="${messageId}"]`)?.remove()
+    const state = store.getState()
+    const projectId = state.activeProjectId
+    const thread = state.threads.find((candidate) => candidate.id === threadId)
+    const msgEl = list.querySelector(`[data-message-id="${messageId}"]`)
+    const recovery = turnRecoveryForMessage(thread, messageId)
+    if (!projectId || !msgEl || !recovery) return
+
+    const fallback = recovery.lastKnownGoodModel
+    const card = createTurnRecoveryCard({
+      ...(fallback !== undefined ? { lastKnownGoodLabel: displayModelLabel(fallback) } : {}),
+      onRetry: () => recoverFailedTurn(store, api, projectId, threadId, messageId, 'current-model'),
+      ...(fallback !== undefined
+        ? {
+            onRetryWithLastKnownGood: (): boolean =>
+              recoverFailedTurn(store, api, projectId, threadId, messageId, 'last-known-good'),
+          }
+        : {}),
+    })
+    card.setAttribute('data-turn-recovery-for', messageId)
+    // Insert last so this action remains the failed message's immediate sibling;
+    // review and hook cards for the same turn follow it in their established order.
     msgEl.after(card)
   }
 
@@ -3434,7 +3464,16 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     store.on('thread_status_changed', (tid, status) => {
       if (status === 'running') cancelThreadCompaction(tid)
       else scheduleThreadCompaction(tid)
-      if (tid === store.getState().activeThreadId && status !== 'running') setActivity(null)
+      if (tid !== store.getState().activeThreadId) return
+      if (status === 'running') {
+        list.querySelectorAll('[data-turn-recovery-card]').forEach((card) => {
+          card.remove()
+        })
+      } else {
+        setActivity(null)
+        const last = getThreadById(store, tid)?.messages.at(-1)
+        if (last?.role === 'assistant') renderMessageTurnRecovery(tid, last.id)
+      }
     }),
     store.on('agent_activity', (tid, label) => {
       if (tid !== store.getState().activeThreadId) return
