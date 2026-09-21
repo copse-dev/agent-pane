@@ -1,9 +1,6 @@
 import { z } from 'zod'
 import { defineTool } from '@shared/types'
-import {
-  GUI_APP_LAUNCH_TOOL_NAME,
-  launchGuiApp,
-} from '../services/exec/gui-app-launch.ts'
+import { GUI_APP_LAUNCH_TOOL_NAME, launchGuiApp } from '../services/exec/gui-app-launch.ts'
 
 /**
  * Approval-gated host GUI-app launch.
@@ -62,7 +59,7 @@ export const launchGuiAppTool = defineTool({
         target,
         ...(args !== undefined ? { args } : {}),
         ...(env !== undefined ? { env } : {}),
-        newInstance: new_instance !== false,
+        newInstance: new_instance,
       },
       signal,
     )

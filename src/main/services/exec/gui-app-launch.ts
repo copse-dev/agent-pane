@@ -31,9 +31,7 @@ export interface GuiAppLaunchRequest {
   newInstance?: boolean
 }
 
-export type GuiAppLaunchResult =
-  | { ok: true; message: string }
-  | { ok: false; error: string }
+export type GuiAppLaunchResult = { ok: true; message: string } | { ok: false; error: string }
 
 const MAX_ENV_ENTRIES = 32
 const MAX_ENV_KEY_CHARS = 128
