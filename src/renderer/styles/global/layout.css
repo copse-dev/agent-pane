@@ -2112,6 +2112,26 @@
 .browser-url-input.has-error {
   border-color: var(--danger, #f14c4c);
 }
+/* A network-policy denial is the policy working as intended, not a fault —
+   the warning token (not --danger) keeps that distinction visible at a glance. */
+.browser-url-input.has-blocked {
+  border-color: var(--warning);
+}
+/* Explains a red/amber URL bar in place, so the reason survives a screenshot
+   and does not depend on hovering the tooltip. Hidden (via the `hidden`
+   attribute) whenever the tab has no load issue. */
+.browser-status {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.browser-status-danger {
+  color: var(--danger, #f14c4c);
+}
+.browser-status-warning {
+  color: var(--warning);
+}
 .file-viewer {
   flex: 1;
   display: flex;

@@ -81,6 +81,19 @@ const api: ApiClient = {
         ipcRenderer.off('browser:preview-stale', listener)
       }
     },
+    onNavigationBlocked: (handler: (webContentsId: number, url: string) => void) => {
+      const listener = (
+        _e: Electron.IpcRendererEvent,
+        webContentsId: number,
+        url: string,
+      ): void => {
+        handler(webContentsId, url)
+      }
+      ipcRenderer.on('browser:navigation-blocked', listener)
+      return (): void => {
+        ipcRenderer.off('browser:navigation-blocked', listener)
+      }
+    },
     onShareText: (
       handler: (share: import('@shared/types/browser-share.ts').BrowserTextShare) => void,
     ) => {

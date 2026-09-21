@@ -58,8 +58,21 @@ function configureBrowserSession(
       allowedOrigins: browserAllowedOrigins(scope),
       originAccess,
     })
-    if (allowed && details.resourceType === 'mainFrame' && details.webContentsId !== undefined) {
-      documents.set(details.webContentsId, details.url)
+    if (details.resourceType === 'mainFrame' && details.webContentsId !== undefined) {
+      if (allowed) {
+        documents.set(details.webContentsId, details.url)
+      } else {
+        // Cancelling a main-frame request here does not reliably reach the
+        // guest as `did-fail-load` — Chromium can leave the navigation in
+        // limbo instead of erroring it, so the URL bar would stay silently on
+        // the rejected address forever. Tell the renderer directly so the tab
+        // that asked for `url` can explain the denial.
+        getMainWindow()?.webContents.send(
+          'browser:navigation-blocked',
+          details.webContentsId,
+          details.url,
+        )
+      }
     }
     callback({ cancel: !allowed })
   })

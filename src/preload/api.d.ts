@@ -179,6 +179,10 @@ export interface ApiClient {
     onShowTab?: (handler: (url: string, partition?: string) => void) => () => void
     /** A preview server served a file that just changed on disk. */
     onPreviewStale?: (handler: (origin: string) => void) => () => void
+    /** A main-frame navigation was denied by the browser network policy — a
+     * cancelled `webRequest` never reaches the guest as `did-fail-load`, so the
+     * main process reports it explicitly instead. */
+    onNavigationBlocked?: (handler: (webContentsId: number, url: string) => void) => () => void
     sharePageText: (webContentsId: number) => Promise<void>
     shareScreenshot: (webContentsId: number) => Promise<void>
     /**
