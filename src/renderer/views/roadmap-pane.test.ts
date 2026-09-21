@@ -1848,6 +1848,7 @@ describe('roadmap pane', () => {
     const unregister = registerPromptAttachments({
       attachFile: (f) => attachedFiles.push(f),
       attachTextBlock: () => {},
+      quoteText: () => {},
       attachImage: (dataUrl, mimeType) => attachedImages.push({ dataUrl, mimeType }),
       attachVideo: () => Promise.resolve(),
       attachArchive: () => Promise.resolve(),

@@ -131,6 +131,9 @@ import { createTurnRecoveryCard } from './turn-recovery-card.ts'
 import { isImageInputUnsupportedMessage } from '@shared/image-input-support.ts'
 import { showToast } from './toast.ts'
 import type { QueuedUserMessage } from '@shared/types'
+import { showContextMenu } from '../dom/context-menu.ts'
+import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
+import { openConversationSearch } from './conversation-search.ts'
 
 type ToolCardStatus = ToolCall['status'] | 'interrupted'
 type InterruptionCause = 'message' | 'user'
@@ -2309,6 +2312,72 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     navigateToChange(store, path)
   })
 
+  // Right-click in the transcript: a non-empty text selection offers quoting
+  // it into the reply, filing it on the roadmap, or searching the thread for
+  // it; with no selection, right-clicking a message still offers to copy its
+  // text. Anywhere else in the transcript (blank space, before any message)
+  // falls through to the platform's own menu.
+  list.addEventListener('contextmenu', (e) => {
+    // An inner element (an image, a link, a code block) that already handled
+    // this right-click keeps its own menu.
+    if (e.defaultPrevented) return
+    const targetEl = e.target instanceof Element ? e.target : null
+    const msgEl = targetEl?.closest<HTMLElement>('.msg[data-message-id]') ?? null
+    const selection = document.getSelection()
+    const selectedText =
+      selection && !selection.isCollapsed && list.contains(selection.anchorNode)
+        ? selection.toString().trim()
+        : ''
+
+    if (!selectedText && !msgEl) return
+
+    e.preventDefault()
+    e.stopPropagation()
+
+    if (selectedText) {
+      const threadId = store.getState().activeThreadId
+      showContextMenu(e.clientX, e.clientY, [
+        {
+          label: 'Quote in reply',
+          onSelect: (): void => {
+            quoteTranscriptSelection(selectedText)
+          },
+        },
+        {
+          label: 'Add to roadmap',
+          onSelect: (): void => {
+            void addTranscriptSelectionToRoadmap(api, threadId, selectedText)
+          },
+        },
+        {
+          label: 'Search',
+          onSelect: (): void => {
+            openConversationSearch(selectedText)
+          },
+        },
+        {
+          label: 'Copy',
+          onSelect: (): void => {
+            void navigator.clipboard.writeText(selectedText)
+          },
+        },
+      ])
+      return
+    }
+
+    const msgId = msgEl?.dataset['messageId']
+    const messageText = msgId ? messageContentById(store, msgId) : undefined
+    if (!messageText) return
+    showContextMenu(e.clientX, e.clientY, [
+      {
+        label: 'Copy message',
+        onSelect: (): void => {
+          void navigator.clipboard.writeText(messageText)
+        },
+      },
+    ])
+  })
+
   // Inline-edit state for a queued message. Preserved across re-renders so a
   // store-driven rebuild (e.g. pause toggle) keeps the editor and its draft.
   let editingMessageId: string | null = null
@@ -4122,6 +4191,39 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     unbindCodeBlockRuns()
     unsubs.forEach((u) => {
       u()
+    })
+  }
+}
+
+/** A message's raw text by id, searched across all threads (mirrors {@link attachCopyButton}). */
+function messageContentById(store: AppStore, msgId: string): string | undefined {
+  return store
+    .getState()
+    .threads.flatMap((t) => t.messages)
+    .find((m) => m.id === msgId)?.content
+}
+
+/** "Quote in reply": insert the transcript selection into the composer as a blockquote. */
+function quoteTranscriptSelection(text: string): void {
+  const handlers = getPromptAttachmentHandlers()
+  if (!handlers) return
+  handlers.quoteText(text)
+  handlers.focusComposer?.()
+}
+
+/** "Add to roadmap": file the transcript selection as a new roadmap item, linked to the thread. */
+async function addTranscriptSelectionToRoadmap(
+  api: ApiClient,
+  threadId: string | null,
+  text: string,
+): Promise<void> {
+  try {
+    const created = await api.roadmap.create(text)
+    if (threadId) await api.roadmap.setThread(created.id, threadId)
+    showToast('Added to roadmap')
+  } catch (err) {
+    showToast(`Could not add to roadmap: ${err instanceof Error ? err.message : String(err)}`, {
+      variant: 'error',
     })
   }
 }
