@@ -1192,7 +1192,9 @@ function hookCardDetailLines(card: HookCard): string[] {
     const via =
       card.nudgeMechanism === 'text-only-turn'
         ? 'as a forced text-only turn'
-        : 'appended to the next turn'
+        : card.nudgeMechanism === 'tool-enabled-turn'
+          ? 'as a tool-enabled finalization turn'
+          : 'appended to the next turn'
     lines.push(`Applied this nudge to the conversation — ${via}`)
   }
   if (card.injectContextChars !== undefined && card.injectContextChars > 0) {
