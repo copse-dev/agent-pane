@@ -7,8 +7,10 @@
 // run resolves its tool permissions from a declared profile that fails closed,
 // and exit codes are the contract's.
 import { execFileSync } from 'node:child_process'
-import { readFile, writeFile } from 'node:fs/promises'
+import { access, readFile, writeFile } from 'node:fs/promises'
 import { parseArgs } from 'node:util'
+import { homedir } from 'node:os'
+import { isAbsolute, join } from 'node:path'
 import {
   CI_DENY_BY_DEFAULT_PROFILE,
   HEADLESS_EXIT,
@@ -35,7 +37,7 @@ import {
 import { renderReviewReport } from './report-text.ts'
 import { toSarif } from './sarif.ts'
 import { decodeMockScript, type MockScript } from './scripted-provider.ts'
-import { openReviewGround, runStage0Checks } from './stage0.ts'
+import { openReviewGround, prepareVerificationBase, runStage0Checks } from './stage0.ts'
 import { runReviewers, type Stage2Result } from './stage2.ts'
 import { verifyFindings, type Stage4Result } from './stage4.ts'
 import { assembleReviewReport, canonicalFindings } from './stage5.ts'
@@ -68,7 +70,7 @@ never the exit code.
   --events <path>         write the model turn's headless events as JSONL (- for stdout)
   --budget-chars <n>      diff budget handed to the model (default 60000)
   --max-steps <n>         tool-using steps the reviewer may take
-  --store <dir>           pnpm store to mount read-only (default: \`pnpm store path\`)
+  --store <dir>           pnpm store to mount read-only (default: host standard store)
   --quiet                 no text report on stdout
   --help
 
@@ -101,9 +103,20 @@ function refExists(ref: string, cwd: string): boolean {
   }
 }
 
-function pnpmStorePath(cwd: string): string | undefined {
+/** Discover only host paths, never load repository/package-manager configuration. */
+async function pnpmStorePath(env: CliIo['env']): Promise<string | undefined> {
+  const configured = env['npm_config_store_dir']
+  const dataHome =
+    process.platform === 'darwin'
+      ? join(homedir(), 'Library')
+      : process.platform === 'win32'
+        ? (env['LOCALAPPDATA'] ?? join(homedir(), 'AppData', 'Local'))
+        : (env['XDG_DATA_HOME'] ?? join(homedir(), '.local', 'share'))
+  const candidate = configured ?? join(env['PNPM_HOME'] ?? join(dataHome, 'pnpm'), 'store')
+  if (!isAbsolute(candidate)) return undefined
   try {
-    return execFileSync('pnpm', ['store', 'path'], { cwd, encoding: 'utf8' }).trim() || undefined
+    await access(candidate)
+    return candidate
   } catch {
     return undefined
   }
@@ -126,10 +139,11 @@ export function reviewPermissionProfile(executionAllowed: boolean): HeadlessPerm
 }
 
 export async function main(argv: readonly string[], io: CliIo): Promise<HeadlessExitCode> {
+  if (io.signal?.aborted) return HEADLESS_EXIT.CANCELLED
   let parsed
   try {
     parsed = parseArgs({
-      args: [...argv],
+      args: argv[0] === '--' ? argv.slice(1) : [...argv],
       options: {
         base: { type: 'string' },
         'allow-unisolated': { type: 'boolean', default: false },
@@ -200,10 +214,10 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
     diffOrigin: 'own',
     unisolatedConsent: values['allow-unisolated'],
     hostEnv: io.env,
-    dependencyStore: values.store ?? pnpmStorePath(io.cwd),
+    dependencyStore: values.store ?? (await pnpmStorePath(io.env)),
   })
   try {
-    const stage0 = await runStage0Checks(ground)
+    const stage0 = await runStage0Checks(ground, io.signal)
     const profile = reviewPermissionProfile(ground.decision.execute && ground.cell !== null)
     const shellDecision = resolveNonInteractiveDecision(capabilityDecision(profile, 'shell'), {
       interactive: false,
@@ -291,9 +305,12 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
             model: challengerSelection.model,
             provider: challengerSelection.providerFor(name),
           })
+          let baseReady: Promise<void> | undefined
           verification = await verifyFindings({
             ...host,
             baseCheckout: ground.checkouts.base,
+            prepareBase: (signal) =>
+              (baseReady ??= prepareVerificationBase(ground, stage0, signal)),
             findings,
             reproducer: role('reproduce'),
             challenger: role('challenge'),
@@ -350,6 +367,9 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
       return HEADLESS_EXIT.FAILURE
     }
     return HEADLESS_EXIT.SUCCESS
+  } catch (err) {
+    if (io.signal?.aborted) return HEADLESS_EXIT.CANCELLED
+    throw err
   } finally {
     await ground.close()
   }

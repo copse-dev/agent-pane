@@ -3,15 +3,17 @@
 // `run_command`, is brokered into the execution cell and gated by the run's
 // permission profile. Candidate findings come back through `report_finding`
 // as structured objects, never as prose to parse.
-import { readdir, readFile, stat } from 'node:fs/promises'
-import { join, relative, resolve } from 'node:path'
+import { readdir, lstat } from 'node:fs/promises'
+import { join, relative } from 'node:path'
 import { z } from 'zod'
 import { wrapExternalContent } from '@copse/agent/external-content.ts'
 import type { LLMTool } from '@copse/llm/wire-types.ts'
 import type { HeadlessPermissionDecision } from '@copse/agent/headless-contract.ts'
 import { decodeWithSchema } from '@copse/std/safe-json.ts'
 import { errorMessage } from '@copse/std/errors.ts'
-import type { ReviewContext } from './context.ts'
+import { readFileDiff, type ReviewContext } from './context.ts'
+import { jailPath, readCheckoutFile } from './checkout-fs.ts'
+export { jailPath } from './checkout-fs.ts'
 import { FINDING_CLASSES, FINDING_CONFIDENCES, FINDING_SEVERITIES } from './finding.ts'
 import type { CellCommandResult, ExecutionCell } from './isolation.ts'
 
@@ -116,10 +118,14 @@ export function reviewerTools(): LLMTool[] {
     },
     {
       name: 'git_diff',
-      description: 'The full diff of one changed file against the merge-base, untruncated.',
+      description:
+        'Read the original diff of one changed file against the merge-base, including omitted/deleted files. Large diffs are paged; pass the returned nextOffset to continue.',
       parameters: {
         type: 'object',
-        properties: { path: { type: 'string', description: 'A changed file' } },
+        properties: {
+          path: { type: 'string', description: 'A changed file' },
+          offset: { type: 'integer', description: 'Zero-based character offset; default 0' },
+        },
         required: ['path'],
       },
     },
@@ -181,7 +187,9 @@ const listDirArgs = decodeWithSchema(z.object({ path: z.string().optional() }))
 const searchArgs = decodeWithSchema(
   z.object({ pattern: z.string().min(1), path: z.string().optional() }),
 )
-const gitDiffArgs = decodeWithSchema(z.object({ path: z.string().min(1) }))
+const gitDiffArgs = decodeWithSchema(
+  z.object({ path: z.string().min(1), offset: z.number().int().nonnegative().optional() }),
+)
 const runCommandArgs = decodeWithSchema(
   z.object({
     argv: z.array(z.string().min(1)).min(1),
@@ -191,22 +199,6 @@ const runCommandArgs = decodeWithSchema(
 const decodeCandidate = decodeWithSchema(candidateFindingSchema)
 
 class ToolInputError extends Error {}
-
-/** Resolve a repo-relative path inside the head checkout; refuse anything outside it. */
-export function jailPath(root: string, path: string): string {
-  const absRoot = resolve(root)
-  const target = resolve(absRoot, path || '.')
-  const rel = relative(absRoot, target)
-  if (
-    rel === '..' ||
-    rel.startsWith('../') ||
-    rel.startsWith('..\\') ||
-    resolve(target) !== target
-  ) {
-    throw new ToolInputError(`Path is outside the change under review: ${path}`)
-  }
-  return target
-}
 
 function cap(text: string): string {
   if (text.length <= MAX_TOOL_OUTPUT_CHARS) return text
@@ -233,7 +225,7 @@ async function* walkFiles(dir: string): AsyncGenerator<string> {
     const path = join(dir, entry)
     let info
     try {
-      info = await stat(path)
+      info = await lstat(path)
     } catch {
       continue
     }
@@ -253,18 +245,22 @@ export interface ReviewerToolExecutor {
 export function createReviewerToolExecutor(host: ReviewerToolHost): ReviewerToolExecutor {
   const reported: ReportedCandidate[] = []
   const commandRuns = new Map<string, CellCommandResult>()
-  const root = host.headCheckout
+  const root = jailPath(host.headCheckout, '.')
 
-  async function readSource(path: string): Promise<string> {
-    const file = jailPath(root, path)
+  function readSource(path: string): Promise<string> {
     try {
-      return await readFile(file, 'utf8')
+      return Promise.resolve(readCheckoutFile(root, path))
     } catch (err) {
-      throw new ToolInputError(`Cannot read ${path}: ${errorMessage(err)}`)
+      return Promise.reject(new ToolInputError(`Cannot read ${path}: ${errorMessage(err)}`))
     }
   }
 
-  async function run(name: string, args: unknown, toolCallId: string): Promise<string> {
+  async function run(
+    name: string,
+    args: unknown,
+    signal: AbortSignal,
+    toolCallId: string,
+  ): Promise<string> {
     switch (name) {
       case 'read_file': {
         const input = readFileArgs(args)
@@ -302,14 +298,14 @@ export function createReviewerToolExecutor(host: ReviewerToolHost): ReviewerTool
         if (input === null) throw new ToolInputError('search_code needs { pattern, path? }')
         const regex = toRegExp(input.pattern)
         const start = jailPath(root, input.path ?? '.')
-        const info = await stat(start).catch(() => null)
+        const info = await lstat(start).catch(() => null)
         if (info === null) throw new ToolInputError(`No such path: ${input.path ?? '.'}`)
         const hits: string[] = []
         const files: AsyncIterable<string> | Iterable<string> = info.isDirectory()
           ? walkFiles(start)
           : [start]
         for await (const file of files) {
-          const text = await readFile(file, 'utf8').catch(() => null)
+          const text = await readSource(relative(root, file)).catch(() => null)
           if (text === null || text.includes('\u0000')) continue
           const relPath = relative(root, file).replace(/\\/g, '/')
           const lines = text.split(/\r?\n/)
@@ -331,10 +327,16 @@ export function createReviewerToolExecutor(host: ReviewerToolHost): ReviewerTool
         if (input === null) throw new ToolInputError('git_diff needs { path }')
         const file = host.context.files.find((entry) => entry.path === input.path)
         if (file === undefined) throw new ToolInputError(`${input.path} is not a changed file`)
-        if (file.dropped !== undefined) {
-          return `The diff for ${input.path} was omitted from the review (${file.dropped}); read the file directly if it matters.`
-        }
-        return cap(file.text)
+        const diff = await readFileDiff(root, host.context.mergeBase, input.path)
+        signal.throwIfAborted()
+        const offset = input.offset ?? 0
+        const nextOffset = offset + MAX_TOOL_OUTPUT_CHARS
+        return (
+          diff.slice(offset, nextOffset) +
+          (nextOffset < diff.length
+            ? `\n…(more diff available; call git_diff with offset ${String(nextOffset)})`
+            : '')
+        )
       }
       case 'run_command': {
         const input = runCommandArgs(args)
@@ -350,6 +352,7 @@ export function createReviewerToolExecutor(host: ReviewerToolHost): ReviewerTool
           argv: [file, ...rest],
           timeoutMs: input.timeoutMs ?? RUN_COMMAND_DEFAULT_TIMEOUT_MS,
           maxOutputBytes: MAX_TOOL_OUTPUT_CHARS * 4,
+          signal,
         })
         const scrubbed = { ...result, output: host.scrub(result.output) }
         commandRuns.set(toolCallId, scrubbed)
@@ -386,9 +389,10 @@ export function createReviewerToolExecutor(host: ReviewerToolHost): ReviewerTool
   }
 
   return {
-    async execute(name, args, _signal, toolCallId): Promise<string> {
+    async execute(name, args, signal, toolCallId): Promise<string> {
       try {
-        return await run(name, args, toolCallId)
+        signal.throwIfAborted()
+        return await run(name, args, signal, toolCallId)
       } catch (err) {
         if (err instanceof ToolInputError) return `Error: ${err.message}`
         return `Error: ${errorMessage(err)}`

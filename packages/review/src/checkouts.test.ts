@@ -1,6 +1,6 @@
 import { after, before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { access, chmod, mkdtemp, readFile, rm } from 'node:fs/promises'
+import { access, chmod, mkdtemp, readFile, realpath, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { materialiseCheckouts } from './checkouts.ts'
@@ -48,7 +48,7 @@ describe('materialiseCheckouts', () => {
       assert.equal(checkouts.mergeBase, baseCommit)
       assert.equal(checkouts.headCommit, headCommit)
       assert.equal(checkouts.dirty, true)
-      assert.equal(checkouts.gitCommonDir, join(repo.root, '.git'))
+      assert.equal(checkouts.gitCommonDir, await realpath(join(repo.root, '.git')))
       assert.equal(await readFile(join(checkouts.base, 'a.txt'), 'utf8'), 'one\n')
       assert.equal(await readFile(join(checkouts.head, 'a.txt'), 'utf8'), 'three\n')
       assert.equal(await readFile(join(checkouts.head, 'new/untracked.txt'), 'utf8'), 'fresh\n')

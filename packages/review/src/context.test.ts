@@ -85,6 +85,21 @@ describe('budgetFileDiffs', () => {
     assert.ok(kept.every((file) => file.text.includes('(diff truncated here')))
     assert.ok(kept.every((file) => !file.text.slice(0, -80).endsWith('padding line that is')))
   })
+  it('bounds total diff text including notices for large changes and small budgets', () => {
+    const raw = Array.from({ length: 100 }, (_, i) => ({
+      path: `src/f${String(i)}.ts`,
+      status: 'modified' as const,
+      additions: 100,
+      deletions: 1,
+      text: '+padding source line\n'.repeat(600),
+    }))
+    for (const budget of [0, 40, 2000, 60000]) {
+      const files = budgetFileDiffs(raw, budget)
+      assert.ok(files.reduce((sum, file) => sum + file.text.length, 0) <= budget)
+      assert.equal(files.length, raw.length)
+      assert.ok(files.some((file) => file.dropped === 'diff budget exhausted'))
+    }
+  })
 })
 
 describe('buildReviewContext', () => {

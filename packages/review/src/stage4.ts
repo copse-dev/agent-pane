@@ -36,6 +36,7 @@ export interface VerifierRole {
 
 export interface Stage4Options extends ReviewerToolHost {
   readonly baseCheckout: string
+  prepareBase(signal: AbortSignal): Promise<void>
   readonly findings: readonly Finding[]
   /** The model that writes reproducers; absent skips that strategy. */
   readonly reproducer: VerifierRole | null

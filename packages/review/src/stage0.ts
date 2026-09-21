@@ -11,11 +11,12 @@
 // that passes on head can produce no finding, so the base run would only be
 // spent on the "fixed" note, and the common case — a clean head — costs one
 // pass instead of two.
-import { access, mkdtemp, readFile, rm } from 'node:fs/promises'
+import { access, mkdtemp, realpath, rm } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { redactSecrets } from '@copse/llm/redact-secrets.ts'
 import { materialiseCheckouts, type GitRunner, type MaterialisedCheckouts } from './checkouts.ts'
+import { readCheckoutFile } from './checkout-fs.ts'
 import {
   findingId,
   type CheckoutTarget,
@@ -189,9 +190,9 @@ function scriptLine(manifest: string, kind: CheckKind): { line: number; text: st
   return index === -1 || text === undefined ? null : { line: index + 1, text }
 }
 
-async function readFileOrNull(path: string): Promise<string | null> {
+function readFileOrNull(root: string, path: string): string | null {
   try {
-    return await readFile(path, 'utf8')
+    return readCheckoutFile(root, path)
   } catch {
     return null
   }
@@ -204,9 +205,9 @@ interface FindingContext {
   readonly baseRun: CheckRun
 }
 
-async function checkLevelFinding(context: FindingContext, klass: FindingClass): Promise<Finding> {
+function checkLevelFinding(context: FindingContext, klass: FindingClass): Finding {
   const { kind } = context.outcome
-  const manifest = await readFileOrNull(join(context.headCheckout, 'package.json'))
+  const manifest = readFileOrNull(context.headCheckout, 'package.json')
   const script = manifest === null ? null : scriptLine(manifest, kind)
   const claim = `\`${quoteArgv(context.headRun.argv)}\` fails on head and passes on base`
   const anchorPath = 'package.json'
@@ -230,11 +231,8 @@ async function checkLevelFinding(context: FindingContext, klass: FindingClass): 
   }
 }
 
-async function diagnosticFinding(
-  context: FindingContext,
-  diagnostic: TscDiagnostic,
-): Promise<Finding> {
-  const source = await readFileOrNull(join(context.headCheckout, diagnostic.path))
+function diagnosticFinding(context: FindingContext, diagnostic: TscDiagnostic): Finding {
+  const source = readFileOrNull(context.headCheckout, diagnostic.path)
   const sourceLine = source?.split(/\r?\n/)[diagnostic.line - 1] ?? ''
   const claim = `${diagnostic.code}: ${diagnostic.message}`
   return {
@@ -267,7 +265,7 @@ async function diagnosticFinding(
   }
 }
 
-async function findingsFor(context: FindingContext): Promise<Finding[]> {
+function findingsFor(context: FindingContext): Finding[] {
   const klass = FINDING_CLASS_BY_KIND[context.outcome.kind]
   if (klass === undefined) return []
   if (klass === 'type') {
@@ -276,10 +274,10 @@ async function findingsFor(context: FindingContext): Promise<Finding[]> {
       parseTscDiagnostics(context.headRun.output),
     )
     if (fresh.length > 0) {
-      return Promise.all(fresh.map((diagnostic) => diagnosticFinding(context, diagnostic)))
+      return fresh.map((diagnostic) => diagnosticFinding(context, diagnostic))
     }
   }
-  return [await checkLevelFinding(context, klass)]
+  return [checkLevelFinding(context, klass)]
 }
 
 interface TargetRuns {
@@ -294,10 +292,12 @@ async function runTarget(
   commands: readonly CheckCommand[],
   kinds: ReadonlySet<CheckKind>,
   scrub: (text: string) => string,
+  signal?: AbortSignal,
 ): Promise<TargetRuns> {
   const runs = new Map<CheckKind, CheckRun>()
   let prepareFailure: string | null = null
   for (const command of commands) {
+    signal?.throwIfAborted()
     if (command.kind !== 'prepare' && !kinds.has(command.kind)) continue
     if (prepareFailure !== null) break
     const result = await cell.run({
@@ -305,6 +305,7 @@ async function runTarget(
       argv: command.argv,
       timeoutMs: command.timeoutMs,
       maxOutputBytes: STAGE0_MAX_OUTPUT_BYTES,
+      signal,
     })
     const run: CheckRun = {
       kind: command.kind,
@@ -404,7 +405,10 @@ export async function openReviewGround(options: Stage0Options): Promise<ReviewGr
 
   if (!decision.execute) return ground({ head: null, base: null })
 
-  scratchDir = await mkdtemp(join(options.scratchParent ?? tmpdir(), 'copse-review-'))
+  // Pass canonical paths into the sandbox; /var and /tmp are host symlinks on macOS.
+  scratchDir = await realpath(
+    await mkdtemp(join(options.scratchParent ?? tmpdir(), 'copse-review-')),
+  )
   try {
     checkouts = await materialiseCheckouts({
       repoRoot: options.repoRoot,
@@ -414,8 +418,8 @@ export async function openReviewGround(options: Stage0Options): Promise<ReviewGr
       ...(options.git ? { git: options.git } : {}),
     })
     const project = {
-      head: await detectProjectCommands(checkouts.head),
-      base: await detectProjectCommands(checkouts.base),
+      head: detectProjectCommands(checkouts.head),
+      base: detectProjectCommands(checkouts.base),
     }
     if (project.head.ecosystem === 'unsupported') return ground(project)
 
@@ -438,7 +442,11 @@ export async function openReviewGround(options: Stage0Options): Promise<ReviewGr
 }
 
 /** Run the checks on an open ground and compute the delta. Leaves the ground open. */
-export async function runStage0Checks(ground: ReviewGround): Promise<Stage0Report> {
+export async function runStage0Checks(
+  ground: ReviewGround,
+  signal?: AbortSignal,
+): Promise<Stage0Report> {
+  signal?.throwIfAborted()
   const { options, decision } = ground
   const now = options.now ?? Date.now
   const started = now()
@@ -486,7 +494,7 @@ export async function runStage0Checks(ground: ReviewGround): Promise<Stage0Repor
   const scrub = (text: string): string => ground.scrub(text)
 
   const headKinds = new Set(checkKinds(headProject))
-  const headRuns = await runTarget(cell, 'head', headProject.commands, headKinds, scrub)
+  const headRuns = await runTarget(cell, 'head', headProject.commands, headKinds, scrub, signal)
 
   const failedOnHead = new Set<CheckKind>()
   for (const [kind, run] of headRuns.runs) {
@@ -495,7 +503,7 @@ export async function runStage0Checks(ground: ReviewGround): Promise<Stage0Repor
   const baseKinds = new Set(checkKinds(baseProject).filter((kind) => failedOnHead.has(kind)))
   const baseRuns =
     baseKinds.size > 0 && baseProject.ecosystem !== 'unsupported'
-      ? await runTarget(cell, 'base', baseProject.commands, baseKinds, scrub)
+      ? await runTarget(cell, 'base', baseProject.commands, baseKinds, scrub, signal)
       : { runs: new Map<CheckKind, CheckRun>(), prepareFailure: null }
 
   const checks: CheckOutcome[] = []
@@ -536,12 +544,12 @@ export async function runStage0Checks(ground: ReviewGround): Promise<Stage0Repor
       const outcome: CheckOutcome = { kind, verdict: 'regressed', head, base }
       checks.push(outcome)
       findings.push(
-        ...(await findingsFor({
+        ...findingsFor({
           headCheckout: checkouts.head,
           outcome,
           headRun: head,
           baseRun: base,
-        })),
+        }),
       )
       continue
     }
@@ -575,5 +583,39 @@ export async function runStage0(options: Stage0Options): Promise<Stage0Report> {
     return await runStage0Checks(ground)
   } finally {
     await ground.close()
+  }
+}
+
+/** Prepare base lazily for verification, including build artifacts when needed. */
+export async function prepareVerificationBase(
+  ground: ReviewGround,
+  stage0: Stage0Report,
+  signal: AbortSignal,
+): Promise<void> {
+  signal.throwIfAborted()
+  const project = ground.project.base
+  if (ground.cell === null || project === null || project.ecosystem === 'unsupported') {
+    throw new Error('The base checkout cannot be prepared for verification')
+  }
+  const commands = project.commands.filter((command) =>
+    command.kind === 'prepare'
+      ? stage0.preparation.base?.status !== 'passed'
+      : command.kind === 'build' &&
+        !stage0.checks.some((check) => check.kind === 'build' && check.base?.status === 'passed'),
+  )
+  const result = await runTarget(
+    ground.cell,
+    'base',
+    commands,
+    new Set(['build']),
+    (text) => ground.scrub(text),
+    signal,
+  )
+  for (const run of result.runs.values()) {
+    if (run.status !== 'passed') {
+      throw new Error(
+        `Base ${run.kind} ${run.status}; reproducer comparison is unavailable: ${run.output}`,
+      )
+    }
   }
 }

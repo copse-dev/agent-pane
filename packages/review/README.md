@@ -50,14 +50,15 @@ Stage 3 clustering, and Stage 4 verification by reproducer and adversarial chall
   the report always says what was not checked and why.
 - **`context.ts`** — Stage 1: the diff against the merge-base (committed plus the overlaid
   working tree), budgeted per file so a large change drops lockfiles and generated files
-  first and then cuts each remaining file at a line boundary, never mid-hunk; the
+  first and then cuts retained files at a line boundary within a strict total cap; the
   repository's `AGENTS.md` / `CLAUDE.md` / `CONTRIBUTING.md`; and a test map for the
   touched files.
 - **`lenses.ts`** — a lens is a scoped brief with a step budget: `correctness` (the default),
   `contracts`, `tests`, `security`, `concurrency`; `--lenses all` runs every one. All stay
   inside B4. The system prompt restates the quality bar as rules.
 - **`reviewer-tools.ts`** — the reviewer's tools, jailed to the head checkout:
-  `read_file`, `list_dir`, `search_code`, `git_diff`; `run_command`, brokered into the
+  `read_file`, `list_dir`, `search_code` (without following checkout symlinks), and
+  `git_diff` (complete per-file diffs paged by character offset); `run_command`, brokered into the
   cell and gated by the run's permission profile, with its output wrapped as external
   content and secret-scrubbed; and `report_finding`, through which every candidate
   arrives as a structured, anchored object rather than prose.
@@ -91,13 +92,13 @@ Stage 3 clustering, and Stage 4 verification by reproducer and adversarial chall
 ## Running it on this repository
 
 ```bash
-pnpm run review -- --allow-unisolated --no-model                 # Stage 0 only
-pnpm run review -- --allow-unisolated --model claude-sonnet-5    # plus one model reviewer
-pnpm run review -- --allow-unisolated --provider lmstudio --model qwen3-coder
-pnpm run review -- --allow-unisolated --model claude-sonnet-5 --model gpt-5 --lenses all
-pnpm run review -- --allow-unisolated --model qwen3-coder --challenger claude-sonnet-5
-pnpm run review -- --allow-unisolated --json report.json --sarif report.sarif --events turns.jsonl
-pnpm run review -- --help
+pnpm run review --allow-unisolated --no-model                 # Stage 0 only
+pnpm run review --allow-unisolated --model claude-sonnet-5    # plus one model reviewer
+pnpm run review --allow-unisolated --provider lmstudio --model qwen3-coder
+pnpm run review --allow-unisolated --model claude-sonnet-5 --model gpt-5 --lenses all
+pnpm run review --allow-unisolated --model qwen3-coder --challenger claude-sonnet-5
+pnpm run review --allow-unisolated --json report.json --sarif report.sarif --events turns.jsonl
+pnpm run review --help
 ```
 
 `--allow-unisolated` is the consent the trust table requires outside the app, where the
@@ -105,6 +106,12 @@ only backend is the host process. Findings are the output, never the exit code; 
 codes are the headless contract's: `0` the reviewer looked, `1` the model turn failed, `2`
 bad usage or an undetectable project, `3` execution was refused for want of consent or
 isolation, `130` cancelled.
+
+The CLI discovers the standard host pnpm store (or the absolute
+`npm_config_store_dir` / `PNPM_HOME` environment setting) without running pnpm
+or reading repository configuration. Pass `--store` for a custom store configured
+only in `.npmrc`. Base dependencies and build artifacts are prepared lazily before
+the first reproducer, even when every Stage 0 check passed on head.
 
 ## Not yet here
 

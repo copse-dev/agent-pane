@@ -501,7 +501,9 @@ On `main` under `packages/review/` (README there), with the app-side adapter und
   Decisions made while building it, recorded so the next phase does not re-derive them:
   - **Head runs first; base runs only for the checks that failed on head.** A passing
     head check can produce no finding, so the clean case costs one pass, not two. The
-    "fixed" verdict is therefore only ever observed incidentally.
+    "fixed" verdict is therefore only ever observed incidentally. Stage 4 separately
+    prepares dependencies and build output on base before its first reproducer, reusing
+    successful Stage 0 work. Preparation failure leaves the finding unverified.
   - **A lint regression is a failed check, never a finding.** The Stage 0 text above
     lists `lint` beside `build` and `type`, and B4's class list does not include it; B4
     is binding, and §The quality bar already says a lint failure "is a lint failure, not
@@ -514,6 +516,9 @@ On `main` under `packages/review/` (README there), with the app-side adapter und
     (`COREPACK_ENABLE_NETWORK=0`), since a cell with its own `HOME` would otherwise try to
     download the pinned package manager. This is P1's "read-only dependency cache" in its
     simplest form; a registry allowlist stays open.
+    The CLI discovers the store using filesystem paths and environment settings only;
+    it never runs `pnpm store path`, which can execute a repository's `.pnpmfile.cjs`
+    before consent. A store configured only in `.npmrc` needs `--store`.
   - **`review.config.json`** is the §Configuration file, Phase 0 subset: an argv per
     command, `null` to disable one, and per-command timeouts. It is repo-controlled, so
     its argv only ever runs inside the cell; the orchestrator reads it as data.
@@ -533,6 +538,13 @@ On `main` under `packages/review/` (README there), with the app-side adapter und
   `os-sandbox`), which spawns ASRT's wrapped argv itself rather than through
   `spawnInProjectSandbox` because that path layers the app's own environment underneath
   the caller's, and a review cell's environment must be exactly the allowlist.
+  The OS overlay denies host reads by default, then allows declared cell paths, read-only
+  mounts and installed system/toolchain resources. Scratch paths are canonical so macOS
+  temporary-directory aliases do not need broader access. A live seatbelt test checks
+  permitted reads and execution against an outside canary.
+  Cancellation reaches Stage 0 and every command, kills the process group and waits for
+  command closure before removing scratch. On POSIX, a leader's normal exit also kills
+  remaining descendants in its process group; background commands cannot outlive it.
 - **The conformance test** (`hostile-fixture.test.ts`): a hostile repository — a prepare
   step that dumps its environment, a build that reads `$HOME/.copse` and the
   orchestrator's secrets file, a test that writes outside the cell, a README aimed at an
@@ -558,7 +570,9 @@ The CLI shell (Shell A), on `main` in the same package, as `copse-review` (the p
   out-of-range anchor), so Problem 3 never re-enters through the model's output. Stage 5
   mints the content-derived id from that anchored source.
 - **The reviewer's tools are brokered, not the loop.** Reads are served over the head
-  checkout as data, jailed to it. `run_command` is the only executing tool: it runs argv
+  checkout as data, jailed to it. Host-side reads and reproducer writes reject symlinks
+  below the canonical checkout root, and final file opens use `O_NOFOLLOW`; recursive
+  searches skip symlinks. `run_command` is the only executing tool: it runs argv
   (never a shell string) in the cell, is gated by the run's permission profile, and its
   output comes back secret-scrubbed and wrapped as external content (P7).
 - **Headless conformance.** The model turn is projected onto the headless contract's event
@@ -570,8 +584,11 @@ The CLI shell (Shell A), on `main` in the same package, as `copse-review` (the p
   repository and the base ref, not a prompt. That reading is recorded here rather than
   forced.
 - **Per-file diff budgeting** replaces the flat 12k truncation: lockfiles, generated files,
-  build output and binaries are dropped (and listed), then every remaining file keeps a
-  proportional share cut at a line boundary. The reviewer reads the rest through its tools.
+  build output and binaries are dropped (and listed). Remaining files receive a minimum
+  useful share only while the total budget permits it, then divide the remaining budget
+  proportionally. Truncation notices count toward the cap. `git_diff` pages the complete
+  per-file diff by character offset, including deleted files and changes omitted from
+  the initial context. Git text conversions and external diff helpers are disabled.
 - **Ranking** is severity × confidence, plus a bonus for executable evidence and a confirmed
   verdict, minus a penalty for a finding one reviewer raised, nobody corroborated and
   nothing verified; refuted findings never reach the list; seven are surfaced and the rest
@@ -583,6 +600,7 @@ The CLI shell (Shell A), on `main` in the same package, as `copse-review` (the p
   redaction. `--provider mock` plays a scripted reviewer, which is how the pipeline is
   tested end to end without a model.
 - **The bin is a one-line shim** over the TypeScript source, which Node strips on load.
+  Flags work directly and with the optional separator forwarded by `pnpm run review --`.
   Publishing to npm needs a bundle step; nothing in this repository publishes yet, so that
   is left with D4.
 

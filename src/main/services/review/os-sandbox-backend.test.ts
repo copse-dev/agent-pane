@@ -1,6 +1,10 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { homedir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
+import { mkdtemp, mkdir, realpath, rm, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { execFileSync } from 'node:child_process'
+import { wrapCommandWithSandboxMacOS } from '@anthropic-ai/sandbox-runtime/dist/sandbox/macos-sandbox-utils.js'
 import type { CellSpec } from '@copse/review/isolation.ts'
 import { createOsSandboxBackend, reviewCellSandboxOverlay } from './os-sandbox-backend.ts'
 
@@ -39,8 +43,8 @@ describe('reviewCellSandboxOverlay', () => {
     assert.ok(fs.denyWrite.includes('/tmp/review-cell/head/.git/hooks'))
   })
 
-  it('denies the home directory and re-allows only the cell and its read-only paths', () => {
-    assert.deepEqual(fs.denyRead, [homedir()])
+  it('denies the host filesystem and re-allows declared paths and runtimes', () => {
+    assert.deepEqual(fs.denyRead, ['/'])
     const allow = fs.allowRead ?? []
     for (const path of [
       '/tmp/review-cell/base/**',
@@ -71,3 +75,55 @@ describe('createOsSandboxBackend', () => {
     assert.equal(createOsSandboxBackend(), null)
   })
 })
+
+it(
+  'enforces read containment with real macOS seatbelt',
+  { skip: process.platform !== 'darwin' },
+  async () => {
+    const scratch = await realpath(await mkdtemp(join(tmpdir(), 'review-seatbelt-')))
+    const cell = join(scratch, 'cell')
+    const outside = join(scratch, 'outside.txt')
+    await mkdir(cell)
+    await writeFile(outside, 'HOST_CANARY')
+    await writeFile(join(cell, 'inside.txt'), 'CELL_DATA')
+    try {
+      const overlay = reviewCellSandboxOverlay({
+        ...spec,
+        scratchDir: cell,
+        checkouts: { base: cell, head: cell },
+        readOnlyPaths: [],
+      })
+      const filesystem = overlay.filesystem
+      assert.ok(filesystem)
+      const run = (command: string): string =>
+        execFileSync(
+          '/bin/sh',
+          [
+            '-c',
+            wrapCommandWithSandboxMacOS({
+              command,
+              needsNetworkRestriction: true,
+              readConfig: {
+                denyOnly: filesystem.denyRead,
+                allowWithinDeny: filesystem.allowRead ?? [],
+              },
+              writeConfig: {
+                allowOnly: filesystem.allowWrite,
+                denyWithinAllow: filesystem.denyWrite,
+              },
+              binShell: '/bin/sh',
+            }),
+          ],
+          { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+        )
+      assert.equal(run(`/bin/cat '${join(cell, 'inside.txt')}'`), 'CELL_DATA')
+      assert.throws(() => run(`/bin/cat '${outside}'`), /Operation not permitted/)
+      assert.equal(
+        run(`'${process.execPath}' -e 'process.stdout.write("node works")'`),
+        'node works',
+      )
+    } finally {
+      await rm(scratch, { recursive: true, force: true })
+    }
+  },
+)

@@ -1,18 +1,19 @@
 import { after, before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ReviewContext } from './context.ts'
 import { createHostProcessBackend } from './host-process-backend.ts'
 import { cellEnvironment, type ExecutionCell } from './isolation.ts'
+import { createTestRepo, type TestRepo } from './test-repo.ts'
 import { createReviewerToolExecutor, jailPath, type ReviewerToolHost } from './reviewer-tools.ts'
 
 const signal = new AbortController().signal
 
-function contextFor(files: ReviewContext['files']): ReviewContext {
+function contextFor(files: ReviewContext['files'], mergeBase = 'a'.repeat(40)): ReviewContext {
   return {
-    mergeBase: 'a'.repeat(40),
+    mergeBase,
     headCommit: 'b'.repeat(40),
     dirtyWorkingTree: false,
     files,
@@ -24,15 +25,18 @@ function contextFor(files: ReviewContext['files']): ReviewContext {
 }
 
 describe('reviewer tools', () => {
+  let repo: TestRepo
   let root = ''
   let cellScratch = ''
   let cell: ExecutionCell
   let host: ReviewerToolHost
 
   before(async () => {
-    root = await mkdtemp(join(tmpdir(), 'review-tools-'))
+    repo = await createTestRepo({ 'src/a.ts': 'old source\n', 'pnpm-lock.yaml': 'old lock\n' })
+    root = repo.root
     cellScratch = await mkdtemp(join(tmpdir(), 'review-tools-cell-'))
-    await mkdir(join(root, 'src'))
+    await mkdir(join(root, 'src'), { recursive: true })
+    await writeFile(join(root, 'pnpm-lock.yaml'), 'new lock\n')
     await mkdir(join(root, 'node_modules', 'dep'), { recursive: true })
     await writeFile(join(root, 'src', 'a.ts'), 'line one\nconst secret = 1\nline three\n')
     await writeFile(join(root, 'node_modules', 'dep', 'index.js'), 'const secret = 2\n')
@@ -48,25 +52,28 @@ describe('reviewer tools', () => {
     })
     host = {
       headCheckout: root,
-      context: contextFor([
-        {
-          path: 'src/a.ts',
-          status: 'modified',
-          additions: 1,
-          deletions: 0,
-          text: 'diff --git a/src/a.ts b/src/a.ts\n+const secret = 1\n',
-          truncated: false,
-        },
-        {
-          path: 'pnpm-lock.yaml',
-          status: 'modified',
-          additions: 1,
-          deletions: 1,
-          text: '',
-          truncated: false,
-          dropped: 'lockfile',
-        },
-      ]),
+      context: contextFor(
+        [
+          {
+            path: 'src/a.ts',
+            status: 'modified',
+            additions: 1,
+            deletions: 0,
+            text: 'diff --git a/src/a.ts b/src/a.ts\n+const secret = 1\n',
+            truncated: false,
+          },
+          {
+            path: 'pnpm-lock.yaml',
+            status: 'modified',
+            additions: 1,
+            deletions: 1,
+            text: '',
+            truncated: false,
+            dropped: 'lockfile',
+          },
+        ],
+        repo.git('rev-parse', 'HEAD'),
+      ),
       cell,
       shellDecision: 'allow',
       scrub: (text: string): string => text.replaceAll('probe', '[SCRUBBED]'),
@@ -79,10 +86,10 @@ describe('reviewer tools', () => {
     await rm(cellScratch, { recursive: true, force: true })
   })
 
-  it('jails every path to the head checkout', () => {
-    assert.equal(jailPath('/repo', 'src/a.ts'), '/repo/src/a.ts')
-    assert.throws(() => jailPath('/repo', '../etc/passwd'), /outside/)
-    assert.throws(() => jailPath('/repo', '/etc/passwd'), /outside/)
+  it('jails every path to the head checkout', async () => {
+    assert.equal(jailPath(root, 'src/a.ts'), await realpath(join(root, 'src/a.ts')))
+    assert.throws(() => jailPath(root, '../etc/passwd'), /outside/)
+    assert.throws(() => jailPath(root, '/etc/passwd'), /outside/)
   })
 
   it('reads numbered line windows and lists directories', async () => {
@@ -102,9 +109,12 @@ describe('reviewer tools', () => {
     )
     assert.match(
       await executor.execute('read_file', { path: '../x' }, signal, 't3'),
-      /^Error: Path is outside/,
+      /^Error: .*Path is outside/,
     )
-    assert.equal(await executor.execute('list_dir', {}, signal, 't4'), 'f probe.cjs\nd src')
+    assert.equal(
+      await executor.execute('list_dir', {}, signal, 't4'),
+      'f .gitignore\nf pnpm-lock.yaml\nf probe.cjs\nd src',
+    )
   })
 
   it('searches with a regex, skipping node_modules, and treats a bad pattern literally', async () => {
@@ -123,7 +133,7 @@ describe('reviewer tools', () => {
     )
   })
 
-  it('serves the full per-file diff and explains an omitted one', async () => {
+  it('serves the original per-file diff even when omitted from context', async () => {
     const executor = createReviewerToolExecutor(host)
     assert.match(
       await executor.execute('git_diff', { path: 'src/a.ts' }, signal, 't1'),
@@ -131,7 +141,7 @@ describe('reviewer tools', () => {
     )
     assert.match(
       await executor.execute('git_diff', { path: 'pnpm-lock.yaml' }, signal, 't2'),
-      /omitted.*lockfile/,
+      /\+new lock/,
     )
     assert.match(
       await executor.execute('git_diff', { path: 'nope.ts' }, signal, 't3'),
@@ -201,5 +211,77 @@ describe('reviewer tools', () => {
       await executor.execute('write_file', {}, signal, 't1'),
       'Error: Unknown tool: write_file',
     )
+  })
+  it('rejects linked reads and listings and skips links during recursive search', async () => {
+    const outside = await mkdtemp(join(tmpdir(), 'review-outside-'))
+    try {
+      await writeFile(join(outside, 'canary.txt'), 'OUTSIDE_CANARY')
+      await symlink(outside, join(root, 'linked'), 'junction')
+      const executor = createReviewerToolExecutor({ ...host, cell: null, shellDecision: 'deny' })
+      assert.match(
+        await executor.execute('read_file', { path: 'linked/canary.txt' }, signal, 's1'),
+        /Error: .*Symlink/,
+      )
+      assert.match(
+        await executor.execute('list_dir', { path: 'linked' }, signal, 's2'),
+        /Error: .*Symlink/,
+      )
+      assert.match(
+        await executor.execute('search_code', { path: 'linked', pattern: 'CANARY' }, signal, 's3'),
+        /Error: .*Symlink/,
+      )
+      assert.equal(
+        await executor.execute('search_code', { pattern: 'OUTSIDE_CANARY' }, signal, 's4'),
+        'No matches.',
+      )
+    } finally {
+      await rm(join(root, 'linked'), { force: true })
+      await rm(outside, { recursive: true, force: true })
+    }
+  })
+
+  it('pages the original diff of a deleted file beyond the prompt budget', async () => {
+    const deleted = await createTestRepo({
+      'deleted.ts': '// padding line\n'.repeat(2000) + '// DELETED_CHECK\n',
+    })
+    try {
+      const mergeBase = deleted.git('rev-parse', 'HEAD')
+      await rm(join(deleted.root, 'deleted.ts'))
+      const executor = createReviewerToolExecutor({
+        ...host,
+        headCheckout: deleted.root,
+        context: contextFor(
+          [
+            {
+              path: 'deleted.ts',
+              status: 'deleted',
+              additions: 0,
+              deletions: 2001,
+              text: 'truncated',
+              truncated: true,
+            },
+          ],
+          mergeBase,
+        ),
+      })
+      const first = await executor.execute('git_diff', { path: 'deleted.ts' }, signal, 'd1')
+      assert.doesNotMatch(first, /DELETED_CHECK/)
+      assert.match(first, /offset 16000/)
+      const second = await executor.execute(
+        'git_diff',
+        { path: 'deleted.ts', offset: 16000 },
+        signal,
+        'd2',
+      )
+      const third = await executor.execute(
+        'git_diff',
+        { path: 'deleted.ts', offset: 32000 },
+        signal,
+        'd3',
+      )
+      assert.match(second + third, /DELETED_CHECK/)
+    } finally {
+      await deleted.remove()
+    }
   })
 })

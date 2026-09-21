@@ -22,7 +22,7 @@ export function appendTailCapped(
 }
 
 /** Kill the child's whole process group when it was spawned detached, else the child. */
-function killTree(child: ChildProcess, signal: NodeJS.Signals): void {
+export function killProcessTree(child: ChildProcess, signal: NodeJS.Signals): void {
   if (child.pid === undefined) return
   try {
     process.kill(-child.pid, signal)
@@ -66,19 +66,39 @@ export function collectProcess(
   child.stderr?.on('data', onChunk)
 
   return new Promise((resolve, reject) => {
+    const onAbort = (): void => {
+      killProcessTree(child, 'SIGKILL')
+    }
+    command.signal?.addEventListener('abort', onAbort, { once: true })
+    if (command.signal?.aborted) onAbort()
+    // The leader can exit while grandchildren still hold pipes or run with
+    // ignored stdio. End the whole command lifetime at the leader's exit.
+    child.once('exit', () => {
+      killProcessTree(child, 'SIGKILL')
+    })
     const timer =
       command.timeoutMs > 0
         ? setTimeout(() => {
             timedOut = true
-            killTree(child, 'SIGKILL')
+            killProcessTree(child, 'SIGKILL')
           }, command.timeoutMs)
         : null
     child.once('error', (err) => {
       if (timer) clearTimeout(timer)
+      command.signal?.removeEventListener('abort', onAbort)
       reject(err)
     })
     child.once('close', (code, signal) => {
       if (timer) clearTimeout(timer)
+      command.signal?.removeEventListener('abort', onAbort)
+      if (command.signal?.aborted) {
+        reject(
+          command.signal.reason instanceof Error
+            ? command.signal.reason
+            : new Error('Review command cancelled'),
+        )
+        return
+      }
       resolve({
         target: command.target,
         argv: [...command.argv],

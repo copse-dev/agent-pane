@@ -43,7 +43,7 @@ describe('detectProjectCommands', () => {
       }),
     })
     roots.push(root)
-    const detected = await detectProjectCommands(root)
+    const detected = detectProjectCommands(root)
     if (detected.ecosystem === 'unsupported') throw new Error(detected.reason)
     assert.equal(detected.ecosystem, 'typescript-pnpm')
     assert.equal(detected.source, 'package.json')
@@ -65,7 +65,7 @@ describe('detectProjectCommands', () => {
       'tsconfig.json': '{}',
     })
     roots.push(root)
-    const detected = await detectProjectCommands(root)
+    const detected = detectProjectCommands(root)
     assert.equal(detected.ecosystem, 'typescript-pnpm')
   })
 
@@ -82,9 +82,9 @@ describe('detectProjectCommands', () => {
     })
     const empty = await project({})
     roots.push(npm, js, empty)
-    assert.match(reasonOf(await detectProjectCommands(npm)), /pnpm.*B5/)
-    assert.match(reasonOf(await detectProjectCommands(js)), /tsconfig/)
-    assert.match(reasonOf(await detectProjectCommands(empty)), /package\.json/)
+    assert.match(reasonOf(detectProjectCommands(npm)), /pnpm.*B5/)
+    assert.match(reasonOf(detectProjectCommands(js)), /tsconfig/)
+    assert.match(reasonOf(detectProjectCommands(empty)), /package\.json/)
   })
 
   it('lets review.config.json override, disable and time-limit commands', async () => {
@@ -100,7 +100,7 @@ describe('detectProjectCommands', () => {
       }),
     })
     roots.push(root)
-    const detected = await detectProjectCommands(root)
+    const detected = detectProjectCommands(root)
     if (detected.ecosystem === 'unsupported') throw new Error(detected.reason)
     assert.equal(detected.ecosystem, 'configured')
     assert.equal(detected.source, REVIEW_CONFIG_FILENAME)
@@ -115,7 +115,7 @@ describe('detectProjectCommands', () => {
       [REVIEW_CONFIG_FILENAME]: JSON.stringify({ commands: { build: ['make'] } }),
     })
     roots.push(root)
-    const detected = await detectProjectCommands(root)
+    const detected = detectProjectCommands(root)
     assert.equal(detected.ecosystem, 'configured')
   })
 
@@ -124,6 +124,6 @@ describe('detectProjectCommands', () => {
       [REVIEW_CONFIG_FILENAME]: JSON.stringify({ commands: { test: 'vitest run' } }),
     })
     roots.push(root)
-    assert.match(reasonOf(await detectProjectCommands(root)), /review\.config\.json/)
+    assert.match(reasonOf(detectProjectCommands(root)), /review\.config\.json/)
   })
 })

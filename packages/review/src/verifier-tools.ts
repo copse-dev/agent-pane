@@ -9,18 +9,17 @@
 // The CHALLENGER reads and runs like a reviewer and closes with `verdict`:
 // refuted, with the lines that show the claim wrong; stands, when it actively
 // confirmed the defect; or undetermined. The burden of proof is on the finding.
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { rm } from 'node:fs/promises'
 import { z } from 'zod'
 import type { LLMTool } from '@copse/llm/wire-types.ts'
 import { wrapExternalContent } from '@copse/agent/external-content.ts'
 import { decodeWithSchema } from '@copse/std/safe-json.ts'
 import { errorMessage } from '@copse/std/errors.ts'
+import { jailPath, readCheckoutFile, writeCheckoutFile } from './checkout-fs.ts'
 import type { CellCommandResult } from './isolation.ts'
 import {
   MAX_TOOL_OUTPUT_CHARS,
   createReviewerToolExecutor,
-  jailPath,
   reviewerTools,
   type ReviewerToolExecutor,
   type ReviewerToolHost,
@@ -65,6 +64,7 @@ export interface ReproducerRun {
 
 export interface VerifierToolHost extends ReviewerToolHost {
   readonly baseCheckout: string
+  prepareBase(signal: AbortSignal): Promise<void>
 }
 
 export function challengerTools(): LLMTool[] {
@@ -121,14 +121,7 @@ export function createVerifierToolExecutor(host: VerifierToolHost): VerifierTool
   let verdict: ChallengeVerdict | null = null
   let reproducer: ReproducerRun | null = null
 
-  async function writeInto(checkout: string, path: string, content: string): Promise<string> {
-    const file = jailPath(checkout, path)
-    await mkdir(dirname(file), { recursive: true })
-    await writeFile(file, content, 'utf8')
-    return file
-  }
-
-  async function runReproducer(request: ReproducerRequest): Promise<string> {
+  async function runReproducer(request: ReproducerRequest, signal: AbortSignal): Promise<string> {
     if (host.cell === null || host.shellDecision !== 'allow') {
       return 'Error: commands cannot run in this review, so a reproducer cannot be executed'
     }
@@ -138,20 +131,25 @@ export function createVerifierToolExecutor(host: VerifierToolHost): VerifierTool
     }
     const [file, ...rest] = request.argv
     if (file === undefined) return 'Error: argv is empty'
-    await writeInto(host.headCheckout, normalised, request.content)
-    const baseFile = await writeInto(host.baseCheckout, normalised, request.content)
+    signal.throwIfAborted()
+    await host.prepareBase(signal)
+    signal.throwIfAborted()
+    writeCheckoutFile(host.headCheckout, normalised, request.content)
+    writeCheckoutFile(host.baseCheckout, normalised, request.content)
     try {
       const head = await host.cell.run({
         target: 'head',
         argv: [file, ...rest],
         timeoutMs: REPRODUCER_TIMEOUT_MS,
         maxOutputBytes: MAX_TOOL_OUTPUT_CHARS * 4,
+        signal,
       })
       const baseRun = await host.cell.run({
         target: 'base',
         argv: [file, ...rest],
         timeoutMs: REPRODUCER_TIMEOUT_MS,
         maxOutputBytes: MAX_TOOL_OUTPUT_CHARS * 4,
+        signal,
       })
       const scrubbed = {
         head: { ...head, output: host.scrub(head.output) },
@@ -160,6 +158,7 @@ export function createVerifierToolExecutor(host: VerifierToolHost): VerifierTool
       const confirms =
         !scrubbed.head.timedOut &&
         !scrubbed.base.timedOut &&
+        scrubbed.head.exitCode !== null &&
         scrubbed.head.exitCode !== 0 &&
         scrubbed.base.exitCode === 0
       reproducer = {
@@ -183,7 +182,7 @@ export function createVerifierToolExecutor(host: VerifierToolHost): VerifierTool
       ].join('\n')
     } finally {
       // Base stays pristine for the next reproducer; head keeps the artefact.
-      await rm(baseFile, { force: true })
+      await rm(jailPath(host.baseCheckout, normalised), { force: true })
     }
   }
 
@@ -202,7 +201,7 @@ export function createVerifierToolExecutor(host: VerifierToolHost): VerifierTool
           const input = reproducerArgs(args)
           if (input === null)
             return 'Error: write_reproducer needs { path, content, argv: string[] }'
-          return await runReproducer(input)
+          return await runReproducer(input, signal)
         }
         return await base.execute(name, args, signal, toolCallId)
       } catch (err) {
@@ -215,9 +214,9 @@ export function createVerifierToolExecutor(host: VerifierToolHost): VerifierTool
 }
 
 /** Read the artefact a reproducer left in the head checkout, for the report. */
-export async function readReproducer(headCheckout: string, path: string): Promise<string | null> {
+export function readReproducer(headCheckout: string, path: string): string | null {
   try {
-    return await readFile(join(headCheckout, path), 'utf8')
+    return readCheckoutFile(headCheckout, path)
   } catch {
     return null
   }

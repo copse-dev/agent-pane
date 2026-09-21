@@ -4,11 +4,10 @@
 // command with a `review.config.json` at its root (§Configuration); that file
 // is repo-controlled, so its argv only ever runs INSIDE the cell — the
 // orchestrator reads it as data and never evaluates it.
-import { readFile } from 'node:fs/promises'
-import { join } from 'node:path'
 import { z } from 'zod'
 import { safeJsonParse, decodeWithSchema } from '@copse/std/safe-json.ts'
 import { memberOf } from '@copse/std/member-of.ts'
+import { readCheckoutFile } from './checkout-fs.ts'
 
 /** In run order. `prepare` installs dependencies; the rest are the checks. */
 export const CHECK_KINDS = ['prepare', 'build', 'typecheck', 'lint', 'test'] as const
@@ -92,9 +91,9 @@ const packageManifestSchema = z.object({
 })
 const decodePackageManifest = decodeWithSchema(packageManifestSchema)
 
-async function readOptional(path: string): Promise<string | null> {
+function readOptional(root: string, path: string): string | null {
   try {
-    return await readFile(path, 'utf8')
+    return readCheckoutFile(root, path)
   } catch {
     return null
   }
@@ -115,10 +114,8 @@ function timeoutFor(kind: CheckKind, config: ReviewConfig | null): number {
  * Detect the commands for one checkout. Detection is per checkout because base
  * and head may declare different scripts; the delta pairs the results by kind.
  */
-export async function detectProjectCommands(
-  checkoutRoot: string,
-): Promise<ProjectCommands | UnsupportedProject> {
-  const configText = await readOptional(join(checkoutRoot, REVIEW_CONFIG_FILENAME))
+export function detectProjectCommands(checkoutRoot: string): ProjectCommands | UnsupportedProject {
+  const configText = readOptional(checkoutRoot, REVIEW_CONFIG_FILENAME)
   let config: ReviewConfig | null = null
   if (configText !== null) {
     config = safeJsonParse(configText, decodeReviewConfig)
@@ -127,11 +124,11 @@ export async function detectProjectCommands(
     }
   }
 
-  const manifestText = await readOptional(join(checkoutRoot, 'package.json'))
+  const manifestText = readOptional(checkoutRoot, 'package.json')
   const manifest = manifestText === null ? null : safeJsonParse(manifestText, decodePackageManifest)
-  const lockfile = await readOptional(join(checkoutRoot, 'pnpm-lock.yaml'))
+  const lockfile = readOptional(checkoutRoot, 'pnpm-lock.yaml')
   const usesPnpm = lockfile !== null || (manifest?.packageManager?.startsWith('pnpm@') ?? false)
-  const tsconfig = await readOptional(join(checkoutRoot, 'tsconfig.json'))
+  const tsconfig = readOptional(checkoutRoot, 'tsconfig.json')
   const usesTypeScript =
     tsconfig !== null ||
     Object.hasOwn(manifest?.devDependencies ?? {}, 'typescript') ||

@@ -5,7 +5,8 @@
 // — to `@copse/review`'s `IsolationBackend`. The cell's processes may read and
 // write their two checkouts and the scratch directory, read the declared
 // read-only paths (the dependency store, the repository's git directory) and
-// the Node toolchain, and nothing under the home directory; they get no
+// the installed toolchains and system runtime files. Other host reads are
+// denied, including files outside the home directory; they get no
 // network at all. Their environment is the one the orchestrator built, plus a
 // `HOME` and `TMPDIR` inside the cell: ASRT's wrapper returns the host's
 // `process.env` verbatim on POSIX, so this backend spawns the wrapped argv
@@ -16,8 +17,8 @@
 // for a foreign diff; `decideExecution` enforces that from `strength`.
 import { spawn } from 'node:child_process'
 import { mkdir, rm } from 'node:fs/promises'
-import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { realpathSync } from 'node:fs'
+import { dirname, join, delimiter } from 'node:path'
 import { SandboxManager, type SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
 import type {
   CellCommand,
@@ -26,7 +27,7 @@ import type {
   ExecutionCell,
   IsolationBackend,
 } from '@copse/review/isolation.ts'
-import { collectProcess } from '@copse/review/process-collect.ts'
+import { collectProcess, killProcessTree } from '@copse/review/process-collect.ts'
 import {
   containedSandboxNetworkConfig,
   resolveNodeToolchainAllowRead,
@@ -54,15 +55,54 @@ function tree(root: string): string[] {
  * The seatbelt overlay for one review cell. Pure in `spec` (plus the host's
  * platform and toolchain), so its shape is pinned by a unit test without a
  * live sandbox: writes only inside the checkouts and scratch, reads of the
- * home directory denied, no network.
+ * rest of the host filesystem denied, no network.
  */
 export function reviewCellSandboxOverlay(spec: CellSpec): Partial<SandboxRuntimeConfig> {
   const writable = [spec.checkouts.base, spec.checkouts.head, spec.scratchDir]
   const readOnly = [...spec.readOnlyPaths]
+  // Only installed runtimes and system resources supplement the declared
+  // cell paths. Canonicalize Node's executable before finding its toolchain:
+  // /opt/homebrew/bin/node must not grant all of /opt/homebrew (including etc).
+  const nodeBins = (spec.env['PATH'] ?? '').split(delimiter).flatMap((path) => {
+    try {
+      return [dirname(realpathSync(join(path, 'node')))]
+    } catch {
+      return []
+    }
+  })
   const allowRead = [
+    ...[
+      '/bin',
+      '/sbin',
+      '/usr/bin',
+      '/usr/sbin',
+      '/usr/lib',
+      '/usr/lib64',
+      '/usr/libexec',
+      '/usr/share',
+      '/lib',
+      '/lib64',
+      '/System/Library',
+      '/Library/Apple/System/Library',
+      '/private/var/db/dyld',
+      '/private/var/select/sh',
+      '/opt/homebrew/Cellar',
+      '/opt/homebrew/opt',
+      '/usr/local/Cellar',
+      '/usr/local/opt',
+      '/dev/null',
+      '/dev/zero',
+      '/dev/random',
+      '/dev/urandom',
+      '/dev/fd',
+      '/etc/passwd',
+      '/etc/group',
+      '/etc/localtime',
+      '/etc/ld.so.cache',
+    ].flatMap(tree),
     ...writable.flatMap(tree),
     ...readOnly.flatMap(tree),
-    ...resolveNodeToolchainAllowRead(spec.env),
+    ...resolveNodeToolchainAllowRead({ PATH: nodeBins.join(delimiter) }),
     ...sandboxRuntimeHelperAllowReadPaths(),
   ]
   const denyWrite = [
@@ -73,7 +113,7 @@ export function reviewCellSandboxOverlay(spec: CellSpec): Partial<SandboxRuntime
   return {
     network: containedSandboxNetworkConfig(),
     filesystem: {
-      denyRead: [homedir()],
+      denyRead: ['/'],
       allowRead: [...new Set(allowRead)],
       allowWrite: writable.flatMap(tree),
       denyWrite: [...new Set(denyWrite)],
@@ -87,6 +127,7 @@ class OsSandboxCell implements ExecutionCell {
   private readonly env: NodeJS.ProcessEnv
   private readonly homeDir: string
   private readonly tmpDir: string
+  private destroyed = false
   private readonly live = new Set<ReturnType<typeof spawn>>()
 
   constructor(spec: CellSpec, homeDir: string, tmpDir: string) {
@@ -104,13 +145,21 @@ class OsSandboxCell implements ExecutionCell {
     })
   }
 
+  private checkOpen(): void {
+    if (this.destroyed) throw new Error('Review cell has been destroyed')
+  }
+
   async run(command: CellCommand): Promise<CellCommandResult> {
+    command.signal?.throwIfAborted()
+    this.checkOpen()
     const [executable, ...args] = command.argv
     const { argv } = await SandboxManager.wrapWithSandboxArgv(
       formatArgvForShell(executable, args),
       shellForSandboxWrap(),
       this.overlay,
     )
+    command.signal?.throwIfAborted()
+    this.checkOpen()
     const [file, ...rest] = argv
     if (file === undefined) throw new Error('sandbox wrap produced empty argv')
     const child = spawn(resolveSandboxShellExecutable(file), rest, {
@@ -128,15 +177,17 @@ class OsSandboxCell implements ExecutionCell {
   }
 
   async destroy(): Promise<void> {
-    for (const child of this.live) {
-      if (child.pid !== undefined) {
-        try {
-          process.kill(-child.pid, 'SIGKILL')
-        } catch {
-          child.kill('SIGKILL')
-        }
-      }
-    }
+    this.destroyed = true
+    const closed = [...this.live].map(
+      (child) =>
+        new Promise<void>((resolve) =>
+          child.once('close', () => {
+            resolve()
+          }),
+        ),
+    )
+    for (const child of this.live) killProcessTree(child, 'SIGKILL')
+    await Promise.all(closed)
     this.live.clear()
     await rm(this.homeDir, { recursive: true, force: true })
     await rm(this.tmpDir, { recursive: true, force: true })

@@ -1,9 +1,10 @@
 import { after, before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, rm, stat } from 'node:fs/promises'
+import { access, mkdtemp, mkdir, readFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
+import { setTimeout as delay } from 'node:timers/promises'
 import { createHostProcessBackend } from './host-process-backend.ts'
 import { cellEnvironment, type CellSpec, type ExecutionCell } from './isolation.ts'
 
@@ -99,4 +100,93 @@ describe('host-process backend', () => {
     assert.equal(result.exitCode, 3)
     assert.match(result.output, /boom/)
   })
+  it('kills an active command on abort and refuses a pre-cancelled command', async () => {
+    const controller = new AbortController()
+    const marker = join(scratch, 'abort-ready')
+    const running = cell.run({
+      target: 'head',
+      argv: [
+        process.execPath,
+        '-e',
+        `require('fs').writeFileSync(${JSON.stringify(marker)},'ready');setTimeout(()=>{},60000)`,
+      ],
+      timeoutMs: 60000,
+      maxOutputBytes: 1024,
+      signal: controller.signal,
+    })
+    const rejected = assert.rejects(running, /cancel review/)
+    try {
+      for (let i = 0; i < 500; i++) {
+        if (
+          await access(marker).then(
+            () => true,
+            () => false,
+          )
+        )
+          break
+        await delay(10)
+      }
+      assert.equal(await readFile(marker, 'utf8'), 'ready')
+      controller.abort(new Error('cancel review'))
+      await rejected
+      await assert.rejects(
+        cell.run({
+          target: 'head',
+          argv: [process.execPath, '-e', 'process.exit(0)'],
+          timeoutMs: 60000,
+          maxOutputBytes: 1024,
+          signal: controller.signal,
+        }),
+        /cancel review/,
+      )
+    } finally {
+      controller.abort(new Error('cancel review'))
+    }
+  })
+
+  it(
+    'kills background descendants after their leader exits',
+    { skip: process.platform === 'win32' },
+    async () => {
+      const result = await cell.run({
+        target: 'head',
+        argv: [
+          process.execPath,
+          '-e',
+          "const child=require('child_process').spawn(process.execPath,['-e','setTimeout(()=>{},60000)'],{stdio:'ignore'});child.unref();console.log(child.pid)",
+        ],
+        timeoutMs: 5000,
+        maxOutputBytes: 1024,
+      })
+      const pid = Number(result.output.trim())
+      assert.ok(Number.isInteger(pid) && pid > 0)
+      try {
+        let exited = false
+        for (let i = 0; i < 100; i++) {
+          try {
+            process.kill(pid, 0)
+          } catch {
+            exited = true
+            break
+          }
+          // Linux can briefly retain a killed orphan as a zombie until reaped.
+          if (process.platform === 'linux') {
+            const status = await readFile(`/proc/${String(pid)}/stat`, 'utf8').catch(() => '')
+            if (status === '' || /^\d+ \(.*\) Z /.test(status)) {
+              exited = true
+              break
+            }
+          }
+          await delay(10)
+        }
+        assert.equal(exited, true, 'background child survived completion')
+      } finally {
+        try {
+          process.kill(pid, 'SIGKILL')
+        } catch {
+          /* already gone */
+        }
+      }
+    },
+  )
 })

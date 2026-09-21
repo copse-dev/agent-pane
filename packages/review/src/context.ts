@@ -5,8 +5,9 @@
 // low-signal files rather than by cutting off mid-hunk; the repository's own
 // instructions; and the test map for the touched files. All of it is read from
 // the head checkout on the orchestrator side as data. Nothing here executes.
-import { readFile, readdir, stat } from 'node:fs/promises'
+import { readdir, lstat } from 'node:fs/promises'
 import { basename, dirname, extname, join, posix } from 'node:path'
+import { readCheckoutFile } from './checkout-fs.ts'
 import { runGit, type GitRunner, type MaterialisedCheckouts } from './checkouts.ts'
 
 export type FileDiffStatus = 'added' | 'modified' | 'deleted' | 'renamed' | 'binary'
@@ -126,10 +127,11 @@ export function splitDiff(diff: string): RawFileDiff[] {
 /** Cut `text` to `max` characters at a line boundary, saying so. */
 function cutAtLine(text: string, max: number): string {
   if (text.length <= max) return text
-  const head = text.slice(0, max)
+  const notice = '\n…(diff truncated here; use git_diff to page through the rest)\n'
+  const head = text.slice(0, Math.max(0, max - notice.length))
   const lastNewline = head.lastIndexOf('\n')
   const kept = lastNewline > max / 2 ? head.slice(0, lastNewline) : head
-  return `${kept}\n…(diff truncated here; read the file for the rest)\n`
+  return `${kept}${notice}`.slice(0, max)
 }
 
 /**
@@ -154,8 +156,31 @@ export function budgetFileDiffs(raw: readonly RawFileDiff[], budgetChars: number
     for (const file of kept) out.push({ ...file, truncated: false })
     return out
   }
+  // Reserve a useful minimum per file before dividing the remaining budget.
+  // Once it is full, explicitly omit files instead of multiplying the minimum
+  // by an unbounded number of files.
+  const selected: RawFileDiff[] = []
+  let reserved = 0
   for (const file of kept) {
-    const share = Math.max(MIN_FILE_CHARS, Math.floor((budgetChars * file.text.length) / total))
+    const minimum = Math.min(MIN_FILE_CHARS, file.text.length)
+    if (reserved + minimum > budgetChars) {
+      out.push({ ...file, text: '', truncated: false, dropped: 'diff budget exhausted' })
+    } else {
+      selected.push(file)
+      reserved += minimum
+    }
+  }
+  const extra = selected.reduce(
+    (sum, file) => sum + Math.max(0, file.text.length - MIN_FILE_CHARS),
+    0,
+  )
+  for (const file of selected) {
+    const minimum = Math.min(MIN_FILE_CHARS, file.text.length)
+    const share =
+      minimum +
+      (extra === 0
+        ? 0
+        : Math.floor(((budgetChars - reserved) * (file.text.length - minimum)) / extra))
     const text = cutAtLine(file.text, share)
     out.push({ ...file, text, truncated: text.length < file.text.length })
   }
@@ -173,7 +198,7 @@ function isTestPath(path: string): boolean {
 
 async function exists(path: string): Promise<boolean> {
   try {
-    await stat(path)
+    await lstat(path)
     return true
   } catch {
     return false
@@ -195,7 +220,7 @@ async function findTestsNamed(dir: string, needle: string, depth: number): Promi
     const path = join(dir, entry)
     let info
     try {
-      info = await stat(path)
+      info = await lstat(path)
     } catch {
       continue
     }
@@ -251,11 +276,11 @@ export async function buildTestMap(
   return entries
 }
 
-async function readInstructions(headCheckout: string): Promise<RepositoryInstructions[]> {
+function readInstructions(headCheckout: string): RepositoryInstructions[] {
   const out: RepositoryInstructions[] = []
   for (const name of INSTRUCTION_FILES) {
     try {
-      const text = await readFile(join(headCheckout, name), 'utf8')
+      const text = readCheckoutFile(headCheckout, name)
       const truncated = text.length > INSTRUCTIONS_MAX_CHARS
       out.push({
         path: name,
@@ -286,6 +311,7 @@ export async function headDiff(checkouts: MaterialisedCheckouts, git: GitRunner)
     'diff',
     '--no-color',
     '--no-ext-diff',
+    '--no-textconv',
     '--find-renames',
     checkouts.mergeBase,
     '--',
@@ -305,7 +331,7 @@ export async function buildReviewContext(options: BuildContextOptions): Promise<
     headCommit: options.checkouts.headCommit,
     dirtyWorkingTree: options.checkouts.dirty,
     files,
-    instructions: await readInstructions(options.checkouts.head),
+    instructions: readInstructions(options.checkouts.head),
     testMap: await buildTestMap(options.checkouts.head, files),
     budgetChars,
     usedChars: files.reduce((sum, file) => sum + file.text.length, 0),
@@ -357,4 +383,24 @@ export function renderReviewContext(context: ReviewContext): string {
   for (const file of context.files) if (file.text.length > 0) lines.push(file.text.trimEnd())
   lines.push('```')
   return lines.join('\n')
+}
+
+/** Retrieve the original diff independently of the prompt budget. */
+export async function readFileDiff(
+  headCheckout: string,
+  mergeBase: string,
+  path: string,
+): Promise<string> {
+  const result = await runGit(headCheckout, [
+    'diff',
+    '--no-color',
+    '--no-ext-diff',
+    '--no-textconv',
+    '--find-renames',
+    mergeBase,
+    '--',
+    `:(literal)${path}`,
+  ])
+  if (result.code !== 0) throw new Error(`Cannot read diff: ${result.stderr.trim()}`)
+  return result.stdout
 }

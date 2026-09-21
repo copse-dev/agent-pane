@@ -1,8 +1,10 @@
 import { after, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
+import { execFileSync } from 'node:child_process'
+import { setTimeout as delay } from 'node:timers/promises'
 import { HEADLESS_EXIT, headlessEventSchema } from '@copse/agent/headless-contract.ts'
 import { main, reviewPermissionProfile } from './cli.ts'
 import { decodeFindings } from './finding.ts'
@@ -291,5 +293,74 @@ describe('copse-review CLI', () => {
     assert.equal(reviewPermissionProfile(false).shell, 'deny')
     assert.equal(reviewPermissionProfile(true).default, 'deny')
     assert.equal(reviewPermissionProfile(true).fileWrite, undefined)
+  })
+  it('does not load repository pnpm hooks during store discovery', async () => {
+    const repo = await fixture({})
+    const marker = join(repo.root, 'pnpm-hook-ran')
+    await repo.write({
+      '.pnpmfile.cjs': `require('fs').writeFileSync(${JSON.stringify(marker)},'host code ran');module.exports={hooks:{}}`,
+    })
+    const denied = await run(repo, ['--base', 'main', '--no-model'])
+    assert.equal(denied.code, HEADLESS_EXIT.APPROVAL_REQUIRED)
+    const allowed = await run(repo, ['--base', 'main', '--allow-unisolated', '--no-model'])
+    assert.equal(allowed.code, HEADLESS_EXIT.SUCCESS)
+    await assert.rejects(access(marker))
+  })
+
+  it('accepts forwarded pnpm separators through the actual executable', () => {
+    const bin = resolve('packages/review/bin/copse-review.mjs')
+    const direct = execFileSync(process.execPath, [bin, '--help'], { encoding: 'utf8' })
+    const forwarded = execFileSync(process.execPath, [bin, '--', '--help'], { encoding: 'utf8' })
+    assert.equal(forwarded, direct)
+    assert.match(forwarded, /^usage: copse-review/)
+  })
+
+  it('cancels Stage 0 without running the next check', { timeout: 15000 }, async () => {
+    const repo = await fixture({})
+    const ready = join(repo.root, 'cancel-ready')
+    const later = join(repo.root, 'ran-after-cancel')
+    await repo.write({
+      'review.config.json': JSON.stringify({
+        commands: {
+          prepare: [
+            process.execPath,
+            '-e',
+            `require('fs').writeFileSync(${JSON.stringify(ready)},'ready');setTimeout(()=>{},60000)`,
+          ],
+          test: [
+            process.execPath,
+            '-e',
+            `require('fs').writeFileSync(${JSON.stringify(later)},'ran')`,
+          ],
+        },
+      }),
+    })
+    const controller = new AbortController()
+    const running = main(['--base', 'main', '--allow-unisolated', '--no-model'], {
+      cwd: repo.root,
+      env: process.env,
+      signal: controller.signal,
+      stdout: () => undefined,
+      stderr: () => undefined,
+    })
+    try {
+      for (let i = 0; i < 700; i++) {
+        if (
+          await access(ready).then(
+            () => true,
+            () => false,
+          )
+        )
+          break
+        await delay(10)
+      }
+      assert.equal(await readFile(ready, 'utf8'), 'ready')
+      controller.abort(new Error('cancel review'))
+      assert.equal(await running, HEADLESS_EXIT.CANCELLED)
+      await assert.rejects(access(later))
+      assert.doesNotMatch(repo.git('worktree', 'list'), /copse-review/)
+    } finally {
+      controller.abort()
+    }
   })
 })

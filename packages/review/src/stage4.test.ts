@@ -11,7 +11,8 @@ import { cellEnvironment, serializeCell, type ExecutionCell } from './isolation.
 import { ScriptedProvider, type ScriptedStep } from './scripted-provider.ts'
 import { verifyFindings, type Stage4Options } from './stage4.ts'
 import { createTestRepo, type TestRepo } from './test-repo.ts'
-import { REPRODUCER_DIR } from './verifier-tools.ts'
+import { openReviewGround, prepareVerificationBase, runStage0Checks } from './stage0.ts'
+import { createVerifierToolExecutor, REPRODUCER_DIR } from './verifier-tools.ts'
 
 function candidate(id: string, klass: Finding['class'], line: number): Finding {
   return {
@@ -82,6 +83,7 @@ describe('verifyFindings', () => {
     return {
       headCheckout: checkouts.head,
       baseCheckout: checkouts.base,
+      prepareBase: () => Promise.resolve(),
       context,
       cell,
       shellDecision: 'allow' as const,
@@ -268,5 +270,60 @@ describe('verifyFindings', () => {
     assert.deepEqual(result.records, [])
     assert.equal(result.counts.attempted, 0)
     assert.equal(result.findings[0]?.verdict.status, 'confirmed')
+  })
+  it('prepares dependencies and build artifacts on a clean base before reproducing', async () => {
+    const project = await createTestRepo({
+      'package.json': '{"name":"fixture"}',
+      'review.config.json': JSON.stringify({
+        commands: {
+          prepare: [process.execPath, 'prepare.cjs'],
+          build: [process.execPath, 'build.cjs'],
+          test: [process.execPath, '-e', 'process.exit(0)'],
+        },
+      }),
+      'prepare.cjs':
+        "const fs=require('fs');fs.mkdirSync('node_modules/dep',{recursive:true});fs.writeFileSync('node_modules/dep/index.js','module.exports=1')",
+      'build.cjs':
+        "const fs=require('fs');fs.mkdirSync('dist',{recursive:true});fs.copyFileSync('lib.cjs','dist/lib.cjs')",
+      'lib.cjs': "module.exports=()=>require('dep')\n",
+    })
+    project.git('checkout', '-q', '-b', 'feature')
+    await project.write({ 'lib.cjs': "module.exports=()=>require('dep')+1\n" })
+    project.commit('change value')
+    const ground = await openReviewGround({
+      repoRoot: project.root,
+      baseRef: 'main',
+      backend: createHostProcessBackend(),
+      diffOrigin: 'own',
+      unisolatedConsent: true,
+    })
+    try {
+      const stage0 = await runStage0Checks(ground)
+      assert.equal(stage0.preparation.base, null)
+      assert.ok(ground.checkouts)
+      const executor = createVerifierToolExecutor({
+        headCheckout: ground.checkouts.head,
+        baseCheckout: ground.checkouts.base,
+        context: await buildReviewContext({ checkouts: ground.checkouts }),
+        cell: ground.cell,
+        shellDecision: 'allow',
+        scrub: (text) => text,
+        prepareBase: (signal) => prepareVerificationBase(ground, stage0, signal),
+      })
+      await executor.execute(
+        'write_reproducer',
+        {
+          path: '.copse-review/repro.cjs',
+          content: "require('assert').equal(require('../dist/lib.cjs')(),1)",
+          argv: [process.execPath, '.copse-review/repro.cjs'],
+        },
+        new AbortController().signal,
+        'repro',
+      )
+      assert.equal(executor.reproducer()?.confirms, true)
+    } finally {
+      await ground.close()
+      await project.remove()
+    }
   })
 })

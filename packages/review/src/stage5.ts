@@ -4,10 +4,9 @@
 // never reach the human, executable evidence earns a bonus, a finding that
 // survived a challenge earns a smaller one, an uncorroborated unverified claim
 // pays a penalty, and the surfaced list is capped; the rest go to an appendix.
-import { readFile } from 'node:fs/promises'
-import { join } from 'node:path'
 import type { HeadlessOutcome, HeadlessStopReason } from '@copse/agent/headless-contract.ts'
 import { clusterFindings } from './cluster.ts'
+import { readCheckoutFile } from './checkout-fs.ts'
 import type { ReviewContext } from './context.ts'
 import {
   findingId,
@@ -271,13 +270,10 @@ export function assembleReviewReport(input: AssembleReportInput): ReviewReport {
 }
 
 /** The source lines a finding is anchored to, for a renderer that wants to quote them. */
-export async function anchoredSource(
-  headCheckout: string,
-  finding: Finding,
-): Promise<string | null> {
+export function anchoredSource(headCheckout: string, finding: Finding): string | null {
   if (finding.anchor.startLine === undefined) return null
   try {
-    const lines = (await readFile(join(headCheckout, finding.anchor.path), 'utf8')).split(/\r?\n/)
+    const lines = readCheckoutFile(headCheckout, finding.anchor.path).split(/\r?\n/)
     return lines
       .slice(finding.anchor.startLine - 1, finding.anchor.endLine ?? finding.anchor.startLine)
       .join('\n')

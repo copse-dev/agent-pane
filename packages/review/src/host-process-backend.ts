@@ -16,7 +16,7 @@ import type {
   ExecutionCell,
   IsolationBackend,
 } from './isolation.ts'
-import { collectProcess } from './process-collect.ts'
+import { collectProcess, killProcessTree } from './process-collect.ts'
 
 export const HOST_PROCESS_BACKEND_ID = 'host-process'
 
@@ -25,6 +25,7 @@ class HostProcessCell implements ExecutionCell {
   private readonly env: Readonly<Record<string, string>>
   private readonly homeDir: string
   private readonly tmpDir: string
+  private destroyed = false
   private readonly live = new Set<ReturnType<typeof spawn>>()
 
   constructor(spec: CellSpec, homeDir: string, tmpDir: string) {
@@ -35,6 +36,8 @@ class HostProcessCell implements ExecutionCell {
   }
 
   async run(command: CellCommand): Promise<CellCommandResult> {
+    command.signal?.throwIfAborted()
+    if (this.destroyed) throw new Error('Review cell has been destroyed')
     const [file, ...args] = command.argv
     const child = spawn(file, args, {
       cwd: this.spec.checkouts[command.target],
@@ -52,15 +55,17 @@ class HostProcessCell implements ExecutionCell {
   }
 
   async destroy(): Promise<void> {
-    for (const child of this.live) {
-      if (child.pid !== undefined) {
-        try {
-          process.kill(-child.pid, 'SIGKILL')
-        } catch {
-          child.kill('SIGKILL')
-        }
-      }
-    }
+    this.destroyed = true
+    const closed = [...this.live].map(
+      (child) =>
+        new Promise<void>((resolve) =>
+          child.once('close', () => {
+            resolve()
+          }),
+        ),
+    )
+    for (const child of this.live) killProcessTree(child, 'SIGKILL')
+    await Promise.all(closed)
     this.live.clear()
     await rm(this.homeDir, { recursive: true, force: true })
     await rm(this.tmpDir, { recursive: true, force: true })

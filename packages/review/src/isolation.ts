@@ -66,6 +66,8 @@ export interface CellCommand {
   readonly timeoutMs: number
   /** Cap on the retained interleaved stdout+stderr; overflow is dropped from the front. */
   readonly maxOutputBytes: number
+  /** Cancels this command, including its process group. */
+  readonly signal?: AbortSignal | undefined
 }
 
 export interface CellCommandResult {
@@ -226,7 +228,10 @@ export function serializeCell(cell: ExecutionCell): ExecutionCell {
   return {
     spec: cell.spec,
     run(command: CellCommand): Promise<CellCommandResult> {
-      const next = tail.then(() => cell.run(command))
+      const next = tail.then(() => {
+        command.signal?.throwIfAborted()
+        return cell.run(command)
+      })
       tail = next.catch(() => undefined)
       return next
     },
