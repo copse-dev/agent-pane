@@ -33,6 +33,7 @@ import { createThread, loadProjectThreads, recordThreadAgentLink } from '../thre
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { expectRecord } from '@shared/unknown-value.ts'
 
 afterEach(() => {
   storageSet('projects', [])
@@ -844,9 +845,31 @@ describe('fetchRemoteArtifactImageDataUrl', () => {
 })
 
 describe('buildRemoteAgentContextPreamble', () => {
-  it('returns empty when there is no prior chat and no branch', () => {
-    assert.equal(buildRemoteAgentContextPreamble({ priorMessages: [] }), '')
-    assert.equal(buildRemoteAgentContextPreamble({ priorMessages: [], branch: '  ' }), '')
+  // Regression coverage for issue #2445: a brand-new thread must never claim
+  // to be "continuing an existing chat" — there is nothing to continue.
+  it('gives a brand-new thread a truthful note instead of a false continuation claim', () => {
+    const preamble = buildRemoteAgentContextPreamble({ priorMessages: [] })
+    assert.notEqual(preamble, '')
+    assert.doesNotMatch(preamble, /continuing/i)
+    assert.doesNotMatch(preamble, /handed off/i)
+    assert.match(preamble, /just submitted from Copse/i)
+    // No prior conversation exists, so no (empty) "previous conversation"
+    // section should be emitted either.
+    assert.doesNotMatch(preamble, /--- Prior conversation ---/)
+  })
+
+  it('mentions the branch in the fresh-thread note when one is known', () => {
+    const preamble = buildRemoteAgentContextPreamble({ priorMessages: [], branch: 'main' })
+    assert.notEqual(preamble, '')
+    assert.doesNotMatch(preamble, /continuing/i)
+    assert.match(preamble, /just submitted from Copse/i)
+    assert.match(preamble, /`main`/)
+  })
+
+  it('treats a blank branch the same as no branch for a fresh thread', () => {
+    const preamble = buildRemoteAgentContextPreamble({ priorMessages: [], branch: '  ' })
+    assert.notEqual(preamble, '')
+    assert.doesNotMatch(preamble, /continuing/i)
   })
 
   it('dumps prior user/assistant turns and the branch into the handoff', () => {
@@ -875,10 +898,13 @@ describe('buildRemoteAgentContextPreamble', () => {
     assert.doesNotMatch(preamble, /contents/)
   })
 
-  it('skips the continue-steer when there is no prior chat (even with a branch)', () => {
-    // Branch is already sent via startingRef / managed-agent system prompt; a
-    // fresh thread has nothing to hand off, so the preamble stays empty.
-    assert.equal(buildRemoteAgentContextPreamble({ priorMessages: [], branch: 'main' }), '')
+  it('keeps the handoff wording for a thread with real prior messages', () => {
+    const preamble = buildRemoteAgentContextPreamble({
+      branch: 'main',
+      priorMessages: [{ role: 'user', content: 'Fix the heading parser' }],
+    })
+    assert.match(preamble, /You are continuing an existing Copse chat/)
+    assert.match(preamble, /User: Fix the heading parser/)
   })
 
   it('marks prior image attachments in the transcript text', () => {
@@ -893,6 +919,18 @@ describe('buildRemoteAgentContextPreamble', () => {
 })
 
 describe('applyRemoteAgentHandoffContext', () => {
+  it('prepends a truthful fresh-thread note, not a continuation claim, on a brand-new thread', () => {
+    const handedOff = applyRemoteAgentHandoffContext(
+      { text: 'Fix the flaky test' },
+      { priorMessages: [], branch: 'main' },
+    )
+
+    assert.doesNotMatch(handedOff.text, /continuing/i)
+    assert.match(handedOff.text, /just submitted from Copse/i)
+    assert.doesNotMatch(handedOff.text, /--- Prior conversation ---/)
+    assert.match(handedOff.text, /--- New message ---\nFix the flaky test/)
+  })
+
   it('forwards prior-turn images on first handoff and prefers current-turn images', () => {
     const priorMessages = [
       {
@@ -1060,6 +1098,61 @@ describe('runRemoteAgentFromSettings follow-up after cancel', () => {
       assert.equal(createAttempts, 2)
       assert.equal(result.assistantText, 'ok')
       assert.ok(chunks.some((c) => c.type === 'done'))
+    } finally {
+      if (prevKey === undefined) delete process.env['CURSOR_API_KEY']
+      else process.env['CURSOR_API_KEY'] = prevKey
+    }
+  })
+
+  // Pins current behaviour: a follow-up turn on an already-created remote
+  // session sends the raw message with no handoff preamble at all (not even
+  // the fresh-thread note) — the remote agent already has this thread's
+  // context from its own prior runs.
+  it('sends a follow-up turn on an existing remote session with no preamble', async () => {
+    seedSession()
+    const prevKey = process.env['CURSOR_API_KEY']
+    process.env['CURSOR_API_KEY'] = 'test-key'
+    let capturedPrompt: unknown = null
+
+    const fetchImpl: typeof fetch = async (input, init) => {
+      const url = requestUrl(input)
+      if (url.endsWith(`/v1/agents/${agentId}/runs`) && init?.method === 'POST') {
+        const body =
+          typeof init.body === 'string' ? expectRecord(JSON.parse(init.body) as unknown) : null
+        capturedPrompt = body?.['prompt'] ?? null
+        return new Response(JSON.stringify({ run: { id: 'run-follow-up-plain' } }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+      if (url.includes('/runs/run-follow-up-plain/stream')) {
+        return sseStream(
+          'event: assistant\ndata: {"text":"ok"}\n\nevent: result\ndata: {"status":"FINISHED","text":"ok"}\n\nevent: done\ndata: {}\n\n',
+        )
+      }
+      if (url.includes('/usage') || url.includes('/artifacts')) {
+        return new Response(JSON.stringify({}), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+      throw new Error(`unexpected fetch: ${url}`)
+    }
+
+    try {
+      await runRemoteAgentFromSettings({
+        threadId,
+        provider: 'cursor',
+        userPrompt: 'what is the status now',
+        priorMessages: [
+          { role: 'user', content: 'send now follow-up' },
+          { role: 'assistant', content: 'ok' },
+        ],
+        signal: new AbortController().signal,
+        onChunk: () => {},
+        fetchImpl,
+      })
+      assert.deepEqual(capturedPrompt, { text: 'what is the status now' })
     } finally {
       if (prevKey === undefined) delete process.env['CURSOR_API_KEY']
       else process.env['CURSOR_API_KEY'] = prevKey
