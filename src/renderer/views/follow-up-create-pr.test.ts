@@ -310,12 +310,48 @@ describe('the "Create PR" follow-up bubble', () => {
     const suggestions = qsRequired(host, '.follow-up-suggestions')
     assert.equal(suggestions.hidden, true)
 
+    // A late status pulse from the completed turn is not a new exchange and
+    // must not resurrect the offer that was just accepted.
+    store.emit('thread_status_changed', threadId, 'running')
+    store.emit('thread_status_changed', threadId, 'idle')
+    await flush()
+    assert.equal(suggestions.hidden, true)
+
     store.emit('thread_status_changed', threadId, 'running')
     addMessage(store, threadId, 'user', 'review the next change')
     addMessage(store, threadId, 'assistant', 'reviewed')
     store.emit('thread_status_changed', threadId, 'idle')
     await flush()
     assert.equal(suggestions.hidden, false)
+  })
+
+  it('does not redraw an accepted offer when an older changes refresh finishes', async () => {
+    const { store, threadId } = storeWithFinishedTurn()
+    const base = fakeApi().api
+    let resolveStats: ((stats: { additions: number; deletions: number } | null) => void) | undefined
+    const api: ApiClient = {
+      ...base,
+      git: {
+        ...base['git'],
+        changeStats: () =>
+          new Promise((resolve) => {
+            resolveStats = resolve
+          }),
+      },
+    }
+    const host = document.createElement('div')
+    document.body.append(host)
+    const dialog = await openBubble(store, threadId, api, host)
+
+    qsRequired(dialog, '.create-pr-dialog-create').click()
+    await flush()
+    const suggestions = qsRequired(host, '.follow-up-suggestions')
+    assert.equal(suggestions.hidden, true)
+
+    assert.ok(resolveStats, 'the initial changes refresh should be in flight')
+    resolveStats({ additions: 4, deletions: 2 })
+    await flush()
+    assert.equal(suggestions.hidden, true)
   })
 
   it('shows a failed create as an errored card', async () => {
