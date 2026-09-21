@@ -381,6 +381,7 @@ import {
 } from '../services/providers/model-card-resolver.ts'
 import {
   fetchRemoteArtifactImageDataUrl,
+  refreshImportedCursorAgentThread,
   resolveRemoteArtifactDownloadUrl,
 } from '../services/remote/remote-agent-client.ts'
 import {
@@ -451,7 +452,11 @@ you want the coding agent to follow on every turn.
   intent is ambiguous.
 `
 
-export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry): void {
+export function registerAllHandlers(
+  win: BrowserWindow,
+  registry: ToolRegistry,
+  isDispatcherThreadActive: (projectId: string, threadId: string) => boolean = () => false,
+): void {
   const reloadMcpForWorkspace = (): void => {
     void reloadMcpServers(registry)
       .then((statuses) => {
@@ -2799,6 +2804,19 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const id = parseIpcArgs(zProjectId, [projectId])
     return discoverExternalCursorAgents({ projectId: id })
   })
+  ipcMain.handle(
+    'remote-agent:refresh-imported-thread',
+    (event, projectId: unknown, threadId: unknown) => {
+      assertMainFrameSender(event, win)
+      const [id, thread] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
+      return refreshImportedCursorAgentThread({
+        projectId: id,
+        threadId: thread,
+        isThreadRunning: (candidateId) =>
+          isDispatcherThreadActive(id, candidateId) || listRunningThreadIds().includes(candidateId),
+      })
+    },
+  )
   ipcMain.handle('acp:detect-agents', (event) => {
     assertMainFrameSender(event, win)
     return detectAcpAgents()

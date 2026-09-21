@@ -1123,6 +1123,13 @@
           0
         ]
       },
+      "remote-agent:refresh-imported-thread": {
+        "api": "remoteAgent.refreshImportedThread",
+        "args": [
+          2,
+          2
+        ]
+      },
       "roadmap:abort-review": {
         "api": "roadmap.abortReview",
         "args": [

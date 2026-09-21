@@ -384,6 +384,44 @@ describe('AgentDispatcher', () => {
     assert.equal(dispatcher.isActive('project-1', 'thread-1'), false)
   })
 
+  it('claims the thread while renderer-epoch persistence is still pending', async () => {
+    let enteredEpochWrite!: () => void
+    let releaseEpochWrite!: () => void
+    const epochWriteStarted = new Promise<void>((resolve) => {
+      enteredEpochWrite = resolve
+    })
+    const epochWrite = new Promise<void>((resolve) => {
+      releaseEpochWrite = resolve
+    })
+    const dispatcher = new AgentDispatcher(
+      host,
+      registry,
+      dependencies({
+        saveEpoch: async () => {
+          enteredEpochWrite()
+          await epochWrite
+        },
+      }),
+    )
+
+    const dispatch = dispatcher.dispatch(
+      request({
+        payload: {
+          userContent: 'continue',
+          invokedSkills: [],
+          priorTodos: [],
+          turnTreeId: 'tree-1',
+          continuationBudgetUsed: 0,
+        },
+      }),
+    )
+    await epochWriteStarted
+    assert.equal(dispatcher.isActive('project-1', 'thread-1'), true)
+    releaseEpochWrite()
+    await dispatch
+    assert.equal(dispatcher.isActive('project-1', 'thread-1'), false)
+  })
+
   it('does not run when trusted execution context resolution fails', async () => {
     let ran = false
     const dispatcher = new AgentDispatcher(
