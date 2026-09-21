@@ -57,6 +57,10 @@ async function latestToolResult(): Promise<WebdriverIO.Element> {
   const card = cards.at(-1)
   assert.ok(card, 'expected a background tool card')
   if ((await card.getAttribute('open')) === null) {
+    // The completion continuation can move the original card above the
+    // viewport while this helper resolves. Chrome refuses to click an
+    // off-screen <summary>, so bring the card back into view first.
+    await card.scrollIntoView({ block: 'center', inline: 'nearest' })
     await card.$('summary.tool-card-header').click()
   }
   return card.$('.tool-result')
