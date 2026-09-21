@@ -107,6 +107,28 @@ describe('indexed-grep backend selection', () => {
     assert.equal(formatCodeSearchResults(['a.ts:1: x'], 5, 'rg'), 'a.ts:1: x')
   })
 
+  it('roots the grep subprocess sandbox at the active worktree', async () => {
+    let cwd: string | undefined
+    setIndexedGrepCommandRunnerForTest(async (_command, _args, options) => {
+      cwd = options?.cwd
+      return {
+        stdout: '',
+        stderr: '',
+        code: 1,
+        stdoutTruncated: false,
+      }
+    })
+
+    await searchCodeContent({
+      pattern: 'needle',
+      searchRoot: '/tmp/worktree/src',
+      displayRoot: '/tmp/worktree',
+      maxResults: 10,
+    })
+
+    assert.equal(cwd, '/tmp/worktree')
+  })
+
   it('reports a failed search instead of turning it into a confident miss', async () => {
     setIndexedGrepCommandRunnerForTest(async () => ({
       stdout: '',
