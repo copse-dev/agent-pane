@@ -96,6 +96,26 @@ describe('real worktree preparation containment', { skip: process.platform === '
     setProjectSandboxEnabled(true)
   })
 
+  it('rejects a symlinked prepare scratch without creating its outside target', async () => {
+    const symlinkRoot = join(parent, 'scratch-symlink-worktree')
+    const outside = join(parent, 'scratch-symlink-target')
+    mkdirSync(symlinkRoot)
+    mkdirSync(outside)
+    symlinkSync(outside, join(symlinkRoot, '.tmp'), 'dir')
+
+    await assert.rejects(
+      runWorktreePreparationProcess(process.execPath, ['-e', 'process.exit(0)'], {
+        root: symlinkRoot,
+        env,
+        mode: 'prepare',
+        offline: true,
+        projectWritable: false,
+      }),
+      /scratch must not be a symlink/,
+    )
+    assert.equal(existsSync(join(outside, 'worktree-preparation')), false)
+  })
+
   it('allows preparation writes only in the worktree and managed caches, including through symlinks', async () => {
     const outside = join(parent, 'outside-write')
     const startup = join(root, 'startup.sh')

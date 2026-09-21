@@ -134,12 +134,30 @@ export async function runWorktreePreparationProcess(
 ): Promise<string> {
   requirePreparationSandbox()
   options.signal?.throwIfAborted()
+  const root = realpathSync(options.root)
   // Some read-only manager checks need temporary bookkeeping. Give each probe
   // private, disposable scratch; never make the project or shared caches writable.
-  const scratch =
-    options.mode === 'preflight'
-      ? realpathSync(mkdtempSync(join(tmpdir(), 'copse-preflight-')))
-      : join(realpathSync(options.root), '.tmp', 'worktree-preparation')
+  let scratch: string
+  if (options.mode === 'preflight') {
+    scratch = realpathSync(mkdtempSync(join(tmpdir(), 'copse-preflight-')))
+  } else {
+    const scratchParent = join(root, '.tmp')
+    const candidate = join(scratchParent, 'worktree-preparation')
+    for (const path of [scratchParent, candidate]) {
+      if (lstatSync(path, { throwIfNoEntry: false })?.isSymbolicLink()) {
+        throw new Error(`Preparation scratch must not be a symlink: ${path}`)
+      }
+    }
+    // Linux bwrap only binds write allow-list entries that already exist. Make
+    // the private bookkeeping directory before wrapping so a read-only project
+    // can still use GOCACHE/GOTMPDIR there without widening the project grant.
+    mkdirSync(candidate, { recursive: true })
+    scratch = realpathSync(candidate)
+    const rel = relative(root, scratch)
+    if (rel.length === 0 || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+      throw new Error(`Preparation scratch escaped the worktree: ${scratch}`)
+    }
+  }
   try {
     return await runContainedPreparationProcess(command, args, options, scratch)
   } finally {
