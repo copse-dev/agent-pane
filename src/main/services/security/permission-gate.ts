@@ -1812,10 +1812,9 @@ export async function ensureToolPermitted(
     // Always prompt — GUI launch leaves the sandbox and puts a window on the
     // desktop. explicitPolicy === 'allow' is still honoured for tests / forced
     // allow-lists; 'ask' and the default both go through the same dialog.
+    // 'block' is handled above via initialOverride early-return.
     if (explicitPolicy === 'allow') {
       permitted = true
-    } else if (explicitPolicy === 'block') {
-      permitted = false
     } else {
       const target =
         typeof args === 'object' &&
