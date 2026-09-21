@@ -54483,22 +54483,12 @@ function resolvePlanInclusion(provider, modelId, snapshot) {
     exhausted: binding.usedPercent >= 100
   };
 }
-function planProviderForModel(id) {
-  const rid = (resolveIntellectModelId(id) ?? id).toLowerCase();
-  if (rid.includes("claude") || /\b(opus|sonnet|haiku|fable)\b/.test(rid)) return "claude";
-  if (rid.includes("grok")) return "cursor";
-  return null;
-}
 function applyPlanCoverage(candidate, snapshot, options = {}) {
   const mode = options.mode ?? "plan";
   if (mode === "inference" || !snapshot) return candidate;
-  const provider = candidate.planAccess?.provider ?? planProviderForModel(candidate.id);
-  if (!provider) return candidate;
-  const inclusion = resolvePlanInclusion(
-    provider,
-    candidate.planAccess?.modelId ?? candidate.id,
-    snapshot
-  );
+  const access = candidate.planAccess;
+  if (!access) return candidate;
+  const inclusion = resolvePlanInclusion(access.provider, access.modelId, snapshot);
   if (!inclusion) return candidate;
   const exhaustion = options.windowExhaustion?.get(inclusion.windowId);
   const expectedExhausted = mode === "expected" && exhaustion !== void 0 && exhaustion.total > 0 && exhaustion.hit / exhaustion.total >= EXPECTED_PLAN_EXHAUSTION_THRESHOLD;
@@ -54528,7 +54518,6 @@ function applyPlanCoverage(candidate, snapshot, options = {}) {
 var EXPECTED_PLAN_EXHAUSTION_THRESHOLD;
 var init_plan_inclusion = __esm({
   "src/shared/plan-inclusion.ts"() {
-    init_model_intellect();
     EXPECTED_PLAN_EXHAUSTION_THRESHOLD = 0.5;
   }
 });
