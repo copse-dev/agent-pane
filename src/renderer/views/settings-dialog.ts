@@ -1552,6 +1552,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         refresh: (): Promise<void> => lmStudioSection.refreshDetection(),
       },
     ],
+    showOpenAiServiceTier: true,
     cloudAgents: [
       {
         vendor: 'cursor',
