@@ -10,6 +10,7 @@ import {
   seedGitImageChangesFixture,
 } from './helpers/seed-config.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
+import { waitForAgentIdle } from './helpers.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
@@ -125,6 +126,71 @@ describe('git changes image preview', function () {
     await browser.waitUntil(
       async () => !(await $('dialog.attachment-preview-dialog[open]').isExisting()),
       { timeout: 5_000, timeoutMsg: 'expand modal did not close' },
+    )
+
+    const beforeImage = await $(
+      '#git-diff-viewer-host .git-image-diff-img[alt="staged.png (before)"]',
+    )
+    const afterImage = await $(
+      '#git-diff-viewer-host .git-image-diff-img[alt="staged.png (after)"]',
+    )
+    await expect(beforeImage).toHaveAttribute('role', 'button')
+    await expect(beforeImage).toHaveAttribute('tabindex', '0')
+    await expect(afterImage).toHaveAttribute('role', 'button')
+    const beforeSrc = await beforeImage.getAttribute('src')
+    const afterSrc = await afterImage.getAttribute('src')
+
+    // Keep a real turn active while dismissing the modal. The app-level Escape
+    // shortcut arms agent cancellation, so the preview must isolate the key
+    // while preserving the dialog's native close behavior.
+    await setComposerValue('Keep working while I inspect this image. [[mock:delay_ms 15000]]')
+    await $('.submit-btn').click()
+    const stopButton = await $('.stop-btn')
+    await stopButton.waitForDisplayed({ timeout: 15_000 })
+
+    await browser.waitUntil(
+      () =>
+        browser.execute(() => {
+          const target = document.querySelector<HTMLElement>(
+            '#git-diff-viewer-host .git-image-diff-img[alt="staged.png (before)"]',
+          )
+          if (!target) return false
+          target.focus()
+          return document.activeElement === target
+        }),
+      { timeout: 5_000, timeoutMsg: 'expected the current before image to receive focus' },
+    )
+    await browser.keys('Enter')
+    const preview = await $('dialog.attachment-preview-dialog[open]')
+    await preview.waitForDisplayed({ timeout: 5_000 })
+    await expect(preview.$('.attachment-preview-title')).toHaveText('staged.png (before)')
+    await expect(preview.$('.image-expand-image')).toHaveAttribute('src', beforeSrc ?? '')
+    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-image-expanded.png'))
+
+    await browser.keys('Escape')
+    await preview.waitForDisplayed({ reverse: true, timeout: 5_000 })
+    await browser.waitUntil(
+      () =>
+        browser.execute(
+          () => document.activeElement?.getAttribute('alt') === 'staged.png (before)',
+        ),
+      { timeout: 5_000, timeoutMsg: 'expected Escape to restore focus to the before image' },
+    )
+    await expect(stopButton).toBeDisplayed()
+    await expect(stopButton).not.toHaveElementClass('stop-pending')
+    await stopButton.click()
+    await waitForAgentIdle(15_000)
+
+    await $('#git-diff-viewer-host .git-image-diff-img[alt="staged.png (after)"]').click()
+    await preview.waitForDisplayed({ timeout: 5_000 })
+    await expect(preview.$('.attachment-preview-title')).toHaveText('staged.png (after)')
+    await expect(preview.$('.image-expand-image')).toHaveAttribute('src', afterSrc ?? '')
+    await preview.$('.attachment-preview-close').click()
+    await preview.waitForDisplayed({ reverse: true, timeout: 5_000 })
+    await browser.waitUntil(
+      () =>
+        browser.execute(() => document.activeElement?.getAttribute('alt') === 'staged.png (after)'),
+      { timeout: 5_000, timeoutMsg: 'expected Close to restore focus to the after image' },
     )
 
     await clickChange('unstaged.png')

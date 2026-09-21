@@ -62,7 +62,11 @@ export function attachImageCopyMenu(image: HTMLImageElement): void {
 }
 
 /** Open the shared image lightbox for a data URL (or other resolvable img src). */
-export function openImageExpand(src: string, alt = 'Expanded attachment'): void {
+export function openImageExpand(
+  src: string,
+  alt = 'Expanded attachment',
+  returnFocus?: () => HTMLElement | null,
+): void {
   if (!src) return
   const imageEl = el('img', { class: 'image-expand-image', alt })
   imageEl.src = src
@@ -72,6 +76,7 @@ export function openImageExpand(src: string, alt = 'Expanded attachment'): void 
     title: alt,
     ariaLabel: `Image preview: ${alt}`,
     content: imageEl,
+    ...(returnFocus ? { returnFocus } : {}),
     onClose: () => {
       imageEl.removeAttribute('src')
       imageEl.alt = 'Expanded attachment'
@@ -95,7 +100,22 @@ export function attachImageExpand(img: HTMLImageElement, alt?: string): void {
 
   const open = (): void => {
     const label = alt ?? (img.alt || 'Expanded attachment')
-    openImageExpand(img.currentSrc || img.src, label)
+    const src = img.currentSrc || img.src
+    openImageExpand(src, label, () => {
+      if (img.isConnected) return img
+      // A live Changes/PR refresh replaces its image-diff nodes while the
+      // modal is open. Recover the equivalent side rather than dropping focus
+      // onto the page body when the original thumbnail no longer exists.
+      for (const candidate of document.querySelectorAll<HTMLImageElement>('img.image-expandable')) {
+        if (
+          candidate.getAttribute('aria-label') === `Expand ${label}` &&
+          (candidate.currentSrc || candidate.src) === src
+        ) {
+          return candidate
+        }
+      }
+      return null
+    })
   }
 
   img.addEventListener('click', (event) => {
