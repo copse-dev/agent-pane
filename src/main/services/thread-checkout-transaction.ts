@@ -445,6 +445,18 @@ export function createThreadCheckoutTransaction(
         choice: input.choice,
         branch: worktree.branch,
         worktree,
+        // Allocation just created HEAD at baseCommit and is the only code that
+        // can seed edits before returning. Recovered worktrees may have changed
+        // since their failed first attempt, so those deliberately fall back to
+        // a live prompt-state read in the renderer.
+        ...(recovered
+          ? {}
+          : {
+              promptState: {
+                startingCommit: worktree.baseCommit,
+                dirty: worktree.seededFromDirtyProject,
+              },
+            }),
       }
     })
 }

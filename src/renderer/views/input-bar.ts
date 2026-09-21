@@ -114,6 +114,7 @@ import { isLocalModel } from '@copse/llm/estimate-cost.ts'
 import type { ReasoningLevel } from '@copse/llm/model-parameters.ts'
 import { commitThreadModelSelection } from '../controller/model-selection.ts'
 import { mark as perfMark } from '../perf.ts'
+import type { GitPromptState } from '@shared/types/git.ts'
 
 interface MountInputBarOptions {
   /**
@@ -1703,6 +1704,7 @@ export function mountInputBar(
     }
     const currentBranch = await api.git.currentBranch(projectId, id)
     const thread = getThreadById(store, id)
+    let preparedPromptState: GitPromptState | undefined
     const threadBranch = thread?.gitBranch
     const isolatedWorktree = thread !== undefined && thread.worktree !== undefined
     // Worktree threads keep the project checkout on its original branch; the
@@ -1820,6 +1822,7 @@ export function mountInputBar(
           // becomes the worktree's base, or the shared checkout's branch.
           branchControl.pendingBaseBranch(id),
         )
+        preparedPromptState = prepared.promptState
         applyPreparedThreadCheckout(store, id, prepared)
         // The user may switch threads while Git is preparing the checkout. The
         // decision remains durable, but their prompt must stay with its composer.
@@ -1841,7 +1844,7 @@ export function mountInputBar(
     // a blank thread the transaction may have just switched the shared checkout
     // to the picked branch, or cut a worktree from it, and the message records
     // the commit the turn actually starts from — not the HEAD before the move.
-    const promptState = await api.git.promptState(projectId, id)
+    const promptState = preparedPromptState ?? (await api.git.promptState(projectId, id))
 
     const priorTodos = thread?.todos ?? []
     const workingBrief = nextWorkingBrief(thread?.workingBrief, fullContent)

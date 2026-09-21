@@ -78,6 +78,7 @@ function createApi(options: {
   promptState?: { startingCommit: string | null; dirty: boolean }
   /** Live prompt state, for flows where the checkout moves mid-send. */
   getPromptState?: () => { startingCommit: string | null; dirty: boolean }
+  readPromptState?: ApiClient['git']['promptState']
   onExportArchive?: (projectId: string, threadId: string) => void
   onAttachArchive?: (projectId: string, threadId: string, name: string, bytes?: Uint8Array) => void
   onRecordModelSelection?: ApiClient['threads']['recordModelSelection']
@@ -143,9 +144,11 @@ function createApi(options: {
             options.currentBranch,
           pr: null,
         }),
-        promptState: async () =>
-          options.getPromptState?.() ??
-          options.promptState ?? { startingCommit: null, dirty: false },
+        promptState:
+          options.readPromptState ??
+          (async (): ReturnType<ApiClient['git']['promptState']> =>
+            options.getPromptState?.() ??
+            options.promptState ?? { startingCommit: null, dirty: false }),
         checkoutBranch: async (
           _projectId: string,
           _threadId: string,
@@ -592,6 +595,60 @@ describe('input bar prompt git-state capture', () => {
     const message = store.getState().threads[0]?.messages[0]
     assert.ok(message)
     assert.equal(message.startingCommit, afterSwitch)
+  })
+
+  it('uses a fresh worktree snapshot returned by checkout without rereading Git', async () => {
+    const startingCommit = 'c'.repeat(40)
+    let promptStateReads = 0
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        readPromptState: async () => {
+          promptStateReads += 1
+          return { startingCommit: 'd'.repeat(40), dirty: false }
+        },
+        onPrepareCheckout: async () => ({
+          checkoutMode: 'worktree',
+          choice: 'automatic',
+          branch: 'copse/fresh-thread1',
+          worktree: {
+            path: '/worktrees/thread-1',
+            branch: 'copse/fresh-thread1',
+            baseBranch: 'main',
+            baseCommit: startingCommit,
+            createdAt: 2,
+            seededFromDirtyProject: true,
+          },
+          promptState: { startingCommit, dirty: true },
+        }),
+      }),
+    )
+    await settle()
+
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    const submit = host.querySelector<HTMLButtonElement>('.submit-btn')
+    assert.ok(composer)
+    assert.ok(submit)
+    composer.textContent = 'Continue from the seeded checkout'
+    submit.click()
+    await flush()
+
+    const message = store.getState().threads[0]?.messages[0]
+    assert.ok(message)
+    assert.equal(promptStateReads, 0)
+    assert.equal(message.startingCommit, startingCommit)
+    assert.equal(message.dirty, true)
   })
 
   it('omits startingCommit and leaves dirty false outside a git repository', async () => {
