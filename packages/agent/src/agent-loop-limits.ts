@@ -108,15 +108,11 @@ export interface AgentRunDeadlineOptions {
   /**
    * Exclude paused time from the wall-clock hard cap (#2332).
    *
-   * The local loop's pauses are tool execution and streaming — precisely the
-   * work the runaway budget exists to bound — but also blocking hook waits,
-   * which the host pauses via `withRunDeadlinePaused` (approval modals,
-   * ask_user, headless launch gates). Blocking indefinitely on a human is
-   * intended behaviour, so that wait must not spend the run's runaway-work
-   * budget; without this a run sitting on an approval is killed underneath a
-   * prompt the user can still see, and the kill surfaces as the generic
-   * run-limit message, indistinguishable from a model that stopped working.
-   * Host-driven runs (the ACP branch) turn this on for the same reason.
+   * The local loop leaves this off: its ordinary pauses are tool execution and
+   * streaming, which are precisely the work the runaway budget exists to bound.
+   * It excludes only explicit host waits through `pauseForHostWait`. A
+   * host-driven run (the ACP branch) turns this option on because all of its
+   * pauses are host waits such as approval modals.
    *
    * The cap itself stays armed, so a run that never pauses — including one whose
    * blocking site forgot to register an idle pause — is still bounded.
@@ -128,15 +124,17 @@ export interface AgentRunDeadlineOptions {
  * Sliding idle deadline with pause support. Tool execution, LLM streaming and
  * host-side blocking waits pause the idle clock; each completed stream or tool
  * batch records activity and resets the idle window. A hard wall-clock cap
- * still applies from run start — over raw wall time by default, or over
- * unpaused time only when {@link AgentRunDeadlineOptions.excludePausesFromHardMax}
- * is set.
+ * still applies from run start, excluding explicit host waits; a host-driven
+ * run may exclude every pause with
+ * {@link AgentRunDeadlineOptions.excludePausesFromHardMax}.
  */
 export class AgentRunDeadline {
   private readonly runStartedAt: number
   private lastActivityAt: number
   private pauseStartedAt: number | null = null
   private accumulatedPauseMs = 0
+  private hostWaitStartedAt: number | null = null
+  private accumulatedHostWaitMs = 0
   // Reference count so nested pauses compose (decision 13, H4): a blocking hook
   // that fires *inside* an already-paused region (e.g. a `toolGate` hook during
   // `executeToolBatch`'s pause) pauses/resumes the same deadline without the
@@ -144,6 +142,7 @@ export class AgentRunDeadline {
   // resume records the elapsed pause; a single pause/resume pair (the pre-H4
   // usage) behaves exactly as before.
   private pauseDepth = 0
+  private hostWaitDepth = 0
   private readonly idleTimeoutMs: number
   private readonly hardMaxMs: number
   private readonly clock: () => number
@@ -190,13 +189,37 @@ export class AgentRunDeadline {
   }
 
   /**
-   * Elapsed time the hard cap is measured over: raw wall time, or wall time with
-   * pauses removed when the run asked for that (see
-   * {@link AgentRunDeadlineOptions.excludePausesFromHardMax}).
+   * Pause for a host-side wait such as an approval dialog or `ask_user`.
+   * Unlike an ordinary stream/tool pause, this time is excluded from both the
+   * idle window and the hard runaway cap.
+   */
+  pauseForHostWait(now = this.clock()): void {
+    this.pause(now)
+    if (this.hostWaitDepth === 0 && this.hostWaitStartedAt === null) {
+      this.hostWaitStartedAt = now
+    }
+    this.hostWaitDepth += 1
+  }
+
+  resumeForHostWait(now = this.clock()): void {
+    if (this.hostWaitDepth === 0) return
+    this.hostWaitDepth -= 1
+    if (this.hostWaitDepth === 0 && this.hostWaitStartedAt !== null) {
+      this.accumulatedHostWaitMs += now - this.hostWaitStartedAt
+      this.hostWaitStartedAt = null
+    }
+    this.resume(now)
+  }
+
+  /**
+   * Elapsed time the hard cap is measured over: wall time without explicit host
+   * waits, or wall time with every pause removed when the run asked for that
+   * (see {@link AgentRunDeadlineOptions.excludePausesFromHardMax}).
    */
   private hardElapsedMs(now = this.clock()): number {
-    if (!this.excludePausesFromHardMax) return now - this.runStartedAt
-    return this.effectiveNow(now) - this.runStartedAt
+    if (this.excludePausesFromHardMax) return this.effectiveNow(now) - this.runStartedAt
+    const activeHostWait = this.hostWaitStartedAt !== null ? now - this.hostWaitStartedAt : 0
+    return now - this.runStartedAt - this.accumulatedHostWaitMs - activeHostWait
   }
 
   isHardExpired(now = this.clock()): boolean {
@@ -218,8 +241,9 @@ export class AgentRunDeadline {
   }
 
   /**
-   * Elapsed run time as the hard cap counts it. Pauses count unless the run
-   * opted out via {@link AgentRunDeadlineOptions.excludePausesFromHardMax}.
+   * Elapsed run time as the hard cap counts it. Explicit host waits never count;
+   * ordinary pauses count unless the run opted out via
+   * {@link AgentRunDeadlineOptions.excludePausesFromHardMax}.
    */
   elapsedWallTimeMs(now = this.clock()): number {
     return Math.max(0, this.hardElapsedMs(now))
