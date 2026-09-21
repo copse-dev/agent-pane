@@ -111,7 +111,7 @@ function attentionBell(label: string): SVGSVGElement {
  * used for overflow elsewhere, with opacity walking across the dots.
  */
 function runningStatus(label: string): SVGSVGElement {
-  const svg = runningStatusIcon('ui-icon ui-icon-sm chat-running-status')
+  const svg = runningStatusIcon('ui-icon chat-running-status')
   svg.setAttribute('role', 'img')
   svg.setAttribute('aria-label', label)
   svg.setAttribute('data-tooltip', label)
