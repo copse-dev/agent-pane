@@ -8,6 +8,10 @@
     "label": "Agent-proposed edits open the Changes panel"
   },
   {
+    "id": "chat-reading-layout",
+    "label": "Readable assistant responses"
+  },
+  {
     "id": "markdown-list-indent",
     "label": "Markdown list indentation"
   },
