@@ -80,7 +80,19 @@ describe('demo preview reconciliation', () => {
     const reconcile = join(root, 'reconcile')
     const publisher = join(root, 'publisher')
     const git = (cwd: string, ...args: string[]): string =>
-      execFileSync('git', args, { cwd, encoding: 'utf8' })
+      execFileSync(
+        'git',
+        [
+          '-c',
+          'user.name=Preview test',
+          '-c',
+          'user.email=preview-test@example.invalid',
+          '-c',
+          'commit.gpgsign=false',
+          ...args,
+        ],
+        { cwd, encoding: 'utf8' },
+      )
     try {
       execFileSync('git', ['init', '--bare', remote])
       execFileSync('git', ['init', seed])

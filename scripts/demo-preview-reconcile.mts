@@ -11,10 +11,6 @@ export interface DemoPreviewReconciliationPlan {
   reclaimedPreviewBytes: number
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null
-}
-
 /** Validate the complete, paginated response produced by `gh api --paginate --slurp`. */
 export function openPullNumbersFromPages(value: unknown): Set<number> {
   if (!Array.isArray(value) || value.length === 0 || !value.every(Array.isArray)) {
@@ -22,9 +18,12 @@ export function openPullNumbersFromPages(value: unknown): Set<number> {
   }
   const numbers = new Set<number>()
   for (const page of value) {
-    for (const pull of page) {
+    const pulls: readonly unknown[] = page
+    for (const pull of pulls) {
       if (
-        !isRecord(pull) ||
+        typeof pull !== 'object' ||
+        pull === null ||
+        !('number' in pull) ||
         typeof pull['number'] !== 'number' ||
         !Number.isSafeInteger(pull['number']) ||
         pull['number'] < 1
