@@ -4,6 +4,7 @@ import {
   arrowDownIcon,
   checkIcon,
   closeIcon,
+  gitBranchIcon,
   moreHorizontalIcon,
   warningIcon,
   zapIcon,
@@ -774,6 +775,19 @@ function subagentCardStatus(tc: ToolCall, session: SubagentSession): ToolCall['s
   return 'done'
 }
 
+// Marks a subagent card's own row as delegated work, not the parent's — the
+// same glyph `thread-proposal-card.ts` uses for a proposal's own checkout
+// (git-branch: "splits off and runs beside this thread"). Lives in the
+// `<summary>` itself so the mark survives collapse, which is the only state
+// most subagent rows are ever seen in (#2452).
+function subagentHeaderMarker(): HTMLElement {
+  return el(
+    'span',
+    { class: 'tool-subagent-marker', 'aria-label': 'Subagent', 'data-tooltip': 'Subagent' },
+    gitBranchIcon('ui-icon ui-icon-sm'),
+  )
+}
+
 // Which model ran this subagent — the whole point of local routing is invisible
 // without it, and so is the silent cloud fallback when LM Studio is unreachable.
 function subagentModelBadge(session: SubagentSession): HTMLElement | null {
@@ -950,7 +964,9 @@ function populateSubagentCard(
     if (node !== timeline) node.remove()
   }
 
-  card.append(createToolHeader(label, status, 'tool-card-header'))
+  const header = createToolHeader(label, status, 'tool-card-header')
+  header.querySelector('.tool-name')?.before(subagentHeaderMarker())
+  card.append(header)
 
   const badge = subagentModelBadge(session)
   if (badge) card.append(badge)
