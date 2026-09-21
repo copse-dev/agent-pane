@@ -33,6 +33,30 @@ describe('canonicalModelLabel', () => {
     assert.equal(canonicalModelLabel('gpt-4o-mini'), 'GPT-4o mini')
   })
 
+  it('uses one Grok label across agent ids and named provider catalogs', () => {
+    for (const label of [
+      'grok-build-0.1',
+      'Grok Build 0.1',
+      'xAI: Grok Build 0.1',
+      'SpaceXAI: Grok Build 0.1',
+    ]) {
+      assert.equal(canonicalModelLabel(label), 'Grok Build 0.1')
+    }
+    for (const label of ['grok-4.3', 'grok-4-3', 'Grok 4.3', 'xAI: Grok 4.3']) {
+      assert.equal(canonicalModelLabel(label), 'Grok 4.3')
+    }
+    assert.equal(canonicalModelLabel('grok-4.3 (high)'), 'Grok 4.3 (high)')
+    for (const label of [
+      'grok-4.3-high',
+      'grok-build-0.1-0616',
+      'grok-4.3[fast]',
+      'grok-latest',
+      'other: Grok 4.3',
+    ]) {
+      assert.equal(canonicalModelLabel(label), label)
+    }
+  })
+
   it('is idempotent on names already in house style', () => {
     for (const label of [
       'Claude Opus 4.8',
