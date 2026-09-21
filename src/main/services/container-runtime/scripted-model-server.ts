@@ -16,7 +16,13 @@ export type ScriptedTurn =
 export interface ScriptedModelServer {
   readonly port: number
   readonly requests: number
+  readonly completionRequests: number
   stop(): Promise<void>
+}
+
+export interface ScriptedModelServerOptions {
+  modelId?: string
+  contextLength?: number
 }
 
 function sse(payload: unknown): string {
@@ -35,9 +41,13 @@ function chunk(delta: Record<string, unknown>, finish: string | null): unknown {
 
 export function startScriptedModelServer(
   turns: readonly ScriptedTurn[],
+  options: ScriptedModelServerOptions = {},
 ): Promise<ScriptedModelServer> {
+  const modelId = options.modelId ?? 'scripted'
+  const contextLength = options.contextLength ?? 128_000
   let index = 0
   let requests = 0
+  let completionRequests = 0
   const server: Server = createServer((req, res) => {
     let _body = ''
     req.on('data', (part: Buffer) => {
@@ -45,10 +55,31 @@ export function startScriptedModelServer(
     })
     req.on('end', () => {
       requests += 1
+      if (req.url?.endsWith('/api/v1/models')) {
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(
+          JSON.stringify({
+            models: [
+              {
+                key: modelId,
+                max_context_length: contextLength,
+                loaded_instances: [{ config: { context_length: contextLength } }],
+              },
+            ],
+          }),
+        )
+        return
+      }
+      if (req.url?.endsWith('/v1/models')) {
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ data: [{ id: modelId, context_length: contextLength }] }))
+        return
+      }
       if (!req.url?.endsWith('/chat/completions')) {
         res.writeHead(404).end()
         return
       }
+      completionRequests += 1
       const turn = turns[index] ?? { kind: 'text' as const, text: 'Done.' }
       index += 1
       res.writeHead(200, {
@@ -99,6 +130,9 @@ export function startScriptedModelServer(
         },
         get requests() {
           return requests
+        },
+        get completionRequests() {
+          return completionRequests
         },
         stop: () =>
           new Promise<void>((resolveStop) => {
