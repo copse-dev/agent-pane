@@ -83,6 +83,9 @@ export class ResponsesProvider implements LLMProvider {
       ...(opts.baseURL ? { baseURL: opts.baseURL } : {}),
       apiKey: opts.apiKey,
       defaultHeaders: withAppAttribution(),
+      // Keep one retry owner. Otherwise the SDK's two internal retries multiply
+      // yieldStreamWithRetry's bounded attempts for every pre-stream failure.
+      maxRetries: 0,
     })
   }
 

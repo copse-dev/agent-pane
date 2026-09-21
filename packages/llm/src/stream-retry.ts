@@ -54,11 +54,14 @@ function errorHeaders(err: unknown): Headers | undefined {
 /**
  * OpenRouter's routing-policy failure: no endpoint satisfies the request's
  * provider constraints (e.g. ZDR-only routing via `provider.zdr`, or
- * `data_collection: "deny"`). Deterministic — the same request always fails —
- * so retrying only adds latency. Served as a 503 ("There is no available model
- * provider that meets your routing requirements"); older responses used a 404
- * "No endpoints found matching your data policy" form. Matched on message
- * because it would otherwise fall into the retryable-5xx bucket below.
+ * `data_collection: "deny"`). Usually this means no configured endpoint can
+ * serve the request, but OpenRouter can also return it transiently while its
+ * eligible endpoint set changes. The stream runner therefore gives it one
+ * bounded retry rather than the full generic retry budget. Served as a 503
+ * ("There is no available model provider that meets your routing
+ * requirements"); older responses used a 404 "No endpoints found matching
+ * your data policy" form. Matched on message because the legacy 404 would not
+ * otherwise enter the retry path.
  */
 export function isRoutingPolicyError(err: unknown): boolean {
   if (!(err instanceof Error)) return false
@@ -131,6 +134,13 @@ export function isRetryableStreamError(err: unknown): boolean {
 
   if (isRoutingPolicyError(err)) return false
 
+  // Preserve the OpenAI SDK's explicit server override now that its internal
+  // retry loop is disabled in our adapters. A routing-policy error stays out
+  // of this generic bucket above and receives only its one special replay.
+  const shouldRetry = errorHeaders(err)?.get('x-should-retry')
+  if (shouldRetry === 'false') return false
+  if (shouldRetry === 'true') return true
+
   if (err instanceof Anthropic.RateLimitError) return true
   if (err instanceof Anthropic.APIConnectionError) return true
   if (err instanceof Anthropic.InternalServerError) return true
@@ -144,7 +154,10 @@ export function isRetryableStreamError(err: unknown): boolean {
   if (!(err instanceof ToolCallRequestError) && isLmStudioTransportError(err)) return true
 
   const status = errorStatus(err)
-  if (status === 429 || status === 529) return true
+  // OpenAI's SDK retries request timeout/conflict by default. Its internal
+  // retry loop is disabled in our adapters so this wrapper owns one bounded
+  // budget; retain those SDK semantics here alongside rate limits.
+  if (status === 408 || status === 409 || status === 429 || status === 529) return true
   if (status !== undefined && status >= 500 && status < 600) return true
 
   if (errorBodyType(err) === 'overloaded_error') return true
@@ -154,10 +167,15 @@ export function isRetryableStreamError(err: unknown): boolean {
 
 export function streamRetryDelayMs(err: unknown, attempt: number): number {
   const headers = errorHeaders(err)
+  const rawMs = headers?.get('retry-after-ms')
+  if (rawMs) {
+    const asNum = Number(rawMs)
+    if (Number.isFinite(asNum) && asNum >= 0) return Math.min(120_000, asNum)
+  }
   const raw = headers?.get('retry-after') ?? headers?.get('Retry-After')
   if (raw) {
     const asNum = Number(raw)
-    if (!Number.isNaN(asNum) && asNum >= 0) return Math.min(120_000, asNum * 1000)
+    if (Number.isFinite(asNum) && asNum >= 0) return Math.min(120_000, asNum * 1000)
     const asDate = Date.parse(raw)
     if (!Number.isNaN(asDate)) return Math.min(120_000, Math.max(0, asDate - Date.now()))
   }
@@ -202,6 +220,8 @@ export async function* yieldStreamWithRetry<T>(
   opts: { signal?: AbortSignal; maxAttempts?: number } = {},
 ): AsyncGenerator<T, void, unknown> {
   const maxAttempts = opts.maxAttempts ?? DEFAULT_STREAM_MAX_ATTEMPTS
+  let routingPolicyRetryUsed = false
+  let reportingRoutingPolicyOutcome = false
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     // Progress-only items do not commit the stream: nothing user-visible has
     // been produced, so replaying from scratch after a retryable failure is
@@ -213,11 +233,44 @@ export async function* yieldStreamWithRetry<T>(
         if (!isProgressOnly(item)) committed = true
         yield item
       }
+      if (reportingRoutingPolicyOutcome) {
+        // Deliberately omit the provider error and request: this diagnostic
+        // measures whether the replay helped without copying prompt contents
+        // or policy details into logs. console.warn is stderr, preserving ACP's
+        // stdout-framed protocol.
+        console.warn('[llm] routing-policy retry succeeded')
+      }
       return
     } catch (err) {
+      if (reportingRoutingPolicyOutcome) {
+        const cancelled = opts.signal?.aborted === true || isStreamAbortError(err)
+        console.warn(
+          cancelled ? '[llm] routing-policy retry cancelled' : '[llm] routing-policy retry failed',
+        )
+        reportingRoutingPolicyOutcome = false
+      }
       if (opts.signal?.aborted) throw err
-      if (committed || !isRetryableStreamError(err) || attempt >= maxAttempts - 1) throw err
-      await sleepMs(streamRetryDelayMs(err, attempt), opts.signal)
+      const routingPolicyFailure = isRoutingPolicyError(err)
+      const canRetryRoutingPolicy = routingPolicyFailure && !routingPolicyRetryUsed
+      if (
+        committed ||
+        (!canRetryRoutingPolicy && !isRetryableStreamError(err)) ||
+        attempt >= maxAttempts - 1
+      ) {
+        throw err
+      }
+      if (routingPolicyFailure) {
+        routingPolicyRetryUsed = true
+        reportingRoutingPolicyOutcome = true
+      }
+      try {
+        await sleepMs(streamRetryDelayMs(err, attempt), opts.signal)
+      } catch (sleepError) {
+        if (routingPolicyFailure) {
+          console.warn('[llm] routing-policy retry cancelled')
+        }
+        throw sleepError
+      }
     }
   }
 }
