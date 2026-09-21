@@ -1810,29 +1810,24 @@ export async function ensureToolPermitted(
     )
   } else if (toolName === 'launch_gui_app') {
     // Always prompt — GUI launch leaves the sandbox and puts a window on the
-    // desktop. explicitPolicy === 'allow' is still honoured for tests / forced
-    // allow-lists; 'ask' and the default both go through the same dialog.
-    // 'block' is handled above via initialOverride early-return.
-    if (explicitPolicy === 'allow') {
-      permitted = true
-    } else {
-      const record = isRecord(args) ? args : null
-      const target = typeof record?.['target'] === 'string' ? record['target'] : '(unknown app)'
-      const rawArgs = record?.['args']
-      const appArgs = Array.isArray(rawArgs)
-        ? rawArgs.flatMap((a) => (typeof a === 'string' ? [a] : []))
-        : undefined
-      const envValue = record?.['env']
-      const envKeys = isRecord(envValue) ? Object.keys(envValue) : undefined
-      permitted = await promptGuiAppLaunch(
-        target,
-        {
-          ...(appArgs?.length ? { args: appArgs } : {}),
-          ...(envKeys?.length ? { envKeys } : {}),
-        },
-        signal,
-      )
-    }
+    // desktop. A stale stored allow is coerced to ask by tool-permissions.ts;
+    // block is handled above via initialOverride's early return.
+    const record = isRecord(args) ? args : null
+    const target = typeof record?.['target'] === 'string' ? record['target'] : '(unknown app)'
+    const rawArgs = record?.['args']
+    const appArgs = Array.isArray(rawArgs)
+      ? rawArgs.flatMap((a) => (typeof a === 'string' ? [a] : []))
+      : undefined
+    const envValue = record?.['env']
+    const envKeys = isRecord(envValue) ? Object.keys(envValue) : undefined
+    permitted = await promptGuiAppLaunch(
+      target,
+      {
+        ...(appArgs?.length ? { args: appArgs } : {}),
+        ...(envKeys?.length ? { envKeys } : {}),
+      },
+      signal,
+    )
   } else {
     permitted =
       explicitPolicy === 'ask' ? await promptExplicitToolAsk(toolName, args, signal) : true

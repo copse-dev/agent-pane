@@ -344,6 +344,39 @@ describe('ensureToolPermitted', () => {
     }
   })
 
+  it('prompts for every host GUI launch even with a stale allow override', async () => {
+    setPermissionGateForTests(null)
+    setSetting('toolPermissionOverrides', {
+      [copseToolPermissionId('launch_gui_app')]: 'allow',
+    })
+    let prompts = 0
+    setApprovalHandler(async (request) => {
+      prompts++
+      assert.equal(request.title, 'Launch GUI app?')
+      assert.equal(request.cause, 'gui-app-launch')
+      assert.equal(request.allowRemember, false)
+      assert.match(request.body, /\/Applications\/Safari\.app/u)
+      assert.match(request.body, /Environment: COPSE_PANEL_USER_DATA/u)
+      return { approved: false, remember: false }
+    })
+    try {
+      assert.equal(
+        await ensureToolPermitted({
+          toolName: 'launch_gui_app',
+          args: {
+            target: '/Applications/Safari.app',
+            env: { COPSE_PANEL_USER_DATA: '/tmp/copse-review' },
+          },
+        }),
+        false,
+      )
+      assert.equal(prompts, 1)
+    } finally {
+      setApprovalHandler(null)
+      setSetting('toolPermissionOverrides', {})
+    }
+  })
+
   it('cancels a pending tool approval when the run aborts', async () => {
     setPermissionGateForTests(null)
     const controller = new AbortController()
