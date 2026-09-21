@@ -55,7 +55,7 @@ export type PackageManager = 'npm' | 'pnpm' | 'yarn' | 'bun'
 export interface WorktreePreparationPlan {
   root: string
   fingerprint: string
-  ecosystem: 'uv' | null
+  ecosystem: 'uv' | 'go' | null
   manager: {
     name: PackageManager
     version: string | null
@@ -116,6 +116,70 @@ function parseWorkspacePatterns(text: string): string[] | null {
   }
 }
 
+function goDirectiveTokens(line: string): string[] {
+  let quoted = false
+  let raw = false
+  let escaped = false
+  let end = line.length
+  for (let index = 0; index < line.length - 1; index++) {
+    const character = line[index]
+    if (escaped) escaped = false
+    else if (quoted && character === '\\') escaped = true
+    else if (!raw && character === '"') quoted = !quoted
+    else if (!quoted && character === '`') raw = !raw
+    else if (!quoted && !raw && character === '/' && line[index + 1] === '/') {
+      end = index
+      break
+    }
+  }
+  return (line.slice(0, end).match(/"(?:\\.|[^"\\])*"|`[^`]*`|=>|[()]|[^\s()]+/g) ?? []).map(
+    (token) => {
+      if (token.startsWith('"')) {
+        try {
+          const parsed: unknown = JSON.parse(token)
+          return typeof parsed === 'string' ? parsed : token
+        } catch {
+          return token
+        }
+      }
+      return token.startsWith('`') ? token.slice(1, -1) : token
+    },
+  )
+}
+
+/** Local Go workspace/module paths must stay within the selected checkout. */
+function validateGoLocalPaths(root: string, manifest: string): void {
+  const text = readPreparationText(root, manifest)
+  if (text === null) return
+  let useBlock = false
+  for (const line of text.split(/\r?\n/)) {
+    const tokens = goDirectiveTokens(line)
+    if (!tokens.length) continue
+    const close = tokens.includes(')')
+    if (tokens[0] === 'use') {
+      useBlock = tokens.includes('(')
+      const candidate = tokens.find((token, index) => index > 0 && token !== '(' && token !== ')')
+      if (candidate) validateGoContainedPath(root, manifest, candidate)
+    } else if (useBlock && tokens[0] !== ')') {
+      validateGoContainedPath(root, manifest, tokens[0] ?? '')
+    }
+    const arrow = tokens.indexOf('=>')
+    if (arrow >= 0) {
+      const candidate = tokens[arrow + 1]
+      if (candidate?.startsWith('.') || candidate?.startsWith('/'))
+        validateGoContainedPath(root, manifest, candidate)
+    }
+    if (close) {
+      useBlock = false
+    }
+  }
+}
+
+function validateGoContainedPath(root: string, manifest: string, path: string): void {
+  const fromRoot = relative(root, resolve(dirname(join(root, manifest)), path))
+  containedPreparationPath(root, fromRoot)
+}
+
 export function readWorktreePreparationPlan(root: string): WorktreePreparationPlan {
   root = realpathSync(root)
   const problems: string[] = []
@@ -132,17 +196,39 @@ export function readWorktreePreparationPlan(root: string): WorktreePreparationPl
   // An explicit declaration owns non-JavaScript setup. Mixed roots must choose
   // deliberately; executable availability is never package-manager selection.
   const uvProject = existsSync(join(root, 'uv.lock'))
-  const ecosystem = !pkg && !config && uvProject ? 'uv' : null
-  if (pkg && uvProject && !config)
+  const goProject = existsSync(join(root, 'go.mod')) || existsSync(join(root, 'go.work'))
+  const automaticEcosystems = [
+    pkg ? 'JavaScript' : null,
+    uvProject ? 'Python' : null,
+    goProject ? 'Go' : null,
+  ].filter(Boolean)
+  const ecosystem =
+    !pkg && !config
+      ? uvProject && !goProject
+        ? 'uv'
+        : goProject && !uvProject
+          ? 'go'
+          : null
+      : null
+  if (automaticEcosystems.length > 1 && !config)
     problems.push(
       `Multiple ecosystems found; declare their setup in ${PREPARATION_CONFIG} or select a nested project.`,
     )
-  if (ecosystem && !existsSync(join(root, 'pyproject.toml')))
+  if (ecosystem === 'uv' && !existsSync(join(root, 'pyproject.toml')))
     problems.push('uv.lock requires a pyproject.toml in the selected project.')
-  if (ecosystem && ['poetry.lock', 'Pipfile.lock'].some((file) => existsSync(join(root, file))))
+  if (
+    ecosystem === 'uv' &&
+    ['poetry.lock', 'Pipfile.lock'].some((file) => existsSync(join(root, file)))
+  )
     problems.push(
       `Conflicting Python lockfiles; select the intended setup in ${PREPARATION_CONFIG}.`,
     )
+  if (
+    !config &&
+    !goProject &&
+    (existsSync(join(root, 'go.sum')) || existsSync(join(root, 'go.work.sum')))
+  )
+    problems.push('Go checksum files require a go.mod or go.work in the selected project.')
   let manager: WorktreePreparationPlan['manager'] = null
   if (pkg) {
     const pin = pkg.packageManager?.match(
@@ -178,7 +264,7 @@ export function readWorktreePreparationPlan(root: string): WorktreePreparationPl
           (pin ? Number(pin[2]?.split('.')[0]) >= 2 : /^__metadata:/m.test(yarnLock ?? '')),
       }
     }
-  } else if (pkgText === null && !config && !ecosystem) {
+  } else if (pkgText === null && !config && !ecosystem && automaticEcosystems.length === 0) {
     problems.push(
       `No automatic package-manager adapter found. Declare this project's setup commands, inputs, and checks in ${PREPARATION_CONFIG}; an empty declaration explicitly means no setup is needed.`,
     )
@@ -218,6 +304,27 @@ export function readWorktreePreparationPlan(root: string): WorktreePreparationPl
         ]),
       ].sort()
     : []
+  const goManifests =
+    ecosystem === 'go'
+      ? globSync(['**/go.mod', '**/go.sum'], {
+          cwd: root,
+          exclude: ['**/vendor/**', '**/node_modules/**', '**/.git/**', '**/.tmp/**'],
+        }).sort()
+      : []
+  const goSources =
+    ecosystem === 'go'
+      ? globSync(['**/*.go'], {
+          cwd: root,
+          exclude: ['**/vendor/**', '**/node_modules/**', '**/.git/**', '**/.tmp/**'],
+        }).sort()
+      : []
+  if (goManifests.length + goSources.length > 20000)
+    throw new Error('Too many Go project inputs to fingerprint safely.')
+  if (ecosystem === 'go') {
+    for (const manifest of goManifests.filter((path) => path.endsWith('go.mod')))
+      validateGoLocalPaths(root, manifest)
+    if (existsSync(join(root, 'go.work'))) validateGoLocalPaths(root, 'go.work')
+  }
   if (manifests.length > 10000) throw new Error('Too many project manifests to fingerprint safely.')
   const inputs = [
     ...manifests,
@@ -242,7 +349,11 @@ export function readWorktreePreparationPlan(root: string): WorktreePreparationPl
     'uv.lock',
     'poetry.lock',
     'Pipfile.lock',
-    ...(ecosystem
+    'go.mod',
+    'go.sum',
+    'go.work',
+    'go.work.sum',
+    ...(ecosystem === 'uv'
       ? [
           'pyproject.toml',
           'uv.toml',
@@ -260,6 +371,7 @@ export function readWorktreePreparationPlan(root: string): WorktreePreparationPl
           }),
         ]
       : []),
+    ...(ecosystem === 'go' ? [...goManifests, ...goSources] : []),
   ]
   for (const input of inputs) containedPreparationPath(root, input)
   for (const check of config?.checks ?? [])
@@ -284,42 +396,66 @@ export function readWorktreePreparationPlan(root: string): WorktreePreparationPl
     pkg?.engines?.node,
   ].flatMap((value) => (typeof value === 'string' && value.length > 0 ? [value] : []))
   const uvArgs = ['sync', '--locked', '--all-packages', '--no-python-downloads']
-  const uvChecks: PreparationCheck[] = ecosystem
-    ? [
-        {
-          name: 'uv',
-          command: { command: 'uv', args: ['--version'] },
-          outputIncludes: 'uv ',
-          fingerprintOutput: true,
-        },
-        {
-          name: 'Compatible Python',
-          command: {
-            command: 'uv',
-            args: ['python', 'find', '--offline', '--no-cache', '--no-python-downloads'],
+  const uvChecks: PreparationCheck[] =
+    ecosystem === 'uv'
+      ? [
+          {
+            name: 'uv',
+            command: { command: 'uv', args: ['--version'] },
+            outputIncludes: 'uv ',
+            fingerprintOutput: true,
           },
-          fingerprintOutput: true,
-        },
-        {
-          name: 'Python environment',
-          path: '.venv/bin/python',
-          command: {
-            command: '.venv/bin/python',
-            args: [
-              '-I',
-              '-c',
-              'import sys; print(sys.version); print(sys.implementation.cache_tag); print(sys.base_prefix)',
-            ],
+          {
+            name: 'Compatible Python',
+            command: {
+              command: 'uv',
+              args: ['python', 'find', '--offline', '--no-cache', '--no-python-downloads'],
+            },
+            fingerprintOutput: true,
           },
-          fingerprintOutput: true,
-        },
-        {
-          name: 'Locked Python dependencies',
-          command: { command: 'uv', args: [...uvArgs, '--check', '--offline', '--no-cache'] },
-          fingerprintOutput: false,
-        },
-      ]
-    : []
+          {
+            name: 'Python environment',
+            path: '.venv/bin/python',
+            command: {
+              command: '.venv/bin/python',
+              args: [
+                '-I',
+                '-c',
+                'import sys; print(sys.version); print(sys.implementation.cache_tag); print(sys.base_prefix)',
+              ],
+            },
+            fingerprintOutput: true,
+          },
+          {
+            name: 'Locked Python dependencies',
+            command: { command: 'uv', args: [...uvArgs, '--check', '--offline', '--no-cache'] },
+            fingerprintOutput: false,
+          },
+        ]
+      : []
+  const goListArgs = ['list', '-mod=readonly', '-deps', '-test', 'all']
+  const goChecks: PreparationCheck[] =
+    ecosystem === 'go'
+      ? [
+          {
+            name: 'Go toolchain',
+            command: { command: 'go', args: ['version'] },
+            outputIncludes: 'go version go',
+            fingerprintOutput: true,
+          },
+          {
+            name: 'Readonly Go package graph',
+            command: { command: 'go', args: goListArgs },
+            fingerprintOutput: false,
+          },
+          {
+            name: 'Verified Go module cache',
+            command: { command: 'go', args: ['mod', 'verify'] },
+            outputIncludes: 'all modules verified',
+            fingerprintOutput: false,
+          },
+        ]
+      : []
   return {
     root,
     fingerprint,
@@ -338,8 +474,13 @@ export function readWorktreePreparationPlan(root: string): WorktreePreparationPl
         ),
       }
     }),
-    prepare: ecosystem ? [{ command: 'uv', args: uvArgs }] : (config?.prepare ?? []),
-    checks: ecosystem ? uvChecks : (config?.checks ?? []),
+    prepare:
+      ecosystem === 'uv'
+        ? [{ command: 'uv', args: uvArgs }]
+        : ecosystem === 'go'
+          ? [{ command: 'go', args: goListArgs }]
+          : (config?.prepare ?? []),
+    checks: ecosystem === 'uv' ? uvChecks : ecosystem === 'go' ? goChecks : (config?.checks ?? []),
     problems,
   }
 }
@@ -411,15 +552,16 @@ export function formatPreparationPlan(plan: WorktreePreparationPlan, offline: bo
   return [
     `Project: ${plan.root}`,
     `Plan fingerprint: ${plan.fingerprint}`,
-    `Package manager: ${plan.manager ? `${plan.manager.name}${plan.manager.version ? `@${plan.manager.version}` : ' (version detected locally)'}` : plan.ecosystem === 'uv' ? 'uv (Python)' : 'project-defined setup'}`,
+    `Package manager: ${plan.manager ? `${plan.manager.name}${plan.manager.version ? `@${plan.manager.version}` : ' (version detected locally)'}` : plan.ecosystem === 'uv' ? 'uv (Python)' : plan.ecosystem === 'go' ? 'Go modules' : 'project-defined setup'}`,
     ...(install
       ? [
           `Install through Socket Firewall: ${JSON.stringify([install.command, ...install.args])} (dependency lifecycle scripts disabled)`,
         ]
       : []),
-    ...plan.prepare.map(
-      (step) =>
-        `Project setup (executes repository code): ${JSON.stringify([step.command, ...step.args])}`,
+    ...plan.prepare.map((step) =>
+      plan.ecosystem === 'go'
+        ? `Readonly package metadata load: ${JSON.stringify([step.command, ...step.args])}`
+        : `Project setup (executes repository code): ${JSON.stringify([step.command, ...step.args])}`,
     ),
     ...plan.checks.map(
       (check) =>
@@ -443,15 +585,21 @@ export function formatPreparationApproval(
           : []),
         ...(plan.prepare.length
           ? [
-              'Project setup:',
+              plan.ecosystem === 'go' ? 'Load locked Go package metadata:' : 'Project setup:',
               ...plan.prepare.map((step) => formatArgvForShell(step.command, step.args)),
             ]
           : []),
       ].join('\n') || 'No setup commands; validate the declared checks.',
     bodyAdvice: [
       ...(install ? ['Install locked dependencies with lifecycle scripts disabled.'] : []),
-      ...(plan.prepare.length ? ['Project setup executes repository code.'] : []),
+      ...(plan.ecosystem === 'go'
+        ? [
+            'Loads package and test import metadata to populate the locked module cache; it does not run go generate, build, or test.',
+          ]
+        : plan.prepare.length
+          ? ['Project setup executes repository code.']
+          : []),
     ].join(' '),
-    bodyFooter: `Network: ${offline ? 'blocked for every subprocess' : 'allowed during preparation; checks stay offline'}. Writes are limited to this project and Copse-managed caches.\nProject: ${plan.root}`,
+    bodyFooter: `Network: ${offline ? 'blocked for every subprocess' : 'allowed during preparation; checks stay offline'}. ${plan.ecosystem === 'go' ? 'The project remains read-only; writes use disposable scratch and Copse-managed caches.' : 'Writes are limited to this project and Copse-managed caches.'}\nProject: ${plan.root}`,
   }
 }

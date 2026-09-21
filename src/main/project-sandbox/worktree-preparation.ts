@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
 import { lstatSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { wrapCommandWithSandboxMacOS } from '@anthropic-ai/sandbox-runtime/dist/sandbox/macos-sandbox-utils.js'
 import {
   cleanupBwrapMountPoints,
@@ -61,7 +61,34 @@ function preparationExecutableReadPaths(command: string, env: NodeJS.ProcessEnv)
         .filter(Boolean)
         .map((directory) => join(directory, command))) {
     try {
-      paths.push(candidate, realpathSync(candidate))
+      const executable = realpathSync(candidate)
+      paths.push(candidate, executable)
+      if (basename(command) === 'go' && basename(dirname(executable)) === 'bin') {
+        const toolchain = dirname(dirname(executable))
+        // A PATH wrapper named `go` must not turn its grandparent (often HOME)
+        // into a read grant. Recognise a real distribution by its compiler,
+        // then grant only Go-owned subtrees rather than the whole toolchain root.
+        const goArch =
+          process.arch === 'x64' ? 'amd64' : process.arch === 'ia32' ? '386' : process.arch
+        const compiler = join(toolchain, 'pkg', 'tool', `${process.platform}_${goArch}`, 'compile')
+        const containedRuntimePath = (path: string): string | null => {
+          if (!lstatSync(path, { throwIfNoEntry: false })) return null
+          const canonical = realpathSync(path)
+          const rel = relative(toolchain, canonical)
+          return rel.length === 0 || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)
+            ? null
+            : canonical
+        }
+        const version = containedRuntimePath(join(toolchain, 'VERSION'))
+        if (version && containedRuntimePath(compiler)) {
+          for (const path of ['bin', 'lib', 'pkg', 'src']) {
+            const absolute = join(toolchain, path)
+            const canonical = containedRuntimePath(absolute)
+            if (canonical) paths.push(absolute, canonical)
+          }
+          paths.push(join(toolchain, 'VERSION'), version)
+        }
+      }
     } catch {
       /* Not an installed executable. */
     }
@@ -87,6 +114,10 @@ interface PreparationProcessOptions {
   signal?: AbortSignal
   output?: (text: string) => void
   additionalExecutables?: string[]
+  /** Private automatic-adapter control; declarations cannot request this grant shape. */
+  projectWritable?: boolean
+  /** Give automatic Go commands disposable build bookkeeping, never shared writes. */
+  goBookkeeping?: boolean
 }
 
 /**
@@ -124,7 +155,15 @@ async function runContainedPreparationProcess(
 ): Promise<string> {
   const root = realpathSync(options.root)
   const caches = preparationCacheRoots(options.env, options.mode === 'prepare')
-  const writable = options.mode === 'prepare'
+  const preparing = options.mode === 'prepare'
+  const projectWritable = preparing && options.projectWritable !== false
+  if (options.goBookkeeping) {
+    options.env = {
+      ...options.env,
+      GOCACHE: join(scratch, 'go-build'),
+      GOTMPDIR: scratch,
+    }
+  }
   const env = withSandboxShellPath(
     withSandboxTmpEnv(envForRendererChildProcess(options.env), scratch),
   )
@@ -144,7 +183,7 @@ async function runContainedPreparationProcess(
       ...args,
     ]),
     binShell: '/bin/bash',
-    needsNetworkRestriction: options.offline || !writable,
+    needsNetworkRestriction: options.offline || !preparing,
     allowAllUnixSockets: false,
     allowGitConfig: false,
     readConfig: {
@@ -166,7 +205,9 @@ async function runContainedPreparationProcess(
       ],
     },
     writeConfig: {
-      allowOnly: writable ? ['/dev/null', root, ...caches] : ['/dev/null', scratch],
+      allowOnly: preparing
+        ? ['/dev/null', scratch, ...caches, ...(projectWritable ? [root] : [])]
+        : ['/dev/null', scratch],
       denyWithinAllow: [],
       // Package tarballs contain inert .idea/.vscode metadata. Protect the
       // checkout's configuration rather than denying those names in every
@@ -174,7 +215,7 @@ async function runContainedPreparationProcess(
       // The whole .git path also covers hooks. Emitting both .git/hooks and an
       // absent .git makes bwrap create a directory and then try to mask it as a
       // file, aborting before execution on a fresh Linux project.
-      mandatoryDenyPaths: writable
+      mandatoryDenyPaths: projectWritable
         ? [
             ...workspaceMandatoryWriteDenyPaths(root).filter(
               (path) => !path.includes('*') && !path.startsWith(`${join(root, '.git')}/`),
@@ -188,7 +229,7 @@ async function runContainedPreparationProcess(
   if (process.platform === 'darwin') {
     wrapped = wrapCommandWithSandboxMacOS({
       ...params,
-      allowLocalBinding: writable && !options.offline,
+      allowLocalBinding: preparing && !options.offline,
     })
   } else {
     wrapped = await wrapCommandWithSandboxLinux({
@@ -213,7 +254,7 @@ async function runContainedPreparationProcess(
       const abort = (): void => {
         stopKill ??= terminateProcessTree(child)
       }
-      const timeout = setTimeout(abort, writable ? 10 * 60_000 : 5_000)
+      const timeout = setTimeout(abort, preparing ? 10 * 60_000 : 5_000)
       options.signal?.addEventListener('abort', abort, { once: true })
       if (options.signal?.aborted) abort()
       child.stdout.on('data', (data: Buffer) => {

@@ -62,6 +62,7 @@ function sandboxProbe(
   root: string,
   signal?: AbortSignal,
   onFailure?: (message: string) => void,
+  goBookkeeping = false,
 ): ProcessProbe {
   return async (command, args, env) => {
     try {
@@ -70,6 +71,7 @@ function sandboxProbe(
         env,
         mode: 'preflight',
         offline: true,
+        goBookkeeping,
         ...(signal ? { signal } : {}),
       })
     } catch (error) {
@@ -92,6 +94,9 @@ function preparationCacheEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv 
     YARN_GLOBAL_FOLDER: join(root, 'yarn', 'global'),
     BUN_INSTALL_CACHE_DIR: join(root, 'bun'),
     UV_CACHE_DIR: join(root, 'uv'),
+    GOMODCACHE: join(root, 'go', 'mod'),
+    GOCACHE: join(root, 'go', 'build'),
+    GOPATH: join(root, 'go', 'path'),
     electron_config_cache: join(root, 'electron-downloads'),
     COPSE_ELECTRON_DIST_CACHE: join(root, 'electron-dist'),
     COPSE_GORTEX_CACHE: join(root, 'gortex'),
@@ -144,6 +149,15 @@ function environmentForPlan(
           PYTHONDONTWRITEBYTECODE: '1',
         }
       : {}),
+    ...(plan.ecosystem === 'go'
+      ? {
+          GOENV: 'off',
+          GOTOOLCHAIN: 'local',
+          GOFLAGS: '-mod=readonly',
+          GOWORK: existsSync(join(plan.root, 'go.work')) ? join(plan.root, 'go.work') : 'off',
+          GOPROXY: offline ? 'off' : (env['GOPROXY'] ?? 'https://proxy.golang.org,direct'),
+        }
+      : {}),
     ...(plan.manager?.name === 'yarn' && plan.manager.modernYarn
       ? {
           YARN_ENABLE_NETWORK: offline ? 'false' : 'true',
@@ -174,9 +188,14 @@ async function inspectPlan(
   const probeFailures: string[] = []
   const probe =
     options.probe ??
-    sandboxProbe(plan.root, undefined, (message) => {
-      probeFailures.push(message)
-    })
+    sandboxProbe(
+      plan.root,
+      undefined,
+      (message) => {
+        probeFailures.push(message)
+      },
+      plan.ecosystem === 'go',
+    )
   const components: WorktreePreparationComponent[] = []
   const identity: string[] = [plan.fingerprint, process.platform, process.arch]
   if (plan.manager) {
@@ -361,6 +380,8 @@ export async function prepareWorktree(
       signal: options.signal,
       output: emitShellOutput,
       additionalExecutables,
+      ...(plan.ecosystem === 'go' && step.command === 'go' ? { projectWritable: false } : {}),
+      goBookkeeping: plan.ecosystem === 'go' && step.command === 'go',
     })
   }
   // Host runtime is only used for fixed file operations; non-Node projects need no Node install.
