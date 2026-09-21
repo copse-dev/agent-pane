@@ -37,6 +37,9 @@ installs the profile and tracing environment first.
     audit.jsonl                      # append-only lifecycle transitions
   task-history/<taskId>.json         # compact terminal-task support summary; no permissions
   event-inbox/<sha256>.json          # internal event admission/recovery receipts (not startup-wired)
+  terminal-history                   # shared bash/zsh HISTFILE for this project's interactive
+                                     #   Shells-tab PTYs (#2433); fish uses a per-project
+                                     #   `fish_history` session name instead of this file
   <threadId>/
     meta.json                        # mutable thread metadata (everything except messages)
     events.jsonl                     # append-only spine: message + hook/audit + plan lines

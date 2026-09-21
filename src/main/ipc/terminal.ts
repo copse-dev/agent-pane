@@ -102,7 +102,7 @@ export function initTerminal(win: BrowserWindow): () => void {
         event.sender,
         cols,
         rows,
-        normalizeMeta(meta),
+        { ...normalizeMeta(meta), projectId: meta.projectId },
         execution.root,
       )
       return { sessionId, checkoutMode: execution.checkoutMode }

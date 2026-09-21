@@ -165,6 +165,7 @@ Everything Copse persists lives under one root, `~/.copse/` (`COPSE_DIR` moves t
 | `user-data/settings.json`                                                            | settings, including encrypted API keys                                     |
 | `user-data/` (rest)                                                                  | `mcp.json`, `tools/`, browser profiles, `gortex/` semantic index           |
 | `workspace/<projectId>/<threadId>/`                                                  | threads, tasks, decision log, deferred approvals                           |
+| `workspace/<projectId>/terminal-history`                                             | shared HISTFILE for the project's interactive Shells-tab PTYs (#2433)      |
 | `worktrees/`                                                                         | Copse-managed Git worktrees                                                |
 | `knowledge/`, `long-tasks/`, `roadmap-review/`, `pack-tool-snapshots/`, `hooks.json` | per-feature stores                                                         |
 
