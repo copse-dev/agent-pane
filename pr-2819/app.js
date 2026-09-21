@@ -203,6 +203,14 @@ function titleCaseSegment(segment) {
     return `${lower.charAt(0).toUpperCase()}${lower.slice(1)}`;
   }).join(" ");
 }
+function canonicalGrokLabel(labelOrId) {
+  const match = GROK_NAME.exec(labelOrId.trim());
+  if (!match?.[2]) return null;
+  const rest = match[3] ?? "";
+  if (rest !== "" && !/^\s/.test(rest)) return null;
+  const family = match[1] ? "Grok Build" : "Grok";
+  return `${family} ${match[2].replace(/-/g, ".")}${rest}`;
+}
 function canonicalVendorLabel(labelOrId) {
   const trimmed2 = labelOrId.trim();
   const gemini = GEMINI_NAME.exec(trimmed2);
@@ -288,14 +296,14 @@ function canonicalModelLabel(labelOrId) {
     const family = `${parsed2.family.charAt(0).toUpperCase()}${parsed2.family.slice(1)}`;
     return `Claude ${family} ${parsed2.version}${parsed2.rest}`;
   }
-  return canonicalGptLabel(labelOrId) ?? canonicalVendorLabel(labelOrId) ?? labelOrId;
+  return canonicalGptLabel(labelOrId) ?? canonicalVendorLabel(labelOrId) ?? canonicalGrokLabel(labelOrId) ?? labelOrId;
 }
 function claudeModelIdFromLabel(labelOrId) {
   const parsed2 = parseClaudeName(labelOrId);
   if (!parsed2 || parsed2.rest.trim() !== "") return null;
   return `claude-${parsed2.family}-${parsed2.version.replace(/\./g, "-")}`;
 }
-var CLAUDE_FAMILIES, FAMILY_PATTERN, VERSION_PATTERN, VERSION_FIRST, FAMILY_FIRST, GPT_NAME, GEMINI_NAME, GLM_NAME, DEEPSEEK_NAME, MISTRAL_NAME, MODELLED_VENDORS, DATED_SNAPSHOT, OPTION_SUFFIX, TOKEN_SPELLING, PARAM_COUNT, SHORT_CODE;
+var CLAUDE_FAMILIES, FAMILY_PATTERN, VERSION_PATTERN, VERSION_FIRST, FAMILY_FIRST, GPT_NAME, GEMINI_NAME, GLM_NAME, DEEPSEEK_NAME, MISTRAL_NAME, GROK_NAME, MODELLED_VENDORS, DATED_SNAPSHOT, OPTION_SUFFIX, TOKEN_SPELLING, PARAM_COUNT, SHORT_CODE;
 var init_model_label = __esm({
   "packages/llm/src/model-label.ts"() {
     CLAUDE_FAMILIES = ["opus", "sonnet", "haiku", "fable"];
@@ -314,7 +322,8 @@ var init_model_label = __esm({
     GLM_NAME = /^glm-(\d+(?:\.\d+)?)(?:-([a-z].*))?$/;
     DEEPSEEK_NAME = /^deepseek-([a-z]+)(?:-v(\d+(?:\.\d+)?))?$/;
     MISTRAL_NAME = /^mistral-([a-z]+)(?:-([a-z]+))?$/;
-    MODELLED_VENDORS = ["claude", "gpt", "gemini", "glm", "deepseek", "mistral"];
+    GROK_NAME = /^(?:(?:xai|spacexai):\s*)?grok[\s-]+(?:(build)[\s-]+)?(\d+(?:[.-]\d+)?)(.*)$/i;
+    MODELLED_VENDORS = ["claude", "gpt", "gemini", "glm", "deepseek", "mistral", "grok"];
     DATED_SNAPSHOT = /-(?:\d{8}|\d{4}-\d{2}-\d{2})$/;
     OPTION_SUFFIX = /\[[^\]]*\]$/;
     TOKEN_SPELLING = {
@@ -40186,8 +40195,9 @@ var init_model_intellect_generated = __esm({
       "GPT-5.6 Terra": "gpt-5.6-terra",
       "GPT-5.6-Terra": "gpt-5.6-terra",
       "Grok 4.5": "grok-4.5",
+      "Grok Build 0.1": "grok-build-0-1-06-16",
       "grok-4-5": "grok-4.5",
-      "grok-build-0.1": "grok-4.5",
+      "grok-build-0.1": "grok-build-0-1-06-16",
       "Haiku 4.5": "claude-haiku-4-5",
       "Kimi K2.6": "moonshotai/kimi-k2.6",
       "Kimi K3": "moonshotai/kimi-k3",
@@ -40224,7 +40234,10 @@ var init_model_intellect_generated = __esm({
       "qwen3.6-35b-a3b": "qwen/qwen3.6-35b-a3b",
       "Sonnet 4.6": "claude-sonnet-4-6",
       "Sonnet 5": "claude-sonnet-5",
+      "SpaceXAI: Grok Build 0.1": "grok-build-0-1-06-16",
       "x-ai/grok-4.5": "grok-4.5",
+      "x-ai/grok-build-0.1": "grok-build-0-1-06-16",
+      "xAI: Grok Build 0.1": "grok-build-0-1-06-16",
       "xai/grok-4.5": "grok-4.5",
       "z-ai/glm-5.2": "zai-org/GLM-5.2",
       "zai/glm-5.2": "zai-org/GLM-5.2"
@@ -54470,22 +54483,12 @@ function resolvePlanInclusion(provider, modelId, snapshot) {
     exhausted: binding.usedPercent >= 100
   };
 }
-function planProviderForModel(id) {
-  const rid = (resolveIntellectModelId(id) ?? id).toLowerCase();
-  if (rid.includes("claude") || /\b(opus|sonnet|haiku|fable)\b/.test(rid)) return "claude";
-  if (rid.includes("grok")) return "cursor";
-  return null;
-}
 function applyPlanCoverage(candidate, snapshot, options = {}) {
   const mode = options.mode ?? "plan";
   if (mode === "inference" || !snapshot) return candidate;
-  const provider = candidate.planAccess?.provider ?? planProviderForModel(candidate.id);
-  if (!provider) return candidate;
-  const inclusion = resolvePlanInclusion(
-    provider,
-    candidate.planAccess?.modelId ?? candidate.id,
-    snapshot
-  );
+  const access = candidate.planAccess;
+  if (!access) return candidate;
+  const inclusion = resolvePlanInclusion(access.provider, access.modelId, snapshot);
   if (!inclusion) return candidate;
   const exhaustion = options.windowExhaustion?.get(inclusion.windowId);
   const expectedExhausted = mode === "expected" && exhaustion !== void 0 && exhaustion.total > 0 && exhaustion.hit / exhaustion.total >= EXPECTED_PLAN_EXHAUSTION_THRESHOLD;
@@ -54515,7 +54518,6 @@ function applyPlanCoverage(candidate, snapshot, options = {}) {
 var EXPECTED_PLAN_EXHAUSTION_THRESHOLD;
 var init_plan_inclusion = __esm({
   "src/shared/plan-inclusion.ts"() {
-    init_model_intellect();
     EXPECTED_PLAN_EXHAUSTION_THRESHOLD = 0.5;
   }
 });
