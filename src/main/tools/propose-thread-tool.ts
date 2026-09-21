@@ -7,7 +7,7 @@ import {
 } from '@shared/threads/thread-proposal.ts'
 
 /**
- * Offer the user a separate thread for work that does not belong in this one.
+ * Offer the user a separate thread for work that should not run in this one.
  *
  * Deliberately does nothing: the whole tool is the arguments. The renderer draws
  * the card straight from this call's `args` (already in the transcript, already
@@ -23,14 +23,17 @@ import {
 export const proposeThreadTool = defineTool({
   name: THREAD_PROPOSAL_TOOL,
   description:
-    'Offer the user a SEPARATE follow-up thread, which they can start with one click. ' +
-    'It runs in its own isolated checkout, so it will not disturb the work in this thread. ' +
-    'Use it for real work you noticed but were not asked to do — a refactor the change exposed, ' +
-    'a missing test, a migration, a bug in adjacent code — instead of silently widening the ' +
-    'current task or burying the suggestion in prose. Do NOT use it for work the user just ' +
-    'asked for (do that here), for questions (use ask_user), or to split a task you can finish now. ' +
-    'This does not block: you are told it was offered, never whether it was accepted, so ' +
-    'continue the current task and do not propose the same thing twice.',
+    'Offer the user a SEPARATE thread, which they must approve by clicking Start this thread. ' +
+    'Use it when the user explicitly asks you to create, open, or spin off a separate thread. ' +
+    'Also use it for worthwhile follow-up work you noticed but were not asked to do — a refactor ' +
+    'the change exposed, a missing test, a migration, or a bug in adjacent code — instead of ' +
+    'silently widening the current task or burying the suggestion in prose. The new thread runs ' +
+    'in its own isolated checkout, so it will not disturb the work in this thread. Calling this ' +
+    'tool does not create the thread or run its prompt; the card is the approval boundary. Do NOT ' +
+    'use it to move work out of the current thread unless the user asked for a separate thread, ' +
+    'for questions (use ask_user), or merely to split a task you can finish here. This does not ' +
+    'block: you are told it was offered, never whether it was accepted, so continue the current ' +
+    'task and do not propose the same thing twice.',
   parameters: z.object({
     title: z
       .string()
