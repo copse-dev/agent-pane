@@ -1,4 +1,4 @@
-import { BrowserWindow, globalShortcut, screen, type WebContents } from 'electron'
+import { app, BrowserWindow, globalShortcut, screen, type WebContents } from 'electron'
 import { join } from 'node:path'
 import { getAppIcon } from '../app-icon.ts'
 import { getSetting, setSetting } from '../services/storage/settings.ts'
@@ -20,6 +20,7 @@ import { registerTrustedAppFrame, unregisterTrustedAppFrame } from './app-frames
 import { registerAppWindow } from './app-window-broadcast.ts'
 import { attachRendererCrashRecovery } from './renderer-crash-recovery.ts'
 import { attachVisualPinchZoom } from './visual-pinch-zoom.ts'
+import { shouldShowNativeWindows } from './native-window-visibility.ts'
 
 const mainWindowRegistry = new MainWindowRegistry<BrowserWindow>()
 const mainWindowState = new MainWindowStateRepository({
@@ -204,6 +205,7 @@ export function createMainWindow(restoredRecord?: MainWindowRecord): BrowserWind
   const saved = sanitizeBounds(record.bounds, record.displayId)
   const icon = getAppIcon()
   const bootTheme = bootThemeWindowOptions()
+  const showNativeWindow = shouldShowNativeWindows(app.commandLine)
   const win = new BrowserWindow({
     ...saved,
     ...(icon ? { icon } : {}),
@@ -285,6 +287,7 @@ export function createMainWindow(restoredRecord?: MainWindowRecord): BrowserWind
     console.warn('[renderer] main window became unresponsive')
   })
   win.once('ready-to-show', () => {
+    if (!showNativeWindow) return
     if (record.maximized) win.maximize()
     if (record.fullscreen) win.setFullScreen(true)
     win.show()
@@ -292,7 +295,7 @@ export function createMainWindow(restoredRecord?: MainWindowRecord): BrowserWind
   // Fallback: if ready-to-show somehow never fires, force-show so the window
   // can never get stuck invisible.
   setTimeout(() => {
-    if (!win.isDestroyed() && !win.isVisible()) win.show()
+    if (showNativeWindow && !win.isDestroyed() && !win.isVisible()) win.show()
   }, 3000)
   void win.loadFile(join(__dirname, '../renderer/index.html'), { query: bootTheme.query })
   return win
