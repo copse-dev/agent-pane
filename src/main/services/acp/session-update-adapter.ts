@@ -335,7 +335,7 @@ function toolResultImage(value: unknown): ToolResultImage | null {
   ) {
     return null
   }
-  return { dataUrl: `data:${mimeType};base64,${data}` }
+  return { dataUrl: `data:${mimeType};base64,${data}`, kind: 'screenshot' }
 }
 
 /** Collect visible text and images from a tool call's ACP content blocks. */

@@ -50,10 +50,15 @@ export interface ToolCallContent {
  * An image a tool produced as part of its result (e.g. `video_frames` stills).
  * `name` is a short label — a frame's timestamped filename — so the model can
  * refer to a specific image by name in its reply and in follow-up tool calls.
+ * `kind` is presentation only: `'screenshot'` marks a self-contained visual
+ * (a generated render, a diagram, a page capture) the transcript previews
+ * inline at reading size; `'frames'` marks one of a batch of stills, which
+ * stay compact thumbnails. Absent `kind` is treated as `'frames'`.
  */
 export interface ToolResultImage {
   dataUrl: string
   name?: string
+  kind?: 'screenshot' | 'frames'
 }
 
 export interface ToolResult {

@@ -274,7 +274,7 @@ describe('sessionUpdateToStreamChunks (client role)', () => {
           status: 'done',
           result: 'Created the image.',
           resultFormat: 'markdown',
-          images: [{ dataUrl: 'data:image/webp;base64,base64-payload' }],
+          images: [{ dataUrl: 'data:image/webp;base64,base64-payload', kind: 'screenshot' }],
         },
       ],
     )
@@ -569,7 +569,7 @@ describe('sessionUpdateToStreamChunks (client role)', () => {
         status: 'done',
         result: 'caption',
         resultFormat: 'markdown',
-        images: [{ dataUrl: 'data:image/png;base64,encoded-image' }],
+        images: [{ dataUrl: 'data:image/png;base64,encoded-image', kind: 'screenshot' }],
       },
     ])
   })
@@ -599,7 +599,7 @@ describe('sessionUpdateToStreamChunks (client role)', () => {
         type: 'tool_call_update',
         toolCallId: 'generated-image',
         status: 'done',
-        images: [{ dataUrl: 'data:image/png;base64,encoded-image' }],
+        images: [{ dataUrl: 'data:image/png;base64,encoded-image', kind: 'screenshot' }],
       },
     ])
   })

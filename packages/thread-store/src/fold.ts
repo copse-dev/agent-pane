@@ -125,6 +125,7 @@ function explodeToolCall(
       return {
         dataUrl: { ref, sha256: hash(image.dataUrl) },
         ...(image.name !== undefined ? { name: image.name } : {}),
+        ...(image.kind !== undefined ? { kind: image.kind } : {}),
       }
     })
   }
@@ -353,6 +354,7 @@ function foldToolCall(
     return {
       dataUrl,
       ...(image.name !== undefined ? { name: image.name } : {}),
+      ...(image.kind !== undefined ? { kind: image.kind } : {}),
     }
   })
 
