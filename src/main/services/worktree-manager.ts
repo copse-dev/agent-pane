@@ -93,6 +93,11 @@ export interface ValidatedThreadWorktree extends ThreadWorktree {
   commonGitDir: string
 }
 
+export interface ValidatedThreadWorktreeRecovery extends Omit<ValidatedThreadWorktree, 'branch'> {
+  /** A recovery terminal is authorized only while Git has detached this checkout. */
+  branch: null
+}
+
 export type RetireWorktreeResult =
   | { status: 'removed'; branch: string }
   | { status: 'blocked-dirty'; paths: string[] }
@@ -848,10 +853,31 @@ export async function restoreRetiredThreadWorktree(
   })
 }
 
+type ValidatedThreadWorktreeState = Omit<ValidatedThreadWorktree, 'branch'> & {
+  branch: string | null
+}
+
+const GIT_RECOVERY_MARKERS = ['rebase-merge', 'rebase-apply', 'CHERRY_PICK_HEAD'] as const
+
+async function hasActiveGitRecovery(gitDir: string): Promise<boolean> {
+  const markers = await Promise.all(
+    GIT_RECOVERY_MARKERS.map(async (marker) => {
+      try {
+        await lstat(join(gitDir, marker))
+        return true
+      } catch (error) {
+        if (ownErrorCode(error) === 'ENOENT') return false
+        throw error
+      }
+    }),
+  )
+  return markers.some(Boolean)
+}
+
 /** Reconstruct and validate persisted metadata; failure never falls back to shared mode. */
-export async function validateThreadWorktree(
+async function validateThreadWorktreeState(
   input: ValidateWorktreeInput,
-): Promise<ValidatedThreadWorktree> {
+): Promise<ValidatedThreadWorktreeState> {
   assertOwnerId('project id', input.projectId)
   assertOwnerId('thread id', input.threadId)
   assertWorktreeMetadata(input.worktree)
@@ -908,13 +934,15 @@ export async function validateThreadWorktree(
   // but a missing branch field there is not evidence that this HEAD detached.
   if (liveBranchCheck.status === 'rejected') throw liveBranchCheck.reason
   const liveBranch = liveBranchCheck.value
-  if (!liveBranch) throw new ThreadWorktreeDetachedError(input.worktree.branch)
   // `symbolicHeadBranch` delegates to `git symbolic-ref`, which rejects a
   // malformed ref before returning its short name. Running `check-ref-format`
   // on that same Git-authored value would add another sandboxed subprocess to
-  // every agent dispatch without strengthening this validation.
-  if (liveBranch === input.worktree.baseBranch) {
-    throw new Error('Thread worktree branch must differ from its recorded base branch')
+  // every agent dispatch without strengthening this validation. A null value
+  // is retained here for the recovery-only validator below.
+  if (liveBranch) {
+    if (liveBranch === input.worktree.baseBranch) {
+      throw new Error('Thread worktree branch must differ from its recorded base branch')
+    }
   }
 
   const executionRoot = executionRootCheck.status === 'fulfilled' ? executionRootCheck.value : null
@@ -924,7 +952,10 @@ export async function validateThreadWorktree(
     commonGitDir(projectRoot),
   ])
   if (registrationCheck.status === 'rejected') throw registrationCheck.reason
-  if (commonGitDirCheck.status === 'rejected') throw commonGitDirCheck.reason
+  if (commonGitDirCheck.status === 'rejected') {
+    releaseWorktreeRoot(executionRoot)
+    throw commonGitDirCheck.reason
+  }
   const registration = registrationCheck.value
   const projectCommonGitDir = commonGitDirCheck.value
   if (registration.commonGitDir !== projectCommonGitDir) {
@@ -938,6 +969,38 @@ export async function validateThreadWorktree(
     root: executionRoot,
     gitDir: registration.gitDir,
     commonGitDir: registration.commonGitDir,
+  }
+}
+
+export async function validateThreadWorktree(
+  input: ValidateWorktreeInput,
+): Promise<ValidatedThreadWorktree> {
+  const validated = await validateThreadWorktreeState(input)
+  const branch = validated.branch
+  if (!branch) {
+    releaseWorktreeRoot(validated.root)
+    throw new ThreadWorktreeDetachedError(input.worktree.branch)
+  }
+  return { ...validated, branch }
+}
+
+/**
+ * Validate a detached checkout for a terminal that can repair an interrupted
+ * Git operation. Detached checkouts without a sequencer marker stay blocked.
+ */
+export async function validateThreadWorktreeRecovery(
+  input: ValidateWorktreeInput,
+): Promise<ValidatedThreadWorktreeRecovery> {
+  const validated = await validateThreadWorktreeState(input)
+  try {
+    if (validated.branch) throw new Error('Thread worktree does not need Git recovery')
+    if (!(await hasActiveGitRecovery(validated.gitDir))) {
+      throw new ThreadWorktreeDetachedError(input.worktree.branch)
+    }
+    return { ...validated, branch: null }
+  } catch (error) {
+    releaseWorktreeRoot(validated.root)
+    throw error
   }
 }
 

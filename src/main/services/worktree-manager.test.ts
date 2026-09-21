@@ -37,6 +37,7 @@ import {
   sameWorktreePath,
   ThreadWorktreeDetachedError,
   validateThreadWorktree,
+  validateThreadWorktreeRecovery,
 } from './worktree-manager.ts'
 
 function git(cwd: string, args: string[]): string {
@@ -607,6 +608,8 @@ describe('worktree manager', () => {
       prompt: 'Validate authority',
       baseBranch: 'main',
     })
+    const registered = getInternalWorkspaceRootRegistration(worktree.path)
+    assert.ok(registered)
     git(worktree.path, ['checkout', '-q', '--detach', 'HEAD'])
     await assert.rejects(
       validateThreadWorktree({
@@ -621,6 +624,28 @@ describe('worktree manager', () => {
         return true
       },
     )
+    await assert.rejects(
+      validateThreadWorktreeRecovery({
+        projectId: 'project-1',
+        threadId: 'thread-1',
+        projectRoot: repo,
+        worktree,
+      }),
+      ThreadWorktreeDetachedError,
+    )
+
+    const rebaseMarker = join(registered.gitDir, 'rebase-merge')
+    await mkdir(rebaseMarker)
+    const recovery = await validateThreadWorktreeRecovery({
+      projectId: 'project-1',
+      threadId: 'thread-1',
+      projectRoot: repo,
+      worktree,
+    })
+    assert.equal(recovery.branch, null)
+    assert.equal(recovery.root, worktree.path)
+    assert.equal(recovery.gitDir, registered.gitDir)
+    await rm(rebaseMarker, { recursive: true })
     git(worktree.path, ['checkout', '-q', worktree.branch])
 
     const headPath = git(worktree.path, ['rev-parse', '--git-path', 'HEAD']).trim()

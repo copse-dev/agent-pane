@@ -5,13 +5,18 @@ import {
   prepareThreadExecutionContext,
   requireThreadExecutionContext,
   resolveThreadExecutionContext,
+  resolveThreadTerminalExecutionContext,
   runWithThreadExecutionContext,
   type ThreadExecutionContext,
   type ThreadExecutionContextDependencies,
   requireThreadExecutionOwner,
 } from './thread-execution-context.ts'
 import type { ThreadWorktree } from '@shared/types/worktree.ts'
-import type { ValidatedThreadWorktree } from './worktree-manager.ts'
+import {
+  ThreadWorktreeDetachedError,
+  type ValidatedThreadWorktree,
+  type ValidatedThreadWorktreeRecovery,
+} from './worktree-manager.ts'
 
 function sharedContext(threadId: string, root: string): ThreadExecutionContext {
   return {
@@ -106,6 +111,86 @@ describe('thread execution context', () => {
       checkoutMode: 'worktree',
       branch: 'copse/thread-1',
     })
+  })
+
+  it('allows a terminal to enter a validated interrupted Git recovery', async () => {
+    const persisted = {
+      path: '/diagnostic/path',
+      branch: 'copse/thread-1',
+      baseBranch: 'main',
+      baseCommit: 'abc123',
+      createdAt: 1,
+      seededFromDirtyProject: false,
+    }
+    const recovery: ValidatedThreadWorktreeRecovery = {
+      ...persisted,
+      branch: null,
+      path: '/validated/root',
+      root: '/validated/root',
+      gitDir: '/repo/.git/worktrees/thread-1',
+      commonGitDir: '/repo/.git',
+    }
+    let recoveryValidations = 0
+    const dependencies: ThreadExecutionContextDependencies = {
+      getProjectRoot: () => '/project',
+      getThreadMeta: async () => ({ id: 'thread-1', worktree: persisted }),
+      validateWorktree: async () => {
+        throw new ThreadWorktreeDetachedError(persisted.branch)
+      },
+      validateWorktreeRecovery: async () => {
+        recoveryValidations += 1
+        return recovery
+      },
+    }
+
+    await assert.rejects(
+      resolveThreadExecutionContext('project-1', 'thread-1', dependencies),
+      ThreadWorktreeDetachedError,
+    )
+    const context = await resolveThreadTerminalExecutionContext(
+      'project-1',
+      'thread-1',
+      dependencies,
+    )
+
+    assert.deepEqual(context, {
+      projectId: 'project-1',
+      threadId: 'thread-1',
+      projectRoot: '/project',
+      root: '/validated/root',
+      checkoutMode: 'worktree',
+      branch: null,
+    })
+    assert.equal(recoveryValidations, 1)
+  })
+
+  it('does not use terminal recovery for unrelated validation failures', async () => {
+    let recoveryValidations = 0
+    await assert.rejects(
+      resolveThreadTerminalExecutionContext('project-1', 'thread-1', {
+        getProjectRoot: () => '/project',
+        getThreadMeta: async () => ({
+          id: 'thread-1',
+          worktree: {
+            path: '/missing',
+            branch: 'copse/thread-1',
+            baseBranch: 'main',
+            baseCommit: 'abc123',
+            createdAt: 1,
+            seededFromDirtyProject: false,
+          },
+        }),
+        validateWorktree: async () => {
+          throw new Error('Thread worktree is missing')
+        },
+        validateWorktreeRecovery: async () => {
+          recoveryValidations += 1
+          throw new Error('unexpected recovery validation')
+        },
+      }),
+      /Thread worktree is missing/,
+    )
+    assert.equal(recoveryValidations, 0)
   })
 
   it('does not index a worktree during generic UI context resolution (#1728)', async () => {

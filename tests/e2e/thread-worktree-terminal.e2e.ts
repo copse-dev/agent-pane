@@ -21,6 +21,12 @@ async function xtermText(): Promise<string> {
   return browser.execute(() => document.querySelector('.xterm-rows')?.textContent ?? '')
 }
 
+async function activeXtermText(): Promise<string> {
+  return browser.execute(
+    () => document.querySelector('.terminals-tab-panel.is-active .xterm-rows')?.textContent ?? '',
+  )
+}
+
 async function gitChangePaths(): Promise<string[]> {
   const elements = await $$('.git-change-path')
   const paths: string[] = []
@@ -225,5 +231,46 @@ describe('isolated thread terminal cwd', () => {
     await expect(preview).toHaveText(expect.stringContaining('Isolated worktree file'))
     await assertNoErrorToasts('thread worktree markdown link click')
     await saveAppScreenshot('thread-worktree-added-file-link.png')
+  })
+
+  it('opens a recovery shell for an interrupted rebase', async function () {
+    this.timeout(90_000)
+    git(worktreeRoot, ['add', 'worktree-only.md'])
+    git(worktreeRoot, ['commit', '-qm', 'worktree change'])
+    git(projectRoot, ['add', 'project-only.md'])
+    git(projectRoot, ['commit', '-qm', 'project change'])
+    git(worktreeRoot, ['config', 'gpg.format', 'ssh'])
+    git(worktreeRoot, ['config', 'commit.gpgSign', 'true'])
+    git(worktreeRoot, ['config', 'user.signingKey', join(projectRoot, 'missing-signing-key.pub')])
+
+    const baseBranch = git(projectRoot, ['branch', '--show-current'])
+    assert.throws(() => git(worktreeRoot, ['rebase', baseBranch]))
+    assert.equal(git(worktreeRoot, ['branch', '--show-current']), '')
+
+    const terminalBtn = await $('#titlebar .titlebar-btn[aria-label="Open terminal"]')
+    if (!(await terminalBtn.getAttribute('class')).includes('active')) await terminalBtn.click()
+    const tabsBefore = await $$('.terminals-tab')
+    await $('.terminals-new-btn').click()
+    await approveUnsandboxedTerminalIfPrompted()
+    await browser.waitUntil(
+      async () => (await $$('.terminals-tab')).length === tabsBefore.length + 1,
+      {
+        timeout: 30_000,
+        timeoutMsg: 'expected a recovery terminal tab to open',
+      },
+    )
+
+    const helper = await $('.terminals-tab-panel.is-active .xterm-helper-textarea')
+    await helper.waitForDisplayed({ timeout: 30_000 })
+    await helper.click()
+    await browser.keys(['clear', '\uE007'])
+    await browser.keys(['git', ' ', 'status', ' ', '--short', ' ', '--branch', '\uE007'])
+    await browser.waitUntil(async () => (await activeXtermText()).includes('HEAD (no branch)'), {
+      timeout: 30_000,
+      timeoutMsg: 'expected the recovery terminal to show the detached rebase checkout',
+    })
+
+    await assertNoErrorToasts('interrupted rebase recovery terminal')
+    await saveAppScreenshot('thread-worktree-rebase-recovery-terminal.png')
   })
 })

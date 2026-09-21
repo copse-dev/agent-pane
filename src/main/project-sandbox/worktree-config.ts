@@ -81,7 +81,7 @@ export async function worktreeManagerSandboxOverlay(
   const writes = repository
     ? [
         repository.gitDir,
-        ...['objects', 'refs', 'logs', 'worktrees', 'packed-refs'].map((name) =>
+        ...['objects', 'refs', 'logs', 'worktrees', 'packed-refs', 'packed-refs.lock'].map((name) =>
           join(repository.commonDir, name),
         ),
       ]

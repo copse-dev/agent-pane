@@ -881,6 +881,7 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
         join(internalRoot.commonGitDir, 'info/**'),
         join(internalRoot.commonGitDir, 'config'),
         join(internalRoot.commonGitDir, 'packed-refs'),
+        join(internalRoot.commonGitDir, 'packed-refs.lock'),
         join(internalRoot.commonGitDir, 'shallow'),
         // The primary checkout's own state, read-only: its HEAD (without it
         // `git worktree list` reported the primary at 0000000), its index (so
@@ -907,6 +908,7 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
         join(internalRoot.commonGitDir, 'refs/**'),
         join(internalRoot.commonGitDir, 'logs/**'),
         join(internalRoot.commonGitDir, 'packed-refs'),
+        join(internalRoot.commonGitDir, 'packed-refs.lock'),
       ]
     : []
   const siblingDeny = internalRoot ? uncoveredSiblingDenyPaths(internalRoot.siblingRoots) : []

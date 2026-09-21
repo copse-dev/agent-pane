@@ -80,6 +80,7 @@ describe('worktree manager sandbox', () => {
     assert.deepEqual(network.allowedDomains, [])
     assert.equal(network.allowLocalBinding, false)
     assert.ok(filesystem.allowWrite.includes(destination))
+    assert.ok(filesystem.allowWrite.includes(join(repo, '.git', 'packed-refs.lock')))
     assert.ok(!filesystem.allowWrite.includes(dirname(destination)))
     assert.ok(filesystem.denyWrite.includes(join(repo, '.git', 'config')))
     assert.ok(filesystem.denyWrite.includes(join(repo, '.git', 'hooks')))
