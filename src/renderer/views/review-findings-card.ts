@@ -328,9 +328,7 @@ export function createReviewFindingsCardEl(
   const visible = report.findings.filter((finding) => !finding.dismissed)
   const dismissed = report.findings.filter((finding) => finding.dismissed)
   if (report.findings.length === 0) {
-    panel.append(
-      el('div', { class: 'review-report-clean' }, report.note ?? 'Clean.'),
-    )
+    panel.append(el('div', { class: 'review-report-clean' }, report.note ?? 'Clean.'))
   } else {
     if (report.note !== undefined) {
       panel.append(el('div', { class: 'review-report-note' }, report.note))
