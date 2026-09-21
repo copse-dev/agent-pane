@@ -680,6 +680,11 @@ export interface ApiClient {
       skippedWrongRepo: number
       skippedInactive: number
     }>
+    /** Fetch one selected imported Cursor agent's terminal run snapshot. */
+    refreshImportedThread: (
+      projectId: string,
+      threadId: string,
+    ) => Promise<import('@shared/types').Message | null>
   }
   acp: {
     /** Detect known ACP agents installed/running on this device (for the Settings panel). */

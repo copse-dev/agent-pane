@@ -21,6 +21,7 @@ import {
   appendStreamStat,
   recordModelSelection,
   appendMessage,
+  appendImportedRemoteAgentRunResult,
   updateMeta,
   getThreadMeta,
   recordThreadAgentLink,
@@ -52,6 +53,7 @@ import {
   type SpineModelSelectedLine,
 } from '@shared/threads/spine-schema.ts'
 import { isNonNull } from '@shared/nullish.ts'
+import { createHash } from 'node:crypto'
 
 /** Build PR refs from URL strings, matching what the link store feeds attach. */
 function prRefs(...urls: string[]): GithubPrRef[] {
@@ -73,6 +75,12 @@ function thread(id: string, overrides: Partial<Thread> = {}): Thread {
 
 function userMsg(id: string, content: string): Message {
   return { id, role: 'user', content, toolCalls: [], createdAt: 10 }
+}
+
+function importedCursorRunMessageId(agentId: string, runId: string): string {
+  return `remote-cursor-run-${createHash('sha256')
+    .update(`${agentId}\u0000${runId}`, 'utf8')
+    .digest('hex')}`
 }
 
 function assistantMsg(id: string, content: string, result: string): Message {
@@ -1032,6 +1040,145 @@ describe('thread-store', () => {
       assert.equal(archived.messages[0]?.toolCalls[0]?.result, 'a big tool result')
     })
   })
+
+  it('persists an imported run snapshot once and reuses its stable message on retry', async () => {
+    await createThread(
+      'proj-1',
+      thread('t1', {
+        remoteAgentLink: {
+          provider: 'cursor',
+          agentId: 'agent-1',
+          runId: 'run-1',
+          imported: true,
+          createdAt: 1,
+        },
+      }),
+    )
+    const snapshot = userMsg(
+      importedCursorRunMessageId('agent-1', 'run-1'),
+      'Finished external work.',
+    )
+    snapshot.role = 'assistant'
+
+    const first = await appendImportedRemoteAgentRunResult('proj-1', 't1', {
+      provider: 'cursor',
+      agentId: 'agent-1',
+      runId: 'run-1',
+      message: snapshot,
+    })
+    const second = await appendImportedRemoteAgentRunResult('proj-1', 't1', {
+      provider: 'cursor',
+      agentId: 'agent-1',
+      runId: 'run-1',
+      message: snapshot,
+    })
+
+    assert.deepEqual(first, snapshot)
+    assert.deepEqual(second, snapshot)
+    const loaded = await loadProjectThreads('proj-1')
+    const stored = loaded[0]
+    assert.ok(stored)
+    assert.deepEqual(stored.messages, [snapshot])
+    assert.equal(stored.remoteAgentLink?.imported, true)
+  })
+
+  it('does not commit an imported snapshot when local ownership begins at the final boundary', async () => {
+    await createThread(
+      'proj-1',
+      thread('t1', {
+        remoteAgentLink: {
+          provider: 'cursor',
+          agentId: 'agent-1',
+          runId: 'run-1',
+          imported: true,
+          createdAt: 1,
+        },
+      }),
+    )
+    const snapshot = userMsg(
+      importedCursorRunMessageId('agent-1', 'run-1'),
+      'Finished external work. https://github.com/acme/project/pull/42',
+    )
+    snapshot.role = 'assistant'
+    let isOwnedByRemoteRefresh = true
+    let checks = 0
+
+    const stored = await appendImportedRemoteAgentRunResult('proj-1', 't1', {
+      provider: 'cursor',
+      agentId: 'agent-1',
+      runId: 'run-1',
+      message: snapshot,
+      canPersist: () => {
+        checks += 1
+        // The check after knownMessageIdsFor is the last synchronous check
+        // before a spine append. Simulate dispatcher ownership accepted in a
+        // queued microtask at precisely that boundary.
+        if (checks === 4) queueMicrotask(() => (isOwnedByRemoteRefresh = false))
+        return isOwnedByRemoteRefresh
+      },
+    })
+
+    assert.equal(stored, null)
+    assert.equal(checks, 5)
+    const reloaded = (await loadProjectThreads('proj-1'))[0]
+    assert.ok(reloaded)
+    assert.deepEqual(reloaded.messages, [])
+    assert.deepEqual(reloaded.prRefs, undefined)
+  })
+
+  it('repairs legacy import provenance and derived PR metadata for an existing result', async () => {
+    const snapshot = userMsg(
+      importedCursorRunMessageId('agent-1', 'run-1'),
+      'Finished external work. https://github.com/acme/project/pull/42',
+    )
+    snapshot.role = 'assistant'
+    await createThread(
+      'proj-1',
+      thread('t1', {
+        model: 'remote-agent:cursor',
+        messages: [
+          {
+            id: 'import-notice',
+            role: 'assistant',
+            content:
+              '_Imported Cursor cloud agent — [t1](https://cursor.com). ' +
+              'Send a message here to continue that run from Copse._',
+            toolCalls: [],
+            createdAt: 1,
+          },
+          snapshot,
+        ],
+        remoteAgentLink: {
+          provider: 'cursor',
+          agentId: 'agent-1',
+          runId: 'run-1',
+          createdAt: 1,
+        },
+      }),
+    )
+
+    const repaired = await appendImportedRemoteAgentRunResult('proj-1', 't1', {
+      provider: 'cursor',
+      agentId: 'agent-1',
+      runId: 'run-1',
+      message: snapshot,
+    })
+
+    assert.deepEqual(repaired, snapshot)
+    const reloaded = (await loadProjectThreads('proj-1'))[0]
+    assert.ok(reloaded)
+    assert.equal(reloaded.remoteAgentLink?.imported, true)
+    assert.deepEqual(
+      reloaded.prRefs?.map((ref) => ref.url),
+      ['https://github.com/acme/project/pull/42'],
+    )
+    const catalogEntry = (await loadProjectCatalog('proj-1'))[0]
+    assert.ok(catalogEntry)
+    assert.deepEqual(
+      catalogEntry.prRefs.map((ref) => ref.url),
+      ['https://github.com/acme/project/pull/42'],
+    )
+  })
 })
 
 describe('thread-store agent-run ↔ PR link (issue #690, Q6)', () => {
@@ -1065,6 +1212,19 @@ describe('thread-store agent-run ↔ PR link (issue #690, Q6)', () => {
     const meta = await getThreadMeta('proj-1', 't1')
     assert.ok(meta)
     assert.deepEqual(meta.remoteAgentLink, CURSOR_LAUNCH)
+  })
+
+  it('replacing an imported link for a local launch clears import provenance', async () => {
+    await createThread(
+      'proj-1',
+      thread('t1', {
+        remoteAgentLink: { ...CURSOR_LAUNCH, imported: true },
+      }),
+    )
+    await recordThreadAgentLink('proj-1', 't1', CURSOR_LAUNCH)
+    const link = (await getThreadMeta('proj-1', 't1'))?.remoteAgentLink
+    assert.ok(link)
+    assert.equal(link.imported, undefined)
   })
 
   it('attaches the PR (canonical url) into the link and the reverse index', async () => {

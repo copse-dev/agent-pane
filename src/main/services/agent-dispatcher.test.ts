@@ -384,6 +384,236 @@ describe('AgentDispatcher', () => {
     assert.equal(dispatcher.isActive('project-1', 'thread-1'), false)
   })
 
+  it('publishes done after committing history so an immediate follow-up serializes', async () => {
+    const saved: LLMMessage[][] = []
+    let followUp: Promise<void> | undefined
+    let activeWhenDone: boolean | undefined
+    const dispatchHost: AgentHost<StreamChunk> = {
+      emit: (_threadId, chunk): void => {
+        if (chunk.type !== 'done' || followUp !== undefined) return
+        activeWhenDone = dispatcher.isActive('project-1', 'thread-1')
+        followUp = dispatcher.dispatch(
+          request({ payload: { userContent: 'next', invokedSkills: [], priorTodos: [] } }),
+        )
+        // Keep the listener's synchronous retry observable below without
+        // reporting an unhandled rejection before its assertion runs.
+        void followUp.catch(() => undefined)
+      },
+    }
+    const dispatcher = new AgentDispatcher(
+      dispatchHost,
+      registry,
+      dependencies({
+        saveHistory: async (_projectId, _threadId, messages) => {
+          saved.push(messages)
+        },
+        run: async (_threadId, userContent, priorMessages, streamHost) => {
+          const messages: LLMMessage[] = [...priorMessages, { role: 'user', content: userContent }]
+          streamHost.emit('thread-1', { type: 'done' })
+          return { usage: { inputTokens: 0, outputTokens: 0 }, messages }
+        },
+      }),
+    )
+
+    await dispatcher.dispatch(request())
+    await followUp
+
+    assert.equal(activeWhenDone, false)
+    assert.deepEqual(saved, [
+      [{ role: 'user', content: 'continue' }],
+      [
+        { role: 'user', content: 'continue' },
+        { role: 'user', content: 'next' },
+      ],
+    ])
+  })
+
+  it('does not publish done before the final history commit succeeds', async () => {
+    let releaseSave!: () => void
+    const saveStarted = new Promise<void>((resolve) => {
+      releaseSave = resolve
+    })
+    let releaseCommit!: () => void
+    const commit = new Promise<void>((resolve) => {
+      releaseCommit = resolve
+    })
+    const chunks: StreamChunk[] = []
+    const dispatcher = new AgentDispatcher(
+      {
+        emit: (_threadId, chunk): void => {
+          chunks.push(chunk)
+        },
+      },
+      registry,
+      dependencies({
+        saveHistory: async () => {
+          releaseSave()
+          await commit
+        },
+        run: async (_threadId, userContent, priorMessages, streamHost) => {
+          streamHost.emit('thread-1', { type: 'done' })
+          return {
+            usage: { inputTokens: 0, outputTokens: 0 },
+            messages: [...priorMessages, { role: 'user', content: userContent }],
+          }
+        },
+      }),
+    )
+
+    const dispatch = dispatcher.dispatch(request())
+    await saveStarted
+    assert.deepEqual(chunks, [])
+    assert.equal(dispatcher.isActive('project-1', 'thread-1'), true)
+    releaseCommit()
+    await dispatch
+
+    assert.deepEqual(chunks, [{ type: 'done' }])
+    assert.equal(dispatcher.isActive('project-1', 'thread-1'), false)
+  })
+
+  it('does not publish done when the final history commit fails', async () => {
+    const chunks: StreamChunk[] = []
+    const priorHistories: LLMMessage[][] = []
+    const outcome = {
+      status: 'completed' as const,
+      stopReason: 'end_turn' as const,
+      source: 'provider' as const,
+      executor: 'local' as const,
+      provider: 'test-provider',
+      model: 'test-model',
+      endedAt: 1,
+    }
+    let loadHistoryCalls = 0
+    let saveHistoryCalls = 0
+    const dispatcher = new AgentDispatcher(
+      {
+        emit: (_threadId, chunk): void => {
+          chunks.push(chunk)
+        },
+      },
+      registry,
+      dependencies({
+        loadHistory: async () => {
+          loadHistoryCalls += 1
+          return []
+        },
+        saveHistory: async () => {
+          saveHistoryCalls += 1
+          if (saveHistoryCalls === 1) throw new Error('history disk full')
+        },
+        run: async (_threadId, userContent, priorMessages, streamHost) => {
+          priorHistories.push(priorMessages)
+          streamHost.emit('thread-1', { type: 'turn_outcome', outcome })
+          streamHost.emit('thread-1', { type: 'done' })
+          return {
+            usage: { inputTokens: 0, outputTokens: 0 },
+            messages: [...priorMessages, { role: 'user', content: userContent }],
+          }
+        },
+      }),
+    )
+
+    await assert.rejects(dispatcher.dispatch(request()), /history disk full/)
+
+    assert.deepEqual(chunks, [])
+    assert.equal(dispatcher.isActive('project-1', 'thread-1'), false)
+    await dispatcher.dispatch(
+      request({ payload: { userContent: 'retry', invokedSkills: [], priorTodos: [] } }),
+    )
+
+    assert.equal(loadHistoryCalls, 2)
+    assert.deepEqual(priorHistories, [[], []])
+    assert.deepEqual(chunks, [{ type: 'turn_outcome', outcome }, { type: 'done' }])
+  })
+
+  it('publishes a machine turn done after releasing the same history ownership', async () => {
+    const saved: LLMMessage[][] = []
+    let followUp: Promise<void> | undefined
+    let activeWhenDone: boolean | undefined
+    const dispatchHost: AgentHost<StreamChunk> = {
+      emit: (_threadId, chunk): void => {
+        if (chunk.type !== 'done' || followUp !== undefined) return
+        activeWhenDone = dispatcher.isActive('project-1', 'thread-1')
+        followUp = dispatcher.dispatch(
+          request({
+            payload: { userContent: 'next after machine', invokedSkills: [], priorTodos: [] },
+          }),
+        )
+        void followUp.catch(() => undefined)
+      },
+    }
+    const dispatcher = new AgentDispatcher(
+      dispatchHost,
+      registry,
+      dependencies({
+        loadEpoch: async () => ({ turnTreeId: 'tree-1', continuationUsed: 0 }),
+        saveHistory: async (_projectId, _threadId, messages) => {
+          saved.push(messages)
+        },
+        run: async (_threadId, userContent, priorMessages, streamHost) => {
+          const messages: LLMMessage[] = [...priorMessages, { role: 'user', content: userContent }]
+          streamHost.emit('thread-1', { type: 'done' })
+          return { usage: { inputTokens: 0, outputTokens: 0 }, messages }
+        },
+      }),
+    )
+
+    const machine = await dispatcher.dispatchMachine({
+      ...request(),
+      operationId: 'machine-1',
+      turnTreeId: 'tree-1',
+    })
+    await followUp
+
+    assert.equal(machine, 'completed')
+    assert.equal(activeWhenDone, false)
+    assert.deepEqual(saved, [
+      [{ role: 'user', content: 'continue' }],
+      [
+        { role: 'user', content: 'continue' },
+        { role: 'user', content: 'next after machine' },
+      ],
+    ])
+  })
+
+  it('claims the thread while renderer-epoch persistence is still pending', async () => {
+    let enteredEpochWrite!: () => void
+    let releaseEpochWrite!: () => void
+    const epochWriteStarted = new Promise<void>((resolve) => {
+      enteredEpochWrite = resolve
+    })
+    const epochWrite = new Promise<void>((resolve) => {
+      releaseEpochWrite = resolve
+    })
+    const dispatcher = new AgentDispatcher(
+      host,
+      registry,
+      dependencies({
+        saveEpoch: async () => {
+          enteredEpochWrite()
+          await epochWrite
+        },
+      }),
+    )
+
+    const dispatch = dispatcher.dispatch(
+      request({
+        payload: {
+          userContent: 'continue',
+          invokedSkills: [],
+          priorTodos: [],
+          turnTreeId: 'tree-1',
+          continuationBudgetUsed: 0,
+        },
+      }),
+    )
+    await epochWriteStarted
+    assert.equal(dispatcher.isActive('project-1', 'thread-1'), true)
+    releaseEpochWrite()
+    await dispatch
+    assert.equal(dispatcher.isActive('project-1', 'thread-1'), false)
+  })
+
   it('does not run when trusted execution context resolution fails', async () => {
     let ran = false
     const dispatcher = new AgentDispatcher(

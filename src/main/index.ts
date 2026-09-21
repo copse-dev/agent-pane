@@ -558,11 +558,13 @@ app
     const disposeSimulatorDesktopHandlers = initSimulatorDesktop(win)
     recordStartupPhase('register-handlers')
     perfMark('main:register-handlers')
-    registerAllHandlers(win, registry)
+    const agentDispatcher = new AgentDispatcher(agentHost, registry)
+    registerAllHandlers(win, registry, (projectId, threadId) =>
+      agentDispatcher.isActive(projectId, threadId),
+    )
     getAutomationService().start((event) => {
       if (!win.isDestroyed()) win.webContents.send('automations:triggered', event)
     })
-    const agentDispatcher = new AgentDispatcher(agentHost, registry)
     // A container run is a turn on its thread but never passes through the
     // dispatcher; write it into the thread's model history when it settles
     // (A14), so the next message to the thread knows what the run did.
