@@ -435,6 +435,19 @@
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+/* Owning-project label on a workspace-level automation row/heading (#2511):
+   same quiet treatment as the PR status chip's neighbours, shrinking before
+   the title does so a long project name never crowds out the schedule name. */
+.chat-thread-owner {
+  flex-shrink: 0;
+  margin-left: var(--spacing-xs);
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+}
+.automation-schedule-toggle .chat-thread-owner {
+  margin-left: 0;
+}
 .automation-schedule-runs .chat-row {
   padding-left: calc(42px + var(--spacing-md));
   color: var(--text-muted);
@@ -499,6 +512,12 @@
   padding: 0;
 }
 .chat-row:hover .chat-delete {
+  opacity: 1;
+}
+/* A single-run automation row (#2511) has no schedule heading of its own to
+   carry `.automation-setup-btn`, so it sits directly on the row — same quiet
+   reveal as the delete button beside it. */
+.chat-row:hover .automation-setup-btn {
   opacity: 1;
 }
 /* Animated "…" in the thread-row indent gutter (not an extra flex column), so
