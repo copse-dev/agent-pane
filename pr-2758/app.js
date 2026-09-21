@@ -69198,7 +69198,7 @@ function hookCardDetailLines(card) {
   if (card.status === "halted") lines.push("Stopped the agent run");
   if (card.updatedInput) lines.push("Rewrote the tool input");
   if (card.nudgeApplied) {
-    const via = card.nudgeMechanism === "text-only-turn" ? "as a forced text-only turn" : "appended to the next turn";
+    const via = card.nudgeMechanism === "text-only-turn" ? "as a forced text-only turn" : card.nudgeMechanism === "tool-enabled-turn" ? "as a tool-enabled finalization turn" : "appended to the next turn";
     lines.push(`Applied this nudge to the conversation \u2014 ${via}`);
   }
   if (card.injectContextChars !== void 0 && card.injectContextChars > 0) {
