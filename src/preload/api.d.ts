@@ -996,6 +996,9 @@ export interface ApiClient {
       id: string,
       threadId: string,
     ) => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote | null>
+    /** The roadmap item currently tracking `threadId` as its `thread` field, if any —
+     * the reverse of `setThread`, used by the thread's back-link chip (#2501). */
+    findByThread: (threadId: string) => Promise<{ id: string; title: string } | null>
   }
   supervisor: {
     list(projectId: string): Promise<{ tasks: SupervisedTaskSummary[] }>

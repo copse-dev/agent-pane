@@ -1233,6 +1233,7 @@ const api: ApiClient = {
     },
     setThread: (id: string, threadId: string) =>
       ipcRenderer.invoke('roadmap:set-thread', id, threadId),
+    findByThread: (threadId: string) => ipcRenderer.invoke('roadmap:find-by-thread', threadId),
   },
   supervisor: {
     list: (projectId: string) => ipcRenderer.invoke('supervisor:list', projectId),

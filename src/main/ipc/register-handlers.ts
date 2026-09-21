@@ -1148,6 +1148,13 @@ export function registerAllHandlers(
   // a `thread` frontmatter field, so the pane can offer reopening it later.
   // Restamping is deliberate: starting a fresh thread from the same item points
   // the field at the newest one. An empty threadId clears the tracking.
+  //
+  // The new thread's own `threads_changed` fires (createThread) before this
+  // stamp lands — the same "return before the background write lands" shape
+  // as a complexity stamp — so the thread-side back-link chip (#2501) cannot
+  // learn the mapping from thread events alone. Broadcast on the shared
+  // `roadmap:changed` channel so it (and the pane) pick the stamp up once it
+  // durably lands, same as stampRoadmapComplexity/Category above.
   ipcMain.handle('roadmap:set-thread', (event, rawId: unknown, rawThreadId: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zRoadmapId, [rawId])
@@ -1155,9 +1162,25 @@ export function registerAllHandlers(
     const existing = getKnowledgeNote(id)
     if (!existing || existing.type !== ROADMAP_TYPE) return null
     const { thread: _thread, ...rest } = existing.fields
-    return updateKnowledgeNote(id, {
+    const updated = updateKnowledgeNote(id, {
       fields: { ...rest, ...(threadId ? { thread: threadId } : {}) },
     })
+    if (updated) notifyRoadmapChanged()
+    return updated
+  })
+
+  // Reverse lookup for the thread-side back-link (issue #2501): given a
+  // thread id, find the roadmap item currently tracking it as its `thread`
+  // field. Because that field is restamped to the newest thread on every
+  // "Start thread" (see roadmap:set-thread above), an item that has since
+  // spawned a second thread only answers for the newer one — the older
+  // thread's back-link quietly stops resolving rather than pointing at the
+  // wrong item.
+  ipcMain.handle('roadmap:find-by-thread', (event, rawThreadId: unknown) => {
+    assertMainFrameSender(event, win)
+    const threadId = parseIpcArgs(zNonEmptyString.max(128), [rawThreadId])
+    const match = loadKnowledgeNotes(ROADMAP_TYPE).find((n) => n.fields['thread'] === threadId)
+    return match ? { id: match.id, title: match.title } : null
   })
 
   // Advisory fit check of an item's prompt against its pinned issue,
