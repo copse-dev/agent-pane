@@ -1,10 +1,15 @@
 import assert from 'node:assert/strict'
+import { join } from 'node:path'
 import { $, $$, browser } from '@wdio/globals'
 import type { MockScriptStep } from '@copse/llm/mock-script'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { waitForPromptReady } from './helpers.ts'
 import { setComposerValue } from './helpers/composer.ts'
-import { saveElementScreenshot } from './helpers/screenshot.ts'
+import {
+  E2E_SCREENSHOT_DIR,
+  prepareE2eScreenshot,
+  waitForSettledLayout,
+} from './helpers/screenshot.ts'
 
 const PROJECT_ID = 'e2e-canvas-background-parity'
 const TITLE = 'Transparent Canvas Parity'
@@ -117,16 +122,22 @@ async function renderCanvas(prompt: string, expectedToolCount: number): Promise<
   await $('.submit-btn').click()
   await browser.waitUntil(
     async () =>
-      browser.execute(
-        (count) =>
+      browser.execute((count) => {
+        const completedReplies = Array.from(
+          document.querySelectorAll('.msg-assistant > .message-body > .message-text'),
+        ).filter((message) => message.textContent?.includes('Mock response to:')).length
+        return (
           !document.querySelector('.submit-btn')?.classList.contains('with-stop') &&
           document.querySelectorAll('.tool-card[data-tool-id][data-status="done"]').length ===
-            count,
-        expectedToolCount,
-      ),
-    { timeout: 30_000, timeoutMsg: 'expected the canvas render tool to finish' },
+            count &&
+          completedReplies >= count
+        )
+      }, expectedToolCount),
+    { timeout: 30_000, timeoutMsg: 'expected the canvas render turn to finish' },
   )
-  // MCP previews are built lazily inside the completed tool's disclosure.
+  // The final reply replaces the running transcript and restores the rollup's
+  // collapsed state. Wait for that repaint above, then open the completed tool;
+  // otherwise the preview can disappear between its pixel check and capture.
   await browser.execute(() => {
     for (const rollup of document.querySelectorAll<HTMLDetailsElement>('.tool-card-rollup')) {
       if (!rollup.open) rollup.querySelector('summary')?.click()
@@ -137,6 +148,29 @@ async function renderCanvas(prompt: string, expectedToolCount: number): Promise<
       if (!tool.open) tool.querySelector('summary')?.click()
     }
   })
+}
+
+async function saveCanvasPreviewScreenshot(filename: string): Promise<void> {
+  // The fixed-size preparation dispatches a resize, which rebuilds the transcript
+  // and restores completed rollups to their collapsed state. Prepare first, then
+  // reveal the preview in the final layout that will actually be captured.
+  await prepareE2eScreenshot()
+  await browser.waitUntil(
+    async () =>
+      browser.execute(() => {
+        const card = document.querySelector<HTMLElement>('.canvas-preview-card')
+        if (!card) return false
+        for (let ancestor = card.parentElement; ancestor; ancestor = ancestor.parentElement) {
+          if (ancestor instanceof HTMLDetailsElement) ancestor.open = true
+        }
+        card.scrollIntoView({ block: 'center', inline: 'nearest' })
+        return card.getClientRects().length > 0
+      }),
+    { timeout: 15_000, timeoutMsg: 'expected the expanded canvas preview to be visible' },
+  )
+  await waitForSettledLayout('.canvas-preview-card')
+  const card = await browser.$('.canvas-preview-card')
+  await card.saveScreenshot(join(E2E_SCREENSHOT_DIR, filename))
 }
 
 describe('canvas background parity', () => {
@@ -198,8 +232,16 @@ describe('canvas background parity', () => {
         `preview ${JSON.stringify(previewCorner)} should match theme ${JSON.stringify(themePixel)}`,
       )
     }
+    await saveCanvasPreviewScreenshot('canvas-transparent-background-dark.png')
 
-    await card.$('button').click()
+    await browser.execute((title) => {
+      const candidate = Array.from(
+        document.querySelectorAll<HTMLElement>('.canvas-preview-card'),
+      ).find((element) => element.querySelector('.canvas-preview-title')?.textContent === title)
+      const openButton = candidate?.querySelector<HTMLButtonElement>('button')
+      if (!openButton) throw new Error(`Open button missing for canvas ${title}`)
+      openButton.click()
+    }, TITLE)
     await $('.browser-tab-panel.is-active .browser-webview').waitForExist({ timeout: 20_000 })
     const surfaces = await browser.execute(() => {
       const host = document.querySelector<HTMLElement>(
@@ -212,8 +254,6 @@ describe('canvas background parity', () => {
       }
     })
     assert.equal(surfaces.canvas, surfaces.app)
-
-    await saveElementScreenshot('.canvas-preview-card', 'canvas-transparent-background-dark.png')
   })
 
   it('lets an artefact override the default canvas background', async function () {

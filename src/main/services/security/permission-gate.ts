@@ -1295,6 +1295,44 @@ export async function ensureShellCommandPermitted(
   )
 }
 
+/** Fixed native add/commit argv never inherits a basename-wide shell escape. */
+export async function ensureGitCommitPermitted(
+  command: string,
+  executionRoot: string,
+  sandboxEnabled: boolean,
+  signal?: AbortSignal,
+): Promise<boolean> {
+  if (signal?.aborted || resolveToolPermission('git_commit')?.policy === 'block') return false
+  const overlap = isSandboxNetworkScopeActive()
+  const autoRun = getSetting<boolean>('autoRunSandboxCommands', true)
+  const allowed = sandboxEnabled && autoRun && !overlap
+  firePermissionDecision('git_commit', allowed ? 'allow' : 'ask', { executionRoot })
+  if (allowed) return true
+  const response = await requestApproval(
+    {
+      type: 'shell',
+      title: 'Run Git commit?',
+      body: command,
+      bodyAdvice: sandboxEnabled
+        ? overlap
+          ? 'Git and its configured helpers will run inside the project sandbox while another process has temporarily enabled network access.'
+          : 'Automatic sandbox commands are disabled. Git and its configured helpers will run inside the project sandbox.'
+        : 'No project sandbox is available. Git and its configured helpers will run with host access for this commit only.',
+      subject: 'git_commit',
+      scope: sandboxEnabled ? 'sandbox' : 'external',
+      cause: !sandboxEnabled
+        ? 'shell-no-containment'
+        : overlap
+          ? 'shell-network-scope-overlap'
+          : 'shell-in-sandbox',
+    },
+    signal,
+  )
+  return (
+    response.approved && !signal?.aborted && resolveToolPermission('git_commit')?.policy !== 'block'
+  )
+}
+
 function browserUrlFromArgs(args: unknown): string | null {
   if (typeof args !== 'object' || args === null || !('url' in args)) return null
   const url = (args as { url?: unknown }).url

@@ -40,8 +40,3 @@ export function leaseGitSshEnv(baseEnv: NodeJS.ProcessEnv): GitSshEnvLease {
     release: askpass.release,
   }
 }
-
-/** Shared git argv prefix: no pager, no color. */
-export function withGitInvocationArgs(args: string[]): string[] {
-  return ['--no-pager', '-c', 'core.pager=cat', '-c', 'color.ui=false', ...args]
-}

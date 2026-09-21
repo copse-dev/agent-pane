@@ -916,3 +916,11 @@ exist to prevent that; the dead-code gate enforces them.
 - [`docs/thread-store-format.md`](../thread-store-format.md) — spine format `hook_run` extends
 - Cursor hooks reference: <https://cursor.com/docs/hooks> · Claude Code hooks reference:
   <https://code.claude.com/docs/en/hooks>
+
+### Native Git permission observation
+
+Native `git_commit` now emits the canonical `permissionDecision` observation for its
+fixed add/commit operation. The ordinary tool-gate hooks remain in the registry path.
+Its separate signing capability never inherits a shell basename bypass: approvals
+bind to a project, system signer, public key and agent socket, and do not change the
+Git hook process's sandbox. See `docs/shell-permissions.md#native-commits-and-signing`.

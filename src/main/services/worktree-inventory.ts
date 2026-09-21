@@ -33,6 +33,7 @@ import {
   listProjectWorktrees,
   managedThreadIdForPath,
   releaseWorktreeRoot,
+  removeRegisteredWorktreeCheckout,
   repositoryLocation,
   runWorktreeGit,
   sameWorktreePath,
@@ -554,8 +555,7 @@ export async function removeWorktree(input: RemoveWorktreeInput): Promise<Worktr
       }
     }
 
-    const args = ['worktree', 'remove', ...(input.force ? ['--force'] : []), record.path]
-    const removed = await runWorktreeGit(repositoryRoot, args)
+    const removed = await removeRegisteredWorktreeCheckout(repositoryRoot, record.path, input.force)
     if (removed.code !== 0) {
       const detail = (removed.stderr || removed.stdout).trim()
       throw new Error(detail ? `Cannot remove worktree: ${detail}` : 'Cannot remove worktree')
