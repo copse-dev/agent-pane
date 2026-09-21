@@ -162,6 +162,159 @@ describe('buildFooterUsageTooltip', () => {
 
     assert.deepEqual(tooltip.modelRows, [])
   })
+
+  it('omits the "This conversation" label when there is nothing to contrast it with', () => {
+    const tooltip = buildFooterUsageTooltip(
+      { inputTokens: 2000, outputTokens: 300, estimated: false },
+      {
+        model: 'claude-sonnet-4-6',
+        messages: [],
+        measuredUsage: { inputTokens: 2000, outputTokens: 300 },
+      },
+    )
+
+    assert.equal(tooltip.conversationLabel, null)
+  })
+})
+
+describe('buildFooterUsageTooltip free-usage explanation (#2464)', () => {
+  it('explains a local model as free rather than leaving "free" unexplained', () => {
+    const tooltip = buildFooterUsageTooltip(
+      { inputTokens: 1200, outputTokens: 80, estimated: false },
+      {
+        model: 'lmstudio:qwen',
+        messages: [],
+        measuredUsage: { inputTokens: 1200, outputTokens: 80 },
+      },
+    )
+
+    assert.equal(tooltip.freeNote, 'Free: local model')
+  })
+
+  it('names an unpriced route rather than leaving it unexplained', () => {
+    const tooltip = buildFooterUsageTooltip(
+      { inputTokens: 1200, outputTokens: 80, estimated: false },
+      {
+        model: 'openrouter:vendor/unknown',
+        messages: [],
+        measuredUsage: { inputTokens: 1200, outputTokens: 80 },
+      },
+    )
+
+    assert.equal(tooltip.freeNote, 'Free: openrouter:vendor/unknown has no listed price')
+  })
+
+  it('says nothing when every model has a real (even paid) rate', () => {
+    const tooltip = buildFooterUsageTooltip(
+      { inputTokens: 1200, outputTokens: 80, estimated: false },
+      {
+        model: 'claude-sonnet-4-6',
+        messages: [],
+        measuredUsage: { inputTokens: 1200, outputTokens: 80 },
+      },
+    )
+
+    assert.equal(tooltip.freeNote, null)
+  })
+
+  it('does not explain a deliberately published zero-rate route as "free"', () => {
+    // A real (if zero) rate is not ambiguous the way an unlisted one is.
+    const tooltip = buildFooterUsageTooltip(
+      { inputTokens: 1200, outputTokens: 80, estimated: false },
+      {
+        model: 'openrouter:vendor/free',
+        messages: [],
+        measuredUsage: { inputTokens: 1200, outputTokens: 80 },
+        pricing: {
+          'openrouter:vendor/free': { inputPricePerMTok: 0, outputPricePerMTok: 0 },
+        },
+      },
+    )
+
+    assert.equal(tooltip.freeNote, null)
+  })
+
+  it("names the exploring subagent's local model even though the parent model is paid", () => {
+    // The #2464 scenario: a paid cloud parent (an OpenRouter route in the
+    // report) with a free local subagent.
+    const tooltip = buildFooterUsageTooltip(
+      { inputTokens: 12_100_000, outputTokens: 196_000, estimated: false },
+      {
+        model: 'claude-sonnet-4-6',
+        messages: [],
+        measuredUsage: {
+          inputTokens: 12_900_000,
+          outputTokens: 211_000,
+          byModel: {
+            'claude-sonnet-4-6': { inputTokens: 12_100_000, outputTokens: 196_000 },
+            'lmstudio:qwen': { inputTokens: 800_000, outputTokens: 15_000 },
+          },
+        },
+      },
+    )
+
+    assert.equal(tooltip.freeNote, 'Free: local model')
+  })
+
+  it('suppresses the free explanation on an estimate, which has no model attribution yet', () => {
+    const tooltip = buildFooterUsageTooltip(
+      { inputTokens: 1200, outputTokens: 80, estimated: true },
+      {
+        model: 'lmstudio:qwen',
+        messages: [],
+        measuredUsage: { inputTokens: 0, outputTokens: 0 },
+      },
+    )
+
+    assert.equal(tooltip.freeNote, null)
+  })
+})
+
+describe('buildFooterUsageTooltip "This conversation" label (#2464)', () => {
+  const messagesWithSubagent: Message[] = [
+    {
+      id: 'a1',
+      role: 'assistant',
+      content: '',
+      createdAt: 1,
+      toolCalls: [
+        {
+          id: 't1',
+          name: 'explore',
+          args: {},
+          status: 'done',
+          result: 'done',
+          subagent: {
+            id: 'sub-1',
+            kind: 'explore',
+            status: 'done',
+            prompt: 'q',
+            summary: null,
+            messages: [],
+            model: 'lmstudio:qwen',
+            usage: { inputTokens: 800_000, outputTokens: 15_000 },
+          },
+        },
+      ],
+    },
+  ]
+
+  it('labels the parent rows once there is a Subagents row to contrast them with', () => {
+    const tooltip = buildFooterUsageTooltip(
+      // Already parent-only, as resolveFooterUsage would produce it.
+      { inputTokens: 12_100_000, outputTokens: 196_000, estimated: false },
+      {
+        model: 'claude-sonnet-4-6',
+        messages: messagesWithSubagent,
+        measuredUsage: { inputTokens: 12_900_000, outputTokens: 211_000 },
+      },
+    )
+
+    assert.equal(tooltip.conversationLabel, 'This conversation')
+    assert.equal(tooltip.header, 'Usage · 12.3M tokens')
+    assert.equal(value(tooltip.rows, 'Input'), '12.1M')
+    assert.equal(value(tooltip.rows, 'Output'), '196.0k')
+  })
 })
 
 describe('sumSubagentUsage', () => {

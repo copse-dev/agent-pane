@@ -387,8 +387,10 @@ export function mountInputBar(
   checkoutMenu.append(sharedCheckoutBtn, isolatedCheckoutBtn)
   checkoutHost.append(checkoutBtn, checkoutMenu)
   const branchHost = el('div', { class: 'footer-branch-host' })
-  // Token usage — always shown once a thread has used tokens; hover (or focus)
-  // for the in/out breakdown and cost, like the context wheel next to it.
+  // Token usage — always shown once a thread has used tokens; counts the
+  // parent conversation only (subagent runs are folded out, see
+  // `resolveFooterUsage`). Hover (or focus) for the in/out breakdown, the
+  // subagent total, and cost, like the context wheel next to it.
   const usageBtn = el('span', {
     class: 'footer-usage',
     tabindex: '0',

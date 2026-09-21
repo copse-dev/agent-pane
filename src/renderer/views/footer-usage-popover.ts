@@ -39,6 +39,9 @@ export function createFooterUsagePopover(): FooterUsagePopover {
         return
       }
       root.append(el('div', { class: 'footer-usage-popover-header' }, model.header))
+      if (model.conversationLabel) {
+        root.append(el('div', { class: 'footer-usage-popover-section' }, model.conversationLabel))
+      }
       for (const entry of model.rows) root.append(row(entry, 'footer-usage-popover-row'))
       // Subagent and per-model rows describe the same totals from a different
       // angle, so they share one section below the divider.
@@ -52,6 +55,9 @@ export function createFooterUsagePopover(): FooterUsagePopover {
         root.append(row(entry, 'footer-usage-popover-row is-model'))
       }
       if (model.note) root.append(el('div', { class: 'footer-usage-popover-note' }, model.note))
+      if (model.freeNote) {
+        root.append(el('div', { class: 'footer-usage-popover-note' }, model.freeNote))
+      }
     },
     show(): void {
       if (hasContent) root.hidden = false

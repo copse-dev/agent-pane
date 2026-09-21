@@ -179,3 +179,78 @@ describe('footer usage popover subagent row (component)', () => {
     assert.equal(below.length, 3)
   })
 })
+
+describe('footer usage popover parent-only headline and free explanation (component, #2464)', () => {
+  it('labels the parent rows "This conversation", keeps Subagents separate, and explains the free model', () => {
+    const popover = createFooterUsagePopover()
+    document.body.append(popover.root)
+
+    popover.render(
+      buildFooterUsageTooltip(
+        // resolveFooterUsage has already folded the subagent's 800.0k in / 15.0k
+        // out back out of these — this is the parent-only headline.
+        { inputTokens: 12_100_000, outputTokens: 196_000, estimated: false },
+        {
+          model: 'claude-sonnet-4-6',
+          measuredUsage: {
+            inputTokens: 12_900_000,
+            outputTokens: 211_000,
+            byModel: {
+              'claude-sonnet-4-6': { inputTokens: 12_100_000, outputTokens: 196_000 },
+              'lmstudio:qwen': { inputTokens: 800_000, outputTokens: 15_000 },
+            },
+          },
+          messages: [
+            {
+              id: 'a1',
+              role: 'assistant',
+              content: '',
+              createdAt: 1,
+              toolCalls: [
+                {
+                  id: 't1',
+                  name: 'explore',
+                  args: {},
+                  status: 'done',
+                  result: 'done',
+                  subagent: {
+                    id: 'sub-1',
+                    kind: 'explore',
+                    status: 'done',
+                    prompt: 'q',
+                    summary: null,
+                    messages: [],
+                    model: 'lmstudio:qwen',
+                    usage: { inputTokens: 800_000, outputTokens: 15_000 },
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      ),
+    )
+    popover.show()
+
+    const header = popover.root.querySelector('.footer-usage-popover-header')
+    assert.equal(header?.textContent, 'Usage · 12.3M tokens')
+
+    const section = popover.root.querySelector('.footer-usage-popover-section')
+    assert.ok(section)
+    assert.equal(section.textContent, 'This conversation')
+    // The section label sits above the parent's own Input/Output rows.
+    assert.equal(section.nextElementSibling?.textContent, 'Input12.1M')
+
+    const subagents = popover.root.querySelector('.footer-usage-popover-row.is-subagents')
+    assert.match(subagents?.textContent ?? '', /Subagents/)
+    assert.match(subagents?.textContent ?? '', /800\.0k in \/ 15\.0k out/)
+
+    const notes = [...popover.root.querySelectorAll('.footer-usage-popover-note')].map(
+      (n) => n.textContent,
+    )
+    assert.ok(
+      notes.includes('Free: local model'),
+      `expected a "Free: local model" note, got ${notes.join(' | ')}`,
+    )
+  })
+})

@@ -3341,6 +3341,78 @@ describe('input bar footer usage counter', () => {
     const popover = host.querySelector<HTMLElement>('.footer-usage-popover')
     assert.equal(popover?.hidden, true)
   })
+
+  it('shows the parent-only total on the counter and explains delegated + free usage on hover (#2464)', async () => {
+    // #2464: the counter used to fold subagent tokens into the headline, with
+    // no explanation for why a local subagent's usage reads as free next to a
+    // paid parent model.
+    const seeded = usageThread()
+    const withSubagent: Thread = {
+      ...seeded,
+      usage: {
+        inputTokens: 12_900_000,
+        outputTokens: 211_000,
+        byModel: {
+          'claude-sonnet-4-6': { inputTokens: 12_100_000, outputTokens: 196_000 },
+          'lmstudio:qwen': { inputTokens: 800_000, outputTokens: 15_000 },
+        },
+      },
+      messages: [
+        {
+          id: 'a1',
+          role: 'assistant',
+          content: '',
+          createdAt: 1,
+          toolCalls: [
+            {
+              id: 't1',
+              name: 'explore',
+              args: {},
+              status: 'done',
+              result: 'done',
+              subagent: {
+                id: 'sub-1',
+                kind: 'explore',
+                status: 'done',
+                prompt: 'q',
+                summary: null,
+                messages: [],
+                model: 'lmstudio:qwen',
+                usage: { inputTokens: 800_000, outputTokens: 15_000 },
+              },
+            },
+          ],
+        },
+      ],
+    }
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [withSubagent],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(host, store, createApi({ currentBranch: 'main' }))
+    await settle()
+
+    const counter = host.querySelector<HTMLElement>('.footer-usage')
+    assert.ok(counter)
+    // Parent-only: 12.1M in + 196.0k out, not the raw 13.1M thread total.
+    assert.equal(counter.textContent, '12.3M tokens')
+
+    const popover = host.querySelector<HTMLElement>('.footer-usage-popover')
+    assert.ok(popover)
+    counter.dispatchEvent(new Event('mouseenter'))
+    assert.equal(popover.hidden, false)
+    assert.match(popover.textContent, /Usage · 12\.3M tokens/)
+    assert.match(popover.textContent, /This conversation/)
+    assert.match(popover.textContent, /Input\s*12\.1M/)
+    assert.match(popover.textContent, /Output\s*196\.0k/)
+    assert.match(popover.textContent, /Subagents\s*1 run · 800\.0k in \/ 15\.0k out/)
+    assert.match(popover.textContent, /Free: local model/)
+  })
 })
 
 describe('input bar context fit warning', () => {

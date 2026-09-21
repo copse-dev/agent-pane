@@ -2526,6 +2526,8 @@ export function seedFooterUsageFixture(workspaceRoot: string): void {
                 args: { prompt: 'Map the renderer views' },
                 status: 'done',
                 result: 'Mapped the renderer views.',
+                // Runs on a local model — this is the #2464 scenario: a paid
+                // cloud parent whose exploring subagent reads as free.
                 subagent: {
                   id: 'subagent-footer-usage',
                   kind: 'explore',
@@ -2533,7 +2535,7 @@ export function seedFooterUsageFixture(workspaceRoot: string): void {
                   prompt: 'Map the renderer views',
                   summary: 'Mapped the renderer views.',
                   messages: [],
-                  model: 'claude-haiku-4-5',
+                  model: 'lmstudio:qwen',
                   usage: { inputTokens: 800_000, outputTokens: 15_000 },
                 },
               },
@@ -2553,7 +2555,7 @@ export function seedFooterUsageFixture(workspaceRoot: string): void {
               cacheReadTokens: 11_400_000,
               cacheCreationTokens: 480_000,
             },
-            'claude-haiku-4-5': { inputTokens: 800_000, outputTokens: 15_000 },
+            'lmstudio:qwen': { inputTokens: 800_000, outputTokens: 15_000 },
           },
         },
         createdAt: now,

@@ -5,9 +5,13 @@ import {
   isLocalModel,
 } from '@copse/llm/estimate-cost.ts'
 import type { ModelPricingMap } from '@copse/llm/model-pricing.ts'
-import type { Message, ModelUsage, ThreadUsage, ToolCall } from '@shared/types'
+import type { Message, ModelUsage, ThreadUsage } from '@shared/types'
 import type { FooterUsageDisplay } from './footer-usage-summary.ts'
+import { sumSubagentUsage } from './footer-usage-summary.ts'
 import { formatTokenCount, formatUsd } from './format-usage-summary.ts'
+
+export type { SubagentUsageTotals } from './footer-usage-summary.ts'
+export { sumSubagentUsage } from './footer-usage-summary.ts'
 
 export interface FooterUsageTooltipRow {
   label: string
@@ -15,19 +19,31 @@ export interface FooterUsageTooltipRow {
 }
 
 export interface FooterUsageTooltipModel {
-  /** Headline: total tokens, `~`-prefixed when the counts are estimated. */
+  /** Headline: parent-only tokens, `~`-prefixed when the counts are estimated. */
   header: string
-  /** In/out (plus cache and cost when known) — one row per line. */
+  /**
+   * Label for `rows` ("This conversation"), shown only alongside `subagentRow`
+   * — with nothing to contrast against, the breakdown obviously *is* the whole
+   * conversation and the label would be noise.
+   */
+  conversationLabel: string | null
+  /** In/out (plus cache and cost when known) for the parent loop — one row per line. */
   rows: FooterUsageTooltipRow[]
   /**
    * How much of the total came from delegated work; null when no subagent in
-   * the thread has reported usage.
+   * the thread has reported usage. Not folded into `rows` above.
    */
   subagentRow: FooterUsageTooltipRow | null
   /** Per-model tokens + cost, only when the thread spans more than one model. */
   modelRows: FooterUsageTooltipRow[]
   /** Why numbers are approximate or a cost is missing; null when neither applies. */
   note: string | null
+  /**
+   * Why some of the usage above reads as free — a local model, or a route with
+   * no listed price — using the same predicates the cost/model rows do. Null
+   * when nothing in the thread is free.
+   */
+  freeNote: string | null
 }
 
 export interface FooterUsageTooltipOptions {
@@ -39,54 +55,34 @@ export interface FooterUsageTooltipOptions {
   pricing?: ModelPricingMap | undefined
 }
 
-export interface SubagentUsageTotals {
-  /** Subagent runs that reported usage; one still running contributes nothing yet. */
-  runs: number
-  inputTokens: number
-  outputTokens: number
-}
-
-function collectSubagentUsage(toolCalls: ToolCall[], totals: SubagentUsageTotals): void {
-  for (const toolCall of toolCalls) {
-    const session = toolCall.subagent
-    if (!session) continue
-    if (session.usage) {
-      totals.runs += 1
-      totals.inputTokens += session.usage.inputTokens
-      totals.outputTokens += session.usage.outputTokens
-    }
-    // A nested subagent's tokens are recorded on its own session, never folded
-    // into its parent's (run-subagent.ts does not forward `usage` upstream), so
-    // recursing here sums the tree rather than double-counting it.
-    for (const message of session.messages) {
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
-      collectSubagentUsage(message.toolCalls ?? [], totals)
-    }
-  }
-}
-
-/**
- * Total tokens spent by subagents in a thread, at every nesting depth.
- *
- * These tokens are already inside the parent thread's totals — the main process
- * folds them in after the run (`subagent-usage.ts`) — so this is a "how much of
- * the total was delegated work" view, not an addition to it.
- */
-export function sumSubagentUsage(messages: Message[]): SubagentUsageTotals {
-  const totals: SubagentUsageTotals = { runs: 0, inputTokens: 0, outputTokens: 0 }
-  for (const message of messages) {
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
-    collectSubagentUsage(message.toolCalls ?? [], totals)
-  }
-  return totals
-}
-
 function modelRowValue(model: string, usage: ModelUsage, pricing?: ModelPricingMap): string {
   const tokens = `${formatTokenCount(usage.inputTokens)} in / ${formatTokenCount(usage.outputTokens)} out`
   if (isLocalModel(model)) return `${tokens} · free`
   const cost = costForModelUsage(model, usage, pricing)
   if (!hasModelPricing(model, pricing)) return `${tokens} · unpriced`
   return `${tokens} · ${cost > 0 ? formatUsd(cost) : 'free'}`
+}
+
+/**
+ * Why `model`'s usage would read as free rather than a dollar figure — the
+ * same two predicates `modelRowValue` and the cost line use: local models cost
+ * nothing to run, and a model outside the catalog/pricing map has no rate to
+ * bill against. A model with a real (even zero) published rate is not
+ * ambiguous, so it gets no explanation here.
+ */
+function freeReason(model: string, pricing?: ModelPricingMap): string | null {
+  if (isLocalModel(model)) return 'local model'
+  if (!hasModelPricing(model, pricing)) return `${model} has no listed price`
+  return null
+}
+
+function buildFreeNote(models: string[], pricing?: ModelPricingMap): string | null {
+  const reasons: string[] = []
+  for (const model of models) {
+    const reason = freeReason(model, pricing)
+    if (reason && !reasons.includes(reason)) reasons.push(reason)
+  }
+  return reasons.length > 0 ? `Free: ${reasons.join('; ')}` : null
 }
 
 /** Hover-tooltip contents for the footer token counter (in/out, cache, cost). */
@@ -112,9 +108,10 @@ export function buildFooterUsageTooltip(
   const cost = estimated ? '' : formatThreadUsageCost(usage, opts.model, opts.pricing)
   if (cost) rows.push({ label: 'Cost', value: cost })
 
-  // Subagent tokens are already counted in the totals above; this row says how
-  // much of that was delegated. Suppressed on an estimate, which has no
-  // provider-reported subagent usage to draw on.
+  // Subagent tokens are already counted in the parent's raw totals upstream
+  // (see `resolveFooterUsage`), which folds them back out of `display` before
+  // this row says how much of them was delegated. Suppressed on an estimate,
+  // which has no provider-reported subagent usage to draw on.
   const subagents = estimated
     ? { runs: 0, inputTokens: 0, outputTokens: 0 }
     : sumSubagentUsage(opts.messages)
@@ -127,6 +124,7 @@ export function buildFooterUsageTooltip(
           )} in / ${formatTokenCount(subagents.outputTokens)} out`,
         }
       : null
+  const conversationLabel = subagentRow ? 'This conversation' : null
 
   const modelRows: FooterUsageTooltipRow[] = []
   const byModel = Object.entries(usage.byModel ?? {}).filter(
@@ -149,12 +147,15 @@ export function buildFooterUsageTooltip(
         ? 'Cost excludes models without pricing'
         : 'No pricing for this model'
       : null
+  const freeNote = estimated ? null : buildFreeNote(pricedModels, opts.pricing)
 
   return {
     header: `Usage · ${approx}${formatTokenCount(inputTokens + outputTokens)} tokens`,
+    conversationLabel,
     rows,
     subagentRow,
     modelRows,
     note,
+    freeNote,
   }
 }
