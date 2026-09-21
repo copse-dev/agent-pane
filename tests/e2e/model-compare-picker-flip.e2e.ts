@@ -1,12 +1,21 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { createServer, type Server } from 'node:http'
-import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { $, $$, browser, expect } from '@wdio/globals'
+import {
+  resetUserData,
+  seedEmptyProject,
+  readSeededSettings,
+  writeSettings,
+} from './helpers/seed-config.ts'
 import { setComposerValue } from './helpers/composer.ts'
 import { E2E_SCREENSHOT_DIR } from './helpers/screenshot.ts'
 
+import { startConversationServer, type ConversationServer } from './helpers/conversation-server.ts'
+import { waitForAgentIdle } from './helpers.ts'
+
 const FIXTURE_MODEL_COUNT = 18
+const REQUEST = 'Compare two models on the current changes.'
 
 /**
  * A tiny stand-in LM Studio server so Reviewer B's picker has enough real,
@@ -60,6 +69,7 @@ function startFixtureModelServer(): Promise<{ server: Server; url: string }> {
 describe('model comparison picker does not clip in a short dialog', function () {
   this.timeout(60_000)
 
+  let conversation: ConversationServer
   let fixtureServer: Server
   let fixtureUrl: string
 
@@ -67,18 +77,22 @@ describe('model comparison picker does not clip in a short dialog', function () 
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     ;({ server: fixtureServer, url: fixtureUrl } = await startFixtureModelServer())
     resetUserData()
+    conversation = await startConversationServer({ title: 'Compare current changes' })
+    conversation.configureEnvironment()
     seedEmptyProject(process.cwd(), 'e2e-model-compare-picker-flip-project', {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
       modelComparisonEnabled: true,
       localServerUrl: fixtureUrl,
     })
+    writeSettings({ ...readSeededSettings(), ...conversation.settings })
     await browser.reloadSession()
   })
 
-  after(() => {
+  after(async () => {
     resetUserData()
     fixtureServer.close()
+    await conversation.close()
   })
 
   /**
@@ -101,7 +115,34 @@ describe('model comparison picker does not clip in a short dialog', function () 
 
   it('flips or contains Reviewer B so the whole menu stays inside the dialog', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    await setComposerValue('[[mcp:compare_models {}]]')
+    // This case needs the spend dialog even though the chat provider is local.
+    // Pin one paid reviewer through the same settings API the plugin UI uses.
+    await browser.execute(async () => {
+      await window.api.plugins.setSetting(
+        'copse.model-comparison',
+        'comparisonModelA',
+        'claude-sonnet-4-6',
+      )
+      await window.api.plugins.setSetting(
+        'copse.model-comparison',
+        'comparisonModelB',
+        'lmstudio:fixture-chat-model-01',
+      )
+      await window.api.plugins.setSetting(
+        'copse.model-comparison',
+        'comparisonJudgeModel',
+        'lmstudio:fixture-chat-model-02',
+      )
+    })
+    conversation.enqueue(
+      { user: REQUEST, toolCalls: [{ name: 'compare_models', args: {} }] },
+      {
+        user: REQUEST,
+        toolResults: [{ name: 'compare_models', includes: 'declined' }],
+        text: 'The comparison was cancelled.',
+      },
+    )
+    await setComposerValue(REQUEST)
     await $('.submit-btn').click()
 
     const dialog = await $('#approval-dialog')
@@ -178,5 +219,12 @@ describe('model comparison picker does not clip in a short dialog', function () 
     await browser.keys('Escape')
     await menu.waitForDisplayed({ reverse: true, timeout: 5_000 })
     await dialog.$('.approval-reject').click()
+    await waitForAgentIdle()
+    await browser.waitUntil(async () =>
+      (await $$('.msg-assistant .message-text').map((message) => message.getText())).includes(
+        'The comparison was cancelled.',
+      ),
+    )
+    conversation.assertComplete()
   })
 })
