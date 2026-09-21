@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
 import type { MockScriptStep } from '../../src/shared/llm/mock-script.ts'
@@ -7,7 +7,8 @@ import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/
 import { setComposerValue } from './helpers/composer.ts'
 import { waitForAgentIdle } from './helpers.ts'
 
-const COMMAND = `node -e "setTimeout(() => console.log('background-complete'), 5000)"`
+const COMPLETION_SIGNAL = join(process.cwd(), '.tmp', 'e2e-background-task-complete')
+const COMMAND = `node -e "const fs=require('node:fs');const timer=setInterval(()=>{if(fs.existsSync(process.argv[1])){clearInterval(timer);console.log('background-complete')}},50)" ${JSON.stringify(COMPLETION_SIGNAL)}`
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 const WAKE_SCRIPT = [
   {
@@ -91,6 +92,8 @@ describe('session-scoped background task lifecycle', function () {
 
   before(async () => {
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
+    mkdirSync(join(process.cwd(), '.tmp'), { recursive: true })
+    rmSync(COMPLETION_SIGNAL, { force: true })
     resetUserData()
     seedEmptyProject(seedStableWorkspace(), 'e2e-background-task-lifecycle', {
       subagentsEnabled: false,
@@ -100,6 +103,9 @@ describe('session-scoped background task lifecycle', function () {
   })
 
   after(async () => {
+    writeFileSync(COMPLETION_SIGNAL, '')
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    rmSync(COMPLETION_SIGNAL, { force: true })
     await browser.execute(async () => {
       await (
         window as unknown as { __copseE2e?: { clearMockScript: () => Promise<void> } }
@@ -114,13 +120,14 @@ describe('session-scoped background task lifecycle', function () {
       action: 'start',
       command: COMMAND,
       wake_on_completion: true,
-      timeout_ms: 15_000,
+      timeout_ms: 60_000,
     })
     await expect(await latestToolResult()).toHaveText(expect.stringContaining('running'))
 
     const assistantCount = (await $$('.msg-assistant')).length
     await browser.execute(() => window.location.reload())
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
+    writeFileSync(COMPLETION_SIGNAL, '')
     await browser.waitUntil(
       async () => (await $$('.msg-assistant')).length === assistantCount + 1,
       {
