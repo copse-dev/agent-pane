@@ -944,6 +944,12 @@ export function mountInputBar(
   async function refreshAutomaticCheckoutPreview(): Promise<void> {
     const seq = ++automaticCheckoutPreviewSeq
     const { activeProjectId } = store.getState()
+    const thread = getActiveThread(store)
+    // The preview only labels the checkout picker on an uncommitted blank
+    // thread. Once checkout preparation binds a choice, synchronous
+    // threads/git events still fire, but refreshing then launches Git work for
+    // a control that is already hidden and competes with first-token dispatch.
+    if (!thread || thread.messages.length > 0 || thread.worktreeChoice) return
     const model = footerChatModel()
     let next: 'shared' | 'worktree' = 'shared'
     if (activeProjectId) {
