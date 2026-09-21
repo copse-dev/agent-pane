@@ -122,7 +122,7 @@ describe('copse-review CLI', () => {
     assert.ok(typeof report === 'object' && report !== null)
     const findings = decodeFindings(Reflect.get(report, 'findings'))
     assert.equal(findings?.length, 1)
-    assert.equal(Reflect.get(report, 'review'), null)
+    assert.deepEqual(Reflect.get(report, 'reviews'), [])
     const sarif: unknown = JSON.parse(await readFile(join(dir, 'report.sarif'), 'utf8'))
     assert.ok(typeof sarif === 'object' && sarif !== null)
     assert.equal(Reflect.get(sarif, 'version'), '2.1.0')
@@ -171,11 +171,12 @@ describe('copse-review CLI', () => {
       events,
       '--json',
       join(dir, 'report.json'),
+      '--no-verify',
     ])
     assert.equal(result.code, HEADLESS_EXIT.SUCCESS, result.err)
     assert.match(
       result.out,
-      /model review: mock under correctness — completed \(end_turn\), 2 tool call\(s\), 1 candidate\(s\)/,
+      /reviewer mock under correctness — completed \(end_turn\), 2 tool call\(s\), 1 candidate\(s\)/,
     )
     assert.match(result.out, /1\. \[contract · high · high\] src\/math\.ts:1 — add subtracts/)
     assert.match(result.out, /unverified: The body is a - b\./)
@@ -185,6 +186,90 @@ describe('copse-review CLI', () => {
     assert.equal(parsed[0]?.type, 'turn_start')
     assert.equal(parsed.at(-1)?.type, 'turn_end')
     assert.ok(parsed.some((event) => event.type === 'tool_call' && event.name === 'run_command'))
+  })
+
+  it('fans out over lenses, clusters duplicate candidates, and verifies them', async () => {
+    const repo = await fixture({})
+    const dir = await mkdtemp(join(tmpdir(), 'review-cli-'))
+    scratch.push(dir)
+    const report_finding = (claim: string): Record<string, unknown> => ({
+      type: 'tool_call',
+      name: 'report_finding',
+      args: {
+        path: 'src/math.ts',
+        startLine: 1,
+        class: 'contract',
+        severity: 'high',
+        confidence: 'high',
+        claim,
+        reason: 'The body is a - b.',
+      },
+    })
+    const script = join(dir, 'script.json')
+    await writeFile(
+      script,
+      JSON.stringify({
+        roles: {
+          'review:correctness': [
+            report_finding('add subtracts its second argument instead of adding it.'),
+            { type: 'text', text: 'Checked src/math.ts.' },
+          ],
+          'review:contracts': [
+            report_finding('The add function subtracts instead of adding its second argument.'),
+            { type: 'text', text: 'Checked callers of add.' },
+          ],
+          reproduce: [{ type: 'text', text: 'No reproducer.' }],
+          challenge: [
+            {
+              type: 'tool_call',
+              name: 'verdict',
+              args: {
+                status: 'stands',
+                reason: 'src/math.ts line 1 subtracts; the test expects a sum.',
+              },
+            },
+            { type: 'text', text: 'Stands.' },
+          ],
+        },
+      }),
+    )
+    const result = await run(repo, [
+      '--base',
+      'main',
+      '--allow-unisolated',
+      '--provider',
+      'mock',
+      '--mock-script',
+      script,
+      '--lenses',
+      'correctness,contracts',
+      '--json',
+      join(dir, 'report.json'),
+    ])
+    assert.equal(result.code, HEADLESS_EXIT.SUCCESS, result.err)
+    assert.match(result.out, /reviewer mock under correctness/)
+    assert.match(result.out, /reviewer mock under contracts/)
+    assert.match(
+      result.out,
+      /verification: 1 attempted — 0 confirmed by reproducer, 0 refuted, 1 survived challenge/,
+    )
+    assert.match(result.out, /1 finding\(s\):/)
+    assert.match(result.out, /corroborated by mock/)
+    assert.match(result.out, /survived challenge by mock/)
+    const report: unknown = JSON.parse(await readFile(join(dir, 'report.json'), 'utf8'))
+    assert.ok(typeof report === 'object' && report !== null)
+    const findings = decodeFindings(Reflect.get(report, 'findings'))
+    const [only] = findings ?? []
+    assert.ok(only)
+    assert.equal(findings?.length, 1)
+    assert.equal(only.provenance.challengedBy.length, 1)
+  })
+
+  it('rejects an unknown lens with the usage exit code', async () => {
+    const repo = await fixture({})
+    const result = await run(repo, ['--lenses', 'vibes'])
+    assert.equal(result.code, HEADLESS_EXIT.USAGE)
+    assert.match(result.err, /unknown lens vibes/)
   })
 
   it('reports a model failure with the failure exit code and no findings from it', async () => {

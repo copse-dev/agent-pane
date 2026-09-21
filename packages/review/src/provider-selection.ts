@@ -13,7 +13,7 @@ import { withSecretRedaction } from '@copse/llm/redacting-provider.ts'
 import type { LLMProvider } from '@copse/llm/wire-types.ts'
 import { memberOf } from '@copse/std/member-of.ts'
 import { droppedHostSecrets } from './isolation.ts'
-import { ScriptedProvider, type ScriptedStep } from './scripted-provider.ts'
+import { ScriptedProvider, stepsForRole, type MockScript } from './scripted-provider.ts'
 
 export const PROVIDER_KINDS = [
   'anthropic',
@@ -32,8 +32,8 @@ export interface ProviderSelection {
   readonly kind?: ProviderKind | undefined
   readonly model?: string | undefined
   readonly baseUrl?: string | undefined
-  /** Steps for `mock`. */
-  readonly script?: readonly ScriptedStep[] | undefined
+  /** Steps for `mock`, shared or per role. */
+  readonly script?: MockScript | undefined
 }
 
 export interface SelectedProvider {
@@ -42,6 +42,12 @@ export interface SelectedProvider {
   readonly provider: LLMProvider
   /** Whether requests leave the machine (and were therefore wrapped in redaction). */
   readonly remote: boolean
+  /**
+   * The provider for one role (`review:<lens>`, `challenge`, `reproduce`). A
+   * real provider is stateless and returns itself; the mock plays that role's
+   * script from the start, so every reviewer in a fan-out gets its own cursor.
+   */
+  providerFor(role: string): LLMProvider
 }
 
 /** The provider a model id implies when none was named. */
@@ -65,20 +71,23 @@ export function selectProvider(
 ): SelectedProvider {
   const kind = selection.kind ?? inferProviderKind(selection.model)
   const secrets = droppedHostSecrets(env)
-  const remote = (model: string, provider: LLMProvider): SelectedProvider => ({
-    kind,
-    model,
-    provider: withSecretRedaction(provider, secrets),
-    remote: true,
-  })
+  const shared = (model: string, provider: LLMProvider, isRemote: boolean): SelectedProvider => {
+    const wrapped = isRemote ? withSecretRedaction(provider, secrets) : provider
+    return { kind, model, provider: wrapped, remote: isRemote, providerFor: () => wrapped }
+  }
+  const remote = (model: string, provider: LLMProvider): SelectedProvider =>
+    shared(model, provider, true)
   switch (kind) {
-    case 'mock':
+    case 'mock': {
+      const script = selection.script ?? []
       return {
         kind,
         model: selection.model ?? 'mock',
-        provider: new ScriptedProvider(selection.script ?? []),
+        provider: new ScriptedProvider(stepsForRole(script, 'default')),
         remote: false,
+        providerFor: (role) => new ScriptedProvider(stepsForRole(script, role)),
       }
+    }
     case 'anthropic': {
       const model = selection.model ?? 'claude-sonnet-5'
       return remote(
@@ -101,7 +110,7 @@ export function selectProvider(
       if (!model) throw new Error('--model (or LM_STUDIO_MODEL) is required for lmstudio')
       const url = selection.baseUrl ?? env['LM_STUDIO_URL']?.trim() ?? DEFAULT_LOCAL_BASE_URL
       const key = env['LM_STUDIO_API_KEY']?.trim() ?? env['LM_API_TOKEN']?.trim() ?? 'lm-studio'
-      return { kind, model, provider: createLMStudioProvider(url, model, key), remote: false }
+      return shared(model, createLMStudioProvider(url, model, key), false)
     }
     case 'openai-compatible': {
       const model = selection.model
@@ -110,7 +119,7 @@ export function selectProvider(
       const key = env['COPSE_REVIEW_API_KEY']?.trim() ?? 'lm-studio'
       const local = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/.test(url)
       const provider = createLocalOpenAIProvider(url, model, key)
-      return local ? { kind, model, provider, remote: false } : remote(model, provider)
+      return shared(model, provider, !local)
     }
   }
 }

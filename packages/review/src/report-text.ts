@@ -78,25 +78,32 @@ function findingLines(finding: Finding, index: number): string[] {
       ? `; corroborated by ${finding.provenance.corroboratedBy.map((ref) => ref.id).join(', ')}`
       : ''
   const executed = finding.evidence.filter((evidence) => evidence.kind === 'command').length
+  const reproducer = finding.evidence.find((evidence) => evidence.kind === 'reproducer')
   return [
     `${String(index + 1)}. [${finding.class} · ${finding.severity} · ${finding.confidence}] ${where} — ${finding.claim}`,
     `   ${finding.verdict.status}: ${finding.verdict.reason}`,
-    `   raised by ${raised}${corroborated}${executed > 0 ? `; ${String(executed)} command(s) as evidence` : ''} (id ${finding.id})`,
+    `   raised by ${raised}${corroborated}${executed > 0 ? `; ${String(executed)} command(s) as evidence` : ''}${reproducer?.kind === 'reproducer' ? `; reproducer ${reproducer.testPath}` : ''} (id ${finding.id})`,
   ]
 }
 
-/** The terminal projection of a full review: Stage 0, the model turn, the ranked list. */
+/** The terminal projection of a full review: Stage 0, the reviewers, verification, the ranked list. */
 export function renderReviewReport(report: ReviewReport): string {
   const lines: string[] = [renderStage0Report(report.stage0)]
-  if (report.review !== null) {
-    const { review } = report
+  for (const review of report.reviews) {
     const usage = `${String(review.usage.inputTokens)} in / ${String(review.usage.outputTokens)} out${review.usage.estimated ? ' (estimated)' : ''}`
     lines.push('')
     lines.push(
-      `model review: ${review.model} under ${review.lens} — ${review.outcome} (${review.stopReason}), ${String(review.toolCalls)} tool call(s), ${String(review.candidates)} candidate(s), ${usage}`,
+      `reviewer ${review.model} under ${review.lens} — ${review.outcome} (${review.stopReason}), ${String(review.toolCalls)} tool call(s), ${String(review.candidates)} candidate(s), ${usage}`,
     )
-    if (review.error !== undefined) lines.push(`model review error: ${review.error}`)
-    if (review.summary.length > 0) lines.push(`reviewer: ${review.summary.replace(/\s+/g, ' ')}`)
+    if (review.error !== undefined) lines.push(`  error: ${review.error}`)
+    if (review.summary.length > 0) lines.push(`  ${review.summary.replace(/\s+/g, ' ')}`)
+  }
+  if (report.verification !== null) {
+    const { counts } = report.verification
+    lines.push('')
+    lines.push(
+      `verification: ${String(counts.attempted)} attempted — ${String(counts.confirmed)} confirmed by reproducer, ${String(counts.refuted)} refuted, ${String(counts.survived)} survived challenge, ${String(counts.undetermined)} undetermined${counts.skipped > 0 ? `, ${String(counts.skipped)} beyond the cap` : ''}`,
+    )
   }
   if (report.context !== null) {
     const { context } = report
@@ -110,13 +117,18 @@ export function renderReviewReport(report: ReviewReport): string {
   }
   lines.push('')
   if (report.findings.length === 0) {
-    lines.push(report.review === null ? 'No findings from Stage 0.' : 'No findings.')
+    lines.push(report.reviews.length === 0 ? 'No findings from Stage 0.' : 'No findings.')
   } else {
     lines.push(`${String(report.findings.length)} finding(s):`)
     report.findings.forEach((finding, index) => lines.push(...findingLines(finding, index)))
   }
   if (report.appendix.length > 0) {
     lines.push(`${String(report.appendix.length)} more below the cap, in the JSON appendix.`)
+  }
+  if (report.refuted.length > 0) {
+    lines.push(
+      `${String(report.refuted.length)} refuted by verification and dropped (kept in the JSON).`,
+    )
   }
   return lines.join('\n')
 }

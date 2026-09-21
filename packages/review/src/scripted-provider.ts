@@ -1,8 +1,9 @@
 // A deterministic provider that plays a fixed script: each `stream` call
 // yields the next step. It is what the CLI's `--provider mock` runs and what
-// the Stage 2 tests drive, so the whole pipeline can be exercised with no
-// model and no network — the same role `MockLLMProvider` plays for the bench
-// harness, with a script shape that says exactly what a reviewer would do.
+// the Stage 2 and Stage 4 tests drive, so the whole pipeline can be exercised
+// with no model and no network — the same role `MockLLMProvider` plays for the
+// bench harness, with a script shape that says exactly what a reviewer, a
+// challenger or a reproducer would do.
 import { z } from 'zod'
 import type {
   LLMMessage,
@@ -23,7 +24,30 @@ export const scriptedStepSchema = z.discriminatedUnion('type', [
   }),
 ])
 export type ScriptedStep = z.infer<typeof scriptedStepSchema>
-export const decodeScript = decodeWithSchema(z.array(scriptedStepSchema))
+const stepsSchema = z.array(scriptedStepSchema)
+
+/**
+ * A mock script is either one step list every role plays, or a list per role
+ * (`review:<lens>`, `challenge`, `reproduce`) with an optional default. Roles
+ * are the names Stage 2 and Stage 4 pass to `providerFor`.
+ */
+export const mockScriptSchema = z.union([
+  stepsSchema,
+  z.object({
+    default: stepsSchema.optional(),
+    roles: z.record(z.string(), stepsSchema),
+  }),
+])
+export type MockScript = z.infer<typeof mockScriptSchema>
+export const decodeMockScript = decodeWithSchema(mockScriptSchema)
+/** Kept for callers that only ever had a flat step list. */
+export const decodeScript = decodeWithSchema(stepsSchema)
+
+/** The steps a role plays: its own list, else the default, else nothing. */
+export function stepsForRole(script: MockScript, role: string): readonly ScriptedStep[] {
+  if (Array.isArray(script)) return script
+  return script.roles[role] ?? script.default ?? []
+}
 
 export class ScriptedProvider implements LLMProvider {
   private readonly steps: readonly ScriptedStep[]

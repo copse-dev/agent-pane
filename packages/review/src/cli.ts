@@ -20,33 +20,49 @@ import {
 } from '@copse/agent/headless-contract.ts'
 import { safeJsonParse } from '@copse/std/safe-json.ts'
 import { errorMessage } from '@copse/std/errors.ts'
+import type { LLMProvider } from '@copse/llm/wire-types.ts'
 import { buildReviewContext } from './context.ts'
 import { createHostProcessBackend } from './host-process-backend.ts'
 import type { IsolationBackend } from './isolation.ts'
-import { CORRECTNESS_LENS } from './lenses.ts'
-import { isProviderKind, selectProvider, PROVIDER_KINDS } from './provider-selection.ts'
+import { resolveLenses } from './lenses.ts'
+import { serializeCell } from './isolation.ts'
+import {
+  isProviderKind,
+  selectProvider,
+  PROVIDER_KINDS,
+  type ProviderKind,
+} from './provider-selection.ts'
 import { renderReviewReport } from './report-text.ts'
 import { toSarif } from './sarif.ts'
-import { decodeScript } from './scripted-provider.ts'
+import { decodeMockScript, type MockScript } from './scripted-provider.ts'
 import { openReviewGround, runStage0Checks } from './stage0.ts'
-import { runStage2, type Stage2Result } from './stage2.ts'
-import { assembleReviewReport } from './stage5.ts'
+import { runReviewers, type Stage2Result } from './stage2.ts'
+import { verifyFindings, type Stage4Result } from './stage4.ts'
+import { assembleReviewReport, canonicalFindings } from './stage5.ts'
+import type { Finding } from './finding.ts'
 
 export const CLI_VERSION = '0.1.0'
 
 export const USAGE = `usage: copse-review [options]
 
 Review the current repository's working tree against a base ref: build, typecheck,
-lint and test on head and base (Stage 0), then one model under the bugs-and-
-regressions lens (Stages 1, 2, 5). Findings are the output, never the exit code.
+lint and test on head and base (Stage 0); then models × lenses review it (Stages 1–2),
+their candidates are clustered (Stage 3) and verified by reproducer and by an adversarial
+challenger (Stage 4), and the survivors are ranked (Stage 5). Findings are the output,
+never the exit code.
 
   --base <ref>            the ref the change is against (default: origin/main, else main)
   --allow-unisolated      consent to run your own tree with no isolation backend
   --no-model              Stage 0 only; no model is called
   --provider <kind>       ${PROVIDER_KINDS.join(' | ')} (default: inferred from --model)
-  --model <id>            model id for the reviewer
+  --model <id>            model id for the reviewer (repeat, or comma-separate, to fan out)
+  --lenses <ids|all>      lenses to run: correctness (default), contracts, tests, security, concurrency
+  --challenger <id>       model that challenges and writes reproducers (default: the first --model)
+  --no-verify             skip Stage 4 (no reproducers, no challenge)
+  --max-verify <n>        findings to verify, most promising first (default 10)
+  --concurrency <n>       reviewers running at once (default 2)
   --base-url <url>        endpoint for lmstudio / openai-compatible
-  --mock-script <path>    scripted steps for --provider mock
+  --mock-script <path>    scripted steps for --provider mock (a list, or {roles:{...}})
   --json [<path>]         write the full report as JSON (path, or - for stdout)
   --sarif <path>          write the surfaced findings as SARIF 2.1.0
   --events <path>         write the model turn's headless events as JSONL (- for stdout)
@@ -119,7 +135,12 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
         'allow-unisolated': { type: 'boolean', default: false },
         'no-model': { type: 'boolean', default: false },
         provider: { type: 'string' },
-        model: { type: 'string' },
+        model: { type: 'string', multiple: true },
+        lenses: { type: 'string' },
+        challenger: { type: 'string' },
+        'no-verify': { type: 'boolean', default: false },
+        'max-verify': { type: 'string' },
+        concurrency: { type: 'string' },
         'base-url': { type: 'string' },
         'mock-script': { type: 'string' },
         json: { type: 'string' },
@@ -143,7 +164,7 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
     return HEADLESS_EXIT.SUCCESS
   }
 
-  let providerKind
+  let providerKind: ProviderKind | undefined
   if (values.provider !== undefined) {
     if (!isProviderKind(values.provider)) {
       io.stderr(
@@ -155,9 +176,15 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
   }
   let budgetChars: number | undefined
   let maxSteps: number | undefined
+  let maxVerify: number | undefined
+  let concurrency: number | undefined
+  let lenses
   try {
     budgetChars = integer(values['budget-chars'], '--budget-chars')
     maxSteps = integer(values['max-steps'], '--max-steps')
+    maxVerify = integer(values['max-verify'], '--max-verify')
+    concurrency = integer(values.concurrency, '--concurrency')
+    lenses = resolveLenses(values.lenses)
   } catch (err) {
     io.stderr(`copse-review: ${errorMessage(err)}\n`)
     return HEADLESS_EXIT.USAGE
@@ -182,46 +209,102 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
       interactive: false,
     })
 
-    let stage2: Stage2Result | null = null
+    let reviews: Stage2Result[] = []
+    let verification: Stage4Result | null = null
+    let findings: Finding[] = stage0.findings.slice()
     let context = null
     let modelError: string | null = null
     if (!values['no-model'] && ground.checkouts !== null) {
       try {
-        let script
+        let script: MockScript | undefined
         if (values['mock-script'] !== undefined) {
-          script = safeJsonParse(await readFile(values['mock-script'], 'utf8'), decodeScript)
-          if (script === null)
+          const parsedScript = safeJsonParse(
+            await readFile(values['mock-script'], 'utf8'),
+            decodeMockScript,
+          )
+          if (parsedScript === null) {
             throw new Error(`${values['mock-script']} is not a valid mock script`)
+          }
+          script = parsedScript
         }
-        const selected = selectProvider(
-          { kind: providerKind, model: values.model, baseUrl: values['base-url'], script },
-          io.env,
+        const modelIds = (values.model ?? [])
+          .flatMap((entry) => entry.split(','))
+          .map((id) => id.trim())
+          .filter((id) => id.length > 0)
+        const selections = (modelIds.length === 0 ? [undefined] : modelIds).map((model) =>
+          selectProvider(
+            { kind: providerKind, model, baseUrl: values['base-url'], script },
+            io.env,
+          ),
         )
+        const first = selections[0]
+        if (first === undefined) throw new Error('no model selected')
+        const challengerSelection =
+          values.challenger === undefined
+            ? first
+            : selectProvider(
+                {
+                  kind: providerKind,
+                  model: values.challenger,
+                  baseUrl: values['base-url'],
+                  script,
+                },
+                io.env,
+              )
         context = await buildReviewContext({
           checkouts: ground.checkouts,
           ...(budgetChars !== undefined ? { budgetChars } : {}),
         })
         const eventLines: string[] = []
-        const turnId = `review-${stage0.headCommit?.slice(0, 10) ?? 'head'}`
-        stage2 = await runStage2({
-          provider: selected.provider,
-          model: selected.model,
-          lens: CORRECTNESS_LENS,
+        const onEvent = (event: Parameters<typeof serializeHeadlessEvent>[0]): void => {
+          const line = serializeHeadlessEvent(event)
+          if (values.events === '-') io.stdout(`${line}\n`)
+          else eventLines.push(line)
+        }
+        const cell = ground.cell === null ? null : serializeCell(ground.cell)
+        const threadId = `copse-review:${stage0.repositoryRoot}`
+        const turnPrefix = `review-${stage0.headCommit?.slice(0, 10) ?? 'head'}`
+        const host = {
           context,
           headCheckout: ground.checkouts.head,
-          cell: ground.cell,
+          cell,
           shellDecision,
-          scrub: (text) => ground.scrub(text),
-          threadId: `copse-review:${stage0.repositoryRoot}`,
-          turnId,
-          ...(io.signal ? { signal: io.signal } : {}),
-          ...(maxSteps !== undefined ? { maxSteps } : {}),
-          onEvent: (event) => {
-            const line = serializeHeadlessEvent(event)
-            if (values.events === '-') io.stdout(`${line}\n`)
-            else eventLines.push(line)
-          },
+          scrub: (text: string): string => ground.scrub(text),
+        }
+        reviews = await runReviewers({
+          ...host,
+          reviewers: selections.map((selection) => ({
+            model: selection.model,
+            providerFor: (lens): LLMProvider => selection.providerFor(`review:${lens.id}`),
+          })),
+          lenses,
+          threadId,
+          turnPrefix,
+          concurrency,
+          signal: io.signal,
+          onEvent,
+          maxSteps,
         })
+        findings = canonicalFindings(stage0, reviews)
+        if (!values['no-verify']) {
+          const role = (name: string): { model: string; provider: LLMProvider } => ({
+            model: challengerSelection.model,
+            provider: challengerSelection.providerFor(name),
+          })
+          verification = await verifyFindings({
+            ...host,
+            baseCheckout: ground.checkouts.base,
+            findings,
+            reproducer: role('reproduce'),
+            challenger: role('challenge'),
+            threadId,
+            turnPrefix,
+            maxVerified: maxVerify,
+            signal: io.signal,
+            onEvent,
+          })
+          findings = [...verification.findings]
+        }
         if (values.events !== undefined && values.events !== '-') {
           await writeFile(values.events, `${eventLines.join('\n')}\n`, 'utf8')
         }
@@ -234,7 +317,14 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
         : `not executed: ${ground.decision.reason}`
     }
 
-    const report = assembleReviewReport({ stage0, context, stage2, startedAt })
+    const report = assembleReviewReport({
+      stage0,
+      context,
+      reviews,
+      verification,
+      findings,
+      startedAt,
+    })
     if (values.json !== undefined) {
       const json = JSON.stringify(report, null, 2)
       if (values.json === '-') io.stdout(`${json}\n`)
@@ -256,7 +346,9 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
     if (!ground.decision.execute) return HEADLESS_EXIT.APPROVAL_REQUIRED
     if (stage0.coverage.notChecked.some((note) => note.kind === 'all')) return HEADLESS_EXIT.USAGE
     if (io.signal?.aborted) return HEADLESS_EXIT.CANCELLED
-    if (modelError !== null || stage2?.outcome === 'failed') return HEADLESS_EXIT.FAILURE
+    if (modelError !== null || reviews.some((review) => review.outcome === 'failed')) {
+      return HEADLESS_EXIT.FAILURE
+    }
     return HEADLESS_EXIT.SUCCESS
   } finally {
     await ground.close()

@@ -1,19 +1,24 @@
 // A lens is a scoped brief with its own tool budget (docs/plans/copse-reviewer.md,
 // Stage 2). Lenses matter more than model count: one model given "only look
-// for broken contracts" finds what a generic "review this" does not. Phase 1
-// ships the one lens B4 allows — bugs and regressions — and the shape the
-// others slot into.
+// for broken contracts" finds what a generic "review this" does not. Every
+// lens stays inside B4 — bugs and regressions only; the `docs` lens the plan
+// sketches is deferred with the `docs` class.
 import { EXTERNAL_CONTENT_BLOCK } from '@copse/agent/external-content.ts'
-import { FINDING_CLASSES } from './finding.ts'
+import { FINDING_CLASSES, type FindingClass } from './finding.ts'
 
 export interface Lens {
   readonly id: string
   readonly title: string
   /** What to look for, and what not to. Becomes part of the system prompt. */
   readonly brief: string
+  /** The classes this lens is expected to raise; others are still accepted. */
+  readonly classes: readonly FindingClass[]
   /** Upper bound on tool-using steps for one run under this lens. */
   readonly maxSteps: number
 }
+
+const NOT_STYLE =
+  'Do not report style, naming, formatting, documentation, or anything the repository’s own linter would flag.'
 
 export const CORRECTNESS_LENS: Lens = {
   id: 'correctness',
@@ -22,13 +27,101 @@ export const CORRECTNESS_LENS: Lens = {
     'Look only for defects this change introduces or fails to handle: wrong behaviour, a broken',
     'contract between caller and callee, a missed edge case, an error path that now misbehaves,',
     'a concurrency or resource problem, a security hole, an incompatible API change, or a test',
-    'that no longer exercises what it claims to. Do not report style, naming, formatting,',
-    'documentation, or anything the repository’s own linter would flag.',
+    `that no longer exercises what it claims to. ${NOT_STYLE}`,
   ].join(' '),
+  classes: ['test', 'contract', 'security', 'concurrency', 'resource', 'api-compat'],
   maxSteps: 24,
 }
 
-export const LENSES: readonly Lens[] = [CORRECTNESS_LENS]
+export const CONTRACTS_LENS: Lens = {
+  id: 'contracts',
+  title: 'Contracts and API compatibility',
+  brief: [
+    'Look only at the boundaries this change touches: function signatures, return shapes, thrown',
+    'errors, persisted formats, wire protocols, configuration keys and exported names. Find every',
+    'caller or consumer of a changed boundary with search_code and check whether it still holds.',
+    'A changed default, a narrowed input, a widened output or a renamed export that a consumer',
+    `still relies on is a finding; a boundary whose consumers were all updated is not. ${NOT_STYLE}`,
+  ].join(' '),
+  classes: ['contract', 'api-compat'],
+  maxSteps: 24,
+}
+
+export const TESTS_LENS: Lens = {
+  id: 'tests',
+  title: 'Tests that no longer prove what they claim',
+  brief: [
+    'Look only at the tests around this change. A test that was weakened to pass, a test whose',
+    'assertion no longer exercises the changed code path, a fixture that hides the new behaviour,',
+    'a skipped or deleted test with no replacement, and changed behaviour with no test at all are',
+    'findings. Read the test and the code it targets together; run the test with run_command when',
+    `you are unsure what it exercises. ${NOT_STYLE}`,
+  ].join(' '),
+  classes: ['test'],
+  maxSteps: 20,
+}
+
+export const SECURITY_LENS: Lens = {
+  id: 'security',
+  title: 'Security',
+  brief: [
+    'Look only for security weaknesses this change introduces: untrusted input reaching a shell,',
+    'a path, a query, a template or an eval; a check that was removed or reordered; a secret or',
+    'credential written, logged or sent; a permission or sandbox boundary widened; a comparison',
+    'that is not constant-time where it must be; a deserialisation of untrusted data. Trace the',
+    `data from where it enters to where it is used before you report. ${NOT_STYLE}`,
+  ].join(' '),
+  classes: ['security'],
+  maxSteps: 24,
+}
+
+export const CONCURRENCY_LENS: Lens = {
+  id: 'concurrency',
+  title: 'Concurrency and resources',
+  brief: [
+    'Look only for ordering, lifetime and resource problems this change introduces: a race',
+    'between two async paths, an await that was dropped, a lock or queue that is bypassed, a',
+    'handle, listener, timer, child process or temp file that is no longer released on every',
+    'path, a retry that is unbounded, a cancellation that is ignored. Follow each resource from',
+    `acquisition to release before you report. ${NOT_STYLE}`,
+  ].join(' '),
+  classes: ['concurrency', 'resource'],
+  maxSteps: 20,
+}
+
+export const LENSES: readonly Lens[] = [
+  CORRECTNESS_LENS,
+  CONTRACTS_LENS,
+  TESTS_LENS,
+  SECURITY_LENS,
+  CONCURRENCY_LENS,
+]
+
+export const DEFAULT_LENS_IDS: readonly string[] = [CORRECTNESS_LENS.id]
+
+/**
+ * Resolve a `--lenses` spec: a comma-separated list of ids, or `all`. Unknown
+ * ids are an error, never silently dropped; an empty spec is the default.
+ */
+export function resolveLenses(spec: string | undefined): Lens[] {
+  if (spec === undefined || spec.trim() === '') {
+    return LENSES.filter((lens) => DEFAULT_LENS_IDS.includes(lens.id))
+  }
+  if (spec.trim() === 'all') return [...LENSES]
+  const ids = spec
+    .split(',')
+    .map((id) => id.trim())
+    .filter((id) => id.length > 0)
+  const lenses: Lens[] = []
+  for (const id of ids) {
+    const lens = LENSES.find((candidate) => candidate.id === id)
+    if (lens === undefined) {
+      throw new Error(`unknown lens ${id}; one of ${LENSES.map((l) => l.id).join(', ')}, or all`)
+    }
+    if (!lenses.includes(lens)) lenses.push(lens)
+  }
+  return lenses
+}
 
 export interface LensPromptOptions {
   /** Whether `run_command` will work: the cell exists and shell is allowed. */

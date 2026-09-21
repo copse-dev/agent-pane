@@ -1,13 +1,13 @@
 // Stage 5 — Report (docs/plans/copse-reviewer.md, §Pipeline and §The quality
-// bar). Stage 0's confirmed findings and Stage 2's candidates become one
-// ranked list: refuted findings never reach the human, executable evidence
-// earns a bonus, an uncorroborated unverified claim pays a penalty, and the
-// surfaced list is capped; the rest go to an appendix. Phase 1 has no
-// verification stage, so every model candidate is `unverified` and ranks
-// below anything Stage 0 proved.
+// bar). Stage 0's confirmed findings, the reviewers' candidates (clustered by
+// Stage 3) and Stage 4's verdicts become one ranked list: refuted findings
+// never reach the human, executable evidence earns a bonus, a finding that
+// survived a challenge earns a smaller one, an uncorroborated unverified claim
+// pays a penalty, and the surfaced list is capped; the rest go to an appendix.
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { HeadlessOutcome, HeadlessStopReason } from '@copse/agent/headless-contract.ts'
+import { clusterFindings } from './cluster.ts'
 import type { ReviewContext } from './context.ts'
 import {
   findingId,
@@ -19,12 +19,40 @@ import {
 import type { CellCommandResult } from './isolation.ts'
 import type { ReportedCandidate } from './reviewer-tools.ts'
 import type { Stage0Report } from './stage0.ts'
-import type { Stage2Result, Stage2Usage } from './stage2.ts'
+import type { Stage2Result } from './stage2.ts'
+import type { Stage4Result, VerificationRecord } from './stage4.ts'
+import type { TurnUsage } from './turn.ts'
 
-export const REVIEW_REPORT_VERSION = 1
+export const REVIEW_REPORT_VERSION = 2
 /** The hard cap on surfaced findings: a forty-item list is a denial of service. */
 export const MAX_SURFACED_FINDINGS = 7
 const EVIDENCE_EXCERPT_CHARS = 4 * 1024
+
+export interface ReviewerSummary {
+  readonly model: string
+  readonly lens: string
+  readonly turnId: string
+  readonly outcome: HeadlessOutcome
+  readonly stopReason: HeadlessStopReason
+  readonly candidates: number
+  readonly toolCalls: number
+  readonly usage: TurnUsage
+  readonly summary: string
+  readonly error?: string
+}
+
+export interface VerificationSummary {
+  readonly counts: Stage4Result['counts']
+  readonly records: readonly VerificationRecord[]
+  /** Reproducers that confirmed a finding: the artefact a human can keep. */
+  readonly reproducers: readonly {
+    readonly findingId: string
+    readonly path: string
+    readonly argv: readonly string[]
+    readonly content: string
+  }[]
+  readonly usage: TurnUsage
+}
 
 export interface ReviewReport {
   readonly version: typeof REVIEW_REPORT_VERSION
@@ -36,21 +64,14 @@ export interface ReviewReport {
     readonly budgetChars: number
     readonly usedChars: number
   } | null
-  readonly review: {
-    readonly model: string
-    readonly lens: string
-    readonly outcome: HeadlessOutcome
-    readonly stopReason: HeadlessStopReason
-    readonly candidates: number
-    readonly toolCalls: number
-    readonly usage: Stage2Usage
-    readonly summary: string
-    readonly error?: string
-  } | null
+  readonly reviews: readonly ReviewerSummary[]
+  readonly verification: VerificationSummary | null
   /** Ranked, capped at {@link MAX_SURFACED_FINDINGS}. */
   readonly findings: readonly Finding[]
   /** Everything that ranked below the cap, in order. */
   readonly appendix: readonly Finding[]
+  /** Findings verification refuted; kept so a reader can see what was dropped and why. */
+  readonly refuted: readonly Finding[]
   readonly durationMs: number
 }
 
@@ -58,10 +79,10 @@ const SEVERITY_WEIGHT: Record<FindingSeverity, number> = { low: 1, medium: 2, hi
 const CONFIDENCE_WEIGHT: Record<FindingConfidence, number> = { low: 1, medium: 2, high: 3 }
 
 /**
- * Rank score: severity × confidence, plus a bonus for executable evidence and
- * a confirmed verdict, minus a penalty for a finding one reviewer raised,
- * nobody corroborated and nothing verified. Refuted findings score nothing
- * because they are dropped before ranking.
+ * Rank score: severity × confidence, plus a bonus for executable evidence, a
+ * confirmed verdict and a survived challenge, minus a penalty for a finding one
+ * reviewer raised, nobody corroborated and nothing verified. Refuted findings
+ * score nothing because they are dropped before ranking.
  */
 export function findingScore(finding: Finding): number {
   let score = SEVERITY_WEIGHT[finding.severity] * CONFIDENCE_WEIGHT[finding.confidence]
@@ -73,10 +94,12 @@ export function findingScore(finding: Finding): number {
     score += 3
   }
   if (finding.verdict.status === 'confirmed') score += 4
+  if (finding.provenance.challengedBy.length > 0) score += 2
   if (
     finding.verdict.status === 'unverified' &&
     finding.provenance.raisedBy.length === 1 &&
-    finding.provenance.corroboratedBy.length === 0
+    finding.provenance.corroboratedBy.length === 0 &&
+    finding.provenance.challengedBy.length === 0
   ) {
     score -= 2
   }
@@ -91,66 +114,22 @@ function compareFindings(a: Finding, b: Finding): number {
   return (a.anchor.startLine ?? 0) - (b.anchor.startLine ?? 0)
 }
 
-function overlaps(a: Finding, b: Finding): boolean {
-  if (a.anchor.path !== b.anchor.path || a.class !== b.class) return false
-  const aStart = a.anchor.startLine ?? 0
-  const aEnd = a.anchor.endLine ?? aStart
-  const bStart = b.anchor.startLine ?? 0
-  const bEnd = b.anchor.endLine ?? bStart
-  return aStart <= bEnd && bStart <= aEnd
-}
+/** Stage 3 over the raw lists. Kept as the older name too. */
+export const mergeFindings = clusterFindings
 
-/**
- * Merge findings that are the same finding: identical id, or the same class on
- * overlapping lines of one file. The first (higher-ranked once sorted, since
- * Stage 0 comes first) keeps its evidence; the other's raisers corroborate it.
- * Phase 2's clustering replaces this with claim equivalence (P2).
- */
-export function mergeFindings(findings: readonly Finding[]): Finding[] {
-  const merged: Finding[] = []
-  for (const finding of findings) {
-    const existing = merged.findIndex(
-      (other) => other.id === finding.id || overlaps(other, finding),
-    )
-    if (existing === -1) {
-      merged.push(finding)
-      continue
-    }
-    const target = merged[existing]
-    if (target === undefined) continue
-    const known = new Set(
-      [...target.provenance.raisedBy, ...target.provenance.corroboratedBy].map(
-        (ref) => `${ref.kind}:${ref.id}:${ref.lens ?? ''}`,
-      ),
-    )
-    const corroboratedBy = [
-      ...target.provenance.corroboratedBy,
-      ...finding.provenance.raisedBy.filter(
-        (ref) => !known.has(`${ref.kind}:${ref.id}:${ref.lens ?? ''}`),
-      ),
-    ]
-    merged[existing] = {
-      ...target,
-      provenance: { ...target.provenance, corroboratedBy },
-      evidence: [
-        ...target.evidence,
-        ...finding.evidence.filter((evidence) => evidence.kind !== 'citation'),
-      ],
-    }
-  }
-  return merged
-}
-
-/** Drop refuted, merge duplicates, rank, and split at the cap. */
+/** Rank the canonical findings and split at the cap; refuted are reported separately. */
 export function rankFindings(findings: readonly Finding[]): {
   surfaced: Finding[]
   appendix: Finding[]
+  refuted: Finding[]
 } {
-  const live = mergeFindings(findings.filter((finding) => finding.verdict.status !== 'refuted'))
+  const refuted = findings.filter((finding) => finding.verdict.status === 'refuted')
+  const live = [...findings.filter((finding) => finding.verdict.status !== 'refuted')]
   live.sort(compareFindings)
   return {
     surfaced: live.slice(0, MAX_SURFACED_FINDINGS),
     appendix: live.slice(MAX_SURFACED_FINDINGS),
+    refuted,
   }
 }
 
@@ -206,27 +185,52 @@ export function candidateToFinding(
   }
 }
 
+/**
+ * Stage 0's findings and every reviewer's candidates, clustered into
+ * canonical findings (Stage 3). Stage 0 goes first so a candidate that
+ * duplicates a confirmed finding corroborates it rather than replacing it.
+ */
+export function canonicalFindings(
+  stage0: Stage0Report,
+  reviews: readonly Stage2Result[],
+): Finding[] {
+  const candidates = reviews.flatMap((review) =>
+    review.candidates.map((reported) =>
+      candidateToFinding(reported, { model: review.model, lens: review.lens }, review.commandRuns),
+    ),
+  )
+  return clusterFindings([...stage0.findings, ...candidates])
+}
+
+export function summarizeReview(review: Stage2Result): ReviewerSummary {
+  return {
+    model: review.model,
+    lens: review.lens,
+    turnId: review.turnId,
+    outcome: review.outcome,
+    stopReason: review.stopReason,
+    candidates: review.candidates.length,
+    toolCalls: review.toolCalls,
+    usage: review.usage,
+    summary: review.summary,
+    ...(review.error !== undefined ? { error: review.error } : {}),
+  }
+}
+
 export interface AssembleReportInput {
   readonly stage0: Stage0Report
   readonly context: ReviewContext | null
-  readonly stage2: Stage2Result | null
+  readonly reviews: readonly Stage2Result[]
+  readonly verification: Stage4Result | null
+  /** The canonical findings after verification (or straight from {@link canonicalFindings}). */
+  readonly findings: readonly Finding[]
   readonly startedAt: number
   readonly now?: () => number
 }
 
 export function assembleReviewReport(input: AssembleReportInput): ReviewReport {
   const now = input.now ?? Date.now
-  const candidates =
-    input.stage2 === null
-      ? []
-      : input.stage2.candidates.map((reported) =>
-          candidateToFinding(
-            reported,
-            { model: input.stage2?.model ?? '', lens: input.stage2?.lens ?? '' },
-            input.stage2?.commandRuns ?? new Map(),
-          ),
-        )
-  const { surfaced, appendix } = rankFindings([...input.stage0.findings, ...candidates])
+  const { surfaced, appendix, refuted } = rankFindings(input.findings)
   return {
     version: REVIEW_REPORT_VERSION,
     stage0: input.stage0,
@@ -244,22 +248,24 @@ export function assembleReviewReport(input: AssembleReportInput): ReviewReport {
             budgetChars: input.context.budgetChars,
             usedChars: input.context.usedChars,
           },
-    review:
-      input.stage2 === null
+    reviews: input.reviews.map(summarizeReview),
+    verification:
+      input.verification === null
         ? null
         : {
-            model: input.stage2.model,
-            lens: input.stage2.lens,
-            outcome: input.stage2.outcome,
-            stopReason: input.stage2.stopReason,
-            candidates: input.stage2.candidates.length,
-            toolCalls: input.stage2.toolCalls,
-            usage: input.stage2.usage,
-            summary: input.stage2.summary,
-            ...(input.stage2.error !== undefined ? { error: input.stage2.error } : {}),
+            counts: input.verification.counts,
+            records: input.verification.records,
+            reproducers: input.verification.reproducers.map(({ findingId: id, run }) => ({
+              findingId: id,
+              path: run.path,
+              argv: run.argv,
+              content: run.content,
+            })),
+            usage: input.verification.usage,
           },
     findings: surfaced,
     appendix,
+    refuted,
     durationMs: now() - input.startedAt,
   }
 }

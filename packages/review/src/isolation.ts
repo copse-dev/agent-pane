@@ -213,3 +213,23 @@ export function droppedHostSecrets(
   }
   return secrets
 }
+
+/**
+ * A view of a cell that runs one command at a time. Reviewers that fan out
+ * share one head checkout, and two test runs in one working directory would
+ * trample each other's build output; the plan's per-reviewer worktrees are
+ * the full answer, and a queue is the Phase 2 stand-in that keeps the shared
+ * checkout coherent at the cost of parallel execution inside the cell.
+ */
+export function serializeCell(cell: ExecutionCell): ExecutionCell {
+  let tail: Promise<unknown> = Promise.resolve()
+  return {
+    spec: cell.spec,
+    run(command: CellCommand): Promise<CellCommandResult> {
+      const next = tail.then(() => cell.run(command))
+      tail = next.catch(() => undefined)
+      return next
+    },
+    destroy: () => cell.destroy(),
+  }
+}

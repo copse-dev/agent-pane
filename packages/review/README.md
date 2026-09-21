@@ -6,10 +6,12 @@ behind. An Electron-free workspace package from its first commit (binding decisi
 depending only on `@copse/std`, `@copse/llm` and zod, so the same core can serve a CLI, the
 app and a CI action.
 
-Phases 0 and 1 are here: the finding schema, Stage 0 (the base-versus-head build and test
+Phases 0 to 2 are here: the finding schema, Stage 0 (the base-versus-head build and test
 delta), the isolation-backend contract and the conformance test that holds a backend to
-what it declares (Phase 0); and the `copse-review` CLI with Stage 1 context, one model
-under one lens with brokered tools, the ranked report and SARIF export (Phase 1).
+what it declares (Phase 0); the `copse-review` CLI with Stage 1 context, brokered tools,
+the ranked report and SARIF export (Phase 1); and the fan-out over models and lenses,
+Stage 3 clustering, and Stage 4 verification by reproducer and adversarial challenge
+(Phase 2).
 
 ## What's in it
 
@@ -51,18 +53,30 @@ under one lens with brokered tools, the ranked report and SARIF export (Phase 1)
   first and then cuts each remaining file at a line boundary, never mid-hunk; the
   repository's `AGENTS.md` / `CLAUDE.md` / `CONTRIBUTING.md`; and a test map for the
   touched files.
-- **`lenses.ts`** — a lens is a scoped brief with a step budget. Phase 1 ships the one B4
-  allows: bugs and regressions. The system prompt restates the quality bar as rules.
+- **`lenses.ts`** — a lens is a scoped brief with a step budget: `correctness` (the default),
+  `contracts`, `tests`, `security`, `concurrency`; `--lenses all` runs every one. All stay
+  inside B4. The system prompt restates the quality bar as rules.
 - **`reviewer-tools.ts`** — the reviewer's tools, jailed to the head checkout:
   `read_file`, `list_dir`, `search_code`, `git_diff`; `run_command`, brokered into the
   cell and gated by the run's permission profile, with its output wrapped as external
   content and secret-scrubbed; and `report_finding`, through which every candidate
   arrives as a structured, anchored object rather than prose.
-- **`stage2.ts`** — one model, one lens, over `@copse/agent`'s loop, projected live onto the
-  headless contract's `turn_start … turn_end` event envelope.
-- **`stage5.ts`** — merge, rank and cap: Stage 0's confirmed findings and the model's
-  unverified candidates in one list, refuted dropped, executable evidence and confirmation
-  rewarded, a lone unverified claim penalised, seven surfaced and the rest in the appendix.
+- **`turn.ts`** / **`stage2.ts`** — one model turn over `@copse/agent`'s loop, projected live
+  onto the headless contract's `turn_start … turn_end` event envelope; `runReviewers` fans
+  out every model over every lens, a few at a time, over one serialised cell.
+- **`cluster.ts`** — Stage 3: two candidates are one finding when their anchors overlap
+  (with a few lines of slack) and their claims share enough content words. The first keeps
+  its identity; the rest corroborate it. Thresholds are exported for `bench:review` to tune.
+- **`verifier-tools.ts`** / **`stage4.ts`** — Stage 4: for the classes a test can demonstrate,
+  a reproducer model writes one test under `.copse-review/` and names how to run it; it is
+  run on head and on base, and confirms the finding only when it fails on head and passes on
+  base. Everything still open goes to the challenger, whose brief is to refute the finding
+  with the burden of proof on the claim; `refuted` drops it, `stands` records the survived
+  challenge. Most promising findings first, up to `--max-verify`.
+- **`stage5.ts`** — rank and cap: confirmed findings, survivors and unverified candidates in
+  one list, refuted reported separately, executable evidence, confirmation and a survived
+  challenge rewarded, a lone unverified claim penalised, seven surfaced and the rest in the
+  appendix.
 - **`sarif.ts`** — SARIF 2.1.0 with the finding id in `partialFingerprints` and evidence,
   provenance and verdict in `properties` (B9).
 - **`provider-selection.ts`** / **`cli.ts`** / **`bin/copse-review.mjs`** — the shell.
@@ -80,7 +94,9 @@ under one lens with brokered tools, the ranked report and SARIF export (Phase 1)
 pnpm run review -- --allow-unisolated --no-model                 # Stage 0 only
 pnpm run review -- --allow-unisolated --model claude-sonnet-5    # plus one model reviewer
 pnpm run review -- --allow-unisolated --provider lmstudio --model qwen3-coder
-pnpm run review -- --allow-unisolated --json report.json --sarif report.sarif --events turn.jsonl
+pnpm run review -- --allow-unisolated --model claude-sonnet-5 --model gpt-5 --lenses all
+pnpm run review -- --allow-unisolated --model qwen3-coder --challenger claude-sonnet-5
+pnpm run review -- --allow-unisolated --json report.json --sarif report.sarif --events turns.jsonl
 pnpm run review -- --help
 ```
 
@@ -92,5 +108,6 @@ isolation, `130` cancelled.
 
 ## Not yet here
 
-Phase 2 adds lenses, clustering and the challenger (verification); Phase 3 the app card;
-Phase 4 the container backend, foreign diffs and the CI action. See the plan's §Phases.
+Phase 3 is the app card and the Changes-view gesture (and retires the comparison judge);
+Phase 4 the container backend, foreign diffs and the CI action; Phase 5 the `bench:review`
+precision measurement. See the plan's §Phases.

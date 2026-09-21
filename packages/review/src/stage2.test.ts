@@ -7,9 +7,15 @@ import { headlessEventSchema } from '@copse/agent/headless-contract.ts'
 import type { LLMMessage, LLMProvider } from '@copse/llm/wire-types.ts'
 import { materialiseCheckouts, type MaterialisedCheckouts } from './checkouts.ts'
 import { buildReviewContext, type ReviewContext } from './context.ts'
-import { CORRECTNESS_LENS, lensSystemPrompt } from './lenses.ts'
+import {
+  CONTRACTS_LENS,
+  CORRECTNESS_LENS,
+  LENSES,
+  lensSystemPrompt,
+  resolveLenses,
+} from './lenses.ts'
 import { ScriptedProvider, type ScriptedStep } from './scripted-provider.ts'
-import { runStage2 } from './stage2.ts'
+import { runReviewers, runStage2 } from './stage2.ts'
 import { createTestRepo, type TestRepo } from './test-repo.ts'
 
 function textOf(message: LLMMessage): string {
@@ -142,5 +148,56 @@ describe('runStage2', () => {
     assert.match(result.error ?? '', /provider exploded/)
     assert.deepEqual(result.candidates, [])
     assert.equal(result.events.at(-1)?.type, 'turn_end')
+  })
+
+  it('fans out every model over every lens and keeps each result in place', async () => {
+    const results = await runReviewers({
+      context,
+      headCheckout: checkouts.head,
+      cell: null,
+      shellDecision: 'deny',
+      scrub: (text) => text,
+      reviewers: [
+        {
+          model: 'm1',
+          providerFor: (): ScriptedProvider =>
+            new ScriptedProvider([{ type: 'text', text: 'm1 done' }]),
+        },
+        {
+          model: 'm2',
+          providerFor: (lens): ScriptedProvider =>
+            new ScriptedProvider([{ type: 'text', text: `m2 ${lens.id}` }]),
+        },
+      ],
+      lenses: [CORRECTNESS_LENS, CONTRACTS_LENS],
+      threadId: 'thread',
+      turnPrefix: 'turn',
+      concurrency: 3,
+    })
+    assert.deepEqual(
+      results.map((result) => [result.model, result.lens, result.summary, result.turnId]),
+      [
+        ['m1', 'correctness', 'm1 done', 'turn:m1:correctness'],
+        ['m1', 'contracts', 'm1 done', 'turn:m1:contracts'],
+        ['m2', 'correctness', 'm2 correctness', 'turn:m2:correctness'],
+        ['m2', 'contracts', 'm2 contracts', 'turn:m2:contracts'],
+      ],
+    )
+  })
+
+  it('resolves lens specs and rejects unknown ids', () => {
+    assert.deepEqual(
+      resolveLenses(undefined).map((lens) => lens.id),
+      ['correctness'],
+    )
+    assert.deepEqual(
+      resolveLenses('all').map((lens) => lens.id),
+      LENSES.map((lens) => lens.id),
+    )
+    assert.deepEqual(
+      resolveLenses(' tests, security ,tests').map((lens) => lens.id),
+      ['tests', 'security'],
+    )
+    assert.throws(() => resolveLenses('vibes'), /unknown lens vibes/)
   })
 })

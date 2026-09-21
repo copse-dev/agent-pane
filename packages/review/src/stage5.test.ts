@@ -69,18 +69,23 @@ describe('findingScore and rankFindings', () => {
       id: 'ffffffffffffffff',
       verdict: { status: 'refuted', reason: 'no' },
     })
-    const { surfaced, appendix } = rankFindings([...many, refuted])
-    assert.equal(surfaced.length, MAX_SURFACED_FINDINGS)
-    assert.equal(appendix.length, 3)
+    const ranked = rankFindings([...many, refuted])
+    assert.equal(ranked.surfaced.length, MAX_SURFACED_FINDINGS)
+    assert.equal(ranked.appendix.length, 3)
     assert.equal(
-      [...surfaced, ...appendix].some((f) => f.id === refuted.id),
+      [...ranked.surfaced, ...ranked.appendix].some((f) => f.id === refuted.id),
       false,
+    )
+    assert.deepEqual(
+      ranked.refuted.map((f) => f.id),
+      [refuted.id],
     )
   })
 
   it('merges the same finding raised twice into one with corroboration', () => {
     const again = finding({
       id: '3333333333333333',
+      claim: confirmed.claim,
       anchor: { path: 'src/a.ts', startLine: 11, endLine: 11 },
       provenance: {
         raisedBy: [{ kind: 'model', id: 'm2', lens: 'correctness' }],
@@ -98,9 +103,22 @@ describe('findingScore and rankFindings', () => {
     assert.equal(only.verdict.status, 'confirmed')
     const different = finding({
       id: '4444444444444444',
+      claim: 'an unrelated timer is never cleared',
       anchor: { path: 'src/a.ts', startLine: 40 },
     })
     assert.equal(mergeFindings([confirmed, different]).length, 2)
+  })
+
+  it('rewards a survived challenge', () => {
+    const lone = finding({ id: '7777777777777777' })
+    const survived = finding({
+      id: '8888888888888888',
+      provenance: {
+        ...lone.provenance,
+        challengedBy: [{ kind: 'model', id: 'c', lens: 'challenge' }],
+      },
+    })
+    assert.equal(findingScore(survived) - findingScore(lone), 4)
   })
 })
 
@@ -174,19 +192,29 @@ describe('assembleReviewReport', () => {
     durationMs: 1,
   }
 
-  it('carries Stage 0 alone when no model ran', () => {
+  it('carries Stage 0 alone when no model ran, and reports refuted findings separately', () => {
     const report = assembleReviewReport({
       stage0,
       context: null,
-      stage2: null,
+      reviews: [],
+      verification: null,
+      findings: [
+        confirmed,
+        finding({ id: 'ffffffffffffffff', verdict: { status: 'refuted', reason: 'no' } }),
+      ],
       startedAt: 0,
       now: () => 10,
     })
-    assert.equal(report.review, null)
+    assert.deepEqual(report.reviews, [])
+    assert.equal(report.verification, null)
     assert.equal(report.context, null)
     assert.deepEqual(
       report.findings.map((f) => f.id),
       [confirmed.id],
+    )
+    assert.deepEqual(
+      report.refuted.map((f) => f.id),
+      ['ffffffffffffffff'],
     )
     assert.equal(report.durationMs, 10)
   })

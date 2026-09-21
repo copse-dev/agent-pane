@@ -1,24 +1,9 @@
-// Stage 2 — Fan out (docs/plans/copse-reviewer.md, §Pipeline), Phase 1 shape:
-// one model, one lens. The reviewer runs `@copse/agent`'s loop with the
-// reviewer tools over the head checkout and the cell, and its run is projected
-// onto the headless contract's event envelope as it goes, so a CLI or CI
-// caller sees the same `turn_start … turn_end` stream every other headless
-// adapter emits. Output is candidate findings, not prose.
-import {
-  HEADLESS_PROTOCOL_VERSION,
-  headlessEventSchema,
-  normalizeStopReason,
-  projectStreamChunk,
-  type HeadlessEvent,
-  type HeadlessOutcome,
-  type HeadlessStopReason,
-} from '@copse/agent/headless-contract.ts'
-import { runAgentLoop } from '@copse/agent/run-agent-loop.ts'
-import { CHARS_PER_TOKEN } from '@copse/agent/token-estimate.ts'
-import type { AgentStreamChunk } from '@copse/agent/wire-types.ts'
-import { hasLastUsage } from '@copse/llm/provider-usage.ts'
-import type { LLMMessage, LLMProvider } from '@copse/llm/wire-types.ts'
-import { errorMessage } from '@copse/std/errors.ts'
+// Stage 2 — Fan out (docs/plans/copse-reviewer.md, §Pipeline): N models × M
+// lenses, each an independent reviewer over the same context, the same head
+// checkout and the same cell. Output is candidate findings, not prose; Stage 3
+// clusters them and Stage 4 tries to settle them.
+import type { HeadlessEvent } from '@copse/agent/headless-contract.ts'
+import type { LLMProvider } from '@copse/llm/wire-types.ts'
 import { renderReviewContext } from './context.ts'
 import { lensSystemPrompt, type Lens } from './lenses.ts'
 import {
@@ -28,6 +13,9 @@ import {
   type ReviewerToolHost,
 } from './reviewer-tools.ts'
 import type { CellCommandResult } from './isolation.ts'
+import { runTurn, type TurnResult, type TurnUsage } from './turn.ts'
+
+export type Stage2Usage = TurnUsage
 
 export interface Stage2Options extends ReviewerToolHost {
   readonly provider: LLMProvider
@@ -36,151 +24,120 @@ export interface Stage2Options extends ReviewerToolHost {
   readonly lens: Lens
   readonly threadId: string
   readonly turnId: string
-  readonly signal?: AbortSignal
+  readonly signal?: AbortSignal | undefined
   /** Receives each contract event as it happens (a CLI writes them to stdout). */
-  readonly onEvent?: (event: HeadlessEvent) => void
-  readonly maxSteps?: number
-}
-
-export interface Stage2Usage {
-  readonly inputTokens: number
-  readonly outputTokens: number
-  /** True when the provider reported no usage and the figures are a ~4 chars/token estimate. */
-  readonly estimated: boolean
+  readonly onEvent?: ((event: HeadlessEvent) => void) | undefined
+  readonly maxSteps?: number | undefined
 }
 
 export interface Stage2Result {
   readonly model: string
   readonly lens: string
+  readonly turnId: string
   readonly candidates: readonly ReportedCandidate[]
   readonly commandRuns: ReadonlyMap<string, CellCommandResult>
   readonly events: readonly HeadlessEvent[]
-  readonly outcome: HeadlessOutcome
-  readonly stopReason: HeadlessStopReason
+  readonly outcome: TurnResult['outcome']
+  readonly stopReason: TurnResult['stopReason']
   /** The reviewer's closing plain-text message: what it checked and what it could not. */
   readonly summary: string
-  readonly usage: Stage2Usage
+  readonly usage: TurnUsage
   readonly toolCalls: number
   readonly error?: string
 }
 
+/** One reviewer: one model under one lens. */
 export async function runStage2(options: Stage2Options): Promise<Stage2Result> {
   const executor = createReviewerToolExecutor(options)
-  const messages: LLMMessage[] = [
-    {
-      role: 'system',
-      content: lensSystemPrompt(options.lens, {
-        canRun: options.shellDecision === 'allow' && options.cell !== null,
-      }),
-    },
-    { role: 'user', content: renderReviewContext(options.context) },
-  ]
-
-  const events: HeadlessEvent[] = []
-  let item = 0
-  const mintItemId = (): string => `${options.turnId}-item-${String(++item)}`
-  const emit = (event: HeadlessEvent): void => {
-    headlessEventSchema.parse(event)
-    events.push(event)
-    options.onEvent?.(event)
-  }
-  // Text and reasoning stream as deltas; coalesce each run into one item so a
-  // message is one event, not one per token, before projecting it.
-  let pending: { type: 'text' | 'reasoning'; text: string } | null = null
-  const flushPending = (): void => {
-    if (pending === null) return
-    for (const event of projectStreamChunk(pending, { turnId: options.turnId, mintItemId }))
-      emit(event)
-    pending = null
-  }
-  let summary = ''
-  let toolCalls = 0
-  let usageChunks = 0
-  let inputTokens = 0
-  let outputTokens = 0
-  let doneStopReason: string | undefined
-  let error: string | undefined
-
-  emit({
-    v: 1,
-    type: 'turn_start',
+  const turn = await runTurn({
+    provider: options.provider,
+    model: options.model,
+    systemPrompt: lensSystemPrompt(options.lens, {
+      canRun: options.shellDecision === 'allow' && options.cell !== null,
+    }),
+    userPrompt: renderReviewContext(options.context),
+    tools: reviewerTools(),
+    execute: (name, args, signal, toolCallId) => executor.execute(name, args, signal, toolCallId),
     threadId: options.threadId,
     turnId: options.turnId,
-    protocolVersion: HEADLESS_PROTOCOL_VERSION,
+    maxSteps: options.maxSteps ?? options.lens.maxSteps,
+    signal: options.signal,
+    onEvent: options.onEvent,
   })
-  try {
-    await runAgentLoop({
-      provider: options.provider,
-      messages,
-      tools: reviewerTools(),
-      executeTool: (name, args, signal, toolCallId) =>
-        executor.execute(name, args, signal, toolCallId),
-      ...(options.signal ? { signal: options.signal } : {}),
-      maxSteps: options.maxSteps ?? options.lens.maxSteps,
-      adaptiveExtensions: false,
-      usageModel: options.model,
-      getLastUsage: () => (hasLastUsage(options.provider) ? options.provider.lastUsage : null),
-      onChunk: (chunk: AgentStreamChunk) => {
-        if (chunk.type === 'text' || chunk.type === 'reasoning') {
-          if (pending !== null && pending.type !== chunk.type) flushPending()
-          pending = { type: chunk.type, text: (pending?.text ?? '') + chunk.text }
-          if (chunk.type === 'text') summary += chunk.text
-          return
-        }
-        flushPending()
-        if (chunk.type === 'tool_call') {
-          toolCalls += 1
-          // A fresh answer follows a tool round; the closing summary is the last text.
-          summary = ''
-        }
-        if (chunk.type === 'usage') {
-          usageChunks += 1
-          inputTokens += chunk.inputTokens
-          outputTokens += chunk.outputTokens
-        }
-        if (chunk.type === 'done') doneStopReason = chunk.stopReason
-        for (const event of projectStreamChunk(chunk, { turnId: options.turnId, mintItemId }))
-          emit(event)
-      },
-    })
-  } catch (err) {
-    error = errorMessage(err)
-  }
-  flushPending()
-
-  const cancelled = options.signal?.aborted ?? false
-  const outcome: HeadlessOutcome = cancelled
-    ? 'cancelled'
-    : error !== undefined
-      ? 'failed'
-      : 'completed'
-  const stopReason: HeadlessStopReason = cancelled
-    ? 'cancelled'
-    : error !== undefined
-      ? 'error'
-      : normalizeStopReason(doneStopReason)
-  emit({ v: 1, type: 'turn_end', turnId: options.turnId, outcome, stopReason })
-
-  const estimated = usageChunks === 0
-  const usage: Stage2Usage = estimated
-    ? {
-        inputTokens: Math.round(JSON.stringify(messages).length / CHARS_PER_TOKEN),
-        outputTokens: Math.round(summary.length / CHARS_PER_TOKEN),
-        estimated,
-      }
-    : { inputTokens, outputTokens, estimated }
-
   return {
     model: options.model,
     lens: options.lens.id,
+    turnId: turn.turnId,
     candidates: executor.reported(),
     commandRuns: executor.commandRuns(),
-    events,
-    outcome,
-    stopReason,
-    summary: summary.trim(),
-    usage,
-    toolCalls,
-    ...(error !== undefined ? { error } : {}),
+    events: turn.events,
+    outcome: turn.outcome,
+    stopReason: turn.stopReason,
+    summary: turn.summary,
+    usage: turn.usage,
+    toolCalls: turn.toolCalls,
+    ...(turn.error !== undefined ? { error: turn.error } : {}),
   }
+}
+
+export interface ReviewerSpec {
+  readonly model: string
+  /** The provider for one lens (`review:<lens>`); a stateless provider returns itself. */
+  providerFor(lens: Lens): LLMProvider
+}
+
+export interface FanOutOptions extends ReviewerToolHost {
+  readonly reviewers: readonly ReviewerSpec[]
+  readonly lenses: readonly Lens[]
+  readonly threadId: string
+  /** Prefix for turn ids; each reviewer gets `<prefix>:<model>:<lens>`. */
+  readonly turnPrefix: string
+  /** How many reviewers run at once. The cell serialises commands regardless. */
+  readonly concurrency?: number | undefined
+  readonly signal?: AbortSignal | undefined
+  readonly onEvent?: ((event: HeadlessEvent) => void) | undefined
+  readonly maxSteps?: number | undefined
+}
+
+/**
+ * Every model under every lens, `concurrency` at a time. A reviewer that fails
+ * is a failed turn in the results, not a failed fan-out: the other reviewers'
+ * candidates still count.
+ */
+export async function runReviewers(options: FanOutOptions): Promise<Stage2Result[]> {
+  const jobs: (() => Promise<Stage2Result>)[] = []
+  for (const reviewer of options.reviewers) {
+    for (const lens of options.lenses) {
+      jobs.push(() =>
+        runStage2({
+          headCheckout: options.headCheckout,
+          context: options.context,
+          cell: options.cell,
+          shellDecision: options.shellDecision,
+          scrub: (text) => options.scrub(text),
+          provider: reviewer.providerFor(lens),
+          model: reviewer.model,
+          lens,
+          threadId: options.threadId,
+          turnId: `${options.turnPrefix}:${reviewer.model}:${lens.id}`,
+          signal: options.signal,
+          onEvent: options.onEvent,
+          maxSteps: options.maxSteps,
+        }),
+      )
+    }
+  }
+  const results: Stage2Result[] = []
+  const limit = Math.max(1, options.concurrency ?? 2)
+  let next = 0
+  const worker = async (): Promise<void> => {
+    while (next < jobs.length) {
+      const index = next++
+      const job = jobs[index]
+      if (job === undefined) return
+      results[index] = await job()
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, jobs.length) }, () => worker()))
+  return results
 }

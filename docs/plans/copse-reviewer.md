@@ -1,13 +1,15 @@
 # Copse Reviewer
 
-Status: **Active — Phases 0 and 1 landed.** `@copse/review` is a workspace package on
+Status: **Active — Phases 0 to 2 landed.** `@copse/review` is a workspace package on
 `main` with the finding schema, Stage 0 (the base-versus-head build and test delta), the
 `IsolationBackend` contract with the host-process and OS-sandbox backends, the
-hostile-fixture conformance test, and the `copse-review` CLI: Stage 1 context, one model
-under one lens with brokered tools, the ranked report, SARIF export and the headless event
-envelope. `pnpm run review -- --allow-unisolated` runs it over this repository's own
-working tree. Phases 2–5 remain proposed. See §What Phase 0 delivered and §What Phase 1
-delivered. The plan
+hostile-fixture conformance test, and the `copse-review` CLI: Stage 1 context, models ×
+lenses with brokered tools, Stage 3 clustering, Stage 4 verification by reproducer and
+adversarial challenge, the ranked report, SARIF export and the headless event envelope.
+`pnpm run review -- --allow-unisolated` runs it over this repository's own working tree.
+Phases 3–5 remain proposed, and Phase 2's retirement of the comparison judge is deferred
+to Phase 3 (see §What Phase 2 delivered). See also §What Phase 0 delivered and §What Phase
+1 delivered. The plan
 supersedes the surfacing and validation gaps in the existing `copse.model-comparison`
 plugin, which stays as-is until Phase 2 retires its judge and Phase 3 replaces it with
 `copse.review`.
@@ -588,6 +590,57 @@ Not in Phase 1: any second model or lens, clustering, the challenger, reproducer
 the app gesture (Phase 3), the container backend and CI action (Phase 4), and the
 `bench:review` precision measurement (Phase 5) — so B8's 85% is still unmeasured.
 
+## What Phase 2 delivered
+
+Fan-out, clustering and verification, in the same package and CLI. Decisions made while
+building it:
+
+- **Five lenses, all inside B4.** `correctness` (the default), `contracts`, `tests`,
+  `security` and `concurrency`; `--lenses all` runs every one, `--model` repeats to fan out
+  across models, `--concurrency` bounds how many reviewers run at once. The `docs` lens
+  waits with the `docs` class.
+- **One serialised cell, not per-reviewer worktrees.** Reviewers fan out over one head
+  checkout and one cell whose commands run one at a time, so two test runs never trample
+  one working directory. The plan's per-reviewer worktrees for writers stay the design;
+  the only writer today is the reproducer, which writes one file under `.copse-review/`
+  and is run alone.
+- **Clustering (Stage 3, P2's starting proposal).** Two candidates are one finding when
+  their anchors overlap within three lines of slack and the Jaccard similarity of their
+  claims' content words (stopwords out, crude suffix stemming) is at least 0.34, and the
+  class matches. The first member keeps its identity and claim, its anchor widens to
+  cover the cluster, later raisers become corroborators, and their command evidence is
+  carried along. The thresholds are exported constants so `bench:review` (Phase 5) can move
+  them with evidence; they were set by hand on the unit tests, which is exactly the
+  corpus-free tuning P2 warns about.
+- **Verification (Stage 4) by class.** `test`, `contract` and `concurrency` go to a
+  reproducer model first: it writes one test under `.copse-review/` and names the argv;
+  the orchestrator runs it on head, copies it to base, runs it there, removes it from base,
+  and confirms only when it fails on head and passes on base. The artefact stays in the
+  head checkout and in the report. Everything still open — including a reproducer that
+  could not separate the two — goes to the challenger, whose brief is to refute the
+  finding with the burden of proof on the claim: `refuted` drops it (kept in the report's
+  `refuted` list with the reason), `stands` records a survived challenge in
+  `challengedBy` and in the verdict reason, `undetermined` leaves it as it was. A
+  challenge never upgrades a finding to `confirmed`: only execution does that.
+- **Budget (P3's staged escalation, first rung).** Verification is spent only on
+  unverified survivors of Stage 3, most promising first by rank score, up to
+  `--max-verify` (default 10); the rest are reported as skipped. `--no-verify` skips the
+  stage. The challenger and reproducer default to the first `--model` and can be a
+  different model via `--challenger` (P5's cross-family diversity is a flag, not yet a
+  measured claim).
+- **Ranking** gains a bonus for a survived challenge, and the lone-unverified penalty no
+  longer applies to a finding that survived one.
+- **The comparison judge is not retired here.** The plan schedules it for Phase 2, but the
+  judge is the only thing the app's comparison card summarises with, and removing it
+  before Phase 3's findings card would leave the card with two prose reviews and nothing
+  between them. It goes when Phase 3 replaces the pack; the per-finding verdicts that
+  replace it now exist.
+
+Not in Phase 2: any model in the app, the app gesture (Phase 3), the container backend and
+CI action (Phase 4), and the precision measurement (Phase 5) — B8's 85% is still
+unmeasured, and the clustering thresholds above are the first thing that measurement
+should move.
+
 ## Phases
 
 - **Phase 0 — Findings schema + Stage 0 + OS-sandbox backend.** ✅ Landed; see above. `@copse/review` as a
@@ -600,7 +653,8 @@ the app gesture (Phase 3), the container backend and CI action (Phase 4), and th
 - **Phase 1 — CLI shell.** ✅ Landed; see above. `copse review` over a single model, one lens, Stage 0 + 1 + 2 + 5,
   bugs and regressions only (B4), findings JSON and SARIF out (B9). Dogfood on this
   repository's own PRs (B6), reviewing the author's own tree.
-- **Phase 2 — Multi-model + verification.** Lenses, fan-out, clustering, the challenger
+- **Phase 2 — Multi-model + verification.** ✅ Landed, except the judge's retirement, which
+  moves to Phase 3; see above. Lenses, fan-out, clustering, the challenger
   role, reproducer generation. Retire the comparison judge in favour of per-finding
   verdicts.
 - **Phase 3 — App shell.** `copse.model-comparison` → `copse.review`; findings card;
