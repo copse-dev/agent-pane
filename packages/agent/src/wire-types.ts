@@ -145,6 +145,8 @@ export interface ToolCall {
    * (plain text) for built-in tools, whose results are structured payloads.
    */
   resultFormat?: 'markdown'
+  /** Images returned by the tool, rendered beside its collapsed transcript card. */
+  images?: ToolResultImage[]
   subagent?: SubagentSession
 }
 
@@ -278,4 +280,5 @@ export interface ToolCallUpdateChunk {
   status?: 'running' | 'done' | 'error'
   result?: string
   resultFormat?: 'markdown'
+  images?: ToolResultImage[]
 }
