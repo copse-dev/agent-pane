@@ -58,6 +58,7 @@ function thread(branch?: string): Thread {
 function createApi(options: {
   currentBranch: string
   getCurrentBranch?: () => string
+  readCurrentBranch?: ApiClient['git']['currentBranch']
   branchStatusCurrentBranch?: string
   branches?: Awaited<ReturnType<ApiClient['git']['listBranches']>>
   onAbort?: () => Promise<void>
@@ -78,6 +79,7 @@ function createApi(options: {
   promptState?: { startingCommit: string | null; dirty: boolean }
   /** Live prompt state, for flows where the checkout moves mid-send. */
   getPromptState?: () => { startingCommit: string | null; dirty: boolean }
+  readPromptState?: ApiClient['git']['promptState']
   onExportArchive?: (projectId: string, threadId: string) => void
   onAttachArchive?: (projectId: string, threadId: string, name: string, bytes?: Uint8Array) => void
   onRecordModelSelection?: ApiClient['threads']['recordModelSelection']
@@ -135,7 +137,10 @@ function createApi(options: {
       },
       git: {
         ...base['git'],
-        currentBranch: async () => options.getCurrentBranch?.() ?? options.currentBranch,
+        currentBranch:
+          options.readCurrentBranch ??
+          (async (): ReturnType<ApiClient['git']['currentBranch']> =>
+            options.getCurrentBranch?.() ?? options.currentBranch),
         branchStatus: async () => ({
           currentBranch:
             options.branchStatusCurrentBranch ??
@@ -143,9 +148,11 @@ function createApi(options: {
             options.currentBranch,
           pr: null,
         }),
-        promptState: async () =>
-          options.getPromptState?.() ??
-          options.promptState ?? { startingCommit: null, dirty: false },
+        promptState:
+          options.readPromptState ??
+          (async (): ReturnType<ApiClient['git']['promptState']> =>
+            options.getPromptState?.() ??
+            options.promptState ?? { startingCommit: null, dirty: false }),
         checkoutBranch: async (
           _projectId: string,
           _threadId: string,
@@ -257,6 +264,14 @@ async function settle(): Promise<void> {
 async function flush(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0))
   await settle()
+}
+
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve: (value: T) => void = () => {}
+  const promise = new Promise<T>((innerResolve) => {
+    resolve = innerResolve
+  })
+  return { promise, resolve }
 }
 
 afterEach(() => {
@@ -518,6 +533,64 @@ describe('input bar first-message checkout', () => {
 })
 
 describe('input bar prompt git-state capture', () => {
+  it('starts branch and prompt-state reads together for an established checkout', async () => {
+    const branch = deferred<string | null>()
+    const promptState = deferred<{ startingCommit: string | null; dirty: boolean }>()
+    let branchStarted = false
+    let promptStateStarted = false
+    let runs = 0
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [{ ...thread('main'), messages: [], worktreeChoice: 'automatic' }],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        readCurrentBranch: () => {
+          branchStarted = true
+          return branch.promise
+        },
+        readPromptState: () => {
+          promptStateStarted = true
+          return promptState.promise
+        },
+        onRun: async () => {
+          runs += 1
+        },
+      }),
+    )
+    await settle()
+
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    const submit = host.querySelector<HTMLButtonElement>('.submit-btn')
+    assert.ok(composer)
+    assert.ok(submit)
+    composer.textContent = 'What changed?'
+    submit.click()
+    await settle()
+
+    assert.equal(branchStarted, true)
+    assert.equal(promptStateStarted, true)
+    assert.equal(runs, 0)
+
+    branch.resolve('main')
+    promptState.resolve({ startingCommit: 'a'.repeat(40), dirty: true })
+    await flush()
+
+    assert.equal(runs, 1)
+    const message = store.getState().threads[0]?.messages[0]
+    assert.ok(message)
+    assert.equal(message.startingCommit, 'a'.repeat(40))
+    assert.equal(message.dirty, true)
+  })
+
   it('stamps the sent message with the fetched startingCommit and dirty flag', async () => {
     const store = createStore({
       workspaceRoot: '/repo',
