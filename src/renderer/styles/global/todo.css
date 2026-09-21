@@ -237,7 +237,9 @@
 
 /* Copse Reviewer findings card: the thread's trailing card once a review has
    run (see syncReviewReportCard). Same hatched plate as the review card; the
-   severity of each finding tints its own row's mark, not the whole card. */
+   severity of each finding tints its own row's label, not the whole card. A
+   finding row is a flat plate with no rail: rails mean nesting here
+   (docs/ui-taste.md → "Rails mark nesting and standing asks"). */
 .review-report {
   --sev: var(--accent, var(--text-secondary));
   margin-top: var(--spacing-sm);
@@ -330,7 +332,6 @@
   --finding-sev: var(--text-secondary);
   border-radius: var(--radius);
   background: color-mix(in srgb, var(--bg-primary) 70%, transparent);
-  border-left: 3px solid var(--finding-sev);
 }
 .review-finding[data-severity='critical'],
 .review-finding[data-severity='high'] {
