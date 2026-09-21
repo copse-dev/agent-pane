@@ -203,6 +203,14 @@ function titleCaseSegment(segment) {
     return `${lower.charAt(0).toUpperCase()}${lower.slice(1)}`;
   }).join(" ");
 }
+function canonicalGrokLabel(labelOrId) {
+  const match = GROK_NAME.exec(labelOrId.trim());
+  if (!match?.[2]) return null;
+  const rest = match[3] ?? "";
+  if (rest !== "" && !/^\s/.test(rest)) return null;
+  const family = match[1] ? "Grok Build" : "Grok";
+  return `${family} ${match[2].replace(/-/g, ".")}${rest}`;
+}
 function canonicalVendorLabel(labelOrId) {
   const trimmed2 = labelOrId.trim();
   const gemini = GEMINI_NAME.exec(trimmed2);
@@ -288,14 +296,14 @@ function canonicalModelLabel(labelOrId) {
     const family = `${parsed2.family.charAt(0).toUpperCase()}${parsed2.family.slice(1)}`;
     return `Claude ${family} ${parsed2.version}${parsed2.rest}`;
   }
-  return canonicalGptLabel(labelOrId) ?? canonicalVendorLabel(labelOrId) ?? labelOrId;
+  return canonicalGptLabel(labelOrId) ?? canonicalVendorLabel(labelOrId) ?? canonicalGrokLabel(labelOrId) ?? labelOrId;
 }
 function claudeModelIdFromLabel(labelOrId) {
   const parsed2 = parseClaudeName(labelOrId);
   if (!parsed2 || parsed2.rest.trim() !== "") return null;
   return `claude-${parsed2.family}-${parsed2.version.replace(/\./g, "-")}`;
 }
-var CLAUDE_FAMILIES, FAMILY_PATTERN, VERSION_PATTERN, VERSION_FIRST, FAMILY_FIRST, GPT_NAME, GEMINI_NAME, GLM_NAME, DEEPSEEK_NAME, MISTRAL_NAME, MODELLED_VENDORS, DATED_SNAPSHOT, OPTION_SUFFIX, TOKEN_SPELLING, PARAM_COUNT, SHORT_CODE;
+var CLAUDE_FAMILIES, FAMILY_PATTERN, VERSION_PATTERN, VERSION_FIRST, FAMILY_FIRST, GPT_NAME, GEMINI_NAME, GLM_NAME, DEEPSEEK_NAME, MISTRAL_NAME, GROK_NAME, MODELLED_VENDORS, DATED_SNAPSHOT, OPTION_SUFFIX, TOKEN_SPELLING, PARAM_COUNT, SHORT_CODE;
 var init_model_label = __esm({
   "packages/llm/src/model-label.ts"() {
     CLAUDE_FAMILIES = ["opus", "sonnet", "haiku", "fable"];
@@ -314,7 +322,8 @@ var init_model_label = __esm({
     GLM_NAME = /^glm-(\d+(?:\.\d+)?)(?:-([a-z].*))?$/;
     DEEPSEEK_NAME = /^deepseek-([a-z]+)(?:-v(\d+(?:\.\d+)?))?$/;
     MISTRAL_NAME = /^mistral-([a-z]+)(?:-([a-z]+))?$/;
-    MODELLED_VENDORS = ["claude", "gpt", "gemini", "glm", "deepseek", "mistral"];
+    GROK_NAME = /^(?:(?:xai|spacexai):\s*)?grok[\s-]+(?:(build)[\s-]+)?(\d+(?:[.-]\d+)?)(.*)$/i;
+    MODELLED_VENDORS = ["claude", "gpt", "gemini", "glm", "deepseek", "mistral", "grok"];
     DATED_SNAPSHOT = /-(?:\d{8}|\d{4}-\d{2}-\d{2})$/;
     OPTION_SUFFIX = /\[[^\]]*\]$/;
     TOKEN_SPELLING = {
@@ -40186,8 +40195,9 @@ var init_model_intellect_generated = __esm({
       "GPT-5.6 Terra": "gpt-5.6-terra",
       "GPT-5.6-Terra": "gpt-5.6-terra",
       "Grok 4.5": "grok-4.5",
+      "Grok Build 0.1": "grok-build-0-1-06-16",
       "grok-4-5": "grok-4.5",
-      "grok-build-0.1": "grok-4.5",
+      "grok-build-0.1": "grok-build-0-1-06-16",
       "Haiku 4.5": "claude-haiku-4-5",
       "Kimi K2.6": "moonshotai/kimi-k2.6",
       "Kimi K3": "moonshotai/kimi-k3",
@@ -40224,7 +40234,10 @@ var init_model_intellect_generated = __esm({
       "qwen3.6-35b-a3b": "qwen/qwen3.6-35b-a3b",
       "Sonnet 4.6": "claude-sonnet-4-6",
       "Sonnet 5": "claude-sonnet-5",
+      "SpaceXAI: Grok Build 0.1": "grok-build-0-1-06-16",
       "x-ai/grok-4.5": "grok-4.5",
+      "x-ai/grok-build-0.1": "grok-build-0-1-06-16",
+      "xAI: Grok Build 0.1": "grok-build-0-1-06-16",
       "xai/grok-4.5": "grok-4.5",
       "z-ai/glm-5.2": "zai-org/GLM-5.2",
       "zai/glm-5.2": "zai-org/GLM-5.2"
@@ -59331,15 +59344,15 @@ function mountSettingsDialog(store2, api2) {
               <legend>Commit signing</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="gitCommitSshAgentSocketAccess" />
-                Let Copse's git commit tool use your ssh-agent (macOS)
+                Enable scoped SSH signing approvals (macOS)
               </label>
               <p class="field-hint">
-                Off by default. Turn this on when Git uses a passphrase-protected SSH key and signed
-                commits fail inside Copse's sandbox. The grant applies only to Copse's native
-                <code>git_commit</code> subprocess, but Git hooks run inside that process and can
-                also ask ssh-agent to use <strong>any key it holds</strong>. The private key remains
-                unreadable. Pair this with <code>ssh-add -c</code> to confirm each use. macOS only:
-                Linux cannot admit one socket without admitting every Unix socket.
+                Off by default. Copse asks before its system SSH signer uses your configured key
+                through ssh-agent. You can remember the signer, key and socket for this project
+                until Copse restarts. Changed configuration requires approval again. Git hooks
+                keep their project sandbox; they receive no ssh-agent access. Turning this off
+                prevents further brokered signing. Private keys remain unreadable. Custom signing
+                programs run with ordinary project access. Scoped socket access is macOS only.
               </p>
             </fieldset>
           </section>
