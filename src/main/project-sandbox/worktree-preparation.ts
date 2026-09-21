@@ -137,9 +137,13 @@ export async function runWorktreePreparationProcess(
   const root = realpathSync(options.root)
   // Some read-only manager checks need temporary bookkeeping. Give each probe
   // private, disposable scratch; never make the project or shared caches writable.
+  // Linux read grants are mounted after write grants. A scratch nested under a
+  // read-only project would therefore be shadowed by the later project bind.
+  const disposableScratch = options.mode === 'preflight' || options.projectWritable === false
   let scratch: string
-  if (options.mode === 'preflight') {
-    scratch = realpathSync(mkdtempSync(join(tmpdir(), 'copse-preflight-')))
+  if (disposableScratch) {
+    const prefix = options.mode === 'preflight' ? 'copse-preflight-' : 'copse-prepare-'
+    scratch = realpathSync(mkdtempSync(join(tmpdir(), prefix)))
   } else {
     const scratchParent = join(root, '.tmp')
     const candidate = join(scratchParent, 'worktree-preparation')
@@ -148,9 +152,9 @@ export async function runWorktreePreparationProcess(
         throw new Error(`Preparation scratch must not be a symlink: ${path}`)
       }
     }
-    // Linux bwrap only binds write allow-list entries that already exist. Make
-    // the private bookkeeping directory before wrapping so a read-only project
-    // can still use GOCACHE/GOTMPDIR there without widening the project grant.
+    // Linux bwrap only binds write allow-list entries that already exist. Create
+    // and canonicalize stable scratch before constructing the writable project's
+    // exact bind, rejecting redirected `.tmp` paths before granting access.
     mkdirSync(candidate, { recursive: true })
     scratch = realpathSync(candidate)
     const rel = relative(root, scratch)
@@ -161,7 +165,7 @@ export async function runWorktreePreparationProcess(
   try {
     return await runContainedPreparationProcess(command, args, options, scratch)
   } finally {
-    if (options.mode === 'preflight') rmSync(scratch, { recursive: true, force: true })
+    if (disposableScratch) rmSync(scratch, { recursive: true, force: true })
   }
 }
 
