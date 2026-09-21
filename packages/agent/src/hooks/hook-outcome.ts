@@ -125,10 +125,10 @@ export interface HookRunDecision {
   nudgeApplied?: boolean
   /**
    * How the applied nudge reached the model: appended to a normal tool-enabled
-   * turn, or used as the prompt for a forced text-only finalization. Carried on
-   * the nudge effect line.
+   * turn, used as a tool-enabled finalization turn, or used as the prompt for a
+   * forced text-only finalization. Carried on the nudge effect line.
    */
-  nudgeMechanism?: 'tool-enabled-message' | 'text-only-turn'
+  nudgeMechanism?: 'tool-enabled-message' | 'tool-enabled-turn' | 'text-only-turn'
   /** Why the synthetic final-answer turn was entered or re-entered. */
   finalizeReason?: FinalizeNudgeReason
   /** Running loop budget when the synthetic final-answer turn was applied. */
