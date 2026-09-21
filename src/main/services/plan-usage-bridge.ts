@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process'
-import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, renameSync, writeFileSync } from 'node:fs'
+import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
@@ -73,17 +74,17 @@ async function runCommand(bin: string, args: readonly string[]): Promise<string>
   return stdout
 }
 
-function readJsonFile(path: string): unknown {
+async function readJsonFile(path: string): Promise<unknown> {
   try {
-    return JSON.parse(readFileSync(path, 'utf8')) as unknown
+    return JSON.parse(await readFile(path, 'utf8')) as unknown
   } catch {
     return null
   }
 }
 
-function readTextFile(path: string): string | null {
+async function readTextFile(path: string): Promise<string | null> {
   try {
-    return readFileSync(path, 'utf8')
+    return await readFile(path, 'utf8')
   } catch {
     return null
   }
@@ -188,7 +189,7 @@ export async function persistRefreshedClaudeToken(
       // Must resolve the same way the read did, or a `CLAUDE_CONFIG_DIR` user
       // gets their rotated token written to a file the CLI never reads.
       const path = claudeCredentialsPath(home, env)
-      const next = updateClaudeOAuthJson(readTextFile(path), refreshed)
+      const next = updateClaudeOAuthJson(await readTextFile(path), refreshed)
       if (next) atomicWriteFile(path, next)
       return
     }
@@ -271,17 +272,17 @@ export async function readCursorAccessTokenFromStateDb(dbPath: string): Promise<
   }
 }
 
-function discoverHuggingFaceToken(
+async function discoverHuggingFaceToken(
   home: string,
   env: NodeJS.ProcessEnv,
   resolveStored: () => string | null,
-): string | undefined {
+): Promise<string | undefined> {
   const fromStored = resolveStored()?.trim()
   if (fromStored) return fromStored
   const fromEnv = firstNonEmptyString(env['HF_TOKEN']?.trim(), env['HUGGINGFACE_API_KEY']?.trim())
   if (fromEnv) return fromEnv
   const hfHome = nonEmptyStringOr(env['HF_HOME']?.trim(), join(home, '.cache', 'huggingface'))
-  return parseHuggingFaceToken(readTextFile(join(hfHome, 'token'))) ?? undefined
+  return parseHuggingFaceToken(await readTextFile(join(hfHome, 'token'))) ?? undefined
 }
 
 async function discoverCursorSessionToken(
@@ -315,11 +316,11 @@ export async function discoverPlanUsageCredentials(
 ): Promise<PlanUsageCredentials> {
   const claudeCredentials = orderClaudeOAuthCredentials({
     keychainJson: await readKeychain(),
-    credentialsJson: readJsonFile(claudeCredentialsPath(home, env)),
+    credentialsJson: await readJsonFile(claudeCredentialsPath(home, env)),
     envToken: env['CLAUDE_CODE_OAUTH_TOKEN'] ?? null,
   })
 
-  const codexFile = readJsonFile(join(home, '.codex', 'auth.json'))
+  const codexFile = await readJsonFile(join(home, '.codex', 'auth.json'))
   const parsedCodex = parseCodexAuthJson(codexFile)
 
   const credentials: PlanUsageCredentials = {
@@ -351,7 +352,7 @@ export async function discoverPlanUsageCredentials(
       accountId: parsedCodex.accountId,
     }
   }
-  const hf = discoverHuggingFaceToken(home, env, resolveHuggingFaceStored)
+  const hf = await discoverHuggingFaceToken(home, env, resolveHuggingFaceStored)
   if (hf) credentials.huggingfaceToken = hf
   const cursor = await discoverCursorSessionToken(home, env, readCursorKeychain, readCursorStateDb)
   if (cursor) credentials.cursorSessionToken = cursor
