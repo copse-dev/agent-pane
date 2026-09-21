@@ -56,8 +56,8 @@ describe('follow-up suggestion bubbles', () => {
       const ciBubble = await $('.follow-up-bubble[data-id="debug-ci"]')
       await expect(ciBubble).toHaveText('Debug CI Failure')
 
-      const compareBubble = await $('.follow-up-bubble[data-id="compare-models"]')
-      await expect(compareBubble).toHaveText('Compare models')
+      const reviewBubble = await $('.follow-up-bubble[data-id="review-changes"]')
+      await expect(reviewBubble).toHaveText('Review changes')
 
       const continuePlanBubble = await $('.follow-up-bubble[data-id="continue-plan"]')
       await expect(continuePlanBubble).toHaveText('Continue: Run the test suite')

@@ -60,7 +60,6 @@ function makeApi(): {
       id: string,
       approved: boolean,
       remember: boolean,
-      _comparisonModels: unknown,
       grantScope?: 'once' | 'turn-tree',
     ): Promise<void> => {
       responses.push({

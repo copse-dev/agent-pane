@@ -55,9 +55,9 @@ import { ADVISOR_STRATEGY_PLUGIN_ID } from '@copse/agent/plugins/advisor-strateg
 import { advisorTool } from '../tools/advisor-tool.ts'
 import { ORCHESTRATION_STRATEGY_ENABLED_SETTING } from './orchestration-strategy.ts'
 import { delegateStepTool } from '../tools/delegate-step-tool.ts'
-import { compareModelsTool } from '../tools/compare-models-tool.ts'
+import { reviewChangesTool } from '../tools/review-changes-tool.ts'
 import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
-import { MODEL_COMPARISON_PLUGIN_ID } from '@copse/agent/plugins/model-comparison-plugin.ts'
+import { REVIEW_PLUGIN_ID } from '@copse/agent/plugins/review-plugin.ts'
 import { LONG_HORIZON_TASKS_PLUGIN_ID } from '@copse/agent/plugins/long-horizon-tasks-plugin.ts'
 import { ROADMAP_PLANS_PLUGIN_ID } from '@copse/agent/plugins/roadmap-plans-plugin.ts'
 import { OKF_MEMORIES_PLUGIN_ID } from '@copse/agent/plugins/okf-memories-plugin.ts'
@@ -150,11 +150,11 @@ export function createRegistry(): ToolRegistry {
   if (getSetting<boolean>(ORCHESTRATION_STRATEGY_ENABLED_SETTING, false)) {
     registry.register(delegateStepTool)
   }
-  // Experimental model comparison harness. P5: gated by the
-  // `copse.model-comparison` first-party plugin — the plugin toggle in Settings >
+  // Copse Reviewer on demand (docs/plans/copse-reviewer.md, Phase 3). Gated by
+  // the `copse.review` first-party plugin — the plugin toggle in Settings >
   // Plugins is the atomic master switch. Live toggles route through
-  // {@link syncModelComparisonTools} on `plugins:set-enabled`.
-  syncModelComparisonTools(registry)
+  // {@link syncReviewTools} on `plugins:set-enabled`.
+  syncReviewTools(registry)
   // Experimental roadmap plans (off by default, issue #556). Gated by the
   // `copse.roadmap-plans` first-party plugin — the plugin toggle in Settings > Plugins
   // is the atomic master switch (it also gates the renderer's Roadmap pane).
@@ -262,20 +262,19 @@ export function syncRoadmapPlanTools(registry: ToolRegistry): void {
 }
 
 /**
- * Register or unregister the experimental `compare_models` tool to match the
- * current enablement of the `copse.model-comparison` first-party plugin (P5).
- * Called at startup (via createRegistry) and again whenever the plugin is toggled
- * from Settings > Plugins (see `ipc/register-handlers.ts` `plugins:set-enabled`), so
- * the tool appears or disappears live — the atomic plugin disable drops the tool
- * from the model tool list in the same flag flip that (a) skips the
- * auto-on-review trigger in `agent-service.ts` and (b) drops the plugin's
- * `activeToolNames()` entry from the Settings plugin list.
+ * Register or unregister the `review_changes` tool to match the current
+ * enablement of the `copse.review` first-party plugin. Called at startup (via
+ * createRegistry) and again whenever the plugin is toggled from Settings >
+ * Plugins (see `ipc/register-handlers.ts` `plugins:set-enabled`), so the tool
+ * appears or disappears live — the atomic plugin disable drops the tool from
+ * the model tool list in the same flag flip that drops the plugin's bubble,
+ * its `activeToolNames()` entry, and the Changes view's "Review" button.
  */
-export function syncModelComparisonTools(registry: ToolRegistry): void {
-  if (getDefaultPluginRegistry().isEnabled(MODEL_COMPARISON_PLUGIN_ID)) {
-    if (!registry.has('compare_models')) registry.register(compareModelsTool)
+export function syncReviewTools(registry: ToolRegistry): void {
+  if (getDefaultPluginRegistry().isEnabled(REVIEW_PLUGIN_ID)) {
+    if (!registry.has('review_changes')) registry.register(reviewChangesTool)
   } else {
-    registry.unregister('compare_models')
+    registry.unregister('review_changes')
   }
 }
 

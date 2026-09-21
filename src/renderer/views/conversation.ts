@@ -91,11 +91,15 @@ import { TODOS_PLUGIN_ID, TODOS_PANEL_CONTRIBUTION_ID } from '@copse/agent/plugi
 import { createAppleDevelopmentPanel } from './apple-development-panel.ts'
 import { createReviewCardEl } from './review-panel.ts'
 import { createComparisonCardEl } from './comparison-panel.ts'
+import { createReviewFindingsCardEl } from './review-findings-card.ts'
 import {
   dismissComparison,
-  retryComparison,
+  dismissReviewFinding,
+  dismissReviewReport,
+  restoreReviewFinding,
   retryReview,
-} from '../controller/retry-review-comparison.ts'
+  startReview,
+} from '../controller/review-actions.ts'
 import { renderToolArgs } from './tool-args-format.ts'
 import {
   createThreadProposalToolCard,
@@ -2861,15 +2865,16 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const msgEl = buildMessageEl(threadId, msgId)
     if (!msgEl) return
 
-    // Keep the trailing comparison card (if any) last in the transcript: a new
-    // message belongs above a comparison produced for an earlier turn. Review
-    // cards are anchored inline after their own message (see renderMessageReview)
-    // and stay put — a new message naturally lands after them.
-    const trailingCard = list.querySelector('[data-comparison-card]')
+    // Keep the trailing cards (a review report, or a retired comparison) last
+    // in the transcript: a new message belongs above a report produced for an
+    // earlier state of the tree. Post-turn review cards are anchored inline
+    // after their own message (see renderMessageReview) and stay put — a new
+    // message naturally lands after them.
+    const trailingCard = firstTrailingCard()
     if (trailingCard) {
-      // The activity row sits immediately above a trailing comparison. Insert
+      // The activity row sits immediately above the trailing cards. Insert
       // the message above both so the status remains the transcript's live tail
-      // while the comparison preserves its last-child contract.
+      // while the cards preserve their last-children contract.
       list.insertBefore(msgEl, activityBar.isConnected ? activityBar : trailingCard)
     } else list.insertBefore(msgEl, activityBar.isConnected ? activityBar : null)
     finalizeMessageEl(threadId, msgId)
@@ -3121,26 +3126,53 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     msgEl.after(card)
   }
 
+  /** The first of the trailing cards, which sit after every message. */
+  function firstTrailingCard(): Element | null {
+    return list.querySelector('[data-review-report-card], [data-comparison-card]')
+  }
+
   function syncComparisonPanel(): void {
-    // Render the comparison card inline as the last child of the message list,
-    // after the review card, so it joins the transcript flow. Replace on sync.
+    // A retired two-model comparison from before Copse Reviewer: still
+    // rendered from thread data so old threads keep their card (decision 17),
+    // dismissible, no longer re-runnable. Sits after the review report.
     list.querySelector('[data-comparison-card]')?.remove()
     const thread = getActiveThread(store)
     if (thread?.comparison) {
       const threadId = thread.id
-      const card = createComparisonCardEl(
-        thread.comparison,
-        api,
-        () => {
-          retryComparison(store, api, threadId)
-        },
-        () => {
-          dismissComparison(store, threadId)
-        },
-      )
+      const card = createComparisonCardEl(thread.comparison, api, undefined, () => {
+        dismissComparison(store, threadId)
+      })
       card.setAttribute('data-comparison-card', '')
       list.append(card)
     }
+  }
+
+  function syncReviewReportCard(): void {
+    // The Copse Reviewer findings card renders inline as a trailing child of
+    // the message list, after the post-turn review cards, so it joins the
+    // transcript flow. Replaced on every sync (status transitions, dismissals).
+    list.querySelector('[data-review-report-card]')?.remove()
+    const thread = getActiveThread(store)
+    if (!thread?.reviewReport) return
+    const threadId = thread.id
+    const card = createReviewFindingsCardEl(thread.reviewReport, {
+      onRetry: () => {
+        startReview(store, api, threadId)
+      },
+      onDismissCard: () => {
+        dismissReviewReport(store, threadId)
+      },
+      onDismissFinding: (finding) => {
+        dismissReviewFinding(store, api, threadId, finding)
+      },
+      onRestoreFinding: (finding) => {
+        restoreReviewFinding(store, api, threadId, finding.id)
+      },
+    })
+    card.setAttribute('data-review-report-card', '')
+    const comparison = list.querySelector('[data-comparison-card]')
+    if (comparison) list.insertBefore(card, comparison)
+    else list.append(card)
   }
 
   /** The chrome around the message list — todos, comparison, queued panel, the
@@ -3152,6 +3184,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     syncTodoPanel()
     appleDevelopmentHost.dispatchEvent(new Event('apple-development-refresh'))
     // Inline review cards are rendered per message by appendMessageEl above.
+    syncReviewReportCard()
     syncComparisonPanel()
     if (thread) {
       renderQueuedPanel(thread.id)
@@ -3162,8 +3195,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       queuedHost.hidden = true
     }
     // Activity is transcript content, not composer chrome. Keep it beneath the
-    // messages but above a trailing comparison card, which remains last.
-    list.insertBefore(activityBar, list.querySelector('[data-comparison-card]'))
+    // messages but above the trailing cards, which remain last.
+    list.insertBefore(activityBar, firstTrailingCard())
     updateScrollButton()
   }
 
@@ -3283,7 +3316,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   } | null {
     const listRect = list.getBoundingClientRect()
     const candidates = list.querySelectorAll<HTMLElement>(
-      ':scope > .msg, :scope > [data-review-card], :scope > [data-comparison-card]',
+      ':scope > .msg, :scope > [data-review-card], :scope > [data-review-report-card], :scope > [data-comparison-card]',
     )
     for (const element of candidates) {
       const rect = element.getBoundingClientRect()
@@ -3445,6 +3478,10 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     }),
     store.on('comparison_changed', () => {
       syncComparisonPanel()
+      scrollToBottom()
+    }),
+    store.on('review_report_changed', () => {
+      syncReviewReportCard()
       scrollToBottom()
     }),
     store.on('settings_changed', () => {

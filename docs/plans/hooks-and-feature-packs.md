@@ -287,7 +287,7 @@ revisiting this document, not silently diverging in an implementation PR.
     even offered from a bounded condition vocabulary (`when`), so the manifest stays
     plain JSON with no plugin code running per turn.
     Two consequences are mechanical rather than conventional. **A host action is a
-    first-party privilege**: it drives app UI (and, for `model-compare`, spends money)
+    first-party privilege**: it drives app UI (and, for `review`, spends money)
     outside the agent, so `pluginManifestFromPluginJson` forces a discovered manifest's
     action back to `prompt` and the registry refuses to register a non-first-party plugin
     that contributes one — the same tiering decision 15 gives `trusted` prompt blocks.
@@ -295,8 +295,7 @@ revisiting this document, not silently diverging in an implementation PR.
     afterwards would restore the exact interruption the bubble replaced, so the run it
     starts skips the spend prompt, and its completion skips the "thread finished" alert
     (the user is watching the card they just asked for). Runs the user did _not_
-    initiate — the auto-on-review trigger, the agent's own `compare_models` call — keep
-    their approval unchanged. Bubbles follow decision 17 like every other contribution:
+    initiate — the agent's own `review_changes` call — keep their approval unchanged. Bubbles follow decision 17 like every other contribution:
     they are consulted for new work only, and disabling the plugin drops them in the same
     atomic flag flip as its tools.
 22. **Current-turn operator placement is model-capability gated.** For the built-in
@@ -798,6 +797,16 @@ from `todosToPanelListData()` so the extracted pack preserves the pre-existing U
 behavior; if every todo is cancelled, the conversation mounts no plan panel. The
 component and e2e assertions use the generic `.pack-panel` DOM rather than the
 deleted `.todo-panel` selectors.
+
+September 2026 P5 amendment: `copse.model-comparison` was replaced by `copse.review`
+(Copse Reviewer's app shell, [`copse-reviewer.md`](copse-reviewer.md) Phase 3). The
+comparison's judge, runner, `compare_models` tool, picker dialog and approval type are
+deleted; `copse.review` declares the `review_changes` tool and the "Review changes"
+bubble (action `review`), contributes the Changes view's "Review" button as a level-3
+control gated on its toggle, and emits the typed `review_report` chunk its findings card
+consumes (decision 15). A one-shot host migration carries the old plugin's enablement
+and its reviewer-A/judge model choices across. Decision 17 holds: a thread that carries a
+`comparison` from before still renders its card (dismissible, never re-runnable).
 
 August 2026 loop-nudge wording follow-up: the E1 mechanism remains a tool-enabled
 message push. `LOOP_NUDGE_USER_MESSAGE` now explicitly ends exploration, forbids using

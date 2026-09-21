@@ -18,6 +18,8 @@ import type {
 } from '@shared/types/git.ts'
 import { showToast, showErrorToast } from './toast.ts'
 import { showConfirmDialog } from './confirm-dialog.ts'
+import { startReview } from '../controller/review-actions.ts'
+import { REVIEW_PLUGIN_ID } from '@copse/agent/plugins/review-plugin.ts'
 import type { ActiveDiff } from '@shared/types/state.ts'
 import {
   pruneStagedDiffCache,
@@ -157,13 +159,51 @@ export function mountGitChangesPane(
     },
     refreshIcon('ui-icon ui-icon-sm'),
   )
+  // "Review": Copse Reviewer over the thread's changes, in the surface where
+  // the human is already looking at them (docs/plans/copse-reviewer.md, P9).
+  // A level-3 contribution of the `copse.review` plugin: hidden until the
+  // plugin is enabled (read via `plugins:list`, re-read on `settings_changed`
+  // like the plugin-gated pane controls), and disabled while the thread runs.
+  const reviewBtn = el(
+    'button',
+    {
+      type: 'button',
+      class: 'git-changes-review-btn',
+      'data-tooltip': 'Review these changes with Copse Reviewer',
+    },
+    'Review',
+  )
+  reviewBtn.hidden = true
   listHeader.append(
     headerTitle,
     bulkActions,
+    reviewBtn,
     panePopoutButton(store, api, 'changes', 'changes'),
     paneMaximizeButton(store, 'changes'),
     refreshBtn,
   )
+  function syncReviewButton(): void {
+    const thread = store.getState().threads.find((t) => t.id === store.getState().activeThreadId)
+    reviewBtn.disabled = thread === undefined || thread.status === 'running'
+  }
+  function syncReviewGate(): void {
+    void api.plugins
+      .list()
+      .then((res) => {
+        reviewBtn.hidden = !res.plugins.some((p) => p.id === REVIEW_PLUGIN_ID && p.enabled)
+      })
+      .catch(() => {
+        reviewBtn.hidden = true
+      })
+  }
+  reviewBtn.addEventListener('click', () => {
+    const threadId = store.getState().activeThreadId
+    if (!threadId) return
+    startReview(store, api, threadId)
+    syncReviewButton()
+  })
+  syncReviewGate()
+  syncReviewButton()
 
   // "Restore pre-session changes": surfaces the session's refs/copse/backups/*
   // snapshot so a user can one-click revert the paths Copse auto-applied over
@@ -1170,6 +1210,9 @@ export function mountGitChangesPane(
     store.on('panel_changed', () => {
       if (changesModeActive(store)) void syncFromStore()
     }),
+    store.on('settings_changed', syncReviewGate),
+    store.on('thread_status_changed', syncReviewButton),
+    store.on('threads_changed', syncReviewButton),
     api.fs.onChanged(() => {
       scheduleRefresh()
     }),

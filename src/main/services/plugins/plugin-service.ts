@@ -45,11 +45,11 @@ import {
 import { setDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { summarizePlugins, type PluginSummaryOut } from '@copse/agent/plugins/plugin-summary.ts'
 import {
-  MODEL_COMPARISON_PLUGIN_ID,
-  COMPARISON_MODEL_A_SETTING_ID,
-  COMPARISON_MODEL_B_SETTING_ID,
-  COMPARISON_JUDGE_MODEL_SETTING_ID,
-} from '@copse/agent/plugins/model-comparison-plugin.ts'
+  CHALLENGER_MODEL_SETTING_ID,
+  RETIRED_MODEL_COMPARISON_PLUGIN_ID,
+  REVIEW_PLUGIN_ID,
+  REVIEWER_MODEL_SETTING_ID,
+} from '@copse/agent/plugins/review-plugin.ts'
 import {
   ADVISOR_STRATEGY_PLUGIN_ID,
   ADVISOR_MODEL_SETTING_ID,
@@ -82,6 +82,8 @@ import { agentPluginMcpServerName } from './agent-plugin-mcp-runtime.ts'
 // P1 of #1336: selected-plugin discovery is part of the production graph before
 // the isolated behavior runtime is wired by the host.
 export { discoverPluginToolSource, hashPluginToolSource } from './plugin-tool-source.ts'
+export { readPluginSettingValue } from './plugin-settings-read.ts'
+import { pluginSettingsKey, readPluginSettings } from './plugin-settings-read.ts'
 
 /** One-time bridge from the retired top-level model settings now owned by plugins. */
 const PLUGIN_MODEL_SETTINGS_MIGRATION_KEY = 'pluginMigration.pluginModelSettings'
@@ -137,13 +139,11 @@ const ARTIFACT_CHECKPOINT_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.artifactCh
 /** One-time default-off seed for Apple Development on upgraded profiles. */
 const APPLE_DEVELOPMENT_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.appleDevelopmentEnablement'
 
+/** One-time carry-over from the retired `copse.model-comparison` plugin to `copse.review`. */
+const REVIEW_PLUGIN_MIGRATION_KEY = 'pluginMigration.reviewFromModelComparison'
+
 /** Preserve the pre-plugin behavior for upgraded profiles while fresh installs use fallback. */
 const AGENTS_MD_MODE_MIGRATION_KEY = 'pluginMigration.agentsMdInstructionFiles'
-
-/** Storage key holding one plugin's settings values (`pluginId` scoped). */
-function pluginSettingsKey(pluginId: string): string {
-  return `plugin.${pluginId}.settings`
-}
 
 /**
  * Carry every `pack*` storage key forward to its `plugin*` name (C3).
@@ -317,6 +317,44 @@ function migrateArtifactCheckpointEnablement(): void {
 }
 
 /**
+ * `copse.review` replaced `copse.model-comparison` (docs/plans/copse-reviewer.md,
+ * Phase 3). On a profile that owns its disable list, carry the user's choice
+ * across once: a comparison the user had switched on becomes a review that is
+ * on; one left off (the shipped default) stays off; the retired id leaves the
+ * list. The reviewer and challenger models start from the old reviewer A and
+ * judge selections when the new bag has nothing for them yet — copy-if-absent,
+ * like `migratePluginModelSettings`. A fresh profile never gets here with a
+ * disable list, and derives the default-off state from the manifest instead.
+ */
+function migrateReviewPluginFromModelComparison(): void {
+  if (storageGet(REVIEW_PLUGIN_MIGRATION_KEY) === true) return
+  const raw = storageGet(PLUGIN_DISABLED_KEY)
+  if (raw !== undefined) {
+    const disabled = readDisabledIds()
+    const comparisonWasOff = disabled.has(RETIRED_MODEL_COMPARISON_PLUGIN_ID)
+    disabled.delete(RETIRED_MODEL_COMPARISON_PLUGIN_ID)
+    if (comparisonWasOff) disabled.add(REVIEW_PLUGIN_ID)
+    else disabled.delete(REVIEW_PLUGIN_ID)
+    storageSet(PLUGIN_DISABLED_KEY, [...disabled].sort())
+  }
+  const legacy = readPluginSettings(RETIRED_MODEL_COMPARISON_PLUGIN_ID)
+  const moves: Array<[from: string, to: string]> = [
+    ['comparisonModelA', REVIEWER_MODEL_SETTING_ID],
+    ['comparisonJudgeModel', CHALLENGER_MODEL_SETTING_ID],
+  ]
+  const bag = { ...readPluginSettings(REVIEW_PLUGIN_ID) }
+  let changed = false
+  for (const [from, to] of moves) {
+    const value = legacy[from]
+    if (typeof value !== 'string' || value.trim() === '' || bag[to] !== undefined) continue
+    bag[to] = value
+    changed = true
+  }
+  if (changed) storageSet(pluginSettingsKey(REVIEW_PLUGIN_ID), bag)
+  storageSet(REVIEW_PLUGIN_MIGRATION_KEY, true)
+}
+
+/**
  * Existing profiles already own their disable list, so manifest stability only
  * protects fresh profiles. Seed Apple Development off once on upgrade; later
  * toggles remain user-owned.
@@ -349,27 +387,9 @@ function migrateAgentsMdInstructionFiles(existingPluginProfile: boolean): void {
   storageSet(AGENTS_MD_MODE_MIGRATION_KEY, true)
 }
 
-/** Read one plugin's persisted settings bag (`{}` when nothing stored). */
-function readPluginSettings(pluginId: string): Record<string, unknown> {
-  const raw = storageGet(pluginSettingsKey(pluginId))
-  return isRecord(raw) ? raw : {}
-}
-
 /**
- * Read one plugin-scoped setting value directly from storage, without constructing
- * (or booting) the plugin service. Exposed so host read sites that previously read
- * a top-level model setting — `advisor-runner.ts`, `model-comparison-runner.ts` —
- * can read the plugin-owned value with no init-order coupling. Returns the raw
- * persisted value (the caller coerces/trims); `undefined` when unset.
- */
-export function readPluginSettingValue(pluginId: string, key: string): unknown {
-  return readPluginSettings(pluginId)[key]
-}
-
-/**
- * Preserve the model choices users had before `advisorModel` /
- * `comparisonModelA` / `comparisonModelB` / `comparisonJudgeModel` moved from
- * top-level **settings.json** keys onto their plugins' `model` setting fields
+ * Preserve the model choice users had before `advisorModel` moved from a
+ * top-level **settings.json** key onto its plugin's `model` setting field
  * (under `config.json` `pack.<id>.settings`). Copies any existing top-level
  * value into the owning plugin's settings bag (without clobbering a value already
  * written there), so the Settings → Plugins picker and the runtime read sites
@@ -388,21 +408,6 @@ function migratePluginModelSettings(): void {
       pluginId: ADVISOR_STRATEGY_PLUGIN_ID,
       key: ADVISOR_MODEL_SETTING_ID,
       legacyKey: 'advisorModel',
-    },
-    {
-      pluginId: MODEL_COMPARISON_PLUGIN_ID,
-      key: COMPARISON_MODEL_A_SETTING_ID,
-      legacyKey: 'comparisonModelA',
-    },
-    {
-      pluginId: MODEL_COMPARISON_PLUGIN_ID,
-      key: COMPARISON_MODEL_B_SETTING_ID,
-      legacyKey: 'comparisonModelB',
-    },
-    {
-      pluginId: MODEL_COMPARISON_PLUGIN_ID,
-      key: COMPARISON_JUDGE_MODEL_SETTING_ID,
-      legacyKey: 'comparisonJudgeModel',
     },
   ]
 
@@ -863,6 +868,7 @@ export function getPluginService(): PluginService {
   migrateAutomationsEnablement()
   migrateParallelSearchEnablement()
   migrateArtifactCheckpointEnablement()
+  migrateReviewPluginFromModelComparison()
   const registry = createFirstPartyPluginRegistry()
   migrateAppleDevelopmentEnablement()
   const service = createPluginService(registry)

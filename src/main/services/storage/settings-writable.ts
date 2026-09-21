@@ -357,15 +357,6 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // cheaper worker model implements delegated steps. See orchestration-strategy.ts.
   orchestrationStrategyEnabled: z.boolean(),
   orchestrationWorkerModel: z.string().max(256),
-  // Experimental model comparison harness: run the working-diff review through
-  // two models plus a judge that compares their verdicts. See model-comparison.ts.
-  // P5: the former top-level `modelComparisonEnabled` boolean is retired —
-  // the `copse.model-comparison` first-party plugin toggle in Settings > Plugins
-  // is the atomic master switch. The sub-toggle below is still top-level.
-  modelComparisonAutoOnReview: z.boolean(),
-  comparisonModelA: z.string().max(256),
-  comparisonModelB: z.string().max(256),
-  comparisonJudgeModel: z.string().max(256),
   // Background tasks moved to the `copse.background-tasks` first-party plugin
   // (Settings > Plugins), which also DECLARES the `loopback-bind` sandbox
   // relaxation (issue #1190), so the former `backgroundTasksEnabled` top-level

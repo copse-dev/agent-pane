@@ -103,8 +103,14 @@ function refExists(ref: string, cwd: string): boolean {
   }
 }
 
-/** Discover only host paths, never load repository/package-manager configuration. */
-async function pnpmStorePath(env: CliIo['env']): Promise<string | undefined> {
+/**
+ * Discover the host's pnpm store from filesystem paths and environment only —
+ * never by running `pnpm store path`, which can execute a repository's
+ * `.pnpmfile.cjs` before any consent. Shared with the app's review service.
+ */
+export async function discoverPnpmStore(
+  env: Readonly<Record<string, string | undefined>>,
+): Promise<string | undefined> {
   const configured = env['npm_config_store_dir']
   const dataHome =
     process.platform === 'darwin'
@@ -214,7 +220,7 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
     diffOrigin: 'own',
     unisolatedConsent: values['allow-unisolated'],
     hostEnv: io.env,
-    dependencyStore: values.store ?? (await pnpmStorePath(io.env)),
+    dependencyStore: values.store ?? (await discoverPnpmStore(io.env)),
   })
   try {
     const stage0 = await runStage0Checks(ground, io.signal)

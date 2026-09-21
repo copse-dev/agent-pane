@@ -2207,3 +2207,23 @@
   overflow: hidden;
   min-width: 300px;
 }
+
+/* "Review" in the Changes header: Copse Reviewer over the thread's changes.
+   Reads as a quiet action beside the bulk buttons, not a primary CTA — a review
+   spends model calls, so the label says what it is and the tooltip says who. */
+.git-changes-review-btn {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.git-changes-review-btn:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+.git-changes-review-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

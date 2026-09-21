@@ -24,6 +24,7 @@ import type {
   ModelComparison,
   Thread,
   ThreadReview,
+  ThreadReviewReport,
 } from '@shared/types'
 import type { PreparedThreadCheckout } from '@shared/types/worktree.ts'
 import {
@@ -785,7 +786,11 @@ export function setMessageTurnOutcome(
   store.emit('threads_changed')
 }
 
-/** Store the two-model comparison for a thread (clears with `null`). */
+/**
+ * Store (or with `null` clear) a thread's retired two-model comparison. Only
+ * the dismiss action on a historical card writes here now; nothing creates a
+ * comparison any more.
+ */
 export function setThreadComparison(
   store: AppStore,
   threadId: string,
@@ -798,6 +803,48 @@ export function setThreadComparison(
     return next
   })
   store.emit('comparison_changed', threadId)
+}
+
+/** Store the Copse Reviewer report for a thread (clears with `null`). */
+export function setThreadReviewReport(
+  store: AppStore,
+  threadId: string,
+  report: ThreadReviewReport | null,
+): void {
+  patchThreadAnywhere(store, threadId, (t) => {
+    const next = { ...t, updatedAt: Date.now() }
+    if (report) next.reviewReport = report
+    else delete next.reviewReport
+    return next
+  })
+  store.emit('review_report_changed', threadId)
+}
+
+/**
+ * Flip one finding's dismissed flag on the thread's report. The persisted
+ * dismissal lives in the knowledge store (main); this keeps the card in step
+ * without waiting for the next review to re-read it.
+ */
+export function setReviewFindingDismissed(
+  store: AppStore,
+  threadId: string,
+  findingId: string,
+  dismissed: boolean,
+): void {
+  patchThreadAnywhere(store, threadId, (t) => {
+    if (!t.reviewReport) return t
+    return {
+      ...t,
+      updatedAt: Date.now(),
+      reviewReport: {
+        ...t.reviewReport,
+        findings: t.reviewReport.findings.map((finding) =>
+          finding.id === findingId ? { ...finding, dismissed } : finding,
+        ),
+      },
+    }
+  })
+  store.emit('review_report_changed', threadId)
 }
 
 /** Suspend/resume FIFO draining of a thread's queued messages (e.g. while editing). */

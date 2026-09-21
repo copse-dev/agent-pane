@@ -137,13 +137,7 @@ import {
   runWithOrchestrationContext,
   resolveOrchestrationWorkerModelId,
 } from './orchestration-runner.ts'
-import {
-  runModelComparison,
-  setModelComparisonContext,
-  isAutoComparisonEnabled,
-  resolveComparisonModelDefaults,
-} from './model-comparison-runner.ts'
-import type { ComparisonModels } from './model-comparison.ts'
+import { runThreadReview, setReviewToolContext } from './review/review-service.ts'
 import { resetSubagentUsage, getAccumulatedSubagentUsage } from './subagent-usage.ts'
 import {
   runWithAgentRunTodoContext,
@@ -271,7 +265,7 @@ function pluginModelResult(raw: unknown): {
 
 // LM Studio models advertise smaller tool-schema budgets than cloud providers,
 // so reserve more of the window for their tool definitions. Shared by the turn
-// path and the standalone review/comparison retries below.
+// path and the standalone review runs and retries below.
 function toolSchemaReserveForModel(model: string): number {
   return model === 'lm-studio' || model.startsWith('lmstudio:') ? 2_500 : 1_000
 }
@@ -295,7 +289,7 @@ async function changedLinesBelow(min: number): Promise<boolean> {
 // Threads whose user approved spending on the post-turn review ("always review
 // with this model in this chat"). Per-thread, not process-global, so approving a
 // billable review in one project never silently authorizes it in another — the
-// same cross-project prompt-leakage guard the model-comparison approval uses.
+// same cross-project prompt-leakage guard the review-spend approval uses.
 const approvedReviewThreads = new Set<string>()
 
 /**
@@ -1578,9 +1572,6 @@ export async function runAgent(
 
     // Set when the turn runs any file-mutating tool, gating the post-turn review.
     let turnChangedFiles = false
-    // Set when the agent already ran a comparison via the `compare_models` tool
-    // this turn, so the auto-on-review trigger doesn't run a second (billable) one.
-    let comparisonRanThisTurn = false
     // E3: the run emits a single terminal `done` at the very end, after the
     // post-turn orchestration (pre-review gate + review/remediation) has run —
     // there is no held-back `done` chunk (the deferred-`done` dance is gone). The
@@ -1928,7 +1919,7 @@ export async function runAgent(
       async () => {
         // The parent tool executor, shared by the main loop and any post-turn parent
         // continuation turns (pre-review todo gate, review remediation) so both route
-        // subagents, advisor, comparison, and shell tagging identically.
+        // subagents, advisor, review, and shell tagging identically.
         const runParentTool = async (
           name: string,
           args: unknown,
@@ -2039,21 +2030,24 @@ export async function runAgent(
               () => registry.execute(name, args, signal),
             )
           }
-          if (name === 'compare_models') {
-            // Manual trigger: run the two-model diff comparison on demand, with
-            // the live parent goal/registry so the reviewers see the same diff.
-            comparisonRanThisTurn = true
-            setModelComparisonContext({
+          if (name === 'review_changes') {
+            // The agent asked for Copse Reviewer over the thread's changes. The
+            // run reads the turn's trusted checkout root and emits its own
+            // `review_report` chunks; a billable model prompts for the spend.
+            const executionRoot = getThreadExecutionContext()?.root
+            if (executionRoot === undefined) {
+              return 'Error: review is not available without a thread checkout.'
+            }
+            setReviewToolContext({
               threadId,
-              parentGoal,
-              registry,
+              root: executionRoot,
               chatModel: model,
               onChunk: sendChunk,
             })
             try {
               return await registry.executeNormalized(name, args, signal)
             } finally {
-              setModelComparisonContext(null)
+              setReviewToolContext(null)
             }
           }
           if (name === 'run_shell') {
@@ -2363,21 +2357,6 @@ export async function runAgent(
           })
         }
 
-        // Auto model comparison: when this turn changed files and the harness is set
-        // to run on review, compare two models on the working diff (gated by a spend
-        // approval for billable models). Usage is folded in via the emitted chunks.
-        // P5: gate on the `copse.model-comparison` plugin toggle in addition to the
-        // fine-grained `modelComparisonAutoOnReview` sub-setting — the plugin toggle
-        // is the atomic master switch (`isAutoComparisonEnabled()` already reads
-        // both).
-
-        if (turnChangedFiles && !comparisonRanThisTurn && isAutoComparisonEnabled()) {
-          await runModelComparison(
-            { threadId, parentGoal, registry, chatModel: model, onChunk: sendChunk },
-            controller.signal,
-          )
-        }
-
         const terminalDone: Extract<StreamChunk, { type: 'done' }> =
           loopStopReason !== undefined
             ? { type: 'done', stopReason: loopStopReason }
@@ -2470,15 +2449,9 @@ export function listRunningThreadIds(): string[] {
 export interface RetryOptions {
   workingBrief?: string
   model?: string
-  /**
-   * Comparison models the user picked in the follow-up bubble's picker. Only
-   * {@link retryModelComparison} reads it; passing it makes the run use exactly
-   * these three and skip the spend prompt the picker already served as.
-   */
-  comparisonModels?: ComparisonModels
 }
 
-/** Register a fresh abort controller for a standalone review/comparison retry,
+/** Register a fresh abort controller for a standalone review run or retry,
  *  mirroring the turn path so the Stop button (agent:abort) can cancel it. */
 function beginRetryRun(threadId: string): {
   controller: AbortController
@@ -2556,57 +2529,33 @@ export async function retryPostTurnReview(
 }
 
 /**
- * Run the two-model comparison for a thread on demand — the retry action on a
- * failed comparison card, and the "Compare models" follow-up bubble. Like
- * {@link retryPostTurnReview}, it reviews the current working diff, so a fixable
- * failure (a mis-loaded local model, a declined/aborted run) can be retried in
- * place. `runModelComparison` emits its own running/terminal `model_comparison`
- * chunks; we bracket it with a `done` so the thread idles.
- *
- * With `options.comparisonModels` — the bubble path — those three models are
- * used verbatim and no spend prompt is raised; without them the settings-driven
- * resolution and its approval apply as before.
+ * Run Copse Reviewer for a thread on demand — the "Review" gesture in the
+ * Changes view and the "Review changes" follow-up bubble. Like
+ * {@link retryPostTurnReview} it is a standalone run on the thread: registered
+ * for the Stop button, bracketed with a `done` so the thread idles, and run
+ * under the thread's execution context so the reviewer sees the same checkout
+ * the turn would. The gesture is the user's own spend decision, so no prompt.
  */
-/**
- * The three models the "Compare models" picker opens on: the plugin's settings (or
- * its defaults) expanded to concrete ids, against the same chat model the run
- * would use for reviewer A. Resolved when the bubble is *clicked* rather than
- * when it is built — expansion can reach the provider catalogue, and a bubble
- * nobody clicks should cost nothing.
- */
-export async function resolveComparisonModelChoices(
-  options?: RetryOptions,
-): Promise<ComparisonModels> {
-  const requestedModel = options?.model ?? getSetting<string>('model', DEFAULT_APP_CHAT_MODEL)
-  const model = (await resolveAgentChatModel(requestedModel)).model
-  return resolveComparisonModelDefaults(model)
-}
-
-export async function retryModelComparison(
+export async function runReviewForThread(
   threadId: string,
-  priorMessages: LLMMessage[],
   host: AgentHost<StreamChunk>,
-  registry: ToolRegistry,
   options?: RetryOptions,
 ): Promise<void> {
   const requestedModel = options?.model ?? getSetting<string>('model', DEFAULT_APP_CHAT_MODEL)
   const model = (await resolveAgentChatModel(requestedModel)).model
   const sendChunk = createAgentChunkSink(threadId, host)
+  const executionRoot = getThreadExecutionContext()?.root
+  if (executionRoot === undefined) throw new Error('No thread execution context is active')
   const { controller, runAbort } = beginRetryRun(threadId)
-
   try {
-    const parentGoal = resolveParentGoal(options?.workingBrief, priorMessages, '')
-    await runModelComparison(
-      {
-        threadId,
-        parentGoal,
-        registry,
-        chatModel: model,
-        onChunk: sendChunk,
-        ...(options?.comparisonModels ? { models: options.comparisonModels } : {}),
-      },
-      controller.signal,
-    )
+    await runThreadReview({
+      threadId,
+      root: executionRoot,
+      chatModel: model,
+      onChunk: sendChunk,
+      signal: controller.signal,
+      initiator: 'user',
+    })
   } finally {
     runAbort.clear()
     clearActiveRunThread(threadId)

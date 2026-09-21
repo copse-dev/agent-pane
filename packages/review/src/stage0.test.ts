@@ -5,7 +5,7 @@ import { createHostProcessBackend } from './host-process-backend.ts'
 import type { IsolationBackend } from './isolation.ts'
 import { REVIEW_CONFIG_FILENAME } from './project-commands.ts'
 import { renderStage0Report } from './report-text.ts'
-import { runStage0, type Stage0Report } from './stage0.ts'
+import { openReviewGround, runStage0, runStage0Checks, type Stage0Report } from './stage0.ts'
 import { createTestRepo, type TestRepo } from './test-repo.ts'
 
 /**
@@ -216,6 +216,36 @@ describe('runStage0', () => {
     })
     assert.equal(report.execution.decision.execute, false)
     assert.match(report.execution.decision.reason, /consent/)
+  })
+
+  it('can materialise read-only checkouts for a refused execution, with no cell', async () => {
+    // The app without an OS sandbox: the reviewer must not execute, but the
+    // model stages still need base and head to read. The ground opens with the
+    // worktrees and nothing else; Stage 0 reports the refusal as before, and
+    // closing removes everything it made.
+    const repo = await scenario({}, { test: { exit: 1 } })
+    const ground = await openReviewGround({
+      repoRoot: repo.root,
+      baseRef: 'main',
+      backend: createHostProcessBackend(),
+      diffOrigin: 'own',
+      readOnlyCheckouts: true,
+    })
+    try {
+      assert.equal(ground.decision.execute, false)
+      assert.ok(ground.checkouts, 'checkouts should be materialised')
+      assert.equal(ground.cell, null)
+      assert.equal(ground.project.head?.ecosystem, 'configured')
+      assert.match(repo.git('worktree', 'list'), /copse-review/)
+      const report = await runStage0Checks(ground)
+      assert.deepEqual(report.checks, [])
+      assert.deepEqual(report.findings, [])
+      assert.equal(report.coverage.notChecked[0]?.kind, 'all')
+      assert.equal(report.headCommit, ground.checkouts.headCommit)
+    } finally {
+      await ground.close()
+    }
+    assert.doesNotMatch(repo.git('worktree', 'list'), /copse-review/)
   })
 
   it('scrubs a host secret out of check output before it reaches the report', async () => {

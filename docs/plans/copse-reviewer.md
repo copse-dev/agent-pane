@@ -1,18 +1,17 @@
 # Copse Reviewer
 
-Status: **Active — Phases 0 to 2 landed.** `@copse/review` is a workspace package on
+Status: **Active — Phases 0 to 3 landed.** `@copse/review` is a workspace package on
 `main` with the finding schema, Stage 0 (the base-versus-head build and test delta), the
 `IsolationBackend` contract with the host-process and OS-sandbox backends, the
 hostile-fixture conformance test, and the `copse-review` CLI: Stage 1 context, models ×
 lenses with brokered tools, Stage 3 clustering, Stage 4 verification by reproducer and
 adversarial challenge, the ranked report, SARIF export and the headless event envelope.
 `pnpm run review -- --allow-unisolated` runs it over this repository's own working tree.
-Phases 3–5 remain proposed, and Phase 2's retirement of the comparison judge is deferred
-to Phase 3 (see §What Phase 2 delivered). See also §What Phase 0 delivered and §What Phase
-1 delivered. The plan
-supersedes the surfacing and validation gaps in the existing `copse.model-comparison`
-plugin, which stays as-is until Phase 2 retires its judge and Phase 3 replaces it with
-`copse.review`.
+In the app, the `copse.review` plugin has replaced `copse.model-comparison`: "Review" in
+the Changes view, the "Review changes" bubble and the `review_changes` tool run the same
+pipeline over the thread's checkout and render a findings card, with dismissals persisted
+to the knowledge store (see §What Phase 3 delivered). Phases 4–5 remain proposed. See also
+§What Phase 0 delivered, §What Phase 1 delivered and §What Phase 2 delivered.
 Binding decisions B1 (execution isolation, 2026-09-03), B2–B6 (packaging, backend
 sequencing, scope, ecosystem, customer; 2026-09-04) and B7–B9 (name, precision aim, SARIF
 export; 2026-09-04) are recorded. Problems are numbered P1–P9 in §What needs to be solved,
@@ -28,9 +27,9 @@ egress proxy returns 403 for `code.ffmpeg.org`), so everything below cites her
 **documented behaviour**, not her implementation. Anything about her internals is
 explicitly marked as inference.
 
-Related: the in-tree `copse.model-comparison` plugin (`src/main/services/model-comparison.ts`,
-`model-comparison-runner.ts`, `packages/agent/src/plugins/model-comparison-plugin.ts`) — no plan
-doc of its own;
+Related: the retired in-tree `copse.model-comparison` plugin (its judge, runner and
+`compare_models` tool were deleted in Phase 3; `packages/agent/src/plugins/review-plugin.ts`
+took its place) — it had no plan doc of its own;
 [`hooks-and-feature-packs.md`](hooks-and-feature-packs.md), whose decisions log
 [`../../AGENTS.md`](../../AGENTS.md) makes binding for feature-pack work — its P5 extracted
 the pack Phase 3 replaces, its decision 15 governs the typed chunk the findings card
@@ -659,6 +658,65 @@ CI action (Phase 4), and the precision measurement (Phase 5) — B8's 85% is sti
 unmeasured, and the clustering thresholds above are the first thing that measurement
 should move.
 
+## What Phase 3 delivered
+
+On `main`: the `copse.review` first-party plugin (`packages/agent/src/plugins/review-plugin.ts`),
+the app-side review service (`src/main/services/review/review-service.ts`, with
+`review-dismissals.ts` beside the OS-sandbox backend), the findings card
+(`src/renderer/views/review-findings-card.ts`) and the Changes-view gesture
+(`git-changes-pane.ts`). The `copse.model-comparison` plugin, its judge, its runner, the
+`compare_models` tool, the picker dialog and the `model-compare` approval type are deleted.
+
+- **One pipeline, three gestures.** "Review" in the Changes header, the "Review changes"
+  follow-up bubble (action `review`, offered on `workspace-changes`) and the agent's
+  `review_changes` tool all run `runThreadReview` over the thread's execution-context
+  root: the base resolves to `HEAD` for a dirty tree (the change is what is not committed
+  yet) and to the base branch for a clean one, so committed branch work still gets a
+  review; a clean tree on the base reports "nothing to review" rather than an error. The
+  human gestures are their own spend decision and never prompt; the tool prompts for a
+  billable model, remembered per thread, exactly as the post-turn review does.
+- **Execution in the app follows the trust table with no consent path.** Behind the OS
+  sandbox (`createOsSandboxBackend`) Stage 0 runs and the reviewer has `run_command`;
+  without it the ground opens **read-only** — a new `readOnlyCheckouts` option on
+  `openReviewGround` materialises base and head with no cell — so the model stages still
+  run over the checkouts, and the card says "Read-only review — nothing was executed" and
+  why. `--allow-unisolated` stays a CLI flag; the app never runs the user's tree unisolated.
+- **The typed chunk (decision 15).** `review_report` carries `ThreadReviewReport` — the
+  package report projected for a card: findings flattened with their anchored source, the
+  Stage 0 checks and coverage notes, the execution decision, reviewer turns, verification
+  counts, cost — as a running placeholder, then the report or an error. It is persisted on
+  the thread as `reviewReport` (metadata, like the retired `comparison`) and rendered from
+  that data alone, so a report keeps rendering after the plugin is disabled (decision 17).
+  No review starts a machine turn, so decision 5's budget is untouched.
+- **The findings card.** Ranked rows — severity, class, `path:line`, the claim, the
+  verdict ("confirmed by reproducer", "survived challenge", "unverified") — each a
+  disclosure onto the verdict's reason, the anchored lines, the evidence (a command with
+  its target, exit and excerpt; a reproducer with its head/base outcome; a citation) and
+  who raised, corroborated or challenged it. Stage 0's checks are chips above the list;
+  the appendix and refuted counts sit below it. "Clean." is a complete answer.
+- **Dismissal persisted (P8).** Dismiss writes one `review-dismissal` knowledge note per
+  finding, keyed by the finding's content-derived id, so it stays dismissed across pushes
+  for as long as the anchored source and the claim hold — and lapses by itself when the
+  code or the claim at that spot changes, which is the P8 balance. The next review marks
+  those ids dismissed; the card folds them behind an "n dismissed" toggle with Restore.
+- **The judge is retired.** Per-finding verdicts (Stage 4) are the only synthesis. A thread
+  that still carries a `comparison` renders its old card, dismissible and never
+  re-runnable; the `model_comparison` chunk, the retry and the auto-on-review trigger are
+  gone with the runner.
+- **Plugin settings and migration.** `reviewerModel` (blank = the chat model),
+  `challengerModel` (default: the most-capable rule), `lenses` (`correctness` or `all`)
+  and `verify`. A one-shot host migration carries an existing profile's comparison
+  enablement across (on stays on, off stays off, the retired id leaves the list) and seeds
+  the reviewer and challenger from reviewer A and the judge when the new bag is empty.
+- **Visual evidence.** `tests/e2e/review-findings-card.e2e.ts` (the card, expansion,
+  dismissal through main's knowledge store, persistence across a restart) and
+  `tests/e2e/git-changes-review-button.e2e.ts` (the button present only while the plugin is
+  enabled), plus component tests for the card, the inline placement and the actions.
+
+Not in Phase 3: a container backend and foreign diffs (Phase 4), the CI action (Phase 4),
+`bench:review` (Phase 5), and the per-finding inline anchor in the Changes view's diff
+(the card links by `path:line`; jumping the diff editor to it is a follow-up).
+
 ## Phases
 
 - **Phase 0 — Findings schema + Stage 0 + OS-sandbox backend.** ✅ Landed; see above. `@copse/review` as a
@@ -675,11 +733,13 @@ should move.
   moves to Phase 3; see above. Lenses, fan-out, clustering, the challenger
   role, reproducer generation. Retire the comparison judge in favour of per-finding
   verdicts.
-- **Phase 3 — App shell.** `copse.model-comparison` → `copse.review`; findings card;
-  the Changes-view gesture; dismissal persisted. This replaces the first-party pack that
+- **Phase 3 — App shell.** ✅ Landed; see above. `copse.model-comparison` → `copse.review`;
+  findings card; the Changes-view gesture; dismissal persisted; the comparison judge
+  retired. This replaced the first-party pack that
   [`hooks-and-feature-packs.md`](hooks-and-feature-packs.md) P5 extracted, so its decisions
-  log binds here: decision 15 for the typed chunk the findings card consumes, decision 5 for
-  any machine turn a review starts.
+  log bound here: decision 15 for the typed chunk the findings card consumes, decision 5 for
+  any machine turn a review starts (none does: every review is a human gesture or an agent
+  tool call inside an existing turn).
 - **Phase 4 — Container backend + foreign diffs + CI shell.** The container/VM
   `IsolationBackend`, consuming the local-docker runtime proposed in
   [`copse-cloud-workspaces.md`](copse-cloud-workspaces.md) C1, which unlocks foreign-diff

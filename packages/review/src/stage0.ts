@@ -60,6 +60,14 @@ export interface Stage0Options {
   readonly unisolatedConsent?: boolean
   /** Review the working tree's uncommitted changes as part of head. Default: `diffOrigin === 'own'`. */
   readonly includeWorkingTree?: boolean
+  /**
+   * When execution is refused, still materialise the base and head checkouts
+   * so the model stages can run read-only over them (no cell, no Stage 0, no
+   * `run_command`). The app uses this where it has no OS sandbox: the plan's
+   * "there the reviewer does not execute", not "there the reviewer does
+   * nothing". Default `false`: a refusal materialises nothing.
+   */
+  readonly readOnlyCheckouts?: boolean
   /** The orchestrator's environment; only the allowlist reaches the cell. Default `process.env`. */
   readonly hostEnv?: Readonly<Record<string, string | undefined>>
   /** pnpm's content-addressed store, mounted read-only into the cell. */
@@ -403,7 +411,7 @@ export async function openReviewGround(options: Stage0Options): Promise<ReviewGr
     close,
   })
 
-  if (!decision.execute) return ground({ head: null, base: null })
+  if (!decision.execute && !options.readOnlyCheckouts) return ground({ head: null, base: null })
 
   // Pass canonical paths into the sandbox; /var and /tmp are host symlinks on macOS.
   scratchDir = await realpath(
@@ -421,6 +429,9 @@ export async function openReviewGround(options: Stage0Options): Promise<ReviewGr
       head: detectProjectCommands(checkouts.head),
       base: detectProjectCommands(checkouts.base),
     }
+    // Read-only ground: the checkouts exist for the model stages to read, and
+    // no cell is built, so nothing from the repository can ever run.
+    if (!decision.execute) return ground(project)
     if (project.head.ecosystem === 'unsupported') return ground(project)
 
     const corepackHome = await resolveCorepackHome(options.corepackHome, hostEnv)

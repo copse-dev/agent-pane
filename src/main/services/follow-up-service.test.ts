@@ -157,14 +157,14 @@ describe('plugin-contributed follow-up bubbles', () => {
         { name: 'copse.test-offers', trust: 'first-party', stability: 'experimental' },
         {
           followUps: [
-            { id: 'compare', label: 'Compare models', action: 'model-compare' },
+            { id: 'review', label: 'Review changes', action: 'review' },
             { id: 'tidy', label: 'Tidy up', prompt: 'Tidy the diff.' },
           ],
         },
       ),
       () => {
         assert.deepEqual(buildPluginFollowUps(dirty), [
-          { id: 'compare', label: 'Compare models', action: 'model-compare' },
+          { id: 'review', label: 'Review changes', action: 'review' },
           { id: 'tidy', label: 'Tidy up', action: 'prompt', prompt: 'Tidy the diff.' },
         ])
       },
@@ -180,7 +180,7 @@ describe('plugin-contributed follow-up bubbles', () => {
             {
               id: 'gated',
               label: 'Needs a diff',
-              action: 'model-compare',
+              action: 'review',
               when: 'workspace-changes',
             },
             { id: 'ungated', label: 'Any time', prompt: 'Go on.', when: 'always' },
@@ -192,8 +192,8 @@ describe('plugin-contributed follow-up bubbles', () => {
           buildPluginFollowUps(dirty).map((s) => s.id),
           ['gated', 'ungated'],
         )
-        // A clean tree has no working diff for the reviewers to read, so the
-        // gated bubble must not offer a comparison of nothing.
+        // A clean tree has no working diff for the reviewer to read, so the
+        // gated bubble must not offer a review of nothing.
         assert.deepEqual(
           buildPluginFollowUps(clean).map((s) => s.id),
           ['ungated'],
@@ -207,7 +207,7 @@ describe('plugin-contributed follow-up bubbles', () => {
     registry.register(
       definePlugin(
         { name: 'copse.test-off', trust: 'first-party', stability: 'experimental' },
-        { followUps: [{ id: 'gone', label: 'Compare models', action: 'model-compare' }] },
+        { followUps: [{ id: 'gone', label: 'Review changes', action: 'review' }] },
       ),
     )
     registry.disable('copse.test-off')

@@ -113,8 +113,15 @@ or reading repository configuration. Pass `--store` for a custom store configure
 only in `.npmrc`. Base dependencies and build artifacts are prepared lazily before
 the first reproducer, even when every Stage 0 check passed on head.
 
+## In the app
+
+Phase 3 lives in the app repository rather than here: the `copse.review` first-party
+plugin, `src/main/services/review/review-service.ts` (this package's pipeline over a
+thread's checkout, read-only where the OS sandbox is not active), the findings card and
+the Changes view's "Review". `openReviewGround`'s `readOnlyCheckouts` option is what the
+app uses to review without executing.
+
 ## Not yet here
 
-Phase 3 is the app card and the Changes-view gesture (and retires the comparison judge);
-Phase 4 the container backend, foreign diffs and the CI action; Phase 5 the `bench:review`
-precision measurement. See the plan's §Phases.
+Phase 4 is the container backend, foreign diffs and the CI action; Phase 5 the
+`bench:review` precision measurement. See the plan's §Phases.
