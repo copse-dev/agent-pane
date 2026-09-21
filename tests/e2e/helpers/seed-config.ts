@@ -2051,6 +2051,16 @@ export function seedHookCardsFixture(workspaceRoot: string): void {
     'msg-assistant-hook': [
       hookRun({ id: 'hr-allow', decision: { permission: 'allow' } }),
       hookRun({
+        id: 'hr-finalize',
+        event: 'stepBoundary',
+        hookId: 'finalize-nudge',
+        decision: {
+          nudgeApplied: true,
+          nudgeMechanism: 'tool-enabled-turn',
+          injectContextChars: 72,
+        },
+      }),
+      hookRun({
         id: 'hr-deny',
         hookId: 'block-prod.sh',
         decision: { permission: 'deny' },

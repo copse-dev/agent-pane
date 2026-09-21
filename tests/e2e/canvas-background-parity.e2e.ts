@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict'
+import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { $, $$, browser } from '@wdio/globals'
 import type { MockScriptStep } from '@copse/llm/mock-script'
+import { PNG } from 'pngjs'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { waitForPromptReady } from './helpers.ts'
 import { setComposerValue } from './helpers/composer.ts'
@@ -189,13 +191,33 @@ async function saveCanvasPreviewScreenshot(filename: string): Promise<void> {
           if (ancestor instanceof HTMLDetailsElement) ancestor.open = true
         }
         card.scrollIntoView({ block: 'center', inline: 'nearest' })
-        return card.getClientRects().length > 0
+        const rect = card.getBoundingClientRect()
+        return rect.width > 0 && rect.height > 0
       }),
     { timeout: 15_000, timeoutMsg: 'expected the expanded canvas preview to be visible' },
   )
   await waitForSettledLayout('.canvas-preview-card')
-  const card = await browser.$('.canvas-preview-card')
-  await card.saveScreenshot(join(E2E_SCREENSHOT_DIR, filename))
+  const crop = await browser.execute(() => {
+    const card = document.querySelector<HTMLElement>('.canvas-preview-card')
+    if (!card) throw new Error('canvas preview card missing before capture')
+    const rect = card.getBoundingClientRect()
+    const scale = window.devicePixelRatio
+    const left = Math.floor(rect.left * scale)
+    const top = Math.floor(rect.top * scale)
+    const right = Math.ceil(rect.right * scale)
+    const bottom = Math.ceil(rect.bottom * scale)
+    return { left, top, width: right - left, height: bottom - top }
+  })
+  const viewport = PNG.sync.read(Buffer.from(await browser.takeScreenshot(), 'base64'))
+  assert.ok(crop.left >= 0 && crop.top >= 0, 'canvas preview starts outside the viewport')
+  assert.ok(crop.width > 0 && crop.height > 0, 'canvas preview has no capture area')
+  assert.ok(
+    crop.left + crop.width <= viewport.width && crop.top + crop.height <= viewport.height,
+    'canvas preview extends outside the viewport',
+  )
+  const preview = new PNG({ width: crop.width, height: crop.height })
+  PNG.bitblt(viewport, preview, crop.left, crop.top, crop.width, crop.height, 0, 0)
+  await writeFile(join(E2E_SCREENSHOT_DIR, filename), PNG.sync.write(preview))
 }
 
 describe('canvas background parity', () => {
