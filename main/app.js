@@ -69245,6 +69245,29 @@ function createCanvasPreviewSection(tc2, threadId) {
   const uri = artefactUriFromToolResult(tc2.result);
   return uri ? createCanvasPreviewCard(threadId, artefactTitleFromUri(uri)) : null;
 }
+function syncToolResultImages(msgEl, toolCalls) {
+  const images = toolCalls.flatMap((toolCall) => toolCall.images ?? []);
+  const current = msgEl.querySelector(":scope > .tool-result-images");
+  if (images.length === 0) {
+    current?.remove();
+    return;
+  }
+  const signature = renderSignature(images);
+  let rendered = current;
+  if (!rendered || toolResultImageSignatures.get(rendered) !== signature) {
+    rendered = createToolResultImages(images);
+    toolResultImageSignatures.set(rendered, signature);
+    if (current) current.replaceWith(rendered);
+    else msgEl.append(rendered);
+  }
+  const toolCards = Array.from(msgEl.children).filter(
+    (node2) => node2.classList.contains("tool-card")
+  );
+  const lastToolCard = toolCards.at(-1);
+  if (lastToolCard && lastToolCard.nextElementSibling !== rendered) {
+    msgEl.insertBefore(rendered, lastToolCard.nextSibling);
+  }
+}
 function syncToolRunMemberVisibility(msgEl) {
   if (!msgEl.classList.contains("msg-tool-run-member")) {
     msgEl.hidden = false;
@@ -69795,6 +69818,24 @@ function createMessageImages(images) {
       loading: "lazy"
     });
     attachImageExpand(img, "Attached image");
+    wrap.append(img);
+  }
+  return wrap;
+}
+function createToolResultImages(images) {
+  const wrap = el("div", {
+    class: "message-images tool-result-images",
+    "data-tool-result-image-count": String(images.length)
+  });
+  for (const image of images) {
+    const label = image.name ?? "Tool result image";
+    const img = el("img", {
+      class: "message-image tool-result-image",
+      src: image.dataUrl,
+      alt: label,
+      loading: "lazy"
+    });
+    attachImageExpand(img, label);
     wrap.append(img);
   }
   return wrap;
@@ -70836,6 +70877,7 @@ function mountConversation(root, store2, api2) {
         msgEl.insertBefore(node2, msgEl.children[base + i] ?? null);
       }
     }
+    syncToolResultImages(msgEl, run2 ? isRunMember ? [] : run2.toolCalls : toolCalls);
     registerReasoningDisclosures(msgEl);
     syncToolRunMemberVisibility(msgEl);
   }
@@ -71444,7 +71486,7 @@ function attachCopyButton(body, msgId, store2) {
   });
   body.append(copyBtn);
 }
-var lazyToolCardBodies, streamingRenderers, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolCardKeys, toolCardSignatures, toolGroupItemSignatures, SCROLL_PIN_THRESHOLD_PX, USER_SCROLL_UP_DEBOUNCE_MS, TOOL_AUTO_REVEAL_DELAY_MS, TOOL_AUTO_REVEAL_MIN_DWELL_MS, TOOL_AUTO_COMPACT_DELAY_MS, INITIAL_RENDER_WINDOW, BACKFILL_CHUNK_SIZE;
+var lazyToolCardBodies, toolResultImageSignatures, streamingRenderers, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolCardKeys, toolCardSignatures, toolGroupItemSignatures, SCROLL_PIN_THRESHOLD_PX, USER_SCROLL_UP_DEBOUNCE_MS, TOOL_AUTO_REVEAL_DELAY_MS, TOOL_AUTO_REVEAL_MIN_DWELL_MS, TOOL_AUTO_COMPACT_DELAY_MS, INITIAL_RENDER_WINDOW, BACKFILL_CHUNK_SIZE;
 var init_conversation = __esm({
   "src/renderer/views/conversation.ts"() {
     init_helpers();
@@ -71501,6 +71543,7 @@ var init_conversation = __esm({
     init_image_input_support();
     init_toast();
     lazyToolCardBodies = /* @__PURE__ */ new WeakMap();
+    toolResultImageSignatures = /* @__PURE__ */ new WeakMap();
     streamingRenderers = /* @__PURE__ */ new WeakMap();
     showAcpTransportNoiseDisclosure = () => false;
     subagentMessageCommitted = /* @__PURE__ */ new WeakMap();
@@ -124434,7 +124477,8 @@ function startAgentController(store2, api2) {
             ...chunk.args !== void 0 ? { args: chunk.args } : {},
             ...chunk.status !== void 0 ? { status: chunk.status } : {},
             ...chunk.result !== void 0 ? { result: chunk.result } : {},
-            ...chunk.resultFormat !== void 0 ? { resultFormat: chunk.resultFormat } : {}
+            ...chunk.resultFormat !== void 0 ? { resultFormat: chunk.resultFormat } : {},
+            ...chunk.images !== void 0 ? { images: chunk.images } : {}
           });
         }
         st2.writing = false;
