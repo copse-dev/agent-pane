@@ -1074,6 +1074,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       abortReview: () => resolved(false),
       onChanged: subscribe,
       setThread: () => resolved(null),
+      findByThread: () => resolved(null),
     },
     supervisor: {
       list: () => resolved({ tasks: [] }),
