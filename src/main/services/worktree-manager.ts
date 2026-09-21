@@ -506,6 +506,18 @@ export async function repositoryLocation(projectRoot: string): Promise<Repositor
 }
 
 async function commonGitDir(root: string): Promise<string> {
+  // `repositoryLocation` already proved `root` is Git's top-level checkout.
+  // In the ordinary non-bare layout its `.git` directory is the common Git
+  // directory by definition, so resolve it directly instead of paying for a
+  // final sandboxed `git rev-parse` on every dispatch. A project that is itself
+  // a linked checkout, or has any other non-directory `.git` layout, retains
+  // Git as the authoritative fallback.
+  const dotGit = join(root, '.git')
+  try {
+    if ((await lstat(dotGit)).isDirectory()) return await realpath(dotGit)
+  } catch {
+    // Let Git produce the actionable repository error below.
+  }
   const value = await requireGitValue(
     root,
     ['rev-parse', '--git-common-dir'],
@@ -891,7 +903,10 @@ export async function validateThreadWorktree(
   if (liveBranchCheck.status === 'rejected') throw liveBranchCheck.reason
   const liveBranch = liveBranchCheck.value
   if (!liveBranch) throw new ThreadWorktreeDetachedError(input.worktree.branch)
-  await assertBranchName(projectRoot, liveBranch, 'Thread branch')
+  // `symbolicHeadBranch` delegates to `git symbolic-ref`, which rejects a
+  // malformed ref before returning its short name. Running `check-ref-format`
+  // on that same Git-authored value would add another sandboxed subprocess to
+  // every agent dispatch without strengthening this validation.
   if (liveBranch === input.worktree.baseBranch) {
     throw new Error('Thread worktree branch must differ from its recorded base branch')
   }
