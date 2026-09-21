@@ -1429,6 +1429,7 @@ src/renderer/views/projects-pane.ts
     // cap, so a grant of 0 means the plan's open todos ride into the still-open
     // note without a single machine closeout turn.
     let closeoutTurns = 0
+    const grantReasons: string[] = []
     const provider: LLMProvider = {
       async *stream(messages) {
         const last = messages.at(-1)
@@ -1448,11 +1449,18 @@ src/renderer/views/projects-pane.ts
       tools: [{ name: 'update_todos', description: 'x', parameters: {} }],
       maxSteps: 1,
       getOpenTodos: () => [{ id: '1', content: 'Pending step', status: 'pending' }],
-      continuationBudget: { tryGrant: () => false, remaining: () => 0 },
+      continuationBudget: {
+        tryGrant: (reason) => {
+          grantReasons.push(reason)
+          return false
+        },
+        remaining: () => 0,
+      },
       onChunk: (c) => chunks.push(c),
       executeTool: async () => '',
     })
     assert.equal(closeoutTurns, 0, 'no closeout turn runs once the shared budget is exhausted')
+    assert.deepEqual(grantReasons, ['todo-closeout'])
     assert.ok(
       chunks.some((c) => c.type === 'text' && c.text.includes('task plan still has open items')),
     )

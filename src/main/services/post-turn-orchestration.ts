@@ -108,7 +108,7 @@ export async function runPreReviewTodoGate(opts: RunParentContinuationOptions): 
     // Each pre-review attempt is a machine-initiated new turn (decision 5):
     // consume one grant so the local cap tightens inside the shared budget. When
     // the budget is exhausted, the gate stops (the open todos ride into review).
-    if (opts.continuationBudget && !opts.continuationBudget.tryGrant()) return
+    if (opts.continuationBudget && !opts.continuationBudget.tryGrant('pre-review-todo')) return
     await runParentContinuationTurn({
       ...opts,
       userNudge: OPEN_TODOS_PRE_REVIEW_NUDGE,
@@ -386,7 +386,7 @@ export async function runPostTurnReviewCycle(opts: RunPostTurnReviewCycleOptions
       // one grant from the shared budget before running it. The local cap
       // (`maxCycles`, from the plugin's `maxReviewCycles` setting) tightens inside
       // the shared cap — once the budget is exhausted, no further remediation runs.
-      if (!opts.continuationBudget.tryGrant()) break
+      if (!opts.continuationBudget.tryGrant('post-review-remediation')) break
 
       const { madeEdits } = await opts.runRemediationTurn(
         buildReviewRemediationNudge(review.verdict),
