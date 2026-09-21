@@ -55,7 +55,7 @@ export type PackageManager = 'npm' | 'pnpm' | 'yarn' | 'bun'
 export interface WorktreePreparationPlan {
   root: string
   fingerprint: string
-  ecosystem: 'uv' | 'go' | null
+  ecosystem: 'uv' | 'go' | 'cargo' | null
   manager: {
     name: PackageManager
     version: string | null
@@ -180,6 +180,47 @@ function validateGoContainedPath(root: string, manifest: string, path: string): 
   containedPreparationPath(root, fromRoot)
 }
 
+/** Automatic Cargo preparation never executes project-selected helpers or credentials. */
+function validateCargoConfig(root: string, path: string, problems: string[]): void {
+  const text = readPreparationText(root, path)
+  if (text === null) return
+  problems.push(
+    `${path} can change Cargo executables, credentials, environment, or sources; declare Cargo setup explicitly after reviewing it.`,
+  )
+}
+
+function findCargoAncestorConfig(root: string): string | null {
+  for (let directory = dirname(root); ; directory = dirname(directory)) {
+    for (const name of ['config.toml', 'config']) {
+      const path = join(directory, '.cargo', name)
+      if (lstatSync(path, { throwIfNoEntry: false })) return path
+    }
+    if (dirname(directory) === directory) return null
+  }
+}
+
+function findCargoAncestorManifest(root: string): string | null {
+  for (let directory = dirname(root); ; directory = dirname(directory)) {
+    const path = join(directory, 'Cargo.toml')
+    if (lstatSync(path, { throwIfNoEntry: false })) return path
+    if (dirname(directory) === directory) return null
+  }
+}
+
+/** Automatic Cargo currently supports only manifests without local graph declarations. */
+function validateCargoManifestBoundary(root: string, manifest: string, problems: string[]): void {
+  const text = readPreparationText(root, manifest)
+  if (text === null) return
+  // Without a TOML parser, accepting any path/workspace syntax would make
+  // containment depend on an incomplete textual grammar. False positives are
+  // deliberately routed to the existing reviewed declaration path.
+  if (/(?:path|workspace)/i.test(text) || text.includes('\\')) {
+    problems.push(
+      `${manifest} contains local path/workspace text or escaped syntax; automatic Cargo supports a narrow unescaped registry/Git manifest subset only. Declare Cargo setup explicitly after review.`,
+    )
+  }
+}
+
 export function readWorktreePreparationPlan(root: string): WorktreePreparationPlan {
   root = realpathSync(root)
   const problems: string[] = []
@@ -197,18 +238,22 @@ export function readWorktreePreparationPlan(root: string): WorktreePreparationPl
   // deliberately; executable availability is never package-manager selection.
   const uvProject = existsSync(join(root, 'uv.lock'))
   const goProject = existsSync(join(root, 'go.mod')) || existsSync(join(root, 'go.work'))
+  const cargoProject = existsSync(join(root, 'Cargo.toml'))
   const automaticEcosystems = [
     pkg ? 'JavaScript' : null,
     uvProject ? 'Python' : null,
     goProject ? 'Go' : null,
+    cargoProject ? 'Rust' : null,
   ].filter(Boolean)
   const ecosystem =
     !pkg && !config
-      ? uvProject && !goProject
+      ? uvProject && !goProject && !cargoProject
         ? 'uv'
-        : goProject && !uvProject
+        : goProject && !uvProject && !cargoProject
           ? 'go'
-          : null
+          : cargoProject && !uvProject && !goProject
+            ? 'cargo'
+            : null
       : null
   if (automaticEcosystems.length > 1 && !config)
     problems.push(
@@ -229,6 +274,10 @@ export function readWorktreePreparationPlan(root: string): WorktreePreparationPl
     (existsSync(join(root, 'go.sum')) || existsSync(join(root, 'go.work.sum')))
   )
     problems.push('Go checksum files require a go.mod or go.work in the selected project.')
+  if (ecosystem === 'cargo' && !existsSync(join(root, 'Cargo.lock')))
+    problems.push('Cargo.toml requires a reviewed Cargo.lock for automatic preparation.')
+  if (!config && !cargoProject && existsSync(join(root, 'Cargo.lock')))
+    problems.push('Cargo.lock requires a Cargo.toml in the selected project.')
   let manager: WorktreePreparationPlan['manager'] = null
   if (pkg) {
     const pin = pkg.packageManager?.match(
@@ -318,12 +367,50 @@ export function readWorktreePreparationPlan(root: string): WorktreePreparationPl
           exclude: ['**/vendor/**', '**/node_modules/**', '**/.git/**', '**/.tmp/**'],
         }).sort()
       : []
+  const cargoManifests =
+    ecosystem === 'cargo'
+      ? globSync(['**/Cargo.toml'], {
+          cwd: root,
+          exclude: ['**/target/**', '**/node_modules/**', '**/.git/**', '**/.tmp/**'],
+        }).sort()
+      : []
   if (goManifests.length + goSources.length > 20000)
     throw new Error('Too many Go project inputs to fingerprint safely.')
   if (ecosystem === 'go') {
     for (const manifest of goManifests.filter((path) => path.endsWith('go.mod')))
       validateGoLocalPaths(root, manifest)
     if (existsSync(join(root, 'go.work'))) validateGoLocalPaths(root, 'go.work')
+  }
+  if (cargoManifests.length > 10000)
+    throw new Error('Too many Cargo manifests to fingerprint safely.')
+  if (ecosystem === 'cargo') {
+    for (const manifest of cargoManifests) validateCargoManifestBoundary(root, manifest, problems)
+    for (const path of ['.cargo/config.toml', '.cargo/config'])
+      validateCargoConfig(root, path, problems)
+    if (existsSync(join(root, '.cargo/config.toml')) && existsSync(join(root, '.cargo/config')))
+      problems.push(
+        'Conflicting .cargo/config.toml and .cargo/config files; retain one reviewed Cargo configuration.',
+      )
+    const ancestorConfig = findCargoAncestorConfig(root)
+    if (ancestorConfig)
+      problems.push(
+        `Cargo configuration outside the selected project is not used automatically (${ancestorConfig}); select a project above it or declare setup explicitly.`,
+      )
+    const ancestorManifest = findCargoAncestorManifest(root)
+    if (ancestorManifest)
+      problems.push(
+        `An enclosing Cargo.toml may select a workspace outside this project (${ancestorManifest}); select that project or declare setup explicitly.`,
+      )
+    if (existsSync(join(root, 'rust-toolchain.toml')))
+      problems.push(
+        'rust-toolchain.toml requires parsed TOML selection; declare Cargo setup explicitly or use a bounded plain rust-toolchain channel.',
+      )
+    const legacyToolchain = readPreparationText(root, 'rust-toolchain')
+    if (
+      legacyToolchain !== null &&
+      (legacyToolchain.length > 128 || !/^[A-Za-z0-9._-]+$/.test(legacyToolchain))
+    )
+      problems.push('rust-toolchain must contain one bounded installed channel name.')
   }
   if (manifests.length > 10000) throw new Error('Too many project manifests to fingerprint safely.')
   const inputs = [
@@ -353,6 +440,12 @@ export function readWorktreePreparationPlan(root: string): WorktreePreparationPl
     'go.sum',
     'go.work',
     'go.work.sum',
+    'Cargo.toml',
+    'Cargo.lock',
+    '.cargo/config.toml',
+    '.cargo/config',
+    'rust-toolchain.toml',
+    'rust-toolchain',
     ...(ecosystem === 'uv'
       ? [
           'pyproject.toml',
@@ -372,6 +465,7 @@ export function readWorktreePreparationPlan(root: string): WorktreePreparationPl
         ]
       : []),
     ...(ecosystem === 'go' ? [...goManifests, ...goSources] : []),
+    ...(ecosystem === 'cargo' ? cargoManifests : []),
   ]
   for (const input of inputs) containedPreparationPath(root, input)
   for (const check of config?.checks ?? [])
@@ -456,6 +550,36 @@ export function readWorktreePreparationPlan(root: string): WorktreePreparationPl
           },
         ]
       : []
+  const cargoFetchArgs = [
+    'fetch',
+    '--locked',
+    '--manifest-path',
+    'Cargo.toml',
+    '--config',
+    'net.git-fetch-with-cli=false',
+  ]
+  const cargoChecks: PreparationCheck[] =
+    ecosystem === 'cargo'
+      ? [
+          {
+            name: 'Cargo',
+            command: { command: 'cargo', args: ['--version'] },
+            outputIncludes: 'cargo ',
+            fingerprintOutput: true,
+          },
+          {
+            name: 'Rust toolchain',
+            command: { command: 'rustc', args: ['-vV'] },
+            outputIncludes: 'rustc ',
+            fingerprintOutput: true,
+          },
+          {
+            name: 'Locked Cargo dependencies',
+            command: { command: 'cargo', args: [...cargoFetchArgs, '--offline'] },
+            fingerprintOutput: false,
+          },
+        ]
+      : []
   return {
     root,
     fingerprint,
@@ -479,8 +603,17 @@ export function readWorktreePreparationPlan(root: string): WorktreePreparationPl
         ? [{ command: 'uv', args: uvArgs }]
         : ecosystem === 'go'
           ? [{ command: 'go', args: goListArgs }]
-          : (config?.prepare ?? []),
-    checks: ecosystem === 'uv' ? uvChecks : ecosystem === 'go' ? goChecks : (config?.checks ?? []),
+          : ecosystem === 'cargo'
+            ? [{ command: 'cargo', args: cargoFetchArgs }]
+            : (config?.prepare ?? []),
+    checks:
+      ecosystem === 'uv'
+        ? uvChecks
+        : ecosystem === 'go'
+          ? goChecks
+          : ecosystem === 'cargo'
+            ? cargoChecks
+            : (config?.checks ?? []),
     problems,
   }
 }
@@ -552,7 +685,7 @@ export function formatPreparationPlan(plan: WorktreePreparationPlan, offline: bo
   return [
     `Project: ${plan.root}`,
     `Plan fingerprint: ${plan.fingerprint}`,
-    `Package manager: ${plan.manager ? `${plan.manager.name}${plan.manager.version ? `@${plan.manager.version}` : ' (version detected locally)'}` : plan.ecosystem === 'uv' ? 'uv (Python)' : plan.ecosystem === 'go' ? 'Go modules' : 'project-defined setup'}`,
+    `Package manager: ${plan.manager ? `${plan.manager.name}${plan.manager.version ? `@${plan.manager.version}` : ' (version detected locally)'}` : plan.ecosystem === 'uv' ? 'uv (Python)' : plan.ecosystem === 'go' ? 'Go modules' : plan.ecosystem === 'cargo' ? 'Cargo (Rust)' : 'project-defined setup'}`,
     ...(install
       ? [
           `Install through Socket Firewall: ${JSON.stringify([install.command, ...install.args])} (dependency lifecycle scripts disabled)`,
@@ -561,7 +694,9 @@ export function formatPreparationPlan(plan: WorktreePreparationPlan, offline: bo
     ...plan.prepare.map((step) =>
       plan.ecosystem === 'go'
         ? `Readonly package metadata load: ${JSON.stringify([step.command, ...step.args])}`
-        : `Project setup (executes repository code): ${JSON.stringify([step.command, ...step.args])}`,
+        : plan.ecosystem === 'cargo'
+          ? `Fetch locked Cargo dependencies: ${JSON.stringify([step.command, ...step.args])}`
+          : `Project setup (executes repository code): ${JSON.stringify([step.command, ...step.args])}`,
     ),
     ...plan.checks.map(
       (check) =>
@@ -585,7 +720,11 @@ export function formatPreparationApproval(
           : []),
         ...(plan.prepare.length
           ? [
-              plan.ecosystem === 'go' ? 'Load locked Go package metadata:' : 'Project setup:',
+              plan.ecosystem === 'go'
+                ? 'Load locked Go package metadata:'
+                : plan.ecosystem === 'cargo'
+                  ? 'Fetch locked Cargo dependencies:'
+                  : 'Project setup:',
               ...plan.prepare.map((step) => formatArgvForShell(step.command, step.args)),
             ]
           : []),
@@ -596,10 +735,14 @@ export function formatPreparationApproval(
         ? [
             'Loads package and test import metadata to populate the locked module cache; it does not run go generate, build, or test.',
           ]
-        : plan.prepare.length
-          ? ['Project setup executes repository code.']
-          : []),
+        : plan.ecosystem === 'cargo'
+          ? [
+              'Fetches the locked dependency sources only; it does not compile crates or run build scripts, tests, or binaries.',
+            ]
+          : plan.prepare.length
+            ? ['Project setup executes repository code.']
+            : []),
     ].join(' '),
-    bodyFooter: `Network: ${offline ? 'blocked for every subprocess' : 'allowed during preparation; checks stay offline'}. ${plan.ecosystem === 'go' ? 'The project remains read-only; writes use disposable scratch and Copse-managed caches.' : 'Writes are limited to this project and Copse-managed caches.'}\nProject: ${plan.root}`,
+    bodyFooter: `Network: ${offline ? 'blocked for every subprocess' : 'allowed during preparation; checks stay offline'}. ${plan.ecosystem === 'go' || plan.ecosystem === 'cargo' ? 'The project remains read-only; writes use disposable scratch and Copse-managed caches.' : 'Writes are limited to this project and Copse-managed caches.'}\nProject: ${plan.root}`,
   }
 }
