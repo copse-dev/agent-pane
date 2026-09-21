@@ -85811,6 +85811,13 @@ function mountInputBar(root, store2, api2, opts = {}) {
     { type: "button", class: "composer-image-describe-btn", hidden: "" },
     "Describe image"
   );
+  const descriptionPickerHost = el("span", { class: "composer-image-description-picker" });
+  const descriptionActions = el(
+    "fieldset",
+    { class: "composer-image-description-actions", "aria-label": "Image description", hidden: "" },
+    describeImagesBtn,
+    descriptionPickerHost
+  );
   const sendWithoutImagesBtn = el(
     "button",
     { type: "button", class: "composer-image-without-btn" },
@@ -85827,7 +85834,7 @@ function mountInputBar(root, store2, api2, opts = {}) {
     el("span", { class: "composer-image-warning-icon", "aria-hidden": "true" }, "!"),
     imageCompatibilityText,
     useImageModelBtn,
-    describeImagesBtn,
+    descriptionActions,
     sendWithoutImagesBtn
   );
   const contextFitText = el("span", { class: "composer-context-warning-text" });
@@ -86149,6 +86156,10 @@ function mountInputBar(root, store2, api2, opts = {}) {
   let recommendedImageModel = null;
   let recommendedDescriptionModel = null;
   let imageDescriptionInProgress = false;
+  let imageDescriptionSeq = 0;
+  let selectedDescriptionModel = null;
+  let descriptionModels = [];
+  let descriptionPicker = null;
   const checkoutChoices = /* @__PURE__ */ new Map();
   let checkoutPreparationInProgress = false;
   let automaticCheckoutMode = "shared";
@@ -86192,7 +86203,8 @@ ${description}
       recommended: recentRecommendation ?? supported.find((option) => option.value !== model) ?? null,
       // Prefer a local vision model for the image→text handoff. It keeps the
       // image on-device even when the final text-only model is remote.
-      descriptionModel: supported.find((option) => option.value.startsWith("lmstudio:")) ?? recentRecommendation ?? supported.find((option) => option.value !== model) ?? null
+      descriptionModels: supported,
+      descriptionModel: supported.find((option) => option.value === selectedDescriptionModel) ?? supported.find((option) => option.value.startsWith("lmstudio:")) ?? recentRecommendation ?? supported.find((option) => option.value !== model) ?? null
     };
   }
   function hideImageCompatibilityWarning() {
@@ -86200,21 +86212,55 @@ ${description}
     recommendedImageModel = null;
     recommendedDescriptionModel = null;
     imageCompatibilityWarning.hidden = true;
+    descriptionPicker?.destroy();
+    descriptionPicker = null;
+  }
+  function updateDescriptionControl() {
+    const descriptor = recommendedDescriptionModel;
+    descriptionActions.hidden = descriptor === null;
+    describeImagesBtn.hidden = descriptor === null;
+    if (!descriptor) {
+      descriptionPicker?.destroy();
+      descriptionPicker = null;
+      return;
+    }
+    const local = descriptor.value.startsWith("lmstudio:");
+    describeImagesBtn.textContent = `${local ? "Describe locally with" : "Describe with"} ${shortModelLabel(descriptor)}`;
+    if (!descriptionPicker) {
+      descriptionPicker = mountModelPicker(
+        descriptionPickerHost,
+        () => recommendedDescriptionModel?.value ?? "",
+        (value) => {
+          const option = descriptionModels.find((candidate) => candidate.value === value);
+          if (!option || imageDescriptionInProgress) return;
+          selectedDescriptionModel = value;
+          recommendedDescriptionModel = option;
+          updateDescriptionControl();
+        },
+        () => Promise.resolve(descriptionModels),
+        {
+          enableShortcut: false,
+          ariaLabel: "Choose image description model",
+          onClose: () => {
+            describeImagesBtn.focus();
+          }
+        }
+      );
+    } else {
+      void descriptionPicker.refresh();
+    }
   }
   async function refreshImageCompatibilityWarning() {
+    if (imageDescriptionInProgress) return;
     const seq = ++imageCompatibilitySeq;
     if (attachedImages.length === 0) {
-      imageCompatibilityWarning.hidden = true;
-      recommendedImageModel = null;
-      recommendedDescriptionModel = null;
+      hideImageCompatibilityWarning();
       return;
     }
     const result = await incompatibleImageModel();
     if (seq !== imageCompatibilitySeq) return;
     if (!result) {
-      imageCompatibilityWarning.hidden = true;
-      recommendedImageModel = null;
-      recommendedDescriptionModel = null;
+      hideImageCompatibilityWarning();
       return;
     }
     const count = attachedImages.length;
@@ -86225,11 +86271,8 @@ ${description}
       useImageModelBtn.textContent = `Use ${shortModelLabel(result.recommended)}`;
     }
     recommendedDescriptionModel = result.descriptionModel;
-    describeImagesBtn.hidden = result.descriptionModel === null;
-    if (result.descriptionModel) {
-      const local = result.descriptionModel.value.startsWith("lmstudio:");
-      describeImagesBtn.textContent = `${local ? "Describe locally with" : "Describe with"} ${shortModelLabel(result.descriptionModel)}`;
-    }
+    descriptionModels = result.descriptionModels;
+    updateDescriptionControl();
     sendWithoutImagesBtn.textContent = count === 1 ? "Send without image" : "Send without images";
     imageCompatibilityWarning.hidden = false;
   }
@@ -86249,8 +86292,10 @@ ${description}
     });
   }
   function setImageDescriptionBusy(busy, label) {
+    if (busy) imageCompatibilitySeq++;
     imageDescriptionInProgress = busy;
     imageCompatibilityWarning.setAttribute("aria-busy", String(busy));
+    descriptionActions.disabled = busy;
     describeImagesBtn.disabled = busy;
     useImageModelBtn.disabled = busy;
     sendWithoutImagesBtn.disabled = busy;
@@ -86263,22 +86308,31 @@ ${description}
     const projectId = store2.getState().activeProjectId;
     const threadId = getActiveThreadId();
     if (!projectId || !threadId) return;
+    const seq = ++imageDescriptionSeq;
     const descriptor = recommendedDescriptionModel;
     const modelLabel2 = shortModelLabel(descriptor);
-    const images = attachedImages.map((image) => image.dataUrl);
+    const describedImages = [...attachedImages];
+    const images = describedImages.map((image) => image.dataUrl);
     const userPrompt = composer.expandedValue().trim();
     setImageDescriptionBusy(true, modelLabel2);
-    void api2.agent.describeImages(projectId, threadId, descriptor.value, userPrompt, images).then(async ({ text: text2 }) => {
-      if (getActiveThreadId() !== threadId) return;
+    void api2.agent.describeImages(projectId, threadId, descriptor.value, userPrompt, images).then(({ text: text2 }) => {
+      if (seq !== imageDescriptionSeq || getActiveThreadId() !== threadId || store2.getState().activeProjectId !== projectId)
+        return;
+      const remainingImages = attachedImages.filter((image) => !describedImages.includes(image));
       removeAttachedImages();
+      for (const image of remainingImages) {
+        addImageChip(image.dataUrl, image.mimeType, image.detail);
+      }
       composer.value = appendImageDescription(composer.value, modelLabel2, text2);
       composer.el.dispatchEvent(new Event("input", { bubbles: true }));
       hideImageCompatibilityWarning();
       scheduleContextEstimate();
-      await submit();
+      composer.focus();
     }).catch((error61) => {
+      if (seq !== imageDescriptionSeq) return;
       showErrorToast(`Could not describe the image with ${modelLabel2}`, error61);
     }).finally(() => {
+      if (seq !== imageDescriptionSeq) return;
       setImageDescriptionBusy(false);
       if (getActiveThreadId() === threadId && attachedImages.length > 0) {
         void refreshImageCompatibilityWarning();
@@ -86470,6 +86524,9 @@ ${description}
       setThreadDraftPrompt(store2, activeComposerThreadId, composer.expandedValue());
       stashDraftAttachments(activeComposerThreadId);
     }
+    imageDescriptionSeq++;
+    selectedDescriptionModel = null;
+    if (imageDescriptionInProgress) setImageDescriptionBusy(false);
     clearAttachments();
     const thread = getThreadById(store2, id);
     composer.value = thread?.draftPrompt ?? "";
@@ -86815,7 +86872,7 @@ ${description}
   });
   let submitInProgress = false;
   async function submit() {
-    if (submitInProgress) return;
+    if (submitInProgress || imageDescriptionInProgress) return;
     submitInProgress = true;
     try {
       await performSubmit();
@@ -87399,6 +87456,7 @@ ${description}
     store2.on("settings_changed", () => {
       void refreshContainerRunsSetting();
       modelPicker.refresh();
+      void refreshImageCompatibilityWarning();
       refreshModelPricing();
       updateFooter();
       scheduleContextEstimate(0);
@@ -87462,6 +87520,8 @@ ${description}
       nextStepHint.destroy();
       unbindDrop();
       unregisterAttachments();
+      imageDescriptionSeq++;
+      descriptionPicker?.destroy();
       modelPicker.destroy();
       footerOverflow.destroy();
       guardedYolo.destroy();
@@ -87499,6 +87559,7 @@ var init_input_bar = __esm({
     init_parse_invocation();
     init_build_skill_user_content();
     init_footer_model_picker();
+    init_model_picker();
     init_footer_branch_status();
     init_context_wheel();
     init_footer_compact();
@@ -98848,12 +98909,74 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     console.warn(`[git-changes-pane] ${scope} failed:`, error61);
   }
   let seededProposedPath = null;
+  const snapshotsByOwner = /* @__PURE__ */ new Map();
+  let displayedOwnerKey = activeOwnerKey();
+  let ownerNeedsRefresh = false;
   function activeOwner2() {
     const { activeProjectId, activeThreadId } = store2.getState();
     return activeProjectId && activeThreadId ? { projectId: activeProjectId, threadId: activeThreadId } : null;
   }
+  function activeOwnerKey() {
+    const owner = activeOwner2();
+    return owner ? checkoutOwnerKey(owner.projectId, owner.threadId) : null;
+  }
+  function checkoutOwnerKey(projectId, threadId) {
+    const { activeProjectId, workspaceRoot, threads } = store2.getState();
+    const currentProject = projectId === activeProjectId;
+    const thread = currentProject ? threads.find((candidate) => candidate.id === threadId) : void 0;
+    const worktree = thread?.worktree;
+    return JSON.stringify([
+      projectId,
+      threadId,
+      currentProject ? workspaceRoot : null,
+      thread?.gitBranch,
+      worktree?.path,
+      worktree?.branch,
+      worktree?.baseCommit,
+      worktree?.createdAt,
+      worktree?.retiredAt
+    ]);
+  }
+  function adoptActiveOwner() {
+    const nextKey = activeOwnerKey();
+    if (nextKey === displayedOwnerKey) return false;
+    if (displayedOwnerKey && loaded && gitAvailable) {
+      snapshotsByOwner.delete(displayedOwnerKey);
+      snapshotsByOwner.set(displayedOwnerKey, {
+        status,
+        committed,
+        sessionBackup,
+        // Proposed changes already have their own owner-scoped content cache.
+        selection: selection2?.kind === "proposed" ? null : selection2
+      });
+      if (snapshotsByOwner.size > 20) {
+        const oldest = snapshotsByOwner.keys().next().value;
+        if (oldest !== void 0) snapshotsByOwner.delete(oldest);
+      }
+    }
+    displayedOwnerKey = nextKey;
+    ownerNeedsRefresh = true;
+    refreshRequestId++;
+    selectRequestId++;
+    const known = nextKey ? snapshotsByOwner.get(nextKey) : void 0;
+    loaded = known !== void 0;
+    gitAvailable = loaded;
+    status = known?.status ?? null;
+    committed = known?.committed ?? null;
+    sessionBackup = known?.sessionBackup ?? null;
+    selection2 = known?.selection ?? null;
+    pendingNavigate = null;
+    pendingProposedNavigate = null;
+    seededProposedPath = null;
+    conflictBanner.hidden = true;
+    renderRestoreBanner();
+    clearViewer();
+    renderList();
+    if (loaded && changesModeActive(store2)) void syncSelection();
+    return true;
+  }
   function proposedDiffCacheFor(projectId, threadId) {
-    const key = JSON.stringify([projectId, threadId]);
+    const key = checkoutOwnerKey(projectId, threadId);
     let cache = proposedDiffCachesByOwner.get(key);
     if (!cache) {
       cache = /* @__PURE__ */ new Map();
@@ -99407,6 +99530,8 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     }
   }
   async function refresh() {
+    adoptActiveOwner();
+    ownerNeedsRefresh = false;
     const requestId = ++refreshRequestId;
     const owner = activeOwner2();
     if (!owner) {
@@ -99428,6 +99553,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
       return;
     gitAvailable = available;
     if (!gitAvailable) {
+      if (displayedOwnerKey) snapshotsByOwner.delete(displayedOwnerKey);
       if (!availabilityFailed) gitFailureLogged = false;
       loaded = true;
       status = null;
@@ -99451,6 +99577,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     } catch (error61) {
       markGitUnavailable("git status read", error61);
       if (requestId !== refreshRequestId) return;
+      if (displayedOwnerKey) snapshotsByOwner.delete(displayedOwnerKey);
       status = null;
       committed = null;
       sessionBackup = null;
@@ -99471,6 +99598,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     await syncSelection();
   }
   async function syncFromStore() {
+    adoptActiveOwner();
     renderList();
     await syncSelection();
   }
@@ -99499,6 +99627,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
       if (changesModeActive(store2)) void refresh();
     }),
     store2.on("git_change_navigate", (path) => {
+      adoptActiveOwner();
       pendingNavigate = path;
       if (changesModeActive(store2)) void refresh();
     }),
@@ -99506,29 +99635,12 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
       if (changesModeActive(store2)) void refresh();
     }),
     store2.on("workspace_changed", () => {
-      loaded = false;
-      status = null;
-      committed = null;
-      sessionBackup = null;
-      renderRestoreBanner();
-      pendingProposedNavigate = null;
-      seededProposedPath = null;
-      clearSelection();
-      conflictBanner.hidden = true;
+      adoptActiveOwner();
       if (changesModeActive(store2)) void refresh();
-      else renderList();
     }),
     store2.on("threads_changed", () => {
-      refreshRequestId++;
-      selectRequestId++;
-      loaded = false;
-      status = null;
-      committed = null;
-      sessionBackup = null;
-      selection2 = null;
-      seededProposedPath = null;
+      if (!adoptActiveOwner() && !ownerNeedsRefresh) return;
       if (changesModeActive(store2)) void refresh();
-      else renderList();
     }),
     store2.on("theme_changed", (theme) => {
       monaco?.editor.setTheme(theme === "dark" ? "vs-dark" : "vs");
