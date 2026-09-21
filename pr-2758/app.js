@@ -111,6 +111,9 @@ var init_model_catalog_generated = __esm({
         inputPricePerMTok: 2.5,
         outputPricePerMTok: 10,
         cacheReadPricePerMTok: 1.25,
+        serviceTierPricing: {
+          priority: { inputPricePerMTok: 4.25, outputPricePerMTok: 17, cacheReadPricePerMTok: 2.125 }
+        },
         contextWindow: 128e3,
         maxOutputTokens: 16384
       },
@@ -118,6 +121,9 @@ var init_model_catalog_generated = __esm({
         inputPricePerMTok: 0.15,
         outputPricePerMTok: 0.6,
         cacheReadPricePerMTok: 0.075,
+        serviceTierPricing: {
+          priority: { inputPricePerMTok: 0.25, outputPricePerMTok: 1, cacheReadPricePerMTok: 0.125 }
+        },
         contextWindow: 128e3,
         maxOutputTokens: 16384
       },
@@ -125,6 +131,10 @@ var init_model_catalog_generated = __esm({
         inputPricePerMTok: 1.25,
         outputPricePerMTok: 10,
         cacheReadPricePerMTok: 0.125,
+        serviceTierPricing: {
+          flex: { inputPricePerMTok: 0.625, outputPricePerMTok: 5, cacheReadPricePerMTok: 0.0625 },
+          priority: { inputPricePerMTok: 2.5, outputPricePerMTok: 20, cacheReadPricePerMTok: 0.25 }
+        },
         contextWindow: 272e3,
         maxOutputTokens: 128e3
       },
@@ -132,6 +142,10 @@ var init_model_catalog_generated = __esm({
         inputPricePerMTok: 0.25,
         outputPricePerMTok: 2,
         cacheReadPricePerMTok: 0.025,
+        serviceTierPricing: {
+          flex: { inputPricePerMTok: 0.125, outputPricePerMTok: 1, cacheReadPricePerMTok: 0.0125 },
+          priority: { inputPricePerMTok: 0.45, outputPricePerMTok: 3.6, cacheReadPricePerMTok: 0.045 }
+        },
         contextWindow: 272e3,
         maxOutputTokens: 128e3
       },
@@ -139,6 +153,9 @@ var init_model_catalog_generated = __esm({
         inputPricePerMTok: 0.05,
         outputPricePerMTok: 0.4,
         cacheReadPricePerMTok: 5e-3,
+        serviceTierPricing: {
+          flex: { inputPricePerMTok: 0.025, outputPricePerMTok: 0.2, cacheReadPricePerMTok: 25e-4 }
+        },
         contextWindow: 272e3,
         maxOutputTokens: 128e3
       },
@@ -146,6 +163,10 @@ var init_model_catalog_generated = __esm({
         inputPricePerMTok: 5,
         outputPricePerMTok: 30,
         cacheReadPricePerMTok: 0.5,
+        serviceTierPricing: {
+          flex: { inputPricePerMTok: 2.5, outputPricePerMTok: 15, cacheReadPricePerMTok: 0.25 },
+          priority: { inputPricePerMTok: 12.5, outputPricePerMTok: 75, cacheReadPricePerMTok: 1.25 }
+        },
         contextWindow: 105e4,
         maxOutputTokens: 128e3
       },
@@ -154,6 +175,20 @@ var init_model_catalog_generated = __esm({
         outputPricePerMTok: 1.2,
         cacheReadPricePerMTok: 0.02,
         cacheCreationPricePerMTok: 0.25,
+        serviceTierPricing: {
+          flex: {
+            inputPricePerMTok: 0.1,
+            outputPricePerMTok: 0.6,
+            cacheReadPricePerMTok: 0.01,
+            cacheCreationPricePerMTok: 0.125
+          },
+          priority: {
+            inputPricePerMTok: 0.4,
+            outputPricePerMTok: 2.4,
+            cacheReadPricePerMTok: 0.04,
+            cacheCreationPricePerMTok: 0.5
+          }
+        },
         contextWindow: 922e3,
         maxOutputTokens: 128e3
       },
@@ -162,6 +197,20 @@ var init_model_catalog_generated = __esm({
         outputPricePerMTok: 20,
         cacheReadPricePerMTok: 0.4,
         cacheCreationPricePerMTok: 5,
+        serviceTierPricing: {
+          flex: {
+            inputPricePerMTok: 2,
+            outputPricePerMTok: 10,
+            cacheReadPricePerMTok: 0.2,
+            cacheCreationPricePerMTok: 2.5
+          },
+          priority: {
+            inputPricePerMTok: 8,
+            outputPricePerMTok: 40,
+            cacheReadPricePerMTok: 0.8,
+            cacheCreationPricePerMTok: 10
+          }
+        },
         contextWindow: 922e3,
         maxOutputTokens: 128e3
       },
@@ -170,6 +219,20 @@ var init_model_catalog_generated = __esm({
         outputPricePerMTok: 12,
         cacheReadPricePerMTok: 0.2,
         cacheCreationPricePerMTok: 2.5,
+        serviceTierPricing: {
+          flex: {
+            inputPricePerMTok: 1,
+            outputPricePerMTok: 6,
+            cacheReadPricePerMTok: 0.1,
+            cacheCreationPricePerMTok: 1.25
+          },
+          priority: {
+            inputPricePerMTok: 4,
+            outputPricePerMTok: 24,
+            cacheReadPricePerMTok: 0.4,
+            cacheCreationPricePerMTok: 5
+          }
+        },
         contextWindow: 922e3,
         maxOutputTokens: 128e3
       },
@@ -178,6 +241,20 @@ var init_model_catalog_generated = __esm({
         outputPricePerMTok: 50,
         cacheReadPricePerMTok: 1,
         cacheCreationPricePerMTok: 12.5,
+        serviceTierPricing: {
+          flex: {
+            inputPricePerMTok: 5,
+            outputPricePerMTok: 25,
+            cacheReadPricePerMTok: 0.5,
+            cacheCreationPricePerMTok: 6.25
+          },
+          priority: {
+            inputPricePerMTok: 20,
+            outputPricePerMTok: 100,
+            cacheReadPricePerMTok: 2,
+            cacheCreationPricePerMTok: 25
+          }
+        },
         contextWindow: 922e3,
         maxOutputTokens: 128e3
       }
@@ -202,6 +279,14 @@ function titleCaseSegment(segment) {
     if (lower === "mini" || lower === "nano") return lower;
     return `${lower.charAt(0).toUpperCase()}${lower.slice(1)}`;
   }).join(" ");
+}
+function canonicalGrokLabel(labelOrId) {
+  const match = GROK_NAME.exec(labelOrId.trim());
+  if (!match?.[2]) return null;
+  const rest = match[3] ?? "";
+  if (rest !== "" && !/^\s/.test(rest)) return null;
+  const family = match[1] ? "Grok Build" : "Grok";
+  return `${family} ${match[2].replace(/-/g, ".")}${rest}`;
 }
 function canonicalVendorLabel(labelOrId) {
   const trimmed2 = labelOrId.trim();
@@ -288,14 +373,14 @@ function canonicalModelLabel(labelOrId) {
     const family = `${parsed2.family.charAt(0).toUpperCase()}${parsed2.family.slice(1)}`;
     return `Claude ${family} ${parsed2.version}${parsed2.rest}`;
   }
-  return canonicalGptLabel(labelOrId) ?? canonicalVendorLabel(labelOrId) ?? labelOrId;
+  return canonicalGptLabel(labelOrId) ?? canonicalVendorLabel(labelOrId) ?? canonicalGrokLabel(labelOrId) ?? labelOrId;
 }
 function claudeModelIdFromLabel(labelOrId) {
   const parsed2 = parseClaudeName(labelOrId);
   if (!parsed2 || parsed2.rest.trim() !== "") return null;
   return `claude-${parsed2.family}-${parsed2.version.replace(/\./g, "-")}`;
 }
-var CLAUDE_FAMILIES, FAMILY_PATTERN, VERSION_PATTERN, VERSION_FIRST, FAMILY_FIRST, GPT_NAME, GEMINI_NAME, GLM_NAME, DEEPSEEK_NAME, MISTRAL_NAME, MODELLED_VENDORS, DATED_SNAPSHOT, OPTION_SUFFIX, TOKEN_SPELLING, PARAM_COUNT, SHORT_CODE;
+var CLAUDE_FAMILIES, FAMILY_PATTERN, VERSION_PATTERN, VERSION_FIRST, FAMILY_FIRST, GPT_NAME, GEMINI_NAME, GLM_NAME, DEEPSEEK_NAME, MISTRAL_NAME, GROK_NAME, MODELLED_VENDORS, DATED_SNAPSHOT, OPTION_SUFFIX, TOKEN_SPELLING, PARAM_COUNT, SHORT_CODE;
 var init_model_label = __esm({
   "packages/llm/src/model-label.ts"() {
     CLAUDE_FAMILIES = ["opus", "sonnet", "haiku", "fable"];
@@ -314,7 +399,8 @@ var init_model_label = __esm({
     GLM_NAME = /^glm-(\d+(?:\.\d+)?)(?:-([a-z].*))?$/;
     DEEPSEEK_NAME = /^deepseek-([a-z]+)(?:-v(\d+(?:\.\d+)?))?$/;
     MISTRAL_NAME = /^mistral-([a-z]+)(?:-([a-z]+))?$/;
-    MODELLED_VENDORS = ["claude", "gpt", "gemini", "glm", "deepseek", "mistral"];
+    GROK_NAME = /^(?:(?:xai|spacexai):\s*)?grok[\s-]+(?:(build)[\s-]+)?(\d+(?:[.-]\d+)?)(.*)$/i;
+    MODELLED_VENDORS = ["claude", "gpt", "gemini", "glm", "deepseek", "mistral", "grok"];
     DATED_SNAPSHOT = /-(?:\d{8}|\d{4}-\d{2}-\d{2})$/;
     OPTION_SUFFIX = /\[[^\]]*\]$/;
     TOKEN_SPELLING = {
@@ -20648,6 +20734,194 @@ var init_active_thread_owner = __esm({
   }
 });
 
+// packages/llm/src/service-tier.ts
+function usageServiceTierFor(value) {
+  switch (value) {
+    case "flex":
+    case "priority":
+    case "scale":
+      return value;
+    case "fast":
+      return "priority";
+    case "auto":
+    case "default":
+      return void 0;
+  }
+}
+function usageServiceTierForCall(requested, response) {
+  return response === void 0 ? requested === void 0 ? void 0 : usageServiceTierFor(requested) : usageServiceTierFor(response);
+}
+var SERVICE_TIERS, isServiceTier, USAGE_SERVICE_TIERS, SERVICE_TIER_CHOICES;
+var init_service_tier = __esm({
+  "packages/llm/src/service-tier.ts"() {
+    init_member_of();
+    SERVICE_TIERS = ["auto", "default", "flex", "fast", "priority", "scale"];
+    isServiceTier = memberOf(SERVICE_TIERS);
+    USAGE_SERVICE_TIERS = ["flex", "priority", "scale"];
+    SERVICE_TIER_CHOICES = [
+      {
+        value: "auto",
+        label: "Project default",
+        description: "Follow the service tier configured for this OpenAI Project."
+      },
+      {
+        value: "default",
+        label: "Standard",
+        description: "Use standard pay-as-you-go pricing and performance."
+      },
+      {
+        value: "flex",
+        label: "Flex",
+        description: "Cheaper per token, slower, and may queue or fail under load. Suits batch work."
+      },
+      {
+        value: "fast",
+        label: "Fast",
+        description: "Faster and more consistent, at a higher per-token price."
+      }
+    ];
+  }
+});
+
+// packages/llm/src/model-usage.ts
+function nonNegative(value) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0;
+}
+function tokenUsageOrNull(value) {
+  if (!isRecord(value)) return null;
+  const usage = value;
+  if (typeof usage["inputTokens"] !== "number" || typeof usage["outputTokens"] !== "number") {
+    return null;
+  }
+  if (!Number.isFinite(usage["inputTokens"]) || !Number.isFinite(usage["outputTokens"])) return null;
+  const cacheReadTokens = usage["cacheReadTokens"];
+  const cacheCreationTokens = usage["cacheCreationTokens"];
+  if (cacheReadTokens !== void 0 && (typeof cacheReadTokens !== "number" || !Number.isFinite(cacheReadTokens))) {
+    return null;
+  }
+  if (cacheCreationTokens !== void 0 && (typeof cacheCreationTokens !== "number" || !Number.isFinite(cacheCreationTokens))) {
+    return null;
+  }
+  return {
+    inputTokens: usage["inputTokens"],
+    outputTokens: usage["outputTokens"],
+    ...typeof cacheReadTokens === "number" ? { cacheReadTokens } : {},
+    ...typeof cacheCreationTokens === "number" ? { cacheCreationTokens } : {}
+  };
+}
+function cappedTierUsage(requested, remaining) {
+  const inputTokens = Math.min(nonNegative(requested.inputTokens), remaining.inputTokens);
+  const outputTokens = Math.min(nonNegative(requested.outputTokens), remaining.outputTokens);
+  const availableCachedInput = inputTokens;
+  const cacheReadTokens = Math.min(
+    nonNegative(requested.cacheReadTokens),
+    remaining.cacheReadTokens ?? 0,
+    availableCachedInput
+  );
+  const cacheCreationTokens = Math.min(
+    nonNegative(requested.cacheCreationTokens),
+    remaining.cacheCreationTokens ?? 0,
+    availableCachedInput - cacheReadTokens
+  );
+  return {
+    inputTokens,
+    outputTokens,
+    ...requested.cacheReadTokens !== void 0 ? { cacheReadTokens } : {},
+    ...requested.cacheCreationTokens !== void 0 ? { cacheCreationTokens } : {}
+  };
+}
+function remainingAfter(remaining, used) {
+  const inputTokens = remaining.inputTokens - used.inputTokens;
+  const outputTokens = remaining.outputTokens - used.outputTokens;
+  const cacheReadTokens = Math.min(
+    remaining.cacheReadTokens === void 0 ? 0 : Math.max(0, remaining.cacheReadTokens - (used.cacheReadTokens ?? 0)),
+    inputTokens
+  );
+  const cacheCreationTokens = Math.min(
+    remaining.cacheCreationTokens === void 0 ? 0 : Math.max(0, remaining.cacheCreationTokens - (used.cacheCreationTokens ?? 0)),
+    inputTokens - cacheReadTokens
+  );
+  return {
+    inputTokens,
+    outputTokens,
+    ...remaining.cacheReadTokens !== void 0 ? { cacheReadTokens } : {},
+    ...remaining.cacheCreationTokens !== void 0 ? { cacheCreationTokens } : {}
+  };
+}
+function addTokens(prev, delta) {
+  const next = {
+    inputTokens: prev.inputTokens + delta.inputTokens,
+    outputTokens: prev.outputTokens + delta.outputTokens
+  };
+  if (delta.cacheReadTokens !== void 0 || prev.cacheReadTokens !== void 0) {
+    next.cacheReadTokens = (prev.cacheReadTokens ?? 0) + (delta.cacheReadTokens ?? 0);
+  }
+  if (delta.cacheCreationTokens !== void 0 || prev.cacheCreationTokens !== void 0) {
+    next.cacheCreationTokens = (prev.cacheCreationTokens ?? 0) + (delta.cacheCreationTokens ?? 0);
+  }
+  return next;
+}
+function mergeModelUsage(prev, delta) {
+  const next = addTokens(prev, delta);
+  const tiers = USAGE_SERVICE_TIERS.filter(
+    (tier) => prev.serviceTierUsage?.[tier] !== void 0 || delta.serviceTierUsage?.[tier] !== void 0
+  );
+  if (tiers.length > 0) {
+    const serviceTierUsage = {};
+    for (const tier of tiers) {
+      const before = prev.serviceTierUsage?.[tier];
+      const addition = delta.serviceTierUsage?.[tier];
+      if (before && addition) serviceTierUsage[tier] = addTokens(before, addition);
+      else if (before) serviceTierUsage[tier] = before;
+      else if (addition) serviceTierUsage[tier] = addition;
+    }
+    next.serviceTierUsage = serviceTierUsage;
+  }
+  return next;
+}
+function usageAtServiceTier(usage, tier) {
+  const base = {
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+    ...usage.cacheReadTokens !== void 0 ? { cacheReadTokens: usage.cacheReadTokens } : {},
+    ...usage.cacheCreationTokens !== void 0 ? { cacheCreationTokens: usage.cacheCreationTokens } : {}
+  };
+  if (tier !== void 0) {
+    base.serviceTierUsage = {
+      [tier]: {
+        inputTokens: base.inputTokens,
+        outputTokens: base.outputTokens,
+        ...base.cacheReadTokens !== void 0 ? { cacheReadTokens: base.cacheReadTokens } : {},
+        ...base.cacheCreationTokens !== void 0 ? { cacheCreationTokens: base.cacheCreationTokens } : {}
+      }
+    };
+  }
+  return base;
+}
+function splitServiceTierUsage(usage) {
+  let remaining = {
+    inputTokens: nonNegative(usage.inputTokens),
+    outputTokens: nonNegative(usage.outputTokens),
+    ...usage.cacheReadTokens !== void 0 ? { cacheReadTokens: nonNegative(usage.cacheReadTokens) } : {},
+    ...usage.cacheCreationTokens !== void 0 ? { cacheCreationTokens: nonNegative(usage.cacheCreationTokens) } : {}
+  };
+  const tiers = {};
+  for (const tier of USAGE_SERVICE_TIERS) {
+    const bucket = tokenUsageOrNull(usage.serviceTierUsage?.[tier]);
+    if (!bucket) continue;
+    const capped = cappedTierUsage(bucket, remaining);
+    tiers[tier] = capped;
+    remaining = remainingAfter(remaining, capped);
+  }
+  return { standard: remaining, tiers };
+}
+var init_model_usage = __esm({
+  "packages/llm/src/model-usage.ts"() {
+    init_unknown_value();
+    init_service_tier();
+  }
+});
+
 // packages/std/src/array-utils.ts
 function at(array2, index) {
   const value = array2[index];
@@ -21169,15 +21443,11 @@ function addUsageDelta(store2, threadId, delta) {
   if (!thread) return;
   const byModel = { ...thread.usage.byModel ?? {} };
   const prev = byModel[delta.model] ?? { inputTokens: 0, outputTokens: 0 };
-  byModel[delta.model] = addCacheTokens(
-    {
-      inputTokens: prev.inputTokens + delta.inputTokens,
-      outputTokens: prev.outputTokens + delta.outputTokens
-    },
-    prev.cacheReadTokens,
-    prev.cacheCreationTokens,
-    delta
+  const usage = delta.serviceTierUsage !== void 0 ? delta : usageAtServiceTier(
+    delta,
+    usageServiceTierForCall(delta.requestedServiceTier, delta.responseServiceTier)
   );
+  byModel[delta.model] = mergeModelUsage(prev, usage);
   updateUsage(
     store2,
     threadId,
@@ -21362,6 +21632,8 @@ function applyPreparedThreadCheckout(store2, threadId, prepared) {
 var randomUUID, messageIndexByStore;
 var init_thread_helpers = __esm({
   "src/shared/store/thread-helpers.ts"() {
+    init_model_usage();
+    init_service_tier();
     init_array_utils2();
     init_thread_proposal2();
     init_thread_sort();
@@ -24767,6 +25039,140 @@ var init_panels = __esm({
   }
 });
 
+// src/shared/fs/image-path.ts
+function imageMimeType(path) {
+  const name = path.split("/").pop()?.toLowerCase() ?? "";
+  const ext = name.split(".").pop() ?? "";
+  return IMAGE_MIME_BY_EXT[ext] ?? null;
+}
+function isImagePath(path) {
+  return imageMimeType(path) !== null;
+}
+function isRasterImagePath(path) {
+  const mime = imageMimeType(path);
+  return mime !== null && mime !== "image/svg+xml";
+}
+var IMAGE_MIME_BY_EXT;
+var init_image_path = __esm({
+  "src/shared/fs/image-path.ts"() {
+    IMAGE_MIME_BY_EXT = {
+      avif: "image/avif",
+      bmp: "image/bmp",
+      gif: "image/gif",
+      ico: "image/x-icon",
+      jpeg: "image/jpeg",
+      jpg: "image/jpeg",
+      png: "image/png",
+      svg: "image/svg+xml",
+      webp: "image/webp"
+    };
+  }
+});
+
+// src/renderer/attachments/attachment-preview.ts
+function releaseCurrent() {
+  const cleanup = currentCleanup;
+  currentCleanup = null;
+  cleanup?.();
+  bodyEl?.replaceChildren();
+}
+function ensureDialog3() {
+  if (dialog) {
+    if (!dialog.isConnected) {
+      if (dialog.open) dialog.close();
+      document.body.append(dialog);
+    }
+    return dialog;
+  }
+  dialog = document.createElement("dialog");
+  dialog.className = "attachment-preview-dialog";
+  titleEl = el("div", { class: "attachment-preview-title" });
+  bodyEl = el("div", { class: "attachment-preview-body" });
+  const closeBtn = el(
+    "button",
+    { type: "button", class: "attachment-preview-close", "aria-label": "Close" },
+    "\xD7"
+  );
+  const header = el("div", { class: "attachment-preview-header" }, titleEl, closeBtn);
+  dialog.append(header, bodyEl);
+  document.body.append(dialog);
+  closeBtn.addEventListener("click", () => dialog?.close());
+  dialog.addEventListener("click", (event) => {
+    if (event.target === dialog) dialog?.close();
+  });
+  dialog.addEventListener("close", () => {
+    activeToken += 1;
+    releaseCurrent();
+  });
+  return dialog;
+}
+function statusNode(message2) {
+  return el("p", { class: "attachment-preview-status" }, message2);
+}
+function openAttachmentPreview(options) {
+  const previewDialog = ensureDialog3();
+  const previewBody = bodyEl;
+  const previewTitle = titleEl;
+  if (!previewBody || !previewTitle) throw new Error("Attachment preview dialog failed to mount");
+  activeToken += 1;
+  const token = activeToken;
+  releaseCurrent();
+  currentCleanup = options.onClose ?? null;
+  previewDialog.dataset["previewKind"] = options.kind;
+  previewDialog.setAttribute(
+    "aria-label",
+    options.ariaLabel ?? `Attachment preview: ${options.title}`
+  );
+  previewTitle.textContent = options.title;
+  if (options.content) previewBody.replaceChildren(options.content);
+  else previewBody.replaceChildren(statusNode(options.status ?? `Loading ${options.title}\u2026`));
+  if (!previewDialog.open) previewDialog.showModal();
+  const isActive = () => token === activeToken && previewDialog.open;
+  return {
+    isActive,
+    setContent(content) {
+      if (!isActive()) return false;
+      previewBody.replaceChildren(content);
+      return true;
+    },
+    setStatus(message2) {
+      if (!isActive()) return false;
+      previewBody.replaceChildren(statusNode(message2));
+      return true;
+    },
+    close() {
+      if (isActive()) previewDialog.close();
+    }
+  };
+}
+var dialog, titleEl, bodyEl, currentCleanup, activeToken;
+var init_attachment_preview = __esm({
+  "src/renderer/attachments/attachment-preview.ts"() {
+    init_helpers();
+    dialog = null;
+    titleEl = null;
+    bodyEl = null;
+    currentCleanup = null;
+    activeToken = 0;
+  }
+});
+
+// packages/std/src/errors.ts
+function errorMessage(err2) {
+  return err2 instanceof Error ? err2.message : String(err2);
+}
+var init_errors3 = __esm({
+  "packages/std/src/errors.ts"() {
+  }
+});
+
+// src/shared/errors.ts
+var init_errors4 = __esm({
+  "src/shared/errors.ts"() {
+    init_errors3();
+  }
+});
+
 // src/renderer/controller/files.ts
 function detectLanguage(filePath) {
   const lower = filePath.split("/").pop()?.toLowerCase() ?? "";
@@ -24776,6 +25182,47 @@ function detectLanguage(filePath) {
 }
 async function openWorkspaceFile(store2, api2, path, reveal) {
   const { projectId, threadId } = requireActiveThreadOwner(store2);
+  if (isImagePath(path) && (!reveal || isRasterImagePath(path))) {
+    const unsubs = [];
+    const preview = openAttachmentPreview({
+      kind: "image",
+      title: path,
+      ariaLabel: `Image preview: ${path}`,
+      onClose: () => {
+        for (const unsubscribe of unsubs) unsubscribe();
+      }
+    });
+    const isOwner = () => {
+      const current = getActiveThreadOwner(store2);
+      return current?.projectId === projectId && current.threadId === threadId;
+    };
+    const checkOwner = () => {
+      if (!isOwner()) preview.close();
+    };
+    unsubs.push(
+      store2.on("panel_changed", checkOwner),
+      store2.on("threads_changed", checkOwner),
+      store2.on("workspace_changed", checkOwner),
+      store2.on("thread_checkout_changed", (changedThreadId) => {
+        if (changedThreadId === threadId) preview.close();
+      })
+    );
+    try {
+      const src = await api2.fs.readImage(projectId, threadId, path);
+      if (!isOwner()) {
+        preview.close();
+        return;
+      }
+      preview.setContent(el("img", { class: "image-expand-image", src, alt: path }));
+    } catch (error61) {
+      if (!isOwner()) {
+        preview.close();
+        return;
+      }
+      preview.setStatus(`Could not preview ${path}: ${errorMessage(error61)}`);
+    }
+    return;
+  }
   const content = await api2.fs.readFile(projectId, threadId, path);
   const currentOwner = getActiveThreadOwner(store2);
   if (currentOwner?.projectId !== projectId || currentOwner.threadId !== threadId) return;
@@ -24827,6 +25274,10 @@ var init_files = __esm({
   "src/renderer/controller/files.ts"() {
     init_active_thread_owner();
     init_panels();
+    init_image_path();
+    init_attachment_preview();
+    init_helpers();
+    init_errors4();
     LANG = {
       ts: "typescript",
       tsx: "typescript",
@@ -26811,6 +27262,7 @@ function createDemoApi(scenario, options = {}) {
     },
     fs: {
       readFile: (_projectId, _threadId, path) => resolved(writtenFiles.get(path) ?? ""),
+      readImage: () => Promise.reject(new Error("Workspace images are unavailable in this demo")),
       writeFile: resolvedVoid,
       readdir: () => resolved(["src", "tests", "package.json"]),
       listDir: () => resolved([
@@ -27105,6 +27557,7 @@ This response is streamed through the real renderer event path.`
       downloadArtifact: unsupported,
       artifactImageDataUrl: unsupported,
       models: emptyArray,
+      refreshImportedThread: () => resolved(null),
       discoverExternal: (_projectId) => resolved({
         imported: [],
         scanned: 0,
@@ -30182,22 +30635,6 @@ var init_rename_blur = __esm({
   }
 });
 
-// packages/std/src/errors.ts
-function errorMessage(err2) {
-  return err2 instanceof Error ? err2.message : String(err2);
-}
-var init_errors3 = __esm({
-  "packages/std/src/errors.ts"() {
-  }
-});
-
-// src/shared/errors.ts
-var init_errors4 = __esm({
-  "src/shared/errors.ts"() {
-    init_errors3();
-  }
-});
-
 // src/shared/auto-approval.ts
 function sanitizeAutoApprovalLevel(value) {
   return isAutoApprovalLevel(value) ? value : DEFAULT_AUTO_APPROVAL_LEVEL;
@@ -31152,11 +31589,16 @@ function pricingForModel(model, pricing) {
   if (!info) return null;
   return info;
 }
+function pricingForTier(model, tier, pricing) {
+  const standard = pricingForModel(model, pricing);
+  if (!standard) return { pricing: null, fallback: false };
+  const tierPricing = standard.serviceTierPricing?.[tier];
+  return tierPricing ? { pricing: tierPricing, fallback: false } : { pricing: standard, fallback: true };
+}
 function hasModelPricing(model, pricing) {
   return pricingForModel(model, pricing) !== null;
 }
-function costForModelUsage(model, usage, pricing) {
-  const info = pricingForModel(model, pricing);
+function costForUsage(usage, info) {
   if (!info) return 0;
   const cacheRead = usage.cacheReadTokens ?? 0;
   const cacheCreation = usage.cacheCreationTokens ?? 0;
@@ -31167,6 +31609,23 @@ function costForModelUsage(model, usage, pricing) {
   const cacheCreationRate = info.cacheCreationPricePerMTok ?? inputRate;
   return freshInput / 1e6 * inputRate + cacheRead / 1e6 * cacheReadRate + cacheCreation / 1e6 * cacheCreationRate + usage.outputTokens / 1e6 * info.outputPricePerMTok;
 }
+function costForModelUsageWithDetails(model, usage, pricing) {
+  const standard = pricingForModel(model, pricing);
+  const split = splitServiceTierUsage(usage);
+  let costUsd = costForUsage(split.standard, standard);
+  let tierPricingFallback = false;
+  for (const tier of USAGE_SERVICE_TIERS) {
+    const tierUsage = split.tiers[tier];
+    if (!tierUsage) continue;
+    const resolved3 = pricingForTier(model, tier, pricing);
+    costUsd += costForUsage(tierUsage, resolved3.pricing);
+    tierPricingFallback ||= resolved3.fallback;
+  }
+  return { costUsd, tierPricingFallback };
+}
+function costForModelUsage(model, usage, pricing) {
+  return costForModelUsageWithDetails(model, usage, pricing).costUsd;
+}
 function estimateUsageCost(byModel, pricing) {
   const entries2 = Object.entries(byModel).filter(([, u]) => u.inputTokens > 0 || u.outputTokens > 0);
   if (entries2.length === 0) return "";
@@ -31174,6 +31633,7 @@ function estimateUsageCost(byModel, pricing) {
   let hasLocal = false;
   let hasPricedCloud = false;
   let hasUnpricedCloud = false;
+  let hasTierPricingFallback = false;
   for (const [model, usage] of entries2) {
     if (isLocalModel(model)) {
       hasLocal = true;
@@ -31181,18 +31641,20 @@ function estimateUsageCost(byModel, pricing) {
     }
     if (hasModelPricing(model, pricing)) hasPricedCloud = true;
     else hasUnpricedCloud = true;
-    const cost = costForModelUsage(model, usage, pricing);
-    totalCost += cost;
+    const cost = costForModelUsageWithDetails(model, usage, pricing);
+    totalCost += cost.costUsd;
+    hasTierPricingFallback ||= cost.tierPricingFallback;
   }
   if (totalCost === 0) {
     if (hasUnpricedCloud) return "";
-    if (hasPricedCloud) return "free";
+    if (hasPricedCloud) return hasTierPricingFallback ? "free (standard tier fallback)" : "free";
     if (hasLocal) return "free (local)";
     return "";
   }
   const costStr = totalCost < 0.01 ? "<$0.01" : `~$${totalCost.toFixed(2)}`;
-  if (hasUnpricedCloud) return `${costStr} (partial)`;
-  return hasLocal ? `${costStr} (+ local free)` : costStr;
+  const qualifiedCost = hasUnpricedCloud ? `${costStr} (partial)` : costStr;
+  const tierQualifiedCost = hasTierPricingFallback ? `${qualifiedCost} (standard tier fallback)` : qualifiedCost;
+  return hasLocal ? `${tierQualifiedCost} (+ local free)` : tierQualifiedCost;
 }
 function formatThreadUsageCost(usage, fallbackChatModel, pricing) {
   if (usage.byModel && Object.keys(usage.byModel).length > 0) {
@@ -31209,6 +31671,8 @@ function formatThreadUsageCost(usage, fallbackChatModel, pricing) {
 var init_estimate_cost = __esm({
   "packages/llm/src/estimate-cost.ts"() {
     init_model_catalog();
+    init_model_usage();
+    init_service_tier();
   }
 });
 
@@ -40186,8 +40650,9 @@ var init_model_intellect_generated = __esm({
       "GPT-5.6 Terra": "gpt-5.6-terra",
       "GPT-5.6-Terra": "gpt-5.6-terra",
       "Grok 4.5": "grok-4.5",
+      "Grok Build 0.1": "grok-build-0-1-06-16",
       "grok-4-5": "grok-4.5",
-      "grok-build-0.1": "grok-4.5",
+      "grok-build-0.1": "grok-build-0-1-06-16",
       "Haiku 4.5": "claude-haiku-4-5",
       "Kimi K2.6": "moonshotai/kimi-k2.6",
       "Kimi K3": "moonshotai/kimi-k3",
@@ -40224,7 +40689,10 @@ var init_model_intellect_generated = __esm({
       "qwen3.6-35b-a3b": "qwen/qwen3.6-35b-a3b",
       "Sonnet 4.6": "claude-sonnet-4-6",
       "Sonnet 5": "claude-sonnet-5",
+      "SpaceXAI: Grok Build 0.1": "grok-build-0-1-06-16",
       "x-ai/grok-4.5": "grok-4.5",
+      "x-ai/grok-build-0.1": "grok-build-0-1-06-16",
+      "xAI: Grok Build 0.1": "grok-build-0-1-06-16",
       "xai/grok-4.5": "grok-4.5",
       "z-ai/glm-5.2": "zai-org/GLM-5.2",
       "zai/glm-5.2": "zai-org/GLM-5.2"
@@ -41607,94 +42075,6 @@ function formatByteSize(bytes) {
 }
 var init_file_bytes = __esm({
   "src/shared/file-bytes.ts"() {
-  }
-});
-
-// src/renderer/attachments/attachment-preview.ts
-function releaseCurrent() {
-  const cleanup = currentCleanup;
-  currentCleanup = null;
-  cleanup?.();
-  bodyEl?.replaceChildren();
-}
-function ensureDialog3() {
-  if (dialog) {
-    if (!dialog.isConnected) {
-      if (dialog.open) dialog.close();
-      document.body.append(dialog);
-    }
-    return dialog;
-  }
-  dialog = document.createElement("dialog");
-  dialog.className = "attachment-preview-dialog";
-  titleEl = el("div", { class: "attachment-preview-title" });
-  bodyEl = el("div", { class: "attachment-preview-body" });
-  const closeBtn = el(
-    "button",
-    { type: "button", class: "attachment-preview-close", "aria-label": "Close" },
-    "\xD7"
-  );
-  const header = el("div", { class: "attachment-preview-header" }, titleEl, closeBtn);
-  dialog.append(header, bodyEl);
-  document.body.append(dialog);
-  closeBtn.addEventListener("click", () => dialog?.close());
-  dialog.addEventListener("click", (event) => {
-    if (event.target === dialog) dialog?.close();
-  });
-  dialog.addEventListener("close", () => {
-    activeToken += 1;
-    releaseCurrent();
-  });
-  return dialog;
-}
-function statusNode(message2) {
-  return el("p", { class: "attachment-preview-status" }, message2);
-}
-function openAttachmentPreview(options) {
-  const previewDialog = ensureDialog3();
-  const previewBody = bodyEl;
-  const previewTitle = titleEl;
-  if (!previewBody || !previewTitle) throw new Error("Attachment preview dialog failed to mount");
-  activeToken += 1;
-  const token = activeToken;
-  releaseCurrent();
-  currentCleanup = options.onClose ?? null;
-  previewDialog.dataset["previewKind"] = options.kind;
-  previewDialog.setAttribute(
-    "aria-label",
-    options.ariaLabel ?? `Attachment preview: ${options.title}`
-  );
-  previewTitle.textContent = options.title;
-  if (options.content) previewBody.replaceChildren(options.content);
-  else previewBody.replaceChildren(statusNode(options.status ?? `Loading ${options.title}\u2026`));
-  if (!previewDialog.open) previewDialog.showModal();
-  const isActive = () => token === activeToken && previewDialog.open;
-  return {
-    isActive,
-    setContent(content) {
-      if (!isActive()) return false;
-      previewBody.replaceChildren(content);
-      return true;
-    },
-    setStatus(message2) {
-      if (!isActive()) return false;
-      previewBody.replaceChildren(statusNode(message2));
-      return true;
-    },
-    close() {
-      if (isActive()) previewDialog.close();
-    }
-  };
-}
-var dialog, titleEl, bodyEl, currentCleanup, activeToken;
-var init_attachment_preview = __esm({
-  "src/renderer/attachments/attachment-preview.ts"() {
-    init_helpers();
-    dialog = null;
-    titleEl = null;
-    bodyEl = null;
-    currentCleanup = null;
-    activeToken = 0;
   }
 });
 
@@ -44941,7 +45321,77 @@ function createProvidersPanel(api2, opts = {}) {
   let deviceScanned = false;
   let providerPicked = false;
   let autoSetupRun = false;
+  let initialOpenAiTierChoice = "auto";
+  let pendingOpenAiTierChoice = "auto";
+  let openAiTierDirty = false;
   const deviceAutoSetup = opts.deviceAutoSetup ?? true;
+  const offeredOpenAiTier = new Set(SERVICE_TIER_CHOICES.map((choice) => choice.value));
+  function openAiTierChoiceForStored(value) {
+    if (value === "") return "auto";
+    if (value === "priority") return "fast";
+    return value;
+  }
+  function retainedOpenAiTierLabel(value) {
+    if (value === "scale") return "Scale \u2014 current advanced value";
+    const visible = value.length > 80 ? `${value.slice(0, 79)}\u2026` : value;
+    return `Current advanced value \u2014 ${visible || "(empty)"}`;
+  }
+  function openAiTierDescription(value) {
+    const choice = SERVICE_TIER_CHOICES.find((entry) => entry.value === value);
+    if (choice) return choice.description;
+    if (value === "scale") {
+      return "Uses committed Scale Tier capacity. It remains selected until you choose another tier.";
+    }
+    return "This value is not offered by this version. It remains selected until you choose another tier.";
+  }
+  async function refreshOpenAiTier() {
+    if (!opts.showOpenAiServiceTier) return;
+    const raw = await api2.settings.get("openAiServiceTier");
+    const stored = typeof raw === "string" ? raw : "";
+    initialOpenAiTierChoice = openAiTierChoiceForStored(stored);
+    pendingOpenAiTierChoice = initialOpenAiTierChoice;
+    openAiTierDirty = false;
+  }
+  function openAiTierBlock() {
+    const picker = el("select", {
+      name: "openAiServiceTier",
+      "data-testid": "openai-service-tier"
+    });
+    for (const choice of SERVICE_TIER_CHOICES) {
+      picker.append(el("option", { value: choice.value }, choice.label));
+    }
+    if (!offeredOpenAiTier.has(pendingOpenAiTierChoice)) {
+      picker.append(
+        el(
+          "option",
+          { value: pendingOpenAiTierChoice },
+          retainedOpenAiTierLabel(pendingOpenAiTierChoice)
+        )
+      );
+    }
+    picker.value = pendingOpenAiTierChoice;
+    const field = uiField({
+      label: "Global OpenAI service tier",
+      control: picker,
+      hint: openAiTierDescription(pendingOpenAiTierChoice)
+    });
+    picker.addEventListener("change", () => {
+      pendingOpenAiTierChoice = picker.value;
+      openAiTierDirty = pendingOpenAiTierChoice !== initialOpenAiTierChoice;
+      field.setAttribute("hint", openAiTierDescription(pendingOpenAiTierChoice));
+    });
+    const tierBlock = block(
+      "Request processing",
+      field,
+      el(
+        "p",
+        { class: "field-hint openai-service-tier-scope" },
+        "Applies to every first-party OpenAI model request. Copse records the tier OpenAI reports for each response, including a downgrade to Standard, and uses it when estimating cost."
+      )
+    );
+    tierBlock.dataset["testid"] = "openai-service-tier-block";
+    return tierBlock;
+  }
   function loadDeviceInfoOnce() {
     if (deviceAutoSetup && providerPicked && !autoSetupRun) {
       autoSetupRun = true;
@@ -45097,6 +45547,9 @@ function createProvidersPanel(api2, opts = {}) {
         body.append(block("API key", apiPanel.root));
       }
     }
+    if (vendor.id === "openai" && opts.showOpenAiServiceTier) {
+      body.append(openAiTierBlock());
+    }
     if (caps.cloud) {
       body.append(block("Cloud agent", caps.cloud.element));
       if (cloudAgentOptions) cloudAgentOptions.hidden = false;
@@ -45128,6 +45581,7 @@ function createProvidersPanel(api2, opts = {}) {
     await localPanel.refresh();
     await agentsPanel.reload();
     await refreshCloudAgentKeys();
+    await refreshOpenAiTier();
     if (selected !== ADD_KEY && !vendors().some((vendor) => vendor.id === selected)) {
       selected = "";
     }
@@ -45135,7 +45589,13 @@ function createProvidersPanel(api2, opts = {}) {
   }
   async function saveKeys() {
     const [apiSaved, localSaved] = await Promise.all([apiPanel.saveKeys(), localPanel.saveKeys()]);
-    return apiSaved && localSaved;
+    if (!apiSaved || !localSaved) return false;
+    if (openAiTierDirty) {
+      await api2.settings.set("openAiServiceTier", pendingOpenAiTierChoice);
+      initialOpenAiTierChoice = pendingOpenAiTierChoice;
+      openAiTierDirty = false;
+    }
+    return true;
   }
   return { root: fieldset, refresh, saveKeys };
 }
@@ -45145,6 +45605,8 @@ var init_providers_section = __esm({
     init_helpers();
     init_custom_providers_section();
     init_acp_agents_section();
+    init_service_tier();
+    init_ui();
     MERGED_VENDORS = [
       {
         id: "anthropic",
@@ -54470,22 +54932,12 @@ function resolvePlanInclusion(provider, modelId, snapshot) {
     exhausted: binding.usedPercent >= 100
   };
 }
-function planProviderForModel(id) {
-  const rid = (resolveIntellectModelId(id) ?? id).toLowerCase();
-  if (rid.includes("claude") || /\b(opus|sonnet|haiku|fable)\b/.test(rid)) return "claude";
-  if (rid.includes("grok")) return "cursor";
-  return null;
-}
 function applyPlanCoverage(candidate, snapshot, options = {}) {
   const mode = options.mode ?? "plan";
   if (mode === "inference" || !snapshot) return candidate;
-  const provider = candidate.planAccess?.provider ?? planProviderForModel(candidate.id);
-  if (!provider) return candidate;
-  const inclusion = resolvePlanInclusion(
-    provider,
-    candidate.planAccess?.modelId ?? candidate.id,
-    snapshot
-  );
+  const access = candidate.planAccess;
+  if (!access) return candidate;
+  const inclusion = resolvePlanInclusion(access.provider, access.modelId, snapshot);
   if (!inclusion) return candidate;
   const exhaustion = options.windowExhaustion?.get(inclusion.windowId);
   const expectedExhausted = mode === "expected" && exhaustion !== void 0 && exhaustion.total > 0 && exhaustion.hit / exhaustion.total >= EXPECTED_PLAN_EXHAUSTION_THRESHOLD;
@@ -54515,7 +54967,6 @@ function applyPlanCoverage(candidate, snapshot, options = {}) {
 var EXPECTED_PLAN_EXHAUSTION_THRESHOLD;
 var init_plan_inclusion = __esm({
   "src/shared/plan-inclusion.ts"() {
-    init_model_intellect();
     EXPECTED_PLAN_EXHAUSTION_THRESHOLD = 0.5;
   }
 });
@@ -56744,13 +57195,14 @@ function renderModelTable(host, title, rows, emptyText) {
     const approx = row2.estimatedTokens ? "~" : "";
     const model = escapeHtml(row2.model);
     const modelLabel2 = row2.estimatedTokens ? `${model} <span class="usage-estimated" title="Estimated locally, because the agent did not report usage">(est.)</span>` : model;
+    const costLabel = row2.isLocal ? "free (local)" : !row2.pricingKnown ? "unpriced" : `${row2.estimatedCostUsd === 0 ? "free" : formatUsd(row2.estimatedCostUsd)}${row2.tierPricingFallback ? ' <span class="usage-estimated" title="This service tier has no published catalog rate; shown at the standard rate.">(standard rate)</span>' : ""}`;
     tr2.innerHTML = `
       <td><code>${modelLabel2}</code></td>
       <td>${approx}${formatTokenCount(row2.inputTokens)}</td>
       <td>${approx}${formatTokenCount(row2.outputTokens)}</td>
       <td>${row2.cacheReadTokens ? formatTokenCount(row2.cacheReadTokens) : "-"}</td>
       <td>${row2.cacheCreationTokens ? formatTokenCount(row2.cacheCreationTokens) : "-"}</td>
-      <td>${row2.isLocal ? "free (local)" : !row2.pricingKnown ? "unpriced" : row2.estimatedCostUsd === 0 ? "free" : formatUsd(row2.estimatedCostUsd)}</td>
+      <td>${costLabel}</td>
     `;
     tbody.append(tr2);
   }
@@ -59331,15 +59783,15 @@ function mountSettingsDialog(store2, api2) {
               <legend>Commit signing</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="gitCommitSshAgentSocketAccess" />
-                Let Copse's git commit tool use your ssh-agent (macOS)
+                Enable scoped SSH signing approvals (macOS)
               </label>
               <p class="field-hint">
-                Off by default. Turn this on when Git uses a passphrase-protected SSH key and signed
-                commits fail inside Copse's sandbox. The grant applies only to Copse's native
-                <code>git_commit</code> subprocess, but Git hooks run inside that process and can
-                also ask ssh-agent to use <strong>any key it holds</strong>. The private key remains
-                unreadable. Pair this with <code>ssh-add -c</code> to confirm each use. macOS only:
-                Linux cannot admit one socket without admitting every Unix socket.
+                Off by default. Copse asks before its system SSH signer uses your configured key
+                through ssh-agent. You can remember the signer, key and socket for this project
+                until Copse restarts. Changed configuration requires approval again. Git hooks
+                keep their project sandbox; they receive no ssh-agent access. Turning this off
+                prevents further brokered signing. Private keys remain unreadable. Custom signing
+                programs run with ordinary project access. Scoped socket access is macOS only.
               </p>
             </fieldset>
           </section>
@@ -59923,6 +60375,7 @@ function mountSettingsDialog(store2, api2) {
         refresh: () => lmStudioSection.refreshDetection()
       }
     ],
+    showOpenAiServiceTier: true,
     cloudAgents: [
       {
         vendor: "cursor",
@@ -66412,6 +66865,9 @@ function bindWorkspaceLinkClicks(root, store2, api2) {
     event.preventDefault();
     event.stopPropagation();
     void api2.index.resolveFileReferences([resolutionCandidate], owner ?? void 0).then((resolved3) => {
+      const currentOwner = getActiveThreadOwner(store2);
+      if (currentOwner?.projectId !== owner?.projectId || currentOwner?.threadId !== owner?.threadId)
+        return;
       const match = resolved3.find((entry) => entry.candidate === resolutionCandidate);
       if (!match) {
         showErrorToast(`Could not find ${parsed2.candidate} in the workspace`, "not in index");
@@ -66423,6 +66879,9 @@ function bindWorkspaceLinkClicks(root, store2, api2) {
       } : void 0;
       return activateWorkspaceReference(store2, api2, match.path, match.kind, reveal);
     }).catch((error61) => {
+      const currentOwner = getActiveThreadOwner(store2);
+      if (currentOwner?.projectId !== owner?.projectId || currentOwner?.threadId !== owner?.threadId)
+        return;
       showErrorToast(`Failed to open ${parsed2.candidate}`, error61);
     });
   };
@@ -68477,6 +68936,160 @@ var init_resend_message = __esm({
   }
 });
 
+// src/renderer/controller/model-selection.ts
+function commitThreadModelSelection(store2, api2, threadId, by, from, to) {
+  if (from === to) return;
+  store2.setState({
+    threads: store2.getState().threads.map(
+      (thread) => thread.id === threadId ? { ...thread, model: to, updatedAt: Date.now() } : thread
+    )
+  });
+  store2.emit("threads_changed");
+  const projectId = store2.getState().activeProjectId;
+  if (!projectId) return;
+  void api2.threads.recordModelSelection(projectId, threadId, by, from, to).then((selection2) => {
+    store2.setState({
+      threads: store2.getState().threads.map((thread) => {
+        if (thread.id !== threadId) return thread;
+        if (thread.modelSelections?.some((candidate) => candidate.id === selection2.id)) {
+          return thread;
+        }
+        return {
+          ...thread,
+          modelSelections: [...thread.modelSelections ?? [], selection2]
+        };
+      })
+    });
+    store2.emit("threads_changed");
+  }).catch((error61) => {
+    console.error("[models] could not record thread model selection", error61);
+  });
+}
+var init_model_selection2 = __esm({
+  "src/renderer/controller/model-selection.ts"() {
+  }
+});
+
+// src/renderer/controller/turn-recovery.ts
+function turnRecoveryForMessage(thread, failedMessageId) {
+  if (!thread || thread.messagesLoaded === false) return null;
+  if (thread.status !== "idle" && thread.status !== "error") return null;
+  if ((thread.pendingMessages?.length ?? 0) > 0) return null;
+  const failedIndex = thread.messages.length - 1;
+  const failed = thread.messages[failedIndex];
+  if (!failed || failed.id !== failedMessageId || failed.role !== "assistant" || failed.turnOutcome?.status !== "failed") {
+    return null;
+  }
+  if (failed.turnOutcome.source !== "provider") return {};
+  for (let index = failedIndex - 1; index >= 0; index -= 1) {
+    const candidate = thread.messages[index];
+    if (candidate?.role === "assistant" && candidate.turnOutcome?.status === "completed") {
+      if (candidate.model === void 0) continue;
+      return candidate.model !== failed.turnOutcome.model ? { lastKnownGoodModel: candidate.model } : {};
+    }
+  }
+  return {};
+}
+function recoverFailedTurn(store2, api2, projectId, threadId, failedMessageId, mode) {
+  const state = store2.getState();
+  if (state.activeProjectId !== projectId || state.activeThreadId !== threadId || !state.threads.some((thread2) => thread2.id === threadId)) {
+    return false;
+  }
+  const thread = state.threads.find((candidate) => candidate.id === threadId);
+  const recovery = turnRecoveryForMessage(thread, failedMessageId);
+  if (!thread || !recovery) return false;
+  if (mode === "last-known-good") {
+    const fallback = recovery.lastKnownGoodModel;
+    if (fallback === void 0) return false;
+    commitThreadModelSelection(store2, api2, threadId, "user", thread.model, fallback);
+  }
+  const payload = {
+    content: INTERRUPTED_TURN_CONTINUATION,
+    invokedSkills: [],
+    priorTodos: thread.todos ?? [],
+    ...thread.workingBrief !== void 0 ? { workingBrief: thread.workingBrief } : {}
+  };
+  addMessage(store2, threadId, "user", INTERRUPTED_TURN_CONTINUATION);
+  startHumanTurnTree(store2, threadId);
+  dispatchAgentRun(store2, api2, threadId, payload);
+  return true;
+}
+var INTERRUPTED_TURN_CONTINUATION;
+var init_turn_recovery = __esm({
+  "src/renderer/controller/turn-recovery.ts"() {
+    init_thread_helpers();
+    init_model_selection2();
+    init_message_queue();
+    INTERRUPTED_TURN_CONTINUATION = "Continue the interrupted turn from the persisted history. Do not repeat completed tool calls. Inspect the current state before taking further action, then finish the request.";
+  }
+});
+
+// src/renderer/views/turn-recovery-card.ts
+function createTurnRecoveryCard(options) {
+  const actions = el("div", { class: "turn-recovery-actions" });
+  const buttons = [];
+  const action = (label, callback) => {
+    const button = el(
+      "button",
+      { class: "ui-btn ui-btn-secondary turn-recovery-button", type: "button" },
+      refreshIcon("ui-icon ui-icon-sm"),
+      el("span", {}, label)
+    );
+    button.addEventListener("click", () => {
+      buttons.forEach((candidate) => candidate.disabled = true);
+      if (callback()) button.closest(".turn-recovery-card")?.remove();
+      else buttons.forEach((candidate) => candidate.disabled = false);
+    });
+    buttons.push(button);
+    actions.append(button);
+    return button;
+  };
+  action("Retry this turn", options.onRetry);
+  if (options.lastKnownGoodLabel !== void 0 && options.onRetryWithLastKnownGood !== void 0) {
+    action(`Use ${options.lastKnownGoodLabel} and retry`, options.onRetryWithLastKnownGood);
+  }
+  const body = el(
+    "div",
+    { class: "turn-recovery-body" },
+    el("div", { class: "turn-recovery-title" }, "Turn interrupted"),
+    el(
+      "div",
+      { class: "turn-recovery-detail" },
+      "Continue from the saved progress. Completed tool calls stay in the history and are not replayed automatically."
+    )
+  );
+  if (options.lastKnownGoodLabel !== void 0) {
+    body.append(
+      el(
+        "div",
+        { class: "turn-recovery-model-note" },
+        `An earlier turn completed with ${options.lastKnownGoodLabel}.`
+      )
+    );
+  }
+  return el(
+    "section",
+    {
+      class: "turn-recovery-card",
+      "data-turn-recovery-card": "",
+      "aria-label": "Interrupted turn recovery"
+    },
+    el(
+      "span",
+      { class: "turn-recovery-icon", "aria-hidden": "true" },
+      warningIcon("ui-icon ui-icon-sm")
+    ),
+    body,
+    actions
+  );
+}
+var init_turn_recovery_card = __esm({
+  "src/renderer/views/turn-recovery-card.ts"() {
+    init_helpers();
+    init_icons();
+  }
+});
+
 // src/shared/image-input-support.ts
 function isImageInputUnsupportedMessage(text2) {
   return text2.startsWith(IMAGE_INPUT_UNSUPPORTED_MESSAGE);
@@ -70331,6 +70944,7 @@ function mountConversation(root, store2, api2) {
     if (run2) syncRunLayout(thread, run2, msgId);
     if (msg.review) renderMessageReview(threadId, msgId);
     renderMessageHookCards(threadId, msgId);
+    renderMessageTurnRecovery(threadId, msgId);
   }
   function appendMessageEl(threadId, msgId, batched = false) {
     if (threadId !== store2.getState().activeThreadId) return;
@@ -70497,6 +71111,26 @@ function mountConversation(root, store2, api2) {
     });
     card.setAttribute("data-review-card", "");
     card.setAttribute("data-review-for", messageId);
+    msgEl.after(card);
+  }
+  function renderMessageTurnRecovery(threadId, messageId) {
+    if (threadId !== store2.getState().activeThreadId) return;
+    list.querySelector(`[data-turn-recovery-for="${messageId}"]`)?.remove();
+    const state = store2.getState();
+    const projectId = state.activeProjectId;
+    const thread = state.threads.find((candidate) => candidate.id === threadId);
+    const msgEl = list.querySelector(`[data-message-id="${messageId}"]`);
+    const recovery = turnRecoveryForMessage(thread, messageId);
+    if (!projectId || !msgEl || !recovery) return;
+    const fallback = recovery.lastKnownGoodModel;
+    const card = createTurnRecoveryCard({
+      ...fallback !== void 0 ? { lastKnownGoodLabel: displayModelLabel(fallback) } : {},
+      onRetry: () => recoverFailedTurn(store2, api2, projectId, threadId, messageId, "current-model"),
+      ...fallback !== void 0 ? {
+        onRetryWithLastKnownGood: () => recoverFailedTurn(store2, api2, projectId, threadId, messageId, "last-known-good")
+      } : {}
+    });
+    card.setAttribute("data-turn-recovery-for", messageId);
     msgEl.after(card);
   }
   function syncComparisonPanel() {
@@ -70757,7 +71391,16 @@ function mountConversation(root, store2, api2) {
     store2.on("thread_status_changed", (tid, status) => {
       if (status === "running") cancelThreadCompaction(tid);
       else scheduleThreadCompaction(tid);
-      if (tid === store2.getState().activeThreadId && status !== "running") setActivity(null);
+      if (tid !== store2.getState().activeThreadId) return;
+      if (status === "running") {
+        list.querySelectorAll("[data-turn-recovery-card]").forEach((card) => {
+          card.remove();
+        });
+      } else {
+        setActivity(null);
+        const last = getThreadById(store2, tid)?.messages.at(-1);
+        if (last?.role === "assistant") renderMessageTurnRecovery(tid, last.id);
+      }
     }),
     store2.on("agent_activity", (tid, label) => {
       if (tid !== store2.getState().activeThreadId) return;
@@ -70853,6 +71496,8 @@ var init_conversation = __esm({
     init_message_queue();
     init_fork_thread3();
     init_resend_message();
+    init_turn_recovery();
+    init_turn_recovery_card();
     init_image_input_support();
     init_toast();
     lazyToolCardBodies = /* @__PURE__ */ new WeakMap();
@@ -83652,7 +84297,7 @@ function buildChangesSuggestion(stats) {
   return {
     id: DETERMINISTIC_FOLLOW_UP_IDS.changes,
     label: "Changes",
-    prompt: "Review the uncommitted changes in this workspace and suggest any fixes or improvements.",
+    prompt: "Review the changes shown in the Changes pane and suggest any fixes or improvements.",
     additions: stats.additions,
     deletions: stats.deletions
   };
@@ -85454,40 +86099,6 @@ var init_container_run_control = __esm({
   }
 });
 
-// src/renderer/controller/model-selection.ts
-function commitThreadModelSelection(store2, api2, threadId, by, from, to) {
-  if (from === to) return;
-  store2.setState({
-    threads: store2.getState().threads.map(
-      (thread) => thread.id === threadId ? { ...thread, model: to, updatedAt: Date.now() } : thread
-    )
-  });
-  store2.emit("threads_changed");
-  const projectId = store2.getState().activeProjectId;
-  if (!projectId) return;
-  void api2.threads.recordModelSelection(projectId, threadId, by, from, to).then((selection2) => {
-    store2.setState({
-      threads: store2.getState().threads.map((thread) => {
-        if (thread.id !== threadId) return thread;
-        if (thread.modelSelections?.some((candidate) => candidate.id === selection2.id)) {
-          return thread;
-        }
-        return {
-          ...thread,
-          modelSelections: [...thread.modelSelections ?? [], selection2]
-        };
-      })
-    });
-    store2.emit("threads_changed");
-  }).catch((error61) => {
-    console.error("[models] could not record thread model selection", error61);
-  });
-}
-var init_model_selection2 = __esm({
-  "src/renderer/controller/model-selection.ts"() {
-  }
-});
-
 // src/renderer/views/input-bar.ts
 function mountInputBar(root, store2, api2, opts = {}) {
   const chips = el("div", { class: "attachment-chips" });
@@ -85571,6 +86182,13 @@ function mountInputBar(root, store2, api2, opts = {}) {
     { type: "button", class: "composer-image-describe-btn", hidden: "" },
     "Describe image"
   );
+  const descriptionPickerHost = el("span", { class: "composer-image-description-picker" });
+  const descriptionActions = el(
+    "fieldset",
+    { class: "composer-image-description-actions", "aria-label": "Image description", hidden: "" },
+    describeImagesBtn,
+    descriptionPickerHost
+  );
   const sendWithoutImagesBtn = el(
     "button",
     { type: "button", class: "composer-image-without-btn" },
@@ -85587,7 +86205,7 @@ function mountInputBar(root, store2, api2, opts = {}) {
     el("span", { class: "composer-image-warning-icon", "aria-hidden": "true" }, "!"),
     imageCompatibilityText,
     useImageModelBtn,
-    describeImagesBtn,
+    descriptionActions,
     sendWithoutImagesBtn
   );
   const contextFitText = el("span", { class: "composer-context-warning-text" });
@@ -85909,6 +86527,10 @@ function mountInputBar(root, store2, api2, opts = {}) {
   let recommendedImageModel = null;
   let recommendedDescriptionModel = null;
   let imageDescriptionInProgress = false;
+  let imageDescriptionSeq = 0;
+  let selectedDescriptionModel = null;
+  let descriptionModels = [];
+  let descriptionPicker = null;
   const checkoutChoices = /* @__PURE__ */ new Map();
   let checkoutPreparationInProgress = false;
   let automaticCheckoutMode = "shared";
@@ -85952,7 +86574,8 @@ ${description}
       recommended: recentRecommendation ?? supported.find((option) => option.value !== model) ?? null,
       // Prefer a local vision model for the image→text handoff. It keeps the
       // image on-device even when the final text-only model is remote.
-      descriptionModel: supported.find((option) => option.value.startsWith("lmstudio:")) ?? recentRecommendation ?? supported.find((option) => option.value !== model) ?? null
+      descriptionModels: supported,
+      descriptionModel: supported.find((option) => option.value === selectedDescriptionModel) ?? supported.find((option) => option.value.startsWith("lmstudio:")) ?? recentRecommendation ?? supported.find((option) => option.value !== model) ?? null
     };
   }
   function hideImageCompatibilityWarning() {
@@ -85960,21 +86583,55 @@ ${description}
     recommendedImageModel = null;
     recommendedDescriptionModel = null;
     imageCompatibilityWarning.hidden = true;
+    descriptionPicker?.destroy();
+    descriptionPicker = null;
+  }
+  function updateDescriptionControl() {
+    const descriptor = recommendedDescriptionModel;
+    descriptionActions.hidden = descriptor === null;
+    describeImagesBtn.hidden = descriptor === null;
+    if (!descriptor) {
+      descriptionPicker?.destroy();
+      descriptionPicker = null;
+      return;
+    }
+    const local = descriptor.value.startsWith("lmstudio:");
+    describeImagesBtn.textContent = `${local ? "Describe locally with" : "Describe with"} ${shortModelLabel(descriptor)}`;
+    if (!descriptionPicker) {
+      descriptionPicker = mountModelPicker(
+        descriptionPickerHost,
+        () => recommendedDescriptionModel?.value ?? "",
+        (value) => {
+          const option = descriptionModels.find((candidate) => candidate.value === value);
+          if (!option || imageDescriptionInProgress) return;
+          selectedDescriptionModel = value;
+          recommendedDescriptionModel = option;
+          updateDescriptionControl();
+        },
+        () => Promise.resolve(descriptionModels),
+        {
+          enableShortcut: false,
+          ariaLabel: "Choose image description model",
+          onClose: () => {
+            describeImagesBtn.focus();
+          }
+        }
+      );
+    } else {
+      void descriptionPicker.refresh();
+    }
   }
   async function refreshImageCompatibilityWarning() {
+    if (imageDescriptionInProgress) return;
     const seq = ++imageCompatibilitySeq;
     if (attachedImages.length === 0) {
-      imageCompatibilityWarning.hidden = true;
-      recommendedImageModel = null;
-      recommendedDescriptionModel = null;
+      hideImageCompatibilityWarning();
       return;
     }
     const result = await incompatibleImageModel();
     if (seq !== imageCompatibilitySeq) return;
     if (!result) {
-      imageCompatibilityWarning.hidden = true;
-      recommendedImageModel = null;
-      recommendedDescriptionModel = null;
+      hideImageCompatibilityWarning();
       return;
     }
     const count = attachedImages.length;
@@ -85985,11 +86642,8 @@ ${description}
       useImageModelBtn.textContent = `Use ${shortModelLabel(result.recommended)}`;
     }
     recommendedDescriptionModel = result.descriptionModel;
-    describeImagesBtn.hidden = result.descriptionModel === null;
-    if (result.descriptionModel) {
-      const local = result.descriptionModel.value.startsWith("lmstudio:");
-      describeImagesBtn.textContent = `${local ? "Describe locally with" : "Describe with"} ${shortModelLabel(result.descriptionModel)}`;
-    }
+    descriptionModels = result.descriptionModels;
+    updateDescriptionControl();
     sendWithoutImagesBtn.textContent = count === 1 ? "Send without image" : "Send without images";
     imageCompatibilityWarning.hidden = false;
   }
@@ -86009,8 +86663,10 @@ ${description}
     });
   }
   function setImageDescriptionBusy(busy, label) {
+    if (busy) imageCompatibilitySeq++;
     imageDescriptionInProgress = busy;
     imageCompatibilityWarning.setAttribute("aria-busy", String(busy));
+    descriptionActions.disabled = busy;
     describeImagesBtn.disabled = busy;
     useImageModelBtn.disabled = busy;
     sendWithoutImagesBtn.disabled = busy;
@@ -86023,22 +86679,31 @@ ${description}
     const projectId = store2.getState().activeProjectId;
     const threadId = getActiveThreadId();
     if (!projectId || !threadId) return;
+    const seq = ++imageDescriptionSeq;
     const descriptor = recommendedDescriptionModel;
     const modelLabel2 = shortModelLabel(descriptor);
-    const images = attachedImages.map((image) => image.dataUrl);
+    const describedImages = [...attachedImages];
+    const images = describedImages.map((image) => image.dataUrl);
     const userPrompt = composer.expandedValue().trim();
     setImageDescriptionBusy(true, modelLabel2);
-    void api2.agent.describeImages(projectId, threadId, descriptor.value, userPrompt, images).then(async ({ text: text2 }) => {
-      if (getActiveThreadId() !== threadId) return;
+    void api2.agent.describeImages(projectId, threadId, descriptor.value, userPrompt, images).then(({ text: text2 }) => {
+      if (seq !== imageDescriptionSeq || getActiveThreadId() !== threadId || store2.getState().activeProjectId !== projectId)
+        return;
+      const remainingImages = attachedImages.filter((image) => !describedImages.includes(image));
       removeAttachedImages();
+      for (const image of remainingImages) {
+        addImageChip(image.dataUrl, image.mimeType, image.detail);
+      }
       composer.value = appendImageDescription(composer.value, modelLabel2, text2);
       composer.el.dispatchEvent(new Event("input", { bubbles: true }));
       hideImageCompatibilityWarning();
       scheduleContextEstimate();
-      await submit();
+      composer.focus();
     }).catch((error61) => {
+      if (seq !== imageDescriptionSeq) return;
       showErrorToast(`Could not describe the image with ${modelLabel2}`, error61);
     }).finally(() => {
+      if (seq !== imageDescriptionSeq) return;
       setImageDescriptionBusy(false);
       if (getActiveThreadId() === threadId && attachedImages.length > 0) {
         void refreshImageCompatibilityWarning();
@@ -86230,6 +86895,9 @@ ${description}
       setThreadDraftPrompt(store2, activeComposerThreadId, composer.expandedValue());
       stashDraftAttachments(activeComposerThreadId);
     }
+    imageDescriptionSeq++;
+    selectedDescriptionModel = null;
+    if (imageDescriptionInProgress) setImageDescriptionBusy(false);
     clearAttachments();
     const thread = getThreadById(store2, id);
     composer.value = thread?.draftPrompt ?? "";
@@ -86575,7 +87243,7 @@ ${description}
   });
   let submitInProgress = false;
   async function submit() {
-    if (submitInProgress) return;
+    if (submitInProgress || imageDescriptionInProgress) return;
     submitInProgress = true;
     try {
       await performSubmit();
@@ -87159,6 +87827,7 @@ ${description}
     store2.on("settings_changed", () => {
       void refreshContainerRunsSetting();
       modelPicker.refresh();
+      void refreshImageCompatibilityWarning();
       refreshModelPricing();
       updateFooter();
       scheduleContextEstimate(0);
@@ -87222,6 +87891,8 @@ ${description}
       nextStepHint.destroy();
       unbindDrop();
       unregisterAttachments();
+      imageDescriptionSeq++;
+      descriptionPicker?.destroy();
       modelPicker.destroy();
       footerOverflow.destroy();
       guardedYolo.destroy();
@@ -87259,6 +87930,7 @@ var init_input_bar = __esm({
     init_parse_invocation();
     init_build_skill_user_content();
     init_footer_model_picker();
+    init_model_picker();
     init_footer_branch_status();
     init_context_wheel();
     init_footer_compact();
@@ -98474,33 +99146,6 @@ var init_git_image_diff = __esm({
   }
 });
 
-// src/shared/fs/image-path.ts
-function imageMimeType(path) {
-  const name = path.split("/").pop()?.toLowerCase() ?? "";
-  const ext = name.split(".").pop() ?? "";
-  return IMAGE_MIME_BY_EXT[ext] ?? null;
-}
-function isRasterImagePath(path) {
-  const mime = imageMimeType(path);
-  return mime !== null && mime !== "image/svg+xml";
-}
-var IMAGE_MIME_BY_EXT;
-var init_image_path = __esm({
-  "src/shared/fs/image-path.ts"() {
-    IMAGE_MIME_BY_EXT = {
-      avif: "image/avif",
-      bmp: "image/bmp",
-      gif: "image/gif",
-      ico: "image/x-icon",
-      jpeg: "image/jpeg",
-      jpg: "image/jpeg",
-      png: "image/png",
-      svg: "image/svg+xml",
-      webp: "image/webp"
-    };
-  }
-});
-
 // src/renderer/views/git-changes-pane.ts
 function bytesToBase64(bytes) {
   const chunks = [];
@@ -98635,12 +99280,74 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     console.warn(`[git-changes-pane] ${scope} failed:`, error61);
   }
   let seededProposedPath = null;
+  const snapshotsByOwner = /* @__PURE__ */ new Map();
+  let displayedOwnerKey = activeOwnerKey();
+  let ownerNeedsRefresh = false;
   function activeOwner2() {
     const { activeProjectId, activeThreadId } = store2.getState();
     return activeProjectId && activeThreadId ? { projectId: activeProjectId, threadId: activeThreadId } : null;
   }
+  function activeOwnerKey() {
+    const owner = activeOwner2();
+    return owner ? checkoutOwnerKey(owner.projectId, owner.threadId) : null;
+  }
+  function checkoutOwnerKey(projectId, threadId) {
+    const { activeProjectId, workspaceRoot, threads } = store2.getState();
+    const currentProject = projectId === activeProjectId;
+    const thread = currentProject ? threads.find((candidate) => candidate.id === threadId) : void 0;
+    const worktree = thread?.worktree;
+    return JSON.stringify([
+      projectId,
+      threadId,
+      currentProject ? workspaceRoot : null,
+      thread?.gitBranch,
+      worktree?.path,
+      worktree?.branch,
+      worktree?.baseCommit,
+      worktree?.createdAt,
+      worktree?.retiredAt
+    ]);
+  }
+  function adoptActiveOwner() {
+    const nextKey = activeOwnerKey();
+    if (nextKey === displayedOwnerKey) return false;
+    if (displayedOwnerKey && loaded && gitAvailable) {
+      snapshotsByOwner.delete(displayedOwnerKey);
+      snapshotsByOwner.set(displayedOwnerKey, {
+        status,
+        committed,
+        sessionBackup,
+        // Proposed changes already have their own owner-scoped content cache.
+        selection: selection2?.kind === "proposed" ? null : selection2
+      });
+      if (snapshotsByOwner.size > 20) {
+        const oldest = snapshotsByOwner.keys().next().value;
+        if (oldest !== void 0) snapshotsByOwner.delete(oldest);
+      }
+    }
+    displayedOwnerKey = nextKey;
+    ownerNeedsRefresh = true;
+    refreshRequestId++;
+    selectRequestId++;
+    const known = nextKey ? snapshotsByOwner.get(nextKey) : void 0;
+    loaded = known !== void 0;
+    gitAvailable = loaded;
+    status = known?.status ?? null;
+    committed = known?.committed ?? null;
+    sessionBackup = known?.sessionBackup ?? null;
+    selection2 = known?.selection ?? null;
+    pendingNavigate = null;
+    pendingProposedNavigate = null;
+    seededProposedPath = null;
+    conflictBanner.hidden = true;
+    renderRestoreBanner();
+    clearViewer();
+    renderList();
+    if (loaded && changesModeActive(store2)) void syncSelection();
+    return true;
+  }
   function proposedDiffCacheFor(projectId, threadId) {
-    const key = JSON.stringify([projectId, threadId]);
+    const key = checkoutOwnerKey(projectId, threadId);
     let cache = proposedDiffCachesByOwner.get(key);
     if (!cache) {
       cache = /* @__PURE__ */ new Map();
@@ -99194,6 +99901,8 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     }
   }
   async function refresh() {
+    adoptActiveOwner();
+    ownerNeedsRefresh = false;
     const requestId = ++refreshRequestId;
     const owner = activeOwner2();
     if (!owner) {
@@ -99215,6 +99924,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
       return;
     gitAvailable = available;
     if (!gitAvailable) {
+      if (displayedOwnerKey) snapshotsByOwner.delete(displayedOwnerKey);
       if (!availabilityFailed) gitFailureLogged = false;
       loaded = true;
       status = null;
@@ -99238,6 +99948,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     } catch (error61) {
       markGitUnavailable("git status read", error61);
       if (requestId !== refreshRequestId) return;
+      if (displayedOwnerKey) snapshotsByOwner.delete(displayedOwnerKey);
       status = null;
       committed = null;
       sessionBackup = null;
@@ -99258,6 +99969,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     await syncSelection();
   }
   async function syncFromStore() {
+    adoptActiveOwner();
     renderList();
     await syncSelection();
   }
@@ -99286,6 +99998,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
       if (changesModeActive(store2)) void refresh();
     }),
     store2.on("git_change_navigate", (path) => {
+      adoptActiveOwner();
       pendingNavigate = path;
       if (changesModeActive(store2)) void refresh();
     }),
@@ -99293,29 +100006,12 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
       if (changesModeActive(store2)) void refresh();
     }),
     store2.on("workspace_changed", () => {
-      loaded = false;
-      status = null;
-      committed = null;
-      sessionBackup = null;
-      renderRestoreBanner();
-      pendingProposedNavigate = null;
-      seededProposedPath = null;
-      clearSelection();
-      conflictBanner.hidden = true;
+      adoptActiveOwner();
       if (changesModeActive(store2)) void refresh();
-      else renderList();
     }),
     store2.on("threads_changed", () => {
-      refreshRequestId++;
-      selectRequestId++;
-      loaded = false;
-      status = null;
-      committed = null;
-      sessionBackup = null;
-      selection2 = null;
-      seededProposedPath = null;
+      if (!adoptActiveOwner() && !ownerNeedsRefresh) return;
       if (changesModeActive(store2)) void refresh();
-      else renderList();
     }),
     store2.on("theme_changed", (theme) => {
       monaco?.editor.setTheme(theme === "dark" ? "vs-dark" : "vs");
@@ -99397,13 +100093,40 @@ var init_git_changes_pane = __esm({
 });
 
 // packages/thread-store/src/remote-agent-link.ts
+function isImportedCursorAgentNotice(thread, messageIndex, link) {
+  const message2 = thread.messages[messageIndex];
+  if (!message2 || message2.role !== "assistant" || message2.toolCalls.length !== 0) return false;
+  const match = LEGACY_IMPORTED_CURSOR_AGENT_NOTICE.exec(message2.content);
+  return match !== null && thread.model === "remote-agent:cursor" && thread.title === match[1] && thread.createdAt === link.createdAt && message2.createdAt === link.createdAt;
+}
+function isImportedCursorAgentThread(thread, expectedResultId) {
+  const link = thread.remoteAgentLink;
+  if (link?.provider !== "cursor") return false;
+  if (link.imported === true) {
+    const isResult2 = (messageIndex) => {
+      const message2 = thread.messages[messageIndex];
+      if (!message2) return false;
+      return (expectedResultId ? message2.id === expectedResultId : IMPORTED_CURSOR_AGENT_RESULT_ID.test(message2.id)) && message2.role === "assistant" && message2.toolCalls.length === 0;
+    };
+    return thread.messages.length === 0 || thread.messages.length === 1 && (isImportedCursorAgentNotice(thread, 0, link) || isResult2(0)) || thread.messages.length === 2 && isImportedCursorAgentNotice(thread, 0, link) && isResult2(1);
+  }
+  const isResult = (messageIndex) => {
+    const message2 = thread.messages[messageIndex];
+    if (!message2) return false;
+    return (expectedResultId ? message2.id === expectedResultId : IMPORTED_CURSOR_AGENT_RESULT_ID.test(message2.id)) && message2.role === "assistant" && message2.toolCalls.length === 0;
+  };
+  return thread.messages.length === 1 && isImportedCursorAgentNotice(thread, 0, link) || thread.messages.length === 2 && isImportedCursorAgentNotice(thread, 0, link) && isResult(1);
+}
 function remoteAgentPrIndexKey(prUrl) {
   const ref = parseGithubPrUrl(prUrl);
   return ref ? githubPrKey(ref) : null;
 }
+var LEGACY_IMPORTED_CURSOR_AGENT_NOTICE, IMPORTED_CURSOR_AGENT_RESULT_ID;
 var init_remote_agent_link = __esm({
   "packages/thread-store/src/remote-agent-link.ts"() {
     init_github_pr_url();
+    LEGACY_IMPORTED_CURSOR_AGENT_NOTICE = /^_Imported Cursor cloud agent — \[([^\]\n]+)]\(([^()\n]+)\)\. Send a message here to continue that run from Copse\._$/;
+    IMPORTED_CURSOR_AGENT_RESULT_ID = /^remote-cursor-run-[a-f0-9]{64}$/;
   }
 });
 
@@ -103159,6 +103882,8 @@ Notes: ${notes}` : prompt;
       renderEditor({ preserveDirty: true });
     }),
     store2.on("workspace_changed", () => {
+      loadToken++;
+      loading = false;
       cancelResolutionCheckUi();
       selectedId = null;
       creating = false;
@@ -103169,11 +103894,9 @@ Notes: ${notes}` : prompt;
       autoSaveToken.clear();
       resetAttachmentEdits();
       attachmentDataCache.clear();
+      renderList();
+      renderEditor();
       if (roadmapModeActive(store2)) void refresh();
-      else {
-        renderList();
-        renderEditor();
-      }
     })
   ];
   renderList();
@@ -123753,7 +124476,10 @@ function startAgentController(store2, api2) {
           inputTokens: chunk.inputTokens,
           outputTokens: chunk.outputTokens,
           ...chunk.cacheReadTokens !== void 0 ? { cacheReadTokens: chunk.cacheReadTokens } : {},
-          ...chunk.cacheCreationTokens !== void 0 ? { cacheCreationTokens: chunk.cacheCreationTokens } : {}
+          ...chunk.cacheCreationTokens !== void 0 ? { cacheCreationTokens: chunk.cacheCreationTokens } : {},
+          ...chunk.requestedServiceTier !== void 0 ? { requestedServiceTier: chunk.requestedServiceTier } : {},
+          ...chunk.responseServiceTier !== void 0 ? { responseServiceTier: chunk.responseServiceTier } : {},
+          ...chunk.serviceTierUsage !== void 0 ? { serviceTierUsage: chunk.serviceTierUsage } : {}
         };
         addUsageDelta(store2, threadId, delta);
         break;
@@ -124600,6 +125326,69 @@ var init_perf_autopilot = __esm({
       "memories"
     ];
     SWEEP_DWELL_MS = 6e3;
+  }
+});
+
+// src/renderer/controller/imported-cursor-agent-refresh.ts
+function refreshKey(projectId, thread) {
+  const link = thread.remoteAgentLink;
+  if (thread.status !== "idle" || thread.queuePaused === true || (thread.pendingMessages?.length ?? 0) > 0 || thread.messagesLoaded === false || link?.provider !== "cursor" || !isImportedCursorAgentThread(thread) || !link.runId) {
+    return null;
+  }
+  return `${projectId}:${thread.id}:${link.agentId}:${link.runId}`;
+}
+function mergeImportedCursorResult(thread, message2) {
+  if (thread.messages.some((current) => current.id === message2.id)) return thread;
+  return {
+    ...thread,
+    messages: [...thread.messages, message2],
+    updatedAt: Math.max(thread.updatedAt, message2.createdAt)
+  };
+}
+function attachImportedCursorAgentRefresh(store2, api2) {
+  let lastAttemptKey = null;
+  const refreshActive = () => {
+    const initial = store2.getState();
+    const projectId = initial.activeProjectId;
+    const threadId = initial.activeThreadId;
+    const thread = threadId ? initial.threads.find((candidate) => candidate.id === threadId) : void 0;
+    const key = projectId && thread ? refreshKey(projectId, thread) : null;
+    if (!projectId || !threadId || !thread || !key) {
+      lastAttemptKey = null;
+      return;
+    }
+    if (lastAttemptKey === key) return;
+    lastAttemptKey = key;
+    void api2.remoteAgent.refreshImportedThread(projectId, threadId).then((message2) => {
+      if (!message2) return;
+      const current = store2.getState();
+      if (current.activeProjectId !== projectId || current.activeThreadId !== threadId) return;
+      const active2 = current.threads.find((candidate) => candidate.id === threadId);
+      if (!active2 || refreshKey(projectId, active2) !== key) return;
+      const merged = mergeImportedCursorResult(active2, message2);
+      if (merged === active2) return;
+      store2.setState({
+        threads: current.threads.map(
+          (candidate) => candidate.id === threadId ? merged : candidate
+        )
+      });
+      store2.emit("threads_changed");
+    }).catch((err2) => {
+      console.debug("[imported-cursor-agent-refresh] skipped:", err2);
+      if (lastAttemptKey === key) lastAttemptKey = null;
+    });
+  };
+  const offThreads = store2.on("threads_changed", refreshActive);
+  const offWorkspace = store2.on("workspace_changed", refreshActive);
+  refreshActive();
+  return () => {
+    offThreads();
+    offWorkspace();
+  };
+}
+var init_imported_cursor_agent_refresh = __esm({
+  "src/renderer/controller/imported-cursor-agent-refresh.ts"() {
+    init_remote_agent_link2();
   }
 });
 
@@ -134008,6 +134797,7 @@ async function boot() {
   }
   attachProjectThreadCache(store);
   attachThreadHydration(store, api);
+  if (!popoutMode) attachImportedCursorAgentRefresh(store, api);
   mountTitlebar(requireElement("titlebar"), store, api);
   api.menu.onSettings(() => {
     if (!isSettingsDialogOpen()) openSettingsDialog();
@@ -134366,6 +135156,7 @@ var init_main = __esm({
     init_perf();
     init_perf_autopilot();
     init_thread_hydration();
+    init_imported_cursor_agent_refresh();
     init_pr_panel_follow();
     init_external_cursor_agent_sync();
     init_startup_settings();
