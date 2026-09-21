@@ -27294,6 +27294,7 @@ This response is streamed through the real renderer event path.`
       downloadArtifact: unsupported,
       artifactImageDataUrl: unsupported,
       models: emptyArray,
+      refreshImportedThread: () => resolved(null),
       discoverExternal: (_projectId) => resolved({
         imported: [],
         scanned: 0,
@@ -99606,13 +99607,40 @@ var init_git_changes_pane = __esm({
 });
 
 // packages/thread-store/src/remote-agent-link.ts
+function isImportedCursorAgentNotice(thread, messageIndex, link) {
+  const message2 = thread.messages[messageIndex];
+  if (!message2 || message2.role !== "assistant" || message2.toolCalls.length !== 0) return false;
+  const match = LEGACY_IMPORTED_CURSOR_AGENT_NOTICE.exec(message2.content);
+  return match !== null && thread.model === "remote-agent:cursor" && thread.title === match[1] && thread.createdAt === link.createdAt && message2.createdAt === link.createdAt;
+}
+function isImportedCursorAgentThread(thread, expectedResultId) {
+  const link = thread.remoteAgentLink;
+  if (link?.provider !== "cursor") return false;
+  if (link.imported === true) {
+    const isResult2 = (messageIndex) => {
+      const message2 = thread.messages[messageIndex];
+      if (!message2) return false;
+      return (expectedResultId ? message2.id === expectedResultId : IMPORTED_CURSOR_AGENT_RESULT_ID.test(message2.id)) && message2.role === "assistant" && message2.toolCalls.length === 0;
+    };
+    return thread.messages.length === 0 || thread.messages.length === 1 && (isImportedCursorAgentNotice(thread, 0, link) || isResult2(0)) || thread.messages.length === 2 && isImportedCursorAgentNotice(thread, 0, link) && isResult2(1);
+  }
+  const isResult = (messageIndex) => {
+    const message2 = thread.messages[messageIndex];
+    if (!message2) return false;
+    return (expectedResultId ? message2.id === expectedResultId : IMPORTED_CURSOR_AGENT_RESULT_ID.test(message2.id)) && message2.role === "assistant" && message2.toolCalls.length === 0;
+  };
+  return thread.messages.length === 1 && isImportedCursorAgentNotice(thread, 0, link) || thread.messages.length === 2 && isImportedCursorAgentNotice(thread, 0, link) && isResult(1);
+}
 function remoteAgentPrIndexKey(prUrl) {
   const ref = parseGithubPrUrl(prUrl);
   return ref ? githubPrKey(ref) : null;
 }
+var LEGACY_IMPORTED_CURSOR_AGENT_NOTICE, IMPORTED_CURSOR_AGENT_RESULT_ID;
 var init_remote_agent_link = __esm({
   "packages/thread-store/src/remote-agent-link.ts"() {
     init_github_pr_url();
+    LEGACY_IMPORTED_CURSOR_AGENT_NOTICE = /^_Imported Cursor cloud agent — \[([^\]\n]+)]\(([^()\n]+)\)\. Send a message here to continue that run from Copse\._$/;
+    IMPORTED_CURSOR_AGENT_RESULT_ID = /^remote-cursor-run-[a-f0-9]{64}$/;
   }
 });
 
@@ -124812,6 +124840,69 @@ var init_perf_autopilot = __esm({
   }
 });
 
+// src/renderer/controller/imported-cursor-agent-refresh.ts
+function refreshKey(projectId, thread) {
+  const link = thread.remoteAgentLink;
+  if (thread.status !== "idle" || thread.queuePaused === true || (thread.pendingMessages?.length ?? 0) > 0 || thread.messagesLoaded === false || link?.provider !== "cursor" || !isImportedCursorAgentThread(thread) || !link.runId) {
+    return null;
+  }
+  return `${projectId}:${thread.id}:${link.agentId}:${link.runId}`;
+}
+function mergeImportedCursorResult(thread, message2) {
+  if (thread.messages.some((current) => current.id === message2.id)) return thread;
+  return {
+    ...thread,
+    messages: [...thread.messages, message2],
+    updatedAt: Math.max(thread.updatedAt, message2.createdAt)
+  };
+}
+function attachImportedCursorAgentRefresh(store2, api2) {
+  let lastAttemptKey = null;
+  const refreshActive = () => {
+    const initial = store2.getState();
+    const projectId = initial.activeProjectId;
+    const threadId = initial.activeThreadId;
+    const thread = threadId ? initial.threads.find((candidate) => candidate.id === threadId) : void 0;
+    const key = projectId && thread ? refreshKey(projectId, thread) : null;
+    if (!projectId || !threadId || !thread || !key) {
+      lastAttemptKey = null;
+      return;
+    }
+    if (lastAttemptKey === key) return;
+    lastAttemptKey = key;
+    void api2.remoteAgent.refreshImportedThread(projectId, threadId).then((message2) => {
+      if (!message2) return;
+      const current = store2.getState();
+      if (current.activeProjectId !== projectId || current.activeThreadId !== threadId) return;
+      const active2 = current.threads.find((candidate) => candidate.id === threadId);
+      if (!active2 || refreshKey(projectId, active2) !== key) return;
+      const merged = mergeImportedCursorResult(active2, message2);
+      if (merged === active2) return;
+      store2.setState({
+        threads: current.threads.map(
+          (candidate) => candidate.id === threadId ? merged : candidate
+        )
+      });
+      store2.emit("threads_changed");
+    }).catch((err2) => {
+      console.debug("[imported-cursor-agent-refresh] skipped:", err2);
+      if (lastAttemptKey === key) lastAttemptKey = null;
+    });
+  };
+  const offThreads = store2.on("threads_changed", refreshActive);
+  const offWorkspace = store2.on("workspace_changed", refreshActive);
+  refreshActive();
+  return () => {
+    offThreads();
+    offWorkspace();
+  };
+}
+var init_imported_cursor_agent_refresh = __esm({
+  "src/renderer/controller/imported-cursor-agent-refresh.ts"() {
+    init_remote_agent_link2();
+  }
+});
+
 // src/renderer/controller/pr-panel-follow.ts
 function attachPrPanelFollow(store2, api2) {
   return api2.threads.onPrCreated((projectId, threadId, ref) => {
@@ -134217,6 +134308,7 @@ async function boot() {
   }
   attachProjectThreadCache(store);
   attachThreadHydration(store, api);
+  if (!popoutMode) attachImportedCursorAgentRefresh(store, api);
   mountTitlebar(requireElement("titlebar"), store, api);
   api.menu.onSettings(() => {
     if (!isSettingsDialogOpen()) openSettingsDialog();
@@ -134575,6 +134667,7 @@ var init_main = __esm({
     init_perf();
     init_perf_autopilot();
     init_thread_hydration();
+    init_imported_cursor_agent_refresh();
     init_pr_panel_follow();
     init_external_cursor_agent_sync();
     init_startup_settings();
