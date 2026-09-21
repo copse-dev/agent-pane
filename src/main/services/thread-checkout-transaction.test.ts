@@ -198,7 +198,7 @@ describe('first-message checkout transaction', () => {
           baseBranch,
           baseCommit: 'e'.repeat(40),
           createdAt: 5,
-          seededFromDirtyProject: false,
+          seededFromDirtyProject: true,
         }
       },
     })
@@ -211,6 +211,10 @@ describe('first-message checkout transaction', () => {
     })
 
     assert.equal(result.checkoutMode, 'worktree')
+    assert.deepEqual(result.promptState, {
+      startingCommit: 'e'.repeat(40),
+      dirty: true,
+    })
     assert.deepEqual(allocations, [
       { baseBranch: 'copse/previous-thread', seedFromDirtyProject: true },
     ])
@@ -641,6 +645,7 @@ describe('first-message checkout transaction', () => {
     assert.deepEqual(result.worktree, recovered)
     assert.equal(result.worktree.baseBranch, 'main')
     assert.equal(result.worktree.baseCommit, 'b'.repeat(40))
+    assert.equal(Object.hasOwn(result, 'promptState'), false)
     assert.equal(getThread().worktreeChoice, 'worktree')
     assert.equal(getThread().gitBranch, recovered.branch)
     assert.deepEqual(getThread().worktree, recovered)
