@@ -1,61 +1,63 @@
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
-import type { MockScriptStep } from '@copse/llm/mock-script'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import {
+  readSeededSettings,
+  resetUserData,
+  seedEmptyProject,
+  writeSettings,
+} from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 import { setComposerValue } from './helpers/composer.ts'
 import { approveShellCommandIfPrompted } from './helpers/shell-approval.ts'
+import { startConversationServer, type ConversationServer } from './helpers/conversation-server.ts'
 
-async function installMockScript(script: MockScriptStep[]): Promise<void> {
-  await browser.execute(async (s) => {
-    const bridge = (
-      window as unknown as {
-        __copseE2e?: { setMockScript: (s: unknown) => Promise<{ steps: number; cursor: number }> }
-      }
-    ).__copseE2e
-    if (!bridge?.setMockScript) throw new Error('__copseE2e.setMockScript unavailable')
-    return bridge.setMockScript(s)
-  }, script)
-}
-
-async function clearMockScript(): Promise<void> {
-  await browser.execute(async () => {
-    await (
-      window as unknown as { __copseE2e?: { clearMockScript: () => Promise<void> } }
-    ).__copseE2e?.clearMockScript?.()
-  })
+async function submitToolPrompt(): Promise<void> {
+  await $('.submit-btn').click()
+  const warning = $('.composer-dirty-warning')
+  await browser.waitUntil(
+    async () => (await warning.isDisplayed()) || (await $('.tool-card').isExisting()),
+    { timeout: 15_000, timeoutMsg: 'neither the tool card nor the dirty-checkout prompt appeared' },
+  )
+  if (await warning.isDisplayed()) await warning.$('.composer-dirty-send-btn').click()
 }
 
 describe('tool activity icon', () => {
+  let server: ConversationServer
+
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    server = await startConversationServer({ title: 'Shell command status' })
+    server.configureEnvironment()
     resetUserData()
     seedEmptyProject(process.cwd(), 'e2e-tool-activity-icon-project', {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
     })
-    await browser.reloadSession()
-    await installMockScript([
+    writeSettings({ ...readSeededSettings(), ...server.settings })
+    server.enqueue(
       {
-        when: 'run a short shell command',
+        user: 'Run a short shell command',
         // Long enough that the running-state assertions (geometry probe, settle
         // pause, screenshot) all land while the card is still `running`, including
         // the approval round-trip on platforms without an OS sandbox.
-        tool: { name: 'run_shell', args: { command: 'sleep 15' } },
+        toolCalls: [{ name: 'run_shell', args: { command: 'sleep 15' } }],
       },
       {
-        when: 'run a short shell command',
-        text: 'The command finished.',
+        user: 'Run a short shell command',
+        toolResults: [{ name: 'run_shell' }],
+        text: 'The short shell command completed successfully.',
       },
-    ])
+    )
+    await browser.reloadSession()
   })
 
   after(async () => {
-    await clearMockScript()
-    resetUserData()
+    try {
+      server.assertComplete()
+    } finally {
+      await server.close()
+      resetUserData()
+    }
   })
 
   it('shows the spiral only while running without shifting the tool label', async function () {
@@ -65,7 +67,7 @@ describe('tool activity icon', () => {
     this.timeout(90_000)
     await $('.prompt-input').waitForExist({ timeout: 15_000 })
     await setComposerValue('Run a short shell command')
-    await $('.submit-btn').click()
+    await submitToolPrompt()
     const card = $('.tool-card')
     await card.waitForExist({ timeout: 15_000 })
     await expect(card).toHaveAttribute('data-status', 'running')
@@ -152,30 +154,41 @@ describe('tool activity icon', () => {
 })
 
 describe('tool activity icon — nested rollup row', () => {
+  let server: ConversationServer
+
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    server = await startConversationServer({ title: 'Wait for the preview server' })
+    server.configureEnvironment()
     resetUserData()
     seedEmptyProject(process.cwd(), 'e2e-tool-activity-icon-nested-project', {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
     })
-    await browser.reloadSession()
-    const longCommand = `sleep 15 # ${'x'.repeat(200)}`
-    await installMockScript([
+    writeSettings({ ...readSeededSettings(), ...server.settings })
+    const longCommand =
+      'sleep 15 # Allow the preview server time to load the workspace, restore cached dependencies, compile the application, and finish preparing the local development page before checking its readiness.'
+    server.enqueue(
       {
-        when: 'run a long shell command',
-        tool: { name: 'run_shell', args: { command: longCommand } },
+        user: 'Wait briefly for the preview server to finish starting.',
+        toolCalls: [{ name: 'run_shell', args: { command: longCommand } }],
       },
-      { when: 'run a long shell command', text: 'Done.' },
-    ])
+      {
+        user: 'Wait briefly for the preview server to finish starting.',
+        toolResults: [{ name: 'run_shell' }],
+        text: 'The wait has finished; the preview server can now be checked.',
+      },
+    )
+    await browser.reloadSession()
   })
 
   after(async () => {
-    await clearMockScript()
-    resetUserData()
+    try {
+      server.assertComplete()
+    } finally {
+      await server.close()
+      resetUserData()
+    }
   })
 
   it('does not let a nested row double up on trailing icons while running', async function () {
@@ -197,8 +210,8 @@ describe('tool activity icon — nested rollup row', () => {
       document.documentElement.style.setProperty('--chat-content-max', '420px')
     })
     await $('.prompt-input').waitForExist({ timeout: 15_000 })
-    await setComposerValue('Run a long shell command')
-    await $('.submit-btn').click()
+    await setComposerValue('Wait briefly for the preview server to finish starting.')
+    await submitToolPrompt()
     const nestedCard = $('.tool-rollup-body .tool-card')
     await nestedCard.waitForExist({ timeout: 15_000 })
     await expect(nestedCard).toHaveAttribute('data-status', 'running')
