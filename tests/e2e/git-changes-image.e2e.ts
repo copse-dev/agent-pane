@@ -1,4 +1,8 @@
-import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
+import {
+  expectAssistantReply,
+  installMockScenario,
+  prepareMockToolTurn,
+} from './helpers/mock-scenario.ts'
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -9,6 +13,7 @@ import {
   seedEmptyProject,
   seedGitImageChangesFixture,
 } from './helpers/seed-config.ts'
+import { setComposerValue } from './helpers/composer.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
 
@@ -59,17 +64,17 @@ async function clickChange(path: string): Promise<void> {
 
 async function proposeImage(path: string, bytes: Buffer): Promise<void> {
   const args = { path, content: bytes.toString('latin1') }
-  await prepareMockToolTurn(
-    `Propose an update to ${path}.`,
+  const prompt = `Propose an update to ${path}.`
+  const reply = 'The proposed file change is ready for review.'
+  const scenario = await prepareMockToolTurn(
+    prompt,
     { name: 'write_file', args },
-    'The proposed file change is ready for review.',
+    reply,
   )
   await $('.submit-btn').click()
-  await browser.waitUntil(async () => (await $('.submit-btn').getText()) === 'Send', {
-    timeout: 60_000,
-    interval: 500,
-    timeoutMsg: 'Agent did not return to idle after proposing the image',
-  })
+  await waitForAgentIdle(60_000)
+  await expectAssistantReply(reply)
+  await scenario.assertComplete()
 }
 
 describe('git changes image preview', function () {
@@ -143,8 +148,25 @@ describe('git changes image preview', function () {
     // Keep a real turn active while dismissing the modal. The app-level Escape
     // shortcut arms agent cancellation, so the preview must isolate the key
     // while preserving the dialog's native close behavior.
-    await setComposerValue('Keep working while I inspect this image. [[mock:delay_ms 15000]]')
+    const user = 'Keep working while I inspect this image.'
+    const scenario = await installMockScenario({
+      title: 'Inspect image while work continues',
+      turns: [
+        {
+          user,
+          responses: [
+            {
+              waitFor: 'preview-open',
+              text: 'I will wait while you inspect the image.',
+            },
+          ],
+          allowAbort: true,
+        },
+      ],
+    })
+    await setComposerValue(user)
     await $('.submit-btn').click()
+    await scenario.waitForHold('preview-open')
     const stopButton = await $('.stop-btn')
     await stopButton.waitForDisplayed({ timeout: 15_000 })
 
@@ -180,6 +202,7 @@ describe('git changes image preview', function () {
     await expect(stopButton).not.toHaveElementClass('stop-pending')
     await stopButton.click()
     await waitForAgentIdle(15_000)
+    await scenario.assertComplete()
 
     await $('#git-diff-viewer-host .git-image-diff-img[alt="staged.png (after)"]').click()
     await preview.waitForDisplayed({ timeout: 5_000 })
@@ -225,7 +248,6 @@ describe('git changes image preview', function () {
     resetUserData()
     seedEmptyProject(proposedRoot, 'e2e-proposed-image-project', {
       subagentsEnabled: false,
-      model: 'claude-sonnet-4-6',
     })
     await browser.reloadSession()
     await waitForWorkspace()
