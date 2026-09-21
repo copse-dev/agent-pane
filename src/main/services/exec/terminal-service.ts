@@ -125,6 +125,21 @@ function bashHistoryDefaults(baseEnv: NodeJS.ProcessEnv): Record<string, string>
 }
 
 /**
+ * bash-only: the `PROMPT_COMMAND` that makes a *running* shell converge with
+ * the shared HISTFILE on its own, one prompt at a time — `history -a` appends
+ * this shell's new lines to the shared file, then `history -n` reads back
+ * whatever other shells appended since. Prepended onto whatever
+ * `PROMPT_COMMAND` the base env already carries (bash runs the whole string as
+ * one command list, left to right), so a user's own hook still runs; never
+ * replaces it.
+ */
+function bashPromptCommand(baseEnv: NodeJS.ProcessEnv): string {
+  const flush = 'history -a; history -n'
+  const existing = baseEnv['PROMPT_COMMAND']
+  return existing ? `${flush}; ${existing}` : flush
+}
+
+/**
  * Env additions that make an interactive terminal PTY share command history
  * with every other terminal opened for the same project (#2433: up-arrow
  * history was scoped to a single thread's own PTY).
@@ -137,10 +152,22 @@ function bashHistoryDefaults(baseEnv: NodeJS.ProcessEnv): Record<string, string>
  * environment happens to carry: an Electron GUI launch essentially never has
  * one, and nothing in this repo forwards a user's interactive shell env into
  * PTYs for history to defer to (`envForRendererChildProcess` forwards ordinary
- * vars but has no such convention). Live sharing between *already-open*
- * terminals still depends on the shell's own settings (e.g. zsh
- * `SHARE_HISTORY`) — this only guarantees every terminal reads and writes the
- * same file, so history from one thread is there the next time a shell starts.
+ * vars but has no such convention).
+ *
+ * A shared `HISTFILE` alone only helps a *new* shell: bash and zsh both load
+ * history once, at startup, and otherwise only write it back at exit — so a
+ * command typed into thread A's still-open shell would not reach thread B
+ * until A's shell exited (or something ran `history -a` by hand). For bash,
+ * `bashPromptCommand` closes that gap through `PROMPT_COMMAND`, so a command
+ * run in one thread's open shell is recallable from another thread's open
+ * shell within one prompt cycle, with no explicit flush and no shell exit
+ * required. Two limits this cannot close: a user's own `~/.bashrc` can
+ * reassign `PROMPT_COMMAND` after this env var seeds it (rc files run after
+ * the shell starts and an assignment, not an append, silently drops the
+ * hook), and zsh has no environment-settable equivalent —
+ * `INC_APPEND_HISTORY` / `SHARE_HISTORY` are shell options `setopt` turns on,
+ * not variables the environment can supply — so zsh still only shares history
+ * at shell exit.
  *
  * Non-interactive tool shells (`run_shell` / `run_background`) never call
  * this — only the interactive Shells-tab PTY does.
@@ -173,8 +200,16 @@ export function terminalHistoryEnv(
     return {}
   }
   const out: Record<string, string> = { HISTFILE: join(dir, TERMINAL_HISTORY_FILENAME) }
-  if (shellName === 'bash' || shellName === 'sh') {
+  // `.includes`, not an exact `=== 'bash'` — `$SHELL` is not always a bare
+  // `bash` basename (versioned binaries like `bash5`, or a wrapper script that
+  // execs real bash, as this repo's own e2e `$SHELL` fixture does for
+  // deterministic terminal screenshots).
+  const isBash = shellName.includes('bash')
+  if (isBash || shellName === 'sh') {
     Object.assign(out, bashHistoryDefaults(baseEnv))
+  }
+  if (isBash) {
+    out['PROMPT_COMMAND'] = bashPromptCommand(baseEnv)
   }
   return out
 }

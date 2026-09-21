@@ -426,7 +426,7 @@ Rules for anything that lands in a captured frame:
   unrelated docs edit moves every wheel from 10% to 11%. The stable workspace is
   a fixed temp path with a few plain files and one commit at a fixed date.
 - **The runner.** Shells tabs spawn `$SHELL`; under e2e that is
-  `tests/e2e/fixtures/e2e-shell.sh` (bash, no rc files, prompt `$ `), so the
+  `tests/e2e/fixtures/e2e-bash-shell.sh` (bash, no rc files, prompt `$ `), so the
   runner's `user@host:~/path` never renders. The Ports rail reports nothing
   listening unless a spec seeds rows through `test:setPortRows`, so chromedriver
   and the Electron debug port stay out of frame. Fixture HTTP servers listen on

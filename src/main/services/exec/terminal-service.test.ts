@@ -377,15 +377,36 @@ describe('terminal history sharing (#2433)', () => {
     assert.equal(env['HISTFILE'], undefined)
   })
 
+  it('sets PROMPT_COMMAND for bash so a running shell flushes to and reloads from the shared HISTFILE', () => {
+    const env = terminalHistoryEnv('/bin/bash', 'project-bash-prompt', {})
+    assert.equal(env['PROMPT_COMMAND'], 'history -a; history -n')
+  })
+
+  it('prepends onto an existing PROMPT_COMMAND instead of replacing it', () => {
+    const env = terminalHistoryEnv('/bin/bash', 'project-bash-prompt-existing', {
+      PROMPT_COMMAND: 'my_custom_hook',
+    })
+    assert.equal(env['PROMPT_COMMAND'], 'history -a; history -n; my_custom_hook')
+  })
+
+  it('does not set PROMPT_COMMAND for zsh or fish — zsh has no environment-settable live-share option, and fish keys history by session name', () => {
+    const zshEnv = terminalHistoryEnv('/usr/bin/zsh', 'project-zsh-prompt')
+    assert.equal(zshEnv['PROMPT_COMMAND'], undefined)
+    const fishEnv = terminalHistoryEnv('/usr/bin/fish', 'project-fish-prompt')
+    assert.equal(fishEnv['PROMPT_COMMAND'], undefined)
+  })
+
   it('leaves agent/tool shells (no projectId) untouched', () => {
     assert.deepEqual(terminalHistoryEnv('/bin/bash', undefined), {})
     assert.deepEqual(terminalHistoryEnv('/bin/bash', null), {})
   })
 
-  it('honours the "share command history" setting turned off', async () => {
+  it('honours the "share command history" setting turned off, including PROMPT_COMMAND', async () => {
     await setSetting(SHARE_TERMINAL_HISTORY_ENABLED_SETTING, false)
     try {
-      assert.deepEqual(terminalHistoryEnv('/bin/bash', 'project-off'), {})
+      const env = terminalHistoryEnv('/bin/bash', 'project-off', { PROMPT_COMMAND: 'my_hook' })
+      assert.deepEqual(env, {})
+      assert.equal(env['PROMPT_COMMAND'], undefined)
     } finally {
       await setSetting(
         SHARE_TERMINAL_HISTORY_ENABLED_SETTING,
@@ -394,7 +415,7 @@ describe('terminal history sharing (#2433)', () => {
     }
   })
 
-  it("recalls a command typed in one thread from a second thread's terminal (real PTYs)", async (t) => {
+  it("recalls a command typed in one thread's still-open terminal from a second thread's terminal (real PTYs)", async (t) => {
     if (process.platform === 'win32') {
       t.skip('POSIX shell / readline assertion')
       return
@@ -419,30 +440,31 @@ describe('terminal history sharing (#2433)', () => {
     let session1 = ''
     let session2 = ''
     try {
-      // Thread 1's terminal: type one command line, then flush bash's
-      // in-memory history to the shared HISTFILE. `history -a` is an ordinary
-      // command typed into the terminal — not a PROMPT_COMMAND/rc-file
-      // override — and joining it onto the same line keeps this the single
-      // history entry thread 2 should see, with no ambiguity about which
-      // history slot the up arrow lands on.
-      const historyLine = `echo ${marker}; history -a`
+      // Thread 1's terminal: type one plain command line — no `history -a`,
+      // no rc-file hook. `terminalHistoryEnv`'s `PROMPT_COMMAND` is what
+      // flushes it: bash runs `history -a; history -n` on its own as it
+      // returns to its prompt after the command finishes, appending this
+      // shell's new line to the shared HISTFILE. Deliberately left running
+      // (not destroyed) so the recall below proves *live* sharing between two
+      // still-open shells, not just a HISTFILE a later shell happens to load.
+      const command = `echo ${marker}`
       session1 = await createTerminalSession(win1, 80, 24, {
         threadId: 'thread-1',
         projectId,
       })
-      writeTerminalSession(session1, OWNER, `${historyLine}\n`)
+      writeTerminalSession(session1, OWNER, `${command}\n`)
       await waitForTerminalOutput(win1, new RegExp(marker))
-      // `history -a`'s own completion produces no terminal output to poll
-      // for (unlike the echoed marker above), so there is no event to wait
-      // on before it has actually written the shared HISTFILE — a short
+      // `PROMPT_COMMAND` firing produces no terminal output of its own to
+      // poll for (unlike the echoed marker above), so there is no event to
+      // wait on before it has actually written the shared HISTFILE — a short
       // fixed pause is the only option here.
       await new Promise((resolve) => setTimeout(resolve, 500))
-      destroyTerminalSession(session1, OWNER)
 
-      // Thread 2's terminal: a fresh shell for the same project. It never
-      // types a command of its own before pressing the up arrow, so the one
-      // history entry loaded from the shared file is unambiguously what a
-      // single up arrow (readline's previous-history binding) recalls.
+      // Thread 2's terminal: a fresh shell for the same project, opened while
+      // thread 1's shell above is still running. It never types a command of
+      // its own before pressing the up arrow, so the one history entry loaded
+      // from the shared file is unambiguously what a single up arrow
+      // (readline's previous-history binding) recalls.
       session2 = await createTerminalSession(win2, 80, 24, {
         threadId: 'thread-2',
         projectId,
@@ -457,8 +479,8 @@ describe('terminal history sharing (#2433)', () => {
       const recalled = await waitForTerminalOutput(win2, new RegExp(marker))
       assert.match(
         recalled,
-        new RegExp(historyLine.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
-        'up-arrow in the second thread recalls the command typed in the first',
+        new RegExp(command.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
+        'up-arrow in the second thread recalls the command typed in the still-open first thread',
       )
     } finally {
       if (session1) destroyTerminalSession(session1, OWNER)

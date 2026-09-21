@@ -108,29 +108,24 @@ describe('shared terminal command history across threads (#2433)', function () {
     await shellA.waitForExist({ timeout: 30_000 })
     await waitForShellReady('thread A')
 
-    // The branch only ever sets HISTFILE (plus HISTCONTROL/HISTSIZE/HISTFILESIZE)
-    // through the PTY's environment (`terminalHistoryEnv` in
-    // src/main/services/exec/terminal-service.ts) — it never installs a
-    // PROMPT_COMMAND or rc-file hook, so bash's in-memory history is not written
-    // to the shared HISTFILE until the shell exits or something explicitly asks
-    // it to. This app also never closes a Shells tab when its shell process
-    // exits — `onExit` in terminals-pane.ts only prints
-    // "[Process exited with code N]" and clears the tab's sessionId, so there is
-    // no "tab closes" signal an e2e spec could wait on. `history -a` (a plain
-    // command typed into the shell, not a rc-file override) is the same flush
-    // this feature's own real-PTY unit test uses to make the write deterministic
-    // (terminal-service.test.ts, "recalls a command typed in one thread from a
-    // second thread's terminal (real PTYs)"), so it is used here too.
-    const historyCommand = `echo ${HISTORY_MARKER}; history -a`
+    // `terminalHistoryEnv` (src/main/services/exec/terminal-service.ts) sets
+    // HISTFILE plus a bash `PROMPT_COMMAND` (`history -a; history -n`), so a
+    // plain command run here reaches the shared HISTFILE on its own, as soon
+    // as this shell returns to its prompt — no `history -a` typed by hand, no
+    // rc-file hook, and (deliberately) no closing this shell's tab either:
+    // thread A's shell is left running for the rest of the test, to prove
+    // *live* sharing between two still-open shells, the gap a shared HISTFILE
+    // alone did not close.
+    const historyCommand = `echo ${HISTORY_MARKER}`
     await activeTerminalHelper().click()
     await browser.keys([historyCommand, '\uE007'])
     await browser.waitUntil(async () => (await activeTerminalText()).includes(HISTORY_MARKER), {
       timeout: 30_000,
       timeoutMsg: 'expected the marker echoed in thread A shell',
     })
-    // `history -a` produces no terminal output of its own to poll for — give it
-    // a moment to land on disk before reading the HISTFILE and before thread B's
-    // shell starts (and loads history from that same file).
+    // `PROMPT_COMMAND` firing produces no terminal output of its own to poll
+    // for — give it a moment to land on disk before reading the HISTFILE and
+    // before thread B's shell starts (and loads history from that same file).
     await browser.pause(500)
 
     const historyPath = join(e2eWorkspaceDir(), PROJECT_ID, TERMINAL_HISTORY_FILENAME)
