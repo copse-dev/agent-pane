@@ -413,6 +413,54 @@ async function buildFirstHandoffPrompt(
   return applyRemoteAgentHandoffContext(prompt, { priorMessages, branch })
 }
 
+/**
+ * Fetch this session's cumulative usage, report only this turn's delta (the
+ * API reports totals across every turn on the session), and — when non-zero —
+ * emit it as a `usage` chunk so it reaches the local ledger the same way a
+ * local model's usage does. Shared by the normal completion path and the
+ * abort path (issue #2448): a session interrupted mid-turn has typically
+ * already billed real tokens, and skipping this call there silently dropped
+ * that spend from the usage panel with no way to recover it later.
+ */
+async function reportManagedAgentUsage(input: {
+  fetchImpl: typeof fetch
+  baseUrl: string
+  apiKey: string
+  threadId: string
+  session: ManagedAgentSession
+  selectedModel: string
+  onChunk: (chunk: StreamChunk) => void
+}): Promise<{ inputTokens: number; outputTokens: number }> {
+  let deltaInput = 0
+  let deltaOutput = 0
+  try {
+    const cumulative = await fetchSessionUsage({
+      fetchImpl: input.fetchImpl,
+      baseUrl: input.baseUrl,
+      apiKey: input.apiKey,
+      sessionId: input.session.sessionId,
+    })
+    // Session usage is cumulative across all turns; report only this turn's
+    // delta and persist the new running total.
+    deltaInput = Math.max(0, cumulative.inputTokens - input.session.usageInput)
+    deltaOutput = Math.max(0, cumulative.outputTokens - input.session.usageOutput)
+    input.session.usageInput = cumulative.inputTokens
+    input.session.usageOutput = cumulative.outputTokens
+    writeSession(input.threadId, input.session)
+    if (deltaInput || deltaOutput) {
+      input.onChunk({
+        type: 'usage',
+        model: remoteAgentModelValue(REMOTE_AGENT_PROVIDER_ANTHROPIC, input.selectedModel),
+        inputTokens: deltaInput,
+        outputTokens: deltaOutput,
+      })
+    }
+  } catch (err) {
+    console.warn('[managed-agent] usage fetch failed:', err)
+  }
+  return { inputTokens: deltaInput, outputTokens: deltaOutput }
+}
+
 function buildLaunchNotice(reused: boolean, hasRepo: boolean): string {
   const verb = reused ? 'Continuing on' : 'Running on'
   const outcome = hasRepo
@@ -557,33 +605,15 @@ export async function runManagedAgentFromSettings(
         }),
     })
 
-    let deltaInput = 0
-    let deltaOutput = 0
-    try {
-      const cumulative = await fetchSessionUsage({
-        fetchImpl,
-        baseUrl,
-        apiKey,
-        sessionId: session.sessionId,
-      })
-      // Session usage is cumulative across all turns; report only this turn's
-      // delta and persist the new running total.
-      deltaInput = Math.max(0, cumulative.inputTokens - session.usageInput)
-      deltaOutput = Math.max(0, cumulative.outputTokens - session.usageOutput)
-      session.usageInput = cumulative.inputTokens
-      session.usageOutput = cumulative.outputTokens
-      writeSession(options.threadId, session)
-      if (deltaInput || deltaOutput) {
-        options.onChunk({
-          type: 'usage',
-          model: remoteAgentModelValue(REMOTE_AGENT_PROVIDER_ANTHROPIC, selectedModel),
-          inputTokens: deltaInput,
-          outputTokens: deltaOutput,
-        })
-      }
-    } catch (err) {
-      console.warn('[managed-agent] usage fetch failed:', err)
-    }
+    const { inputTokens: deltaInput, outputTokens: deltaOutput } = await reportManagedAgentUsage({
+      fetchImpl,
+      baseUrl,
+      apiKey,
+      threadId: options.threadId,
+      session,
+      selectedModel,
+      onChunk: options.onChunk,
+    })
 
     options.onChunk(
       terminalStatus ? { type: 'done', stopReason: terminalStatus } : { type: 'done' },
@@ -596,6 +626,23 @@ export async function runManagedAgentFromSettings(
       outputTokens: deltaOutput,
       messages: assistantText ? [{ role: 'assistant', content: assistantText }] : [],
     }
+  } catch (err) {
+    // User Stop / Send now (or a host-issued abort) interrupts the stream
+    // mid-turn. The session has typically already billed real tokens by then —
+    // attribute them to the ledger before letting the abort propagate to the
+    // caller, which paints the turn as CANCELLED.
+    if (options.signal.aborted) {
+      await reportManagedAgentUsage({
+        fetchImpl,
+        baseUrl,
+        apiKey,
+        threadId: options.threadId,
+        session,
+        selectedModel,
+        onChunk: options.onChunk,
+      })
+    }
+    throw err
   } finally {
     options.signal.removeEventListener('abort', onAbort)
   }

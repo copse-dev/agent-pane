@@ -296,6 +296,27 @@ describe('renderModelTable alignment', () => {
     assert.equal(estimate?.textContent, '(standard rate)')
     assert.match(estimate.getAttribute('title') ?? '', /no published catalog rate/)
   })
+
+  it('renders a cloud agent run as an unpriced cloud row instead of dropping it (#2448)', () => {
+    const host = document.createElement('div')
+    // A Cursor / Claude Cloud Agent run records its model as `remote-agent:<provider>`
+    // (optionally `#<model>`) — not in the static pricing catalog, so the rate is
+    // unknown. The row must still render with its real token counts rather than
+    // disappearing from the usage panel.
+    renderModelTable(
+      host,
+      'Cloud models',
+      [row('remote-agent:cursor', { pricingKnown: false, estimatedCostUsd: 0 })],
+      'No cloud model usage in this period.',
+    )
+    const table = host.querySelector('table.usage-table')
+    assert.ok(table, 'expected the cloud agent run to render a table, not the empty state')
+    const cells = [...table.querySelectorAll('tbody tr td')].map((td) => td.textContent)
+    assert.equal(cells[0], 'remote-agent:cursor')
+    assert.equal(cells[1], '1.0k')
+    assert.equal(cells[2], '200')
+    assert.equal(cells[5], 'unpriced')
+  })
 })
 
 describe('renderPlanWorthItSection', () => {
