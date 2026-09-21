@@ -1829,7 +1829,7 @@ export async function ensureToolPermitted(
         args !== null &&
         'args' in args &&
         Array.isArray((args as { args?: unknown }).args)
-          ? ((args as { args: unknown[] }).args.filter((a) => typeof a === 'string') as string[])
+          ? (args as { args: unknown[] }).args.filter((a) => typeof a === 'string')
           : undefined
       const envKeys =
         typeof args === 'object' &&
