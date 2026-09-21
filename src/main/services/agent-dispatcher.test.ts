@@ -194,6 +194,102 @@ describe('AgentDispatcher', () => {
     ])
   })
 
+  it('preserves a failed mid-stream turn for one later explicit continuation without replaying tools', async () => {
+    const seenPrior: LLMMessage[][] = []
+    let persisted: LLMMessage[] = []
+    let runs = 0
+    const interrupted: LLMMessage[] = [
+      { role: 'user', content: 'Upload the report, then remove the generated file' },
+      { role: 'assistant', content: 'The report is uploaded. Cleaning up next.' },
+      {
+        role: 'assistant',
+        content: [{ id: 'upload-1', name: 'run_shell', args: { command: 'upload report.pdf' } }],
+      },
+      { role: 'tool', toolResults: [{ toolCallId: 'upload-1', result: 'uploaded' }] },
+    ]
+    const run: AgentDispatcherDependencies['run'] = async (
+      _threadId,
+      userContent,
+      priorMessages,
+      _host,
+      _registry,
+      options,
+    ) => {
+      runs += 1
+      seenPrior.push([...priorMessages])
+      if (runs === 1) {
+        assert.equal(userContent, 'Upload the report, then remove the generated file')
+        options.onHistoryCheckpoint?.(interrupted)
+        await settle()
+        return {
+          usage: { inputTokens: 20, outputTokens: 8 },
+          messages: interrupted,
+          turnOutcome: {
+            status: 'failed',
+            stopReason: 'error',
+            source: 'provider',
+            executor: 'local',
+            provider: 'openrouter',
+            model: 'openrouter:x-ai/grok-4.5',
+            lastEvent: 'tool',
+            error: { code: 502, message: 'upstream disconnected' },
+            endedAt: 10,
+          },
+        }
+      }
+      return {
+        usage: { inputTokens: 30, outputTokens: 5 },
+        messages: [
+          ...priorMessages,
+          { role: 'user', content: userContent },
+          { role: 'assistant', content: 'Removed the generated file.' },
+        ],
+      }
+    }
+    const dispatcherDependencies = (): AgentDispatcherDependencies =>
+      dependencies({
+        loadHistory: async () => persisted,
+        saveHistory: async (_projectId, _threadId, messages) => {
+          persisted = [...messages]
+        },
+        run,
+      })
+    const dispatcher = new AgentDispatcher(host, registry, dispatcherDependencies())
+
+    await dispatcher.dispatch(
+      request({
+        payload: {
+          userContent: 'Upload the report, then remove the generated file',
+          invokedSkills: [],
+          priorTodos: [],
+        },
+      }),
+    )
+    assert.equal(runs, 1, 'a provider failure never dispatches another turn automatically')
+
+    // Simulate an application restart: the explicit recovery must load the
+    // failed turn from the persisted sidecar, not a dispatcher's memory cache.
+    const restartedDispatcher = new AgentDispatcher(host, registry, dispatcherDependencies())
+    await restartedDispatcher.dispatch(
+      request({
+        payload: {
+          userContent:
+            'Continue the interrupted turn from the persisted history. Do not repeat completed tool calls.',
+          invokedSkills: [],
+          priorTodos: [],
+        },
+      }),
+    )
+
+    assert.equal(runs, 2)
+    assert.deepEqual(seenPrior, [[], interrupted])
+    assert.equal(
+      seenPrior[1]?.filter((message) => message.role === 'tool').length,
+      1,
+      'the completed tool result is history, not a replayed call',
+    )
+  })
+
   it('keeps the checkpointed prompt when the run throws before committing', async () => {
     const saved: LLMMessage[][] = []
     const dispatcher = new AgentDispatcher(
