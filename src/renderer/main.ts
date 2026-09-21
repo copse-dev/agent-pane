@@ -105,6 +105,7 @@ import { startPerfAutopilot } from './perf-autopilot.ts'
 import { attachThreadHydration } from './controller/thread-hydration.ts'
 import { attachPrPanelFollow } from './controller/pr-panel-follow.ts'
 import { startExternalCursorAgentSync } from './controller/external-cursor-agent-sync.ts'
+import { attachRemoteAgentThreadRefresh } from './controller/remote-agent-thread-refresh.ts'
 import { loadStartupSettings } from './controller/startup-settings.ts'
 import {
   addProjectFromPath,
@@ -349,6 +350,9 @@ async function boot(): Promise<void> {
     // Outside Cursor cloud agents for the open project — first tick after one
     // interval, never on editor open.
     startExternalCursorAgentSync(store, api)
+    // Refetch a Cursor cloud agent thread's latest state on activation,
+    // including once at boot for the thread reopened into (issue #2446).
+    attachRemoteAgentThreadRefresh(store, api)
   } else {
     // …but the diff queue is shared workspace state, not agent ownership. Without
     // this the detached Changes pane has an empty `stagedDiffs` forever and never

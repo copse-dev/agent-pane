@@ -27,6 +27,7 @@ import {
   type RemoteAgentProvider,
 } from '@shared/remote-agent.ts'
 import { firstNonEmptyString, isRecord } from '@shared/unknown-value.ts'
+import { memberOf } from '@copse/std/member-of.ts'
 import { z } from 'zod'
 import { sleepMs } from '@copse/llm/stream-retry.ts'
 import { getApiKey, getSetting } from '../storage/settings.ts'
@@ -130,6 +131,26 @@ interface RemoteAgentSession {
   model?: string
   /** Web URL for the remote run (e.g. cursor.com/agents/...), shown in the transcript. */
   url?: string
+  /**
+   * Provider-side run id for the most recent turn on this agent (issue #2446).
+   * Absent on sessions persisted before reopen-refresh support — those threads
+   * simply get no refresh until their next turn writes one.
+   */
+  runId?: string
+  /**
+   * Last SSE event id this session has applied for {@link runId}, so a later
+   * reopen resumes the stream exactly where it left off (the same
+   * `Last-Event-ID` resume the mid-turn reconnect loop already uses) instead of
+   * re-fetching from the start, which can replay text already shown.
+   */
+  lastEventId?: string
+  /**
+   * Terminal status ({@link isTerminalRunStatus}) already reconciled into the
+   * thread for {@link runId}. Once set, reopening this thread again skips the
+   * refresh outright — a finished Cursor run cannot change further — instead of
+   * re-fetching a snapshot it would just discard.
+   */
+  syncedTerminalStatus?: string
 }
 
 const optionalString = z.preprocess(
@@ -215,6 +236,11 @@ function readSession(threadId: string): RemoteAgentSession | null {
     baseUrl: raw['baseUrl'],
     ...(typeof raw['model'] === 'string' ? { model: raw['model'] } : {}),
     ...(typeof raw['url'] === 'string' ? { url: raw['url'] } : {}),
+    ...(typeof raw['runId'] === 'string' ? { runId: raw['runId'] } : {}),
+    ...(typeof raw['lastEventId'] === 'string' ? { lastEventId: raw['lastEventId'] } : {}),
+    ...(typeof raw['syncedTerminalStatus'] === 'string'
+      ? { syncedTerminalStatus: raw['syncedTerminalStatus'] }
+      : {}),
   }
 }
 
@@ -683,11 +709,9 @@ const cursorRunResponseSchema = z
   .loose()
 type CursorRunResponse = z.infer<typeof cursorRunResponseSchema>
 
-function isTerminalRunStatus(status: string | null | undefined): boolean {
-  return (
-    status === 'FINISHED' || status === 'ERROR' || status === 'CANCELLED' || status === 'EXPIRED'
-  )
-}
+const TERMINAL_RUN_STATUSES = ['FINISHED', 'ERROR', 'CANCELLED', 'EXPIRED'] as const
+type TerminalRunStatus = (typeof TERMINAL_RUN_STATUSES)[number]
+const isTerminalRunStatus = memberOf(TERMINAL_RUN_STATUSES)
 
 async function fetchCursorRun(input: {
   fetchImpl: typeof fetch
@@ -824,6 +848,14 @@ async function streamRemoteRun(input: {
   runId: string
   signal: AbortSignal
   onChunk: (chunk: StreamChunk) => void
+  /**
+   * Resume from a previously-seen event id (issue #2446) instead of always
+   * starting cold — used when reattaching to a run on thread reopen, where a
+   * cold start could replay text already shown before the app restarted.
+   */
+  initialLastEventId?: string
+  /** Called as new event ids arrive, so a caller can persist the resume point. */
+  persistEventId?: (id: string) => void
 }): Promise<RemoteStreamState> {
   const state: RemoteStreamState = {
     seenToolCalls: new Set(),
@@ -832,7 +864,7 @@ async function streamRemoteRun(input: {
     terminalStatus: null,
   }
   const seenEventIds = new Set<string>()
-  let lastEventId: string | undefined
+  let lastEventId: string | undefined = input.initialLastEventId
   let attempt = 0
   const deadline = Date.now() + STREAM_WAIT_DEADLINE_MS
 
@@ -852,6 +884,7 @@ async function streamRemoteRun(input: {
         onChunk: input.onChunk,
         onEventId: (id) => {
           lastEventId = id
+          input.persistEventId?.(id)
         },
       })
       if (outcome === 'received-result') return state
@@ -974,14 +1007,19 @@ export async function runRemoteAgentFromSettings(
         ...(selectedModel ? { model: selectedModel } : {}),
       })
 
-  writeSession(options.threadId, {
+  // Kept around (rather than re-reading storage) so `persistEventId` below can
+  // merge onto it: this run's own fields never change mid-stream, only
+  // `lastEventId` does.
+  const sessionRecord: RemoteAgentSession = {
     v: 1,
     provider: options.provider,
     baseUrl,
     agentId: run.agentId,
+    runId: run.runId,
     ...(selectedModel ? { model: selectedModel } : {}),
     ...(run.url ? { url: run.url } : {}),
-  })
+  }
+  writeSession(options.threadId, sessionRecord)
 
   // Record the durable agent-run ↔ thread link at launch (issue #690, Q6). Only
   // on a fresh agent — a follow-up reuses the same agent/link, and the PR it
@@ -1032,7 +1070,25 @@ export async function runRemoteAgentFromSettings(
       runId: run.runId,
       signal: options.signal,
       onChunk: options.onChunk,
+      // A crash/quit mid-run leaves this as the durable resume point (issue
+      // #2446) — reopening the thread reattaches from here instead of from the
+      // start, which would replay text this session already showed.
+      persistEventId: (id) => {
+        writeSession(options.threadId, { ...sessionRecord, lastEventId: id })
+      },
     })
+    // The stream above already applied a terminal result to the transcript
+    // (its text/tool chunks went straight to `options.onChunk`), so record that
+    // this run's outcome is fully reconciled — a later reopen must not re-apply
+    // it (see `refreshRemoteAgentRun`).
+    if (isTerminalRunStatus(state.terminalStatus)) {
+      // `sessionRecord` never carried `lastEventId` (only the merged copies
+      // `persistEventId` wrote did), so this drops it along with recording sync.
+      writeSession(options.threadId, {
+        ...sessionRecord,
+        syncedTerminalStatus: state.terminalStatus,
+      })
+    }
     let usage = { inputTokens: 0, outputTokens: 0 }
     try {
       usage = await fetchRunUsage({
@@ -1084,6 +1140,9 @@ export async function runRemoteAgentFromSettings(
     if (options.signal.aborted) {
       if (cancelPromise) await cancelPromise
       options.onChunk({ type: 'done', stopReason: 'CANCELLED' })
+      // Already fully reconciled locally (the `done` above is it) — a later
+      // reopen must not refetch and re-append this run's result (issue #2446).
+      writeSession(options.threadId, { ...sessionRecord, syncedTerminalStatus: 'CANCELLED' })
       return {
         assistantText: '',
         inputTokens: 0,
@@ -1095,4 +1154,137 @@ export async function runRemoteAgentFromSettings(
   } finally {
     options.signal.removeEventListener('abort', abortCancel)
   }
+}
+
+// --- Reopen refresh (issue #2446) -------------------------------------------
+//
+// Loading a project's threads reads the persisted transcript off disk and
+// nothing more (see `attachThreadHydration`): a Cursor cloud agent thread that
+// was mid-run when the app last closed reopens showing exactly what was on
+// screen at quit, even though the run itself keeps going (or finishes) on
+// Cursor's infrastructure regardless of whether Copse is watching. Reopening
+// never asked Cursor for the run's current state, so the thread could sit
+// indefinitely behind reality.
+//
+// `refreshRemoteAgentRun` closes that gap without polling: on thread
+// activation it makes exactly one request (Get A Run) using the session this
+// thread's launch already persisted. A terminal run applies its snapshot
+// through the same `applyCursorRunSnapshot` the mid-turn 410 fallback uses,
+// once, then is marked synced so every later activation skips the network
+// entirely. A run still in progress reattaches the same resumable SSE loop the
+// mid-turn reconnect uses — from this session's last-seen event id, so it
+// picks up where it left off instead of replaying text already shown.
+
+export interface RemoteAgentRefreshOptions {
+  threadId: string
+  signal: AbortSignal
+  onChunk: (chunk: StreamChunk) => void
+  fetchImpl?: typeof fetch
+}
+
+export type RemoteAgentRefreshOutcome =
+  /** No session, or one predating reopen-refresh support (no `runId` yet). */
+  | { kind: 'no-session' }
+  /** Session belongs to a provider this refresh does not (yet) cover. */
+  | { kind: 'unsupported-provider' }
+  /** Terminal and already reconciled on a previous activation — no request made. */
+  | { kind: 'already-synced' }
+  /** Fetched a terminal run and applied its snapshot just now. */
+  | { kind: 'snapshot'; status: TerminalRunStatus }
+  /** Run was still in progress; reattached its stream until it finished. */
+  | { kind: 'reattached'; status: TerminalRunStatus | null }
+
+function freshRemoteStreamState(): RemoteStreamState {
+  return { seenToolCalls: new Set(), assistantText: '', resultText: '', terminalStatus: null }
+}
+
+/** In-flight refreshes by thread id, so re-activating the same thread while one
+ *  is still running coalesces onto it instead of starting a second request. */
+const refreshInFlight = new Map<string, Promise<RemoteAgentRefreshOutcome>>()
+
+async function performRemoteAgentRefresh(
+  options: RemoteAgentRefreshOptions,
+): Promise<RemoteAgentRefreshOutcome> {
+  const session = readSession(options.threadId)
+  if (!session) return { kind: 'no-session' }
+  if (session.provider !== REMOTE_AGENT_PROVIDER_CURSOR) return { kind: 'unsupported-provider' }
+  if (!session.runId) return { kind: 'no-session' }
+  if (session.syncedTerminalStatus) return { kind: 'already-synced' }
+
+  const fetchImpl = options.fetchImpl ?? fetch
+  const apiKey = resolveApiKey()
+
+  // A persisted `lastEventId` means some of this run's text already streamed
+  // into the transcript before the app closed. `applyCursorRunSnapshot` always
+  // emits the *whole* `run.result` (it starts from a fresh, empty
+  // `RemoteStreamState`, so it has no way to know part of that text is already
+  // shown) — taking the snapshot branch here would duplicate it even though
+  // the run has since finished. Skip straight to the resumable stream instead:
+  // it delivers only the events after `lastEventId`, and already falls back to
+  // this same snapshot on HTTP 410 (retention elapsed), which is the one case
+  // a duplicate is unavoidable — the transcript itself is gone from Cursor's
+  // side by then. This also makes the Get A Run call below redundant when a
+  // resume point exists, so it is skipped: the stream attempt itself is enough
+  // to tell a live run from a finished one.
+  if (!session.lastEventId) {
+    const run = await fetchCursorRun({
+      fetchImpl,
+      baseUrl: session.baseUrl,
+      apiKey,
+      agentId: session.agentId,
+      runId: session.runId,
+      signal: options.signal,
+    })
+
+    if (isTerminalRunStatus(run.status)) {
+      applyCursorRunSnapshot(run, freshRemoteStreamState(), options.onChunk)
+      writeSession(options.threadId, { ...session, syncedTerminalStatus: run.status })
+      return { kind: 'snapshot', status: run.status }
+    }
+  }
+
+  // Tracks the latest persisted session so the final write below merges onto
+  // whatever `persistEventId` last wrote, rather than the stale copy read at
+  // the top of this function (which would otherwise erase the resume point
+  // `persistEventId` just recorded).
+  let latestSession = session
+  const state = await streamRemoteRun({
+    fetchImpl,
+    baseUrl: session.baseUrl,
+    apiKey,
+    agentId: session.agentId,
+    runId: session.runId,
+    signal: options.signal,
+    onChunk: options.onChunk,
+    ...(session.lastEventId ? { initialLastEventId: session.lastEventId } : {}),
+    persistEventId: (id) => {
+      latestSession = { ...latestSession, lastEventId: id }
+      writeSession(options.threadId, latestSession)
+    },
+  })
+  if (isTerminalRunStatus(state.terminalStatus)) {
+    writeSession(options.threadId, { ...latestSession, syncedTerminalStatus: state.terminalStatus })
+  }
+  return {
+    kind: 'reattached',
+    status: isTerminalRunStatus(state.terminalStatus) ? state.terminalStatus : null,
+  }
+}
+
+/**
+ * Refresh a thread's cloud agent run on reopen/activation (issue #2446). Safe
+ * to call for any thread — a thread with no remote-agent session, or one on a
+ * provider this does not cover, resolves immediately with no request made.
+ * Concurrent calls for the same thread share one in-flight request.
+ */
+export function refreshRemoteAgentRun(
+  options: RemoteAgentRefreshOptions,
+): Promise<RemoteAgentRefreshOutcome> {
+  const existing = refreshInFlight.get(options.threadId)
+  if (existing) return existing
+  const promise = performRemoteAgentRefresh(options).finally(() => {
+    if (refreshInFlight.get(options.threadId) === promise) refreshInFlight.delete(options.threadId)
+  })
+  refreshInFlight.set(options.threadId, promise)
+  return promise
 }

@@ -1,5 +1,7 @@
 import { containerRunRequestSchema } from '@shared/container-run-schema.ts'
 import { TOOL_PERMISSION_POLICIES } from '@shared/types/tool-permissions.ts'
+import type { AgentHost } from '@copse/agent/agent-host.ts'
+import type { StreamChunk } from '@shared/types'
 import { app, BrowserWindow, dialog, ipcMain, shell, webContents, type WebContents } from 'electron'
 import { mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
@@ -12,6 +14,7 @@ import { parseMessageValue, parseThreadValue } from '@shared/threads/thread-boun
 import micromatch from 'micromatch'
 import { nonEmptyStringOr, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import { createPanePopoutWindow } from '../windows/create-popout-window.ts'
+import { assertPrimaryMainWindow } from '../windows/create-main-window.ts'
 import { broadcastToAppWindows } from '../windows/app-window-broadcast.ts'
 import { browserPartitionForContents } from '../windows/browser-web-contents.ts'
 import { isVisibleBrowserSessionPartition } from '@shared/browser-session.ts'
@@ -161,7 +164,7 @@ import {
   openWorkspaceInExternalEditor,
 } from '../services/editors/editor-launcher.ts'
 import { probeAcpAgentForSettings } from '../services/acp/acp-agent-service.ts'
-import { listRunningThreadIds } from '../services/agent-service.ts'
+import { listRunningThreadIds, refreshRemoteAgentThread } from '../services/agent-service.ts'
 import {
   listWorktreeInventory,
   cleanupWorktreePackages,
@@ -2789,6 +2792,22 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     }
     const id = parseIpcArgs(zProjectId, [projectId])
     return discoverExternalCursorAgents({ projectId: id })
+  })
+  /**
+   * Refresh a cloud agent thread's latest state on reopen/activation (issue
+   * #2446). A no-op (no request) for a thread that isn't remote-agent-backed,
+   * or one already known fully synced — see `refreshRemoteAgentThread`.
+   */
+  ipcMain.handle('remote-agent:refresh-thread', (event, threadIdArg: unknown) => {
+    assertMainFrameSender(event, win)
+    assertPrimaryMainWindow(event.sender)
+    const threadId = parseIpcArgs(zThreadId, [threadIdArg])
+    const host: AgentHost<StreamChunk> = {
+      emit: (emitThreadId, chunk) => {
+        if (!win.isDestroyed()) win.webContents.send('agent:chunk', emitThreadId, chunk)
+      },
+    }
+    return refreshRemoteAgentThread(threadId, host)
   })
   ipcMain.handle('acp:detect-agents', (event) => {
     assertMainFrameSender(event, win)

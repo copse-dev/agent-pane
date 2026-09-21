@@ -28,6 +28,8 @@ import { runWithWorkspaceTrust } from './security/workspace-trust.ts'
 import { buildAcpAgentApp, type AcpTurnRunner } from './acp/acp-agent-server.ts'
 import { acquireAcpSession, disposeAllAcpSessions } from './acp/acp-session-pool.ts'
 import { ACP_CANCELLED_TOOL_CALL_RESULT } from './acp/acp-turn-recovery.ts'
+import { clearRemoteAgentSession } from './remote/remote-agent-client.ts'
+import { storageSet } from './storage/storage.ts'
 
 // agent-service is now an orchestrator that re-exports the public surface from the
 // focused modules it composes. These tests pin that public surface so IPC callers
@@ -680,5 +682,102 @@ describe('runAgent AgentHost decoupling', () => {
     assert.equal(terminal.outcome.stopReason, 'max_steps')
     assert.equal(terminal.outcome.rawStopReason, 'max_steps')
     assert.deepEqual(received.at(-1), { type: 'done', stopReason: 'max_steps' })
+  })
+})
+
+describe('refreshRemoteAgentThread (issue #2446 — reopen refresh)', () => {
+  const threadId = 'thread-refresh-glue-2446'
+  const agentId = 'bc-refresh-glue'
+  const runId = 'run-refresh-glue'
+  const baseUrl = 'https://api.cursor.com'
+
+  function seedSession(): void {
+    storageSet(`remote-agent-session:${threadId}`, {
+      v: 1,
+      provider: 'cursor',
+      baseUrl,
+      agentId,
+      runId,
+    })
+  }
+
+  it('is a no-op for a thread with no remote-agent session', async () => {
+    const received: StreamChunk[] = []
+    const host: AgentHost<StreamChunk> = { emit: (_id, chunk) => received.push(chunk) }
+    await agentService.refreshRemoteAgentThread('thread-no-session-2446', host)
+    assert.deepEqual(received, [])
+  })
+
+  it('forwards a terminal snapshot and a final done chunk through the host', async () => {
+    seedSession()
+    const prevKey = process.env['CURSOR_API_KEY']
+    process.env['CURSOR_API_KEY'] = 'test-key'
+    const prevFetch = globalThis.fetch
+    globalThis.fetch = async (input: RequestInfo | URL): Promise<Response> => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+      if (url === `${baseUrl}/v1/agents/${agentId}/runs/${runId}`) {
+        return new Response(
+          JSON.stringify({ id: runId, status: 'FINISHED', result: 'Reopen brought this back.' }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        )
+      }
+      throw new Error(`unexpected fetch: ${url}`)
+    }
+
+    try {
+      const received: StreamChunk[] = []
+      const host: AgentHost<StreamChunk> = { emit: (_id, chunk) => received.push(chunk) }
+      await agentService.refreshRemoteAgentThread(threadId, host)
+
+      assert.deepEqual(received, [
+        { type: 'text', text: 'Reopen brought this back.' },
+        { type: 'done', stopReason: 'FINISHED' },
+      ])
+    } finally {
+      globalThis.fetch = prevFetch
+      if (prevKey === undefined) delete process.env['CURSOR_API_KEY']
+      else process.env['CURSOR_API_KEY'] = prevKey
+      clearRemoteAgentSession(threadId)
+    }
+  })
+
+  it('declines to start a second refresh while one for the thread is already in flight', async () => {
+    seedSession()
+    const prevKey = process.env['CURSOR_API_KEY']
+    process.env['CURSOR_API_KEY'] = 'test-key'
+    const prevFetch = globalThis.fetch
+    let getRunCalls = 0
+    let resolveRun: (() => void) | undefined
+    globalThis.fetch = async (input: RequestInfo | URL): Promise<Response> => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+      if (url === `${baseUrl}/v1/agents/${agentId}/runs/${runId}`) {
+        getRunCalls += 1
+        await new Promise<void>((resolve) => {
+          resolveRun = resolve
+        })
+        return new Response(JSON.stringify({ id: runId, status: 'FINISHED', result: 'done' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+      throw new Error(`unexpected fetch: ${url}`)
+    }
+
+    try {
+      const host: AgentHost<StreamChunk> = { emit: () => {} }
+      const first = agentService.refreshRemoteAgentThread(threadId, host)
+      const second = agentService.refreshRemoteAgentThread(threadId, host)
+      // The first call's abortMap registration happens synchronously before its
+      // first await, so the second call sees the thread already claimed.
+      assert.equal(getRunCalls, 1)
+      resolveRun?.()
+      await Promise.all([first, second])
+      assert.equal(getRunCalls, 1, 'only the first call made a request')
+    } finally {
+      globalThis.fetch = prevFetch
+      if (prevKey === undefined) delete process.env['CURSOR_API_KEY']
+      else process.env['CURSOR_API_KEY'] = prevKey
+      clearRemoteAgentSession(threadId)
+    }
   })
 })

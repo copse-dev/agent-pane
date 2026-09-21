@@ -193,7 +193,7 @@ import { verifyTodoCheck } from './todo-verification.ts'
 import type { TodoItem } from '@shared/types/todo.ts'
 import { type ReasoningLevel } from '@copse/llm/model-parameters.ts'
 import { parseRemoteAgentModelSelection } from '@shared/remote-agent.ts'
-import { runRemoteAgentFromSettings } from './remote/remote-agent-client.ts'
+import { refreshRemoteAgentRun, runRemoteAgentFromSettings } from './remote/remote-agent-client.ts'
 import { resolveAgentChatModel } from './providers/resolve-agent-model.ts'
 import {
   offerAcpClaudeFallback,
@@ -2439,6 +2439,57 @@ export function abortAgent(threadId: string): void {
  */
 export function listRunningThreadIds(): string[] {
   return [...abortMap.keys()]
+}
+
+/**
+ * Refresh a thread's cloud agent run on reopen/activation (issue #2446): the
+ * renderer calls this when the active thread turns out to be backed by a
+ * remote-agent session, so a run that kept going (or finished) while the app
+ * was closed reconciles into the thread instead of sitting stale. A no-op for
+ * any other thread (see {@link refreshRemoteAgentRun}), so it is cheap to call
+ * unconditionally on every activation — including once the thread's transcript
+ * has just been hydrated, or the transcript was already in memory.
+ *
+ * Registered in the same `abortMap` a genuine turn uses, purely so the two
+ * cannot write into the transcript at once: `sendChunk` below re-checks
+ * ownership of the thread's `abortMap` slot before forwarding each chunk, and
+ * self-aborts the moment a real turn (or another refresh) claims it, rather
+ * than continuing to append text the new turn owns. Declining to start when
+ * the thread already has a live entry is the same guard in the other
+ * direction. Unlike a real turn, no tools run locally (the cloud agent
+ * executes everything on Cursor's infrastructure) and the thread's `status`
+ * is left alone — this is a passive resync, not a new turn — so this skips
+ * the active-run identity / hook machinery a real turn needs.
+ */
+export async function refreshRemoteAgentThread(
+  threadId: string,
+  host: AgentHost<StreamChunk>,
+): Promise<void> {
+  if (abortMap.has(threadId)) return
+  const controller = new AbortController()
+  abortMap.set(threadId, controller)
+  const emit = createAgentChunkSink(threadId, host)
+  const sendChunk = (chunk: StreamChunk): void => {
+    if (abortMap.get(threadId) !== controller) {
+      if (!controller.signal.aborted) controller.abort()
+      return
+    }
+    emit(chunk)
+  }
+  try {
+    const outcome = await refreshRemoteAgentRun({
+      threadId,
+      signal: controller.signal,
+      onChunk: sendChunk,
+    })
+    if (outcome.kind === 'snapshot' || outcome.kind === 'reattached') {
+      sendChunk(outcome.status ? { type: 'done', stopReason: outcome.status } : { type: 'done' })
+    }
+  } catch (err) {
+    if (!controller.signal.aborted) console.warn('[remote-agent] reopen refresh failed:', err)
+  } finally {
+    if (abortMap.get(threadId) === controller) abortMap.delete(threadId)
+  }
 }
 
 export interface RetryOptions {

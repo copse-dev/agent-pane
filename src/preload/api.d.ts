@@ -678,6 +678,13 @@ export interface ApiClient {
       skippedWrongRepo: number
       skippedInactive: number
     }>
+    /**
+     * Refresh a cloud agent thread's latest state on reopen/activation (issue
+     * #2446): applies a finished run's snapshot, or reattaches a still-live
+     * run's stream, into the thread. A no-op for a thread that is not
+     * remote-agent-backed or is already known fully synced.
+     */
+    refreshThread: (threadId: string) => Promise<void>
   }
   acp: {
     /** Detect known ACP agents installed/running on this device (for the Settings panel). */

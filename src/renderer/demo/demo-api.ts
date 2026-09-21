@@ -854,6 +854,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
           skippedWrongRepo: 0,
           skippedInactive: 0,
         }),
+      refreshThread: (_threadId: string) => resolvedVoid(),
     },
     acp: {
       detectAgents: emptyArray,

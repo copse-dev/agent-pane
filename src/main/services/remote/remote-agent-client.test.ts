@@ -1,4 +1,4 @@
-import { afterEach, describe, it, mock } from 'node:test'
+import { afterEach, beforeEach, describe, it, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { renderMarkdownUnsafe } from '@copse/streaming-markdown'
 import type { StreamChunk } from '@shared/types'
@@ -19,13 +19,15 @@ import {
   clearRemoteAgentSession,
   fetchRemoteArtifactImageDataUrl,
   formatRemoteArtifactsSummary,
+  refreshRemoteAgentRun,
   remoteAgentBusyRetryDelayMs,
   resolveRemoteAgentRepository,
   runRemoteAgentFromSettings,
   setRemoteStreamReconnectDelayForTest,
 } from './remote-agent-client.ts'
-import { storageSet } from '../storage/storage.ts'
+import { storageGet, storageSet } from '../storage/storage.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
+import { isRecord } from '@shared/unknown-value.ts'
 
 afterEach(() => {
   storageSet('projects', [])
@@ -228,6 +230,343 @@ describe('runRemoteAgentFromSettings (cursor)', () => {
       if (prevKey === undefined) delete process.env['CURSOR_API_KEY']
       else process.env['CURSOR_API_KEY'] = prevKey
     }
+  })
+})
+
+describe('refreshRemoteAgentRun (issue #2446 — reopen refresh)', () => {
+  const threadId = 'thread-refresh-2446'
+  const agentId = 'bc-refresh-2446'
+  const runId = 'run-refresh-2446'
+  const baseUrl = 'https://api.cursor.com'
+
+  function seedSession(extra: Record<string, unknown> = {}): void {
+    storageSet(`remote-agent-session:${threadId}`, {
+      v: 1,
+      provider: 'cursor',
+      baseUrl,
+      agentId,
+      runId,
+      ...extra,
+    })
+  }
+
+  function requestUrl(input: RequestInfo | URL): string {
+    if (typeof input === 'string') return input
+    if (input instanceof URL) return input.href
+    return input.url
+  }
+
+  function syncedTerminalStatusOf(id: string): unknown {
+    const raw = storageGet(`remote-agent-session:${id}`)
+    return isRecord(raw) ? raw['syncedTerminalStatus'] : undefined
+  }
+
+  let prevApiKey: string | undefined
+  beforeEach(() => {
+    prevApiKey = process.env['CURSOR_API_KEY']
+    process.env['CURSOR_API_KEY'] = 'test-key'
+  })
+  afterEach(() => {
+    clearRemoteAgentSession(threadId)
+    clearRemoteAgentSession('thread-refresh-no-session')
+    if (prevApiKey === undefined) delete process.env['CURSOR_API_KEY']
+    else process.env['CURSOR_API_KEY'] = prevApiKey
+  })
+
+  it('resolves with no request when the thread has no remote-agent session', async () => {
+    const fetchImpl: typeof fetch = () => {
+      throw new Error('unexpected network call')
+    }
+    const outcome = await refreshRemoteAgentRun({
+      threadId: 'thread-refresh-no-session',
+      signal: new AbortController().signal,
+      onChunk: () => {
+        throw new Error('unexpected chunk')
+      },
+      fetchImpl,
+    })
+    assert.deepEqual(outcome, { kind: 'no-session' })
+  })
+
+  it('resolves with no request for a session predating runId (no reopen-refresh support yet)', async () => {
+    storageSet(`remote-agent-session:${threadId}`, {
+      v: 1,
+      provider: 'cursor',
+      baseUrl,
+      agentId,
+    })
+    const outcome = await refreshRemoteAgentRun({
+      threadId,
+      signal: new AbortController().signal,
+      onChunk: () => {
+        throw new Error('unexpected chunk')
+      },
+      fetchImpl: () => {
+        throw new Error('unexpected network call')
+      },
+    })
+    assert.deepEqual(outcome, { kind: 'no-session' })
+  })
+
+  it('applies a terminal run snapshot once, then skips entirely once synced', async () => {
+    seedSession()
+    let getRunCalls = 0
+    const fetchImpl: typeof fetch = async (input) => {
+      const url = requestUrl(input)
+      if (url === `${baseUrl}/v1/agents/${agentId}/runs/${runId}`) {
+        getRunCalls += 1
+        return new Response(
+          JSON.stringify({ id: runId, status: 'FINISHED', result: 'Final answer, applied once.' }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        )
+      }
+      throw new Error(`unexpected fetch: ${url}`)
+    }
+
+    const chunks: StreamChunk[] = []
+    const outcome = await refreshRemoteAgentRun({
+      threadId,
+      signal: new AbortController().signal,
+      onChunk: (chunk) => chunks.push(chunk),
+      fetchImpl,
+    })
+
+    assert.deepEqual(outcome, { kind: 'snapshot', status: 'FINISHED' })
+    assert.equal(getRunCalls, 1)
+    assert.deepEqual(chunks, [{ type: 'text', text: 'Final answer, applied once.' }])
+    assert.equal(syncedTerminalStatusOf(threadId), 'FINISHED')
+
+    // A later activation (e.g. reopening the editor again) must not re-fetch or
+    // re-apply the same result — the whole point of recording the sync above.
+    const secondChunks: StreamChunk[] = []
+    const secondOutcome = await refreshRemoteAgentRun({
+      threadId,
+      signal: new AbortController().signal,
+      onChunk: (chunk) => secondChunks.push(chunk),
+      fetchImpl: () => {
+        throw new Error('unexpected network call on an already-synced thread')
+      },
+    })
+    assert.deepEqual(secondOutcome, { kind: 'already-synced' })
+    assert.equal(getRunCalls, 1, 'no additional Get A Run call')
+    assert.deepEqual(secondChunks, [], 'no duplicate message appended')
+  })
+
+  it('reattaches the stream for a run still in progress and applies its tail', async () => {
+    seedSession()
+    let getRunCalls = 0
+    let streamCalls = 0
+    const streamHeaders: Array<string | null> = []
+    const fetchImpl: typeof fetch = async (input, init) => {
+      const url = requestUrl(input)
+      if (url === `${baseUrl}/v1/agents/${agentId}/runs/${runId}`) {
+        getRunCalls += 1
+        return new Response(JSON.stringify({ id: runId, status: 'RUNNING', result: null }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+      if (url === `${baseUrl}/v1/agents/${agentId}/runs/${runId}/stream`) {
+        streamCalls += 1
+        streamHeaders.push(new Headers(init?.headers).get('Last-Event-ID'))
+        return new Response(
+          cursorSse([
+            { id: '1-0', event: 'assistant', data: { text: 'Reattached and still going.' } },
+            {
+              id: '2-0',
+              event: 'result',
+              data: { status: 'FINISHED', text: 'Reattached and still going.' },
+            },
+            { event: 'done', data: {} },
+          ]),
+          { status: 200, headers: { 'content-type': 'text/event-stream' } },
+        )
+      }
+      throw new Error(`unexpected fetch: ${url}`)
+    }
+
+    const chunks: StreamChunk[] = []
+    const outcome = await refreshRemoteAgentRun({
+      threadId,
+      signal: new AbortController().signal,
+      onChunk: (chunk) => chunks.push(chunk),
+      fetchImpl,
+    })
+
+    assert.deepEqual(outcome, { kind: 'reattached', status: 'FINISHED' })
+    assert.equal(getRunCalls, 1)
+    assert.equal(streamCalls, 1)
+    // First reattach this session — no resume cursor persisted yet.
+    assert.equal(streamHeaders[0], null)
+    const text = chunks
+      .filter((chunk): chunk is { type: 'text'; text: string } => chunk.type === 'text')
+      .map((chunk) => chunk.text)
+      .join('')
+    assert.match(text, /Reattached and still going\./)
+    assert.equal(
+      text.match(/Reattached and still going\./g)?.length,
+      1,
+      'the result event echoing already-streamed text must not duplicate it',
+    )
+    assert.equal(syncedTerminalStatusOf(threadId), 'FINISHED')
+  })
+
+  it('resumes a reattached stream from its last-seen event id, skipping Get A Run entirely', async () => {
+    // Simulate a session that already reattached partway (e.g. the app was
+    // closed again mid-stream): the resume point is what was last persisted.
+    seedSession({ lastEventId: '5-0' })
+    let getRunCalls = 0
+    const streamHeaders: Array<string | null> = []
+    const fetchImpl: typeof fetch = async (input, init) => {
+      const url = requestUrl(input)
+      if (url === `${baseUrl}/v1/agents/${agentId}/runs/${runId}`) {
+        getRunCalls += 1
+        return new Response(JSON.stringify({ id: runId, status: 'RUNNING', result: null }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+      if (url === `${baseUrl}/v1/agents/${agentId}/runs/${runId}/stream`) {
+        streamHeaders.push(new Headers(init?.headers).get('Last-Event-ID'))
+        return new Response(
+          cursorSse([
+            { id: '6-0', event: 'result', data: { status: 'FINISHED', text: 'tail only' } },
+            { event: 'done', data: {} },
+          ]),
+          { status: 200, headers: { 'content-type': 'text/event-stream' } },
+        )
+      }
+      throw new Error(`unexpected fetch: ${url}`)
+    }
+
+    await refreshRemoteAgentRun({
+      threadId,
+      signal: new AbortController().signal,
+      onChunk: () => {},
+      fetchImpl,
+    })
+
+    assert.equal(streamHeaders[0], '5-0')
+    // A resume point already tells the stream where to pick up — a separate
+    // Get A Run first would be a redundant request (issue #2446 review).
+    assert.equal(getRunCalls, 0)
+  })
+
+  it('a terminal run with a persisted last-seen event id resumes the stream instead of re-emitting the full result', async () => {
+    // The app quit mid-run after some assistant text had already streamed in
+    // (persisting `lastEventId`), and the run finished on Cursor's side before
+    // the thread was reopened. Taking the snapshot branch here would re-append
+    // the *whole* result on top of the partial text already in the transcript
+    // — this must resume the stream and receive only the tail instead.
+    seedSession({ lastEventId: '5-0' })
+    let getRunCalls = 0
+    const streamHeaders: Array<string | null> = []
+    const fetchImpl: typeof fetch = async (input, init) => {
+      const url = requestUrl(input)
+      if (url === `${baseUrl}/v1/agents/${agentId}/runs/${runId}`) {
+        getRunCalls += 1
+        // If this were called, it would report the run as already finished —
+        // proving the assertions below are checking the right thing.
+        return new Response(
+          JSON.stringify({ id: runId, status: 'FINISHED', result: 'Full answer, already shown.' }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        )
+      }
+      if (url === `${baseUrl}/v1/agents/${agentId}/runs/${runId}/stream`) {
+        streamHeaders.push(new Headers(init?.headers).get('Last-Event-ID'))
+        return new Response(
+          cursorSse([
+            {
+              id: '6-0',
+              event: 'result',
+              data: { status: 'FINISHED', text: 'Full answer, already shown.' },
+            },
+            { event: 'done', data: {} },
+          ]),
+          { status: 200, headers: { 'content-type': 'text/event-stream' } },
+        )
+      }
+      throw new Error(`unexpected fetch: ${url}`)
+    }
+
+    const chunks: StreamChunk[] = []
+    const outcome = await refreshRemoteAgentRun({
+      threadId,
+      signal: new AbortController().signal,
+      onChunk: (chunk) => chunks.push(chunk),
+      fetchImpl,
+    })
+
+    assert.deepEqual(outcome, { kind: 'reattached', status: 'FINISHED' })
+    assert.equal(getRunCalls, 0, 'Get A Run must be skipped once a resume point exists')
+    assert.equal(streamHeaders[0], '5-0', 'the stream resumes from the persisted event id')
+    // The result event's text lands exactly once — no snapshot re-emitting the
+    // whole result on top of it.
+    const texts = chunks.filter(
+      (chunk): chunk is { type: 'text'; text: string } => chunk.type === 'text',
+    )
+    assert.deepEqual(texts, [{ type: 'text', text: 'Full answer, already shown.' }])
+    assert.equal(syncedTerminalStatusOf(threadId), 'FINISHED')
+  })
+
+  it('coalesces concurrent refreshes for the same thread into one request', async () => {
+    seedSession()
+    let getRunCalls = 0
+    const fetchImpl: typeof fetch = async (input) => {
+      const url = requestUrl(input)
+      if (url === `${baseUrl}/v1/agents/${agentId}/runs/${runId}`) {
+        getRunCalls += 1
+        await new Promise((resolve) => setTimeout(resolve, 5))
+        return new Response(
+          JSON.stringify({ id: runId, status: 'FINISHED', result: 'done once' }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        )
+      }
+      throw new Error(`unexpected fetch: ${url}`)
+    }
+
+    const [a, b] = await Promise.all([
+      refreshRemoteAgentRun({
+        threadId,
+        signal: new AbortController().signal,
+        onChunk: () => {},
+        fetchImpl,
+      }),
+      refreshRemoteAgentRun({
+        threadId,
+        signal: new AbortController().signal,
+        onChunk: () => {},
+        fetchImpl,
+      }),
+    ])
+
+    assert.equal(getRunCalls, 1, 'concurrent activations share one in-flight request')
+    assert.deepEqual(a, { kind: 'snapshot', status: 'FINISHED' })
+    assert.deepEqual(b, a)
+  })
+
+  it('skips a thread on a provider this refresh does not cover', async () => {
+    storageSet(`remote-agent-session:${threadId}`, {
+      v: 1,
+      provider: 'anthropic',
+      baseUrl,
+      agentId,
+      runId,
+    })
+    const outcome = await refreshRemoteAgentRun({
+      threadId,
+      signal: new AbortController().signal,
+      onChunk: () => {
+        throw new Error('unexpected chunk')
+      },
+      fetchImpl: () => {
+        throw new Error('unexpected network call')
+      },
+    })
+    assert.deepEqual(outcome, { kind: 'unsupported-provider' })
   })
 })
 
