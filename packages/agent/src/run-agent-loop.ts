@@ -744,7 +744,7 @@ async function closeOpenTodosBeforeFinalize(
     // grant from the shared budget before running it, so closeout is bounded by
     // `min(MAX_TODO_CLOSEOUT_ATTEMPTS, remaining)` — the local cap tightens
     // inside the shared cap. No budget wired → local cap alone (unchanged).
-    if (ctx.continuationBudget && !ctx.continuationBudget.tryGrant()) break
+    if (ctx.continuationBudget && !ctx.continuationBudget.tryGrant('todo-closeout')) break
     await runToolEnabledNudgeTurn(ctx, nudge)
     if (ctx.signal?.aborted) break
   }
