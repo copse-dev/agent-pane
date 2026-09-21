@@ -1,6 +1,7 @@
 # Copse Reviewer
 
-Status: **Active — Phases 0 to 4 landed.** `@copse/review` is a workspace package on
+Status: **Active — Phases 0 to 5 landed; the model-profile baseline is unrecorded.**
+`@copse/review` is a workspace package on
 `main` with the finding schema, Stage 0 (the base-versus-head build and test delta), the
 `IsolationBackend` contract with the host-process, OS-sandbox and container backends, the
 hostile-fixture conformance test, and the `copse-review` CLI: Stage 1 context, models ×
@@ -13,8 +14,11 @@ the Changes view, the "Review changes" bubble and the `review_changes` tool run 
 pipeline over the thread's checkout and render a findings card, with dismissals persisted
 to the knowledge store (see §What Phase 3 delivered). In CI, the `copse-review` label on a
 pull request runs Stage 0 on a secret-free runner and posts the findings as one review
-from a second, read-only job (see §What Phase 4 delivered). Phase 5 remains proposed. See
-also §What Phase 0 delivered, §What Phase 1 delivered and §What Phase 2 delivered.
+from a second, read-only job (see §What Phase 4 delivered). `pnpm run bench:review` scores
+the pipeline for precision on surfaced findings over a corpus of cases with known defects,
+with a mock self-test CI gates per PR and a model profile whose baseline — the number B8
+rests on — still needs a model run (see §What Phase 5 delivered). See also §What Phase 0
+delivered, §What Phase 1 delivered and §What Phase 2 delivered.
 Binding decisions B1 (execution isolation, 2026-09-03), B2–B6 (packaging, backend
 sequencing, scope, ecosystem, customer; 2026-09-04) and B7–B9 (name, precision aim, SARIF
 export; 2026-09-04) are recorded. Problems are numbered P1–P9 in §What needs to be solved,
@@ -432,7 +436,11 @@ Changing one of these requires updating this document in the same change — the
    number is about 76%. Nobody has measured this pipeline yet, so the first `bench:review`
    run (P6) sets the baseline and the number is revisited then, not before. Until that run
    exists the bar is the qualitative one in §The quality bar: no finding reaches a human
-   without evidence. Recorded 2026-09-04; answers Q5.
+   without evidence. Recorded 2026-09-04; answers Q5. _Amended 2026-09-21 (Phase 5):_ the
+   harness exists and its mock profile scores 80% by construction — that number measures
+   the corpus and the pipeline's non-model parts, never the reviewer — so "the first run"
+   here means the first **model-profile** run, which sets the baseline B8 is revisited
+   against. It has not been recorded.
 9. **B9 — SARIF is the interchange export.** The findings JSON (P2) stays the canonical
    contract; the CLI and the CI shell also emit SARIF 2.1.0, carrying the finding identity in
    `partialFingerprints` and the evidence, provenance and verdict in each result's
@@ -800,6 +808,57 @@ Not in Phase 4: reproducers in CI (above), `bench:review` (Phase 5), and a forei
 gesture in the app (the app reviews the thread's own tree; a "review this pull request"
 gesture is a product question for later).
 
+## What Phase 5 delivered
+
+On `main`: the scorer (`packages/review/src/eval.ts`), the harness
+(`scripts/bench-review-lib.mts`, `pnpm run bench:review`), the corpus and its baseline
+(`benchmarks/review/`, with a README), and the per-PR gate in CI's `bench` job.
+
+- **Precision is the metric, as P6 asks.** A case declares the defects its head carries as
+  anchors (path and lines in the head) and, where a defect makes a Stage 0 check regress,
+  which one; the harness runs the whole pipeline over the case and scores only the
+  **surfaced** findings — the appendix and the refuted never reach a human, so they never
+  count. A finding hits a defect the way Stage 3 clusters candidates (same path, ranges
+  overlapping within `ANCHOR_SLACK_LINES`), or, for a Stage 0 finding, by the regression
+  the defect declares (Stage 0 anchors at the script that failed, not at the defect).
+  Everything else is a false positive. Reported beside precision: recall (secondary, by
+  design), the reproducer rate, and output tokens per confirmed finding as the cost figure
+  every provider can report.
+- **The corpus is small and deliberate.** Five cases, each a two-tree project with a
+  `review.config.json` that runs its own test with `node` so Stage 0 needs no install: a
+  defect the project's test catches (Stage 0 mints it, a reviewer anchors it, a reproducer
+  confirms it); a resource leak no test covers (the challenger is the verdict); a clean
+  rename where the mock reviewer's wrong candidate is refuted and dropped; a dropped null
+  guard reported by two lenses in different words (one finding after Stage 3, confirmed by
+  a reproducer); and a harmless change where a wrong claim the challenger cannot settle
+  reaches the human. That last one is the point: the corpus scores 80%, not 100%, so the
+  metric visibly bites, and a change that lets one more wrong claim through moves it.
+- **Two profiles, one harness.** `--mock` plays each case's `mock.json` through the same
+  `ScriptedProvider` the CLI's `--provider mock` uses — deterministic, no model, a few
+  seconds — and is the self-test CI runs per PR with `--gate`. A model profile goes through
+  the CLI's provider door (`--provider`, `--model` repeatable for an ensemble,
+  `--challenger`, keys from the environment) and is keyed in the baseline by its models.
+  `--no-verify`, `--lenses` and the model list are the ablation knobs; `--compare` prints
+  the delta between two summaries, which is how Q6 (cross-model ensembling against one
+  model) and "how much does verification buy" are read.
+- **The ratchet.** `benchmarks/review/baseline.json`, coverage-baseline style: `--gate`
+  fails when precision drops (the mock gets no tolerance, a model profile five points),
+  when true positives fall, when tokens per confirmed finding grow past 1.25×, or when the
+  case count is not the baseline's; `--update-baseline` moves it on purpose. The unit tier
+  runs the corpus too (`scripts/bench-review.test.ts`), pinning each case's expected
+  surfaced/true/false counts, so a change to Stage 0's delta, clustering, verification or
+  ranking that moves the measurement fails on the PR that makes it.
+- **What is and is not measured.** The mock's 80% is a property of the corpus and of the
+  pipeline's non-model parts; it says nothing about any reviewer. B8's number rests on a
+  model profile's baseline, which needs a model run and is not recorded (this environment
+  has no key or local model). B8 is amended to say so. The corpus is also small enough that
+  a model number over it is a smoke figure, not a claim; growing it — real pull requests
+  with known outcomes, the plan's original ask — is the work that makes the number mean
+  something, and is deliberately not faked here.
+
+Not in Phase 5: a model-profile baseline, a corpus of real pull requests, and the online
+track (Q8).
+
 ## Phases
 
 - **Phase 0 — Findings schema + Stage 0 + OS-sandbox backend.** ✅ Landed; see above. `@copse/review` as a
@@ -829,8 +888,9 @@ gesture is a product question for later).
   [`copse-cloud-workspaces.md`](copse-cloud-workspaces.md) C1 proposed), which unlocks
   foreign-diff review (B3); then the GitHub workflows with inline comments, opt-in by label,
   and the Forgejo equivalent.
-- **Phase 5 — Eval.** `bench:review` and a precision gate. Arguably belongs at Phase 2;
-  listed last only because it needs a corpus that Phases 1–2 generate.
+- **Phase 5 — Eval.** ✅ Landed, except the model-profile baseline; see above.
+  `bench:review` and a precision gate. Arguably belongs at Phase 2; listed last only
+  because it needs a corpus that Phases 1–2 generate.
 
 ## Non-goals
 

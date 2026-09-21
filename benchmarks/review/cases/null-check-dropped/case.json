@@ -1,0 +1,12 @@
+{
+  "id": "null-check-dropped",
+  "description": "The head removes the null guard; the tests never pass null. Two lenses report the same defect in different words, which Stage 3 must cluster to one finding, and a reproducer confirms it.",
+  "truth": [
+    {
+      "id": "null-user-throws",
+      "class": "contract",
+      "anchors": [{ "path": "src/display.cjs", "startLine": 3, "endLine": 3 }],
+      "note": "displayName(null) throws a TypeError instead of returning null"
+    }
+  ]
+}

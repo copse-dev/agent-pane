@@ -32,6 +32,9 @@ export * from './cli.ts'
 export * from './stage0-report.ts'
 export * from './forge-review.ts'
 
+// The measurement: a review scored against known defects.
+export * from './eval.ts'
+
 // Backends and the helper every backend shares.
 export * from './host-process-backend.ts'
 export * from './container-backend.ts'

@@ -14,6 +14,9 @@ tests/e2e/electron-shell/.e2e-env.json
 .wdio-profile-*
 .wdio-git-fixture-*
 tests/fixtures/git-changes-repo/
+# Review-bench cases: the truth anchors are line numbers in these trees, so a
+# reformat could move a defect off the line the corpus says it is on.
+benchmarks/review/cases/
 # E2E markdown fixture with intentional hard-break trailing spaces + &nbsp;.
 tests/fixtures/job-description-metadata.md
 # Vendored upstream hook schemas (G3) — pinned byte-identical to upstream; never

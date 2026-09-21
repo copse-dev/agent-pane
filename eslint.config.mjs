@@ -47,6 +47,9 @@ export default ts.config(
       // Bench-task fixture repos: code for the agent under eval to fix, not project code.
       'benchmarks/fixtures/**',
       'benchmarks/steer/fixtures/**',
+      // Review-bench cases: the head trees carry the defects the reviewer is
+      // measured on (an unused timer is one of them), so a linter must not "fix" them.
+      'benchmarks/review/cases/**',
     ],
   },
   js.configs.recommended,

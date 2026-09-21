@@ -1,0 +1,13 @@
+{
+  "id": "paginate-off-by-one",
+  "description": "The head shortens every page by one item. The project's own test catches it, so Stage 0 mints a test regression; a reviewer should anchor the defect at the slice.",
+  "truth": [
+    {
+      "id": "off-by-one",
+      "class": "contract",
+      "anchors": [{ "path": "src/paginate.cjs", "startLine": 4, "endLine": 4 }],
+      "regressions": ["test"],
+      "note": "slice(start, start + size - 1) returns size - 1 items"
+    }
+  ]
+}

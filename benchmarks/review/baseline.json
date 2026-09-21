@@ -1,0 +1,8 @@
+{
+  "mock": {
+    "cases": 5,
+    "precision": 0.8,
+    "truePositives": 4,
+    "outputTokensPerConfirmed": 207
+  }
+}

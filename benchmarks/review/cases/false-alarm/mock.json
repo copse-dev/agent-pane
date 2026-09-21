@@ -1,0 +1,30 @@
+{
+  "roles": {
+    "review:correctness": [
+      {
+        "type": "tool_call",
+        "name": "report_finding",
+        "args": {
+          "path": "src/total.cjs",
+          "startLine": 4,
+          "class": "contract",
+          "severity": "medium",
+          "confidence": "medium",
+          "claim": "total returns NaN for an empty list because reduce has no initial value.",
+          "reason": "reduce over an empty array without an initial value throws or yields NaN."
+        }
+      },
+      { "type": "text", "text": "One possible empty-list issue." }
+    ],
+    "review:contracts": [{ "type": "text", "text": "Nothing to add." }],
+    "reproduce": [{ "type": "text", "text": "Could not write a failing test." }],
+    "challenge": [
+      {
+        "type": "tool_call",
+        "name": "verdict",
+        "args": { "status": "undetermined", "reason": "could not establish either way without running it" }
+      },
+      { "type": "text", "text": "Undetermined." }
+    ]
+  }
+}

@@ -1,0 +1,5 @@
+const assert = require('node:assert/strict')
+const { displayName } = require('./src/display.cjs')
+assert.equal(displayName({ name: 'Ada', nickname: '' }), 'Ada')
+assert.equal(displayName({ name: 'Ada', nickname: 'ada' }), 'ada')
+console.log('ok')

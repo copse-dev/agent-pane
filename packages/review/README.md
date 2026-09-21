@@ -103,6 +103,12 @@ shell's hand-offs (Phase 4).
   request for changes), each surfaced finding with a line an inline comment on the head
   commit, the rest in the body. GitHub and Forgejo; a line the forge refuses is folded
   into the body rather than lost.
+- **`eval.ts`** — the measurement (P6, B8): a case's known defects as anchors, a finding
+  matched to a defect the way Stage 3 clusters (same path, overlapping lines within the
+  slack) or by the Stage 0 regression it declares, and the metrics — precision on surfaced
+  findings first, recall second, the reproducer rate and tokens per confirmed finding.
+  `pnpm run bench:review` (`scripts/bench-review-lib.mts`, corpus and baseline under
+  `benchmarks/review/`) is the harness over it.
 - **`hostile-fixture.test.ts`** — the conformance test: a hostile repository reviewed with
   canary secrets in the orchestrator's environment. No canary may appear in any cell
   output or finding, and each capability a backend declares is checked against what the
@@ -167,8 +173,20 @@ thread's checkout, read-only where the OS sandbox is not active), the findings c
 the Changes view's "Review". `openReviewGround`'s `readOnlyCheckouts` option is what the
 app uses to review without executing.
 
+## Measuring it
+
+```bash
+pnpm run bench:review -- --mock --gate                      # the deterministic self-test CI runs
+pnpm run bench:review -- --provider lmstudio --model qwen3-coder
+pnpm run bench:review -- --model a --model b --compare bench-results/review/summary.json other/summary.json
+```
+
+See [`benchmarks/review/README.md`](../../benchmarks/review/README.md). The mock number
+measures the corpus and the pipeline's non-model parts; a precision claim rests on a model
+profile's baseline, which needs a model run.
+
 ## Not yet here
 
-Reproducers in CI (job B has no cell, so Stage 4 there is the challenger only) and Phase 5,
-the `bench:review` precision measurement. See the plan's §Phases and §What Phase 4
-delivered.
+Reproducers in CI (job B has no cell, so Stage 4 there is the challenger only), a
+model-profile precision baseline, and a corpus of real pull requests. See the plan's
+§Phases, §What Phase 4 delivered and §What Phase 5 delivered.

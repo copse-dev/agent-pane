@@ -744,6 +744,11 @@ jobs:
       # write → grading) and the --gate ratchet compares solve rate and
       # tokens-per-solve against benchmarks/bench-baseline.json. No model, ~30s.
       - run: npm run bench:agent -- --mock --gate
+      # Copse Reviewer measurement self-test (docs/plans/copse-reviewer.md, P6):
+      # the committed corpus through the whole review pipeline with scripted
+      # reviewers, scored for precision on surfaced findings, and the --gate
+      # ratchet against benchmarks/review/baseline.json. No model, a few seconds.
+      - run: npm run bench:review -- --mock --gate
       # Doctrine ablation harness self-test (#744): runs the full and omit-tools
       # arms through the real agent loop with a deterministic mock task. The
       # real-model matrix stays in doctrine-eval-model below.

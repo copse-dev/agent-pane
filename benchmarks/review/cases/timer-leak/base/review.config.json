@@ -1,0 +1,3 @@
+{
+  "commands": { "prepare": null, "build": null, "typecheck": null, "lint": null, "test": ["node", "test.cjs"] }
+}
