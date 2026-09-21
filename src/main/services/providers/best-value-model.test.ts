@@ -24,7 +24,7 @@ describe('resolveBestValueFromFrontier', () => {
     assert.equal(picked, 'lmstudio:qwen/qwen2.5-coder-32b')
   })
 
-  it('prefers a plan-covered cloud model over a paid alternative', () => {
+  it('prefers an explicitly plan-covered route over a paid alternative', () => {
     const snapshot: PlanUsageSnapshot = {
       checkedAt: '2026-07-22T00:00:00Z',
       providers: [
@@ -48,12 +48,54 @@ describe('resolveBestValueFromFrontier', () => {
       ],
     }
     const picked = resolveBestValueFromFrontier(
-      [{ id: 'openrouter:openai/gpt-4o', intellect: 48, costPerMTok: 6 }],
+      [
+        { id: 'openrouter:openai/gpt-4o', intellect: 48, costPerMTok: 6 },
+        {
+          id: 'acp:claude-acp#sonnet',
+          intellect: 50,
+          costPerMTok: 9,
+          planAccess: { provider: 'claude', modelId: 'claude-sonnet-4-6' },
+        },
+      ],
       snapshot,
-      (c) => c.id === 'claude-sonnet-4-6' || c.id.startsWith('openrouter:'),
+      (c) => c.id.startsWith('acp:') || c.id.startsWith('openrouter:'),
     )
-    // claude-sonnet-4-6 comes from the tracked catalog; plan coverage drops it to $0.
-    assert.equal(picked, 'claude-sonnet-4-6')
+    // Only the subscription-backed route receives the plan discount.
+    assert.equal(picked, 'acp:claude-acp#sonnet')
+  })
+
+  it('chooses included Opus over a stronger paid Fable route', () => {
+    const snapshot: PlanUsageSnapshot = {
+      checkedAt: '2026-09-21T00:00:00Z',
+      providers: [
+        {
+          provider: 'claude',
+          status: 'ok',
+          usage: {
+            provider: 'claude',
+            plan: 'Max',
+            checkedAt: '2026-09-21T00:00:00Z',
+            windows: [{ id: 'seven_day', label: 'Weekly', usedPercent: 20, resetsAt: null }],
+          },
+        },
+      ],
+    }
+    assert.equal(
+      resolveBestValueFromFrontier(
+        [
+          { id: 'openrouter:anthropic/claude-fable-5', intellect: 65, costPerMTok: 30 },
+          {
+            id: 'acp:claude-acp#opus',
+            intellect: 60,
+            costPerMTok: 9,
+            planAccess: { provider: 'claude', modelId: 'claude-opus-5' },
+          },
+        ],
+        snapshot,
+        (candidate) => candidate.id.startsWith('openrouter:') || candidate.id.startsWith('acp:'),
+      ),
+      'acp:claude-acp#opus',
+    )
   })
 
   it('returns null when keepRoute excludes every candidate', () => {
