@@ -94,11 +94,7 @@ describe('fork a thread and resend the last message', function () {
       if (!bubble || !actions) return null
       const bubbleRect = bubble.getBoundingClientRect()
       const actionsRect = actions.getBoundingClientRect()
-      return (
-        actionsRect.top +
-        actionsRect.height / 2 -
-        (bubbleRect.top + bubbleRect.height / 2)
-      )
+      return actionsRect.top + actionsRect.height / 2 - (bubbleRect.top + bubbleRect.height / 2)
     })
     assert.ok(actionCenterOffset !== null, 'the latest prompt actions must render')
     assert.ok(
