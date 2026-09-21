@@ -108,13 +108,15 @@ export interface AgentRunDeadlineOptions {
   /**
    * Exclude paused time from the wall-clock hard cap (#2332).
    *
-   * The local loop leaves this off: its pauses are its own tool execution and
-   * streaming, which is precisely the work the runaway budget exists to bound.
-   * A host-driven run (the ACP branch) turns it on, because there the pauses are
-   * approval modals — time spent blocked on a human. Blocking indefinitely on an
-   * approval prompt is intended behaviour, so it must not spend the run's
-   * runaway-work budget; without this an ACP turn is killed underneath a prompt
-   * the user can still see, and the kill is indistinguishable from Stop.
+   * The local loop's pauses are tool execution and streaming — precisely the
+   * work the runaway budget exists to bound — but also blocking hook waits,
+   * which the host pauses via `withRunDeadlinePaused` (approval modals,
+   * ask_user, headless launch gates). Blocking indefinitely on a human is
+   * intended behaviour, so that wait must not spend the run's runaway-work
+   * budget; without this a run sitting on an approval is killed underneath a
+   * prompt the user can still see, and the kill surfaces as the generic
+   * run-limit message, indistinguishable from a model that stopped working.
+   * Host-driven runs (the ACP branch) turn this on for the same reason.
    *
    * The cap itself stays armed, so a run that never pauses — including one whose
    * blocking site forgot to register an idle pause — is still bounded.
@@ -123,11 +125,12 @@ export interface AgentRunDeadlineOptions {
 }
 
 /**
- * Sliding idle deadline with pause support. Tool execution and LLM streaming pause
- * the idle clock; each completed stream or tool batch records activity and resets
- * the idle window. A hard wall-clock cap still applies from run start — over raw
- * wall time by default, or over unpaused time only when
- * {@link AgentRunDeadlineOptions.excludePausesFromHardMax} is set.
+ * Sliding idle deadline with pause support. Tool execution, LLM streaming and
+ * host-side blocking waits pause the idle clock; each completed stream or tool
+ * batch records activity and resets the idle window. A hard wall-clock cap
+ * still applies from run start — over raw wall time by default, or over
+ * unpaused time only when {@link AgentRunDeadlineOptions.excludePausesFromHardMax}
+ * is set.
  */
 export class AgentRunDeadline {
   private readonly runStartedAt: number
@@ -215,9 +218,8 @@ export class AgentRunDeadline {
   }
 
   /**
-   * Elapsed run time as the hard cap counts it. Pauses deliberately still count
-   * unless the run opted out via
-   * {@link AgentRunDeadlineOptions.excludePausesFromHardMax}.
+   * Elapsed run time as the hard cap counts it. Pauses count unless the run
+   * opted out via {@link AgentRunDeadlineOptions.excludePausesFromHardMax}.
    */
   elapsedWallTimeMs(now = this.clock()): number {
     return Math.max(0, this.hardElapsedMs(now))
