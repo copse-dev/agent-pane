@@ -58,6 +58,22 @@ describe('strReplaceTool', () => {
     assert.match(out, /not found/)
   })
 
+  ownedIt('names read_file as the remedy, not another explore call (#1433)', async () => {
+    // explore returns a prose summary with approximate line numbers, so a
+    // model that just called explore satisfies a generic "re-read the file"
+    // message by calling explore again. Naming read_file specifically breaks
+    // that loop.
+    await writeFile(join(tempRoot, 'f.ts'), 'a', 'utf-8')
+    const out = await runStrReplace({
+      path: 'f.ts',
+      old_string: 'missing',
+      new_string: 'b',
+      replace_all: false,
+    })
+    assert.match(out, /read_file/)
+    assert.match(out, /f\.ts/)
+  })
+
   ownedIt('errors on ambiguous match without replace_all', async () => {
     await writeFile(join(tempRoot, 'f.ts'), 'foo\nfoo\n', 'utf-8')
     const out = await runStrReplace({

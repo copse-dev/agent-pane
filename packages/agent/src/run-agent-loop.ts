@@ -21,6 +21,7 @@ import type { TodoItem } from './wire-types.ts'
 import {
   DUPLICATE_TOOL_RESULT_PREFIX,
   isDuplicateExploreCall,
+  nextConsecutiveExploreWithoutRead,
   normalizeExploreArgs,
   toolCallFingerprint,
 } from './agent-loop-guards.ts'
@@ -72,7 +73,16 @@ import {
   type ReasoningCircleSignal,
 } from './reasoning-circle-detector.ts'
 
-const RECENT_FINGERPRINT_WINDOW = 16
+/**
+ * Recent tool-call fingerprints (and per-attempt progress markers) kept for
+ * duplicate detection. #1433: a real 43-minute run interleaved 15 `explore`
+ * repeats with `str_replace` failures and other tool calls, so the repeats
+ * were spread far apart in the raw call sequence, not clustered — a window
+ * sized to "how many explores can repeat" undercounts once other tools sit
+ * between them. Doubled from the original 16 so that interleaving no longer
+ * pushes the earliest repeat out of the window before the run notices.
+ */
+const RECENT_FINGERPRINT_WINDOW = 32
 /**
  * Recent turns' reasoning text kept for cross-turn circle detection (#1408):
  * `streamReasoningText` resets to empty at the top of every LLM call, so a
@@ -792,6 +802,13 @@ type ToolBatchContext = {
   recentFingerprints: string[]
   recentToolProgress: (string | null)[]
   budget: LlmCallBudget
+  /**
+   * Mutable explore-without-read streak (#1433; see
+   * `nextConsecutiveExploreWithoutRead`), read by the `loop-nudge` step-
+   * boundary hook. Optional: only the primary loop, which owns that nudge,
+   * tracks it — nudge/closeout turns leave it untouched.
+   */
+  consecutiveExploreWithoutRead?: { value: number }
 }
 
 const FINALIZE_TOOL_BUDGET_RESULT =
@@ -920,6 +937,7 @@ async function executeToolBatch(ctx: ToolBatchContext): Promise<void> {
     recentFingerprints,
     recentToolProgress,
     budget,
+    consecutiveExploreWithoutRead,
   } = ctx
   const measuredInputBeforeTools = getLastMeasuredInputTokens()
   const toolResults: ToolResult[] = []
@@ -942,6 +960,12 @@ async function executeToolBatch(ctx: ToolBatchContext): Promise<void> {
           })
         }
         break
+      }
+      if (consecutiveExploreWithoutRead) {
+        consecutiveExploreWithoutRead.value = nextConsecutiveExploreWithoutRead(
+          consecutiveExploreWithoutRead.value,
+          tc.name,
+        )
       }
       if (tc.argsError) {
         const result = `Error: ${tc.argsError}`
@@ -1132,6 +1156,9 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
   // non-duplicate progress; null means duplicate, malformed, or failed. Keeping
   // attempts in the window lets a current thrash phase age out old success.
   const recentToolProgress: (string | null)[] = []
+  // Explore-without-read streak (#1433) driving the `loop-nudge` hook's
+  // read-specific condition; see `nextConsecutiveExploreWithoutRead`.
+  const consecutiveExploreWithoutRead = { value: 0 }
   // Cross-turn reasoning fingerprint (#1408): see RECENT_REASONING_TEXT_WINDOW.
   const recentReasoningTexts: string[] = []
 
@@ -1247,6 +1274,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
           elapsedWallTimeMs: budget.deadline.elapsedWallTimeMs(),
           remainingWallTimeMs: budget.deadline.remainingWallTimeMs(),
           streamCappedAsRunaway: false,
+          consecutiveExploreWithoutRead: consecutiveExploreWithoutRead.value,
         })
 
         if (preNudges.stuckFinalize !== undefined) {
@@ -1354,6 +1382,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         elapsedWallTimeMs: budget.deadline.elapsedWallTimeMs(),
         remainingWallTimeMs: budget.deadline.remainingWallTimeMs(),
         streamCappedAsRunaway: false,
+        consecutiveExploreWithoutRead: consecutiveExploreWithoutRead.value,
       })
       artifactCheckpointSent =
         applyArtifactCheckpointNudge(preNudges.artifactCheckpoint) || artifactCheckpointSent
@@ -1775,6 +1804,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       recentFingerprints,
       recentToolProgress,
       budget,
+      consecutiveExploreWithoutRead,
     })
 
     toolOnlySteps++

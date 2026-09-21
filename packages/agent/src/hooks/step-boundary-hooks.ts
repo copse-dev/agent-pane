@@ -19,7 +19,12 @@
 // `packages/agent` stays Electron-free (execution-guidance rule 4): these are
 // first-party function hooks that read pure loop signals off the payload.
 import type { BlockingHook } from './canonical-events.ts'
-import { LOOP_NUDGE_USER_MESSAGE, STUCK_FINALIZE_NUDGE } from '../agent-loop-guards.ts'
+import {
+  EXPLORE_WITHOUT_READ_NUDGE,
+  EXPLORE_WITHOUT_READ_NUDGE_THRESHOLD,
+  LOOP_NUDGE_USER_MESSAGE,
+  STUCK_FINALIZE_NUDGE,
+} from '../agent-loop-guards.ts'
 import { shouldForceTextAnswer, shouldInjectLoopNudge } from '../agent-loop-escalation.ts'
 import {
   isTruncationStopReason,
@@ -55,16 +60,32 @@ export const stuckFinalizeNudgeHook: BlockingHook<'stepBoundary'> = {
 }
 
 /**
- * Nudge the model off a redundant exploration loop when pressure + tool-only
- * steps indicate it is spinning (`shouldInjectLoopNudge`). Once-per-run
- * (`loopNudgeSent`). The harness pushes the returned text as a user message.
+ * Nudge the model off a redundant exploration loop. Two independent
+ * conditions share this one hook/once-per-run gate (`loopNudgeSent`), since
+ * both are "you are spinning in exploration, stop and act" — they just differ
+ * in *what* "act" means:
+ *   - pressure + tool-only steps indicate it is spinning (`shouldInjectLoopNudge`)
+ *     → the generic `LOOP_NUDGE_USER_MESSAGE` ("stop gathering context").
+ *   - three-plus consecutive `explore` calls with no intervening `read_file`
+ *     (#1433: `explore` only returns prose summaries, so a run stuck here
+ *     never gets the verbatim bytes an edit needs) → the read-specific
+ *     `EXPLORE_WITHOUT_READ_NUDGE`, which does the opposite — telling the
+ *     model to `read_file` before it edits, not to stop reading altogether.
+ * The explore-without-read condition does not require `escalation` (context-
+ * window tracking): it is meaningful even when the loop never measures
+ * conversation pressure. The harness pushes the returned text as a user
+ * message either way.
  */
 export const loopNudgeHook: BlockingHook<'stepBoundary'> = {
   id: LOOP_NUDGE_HOOK_ID,
   event: 'stepBoundary',
   run(payload) {
-    if (payload.phase !== 'preStream' || !payload.escalation) return undefined
+    if (payload.phase !== 'preStream') return undefined
     if (payload.loopNudgeSent) return undefined
+    if ((payload.consecutiveExploreWithoutRead ?? 0) >= EXPLORE_WITHOUT_READ_NUDGE_THRESHOLD) {
+      return { injectContext: EXPLORE_WITHOUT_READ_NUDGE }
+    }
+    if (!payload.escalation) return undefined
     if (!shouldInjectLoopNudge(payload.escalation.input, payload.escalation.pressure)) {
       return undefined
     }

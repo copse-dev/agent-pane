@@ -47,7 +47,11 @@ export const strReplaceTool = defineTool({
 
     const occurrences = countOccurrences(before, old_string)
     if (occurrences === 0) {
-      return 'old_string was not found in the file. Re-read the file and copy the exact snippet to replace.'
+      // explore returns a prose summary with approximate line numbers, not
+      // verbatim bytes, so telling the model to "re-read" is ambiguous — it
+      // was satisfied by calling explore again (#1433). Name the remedy: only
+      // read_file returns the exact text str_replace needs to match.
+      return `old_string was not found in the file. Call read_file on ${path} and copy the exact text from its output — explore returns a summary, not verbatim bytes.`
     }
     if (!replace_all && occurrences > 1) {
       return `old_string appears ${String(occurrences)} times; include more surrounding context so it is unique, or set replace_all to true.`
