@@ -12,11 +12,12 @@ import {
 import { parseSessionHostRequest } from './acp-session-host-worker.ts'
 
 const REPO_ROOT = process.cwd()
+const TEST_OUTPUT_DIR = process.env['COPSE_TEST_OUTPUT_DIR'] ?? join(REPO_ROOT, 'dist-test')
 const SANDBOX_RUNTIME_HELPER_MODULE =
   '@anthropic-ai/sandbox-runtime/dist/sandbox/generate-seccomp-filter.js'
 
 function makeBundleDir(prefix: string): string {
-  const base = join(REPO_ROOT, 'dist-test', 'acp-session-host-fixtures')
+  const base = join(TEST_OUTPUT_DIR, 'acp-session-host-fixtures')
   mkdirSync(base, { recursive: true })
   return mkdtempSync(join(base, prefix))
 }

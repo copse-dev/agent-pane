@@ -1,7 +1,18 @@
 import * as esbuild from 'esbuild'
-import { glob, readFile, rm } from 'node:fs/promises'
+import {
+  copyFile,
+  glob,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from 'node:fs/promises'
 import { spawnSync } from 'node:child_process'
-import { dirname, relative, resolve } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
 import { selectTestFiles, describeNoMatch, testOutputPath } from './lib/test-filter.mts'
 import { rewriteModuleRelativeTestPaths } from './lib/module-relative-test-paths.mts'
 
@@ -24,6 +35,10 @@ if (bundleOnly && testOnly) {
  */
 const filters = process.argv.slice(2).filter((a) => !a.startsWith('-'))
 
+const isolatedRun = !bundleOnly && !testOnly
+const fixedOutputDir = 'dist-test'
+const rootUnitTapLog = 'unit-tests.tap'
+
 /** Every test file the suite covers, repo-relative and sorted. */
 async function allTestFiles(): Promise<string[]> {
   const testFiles: string[] = []
@@ -44,15 +59,15 @@ async function selectedTestFiles(): Promise<string[]> {
   return selectTestFiles(all, filters)
 }
 
-async function bundleTests(testFiles: string[]): Promise<void> {
+async function bundleTests(testFiles: string[], outputDir: string): Promise<void> {
   // Shared chunks are content-addressed. Always start clean so a filtered run
   // cannot leave orphan chunks behind, and so --bundle-only produces exactly
   // the tree the following --test-only invocation will execute.
-  await rm('dist-test', { recursive: true, force: true })
+  await rm(outputDir, { recursive: true, force: true })
 
   const buildOptions: esbuild.BuildOptions = {
     entryPoints: testFiles,
-    outdir: 'dist-test',
+    outdir: outputDir,
     // Pin the output layout to the repo root. esbuild otherwise derives outbase
     // from the entry points' common ancestor, so a subset under one directory
     // would flatten to different `dist-test/` paths than the full run produces.
@@ -158,7 +173,7 @@ async function bundleTests(testFiles: string[]): Promise<void> {
           build.onLoad({ filter: /\.(?:ts|mts)$/ }, async (args) => {
             if (!args.path.startsWith(`${repoRoot}/`)) return undefined
             const source = await readFile(args.path, 'utf8')
-            const outputPath = resolve('dist-test', relative(repoRoot, args.path)).replace(
+            const outputPath = resolve(outputDir, relative(repoRoot, args.path)).replace(
               /\.(?:ts|mts)$/,
               '.mjs',
             )
@@ -224,18 +239,75 @@ async function bundleTests(testFiles: string[]): Promise<void> {
  * `dot` reporter instead (one character per test, failures re-listed in full at
  * the end) and keep the machine-readable TAP in a file the job uploads.
  */
-function reporterArgs(): string[] {
+function reporterArgs(tapLog: string): string[] {
   if (!process.env['CI']) return []
   return [
     '--test-reporter=dot',
     '--test-reporter-destination=stdout',
     '--test-reporter=tap',
-    `--test-reporter-destination=${UNIT_TAP_LOG}`,
+    `--test-reporter-destination=${tapLog}`,
   ]
 }
 
-/** Full TAP for the run, kept for artifact upload rather than the console. */
-const UNIT_TAP_LOG = 'unit-tests.tap'
+/** Full TAP for the last completed run, kept for existing CI artifact consumers. */
+async function publishLastCompletedTap(tapLog: string): Promise<void> {
+  const temporaryPath = `${rootUnitTapLog}.${String(process.pid)}.tmp`
+  await copyFile(tapLog, temporaryPath)
+  await rename(temporaryPath, rootUnitTapLog)
+}
+
+async function hasNonemptyFile(path: string): Promise<boolean> {
+  try {
+    const details = await stat(path)
+    return details.isFile() && details.size > 0
+  } catch {
+    return false
+  }
+}
+
+async function writeRunMetadata(
+  outputDir: string,
+  tapLog: string,
+  status: number | null,
+  signal: NodeJS.Signals | null,
+  error: string | null,
+  reportPublished: boolean,
+  startedAt: string,
+): Promise<void> {
+  await writeFile(
+    join(outputDir, 'run-meta.json'),
+    `${JSON.stringify(
+      {
+        completedAt: new Date().toISOString(),
+        error,
+        filters,
+        outputDir,
+        pid: process.pid,
+        reportPublished,
+        signal,
+        startedAt,
+        status,
+        tapLog: process.env['CI'] ? tapLog : null,
+      },
+      null,
+      2,
+    )}\n`,
+  )
+}
+
+/** Keep compact reports for successful CI runs, but discard their generated bundles. */
+async function cleanSuccessfulOutput(outputDir: string, keepReport: boolean): Promise<void> {
+  if (!keepReport) {
+    await rm(outputDir, { recursive: true, force: true })
+    return
+  }
+  const entries = await readdir(outputDir)
+  for (const entry of entries) {
+    if (entry === 'unit-tests.tap' || entry === 'run-meta.json') continue
+    await rm(join(outputDir, entry), { recursive: true, force: true })
+  }
+}
+
 // Several hook/process suites deliberately spawn subprocess trees. Letting
 // Node derive file concurrency from a large developer/runner host can put dozens
 // of short-lived children in flight and turn fixed 2s safety deadlines into
@@ -243,17 +315,54 @@ const UNIT_TAP_LOG = 'unit-tests.tap'
 // bounding that shared OS pressure.
 const TEST_FILE_CONCURRENCY = 4
 
-function runTests(testFiles: string[]): void {
+async function runTests(testFiles: string[], outputDir: string): Promise<number> {
   // Unfiltered: hand node the glob so it picks up every emitted test entry.
   // Filtered: hand it the exact entries selected above.
   const specs =
-    filters.length === 0 ? ['dist-test/**/*.test.mjs'] : testFiles.map((f) => testOutputPath(f))
+    filters.length === 0
+      ? [`${outputDir.replace(/\\/g, '/')}/**/*.test.mjs`]
+      : testFiles.map((f) => testOutputPath(f, outputDir))
+  const tapLog = isolatedRun ? join(outputDir, 'unit-tests.tap') : rootUnitTapLog
+  const startedAt = new Date().toISOString()
   const result = spawnSync(
     'node',
-    ['--test', `--test-concurrency=${String(TEST_FILE_CONCURRENCY)}`, ...reporterArgs(), ...specs],
-    { stdio: 'inherit' },
+    [
+      '--test',
+      `--test-concurrency=${String(TEST_FILE_CONCURRENCY)}`,
+      ...reporterArgs(tapLog),
+      ...specs,
+    ],
+    {
+      env: { ...process.env, COPSE_TEST_OUTPUT_DIR: resolve(outputDir) },
+      stdio: 'inherit',
+    },
   )
-  process.exit(result.status ?? 1)
+  const status = result.status ?? 1
+  if (!isolatedRun) return status
+
+  if (result.error) {
+    console.error(`[run-tests] failed to launch test process: ${result.error.message}`)
+  }
+  const reportAvailable = result.status !== null && (await hasNonemptyFile(tapLog))
+  const reportPublished = Boolean(process.env['CI']) && reportAvailable
+  if (reportPublished) await publishLastCompletedTap(tapLog)
+  await writeRunMetadata(
+    outputDir,
+    tapLog,
+    result.status,
+    result.signal,
+    result.error?.message ?? null,
+    reportPublished,
+    startedAt,
+  )
+  if (status === 0) {
+    if (process.env['COPSE_TEST_KEEP_OUTPUT'] !== '1') {
+      await cleanSuccessfulOutput(outputDir, Boolean(process.env['CI']))
+    }
+  } else {
+    console.error(`[run-tests] retained output after failure: ${outputDir}`)
+  }
+  return status
 }
 
 const testFiles = await selectedTestFiles()
@@ -262,9 +371,13 @@ if (filters.length > 0) {
   for (const f of testFiles) console.log(`  ${f}`)
 }
 
+if (isolatedRun) await mkdir(join(repoRoot, '.tmp'), { recursive: true })
+const outputDir = isolatedRun ? await mkdtemp(join(repoRoot, '.tmp/test-run-')) : fixedOutputDir
+if (isolatedRun) console.log(`[run-tests] output directory: ${outputDir}`)
+
 if (testOnly) {
-  runTests(testFiles)
+  process.exit(await runTests(testFiles, outputDir))
 } else {
-  await bundleTests(testFiles)
-  if (!bundleOnly) runTests(testFiles)
+  await bundleTests(testFiles, outputDir)
+  if (!bundleOnly) process.exit(await runTests(testFiles, outputDir))
 }
