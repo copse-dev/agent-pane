@@ -1820,7 +1820,7 @@ export async function ensureToolPermitted(
       const target = typeof record?.['target'] === 'string' ? record['target'] : '(unknown app)'
       const rawArgs = record?.['args']
       const appArgs = Array.isArray(rawArgs)
-        ? rawArgs.filter((a): a is string => typeof a === 'string')
+        ? rawArgs.flatMap((a) => (typeof a === 'string' ? [a] : []))
         : undefined
       const envValue = record?.['env']
       const envKeys = isRecord(envValue) ? Object.keys(envValue) : undefined
