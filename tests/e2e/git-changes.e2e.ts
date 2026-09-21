@@ -20,11 +20,11 @@ async function waitForWorkspace(): Promise<void> {
   )
 }
 
-async function getGitChangePaths(): Promise<string[]> {
+async function readGitChangePaths(): Promise<string[]> {
   return browser.execute(() =>
     Array.from(document.querySelectorAll<HTMLElement>('.git-change-path'), (element) =>
-      element.textContent?.trim(),
-    ).filter((path): path is string => path !== undefined),
+      element.innerText.trim(),
+    ),
   )
 }
 
@@ -83,7 +83,7 @@ describe('git changes viewer', function () {
     await expect(sectionTitles.some((t) => t.startsWith('committed ('))).toBe(true)
 
     // Verify the three expected files appear with status badges.
-    const paths = await getGitChangePaths()
+    const paths = await readGitChangePaths()
     await expect(paths).toContain('staged.ts')
     await expect(paths).toContain('unstaged.ts')
     await expect(paths).toContain('untracked.ts')
@@ -98,7 +98,7 @@ describe('git changes viewer', function () {
     // Refresh (#1753).
     writeFileSync(join(repoRoot, 'external-change.ts'), 'export const externallyChanged = true\n')
     await browser.waitUntil(
-      async () => (await getGitChangePaths()).includes('external-change.ts'),
+      async () => (await readGitChangePaths()).includes('external-change.ts'),
       {
         timeout: 10_000,
         timeoutMsg: 'expected an unwatched external change to appear automatically',
