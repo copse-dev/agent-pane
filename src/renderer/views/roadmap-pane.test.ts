@@ -1112,6 +1112,71 @@ describe('roadmap pane', () => {
     }
   })
 
+  // Issue #2467: the filter panel used to float over the list as a dropdown
+  // anchored to the header, covering rows below it until dismissed. It is now
+  // a sticky footer appended after `.roadmap-list`, so rows keep their own
+  // scroll and stay selectable while it is open.
+  it('docks the filter panel as a footer after the list, not a dropdown inside the header', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api } = makeApi([makeItem('a', 'First'), makeItem('b', 'Second')])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      const filterMenu = list.querySelector<HTMLElement>('.roadmap-filter-menu')
+      const listBody = list.querySelector<HTMLElement>('.roadmap-list')
+      assert.ok(filterMenu && listBody)
+      // A footer sits after the scrolling list in the same host, not nested
+      // inside `.roadmap-filter` (the header's search/toggle group).
+      assert.equal(filterMenu.closest('.roadmap-filter'), null)
+      assert.equal(filterMenu.parentElement, list)
+      assert.equal(
+        listBody.compareDocumentPosition(filterMenu) & Node.DOCUMENT_POSITION_FOLLOWING,
+        Node.DOCUMENT_POSITION_FOLLOWING,
+        'the footer must follow the list in document order',
+      )
+    } finally {
+      unmount()
+    }
+  })
+
+  it('keeps the filter footer open when a facet inside it is clicked, and rows selectable while it is shown', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api } = makeApi([makeItem('a', 'First'), makeItem('b', 'Second')])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      const toggle = list.querySelector<HTMLButtonElement>('.roadmap-filter-toggle')
+      const filterMenu = list.querySelector<HTMLElement>('.roadmap-filter-menu')
+      assert.ok(toggle && filterMenu)
+      toggle.click()
+      assert.equal(filterMenu.hidden, false)
+      // Clicking a facet checkbox inside the footer is not an "outside" click —
+      // it must not close the footer (a regression the header-nested dropdown
+      // could not have had, since the menu used to live inside the click guard).
+      const firstCheckbox = filterMenu.querySelector<HTMLInputElement>('input[type="checkbox"]')
+      assert.ok(firstCheckbox)
+      firstCheckbox.dispatchEvent(new window.MouseEvent('click', { bubbles: true }))
+      await flush()
+      assert.equal(filterMenu.hidden, false, 'a click inside the footer must not close it')
+      // Rows above the footer stay selectable while it is open. The click
+      // handler rebuilds the list, so the selection is re-queried rather than
+      // checked on the (now-detached) node the click was sent to.
+      const row = list.querySelector<HTMLButtonElement>('.roadmap-row')
+      assert.ok(row)
+      row.click()
+      await flush()
+      assert.ok(
+        list.querySelector('.roadmap-row.is-selected'),
+        'a row click still selects while the footer is open',
+      )
+      assert.equal(viewer.querySelector<HTMLElement>('.roadmap-form')?.hidden, false)
+    } finally {
+      unmount()
+    }
+  })
+
   it('places attachment and thread shortcuts before complexity', async () => {
     const tracked = makeThread('t1', 'Tracked work')
     const store = createStore({

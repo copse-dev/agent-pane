@@ -109,8 +109,10 @@ describe('roadmap done toggle', () => {
     assert.ok(doneStyles, 'done row styles must exist')
     assert.match(doneStyles.decoration, /line-through/, 'done title is struck through')
     assert.equal(doneStyles.editorStaysEmpty, true, 'revealing a row must not open the editor')
-    // The filter popover covers this narrow pane's list. Close it so the visual
-    // reference named "revealed" actually shows the struck-through done row.
+    // Close the filter footer so the visual reference named "revealed" frames
+    // just the struck-through done row, not the facet checkboxes below it
+    // (issue #2467: the footer no longer covers the list while open, but the
+    // named screenshot is still clearer without it in frame).
     await filterToggle.click()
     await doneFacet.waitForDisplayed({ reverse: true })
     await saveAppScreenshot('roadmap-done-revealed.png')
