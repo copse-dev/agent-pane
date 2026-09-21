@@ -148,6 +148,34 @@ describe('ACP in-flight tool calls (#2332)', () => {
     assert.deepEqual(tracker.settle(), [], 'settling twice must not re-cancel')
   })
 
+  it('leaves calls whose approval prompt survived the turn open, and they still settle normally', () => {
+    const tracker = createAcpToolCallTracker()
+    tracker.observe(TOOL_CALL)
+    tracker.observe({ type: 'tool_call', toolCall: { id: 'build', name: 'run_shell', args: {} } })
+
+    assert.deepEqual(
+      tracker.settle(new Set(['build'])),
+      [
+        {
+          type: 'tool_call_update',
+          toolCallId: 'search',
+          status: 'error',
+          result: ACP_CANCELLED_TOOL_CALL_RESULT,
+        },
+      ],
+      'only the non-parked call is interrupted',
+    )
+
+    // The parked call stayed observable: its terminal update is wind-down the
+    // tracker must pass through, not refuse.
+    assert.equal(
+      tracker.observe({ type: 'tool_call_update', toolCallId: 'build', status: 'done' }),
+      true,
+    )
+    // …and once the agent settled it, a later settle has nothing left to say.
+    assert.deepEqual(tracker.settle(), [])
+  })
+
   it('refuses the agent s late terminal update for a call the host cancelled', () => {
     // The reported shape: `session/cancel` goes out, the host stamps the call
     // cancelled, and 235ms later the agent stamps it `done` with the call's own

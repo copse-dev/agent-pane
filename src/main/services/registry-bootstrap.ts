@@ -84,6 +84,7 @@ import {
   OPEN_SIMULATOR_DESKTOP_TOOL_NAME,
   openSimulatorDesktopTool,
 } from '../tools/simulator-desktop-tool.ts'
+import { launchGuiAppTool } from '../tools/gui-app-launch-tool.ts'
 
 export function createRegistry(): ToolRegistry {
   const registry = new ToolRegistry()
@@ -107,6 +108,9 @@ export function createRegistry(): ToolRegistry {
   registry.register(gitCommitTool)
   syncGhTools(registry)
   registry.register(runShellTool)
+  // Host GUI launch (macOS Launch Services). Always approval-gated; not a
+  // substitute for run_shell — see gui-app-launch-tool.ts.
+  registry.register(launchGuiAppTool)
   registry.register(preflightWorktreeTool)
   registry.register(prepareWorktreeTool)
   registry.register(exploreTool)

@@ -13,6 +13,8 @@ import {
   clearAbandonedVerdictsForTest,
   parkedApprovalCount,
   pendingApprovalCountForThread,
+  pendingApprovalParkedToolCallIds,
+  releaseParkedApprovalsForThread,
   requestApproval,
   runWithApprovalHandler,
   setApprovalClockForTest,
@@ -578,24 +580,63 @@ describe('abandoned calls (parked prompts and verdict replay)', () => {
     assert.equal(parkedApprovalCount(), 0)
   })
 
-  it('still dismisses a parked prompt when the thread turn ends, storing nothing', async () => {
+  it('keeps a parked prompt open through turn-end cleanup; the answer waits for the retry', async () => {
+    parkingHandler()
+    const controller = new AbortController()
+    const first = requestUnderThread(req, controller.signal)
+    await Promise.resolve()
+    // The production race: the turn's own abort (controller.signal — the
+    // signal the turn is torn down with) fires while carrying the bridge's
+    // abandonment sentinel, so the waiter parks a stand-in *and* is still
+    // sitting in the entry when cancelApprovalsForThread runs a tick later.
+    controller.abort(new AbandonedCallAbort('client gave up'))
+    await assert.rejects(first, ApprovalPendingError)
+    assert.equal(parkedApprovalCount(), 1)
+    assert.equal(cancelApprovalsForThread(THREAD), 0)
+    assert.equal(handlerSignal?.aborted, false)
+    assert.equal(parkedApprovalCount(), 1)
+
+    release?.({ approved: true, remember: false, resolution: 'user' })
+    await Promise.resolve()
+    assert.equal(parkedApprovalCount(), 0)
+    const retry = await requestUnderThread(req)
+    assert.equal(retry.approved, true)
+    assert.equal(handlerCalls, 1, 'the retry reuses the answer without prompting again')
+  })
+
+  it('releaseParkedApprovalsForThread detaches the stand-in without closing the prompt', async () => {
     parkingHandler()
     const { signal, abandon } = abandonedSignal()
     const first = requestUnderThread(req, signal)
     await Promise.resolve()
     abandon()
     await assert.rejects(first, ApprovalPendingError)
-    assert.equal(cancelApprovalsForThread(THREAD), 1)
-    assert.equal(handlerSignal?.aborted, true)
-    assert.equal(parkedApprovalCount(), 0)
-    // Whatever the torn-down handler returns now is not a user answer.
+    releaseParkedApprovalsForThread(THREAD)
+    assert.equal(pendingApprovalCountForThread(THREAD), 0)
+    assert.equal(parkedApprovalCount(), 1, 'the prompt itself is still up')
+    assert.equal(handlerSignal?.aborted, false)
+
+    release?.({ approved: true, remember: false, resolution: 'user' })
+    await Promise.resolve()
+    // The ledger key carries the same thread id, so that thread's identical
+    // retry still claims the answer.
+    assert.equal((await requestUnderThread(req)).approved, true)
+    assert.equal(handlerCalls, 1)
+  })
+
+  it('attributes a parked stand-in to its tool call id for turn bookkeeping', async () => {
+    parkingHandler()
+    const { signal, abandon } = abandonedSignal()
+    const first = runWithActiveRunIdentity(THREAD, () =>
+      requestApproval({ ...req, toolCallId: 'call-42' }, signal),
+    )
+    await Promise.resolve()
+    abandon()
+    await assert.rejects(first, ApprovalPendingError)
+    assert.deepEqual([...pendingApprovalParkedToolCallIds(THREAD)], ['call-42'])
     release?.({ approved: true, remember: false })
     await Promise.resolve()
-    const retry = requestUnderThread(req)
-    await Promise.resolve()
-    assert.equal(handlerCalls, 2)
-    release?.({ approved: false, remember: false })
-    await retry
+    assert.deepEqual([...pendingApprovalParkedToolCallIds(THREAD)], [])
   })
 
   it('does not park a request that no thread owns', async () => {
