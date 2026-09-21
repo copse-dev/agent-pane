@@ -200,7 +200,32 @@ describe('switching between isolated running threads', () => {
       timeoutMsg: 'both isolated runs did not settle',
     })
 
-    const history = await loadedThreadHistory(PROJECT_ID)
+    // The run registry is cleared when provider work settles, just before the
+    // final thread-store write is guaranteed visible to a fresh reader. Poll
+    // the real persisted histories so slower filesystems do not observe the
+    // preceding tool-call message without its final assistant response.
+    let history = await loadedThreadHistory(PROJECT_ID)
+    await browser.waitUntil(
+      async () => {
+        history = await loadedThreadHistory(PROJECT_ID)
+        return [THREAD_A, THREAD_B].every((threadId) => {
+          const thread = history.find((candidate) => candidate.id === threadId)
+          return (
+            thread?.messages.some(
+              (message) =>
+                message.role === 'assistant' &&
+                message.content.includes(
+                  `Mock response to: ${threadId === THREAD_A ? 'A' : 'B'} checkout probe`,
+                ),
+            ) === true
+          )
+        })
+      },
+      {
+        timeout: 15_000,
+        timeoutMsg: 'final isolated-thread responses were not persisted',
+      },
+    )
     const savedA = history.find((thread) => thread.id === THREAD_A)
     const savedB = history.find((thread) => thread.id === THREAD_B)
     if (!savedA || !savedB) throw new Error('expected both isolated thread histories to load')
