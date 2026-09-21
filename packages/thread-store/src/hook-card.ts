@@ -54,7 +54,7 @@ export interface HookCard {
   /** This nudge is the one the loop pushed, not merely one that was offered. */
   nudgeApplied?: boolean
   /** How the applied nudge reached the model. */
-  nudgeMechanism?: 'tool-enabled-message' | 'text-only-turn'
+  nudgeMechanism?: 'tool-enabled-message' | 'tool-enabled-turn' | 'text-only-turn'
   /** Bounded halt reason (`continue: false` + `stopReason`, decision 12). */
   stopReason?: string
   /** Character count of injected context (blocking hooks, H2). */

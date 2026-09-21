@@ -110,7 +110,7 @@ function nudgeFrom(result: HookEmitResult, hookId: string): string | undefined {
 export interface AppliedNudgeRecord {
   step: number
   hookId: string
-  mechanism: 'tool-enabled-message' | 'text-only-turn'
+  mechanism: 'tool-enabled-message' | 'tool-enabled-turn' | 'text-only-turn'
   text: string
   finalizeReason?: FinalizeNudgeReason
   budget?: FinalizeNudgeBudget
@@ -489,6 +489,7 @@ async function streamTextOnlyTurn(
   messages: LLMMessage[],
   onChunk: (chunk: AgentStreamChunk) => void,
   budget: LlmCallBudget,
+  tools: LLMTool[] = [],
   // null means `messages` already ends in the selected truncation nudge.
   nudge: string | null = FINALIZE_NUDGE,
   getLastUsage?: () => { inputTokens: number; outputTokens: number } | null,
@@ -510,13 +511,14 @@ async function streamTextOnlyTurn(
   const turnMessages: LLMMessage[] =
     nudge === null ? [...messages] : [...messages, { role: 'user', content: nudge }]
   let assistantText = ''
+  const pendingToolCalls: ToolCallChunk[] = []
   let stopReason: string | undefined
   let streamUsage: StepUsage | null = null
   let streamOutputChars = 0
 
   budget.deadline.pause()
   try {
-    for await (const chunk of provider.stream(turnMessages, [], signal)) {
+    for await (const chunk of provider.stream(turnMessages, tools, signal)) {
       if (signal?.aborted) break
       if (chunk.type === 'reasoning') {
         streamOutputChars += chunk.text.length
@@ -525,6 +527,10 @@ async function streamTextOnlyTurn(
       if (chunk.type === 'text') {
         streamOutputChars += chunk.text.length
         assistantText += chunk.text
+        onChunk(chunk)
+      }
+      if (chunk.type === 'tool_call' && tools.length > 0) {
+        pendingToolCalls.push(chunk.toolCall)
         onChunk(chunk)
       }
       if (chunk.type === 'prompt_progress') onChunk(chunk)
@@ -562,7 +568,6 @@ async function streamTextOnlyTurn(
   }
   recordRunActivity(budget)
 
-  const pendingToolCalls: ToolCallChunk[] = []
   assistantText = applyTextToolCallRecovery(
     assistantText,
     pendingToolCalls,
@@ -784,6 +789,36 @@ type ToolBatchContext = {
   recentFingerprints: string[]
   recentToolProgress: (string | null)[]
   budget: LlmCallBudget
+}
+
+const FINALIZE_TOOL_BUDGET_RESULT =
+  'Error: Finalize tool call was not executed because the LLM call budget was exhausted.'
+const FINALIZE_TOOL_DEADLINE_RESULT =
+  'Error: Finalize tool call was not executed because the run deadline expired.'
+
+function finalizeToolBudgetResult(stopReason: RunLimitStopReason | null): string {
+  return stopReason === 'timeout' ? FINALIZE_TOOL_DEADLINE_RESULT : FINALIZE_TOOL_BUDGET_RESULT
+}
+
+function settleUnexecutedFinalizeToolCalls(
+  messages: LLMMessage[],
+  pendingToolCalls: readonly ToolCallChunk[],
+  onChunk: (chunk: AgentStreamChunk) => void,
+  result: string,
+): void {
+  const toolResults = pendingToolCalls.map((toolCall) => ({
+    toolCallId: toolCall.id,
+    result,
+  }))
+  messages.push({ role: 'tool', toolResults })
+  for (const toolResult of toolResults) {
+    onChunk({
+      type: 'tool_result',
+      toolCallId: toolResult.toolCallId,
+      result: toolResult.result,
+      isError: true,
+    })
+  }
 }
 
 /**
@@ -1218,6 +1253,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
               messages,
               onChunk,
               budget,
+              [],
               preNudges.stuckFinalize,
               getLastUsage,
               usageModel,
@@ -1231,6 +1267,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
                 messages,
                 onChunk,
                 budget,
+                [],
                 null,
                 getLastUsage,
                 usageModel,
@@ -1727,7 +1764,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     // When open todos remain, fire `beforeFinalize` (M0.3) to select closeout
     // nudges so the model reconciles the plan via update_todos — a plain-text
     // "all done" no longer satisfies finalize. Only once the plan is clean (or
-    // after closeout gives up) do we fall through to the text-only finalize
+    // after closeout gives up) do we fall through to bounded finalization
     // that produces the user-facing answer.
     const stepCtx: AgentStepContext = {
       provider,
@@ -1762,7 +1799,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       recordAppliedNudge(appliedNudgeSink, {
         step: budget.llmCalls,
         hookId: FINALIZE_NUDGE_ID,
-        mechanism: 'text-only-turn',
+        mechanism: 'tool-enabled-turn',
         text: FINALIZE_NUDGE,
         finalizeReason: reason,
         budget: finalizeBudget(),
@@ -1786,6 +1823,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         messages,
         onChunk,
         budget,
+        tools,
         FINALIZE_NUDGE,
         getLastUsage,
         usageModel,
@@ -1793,12 +1831,18 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         maxStreamOutputTokens,
         resolveTruncationNudge,
       )
-      while (
-        (finalResult.pendingToolCalls.length > 0 || finalResult.retryAfterTruncation) &&
-        !runBudgetExhausted(budget)
-      ) {
+      while (finalResult.pendingToolCalls.length > 0 || finalResult.retryAfterTruncation) {
         const retryingTruncation = finalResult.retryAfterTruncation
         if (finalResult.pendingToolCalls.length > 0) {
+          if (runBudgetExhausted(budget)) {
+            settleUnexecutedFinalizeToolCalls(
+              messages,
+              finalResult.pendingToolCalls,
+              onChunk,
+              finalizeToolBudgetResult(runBudgetStopReason(budget)),
+            )
+            break
+          }
           await executeToolBatch({
             pendingToolCalls: finalResult.pendingToolCalls,
             messages,
@@ -1815,11 +1859,13 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         if (!retryingTruncation) {
           recordFinalizeNudge('pending-tool-calls')
         }
+        if (runBudgetExhausted(budget)) break
         finalResult = await streamTextOnlyTurn(
           provider,
           messages,
           onChunk,
           budget,
+          tools,
           retryingTruncation ? null : FINALIZE_NUDGE,
           getLastUsage,
           usageModel,

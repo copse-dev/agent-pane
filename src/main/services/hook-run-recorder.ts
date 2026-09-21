@@ -432,7 +432,7 @@ export function recordHaltRun(
 export function recordAppliedNudgeRun(
   input: {
     hookId: string
-    mechanism: 'tool-enabled-message' | 'text-only-turn'
+    mechanism: 'tool-enabled-message' | 'tool-enabled-turn' | 'text-only-turn'
     text: string
     finalizeReason?: FinalizeNudgeReason
     budget?: FinalizeNudgeBudget
