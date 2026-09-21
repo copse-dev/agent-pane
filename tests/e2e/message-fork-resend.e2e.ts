@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
