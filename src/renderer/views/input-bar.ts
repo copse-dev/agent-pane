@@ -1701,8 +1701,18 @@ export function mountInputBar(
         return
       }
     }
-    const currentBranch = await api.git.currentBranch(projectId, id)
     const thread = getThreadById(store, id)
+    // A genuinely new thread has no branch contract to validate yet. Its
+    // checkout transaction is authoritative and returns the branch it binds,
+    // so reading the pre-transaction checkout only starts one redundant Git
+    // process. Legacy blank threads can already carry gitBranch, and must keep
+    // the mismatch guard before the transaction is allowed to replace it.
+    const requiresCheckoutPreparation =
+      thread !== undefined && thread.messages.length === 0 && !thread.worktreeChoice
+    const currentBranch =
+      requiresCheckoutPreparation && !thread.gitBranch
+        ? null
+        : await api.git.currentBranch(projectId, id)
     const threadBranch = thread?.gitBranch
     const isolatedWorktree = thread !== undefined && thread.worktree !== undefined
     // Worktree threads keep the project checkout on its original branch; the
@@ -1803,7 +1813,7 @@ export function mountInputBar(
     // Blank threads commit their checkout decision in main before the renderer
     // records or clears the first message. Allocation/persistence failures are
     // therefore retryable without losing or accidentally dispatching the prompt.
-    if (thread && thread.messages.length === 0 && !thread.worktreeChoice) {
+    if (requiresCheckoutPreparation) {
       const projectId = store.getState().activeProjectId
       if (!projectId) return
       hideCheckoutError()
