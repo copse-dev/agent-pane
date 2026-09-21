@@ -46,7 +46,11 @@ import {
   isStreamOutputRunaway,
   shouldExtendRunBudget,
 } from './agent-loop-limits.ts'
-import { hasOpenTodos, OPEN_TODOS_STILL_OPEN_MESSAGE } from './agent-loop-guards.ts'
+import {
+  buildBudgetExhaustedTodoNote,
+  hasOpenTodos,
+  OPEN_TODOS_STILL_OPEN_MESSAGE,
+} from './agent-loop-guards.ts'
 import { createHookRegistry, mergeBlockingOutcomes } from './hooks/hook-registry.ts'
 import type { HookEmitResult } from './hooks/hook-registry.ts'
 import type { HookContext, StepBoundaryPayload } from './hooks/canonical-events.ts'
@@ -705,24 +709,35 @@ async function runToolEnabledNudgeTurn(
   return { answerText: assistantText.trim(), executedTools: false }
 }
 
+/** Result of running the finalize closeout loop (see {@link closeOpenTodosBeforeFinalize}). */
+interface CloseoutOutcome {
+  /** True once no todos are open — the sole "nothing to report" case. */
+  closed: boolean
+  /** How many tool-enabled closeout turns actually ran (not merely offered). */
+  attemptsRun: number
+  /** Whether the last closeout turn that ran called any tool. */
+  lastAttemptMadeEdits: boolean
+}
+
 /**
  * Run tool-enabled closeout turns while open todos remain. Nudge selection and
  * the attempt budget live in `beforeFinalize` hooks (M0.3); this site only
- * fires the event and runs the returned `injectContext` as a nudge. Returns
- * true once no todos are open.
+ * fires the event and runs the returned `injectContext` as a nudge.
  */
 async function closeOpenTodosBeforeFinalize(
   ctx: AgentStepContext,
   getOpenTodos: () => readonly TodoItem[],
-): Promise<boolean> {
+): Promise<CloseoutOutcome> {
   const registry = createHookRegistry()
   const hookContext: HookContext = {
     ...(ctx.signal !== undefined ? { signal: ctx.signal } : {}),
     ...(ctx.recordHookRun !== undefined ? { recordHookRun: ctx.recordHookRun } : {}),
   }
+  let attemptsRun = 0
+  let lastAttemptMadeEdits = false
   for (let attempt = 0; ; attempt++) {
     const openTodos = getOpenTodos()
-    if (!hasOpenTodos(openTodos)) return true
+    if (!hasOpenTodos(openTodos)) return { closed: true, attemptsRun, lastAttemptMadeEdits }
     const result = await registry.emit('beforeFinalize', { openTodos, attempt }, hookContext)
     const nudge = mergeBlockingOutcomes(result.outcomes).injectContext
     if (!nudge) break
@@ -745,10 +760,12 @@ async function closeOpenTodosBeforeFinalize(
     // `min(MAX_TODO_CLOSEOUT_ATTEMPTS, remaining)` — the local cap tightens
     // inside the shared cap. No budget wired → local cap alone (unchanged).
     if (ctx.continuationBudget && !ctx.continuationBudget.tryGrant()) break
-    await runToolEnabledNudgeTurn(ctx, nudge)
+    const { executedTools } = await runToolEnabledNudgeTurn(ctx, nudge)
+    attemptsRun++
+    lastAttemptMadeEdits = executedTools
     if (ctx.signal?.aborted) break
   }
-  return !hasOpenTodos(getOpenTodos())
+  return { closed: !hasOpenTodos(getOpenTodos()), attemptsRun, lastAttemptMadeEdits }
 }
 
 type ToolBatchContext = {
@@ -1723,10 +1740,25 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     }
 
     if (getOpenTodos && hasOpenTodos(getOpenTodos())) {
-      const closed = await closeOpenTodosBeforeFinalize(stepCtx, getOpenTodos)
-      if (!closed && !signal?.aborted) {
-        onChunk({ type: 'text', text: OPEN_TODOS_STILL_OPEN_MESSAGE })
-        messages.push({ role: 'assistant', content: OPEN_TODOS_STILL_OPEN_MESSAGE })
+      const outcome = await closeOpenTodosBeforeFinalize(stepCtx, getOpenTodos)
+      if (!outcome.closed && !signal?.aborted) {
+        // A generic "still open" line doesn't say *why* — if the shared
+        // auto-continuation budget (decision 5) is what actually stopped
+        // further attempts, name the blocker instead of leaving it silent
+        // (#1410): which todos, how many closeout turns ran, and whether the
+        // last one did anything. When budget remains, the stop is the local
+        // attempt cap (`MAX_TODO_CLOSEOUT_ATTEMPTS`) giving up on its own, so
+        // the existing generic note is still the right one.
+        const budgetExhausted = stepCtx.continuationBudget?.remaining() === 0
+        const note = budgetExhausted
+          ? buildBudgetExhaustedTodoNote(
+              getOpenTodos(),
+              outcome.attemptsRun,
+              outcome.lastAttemptMadeEdits,
+            )
+          : OPEN_TODOS_STILL_OPEN_MESSAGE
+        onChunk({ type: 'text', text: note })
+        messages.push({ role: 'assistant', content: note })
       }
     }
 

@@ -71,3 +71,44 @@ Plain-text claims that work is done are not accepted — update_todos is require
 
 export const OPEN_TODOS_STILL_OPEN_MESSAGE =
   'Note: the task plan still has open items — the agent did not reconcile todos before finishing.'
+
+/**
+ * Cap on how many open-todo titles the budget-exhaustion note (below) lists by
+ * name, so a plan with dozens of items doesn't turn the note into a wall of
+ * text — a handful is enough to tell the human what is still blocking.
+ */
+export const MAX_BUDGET_EXHAUSTED_NOTE_TODOS = 5
+
+/**
+ * The note surfaced when a turn tree's shared auto-continuation budget
+ * (decision 5) runs out while todos are still open — the closeout loop
+ * (`todo-finalize-closeout`, `run-agent-loop.ts`) and the pre-review todo gate
+ * (`runPreReviewTodoGate`, `post-turn-orchestration.ts`) both draw
+ * machine-initiated turns from this one pool, and previously each stopped
+ * silently once it ran out (#1410). This names the actual blocker — which
+ * todos, how many closeout attempts ran, whether the last one did anything —
+ * instead of a generic "still open" line, so a human "continue" is informed
+ * rather than blindly re-arming the same failure.
+ */
+export function buildBudgetExhaustedTodoNote(
+  openTodos: readonly TodoItem[],
+  attemptsRun: number,
+  lastAttemptMadeEdits: boolean,
+): string {
+  const shown = openTodos.slice(0, MAX_BUDGET_EXHAUSTED_NOTE_TODOS)
+  const remainder = openTodos.length - shown.length
+  const todoLines = shown.map((todo) => `- ${todo.content}`).join('\n')
+  const todoList = remainder > 0 ? `${todoLines}\n- …and ${String(remainder)} more` : todoLines
+  const attemptsSummary =
+    attemptsRun === 0
+      ? 'No closeout attempt ran before the budget ran out.'
+      : `${String(attemptsRun)} closeout attempt${attemptsRun === 1 ? '' : 's'} ran; the last one ${
+          lastAttemptMadeEdits ? 'called tools but did not finish the plan' : 'made no tool calls'
+        }.`
+  return (
+    'Note: the auto-continuation budget for this message is used up, so the agent stopped with ' +
+    'open todos still on the plan:\n' +
+    `${todoList}\n` +
+    `${attemptsSummary} Sending another message starts a fresh turn and re-arms the budget.`
+  )
+}

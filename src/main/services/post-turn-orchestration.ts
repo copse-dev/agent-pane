@@ -16,7 +16,7 @@ import { runSubagent } from '@copse/agent/run-subagent.ts'
 import { resolveMaxReviewCycles } from '@copse/agent/plugins/post-turn-review-plugin.ts'
 import { conversationTokenBudget } from '@copse/agent/trim-history.ts'
 import { readFileLimitsForSubagent } from '@copse/agent/read-file-limits.ts'
-import { hasOpenTodos } from '@copse/agent/agent-loop-guards.ts'
+import { buildBudgetExhaustedTodoNote, hasOpenTodos } from '@copse/agent/agent-loop-guards.ts'
 import {
   applyTodoUpdate,
   MAX_POST_TURN_REVIEW_CYCLES,
@@ -101,19 +101,42 @@ function executeReviewTool(
   return registry.execute(name, args, signal)
 }
 
-/** Deterministic parent continuation when todos are still open before review. */
+/**
+ * Deterministic parent continuation when todos are still open before review.
+ *
+ * When the shared auto-continuation budget (decision 5) is what stops this
+ * gate short — rather than its own local attempt cap — the open todos would
+ * otherwise ride into review with nothing said about why no further attempt
+ * ran (#1410). Only report that here when this gate itself spent at least one
+ * attempt: if the budget was already exhausted before this gate even started
+ * (e.g. by the finalize closeout loop upstream), that loop already surfaced
+ * the note, and re-reporting an empty attempt count here would misattribute
+ * the earlier attempts to this gate instead.
+ */
 export async function runPreReviewTodoGate(opts: RunParentContinuationOptions): Promise<void> {
+  let attemptsRun = 0
+  let lastAttemptMadeEdits = false
   for (let attempt = 0; attempt < MAX_PRE_REVIEW_TODO_ATTEMPTS; attempt++) {
     if (!hasOpenTodos(opts.getOpenTodos())) return
     // Each pre-review attempt is a machine-initiated new turn (decision 5):
-    // consume one grant so the local cap tightens inside the shared budget. When
-    // the budget is exhausted, the gate stops (the open todos ride into review).
-    if (opts.continuationBudget && !opts.continuationBudget.tryGrant()) return
+    // consume one grant so the local cap tightens inside the shared budget.
+    if (opts.continuationBudget && !opts.continuationBudget.tryGrant()) break
+    const messagesBefore = opts.messages.length
     await runParentContinuationTurn({
       ...opts,
       userNudge: OPEN_TODOS_PRE_REVIEW_NUDGE,
     })
+    attemptsRun++
+    lastAttemptMadeEdits = opts.messages
+      .slice(messagesBefore)
+      .some((message) => message.role === 'assistant' && Array.isArray(message.content))
     if (opts.signal.aborted) return
+  }
+  const stillOpen = opts.getOpenTodos()
+  if (attemptsRun > 0 && opts.continuationBudget?.remaining() === 0 && hasOpenTodos(stillOpen)) {
+    const note = buildBudgetExhaustedTodoNote(stillOpen, attemptsRun, lastAttemptMadeEdits)
+    opts.onChunk({ type: 'text', text: note })
+    opts.messages.push({ role: 'assistant', content: note })
   }
 }
 

@@ -33,6 +33,17 @@ function mockProvider(chunks: ProviderStreamChunk[][]): LLMProvider {
   }
 }
 
+/** Find a `text` chunk whose text includes `substring` — narrows the union explicitly. */
+function findTextChunk(
+  chunks: AgentStreamChunk[],
+  substring: string,
+): Extract<AgentStreamChunk, { type: 'text' }> | undefined {
+  return chunks.find(
+    (c): c is Extract<AgentStreamChunk, { type: 'text' }> =>
+      c.type === 'text' && c.text.includes(substring),
+  )
+}
+
 /** Assert the Anthropic invariant: every assistant tool_use has a tool_result. */
 function assertToolPairingValid(messages: LLMMessage[]): void {
   for (let i = 0; i < messages.length; i++) {
@@ -1426,8 +1437,8 @@ src/renderer/views/projects-pane.ts
   it('closeout is tightened by the shared continuation budget (decision 5)', async () => {
     // With the shared budget already exhausted, no closeout turn may run — the
     // local cap (MAX_TODO_CLOSEOUT_ATTEMPTS) is a tightener *inside* the shared
-    // cap, so a grant of 0 means the plan's open todos ride into the still-open
-    // note without a single machine closeout turn.
+    // cap, so a grant of 0 means the plan's open todos ride into the
+    // budget-exhausted note without a single machine closeout turn.
     let closeoutTurns = 0
     const provider: LLMProvider = {
       async *stream(messages) {
@@ -1453,8 +1464,168 @@ src/renderer/views/projects-pane.ts
       executeTool: async () => '',
     })
     assert.equal(closeoutTurns, 0, 'no closeout turn runs once the shared budget is exhausted')
+    const note = findTextChunk(chunks, 'auto-continuation budget')
+    assert.ok(note, 'a budget-exhausted note is emitted')
+    assert.ok(note.text.includes('Pending step'))
+    assert.ok(note.text.includes('No closeout attempt ran before the budget'))
+  })
+
+  it('names the still-open todos and attempt count when the budget runs out mid-closeout (#1410)', async () => {
+    // The local cap (MAX_TODO_CLOSEOUT_ATTEMPTS = 3) offers a nudge on every
+    // attempt; here the shared budget only has room for one, so the loop runs
+    // exactly one closeout turn (which calls update_todos, but leaves the plan
+    // open) before the second `tryGrant` refuses it.
+    let remaining = 1
+    const continuationBudget = {
+      tryGrant: (): boolean => {
+        if (remaining <= 0) return false
+        remaining--
+        return true
+      },
+      remaining: (): number => remaining,
+    }
+    const todos: TodoItem[] = [
+      { id: '1', content: 'Wire up the export button', status: 'pending' },
+      { id: '2', content: 'Add a loading spinner', status: 'in_progress' },
+    ]
+    const provider: LLMProvider = {
+      async *stream(messages) {
+        const last = messages.at(-1)
+        const content =
+          last && 'content' in last && typeof last.content === 'string' ? last.content : ''
+        if (content.includes('open todos')) {
+          yield {
+            type: 'tool_call',
+            toolCall: { id: 'todo-1', name: 'update_todos', args: { merge: true, todos: [] } },
+          }
+        }
+        yield { type: 'done' }
+      },
+    }
+    const chunks: AgentStreamChunk[] = []
+    await runAgentLoop({
+      provider,
+      messages: [{ role: 'user', content: 'big task' }],
+      tools: [{ name: 'update_todos', description: 'x', parameters: {} }],
+      maxSteps: 1,
+      getOpenTodos: () => todos,
+      continuationBudget,
+      onChunk: (c) => chunks.push(c),
+      executeTool: async () => 'no-op',
+    })
+    const note = findTextChunk(chunks, 'auto-continuation budget')
+    assert.ok(note, 'a budget-exhausted note is emitted')
+    assert.ok(note.text.includes('Wire up the export button'))
+    assert.ok(note.text.includes('Add a loading spinner'))
+    assert.ok(note.text.includes('1 closeout attempt ran'))
+    assert.ok(note.text.includes('called tools but did not finish'))
+    assert.ok(note.text.includes('Sending another message starts a fresh turn'))
+  })
+
+  it('emits nothing budget-related once every todo is closed, even with an exhausted budget', async () => {
+    const todos: TodoItem[] = [{ id: '1', content: 'Pending step', status: 'pending' }]
+    const provider: LLMProvider = {
+      async *stream(messages) {
+        const last = messages.at(-1)
+        const content =
+          last && 'content' in last && typeof last.content === 'string' ? last.content : ''
+        if (content.includes('open todos')) {
+          yield {
+            type: 'tool_call',
+            toolCall: {
+              id: 'todo-1',
+              name: 'update_todos',
+              args: {
+                merge: true,
+                todos: [{ id: '1', content: 'Pending step', status: 'completed' }],
+              },
+            },
+          }
+        }
+        yield { type: 'done' }
+      },
+    }
+    const chunks: AgentStreamChunk[] = []
+    // The budget has exactly one grant left — enough to close the plan, and
+    // exhausted immediately after, but there is nothing left open to report.
+    let granted = false
+    await runAgentLoop({
+      provider,
+      messages: [{ role: 'user', content: 'big task' }],
+      tools: [{ name: 'update_todos', description: 'x', parameters: {} }],
+      maxSteps: 1,
+      getOpenTodos: () => todos,
+      continuationBudget: {
+        tryGrant: (): boolean => {
+          if (granted) return false
+          granted = true
+          return true
+        },
+        remaining: (): number => (granted ? 0 : 1),
+      },
+      onChunk: (c) => chunks.push(c),
+      executeTool: async (name) => {
+        if (name === 'update_todos') {
+          const first = todos[0]
+          if (first) first.status = 'completed'
+        }
+        return 'Plan updated (1/1 done).'
+      },
+    })
+    assert.equal(todos[0]?.status, 'completed')
     assert.ok(
-      chunks.some((c) => c.type === 'text' && c.text.includes('task plan still has open items')),
+      !chunks.some((c) => c.type === 'text' && c.text.includes('auto-continuation budget')),
+      'no budget note when there is nothing left open to report',
+    )
+  })
+
+  it('a fresh turn tree (new human message) re-arms the budget with no note', async () => {
+    // A brand-new human submission gets a fresh `ContinuationLedger` entry —
+    // simulated here with a full grant available — so closeout can run to
+    // completion without any budget-exhaustion note.
+    const todos: TodoItem[] = [{ id: '1', content: 'Pending step', status: 'pending' }]
+    const provider: LLMProvider = {
+      async *stream(messages) {
+        const last = messages.at(-1)
+        const content =
+          last && 'content' in last && typeof last.content === 'string' ? last.content : ''
+        if (content.includes('open todos')) {
+          yield {
+            type: 'tool_call',
+            toolCall: {
+              id: 'todo-1',
+              name: 'update_todos',
+              args: {
+                merge: true,
+                todos: [{ id: '1', content: 'Pending step', status: 'completed' }],
+              },
+            },
+          }
+        }
+        yield { type: 'done' }
+      },
+    }
+    const chunks: AgentStreamChunk[] = []
+    await runAgentLoop({
+      provider,
+      messages: [{ role: 'user', content: 'continue' }],
+      tools: [{ name: 'update_todos', description: 'x', parameters: {} }],
+      maxSteps: 1,
+      getOpenTodos: () => todos,
+      continuationBudget: { tryGrant: () => true, remaining: () => 5 },
+      onChunk: (c) => chunks.push(c),
+      executeTool: async (name) => {
+        if (name === 'update_todos') {
+          const first = todos[0]
+          if (first) first.status = 'completed'
+        }
+        return 'Plan updated (1/1 done).'
+      },
+    })
+    assert.equal(todos[0]?.status, 'completed')
+    assert.ok(
+      !chunks.some((c) => c.type === 'text' && c.text.includes('auto-continuation budget')),
+      'a fresh budget that can finish the plan emits no note',
     )
   })
 

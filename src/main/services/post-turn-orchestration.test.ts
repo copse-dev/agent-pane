@@ -4,7 +4,9 @@ import {
   applyReviewTodoUpdates,
   reviewSpendApprovalBody,
   runPostTurnReviewCycle,
+  runPreReviewTodoGate,
   type PostTurnReviewOutcome,
+  type RunParentContinuationOptions,
   type RunPostTurnReviewCycleOptions,
 } from './post-turn-orchestration.ts'
 import { MAX_POST_TURN_REVIEW_CYCLES } from '@shared/todos/todo-logic.ts'
@@ -13,7 +15,9 @@ import type { ParsedReviewVerdict } from '@copse/agent/review-subagent.ts'
 import type { StreamChunk } from '@shared/types'
 import type { TodoItem } from '@shared/types/todo.ts'
 import type { ContinuationGrant } from '@copse/agent/hooks/continuation-budget.ts'
+import type { LLMMessage, LLMProvider, ProviderStreamChunk } from '@copse/llm/wire-types.ts'
 import { at } from '@shared/array-utils.ts'
+import { isRecord } from '@copse/std/unknown-value.ts'
 
 describe('post-turn orchestration helpers', () => {
   it('applyReviewTodoUpdates merges review todo patches', () => {
@@ -320,5 +324,151 @@ describe('runPostTurnReviewCycle (E3)', () => {
     const reviews = reviewChunks(h.chunks)
     assert.equal(reviews.at(-1)?.status, 'error')
     assert.equal(h.remediations.length, 0)
+  })
+})
+
+/**
+ * A minimal provider for `runPreReviewTodoGate` tests: it recognizes the pre-
+ * review nudge (`OPEN_TODOS_PRE_REVIEW_NUDGE`, "reconcile the task plan") and
+ * either calls `update_todos` (via `closesTodos`) or answers with plain text
+ * that does nothing, so a test can control whether an attempt "makes edits".
+ */
+function preReviewProvider(closesTodos: boolean, todos: TodoItem[]): LLMProvider {
+  return {
+    async *stream(messages: LLMMessage[]): AsyncGenerator<ProviderStreamChunk> {
+      const last = messages.at(-1)
+      const content =
+        last && 'content' in last && typeof last.content === 'string' ? last.content : ''
+      if (content.includes('reconcile the task plan')) {
+        if (closesTodos) {
+          yield {
+            type: 'tool_call',
+            toolCall: {
+              id: 'todo-1',
+              name: 'update_todos',
+              args: {
+                merge: true,
+                todos: todos.map((t) => ({ ...t, status: 'completed' as const })),
+              },
+            },
+          }
+        } else {
+          yield { type: 'text', text: 'still working on it' }
+        }
+      }
+      yield { type: 'done' }
+    },
+  }
+}
+
+function preReviewOptions(
+  todos: TodoItem[],
+  provider: LLMProvider,
+  over: Partial<RunParentContinuationOptions> = {},
+): RunParentContinuationOptions {
+  return {
+    provider,
+    messages: [{ role: 'user', content: 'do the task' }],
+    tools: [{ name: 'update_todos', description: 'x', parameters: {} }],
+    contextWindow: 100_000,
+    toolSchemaReserve: 0,
+    signal: new AbortController().signal,
+    usageModel: 'test-model',
+    onChunk: (): void => {},
+    getOpenTodos: () => todos,
+    setTodos: (t): void => {
+      todos.length = 0
+      todos.push(...t)
+    },
+    userNudge: '',
+    maxSteps: 4,
+    executeTool: async (name, args): Promise<string> => {
+      if (name === 'update_todos' && isRecord(args) && Array.isArray(args['todos'])) {
+        for (const update of args['todos']) {
+          if (!isRecord(update) || typeof update['id'] !== 'string') continue
+          const existing = todos.find((t) => t.id === update['id'])
+          if (existing) existing.status = 'completed'
+        }
+      }
+      return 'ok'
+    },
+    ...over,
+  }
+}
+
+describe('runPreReviewTodoGate (#1410)', () => {
+  it('emits a budget-exhausted note naming the open todos and attempt count', async () => {
+    const todos: TodoItem[] = [
+      { id: 'a', content: 'Wire up the export button', status: 'pending' },
+      { id: 'b', content: 'Add a loading spinner', status: 'in_progress' },
+    ]
+    // Provider answers with plain text (no tool call) so the plan stays open;
+    // the single grant is spent on that one attempt.
+    const chunks: StreamChunk[] = []
+    const opts = preReviewOptions(todos, preReviewProvider(false, todos), {
+      continuationBudget: grantBudget(1),
+      onChunk: (c) => chunks.push(c),
+    })
+    await runPreReviewTodoGate(opts)
+    const note = chunks.find(
+      (c): c is Extract<StreamChunk, { type: 'text' }> =>
+        c.type === 'text' && c.text.includes('auto-continuation budget'),
+    )
+    assert.ok(note, 'a budget-exhausted note is emitted')
+    assert.ok(note.text.includes('Wire up the export button'))
+    assert.ok(note.text.includes('Add a loading spinner'))
+    assert.ok(note.text.includes('1 closeout attempt ran'))
+    assert.ok(note.text.includes('made no tool calls'))
+    // The note is persisted into the turn's own message history, so it
+    // survives a reload of the thread.
+    assert.ok(
+      opts.messages.some(
+        (m) => m.role === 'assistant' && typeof m.content === 'string' && m.content === note.text,
+      ),
+    )
+  })
+
+  it('emits nothing when the budget runs out but no todos remain open', async () => {
+    const todos: TodoItem[] = [{ id: 'a', content: 'Wire up the export button', status: 'pending' }]
+    const chunks: StreamChunk[] = []
+    const opts = preReviewOptions(todos, preReviewProvider(true, todos), {
+      continuationBudget: grantBudget(1),
+      onChunk: (c) => chunks.push(c),
+    })
+    await runPreReviewTodoGate(opts)
+    assert.equal(todos[0]?.status, 'completed')
+    assert.ok(
+      !chunks.some((c) => c.type === 'text' && c.text.includes('auto-continuation budget')),
+      'no note once the plan is clean',
+    )
+  })
+
+  it('does not re-report when the budget was already exhausted before this gate ran', async () => {
+    // Simulates the finalize closeout loop (upstream) having already spent the
+    // whole shared budget and surfaced its own note — this gate must not
+    // misattribute zero attempts of its own as "no closeout attempt ran".
+    const todos: TodoItem[] = [{ id: 'a', content: 'Wire up the export button', status: 'pending' }]
+    const chunks: StreamChunk[] = []
+    const opts = preReviewOptions(todos, preReviewProvider(false, todos), {
+      continuationBudget: grantBudget(0),
+      onChunk: (c) => chunks.push(c),
+    })
+    await runPreReviewTodoGate(opts)
+    assert.ok(
+      !chunks.some((c) => c.type === 'text' && c.text.includes('auto-continuation budget')),
+      'this gate stays silent when it made no attempts of its own',
+    )
+  })
+
+  it('a fresh budget that finishes the plan emits no note', async () => {
+    const todos: TodoItem[] = [{ id: 'a', content: 'Wire up the export button', status: 'pending' }]
+    const chunks: StreamChunk[] = []
+    const opts = preReviewOptions(todos, preReviewProvider(true, todos), {
+      continuationBudget: grantBudget(5),
+      onChunk: (c) => chunks.push(c),
+    })
+    await runPreReviewTodoGate(opts)
+    assert.equal(todos[0]?.status, 'completed')
+    assert.ok(!chunks.some((c) => c.type === 'text' && c.text.includes('auto-continuation budget')))
   })
 })
