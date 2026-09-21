@@ -53,6 +53,20 @@ export default ts.config(
   ...ts.configs.strictTypeChecked,
   prettier,
   {
+    // Adapter implementations must accept every input their shared contract
+    // permits. Method signatures bypass strictFunctionTypes' parameter checks;
+    // function properties retain them. Start with these three adapter seams
+    // rather than changing unrelated interface and overload declarations (#1323).
+    files: [
+      'packages/hooks-dialects/src/dialect-adapter.ts',
+      'src/main/services/github/backend/backend.ts',
+      'src/main/services/workspace-fs/workspace-fs.ts',
+    ],
+    rules: {
+      '@typescript-eslint/method-signature-style': ['error', 'property'],
+    },
+  },
+  {
     // A stale `// eslint-disable` is as misleading as a missing one: it implies a
     // rule fires here when it no longer does. Fail the build on unused directives
     // so the inline-suppression inventory stays honest as the code changes.
