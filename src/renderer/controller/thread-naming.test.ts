@@ -4,8 +4,9 @@ import { createStore } from '@shared/store/store.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import { getThreadById, setThreadTitle } from '@shared/store/thread-helpers.ts'
 import type { Message, Thread } from '@shared/types'
+import type { ThreadWorktree } from '@shared/types/worktree.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import { maybeNameThread } from './thread-naming.ts'
+import { maybeNameThread, maybeRenameThreadBranch } from './thread-naming.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 
 function requireThread(store: AppStore, id: string): Thread {
@@ -47,11 +48,20 @@ function addUserMessages(store: AppStore, threadId: string, contents: string[]):
   })
 }
 
-function apiWithTitle(suggest: (text: string) => Promise<string | null>): {
+function apiWithTitle(
+  suggest: (text: string) => Promise<string | null>,
+  rename: (
+    projectId: string,
+    threadId: string,
+    title: string,
+  ) => Promise<ThreadWorktree | null> = async () => null,
+): {
   api: ApiClient
   titleCalls: string[]
+  branchRenameCalls: Array<{ projectId: string; threadId: string; title: string }>
 } {
   const titleCalls: string[] = []
+  const branchRenameCalls: Array<{ projectId: string; threadId: string; title: string }> = []
   const api = ((): ApiClient => {
     const base = createFakeApi()
     return {
@@ -62,10 +72,18 @@ function apiWithTitle(suggest: (text: string) => Promise<string | null>): {
           titleCalls.push(text)
           return suggest(text)
         },
+        renameCheckoutBranch: async (
+          projectId,
+          threadId,
+          title,
+        ): Promise<ThreadWorktree | null> => {
+          branchRenameCalls.push({ projectId, threadId, title })
+          return rename(projectId, threadId, title)
+        },
       },
     } satisfies ApiClient
   })()
-  return { api, titleCalls }
+  return { api, titleCalls, branchRenameCalls }
 }
 
 test('maybeNameThread suggests a title from the first user message', async () => {
@@ -80,6 +98,45 @@ test('maybeNameThread suggests a title from the first user message', async () =>
 
   assert.deepEqual(titleCalls, ['Add a login button'])
   assert.equal(requireThread(store, 't-name').title, 'Generated Title')
+})
+
+test('maybeRenameThreadBranch applies an idle settled title to its worktree branch', async () => {
+  const worktree: ThreadWorktree = {
+    path: '/worktrees/t-branch',
+    branch: 'copse/thread-branch',
+    baseBranch: 'main',
+    baseCommit: 'a'.repeat(40),
+    createdAt: 1,
+    seededFromDirtyProject: false,
+  }
+  const named = newThread('t-branch', [userMessage('Repair sessions')])
+  named.status = 'idle'
+  named.title = 'Repair Sessions'
+  named.worktree = worktree
+  named.gitBranch = worktree.branch
+  const store = createStore({
+    projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+    activeProjectId: 'project-1',
+    threads: [named],
+    activeThreadId: 't-branch',
+  })
+  const { api, branchRenameCalls } = apiWithTitle(
+    async () => null,
+    async () => ({
+      ...worktree,
+      branch: 'copse/repair-sessions-branch',
+    }),
+  )
+
+  maybeRenameThreadBranch(store, api, 't-branch')
+  maybeRenameThreadBranch(store, api, 't-branch')
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  assert.deepEqual(branchRenameCalls, [
+    { projectId: 'project-1', threadId: 't-branch', title: 'Repair Sessions' },
+  ])
+  assert.equal(requireThread(store, 't-branch').gitBranch, 'copse/repair-sessions-branch')
+  assert.equal(requireThread(store, 't-branch').worktree?.branch, 'copse/repair-sessions-branch')
 })
 
 test('maybeNameThread falls back to first words when suggestTitle fails', async () => {

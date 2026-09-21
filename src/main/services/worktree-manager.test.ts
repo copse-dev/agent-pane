@@ -16,7 +16,7 @@ import {
 } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { threadWorktreeBranchName } from '@shared/git/worktree-policy.ts'
+import { initialThreadWorktreeBranchName } from '@shared/git/worktree-policy.ts'
 import { setGitAvailableForTest } from './tool-availability.ts'
 import {
   clearAllowedWorkspaceRootsForTest,
@@ -32,6 +32,7 @@ import {
   pruneSafeOrphans,
   readThreadWorktreeRecoveryMetadata,
   removeRegisteredWorktreeCheckout,
+  renameThreadWorktreeBranch,
   restoreRetiredThreadWorktree,
   retireThreadWorktree,
   sameWorktreePath,
@@ -159,6 +160,7 @@ describe('worktree manager', () => {
     })
 
     assert.equal(worktree.path, expectedThreadWorktreePath('project-1', 'thread-1'))
+    assert.equal(worktree.branch, initialThreadWorktreeBranchName('thread-1'))
     assert.equal(worktree.seededFromDirtyProject, false)
     assert.equal(git(repo, ['branch', '--show-current']).trim(), beforeBranch)
     assert.equal(git(worktree.path, ['branch', '--show-current']).trim(), worktree.branch)
@@ -222,6 +224,65 @@ describe('worktree manager', () => {
 
     assert.equal(removed.code, 0)
     await assert.rejects(lstat(canonicalPath), /ENOENT/)
+  })
+
+  it('renames an anonymous branch from the settled thread title', async () => {
+    const { repo } = await setup()
+    const worktree = await allocateThreadWorktree({
+      projectId: 'project-1',
+      threadId: 'thread-title-abc123',
+      projectRoot: repo,
+      prompt: 'A raw prompt that is deliberately ignored',
+      baseBranch: 'main',
+    })
+
+    const renamed = await renameThreadWorktreeBranch({
+      projectId: 'project-1',
+      threadId: 'thread-title-abc123',
+      projectRoot: repo,
+      title: 'Repair Auth Sessions',
+      worktree,
+    })
+
+    assert.ok(renamed)
+    assert.equal(renamed.branch, 'copse/repair-auth-sessions-abc123')
+    assert.equal(git(worktree.path, ['branch', '--show-current']).trim(), renamed.branch)
+    assert.throws(() =>
+      git(repo, ['show-ref', '--verify', '--quiet', `refs/heads/${worktree.branch}`]),
+    )
+    assert.deepEqual(await readThreadWorktreeRecoveryMetadata(repo, renamed.branch), {
+      baseBranch: renamed.baseBranch,
+      baseCommit: renamed.baseCommit,
+      createdAt: renamed.createdAt,
+      seededFromDirtyProject: renamed.seededFromDirtyProject,
+    })
+  })
+
+  it('does not rename an anonymous branch after it has been pushed', async () => {
+    const { temp, repo } = await setup()
+    const remote = join(temp, 'rename-remote.git')
+    git(temp, ['init', '-q', '--bare', remote])
+    git(repo, ['remote', 'add', 'origin', remote])
+    const worktree = await allocateThreadWorktree({
+      projectId: 'project-1',
+      threadId: 'thread-pushed',
+      projectRoot: repo,
+      prompt: 'Ship it',
+      baseBranch: 'main',
+    })
+    // A plain push publishes the branch without configuring an upstream.
+    git(worktree.path, ['push', '-q', 'origin', worktree.branch])
+
+    const renamed = await renameThreadWorktreeBranch({
+      projectId: 'project-1',
+      threadId: 'thread-pushed',
+      projectRoot: repo,
+      title: 'A Better Name',
+      worktree,
+    })
+
+    assert.equal(renamed, null)
+    assert.equal(git(worktree.path, ['branch', '--show-current']).trim(), worktree.branch)
   })
 
   it('parks a clean pushed PR branch and restores it without deleting the branch', async () => {
@@ -550,7 +611,7 @@ describe('worktree manager', () => {
 
   it('serializes concurrent allocations and suffixes branch collisions deterministically', async () => {
     const { repo } = await setup()
-    const colliding = threadWorktreeBranchName('Same prompt', 'thread-a')
+    const colliding = initialThreadWorktreeBranchName('thread-a')
     git(repo, ['branch', colliding])
 
     const [first, second] = await Promise.all([

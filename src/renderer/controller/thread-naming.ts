@@ -1,9 +1,15 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import { getThreadById, setThreadTitle } from '@shared/store/thread-helpers.ts'
+import {
+  applyRenamedThreadWorktree,
+  getThreadById,
+  setThreadTitle,
+} from '@shared/store/thread-helpers.ts'
 import type { Message, Thread } from '@shared/types'
 import { nonEmptyStringOr } from '@shared/unknown-value.ts'
+import { isInitialThreadWorktreeBranchName } from '@shared/git/worktree-policy.ts'
 import { queuedMessageIds } from './message-queue.ts'
+import { backgroundProjectOf } from './background-threads.ts'
 
 // Threads with a suggestion in flight, so the two call sites (first text chunk,
 // first tool call) of a turn don't both fire the same pass.
@@ -46,6 +52,42 @@ function namingInput(userMessages: Message[]): string {
   if (!first) return ''
   const recent = userMessages.slice(1).slice(-3)
   return [first, ...recent].map((m) => m.content.trim().slice(0, 300)).join('\n\n')
+}
+
+const branchRenameInFlight = new Set<string>()
+
+function owningProjectId(store: AppStore, threadId: string): string | null {
+  const background = backgroundProjectOf(store, threadId)
+  if (background) return background
+  const state = store.getState()
+  if (!state.threads.some((thread) => thread.id === threadId)) return null
+  return state.activeProjectId
+}
+
+/** Rename the anonymous worktree branch once, after the first turn is quiet. */
+export function maybeRenameThreadBranch(store: AppStore, api: ApiClient, threadId: string): void {
+  if (branchRenameInFlight.has(threadId)) return
+  const thread = getThreadById(store, threadId)
+  if (
+    !thread?.worktree ||
+    thread.status !== 'idle' ||
+    thread.title === 'New Thread' ||
+    !isInitialThreadWorktreeBranchName(thread.worktree.branch, threadId)
+  ) {
+    return
+  }
+  const projectId = owningProjectId(store, threadId)
+  if (!projectId) return
+  branchRenameInFlight.add(threadId)
+  void api.agent
+    .renameCheckoutBranch(projectId, threadId, thread.title)
+    .then((worktree) => {
+      if (worktree) applyRenamedThreadWorktree(store, threadId, worktree)
+    })
+    .catch((error: unknown) => {
+      console.warn('[thread-naming] Could not rename thread branch:', error)
+    })
+    .finally(() => branchRenameInFlight.delete(threadId))
 }
 
 /**
@@ -97,5 +139,6 @@ export function maybeNameThread(store: AppStore, api: ApiClient, threadId: strin
     setThreadTitle(store, threadId, nonEmptyStringOr(title?.trim(), fallback), {
       autoTitleCount: passes + 1,
     })
+    maybeRenameThreadBranch(store, api, threadId)
   })()
 }

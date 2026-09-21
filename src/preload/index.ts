@@ -244,6 +244,8 @@ const api: ApiClient = {
         model,
         baseBranch,
       ),
+    renameCheckoutBranch: (projectId: string, threadId: string, title: string) =>
+      ipcRenderer.invoke('agent:rename-checkout-branch', projectId, threadId, title),
     previewCheckout: (
       projectId: string,
       choice: 'automatic' | 'shared' | 'worktree',

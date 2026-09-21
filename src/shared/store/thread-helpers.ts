@@ -26,7 +26,7 @@ import type {
   ThreadReview,
   ThreadReviewReport,
 } from '@shared/types'
-import type { PreparedThreadCheckout } from '@shared/types/worktree.ts'
+import type { PreparedThreadCheckout, ThreadWorktree } from '@shared/types/worktree.ts'
 import {
   clearThreadProposalDecision,
   recordThreadProposalDecision,
@@ -926,6 +926,23 @@ export function setThreadGitBranch(store: AppStore, threadId: string, branch: st
   )
   store.setState({ threads: updated })
   store.emit('threads_changed')
+}
+
+/** Apply main's durable branch rename to active or carried renderer state. */
+export function applyRenamedThreadWorktree(
+  store: AppStore,
+  threadId: string,
+  worktree: ThreadWorktree,
+): void {
+  const applied = patchThreadAnywhere(store, threadId, (thread) => ({
+    ...thread,
+    worktree,
+    gitBranch: worktree.branch,
+    updatedAt: Date.now(),
+  }))
+  if (!applied) return
+  store.emit('threads_changed')
+  store.emit('git_branch_changed')
 }
 
 /**

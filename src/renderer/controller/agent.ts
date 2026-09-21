@@ -42,7 +42,7 @@ import { planAgentTextChunk } from '@copse/agent/agent-text-chunk.ts'
 import { syncAgentActivity, CONTEXT_TRIM_ACTIVITY, promptProgressLabel } from '../agent-activity.ts'
 import { drainMessageQueue, enqueueHookMessage, foldBackContinuationUsed } from './message-queue.ts'
 import { attachDiffState } from './diff-state.ts'
-import { maybeNameThread } from './thread-naming.ts'
+import { maybeNameThread, maybeRenameThreadBranch } from './thread-naming.ts'
 import { takeQuietRun } from './quiet-runs.ts'
 import { backgroundProjectOf, dropBackgroundThread } from './background-threads.ts'
 import type { UsageDelta } from '@shared/types'
@@ -596,6 +596,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         // The turn is over; the next one resolves its own parameters (or none).
         pendingTurn.delete(threadId)
         setThreadStatus(store, threadId, 'idle')
+        maybeRenameThreadBranch(store, api, threadId)
         // Not emitActivity: the state entry is gone, and recording the label on
         // a fresh one would leak an entry per finished turn. The next turn
         // starts from a null key anyway.

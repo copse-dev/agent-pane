@@ -583,6 +583,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       // in a browser; the demo always stays on the shared branch.
       prepareCheckout: (_projectId: string, _threadId: string, _prompt: string, choice) =>
         resolved({ checkoutMode: 'shared' as const, choice, branch: currentBranch }),
+      renameCheckoutBranch: () => resolved(null),
       previewCheckout: () => resolved({ checkoutMode: 'shared' as const }),
       resetDefaultBranchCache: () => resolvedVoid(),
       estimateContext: (_projectId: string, _threadId: string, payload: string) =>

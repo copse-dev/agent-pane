@@ -19,6 +19,8 @@ import {
   expectedThreadWorktreePath,
   listProjectWorktrees,
   readThreadWorktreeRecoveryMetadata,
+  renameThreadWorktreeBranch,
+  restoreThreadWorktreeBranch,
   retireThreadWorktree,
   sameWorktreePath,
   validateThreadWorktree,
@@ -459,5 +461,88 @@ export function createThreadCheckoutTransaction(
     })
 }
 
+export interface ThreadWorktreeBranchRenameDependencies {
+  getProject: (projectId: string) => Project | null
+  getThread: (projectId: string, threadId: string) => Promise<Thread | null>
+  updateMeta: (
+    projectId: string,
+    threadId: string,
+    patch: Partial<Omit<Thread, 'messages'>>,
+  ) => Promise<void>
+  rename: (input: {
+    projectId: string
+    threadId: string
+    projectRoot: string
+    title: string
+    worktree: ThreadWorktree
+  }) => Promise<ThreadWorktree | null>
+  restore: (
+    input: {
+      projectId: string
+      threadId: string
+      projectRoot: string
+      worktree: ThreadWorktree
+    },
+    branch: string,
+  ) => Promise<ThreadWorktree>
+}
+
+/** Rename the allocator-owned initial branch and keep durable thread metadata in step. */
+export function createThreadWorktreeBranchRename(
+  dependencies: ThreadWorktreeBranchRenameDependencies,
+): (projectId: string, threadId: string, title: string) => Promise<ThreadWorktree | null> {
+  return async (projectId, threadId, title) => {
+    const project = dependencies.getProject(projectId)
+    if (!project) return null
+    const thread = await dependencies.getThread(projectId, threadId)
+    if (!thread?.worktree) return null
+    const previous = thread.worktree
+    const renamed = await dependencies.rename({
+      projectId,
+      threadId,
+      projectRoot: project.path,
+      title,
+      worktree: previous,
+    })
+    if (!renamed) return null
+    try {
+      await dependencies.updateMeta(projectId, threadId, {
+        worktree: renamed,
+        gitBranch: renamed.branch,
+      })
+    } catch (error) {
+      await dependencies
+        .restore(
+          {
+            projectId,
+            threadId,
+            projectRoot: project.path,
+            worktree: renamed,
+          },
+          previous.branch,
+        )
+        .catch((restoreError: unknown) => {
+          console.error(
+            '[thread-checkout] Could not restore branch after persistence failed:',
+            restoreError,
+          )
+        })
+      throw error
+    }
+    return renamed
+  }
+}
+
+const defaultBranchRenameDependencies: ThreadWorktreeBranchRenameDependencies = {
+  getProject: projectById,
+  getThread: getProjectThread,
+  updateMeta: updateMetaOrThrow,
+  rename: renameThreadWorktreeBranch,
+  restore: restoreThreadWorktreeBranch,
+}
+
 export const prepareThreadCheckout = createThreadCheckoutTransaction(defaultDependencies)
 export const previewThreadCheckout = createThreadCheckoutPreview(defaultDependencies)
+export const renameThreadWorktreeBranchAfterTitle = createThreadWorktreeBranchRename(
+  defaultBranchRenameDependencies,
+)
