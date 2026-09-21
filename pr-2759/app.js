@@ -20732,6 +20732,8 @@ function usageServiceTierFor(value) {
     case "priority":
     case "scale":
       return value;
+    case "fast":
+      return "priority";
     case "auto":
     case "default":
       return void 0;
@@ -20740,13 +20742,35 @@ function usageServiceTierFor(value) {
 function usageServiceTierForCall(requested, response) {
   return response === void 0 ? requested === void 0 ? void 0 : usageServiceTierFor(requested) : usageServiceTierFor(response);
 }
-var SERVICE_TIERS, isServiceTier, USAGE_SERVICE_TIERS;
+var SERVICE_TIERS, isServiceTier, USAGE_SERVICE_TIERS, SERVICE_TIER_CHOICES;
 var init_service_tier = __esm({
   "packages/llm/src/service-tier.ts"() {
     init_member_of();
-    SERVICE_TIERS = ["auto", "default", "flex", "priority", "scale"];
+    SERVICE_TIERS = ["auto", "default", "flex", "fast", "priority", "scale"];
     isServiceTier = memberOf(SERVICE_TIERS);
     USAGE_SERVICE_TIERS = ["flex", "priority", "scale"];
+    SERVICE_TIER_CHOICES = [
+      {
+        value: "auto",
+        label: "Project default",
+        description: "Follow the service tier configured for this OpenAI Project."
+      },
+      {
+        value: "default",
+        label: "Standard",
+        description: "Use standard pay-as-you-go pricing and performance."
+      },
+      {
+        value: "flex",
+        label: "Flex",
+        description: "Cheaper per token, slower, and may queue or fail under load. Suits batch work."
+      },
+      {
+        value: "fast",
+        label: "Fast",
+        description: "Faster and more consistent, at a higher per-token price."
+      }
+    ];
   }
 });
 
@@ -45207,7 +45231,77 @@ function createProvidersPanel(api2, opts = {}) {
   let deviceScanned = false;
   let providerPicked = false;
   let autoSetupRun = false;
+  let initialOpenAiTierChoice = "auto";
+  let pendingOpenAiTierChoice = "auto";
+  let openAiTierDirty = false;
   const deviceAutoSetup = opts.deviceAutoSetup ?? true;
+  const offeredOpenAiTier = new Set(SERVICE_TIER_CHOICES.map((choice) => choice.value));
+  function openAiTierChoiceForStored(value) {
+    if (value === "") return "auto";
+    if (value === "priority") return "fast";
+    return value;
+  }
+  function retainedOpenAiTierLabel(value) {
+    if (value === "scale") return "Scale \u2014 current advanced value";
+    const visible = value.length > 80 ? `${value.slice(0, 79)}\u2026` : value;
+    return `Current advanced value \u2014 ${visible || "(empty)"}`;
+  }
+  function openAiTierDescription(value) {
+    const choice = SERVICE_TIER_CHOICES.find((entry) => entry.value === value);
+    if (choice) return choice.description;
+    if (value === "scale") {
+      return "Uses committed Scale Tier capacity. It remains selected until you choose another tier.";
+    }
+    return "This value is not offered by this version. It remains selected until you choose another tier.";
+  }
+  async function refreshOpenAiTier() {
+    if (!opts.showOpenAiServiceTier) return;
+    const raw = await api2.settings.get("openAiServiceTier");
+    const stored = typeof raw === "string" ? raw : "";
+    initialOpenAiTierChoice = openAiTierChoiceForStored(stored);
+    pendingOpenAiTierChoice = initialOpenAiTierChoice;
+    openAiTierDirty = false;
+  }
+  function openAiTierBlock() {
+    const picker = el("select", {
+      name: "openAiServiceTier",
+      "data-testid": "openai-service-tier"
+    });
+    for (const choice of SERVICE_TIER_CHOICES) {
+      picker.append(el("option", { value: choice.value }, choice.label));
+    }
+    if (!offeredOpenAiTier.has(pendingOpenAiTierChoice)) {
+      picker.append(
+        el(
+          "option",
+          { value: pendingOpenAiTierChoice },
+          retainedOpenAiTierLabel(pendingOpenAiTierChoice)
+        )
+      );
+    }
+    picker.value = pendingOpenAiTierChoice;
+    const field = uiField({
+      label: "Global OpenAI service tier",
+      control: picker,
+      hint: openAiTierDescription(pendingOpenAiTierChoice)
+    });
+    picker.addEventListener("change", () => {
+      pendingOpenAiTierChoice = picker.value;
+      openAiTierDirty = pendingOpenAiTierChoice !== initialOpenAiTierChoice;
+      field.setAttribute("hint", openAiTierDescription(pendingOpenAiTierChoice));
+    });
+    const tierBlock = block(
+      "Request processing",
+      field,
+      el(
+        "p",
+        { class: "field-hint openai-service-tier-scope" },
+        "Applies to every first-party OpenAI model request. Copse records the tier OpenAI reports for each response, including a downgrade to Standard, and uses it when estimating cost."
+      )
+    );
+    tierBlock.dataset["testid"] = "openai-service-tier-block";
+    return tierBlock;
+  }
   function loadDeviceInfoOnce() {
     if (deviceAutoSetup && providerPicked && !autoSetupRun) {
       autoSetupRun = true;
@@ -45363,6 +45457,9 @@ function createProvidersPanel(api2, opts = {}) {
         body.append(block("API key", apiPanel.root));
       }
     }
+    if (vendor.id === "openai" && opts.showOpenAiServiceTier) {
+      body.append(openAiTierBlock());
+    }
     if (caps.cloud) {
       body.append(block("Cloud agent", caps.cloud.element));
       if (cloudAgentOptions) cloudAgentOptions.hidden = false;
@@ -45394,6 +45491,7 @@ function createProvidersPanel(api2, opts = {}) {
     await localPanel.refresh();
     await agentsPanel.reload();
     await refreshCloudAgentKeys();
+    await refreshOpenAiTier();
     if (selected !== ADD_KEY && !vendors().some((vendor) => vendor.id === selected)) {
       selected = "";
     }
@@ -45401,7 +45499,13 @@ function createProvidersPanel(api2, opts = {}) {
   }
   async function saveKeys() {
     const [apiSaved, localSaved] = await Promise.all([apiPanel.saveKeys(), localPanel.saveKeys()]);
-    return apiSaved && localSaved;
+    if (!apiSaved || !localSaved) return false;
+    if (openAiTierDirty) {
+      await api2.settings.set("openAiServiceTier", pendingOpenAiTierChoice);
+      initialOpenAiTierChoice = pendingOpenAiTierChoice;
+      openAiTierDirty = false;
+    }
+    return true;
   }
   return { root: fieldset, refresh, saveKeys };
 }
@@ -45411,6 +45515,8 @@ var init_providers_section = __esm({
     init_helpers();
     init_custom_providers_section();
     init_acp_agents_section();
+    init_service_tier();
+    init_ui();
     MERGED_VENDORS = [
       {
         id: "anthropic",
@@ -60190,6 +60296,7 @@ function mountSettingsDialog(store2, api2) {
         refresh: () => lmStudioSection.refreshDetection()
       }
     ],
+    showOpenAiServiceTier: true,
     cloudAgents: [
       {
         vendor: "cursor",
