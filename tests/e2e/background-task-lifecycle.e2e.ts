@@ -67,8 +67,17 @@ async function latestToolResult(): Promise<WebdriverIO.Element> {
   assert.ok(card, 'expected a background tool card')
   await card.waitForDisplayed({ timeout: 10_000 })
   if ((await card.getAttribute('open')) === null) {
-    await card.scrollIntoView({ block: 'center', inline: 'nearest' })
-    await card.$('summary.tool-card-header').click()
+    const toolId = await card.getAttribute('data-tool-id')
+    assert.ok(toolId, 'expected the background tool card to have an id')
+    const opened = await browser.execute((id: string) => {
+      const rollups = document.querySelectorAll<HTMLDetailsElement>('.tool-card-rollup')
+      const rollup = rollups.item(rollups.length - 1)
+      const cards = rollup?.querySelectorAll<HTMLDetailsElement>('.tool-card[data-tool-id]')
+      const target = [...(cards ?? [])].find((candidate) => candidate.dataset['toolId'] === id)
+      target?.querySelector<HTMLElement>('summary.tool-card-header')?.click()
+      return target?.open ?? false
+    }, toolId)
+    assert.equal(opened, true, 'expected the background tool card to open')
   }
   await expect(card).toHaveAttribute('open')
 
