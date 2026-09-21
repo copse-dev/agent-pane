@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { e2eWorkspaceDir, resetUserData, seedForkResendFixture } from './helpers/seed-config.ts'
+import { saveAppScreenshot } from './helpers/screenshot.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
@@ -84,8 +85,28 @@ describe('fork a thread and resend the last message', function () {
     await latestPrompt.moveTo()
     await expect(latestPrompt.$('.msg-actions')).toBeDisplayed()
     await expect(latestPrompt.$('.msg-resend')).toBeDisplayed()
+
+    const actionCenterOffset = await browser.execute(() => {
+      const prompts = document.querySelectorAll<HTMLElement>('.messages-list .msg-user')
+      const bubble = prompts.item(prompts.length - 1)
+      const actions = bubble?.querySelector<HTMLElement>('.msg-actions')
+      if (!bubble || !actions) return null
+      const bubbleRect = bubble.getBoundingClientRect()
+      const actionsRect = actions.getBoundingClientRect()
+      return (
+        actionsRect.top +
+        actionsRect.height / 2 -
+        (bubbleRect.top + bubbleRect.height / 2)
+      )
+    })
+    assert.ok(actionCenterOffset !== null, 'the latest prompt actions must render')
+    assert.ok(
+      Math.abs(actionCenterOffset) <= 1,
+      `one-line prompt actions must be vertically centred in the bubble, offset ${String(actionCenterOffset)}`,
+    )
+
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
-    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'message-fork-resend-actions.png'))
+    await saveAppScreenshot('message-fork-resend-actions.png')
 
     // Fork from the FIRST prompt: the new thread carries only that exchange.
     await firstPrompt.moveTo()
