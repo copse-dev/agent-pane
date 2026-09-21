@@ -117,6 +117,31 @@ async function previewCornerPixel(title: string): Promise<number[]> {
   }, title)
 }
 
+async function pinPreviewRollupOpen(expectedTitle: string): Promise<void> {
+  await browser.waitUntil(
+    async () =>
+      browser.execute((title) => {
+        const card = Array.from(
+          document.querySelectorAll<HTMLElement>('.canvas-preview-card'),
+        ).find(
+          (candidate) => candidate.querySelector('.canvas-preview-title')?.textContent === title,
+        )
+        const rollup = card?.closest<HTMLDetailsElement>('details.tool-card-rollup')
+        const summary = rollup?.querySelector<HTMLElement>(':scope > summary')
+        if (!rollup || !summary) return false
+
+        // Auto-revealed rollups have no user preference and can be compacted
+        // while the preview image is loading. Use the real summary handler to
+        // record an explicit open choice, then let the caller reacquire the
+        // current card before interacting with it.
+        if (rollup.open) summary.click()
+        summary.click()
+        return rollup.open && rollup.dataset['userToggled'] === '1'
+      }, expectedTitle),
+    { timeout: 20_000, timeoutMsg: 'expected the canvas preview rollup to open' },
+  )
+}
+
 async function renderCanvas(prompt: string, expectedToolCount: number): Promise<void> {
   await setComposerValue(prompt)
   await $('.submit-btn').click()
@@ -208,9 +233,8 @@ describe('canvas background parity', () => {
 
     await renderCanvas('Please render the transparent canvas.', 1)
 
-    const card = $('.canvas-preview-card')
-    await card.waitForExist({ timeout: 20_000 })
-    const image = card.$('.canvas-preview-image')
+    const initialCard = $('.canvas-preview-card')
+    await initialCard.waitForExist({ timeout: 20_000 })
     await browser.waitUntil(
       async () =>
         browser.execute((selector) => {
@@ -220,7 +244,7 @@ describe('canvas background parity', () => {
       { timeout: 20_000, timeoutMsg: 'expected canvas preview image to load' },
     )
 
-    const preview = await image.getAttribute('src')
+    const preview = await $('.canvas-preview-card .canvas-preview-image').getAttribute('src')
     assert.ok(preview?.startsWith('data:image/png;base64,'))
     const previewCorner = await previewCornerPixel(TITLE)
     const themePixel = await resolvedBodyBackgroundPixel()
@@ -234,6 +258,7 @@ describe('canvas background parity', () => {
     }
     await saveCanvasPreviewScreenshot('canvas-transparent-background-dark.png')
 
+    await pinPreviewRollupOpen(TITLE)
     await browser.execute((title) => {
       const candidate = Array.from(
         document.querySelectorAll<HTMLElement>('.canvas-preview-card'),
