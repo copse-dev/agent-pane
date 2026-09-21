@@ -104633,6 +104633,7 @@ Notes: ${notes}` : prompt;
       }
       bulkReviewFinished = true;
       reviewStatus.textContent = `Review complete \u2014 ${String(reviewResults.length)} item(s) judged. Use the row actions to mark done, archive, or open an item. Close when finished to advance the commit checkpoint.`;
+      reviewInFlight = false;
       syncReviewActionVisibility();
       renderReviewResults();
     } catch (err2) {
