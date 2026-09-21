@@ -246,6 +246,40 @@ test('round-trips ACP tool-call display metadata (kind + resultFormat)', () => {
   deepStrictEqual(roundTrip(messages).messages, messages)
 })
 
+test('round-trips tool-result images through referenced blobs', () => {
+  const dataUrl = 'data:image/png;base64,aW1hZ2UtYnl0ZXM='
+  const messages: Message[] = [
+    {
+      id: 'a1',
+      role: 'assistant',
+      content: '',
+      toolCalls: [
+        {
+          id: 'tc-image',
+          name: 'Generate image',
+          args: {},
+          status: 'done',
+          result: 'Created the image.',
+          resultFormat: 'markdown',
+          images: [{ dataUrl, name: 'concept.png' }],
+        },
+      ],
+      createdAt: 5,
+    },
+  ]
+  const { spine, files } = explodeThread(messages, hash)
+  const imageRef = spine[0]?.toolCalls[0]?.images?.[0]?.dataUrl
+  ok(imageRef)
+  strictEqual(imageRef.ref, 'blobs/tc-image-img-0.dataurl')
+  strictEqual(files.find((file) => file.ref === imageRef.ref)?.contents, dataUrl)
+  strictEqual(
+    JSON.stringify(spine).includes(dataUrl),
+    false,
+    'the spine must not inline base64 data',
+  )
+  deepStrictEqual(foldThread(meta(), spine, resolverFor(files), { hash }).messages, messages)
+})
+
 test('distinguishes a null result from an empty-string result', () => {
   const messages: Message[] = [
     {

@@ -1,4 +1,5 @@
 import type { ModelParameters } from '@copse/llm/model-parameters.ts'
+import type { ToolResultImage } from '@copse/llm/wire-types.ts'
 import type { CanvasArtefactReference } from './canvas-types.ts'
 import type {
   ModelUsage,
@@ -49,6 +50,9 @@ export interface ImageRef {
   sha256: string
 }
 
+/** Tool-image metadata stays inline while its data URL lives in a blob. */
+export type SpineToolResultImage = Omit<ToolResultImage, 'dataUrl'> & { dataUrl: ImageRef }
+
 /** Transcript metadata stays inline; potentially large text snapshots do not. */
 export type SpineTranscriptAttachment = Omit<TranscriptAttachment, 'content'> & {
   content?: ContentRef
@@ -67,6 +71,8 @@ export interface SpineToolCall {
   kind?: string
   /** Render `result` as Markdown (external ACP agents author Markdown output). */
   resultFormat?: 'markdown'
+  /** Image data is persisted out of line; this list retains order and labels. */
+  images?: SpineToolResultImage[]
   subagent?: SpineSubagentRef
 }
 
