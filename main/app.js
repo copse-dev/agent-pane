@@ -28537,6 +28537,12 @@ function createDemoApi(scenario, options = {}) {
       onUiScaleZoomOut: subscribe,
       onUiScaleReset: subscribe
     },
+    classifiers: {
+      list: emptyArray,
+      save: unsupported,
+      remove: unsupported,
+      test: unsupported
+    },
     settings: {
       get: (key) => resolved(settings.get(key)),
       set: (key, value) => {
@@ -46674,6 +46680,520 @@ var init_providers_section = __esm({
   }
 });
 
+// packages/llm/src/classifiers/presets.ts
+function classifierCredentialId(id) {
+  if (!/^[a-z0-9-]{1,53}$/.test(id)) throw new Error("Invalid classifier profile ID");
+  return `classifier-${id}`;
+}
+var CLASSIFIER_PRESETS;
+var init_presets = __esm({
+  "packages/llm/src/classifiers/presets.ts"() {
+    CLASSIFIER_PRESETS = [
+      {
+        id: "typesafe",
+        label: "TypeSafe / Jev",
+        model: "jev-latest",
+        timeoutMs: 6e4,
+        connection: {
+          type: "http",
+          protocol: "systemone",
+          baseUrl: "https://api.typesafe.ai/v1",
+          auth: "bearer",
+          apiKeyEnv: "TYPESAFE_API_KEY"
+        }
+      },
+      {
+        id: "kev",
+        label: "Kev (local)",
+        model: "kev-latest",
+        timeoutMs: 12e4,
+        connection: {
+          type: "http",
+          protocol: "systemone",
+          baseUrl: "http://127.0.0.1:8009/v1",
+          auth: "none"
+        }
+      },
+      {
+        id: "semif",
+        label: "SemIf (local)",
+        model: "Qwen/Qwen3.5-4B",
+        timeoutMs: 3e5,
+        connection: {
+          type: "semif",
+          executable: "semif-score",
+          backend: "torch",
+          revision: "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a",
+          mode: "direct",
+          device: "auto"
+        }
+      },
+      {
+        id: "featherless",
+        label: "Featherless / Simple Jev",
+        model: "featherless-ai/gemma-4-26B-A4B-classifier",
+        timeoutMs: 6e4,
+        connection: {
+          type: "http",
+          protocol: "featherless",
+          baseUrl: "https://api.featherless.ai/v1",
+          auth: "bearer",
+          apiKeyEnv: "FEATHERLESS_API_KEY"
+        }
+      }
+    ];
+  }
+});
+
+// src/renderer/views/setup/classifiers-section.ts
+function classifierErrorMessage(error62) {
+  const message2 = errorMessage(error62).replace(
+    /^(?:Error invoking remote method '[^']+':\s*|(?:ClassifierError|Error):\s*)+/,
+    ""
+  );
+  if (message2.startsWith("IpcValidationError:")) {
+    return "The supplied settings are invalid. Check the field values and try again.";
+  }
+  return message2 || "Classifier request failed.";
+}
+function describeResult(result) {
+  const answers = Object.entries(result.answers).map(([id, answer]) => {
+    switch (answer.type) {
+      case "choice":
+        return `${id}: ${answer.choice}`;
+      case "boolean":
+        return `${id}: ${(answer.probability * 100).toFixed(1)}% probability`;
+      case "score":
+        return `${id}: ${String(answer.score)}`;
+    }
+  });
+  return `${answers.join(" \xB7 ")} \xB7 ${String(Math.round(result.elapsedMs))} ms \xB7 ${result.model}`;
+}
+function createClassifiersSection(api2) {
+  const chips = el("div", { class: "provider-chips", "aria-label": "Classifier profiles" });
+  const formHost = el("div", { class: "provider-form-host" });
+  const status = el("p", { class: "classifier-status", role: "status", "aria-live": "polite" });
+  const root = el(
+    "fieldset",
+    { class: "classifiers-section" },
+    el("legend", {}, "Classifier connections"),
+    el(
+      "p",
+      { class: "settings-fieldset-desc" },
+      "Connect local or hosted classifiers for evals and explicit calls. Save a connection, then use Test classifier to send a small sample. Hosted tests may incur a charge."
+    ),
+    chips,
+    formHost,
+    status
+  );
+  let profiles = [];
+  let selectedId = null;
+  const drafts = /* @__PURE__ */ new Map();
+  let captureDraft;
+  const pending = /* @__PURE__ */ new Map();
+  let busy = false;
+  function renderChips() {
+    clear(chips);
+    const items = [...profiles.map((item) => item.profile), ...drafts.values()].filter(
+      (profile, index, all) => all.findIndex((item) => item.id === profile.id) === index
+    );
+    for (const profile of items) {
+      const chip2 = el(
+        "button",
+        {
+          type: "button",
+          class: "provider-chip",
+          "aria-pressed": String(profile.id === selectedId),
+          "data-classifier-id": profile.id
+        },
+        profile.label
+      );
+      chip2.classList.toggle("active", profile.id === selectedId);
+      chip2.addEventListener("click", () => {
+        if (busy) return;
+        captureDraft?.();
+        selectedId = profile.id;
+        render();
+      });
+      chips.append(chip2);
+    }
+    const add2 = el(
+      "button",
+      { type: "button", class: "provider-chip classifier-add" },
+      "+ Add classifier"
+    );
+    add2.classList.toggle("active", selectedId === null);
+    add2.addEventListener("click", () => {
+      if (busy) return;
+      captureDraft?.();
+      selectedId = null;
+      render();
+    });
+    chips.append(add2);
+  }
+  function render() {
+    renderChips();
+    clear(formHost);
+    clear(status);
+    captureDraft = void 0;
+    const saved = profiles.find((item) => item.profile.id === selectedId);
+    const profile = saved?.profile ?? drafts.get(selectedId ?? "");
+    if (!profile) {
+      const presets = el("select", { name: "classifierPreset" });
+      for (const preset of CLASSIFIER_PRESETS) {
+        presets.append(el("option", { value: preset.id }, preset.label));
+      }
+      presets.append(el("option", { value: "custom" }, "Custom compatible endpoint"));
+      const add2 = el(
+        "button",
+        { type: "button", class: "classifier-create" },
+        "Configure classifier"
+      );
+      add2.addEventListener("click", () => {
+        const preset = CLASSIFIER_PRESETS.find((item) => item.id === presets.value);
+        const id = `${preset?.id ?? "custom"}-${crypto.randomUUID().slice(0, 8)}`;
+        const draft = preset ? { ...preset, id, connection: { ...preset.connection } } : {
+          id,
+          label: "Custom classifier",
+          model: "",
+          timeoutMs: 3e4,
+          connection: { type: "http", protocol: "systemone", baseUrl: "", auth: "bearer" }
+        };
+        drafts.set(id, draft);
+        selectedId = id;
+        render();
+      });
+      formHost.append(
+        el(
+          "div",
+          { class: "provider-form" },
+          el("label", {}, "Provider", presets),
+          el("div", { class: "provider-actions" }, add2)
+        )
+      );
+      return;
+    }
+    const values = pending.get(profile.id) ?? /* @__PURE__ */ new Map();
+    const controls = /* @__PURE__ */ new Map();
+    function input2(name, value, type = "text") {
+      const control = el("input", { type, name: `classifier${name}`, autocomplete: "off" });
+      control.value = values.get(name) ?? value;
+      controls.set(name, control);
+      return control;
+    }
+    function select(name, value, options) {
+      const control = el("select", { name: `classifier${name}` });
+      for (const option of options) control.append(el("option", { value: option }, option));
+      control.value = values.get(name) ?? value;
+      controls.set(name, control);
+      return control;
+    }
+    captureDraft = () => {
+      for (const [name, control] of controls) values.set(name, control.value);
+      pending.set(profile.id, values);
+    };
+    const label = input2("Label", profile.label);
+    const model = input2("Model", profile.model);
+    const timeout = input2("Timeout", String(profile.timeoutMs / 1e3), "number");
+    timeout.min = "0.1";
+    timeout.step = "0.001";
+    timeout.max = "600";
+    const form = el(
+      "div",
+      { class: "provider-form classifier-form" },
+      el("label", {}, "Connection name", label),
+      el("label", {}, "Model ID", model),
+      el("span", { class: "field-hint" }, "Profile ID for evals: ", el("code", {}, profile.id))
+    );
+    const read = (name) => controls.get(name)?.value.trim() ?? "";
+    const advanced = el(
+      "details",
+      { class: "provider-advanced" },
+      el("summary", {}, "Connection options")
+    );
+    let key;
+    let removeKey;
+    if (profile.connection.type === "http") {
+      let normalizedUrl = function(value) {
+        try {
+          return new URL(value).href.replace(/\/+$/, "");
+        } catch {
+          return value.trim().replace(/\/+$/, "");
+        }
+      };
+      const connection = profile.connection;
+      const protocol = select("Protocol", connection.protocol, ["systemone", "featherless"]);
+      const url2 = input2("Url", connection.baseUrl, "url");
+      const auth = select("Auth", connection.auth, ["none", "bearer"]);
+      const env = input2("KeyEnv", connection.apiKeyEnv ?? "");
+      key = input2("Key", "", "password");
+      const destinationNote = el("span", {
+        class: "field-hint classifier-destination-note",
+        hidden: true
+      });
+      const updateDestinationNote = () => {
+        destinationNote.hidden = !saved || normalizedUrl(url2.value) === normalizedUrl(connection.baseUrl) && protocol.value === connection.protocol && auth.value === connection.auth;
+        if (key) {
+          key.placeholder = !destinationNote.hidden ? "Enter a key for the new connection" : saved?.hasKey ? saved.encrypted === null ? "Leave blank to use the environment key" : "Leave blank to keep the saved key" : "API key";
+        }
+        destinationNote.textContent = auth.value === "bearer" ? "Saving this connection change removes any saved key. Enter a replacement key or name an environment variable before testing." : "Saving this connection change removes any saved key.";
+      };
+      url2.addEventListener("input", updateDestinationNote);
+      url2.addEventListener("change", updateDestinationNote);
+      protocol.addEventListener("change", updateDestinationNote);
+      auth.addEventListener("change", updateDestinationNote);
+      updateDestinationNote();
+      const keyStatus = el(
+        "span",
+        { class: "field-hint classifier-key-status" },
+        saved?.hasKey ? saved.encrypted === true ? "Key saved \xB7 encrypted by OS keychain" : saved.encrypted === false ? "Key saved \xB7 stored unencrypted" : "Key available from environment" : "No key saved"
+      );
+      removeKey = el("input", { type: "checkbox", name: "classifierRemoveKey" });
+      removeKey.checked = values.get("RemoveKey") === "true";
+      const remove2 = el("label", { class: "checkbox-label" }, removeKey, " Remove saved key");
+      remove2.hidden = !saved?.hasKey || saved.encrypted === null;
+      removeKey.addEventListener(
+        "change",
+        () => values.set("RemoveKey", String(removeKey?.checked))
+      );
+      const credentials = el(
+        "div",
+        { class: "provider-field-group classifier-credentials" },
+        el("label", {}, "API key", key),
+        keyStatus,
+        remove2
+      );
+      const envField = el(
+        "label",
+        {},
+        "Environment variable (optional)",
+        env,
+        el(
+          "span",
+          { class: "field-hint" },
+          "Custom connections use COPSE_CLASSIFIER_* variables. TYPESAFE_API_KEY and FEATHERLESS_API_KEY work only with their matching official endpoints. Leave blank to use a saved key."
+        )
+      );
+      const updateAuth = () => {
+        envField.hidden = auth.value !== "bearer";
+        credentials.hidden = auth.value !== "bearer";
+      };
+      auth.addEventListener("change", updateAuth);
+      updateAuth();
+      form.append(el("label", {}, "Base URL", url2), destinationNote, credentials);
+      advanced.append(
+        el("label", {}, "API protocol", protocol),
+        el("label", {}, "Authentication", auth),
+        envField
+      );
+    } else {
+      const connection = profile.connection;
+      const backend = select("Backend", connection.backend, ["torch", "mlx", "llamacpp"]);
+      const gguf = el("label", {}, "GGUF model path", input2("Gguf", connection.gguf ?? ""));
+      const updateBackend = () => {
+        gguf.hidden = backend.value !== "llamacpp";
+      };
+      backend.addEventListener("change", updateBackend);
+      updateBackend();
+      form.append(el("label", {}, "Scorer executable", input2("Executable", connection.executable)));
+      advanced.append(
+        el("label", {}, "Backend", backend),
+        el("label", {}, "Model revision", input2("Revision", connection.revision)),
+        el(
+          "label",
+          {},
+          "Scoring mode",
+          select("Mode", connection.mode, ["direct", "serial", "shared"])
+        ),
+        gguf,
+        el(
+          "span",
+          { class: "field-hint" },
+          "Uses your installed SemIf scorer and cached or local weights. Test does not install a runtime or download models."
+        )
+      );
+    }
+    advanced.append(el("label", {}, "Timeout (seconds)", timeout));
+    form.append(advanced);
+    const save = el("button", { type: "button", class: "classifier-save" }, "Save classifier");
+    const test = el(
+      "button",
+      { type: "button", class: "classifier-test", disabled: !saved },
+      "Test classifier"
+    );
+    const remove = el(
+      "button",
+      { type: "button", class: "classifier-remove" },
+      saved ? "Remove classifier" : "Discard draft"
+    );
+    const actions = el("div", { class: "provider-actions" }, save, test, remove);
+    form.append(actions);
+    formHost.append(form);
+    function edited() {
+      return [...controls].some(([name, control]) => control.value !== values.get(`saved:${name}`)) || removeKey?.checked === true;
+    }
+    for (const [name, control] of controls) {
+      const initial = name === "Key" ? "" : control.value;
+      if (!values.has(`saved:${name}`)) values.set(`saved:${name}`, initial);
+      control.addEventListener("input", () => {
+        clear(status);
+        captureDraft?.();
+        test.disabled = !saved || edited();
+      });
+      control.addEventListener("change", () => {
+        clear(status);
+        captureDraft?.();
+        test.disabled = !saved || edited();
+      });
+    }
+    removeKey?.addEventListener("change", () => {
+      test.disabled = !saved || edited();
+    });
+    test.disabled = !saved || edited();
+    test.title = "Tests the saved connection. Save edits first.";
+    async function run2(action) {
+      if (busy) return;
+      busy = true;
+      root.disabled = true;
+      save.disabled = test.disabled = remove.disabled = true;
+      try {
+        await action();
+      } catch (error62) {
+        setInlineStatus(status, "error", classifierErrorMessage(error62));
+      } finally {
+        busy = false;
+        root.disabled = false;
+        save.disabled = remove.disabled = false;
+        test.disabled = !saved || edited();
+      }
+    }
+    save.addEventListener("click", () => {
+      void run2(async () => {
+        captureDraft?.();
+        const connection = profile.connection.type === "http" ? {
+          type: "http",
+          protocol: read("Protocol") === "featherless" ? "featherless" : "systemone",
+          baseUrl: read("Url"),
+          auth: read("Auth") === "none" ? "none" : "bearer",
+          ...read("KeyEnv") ? { apiKeyEnv: read("KeyEnv") } : {}
+        } : {
+          type: "semif",
+          executable: read("Executable"),
+          ...profile.connection.device ? { device: profile.connection.device } : {},
+          ...profile.connection.maxTokens ? { maxTokens: profile.connection.maxTokens } : {},
+          backend: read("Backend") === "mlx" ? "mlx" : read("Backend") === "llamacpp" ? "llamacpp" : "torch",
+          revision: read("Revision"),
+          mode: read("Mode") === "serial" ? "serial" : read("Mode") === "shared" ? "shared" : "direct",
+          ...read("Backend") === "llamacpp" && read("Gguf") ? { gguf: read("Gguf") } : {}
+        };
+        const next = {
+          id: profile.id,
+          label: read("Label"),
+          model: read("Model"),
+          timeoutMs: Math.round(Number(read("Timeout")) * 1e3),
+          connection
+        };
+        profiles = await api2.classifiers.save(next);
+        selectedId = profile.id;
+        drafts.delete(profile.id);
+        let keyError = null;
+        const enteredKey = key?.value.trim() ?? "";
+        const removingKey = removeKey?.checked === true;
+        if (enteredKey || removingKey) {
+          const secret = removingKey ? "" : enteredKey;
+          try {
+            let result = await api2.settings.setKey(classifierCredentialId(profile.id), secret);
+            if (!result.ok && result.reason === "plaintext-consent-required") {
+              const approved = await showConfirmDialog({
+                message: `No OS keyring is available to encrypt the key for ${next.label}.`,
+                detail: "Store it unencrypted on this machine anyway?",
+                confirmLabel: "Store anyway"
+              });
+              if (approved)
+                result = await api2.settings.setKey(classifierCredentialId(profile.id), secret, {
+                  allowPlaintext: true
+                });
+            }
+            if (!result.ok) {
+              keyError = result.reason === "plaintext-storage-disabled" ? "Connection saved; key not saved because secure storage is unavailable and plaintext storage is disabled." : "Connection saved; key not saved because unencrypted storage was declined.";
+            }
+          } catch (error62) {
+            keyError = `Connection saved; key save failed: ${classifierErrorMessage(error62)}`;
+          }
+        }
+        pending.delete(profile.id);
+        if (keyError) {
+          pending.set(
+            profile.id,
+            /* @__PURE__ */ new Map([
+              ["Key", enteredKey],
+              ["RemoveKey", String(removingKey)]
+            ])
+          );
+        }
+        let refreshError = null;
+        try {
+          profiles = await api2.classifiers.list();
+        } catch (error62) {
+          refreshError = `Connection saved; could not refresh key status: ${classifierErrorMessage(error62)}`;
+        }
+        render();
+        const failure2 = keyError ?? refreshError;
+        setInlineStatus(
+          status,
+          failure2 ? "error" : "ok",
+          failure2 ?? "Classifier saved. No test call has been made."
+        );
+      });
+    });
+    test.addEventListener("click", () => {
+      void run2(async () => {
+        setInlineStatus(status, "pending", "Testing saved classifier\u2026");
+        const result = await api2.classifiers.test(profile.id);
+        setInlineStatus(status, "ok", `Test succeeded \xB7 ${describeResult(result)}`);
+      });
+    });
+    remove.addEventListener("click", () => {
+      void run2(async () => {
+        if (saved) profiles = await api2.classifiers.remove(profile.id);
+        pending.delete(profile.id);
+        selectedId = profiles[0]?.profile.id ?? null;
+        drafts.delete(profile.id);
+        render();
+        setInlineStatus(
+          status,
+          "ok",
+          saved ? "Classifier and its saved key removed." : "Draft discarded."
+        );
+      });
+    });
+  }
+  async function refresh() {
+    if (busy) return;
+    captureDraft?.();
+    try {
+      profiles = await api2.classifiers.list();
+      selectedId ??= profiles[0]?.profile.id ?? null;
+      if (selectedId !== null && !drafts.has(selectedId) && !profiles.some((item) => item.profile.id === selectedId))
+        selectedId = null;
+      render();
+    } catch (error62) {
+      setInlineStatus(status, "error", classifierErrorMessage(error62));
+    }
+  }
+  render();
+  return { root, refresh };
+}
+var init_classifiers_section = __esm({
+  "src/renderer/views/setup/classifiers-section.ts"() {
+    init_presets();
+    init_helpers();
+    init_inline_status();
+    init_confirm_dialog();
+    init_errors4();
+  }
+});
+
 // src/renderer/views/setup/detected-item-row.ts
 function providerLabel(slug2) {
   return PROVIDER_LABELS[slug2] ?? slug2;
@@ -60629,6 +61149,7 @@ function mountSettingsDialog(store2, api2) {
             />
           </div>
           <button type="button" class="settings-nav-btn active" data-section="general">General</button>
+          <button type="button" class="settings-nav-btn" data-section="classifiers">Classifiers</button>
           <button type="button" class="settings-nav-btn" data-section="usage">Usage</button>
           <button type="button" class="settings-nav-btn" data-section="agent">Agent</button>
           <button type="button" class="settings-nav-btn" data-section="permissions">Permissions</button>
@@ -60729,6 +61250,15 @@ function mountSettingsDialog(store2, api2) {
                 </label>
               </div>
             </div>
+          </section>
+
+          <section class="settings-section" data-section="classifiers">
+            <h3>Classifiers</h3>
+            <p class="settings-section-desc">
+              Connections for classification evals and explicit calls. Copse's built-in classifiers
+              and chat model choices are configured separately.
+            </p>
+            <div id="settings-classifiers-host" class="settings-mount"></div>
           </section>
 
           <section class="settings-section" data-section="usage">
@@ -61557,6 +62087,8 @@ function mountSettingsDialog(store2, api2) {
   `;
   overlayEl = overlay;
   qsRequired(overlay, "#settings-close").append(closeIcon("ui-icon"));
+  const classifiersSection = createClassifiersSection(api2);
+  qsRequired(overlay, "#settings-classifiers-host").append(classifiersSection.root);
   const sshWorkspaceSection = createSshWorkspaceSection(api2, {
     // Live-persist toggles must wake listeners (e.g. the projects add menu)
     // without requiring the dialog Save button.
@@ -61824,6 +62356,7 @@ function mountSettingsDialog(store2, api2) {
     if (!searchContentLoaded) {
       searchContentLoaded = true;
       void providersPanel.refresh();
+      void classifiersSection.refresh();
       void sshWorkspaceSection.refresh();
       void refreshSources();
     }
@@ -61864,6 +62397,7 @@ function mountSettingsDialog(store2, api2) {
           applySearch("");
         }
         showSection(id);
+        if (id === "classifiers") void classifiersSection.refresh();
         if (id === "usage") void usageSection.refresh();
         if (id === "permissions") void toolPermissionsPanel.refresh();
         if (id === "ssh") void sshWorkspaceSection.refresh();
@@ -63609,6 +64143,7 @@ function mountSettingsDialog(store2, api2) {
     pendingSection = null;
     pluginDetail = pendingPluginDetail;
     pendingPluginDetail = null;
+    if (openedSection === "classifiers") void classifiersSection.refresh();
     if (openedSection === "ssh") void sshWorkspaceSection.refresh();
     if (openedSection === "usage") void usageSection.refresh();
     if (openedSection === "permissions") void toolPermissionsPanel.refresh();
@@ -63922,6 +64457,7 @@ var init_settings_dialog = __esm({
     init_model_picker();
     init_api_keys_section();
     init_providers_section();
+    init_classifiers_section();
     init_env_key_detect_section();
     init_lm_studio_section();
     init_gh_cli_section();
@@ -63946,7 +64482,7 @@ var init_settings_dialog = __esm({
     init_projects();
     init_appearance();
     init_nullish2();
-    isSettingsSection = (value) => value === "general" || value === "usage" || value === "agent" || value === "permissions" || value === "mcp" || value === "customise" || value === "storage" || value === "appearance" || value === "ssh" || value === "experimental";
+    isSettingsSection = (value) => value === "general" || value === "classifiers" || value === "usage" || value === "agent" || value === "permissions" || value === "mcp" || value === "customise" || value === "storage" || value === "appearance" || value === "ssh" || value === "experimental";
     PLUGIN_NAME_ACRONYMS = /* @__PURE__ */ new Set(["acp", "api", "ci", "llm", "mcp", "okf", "pii", "ui"]);
     COPSE_SITE_TINT_COLOR = "#002E2B";
     TINT_STRENGTH_AMOUNTS = {
@@ -86563,7 +87099,7 @@ function buildChangesSuggestion(stats) {
   };
 }
 var DETERMINISTIC_FOLLOW_UP_IDS;
-var init_presets = __esm({
+var init_presets2 = __esm({
   "src/shared/follow-ups/presets.ts"() {
     DETERMINISTIC_FOLLOW_UP_IDS = {
       changes: "changes",
@@ -86609,7 +87145,7 @@ function reconcileChangesSuggestion(suggestions, stats, maxSuggestions = DEFAULT
 var DEFAULT_MAX_SUGGESTIONS;
 var init_changes_stat = __esm({
   "src/shared/follow-ups/changes-stat.ts"() {
-    init_presets();
+    init_presets2();
     DEFAULT_MAX_SUGGESTIONS = 3;
   }
 });
