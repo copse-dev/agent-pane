@@ -384,6 +384,90 @@ describe('AgentDispatcher', () => {
     assert.equal(dispatcher.isActive('project-1', 'thread-1'), false)
   })
 
+  it('waits for an active dispatch to release its slot', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const dispatcher = new AgentDispatcher(
+      host,
+      registry,
+      dependencies({
+        run: async (_threadId, userContent: UserContent, priorMessages) => {
+          await gate
+          return {
+            usage: { inputTokens: 0, outputTokens: 0 },
+            messages: [...priorMessages, { role: 'user', content: userContent }],
+          }
+        },
+      }),
+    )
+
+    const dispatch = dispatcher.dispatch(request())
+    await settle()
+    let idle = false
+    const wait = dispatcher.waitForIdle('project-1', 'thread-1').then(() => {
+      idle = true
+    })
+    await settle()
+    assert.equal(idle, false)
+
+    release()
+    await Promise.all([dispatch, wait])
+    assert.equal(idle, true)
+  })
+
+  it('waits for machine bookkeeping that began before the deletion fence', async () => {
+    let releaseEpoch!: () => void
+    const epochGate = new Promise<void>((resolve) => {
+      releaseEpoch = resolve
+    })
+    const dispatcher = new AgentDispatcher(
+      host,
+      registry,
+      dependencies({
+        loadEpoch: async () => {
+          await epochGate
+          return null
+        },
+      }),
+    )
+
+    const dispatch = dispatcher.dispatchMachine({
+      ...request(),
+      operationId: 'wake-before-delete',
+      turnTreeId: 'tree-1',
+    })
+    await settle()
+    dispatcher.beginThreadDeletion('project-1', 'thread-1')
+    let idle = false
+    const wait = dispatcher.waitForIdle('project-1', 'thread-1').then(() => {
+      idle = true
+    })
+    await settle()
+    assert.equal(idle, false)
+
+    releaseEpoch()
+    assert.equal(await dispatch, 'stale')
+    await wait
+    assert.equal(idle, true)
+  })
+
+  it('rejects foreground and machine dispatches after deletion begins', async () => {
+    const dispatcher = new AgentDispatcher(host, registry, dependencies())
+    dispatcher.beginThreadDeletion('project-1', 'thread-1')
+
+    await assert.rejects(dispatcher.dispatch(request()), /thread "thread-1" is being deleted/i)
+    await assert.rejects(
+      dispatcher.dispatchMachine({
+        ...request(),
+        operationId: 'wake-after-delete',
+        turnTreeId: 'tree-1',
+      }),
+      /thread "thread-1" is being deleted/i,
+    )
+  })
+
   it('publishes done after committing history so an immediate follow-up serializes', async () => {
     const saved: LLMMessage[][] = []
     let followUp: Promise<void> | undefined

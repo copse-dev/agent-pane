@@ -73,7 +73,7 @@ export function activeThreadReadRootPaths(): string[] {
   return [...paths]
 }
 
-/** Drop one thread's roots, or every thread's. For tests and teardown. */
+/** Drop one thread's roots on deletion, or every thread's during test teardown. */
 export function clearThreadReadRoots(threadId?: string): void {
   if (threadId === undefined) rootsByThread.clear()
   else rootsByThread.delete(threadId)

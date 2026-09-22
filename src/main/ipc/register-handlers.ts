@@ -133,10 +133,13 @@ import {
   appendMessage,
   updateMeta,
   recordModelSelection,
-  deleteProjectThread,
   loadProjectCatalog,
   listOrphanProjectStores,
 } from '../services/thread-store.ts'
+import {
+  deleteThreadResourcesAndStore,
+  type ThreadDeletionRuntime,
+} from '../services/thread-deletion.ts'
 import { buildThreadArchive } from '../services/thread-archive.ts'
 import {
   getElectronAppVersion,
@@ -455,7 +458,8 @@ you want the coding agent to follow on every turn.
 export function registerAllHandlers(
   win: BrowserWindow,
   registry: ToolRegistry,
-  isDispatcherThreadActive: (projectId: string, threadId: string) => boolean = () => false,
+  isDispatcherThreadActive: (projectId: string, threadId: string) => boolean,
+  threadDeletionRuntime: ThreadDeletionRuntime,
 ): void {
   const reloadMcpForWorkspace = (): void => {
     void reloadMcpServers(registry)
@@ -1851,7 +1855,7 @@ export function registerAllHandlers(
   ipcMain.handle('threads:delete', (event, projectId: unknown, threadId: unknown) => {
     assertMainFrameSender(event, win)
     const [pid, tid] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
-    return deleteProjectThread(pid, tid)
+    return deleteThreadResourcesAndStore(pid, tid, threadDeletionRuntime)
   })
   // Seed a freshly created fork's provider-format history from the thread it was
   // branched off. The renderer owns the visible transcript copy; this is the

@@ -435,6 +435,23 @@ export function cancelApprovalsForThread(threadId: string): number {
   return cancelled
 }
 
+/**
+ * Tear down every prompt still owned by a thread, including parked ACP
+ * stand-ins. Ordinary turn cleanup deliberately preserves those stand-ins for
+ * a retry; thread deletion has no future turn to receive one.
+ */
+export function discardApprovalsForThread(threadId: string): number {
+  let discarded = 0
+  for (const entry of [...inflight.values()]) {
+    for (const waiter of [...entry.waiters]) {
+      if (waiter.threadId !== threadId) continue
+      waiter.onAbort()
+      discarded++
+    }
+  }
+  return discarded
+}
+
 /** How many in-flight approval waiters are attributed to `threadId`. */
 export function pendingApprovalCountForThread(threadId: string): number {
   let count = 0

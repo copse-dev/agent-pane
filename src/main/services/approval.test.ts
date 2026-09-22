@@ -11,6 +11,7 @@ import {
   cancelApprovalsForThread,
   cancelApprovalsForAcpToolCall,
   clearAbandonedVerdictsForTest,
+  discardApprovalsForThread,
   parkedApprovalCount,
   pendingApprovalCountForThread,
   pendingApprovalParkedToolCallIds,
@@ -602,6 +603,19 @@ describe('abandoned calls (parked prompts and verdict replay)', () => {
     const retry = await requestUnderThread(req)
     assert.equal(retry.approved, true)
     assert.equal(handlerCalls, 1, 'the retry reuses the answer without prompting again')
+  })
+
+  it('discards a parked prompt when its thread is deleted', async () => {
+    parkingHandler()
+    const { signal, abandon } = abandonedSignal()
+    const first = requestUnderThread(req, signal)
+    await Promise.resolve()
+    abandon()
+    await assert.rejects(first, ApprovalPendingError)
+
+    assert.equal(discardApprovalsForThread(THREAD), 1)
+    assert.equal(parkedApprovalCount(), 0)
+    assert.equal(handlerSignal?.aborted, true)
   })
 
   it('releaseParkedApprovalsForThread detaches the stand-in without closing the prompt', async () => {
