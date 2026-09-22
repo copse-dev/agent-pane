@@ -261,7 +261,7 @@ test('round-trips tool-result images through referenced blobs', () => {
           status: 'done',
           result: 'Created the image.',
           resultFormat: 'markdown',
-          images: [{ dataUrl, name: 'concept.png' }],
+          images: [{ dataUrl, name: 'concept.png', kind: 'screenshot' }],
         },
       ],
       createdAt: 5,

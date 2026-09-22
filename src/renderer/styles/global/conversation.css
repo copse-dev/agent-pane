@@ -675,6 +675,27 @@
   border: 1px solid var(--border);
   background: var(--bg-base);
 }
+/* A self-contained tool visual (generated render, diagram, page capture) is
+   the turn's deliverable, so it previews at reading size like a remote
+   artifact image instead of the thumbnail grid used for frame batches. */
+.tool-result-preview {
+  margin: 0;
+  max-width: 100%;
+}
+.tool-result-preview-image {
+  display: block;
+  max-width: 100%;
+  max-height: min(520px, 60vh);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  object-fit: contain;
+}
+.tool-result-preview-caption {
+  margin-top: var(--spacing-xs);
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+}
 .message-text .remote-artifact-image {
   display: block;
   max-width: 100%;
