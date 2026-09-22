@@ -22331,6 +22331,31 @@ function setThreadComparison(store2, threadId, comparison) {
   });
   store2.emit("comparison_changed", threadId);
 }
+function setThreadReviewReport(store2, threadId, report) {
+  patchThreadAnywhere(store2, threadId, (t) => {
+    const next = { ...t, updatedAt: Date.now() };
+    if (report) next.reviewReport = report;
+    else delete next.reviewReport;
+    return next;
+  });
+  store2.emit("review_report_changed", threadId);
+}
+function setReviewFindingDismissed(store2, threadId, findingId, dismissed) {
+  patchThreadAnywhere(store2, threadId, (t) => {
+    if (!t.reviewReport) return t;
+    return {
+      ...t,
+      updatedAt: Date.now(),
+      reviewReport: {
+        ...t.reviewReport,
+        findings: t.reviewReport.findings.map(
+          (finding) => finding.id === findingId ? { ...finding, dismissed } : finding
+        )
+      }
+    };
+  });
+  store2.emit("review_report_changed", threadId);
+}
 function setQueuePaused(store2, threadId, paused) {
   const { threads } = store2.getState();
   const thread = threads.find((t) => t.id === threadId);
@@ -22757,6 +22782,11 @@ function attachAutosave(store2, api2) {
     // event in flight — e.g. dismissing a failed card on an idle thread — so it
     // needs its own autosave trigger or the card resurrects on reload.
     store2.on("comparison_changed", () => {
+      schedule();
+    }),
+    // Same for the review report: a dismissed finding or a cleared card is a
+    // metadata-only change on an idle thread.
+    store2.on("review_report_changed", () => {
       schedule();
     }),
     store2.on("projects_changed", () => {
@@ -28149,8 +28179,6 @@ This response is streamed through the real renderer event path.`
       // crash leftover the moment the project loads (#1406's reconciliation).
       runningThreadIds: () => resolved(threads.filter((t) => t.status === "running").map((t) => t.id)),
       retryReview: resolvedVoid,
-      retryComparison: resolvedVoid,
-      comparisonModels: () => resolved({ a: "", b: "", judge: "" }),
       clearHistory: resolvedVoid,
       refreshModelContext: resolvedVoid,
       suggestTitle: () => resolved(null),
@@ -28207,6 +28235,7 @@ This response is streamed through the real renderer event path.`
       onConflict: subscribe
     },
     approval: { respond: resolvedVoid },
+    review: { run: resolvedVoid, dismissFinding: resolvedVoid, restoreFinding: resolvedVoid },
     ask: { respond: resolvedVoid },
     alerts: { threadFinished: resolvedVoid },
     sshPrompt: {
@@ -29548,6 +29577,7 @@ function createStore(initial) {
     review_changed: /* @__PURE__ */ new Set(),
     hook_card_added: /* @__PURE__ */ new Set(),
     comparison_changed: /* @__PURE__ */ new Set(),
+    review_report_changed: /* @__PURE__ */ new Set(),
     git_branch_changed: /* @__PURE__ */ new Set(),
     thread_checkout_changed: /* @__PURE__ */ new Set(),
     composer_draft_flush: /* @__PURE__ */ new Set(),
@@ -45763,7 +45793,7 @@ function createAcpAgentsSection(api2, opts = {}) {
       { type: "button", class: "provider-secondary" },
       "Detect models"
     );
-    const modelRow2 = el("div", { class: "acp-model-row" }, modelSelect, detectModels);
+    const modelRow = el("div", { class: "acp-model-row" }, modelSelect, detectModels);
     const modelStatus = el("span", { class: "field-hint" });
     const DEFAULT_MODE_LABEL = "Agent default";
     const modeSelect = el("select", {});
@@ -45901,7 +45931,7 @@ function createAcpAgentsSection(api2, opts = {}) {
       el("label", {}, "Command", commandInput),
       el("label", {}, "Arguments", argsArea),
       el("label", {}, "Environment", envArea),
-      el("label", {}, "Model", modelRow2, modelStatus),
+      el("label", {}, "Model", modelRow, modelStatus),
       el(
         "label",
         { class: "acp-permission-mode-field" },
@@ -61099,25 +61129,6 @@ function mountSettingsDialog(store2, api2) {
             </fieldset>
 
             <fieldset>
-              <legend>Model comparison</legend>
-              <p class="field-hint">
-                Reviews your current changes through two models independently, then has a third
-                compare their verdicts. Turn it on under <strong>Plugins</strong>, where you also
-                choose how the three models are picked \u2014 they always resolve to different models,
-                so there is something to compare. A run makes up to three model calls, so it asks
-                before spending on a paid model.
-              </p>
-              <label class="checkbox-label">
-                <input type="checkbox" name="modelComparisonAutoOnReview" />
-                Run the comparison automatically after editing turns
-              </label>
-              <p class="field-hint">
-                When on, the comparison runs as part of the post-turn review, still asking before
-                it spends. When off, ask for it when you want it.
-              </p>
-            </fieldset>
-
-            <fieldset>
               <legend>Developer mode</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="developerMode" />
@@ -63595,9 +63606,6 @@ var init_settings_dialog = __esm({
       { name: "nextStepSuggestionEnabled", kind: "checkbox", default: false, save: true },
       { name: "containerRunsEnabled", kind: "checkbox", default: false, save: true },
       { name: "orchestrationStrategyEnabled", kind: "checkbox", default: false, save: true },
-      // P5: the master model-comparison toggle moved to Settings > Plugins
-      // (`copse.model-comparison`); the auto-on-review sub-toggle stays here.
-      { name: "modelComparisonAutoOnReview", kind: "checkbox", default: false, save: true },
       { name: DEVELOPER_MODE_SETTING, kind: "checkbox", default: false, save: true },
       // Background tasks moved to Settings > Plugins (`copse.background-tasks`), which
       // also declares the `loopback-bind` sandbox relaxation (issue #1190).
@@ -69147,6 +69155,315 @@ var init_comparison_panel = __esm({
   }
 });
 
+// src/renderer/views/review-findings-card.ts
+function statusLabel3(report) {
+  switch (report.status) {
+    case "running":
+      return "Reviewing\u2026";
+    case "error":
+      return "Review failed";
+    default:
+      return "Review";
+  }
+}
+function findingLocation(finding) {
+  if (finding.startLine === void 0) return finding.path;
+  const end = finding.endLine !== void 0 && finding.endLine !== finding.startLine;
+  return `${finding.path}:${String(finding.startLine)}${end ? `\u2013${String(finding.endLine)}` : ""}`;
+}
+function verdictLabel(finding) {
+  switch (finding.verdict.status) {
+    case "confirmed":
+      return finding.evidence.some((evidence) => evidence.kind === "reproducer") ? "confirmed by reproducer" : "confirmed";
+    case "refuted":
+      return "refuted";
+    default:
+      return finding.challengedBy.length > 0 ? "survived challenge" : "unverified";
+  }
+}
+function evidenceEl(evidence) {
+  const item = el("li", { class: "review-finding-evidence", "data-kind": evidence.kind });
+  switch (evidence.kind) {
+    case "command": {
+      const exit = evidence.exitCode === null ? "killed" : `exit ${String(evidence.exitCode)}`;
+      item.append(
+        el("code", { class: "review-finding-command" }, evidence.command),
+        el("span", { class: "review-finding-evidence-meta" }, ` on ${evidence.target}, ${exit}`)
+      );
+      if (evidence.excerpt.trim() !== "") {
+        item.append(el("pre", { class: "review-finding-excerpt" }, evidence.excerpt.trimEnd()));
+      }
+      return item;
+    }
+    case "reproducer": {
+      const outcome = `${evidence.failsOnHead ? "fails" : "passes"} on head, ${evidence.passesOnBase ? "passes" : "fails"} on base`;
+      item.append(
+        el("code", { class: "review-finding-command" }, evidence.testPath),
+        el("span", { class: "review-finding-evidence-meta" }, ` \u2014 reproducer ${outcome}`)
+      );
+      return item;
+    }
+    default: {
+      const lines = evidence.startLine === evidence.endLine ? String(evidence.startLine) : `${String(evidence.startLine)}\u2013${String(evidence.endLine)}`;
+      item.append(
+        el("span", { class: "review-finding-evidence-meta" }, "cites "),
+        el("code", { class: "review-finding-command" }, `${evidence.path}:${lines}`)
+      );
+      return item;
+    }
+  }
+}
+function provenanceEl(finding) {
+  const parts = [`Raised by ${finding.raisedBy.join(", ")}`];
+  if (finding.corroboratedBy.length > 0) {
+    parts.push(`corroborated by ${finding.corroboratedBy.join(", ")}`);
+  }
+  if (finding.challengedBy.length > 0) {
+    parts.push(`challenged by ${finding.challengedBy.join(", ")}`);
+  }
+  return el("div", { class: "review-finding-provenance" }, `${parts.join("; ")}.`);
+}
+function findingEl(finding, actions) {
+  const item = el("li", {
+    class: "review-finding",
+    "data-finding-id": finding.id,
+    "data-severity": finding.severity,
+    "data-verdict": finding.verdict.status,
+    ...finding.dismissed ? { "data-dismissed": "" } : {}
+  });
+  const details = el("details", { class: "review-finding-details" });
+  const summary = el("summary", { class: "review-finding-summary" });
+  summary.append(
+    el("span", { class: "review-finding-severity" }, finding.severity),
+    el("span", { class: "review-finding-class" }, finding.class),
+    el("code", { class: "review-finding-location" }, findingLocation(finding)),
+    el("span", { class: "review-finding-claim" }, finding.claim),
+    el(
+      "span",
+      { class: "review-finding-verdict", "data-verdict": finding.verdict.status },
+      verdictLabel(finding)
+    )
+  );
+  details.append(summary);
+  const body = el("div", { class: "review-finding-body" });
+  body.append(el("p", { class: "review-finding-reason" }, finding.verdict.reason));
+  if (finding.anchoredText !== void 0 && finding.anchoredText.trim() !== "") {
+    body.append(el("pre", { class: "review-finding-anchor" }, finding.anchoredText));
+  }
+  if (finding.evidence.length > 0) {
+    const list = el("ul", { class: "review-finding-evidence-list" });
+    for (const evidence of finding.evidence) list.append(evidenceEl(evidence));
+    body.append(list);
+  }
+  body.append(provenanceEl(finding));
+  const footer = el("div", { class: "review-finding-actions" });
+  footer.append(
+    el(
+      "span",
+      { class: "review-finding-confidence" },
+      `${finding.confidence} confidence \xB7 ${finding.id}`
+    )
+  );
+  if (finding.dismissed) {
+    if (actions.onRestoreFinding) {
+      const restore = el("button", { type: "button", class: "review-finding-restore" }, "Restore");
+      on(restore, "click", () => {
+        restore.disabled = true;
+        actions.onRestoreFinding?.(finding);
+      });
+      footer.append(restore);
+    }
+  } else if (actions.onDismissFinding) {
+    const dismiss = el(
+      "button",
+      {
+        type: "button",
+        class: "review-finding-dismiss",
+        "data-tooltip": "Hide this finding, here and in later reviews of the same lines"
+      },
+      "Dismiss"
+    );
+    on(dismiss, "click", () => {
+      dismiss.disabled = true;
+      actions.onDismissFinding?.(finding);
+    });
+    footer.append(dismiss);
+  }
+  body.append(footer);
+  details.append(body);
+  item.append(details);
+  return item;
+}
+function metaLine(report) {
+  const parts = [];
+  if (report.models.reviewer !== "") {
+    parts.push(
+      report.models.challenger !== null && report.models.challenger !== report.models.reviewer ? `${report.models.reviewer}, challenged by ${report.models.challenger}` : report.models.reviewer
+    );
+  }
+  if (report.baseRef !== "") {
+    parts.push(
+      report.dirtyWorkingTree ? `working tree against ${report.baseRef}` : `HEAD against ${report.baseRef}`
+    );
+  }
+  return parts.join(" \xB7 ");
+}
+function groundEl(report) {
+  if (report.status !== "done") return null;
+  const ground = el("div", { class: "review-report-ground" });
+  if (!report.execution.executed) {
+    ground.append(
+      el(
+        "span",
+        { class: "review-report-ground-note", "data-executed": "false" },
+        `Read-only review \u2014 nothing was executed: ${report.execution.reason}`
+      )
+    );
+    return ground;
+  }
+  for (const check2 of report.checks) {
+    const mark2 = check2.verdict === "clean" || check2.verdict === "fixed" ? "\u2713" : "\u2717";
+    ground.append(
+      el(
+        "span",
+        { class: "review-report-check", "data-verdict": check2.verdict },
+        `${check2.kind} ${mark2} ${check2.verdict}`
+      )
+    );
+  }
+  for (const note of report.notChecked) {
+    ground.append(el("span", { class: "review-report-ground-note" }, `not checked: ${note}`));
+  }
+  return ground.childElementCount === 0 ? null : ground;
+}
+function footerEl(report, dismissedCount, onToggleDismissed) {
+  const parts = [];
+  if (report.appendix > 0) {
+    parts.push(`${String(report.appendix)} more below the cut`);
+  }
+  if (report.refuted > 0) {
+    parts.push(`${String(report.refuted)} refuted by the challenger`);
+  }
+  if (report.verification !== null && report.verification.skipped > 0) {
+    parts.push(`${String(report.verification.skipped)} left unverified`);
+  }
+  if (dismissedCount > 0 && onToggleDismissed) {
+    const toggle = el(
+      "button",
+      { type: "button", class: "review-report-dismissed-toggle", "aria-pressed": "false" },
+      `${String(dismissedCount)} dismissed`
+    );
+    on(toggle, "click", () => {
+      const shown = toggle.getAttribute("aria-pressed") === "true";
+      toggle.setAttribute("aria-pressed", shown ? "false" : "true");
+      onToggleDismissed();
+    });
+    parts.push(toggle);
+  }
+  if (parts.length === 0) return null;
+  const footer = el("div", { class: "review-report-footer" });
+  parts.forEach((part, index) => {
+    if (index > 0) footer.append(el("span", { class: "review-report-footer-sep" }, " \xB7 "));
+    footer.append(part);
+  });
+  return footer;
+}
+function createDismissCardButton(onDismiss) {
+  const button = el(
+    "button",
+    {
+      type: "button",
+      class: "card-dismiss-button",
+      "data-tooltip": "Dismiss",
+      "aria-label": "Dismiss"
+    },
+    closeIcon("ui-icon ui-icon-sm")
+  );
+  on(button, "click", () => {
+    button.disabled = true;
+    onDismiss();
+  });
+  return button;
+}
+function createReviewFindingsCardEl(report, actions = {}) {
+  const panel = el("div", {
+    class: `review-report review-report-${report.status}`,
+    "data-status": report.status
+  });
+  const header = el("div", { class: "review-report-header" });
+  header.append(
+    el(
+      "span",
+      { class: "review-report-icon", "aria-hidden": "true" },
+      searchIcon("ui-icon ui-icon-sm")
+    ),
+    el("span", { class: "review-report-title" }, statusLabel3(report))
+  );
+  const meta3 = metaLine(report);
+  if (meta3 !== "") header.append(el("span", { class: "review-report-meta" }, meta3));
+  if (report.cost !== void 0) {
+    header.append(el("span", { class: "review-report-cost" }, report.cost));
+  }
+  if (report.status === "error" && actions.onRetry)
+    header.append(createRetryButton(actions.onRetry));
+  if (report.status === "error" && actions.onDismissCard) {
+    header.append(createDismissCardButton(actions.onDismissCard));
+  }
+  panel.append(header);
+  if (report.status === "running") return panel;
+  if (report.status === "error") {
+    panel.append(
+      el(
+        "div",
+        { class: "review-report-error message-text" },
+        nonEmptyStringOr(report.error, "Review failed.")
+      )
+    );
+    return panel;
+  }
+  const ground = groundEl(report);
+  if (ground) panel.append(ground);
+  const visible = report.findings.filter((finding) => !finding.dismissed);
+  const dismissed = report.findings.filter((finding) => finding.dismissed);
+  if (report.findings.length === 0) {
+    panel.append(el("div", { class: "review-report-clean" }, report.note ?? "Clean."));
+  } else {
+    if (report.note !== void 0) {
+      panel.append(el("div", { class: "review-report-note" }, report.note));
+    }
+    const list = el("ol", { class: "review-report-findings" });
+    for (const finding of visible) list.append(findingEl(finding, actions));
+    if (visible.length === 0) {
+      panel.append(
+        el("div", { class: "review-report-clean" }, "Nothing left: every finding is dismissed.")
+      );
+    }
+    panel.append(list);
+    if (dismissed.length > 0) {
+      const dismissedList = el("ol", { class: "review-report-findings review-report-dismissed" });
+      dismissedList.hidden = true;
+      for (const finding of dismissed) dismissedList.append(findingEl(finding, actions));
+      panel.append(dismissedList);
+      const footer2 = footerEl(report, dismissed.length, () => {
+        dismissedList.hidden = !dismissedList.hidden;
+      });
+      if (footer2) panel.append(footer2);
+      return panel;
+    }
+  }
+  const footer = footerEl(report, 0, null);
+  if (footer) panel.append(footer);
+  return panel;
+}
+var init_review_findings_card = __esm({
+  "src/renderer/views/review-findings-card.ts"() {
+    init_helpers();
+    init_icons();
+    init_retry_button();
+    init_unknown_value3();
+  }
+});
+
 // src/renderer/controller/quiet-runs.ts
 function markQuietRun(threadId) {
   quietThreads.add(threadId);
@@ -69161,17 +69478,13 @@ var init_quiet_runs = __esm({
   }
 });
 
-// src/renderer/controller/retry-review-comparison.ts
-function retryPayload(store2, threadId, comparisonModels) {
+// src/renderer/controller/review-actions.ts
+function reviewPayload(store2, threadId) {
   const thread = store2.getState().threads.find((t) => t.id === threadId);
   return JSON.stringify({
     ...thread?.workingBrief !== void 0 ? { workingBrief: thread.workingBrief } : {},
-    ...thread?.model !== void 0 ? { model: thread.model } : {},
-    ...comparisonModels ? { comparisonModels } : {}
+    ...thread?.model !== void 0 ? { model: thread.model } : {}
   });
-}
-function comparisonModelsPayload(store2, threadId) {
-  return retryPayload(store2, threadId);
 }
 function retryReview(store2, api2, threadId, messageId) {
   const projectId = store2.getState().activeProjectId;
@@ -69179,43 +69492,82 @@ function retryReview(store2, api2, threadId, messageId) {
   setMessageReview(store2, threadId, messageId, { status: "running", summary: "" });
   setThreadStatus(store2, threadId, "running");
   syncAgentActivity(store2, threadId, false);
-  void api2.agent.retryReview(projectId, threadId, retryPayload(store2, threadId));
+  void api2.agent.retryReview(projectId, threadId, reviewPayload(store2, threadId));
 }
 function dismissComparison(store2, threadId) {
   setThreadComparison(store2, threadId, null);
 }
-function retryComparison(store2, api2, threadId) {
+function startReview(store2, api2, threadId) {
   const projectId = store2.getState().activeProjectId;
   if (!projectId) return;
   const thread = store2.getState().threads.find((t) => t.id === threadId);
-  const comparison = thread?.comparison;
-  if (comparison) {
-    setThreadComparison(store2, threadId, { ...comparison, status: "running" });
-  }
-  setThreadStatus(store2, threadId, "running");
-  syncAgentActivity(store2, threadId, false);
-  void api2.agent.retryComparison(projectId, threadId, retryPayload(store2, threadId));
-}
-function startComparison(store2, api2, threadId, models) {
-  const projectId = store2.getState().activeProjectId;
-  if (!projectId) return;
-  setThreadComparison(store2, threadId, {
+  if (thread?.status === "running") return;
+  setThreadReviewReport(store2, threadId, {
     status: "running",
-    models,
-    reviewA: "",
-    reviewB: "",
-    synthesis: ""
+    startedAt: Date.now(),
+    models: { reviewer: thread?.model ?? "", challenger: null },
+    lenses: [],
+    baseRef: "",
+    headCommit: null,
+    dirtyWorkingTree: false,
+    execution: { backend: "", strength: "none", executed: false, reason: "" },
+    checks: [],
+    notChecked: [],
+    findings: [],
+    appendix: 0,
+    refuted: 0,
+    reviewers: [],
+    verification: null,
+    durationMs: 0
   });
   setThreadStatus(store2, threadId, "running");
   syncAgentActivity(store2, threadId, false);
   markQuietRun(threadId);
-  void api2.agent.retryComparison(projectId, threadId, retryPayload(store2, threadId, models));
+  void api2.review.run(projectId, threadId, reviewPayload(store2, threadId)).catch((err2) => {
+    const report = store2.getState().threads.find((t) => t.id === threadId)?.reviewReport;
+    if (report?.status === "running") {
+      setThreadReviewReport(store2, threadId, {
+        ...report,
+        status: "error",
+        error: errorMessage(err2),
+        durationMs: Date.now() - report.startedAt
+      });
+      setThreadStatus(store2, threadId, "idle");
+      syncAgentActivity(store2, threadId, false);
+      takeQuietRun(threadId);
+    }
+    showErrorToast("Review could not start", err2);
+  });
 }
-var init_retry_review_comparison = __esm({
-  "src/renderer/controller/retry-review-comparison.ts"() {
+function dismissReviewReport(store2, threadId) {
+  setThreadReviewReport(store2, threadId, null);
+}
+function dismissReviewFinding(store2, api2, threadId, finding) {
+  setReviewFindingDismissed(store2, threadId, finding.id, true);
+  void api2.review.dismissFinding({
+    findingId: finding.id,
+    path: finding.path,
+    claim: finding.claim,
+    class: finding.class
+  }).catch((err2) => {
+    setReviewFindingDismissed(store2, threadId, finding.id, false);
+    showErrorToast("Could not save the dismissal", err2);
+  });
+}
+function restoreReviewFinding(store2, api2, threadId, findingId) {
+  setReviewFindingDismissed(store2, threadId, findingId, false);
+  void api2.review.restoreFinding(findingId).catch((err2) => {
+    setReviewFindingDismissed(store2, threadId, findingId, true);
+    showErrorToast("Could not restore the finding", err2);
+  });
+}
+var init_review_actions = __esm({
+  "src/renderer/controller/review-actions.ts"() {
     init_thread_helpers();
     init_agent_activity();
     init_quiet_runs();
+    init_toast();
+    init_errors3();
   }
 });
 
@@ -71811,7 +72163,7 @@ function mountConversation(root, store2, api2) {
     }
     const msgEl = buildMessageEl(threadId, msgId);
     if (!msgEl) return;
-    const trailingCard = list.querySelector("[data-comparison-card]");
+    const trailingCard = firstTrailingCard();
     if (trailingCard) {
       list.insertBefore(msgEl, activityBar.isConnected ? activityBar : trailingCard);
     } else list.insertBefore(msgEl, activityBar.isConnected ? activityBar : null);
@@ -71987,28 +72339,49 @@ function mountConversation(root, store2, api2) {
     card.setAttribute("data-turn-recovery-for", messageId);
     msgEl.after(card);
   }
+  function firstTrailingCard() {
+    return list.querySelector("[data-review-report-card], [data-comparison-card]");
+  }
   function syncComparisonPanel() {
     list.querySelector("[data-comparison-card]")?.remove();
     const thread = getActiveThread(store2);
     if (thread?.comparison) {
       const threadId = thread.id;
-      const card = createComparisonCardEl(
-        thread.comparison,
-        api2,
-        () => {
-          retryComparison(store2, api2, threadId);
-        },
-        () => {
-          dismissComparison(store2, threadId);
-        }
-      );
+      const card = createComparisonCardEl(thread.comparison, api2, void 0, () => {
+        dismissComparison(store2, threadId);
+      });
       card.setAttribute("data-comparison-card", "");
       list.append(card);
     }
   }
+  function syncReviewReportCard() {
+    list.querySelector("[data-review-report-card]")?.remove();
+    const thread = getActiveThread(store2);
+    if (!thread?.reviewReport) return;
+    const threadId = thread.id;
+    const card = createReviewFindingsCardEl(thread.reviewReport, {
+      onRetry: () => {
+        startReview(store2, api2, threadId);
+      },
+      onDismissCard: () => {
+        dismissReviewReport(store2, threadId);
+      },
+      onDismissFinding: (finding) => {
+        dismissReviewFinding(store2, api2, threadId, finding);
+      },
+      onRestoreFinding: (finding) => {
+        restoreReviewFinding(store2, api2, threadId, finding.id);
+      }
+    });
+    card.setAttribute("data-review-report-card", "");
+    const comparison = list.querySelector("[data-comparison-card]");
+    if (comparison) list.insertBefore(card, comparison);
+    else list.append(card);
+  }
   function finishThreadChrome(thread) {
     syncTodoPanel();
     appleDevelopmentHost.dispatchEvent(new Event("apple-development-refresh"));
+    syncReviewReportCard();
     syncComparisonPanel();
     if (thread) {
       renderQueuedPanel(thread.id);
@@ -72016,7 +72389,7 @@ function mountConversation(root, store2, api2) {
       queuedHost.replaceChildren();
       queuedHost.hidden = true;
     }
-    list.insertBefore(activityBar, list.querySelector("[data-comparison-card]"));
+    list.insertBefore(activityBar, firstTrailingCard());
     updateScrollButton();
   }
   function backfillOlderMessages(thread, cursor, generation) {
@@ -72093,7 +72466,7 @@ function mountConversation(root, store2, api2) {
   function captureReadingAnchor() {
     const listRect = list.getBoundingClientRect();
     const candidates = list.querySelectorAll(
-      ":scope > .msg, :scope > [data-review-card], :scope > [data-comparison-card]"
+      ":scope > .msg, :scope > [data-review-card], :scope > [data-review-report-card], :scope > [data-comparison-card]"
     );
     for (const element of candidates) {
       const rect = element.getBoundingClientRect();
@@ -72230,6 +72603,10 @@ function mountConversation(root, store2, api2) {
       syncComparisonPanel();
       scrollToBottom();
     }),
+    store2.on("review_report_changed", () => {
+      syncReviewReportCard();
+      scrollToBottom();
+    }),
     store2.on("settings_changed", () => {
       const thread = getActiveThread(store2);
       if (!thread) return;
@@ -72343,7 +72720,8 @@ var init_conversation = __esm({
     init_apple_development_panel();
     init_review_panel();
     init_comparison_panel();
-    init_retry_review_comparison();
+    init_review_findings_card();
+    init_review_actions();
     init_tool_args_format();
     init_thread_proposal_tool_card();
     init_render_signature();
@@ -85413,186 +85791,11 @@ var init_last_exchange = __esm({
   }
 });
 
-// src/renderer/views/approval-comparison-pickers.ts
-async function reviewerOptions(api2, current) {
-  const options = await fetchModelOptions(api2, current, REVIEWER_OPTIONS);
-  return options.map(
-    (option) => option.value === current && UNRUNNABLE_CURRENT_SUFFIX.test(option.label) ? { ...option, disabled: true } : option
-  );
-}
-async function refreshReviewer(picker, select, current) {
-  await picker.refresh(current);
-  const selected = select.selectedOptions[0];
-  if (selected?.disabled !== true) return;
-  const replacement = [...select.options].find(
-    (option) => !option.disabled && option.value.length > 0
-  );
-  if (!replacement) return;
-  select.value = replacement.value;
-  select.dispatchEvent(new Event("change", { bubbles: true }));
-}
-function modelRow(label, select) {
-  return el(
-    "label",
-    { class: "approval-comparison-row" },
-    el("span", { class: "approval-comparison-label" }, label),
-    select
-  );
-}
-function createComparisonModelPickers(api2, models, intro) {
-  const selectA = el("select", { class: "approval-model-select" });
-  const selectB = el("select", { class: "approval-model-select" });
-  const selectJudge = el("select", { class: "approval-model-select" });
-  for (const select of [selectA, selectB, selectJudge]) {
-    select.append(el("option", { value: "" }, "(loading\u2026)"));
-  }
-  const root = el(
-    "div",
-    { class: "approval-comparison-models" },
-    el("p", { class: "approval-comparison-intro" }, intro),
-    modelRow("Reviewer A", selectA),
-    modelRow("Reviewer B", selectB),
-    modelRow("Judge", selectJudge)
-  );
-  const pickerA = mountModelSelectPicker(selectA, {
-    loadOptions: (current) => reviewerOptions(api2, current),
-    className: "approval-model-picker",
-    ariaLabel: "Reviewer A model",
-    loadOnMount: false
-  });
-  const pickerB = mountModelSelectPicker(selectB, {
-    loadOptions: (current) => reviewerOptions(api2, current),
-    className: "approval-model-picker",
-    ariaLabel: "Reviewer B model",
-    loadOnMount: false
-  });
-  const pickerJudge = mountModelSelectPicker(selectJudge, {
-    loadOptions: (current) => reviewerOptions(api2, current),
-    className: "approval-model-picker",
-    ariaLabel: "Judge model",
-    loadOnMount: false
-  });
-  void Promise.all([
-    refreshReviewer(pickerA, selectA, models.a),
-    refreshReviewer(pickerB, selectB, models.b),
-    refreshReviewer(pickerJudge, selectJudge, models.judge)
-  ]);
-  return {
-    root,
-    read: () => ({
-      a: selectA.value,
-      b: selectB.value,
-      judge: selectJudge.value
-    })
-  };
-}
-var REVIEWER_OPTIONS, UNRUNNABLE_CURRENT_SUFFIX;
-var init_approval_comparison_pickers = __esm({
-  "src/renderer/views/approval-comparison-pickers.ts"() {
-    init_helpers();
-    init_model_options();
-    init_model_picker();
-    REVIEWER_OPTIONS = { includeAgentModels: false };
-    UNRUNNABLE_CURRENT_SUFFIX = / \((?:no key|not available|offline)\)$/i;
-  }
-});
-
-// src/renderer/views/comparison-model-dialog.ts
-function ensureDialog5() {
-  if (dialogEl4) return dialogEl4;
-  dialogEl4 = el("dialog", {
-    id: "comparison-model-dialog",
-    class: "comparison-model-dialog"
-  });
-  document.body.append(dialogEl4);
-  return dialogEl4;
-}
-function openComparisonModelDialog(api2, models) {
-  const dialog2 = ensureDialog5();
-  clear(dialog2);
-  const pickers = createComparisonModelPickers(
-    api2,
-    models,
-    "Each reviewer independently reads the working diff; a judge compares their verdicts."
-  );
-  const runBtn = el(
-    "button",
-    { type: "button", class: "ui-btn ui-btn-primary comparison-model-dialog-run" },
-    "Run comparison"
-  );
-  const cancelBtn = el(
-    "button",
-    { type: "button", class: "ui-btn comparison-model-dialog-cancel" },
-    "Cancel"
-  );
-  dialog2.append(
-    el("h3", {}, "Compare models on this diff"),
-    pickers.root,
-    // Three inferences, and the picker is the only place their cost is named
-    // before they run — there is no follow-up prompt to disclose it later.
-    el(
-      "p",
-      { class: "field-hint comparison-model-dialog-cost" },
-      "Runs three model calls: two reviews and one judgement. Any model that is not local is billed."
-    ),
-    el("div", { class: "comparison-model-dialog-actions" }, cancelBtn, runBtn)
-  );
-  return new Promise((resolve) => {
-    let settled = false;
-    const perOpen = new AbortController();
-    const finish = (value) => {
-      if (settled) return;
-      settled = true;
-      perOpen.abort();
-      dialog2.close();
-      resolve(value);
-    };
-    dialog2.addEventListener(
-      "cancel",
-      () => {
-        finish(null);
-      },
-      { signal: perOpen.signal }
-    );
-    cancelBtn.addEventListener("click", () => {
-      finish(null);
-    });
-    runBtn.addEventListener("click", () => {
-      const picked = pickers.read();
-      if (!picked.a || !picked.b || !picked.judge) return;
-      finish(picked);
-    });
-    dialog2.showModal();
-    runBtn.focus();
-  });
-}
-var dialogEl4;
-var init_comparison_model_dialog = __esm({
-  "src/renderer/views/comparison-model-dialog.ts"() {
-    init_helpers();
-    init_approval_comparison_pickers();
-    dialogEl4 = null;
-  }
-});
-
 // src/renderer/views/follow-up-suggestions.ts
 function openChangesReviewer(store2) {
   store2.setState({ rightPanelMode: "changes", filesPaneOpen: true });
   store2.emit("right_panel_mode_changed");
   store2.emit("files_pane_changed");
-}
-async function runComparisonFromBubble(store2, api2, threadId, onStarted) {
-  let defaults;
-  try {
-    defaults = await api2.agent.comparisonModels(comparisonModelsPayload(store2, threadId));
-  } catch (err2) {
-    showErrorToast("Could not load comparison models", err2);
-    return;
-  }
-  const picked = await openComparisonModelDialog(api2, defaults);
-  if (!picked) return;
-  onStarted();
-  startComparison(store2, api2, threadId, picked);
 }
 async function createPrFromBubble(store2, api2, threadId, onConfirmed) {
   const { activeProjectId } = store2.getState();
@@ -85712,8 +85915,9 @@ function mountFollowUpSuggestions(store2, api2, onSelect) {
         if (store2.getState().activeThreadId !== sourceThreadId) {
           switchThread(store2, sourceThreadId);
         }
-        if (suggestion.action === "model-compare") {
-          void runComparisonFromBubble(store2, api2, sourceThreadId, clearSuggestions);
+        if (suggestion.action === "review") {
+          clearSuggestions();
+          startReview(store2, api2, sourceThreadId);
           return;
         }
         if (suggestion.action === "create-pr") {
@@ -85863,8 +86067,7 @@ var init_follow_up_suggestions = __esm({
     init_create_pr_dialog();
     init_thread_helpers();
     init_last_exchange();
-    init_comparison_model_dialog();
-    init_retry_review_comparison();
+    init_review_actions();
     init_toast();
   }
 });
@@ -86274,7 +86477,7 @@ function mountContainerRunControl(api2, context, onStateChanged) {
     text2.textContent = `Container run: ${PHASE_LABEL[run2.phase].toLowerCase()}. ${summary}`;
     onStateChanged();
   }
-  function ensureDialog6() {
+  function ensureDialog5() {
     if (!overlay) {
       overlay = createOverlayDialog({
         id: "container-run-dialog",
@@ -86917,7 +87120,7 @@ function mountContainerRunControl(api2, context, onStateChanged) {
   }
   function open2() {
     if (!context.getActiveThreadId()) return;
-    const dialog2 = ensureDialog6();
+    const dialog2 = ensureDialog5();
     dialog2.open();
     renderDialog();
   }
@@ -99961,6 +100164,82 @@ var init_pane_loading = __esm({
   }
 });
 
+// packages/agent/src/plugins/review-plugin.ts
+var REVIEW_PLUGIN_ID, REVIEW_TOOL_NAME, REVIEW_FOLLOW_UP_ID, REVIEWER_MODEL_SETTING_ID, CHALLENGER_MODEL_SETTING_ID, REVIEW_LENSES_SETTING_ID, REVIEW_VERIFY_SETTING_ID, DEFAULT_CHALLENGER_MODEL_ID, REVIEW_LENS_CHOICES, DEFAULT_REVIEW_LENS_CHOICE, reviewPlugin;
+var init_review_plugin = __esm({
+  "packages/agent/src/plugins/review-plugin.ts"() {
+    init_dynamic_model();
+    init_plugin_manifest();
+    REVIEW_PLUGIN_ID = "copse.review";
+    REVIEW_TOOL_NAME = "review_changes";
+    REVIEW_FOLLOW_UP_ID = "review-changes";
+    REVIEWER_MODEL_SETTING_ID = "reviewerModel";
+    CHALLENGER_MODEL_SETTING_ID = "challengerModel";
+    REVIEW_LENSES_SETTING_ID = "lenses";
+    REVIEW_VERIFY_SETTING_ID = "verify";
+    DEFAULT_CHALLENGER_MODEL_ID = BEST_INTELLECT_MODEL_SELECTOR;
+    REVIEW_LENS_CHOICES = ["correctness", "all"];
+    DEFAULT_REVIEW_LENS_CHOICE = "correctness";
+    reviewPlugin = definePlugin(
+      {
+        name: REVIEW_PLUGIN_ID,
+        description: 'Copse Reviewer \u2014 builds and tests your changes against their base, has a model review them under a lens, and tries to refute every finding before it reaches you. On demand from the Changes view, the "Review changes" bubble, or the `review_changes` tool.',
+        trust: "first-party",
+        stability: "experimental",
+        tools: { native: [REVIEW_TOOL_NAME] },
+        // Offered only when the working tree has uncommitted changes: with a clean
+        // tree on its base branch there is nothing to review.
+        followUps: [
+          {
+            id: REVIEW_FOLLOW_UP_ID,
+            label: "Review changes",
+            action: "review",
+            when: "workspace-changes"
+          }
+        ],
+        settings: {
+          [REVIEWER_MODEL_SETTING_ID]: {
+            kind: "model",
+            title: "Reviewer",
+            description: "How to choose the model that reads the change and reports findings. Leave unset to review with the model this chat is already on."
+          },
+          [CHALLENGER_MODEL_SETTING_ID]: {
+            kind: "model",
+            title: "Challenger",
+            description: "How to choose the model that tries to refute each finding and writes the reproducing test. A different family from the reviewer catches more.",
+            default: DEFAULT_CHALLENGER_MODEL_ID
+          },
+          [REVIEW_LENSES_SETTING_ID]: {
+            kind: "enum",
+            title: "Lenses",
+            description: "Which briefs the reviewer runs under: bugs and regressions only, or every lens (contracts, tests, security, concurrency too). More lenses cost more calls.",
+            options: [...REVIEW_LENS_CHOICES],
+            default: DEFAULT_REVIEW_LENS_CHOICE
+          },
+          [REVIEW_VERIFY_SETTING_ID]: {
+            kind: "boolean",
+            title: "Verify findings",
+            description: "Run the challenger over every finding and, where a test can show it, a reproducer on head and base. Off reports the unverified candidates as such.",
+            default: true
+          }
+        },
+        storage: { namespace: REVIEW_PLUGIN_ID }
+      },
+      {
+        toolNames: [REVIEW_TOOL_NAME],
+        followUps: [
+          {
+            id: REVIEW_FOLLOW_UP_ID,
+            label: "Review changes",
+            action: "review",
+            when: "workspace-changes"
+          }
+        ]
+      }
+    );
+  }
+});
+
 // src/shared/diff/staged-diff-ui.ts
 function pruneStagedDiffCache(cache, entries2) {
   const paths = new Set(entries2.map((e2) => e2.path));
@@ -100106,13 +100385,43 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     },
     refreshIcon("ui-icon ui-icon-sm")
   );
+  const reviewBtn = el(
+    "button",
+    {
+      type: "button",
+      class: "git-changes-review-btn",
+      "data-tooltip": "Review these changes with Copse Reviewer"
+    },
+    "Review"
+  );
+  reviewBtn.hidden = true;
   listHeader.append(
     headerTitle,
     bulkActions,
+    reviewBtn,
     panePopoutButton(store2, api2, "changes", "changes"),
     paneMaximizeButton(store2, "changes"),
     refreshBtn
   );
+  function syncReviewButton() {
+    const thread = store2.getState().threads.find((t) => t.id === store2.getState().activeThreadId);
+    reviewBtn.disabled = thread === void 0 || thread.status === "running";
+  }
+  function syncReviewGate() {
+    void api2.plugins.list().then((res) => {
+      reviewBtn.hidden = !res.plugins.some((p) => p.id === REVIEW_PLUGIN_ID && p.enabled);
+    }).catch(() => {
+      reviewBtn.hidden = true;
+    });
+  }
+  reviewBtn.addEventListener("click", () => {
+    const threadId = store2.getState().activeThreadId;
+    if (!threadId) return;
+    startReview(store2, api2, threadId);
+    syncReviewButton();
+  });
+  syncReviewGate();
+  syncReviewButton();
   const restoreBanner = el("div", { class: "git-changes-restore" });
   const restoreLabel = el("span", { class: "git-changes-restore-label" });
   const restoreBtn = el(
@@ -100908,6 +101217,9 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     store2.on("panel_changed", () => {
       if (changesModeActive(store2)) void syncFromStore();
     }),
+    store2.on("settings_changed", syncReviewGate),
+    store2.on("thread_status_changed", syncReviewButton),
+    store2.on("threads_changed", syncReviewButton),
     api2.fs.onChanged(() => {
       scheduleRefresh();
     }),
@@ -100957,6 +101269,8 @@ var init_git_changes_pane = __esm({
     init_array_utils2();
     init_toast();
     init_confirm_dialog();
+    init_review_actions();
+    init_review_plugin();
     init_staged_diff_ui();
     init_git_diff_viewer();
     init_selection_to_chat();
@@ -102223,7 +102537,7 @@ function mountMemoriesPane(listRoot, viewerRoot, store2, api2) {
     placeholder: "Memory content (markdown)\u2026",
     "aria-label": "Memory content"
   });
-  const metaLine = el("div", { class: "memories-meta" });
+  const metaLine2 = el("div", { class: "memories-meta" });
   const errorLine = el("div", { class: "memories-error", hidden: true });
   const saveBtn = el(
     "button",
@@ -102244,7 +102558,7 @@ function mountMemoriesPane(listRoot, viewerRoot, store2, api2) {
     tagsInput,
     el("label", { class: "memories-label" }, "Content"),
     bodyInput,
-    metaLine,
+    metaLine2,
     errorLine,
     actions
   );
@@ -102276,14 +102590,14 @@ function mountMemoriesPane(listRoot, viewerRoot, store2, api2) {
     }
     deleteBtn.hidden = !note;
     if (note?.updatedAt) {
-      metaLine.hidden = false;
-      metaLine.textContent = `Updated ${knowledgeDate(note.updatedAt)}`;
+      metaLine2.hidden = false;
+      metaLine2.textContent = `Updated ${knowledgeDate(note.updatedAt)}`;
       if (note.fields["externalContext"] === "true") {
-        metaLine.textContent += " \xB7 saved with external content in context \u2014 saving clears this";
+        metaLine2.textContent += " \xB7 saved with external content in context \u2014 saving clears this";
       }
     } else {
-      metaLine.hidden = true;
-      metaLine.textContent = "";
+      metaLine2.hidden = true;
+      metaLine2.textContent = "";
     }
   }
   function renderList() {
@@ -103310,8 +103624,8 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
     plusIcon("ui-icon ui-icon-sm"),
     "Attach"
   );
-  const statusLabel3 = el("label", { class: "memories-label" }, "Status");
-  const metaLine = el("div", { class: "memories-meta" });
+  const statusLabel4 = el("label", { class: "memories-label" }, "Status");
+  const metaLine2 = el("div", { class: "memories-meta" });
   const errorLine = el("div", { class: "memories-error", hidden: true });
   const fitResult = el("div", { class: "roadmap-fit-result", hidden: true });
   const reviewResult = el("div", { class: "roadmap-review-result", hidden: true });
@@ -103404,9 +103718,9 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
     attachFileInput,
     el("label", { class: "memories-label" }, "Category"),
     categorySelect,
-    statusLabel3,
+    statusLabel4,
     statusSelect,
-    metaLine,
+    metaLine2,
     errorLine,
     fitResult,
     reviewResult,
@@ -103705,7 +104019,7 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
       }
     }
     renderAttachments();
-    statusLabel3.hidden = !item;
+    statusLabel4.hidden = !item;
     statusSelect.hidden = !item;
     startBtn.hidden = !item;
     reopenBtn.hidden = !item || !getThreadById(store2, itemThreadId(item));
@@ -103765,15 +104079,15 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
       reviewResultBody.hidden = true;
     }
     if (item?.updatedAt) {
-      metaLine.hidden = false;
+      metaLine2.hidden = false;
       const updatedTime = new Date(item.updatedAt).toLocaleTimeString([], {
         hour: "2-digit",
         minute: "2-digit"
       });
-      metaLine.textContent = `Updated ${knowledgeDate(item.updatedAt)} at ${updatedTime}`;
+      metaLine2.textContent = `Updated ${knowledgeDate(item.updatedAt)} at ${updatedTime}`;
     } else {
-      metaLine.hidden = true;
-      metaLine.textContent = "";
+      metaLine2.hidden = true;
+      metaLine2.textContent = "";
     }
   }
   function matchesSearch(item) {
@@ -104599,7 +104913,7 @@ Notes: ${notes}` : prompt;
     reviewMarkResolvedBtn.disabled = false;
     reviewArchiveResolvedBtn.disabled = false;
   }
-  async function startReview() {
+  async function startReview2() {
     cancelResolutionCheckUi();
     const runToken = ++reviewRunToken;
     reviewing = true;
@@ -104672,7 +104986,7 @@ Notes: ${notes}` : prompt;
     renderEditor();
   }
   importBtn.addEventListener("click", startImport);
-  reviewBtn.addEventListener("click", () => void startReview());
+  reviewBtn.addEventListener("click", () => void startReview2());
   reviewBackBtn.addEventListener("click", () => {
     returnToReview();
   });
@@ -123232,7 +123546,6 @@ function mountApprovalDialog(api2, store2, options = {}) {
   let coalesceScheduled = false;
   let cancelCoalesce = null;
   let cancelSettle = null;
-  let readComparisonModels = null;
   let detailsExpanded = false;
   function closeDialog() {
     dialog2.close();
@@ -123252,16 +123565,11 @@ function mountApprovalDialog(api2, store2, options = {}) {
     const waiting = queue.map((req) => req.threadId).filter((id) => !!id && (hidden || id !== activeThreadId));
     setAttentionThreads(store2, "approval", waiting);
   }
-  function requiresSoloPrompt(req) {
-    return req.type === "model-compare";
-  }
   function drainShowableIntoBatch() {
     let moved = 0;
     for (let i = 0; i < queue.length; ) {
       const req = queue[i];
       if (req && isShowable(req)) {
-        const first = batch[0];
-        if (first && (requiresSoloPrompt(first) || requiresSoloPrompt(req))) break;
         queue.splice(i, 1);
         batch.push(req);
         moved++;
@@ -123301,10 +123609,8 @@ function mountApprovalDialog(api2, store2, options = {}) {
     return toggle;
   }
   function renderBatch() {
-    readComparisonModels = null;
     const count = batch.length;
     const collapseDetails = soloRequest()?.collapseDetails === true;
-    const singleModelCompare = count === 1 && batch[0]?.type === "model-compare" && batch[0].comparisonModels !== void 0;
     const uniqueTitles = new Set(batch.map((req) => req.title));
     const sharedTitle = uniqueTitles.size === 1 ? batch[0]?.title ?? "" : null;
     const showRowTitles = count > 1 && sharedTitle === null;
@@ -123346,19 +123652,13 @@ function mountApprovalDialog(api2, store2, options = {}) {
           const rowChildren = [];
           if (showRowTitles)
             rowChildren.push(el("div", { class: "approval-item-title" }, req.title));
-          if (singleModelCompare && req.comparisonModels && req === batch[0]) {
-            const pickers = createComparisonModelPickers(api2, req.comparisonModels, req.body);
-            readComparisonModels = pickers.read;
-            rowChildren.push(pickers.root);
-          } else {
-            if (req.bodyAdvice) {
-              rowChildren.push(adviceElement(req.bodyAdvice));
-            }
-            if (collapseDetails) rowChildren.push(detailsToggle());
-            rowChildren.push(requestBody(req));
-            if (req.bodyFooter) {
-              rowChildren.push(el("div", { class: "approval-footer" }, req.bodyFooter));
-            }
+          if (req.bodyAdvice) {
+            rowChildren.push(adviceElement(req.bodyAdvice));
+          }
+          if (collapseDetails) rowChildren.push(detailsToggle());
+          rowChildren.push(requestBody(req));
+          if (req.bodyFooter) {
+            rowChildren.push(el("div", { class: "approval-footer" }, req.bodyFooter));
           }
           return el("div", { class: "approval-item" }, ...rowChildren);
         })
@@ -123451,7 +123751,6 @@ function mountApprovalDialog(api2, store2, options = {}) {
     if (batch.length === 0) {
       closeDialog();
       active2 = false;
-      readComparisonModels = null;
       clearSettle();
       return;
     }
@@ -123476,7 +123775,6 @@ function mountApprovalDialog(api2, store2, options = {}) {
       if (batch.length === 0) {
         closeDialog();
         active2 = false;
-        readComparisonModels = null;
         clearSettle();
         show2();
       } else {
@@ -123489,22 +123787,14 @@ function mountApprovalDialog(api2, store2, options = {}) {
   function resolve(approved, remember) {
     if (!active2 || batch.length === 0) return;
     const answered = batch;
-    const comparisonModels = approved && readComparisonModels ? readComparisonModels() : void 0;
     const grantScope = approved && !turnTreeLeaseLabel.hidden && turnTreeLeaseInput.checked ? "turn-tree" : "once";
     closeDialog();
     batch = [];
     active2 = false;
-    readComparisonModels = null;
     turnTreeLeaseInput.checked = false;
     clearSettle();
     for (const req of answered) {
-      void api2.approval.respond(
-        req.id,
-        approved,
-        remember,
-        req.type === "model-compare" ? comparisonModels : void 0,
-        grantScope
-      );
+      void api2.approval.respond(req.id, approved, remember, grantScope);
     }
     show2();
   }
@@ -123522,7 +123812,6 @@ function mountApprovalDialog(api2, store2, options = {}) {
       collapseDetails,
       approveOnceLabel,
       showWhileSettingsOpen,
-      comparisonModels,
       allowTurnTreeLease,
       turnTreeLeaseLabel: turnTreeLeaseLabel2,
       turnTreeLeaseDefault,
@@ -123546,14 +123835,12 @@ function mountApprovalDialog(api2, store2, options = {}) {
         turnTreeLeaseDefault,
         turnTreeLeaseSubject
       };
-      if (comparisonModels) pending.comparisonModels = comparisonModels;
       queue.push(pending);
       if (active2 && isSettingsDialogOpen() && pending.showWhileSettingsOpen) {
         queue.unshift(...batch);
         batch = [];
         closeDialog();
         active2 = false;
-        readComparisonModels = null;
         clearSettle();
         show2();
       } else if (active2) appendToOpen();
@@ -123596,7 +123883,6 @@ var init_approval_dialog = __esm({
     init_helpers();
     init_settings_dialog();
     init_attention();
-    init_approval_comparison_pickers();
     init_actions();
     APPROVAL_COALESCE_MS = 120;
     APPROVAL_SETTLE_MS = 500;
@@ -123990,10 +124276,10 @@ function openFileSearchDialog() {
   openImpl?.();
 }
 function closeFileSearchDialog() {
-  if (dialogEl5?.open) dialogEl5.close();
+  if (dialogEl4?.open) dialogEl4.close();
 }
 function isFileSearchDialogOpen() {
-  return !!dialogEl5?.open;
+  return !!dialogEl4?.open;
 }
 function mountFileSearchDialog(store2, api2) {
   const dialog2 = document.createElement("dialog");
@@ -124013,7 +124299,7 @@ function mountFileSearchDialog(store2, api2) {
   const shell3 = el("div", { class: "file-search-shell" }, input2, list, empty);
   dialog2.append(shell3);
   document.body.append(dialog2);
-  dialogEl5 = dialog2;
+  dialogEl4 = dialog2;
   let results = [];
   let selectedIdx = 0;
   let roadmapItems = [];
@@ -124163,7 +124449,7 @@ function mountFileSearchDialog(store2, api2) {
     void runQuery("");
   };
 }
-var ROADMAP_RESULT_LIMIT, ROADMAP_ICON_PATHS, dialogEl5, openImpl;
+var ROADMAP_RESULT_LIMIT, ROADMAP_ICON_PATHS, dialogEl4, openImpl;
 var init_file_search_dialog = __esm({
   "src/renderer/views/file-search-dialog.ts"() {
     init_helpers();
@@ -124174,7 +124460,7 @@ var init_file_search_dialog = __esm({
     init_roadmap_plans_plugin();
     ROADMAP_RESULT_LIMIT = 8;
     ROADMAP_ICON_PATHS = ["M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4Z", "M8 2v16", "M16 6v16"];
-    dialogEl5 = null;
+    dialogEl4 = null;
     openImpl = null;
   }
 });
@@ -124197,14 +124483,14 @@ function keyLabel(token, isMac2) {
   }
 }
 function openKeyboardShortcutsDialog() {
-  if (!dialogEl6 || dialogEl6.open) return;
-  dialogEl6.showModal();
+  if (!dialogEl5 || dialogEl5.open) return;
+  dialogEl5.showModal();
 }
 function closeKeyboardShortcutsDialog() {
-  if (dialogEl6?.open) dialogEl6.close();
+  if (dialogEl5?.open) dialogEl5.close();
 }
 function isKeyboardShortcutsDialogOpen() {
-  return !!dialogEl6?.open;
+  return !!dialogEl5?.open;
 }
 function mountKeyboardShortcutsDialog() {
   const dialog2 = document.createElement("dialog");
@@ -124240,12 +124526,12 @@ function mountKeyboardShortcutsDialog() {
   clear(dialog2);
   dialog2.append(shell3);
   document.body.append(dialog2);
-  dialogEl6 = dialog2;
+  dialogEl5 = dialog2;
   dialog2.addEventListener("mousedown", (e2) => {
     if (e2.target === dialog2) closeKeyboardShortcutsDialog();
   });
 }
-var SECTIONS, dialogEl6;
+var SECTIONS, dialogEl5;
 var init_keyboard_shortcuts_dialog = __esm({
   "src/renderer/views/keyboard-shortcuts-dialog.ts"() {
     init_helpers();
@@ -124287,7 +124573,7 @@ var init_keyboard_shortcuts_dialog = __esm({
         ]
       }
     ];
-    dialogEl6 = null;
+    dialogEl5 = null;
   }
 });
 
@@ -124551,10 +124837,10 @@ function openCommandPalette() {
   openImpl3?.();
 }
 function closeCommandPalette() {
-  if (dialogEl7?.open) dialogEl7.close();
+  if (dialogEl6?.open) dialogEl6.close();
 }
 function isCommandPaletteOpen() {
-  return !!dialogEl7?.open;
+  return !!dialogEl6?.open;
 }
 function mountCommandPalette(store2, api2) {
   const dialog2 = document.createElement("dialog");
@@ -124574,7 +124860,7 @@ function mountCommandPalette(store2, api2) {
   const shell3 = el("div", { class: "command-palette-shell" }, input2, list, empty);
   dialog2.append(shell3);
   document.body.append(dialog2);
-  dialogEl7 = dialog2;
+  dialogEl6 = dialog2;
   let entries2 = [];
   let selectedIdx = 0;
   let threadHits = [];
@@ -124786,7 +125072,7 @@ function mountCommandPalette(store2, api2) {
     void loadThreads2();
   };
 }
-var PANEL_ITEMS, THREAD_LIMIT, PROJECT_LIMIT, dialogEl7, openImpl3;
+var PANEL_ITEMS, THREAD_LIMIT, PROJECT_LIMIT, dialogEl6, openImpl3;
 var init_command_palette = __esm({
   "src/renderer/views/command-palette.ts"() {
     init_helpers();
@@ -124809,7 +125095,7 @@ var init_command_palette = __esm({
     ];
     THREAD_LIMIT = 25;
     PROJECT_LIMIT = 25;
-    dialogEl7 = null;
+    dialogEl6 = null;
     openImpl3 = null;
   }
 });
@@ -125478,10 +125764,10 @@ function startAgentController(store2, api2) {
         if (chunk.status === "running") emitActivity(threadId, "Reviewing changes\u2026");
         break;
       }
-      case "model_comparison": {
-        setThreadComparison(store2, threadId, chunk.comparison);
-        if (chunk.comparison.status === "running") {
-          emitActivity(threadId, "Comparing models\u2026");
+      case "review_report": {
+        setThreadReviewReport(store2, threadId, chunk.report);
+        if (chunk.report.status === "running") {
+          emitActivity(threadId, "Reviewing changes\u2026");
         }
         break;
       }
