@@ -121,6 +121,64 @@ describe('runAgentLoop', () => {
     assert.ok(chunks.some((c) => c.type === 'tool_result'))
   })
 
+  it('streams explicit visual evidence before settling its tool call', async () => {
+    const chunks: AgentStreamChunk[] = []
+    await runAgentLoop({
+      provider: mockProvider([
+        [
+          {
+            type: 'tool_call',
+            toolCall: { id: 'present-1', name: 'present_visual_evidence', args: {} },
+          },
+          { type: 'done' },
+        ],
+        [{ type: 'text', text: 'The fix is shown above.' }, { type: 'done' }],
+      ]),
+      messages: [{ role: 'user', content: 'show me' }],
+      tools: [],
+      onChunk: (chunk) => chunks.push(chunk),
+      executeTool: async () => ({
+        result: 'Published visual evidence.',
+        visualEvidence: [
+          {
+            id: 'evidence-1',
+            kind: 'screenshot',
+            caption: 'The fixed state.',
+            createdAt: 2,
+            assets: [
+              {
+                id: 'asset-1',
+                label: 'Screenshot',
+                mimeType: 'image/png',
+                width: 1280,
+                height: 800,
+                capturedAt: 1,
+                source: {
+                  kind: 'browser',
+                  viewId: 'tab-1',
+                  title: 'Preview',
+                  url: 'http://localhost:3000/',
+                },
+                dataUrl: 'data:image/png;base64,cGl4ZWxz',
+              },
+            ],
+          },
+        ],
+      }),
+    })
+
+    const evidenceIndex = chunks.findIndex((chunk) => chunk.type === 'visual_evidence')
+    const resultIndex = chunks.findIndex(
+      (chunk) => chunk.type === 'tool_result' && chunk.toolCallId === 'present-1',
+    )
+    assert.ok(evidenceIndex >= 0)
+    assert.ok(resultIndex > evidenceIndex)
+    const evidence = chunks[evidenceIndex]
+    assert.ok(evidence?.type === 'visual_evidence')
+    assert.equal(evidence.toolCallId, 'present-1')
+    assert.equal(evidence.evidence[0]?.id, 'evidence-1')
+  })
+
   it('does not execute tools with unparseable args; returns an error result (#114)', async () => {
     let executed = false
     const chunks: AgentStreamChunk[] = []

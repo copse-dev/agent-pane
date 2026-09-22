@@ -3,8 +3,10 @@
 **Status: Active.** Tracked by
 [#2694](https://github.com/copse-dev/agent-pane/issues/2694). U1, the bounded
 SSH binary-media foundation, is implemented. The browser portion of U5 now
-returns model-visible pixels plus a short-lived capture handle; other sources
-and U2–U4/U6–U12 remain proposed.
+returns model-visible pixels plus a short-lived capture handle. The first U6
+slice publishes those handles as durable screenshot or before/after evidence
+for the built-in agent; other sources, ACP publication, frame sequences, clips,
+and U2–U4/U7–U12 remain proposed.
 
 This is the umbrella plan for making visual debugging a complete loop:
 
@@ -44,15 +46,15 @@ transcripts, or evidence that the user or an authorised tool explicitly chose.
 The current product has useful pieces, but the end-to-end contract differs by
 source and agent route:
 
-| Input or output                       | Human in the app                                                 | Built-in agent                                                    | ACP agent                                                         | Managed/cloud agent                                      | Durable user-visible evidence                         |
-| ------------------------------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------- | ----------------------------------------------------------------- | -------------------------------------------------------- | ----------------------------------------------------- |
-| Pasted or dropped image               | Attachment is visible                                            | Provider image block                                              | Depends on the ACP/client route                                   | Supported where the adapter accepts image input          | User attachment persists                              |
-| Local video attachment                | Film chip and up-to-50 MiB preview                               | `video_frames` returns selected stills                            | Native-tool bridge returns MCP image content                      | No callable local `video_frames`; a path is not portable | Video persists; inspected frames do not               |
-| SSH-workspace video                   | U1 adds metadata and preview through the active workspace FS     | U1 adds bounded materialisation for `video_frames`                | Local bridge can reuse the native tool; remote ACP is still gated | No media broker or portable derived survey               | Same limitation as local video                        |
-| Browser screenshot tool               | Tool activity names the capture handle                           | PNG pixels plus a short-lived, thread-scoped handle               | Native-tool bridge returns the same PNG                           | Not available                                            | No durable evidence object                            |
-| VNC / Simulator / Android desktop     | Live human panes; a human can manually attach a current capture  | No desktop enumeration or screenshot tool                         | No desktop inspection route                                       | No desktop inspection route                              | No capture provenance                                 |
-| Agent-inspected `video_frames` output | Not rendered as part of the assistant answer                     | Images are available to the model for that call                   | Images are returned as MCP image content                          | Not available                                            | Images are omitted from persisted/streamed transcript |
-| Automated bug/fix demonstration       | Focused e2e screenshots and browser traces exist as test outputs | No tool for publishing a selected screenshot, clip, or comparison | No shared evidence contract                                       | No shared evidence contract                              | No assistant-owned evidence card                      |
+| Input or output                       | Human in the app                                                 | Built-in agent                                                                                            | ACP agent                                                           | Managed/cloud agent                                      | Durable user-visible evidence                                      |
+| ------------------------------------- | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------ |
+| Pasted or dropped image               | Attachment is visible                                            | Provider image block                                                                                      | Depends on the ACP/client route                                     | Supported where the adapter accepts image input          | User attachment persists                                           |
+| Local video attachment                | Film chip and up-to-50 MiB preview                               | `video_frames` returns selected stills                                                                    | Native-tool bridge returns MCP image content                        | No callable local `video_frames`; a path is not portable | Video persists; inspected frames do not                            |
+| SSH-workspace video                   | U1 adds metadata and preview through the active workspace FS     | U1 adds bounded materialisation for `video_frames`                                                        | Local bridge can reuse the native tool; remote ACP is still gated   | No media broker or portable derived survey               | Same limitation as local video                                     |
+| Browser screenshot tool               | Tool activity names the capture handle                           | PNG pixels plus a short-lived, thread-scoped handle; the agent can explicitly publish one or two captures | Native-tool bridge returns the PNG, but cannot yet publish evidence | Not available                                            | Published screenshots/comparisons persist on the assistant message |
+| VNC / Simulator / Android desktop     | Live human panes; a human can manually attach a current capture  | No desktop enumeration or screenshot tool                                                                 | No desktop inspection route                                         | No desktop inspection route                              | No capture provenance                                              |
+| Agent-inspected `video_frames` output | Not rendered as part of the assistant answer                     | Images are available to the model for that call                                                           | Images are returned as MCP image content                            | Not available                                            | Images are omitted from persisted/streamed transcript              |
+| Automated bug/fix demonstration       | Focused e2e screenshots and browser traces exist as test outputs | `present_visual_evidence` publishes one screenshot or a before/after comparison                           | No shared evidence publication contract yet                         | No shared evidence contract                              | Compact evidence card survives reload, fork, and export            |
 
 U1 also closes a concrete defect behind the SSH-video row: binary reads used to
 base64-encode the file through the generic 100 KiB SSH command-output channel,
@@ -95,7 +97,7 @@ metadata, not one unbounded file. The detailed schema and capture adapters are
 defined in [`screen-capture-and-remote-video.md`](screen-capture-and-remote-video.md).
 The manifest is itself a `MediaAsset` locator.
 
-## Implemented browser screenshot flow
+## Implemented browser screenshot and publication flow
 
 The first U5 slice removes the browser screenshot's raw-path handoff. One
 capture now fans out into model input for the current turn and a scoped,
@@ -109,14 +111,20 @@ flowchart LR
   tool -->|Copy pixels| registry[Bounded in-memory capture registry]
   registry -->|Opaque ID, owner check, 30-minute TTL| handle[Thread-scoped capture handle]
   handle -->|Text only| event[Persisted tool event]
-  registry -.->|Never writes automatically| noDisk[No screenshot file or evidence asset]
+  handle -->|Explicit present_visual_evidence call| publish[Evidence publisher]
+  publish -->|Copy PNG plus safe provenance| blob[Thread-owned content-addressed blob]
+  blob --> ref[VisualEvidenceRef on assistant message]
+  ref --> card[Compact expandable evidence card]
+  registry -.->|Never writes without publication| noDisk[No automatic screenshot persistence]
 ```
 
-The image bytes are available to the model only in the live tool-result turn.
-The persisted event keeps the handle and source description, not base64 pixels.
-The registry is capped at 12 MiB per capture, 64 MiB and 64 entries overall;
-expiry, eviction, or process exit removes its authority. U6 will be the explicit
-operation that resolves a live handle and publishes a durable evidence object.
+The image bytes are available to the model in the live tool-result turn. The
+ordinary screenshot event keeps the handle and source description, not base64
+pixels. The registry is capped at 12 MiB per capture, 64 MiB and 64 entries
+overall; expiry, eviction, or process exit removes its authority. Only the
+explicit U6 publication tool resolves a live owner-scoped handle and copies its
+pixels into the thread. URL credentials, query, and fragment are removed from
+durable provenance.
 
 ## Dependency map
 
@@ -141,10 +149,12 @@ flowchart LR
 ```
 
 U0 is an ongoing truth requirement rather than a reason to serialize all work.
-U2 is the important architectural gate: capture and evidence should not invent
-another generation of durable raw-path fields. The browser-only part of U5 can
-land before U2 because its backing pixels are transient process memory; U2 still
-gates durable evidence and handles backed by VNC, device, or recording assets.
+U2 is the important architectural gate for path-backed and time-based media:
+capture and evidence should not invent another generation of durable raw-path
+fields. U5 and the screenshot-only U6 slice can land before U2 because the
+publication boundary copies bytes from an owner-scoped in-memory handle into a
+thread blob. U2 still gates durable frame sequences, clips, and handles backed
+by VNC, device, workspace, or recording assets.
 
 ## Work units
 
@@ -281,17 +291,21 @@ and device sources remain proposed.
 
 ### U6 — Assistant visual evidence
 
-**Status:** Proposed.
+**Status:** Screenshot/comparison slice implemented here; frame sequences,
+clips, `MediaAsset` selections, and ACP publication remain proposed.
 
 **Deliverables**
 
 - Add `VisualEvidenceRef` to persisted assistant messages.
-- Add a `present_visual_evidence` tool accepting valid capture handles or
-  `MediaAsset` selections for screenshots, frame sequences, bounded clips, and
-  before/after comparisons.
+- Add a `present_visual_evidence` tool accepting valid capture handles for one
+  screenshot or a two-capture before/after comparison. Extend it to
+  `MediaAsset` selections, frame sequences, and bounded clips after U2.
 - Render compact, expandable evidence cards with caption, source, timestamp,
   before/after labels, and unavailable-state copy.
 - Copy published evidence immutably into the owning thread.
+- Strip credentials, query, and fragment from a browser URL before it becomes
+  durable provenance. Do not expose this first slice through ACP until the ACP
+  stream can carry the same evidence ownership event.
 
 **Acceptance**
 

@@ -4991,6 +4991,106 @@ export function seedThreadProposalFixture(workspaceRoot: string): {
   return { projectId, threadId }
 }
 
+/**
+ * Assistant turn with an explicitly published before/after capture. The image
+ * bytes travel through the real thread explode path so the spec exercises the
+ * same content-addressed evidence blobs as a live `present_visual_evidence`
+ * call, rather than a renderer-only test flag.
+ */
+export function seedVisualEvidenceFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-visual-evidence-project'
+  const threadId = 'e2e-visual-evidence-thread'
+  const createdAt = Date.UTC(2026, 8, 22, 11, 30)
+  const screenshotDataUrl = (name: string): string =>
+    `data:image/png;base64,${readFileSync(join(workspaceRoot, 'tests/e2e/screenshots', name)).toString('base64')}`
+  const source = {
+    kind: 'browser' as const,
+    viewId: 'projects-ordering-demo',
+    title: 'Project ordering regression',
+    url: 'https://copse.local/projects',
+  }
+
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Project reorder visual proof',
+        status: 'idle',
+        messages: [
+          {
+            id: 'visual-evidence-user',
+            role: 'user',
+            content: 'Dragging a project leaves it in the old position. Can you fix and verify it?',
+            toolCalls: [],
+            createdAt,
+          },
+          {
+            id: 'visual-evidence-assistant',
+            role: 'assistant',
+            content:
+              'Fixed the reorder path. The capture below shows Gamma moving above Alpha while the active thread remains selected.',
+            toolCalls: [
+              {
+                id: 'visual-evidence-tool-call',
+                name: 'present_visual_evidence',
+                args: {
+                  caption: 'Project order updates immediately after the drag',
+                  captures: [
+                    { handle: 'expired-before', label: 'Before' },
+                    { handle: 'expired-after', label: 'After' },
+                  ],
+                },
+                status: 'done',
+                result: 'Published a before/after visual evidence card.',
+              },
+            ],
+            visualEvidence: [
+              {
+                id: 'visual-evidence-comparison',
+                toolCallId: 'visual-evidence-tool-call',
+                kind: 'comparison',
+                caption: 'Project order updates immediately after the drag',
+                createdAt: createdAt + 4_000,
+                assets: [
+                  {
+                    id: 'visual-evidence-before',
+                    label: 'Before',
+                    mimeType: 'image/png',
+                    width: 480,
+                    height: 1520,
+                    capturedAt: createdAt + 1_000,
+                    dataUrl: screenshotDataUrl('projects-drag-before.png'),
+                    source,
+                  },
+                  {
+                    id: 'visual-evidence-after',
+                    label: 'After',
+                    mimeType: 'image/png',
+                    width: 480,
+                    height: 1520,
+                    capturedAt: createdAt + 3_000,
+                    dataUrl: screenshotDataUrl('projects-drag-after.png'),
+                    source,
+                  },
+                ],
+              },
+            ],
+            createdAt: createdAt + 5_000,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt,
+        updatedAt: createdAt + 5_000,
+      },
+    ],
+  })
+  seedE2eViewport({ width: 1280, height: 800 }, { theme: 'dark' })
+}
+
 /** Isolated Apple Development profile with retained operation history for visual evaluation. */
 export function seedAppleDevelopmentFixture(workspaceRoot: string): void {
   const projectId = 'e2e-apple-development-project'

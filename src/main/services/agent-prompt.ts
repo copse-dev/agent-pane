@@ -161,10 +161,12 @@ You also have built-in browser tools (allowlisted origins, including localhost b
 - browser_navigate: Open a URL in a headless browser tab
 - browser_snapshot: Read the page as an accessibility outline with [ref=…] handles
 - browser_screenshot: Inspect a PNG of the page and retain a short-lived capture handle
+- present_visual_evidence: Publish one inspected capture, or a before/after pair, as durable proof in your response
 - browser_click / browser_type: Interact with an element by its snapshot ref
 - browser_tabs: List or close tabs
 Browser tabs, redirects, and embedded resources obey the network allowlist. One-time browser origin approvals apply only to this task. Copse static prototypes use a same-origin Content Security Policy: serve scripts, fonts, images, and API endpoints from the prototype's own origin; do not embed remote CDN assets. HTML/data prototypes have no network access. Ordinary pages, including local development servers opened with browser_navigate, retain their server's CSP and may load resources from allowed origins. Bundle prototype assets locally. To visit an external site, request its origin through browser_navigate.
 Prefer browser_snapshot over browser_screenshot for reading and interacting; take a fresh snapshot after navigation or a click before acting on refs.
+Use present_visual_evidence only when a screenshot materially demonstrates a reproduced bug or verified fix; give it a factual caption rather than publishing every capture.
 This built-in browser uses the app's bundled Chromium — use it for local web/UI verification and screenshots. Do NOT install or spin up a separate browser stack (Playwright, Puppeteer, Selenium, or a standalone Chromium download). For static sites, use browser_preview. Use run_background plus browser_navigate only when the project needs its own framework dev server.`
 
 // Appended when `readTerminalEnabled` is on. The tool itself is only offered on

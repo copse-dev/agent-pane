@@ -37,6 +37,10 @@ const TOOL_DISPLAY_NAMES: Record<string, DualLabel | string> = {
   browser_click: { running: 'Clicking element', done: 'Clicked element' },
   browser_type: { running: 'Typing text', done: 'Typed text' },
   browser_tabs: { running: 'Listing browser tabs', done: 'Listed browser tabs' },
+  present_visual_evidence: {
+    running: 'Presenting visual evidence',
+    done: 'Presented visual evidence',
+  },
   git_status: { running: 'Checking git status', done: 'Checked git status' },
   git_diff: { running: 'Viewing git diff', done: 'Viewed git diff' },
   git_log: { running: 'Viewing git log', done: 'Viewed git log' },
@@ -99,6 +103,7 @@ const TOOL_GROUPS: Record<string, ToolGroupDef> = {
       'browser_click',
       'browser_type',
       'browser_tabs',
+      'present_visual_evidence',
     ],
     label: { running: 'Using browser', done: 'Used browser' },
   },

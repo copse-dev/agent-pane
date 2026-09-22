@@ -13,6 +13,8 @@ import type {
   ThreadReview,
   ToolCall,
   TranscriptAttachment,
+  VisualEvidenceAsset,
+  VisualEvidenceRef,
 } from './thread-types.ts'
 import type { TurnOutcome } from './turn-outcome.ts'
 import { hookCardFromSpineLine } from './hook-card.ts'
@@ -25,6 +27,8 @@ import {
   type SpineSubagentRef,
   type SpineToolCall,
   type SpineToolResultImage,
+  type SpineVisualEvidenceAsset,
+  type SpineVisualEvidenceRef,
   type ThreadMeta,
   SPINE_SCHEMA_VERSION,
   isContentRef,
@@ -58,6 +62,7 @@ interface MessageLike {
   reasoningBlocks?: AcpContentBlock[]
   images?: string[]
   canvasArtefacts?: CanvasArtefactReference[]
+  visualEvidence?: VisualEvidenceRef[]
   commandSummary?: string
   toolSummary?: string
   runSummary?: string
@@ -80,9 +85,54 @@ export interface ExplodedMessage {
 }
 
 const EVENTS_FILE = 'events.jsonl'
+const EVIDENCE_UNAVAILABLE_REASON = 'Evidence image is unavailable.'
 
 function contentRef(ref: string, content: string, hash: HashFn): ContentRef {
   return { ref, sha256: hash(content) }
+}
+
+function explodeVisualEvidenceAsset(
+  asset: VisualEvidenceAsset,
+  hash: HashFn,
+): { spine: SpineVisualEvidenceAsset; file?: FileToWrite } {
+  const { dataUrl, unavailableReason, ...metadata } = asset
+  if (dataUrl === undefined) {
+    return {
+      spine: {
+        ...metadata,
+        unavailableReason,
+      },
+    }
+  }
+  const sha256 = hash(dataUrl)
+  const ref = `blobs/evidence/${sha256}.dataurl`
+  return {
+    spine: { ...metadata, dataUrl: { ref, sha256 } },
+    file: { ref, contents: dataUrl },
+  }
+}
+
+function explodeVisualEvidence(
+  evidence: VisualEvidenceRef,
+  hash: HashFn,
+): { spine: SpineVisualEvidenceRef; files: FileToWrite[] } {
+  const files: FileToWrite[] = []
+  const assets = evidence.assets.map((asset) => {
+    const exploded = explodeVisualEvidenceAsset(asset, hash)
+    if (exploded.file) files.push(exploded.file)
+    return exploded.spine
+  })
+  return {
+    spine: {
+      id: evidence.id,
+      kind: evidence.kind,
+      caption: evidence.caption,
+      createdAt: evidence.createdAt,
+      toolCallId: evidence.toolCallId,
+      assets,
+    },
+    files,
+  }
 }
 
 /** Inline tool args below this UTF-8 size; larger args spill to `blobs/<id>.args.json`. */
@@ -313,6 +363,13 @@ function explodeOne(msg: MessageLike, hash: HashFn): ExplodedMessage {
   }
 
   if (msg.canvasArtefacts !== undefined) line.canvasArtefacts = msg.canvasArtefacts
+  if (msg.visualEvidence !== undefined && msg.visualEvidence.length > 0) {
+    line.visualEvidence = msg.visualEvidence.map((evidence) => {
+      const exploded = explodeVisualEvidence(evidence, hash)
+      files.push(...exploded.files)
+      return exploded.spine
+    })
+  }
   if (msg.commandSummary !== undefined) line.commandSummary = msg.commandSummary
   if (msg.toolSummary !== undefined) line.toolSummary = msg.toolSummary
   if (msg.runSummary !== undefined) line.runSummary = msg.runSummary
@@ -391,6 +448,13 @@ export function refsOfLine(line: SpineMessageLine): {
   if (line.contentBlocks) files.push(line.contentBlocks.ref)
   if (line.reasoningBlocks) files.push(line.reasoningBlocks.ref)
   if (line.images) for (const img of line.images) files.push(img.ref)
+  if (line.visualEvidence) {
+    for (const evidence of line.visualEvidence) {
+      for (const asset of evidence.assets) {
+        if (asset.dataUrl) files.push(asset.dataUrl.ref)
+      }
+    }
+  }
   if (line.attachments) {
     for (const attachment of line.attachments) {
       if (attachment.content) files.push(attachment.content.ref)
@@ -409,6 +473,43 @@ export function refsOfLine(line: SpineMessageLine): {
 function verify(ref: ContentRef, body: string, hash: HashFn | undefined): void {
   if (hash && hash(body) !== ref.sha256) {
     throw new Error(`Thread content hash mismatch for ${ref.ref}`)
+  }
+}
+
+function foldVisualEvidenceAsset(
+  spine: SpineVisualEvidenceAsset,
+  resolve: RefResolver,
+  hash: HashFn | undefined,
+): VisualEvidenceAsset {
+  const { dataUrl, unavailableReason, ...metadata } = spine
+  if (!dataUrl) {
+    return {
+      ...metadata,
+      unavailableReason,
+    }
+  }
+  try {
+    const resolved = resolve(dataUrl.ref)
+    verify(dataUrl, resolved, hash)
+    if (!resolved.startsWith('data:image/png;base64,')) throw new Error('Invalid evidence image')
+    return { ...metadata, dataUrl: resolved }
+  } catch {
+    return { ...metadata, unavailableReason: EVIDENCE_UNAVAILABLE_REASON }
+  }
+}
+
+function foldVisualEvidence(
+  spine: SpineVisualEvidenceRef,
+  resolve: RefResolver,
+  hash: HashFn | undefined,
+): VisualEvidenceRef {
+  return {
+    id: spine.id,
+    kind: spine.kind,
+    caption: spine.caption,
+    createdAt: spine.createdAt,
+    toolCallId: spine.toolCallId,
+    assets: spine.assets.map((asset) => foldVisualEvidenceAsset(asset, resolve, hash)),
   }
 }
 
@@ -556,6 +657,11 @@ function foldOne(
   }
 
   if (line.canvasArtefacts !== undefined) msg.canvasArtefacts = line.canvasArtefacts
+  if (line.visualEvidence !== undefined) {
+    msg.visualEvidence = line.visualEvidence.map((evidence) =>
+      foldVisualEvidence(evidence, resolve, hash),
+    )
+  }
   if (line.commandSummary !== undefined) msg.commandSummary = line.commandSummary
   if (line.toolSummary !== undefined) msg.toolSummary = line.toolSummary
   if (line.runSummary !== undefined) msg.runSummary = line.runSummary
@@ -598,6 +704,7 @@ export function foldMessage(
     ...(m.reasoningBlocks !== undefined ? { reasoningBlocks: m.reasoningBlocks } : {}),
     ...(m.images !== undefined ? { images: m.images } : {}),
     ...(m.canvasArtefacts !== undefined ? { canvasArtefacts: m.canvasArtefacts } : {}),
+    ...(m.visualEvidence !== undefined ? { visualEvidence: m.visualEvidence } : {}),
     ...(m.commandSummary !== undefined ? { commandSummary: m.commandSummary } : {}),
     ...(m.toolSummary !== undefined ? { toolSummary: m.toolSummary } : {}),
     ...(m.runSummary !== undefined ? { runSummary: m.runSummary } : {}),

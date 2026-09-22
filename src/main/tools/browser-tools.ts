@@ -10,6 +10,7 @@ import {
 } from '../services/browser/static-preview-server.ts'
 import { getAgentExecutionRoot } from '../services/execution-root.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
+import { presentVisualEvidenceTool } from './visual-evidence-tools.ts'
 
 export const browserNavigateTool = defineTool({
   name: 'browser_navigate',
@@ -215,6 +216,7 @@ export const browserTools = [
   browserTypeTool,
   browserTabsTool,
   browserShowTool,
+  presentVisualEvidenceTool,
 ]
 
 export function registerBrowserTools(registry: ToolRegistry): void {
@@ -226,4 +228,5 @@ export function registerBrowserTools(registry: ToolRegistry): void {
   registry.register(browserTypeTool)
   registry.register(browserTabsTool)
   registry.register(browserShowTool)
+  registry.register(presentVisualEvidenceTool)
 }

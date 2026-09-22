@@ -93,6 +93,7 @@ import { TODOS_PLUGIN_ID, TODOS_PANEL_CONTRIBUTION_ID } from '@copse/agent/plugi
 import { createAppleDevelopmentPanel } from './apple-development-panel.ts'
 import { createReviewCardEl } from './review-panel.ts'
 import { createComparisonCardEl } from './comparison-panel.ts'
+import { createVisualEvidenceSection } from './visual-evidence-card.ts'
 import { createReviewFindingsCardEl } from './review-findings-card.ts'
 import {
   dismissComparison,
@@ -445,6 +446,15 @@ function syncMessageCanvasPreviews(
   if (cards.length > 0) {
     body.append(el('div', { class: 'message-canvas-previews' }, ...cards))
   }
+  syncToolRunMemberVisibility(msgEl)
+}
+
+function syncMessageVisualEvidence(msgEl: HTMLElement, msg: Message): void {
+  const body = msgEl.querySelector<HTMLElement>(':scope > .message-body')
+  if (!body) return
+  body.querySelector(':scope > .message-visual-evidence')?.remove()
+  const section = createVisualEvidenceSection(msg.visualEvidence ?? [])
+  if (section) body.append(section)
   syncToolRunMemberVisibility(msgEl)
 }
 
@@ -3157,6 +3167,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       ...(run ? { run, liveStepId: liveStepMessageId(thread) } : {}),
     })
     syncMessageCanvasPreviews(msgEl, msg, store.getState().activeProjectId, threadId, api)
+    syncMessageVisualEvidence(msgEl, msg)
     // A run's rollup lives on its anchor, so inserting one message changes what
     // a *different* message renders: a member joining gives the anchor a new
     // step, and an anchor arriving during the newest-first backfill takes back
@@ -3731,6 +3742,15 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       const msgEl = list.querySelector<HTMLElement>(`[data-message-id="${mid}"]`)
       if (thread && msg?.role === 'assistant' && msgEl) {
         syncMessageCanvasPreviews(msgEl, msg, store.getState().activeProjectId, thread.id, api)
+        scrollToBottom()
+      }
+    }),
+    store.on('message_visual_evidence_changed', (mid) => {
+      const thread = getActiveThread(store)
+      const msg = thread?.messages.find((message) => message.id === mid)
+      const msgEl = list.querySelector<HTMLElement>(`[data-message-id="${mid}"]`)
+      if (msg?.role === 'assistant' && msgEl) {
+        syncMessageVisualEvidence(msgEl, msg)
         scrollToBottom()
       }
     }),

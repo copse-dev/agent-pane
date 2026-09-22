@@ -126,6 +126,7 @@ function copyMessage(message: Message): Message {
     toolCalls,
     images,
     canvasArtefacts,
+    visualEvidence,
     attachments,
     ...rest
   } = message
@@ -137,6 +138,17 @@ function copyMessage(message: Message): Message {
     ...(images !== undefined ? { images: [...images] } : {}),
     ...(canvasArtefacts !== undefined
       ? { canvasArtefacts: canvasArtefacts.map((artefact) => ({ ...artefact })) }
+      : {}),
+    ...(visualEvidence !== undefined
+      ? {
+          visualEvidence: visualEvidence.map((evidence) => ({
+            ...evidence,
+            assets: evidence.assets.map((asset) => ({
+              ...asset,
+              source: { ...asset.source },
+            })),
+          })),
+        }
       : {}),
     ...(attachments !== undefined
       ? { attachments: attachments.map((attachment) => ({ ...attachment })) }

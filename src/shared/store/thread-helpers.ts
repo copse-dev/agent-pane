@@ -34,6 +34,7 @@ import {
 } from '@shared/threads/thread-proposal.ts'
 import type { VideoAttachmentRef } from '@shared/video/video-media.ts'
 import type { ArchiveAttachmentRef } from '@shared/archive/archive-media.ts'
+import type { VisualEvidenceDraft } from '@copse/agent/visual-evidence.ts'
 
 import { isHumanUserPrompt, sortThreadsNewestFirst } from '@copse/thread-store/thread-sort.ts'
 export {
@@ -583,6 +584,31 @@ export function addMessageCanvasArtefact(
     message.canvasArtefacts = [...(message.canvasArtefacts ?? []), artefact]
   })
   store.emit('message_canvas_artefacts_changed', messageId)
+}
+
+/** Attach immutable, tool-authored proof to its owning assistant message. */
+export function addMessageVisualEvidence(
+  store: AppStore,
+  messageId: string,
+  toolCallId: string,
+  evidence: readonly VisualEvidenceDraft[],
+): void {
+  const loc = locateMessage(store, messageId)
+  if (!loc) return
+  const existing = new Set((loc.message.visualEvidence ?? []).map((item) => item.id))
+  const additions = evidence
+    .filter((item) => !existing.has(item.id))
+    .map((item) => ({
+      ...item,
+      toolCallId,
+      assets: item.assets.map((asset) => ({
+        ...asset,
+        source: { ...asset.source },
+      })),
+    }))
+  if (additions.length === 0) return
+  loc.message.visualEvidence = [...(loc.message.visualEvidence ?? []), ...additions]
+  store.emit('message_visual_evidence_changed', messageId)
 }
 
 export function setMessageCommandSummary(

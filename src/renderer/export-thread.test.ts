@@ -133,7 +133,7 @@ describe('export thread', () => {
     t.draftPrompt = 'unsent'
 
     const header = expectRecord(parseJsonUnknown(at(threadToJsonl(t).trimEnd().split('\n'), 0)))
-    assert.equal(header['exportVersion'], 7)
+    assert.equal(header['exportVersion'], 8)
     assert.equal(header['status'], 'error')
     assert.deepEqual(header['todos'], t.todos)
     assert.equal(header['workingBrief'], 'fix the bug')
@@ -225,6 +225,53 @@ describe('export thread', () => {
 
     const line = expectRecord(parseJsonUnknown(at(jsonl.trimEnd().split('\n'), 1)))
     assert.equal(line['reasoning'], 'thinking step by step')
+  })
+
+  it('inlines durable visual evidence so the export is self-contained', () => {
+    const dataUrl = 'data:image/png;base64,cGl4ZWxz'
+    const jsonl = threadToJsonl(
+      thread([
+        {
+          id: 'message-1',
+          role: 'assistant',
+          content: 'The responsive layout is fixed.',
+          toolCalls: [],
+          createdAt: 2,
+          visualEvidence: [
+            {
+              id: 'evidence-1',
+              toolCallId: 'tool-1',
+              kind: 'screenshot',
+              caption: 'Settings at the narrow breakpoint',
+              createdAt: 3,
+              assets: [
+                {
+                  id: 'asset-1',
+                  label: 'After',
+                  mimeType: 'image/png',
+                  width: 64,
+                  height: 64,
+                  capturedAt: 2,
+                  dataUrl,
+                  source: {
+                    kind: 'browser',
+                    viewId: 'view-1',
+                    title: 'Settings',
+                    url: 'https://example.test/settings',
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      ]),
+    )
+
+    const line = expectRecord(parseJsonUnknown(at(jsonl.trimEnd().split('\n'), 1)))
+    const evidence = at(recordArrayOrEmpty(line['visualEvidence']), 0)
+    const asset = at(recordArrayOrEmpty(evidence['assets']), 0)
+    assert.equal(evidence['toolCallId'], 'tool-1')
+    assert.equal(asset['dataUrl'], dataUrl)
   })
 
   it('exports structured turn outcomes for offline diagnosis', () => {
