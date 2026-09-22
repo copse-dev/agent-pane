@@ -609,10 +609,22 @@ async function verifySnapshotContent(worktreePath: string, snapshotRef: string):
       })
     const expected = await run(['read-tree', snapshotRef])
     if (expected.code !== 0) return false
-    const trackedDifference = await run(['diff', '--quiet', '--'])
-    if (trackedDifference.code !== 0) return false
-    const extra = await run(['ls-files', '--others', '--exclude-standard', '-z'])
-    return extra.code === 0 && extra.stdout.length === 0
+    // With the snapshot loaded into the throwaway index, porcelain's second
+    // status column describes worktree differences and `??` covers files the
+    // snapshot did not contain. The first column is intentionally ignored: it
+    // compares the snapshot to the linked checkout's real HEAD. One status
+    // process therefore replaces the former serial diff + ls-files probes.
+    const status = await run([
+      'status',
+      '--porcelain=v1',
+      '-z',
+      '--untracked-files=all',
+      '--no-renames',
+    ])
+    return (
+      status.code === 0 &&
+      status.stdout.split('\0').every((record) => record.length === 0 || record[1] === ' ')
+    )
   } finally {
     await rm(temp, { recursive: true, force: true })
   }
