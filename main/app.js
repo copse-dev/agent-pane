@@ -27552,24 +27552,24 @@ var init_demo_scenarios = __esm({
           {
             id: "demo-approval-grouped-shell-commands-oracle",
             title: "Run outside sandbox?",
-            body: 'COREPACK_HOME="$TMPDIR/copse-corepack" corepack pnpm run check:oracle',
-            bodyAdvice: "The project sandbox would block this command:\n\u2022 Downloads package-manager binaries (corepack)",
+            body: "node .tmp/dep-candidates.mjs",
+            bodyAdvice: "The project sandbox would block this command:\n\u2022 Runs a script file from the project, so Copse can't tell what it does",
             bodyFooter: "Allow running it once outside the sandbox?",
             type: "shell"
           },
           {
             id: "demo-approval-grouped-shell-commands-syntax",
             title: "Run outside sandbox?",
-            body: 'COREPACK_HOME="$TMPDIR/copse-corepack" corepack pnpm run check:e2e-syntax',
-            bodyAdvice: "The project sandbox would block this command:\n\u2022 Downloads package-manager binaries (corepack)",
+            body: "mkdir -p node_modules && ln -s ../.tmp/validation/node_modules.partial/.pnpm/esbuild@0.28.2/node_modules/esbuild node_modules/esbuild",
+            bodyAdvice: "The project sandbox would block this command:\n\u2022 Reaches outside the project with a ../ path",
             bodyFooter: "Allow running it once outside the sandbox?",
             type: "shell"
           },
           {
             id: "demo-approval-grouped-shell-commands-test",
             title: "Run outside sandbox?",
-            body: 'COREPACK_HOME="$TMPDIR/copse-corepack" corepack pnpm test',
-            bodyAdvice: "The project sandbox would block this command:\n\u2022 Downloads package-manager binaries (corepack)",
+            body: "ln -s ../.tmp/validation/node_modules.partial/.pnpm/esbuild@0.28.2/node_modules/esbuild node_modules/esbuild",
+            bodyAdvice: "The project sandbox would block this command:\n\u2022 Reaches outside the project with a ../ path",
             bodyFooter: "Allow running it once outside the sandbox?",
             type: "shell"
           }
@@ -123500,6 +123500,30 @@ function adviceElement(advice) {
   });
   return el("div", { class: "approval-advice" }, ...children);
 }
+function mergeApprovalAdvice(values) {
+  const unique = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const value of values) {
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    unique.push(value);
+  }
+  if (unique.length <= 1) return unique[0];
+  const lines = unique.map((value) => value.split("\n"));
+  const sharedLead = lines[0]?.[0];
+  if (sharedLead === void 0 || !lines.every((parts) => parts[0] === sharedLead)) {
+    return unique.join("\n\n");
+  }
+  const merged = [sharedLead];
+  const seenDetails = /* @__PURE__ */ new Set();
+  for (const parts of lines) {
+    const details = parts.slice(1).join("\n");
+    if (!details || seenDetails.has(details)) continue;
+    seenDetails.add(details);
+    merged.push(details);
+  }
+  return merged.join("\n");
+}
 function mountApprovalDialog(api2, store2, options = {}) {
   const coalesceMs = options.coalesceMs ?? APPROVAL_COALESCE_MS;
   const settleMs = options.settleMs ?? APPROVAL_SETTLE_MS;
@@ -123632,10 +123656,16 @@ function mountApprovalDialog(api2, store2, options = {}) {
     const uniqueTitles = new Set(batch.map((req) => req.title));
     const sharedTitle = uniqueTitles.size === 1 ? batch[0]?.title ?? "" : null;
     const showRowTitles = count > 1 && sharedTitle === null;
-    const firstRequest = batch[0];
-    const hasSharedContext = count > 1 && firstRequest !== void 0 && batch.every(
-      (req) => req.type === firstRequest.type && req.title === firstRequest.title && req.bodyAdvice === firstRequest.bodyAdvice && req.bodyFooter === firstRequest.bodyFooter
-    );
+    const presentationGroups = [];
+    for (const req of batch) {
+      const previousGroup = presentationGroups.at(-1);
+      const previous = previousGroup?.[0];
+      if (previousGroup && previous && req.type === previous.type && req.title === previous.title && req.bodyFooter === previous.bodyFooter) {
+        previousGroup.push(req);
+      } else {
+        presentationGroups.push([req]);
+      }
+    }
     heading.textContent = count <= 1 ? batch[0]?.title ?? "" : sharedTitle ?? `${String(count)} requests`;
     const requestBody = (req) => {
       const bodyClass = req.type === "shell" ? "approval-body approval-body-code" : "approval-body";
@@ -123643,45 +123673,41 @@ function mountApprovalDialog(api2, store2, options = {}) {
       if (collapseDetails && !detailsExpanded) body.hidden = true;
       return body;
     };
-    if (hasSharedContext) {
-      const sharedChildren = [];
-      if (firstRequest.bodyAdvice) {
-        sharedChildren.push(adviceElement(firstRequest.bodyAdvice));
-      }
-      const bodyLabel = firstRequest.type === "shell" ? "Commands requiring approval" : "Requests";
-      sharedChildren.push(
-        el(
-          "div",
-          { class: "approval-body-list", role: "list", "aria-label": bodyLabel },
-          ...batch.map((req) => {
-            const body = requestBody(req);
-            body.setAttribute("role", "listitem");
-            return body;
-          })
-        )
-      );
-      if (firstRequest.bodyFooter) {
-        sharedChildren.push(el("div", { class: "approval-footer" }, firstRequest.bodyFooter));
-      }
-      items.replaceChildren(el("div", { class: "approval-item" }, ...sharedChildren));
-    } else {
-      items.replaceChildren(
-        ...batch.map((req) => {
-          const rowChildren = [];
-          if (showRowTitles)
-            rowChildren.push(el("div", { class: "approval-item-title" }, req.title));
-          if (req.bodyAdvice) {
-            rowChildren.push(adviceElement(req.bodyAdvice));
-          }
-          if (collapseDetails) rowChildren.push(detailsToggle());
-          rowChildren.push(requestBody(req));
-          if (req.bodyFooter) {
-            rowChildren.push(el("div", { class: "approval-footer" }, req.bodyFooter));
-          }
-          return el("div", { class: "approval-item" }, ...rowChildren);
-        })
-      );
-    }
+    items.replaceChildren(
+      ...presentationGroups.map((group) => {
+        const firstRequest = group[0];
+        if (!firstRequest) throw new Error("approval presentation group must not be empty");
+        const rowChildren = [];
+        if (showRowTitles) {
+          rowChildren.push(el("div", { class: "approval-item-title" }, firstRequest.title));
+        }
+        const advice = mergeApprovalAdvice(group.map((request) => request.bodyAdvice));
+        if (advice) {
+          rowChildren.push(adviceElement(advice));
+        }
+        if (collapseDetails) rowChildren.push(detailsToggle());
+        if (group.length > 1) {
+          const bodyLabel = firstRequest.type === "shell" ? "Commands requiring approval" : "Requests";
+          rowChildren.push(
+            el(
+              "div",
+              { class: "approval-body-list", role: "list", "aria-label": bodyLabel },
+              ...group.map((req) => {
+                const body = requestBody(req);
+                body.setAttribute("role", "listitem");
+                return body;
+              })
+            )
+          );
+        } else {
+          rowChildren.push(requestBody(firstRequest));
+        }
+        if (firstRequest.bodyFooter) {
+          rowChildren.push(el("div", { class: "approval-footer" }, firstRequest.bodyFooter));
+        }
+        return el("div", { class: "approval-item" }, ...rowChildren);
+      })
+    );
     approveButton.textContent = count > 1 ? `Approve all (${String(count)})` : "Approve";
     rejectButton.textContent = count > 1 ? `Reject all (${String(count)})` : "Reject";
     const onceLabel = approveOnceGrant();
