@@ -67,6 +67,10 @@ describe('live sidebar thread ordering', () => {
 
   it('moves an older thread to the front as soon as the user prompts it', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
+    await browser.waitUntil(async () => (await sidebarTitles()).length === 2, {
+      timeout: 20_000,
+      timeoutMsg: 'expected seeded thread rows in the sidebar',
+    })
     expect(await sidebarTitles()).toEqual([RECENT_TITLE, OLDER_TITLE])
 
     await $(`.chat-row*=${OLDER_TITLE}`).click()
