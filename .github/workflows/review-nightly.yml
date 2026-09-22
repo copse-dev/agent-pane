@@ -1,6 +1,9 @@
 name: Copse review nightly sample
 
-# One bounded dogfood sample per night. The trust split is the same as the
+# One bounded dogfood sample per night, including draft pull requests. Copse's
+# active backlog is draft-heavy, and draft state does not change the trust
+# boundary: only same-repository heads can enter the secret-free ground job.
+# The trust split is the same as the
 # label-triggered pair, but all three jobs live in this scheduled workflow so
 # the trusted selector's PR identity crosses jobs as outputs rather than as an
 # artefact the pull request can rewrite. `ground` is the only job that executes
@@ -69,8 +72,7 @@ jobs:
               const cutoff = Date.now() - 14 * 24 * 60 * 60 * 1000;
               const candidates = pulls.filter((pull) => {
                 const labels = pull.labels.map((label) => label.name);
-                return !pull.draft &&
-                  pull.head.repo?.full_name === `${owner}/${repo}` &&
+                return pull.head.repo?.full_name === `${owner}/${repo}` &&
                   Date.parse(pull.updated_at) >= cutoff &&
                   !labels.includes('copse-review') &&
                   !labels.includes('copse-review-skip') &&
@@ -84,8 +86,8 @@ jobs:
               selected = candidates[utcDay % candidates.length];
             }
 
-            if (selected.state !== 'open' || selected.draft || selected.head.repo?.full_name !== `${owner}/${repo}`) {
-              core.setFailed('dogfood samples must be open, non-draft pull requests from this repository');
+            if (selected.state !== 'open' || selected.head.repo?.full_name !== `${owner}/${repo}`) {
+              core.setFailed('dogfood samples must be open pull requests from this repository');
               return;
             }
             core.setOutput('number', String(selected.number));
