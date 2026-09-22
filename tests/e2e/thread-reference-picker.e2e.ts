@@ -7,7 +7,9 @@ import {
   seedThreadReferenceFixture,
 } from './helpers/seed-config.ts'
 import { setComposerValue } from './helpers/composer.ts'
+import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { waitForAgentIdle } from './helpers.ts'
 
 describe('@-reference past threads (#644)', () => {
   before(async () => {
@@ -121,6 +123,17 @@ describe('@-reference past threads (#644)', () => {
       selection.addRange(range)
     })
     await browser.keys(' can you compare the proposal?')
+    const reply =
+      'The referenced auth plan proposes separating authentication policy from transport concerns.'
+    const scenario = await installMockScenario({
+      title: 'Compare the auth proposal',
+      turns: [
+        {
+          user: { includes: 'can you compare the proposal?' },
+          responses: [{ text: reply }],
+        },
+      ],
+    })
     await $('.submit-btn').click()
 
     const sentChip = await $('.msg-user .message-text > .transcript-attachment-thread')
@@ -131,6 +144,9 @@ describe('@-reference past threads (#644)', () => {
       $('.msg-user .transcript-attachment-row .transcript-attachment-thread'),
     ).not.toBeExisting()
 
+    await expectAssistantReply(reply)
+    await waitForAgentIdle()
+    await scenario.assertComplete()
     await saveAppScreenshot('thread-reference-sent-inline.png')
   })
 })
