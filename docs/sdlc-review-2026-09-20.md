@@ -1,4 +1,4 @@
-# Copse SDLC assessment — 20 September 2026
+# Copse shipping quality assessment — 20 September 2026
 
 Copse has a substantial engineering system for agent-led development. Its strongest areas are implementation discipline, deterministic tests, architectural boundaries, and release packaging. Its weakest areas are proving that required checks actually authorize a merge, independently challenging an agent's assumptions, and keeping product/release evidence current.
 

@@ -1667,9 +1667,9 @@ jobs:
   # uploads only PNGs that differ from the checked-out baseline; this job merges
   # those slices into one downloadable candidate set. It deliberately has no
   # write permission and never checks out or pushes the PR branch. The trusted
-  # publish-screenshot-candidates workflow consumes the finished artifact, opens
-  # a bot-owned child PR into the source branch, and links it from the parent for
-  # explicit image-diff review. Forks retain the artifact-only/manual path.
+  # publish-screenshot-candidates workflow links the finished artifact from the
+  # parent. Only `update-screenshots` requests a bot-owned child PR for accepting
+  # baseline changes. Forks retain the artifact-only/manual path.
   screenshot-artifacts:
     needs: [build, e2e]
     if: >-
@@ -1713,7 +1713,7 @@ jobs:
       # ignore / flap decision and was written for exactly this, but it was only
       # ever documented as a manual local step. Run it here, in the job that
       # merges the shard slices, so the candidate artifact carries only real
-      # changes and the downstream review PR is worth opening.
+      # changes and any explicitly requested review PR is worth opening.
       - name: Drop render noise from the candidate set
         env:
           # The filter's documented escape hatch: the label means "refresh
@@ -1759,12 +1759,12 @@ jobs:
             echo "## E2E screenshot candidates"
             echo
             if [ ${#files[@]} -eq 0 ]; then
-              echo "All rendered screenshots match the committed references."
+              echo "No baseline-update candidates remain after noise, ownership, and drift filtering."
             else
               echo "${#files[@]} changed reference screenshot(s) are attached as an immutable artifact."
               echo
-              echo "A trusted follow-up workflow will put these PNGs on a bot-owned branch,"
-              echo "open a child PR into the source branch, and link it from the parent for review."
+              echo "A trusted follow-up workflow links this evidence from the same-repository parent PR."
+              echo 'Only the `update-screenshots` label requests a separate PNG review PR.'
               echo "The artifact remains the immutable record and the manual fallback for forks."
               echo
               printf -- '- `%s`\n' "${files[@]#candidates/}"

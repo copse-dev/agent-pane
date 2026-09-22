@@ -2,7 +2,7 @@
 
 Task baseline: `main` at `0a7a0967002da98b6055dc9f87544e91c8ad501b`,
 20 September 2026. Owner: [#2520](https://github.com/copse-dev/agent-pane/issues/2520).
-This is the cancellation slice of SDLC roadmap R11. Base-retarget triggers,
+This is the cancellation slice of Shipping quality roadmap R11. Base-retarget triggers,
 current-base enforcement, and independent acceptance are separate work.
 
 ## Problem and acceptance
