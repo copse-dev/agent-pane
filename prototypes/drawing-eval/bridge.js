@@ -4,7 +4,7 @@
 // page is framed by index.html the payload is posted to the parent, which
 // renders it in the "Agent payload" panel. Standalone, the payload is shown in
 // the page's own status line and logged to the console.
-(function () {
+;(function () {
   const STATUS_ID = 'status'
 
   function setStatus(text) {
@@ -62,7 +62,11 @@
       bg.setAttribute('fill', background)
       clone.insertBefore(bg, clone.firstChild)
     }
-    return { svg: new XMLSerializer().serializeToString(clone), width: rect.width, height: rect.height }
+    return {
+      svg: new XMLSerializer().serializeToString(clone),
+      width: rect.width,
+      height: rect.height,
+    }
   }
 
   async function send(payload) {
@@ -76,10 +80,14 @@
     }
     if (window.parent && window.parent !== window) {
       window.parent.postMessage(message, '*')
-      setStatus(`Sent to agent panel: ${message.svg.length.toLocaleString()} bytes of SVG${message.png ? ' + PNG' : ''}`)
+      setStatus(
+        `Sent to agent panel: ${message.svg.length.toLocaleString()} bytes of SVG${message.png ? ' + PNG' : ''}`,
+      )
     } else {
       console.log('[drawing-eval] export', message)
-      setStatus(`Export ready (see console): ${message.svg.length.toLocaleString()} bytes of SVG${message.png ? ' + PNG' : ''}`)
+      setStatus(
+        `Export ready (see console): ${message.svg.length.toLocaleString()} bytes of SVG${message.png ? ' + PNG' : ''}`,
+      )
     }
     return message
   }

@@ -68,7 +68,13 @@ export function attachPointer(svg, handlers) {
     svg.setPointerCapture(e.pointerId)
     const p = toLocal(e)
     active = { id: e.pointerId, points: [p], pointerType: e.pointerType }
-    handlers.start?.({ x: p[0], y: p[1], pressure: p[2], pointerType: e.pointerType, points: active.points })
+    handlers.start?.({
+      x: p[0],
+      y: p[1],
+      pressure: p[2],
+      pointerType: e.pointerType,
+      points: active.points,
+    })
   })
   svg.addEventListener('pointermove', (e) => {
     if (!active || e.pointerId !== active.id) return
@@ -77,14 +83,26 @@ export function attachPointer(svg, handlers) {
     const events = typeof e.getCoalescedEvents === 'function' ? e.getCoalescedEvents() : [e]
     for (const ce of events.length ? events : [e]) active.points.push(toLocal(ce))
     const p = active.points[active.points.length - 1]
-    handlers.move?.({ x: p[0], y: p[1], pressure: p[2], pointerType: active.pointerType, points: active.points })
+    handlers.move?.({
+      x: p[0],
+      y: p[1],
+      pressure: p[2],
+      pointerType: active.pointerType,
+      points: active.points,
+    })
   })
   const finish = (e) => {
     if (!active || e.pointerId !== active.id) return
     const gesture = active
     active = null
     const p = gesture.points[gesture.points.length - 1]
-    handlers.end?.({ x: p[0], y: p[1], pressure: p[2], pointerType: gesture.pointerType, points: gesture.points })
+    handlers.end?.({
+      x: p[0],
+      y: p[1],
+      pressure: p[2],
+      pointerType: gesture.pointerType,
+      points: gesture.points,
+    })
   }
   svg.addEventListener('pointerup', finish)
   svg.addEventListener('pointercancel', finish)
@@ -117,6 +135,8 @@ export function createHistory(svg) {
       undo.length = 0
       redo.length = 0
     },
-    get size() { return undo.length },
+    get size() {
+      return undo.length
+    },
   }
 }
