@@ -31,18 +31,14 @@ describe('skills', () => {
 
   it('invokes a workspace skill through the live agent path', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    // The composer mounts before the workspace's background skill scan completes.
-    await browser.waitUntil(
-      async () =>
-        browser.execute(async () =>
-          (await window.api.skills.list()).some((skill) => skill.name === 'demo-skill'),
-        ),
-      { timeout: 10_000, timeoutMsg: 'workspace demo skill was not discovered' },
-    )
+    // Deliberately type as soon as the composer mounts. Workspace discovery
+    // finishes in the background; an already-open query must update without
+    // requiring another keystroke (#2948).
     await setComposerValue('/demo-skill')
     const skill = $('.skill-picker').$('.skill-item*=/demo-skill')
     await skill.waitForDisplayed({ timeout: 10_000 })
     await expect(skill.$('.skill-item-name')).toHaveText('/demo-skill')
+    await saveAppScreenshot('skills-discovery-picker.png')
 
     const scenario = await installMockScenario({
       title: 'Validate skills support',
