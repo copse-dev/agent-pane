@@ -945,27 +945,27 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       {
         id: 'demo-approval-grouped-shell-commands-oracle',
         title: 'Run outside sandbox?',
-        body: 'COREPACK_HOME="$TMPDIR/copse-corepack" corepack pnpm run check:oracle',
+        body: 'node .tmp/dep-candidates.mjs',
         bodyAdvice:
-          'The project sandbox would block this command:\n• Downloads package-manager binaries (corepack)',
+          "The project sandbox would block this command:\n• Runs a script file from the project, so Copse can't tell what it does",
         bodyFooter: 'Allow running it once outside the sandbox?',
         type: 'shell',
       },
       {
         id: 'demo-approval-grouped-shell-commands-syntax',
         title: 'Run outside sandbox?',
-        body: 'COREPACK_HOME="$TMPDIR/copse-corepack" corepack pnpm run check:e2e-syntax',
+        body: 'mkdir -p node_modules && ln -s ../.tmp/validation/node_modules.partial/.pnpm/esbuild@0.28.2/node_modules/esbuild node_modules/esbuild',
         bodyAdvice:
-          'The project sandbox would block this command:\n• Downloads package-manager binaries (corepack)',
+          'The project sandbox would block this command:\n• Reaches outside the project with a ../ path',
         bodyFooter: 'Allow running it once outside the sandbox?',
         type: 'shell',
       },
       {
         id: 'demo-approval-grouped-shell-commands-test',
         title: 'Run outside sandbox?',
-        body: 'COREPACK_HOME="$TMPDIR/copse-corepack" corepack pnpm test',
+        body: 'ln -s ../.tmp/validation/node_modules.partial/.pnpm/esbuild@0.28.2/node_modules/esbuild node_modules/esbuild',
         bodyAdvice:
-          'The project sandbox would block this command:\n• Downloads package-manager binaries (corepack)',
+          'The project sandbox would block this command:\n• Reaches outside the project with a ../ path',
         bodyFooter: 'Allow running it once outside the sandbox?',
         type: 'shell',
       },

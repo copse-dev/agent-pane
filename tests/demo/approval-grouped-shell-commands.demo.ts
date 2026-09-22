@@ -8,28 +8,29 @@ describe('browser-hosted grouped shell approval', () => {
     await $('#approval-dialog').waitForDisplayed()
   })
 
-  it('shows shared approval copy once around the command list', async () => {
+  it('coalesces every command under one deduplicated explanation', async () => {
     const dialog = $('#approval-dialog')
     await expect(dialog.$('.approval-heading')).toHaveText('Run outside sandbox?')
     await expect(dialog.$$('.approval-item')).toBeElementsArrayOfSize(1)
     await expect(dialog.$$('.approval-advice')).toBeElementsArrayOfSize(1)
     await expect(dialog.$$('.approval-footer')).toBeElementsArrayOfSize(1)
     await expect(dialog.$$('.approval-body-list')).toBeElementsArrayOfSize(1)
-    await expect(dialog.$$('.approval-body')).toBeElementsArrayOfSize(3)
-    await expect(dialog.$('.approval-advice')).toHaveText(
-      'The project sandbox would block this command:\n• Downloads package-manager binaries (corepack)',
-    )
-    await expect(dialog.$('.approval-footer')).toHaveText(
-      'Allow running it once outside the sandbox?',
-    )
+    await expect(dialog.$$('.approval-body-list .approval-body')).toBeElementsArrayOfSize(3)
     await expect(dialog.$('.approval-approve')).toHaveText('Approve all (3)')
     await expect(dialog.$('.approval-reject')).toHaveText('Reject all (3)')
 
+    const advice = await dialog.$('.approval-advice').getText()
+    assert.equal(
+      advice,
+      'The project sandbox would block this command:\n' +
+        "• Runs a script file from the project, so Copse can't tell what it does\n" +
+        '• Reaches outside the project with a ../ path',
+    )
     const commands = await dialog.$$('.approval-body').map((body) => body.getText())
     assert.deepEqual(commands, [
-      'COREPACK_HOME="$TMPDIR/copse-corepack" corepack pnpm run check:oracle',
-      'COREPACK_HOME="$TMPDIR/copse-corepack" corepack pnpm run check:e2e-syntax',
-      'COREPACK_HOME="$TMPDIR/copse-corepack" corepack pnpm test',
+      'node .tmp/dep-candidates.mjs',
+      'mkdir -p node_modules && ln -s ../.tmp/validation/node_modules.partial/.pnpm/esbuild@0.28.2/node_modules/esbuild node_modules/esbuild',
+      'ln -s ../.tmp/validation/node_modules.partial/.pnpm/esbuild@0.28.2/node_modules/esbuild node_modules/esbuild',
     ])
 
     const layout = await browser.execute(() => {

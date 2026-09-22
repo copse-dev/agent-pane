@@ -50,6 +50,39 @@ function adviceElement(advice: string): HTMLElement {
 }
 
 /**
+ * Combine the distinct explanations for one grouped decision. Permission copy
+ * commonly shares a lead line followed by request-specific bullets; keep that
+ * lead once and preserve every unique detail below it. Unstructured advice stays
+ * intact as separate paragraphs.
+ */
+function mergeApprovalAdvice(values: readonly (string | undefined)[]): string | undefined {
+  const unique: string[] = []
+  const seen = new Set<string>()
+  for (const value of values) {
+    if (!value || seen.has(value)) continue
+    seen.add(value)
+    unique.push(value)
+  }
+  if (unique.length <= 1) return unique[0]
+
+  const lines = unique.map((value) => value.split('\n'))
+  const sharedLead = lines[0]?.[0]
+  if (sharedLead === undefined || !lines.every((parts) => parts[0] === sharedLead)) {
+    return unique.join('\n\n')
+  }
+
+  const merged = [sharedLead]
+  const seenDetails = new Set<string>()
+  for (const parts of lines) {
+    const details = parts.slice(1).join('\n')
+    if (!details || seenDetails.has(details)) continue
+    seenDetails.add(details)
+    merged.push(details)
+  }
+  return merged.join('\n')
+}
+
+/**
  * Timer factory returning a cancel function. Overridable so tests drive the
  * coalesce/settle windows deterministically instead of waiting on real time.
  */
@@ -287,21 +320,27 @@ export function mountApprovalDialog(
     const uniqueTitles = new Set(batch.map((req) => req.title))
     const sharedTitle = uniqueTitles.size === 1 ? (batch[0]?.title ?? '') : null
     const showRowTitles = count > 1 && sharedTitle === null
-    const firstRequest = batch[0]
-    // A homogeneous batch is one approval question with several subjects. Keep
-    // its explanatory copy around the group instead of repeating it around
-    // every command. Matching the visible context (not just `type`) ensures a
-    // command-specific warning or answer prompt is never hidden by grouping.
-    const hasSharedContext =
-      count > 1 &&
-      firstRequest !== undefined &&
-      batch.every(
-        (req) =>
-          req.type === firstRequest.type &&
-          req.title === firstRequest.title &&
-          req.bodyAdvice === firstRequest.bodyAdvice &&
-          req.bodyFooter === firstRequest.bodyFooter,
-      )
+    // Collapse each adjacent run that asks the same question and offers the same
+    // answer. Keeping groups contiguous preserves request order: an A/B/A batch
+    // stays A, B, A. Advice may still differ within a group; it is merged above
+    // one continuous body list so every safety reason remains visible without
+    // splitting one decision into several bordered sections.
+    const presentationGroups: PendingApproval[][] = []
+    for (const req of batch) {
+      const previousGroup = presentationGroups.at(-1)
+      const previous = previousGroup?.[0]
+      if (
+        previousGroup &&
+        previous &&
+        req.type === previous.type &&
+        req.title === previous.title &&
+        req.bodyFooter === previous.bodyFooter
+      ) {
+        previousGroup.push(req)
+      } else {
+        presentationGroups.push([req])
+      }
+    }
 
     heading.textContent =
       count <= 1 ? (batch[0]?.title ?? '') : (sharedTitle ?? `${String(count)} requests`)
@@ -315,45 +354,42 @@ export function mountApprovalDialog(
       return body
     }
 
-    if (hasSharedContext) {
-      const sharedChildren: (Node | string)[] = []
-      if (firstRequest.bodyAdvice) {
-        sharedChildren.push(adviceElement(firstRequest.bodyAdvice))
-      }
-      const bodyLabel = firstRequest.type === 'shell' ? 'Commands requiring approval' : 'Requests'
-      sharedChildren.push(
-        el(
-          'div',
-          { class: 'approval-body-list', role: 'list', 'aria-label': bodyLabel },
-          ...batch.map((req) => {
-            const body = requestBody(req)
-            body.setAttribute('role', 'listitem')
-            return body
-          }),
-        ),
-      )
-      if (firstRequest.bodyFooter) {
-        sharedChildren.push(el('div', { class: 'approval-footer' }, firstRequest.bodyFooter))
-      }
-      items.replaceChildren(el('div', { class: 'approval-item' }, ...sharedChildren))
-    } else {
-      items.replaceChildren(
-        ...batch.map((req) => {
-          const rowChildren: (Node | string)[] = []
-          if (showRowTitles)
-            rowChildren.push(el('div', { class: 'approval-item-title' }, req.title))
-          if (req.bodyAdvice) {
-            rowChildren.push(adviceElement(req.bodyAdvice))
-          }
-          if (collapseDetails) rowChildren.push(detailsToggle())
-          rowChildren.push(requestBody(req))
-          if (req.bodyFooter) {
-            rowChildren.push(el('div', { class: 'approval-footer' }, req.bodyFooter))
-          }
-          return el('div', { class: 'approval-item' }, ...rowChildren)
-        }),
-      )
-    }
+    items.replaceChildren(
+      ...presentationGroups.map((group) => {
+        const firstRequest = group[0]
+        if (!firstRequest) throw new Error('approval presentation group must not be empty')
+        const rowChildren: (Node | string)[] = []
+        if (showRowTitles) {
+          rowChildren.push(el('div', { class: 'approval-item-title' }, firstRequest.title))
+        }
+        const advice = mergeApprovalAdvice(group.map((request) => request.bodyAdvice))
+        if (advice) {
+          rowChildren.push(adviceElement(advice))
+        }
+        if (collapseDetails) rowChildren.push(detailsToggle())
+        if (group.length > 1) {
+          const bodyLabel =
+            firstRequest.type === 'shell' ? 'Commands requiring approval' : 'Requests'
+          rowChildren.push(
+            el(
+              'div',
+              { class: 'approval-body-list', role: 'list', 'aria-label': bodyLabel },
+              ...group.map((req) => {
+                const body = requestBody(req)
+                body.setAttribute('role', 'listitem')
+                return body
+              }),
+            ),
+          )
+        } else {
+          rowChildren.push(requestBody(firstRequest))
+        }
+        if (firstRequest.bodyFooter) {
+          rowChildren.push(el('div', { class: 'approval-footer' }, firstRequest.bodyFooter))
+        }
+        return el('div', { class: 'approval-item' }, ...rowChildren)
+      }),
+    )
 
     approveButton.textContent = count > 1 ? `Approve all (${String(count)})` : 'Approve'
     rejectButton.textContent = count > 1 ? `Reject all (${String(count)})` : 'Reject'
