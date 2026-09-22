@@ -61,9 +61,14 @@ export async function runStage2(options: Stage2Options): Promise<Stage2Result> {
     threadId: options.threadId,
     turnId: options.turnId,
     maxSteps: options.maxSteps ?? options.lens.maxSteps,
+    completionError: () =>
+      executor.completion() === null
+        ? 'reviewer stopped without calling the required finish_review tool'
+        : undefined,
     signal: options.signal,
     onEvent: options.onEvent,
   })
+  const completion = executor.completion()
   return {
     model: options.model,
     lens: options.lens.id,
@@ -73,7 +78,10 @@ export async function runStage2(options: Stage2Options): Promise<Stage2Result> {
     events: turn.events,
     outcome: turn.outcome,
     stopReason: turn.stopReason,
-    summary: turn.summary,
+    summary:
+      completion === null
+        ? turn.summary
+        : `Checked: ${completion.checked}\nCould not verify: ${completion.couldNotVerify}`,
     usage: turn.usage,
     toolCalls: turn.toolCalls,
     ...(turn.error !== undefined ? { error: turn.error } : {}),

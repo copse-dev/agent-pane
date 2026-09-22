@@ -89,6 +89,7 @@ function findingLines(finding: Finding, index: number): string[] {
 /** The terminal projection of a full review: Stage 0, the reviewers, verification, the ranked list. */
 export function renderReviewReport(report: ReviewReport): string {
   const lines: string[] = [renderStage0Report(report.stage0)]
+  const incompleteReviews = report.reviews.filter((review) => review.outcome !== 'completed')
   for (const review of report.reviews) {
     const usage = `${String(review.usage.inputTokens)} in / ${String(review.usage.outputTokens)} out${review.usage.estimated ? ' (estimated)' : ''}`
     lines.push('')
@@ -116,8 +117,19 @@ export function renderReviewReport(report: ReviewReport): string {
     if (notes.length > 0) lines.push(`context: ${notes.join('; ')}`)
   }
   lines.push('')
+  if (incompleteReviews.length > 0) {
+    lines.push(
+      `Review incomplete: ${String(incompleteReviews.length)} of ${String(report.reviews.length)} reviewer run(s) did not complete; this is not a clean result.`,
+    )
+  }
   if (report.findings.length === 0) {
-    lines.push(report.reviews.length === 0 ? 'No findings from Stage 0.' : 'No findings.')
+    lines.push(
+      report.reviews.length === 0
+        ? 'No findings from Stage 0.'
+        : incompleteReviews.length > 0
+          ? 'No findings were produced before the incomplete review stopped.'
+          : 'No findings.',
+    )
   } else {
     lines.push(`${String(report.findings.length)} finding(s):`)
     report.findings.forEach((finding, index) => lines.push(...findingLines(finding, index)))

@@ -14,9 +14,21 @@
           "reason": "A rename to a name that already exists in scope would resolve differently."
         }
       },
+      {
+        "type": "tool_call",
+        "name": "finish_review",
+        "args": { "checked": "The renamed binding and its returned value.", "couldNotVerify": "Nothing" }
+      },
       { "type": "text", "text": "One possible shadowing issue." }
     ],
-    "review:contracts": [{ "type": "text", "text": "The returned string is unchanged." }],
+    "review:contracts": [
+      {
+        "type": "tool_call",
+        "name": "finish_review",
+        "args": { "checked": "The greet return-value contract after the rename.", "couldNotVerify": "Nothing" }
+      },
+      { "type": "text", "text": "Done." }
+    ],
     "reproduce": [{ "type": "text", "text": "No reproducer: the value is the same on both." }],
     "challenge": [
       { "type": "tool_call", "name": "read_file", "args": { "path": "src/greet.cjs" } },

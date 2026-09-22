@@ -63,6 +63,10 @@ interface Captured {
   code: number
 }
 
+function finishReviewStep(checked: string, couldNotVerify = 'Nothing'): Record<string, unknown> {
+  return { type: 'tool_call', name: 'finish_review', args: { checked, couldNotVerify } }
+}
+
 async function run(
   repo: TestRepo,
   args: string[],
@@ -157,7 +161,8 @@ describe('copse-review CLI', () => {
             commandCallIds: ['call-1'],
           },
         },
-        { type: 'text', text: 'Checked src/math.ts and ran a probe.' },
+        finishReviewStep('src/math.ts and a focused runtime probe.'),
+        { type: 'text', text: 'Done.' },
       ]),
     )
     const events = join(dir, 'events.jsonl')
@@ -178,7 +183,7 @@ describe('copse-review CLI', () => {
     assert.equal(result.code, HEADLESS_EXIT.SUCCESS, result.err)
     assert.match(
       result.out,
-      /reviewer mock under correctness — completed \(end_turn\), 2 tool call\(s\), 1 candidate\(s\)/,
+      /reviewer mock under correctness — completed \(end_turn\), 3 tool call\(s\), 1 candidate\(s\)/,
     )
     assert.match(result.out, /1\. \[contract · high · high\] src\/math\.ts:1 — add subtracts/)
     assert.match(result.out, /unverified: The body is a - b\./)
@@ -214,11 +219,13 @@ describe('copse-review CLI', () => {
         roles: {
           'review:correctness': [
             report_finding('add subtracts its second argument instead of adding it.'),
-            { type: 'text', text: 'Checked src/math.ts.' },
+            finishReviewStep('src/math.ts and the changed implementation.'),
+            { type: 'text', text: 'Done.' },
           ],
           'review:contracts': [
             report_finding('The add function subtracts instead of adding its second argument.'),
-            { type: 'text', text: 'Checked callers of add.' },
+            finishReviewStep('The add contract and all of its callers.'),
+            { type: 'text', text: 'Done.' },
           ],
           reproduce: [{ type: 'text', text: 'No reproducer.' }],
           challenge: [
@@ -288,6 +295,33 @@ describe('copse-review CLI', () => {
     assert.match(result.out, /No findings from Stage 0\./)
   })
 
+  it('fails closed and refuses to call an unattested model run clean', async () => {
+    const repo = await fixture({})
+    const dir = await mkdtemp(join(tmpdir(), 'review-cli-'))
+    scratch.push(dir)
+    const script = join(dir, 'script.json')
+    await writeFile(
+      script,
+      JSON.stringify([{ type: 'text', text: 'I looked around and found no defects.' }]),
+    )
+    const result = await run(repo, [
+      '--base',
+      'main',
+      '--allow-unisolated',
+      '--provider',
+      'mock',
+      '--mock-script',
+      script,
+      '--no-verify',
+    ])
+    assert.equal(result.code, HEADLESS_EXIT.FAILURE)
+    assert.match(result.out, /reviewer mock under correctness — failed \(error\)/)
+    assert.match(result.out, /without calling the required finish_review tool/)
+    assert.match(result.out, /Review incomplete: 1 of 1 reviewer run\(s\)/)
+    assert.match(result.out, /No findings were produced before the incomplete review stopped\./)
+    assert.doesNotMatch(result.out, /\nNo findings\.\n/)
+  })
+
   it('derives the permission profile from the execution decision, failing closed', () => {
     assert.equal(reviewPermissionProfile(true).shell, 'allow')
     assert.equal(reviewPermissionProfile(false).shell, 'deny')
@@ -341,7 +375,11 @@ describe('copse-review CLI', () => {
             reason: 'The body is a - b.',
           },
         },
-        { type: 'text', text: 'Looked without running anything.' },
+        finishReviewStep(
+          'src/math.ts and the changed implementation.',
+          'Commands, because execution was denied.',
+        ),
+        { type: 'text', text: 'Done.' },
       ]),
     )
     // `--allow-unisolated` is not consent for a foreign diff (B3); the image
@@ -404,7 +442,13 @@ describe('copse-review CLI', () => {
     // Job B: the model stages over the same ref, executing nothing, and one
     // review posted on the pull request through an injected client.
     const script = join(dir, 'script.json')
-    await writeFile(script, JSON.stringify([{ type: 'text', text: 'Nothing beyond Stage 0.' }]))
+    await writeFile(
+      script,
+      JSON.stringify([
+        finishReviewStep('The imported Stage 0 report and changed source.'),
+        { type: 'text', text: 'Done.' },
+      ]),
+    )
     const posts: { url: string; body: string }[] = []
     let out = ''
     let err = ''

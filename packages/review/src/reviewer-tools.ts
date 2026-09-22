@@ -24,6 +24,7 @@ export const REVIEWER_TOOL_NAMES = [
   'git_diff',
   'run_command',
   'report_finding',
+  'finish_review',
 ] as const
 export type ReviewerToolName = (typeof REVIEWER_TOOL_NAMES)[number]
 
@@ -51,6 +52,14 @@ export const candidateFindingSchema = z.object({
   commandCallIds: z.array(z.string().min(1)).max(4).optional(),
 })
 export type CandidateFinding = z.infer<typeof candidateFindingSchema>
+
+export const reviewCompletionSchema = z.object({
+  /** A concise account of the files, callers, tests, or boundaries actually inspected. */
+  checked: z.string().trim().min(8).max(800),
+  /** Anything material the reviewer could not settle; use "Nothing" when there was none. */
+  couldNotVerify: z.string().trim().min(2).max(800),
+})
+export type ReviewCompletion = z.infer<typeof reviewCompletionSchema>
 
 export interface ReportedCandidate {
   readonly candidate: CandidateFinding
@@ -173,6 +182,26 @@ export function reviewerTools(): LLMTool[] {
         required: ['path', 'startLine', 'class', 'severity', 'confidence', 'claim', 'reason'],
       },
     },
+    {
+      name: 'finish_review',
+      description:
+        'Required final tool call. Attest what you actually checked and what you could not verify. Call exactly once, after all report_finding calls; a review without it is incomplete.',
+      parameters: {
+        type: 'object',
+        properties: {
+          checked: {
+            type: 'string',
+            description: 'Concise account of the files, callers, tests, or boundaries inspected',
+          },
+          couldNotVerify: {
+            type: 'string',
+            description:
+              'Material uncertainty or unverified work; use "Nothing" when there was none',
+          },
+        },
+        required: ['checked', 'couldNotVerify'],
+      },
+    },
   ]
 }
 
@@ -197,6 +226,7 @@ const runCommandArgs = decodeWithSchema(
   }),
 )
 const decodeCandidate = decodeWithSchema(candidateFindingSchema)
+const decodeCompletion = decodeWithSchema(reviewCompletionSchema)
 
 class ToolInputError extends Error {}
 
@@ -238,6 +268,8 @@ export interface ReviewerToolExecutor {
   execute(name: string, args: unknown, signal: AbortSignal, toolCallId: string): Promise<string>
   /** Every candidate the model reported, in order. */
   reported(): readonly ReportedCandidate[]
+  /** The model's explicit clean-or-findings completion attestation. */
+  completion(): ReviewCompletion | null
   /** Every `run_command` result, by tool-call id, for evidence. */
   commandRuns(): ReadonlyMap<string, CellCommandResult>
 }
@@ -245,6 +277,7 @@ export interface ReviewerToolExecutor {
 export function createReviewerToolExecutor(host: ReviewerToolHost): ReviewerToolExecutor {
   const reported: ReportedCandidate[] = []
   const commandRuns = new Map<string, CellCommandResult>()
+  let completion: ReviewCompletion | null = null
   const root = jailPath(host.headCheckout, '.')
 
   function readSource(path: string): Promise<string> {
@@ -261,6 +294,9 @@ export function createReviewerToolExecutor(host: ReviewerToolHost): ReviewerTool
     signal: AbortSignal,
     toolCallId: string,
   ): Promise<string> {
+    if (completion !== null) {
+      throw new ToolInputError('The review is already finished; do not call more tools')
+    }
     switch (name) {
       case 'read_file': {
         const input = readFileArgs(args)
@@ -383,6 +419,16 @@ export function createReviewerToolExecutor(host: ReviewerToolHost): ReviewerTool
         })
         return `Recorded finding ${String(reported.length)} at ${candidate.path}:${String(candidate.startLine)}.`
       }
+      case 'finish_review': {
+        const input = decodeCompletion(args)
+        if (input === null) {
+          throw new ToolInputError(
+            'finish_review needs { checked, couldNotVerify }; use "Nothing" when everything was verified',
+          )
+        }
+        completion = input
+        return 'Review completion recorded. Stop now.'
+      }
       default:
         throw new ToolInputError(`Unknown tool: ${name}`)
     }
@@ -399,6 +445,7 @@ export function createReviewerToolExecutor(host: ReviewerToolHost): ReviewerTool
       }
     },
     reported: () => reported,
+    completion: () => completion,
     commandRuns: () => commandRuns,
   }
 }

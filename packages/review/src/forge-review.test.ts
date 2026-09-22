@@ -187,6 +187,33 @@ describe('forge review', () => {
     assert.doesNotMatch(review.body, /Head:/)
   })
 
+  it('never presents an incomplete reviewer run as a clean review', () => {
+    const review = buildForgeReview(
+      report({
+        findings: [],
+        reviews: [
+          {
+            model: 'qwen3.8-27b',
+            lens: 'correctness',
+            turnId: 't-incomplete',
+            outcome: 'failed',
+            stopReason: 'error',
+            candidates: 0,
+            toolCalls: 24,
+            usage: { inputTokens: 479_515, outputTokens: 60_340, estimated: false },
+            summary: 'The agent stopped before producing a final answer.',
+            error: 'reviewer stopped without calling the required finish_review tool',
+          },
+        ],
+      }),
+      { headCommit: target.headCommit, toolVersion: '0.1.0' },
+    )
+    assert.match(review.body, /Review incomplete: 1 of 1 reviewer run\(s\)/)
+    assert.match(review.body, /without calling the required finish_review tool/)
+    assert.match(review.body, /No findings were produced before the incomplete review stopped\./)
+    assert.doesNotMatch(review.body, /\nNo findings\.\n/)
+  })
+
   it('posts a GitHub review with inline comments on the head commit', async () => {
     const { fetch, calls } = fakeFetch([200])
     const posted = await postForgeReview(target, report(), { toolVersion: '0.1.0', fetch })

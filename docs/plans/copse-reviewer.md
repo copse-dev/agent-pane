@@ -586,7 +586,10 @@ The CLI shell (Shell A), on `main` in the same package, as `copse-review` (the p
   `report_finding`, whose arguments are validated against the finding vocabulary and
   anchored to real lines at report time (the tool reads the anchored source and rejects an
   out-of-range anchor), so Problem 3 never re-enters through the model's output. Stage 5
-  mints the content-derived id from that anchored source.
+  mints the content-derived id from that anchored source. The reviewer must then call
+  `finish_review` exactly once with what it checked and could not verify. Missing that
+  structured completion fails closed, so an exhausted or interrupted model can never be
+  projected as “No findings.”
 - **The reviewer's tools are brokered, not the loop.** Reads are served over the head
   checkout as data, jailed to it. Host-side reads and reproducer writes reject symlinks
   below the canonical checkout root, and final file opens use `O_NOFOLLOW`; recursive
