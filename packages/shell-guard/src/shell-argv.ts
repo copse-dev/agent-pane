@@ -63,7 +63,7 @@ export const CODE_INTERPRETERS: ReadonlySet<string> = new Set([
  * as well as test a bare token. Previously three separate literals, one of which
  * carried a comment promising it was "kept byte-for-byte in sync" with another.
  */
-export const SCRIPT_EXTENSION_ALTERNATION = 'sh|bash|zsh|js|cjs|mjs|ts|py|rb|pl|ps1|cmd|bat'
+export const SCRIPT_EXTENSION_ALTERNATION = 'sh|bash|zsh|js|cjs|mjs|ts|mts|cts|py|rb|pl|ps1|cmd|bat'
 
 /** Matches a token ending in a recognised script suffix. */
 export const SCRIPT_EXTENSIONS = new RegExp(`\\.(?:${SCRIPT_EXTENSION_ALTERNATION})$`, 'i')
@@ -570,7 +570,7 @@ const WRITE_REDIRECTS = new Set(['>', '>>'])
  */
 const REDIRECTS = new Set([...WRITE_REDIRECTS, '<', '<<', '<<<', '>&', '<&', '&>', '>|'])
 
-export function shellSegments(command: string): string[][] {
+export function shellSegments(command: string, includeRawFallback = true): string[][] {
   const segments: string[][] = []
 
   let tokens: ReturnType<typeof parseShellCommand> | null
@@ -615,6 +615,9 @@ export function shellSegments(command: string): string[][] {
     }
     flush()
   }
+
+  // Hard-deny consumers must not treat a separator inside quoted data as code.
+  if (!includeRawFallback) return segments
 
   for (const segment of command.split(/&&|\|\||[;&|(\r\n]+/)) {
     const argv = withoutRawRedirects(rawTokens(segment))

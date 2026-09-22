@@ -1042,15 +1042,119 @@ function inspectInterpreter(
   )
 }
 
+const HOST_POWER_WORD = /\b(?:shutdown|reboot|halt|poweroff|Stop-Computer|Restart-Computer)\b/i
+const HOST_POWER_COMMANDS = new Set([
+  'shutdown',
+  'reboot',
+  'halt',
+  'poweroff',
+  'stop-computer',
+  'restart-computer',
+])
+const SHELL_CONTROL_PREFIXES = new Set(['if', 'then', 'elif', 'else', 'do', 'while', 'until', '!'])
+const UNCERTAIN_HOST_POWER =
+  'Possible host shutdown or reboot in script code could not be confirmed. Review this command before allowing it once.'
+
+/**
+ * shell-quote treats newlines as whitespace. Preserve command boundaries while
+ * leaving quoted newlines alone and discarding shell comments, so neither a
+ * filename nor quoted/commented-out command text becomes a host operation.
+ */
+function hostPowerShellSource(command: string): string {
+  let source = ''
+  let quote: "'" | '"' | null = null
+  for (let index = 0; index < command.length; index += 1) {
+    const char = command.charAt(index)
+    if (char === '\\' && quote !== "'") {
+      const next = command.charAt(index + 1)
+      if (next !== '\n') source += char + next
+      index += 1
+      continue
+    }
+    if (quote !== null) {
+      source += char
+      if (char === quote) quote = null
+      continue
+    }
+    if (char === "'" || char === '"') {
+      quote = char
+    } else if (char === '#' && (index === 0 || /[\s;&|()]/.test(command.charAt(index - 1)))) {
+      while (index < command.length && command.charAt(index) !== '\n') index += 1
+      source += ';'
+      continue
+    } else if (char === '\n') {
+      source += ';'
+      continue
+    }
+    source += char
+  }
+  return source
+}
+
+function isHostPowerInvocation(segment: string[]): boolean {
+  let argv = unwrapWrappers(segment)
+  while (SHELL_CONTROL_PREFIXES.has(argv[0] ?? '')) argv = unwrapWrappers(argv.slice(1))
+  // Windows executable paths also occur in commands inspected on POSIX hosts.
+  const head = commandName(argv[0]?.replace(/\\/g, '/')).replace(/\.exe$/, '')
+  if (HOST_POWER_COMMANDS.has(head)) return true
+  // These tools dispatch the power operation as a subcommand.
+  if (head === 'systemctl' || head === 'loginctl' || head === 'busybox') {
+    const subcommand = argv.slice(1).find((arg) => !/^--(?:force|no-wall|no-block)$|^-f$/.test(arg))
+    return HOST_POWER_COMMANDS.has(subcommand ?? '')
+  }
+  return false
+}
+
+function hostPowerMentionNeedsReview(segment: string[]): boolean {
+  const argv = unwrapWrappers(segment)
+  const head = commandName(argv[0])
+  // These commands only print their operands. Substitutions are inspected
+  // separately; an argument that names a shutdown command is still just data.
+  if (head === 'echo' || head === 'printf') return false
+  return argv.some(
+    (arg) =>
+      HOST_POWER_COMMANDS.has(commandName(arg.replace(/\\/g, '/')).replace(/\.exe$/, '')) ||
+      (/\s/.test(arg) && HOST_POWER_WORD.test(arg)),
+  )
+}
+
+function inspectHostPower(command: string, language: SourceLanguage, out: MutableDecision): void {
+  if (language === 'code') {
+    // A text match in an arbitrary programming language is evidence for human
+    // review, not proof of an invocation. Literal exec/system payloads still
+    // recurse through the shell path and can produce a hard deny.
+    if (HOST_POWER_WORD.test(command)) addUnique(out.prompt, UNCERTAIN_HOST_POWER)
+    return
+  }
+
+  const source = hostPowerShellSource(command)
+  const segments = shellSegments(source, false)
+  if (segments.some(isHostPowerInvocation)) {
+    addUnique(out.deny, 'host shutdown or reboot is never allowed')
+  } else if (
+    segments.some(hostPowerMentionNeedsReview) ||
+    (shellSegments(source).some(isHostPowerInvocation) &&
+      segments.some((segment) => {
+        const head = commandName(unwrapWrappers(segment)[0])
+        return head !== 'echo' && head !== 'printf'
+      })) ||
+    (HOST_POWER_WORD.test(source) &&
+      (segments.length === 0 ||
+        (/\$(?:\{|[A-Za-z_])/.test(source) &&
+          segments.some((segment) => {
+            const head = commandName(unwrapWrappers(segment)[0])
+            return head !== 'echo' && head !== 'printf'
+          }))))
+  ) {
+    // Forwarded or dynamically selected commands are not proven invocations,
+    // but must not silently auto-run merely because a wrapper is unfamiliar.
+    addUnique(out.prompt, UNCERTAIN_HOST_POWER)
+  }
+}
+
 function inspectObviousCatastrophe(normalized: string, out: MutableDecision): void {
   if (/:\(\)\s*\{\s*:\|:&\s*}\s*;/.test(normalized)) {
     addUnique(out.deny, 'fork bomb is never allowed')
-  }
-  if (
-    /\b(?:shutdown|reboot|halt|poweroff)\b/i.test(normalized) ||
-    /\b(?:Stop-Computer|Restart-Computer)\b/i.test(normalized)
-  ) {
-    addUnique(out.deny, 'host shutdown or reboot is never allowed')
   }
   if (
     /\b(?:killall|pkill)\b[^\n|;&]*(?:-9|SIGKILL)[^\n|;&]*(?:launchd|systemd|electron|copse)/i.test(
@@ -1258,6 +1362,7 @@ function assess(
   inspectPermissionBypass(inspectableCommand, normalized, out)
   inspectLanguageDeletion(inspectableCommand, context, out)
   inspectObviousCatastrophe(normalized, out)
+  inspectHostPower(inspectableCommand, language, out)
   inspectDestructiveVcs(normalized, out)
 
   if (language === 'shell') {
@@ -1266,9 +1371,10 @@ function assess(
     inspectCommandLine(inspectableCommand, context, out, depth, seenScripts)
   }
 
-  // `exec`/`system`/`popen` take a shell string whatever language calls them, so
-  // their bodies are re-assessed as shell even inside code.
-  for (const body of embeddedProcessBodies(inspectableCommand)) {
+  // Programmatic exec/system/popen calls carry shell strings inside code.
+  // Shell interpreter arguments already recurse above; scanning shell text here
+  // would also execute our analysis over quoted output and shell comments.
+  for (const body of language === 'code' ? embeddedProcessBodies(inspectableCommand) : []) {
     if (depth >= MAX_SCRIPT_DEPTH) {
       addUnique(out.prompt, 'nested child-process code could not be fully inspected')
       break

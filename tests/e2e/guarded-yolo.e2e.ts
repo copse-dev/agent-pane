@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
@@ -50,6 +50,14 @@ describe('Guarded YOLO shell mode', function () {
     })
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
+  })
+
+  afterEach(async () => {
+    const dialog = await $('#approval-dialog')
+    if (await dialog.isDisplayed()) {
+      await dialog.$('.approval-reject').click()
+      await waitForAgentIdle()
+    }
   })
 
   after(() => {
@@ -109,6 +117,51 @@ describe('Guarded YOLO shell mode', function () {
     await dialog.$('.approval-reject').click()
     await waitForAgentIdle()
     await expect($('.guarded-yolo-banner')).toHaveAttribute('data-phase', 'active')
+  })
+
+  it('runs uncertain script code only after one-time consent', async () => {
+    const marker = join(workspaceRoot, 'consent-marker.txt')
+    writeFileSync(
+      join(workspaceRoot, 'shutdown-report.mts'),
+      [
+        "import { appendFileSync } from 'node:fs'",
+        'console.log("shutdown report")',
+        'appendFileSync("consent-marker.txt", "ran\\n")',
+      ].join('\n'),
+    )
+    const command = 'node shutdown-report.mts'
+    const submitCommand = async (): Promise<void> => {
+      await setComposerValue(`[[mcp:run_shell ${JSON.stringify({ command })}]]`)
+      await $('.submit-btn').click()
+      await $('#approval-dialog').waitForDisplayed({ timeout: 30_000 })
+    }
+
+    await submitCommand()
+    const dialog = await $('#approval-dialog')
+    await expect(dialog.$('.approval-heading')).toHaveText('Guarded YOLO safety check')
+    expect(await dialog.$('.approval-body').getText()).toContain(command)
+    expect(await dialog.$('.approval-advice').getText()).toContain('could not be confirmed')
+    expect(await dialog.getText()).toMatch(/Runs (inside|outside) the project sandbox/)
+    for (const checkbox of await dialog.$$('input[type="checkbox"]')) {
+      await expect(checkbox).not.toBeDisplayed()
+    }
+    expect(existsSync(marker)).toBe(false)
+    await saveElementScreenshot('#approval-dialog', 'guarded-yolo-uncertain-power-prompt.png')
+    await dialog.$('.approval-reject').click()
+    await waitForAgentIdle()
+    expect(existsSync(marker)).toBe(false)
+
+    await submitCommand()
+    await $('#approval-dialog .approval-approve').click()
+    await waitForAgentIdle()
+    expect(readFileSync(marker, 'utf8')).toBe('ran\n')
+
+    // Consent belongs to the invocation; a retry must ask again.
+    await submitCommand()
+    expect(readFileSync(marker, 'utf8')).toBe('ran\n')
+    await $('#approval-dialog .approval-reject').click()
+    await waitForAgentIdle()
+    expect(readFileSync(marker, 'utf8')).toBe('ran\n')
   })
 
   it('hard-denies catastrophic deletion without offering approval', async () => {
