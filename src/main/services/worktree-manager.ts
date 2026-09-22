@@ -506,6 +506,18 @@ export async function repositoryLocation(projectRoot: string): Promise<Repositor
 }
 
 async function commonGitDir(root: string): Promise<string> {
+  // `repositoryLocation` already proved `root` is Git's top-level checkout.
+  // In the ordinary non-bare layout its `.git` directory is the common Git
+  // directory by definition, so resolve it directly instead of paying for a
+  // final sandboxed `git rev-parse` on every dispatch. A project that is itself
+  // a linked checkout, or has any other non-directory `.git` layout, retains
+  // Git as the authoritative fallback.
+  const dotGit = join(root, '.git')
+  try {
+    if ((await lstat(dotGit)).isDirectory()) return await realpath(dotGit)
+  } catch {
+    // Let Git produce the actionable repository error below.
+  }
   const value = await requireGitValue(
     root,
     ['rev-parse', '--git-common-dir'],
@@ -633,8 +645,16 @@ export async function allocateThreadWorktree(
     )
     if (existing) throw new Error(`Thread worktree is already registered: ${target}`)
 
-    await assertBranchName(projectRoot, input.baseBranch, 'Base branch')
-    const defaultBranch = await getDefaultBranch(projectRoot)
+    // None of these probes mutates repository state or depends on another.
+    // Each Git invocation pays the sandbox/process startup cost, so keep them
+    // concurrent on the first-submit path instead of serializing that overhead.
+    const [, defaultBranch, dirtyProject, headResult, branch] = await Promise.all([
+      assertBranchName(projectRoot, input.baseBranch, 'Base branch'),
+      getDefaultBranch(projectRoot),
+      repositoryIsDirty(projectRoot),
+      git(projectRoot, ['rev-parse', 'HEAD']),
+      chooseBranch(projectRoot, input.prompt, input.threadId),
+    ])
     const isDefaultBranch = defaultBranch !== null && defaultBranch === input.baseBranch
     if (isDefaultBranch) await fetchDefaultBranch(projectRoot, input.baseBranch)
     const remoteRef = `refs/remotes/origin/${input.baseBranch}`
@@ -648,14 +668,13 @@ export async function allocateThreadWorktree(
       ['rev-parse', '--verify', `${baseRef}^{commit}`],
       `Cannot resolve base branch ${input.baseBranch}`,
     )
-    const dirtyProject = await repositoryIsDirty(projectRoot)
     // Seeding restores the snapshot over the worktree wholesale rather than
     // merging it, so it only means anything when both start from the same
     // commit. A base that moved — a fetched `origin/<default>`, or a project
     // checkout parked on another branch — would have those edits pasted onto an
     // unrelated tree, silently mixing two states. Start clean instead; the
     // user's own checkout still holds the work, untouched.
-    const headCommit = (await git(projectRoot, ['rev-parse', 'HEAD'])).stdout.trim()
+    const headCommit = headResult.stdout.trim()
     const seedable = (input.seedFromDirtyProject ?? true) && headCommit === baseCommit
     if (dirtyProject && !seedable) {
       console.info(
@@ -675,7 +694,6 @@ export async function allocateThreadWorktree(
       )
     }
 
-    const branch = await chooseBranch(projectRoot, input.prompt, input.threadId)
     const createdTarget = await prepareManagedWorktreeDestination(input.projectId, target)
     const add = await git(
       projectRoot,
@@ -891,7 +909,10 @@ export async function validateThreadWorktree(
   if (liveBranchCheck.status === 'rejected') throw liveBranchCheck.reason
   const liveBranch = liveBranchCheck.value
   if (!liveBranch) throw new ThreadWorktreeDetachedError(input.worktree.branch)
-  await assertBranchName(projectRoot, liveBranch, 'Thread branch')
+  // `symbolicHeadBranch` delegates to `git symbolic-ref`, which rejects a
+  // malformed ref before returning its short name. Running `check-ref-format`
+  // on that same Git-authored value would add another sandboxed subprocess to
+  // every agent dispatch without strengthening this validation.
   if (liveBranch === input.worktree.baseBranch) {
     throw new Error('Thread worktree branch must differ from its recorded base branch')
   }

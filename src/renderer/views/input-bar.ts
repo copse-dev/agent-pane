@@ -1701,8 +1701,26 @@ export function mountInputBar(
         return
       }
     }
-    const currentBranch = await api.git.currentBranch(projectId, id)
     const thread = getThreadById(store, id)
+    // A blank thread's checkout transaction can move HEAD, so its prompt state
+    // must still be read afterwards. Established threads cannot move checkout
+    // here: start their two independent Git reads together to keep both
+    // subprocess round trips off the serial submit path.
+    const requiresCheckoutPreparation =
+      thread !== undefined && thread.messages.length === 0 && !thread.worktreeChoice
+    const prefetchedGitState = requiresCheckoutPreparation
+      ? null
+      : await Promise.allSettled([
+          api.git.currentBranch(projectId, id),
+          api.git.promptState(projectId, id),
+        ])
+    const branchResult = prefetchedGitState?.[0]
+    if (branchResult?.status === 'rejected') throw branchResult.reason
+    const currentBranch =
+      branchResult?.status === 'fulfilled'
+        ? branchResult.value
+        : await api.git.currentBranch(projectId, id)
+    const prefetchedPromptState = prefetchedGitState?.[1]
     const threadBranch = thread?.gitBranch
     const isolatedWorktree = thread !== undefined && thread.worktree !== undefined
     // Worktree threads keep the project checkout on its original branch; the
@@ -1841,7 +1859,11 @@ export function mountInputBar(
     // a blank thread the transaction may have just switched the shared checkout
     // to the picked branch, or cut a worktree from it, and the message records
     // the commit the turn actually starts from — not the HEAD before the move.
-    const promptState = await api.git.promptState(projectId, id)
+    if (prefetchedPromptState?.status === 'rejected') throw prefetchedPromptState.reason
+    const promptState =
+      prefetchedPromptState?.status === 'fulfilled'
+        ? prefetchedPromptState.value
+        : await api.git.promptState(projectId, id)
 
     const priorTodos = thread?.todos ?? []
     const workingBrief = nextWorkingBrief(thread?.workingBrief, fullContent)

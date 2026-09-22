@@ -192,6 +192,36 @@ describe('hook cards (component, decision 10)', () => {
     assert.match(detail, /Queued a 12-char follow-up/)
   })
 
+  it('labels a tool-enabled finalization nudge accurately', () => {
+    const store = createStore()
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+
+    seedThread(store, [
+      {
+        id: 'a-finalize',
+        role: 'assistant',
+        content: 'finishing',
+        toolCalls: [],
+        createdAt: 1,
+        hookCards: [
+          card({
+            id: 'h-finalize',
+            event: 'stepBoundary',
+            hookId: 'finalize-nudge',
+            nudgeApplied: true,
+            nudgeMechanism: 'tool-enabled-turn',
+          }),
+        ],
+      },
+    ])
+
+    const detail = document.querySelector('.hook-card-detail')?.textContent ?? ''
+    assert.match(detail, /as a tool-enabled finalization turn/)
+    assert.doesNotMatch(detail, /appended to the next turn/)
+  })
+
   it('marks a hook-originated turn with an origin marker (not a plain user message)', () => {
     const store = createStore()
     const host = document.createElement('div')

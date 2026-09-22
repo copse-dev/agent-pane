@@ -256,6 +256,12 @@ content-addressed **toolset fingerprints** referenced by hash from assistant lin
 `hook_run` records. The spine format is documented in
 [`docs/thread-store-format.md`](./thread-store-format.md).
 
+The synthetic `finalize-nudge` effect line also records why the text-only turn was
+entered (`step-budget-exhausted`) or re-entered after recovered text tool calls
+(`pending-tool-calls`), plus the running `steps`, `maxSteps`, `llmCalls`, and
+`maxLlmCalls` snapshot. These additive fields keep budget pressure and finalize
+reapplication visible without changing the loop's termination policy.
+
 ## Sandbox ([Copse-dialect phase](./plans/hooks-and-feature-packs.md#phase-f--copse-dialect-native-events-sandbox))
 
 Hooks are trusted by declaration (the user/workspace-trust gate is the consent) but

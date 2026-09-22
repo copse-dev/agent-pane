@@ -11,6 +11,7 @@ import {
 import { errorMessage } from '@shared/errors.ts'
 import { getSetting } from '../storage/settings.ts'
 import { AbandonedCallAbort } from '../approval.ts'
+import { runWithApprovalToolCallId } from '../approval-tool-call-context.ts'
 import type { ToolRegistry } from '../tool-registry.ts'
 import type { ToolResultImage } from '@shared/types'
 import type { AdvisorRunnerContext } from '../advisor-runner-context.ts'
@@ -84,6 +85,10 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
   // prompts and, when approved, runs outside the ACP process's seatbelt.
   'run_shell',
   'run_background',
+  // Host GUI launch via Launch Services. run_shell/open cannot reach the
+  // window server from the seatbelt; this tool asks once, then launches
+  // unsandboxed from the host process (gui-app-launch-tool.ts).
+  'launch_gui_app',
   // GitHub / CI — run with Copse's gh auth and network access.
   'gh_pr_list',
   'gh_pr_view',
@@ -442,7 +447,9 @@ function buildMcpServer(
       // resolve; the guard above already rejected any call with none bound.
       const runExecute = (): ReturnType<ToolRegistry['executeNormalized']> =>
         runWithActiveRunIdentity(ctx.threadId, () =>
-          runWithThreadExecutionContext(executionContext, withPermissionContext),
+          runWithThreadExecutionContext(executionContext, () =>
+            runWithApprovalToolCallId(requestKey, withPermissionContext),
+          ),
         )
       const advisor = advisorContext.current
       const { result, images } =

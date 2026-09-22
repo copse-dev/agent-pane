@@ -269,6 +269,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
             ...(chunk.status !== undefined ? { status: chunk.status } : {}),
             ...(chunk.result !== undefined ? { result: chunk.result } : {}),
             ...(chunk.resultFormat !== undefined ? { resultFormat: chunk.resultFormat } : {}),
+            ...(chunk.images !== undefined ? { images: chunk.images } : {}),
           })
         }
         st.writing = false

@@ -15,6 +15,9 @@ export const ACP_UNFINISHED_TURN_RECOVERY_PROMPT = [
 export const ACP_UNFINISHED_TURN_FALLBACK =
   'The external agent stopped after using its tools without providing a final result. Send “continue” to resume.'
 
+export const ACP_UNFINISHED_TURN_BUDGET_FALLBACK =
+  'Copse could not request a final response automatically because this turn reached its continuation limit. Send “continue” to resume.'
+
 /**
  * Result written onto a tool call the turn ended on top of (#2332). `ToolCall`
  * has no `cancelled` status, so this reuses `error` and says so in the payload.
@@ -149,8 +152,14 @@ export function createAcpToolCallTracker(): {
    * progress. Chunks that are not part of a tool call always pass.
    */
   observe: (chunk: StreamChunk) => boolean
-  /** Cancel every call still in flight, returning the chunks to emit for them. */
-  settle: () => ToolCallUpdateChunk[]
+  /**
+   * Cancel every call still in flight, returning the chunks to emit for them.
+   * Ids in `keepOpen` are left open: their approval prompt survived the turn
+   * (approval.ts parking), so an "interrupted" verdict would be a lie the
+   * user's pending answer contradicts. They also stay observable — a terminal
+   * update the agent sends for one still settles it normally.
+   */
+  settle: (keepOpen?: ReadonlySet<string>) => ToolCallUpdateChunk[]
 } {
   const open = new Set<string>()
   const hostSettled = new Set<string>()
@@ -163,15 +172,20 @@ export function createAcpToolCallTracker(): {
       else open.delete(lifecycle.toolCallId)
       return true
     },
-    settle(): ToolCallUpdateChunk[] {
-      const cancelled = [...open].map((toolCallId): ToolCallUpdateChunk => ({
-        type: 'tool_call_update',
-        toolCallId,
-        status: 'error',
-        result: ACP_CANCELLED_TOOL_CALL_RESULT,
-      }))
-      for (const toolCallId of open) hostSettled.add(toolCallId)
-      open.clear()
+    settle(keepOpen): ToolCallUpdateChunk[] {
+      const cancelled = [...open]
+        .filter((toolCallId) => keepOpen?.has(toolCallId) !== true)
+        .map((toolCallId): ToolCallUpdateChunk => ({
+          type: 'tool_call_update',
+          toolCallId,
+          status: 'error',
+          result: ACP_CANCELLED_TOOL_CALL_RESULT,
+        }))
+      for (const toolCallId of open) {
+        if (keepOpen?.has(toolCallId) === true) continue
+        hostSettled.add(toolCallId)
+        open.delete(toolCallId)
+      }
       return cancelled
     },
   }

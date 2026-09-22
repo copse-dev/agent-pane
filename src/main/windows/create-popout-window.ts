@@ -1,4 +1,4 @@
-import { BrowserWindow } from 'electron'
+import { app, BrowserWindow } from 'electron'
 import { join } from 'node:path'
 import type { RightPanelMode } from '@shared/types/state.ts'
 import { getAppIcon } from '../app-icon.ts'
@@ -9,6 +9,7 @@ import { registerAppWindow } from './app-window-broadcast.ts'
 import { bootThemeWindowOptions } from './boot-theme.ts'
 import { attachRendererCrashRecovery } from './renderer-crash-recovery.ts'
 import { attachVisualPinchZoom } from './visual-pinch-zoom.ts'
+import { shouldShowNativeWindows } from './native-window-visibility.ts'
 
 /** Any right-panel pane can be detached into its own window. */
 export type PopoutMode = RightPanelMode
@@ -100,7 +101,7 @@ export function createPanePopoutWindow(mode: PopoutMode, seed?: unknown): Browse
   const unregisterBroadcast = registerAppWindow(win.webContents)
 
   win.once('ready-to-show', () => {
-    win.show()
+    if (shouldShowNativeWindows(app.commandLine)) win.show()
   })
   win.on('closed', () => {
     unregisterTrustedAppFrame(frame)

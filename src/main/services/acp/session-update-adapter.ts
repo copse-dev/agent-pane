@@ -1,5 +1,5 @@
 import type { PlanEntry, SessionUpdate, ToolCallContent, ToolKind } from '@agentclientprotocol/sdk'
-import type { StreamChunk } from '@shared/types'
+import type { StreamChunk, ToolResultImage } from '@shared/types'
 import type { TodoItem } from '@shared/types/todo.ts'
 import { TODOS_PLUGIN_ID, TODOS_PANEL_CONTRIBUTION_ID } from '@copse/agent/plugins/todos-plugin.ts'
 import type { PanelEntry } from '@copse/agent/plugins/plugin-panel.ts'
@@ -254,18 +254,25 @@ function sessionUpdateToStreamChunk(update: SessionUpdate): StreamChunk | null {
       const status = toolCallStatus(update.status)
       const contentResult =
         update.content !== undefined && update.content !== null
-          ? toolCallContentText(update.content)
+          ? toolCallContent(update.content)
           : undefined
-      const rawTextResult =
-        update.rawOutput !== undefined ? mcpTextResult(update.rawOutput) : undefined
+      const rawResult = update.rawOutput !== undefined ? mcpToolResult(update.rawOutput) : undefined
       const result =
-        rawTextResult ??
-        contentResult ??
-        (update.rawOutput !== undefined ? formatRawToolValue(update.rawOutput) : undefined)
+        rawResult !== undefined
+          ? rawResult.text
+          : (contentResult?.text ??
+            (update.rawOutput !== undefined ? formatRawToolValue(update.rawOutput) : undefined))
+      const images =
+        rawResult && rawResult.images.length > 0
+          ? rawResult.images
+          : contentResult && contentResult.images.length > 0
+            ? contentResult.images
+            : undefined
       const name = preferredAcpToolLabel(update.title, update.name)
       if (
         status === undefined &&
         result === undefined &&
+        images === undefined &&
         name === undefined &&
         update.rawInput === undefined
       ) {
@@ -278,6 +285,7 @@ function sessionUpdateToStreamChunk(update: SessionUpdate): StreamChunk | null {
         ...(update.rawInput !== undefined ? { args: update.rawInput } : {}),
         ...(status !== undefined ? { status } : {}),
         ...(result !== undefined ? { result, resultFormat: 'markdown' } : {}),
+        ...(images !== undefined ? { images } : {}),
       }
     }
     // The agent's permission (session) mode changed — either from our own
@@ -309,14 +317,43 @@ export function unwrapInlineCode(text: string): string {
   return trimmed
 }
 
-/** Collect the plain text from a tool call's content blocks. */
-function toolCallContentText(content: ToolCallContent[] | null | undefined): string {
-  if (!content) return ''
-  const parts: string[] = []
-  for (const item of content) {
-    if (item.type === 'content' && item.content.type === 'text') parts.push(item.content.text)
+interface ToolCallContentResult {
+  text?: string
+  images: ToolResultImage[]
+}
+
+/** Decode one MCP/ACP image block into the shared tool-result representation. */
+function toolResultImage(value: unknown): ToolResultImage | null {
+  if (!isRecord(value) || value['type'] !== 'image') return null
+  const data = value['data']
+  const mimeType = value['mimeType']
+  if (
+    typeof data !== 'string' ||
+    data.length === 0 ||
+    typeof mimeType !== 'string' ||
+    !/^image\/[\w.+-]+$/.test(mimeType)
+  ) {
+    return null
   }
-  return parts.join('')
+  return { dataUrl: `data:${mimeType};base64,${data}` }
+}
+
+/** Collect visible text and images from a tool call's ACP content blocks. */
+function toolCallContent(content: ToolCallContent[] | null | undefined): ToolCallContentResult {
+  const result: ToolCallContentResult = { images: [] }
+  if (!content) return result
+  const text: string[] = []
+  for (const item of content) {
+    if (item.type !== 'content') continue
+    if (item.content.type === 'text') {
+      text.push(item.content.text)
+      continue
+    }
+    const image = toolResultImage(item.content)
+    if (image) result.images.push(image)
+  }
+  if (text.length > 0) result.text = text.join('')
+  return result
 }
 
 function toolCallStatus(
@@ -329,11 +366,12 @@ function toolCallStatus(
 }
 
 /**
- * MCP transports wrap successful tool text in a protocol envelope. Extract it
- * only when doing so is lossless; errors, mixed media, and structured results
- * stay serialized so the UI never hides meaningful response data.
+ * MCP transports wrap successful tool content in a protocol envelope. Extract
+ * text and image blocks only when doing so is lossless; errors, structured
+ * results, and unknown media stay serialized so the UI never hides data it
+ * cannot present directly.
  */
-function mcpTextResult(value: unknown): string | undefined {
+function mcpToolResult(value: unknown): ToolCallContentResult | undefined {
   if (!isRecord(value)) return undefined
   const error = value['error']
   if (error !== undefined && error !== null) return undefined
@@ -345,20 +383,24 @@ function mcpTextResult(value: unknown): string | undefined {
 
   const content = result['content']
   if (!Array.isArray(content) || content.length === 0) return undefined
-  const parts: string[] = []
+  const text: string[] = []
+  const images: ToolResultImage[] = []
   for (const item of content) {
-    if (!isRecord(item) || item['type'] !== 'text' || typeof item['text'] !== 'string') {
-      return undefined
+    if (isRecord(item) && item['type'] === 'text' && typeof item['text'] === 'string') {
+      text.push(item['text'])
+      continue
     }
-    parts.push(item['text'])
+    const image = toolResultImage(item)
+    if (!image) return undefined
+    images.push(image)
   }
-  return parts.join('\n')
+  return { ...(text.length > 0 ? { text: text.join('\n') } : {}), images }
 }
 
 function formatRawToolValue(value: unknown): string {
   if (typeof value === 'string') return value
-  const textResult = mcpTextResult(value)
-  if (textResult !== undefined) return textResult
+  const contentResult = mcpToolResult(value)
+  if (contentResult !== undefined) return contentResult.text ?? ''
   try {
     return JSON.stringify(value, null, 2)
   } catch {

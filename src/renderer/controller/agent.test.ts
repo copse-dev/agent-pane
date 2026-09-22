@@ -379,6 +379,7 @@ test('tool_call_update patches ACP arguments, output, and status in place', () =
     status: 'running',
     result: 'starting',
     resultFormat: 'markdown',
+    images: [{ dataUrl: 'data:image/png;base64,cGl4ZWxz' }],
   })
 
   let tc = at(at(messages(), 0).toolCalls, 0)
@@ -387,6 +388,7 @@ test('tool_call_update patches ACP arguments, output, and status in place', () =
   assert.equal(tc.status, 'running')
   assert.equal(tc.result, 'starting')
   assert.equal(tc.resultFormat, 'markdown')
+  assert.deepEqual(tc.images, [{ dataUrl: 'data:image/png;base64,cGl4ZWxz' }])
 
   send({ type: 'tool_call_update', toolCallId: 'tc1', status: 'done' })
   tc = at(at(messages(), 0).toolCalls, 0)

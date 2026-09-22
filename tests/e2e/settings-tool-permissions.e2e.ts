@@ -50,6 +50,21 @@ describe('settings tool permissions', () => {
     const firstCopseRow = copseGroup.$('.tool-permission-row')
     await firstCopseRow.waitForExist()
     await expect(firstCopseRow.$$('.tool-permission-choice')).toBeElementsArrayOfSize(3)
+    if ((await copseGroup.getAttribute('open')) === null) {
+      await copseGroup.$('summary').click()
+    }
+
+    const guiLaunchRow = copseGroup.$('[data-tool-id="copse:launch_gui_app"]')
+    await guiLaunchRow.waitForExist({ timeout: 15_000 })
+    await guiLaunchRow.scrollIntoView({ block: 'center' })
+    assert.equal(await guiLaunchRow.getAttribute('data-policy'), 'ask')
+    const allowGuiLaunch = guiLaunchRow.$('[data-policy="allow"]')
+    assert.equal(await allowGuiLaunch.isEnabled(), false)
+    assert.match(
+      (await allowGuiLaunch.getAttribute('aria-description')) ?? '',
+      /must be approved each time/u,
+    )
+    await saveElementScreenshot('#settings-dialog', 'settings-gui-app-permission.png')
 
     const canvasGroup = $(`.tool-permission-group[data-group-id*=":${SERVER_NAME}:"]`)
     await canvasGroup.waitForDisplayed({ timeout: 15_000 })

@@ -256,6 +256,22 @@ describe('tool permissions', () => {
     assert.equal(await setToolPermissionForExecution('gh_pr_create', 'allow'), false)
   })
 
+  it('requires approval for host GUI launches and rejects an allow update', async () => {
+    const registry = new ToolRegistry()
+    registerTool(registry, 'launch_gui_app')
+    const id = copseToolPermissionId('launch_gui_app')
+    const initial = listToolPermissionCatalog(registry, []).groups[0]?.tools[0]
+
+    assert.ok(initial)
+    assert.equal(initial.defaultPolicy, 'ask')
+    assert.deepEqual(initial.disabledPolicies, ['allow'])
+    assert.match(initial.disabledReason ?? '', /sandbox/u)
+
+    await setSetting(OVERRIDES_KEY, { [id]: 'allow' })
+    assert.deepEqual(resolveToolPermission('launch_gui_app'), { id, policy: 'ask' })
+    assert.equal(await setToolPermissionForExecution('launch_gui_app', 'allow'), false)
+  })
+
   it('defaults custom tools to ask and disables allow when the tool requires approval', async () => {
     const registry = new ToolRegistry()
     registerTool(registry, 'custom__lookup')

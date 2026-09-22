@@ -2082,11 +2082,17 @@ export function mountRoadmapPane(
       }
       bulkReviewFinished = true
       reviewStatus.textContent = `Review complete — ${String(reviewResults.length)} item(s) judged. Use the row actions to mark done, archive, or open an item. Close when finished to advance the commit checkpoint.`
+      // The run is over before the final render: renderReviewResults() only
+      // reveals the bulk buttons while no review is in flight, and the
+      // `finally` below would otherwise flip the flag one render too late.
+      reviewInFlight = false
       syncReviewActionVisibility()
       renderReviewResults()
     } catch (err) {
       reviewStatus.textContent = ipcErrorMessage(err, 'Roadmap review failed.')
     } finally {
+      // Still needed for the early returns above (stopped mid-run, nothing to
+      // review) and the error path; a no-op after a completed run.
       reviewInFlight = false
       reviewBtn.disabled = false
       syncReviewActionVisibility()

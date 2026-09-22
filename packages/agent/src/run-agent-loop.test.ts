@@ -842,7 +842,13 @@ describe('runAgentLoop', () => {
         sawStuckFinalizeNudge ||= messages.some(
           (message) => message.role === 'user' && message.content === STUCK_FINALIZE_NUDGE,
         )
-        if (tools.length > 0) {
+        const isTextFinalize = messages.some(
+          (message) =>
+            message.role === 'user' &&
+            typeof message.content === 'string' &&
+            message.content.includes('Do not call any tools.'),
+        )
+        if (tools.length > 0 && !isTextFinalize) {
           toolCalls++
           yield {
             type: 'tool_call',
@@ -880,7 +886,13 @@ describe('runAgentLoop', () => {
         sawRecoveryNudge ||= messages.some(
           (message) => message.role === 'user' && message.content === recoveryNudge,
         )
-        if (tools.length === 0) {
+        const isTextFinalize = messages.some(
+          (message) =>
+            message.role === 'user' &&
+            typeof message.content === 'string' &&
+            message.content.includes('Do not call any tools.'),
+        )
+        if (tools.length === 0 || isTextFinalize) {
           toolCallsBeforeFinalTextTurn = toolCalls
           yield { type: 'text', text: 'Final.' }
           yield { type: 'done' }
@@ -1020,10 +1032,17 @@ src/renderer/views/projects-pane.ts
 
   it('recovers phantom read_file XML from finalize text-only turn', async () => {
     const readPaths: string[] = []
+    const applied: import('./run-agent-loop.ts').AppliedNudgeRecord[] = []
     let textOnlyCalls = 0
     const provider: LLMProvider = {
       async *stream(_messages, tools) {
-        if (tools.length === 0) {
+        const isTextFinalize = _messages.some(
+          (message) =>
+            message.role === 'user' &&
+            typeof message.content === 'string' &&
+            message.content.includes('Do not call any tools.'),
+        )
+        if (tools.length === 0 || isTextFinalize) {
           textOnlyCalls++
           yield {
             type: 'text',
@@ -1042,6 +1061,7 @@ src/renderer/views/projects-pane.ts
       messages: [{ role: 'user', content: 'verify settings icons' }],
       tools: [{ name: 'list_dir', description: '', parameters: {} }],
       maxSteps: 1,
+      recordAppliedNudge: (record) => applied.push(record),
       onChunk: (c) => chunks.push(c),
       coerceTextToolCallArgs: (name, args) => {
         if (name === 'read_file' && typeof args['path'] === 'string' && args['path'].trim()) {
@@ -1062,6 +1082,23 @@ src/renderer/views/projects-pane.ts
     ])
     assert.ok(chunks.some((c) => c.type === 'text_replace'))
     assert.ok(chunks.some((c) => c.type === 'text' && c.text.includes('Icons look good')))
+    const finalize = applied.filter((record) => record.hookId === 'finalize-nudge')
+    assert.deepEqual(
+      finalize.map((record) => record.finalizeReason),
+      ['step-budget-exhausted', 'pending-tool-calls'],
+    )
+    assert.deepEqual(finalize[0]?.budget, {
+      steps: 1,
+      maxSteps: 1,
+      llmCalls: 1,
+      maxLlmCalls: 4,
+    })
+    assert.deepEqual(finalize[1]?.budget, {
+      steps: 1,
+      maxSteps: 1,
+      llmCalls: 2,
+      maxLlmCalls: 4,
+    })
   })
 
   it('recovers phantom read_file XML from forced text-only turn', async () => {
@@ -1112,6 +1149,58 @@ src/renderer/views/projects-pane.ts
       'src/renderer/views/projects-pane.ts',
     ])
     assert.ok(chunks.some((c) => c.type === 'tool_result'))
+  })
+
+  it('passes native tool schemas to the bounded finalize turn', async () => {
+    const executed: string[] = []
+    let initialTurn = true
+    let finalizeCalls = 0
+    const provider: LLMProvider = {
+      async *stream(_messages, tools) {
+        if (initialTurn) {
+          initialTurn = false
+          yield {
+            type: 'tool_call',
+            toolCall: { id: 'initial', name: 'list_dir', args: { path: '.' } },
+          }
+          yield { type: 'done', stopReason: 'tool_use' }
+          return
+        }
+
+        assert.ok(
+          tools.some((tool) => tool.name === 'list_dir'),
+          'finalize must receive the native tool schemas before it can execute a tool call',
+        )
+        finalizeCalls++
+        if (finalizeCalls === 1) {
+          yield {
+            type: 'tool_call',
+            toolCall: { id: 'finalize', name: 'list_dir', args: { path: 'src' } },
+          }
+          yield { type: 'done', stopReason: 'tool_use' }
+          return
+        }
+        yield { type: 'text', text: 'Final answer.' }
+        yield { type: 'done', stopReason: 'end_turn' }
+      },
+    }
+    const chunks: AgentStreamChunk[] = []
+    await runAgentLoop({
+      provider,
+      messages: [{ role: 'user', content: 'inspect the source' }],
+      tools: [{ name: 'list_dir', description: 'list files', parameters: { type: 'object' } }],
+      maxSteps: 1,
+      maxLlmCalls: 3,
+      onChunk: (chunk) => chunks.push(chunk),
+      executeTool: async (name) => {
+        executed.push(name)
+        return 'directory contents'
+      },
+    })
+
+    assert.deepEqual(executed, ['list_dir', 'list_dir'])
+    assert.equal(finalizeCalls, 2)
+    assert.ok(chunks.some((chunk) => chunk.type === 'text' && chunk.text.includes('Final answer.')))
   })
 
   it('stops when max LLM call budget is exhausted', async () => {
@@ -1394,6 +1483,17 @@ src/renderer/views/projects-pane.ts
     assert.ok(closeout[0])
     assert.equal(closeout[0].mechanism, 'tool-enabled-message')
     assert.ok(closeout[0].text.length > 0)
+    const finalize = applied.filter((record) => record.hookId === 'finalize-nudge')
+    assert.equal(finalize.length, 1)
+    const finalizeRecord = finalize[0]
+    assert.ok(finalizeRecord)
+    assert.equal(finalizeRecord.finalizeReason, 'step-budget-exhausted')
+    assert.deepEqual(finalizeRecord.budget, {
+      steps: 1,
+      maxSteps: 1,
+      llmCalls: 2,
+      maxLlmCalls: 4,
+    })
   })
 
   it('surfaces a note when todos stay open after closeout attempts', async () => {
@@ -1883,8 +1983,113 @@ src/renderer/views/projects-pane.ts
     const finalize = applied.filter((record) => record.hookId === 'finalize-nudge')
     assert.equal(finalize.length, 1)
     assert.ok(finalize[0])
-    assert.equal(finalize[0].mechanism, 'text-only-turn')
+    assert.equal(finalize[0].mechanism, 'tool-enabled-turn')
     assert.match(finalize[0].text, /write a clear final answer/)
+    assert.equal(finalize[0].finalizeReason, 'step-budget-exhausted')
+    assert.deepEqual(finalize[0].budget, {
+      steps: 1,
+      maxSteps: 1,
+      llmCalls: 1,
+      maxLlmCalls: 4,
+    })
+  })
+
+  it('pairs a native finalize call with an error when the call budget is exhausted', async () => {
+    const messages: LLMMessage[] = [{ role: 'user', content: 'inspect the source' }]
+    const chunks: AgentStreamChunk[] = []
+    let providerCalls = 0
+    let executed = 0
+    const provider: LLMProvider = {
+      async *stream(_messages, tools) {
+        providerCalls++
+        assert.ok(tools.some((tool) => tool.name === 'list_dir'))
+        yield {
+          type: 'tool_call',
+          toolCall: { id: 'finalize-at-cap', name: 'list_dir', args: { path: 'src' } },
+        }
+        yield { type: 'done', stopReason: 'tool_use' }
+      },
+    }
+
+    await runAgentLoop({
+      provider,
+      messages,
+      tools: [{ name: 'list_dir', description: 'list files', parameters: { type: 'object' } }],
+      maxSteps: 0,
+      maxLlmCalls: 1,
+      onChunk: (chunk) => chunks.push(chunk),
+      executeTool: async () => {
+        executed++
+        return 'should not execute'
+      },
+    })
+
+    assert.equal(providerCalls, 1)
+    assert.equal(executed, 0)
+    const result = chunks.find(
+      (chunk) => chunk.type === 'tool_result' && chunk.toolCallId === 'finalize-at-cap',
+    )
+    assert.ok(result)
+    assert.equal(result.type, 'tool_result')
+    assert.equal(result.isError, true)
+    assert.match(result.result, /call budget was exhausted/)
+    assertToolPairingValid(messages)
+  })
+
+  it('pairs a native finalize call with a deadline error without executing it', async () => {
+    let now = 0
+    const deadline = new AgentRunDeadline(60_000, 100, now, () => now)
+    const messages: LLMMessage[] = [{ role: 'user', content: 'inspect the source' }]
+    const chunks: AgentStreamChunk[] = []
+    let providerCalls = 0
+    let executedFinalize = 0
+    const provider: LLMProvider = {
+      async *stream(_messages, tools) {
+        providerCalls++
+        assert.ok(tools.some((tool) => tool.name === 'list_dir'))
+        if (providerCalls === 1) {
+          yield {
+            type: 'tool_call',
+            toolCall: { id: 'initial', name: 'list_dir', args: { path: '.' } },
+          }
+          yield { type: 'done', stopReason: 'tool_use' }
+          return
+        }
+        now = 100
+        yield {
+          type: 'tool_call',
+          toolCall: { id: 'finalize-at-deadline', name: 'list_dir', args: { path: 'src' } },
+        }
+        yield { type: 'done', stopReason: 'tool_use' }
+      },
+    }
+
+    await runAgentLoop({
+      provider,
+      messages,
+      tools: [{ name: 'list_dir', description: 'list files', parameters: { type: 'object' } }],
+      maxSteps: 1,
+      maxLlmCalls: 10,
+      adaptiveExtensions: false,
+      runDeadline: deadline,
+      onChunk: (chunk) => chunks.push(chunk),
+      executeTool: async (name, args) => {
+        if (name === 'list_dir' && isRecord(args) && args['path'] === 'src') executedFinalize++
+        return 'should not execute'
+      },
+    })
+
+    assert.equal(providerCalls, 2)
+    assert.equal(executedFinalize, 0)
+    const result = chunks.find(
+      (chunk) => chunk.type === 'tool_result' && chunk.toolCallId === 'finalize-at-deadline',
+    )
+    assert.ok(result)
+    assert.equal(result.type, 'tool_result')
+    assert.equal(result.isError, true)
+    assert.match(result.result, /run deadline expired/)
+    assert.doesNotMatch(result.result, /LLM call budget/)
+    assertToolPairingValid(messages)
   })
 
   it('prefers per-stream usage chunks over the shared lastUsage field (#112)', async () => {

@@ -89,7 +89,12 @@ import {
   isBillableModel,
   isLocalChatModel,
 } from './providers/provider-selection.ts'
-import { requestApproval, cancelApprovalsForThread } from './approval.ts'
+import {
+  requestApproval,
+  cancelApprovalsForThread,
+  pendingApprovalParkedToolCallIds,
+  releaseParkedApprovalsForThread,
+} from './approval.ts'
 import {
   reviewSpendApprovalBody,
   runParentContinuationTurn,
@@ -203,6 +208,7 @@ import {
 import { parseAcpModelSelection } from '@shared/acp.ts'
 import { AcpTurnFailure, runAcpAgentFromSettings } from './acp/acp-agent-service.ts'
 import {
+  ACP_UNFINISHED_TURN_BUDGET_FALLBACK,
   ACP_UNFINISHED_TURN_FALLBACK,
   ACP_UNFINISHED_TURN_RECOVERY_OPERATION_ID,
   ACP_UNFINISHED_TURN_RECOVERY_PROMPT,
@@ -1057,9 +1063,15 @@ export async function runAgent(
     // a spinner (or the agent's own bogus terminal update) into history (#2332).
     const toolCalls = createAcpToolCallTracker()
     const settleOpenToolCalls = (): void => {
+      // A call parked in an approval prompt is not dead: the user may still
+      // answer, and the agent's identical retry completes the run (approval.ts
+      // abandoned-verdict parking). Settling it "interrupted" would write a
+      // false terminal verdict over a live question — so it stays open, and
+      // `parkedApprovalsForThread` re-detaches it once the prompt settles.
+      const parked = pendingApprovalParkedToolCallIds(threadId)
       // sendChunk, not acpChunkSink: these are the host's own bookkeeping, so
       // they must not record deadline activity or move the turn's `lastEvent`.
-      for (const cancelled of toolCalls.settle()) sendChunk(cancelled)
+      for (const cancelled of toolCalls.settle(parked)) sendChunk(cancelled)
     }
     // Settled at the abort site rather than once the turn has unwound, because
     // the agent goes on streaming for as long as its own wind-down takes.
@@ -1186,8 +1198,11 @@ export async function runAgent(
       settleOpenToolCalls()
 
       if (endedAfterTools && !recoverySucceeded) {
-        sendChunk({ type: 'text', text: `\n\n${ACP_UNFINISHED_TURN_FALLBACK}` })
-        messages.push({ role: 'assistant', content: ACP_UNFINISHED_TURN_FALLBACK })
+        const fallback = recoveryAttempted
+          ? ACP_UNFINISHED_TURN_FALLBACK
+          : ACP_UNFINISHED_TURN_BUDGET_FALLBACK
+        sendChunk({ type: 'text', text: `\n\n${fallback}` })
+        messages.push({ role: 'assistant', content: fallback })
       }
 
       messages = messages.map((message): LLMMessage => {
@@ -1311,6 +1326,11 @@ export async function runAgent(
       fireStopHook(threadId, controller.signal.aborted ? 'aborted' : 'completed', turnTreeId)
       bridgeTurn.abort()
       cancelApprovalsForThread(threadId)
+      // Approvals that survived the turn (parked when the agent abandoned the
+      // bridged call, then kept by the skips above) are re-detached from the
+      // turn's identity once their prompt settles, so a verdict answered after
+      // this finally is never attributed to the finished run.
+      releaseParkedApprovalsForThread(threadId)
       runAbort.clear()
       clearRunDeadline(threadId, runAbort.deadline)
       clearHookRunLiveSink(acpHookCardSink)
@@ -1499,9 +1519,12 @@ export async function runAgent(
     sendChunk({ type: 'hook_run', card })
   }
   setHookRunLiveSink(hookCardSink)
+  // Host-side blocking waits use the deadline's dedicated host-wait pause, so
+  // approvals and ask_user do not spend the hard cap while ordinary model
+  // streaming and tool execution remain bounded by it.
   const runAbort = createAgentRunAbortScheduler(controller)
   runAbort.schedule()
-  // H4 (decision 13): register this run's idle deadline so host-side blocking
+  // H4 (decision 13): register this run's deadline so host-side blocking
   // hook fire sites (tool gate, subagent spawn gate, afterFileEdit formatter)
   // can pause it while a blocking hook is awaited — "the same way tool execution
   // does". Cleared in the finally, guarded on the same deadline object.

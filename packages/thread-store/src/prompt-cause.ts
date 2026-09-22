@@ -90,6 +90,13 @@ export const PROMPT_CAUSES = [
   /** Forwarding an ACP agent's configured env (provider keys) to a remote SSH host. */
   'acp-remote-env',
   /**
+   * Launching a host GUI app (macOS Launch Services) from the agent. The
+   * process must leave the sandbox to reach the window server, so a container
+   * does not remove the ask — the user is authorizing a visible app on their
+   * desktop, not a confined guest.
+   */
+  'gui-app-launch',
+  /**
    * Arming a mode the user themselves just asked for. Not an interruption —
    * counted so the log stays complete, and labelled so a reader discounts it.
    */
@@ -162,6 +169,9 @@ const CONTAINMENT: Readonly<Record<PromptCause, PromptCauseContainment>> = {
   // Secrets crossing to a user-chosen remote host need consent regardless of
   // where the local work runs; a container changes nothing about that.
   'acp-remote-env': 'kept',
+  // A GUI launch is an authorization for a visible host app — the window
+  // server is outside any guest, so a container never removes this ask.
+  'gui-app-launch': 'kept',
   'mode-arming': 'kept',
 }
 
@@ -198,6 +208,7 @@ const LABELS: Readonly<Record<PromptCause, string>> = {
   'acp-permission': 'ACP agent permission request',
   'acp-package-setup': 'ACP agent package setup',
   'acp-remote-env': 'Forwarding ACP agent env to a remote host',
+  'gui-app-launch': 'Launch a host GUI app',
   'mode-arming': 'Arming a mode (user-initiated, not an interruption)',
 }
 
