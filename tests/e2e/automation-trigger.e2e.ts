@@ -157,13 +157,18 @@ describe('cron automation trigger', function () {
 
   it('submits the scheduled prompt and completes a real mock agent turn', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    await installMockScenario(
+    const scenario = await installMockScenario(
       {
         title: 'CI review',
         turns: [
           {
             user: PROMPT,
-            responses: [{ text: 'The CI review is complete; no failures were found.' }],
+            responses: [
+              {
+                waitFor: 'review-ready',
+                text: 'The CI review is complete; no failures were found.',
+              },
+            ],
           },
         ],
       },
@@ -191,6 +196,10 @@ describe('cron automation trigger', function () {
         timeoutMsg: 'the fresh scheduled task never joined its existing schedule group',
       },
     )
+    // Finish checkout/provider startup, then hold the response while opening
+    // the scheduled run. Streaming store updates rebuild the entire sidebar
+    // and can detach a row between WebDriver locating and clicking it.
+    await scenario.waitForHold('review-ready')
     assert.equal(await scheduleGroup.$('.automation-schedule-count').getText(), '3 runs')
     assert.equal(
       await scheduleGroup.$('.automation-schedule-toggle').getAttribute('aria-expanded'),
@@ -201,6 +210,8 @@ describe('cron automation trigger', function () {
     const scheduledRow = scheduleGroup.$('.automation-schedule-runs .chat-row')
     await scheduledRow.waitForExist({ timeout: 5_000 })
     assert.match(await scheduledRow.getText(), /^Latest · /)
+    const scheduledThreadId = await scheduledRow.getAttribute('data-thread-id')
+    assert.ok(scheduledThreadId, 'the latest scheduled run must have a thread id')
     // The row is the run the real scheduler just fired, so its time is the
     // wall clock; nothing seeded can stand in for it. Pin only that text.
     const restoreRunTime = await pinTextForCapture(
@@ -210,7 +221,7 @@ describe('cron automation trigger', function () {
     )
     await saveElementScreenshot('.automation-threads-group', 'automation-thread-group.png')
     await restoreRunTime()
-    await scheduledRow.click()
+    await $(`.automation-schedule-runs .chat-row[data-thread-id="${scheduledThreadId}"]`).click()
 
     const userMessage = $('.msg-user .message-text')
     // Same reasoning as the sibling diagnostic in automation-attention (#1719):
@@ -243,6 +254,7 @@ describe('cron automation trigger', function () {
       )
     }
 
+    await scenario.release('review-ready')
     const expectedResponse = 'The CI review is complete; no failures were found.'
     await browser.waitUntil(
       async () => {
@@ -259,6 +271,15 @@ describe('cron automation trigger', function () {
     )
     assert.equal(await $('.prompt-input').getText(), '')
 
-    await saveAppScreenshot('automation-trigger.png')
+    const restoreFinalRunTime = await pinTextForCapture(
+      '.automation-schedule-runs',
+      /^Latest · .+$/,
+      'Latest · Jan 1, 2026, 12:00 AM',
+    )
+    try {
+      await saveAppScreenshot('automation-trigger.png')
+    } finally {
+      await restoreFinalRunTime()
+    }
   })
 })

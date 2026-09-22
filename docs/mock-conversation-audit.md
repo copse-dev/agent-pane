@@ -340,5 +340,10 @@ crops hid an unconfigured fallback reply in the transcript. Those fixtures now
 read real router and README files through registered scenarios and assert the
 resulting replies before capture. Both focused specs pass.
 
+The scheduled-run fixture also holds its reply while opening the new run. This
+keeps streaming store updates from replacing the sidebar row between WebDriver
+locating and clicking it. The test releases the response after verifying that
+the real scheduled prompt opened, then checks the completed conversation.
+
 The broad provider and fixture changes require the full Electron CI tier before
 merge. The focused runs above supplement that gate rather than replacing it.
