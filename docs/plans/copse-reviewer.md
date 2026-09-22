@@ -797,6 +797,18 @@ CI shell needs (`stage0-report.ts`, `forge-review.ts`) and the workflows
   every inline comment folded into the body rather than lost. `--post-review github|forgejo`
   with `--repo` and `--pr`; the token from `COPSE_REVIEW_FORGE_TOKEN`, else `GITHUB_TOKEN`
   (Forgejo: `FORGEJO_TOKEN` too); a review that could not be posted is exit 1.
+- **Copse dogfoods the shell, still as an adviser.** _Added 2026-09-22._ The label-triggered
+  GitHub path uses the existing Scaleway OpenAI-compatible account, pinned by default to
+  `qwen3.6-35b-a3b`, the correctness lens and at most three challenged findings. A separate
+  schedule samples no more than one recent, non-draft, unlabelled same-repository pull
+  request per night; `copse-review-skip` is the opt-out. Both paths run the trusted default-branch CLI,
+  preserve the secret-free Stage 0 / read-only model-job boundary, post `COMMENT` reviews
+  only, and retain JSON plus SARIF for 30 days. This is explicit remote processing: the
+  secret-redacted diff and file context leave the GitHub runner for Scaleway. Human
+  accepted/rejected judgements, report latency and token usage are gathered during the
+  rollout; making the reviewer required needs a separate decision backed by that record.
+  Dogfood acceptance is operational evidence, not the Martian offline measurement B8
+  requires for the public 85% precision claim.
 - **Known limit: reproducers in CI.** The findings job has no cell, so Stage 4 there is
   the challenger only; a reproducer needs execution, which belongs to the secret-free job,
   and a job-crossing loop for it is a follow-up. The reports say "unverified" or "survived
