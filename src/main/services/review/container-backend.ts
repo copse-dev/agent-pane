@@ -64,7 +64,10 @@ export async function createReviewContainerBackend(
     return { backend: null, reason: 'the container backend needs a POSIX host' }
   }
   if (!(await probe.dockerAvailable())) {
-    return { backend: null, reason: 'Docker is not running (unattended runs and review cells need the Docker daemon)' }
+    return {
+      backend: null,
+      reason: 'Docker is not running (unattended runs and review cells need the Docker daemon)',
+    }
   }
   let wanted: string
   try {

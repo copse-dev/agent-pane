@@ -1,8 +1,5 @@
 import type { ThreadContainerRunSpec } from './run-spec.ts'
-import {
-  dockerDaemonReachable,
-  requireDockerForThreadContainer,
-} from './container-engine.ts'
+import { dockerDaemonReachable, requireDockerForThreadContainer } from './container-engine.ts'
 /**
  * Run one Copse thread inside a disposable, hardened local Docker container
  * (`docs/plans/thread-in-container.md`).

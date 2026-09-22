@@ -1329,7 +1329,6 @@ describe('container task supervision', () => {
       /Apple container is running on this Mac[\s\S]*still require Docker/,
     )
   })
-
 })
 
 function supervisedService(
