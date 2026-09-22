@@ -85458,14 +85458,19 @@ function initSkillPicker(opts) {
   let selectedIdx = 0;
   let currentSkills = [];
   let allSkills = null;
+  let skillsRevision = 0;
+  let pickerRequest = 0;
   async function ensureSkills() {
-    allSkills ??= await listInvocables();
-    return allSkills;
+    if (allSkills) return allSkills;
+    const revision = skillsRevision;
+    const skills = await listInvocables();
+    if (revision !== skillsRevision) return ensureSkills();
+    allSkills = skills;
+    return skills;
   }
-  function filterSkills(query) {
-    const skills = allSkills ?? [];
+  function filterSkills(query, skills) {
     const q2 = query.toLowerCase();
-    if (!q2) return skills;
+    if (!q2) return [...skills];
     const matched = skills.filter(
       (skill) => skill.name.toLowerCase().includes(q2) || skill.description.toLowerCase().includes(q2)
     );
@@ -85511,8 +85516,10 @@ function initSkillPicker(opts) {
     picker.hidden = currentSkills.length === 0;
   }
   async function updatePicker(query) {
-    await ensureSkills();
-    currentSkills = filterSkills(query);
+    const request = ++pickerRequest;
+    const skills = await ensureSkills();
+    if (request !== pickerRequest) return;
+    currentSkills = filterSkills(query, skills);
     renderPicker();
   }
   function selectItem(idx) {
@@ -85531,8 +85538,20 @@ function initSkillPicker(opts) {
     input2.focus();
   }
   function hidePicker() {
+    pickerRequest++;
     picker.hidden = true;
     slashStart = -1;
+  }
+  function refreshOpenPicker() {
+    const val = input2.value;
+    const cursor = input2.selectionStart;
+    const slashIdx = findSkillTriggerIndex(val, cursor);
+    if (slashIdx === -1) {
+      hidePicker();
+      return;
+    }
+    slashStart = slashIdx;
+    void updatePicker(val.slice(slashIdx + 1, cursor));
   }
   function updateSelection() {
     const items = picker.querySelectorAll(".mention-item");
@@ -85581,12 +85600,19 @@ function initSkillPicker(opts) {
   document.addEventListener("mousedown", (e2) => {
     if (!picker.contains(e2.target instanceof Node ? e2.target : null)) hidePicker();
   });
-  window.addEventListener("copse:skills-changed", () => {
+  function handleSkillsChanged() {
+    skillsRevision++;
     allSkills = null;
-  });
-  return () => {
-    hidePicker();
-    allSkills = null;
+    if (slashStart !== -1) refreshOpenPicker();
+  }
+  window.addEventListener("copse:skills-changed", handleSkillsChanged);
+  return {
+    refresh: handleSkillsChanged,
+    destroy() {
+      window.removeEventListener("copse:skills-changed", handleSkillsChanged);
+      hidePicker();
+      allSkills = null;
+    }
   };
 }
 var init_skill_picker = __esm({
@@ -90443,8 +90469,10 @@ ${description}
   const unsubs = [
     // Main fires this after `initSkillsRegistry` (including the background
     // rescan on `workspace:set`). Refresh the cache so `/checkup` and friends
-    // are visible to context estimates before the next picker open/submit.
+    // are visible to context estimates and to a slash picker that is already
+    // open while discovery finishes (#2948).
     api2.agent.onRefreshContextEstimate(() => {
+      skillPicker.refresh();
       refreshSkillsCache();
       scheduleContextEstimate(0);
     }),
@@ -90569,7 +90597,7 @@ ${description}
       portraitPanelControls.destroy();
       branchControl.destroy();
       indexStatusChip.destroy();
-      skillPicker();
+      skillPicker.destroy();
     }
   };
 }
