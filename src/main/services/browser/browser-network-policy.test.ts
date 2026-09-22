@@ -96,6 +96,19 @@ describe('browser request network boundary', () => {
     }
   })
 
+  it('allows app-internal DevTools documents that share the guest session', () => {
+    // openDevTools() loads devtools_app.html through the guest session's
+    // webRequest hook; cancelling it leaves a blank inspector (ERR_BLOCKED_BY_CLIENT).
+    assert.equal(
+      isBrowserRequestAllowed({
+        ...base,
+        resourceType: 'mainFrame',
+        url: 'devtools://devtools/bundled/devtools_app.html?remoteBase=https://chrome-devtools-frontend.appspot.com/serve_file/@abc123/&experiments=true',
+      }),
+      true,
+    )
+  })
+
   it('enforces the allowlist on every navigation and redirect target', () => {
     assert.equal(
       isBrowserRequestAllowed({ ...base, resourceType: 'mainFrame', url: 'https://example.com' }),

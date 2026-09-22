@@ -21,6 +21,13 @@ export function isBrowserRequestAllowed(input: {
   const { url, documentUrl, resourceType, allowedOrigins, originAccess } = input
   if (!URL.canParse(url)) return false
   const target = new URL(url)
+  // DevTools documents are app-internal UI Chromium loads for the guest's own
+  // inspector (openDevTools/inspectElement); the session request hook sees them
+  // too and must not cancel them, or the inspector window stays blank with
+  // ERR_BLOCKED_BY_CLIENT. Guest pages still cannot reach devtools: themselves —
+  // will-frame-navigate/isAllowedBrowserNavigationUrl restrict page-driven
+  // navigation to http/https.
+  if (target.protocol === 'devtools:') return true
   if (target.protocol === 'data:' || url === 'about:blank') return true
   // file navigation is not supported by the browser tools; don't introduce local file access.
   if (target.protocol === 'blob:') return resourceType !== 'mainFrame'
