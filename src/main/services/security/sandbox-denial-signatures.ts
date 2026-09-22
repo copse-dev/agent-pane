@@ -16,12 +16,15 @@
  * SECURITY: this module only ever produces *advisory text and an operation
  * name* — the same tolerance `sandbox-denial-advice.ts` already documents for
  * text derived from a model-authored command. It does NOT reopen #104: matching
- * one of these signatures never grants an unsandboxed run by itself. Every
- * caller must still route the retry through the same approval prompt a
- * user-requested elevation goes through (`promptUnsandboxedShell` /
- * `promptExpectedSandboxBlock`), so the worst a forged signature can do is cause
- * an extra prompt — exactly the trust level the model's own `expects_sandbox_block`
- * hint already carries today.
+ * one of these signatures never grants a host-sandbox escape by itself. A retry
+ * that would leave the host sandbox must still use the same approval prompt as
+ * a user-requested elevation (`promptUnsandboxedShell` /
+ * `promptExpectedSandboxBlock`). Guarded YOLO may bypass that prompt only for
+ * the runner's non-forgeable evidence, never for one of these signatures. An
+ * unattended container can retry without a person because it stays inside the
+ * same disposable guest rather than escaping onto the host. Thus a forged
+ * signature can cause only an extra prompt or a rerun inside that guest — the
+ * same trust level as the model's own `expects_sandbox_block` hint.
  */
 
 export interface SandboxDenialClassification {
@@ -137,6 +140,24 @@ export function sandboxDenialRetryClassification(
 ): SandboxDenialClassification | null {
   if (alreadyExpectedSandboxBlock) return null
   return classifySandboxDenial(output, command)
+}
+
+export type SandboxRetryEvidence = 'runner' | 'signature'
+
+/**
+ * Whether a retry may bypass its approval prompt in an explicitly unattended
+ * mode. Guarded YOLO may trust the sandbox runner's own non-forgeable evidence,
+ * but never a signature copied from command output: a sandboxed executable can
+ * print that text itself and must not thereby earn an unsandboxed rerun. An
+ * unattended container has no host sandbox to escape, so either evidence kind
+ * retries only inside the same disposable guest.
+ */
+export function sandboxRetryMaySkipApproval(
+  evidence: SandboxRetryEvidence,
+  guardedYolo: boolean,
+  unattendedContainer: boolean,
+): boolean {
+  return unattendedContainer || (evidence === 'runner' && guardedYolo)
 }
 
 /** One-line, greppable note so a signature-triggered retry stays visible in the transcript. */

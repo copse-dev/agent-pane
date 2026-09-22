@@ -8,6 +8,7 @@ import {
   SANDBOX_DENIAL_CACHE_SKIP_NOTE,
   SANDBOX_DENIAL_RETRY_NOTE,
   sandboxDenialRetryClassification,
+  sandboxRetryMaySkipApproval,
 } from './sandbox-denial-signatures.ts'
 
 describe('classifySandboxDenial (issue #1436)', () => {
@@ -68,6 +69,26 @@ describe('sandboxDenialRetryClassification (issue #1436 point 1)', () => {
   it('returns null for an unrecognised failure regardless of expects_sandbox_block', () => {
     assert.equal(sandboxDenialRetryClassification('boom', 'run-tests.sh', false), null)
     assert.equal(sandboxDenialRetryClassification('boom', 'run-tests.sh', true), null)
+  })
+})
+
+describe('sandbox retry approval boundary', () => {
+  it('does not let Guarded YOLO turn forgeable command output into an automatic escape', () => {
+    assert.equal(sandboxRetryMaySkipApproval('signature', true, false), false)
+  })
+
+  it('preserves Guarded YOLO auto-retry for runner-verified sandbox evidence', () => {
+    assert.equal(sandboxRetryMaySkipApproval('runner', true, false), true)
+  })
+
+  it('can retry either evidence kind inside the same unattended container', () => {
+    assert.equal(sandboxRetryMaySkipApproval('runner', false, true), true)
+    assert.equal(sandboxRetryMaySkipApproval('signature', false, true), true)
+  })
+
+  it('requires ordinary runs to ask for approval for either evidence kind', () => {
+    assert.equal(sandboxRetryMaySkipApproval('runner', false, false), false)
+    assert.equal(sandboxRetryMaySkipApproval('signature', false, false), false)
   })
 })
 

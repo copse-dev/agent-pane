@@ -25,6 +25,7 @@ import {
   prefixWithSandboxRetryNote,
   SANDBOX_DENIAL_RETRY_NOTE,
   sandboxDenialRetryClassification,
+  sandboxRetryMaySkipApproval,
 } from '../services/security/sandbox-denial-signatures.ts'
 import { cachedDenialAdvice, deniedOperations } from '../services/security/denied-operations.ts'
 import {
@@ -240,6 +241,7 @@ async function maybeRetryUnsandboxed(
   result: ShellRunResult,
   env: NodeJS.ProcessEnv,
   guardedYolo: boolean,
+  unattendedContainer: boolean,
   readGrantApplied: boolean,
   outsideRootPath: string | null,
   expectsSandboxBlock: boolean,
@@ -278,8 +280,9 @@ async function maybeRetryUnsandboxed(
   if (signatureMatch) {
     deniedOperations.record(threadId, signatureMatch.operation, command, signatureMatch.advice)
   }
+  const evidence = runnerDetection.likely ? 'runner' : 'signature'
   const approved =
-    guardedYolo ||
+    sandboxRetryMaySkipApproval(evidence, guardedYolo, unattendedContainer) ||
     (await promptUnsandboxedShell(command, detection.reasons, signal, { readGrantApplied }))
   if (!approved) return 'declined'
   const retryResult = await runShellOnce(command, cwd, timeout_ms, signal, true, env)
@@ -561,7 +564,8 @@ export const runShellTool = defineTool({
           signal,
           result,
           childEnv,
-          guardedYolo || unattendedContainer,
+          guardedYolo,
+          unattendedContainer,
           readGrantTargets !== null,
           cdTarget,
           expects_sandbox_block === true,
@@ -571,10 +575,10 @@ export const runShellTool = defineTool({
         if (retry) {
           if (succeeded(retry.result)) {
             recordCreatedPullRequest(command, retry.result.output)
-            const retryBanner = guardedYolo
-              ? '[Guarded YOLO · unsandboxed retry]\n'
-              : unattendedContainer
-                ? '[Unattended · container retry outside the project sandbox]\n'
+            const retryBanner = unattendedContainer
+              ? '[Unattended · container retry outside the project sandbox]\n'
+              : guardedYolo && retry.retryNote === null
+                ? '[Guarded YOLO · unsandboxed retry]\n'
                 : ''
             const success = `${retryBanner}${withBanner(formatShellSuccess(retry.result))}`
             return retry.retryNote ? prefixWithSandboxRetryNote(success) : success
