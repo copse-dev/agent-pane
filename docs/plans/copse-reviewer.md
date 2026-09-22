@@ -804,7 +804,10 @@ CI shell needs (`stage0-report.ts`, `forge-review.ts`) and the workflows
   because GitHub suppresses the implicit `workflow_run` event after a run that another
   workflow started with `GITHUB_TOKEN`; `workflow_dispatch` is the documented exception that
   always creates a run. The findings workflow runs in the base repository's context with the
-  model key and a token that can write a review. It verifies that the named run is the
+  model key. Its ordinary workflow token can only read pull-request metadata and artefacts;
+  after verification it mints a repository-scoped installation token for the existing Copse
+  release/deploy App with only `pull-requests: write`, and passes that token only as the forge
+  posting credential. It verifies that the named run is the
   successful default-branch `Copse review ground` run, resolves the current contributor commit
   and base from GitHub's Pull Request API, and never trusts the artefact or a dynamic run
   association. It fetches the head

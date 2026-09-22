@@ -183,8 +183,11 @@ newer head.
 Job B, on the base ref with the model key, imports that report (`--stage0-json`, which makes
 the run read-only and refuses a report for another commit), reviews the head without
 executing it, and posts one advisory review (`--post-review github --repo owner/name --pr n`).
-The token is `COPSE_REVIEW_FORGE_TOKEN`, else `GITHUB_TOKEN`; the model key
-`COPSE_REVIEW_API_KEY`. Provider-specific keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
+The GitHub dogfood jobs mint a repository-scoped token for the existing Copse release/deploy
+App with only `pull-requests: write` and pass it as `COPSE_REVIEW_FORGE_TOKEN`; their
+`GITHUB_TOKEN` remains read-only. For other callers the token is
+`COPSE_REVIEW_FORGE_TOKEN`, else `GITHUB_TOKEN`; the model key `COPSE_REVIEW_API_KEY`.
+Provider-specific keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
 `OPENROUTER_API_KEY`) take precedence over that shared model key when set.
 
 This repository dogfoods the GitHub path with `qwen3.8-27b` through Scaleway's
