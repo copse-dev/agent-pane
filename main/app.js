@@ -70991,7 +70991,25 @@ function createToolResultImages(images) {
     class: "message-images tool-result-images",
     "data-tool-result-image-count": String(images.length)
   });
-  for (const image of images) {
+  const previews2 = images.filter((image) => image.kind === "screenshot");
+  const thumbnails = previews2.length > 0 ? images.filter((image) => image.kind !== "screenshot") : images;
+  for (const image of previews2) {
+    const label = image.name ?? "Tool result image";
+    const figure = el("figure", { class: "tool-result-preview" });
+    const img = el("img", {
+      class: "tool-result-preview-image",
+      src: image.dataUrl,
+      alt: label,
+      loading: "lazy"
+    });
+    attachImageExpand(img, label);
+    figure.append(img);
+    if (image.name !== void 0) {
+      figure.append(el("figcaption", { class: "tool-result-preview-caption" }, image.name));
+    }
+    wrap.append(figure);
+  }
+  for (const image of thumbnails) {
     const label = image.name ?? "Tool result image";
     const img = el("img", {
       class: "message-image tool-result-image",
