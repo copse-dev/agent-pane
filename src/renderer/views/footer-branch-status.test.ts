@@ -159,7 +159,7 @@ describe('footer branch status', () => {
       { name: 'main', lastCommitDate: '2024-01-01' },
     ]
 
-    mountFooterBranchStatus(host, store, {
+    const control = mountFooterBranchStatus(host, store, {
       ...base,
       git: { ...base['git'], listBranches: () => listBranches() },
     })
@@ -171,14 +171,14 @@ describe('footer branch status', () => {
       new Promise<GitBranchInfo[]>((resolve) => {
         releaseStale = resolve
       })
-    store.emit('git_branch_changed')
+    control.refresh()
     await settle()
 
     // ...while refresh B starts and finishes with the list that is now current.
     listBranches = async (): Promise<GitBranchInfo[]> => [
       { name: 'feature/current', lastCommitDate: '2024-01-02' },
     ]
-    store.emit('git_branch_changed')
+    control.refresh()
     await settle()
 
     releaseStale([{ name: 'feature/stale', lastCommitDate: '2024-01-03' }])
@@ -188,6 +188,51 @@ describe('footer branch status', () => {
       (node) => node.textContent,
     )
     assert.deepEqual(labels, ['feature/current'])
+  })
+
+  it('coalesces same-thread store events but refreshes a thread switch immediately', async () => {
+    const second = { ...thread('feature/two', true), id: 'thread-2' }
+    const store = createStore({
+      workspaceRoot: '/repo',
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread('main', true), second],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    let branchReads = 0
+    const base = createApi({ currentBranch: 'main', pr: null })
+    mountFooterBranchStatus(host, store, {
+      ...base,
+      git: {
+        ...base['git'],
+        branchStatus: async () => {
+          branchReads += 1
+          return {
+            currentBranch: store.getState().activeThreadId === 'thread-1' ? 'main' : 'feature/two',
+            pr: null,
+          }
+        },
+      },
+    })
+    await settle()
+    assert.equal(branchReads, 1)
+
+    store.emit('threads_changed')
+    store.emit('message_added', 'thread-1', 'message-1')
+    store.emit('git_branch_changed')
+    await settle()
+    assert.equal(branchReads, 1, 'same-turn events do not start competing Git reads')
+
+    await new Promise<void>((resolve) => setTimeout(resolve, 550))
+    await settle()
+    assert.equal(branchReads, 2, 'the event burst resolves to one deferred refresh')
+
+    store.setState({ activeThreadId: 'thread-2' })
+    store.emit('threads_changed')
+    await settle()
+    assert.equal(branchReads, 3, 'a visible thread switch does not wait for the debounce')
+    assert.equal(host.querySelector('.footer-branch-label')?.textContent, 'feature/two')
   })
 
   it('copies the thread branch on click for existing chats', async () => {
