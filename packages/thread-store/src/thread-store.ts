@@ -48,6 +48,7 @@ import {
 } from './spine-schema.ts'
 import {
   remoteAgentPrIndexKey,
+  isImportedCursorAgentThread,
   type RemoteAgentLink,
   type RemoteAgentPrIndexEntry,
 } from './remote-agent-link.ts'
@@ -1257,6 +1258,127 @@ export function recordThreadAgentLink(
 }
 
 /**
+ * Persist a terminal snapshot for an imported cloud-agent run.
+ *
+ * The stored link is re-read while holding the project's write queue. A
+ * snapshot fetched for a thread that has since started another run therefore
+ * cannot be appended to the wrong conversation. `message.id` is supplied by
+ * the caller as a stable provider-run key, which also makes a retry reuse the
+ * same completed answer rather than duplicating it.
+ */
+export function appendImportedRemoteAgentRunResult(
+  projectId: string,
+  threadId: string,
+  input: {
+    provider: RemoteAgentLink['provider']
+    agentId: string
+    runId: string
+    message: Message
+    canPersist?: () => boolean
+  },
+): Promise<Message | null> {
+  return runStoreWrite(projectId, async () => {
+    if (input.canPersist && !input.canPersist()) return null
+    const current = await readThread(projectId, threadId)
+    // The running-agent registry is in memory rather than on this queue. It
+    // can change while readThread awaits the transcript, so test it again at
+    // the last point before preparing an append.
+    if (input.canPersist && !input.canPersist()) return null
+    const currentLink = current?.remoteAgentLink
+    if (
+      !current ||
+      current.status !== 'idle' ||
+      current.queuePaused === true ||
+      (current.pendingMessages?.length ?? 0) > 0 ||
+      !currentLink ||
+      !isImportedCursorAgentThread(current, input.message.id) ||
+      currentLink.provider !== input.provider ||
+      currentLink.agentId !== input.agentId ||
+      currentLink.runId !== input.runId
+    ) {
+      return null
+    }
+
+    const existing = current.messages.find((message) => message.id === input.message.id)
+    if (existing) {
+      // A crash can land the spine before its PR metadata, migrated provenance,
+      // or catalog row. Reapply every derived write on retry instead of treating
+      // the deterministic message id as a complete no-op.
+      await mergePrRefsIntoMeta(projectId, threadId, existing)
+      const dir = threadDir(projectId, threadId)
+      const latestMeta = readMeta(dir)
+      const latestLink = latestMeta?.remoteAgentLink
+      if (
+        !latestMeta ||
+        !latestLink ||
+        !isImportedCursorAgentThread(
+          { ...current, remoteAgentLink: latestLink },
+          input.message.id,
+        ) ||
+        latestLink.provider !== input.provider ||
+        latestLink.agentId !== input.agentId ||
+        latestLink.runId !== input.runId
+      ) {
+        return null
+      }
+      const updatedAt = Math.max(current.updatedAt, existing.createdAt)
+      const nextMeta: ThreadMeta = {
+        ...latestMeta,
+        remoteAgentLink: { ...latestLink, imported: true },
+        updatedAt: Math.max(latestMeta.updatedAt, updatedAt),
+        id: threadId,
+      }
+      writeFileSync(join(dir, META_FILE), `${JSON.stringify(nextMeta)}\n`)
+      upsertCatalogEntry(projectId, { ...current, ...nextMeta, messages: current.messages })
+      return existing
+    }
+
+    const committed = await appendMessageUnqueued(
+      projectId,
+      threadId,
+      input.message,
+      input.canPersist,
+    )
+    if (!committed) return null
+
+    // `appendMessageUnqueued` may have refreshed cached PR refs. Re-read the
+    // metadata before recording completion so that write is preserved.
+    const dir = threadDir(projectId, threadId)
+    const latestMeta = readMeta(dir)
+    const latestLink = latestMeta?.remoteAgentLink
+    if (
+      !latestMeta ||
+      !latestLink ||
+      !isImportedCursorAgentThread(
+        {
+          ...current,
+          remoteAgentLink: latestLink,
+        },
+        input.message.id,
+      ) ||
+      latestLink.provider !== input.provider ||
+      latestLink.agentId !== input.agentId ||
+      latestLink.runId !== input.runId
+    ) {
+      return null
+    }
+    const nextMeta: ThreadMeta = {
+      ...latestMeta,
+      remoteAgentLink: { ...latestLink, imported: true },
+      updatedAt: Math.max(latestMeta.updatedAt, input.message.createdAt),
+      id: threadId,
+    }
+    writeFileSync(join(dir, META_FILE), `${JSON.stringify(nextMeta)}\n`)
+    upsertCatalogEntry(projectId, {
+      ...current,
+      ...nextMeta,
+      messages: [...current.messages, input.message],
+    })
+    return input.message
+  })
+}
+
+/**
  * Attach the PR the agent opened, chosen from the URLs scraped out of its reply.
  * Write-once: it no-ops unless a launch was recorded and no PR is linked yet, so
  * a follow-up turn that mentions another PR can't repoint the link. See
@@ -1383,43 +1505,74 @@ export function createThread(projectId: string, thread: Thread): Promise<void> {
  * `updateMeta` — the renderer bumps `updatedAt` through it around the same
  * time.
  */
-export function appendMessage(
+async function appendMessageUnqueued(
   projectId: string,
   threadId: string,
   message: Message,
-): Promise<void> {
-  return runStoreWrite(projectId, async () => {
-    const dir = threadDir(projectId, threadId)
-    await fsPromises.mkdir(dir, { recursive: true })
-    const { line, files } = explodeMessage(message, sha256)
-    // Keep each referenced-file write inside this queued operation. Sequential
-    // awaits are deliberate: Promise.all rejects before its surviving siblings
-    // settle, which could release the project queue while a failed batch still
-    // has writes in flight.
-    for (const file of files) {
-      await writeFileEnsuringDirAsync(join(dir, file.ref), file.contents)
-    }
-    const raw = serializeSpineLine(line)
-    // The sidebar's PR chip is derived from links in message text, which a
-    // metadata-only load never reads. Fold this message's links into the
-    // thread's cached `prRefs` as it lands, so the chip is correct on the next
-    // launch without the transcript being read again.
-    await mergePrRefsIntoMeta(projectId, threadId, message)
-    const knownIds = await knownMessageIdsFor(dir)
-    if (!knownIds.has(message.id)) {
-      await fsPromises.appendFile(join(dir, EVENTS_FILE), `${raw}\n`)
-      // Do not teach the cache about an id until the append is durable enough
-      // for Node to resolve it. A rejected append must take this path again.
-      knownIds.add(message.id)
-      return
-    }
+  canCommit?: () => boolean,
+): Promise<boolean> {
+  const dir = threadDir(projectId, threadId)
+  await fsPromises.mkdir(dir, { recursive: true })
+  const { line, files } = explodeMessage(message, sha256)
+  // Keep each referenced-file write inside this queued operation. Sequential
+  // awaits are deliberate: Promise.all rejects before its surviving siblings
+  // settle, which could release the project queue while a failed batch still
+  // has writes in flight.
+  for (const file of files) {
+    await writeFileEnsuringDirAsync(join(dir, file.ref), file.contents)
+  }
+  // File bodies are unreachable until a spine line refers to them. Check the
+  // in-memory run owner before beginning the visible commit.
+  if (canCommit && !canCommit()) return false
+  const raw = serializeSpineLine(line)
+  const knownIds = await knownMessageIdsFor(dir)
+  // `knownMessageIdsFor` can await a disk read. Recheck immediately before the
+  // user-visible spine commit so a local dispatch accepted in that interval
+  // keeps sole ownership of the thread.
+  if (canCommit && !canCommit()) return false
+  // Let a dispatch accepted in a microtask queued by the final check take
+  // ownership before starting the append. The recheck below is immediately
+  // followed by the durable write, which is this operation's linearization
+  // point for imported results.
+  if (canCommit) {
+    await Promise.resolve()
+    if (!canCommit()) return false
+  }
+  if (!knownIds.has(message.id)) {
+    await fsPromises.appendFile(join(dir, EVENTS_FILE), `${raw}\n`)
+    // Do not teach the cache about an id until the append is durable enough
+    // for Node to resolve it. A rejected append must take this path again.
+    knownIds.add(message.id)
+  } else {
     const entries = parseSpineEntries((await readOrNull(join(dir, EVENTS_FILE))) ?? '')
+    // Replacing an existing spine line has one more await before its write.
+    // Preserve a dispatch that became active while that file was read.
+    if (canCommit && !canCommit()) return false
+    if (canCommit) {
+      await Promise.resolve()
+      if (!canCommit()) return false
+    }
     const existingIndex = entries.findIndex(
       (entry) => entry.line?.type === 'message' && entry.line.id === message.id,
     )
     if (existingIndex >= 0) entries[existingIndex] = { raw, line }
     else entries.push({ raw, line })
     await fsPromises.writeFile(join(dir, EVENTS_FILE), serializeSpineEntries(entries))
+  }
+  // The sidebar's PR chip is derived from links in message text, which a
+  // metadata-only load never reads. Derive it only after the spine commit, so
+  // a rejected imported result cannot leave stale cloud PR refs in metadata.
+  await mergePrRefsIntoMeta(projectId, threadId, message)
+  return true
+}
+
+export function appendMessage(
+  projectId: string,
+  threadId: string,
+  message: Message,
+): Promise<void> {
+  return runStoreWrite(projectId, async () => {
+    await appendMessageUnqueued(projectId, threadId, message)
   })
 }
 

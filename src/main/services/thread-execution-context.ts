@@ -6,8 +6,11 @@ import { getThreadMeta, updateMeta } from './thread-store.ts'
 import { getProjectRoot } from './workspace.ts'
 import {
   restoreRetiredThreadWorktree,
+  ThreadWorktreeDetachedError,
   validateThreadWorktree,
+  validateThreadWorktreeRecovery,
   type ValidatedThreadWorktree,
+  type ValidatedThreadWorktreeRecovery,
 } from './worktree-manager.ts'
 import { startExecutionRootIndexing } from './search/workspace-indexing.ts'
 import type { ThreadWorktree } from '@shared/types/worktree.ts'
@@ -50,6 +53,13 @@ export interface ThreadExecutionContextDependencies {
     projectRoot: string
     worktree: ThreadWorktree
   }) => Promise<ValidatedThreadWorktree>
+  /** Validate a detached checkout only when Git has an active recovery marker. */
+  validateWorktreeRecovery?: (input: {
+    projectId: string
+    threadId: string
+    projectRoot: string
+    worktree: ThreadWorktree
+  }) => Promise<ValidatedThreadWorktreeRecovery>
   restoreWorktree?: (input: {
     projectId: string
     threadId: string
@@ -77,6 +87,7 @@ const defaultDependencies: ThreadExecutionContextDependencies = {
   getProjectRoot,
   getThreadMeta,
   validateWorktree: validateThreadWorktree,
+  validateWorktreeRecovery: validateThreadWorktreeRecovery,
   restoreWorktree: restoreRetiredThreadWorktree,
   syncWorktreeBranch: syncAdoptedWorktreeBranch,
   startWorktreeIndexing: startExecutionRootIndexing,
@@ -126,6 +137,62 @@ export function resolveThreadExecutionContext(
   // still receive the original promise and its original rejection.
   void pending.then(clear, clear)
   return pending
+}
+
+/**
+ * Resolve a terminal root through the ordinary strict path first. A detached
+ * checkout gets one narrower fallback so the user can repair a rebase or
+ * cherry-pick that Git left in progress.
+ */
+export async function resolveThreadTerminalExecutionContext(
+  projectId: string,
+  threadId: string,
+  dependencies: ThreadExecutionContextDependencies = defaultDependencies,
+): Promise<ThreadExecutionContext> {
+  try {
+    return await resolveThreadExecutionContext(projectId, threadId, dependencies)
+  } catch (error) {
+    if (!(error instanceof ThreadWorktreeDetachedError)) throw error
+  }
+
+  const projectRoot = dependencies.getProjectRoot(projectId)
+  if (!projectRoot) throw new Error(`Cannot resolve root for project "${projectId}"`)
+
+  const threadMeta = await dependencies.getThreadMeta(projectId, threadId)
+  if (threadMeta == null) {
+    throw new Error(`Thread "${threadId}" is not persisted yet under project "${projectId}"`)
+  }
+  if (threadMeta.id !== threadId) {
+    throw new Error(`Thread "${threadId}" does not belong to project "${projectId}"`)
+  }
+  if (!threadMeta.worktree) {
+    throw new Error('Detached thread recovery requires a persisted worktree')
+  }
+
+  const restored =
+    threadMeta.worktree.retiredAt === undefined && !threadMeta.worktree.pullRequestUrl
+      ? threadMeta.worktree
+      : await (dependencies.restoreWorktree ?? restoreRetiredThreadWorktree)({
+          projectId,
+          threadId,
+          projectRoot,
+          worktree: threadMeta.worktree,
+        })
+  const validateRecovery = dependencies.validateWorktreeRecovery ?? validateThreadWorktreeRecovery
+  const worktree = await validateRecovery({
+    projectId,
+    threadId,
+    projectRoot,
+    worktree: restored,
+  })
+  return Object.freeze({
+    projectId,
+    threadId,
+    projectRoot,
+    root: worktree.root,
+    checkoutMode: 'worktree',
+    branch: null,
+  })
 }
 
 async function resolveThreadExecutionContextUncached(

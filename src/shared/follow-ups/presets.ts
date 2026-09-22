@@ -37,7 +37,7 @@ export const DETERMINISTIC_FOLLOW_UP_IDS = {
  * and, once confirmed, runs `createPrForThread` directly — no prompt is sent
  * and no model is involved in the create, so unlike the prompt presets this
  * carries no `prompt`. The shape matches the other action-only bubble
- * (`model-compare`): an id and a label, with the renderer keyed on `action`.
+ * (`review`): an id and a label, with the renderer keyed on `action`.
  */
 export function buildCreatePrSuggestion(): { id: string; label: string } {
   return {
@@ -88,8 +88,7 @@ export function buildChangesSuggestion(stats: { additions: number; deletions: nu
   return {
     id: DETERMINISTIC_FOLLOW_UP_IDS.changes,
     label: 'Changes',
-    prompt:
-      'Review the uncommitted changes in this workspace and suggest any fixes or improvements.',
+    prompt: 'Review the changes shown in the Changes pane and suggest any fixes or improvements.',
     additions: stats.additions,
     deletions: stats.deletions,
   }

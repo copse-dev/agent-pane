@@ -1,0 +1,31 @@
+{
+  "roles": {
+    "review:correctness": [
+      {
+        "type": "tool_call",
+        "name": "report_finding",
+        "args": {
+          "path": "src/greet.cjs",
+          "startLine": 3,
+          "class": "contract",
+          "severity": "low",
+          "confidence": "low",
+          "claim": "The renamed binding greeting shadows an outer greeting and changes the returned value.",
+          "reason": "A rename to a name that already exists in scope would resolve differently."
+        }
+      },
+      { "type": "text", "text": "One possible shadowing issue." }
+    ],
+    "review:contracts": [{ "type": "text", "text": "The returned string is unchanged." }],
+    "reproduce": [{ "type": "text", "text": "No reproducer: the value is the same on both." }],
+    "challenge": [
+      { "type": "tool_call", "name": "read_file", "args": { "path": "src/greet.cjs" } },
+      {
+        "type": "tool_call",
+        "name": "verdict",
+        "args": { "status": "refuted", "reason": "there is no outer binding named greeting; the rename is local to greet and the returned value is identical" }
+      },
+      { "type": "text", "text": "Refuted." }
+    ]
+  }
+}

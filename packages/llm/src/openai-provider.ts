@@ -14,7 +14,7 @@ import {
   yieldStreamWithRetry,
 } from './stream-retry.ts'
 import { parseToolArgs } from './parse-tool-args.ts'
-import { serviceTierBody, type ServiceTier } from './service-tier.ts'
+import { isServiceTier, serviceTierBody, type ServiceTier } from './service-tier.ts'
 import { toolCallIdOrSynthesized } from './tool-call-id.ts'
 import { dropImageContent, toolResultImageFollowUp } from './tool-result-images.ts'
 import { openAiParameterFields, type ModelParameters } from './model-parameters.ts'
@@ -135,6 +135,10 @@ export class OpenAIProvider implements LLMProvider {
       apiKey: opts.apiKey ?? process.env['OPENAI_API_KEY'] ?? 'not-needed',
       ...(opts.baseURL ? { baseURL: opts.baseURL } : {}),
       defaultHeaders: withAppAttribution(opts.defaultHeaders),
+      // yieldStreamWithRetry owns the request budget. Leaving the SDK's two
+      // retries enabled would multiply that outer budget — most importantly,
+      // one routing-policy replay could become six HTTP requests for a 503.
+      maxRetries: 0,
     })
   }
 
@@ -235,8 +239,12 @@ export class OpenAIProvider implements LLMProvider {
         const toolCallBuilders = new Map<number, { id: string; name: string; argsJson: string }>()
         let finishReason: string | undefined
         let streamUsage: ModelUsage | null = null
+        let responseServiceTier: ServiceTier | undefined
 
         for await (const event of stream) {
+          if (typeof event.service_tier === 'string' && isServiceTier(event.service_tier)) {
+            responseServiceTier = event.service_tier
+          }
           if (event.usage) {
             const cacheReadTokens = event.usage.prompt_tokens_details?.cached_tokens
             const details = event.usage.prompt_tokens_details
@@ -312,6 +320,8 @@ export class OpenAIProvider implements LLMProvider {
             ...(streamUsage.cacheCreationTokens !== undefined
               ? { cacheCreationTokens: streamUsage.cacheCreationTokens }
               : {}),
+            ...(self.serviceTier !== undefined ? { requestedServiceTier: self.serviceTier } : {}),
+            ...(responseServiceTier !== undefined ? { responseServiceTier } : {}),
           }
         }
         reportCache(streamUsage)

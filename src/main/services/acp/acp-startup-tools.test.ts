@@ -52,7 +52,12 @@ describe('ACP tool calls with initial results (#2494)', () => {
       assert.deepEqual(chunks, [
         {
           type: 'tool_call',
-          toolCall: { id: 'mcp-startup-docs', name: 'mcp__docs__startup', args: {} },
+          toolCall: {
+            id: 'mcp-startup-docs',
+            name: 'mcp__docs__startup',
+            title: 'mcp__docs__startup',
+            args: {},
+          },
         },
         {
           type: 'tool_call_update',
@@ -60,6 +65,8 @@ describe('ACP tool calls with initial results (#2494)', () => {
           status: 'error',
           result: message,
           resultFormat: 'markdown',
+          images: [],
+          content: [{ type: 'content', content: { type: 'text', text: message } }],
         },
       ])
     } finally {

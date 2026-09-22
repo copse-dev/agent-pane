@@ -186,6 +186,8 @@ const api: ApiClient = {
   fs: {
     readFile: (projectId: string, threadId: string, path: string) =>
       ipcRenderer.invoke('fs:read-file', projectId, threadId, path),
+    readImage: (projectId: string, threadId: string, path: string) =>
+      ipcRenderer.invoke('fs:read-image', projectId, threadId, path),
     writeFile: (projectId: string, threadId: string, path: string, content: string) =>
       ipcRenderer.invoke('fs:write-file', projectId, threadId, path, content),
     readdir: (projectId: string, threadId: string, path: string) =>
@@ -242,6 +244,8 @@ const api: ApiClient = {
         model,
         baseBranch,
       ),
+    renameCheckoutBranch: (projectId: string, threadId: string, title: string) =>
+      ipcRenderer.invoke('agent:rename-checkout-branch', projectId, threadId, title),
     previewCheckout: (
       projectId: string,
       choice: 'automatic' | 'shared' | 'worktree',
@@ -254,9 +258,6 @@ const api: ApiClient = {
     runningThreadIds: () => ipcRenderer.invoke('agent:running-thread-ids'),
     retryReview: (projectId: string, threadId: string, payload: string) =>
       ipcRenderer.invoke('agent:retry-review', projectId, threadId, payload),
-    retryComparison: (projectId: string, threadId: string, payload: string) =>
-      ipcRenderer.invoke('agent:retry-comparison', projectId, threadId, payload),
-    comparisonModels: (payload: string) => ipcRenderer.invoke('agent:comparison-models', payload),
     clearHistory: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('agent:clear-history', projectId, threadId),
     refreshModelContext: () => ipcRenderer.invoke('agent:refresh-model-context'),
@@ -300,7 +301,6 @@ const api: ApiClient = {
         collapseDetails?: boolean
         approveOnceLabel?: string
         showWhileSettingsOpen?: boolean
-        comparisonModels?: { a: string; b: string; judge: string }
         allowTurnTreeLease?: boolean
         turnTreeLeaseLabel?: string
         turnTreeLeaseSubject?: string
@@ -320,7 +320,6 @@ const api: ApiClient = {
           rememberLabel?: string
           collapseDetails?: boolean
           approveOnceLabel?: string
-          comparisonModels?: { a: string; b: string; judge: string }
           allowTurnTreeLease?: boolean
           turnTreeLeaseLabel?: string
           turnTreeLeaseDefault?: boolean
@@ -490,10 +489,15 @@ const api: ApiClient = {
       id: string,
       approved: boolean,
       remember?: boolean,
-      comparisonModels?: { a: string; b: string; judge: string },
       grantScope?: 'once' | 'turn-tree',
-    ) =>
-      ipcRenderer.invoke('approval:respond', id, approved, remember, comparisonModels, grantScope),
+    ) => ipcRenderer.invoke('approval:respond', id, approved, remember, grantScope),
+  },
+  review: {
+    run: (projectId: string, threadId: string, payload: string) =>
+      ipcRenderer.invoke('review:run', projectId, threadId, payload),
+    dismissFinding: (finding: { findingId: string; path: string; claim: string; class: string }) =>
+      ipcRenderer.invoke('review:dismiss-finding', finding),
+    restoreFinding: (findingId: string) => ipcRenderer.invoke('review:restore-finding', findingId),
   },
   ask: {
     respond: (id: string, answers: string[]) => ipcRenderer.invoke('ask:respond', id, answers),
@@ -925,6 +929,8 @@ const api: ApiClient = {
     /** Import outside Cursor cloud agents as local thread stubs for a project. */
     discoverExternal: (projectId?: string) =>
       ipcRenderer.invoke('remote-agent:discover-external', projectId),
+    refreshImportedThread: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('remote-agent:refresh-imported-thread', projectId, threadId),
   },
   acp: {
     detectAgents: () => ipcRenderer.invoke('acp:detect-agents'),

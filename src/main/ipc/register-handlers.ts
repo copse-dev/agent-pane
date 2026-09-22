@@ -214,7 +214,7 @@ import {
   syncAdvisorStrategyTools,
   syncCiInvestigatorTools,
   syncLongHorizonTasksTools,
-  syncModelComparisonTools,
+  syncReviewTools,
   syncBackgroundTasksTools,
   syncOkfMemoryTools,
   syncParallelSearchTools,
@@ -222,7 +222,7 @@ import {
   syncReadTerminalTools,
   syncRoadmapPlanTools,
 } from '../services/registry-bootstrap.ts'
-import { MODEL_COMPARISON_PLUGIN_ID } from '@copse/agent/plugins/model-comparison-plugin.ts'
+import { REVIEW_PLUGIN_ID } from '@copse/agent/plugins/review-plugin.ts'
 import { LONG_HORIZON_TASKS_PLUGIN_ID } from '@copse/agent/plugins/long-horizon-tasks-plugin.ts'
 import { ROADMAP_PLANS_PLUGIN_ID } from '@copse/agent/plugins/roadmap-plans-plugin.ts'
 import { ADVISOR_STRATEGY_PLUGIN_ID } from '@copse/agent/plugins/advisor-strategy-plugin.ts'
@@ -381,6 +381,7 @@ import {
 } from '../services/providers/model-card-resolver.ts'
 import {
   fetchRemoteArtifactImageDataUrl,
+  refreshImportedCursorAgentThread,
   resolveRemoteArtifactDownloadUrl,
 } from '../services/remote/remote-agent-client.ts'
 import {
@@ -393,6 +394,7 @@ import { listActiveProjectAgentPrLinks } from '../services/remote/remote-agent-l
 import {
   gatewayListDir,
   gatewayReadFile,
+  gatewayReadImage,
   gatewayReaddir,
   gatewayWriteFile,
 } from '../project-sandbox/sandbox-fs-client.ts'
@@ -450,7 +452,11 @@ you want the coding agent to follow on every turn.
   intent is ambiguous.
 `
 
-export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry): void {
+export function registerAllHandlers(
+  win: BrowserWindow,
+  registry: ToolRegistry,
+  isDispatcherThreadActive: (projectId: string, threadId: string) => boolean = () => false,
+): void {
   const reloadMcpForWorkspace = (): void => {
     void reloadMcpServers(registry)
       .then((statuses) => {
@@ -730,6 +736,14 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const { root } = await resolveThreadExecutionContext(projectId, threadId)
     const abs = await resolvePathWithinRoot(relPath, root)
     return gatewayReadFile(abs, root)
+  })
+
+  ipcMain.handle('fs:read-image', async (event, ...rawArgs) => {
+    assertMainFrameSender(event, win)
+    const [projectId, threadId, relPath] = parseIpcArgs(threadPathArgs, rawArgs)
+    const { root } = await resolveThreadExecutionContext(projectId, threadId)
+    const abs = await resolvePathWithinRoot(relPath, root)
+    return gatewayReadImage(abs, root, relPath)
   })
 
   ipcMain.handle('fs:write-file', async (event, ...rawArgs) => {
@@ -2184,12 +2198,12 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       const statuses = await reloadMcpServers(registry)
       win.webContents.send('mcp:status-changed', statuses)
     }
-    // P5: toggling the model-comparison plugin adds/removes its `compare_models`
-    // tool on the live registry so the atomic plugin-disable also drops the tool
-    // from the model tool list without an app restart (mirrors the setting
-    // toggles above for the other syncable tools).
-    if (id === MODEL_COMPARISON_PLUGIN_ID) {
-      syncModelComparisonTools(registry)
+    // Toggling the review plugin adds/removes its `review_changes` tool on the
+    // live registry so the atomic plugin-disable also drops the tool from the
+    // model tool list without an app restart (mirrors the setting toggles
+    // above for the other syncable tools).
+    if (id === REVIEW_PLUGIN_ID) {
+      syncReviewTools(registry)
     }
     // Same for the `copse.long-horizon-tasks` plugin's `track_long_task` tool.
     if (id === LONG_HORIZON_TASKS_PLUGIN_ID) {
@@ -2545,7 +2559,11 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('git:change-stats', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
-    return getGitChangeStats(await resolveWatchedGitRoot(projectId, threadId))
+    const root = await resolveWatchedGitRoot(projectId, threadId)
+    return getGitChangeStats(root, {
+      includeCommitted: true,
+      hasOpenPr: (branch) => branchHasOpenPr(projectId, branch, root),
+    })
   })
   ipcMain.handle('git:file-diff', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
@@ -2790,6 +2808,19 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const id = parseIpcArgs(zProjectId, [projectId])
     return discoverExternalCursorAgents({ projectId: id })
   })
+  ipcMain.handle(
+    'remote-agent:refresh-imported-thread',
+    (event, projectId: unknown, threadId: unknown) => {
+      assertMainFrameSender(event, win)
+      const [id, thread] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
+      return refreshImportedCursorAgentThread({
+        projectId: id,
+        threadId: thread,
+        isThreadRunning: (candidateId) =>
+          isDispatcherThreadActive(id, candidateId) || listRunningThreadIds().includes(candidateId),
+      })
+    },
+  )
   ipcMain.handle('acp:detect-agents', (event) => {
     assertMainFrameSender(event, win)
     return detectAcpAgents()

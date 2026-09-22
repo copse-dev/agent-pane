@@ -1,0 +1,5 @@
+{
+  "id": "clean-rename",
+  "description": "A local variable is renamed; behaviour is unchanged. Anything surfaced here is a false positive. The mock reviewer raises one, and the challenger refutes it, which is the mechanism that keeps precision.",
+  "truth": []
+}

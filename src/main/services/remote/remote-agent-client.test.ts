@@ -1,7 +1,8 @@
 import { afterEach, describe, it, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { renderMarkdownUnsafe } from '@copse/streaming-markdown'
-import type { StreamChunk } from '@shared/types'
+import type { StreamChunk, Thread } from '@shared/types'
+import { isImportedCursorAgentThread } from '@shared/remote-agent-link.ts'
 import {
   applyRemoteAgentHandoffContext,
   buildRemoteAgentContextPreamble,
@@ -17,8 +18,10 @@ import {
 } from '@shared/remote-agent-stream.ts'
 import {
   clearRemoteAgentSession,
+  cursorRunMessageId,
   fetchRemoteArtifactImageDataUrl,
   formatRemoteArtifactsSummary,
+  refreshImportedCursorAgentThread,
   remoteAgentBusyRetryDelayMs,
   resolveRemoteAgentRepository,
   runRemoteAgentFromSettings,
@@ -26,6 +29,10 @@ import {
 } from './remote-agent-client.ts'
 import { storageSet } from '../storage/storage.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
+import { createThread, loadProjectThreads, recordThreadAgentLink } from '../thread-store.ts'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 afterEach(() => {
   storageSet('projects', [])
@@ -40,6 +47,25 @@ function state(): RemoteStreamState {
     assistantText: '',
     resultText: '',
     terminalStatus: null,
+  }
+}
+
+function importedThread(id: string): Thread {
+  return {
+    id,
+    title: 'Imported agent',
+    status: 'idle',
+    messages: [],
+    usage: { inputTokens: 0, outputTokens: 0 },
+    remoteAgentLink: {
+      provider: 'cursor',
+      agentId: 'agent-imported',
+      runId: 'run-imported',
+      imported: true,
+      createdAt: 1,
+    },
+    createdAt: 1,
+    updatedAt: 1,
   }
 }
 
@@ -76,6 +102,309 @@ describe('resolveRemoteAgentRepository', () => {
       assert.equal(repository, null)
     } finally {
       restoreWorkspace()
+    }
+  })
+})
+
+describe('refreshImportedCursorAgentThread', () => {
+  it('uses a fixed-length filesystem-safe stable ID for hyphenated provider IDs', () => {
+    assert.notEqual(cursorRunMessageId('a--b', 'c'), cursorRunMessageId('a', 'b--c'))
+    assert.match(
+      cursorRunMessageId('agent:has*reserved', 'run/with/slashes'),
+      /^remote-cursor-run-[a-f0-9]{64}$/,
+    )
+  })
+
+  it('migrates only the exact app-authored legacy import notice', () => {
+    const legacy: Thread = {
+      ...importedThread('legacy'),
+      title: 'Cloud task',
+      model: 'remote-agent:cursor',
+      messages: [
+        {
+          id: 'notice',
+          role: 'assistant',
+          content:
+            '_Imported Cursor cloud agent — [Cloud task](https://cursor.com). ' +
+            'Send a message here to continue that run from Copse._',
+          toolCalls: [],
+          createdAt: 1,
+        },
+      ],
+      remoteAgentLink: {
+        provider: 'cursor',
+        agentId: 'agent-imported',
+        runId: 'run-imported',
+        createdAt: 1,
+      },
+    }
+    assert.equal(isImportedCursorAgentThread(legacy), true)
+    const legacyLink = legacy.remoteAgentLink
+    assert.ok(legacyLink)
+    assert.equal(
+      isImportedCursorAgentThread({
+        ...legacy,
+        remoteAgentLink: { ...legacyLink, imported: true },
+      }),
+      true,
+    )
+    assert.equal(
+      isImportedCursorAgentThread({
+        ...legacy,
+        messages: [
+          {
+            id: 'normal-answer',
+            role: 'assistant',
+            content: 'Completed the cloud task.',
+            toolCalls: [],
+            createdAt: 2,
+          },
+        ],
+      }),
+      false,
+    )
+  })
+
+  it('persists the documented terminal result and git summary once for an imported stub', async () => {
+    const previousRoot = process.env['COPSE_WORKSPACE_DIR']
+    const previousKey = process.env['CURSOR_API_KEY']
+    const root = mkdtempSync(join(tmpdir(), 'copse-imported-cursor-run-'))
+    process.env['COPSE_WORKSPACE_DIR'] = root
+    process.env['CURSOR_API_KEY'] = 'test-key'
+    let requests = 0
+    try {
+      await createThread('project-1', importedThread('thread-1'))
+      const fetchImpl: typeof fetch = async (input) => {
+        requests += 1
+        const href =
+          input instanceof Request ? input.url : input instanceof URL ? input.href : input
+        assert.equal(href, 'https://api.cursor.com/v1/agents/agent-imported/runs/run-imported')
+        return new Response(
+          JSON.stringify({
+            id: 'run-imported',
+            status: 'FINISHED',
+            result: 'Completed the requested refactor.',
+            git: {
+              branches: [
+                {
+                  repoUrl: 'github.com/acme/project',
+                  branch: 'cursor/refactor',
+                  prUrl: 'https://github.com/acme/project/pull/42',
+                },
+              ],
+            },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        )
+      }
+
+      const first = await refreshImportedCursorAgentThread({
+        projectId: 'project-1',
+        threadId: 'thread-1',
+        fetchImpl,
+        now: () => 42,
+      })
+      const second = await refreshImportedCursorAgentThread({
+        projectId: 'project-1',
+        threadId: 'thread-1',
+        fetchImpl,
+        now: () => 43,
+      })
+
+      assert.ok(first)
+      assert.equal(
+        first.content,
+        'Completed the requested refactor.\n\n---\n_Remote agent updated the repository:_\n- Pushed branch `cursor/refactor` on github.com/acme/project — https://github.com/acme/project/pull/42',
+      )
+      assert.deepEqual(second, first)
+      assert.equal(requests, 1)
+      const [stored] = await loadProjectThreads('project-1')
+      assert.ok(stored)
+      assert.deepEqual(stored.messages, [first])
+      assert.equal(stored.remoteAgentLink?.imported, true)
+    } finally {
+      if (previousRoot === undefined) delete process.env['COPSE_WORKSPACE_DIR']
+      else process.env['COPSE_WORKSPACE_DIR'] = previousRoot
+      if (previousKey === undefined) delete process.env['CURSOR_API_KEY']
+      else process.env['CURSOR_API_KEY'] = previousKey
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('does not query or write an imported link after a local turn adds ordinary output', async () => {
+    const previousRoot = process.env['COPSE_WORKSPACE_DIR']
+    const root = mkdtempSync(join(tmpdir(), 'copse-owned-cursor-run-'))
+    process.env['COPSE_WORKSPACE_DIR'] = root
+    try {
+      await createThread('project-1', {
+        ...importedThread('thread-2'),
+        model: 'remote-agent:cursor',
+        messages: [
+          {
+            id: 'local-user',
+            role: 'user',
+            content: 'Continue this locally.',
+            toolCalls: [],
+            createdAt: 2,
+          },
+          {
+            id: 'normal-answer',
+            role: 'assistant',
+            content: 'Completed the cloud task.',
+            toolCalls: [],
+            createdAt: 3,
+          },
+        ],
+        remoteAgentLink: {
+          provider: 'cursor',
+          agentId: 'agent-imported',
+          runId: 'run-imported',
+          imported: true,
+          createdAt: 1,
+        },
+      })
+      const result = await refreshImportedCursorAgentThread({
+        projectId: 'project-1',
+        threadId: 'thread-2',
+        fetchImpl: () => {
+          throw new Error('unexpected fetch')
+        },
+      })
+      assert.equal(result, null)
+    } finally {
+      if (previousRoot === undefined) delete process.env['COPSE_WORKSPACE_DIR']
+      else process.env['COPSE_WORKSPACE_DIR'] = previousRoot
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('does not treat a prefix-shaped local message ID as imported provenance', async () => {
+    const previousRoot = process.env['COPSE_WORKSPACE_DIR']
+    const root = mkdtempSync(join(tmpdir(), 'copse-imported-cursor-prefix-'))
+    process.env['COPSE_WORKSPACE_DIR'] = root
+    try {
+      await createThread('project-1', {
+        ...importedThread('thread-prefix'),
+        messages: [
+          {
+            id: 'remote-cursor-run-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            role: 'assistant',
+            content: 'A local message that resembles an imported result.',
+            toolCalls: [],
+            createdAt: 2,
+          },
+        ],
+      })
+      const result = await refreshImportedCursorAgentThread({
+        projectId: 'project-1',
+        threadId: 'thread-prefix',
+        fetchImpl: () => {
+          throw new Error('unexpected fetch')
+        },
+      })
+      assert.equal(result, null)
+    } finally {
+      if (previousRoot === undefined) delete process.env['COPSE_WORKSPACE_DIR']
+      else process.env['COPSE_WORKSPACE_DIR'] = previousRoot
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('discards a fetched snapshot when a newer local run replaces the persisted link', async () => {
+    const previousRoot = process.env['COPSE_WORKSPACE_DIR']
+    const previousKey = process.env['CURSOR_API_KEY']
+    const root = mkdtempSync(join(tmpdir(), 'copse-imported-cursor-race-'))
+    process.env['COPSE_WORKSPACE_DIR'] = root
+    process.env['CURSOR_API_KEY'] = 'test-key'
+    let releaseFetch: ((response: Response) => void) | undefined
+    let startedFetch: (() => void) | undefined
+    try {
+      await createThread('project-1', importedThread('thread-1'))
+      const refresh = refreshImportedCursorAgentThread({
+        projectId: 'project-1',
+        threadId: 'thread-1',
+        fetchImpl: async () => {
+          startedFetch?.()
+          return new Promise<Response>((resolve) => {
+            releaseFetch = resolve
+          })
+        },
+      })
+      await new Promise<void>((resolve) => {
+        startedFetch = resolve
+      })
+      await recordThreadAgentLink('project-1', 'thread-1', {
+        provider: 'cursor',
+        agentId: 'new-local-agent',
+        runId: 'new-local-run',
+        createdAt: 2,
+      })
+      releaseFetch?.(
+        new Response(JSON.stringify({ status: 'FINISHED', result: 'Old result.' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      )
+
+      assert.equal(await refresh, null)
+      assert.deepEqual((await loadProjectThreads('project-1'))[0]?.messages, [])
+    } finally {
+      if (previousRoot === undefined) delete process.env['COPSE_WORKSPACE_DIR']
+      else process.env['COPSE_WORKSPACE_DIR'] = previousRoot
+      if (previousKey === undefined) delete process.env['CURSOR_API_KEY']
+      else process.env['CURSOR_API_KEY'] = previousKey
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('discards a fetched snapshot when the main agent registry marks the thread live during its queued read', async () => {
+    const previousRoot = process.env['COPSE_WORKSPACE_DIR']
+    const previousKey = process.env['CURSOR_API_KEY']
+    const root = mkdtempSync(join(tmpdir(), 'copse-imported-cursor-running-race-'))
+    process.env['COPSE_WORKSPACE_DIR'] = root
+    process.env['CURSOR_API_KEY'] = 'test-key'
+    let releaseFetch: ((response: Response) => void) | undefined
+    let startedFetch: (() => void) | undefined
+    let running = false
+    let registryChecks = 0
+    try {
+      await createThread('project-1', importedThread('thread-1'))
+      const refresh = refreshImportedCursorAgentThread({
+        projectId: 'project-1',
+        threadId: 'thread-1',
+        isThreadRunning: () => {
+          registryChecks += 1
+          // The second call is the store's first write-queue check. Make the
+          // registry live while its transcript read is awaiting disk.
+          if (registryChecks === 2) queueMicrotask(() => (running = true))
+          return running
+        },
+        fetchImpl: async () => {
+          startedFetch?.()
+          return new Promise<Response>((resolve) => {
+            releaseFetch = resolve
+          })
+        },
+      })
+      await new Promise<void>((resolve) => {
+        startedFetch = resolve
+      })
+      releaseFetch?.(
+        new Response(JSON.stringify({ status: 'FINISHED', result: 'Old result.' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      )
+
+      assert.equal(await refresh, null)
+      assert.equal(registryChecks, 3)
+      assert.deepEqual((await loadProjectThreads('project-1'))[0]?.messages, [])
+    } finally {
+      if (previousRoot === undefined) delete process.env['COPSE_WORKSPACE_DIR']
+      else process.env['COPSE_WORKSPACE_DIR'] = previousRoot
+      if (previousKey === undefined) delete process.env['CURSOR_API_KEY']
+      else process.env['CURSOR_API_KEY'] = previousKey
+      rmSync(root, { recursive: true, force: true })
     }
   })
 })

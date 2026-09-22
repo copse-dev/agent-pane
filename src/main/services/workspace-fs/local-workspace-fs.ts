@@ -52,8 +52,32 @@ export const localWorkspaceFs: WorkspaceFsPathProbe = {
   },
 
   async readFileBytes(path: string, options?: WorkspaceBinaryReadOptions): Promise<Buffer> {
-    await this.materializeToLocal(path, options)
-    return options?.signal ? fsp.readFile(path, { signal: options.signal }) : fsp.readFile(path)
+    const maxBytes = options?.maxBytes
+    if (maxBytes === undefined) {
+      return options?.signal ? fsp.readFile(path, { signal: options.signal }) : fsp.readFile(path)
+    }
+    options?.signal?.throwIfAborted()
+    const file = await fsp.open(path, 'r')
+    try {
+      enforceWorkspaceFileSize((await file.stat()).size, maxBytes)
+      const chunks: Buffer[] = []
+      let size = 0
+      while (size <= maxBytes) {
+        options?.signal?.throwIfAborted()
+        // The extra byte proves overflow without reading the rest of a growing
+        // file. One open handle also prevents a path replacement after stat
+        // from redirecting this read to a different, potentially much larger file.
+        const chunk = Buffer.allocUnsafe(Math.min(64 * 1024, maxBytes + 1 - size))
+        const { bytesRead } = await file.read(chunk, 0, chunk.byteLength, null)
+        if (bytesRead === 0) break
+        size += bytesRead
+        enforceWorkspaceFileSize(size, maxBytes)
+        chunks.push(chunk.subarray(0, bytesRead))
+      }
+      return Buffer.concat(chunks, size)
+    } finally {
+      await file.close()
+    }
   },
 
   async sizeOf(path: string, options?: { signal?: AbortSignal }): Promise<number> {

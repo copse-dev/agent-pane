@@ -475,6 +475,65 @@ beforeEach(() => {
 })
 
 describe('roadmap pane', () => {
+  it('clears the previous project editor before the new roadmap finishes loading', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api } = makeApi([makeItem('a', 'Project A item')])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    let resolveList: (items: KnowledgeNote[]) => void = () => assert.fail('list not requested')
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.roadmap-row')?.click()
+      const form = viewer.querySelector<HTMLElement>('.roadmap-form')
+      assert.ok(form)
+      assert.equal(form.hidden, false)
+      api.roadmap.list = (): Promise<KnowledgeNote[]> =>
+        new Promise((resolve) => {
+          resolveList = resolve
+        })
+
+      store.emit('workspace_changed')
+
+      assert.equal(form.hidden, true, 'the old item is hidden synchronously')
+      assert.equal(list.querySelectorAll('.roadmap-row').length, 0)
+      resolveList([makeItem('b', 'Project B item')])
+      await flush()
+      assert.equal(list.querySelector('.roadmap-row-title')?.textContent, 'Project B item')
+      assert.equal(form.hidden, true, 'the new project starts with no selection')
+    } finally {
+      unmount()
+    }
+  })
+
+  it('discards an old project refresh when switching projects with the roadmap hidden', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api, fireChanged } = makeApi([makeItem('a', 'Project A item')])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    let resolveList: (items: KnowledgeNote[]) => void = () => assert.fail('list not requested')
+    try {
+      await flush()
+      api.roadmap.list = (): Promise<KnowledgeNote[]> =>
+        new Promise((resolve) => {
+          resolveList = resolve
+        })
+      fireChanged()
+      store.setState({ filesPaneOpen: false })
+      store.emit('workspace_changed')
+      resolveList([makeItem('a', 'Stale project A result')])
+      await flush()
+
+      assert.equal(list.querySelectorAll('.roadmap-row').length, 0)
+      api.roadmap.list = async (): Promise<KnowledgeNote[]> => [makeItem('b', 'Project B item')]
+      store.setState({ filesPaneOpen: true })
+      store.emit('files_pane_changed')
+      await flush()
+      assert.equal(list.querySelector('.roadmap-row-title')?.textContent, 'Project B item')
+    } finally {
+      unmount()
+    }
+  })
+
   it('lists items quietly — ready is silent; only exceptional statuses chip', async () => {
     const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
     const { api, calls } = makeApi([
@@ -2024,6 +2083,39 @@ describe('roadmap pane', () => {
       assert.ok(reviewView)
       assert.equal(reviewView.hidden, false)
       assert.ok(viewer.querySelector<HTMLElement>('.roadmap-form[hidden]'))
+    } finally {
+      unmount()
+    }
+  })
+
+  it('reveals the bulk review actions as soon as a review run completes', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api } = makeApi([
+      makeItem('a', 'Fix startup flash', 'ready', undefined, '#41'),
+      makeItem('b', 'Terminal shortcut', 'ready', undefined, '#42'),
+    ])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      const markResolved = viewer.querySelector<HTMLButtonElement>('.roadmap-review-mark-resolved')
+      const archiveResolved = viewer.querySelector<HTMLButtonElement>(
+        '.roadmap-review-archive-resolved',
+      )
+      assert.ok(markResolved)
+      assert.ok(archiveResolved)
+
+      list.querySelector<HTMLButtonElement>('.roadmap-review-btn')?.click()
+      await flush()
+      assert.match(viewer.querySelector('.roadmap-review-status')?.textContent ?? '', /complete/i)
+      assert.equal(viewer.querySelectorAll('.roadmap-review-row').length, 2)
+      // No opening a row and coming back: the buttons appear with the
+      // "complete" status, straight after the run.
+      assert.equal(markResolved.hidden, false)
+      assert.equal(markResolved.disabled, false)
+      assert.equal(archiveResolved.hidden, false)
+      assert.equal(archiveResolved.disabled, false)
+      assert.ok(viewer.querySelector<HTMLElement>('.roadmap-review-stop[hidden]'))
     } finally {
       unmount()
     }

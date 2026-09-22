@@ -1,10 +1,17 @@
 import assert from 'node:assert/strict'
+import { writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { $, $$, browser } from '@wdio/globals'
 import type { MockScriptStep } from '@copse/llm/mock-script'
+import { PNG } from 'pngjs'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { waitForPromptReady } from './helpers.ts'
 import { setComposerValue } from './helpers/composer.ts'
-import { saveElementScreenshot } from './helpers/screenshot.ts'
+import {
+  E2E_SCREENSHOT_DIR,
+  prepareE2eScreenshot,
+  waitForSettledLayout,
+} from './helpers/screenshot.ts'
 
 const PROJECT_ID = 'e2e-canvas-background-parity'
 const TITLE = 'Transparent Canvas Parity'
@@ -112,21 +119,52 @@ async function previewCornerPixel(title: string): Promise<number[]> {
   }, title)
 }
 
+async function pinPreviewRollupOpen(expectedTitle: string): Promise<void> {
+  await browser.waitUntil(
+    async () =>
+      browser.execute((title) => {
+        const card = Array.from(
+          document.querySelectorAll<HTMLElement>('.canvas-preview-card'),
+        ).find(
+          (candidate) => candidate.querySelector('.canvas-preview-title')?.textContent === title,
+        )
+        const rollup = card?.closest<HTMLDetailsElement>('details.tool-card-rollup')
+        const summary = rollup?.querySelector<HTMLElement>(':scope > summary')
+        if (!rollup || !summary) return false
+
+        // Auto-revealed rollups have no user preference and can be compacted
+        // while the preview image is loading. Use the real summary handler to
+        // record an explicit open choice, then let the caller reacquire the
+        // current card before interacting with it.
+        if (rollup.open) summary.click()
+        summary.click()
+        return rollup.open && rollup.dataset['userToggled'] === '1'
+      }, expectedTitle),
+    { timeout: 20_000, timeoutMsg: 'expected the canvas preview rollup to open' },
+  )
+}
+
 async function renderCanvas(prompt: string, expectedToolCount: number): Promise<void> {
   await setComposerValue(prompt)
   await $('.submit-btn').click()
   await browser.waitUntil(
     async () =>
-      browser.execute(
-        (count) =>
+      browser.execute((count) => {
+        const completedReplies = Array.from(
+          document.querySelectorAll('.msg-assistant > .message-body > .message-text'),
+        ).filter((message) => message.textContent?.includes('Mock response to:')).length
+        return (
           !document.querySelector('.submit-btn')?.classList.contains('with-stop') &&
           document.querySelectorAll('.tool-card[data-tool-id][data-status="done"]').length ===
-            count,
-        expectedToolCount,
-      ),
-    { timeout: 30_000, timeoutMsg: 'expected the canvas render tool to finish' },
+            count &&
+          completedReplies >= count
+        )
+      }, expectedToolCount),
+    { timeout: 30_000, timeoutMsg: 'expected the canvas render turn to finish' },
   )
-  // MCP previews are built lazily inside the completed tool's disclosure.
+  // The final reply replaces the running transcript and restores the rollup's
+  // collapsed state. Wait for that repaint above, then open the completed tool;
+  // otherwise the preview can disappear between its pixel check and capture.
   await browser.execute(() => {
     for (const rollup of document.querySelectorAll<HTMLDetailsElement>('.tool-card-rollup')) {
       if (!rollup.open) rollup.querySelector('summary')?.click()
@@ -137,6 +175,63 @@ async function renderCanvas(prompt: string, expectedToolCount: number): Promise<
       if (!tool.open) tool.querySelector('summary')?.click()
     }
   })
+}
+
+async function saveCanvasPreviewScreenshot(filename: string, title: string): Promise<void> {
+  // The fixed-size preparation dispatches a resize, which rebuilds the transcript
+  // and restores completed rollups to their collapsed state. Prepare first, then
+  // reveal the preview in the final layout that will actually be captured.
+  await prepareE2eScreenshot()
+  // Flipping `details.open` directly records no preference, so a rebuild that
+  // lands after the visibility check (seen on Electron 44.3 / Chromium
+  // 152.0.7977.78) collapses the rollup again and chromedriver measures a 0x0
+  // card. Open the rollup through its real summary handler, which records the
+  // choice, and do the same for any other collapsed ancestor.
+  await pinPreviewRollupOpen(title)
+  await browser.waitUntil(
+    async () =>
+      browser.execute((expectedTitle) => {
+        const card = Array.from(
+          document.querySelectorAll<HTMLElement>('.canvas-preview-card'),
+        ).find(
+          (candidate) =>
+            candidate.querySelector('.canvas-preview-title')?.textContent === expectedTitle,
+        )
+        if (!card) return false
+        for (let ancestor = card.parentElement; ancestor; ancestor = ancestor.parentElement) {
+          if (ancestor instanceof HTMLDetailsElement && !ancestor.open) {
+            ancestor.querySelector<HTMLElement>(':scope > summary')?.click()
+            return false
+          }
+        }
+        card.scrollIntoView({ block: 'center', inline: 'nearest' })
+        const rect = card.getBoundingClientRect()
+        return rect.width > 0 && rect.height > 0
+      }, title),
+    { timeout: 15_000, timeoutMsg: 'expected the expanded canvas preview to be visible' },
+  )
+  await waitForSettledLayout('.canvas-preview-card')
+  const crop = await browser.execute(() => {
+    const card = document.querySelector<HTMLElement>('.canvas-preview-card')
+    if (!card) throw new Error('canvas preview card missing before capture')
+    const rect = card.getBoundingClientRect()
+    const scale = window.devicePixelRatio
+    const left = Math.floor(rect.left * scale)
+    const top = Math.floor(rect.top * scale)
+    const right = Math.ceil(rect.right * scale)
+    const bottom = Math.ceil(rect.bottom * scale)
+    return { left, top, width: right - left, height: bottom - top }
+  })
+  const viewport = PNG.sync.read(Buffer.from(await browser.takeScreenshot(), 'base64'))
+  assert.ok(crop.left >= 0 && crop.top >= 0, 'canvas preview starts outside the viewport')
+  assert.ok(crop.width > 0 && crop.height > 0, 'canvas preview has no capture area')
+  assert.ok(
+    crop.left + crop.width <= viewport.width && crop.top + crop.height <= viewport.height,
+    'canvas preview extends outside the viewport',
+  )
+  const preview = new PNG({ width: crop.width, height: crop.height })
+  PNG.bitblt(viewport, preview, crop.left, crop.top, crop.width, crop.height, 0, 0)
+  await writeFile(join(E2E_SCREENSHOT_DIR, filename), PNG.sync.write(preview))
 }
 
 describe('canvas background parity', () => {
@@ -174,9 +269,8 @@ describe('canvas background parity', () => {
 
     await renderCanvas('Please render the transparent canvas.', 1)
 
-    const card = $('.canvas-preview-card')
-    await card.waitForExist({ timeout: 20_000 })
-    const image = card.$('.canvas-preview-image')
+    const initialCard = $('.canvas-preview-card')
+    await initialCard.waitForExist({ timeout: 20_000 })
     await browser.waitUntil(
       async () =>
         browser.execute((selector) => {
@@ -186,7 +280,7 @@ describe('canvas background parity', () => {
       { timeout: 20_000, timeoutMsg: 'expected canvas preview image to load' },
     )
 
-    const preview = await image.getAttribute('src')
+    const preview = await $('.canvas-preview-card .canvas-preview-image').getAttribute('src')
     assert.ok(preview?.startsWith('data:image/png;base64,'))
     const previewCorner = await previewCornerPixel(TITLE)
     const themePixel = await resolvedBodyBackgroundPixel()
@@ -198,8 +292,16 @@ describe('canvas background parity', () => {
         `preview ${JSON.stringify(previewCorner)} should match theme ${JSON.stringify(themePixel)}`,
       )
     }
+    await saveCanvasPreviewScreenshot('canvas-transparent-background-dark.png', TITLE)
 
-    await card.$('button').click()
+    await browser.execute((title) => {
+      const candidate = Array.from(
+        document.querySelectorAll<HTMLElement>('.canvas-preview-card'),
+      ).find((element) => element.querySelector('.canvas-preview-title')?.textContent === title)
+      const openButton = candidate?.querySelector<HTMLButtonElement>('button')
+      if (!openButton) throw new Error(`Open button missing for canvas ${title}`)
+      openButton.click()
+    }, TITLE)
     await $('.browser-tab-panel.is-active .browser-webview').waitForExist({ timeout: 20_000 })
     const surfaces = await browser.execute(() => {
       const host = document.querySelector<HTMLElement>(
@@ -212,8 +314,6 @@ describe('canvas background parity', () => {
       }
     })
     assert.equal(surfaces.canvas, surfaces.app)
-
-    await saveElementScreenshot('.canvas-preview-card', 'canvas-transparent-background-dark.png')
   })
 
   it('lets an artefact override the default canvas background', async function () {

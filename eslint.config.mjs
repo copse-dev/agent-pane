@@ -47,11 +47,28 @@ export default ts.config(
       // Bench-task fixture repos: code for the agent under eval to fix, not project code.
       'benchmarks/fixtures/**',
       'benchmarks/steer/fixtures/**',
+      // Review-bench cases: the head trees carry the defects the reviewer is
+      // measured on (an unused timer is one of them), so a linter must not "fix" them.
+      'benchmarks/review/cases/**',
     ],
   },
   js.configs.recommended,
   ...ts.configs.strictTypeChecked,
   prettier,
+  {
+    // Adapter implementations must accept every input their shared contract
+    // permits. Method signatures bypass strictFunctionTypes' parameter checks;
+    // function properties retain them. Start with these three adapter seams
+    // rather than changing unrelated interface and overload declarations (#1323).
+    files: [
+      'packages/hooks-dialects/src/dialect-adapter.ts',
+      'src/main/services/github/backend/backend.ts',
+      'src/main/services/workspace-fs/workspace-fs.ts',
+    ],
+    rules: {
+      '@typescript-eslint/method-signature-style': ['error', 'property'],
+    },
+  },
   {
     // A stale `// eslint-disable` is as misleading as a missing one: it implies a
     // rule fires here when it no longer does. Fail the build on unused directives
@@ -150,6 +167,53 @@ export default ts.config(
         'error',
         {
           paths: [NO_ELECTRON],
+        },
+      ],
+    },
+  },
+  {
+    // Plan-usage credential discovery runs from the Settings IPC handler on the
+    // Electron main thread. Keep file reads awaitable so a credential file cannot
+    // block the renderer while the five-minute usage cache is cold. This block
+    // follows the broad agent-path import rule because ESLint replaces rule
+    // options instead of merging them.
+    files: ['src/main/services/plan-usage-bridge.ts'],
+    rules: {
+      '@typescript-eslint/no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            NO_ELECTRON,
+            {
+              name: 'node:fs',
+              importNames: ['readFileSync'],
+              message:
+                'Settings plan-usage discovery runs on the main thread; use node:fs/promises readFile instead.',
+            },
+            {
+              name: 'fs',
+              importNames: ['readFileSync'],
+              message:
+                'Settings plan-usage discovery runs on the main thread; use node:fs/promises readFile instead.',
+            },
+          ],
+        },
+      ],
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "BinaryExpression[operator='in'][left.type!='Literal']",
+          message:
+            'A dynamic key with `in` also matches inherited members (toString, constructor, ' +
+            '__proto__, and five more). Use Object.hasOwn(record, key) — or keyOf(record) from ' +
+            "@copse/std when you want a type predicate. A literal key (`'kind' in value`) is " +
+            'fine and is not restricted.',
+        },
+        {
+          selector:
+            "CallExpression[callee.type='MemberExpression'][callee.property.name='readFileSync']",
+          message:
+            'Settings plan-usage discovery runs on the main thread; use node:fs/promises readFile instead.',
         },
       ],
     },
@@ -292,7 +356,10 @@ export default ts.config(
     // tests/fixtures/mock-acp-agent.mjs). They run as plain ESM under `node`,
     // not through the test bundler, so they carry no TS annotations and are not
     // part of the TS project graph.
-    files: ['tests/fixtures/*.mjs'],
+    // `packages/*/bin/*.mjs` are the one-line executable shims a workspace
+    // package's `bin` points at (`copse-review`): the same shape, for the same
+    // reason.
+    files: ['tests/fixtures/*.mjs', 'packages/*/bin/*.mjs'],
     extends: [ts.configs.disableTypeChecked],
     languageOptions: {
       sourceType: 'module',
@@ -301,6 +368,7 @@ export default ts.config(
         console: 'readonly',
         Buffer: 'readonly',
         ReadableStream: 'readonly',
+        AbortController: 'readonly',
       },
     },
     rules: {

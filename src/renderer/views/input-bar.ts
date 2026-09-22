@@ -58,6 +58,7 @@ import type { ContextBreakdown, TranscriptAttachment, UserContent } from '@share
 import type { AgentRunPayload, SkillSummary } from '@shared/types/skills.ts'
 import type { AgentSummary } from '@shared/types/agents.ts'
 import { mountFooterModelPicker } from './footer-model-picker.ts'
+import { mountModelPicker, type ModelPicker } from './model-picker.ts'
 import { mountFooterBranchStatus } from './footer-branch-status.ts'
 import { createContextWheel } from './context-wheel.ts'
 import { bindFooterCompactLayout } from './footer-compact.ts'
@@ -113,6 +114,7 @@ import { isLocalModel } from '@copse/llm/estimate-cost.ts'
 import type { ReasoningLevel } from '@copse/llm/model-parameters.ts'
 import { commitThreadModelSelection } from '../controller/model-selection.ts'
 import { mark as perfMark } from '../perf.ts'
+import type { GitPromptState } from '@shared/types/git.ts'
 
 interface MountInputBarOptions {
   /**
@@ -240,6 +242,13 @@ export function mountInputBar(
     { type: 'button', class: 'composer-image-describe-btn', hidden: '' },
     'Describe image',
   )
+  const descriptionPickerHost = el('span', { class: 'composer-image-description-picker' })
+  const descriptionActions = el(
+    'fieldset',
+    { class: 'composer-image-description-actions', 'aria-label': 'Image description', hidden: '' },
+    describeImagesBtn,
+    descriptionPickerHost,
+  )
   const sendWithoutImagesBtn = el(
     'button',
     { type: 'button', class: 'composer-image-without-btn' },
@@ -256,7 +265,7 @@ export function mountInputBar(
     el('span', { class: 'composer-image-warning-icon', 'aria-hidden': 'true' }, '!'),
     imageCompatibilityText,
     useImageModelBtn,
-    describeImagesBtn,
+    descriptionActions,
     sendWithoutImagesBtn,
   )
   // Sits beside the model picker it talks about: the thread no longer fits (or
@@ -686,6 +695,10 @@ export function mountInputBar(
   let recommendedImageModel: ModelOption | null = null
   let recommendedDescriptionModel: ModelOption | null = null
   let imageDescriptionInProgress = false
+  let imageDescriptionSeq = 0
+  let selectedDescriptionModel: string | null = null
+  let descriptionModels: ModelOption[] = []
+  let descriptionPicker: ModelPicker | null = null
   const checkoutChoices = new Map<string, ThreadWorktreeChoice>()
   let checkoutPreparationInProgress = false
   let automaticCheckoutMode: 'shared' | 'worktree' = 'shared'
@@ -716,6 +729,7 @@ export function mountInputBar(
     selected: ModelOption
     recommended: ModelOption | null
     descriptionModel: ModelOption | null
+    descriptionModels: ModelOption[]
   } | null> {
     if (attachedImages.length === 0) return null
     const model = footerChatModel()
@@ -745,7 +759,9 @@ export function mountInputBar(
         recentRecommendation ?? supported.find((option) => option.value !== model) ?? null,
       // Prefer a local vision model for the image→text handoff. It keeps the
       // image on-device even when the final text-only model is remote.
+      descriptionModels: supported,
       descriptionModel:
+        supported.find((option) => option.value === selectedDescriptionModel) ??
         supported.find((option) => option.value.startsWith('lmstudio:')) ??
         recentRecommendation ??
         supported.find((option) => option.value !== model) ??
@@ -758,22 +774,57 @@ export function mountInputBar(
     recommendedImageModel = null
     recommendedDescriptionModel = null
     imageCompatibilityWarning.hidden = true
+    descriptionPicker?.destroy()
+    descriptionPicker = null
+  }
+
+  function updateDescriptionControl(): void {
+    const descriptor = recommendedDescriptionModel
+    descriptionActions.hidden = descriptor === null
+    describeImagesBtn.hidden = descriptor === null
+    if (!descriptor) {
+      descriptionPicker?.destroy()
+      descriptionPicker = null
+      return
+    }
+    const local = descriptor.value.startsWith('lmstudio:')
+    describeImagesBtn.textContent = `${local ? 'Describe locally with' : 'Describe with'} ${shortModelLabel(descriptor)}`
+    if (!descriptionPicker) {
+      descriptionPicker = mountModelPicker(
+        descriptionPickerHost,
+        () => recommendedDescriptionModel?.value ?? '',
+        (value) => {
+          const option = descriptionModels.find((candidate) => candidate.value === value)
+          if (!option || imageDescriptionInProgress) return
+          selectedDescriptionModel = value
+          recommendedDescriptionModel = option
+          updateDescriptionControl()
+        },
+        () => Promise.resolve(descriptionModels),
+        {
+          enableShortcut: false,
+          ariaLabel: 'Choose image description model',
+          onClose: () => {
+            describeImagesBtn.focus()
+          },
+        },
+      )
+    } else {
+      void descriptionPicker.refresh()
+    }
   }
 
   async function refreshImageCompatibilityWarning(): Promise<void> {
+    if (imageDescriptionInProgress) return
     const seq = ++imageCompatibilitySeq
     if (attachedImages.length === 0) {
-      imageCompatibilityWarning.hidden = true
-      recommendedImageModel = null
-      recommendedDescriptionModel = null
+      hideImageCompatibilityWarning()
       return
     }
     const result = await incompatibleImageModel()
     if (seq !== imageCompatibilitySeq) return
     if (!result) {
-      imageCompatibilityWarning.hidden = true
-      recommendedImageModel = null
-      recommendedDescriptionModel = null
+      hideImageCompatibilityWarning()
       return
     }
     const count = attachedImages.length
@@ -784,11 +835,8 @@ export function mountInputBar(
       useImageModelBtn.textContent = `Use ${shortModelLabel(result.recommended)}`
     }
     recommendedDescriptionModel = result.descriptionModel
-    describeImagesBtn.hidden = result.descriptionModel === null
-    if (result.descriptionModel) {
-      const local = result.descriptionModel.value.startsWith('lmstudio:')
-      describeImagesBtn.textContent = `${local ? 'Describe locally with' : 'Describe with'} ${shortModelLabel(result.descriptionModel)}`
-    }
+    descriptionModels = result.descriptionModels
+    updateDescriptionControl()
     sendWithoutImagesBtn.textContent = count === 1 ? 'Send without image' : 'Send without images'
     imageCompatibilityWarning.hidden = false
   }
@@ -815,8 +863,10 @@ export function mountInputBar(
   }
 
   function setImageDescriptionBusy(busy: boolean, label?: string): void {
+    if (busy) imageCompatibilitySeq++
     imageDescriptionInProgress = busy
     imageCompatibilityWarning.setAttribute('aria-busy', String(busy))
+    descriptionActions.disabled = busy
     describeImagesBtn.disabled = busy
     useImageModelBtn.disabled = busy
     sendWithoutImagesBtn.disabled = busy
@@ -830,28 +880,43 @@ export function mountInputBar(
     const projectId = store.getState().activeProjectId
     const threadId = getActiveThreadId()
     if (!projectId || !threadId) return
+    const seq = ++imageDescriptionSeq
     const descriptor = recommendedDescriptionModel
     const modelLabel = shortModelLabel(descriptor)
-    const images = attachedImages.map((image) => image.dataUrl)
+    const describedImages = [...attachedImages]
+    const images = describedImages.map((image) => image.dataUrl)
     const userPrompt = composer.expandedValue().trim()
     setImageDescriptionBusy(true, modelLabel)
     void api.agent
       .describeImages(projectId, threadId, descriptor.value, userPrompt, images)
-      .then(async ({ text }) => {
+      .then(({ text }) => {
         // A thread switch changes the ownership of the composer. Never carry a
         // generated description into a different thread or auto-submit there.
-        if (getActiveThreadId() !== threadId) return
+        if (
+          seq !== imageDescriptionSeq ||
+          getActiveThreadId() !== threadId ||
+          store.getState().activeProjectId !== projectId
+        )
+          return
+        // A paste/drop can finish while the request is pending. Only consume
+        // the images this description actually saw; leave later attachments.
+        const remainingImages = attachedImages.filter((image) => !describedImages.includes(image))
         removeAttachedImages()
+        for (const image of remainingImages) {
+          addImageChip(image.dataUrl, image.mimeType, image.detail)
+        }
         composer.value = appendImageDescription(composer.value, modelLabel, text)
         composer.el.dispatchEvent(new Event('input', { bubbles: true }))
         hideImageCompatibilityWarning()
         scheduleContextEstimate()
-        await submit()
+        composer.focus()
       })
       .catch((error: unknown) => {
+        if (seq !== imageDescriptionSeq) return
         showErrorToast(`Could not describe the image with ${modelLabel}`, error)
       })
       .finally(() => {
+        if (seq !== imageDescriptionSeq) return
         setImageDescriptionBusy(false)
         if (getActiveThreadId() === threadId && attachedImages.length > 0) {
           void refreshImageCompatibilityWarning()
@@ -879,6 +944,12 @@ export function mountInputBar(
   async function refreshAutomaticCheckoutPreview(): Promise<void> {
     const seq = ++automaticCheckoutPreviewSeq
     const { activeProjectId } = store.getState()
+    const thread = getActiveThread(store)
+    // The preview only labels the checkout picker on an uncommitted blank
+    // thread. Once checkout preparation binds a choice, synchronous
+    // threads/git events still fire, but refreshing then launches Git work for
+    // a control that is already hidden and competes with first-token dispatch.
+    if (!thread || thread.messages.length > 0 || thread.worktreeChoice) return
     const model = footerChatModel()
     let next: 'shared' | 'worktree' = 'shared'
     if (activeProjectId) {
@@ -1127,6 +1198,9 @@ export function mountInputBar(
       // Keep chips with the draft on the attaching thread; do not carry them.
       stashDraftAttachments(activeComposerThreadId)
     }
+    imageDescriptionSeq++
+    selectedDescriptionModel = null
+    if (imageDescriptionInProgress) setImageDescriptionBusy(false)
     clearAttachments()
     const thread = getThreadById(store, id)
     composer.value = thread?.draftPrompt ?? ''
@@ -1585,7 +1659,7 @@ export function mountInputBar(
   let submitInProgress = false
 
   async function submit(): Promise<void> {
-    if (submitInProgress) return
+    if (submitInProgress || imageDescriptionInProgress) return
     submitInProgress = true
     try {
       await performSubmit()
@@ -1634,8 +1708,31 @@ export function mountInputBar(
         return
       }
     }
-    const currentBranch = await api.git.currentBranch(projectId, id)
     const thread = getThreadById(store, id)
+    // A genuinely new thread has no branch contract to validate yet. Its
+    // checkout transaction is authoritative and returns the branch it binds, so
+    // skip both pre-transaction Git reads. A legacy blank thread may already
+    // carry gitBranch: validate that contract, but still read prompt state after
+    // checkout because the transaction can move HEAD. Established threads cannot
+    // move checkout here, so start their two independent Git reads together.
+    const requiresCheckoutPreparation =
+      thread !== undefined && thread.messages.length === 0 && !thread.worktreeChoice
+    const prefetchedGitState = requiresCheckoutPreparation
+      ? null
+      : await Promise.allSettled([
+          api.git.currentBranch(projectId, id),
+          api.git.promptState(projectId, id),
+        ])
+    const branchResult = prefetchedGitState?.[0]
+    if (branchResult?.status === 'rejected') throw branchResult.reason
+    const currentBranch =
+      requiresCheckoutPreparation && !thread.gitBranch
+        ? null
+        : branchResult?.status === 'fulfilled'
+          ? branchResult.value
+          : await api.git.currentBranch(projectId, id)
+    const prefetchedPromptState = prefetchedGitState?.[1]
+    let preparedPromptState: GitPromptState | undefined
     const threadBranch = thread?.gitBranch
     const isolatedWorktree = thread !== undefined && thread.worktree !== undefined
     // Worktree threads keep the project checkout on its original branch; the
@@ -1736,7 +1833,7 @@ export function mountInputBar(
     // Blank threads commit their checkout decision in main before the renderer
     // records or clears the first message. Allocation/persistence failures are
     // therefore retryable without losing or accidentally dispatching the prompt.
-    if (thread && thread.messages.length === 0 && !thread.worktreeChoice) {
+    if (requiresCheckoutPreparation) {
       const projectId = store.getState().activeProjectId
       if (!projectId) return
       hideCheckoutError()
@@ -1753,6 +1850,7 @@ export function mountInputBar(
           // becomes the worktree's base, or the shared checkout's branch.
           branchControl.pendingBaseBranch(id),
         )
+        preparedPromptState = prepared.promptState
         applyPreparedThreadCheckout(store, id, prepared)
         // The user may switch threads while Git is preparing the checkout. The
         // decision remains durable, but their prompt must stay with its composer.
@@ -1774,7 +1872,12 @@ export function mountInputBar(
     // a blank thread the transaction may have just switched the shared checkout
     // to the picked branch, or cut a worktree from it, and the message records
     // the commit the turn actually starts from — not the HEAD before the move.
-    const promptState = await api.git.promptState(projectId, id)
+    if (prefetchedPromptState?.status === 'rejected') throw prefetchedPromptState.reason
+    const promptState =
+      preparedPromptState ??
+      (prefetchedPromptState?.status === 'fulfilled'
+        ? prefetchedPromptState.value
+        : await api.git.promptState(projectId, id))
 
     const priorTodos = thread?.todos ?? []
     const workingBrief = nextWorkingBrief(thread?.workingBrief, fullContent)
@@ -2182,6 +2285,7 @@ export function mountInputBar(
     store,
     api,
     onAttach: addChip,
+    onAttachImage: addImageChip,
     onAttachThread: addThreadChip,
     onAttachShell: addShellChip,
   })
@@ -2307,6 +2411,7 @@ export function mountInputBar(
     store.on('settings_changed', () => {
       void refreshContainerRunsSetting()
       modelPicker.refresh()
+      void refreshImageCompatibilityWarning()
       // An added/edited provider (e.g. a freshly fetched HF list) changes pricing.
       refreshModelPricing()
       updateFooter()
@@ -2314,11 +2419,9 @@ export function mountInputBar(
       scheduleContextEstimate(0)
     }),
     store.on('workspace_changed', () => {
-      branchControl.refresh()
       void refreshAutomaticCheckoutPreview()
     }),
     store.on('git_branch_changed', () => {
-      branchControl.refresh()
       void refreshAutomaticCheckoutPreview()
     }),
   ]
@@ -2387,6 +2490,8 @@ export function mountInputBar(
       nextStepHint.destroy()
       unbindDrop()
       unregisterAttachments()
+      imageDescriptionSeq++
+      descriptionPicker?.destroy()
       modelPicker.destroy()
       footerOverflow.destroy()
       guardedYolo.destroy()

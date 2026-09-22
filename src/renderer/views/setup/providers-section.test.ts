@@ -168,6 +168,75 @@ describe('providers panel', () => {
     assert.equal(openai?.querySelector('.provider-chip-dot'), null)
   })
 
+  it('shows the global OpenAI tier only in the OpenAI provider form', async () => {
+    state.settings['openAiServiceTier'] = ''
+    const panel = createProvidersPanel(stubApi(state), { showOpenAiServiceTier: true })
+    document.body.append(panel.root)
+    await panel.refresh()
+
+    clickChip(panel.root, 'openai')
+    const tier = panel.root.querySelector<HTMLSelectElement>('[name="openAiServiceTier"]')
+    assert.ok(tier)
+    assert.equal(tier.value, 'auto')
+    assert.deepEqual(
+      [...tier.options].map((option) => option.value),
+      ['auto', 'default', 'flex', 'fast'],
+    )
+    assert.match(panel.root.textContent, /Global OpenAI service tier/)
+    assert.match(panel.root.textContent, /configured for this OpenAI Project/)
+    await panel.saveKeys()
+    assert.equal(state.settings['openAiServiceTier'], '')
+
+    clickChip(panel.root, 'anthropic')
+    assert.equal(panel.root.querySelector('[name="openAiServiceTier"]'), null)
+  })
+
+  it('does not show the global tier control in the onboarding-style panel', async () => {
+    state.settings['openAiServiceTier'] = 'flex'
+    const panel = createProvidersPanel(stubApi(state), { deviceAutoSetup: false })
+    document.body.append(panel.root)
+    await panel.refresh()
+
+    clickChip(panel.root, 'openai')
+    assert.equal(panel.root.querySelector('[name="openAiServiceTier"]'), null)
+  })
+
+  it('writes a chosen OpenAI tier but preserves semantically equivalent legacy bytes', async () => {
+    state.settings['openAiServiceTier'] = 'priority'
+    const panel = createProvidersPanel(stubApi(state), { showOpenAiServiceTier: true })
+    document.body.append(panel.root)
+    await panel.refresh()
+    clickChip(panel.root, 'openai')
+
+    const tier = panel.root.querySelector<HTMLSelectElement>('[name="openAiServiceTier"]')
+    assert.ok(tier)
+    assert.equal(tier.value, 'fast')
+    await panel.saveKeys()
+    assert.equal(state.settings['openAiServiceTier'], 'priority')
+
+    tier.value = 'flex'
+    tier.dispatchEvent(new Event('change', { bubbles: true }))
+    assert.equal(await panel.saveKeys(), true)
+    assert.equal(state.settings['openAiServiceTier'], 'flex')
+  })
+
+  it('retains an advanced or unknown current tier until a supported choice is made', async () => {
+    for (const current of ['scale', 'future-tier']) {
+      state.settings['openAiServiceTier'] = current
+      const panel = createProvidersPanel(stubApi(state), { showOpenAiServiceTier: true })
+      document.body.replaceChildren(panel.root)
+      await panel.refresh()
+      clickChip(panel.root, 'openai')
+
+      const tier = panel.root.querySelector<HTMLSelectElement>('[name="openAiServiceTier"]')
+      assert.ok(tier)
+      assert.equal(tier.value, current)
+      assert.match(tier.selectedOptions[0]?.textContent ?? '', /current/i)
+      await panel.saveKeys()
+      assert.equal(state.settings['openAiServiceTier'], current)
+    }
+  })
+
   it('keeps a key pending and explains the default-off plaintext policy', async () => {
     state.setKeyResult = { ok: false, reason: 'plaintext-storage-disabled' }
     const panel = createProvidersPanel(stubApi(state), {})
@@ -186,6 +255,27 @@ describe('providers panel', () => {
     assert.equal(state.keys['openai'], undefined)
     const status = panel.root.querySelector<HTMLElement>('[data-provider-key-status="openai"]')
     assert.match(status?.textContent ?? '', /COPSE_ALLOW_PLAINTEXT_SECRETS=1/)
+  })
+
+  it('does not persist a tier while another provider field blocks the save', async () => {
+    state.settings['openAiServiceTier'] = 'default'
+    state.setKeyResult = { ok: false, reason: 'plaintext-storage-disabled' }
+    const panel = createProvidersPanel(stubApi(state), { showOpenAiServiceTier: true })
+    document.body.append(panel.root)
+    await panel.refresh()
+    clickChip(panel.root, 'openai')
+
+    const tier = panel.root.querySelector<HTMLSelectElement>('[name="openAiServiceTier"]')
+    const key = panel.root.querySelector<HTMLInputElement>('.provider-form input[type="password"]')
+    assert.ok(tier)
+    assert.ok(key)
+    tier.value = 'fast'
+    tier.dispatchEvent(new Event('change', { bubbles: true }))
+    key.value = 'sk-test'
+    key.dispatchEvent(new Event('input', { bubbles: true }))
+
+    assert.equal(await panel.saveKeys(), false)
+    assert.equal(state.settings['openAiServiceTier'], 'default')
   })
 
   it('keeps the cloud-agent run options in the form, hidden until one is selected', async () => {

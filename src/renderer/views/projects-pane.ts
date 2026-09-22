@@ -52,6 +52,7 @@ import { forkThread } from '../controller/fork-thread.ts'
 import { sidebarPrRefs, type SidebarThread } from '../controller/sidebar-thread.ts'
 import { isThreadAwaitingAttention } from '../controller/attention.ts'
 import { isSshWorkspaceEnabled } from '../controller/ssh-workspace-ui.ts'
+import { maybeRenameThreadBranch } from '../controller/thread-naming.ts'
 import {
   buildProjectTree,
   projectGroupId,
@@ -111,7 +112,7 @@ function attentionBell(label: string): SVGSVGElement {
  * used for overflow elsewhere, with opacity walking across the dots.
  */
 function runningStatus(label: string): SVGSVGElement {
-  const svg = runningStatusIcon('ui-icon ui-icon-sm chat-running-status')
+  const svg = runningStatusIcon('ui-icon chat-running-status')
   svg.setAttribute('role', 'img')
   svg.setAttribute('aria-label', label)
   svg.setAttribute('data-tooltip', label)
@@ -359,8 +360,12 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     const { threadId, draft } = renaming
     renaming = null
     const next = draft.trim()
-    if (save && next) setThreadTitle(store, threadId, next)
-    else render()
+    if (save && next) {
+      setThreadTitle(store, threadId, next)
+      maybeRenameThreadBranch(store, api, threadId)
+    } else {
+      render()
+    }
   }
 
   /**

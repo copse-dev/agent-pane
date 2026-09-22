@@ -209,6 +209,39 @@ describe('tool call display (component)', () => {
     assert.equal(restored.open, false, 'thread switching lost the user-closed state')
   })
 
+  it('retains an explicit user-open after settled work compacts', async () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    const messageId = addMessage(store, threadId, 'assistant', '')
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+    setThreadStatus(store, threadId, 'running')
+    addToolCall(store, messageId, {
+      id: 'tc-explicit-open',
+      name: 'run_shell',
+      args: { command: 'npm test' },
+      status: 'running',
+      result: null,
+    })
+
+    const rollup = document.querySelector<HTMLDetailsElement>('.tool-card-rollup')
+    assert.ok(rollup)
+    await delay(350)
+    assert.equal(rollup.open, true)
+    rollup.querySelector<HTMLElement>(':scope > summary')?.click()
+    rollup.querySelector<HTMLElement>(':scope > summary')?.click()
+    assert.equal(rollup.open, true)
+
+    updateToolCall(store, messageId, 'tc-explicit-open', {
+      status: 'done',
+      result: 'passed',
+    })
+    setThreadStatus(store, threadId, 'idle')
+    await delay(1_100)
+    assert.equal(rollup.open, true, 'explicit user-open state was compacted')
+  })
+
   it('reserves the activity icon slot when a running tool settles', () => {
     const store = createStore()
     const threadId = createThread(store)

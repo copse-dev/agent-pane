@@ -8,7 +8,7 @@ import type {
 } from 'openai/resources/responses/responses'
 import { withAppAttribution } from './app-attribution.ts'
 import { parseToolArgs } from './parse-tool-args.ts'
-import { serviceTierBody, type ServiceTier } from './service-tier.ts'
+import { isServiceTier, serviceTierBody, type ServiceTier } from './service-tier.ts'
 import { toolCallIdOrSynthesized } from './tool-call-id.ts'
 import { yieldStreamWithRetry } from './stream-retry.ts'
 import { toolResultImageFollowUp } from './tool-result-images.ts'
@@ -34,6 +34,10 @@ export class ResponsesProvider implements LLMProvider {
   private readonly reasoningSummaries: boolean
   private readonly encryptedReasoning: boolean
   lastUsage: { inputTokens: number; outputTokens: number } | null = null
+
+  get requestedServiceTier(): ServiceTier | undefined {
+    return this.serviceTier
+  }
 
   /**
    * Reasoning items from earlier turns of this run, keyed by the id of the first
@@ -79,6 +83,9 @@ export class ResponsesProvider implements LLMProvider {
       ...(opts.baseURL ? { baseURL: opts.baseURL } : {}),
       apiKey: opts.apiKey,
       defaultHeaders: withAppAttribution(),
+      // Keep one retry owner. Otherwise the SDK's two internal retries multiply
+      // yieldStreamWithRetry's bounded attempts for every pre-stream failure.
+      maxRetries: 0,
     })
   }
 
@@ -243,6 +250,12 @@ function* usageChunks(
     outputTokens: usage.output_tokens,
     ...(usage.input_tokens_details.cached_tokens
       ? { cacheReadTokens: usage.input_tokens_details.cached_tokens }
+      : {}),
+    ...(provider.requestedServiceTier !== undefined
+      ? { requestedServiceTier: provider.requestedServiceTier }
+      : {}),
+    ...(typeof response.service_tier === 'string' && isServiceTier(response.service_tier)
+      ? { responseServiceTier: response.service_tier }
       : {}),
   }
 }

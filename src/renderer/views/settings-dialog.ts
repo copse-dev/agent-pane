@@ -301,9 +301,6 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'nextStepSuggestionEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'containerRunsEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'orchestrationStrategyEnabled', kind: 'checkbox', default: false, save: true },
-  // P5: the master model-comparison toggle moved to Settings > Plugins
-  // (`copse.model-comparison`); the auto-on-review sub-toggle stays here.
-  { name: 'modelComparisonAutoOnReview', kind: 'checkbox', default: false, save: true },
   { name: DEVELOPER_MODE_SETTING, kind: 'checkbox', default: false, save: true },
   // Background tasks moved to Settings > Plugins (`copse.background-tasks`), which
   // also declares the `loopback-bind` sandbox relaxation (issue #1190).
@@ -940,15 +937,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               <legend>Commit signing</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="gitCommitSshAgentSocketAccess" />
-                Let Copse's git commit tool use your ssh-agent (macOS)
+                Enable scoped SSH signing approvals (macOS)
               </label>
               <p class="field-hint">
-                Off by default. Turn this on when Git uses a passphrase-protected SSH key and signed
-                commits fail inside Copse's sandbox. The grant applies only to Copse's native
-                <code>git_commit</code> subprocess, but Git hooks run inside that process and can
-                also ask ssh-agent to use <strong>any key it holds</strong>. The private key remains
-                unreadable. Pair this with <code>ssh-add -c</code> to confirm each use. macOS only:
-                Linux cannot admit one socket without admitting every Unix socket.
+                Off by default. Copse asks before its system SSH signer uses your configured key
+                through ssh-agent. You can remember the signer, key and socket for this project
+                until Copse restarts. Changed configuration requires approval again. Git hooks
+                keep their project sandbox; they receive no ssh-agent access. Turning this off
+                prevents further brokered signing. Private keys remain unreadable. Custom signing
+                programs run with ordinary project access. Scoped socket access is macOS only.
               </p>
             </fieldset>
           </section>
@@ -1444,25 +1441,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             </fieldset>
 
             <fieldset>
-              <legend>Model comparison</legend>
-              <p class="field-hint">
-                Reviews your current changes through two models independently, then has a third
-                compare their verdicts. Turn it on under <strong>Plugins</strong>, where you also
-                choose how the three models are picked — they always resolve to different models,
-                so there is something to compare. A run makes up to three model calls, so it asks
-                before spending on a paid model.
-              </p>
-              <label class="checkbox-label">
-                <input type="checkbox" name="modelComparisonAutoOnReview" />
-                Run the comparison automatically after editing turns
-              </label>
-              <p class="field-hint">
-                When on, the comparison runs as part of the post-turn review, still asking before
-                it spends. When off, ask for it when you want it.
-              </p>
-            </fieldset>
-
-            <fieldset>
               <legend>Developer mode</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="developerMode" />
@@ -1552,6 +1530,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         refresh: (): Promise<void> => lmStudioSection.refreshDetection(),
       },
     ],
+    showOpenAiServiceTier: true,
     cloudAgents: [
       {
         vendor: 'cursor',
@@ -4334,8 +4313,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         await settingsModelPickers.smallTasksModel.refresh(
           roleModels['small-tasks'] ?? smallTasksModel ?? '',
         )
-        // The advisor model and the three comparison models are no longer form
-        // fields: they are plugin-scoped `model` settings rendered in Settings →
+        // The advisor model and the reviewer models are no longer form fields:
+        // they are plugin-scoped `model` settings rendered in Settings →
         // Plugins (advisor pair hint included), populated by `refreshPlugins()`.
         const orchestrationWorkerModel = storedString(
           await api.settings.get('orchestrationWorkerModel'),
@@ -4529,9 +4508,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
       saveIfDirty('model', model)
       saveIfDirty('smallTasksModel', formDataString(data, 'smallTasksModel').trim())
-      // `advisorModel` and the three `comparisonModel*` values are no longer
-      // saved here — they are plugin-scoped `model` settings persisted on change
-      // via `plugins:set-setting` from Settings → Plugins.
+      // `advisorModel` and the reviewer models are no longer saved here — they
+      // are plugin-scoped `model` settings persisted on change via
+      // `plugins:set-setting` from Settings → Plugins.
       saveIfDirty(
         'orchestrationWorkerModel',
         formDataString(data, 'orchestrationWorkerModel').trim(),

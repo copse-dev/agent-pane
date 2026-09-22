@@ -1009,6 +1009,17 @@ describe('plan coverage on the map', () => {
           label: 'Weekly Fable',
           usedPercent: 20,
         }),
+      undefined,
+      async () => ['acp:claude-acp#fable'],
+      async () => [
+        {
+          id: 'claude-acp',
+          title: 'Claude',
+          command: 'claude-agent-acp',
+          enabled: true,
+          availableModels: [{ value: 'fable', label: 'Claude Fable 5' }],
+        },
+      ],
     )
     await panel.refresh()
     // The dashed plan-badge ring is only drawn for a plan-covered point.
@@ -1031,8 +1042,33 @@ describe('plan coverage on the map', () => {
           label: 'Weekly Fable',
           usedPercent: 100,
         }),
+      undefined,
+      async () => ['acp:claude-acp#fable'],
+      async () => [
+        {
+          id: 'claude-acp',
+          title: 'Claude',
+          command: 'claude-agent-acp',
+          enabled: true,
+          availableModels: [{ value: 'fable', label: 'Claude Fable 5' }],
+        },
+      ],
     )
     await panel.refresh()
+    assert.equal(panel.root.querySelector('circle.frontier-plan-badge'), null)
+  })
+
+  it('keeps direct Claude API prices despite a matching subscription snapshot', async () => {
+    const panel = createIntellectFrontierPanel(
+      async () => [],
+      undefined,
+      undefined,
+      async () => claudePlan({ id: 'seven_day', label: 'Weekly', usedPercent: 20 }),
+      undefined,
+      async () => ['claude-fable-5'],
+    )
+    await panel.refresh()
+    assert.ok(panel.root.querySelector('circle.frontier-point[data-model-id="claude-fable-5"]'))
     assert.equal(panel.root.querySelector('circle.frontier-plan-badge'), null)
   })
 

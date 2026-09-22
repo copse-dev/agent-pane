@@ -64,26 +64,26 @@ export interface GitHubBackend {
   readonly kind: 'cli' | 'api' | 'mock'
 
   // Reads — back the PR panel.
-  getStatus(): Promise<GhCliStatus>
-  listMyOpenPrs(limit: number): Promise<GhPrSummary[] | null>
-  listWorkspaceOpenPrs(limit: number): Promise<GhPrSummary[]>
-  getPrDetails(ref: PrRef): Promise<GhPrDetails | null>
-  getPrFileDiff(ref: PrRef, path: string): Promise<GhPrFileDiff | null>
-  getPrChecksState(ref: PrRef): Promise<GhPrChecksState>
+  getStatus: () => Promise<GhCliStatus>
+  listMyOpenPrs: (limit: number) => Promise<GhPrSummary[] | null>
+  listWorkspaceOpenPrs: (limit: number) => Promise<GhPrSummary[]>
+  getPrDetails: (ref: PrRef) => Promise<GhPrDetails | null>
+  getPrFileDiff: (ref: PrRef, path: string) => Promise<GhPrFileDiff | null>
+  getPrChecksState: (ref: PrRef) => Promise<GhPrChecksState>
   /** One bounded page of open workspace issues (PRs excluded) — backs roadmap import. */
-  listWorkspaceOpenIssues(page: number, pageSize: number): Promise<GhIssuePage>
+  listWorkspaceOpenIssues: (page: number, pageSize: number) => Promise<GhIssuePage>
   /** One issue by coordinates (any state); null when missing or actually a PR. */
-  getIssue(ref: PrRef): Promise<GhIssueSummary | null>
+  getIssue: (ref: PrRef) => Promise<GhIssueSummary | null>
   /** Search issues in the workspace repo (any state) — backs roadmap review. */
-  searchWorkspaceIssues(query: string, limit: number): Promise<GhIssueSummary[]>
+  searchWorkspaceIssues: (query: string, limit: number) => Promise<GhIssueSummary[]>
 
   // Writes — Wave 1 PR lifecycle actions.
   /** Open a PR and report its coordinates, so the caller can link it to a thread. */
-  createPr(input: PrCreateInput): Promise<PrCreateResult>
-  rerunFailedRuns(ref: PrRef): Promise<PrActionResult>
-  approvePr(ref: PrRef): Promise<PrActionResult>
-  markPrReady(ref: PrRef): Promise<PrActionResult>
-  enableAutoMerge(ref: PrRef): Promise<PrActionResult>
+  createPr: (input: PrCreateInput) => Promise<PrCreateResult>
+  rerunFailedRuns: (ref: PrRef) => Promise<PrActionResult>
+  approvePr: (ref: PrRef) => Promise<PrActionResult>
+  markPrReady: (ref: PrRef) => Promise<PrActionResult>
+  enableAutoMerge: (ref: PrRef) => Promise<PrActionResult>
 }
 
 /** Settings key controlling which backend the PR panel talks to. */

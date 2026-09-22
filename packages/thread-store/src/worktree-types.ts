@@ -40,6 +40,15 @@ export interface PreparedThreadCheckout {
   choice: ThreadWorktreeChoice
   branch: string | null
   worktree?: ThreadWorktree
+  /**
+   * Prompt-boundary Git state when the transaction can prove it without
+   * another repository read. Fresh worktrees start at `baseCommit`, and only
+   * the transaction can seed their initial dirty state.
+   */
+  promptState?: {
+    startingCommit: string | null
+    dirty: boolean
+  }
 }
 
 /**

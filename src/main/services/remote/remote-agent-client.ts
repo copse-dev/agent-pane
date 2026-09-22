@@ -7,7 +7,8 @@
  * SDK's reconnect loop so a mid-turn SSE drop does not abort a still-running
  * remote agent.
  */
-import type { LLMMessage, StreamChunk } from '@shared/types'
+import type { LLMMessage, Message, StreamChunk } from '@shared/types'
+import { createHash } from 'node:crypto'
 import {
   applyRemoteAgentHandoffContext,
   formatRemoteGitSummary,
@@ -26,10 +27,13 @@ import {
   remoteAgentModelValue,
   type RemoteAgentProvider,
 } from '@shared/remote-agent.ts'
+import { isImportedCursorAgentThread } from '@shared/remote-agent-link.ts'
 import { firstNonEmptyString, isRecord } from '@shared/unknown-value.ts'
 import { z } from 'zod'
 import { sleepMs } from '@copse/llm/stream-retry.ts'
 import { getApiKey, getSetting } from '../storage/settings.ts'
+import { appendImportedRemoteAgentRunResult, getProjectThread } from '../thread-store.ts'
+import { FETCH_TIMEOUTS } from '../fetch-timeouts.ts'
 import { validateRemoteAgentBaseUrl } from '../security/web-origin-policy.ts'
 import { getCurrentBranchName } from '../github/git-service.ts'
 import { storageGet, storageSet } from '../storage/storage.ts'
@@ -687,6 +691,76 @@ function isTerminalRunStatus(status: string | null | undefined): boolean {
   return (
     status === 'FINISHED' || status === 'ERROR' || status === 'CANCELLED' || status === 'EXPIRED'
   )
+}
+
+/** Filesystem-safe deterministic identity for one provider agent/run snapshot. */
+export function cursorRunMessageId(agentId: string, runId: string): string {
+  return `remote-cursor-run-${createHash('sha256')
+    .update(`${agentId}\u0000${runId}`, 'utf8')
+    .digest('hex')}`
+}
+
+/**
+ * Refresh the final persisted result for an externally imported Cursor agent.
+ *
+ * Cursor's durable run endpoint only exposes the terminal summary, not a
+ * replayable transcript. This intentionally performs one snapshot request for
+ * a selected imported thread and never opens an SSE stream or polls a live run.
+ */
+export async function refreshImportedCursorAgentThread(input: {
+  projectId: string
+  threadId: string
+  fetchImpl?: typeof fetch
+  now?: () => number
+  isThreadRunning?: (threadId: string) => boolean
+}): Promise<Message | null> {
+  const thread = await getProjectThread(input.projectId, input.threadId)
+  const link = thread?.remoteAgentLink
+  if (!thread || !link || link.provider !== REMOTE_AGENT_PROVIDER_CURSOR || !link.runId) {
+    return null
+  }
+  const messageId = cursorRunMessageId(link.agentId, link.runId)
+  if (
+    thread.status !== 'idle' ||
+    thread.queuePaused === true ||
+    (thread.pendingMessages?.length ?? 0) > 0 ||
+    input.isThreadRunning?.(input.threadId) === true ||
+    !isImportedCursorAgentThread(thread, messageId)
+  ) {
+    return null
+  }
+
+  const alreadyStored = thread.messages.find((message) => message.id === messageId)
+  const result = alreadyStored ? alreadyStored.content : undefined
+  const snapshot =
+    result === undefined
+      ? await fetchCursorRun({
+          fetchImpl: input.fetchImpl ?? fetch,
+          baseUrl: resolveBaseUrl(REMOTE_AGENT_PROVIDER_CURSOR),
+          apiKey: resolveApiKey(),
+          agentId: link.agentId,
+          runId: link.runId,
+          signal: AbortSignal.timeout(FETCH_TIMEOUTS.agentDiscovery),
+        })
+      : null
+  if (snapshot && !isTerminalRunStatus(snapshot.status)) return null
+
+  const content = result ?? `${snapshot?.result ?? ''}${formatRemoteGitSummary(snapshot?.git)}`
+  if (!content) return null
+
+  return appendImportedRemoteAgentRunResult(input.projectId, input.threadId, {
+    provider: REMOTE_AGENT_PROVIDER_CURSOR,
+    agentId: link.agentId,
+    runId: link.runId,
+    canPersist: () => input.isThreadRunning?.(input.threadId) !== true,
+    message: {
+      id: messageId,
+      role: 'assistant',
+      content,
+      toolCalls: [],
+      createdAt: alreadyStored?.createdAt ?? (input.now ?? Date.now)(),
+    },
+  })
 }
 
 async function fetchCursorRun(input: {

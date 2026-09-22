@@ -1,0 +1,9 @@
+{
+  "id": "git-commit-approval",
+  "description": "git-commit-approval.e2e.ts declines an explicit commit before staging or running configured hooks; the tool keeps shell sandbox/approval semantics.",
+  "prompts": ["Please commit the changes with my configured Git hooks and signing."],
+  "expect": {
+    "requireTools": ["git_commit"],
+    "maxExplore": 0
+  }
+}

@@ -1,0 +1,179 @@
+name: Copse review ground
+run-name: copse-review-ground pr=${{ inputs.pr }}
+
+# Shell C, job A (docs/plans/copse-reviewer.md, §Execution isolation, "Backend
+# per shell — CI"). `review-trigger.yml` dispatches this workflow from its
+# default-branch `pull_request_target:labeled` resolver; the target-context
+# workflow never executes pull-request code. Its ground job has no token
+# permissions or secrets. It checks out the trusted default-branch reviewer,
+# then fetches the exact resolved PR head as data. With credentials removed
+# after checkout and a fresh hosted runner, contributor code has nothing
+# privileged to reach. It runs Stage 0 (build,
+# typecheck, lint, test on head, and on base for whatever failed on head) with
+# the runner itself as the execution cell and uploads the report. Nothing in
+# that job can reach a model or a privileged token: the runner is ephemeral
+# and holds neither, which is what lets a contributor's code run.
+#
+# A separate, fresh handoff job gets only Actions-dispatch permission after
+# grounding succeeds. It explicitly dispatches "Copse review findings" on the
+# base ref with this run id; that job gets the model key and review token but
+# never executes the pull request's code. The artefact is the only untrusted
+# thing that crosses between them, and it is validated there before use.
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number resolved by the trusted trigger
+        required: true
+        type: string
+      head:
+        description: Exact pull request head SHA resolved by the trusted trigger
+        required: true
+        type: string
+      base:
+        description: Base branch resolved by the trusted trigger
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: copse-review-ground-${{ inputs.pr }}
+  cancel-in-progress: true
+
+jobs:
+  ground:
+    name: Stage 0 on the pull request head
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # Repeat the workflow-level denial at the execution boundary so a future
+    # sibling job cannot make this job inherit broader permissions.
+    permissions: {}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          # Use the reviewed CLI from the default branch. The PR head is fetched
+          # below and executed only by Stage 0's secret-free execution cell.
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: '.nvmrc'
+
+      # The review cell inherits only a scrubbed PATH and a disposable HOME.
+      # Provision the same native tools the full unit gate expects before the
+      # contributor ref is fetched, while this job still contains only trusted
+      # default-branch code. Apt's /usr/bin Cargo is intentional: rustup's shim
+      # depends on the runner HOME that the cell must not inherit.
+      - name: Provision the Stage 0 test toolchain
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends bubblewrap cargo ripgrep socat
+          if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          command -v bwrap
+          command -v cargo
+          command -v rg
+          command -v rustc
+          command -v socat
+          bwrap --unshare-all --dev-bind / / --die-with-parent true
+
+      - name: Activate the pinned pnpm
+        shell: bash
+        run: |
+          corepack enable
+          corepack prepare --activate
+          pnpm --version
+
+      # Only the reviewer and its workspace dependencies, with no lifecycle
+      # scripts: the pull request's own install runs inside Stage 0, under the
+      # reviewer's own rules, not here.
+      - name: Install the reviewer
+        shell: bash
+        run: pnpm install --frozen-lockfile --ignore-scripts --filter "@copse/review..."
+
+      - name: Run Stage 0 with the runner as the cell
+        shell: bash
+        env:
+          HEAD_SHA: ${{ inputs.head }}
+          BASE_REF: ${{ inputs.base }}
+          PR_NUMBER: ${{ inputs.pr }}
+        run: |
+          set -euo pipefail
+          setup_node_bin="$(dirname "$(command -v node)")"
+          export PATH="${setup_node_bin}:/usr/bin:${PATH}"
+          test "$(command -v cargo)" = /usr/bin/cargo
+          test "$(command -v node)" = "${setup_node_bin}/node"
+          [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]]
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git check-ref-format --branch "$BASE_REF"
+          git fetch --no-tags --quiet origin \
+            "+refs/pull/${PR_NUMBER}/head:refs/remotes/pr/${PR_NUMBER}" \
+            "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}"
+          test "$(git rev-parse "refs/remotes/pr/${PR_NUMBER}")" = "$HEAD_SHA"
+
+          # Stage 0 installs with --offline inside the isolated cell. Prime the
+          # host store from data-only files at the exact contributor commit;
+          # pnpm fetch ignores manifests and never runs lifecycle scripts. This
+          # job has no token permissions or secrets if the lockfile is hostile.
+          dependency_seed="$RUNNER_TEMP/copse-review-dependencies"
+          mkdir -p "$dependency_seed"
+          git show "${HEAD_SHA}:pnpm-lock.yaml" > "$dependency_seed/pnpm-lock.yaml"
+          if git cat-file -e "${HEAD_SHA}:patches" 2>/dev/null; then
+            git archive --format=tar "$HEAD_SHA" patches | tar -xf - -C "$dependency_seed"
+          fi
+          pnpm fetch --frozen-lockfile --dir "$dependency_seed"
+
+          mkdir -p ground
+          printf '{"pr":%s,"headSha":"%s","baseRef":"%s"}\n' "$PR_NUMBER" "$HEAD_SHA" "$BASE_REF" > ground/meta.json
+          # Findings never affect the exit code; a refused execution (3) or an
+          # undetectable project (2) does, and then there is no ground to upload.
+          node packages/review/bin/copse-review.mjs \
+            --foreign \
+            --head "refs/remotes/pr/${PR_NUMBER}" \
+            --base "origin/${BASE_REF}" \
+            --backend ephemeral-runner \
+            --no-model \
+            --json ground/report.json
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: copse-review-ground
+          path: ground/
+          retention-days: 7
+          if-no-files-found: error
+
+  handoff:
+    name: Dispatch findings after secret-free grounding
+    needs: ground
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # This is a fresh runner. It checks out, downloads and executes nothing;
+    # the untrusted ground job above never receives this token.
+    permissions:
+      actions: write
+    steps:
+      - name: Dispatch the read-only findings workflow
+        shell: bash
+        env:
+          BASE_REF: ${{ inputs.base }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          GH_TOKEN: ${{ github.token }}
+          GROUND_RUN_ID: ${{ github.run_id }}
+          HEAD_SHA: ${{ inputs.head }}
+          PR_NUMBER: ${{ inputs.pr }}
+        run: |
+          set -euo pipefail
+          gh workflow run review-findings.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref "$DEFAULT_BRANCH" \
+            -f "ground_run_id=${GROUND_RUN_ID}" \
+            -f "pr=${PR_NUMBER}" \
+            -f "head=${HEAD_SHA}" \
+            -f "base=${BASE_REF}"

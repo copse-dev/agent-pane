@@ -152,7 +152,7 @@ carries an `id`, a `label`, and two optional fields the host resolves:
 | field    | values              | meaning                                                               |
 | -------- | ------------------- | --------------------------------------------------------------------- |
 | `action` | `prompt` (default)  | the click sends the declaration's `prompt` to the agent               |
-|          | `model-compare`     | the click opens the comparison model picker, then runs the comparison |
+|          | `review`            | the click runs Copse Reviewer over the changes and shows the findings |
 | `when`   | `always` (default)  | offered whenever the plugin is enabled                                |
 |          | `workspace-changes` | offered only while the working tree has uncommitted changes           |
 
@@ -161,18 +161,21 @@ plain JSON: a plugin names a condition the host already computes for its own
 deterministic bubbles, and no plugin code runs at the end of every turn.
 
 A **host action is first-party only.** It drives app UI (and, for
-`model-compare`, spends money) without passing through the agent, so
+`review`, spends money and executes the repository's own checks) without
+passing through the agent, so
 `pluginManifestFromPluginJson` forces a discovered manifest's `action` back to
 `prompt`, and `PluginRegistry.register` throws
 `InvalidFollowUpContributionError` for a non-first-party plugin that
 contributes one. It also rejects a `prompt` bubble with no prompt text, which
 would be a dead click.
 
-The shipped example is `copse.model-comparison`, whose "Compare models" bubble
-is gated on `workspace-changes` because the reviewers read the working diff.
-Its picker names all three models before anything runs, which is what lets the
-run behind it skip the spend approval and completion chime: the click was the
-decision. Agent-initiated and auto-on-review runs still prompt.
+The shipped example is `copse.review`, whose "Review changes" bubble is gated
+on `workspace-changes` because the reviewer reads the working diff. The click
+is the decision: the run behind it skips the spend approval and the completion
+chime, and uses the reviewer and challenger the plugin's settings name. The
+agent's own `review_changes` call still prompts for a billable model. The same
+plugin contributes the "Review" button in the Changes view, which follows its
+toggle the way the plugin-gated pane controls do.
 
 Disabling the plugin drops its bubbles from `activeFollowUps()` in the same
 atomic flag flip as its tools and hooks.

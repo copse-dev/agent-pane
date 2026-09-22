@@ -273,8 +273,8 @@
             "type": "string"
           },
           "action": {
-            "description": "What the click does. `prompt` (the default) sends `prompt` to the agent. Host actions such as `model-compare` are first-party only: a discovered manifest is forced back to `prompt`, whatever it declares here.",
-            "enum": ["prompt", "model-compare"]
+            "description": "What the click does. `prompt` (the default) sends `prompt` to the agent. Host actions such as `review` are first-party only: a discovered manifest is forced back to `prompt`, whatever it declares here.",
+            "enum": ["prompt", "review"]
           },
           "when": {
             "description": "When the host offers the bubble: `always` (the default), or `workspace-changes` for only while the working tree has uncommitted changes.",

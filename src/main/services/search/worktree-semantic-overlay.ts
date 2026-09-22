@@ -195,10 +195,25 @@ export async function overlayWorktreeSemanticResults(
     options.worktreeRoot,
     options.signal,
   )
+  const terms = queryTerms(options.query)
+  const semanticRanks = new Map<string, number>()
+  for (const [index, hit] of options.baselineHits.entries()) {
+    if (!semanticRanks.has(hit.path)) semanticRanks.set(hit.path, index)
+  }
+  const pathScore = (path: string): number =>
+    countTermMatches(path, terms) * 4 + countTermMatches(basename(path), terms) * 2
+  // Refresh known semantic candidates before the bounded scan. Alphabetical
+  // truncation can otherwise spend the entire budget on docs and discard every
+  // changed source file that the native index found.
   const scopedChangedPaths = [...changedPaths]
     .filter((path) => pathMatchesFilter(path, options.filterPath))
-    .sort()
-  const terms = queryTerms(options.query)
+    .sort(
+      (a, b) =>
+        (semanticRanks.get(a) ?? Number.MAX_SAFE_INTEGER) -
+          (semanticRanks.get(b) ?? Number.MAX_SAFE_INTEGER) ||
+        pathScore(b) - pathScore(a) ||
+        a.localeCompare(b),
+    )
   const ranked = (
     await Promise.all(
       scopedChangedPaths
@@ -209,11 +224,30 @@ export async function overlayWorktreeSemanticResults(
     .filter(isNonNull)
     .sort((a, b) => b.score - a.score || a.hit.path.localeCompare(b.hit.path))
 
-  const baseline = options.baselineHits.filter(
-    (hit) => !changedPaths.has(hit.path) && pathMatchesFilter(hit.path, options.filterPath),
-  )
-  return {
-    hits: [...ranked.map((result) => result.hit), ...baseline].slice(0, options.maxResults),
-    changedPathCount: scopedChangedPaths.length,
+  const refreshed = new Map(ranked.map((result) => [result.hit.path, result.hit]))
+  const replacedPaths = new Set<string>()
+  const baseline = options.baselineHits.flatMap((hit) => {
+    if (!pathMatchesFilter(hit.path, options.filterPath)) return []
+    if (!changedPaths.has(hit.path)) return [hit]
+    if (replacedPaths.has(hit.path)) return []
+    replacedPaths.add(hit.path)
+    const replacement = refreshed.get(hit.path)
+    return replacement ? [replacement] : []
+  })
+  const baselinePaths = new Set(baseline.map((hit) => hit.path))
+  const additions = ranked.map((result) => result.hit).filter((hit) => !baselinePaths.has(hit.path))
+  // Reserve room for both native relevance and newly changed files. A stream of
+  // weak keyword matches must not replace the whole semantic shortlist.
+  const hits: SemanticSearchHit[] = []
+  for (
+    let index = 0;
+    hits.length < options.maxResults && index < Math.max(baseline.length, additions.length);
+    index++
+  ) {
+    const semantic = baseline[index]
+    const addition = additions[index]
+    if (semantic) hits.push(semantic)
+    if (addition && hits.length < options.maxResults) hits.push(addition)
   }
+  return { hits, changedPathCount: scopedChangedPaths.length }
 }

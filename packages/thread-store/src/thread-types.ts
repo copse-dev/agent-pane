@@ -12,13 +12,22 @@ export type { HookCard } from './hook-card.ts'
 // the contract). Imported for use by the thread types below and re-exported so
 // `@shared/types` consumers are unchanged.
 import type { ModelUsage, ThreadUsage } from '@copse/llm/wire-types.ts'
+import type { ServiceTier } from '@copse/llm/service-tier.ts'
 export type { ModelUsage, ThreadUsage } from '@copse/llm/wire-types.ts'
 // The subagent session/tool-call record and the context-breakdown shapes are
 // owned by the agent module (the loop constructs sessions and reports the
 // breakdown); imported for the thread types below and re-exported so
 // `@shared/types` consumers are unchanged.
-import type { AgentRunPayload, TodoItem, ToolCall } from '@copse/agent/wire-types.ts'
+import type {
+  AcpContentBlock,
+  AgentRunPayload,
+  TodoItem,
+  ToolCall,
+} from '@copse/agent/wire-types.ts'
 export type {
+  AcpContentBlock,
+  AcpToolCallContent,
+  AcpToolCallLocation,
   ToolCall,
   SubagentMessage,
   SubagentSession,
@@ -104,6 +113,8 @@ export interface ContextSnapshot {
   fillRatio: number
   /** Present when the context owner reported this snapshot directly. */
   source?: 'agent-reported'
+  /** Cumulative cost reported by the ACP session, in the agent's ISO currency. */
+  cost?: { amount: number; currency: string }
   updatedAt: number
 }
 
@@ -120,10 +131,11 @@ export interface ThreadReview {
 }
 
 /**
- * Result of running the working-diff review through two models and a judge that
- * compares their findings (the "model comparison harness"). `reviewA`/`reviewB`
- * are each model's independent verdict; `synthesis` is the judge's comparison
- * (agreements, disagreements, unique catches, overall recommendation).
+ * Result of the retired model-comparison harness (two reviewers and a judge
+ * comparing their prose). Nothing produces one any more; the type stays so a
+ * thread that carries one from before Copse Reviewer still renders its card
+ * (hooks-and-feature-packs decision 17: disabling or replacing a pack never
+ * breaks history).
  */
 export interface ModelComparison {
   status: 'running' | 'done' | 'error'
@@ -137,6 +149,116 @@ export interface ModelComparison {
   synthesis: string
   /** Human-readable cost estimate for the whole run (e.g. `~$0.04`). */
   cost?: string
+  /** Populated when `status === 'error'`. */
+  error?: string
+}
+
+/**
+ * What a review finding could stand on — the app-side projection of
+ * `@copse/review`'s evidence union, carried verbatim so the card can quote the
+ * command, the reproducer or the cited lines.
+ */
+export type ReviewFindingEvidence =
+  | {
+      kind: 'command'
+      /** The argv that ran, shell-quoted for display. */
+      command: string
+      target: 'base' | 'head'
+      /** `null` when the process was killed rather than exiting. */
+      exitCode: number | null
+      /** Capped, secret-scrubbed tail of the output. */
+      excerpt: string
+    }
+  | { kind: 'reproducer'; testPath: string; failsOnHead: boolean; passesOnBase: boolean }
+  | { kind: 'citation'; path: string; startLine: number; endLine: number }
+
+/**
+ * One finding as the findings card shows it: `@copse/review`'s `Finding`
+ * flattened for rendering, plus the source lines it is anchored to and whether
+ * the user has dismissed it. The `id` is the reviewer's content-derived
+ * identity, which is what a persisted dismissal is keyed by, so a finding stays
+ * dismissed across pushes as long as the anchored source and the claim hold.
+ */
+export interface ReviewFindingRecord {
+  id: string
+  path: string
+  startLine?: number
+  endLine?: number
+  /** One sentence, falsifiable. */
+  claim: string
+  /** A class from the reviewer's B4 list (`build`, `type`, `test`, `contract`, …). */
+  class: string
+  severity: 'low' | 'medium' | 'high' | 'critical'
+  confidence: 'low' | 'medium' | 'high'
+  verdict: { status: 'confirmed' | 'refuted' | 'unverified'; reason: string }
+  /** Reviewer labels: `stage0`, or `model (lens)`. */
+  raisedBy: string[]
+  corroboratedBy: string[]
+  challengedBy: string[]
+  evidence: ReviewFindingEvidence[]
+  /** The lines the anchor covers on head, when the file could be read. */
+  anchoredText?: string
+  /** Set when the user dismissed this finding (persisted in the knowledge store). */
+  dismissed?: boolean
+}
+
+/** One reviewer turn (a model under a lens), as the card lists them. */
+export interface ReviewReportReviewer {
+  model: string
+  lens: string
+  /** The headless contract's turn outcome. */
+  outcome: 'completed' | 'failed' | 'cancelled' | 'awaiting_approval' | 'awaiting_input'
+  candidates: number
+  summary: string
+  error?: string
+}
+
+/**
+ * The Copse Reviewer report for a thread, as produced by a "Review" gesture
+ * (the Changes view, the follow-up bubble or the `review_changes` tool).
+ * Replaces the model comparison as the thread's trailing card: findings, not
+ * prose — each one addressable, evidenced and dismissible.
+ */
+export interface ThreadReviewReport {
+  status: 'running' | 'done' | 'error'
+  /** When the run started (ms since epoch). */
+  startedAt: number
+  /** The reviewer model, and the challenger/reproducer model when verification ran. */
+  models: { reviewer: string; challenger: string | null }
+  lenses: string[]
+  /** What the head was reviewed against. */
+  baseRef: string
+  headCommit: string | null
+  dirtyWorkingTree: boolean
+  /**
+   * Whether anything from the repository was executed, behind which boundary,
+   * and why not when it was not. A review without execution is read-only:
+   * Stage 0 did not run and the reviewer had no `run_command`.
+   */
+  execution: { backend: string; strength: string; executed: boolean; reason: string }
+  /** Stage 0's per-check verdicts on head. */
+  checks: { kind: string; verdict: string }[]
+  /** Why some or all of Stage 0 did not run. */
+  notChecked: string[]
+  /** Ranked and capped; `appendix` counts the rest. */
+  findings: ReviewFindingRecord[]
+  appendix: number
+  /** Candidates the challenger refuted; never surfaced, counted so the card can say so. */
+  refuted: number
+  reviewers: ReviewReportReviewer[]
+  verification: {
+    attempted: number
+    confirmed: number
+    refuted: number
+    survived: number
+    undetermined: number
+    skipped: number
+  } | null
+  durationMs: number
+  /** Human-readable cost estimate for the whole run (e.g. `~$0.04`). */
+  cost?: string
+  /** A completed run with a caveat worth one line, e.g. no changes against the base. */
+  note?: string
   /** Populated when `status === 'error'`. */
   error?: string
 }
@@ -184,8 +306,13 @@ export interface Thread {
   contextSnapshot?: ContextSnapshot
   /** Structured task plan for multi-step agent work (updated via update_todos). */
   todos?: TodoItem[]
-  /** Latest two-model comparison produced for an editing turn (auto or on demand). */
+  /**
+   * A two-model comparison from before Copse Reviewer replaced the harness.
+   * Never written any more; kept so old threads still render their card.
+   */
   comparison?: ModelComparison
+  /** Latest Copse Reviewer report for this thread's changes (replaces `comparison`). */
+  reviewReport?: ThreadReviewReport
   /** Persisted parent/explore goal; set on the first user message in the thread. */
   workingBrief?: string
   /** Git branch this thread was started on; set on first message and persisted. */
@@ -399,6 +526,10 @@ export interface Message {
    * a collapsible disclosure. Never sent back upstream as conversation history.
    */
   reasoning?: string
+  /** Non-text ACP assistant content, kept out of the Markdown body. */
+  contentBlocks?: AcpContentBlock[]
+  /** Non-text ACP thought content, rendered inside the reasoning disclosure. */
+  reasoningBlocks?: AcpContentBlock[]
   /** Pasted image attachments as data URLs (user messages only). */
   images?: string[]
   toolCalls: ToolCall[]
@@ -486,6 +617,8 @@ export interface Message {
 
 export interface UsageDelta extends ModelUsage {
   model: string
+  requestedServiceTier?: ServiceTier
+  responseServiceTier?: ServiceTier
 }
 
 /**

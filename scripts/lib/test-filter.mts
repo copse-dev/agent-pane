@@ -106,6 +106,6 @@ export function describeNoMatch(all: string[], filters: string[]): string | null
 }
 
 /** Where esbuild writes a test file's bundle, given `outbase: '.'`. */
-export function testOutputPath(testFile: string): string {
-  return `dist-test/${normalize(testFile).replace(/\.ts$/, '.mjs')}`
+export function testOutputPath(testFile: string, outputDir = 'dist-test'): string {
+  return `${outputDir.replace(/\/$/, '')}/${normalize(testFile).replace(/\.ts$/, '.mjs')}`
 }

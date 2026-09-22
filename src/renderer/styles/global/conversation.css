@@ -11,6 +11,81 @@
   gap: var(--spacing-sm);
   min-height: 0;
 }
+
+/* Explicit recovery for a turn that ended after partial output. This is an
+   inline transcript offer: no modal and no implied automatic replay. */
+.messages-list > .turn-recovery-card {
+  width: min(100%, var(--chat-content-max));
+  margin: var(--spacing-sm) auto 0;
+}
+
+.turn-recovery-card {
+  --sev: var(--warning);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--spacing-sm);
+  border: 1px solid color-mix(in srgb, var(--sev) 45%, var(--border));
+  border-radius: var(--radius);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background:
+    repeating-linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--sev) var(--callout-hatch-line), transparent) 0 1px,
+      transparent 1px var(--callout-hatch-pitch)
+    ),
+    color-mix(in srgb, var(--sev) var(--callout-hatch-fill), transparent);
+}
+
+.turn-recovery-icon {
+  display: inline-flex;
+  color: var(--sev);
+  margin-top: var(--spacing-xs);
+}
+
+.turn-recovery-body {
+  min-width: 0;
+}
+
+.turn-recovery-title {
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.turn-recovery-detail,
+.turn-recovery-model-note {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-base);
+}
+
+.turn-recovery-model-note {
+  margin-top: var(--spacing-xs);
+}
+
+.turn-recovery-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--spacing-sm);
+}
+
+.turn-recovery-button.ui-btn {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .turn-recovery-card {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .turn-recovery-actions {
+    grid-column: 2;
+    justify-content: flex-start;
+  }
+}
 .conversation-scroll {
   position: relative;
   flex: 1;
@@ -364,7 +439,11 @@
 .msg-actions {
   position: absolute;
   right: 0;
-  bottom: 0;
+  /* The containing block is `.message-body`, while the visible user bubble
+     adds its own block padding. Let the row sit halfway into that lower padding
+     so a one-line prompt and its 28px actions share a visual centre; keeping the
+     offset small preserves the bottom-right placement on wrapped prompts. */
+  bottom: calc(-1 * var(--spacing-xs));
   display: flex;
   gap: var(--spacing-xs);
   opacity: 0;
@@ -599,6 +678,98 @@
   object-fit: contain;
   border: 1px solid var(--border);
   background: var(--bg-base);
+}
+/* A self-contained tool visual (generated render, diagram, page capture) is
+   the turn's deliverable, so it previews at reading size like a remote
+   artifact image instead of the thumbnail grid used for frame batches. */
+.tool-result-preview {
+  margin: 0;
+  max-width: 100%;
+}
+.tool-result-preview-image {
+  display: block;
+  max-width: 100%;
+  max-height: min(520px, 60vh);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  object-fit: contain;
+}
+.tool-result-preview-caption {
+  margin-top: var(--spacing-xs);
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+}
+.acp-content-blocks,
+.tool-result-content {
+  display: grid;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-sm);
+}
+.tool-result-content {
+  margin-bottom: var(--spacing-sm);
+}
+.acp-content-image {
+  justify-self: start;
+}
+.acp-audio-content,
+.acp-resource-content,
+.acp-terminal-reference,
+.acp-tool-diff {
+  min-width: 0;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-muted);
+  color: var(--text-secondary);
+}
+.acp-audio-content,
+.acp-resource-content,
+.acp-terminal-reference {
+  display: grid;
+  gap: var(--spacing-xs);
+}
+.acp-audio-content audio {
+  width: min(100%, 420px);
+  height: 36px;
+}
+.acp-content-label,
+.acp-resource-meta,
+.acp-resource-description {
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+}
+.acp-resource-title {
+  width: fit-content;
+  color: var(--link);
+  font-weight: 600;
+}
+span.acp-resource-title {
+  color: var(--text-primary);
+}
+.acp-resource-uri {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.acp-embedded-resource summary,
+.acp-tool-diff summary {
+  cursor: pointer;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.acp-resource-text,
+.acp-tool-diff-text {
+  margin: var(--spacing-xs) 0 0;
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+}
+.acp-tool-diff > .acp-content-label {
+  display: block;
+  margin-top: var(--spacing-sm);
 }
 .message-text .remote-artifact-image {
   display: block;

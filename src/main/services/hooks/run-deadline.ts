@@ -1,26 +1,25 @@
 // Run-deadline pause registry (H4, decision 13) — lets host-side blocking hook
-// fire sites pause the active run's sliding **idle** deadline while a blocking
-// hook is awaited, "the same way tool execution does".
+// fire sites pause the active run's idle deadline and hard runaway cap while a
+// blocking hook is awaited.
 //
 // The idle deadline (`AgentRunDeadline`, `packages/agent`) already pauses around
 // tool execution and LLM streaming (see `run-agent-loop.ts`). A blocking hook
 // can legitimately run for a long time (a Claude `command` hook defaults to
-// 600s), so awaiting one must not advance the idle clock — decision 13:
-// "Blocking-hook wait pauses the idle deadline the same way tool execution
-// does." The deadline lives inside the loop, but the blocking hooks fire from
+// 600s), so awaiting one must not advance the idle clock or spend the hard work
+// budget. The deadline lives inside the loop, but the blocking hooks fire from
 // host code (the permission gate, the compose path, the subagent spawn gate,
 // the diff-queue write site). This registry bridges that gap exactly like
 // `halt-run.ts` bridges the abort path: the run registers its deadline on start
 // (keyed by thread id) and clears it on end, and a fire site wraps its hook
 // wait in {@link withRunDeadlinePaused}.
 //
-// Nested pause is safe: `AgentRunDeadline.pause/resume` is reference-counted, so
+// Nested pause is safe: the deadline's pause methods are reference-counted, so
 // a `toolGate` hook that fires *inside* `executeToolBatch`'s already-paused
 // region composes cleanly (the inner resume never un-pauses the outer region).
 //
 // Module layout (execution-guidance rule 4): the deadline is a run-owned host
 // concern here; `packages/agent` stays Electron-free and only exposes the
-// pause/resume primitive on the deadline object.
+// host-wait pause/resume primitive on the deadline object.
 
 /**
  * The slice of `AgentRunDeadline` this registry needs. A structural type (not
@@ -28,8 +27,8 @@
  * which is what the contract test injects.
  */
 export interface PausableRunDeadline {
-  pause(): void
-  resume(): void
+  pauseForHostWait(): void
+  resumeForHostWait(): void
 }
 
 /**
@@ -43,7 +42,7 @@ export interface PausableRunDeadline {
 const deadlines = new Map<string, PausableRunDeadline>()
 
 /**
- * Register the active run's idle deadline for its thread (H4). Called at run
+ * Register the active run's deadline for its thread (H4). Called at run
  * start in agent-service alongside `registerHaltTarget`; cleared in the run's
  * `finally` via {@link clearRunDeadline}.
  */
@@ -61,9 +60,9 @@ export function clearRunDeadline(threadId: string, deadline: PausableRunDeadline
 }
 
 /**
- * Run `fn` with the session's idle deadline paused for its entire duration
- * (decision 13). Used by every blocking hook fire site to wrap the hook wait so
- * a slow blocking hook does not advance the idle clock. `sessionId` is the
+ * Run `fn` with the session's idle deadline and hard cap paused for its entire
+ * duration (decision 13). Used by every blocking hook fire site to wrap the
+ * host wait so it spends neither clock. `sessionId` is the
  * run's thread id (`agentSession.conversationId`); when it is undefined or no
  * deadline is registered for it, this is a transparent pass-through — the hook
  * still runs, just with no clock to pause. The deadline is always resumed, even
@@ -75,11 +74,11 @@ export async function withRunDeadlinePaused<T>(
 ): Promise<T> {
   const deadline = sessionId !== undefined ? deadlines.get(sessionId) : undefined
   if (!deadline) return fn()
-  deadline.pause()
+  deadline.pauseForHostWait()
   try {
     return await fn()
   } finally {
-    deadline.resume()
+    deadline.resumeForHostWait()
   }
 }
 

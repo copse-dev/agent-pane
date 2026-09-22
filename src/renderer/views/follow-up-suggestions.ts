@@ -12,8 +12,7 @@ import {
   updateToolCall,
 } from '@shared/store/thread-helpers.ts'
 import { lastExchange } from './last-exchange.ts'
-import { openComparisonModelDialog } from './comparison-model-dialog.ts'
-import { comparisonModelsPayload, startComparison } from '../controller/retry-review-comparison.ts'
+import { startReview } from '../controller/review-actions.ts'
 import { showErrorToast, showToast } from './toast.ts'
 
 /** Open the changeset reviewer pane (mirrors the diff-conflict banner path). */
@@ -21,36 +20,6 @@ function openChangesReviewer(store: AppStore): void {
   store.setState({ rightPanelMode: 'changes', filesPaneOpen: true })
   store.emit('right_panel_mode_changed')
   store.emit('files_pane_changed')
-}
-
-/**
- * The "Compare models" bubble: pick the three models, then run the comparison
- * against the working diff. The picker opens on the plugin's configured selections
- * resolved to concrete ids — a comparison priced in three inferences should name
- * what it is about to spend, and "most capable" names nothing.
- *
- * No approval prompt follows: the dialog the user just answered *is* the spend
- * decision, and the run is marked quiet so its completion does not chime either.
- */
-async function runComparisonFromBubble(
-  store: AppStore,
-  api: ApiClient,
-  threadId: string,
-  onStarted: () => void,
-): Promise<void> {
-  let defaults
-  try {
-    defaults = await api.agent.comparisonModels(comparisonModelsPayload(store, threadId))
-  } catch (err) {
-    showErrorToast('Could not load comparison models', err)
-    return
-  }
-  const picked = await openComparisonModelDialog(api, defaults)
-  // Backing out of the picker leaves the bubbles up: nothing happened, so the
-  // offer should still be there.
-  if (!picked) return
-  onStarted()
-  startComparison(store, api, threadId, picked)
 }
 
 /**
@@ -88,10 +57,13 @@ async function createPrFromBubble(
     ...(bodyPromise ? { bodyPromise } : {}),
   })
   if (!picked) return
-  onConfirmed()
 
   const request = { title: picked.title, body: picked.body, draft: picked.draft }
   const card = openPrCardInTranscript(store, threadId, request)
+  // Consume after the synthetic card is appended so the remembered turn key
+  // includes that card. A later status pulse for the turn that just finished
+  // must not make the accepted offer eligible again.
+  onConfirmed()
   try {
     const result = await api.gh.createPrForThread(activeProjectId, threadId, request)
     settlePrCard(store, card, result.ok ? 'done' : 'error', result.message)
@@ -180,18 +152,26 @@ export function mountFollowUpSuggestions(
     fetchTokens.set(threadId, token)
     return token
   }
+  const changesRefreshTokens = new Map<string, number>()
+  const nextChangesRefreshToken = (threadId: string): number => {
+    const token = (changesRefreshTokens.get(threadId) ?? 0) + 1
+    changesRefreshTokens.set(threadId, token)
+    return token
+  }
   let changesRefreshTimer: ReturnType<typeof setTimeout> | null = null
   let displayedThreadId: string | null = null
   const suggestionsByThread = new Map<string, CachedSuggestions>()
-  const consumedThreads = new Set<string>()
+  const consumedTurnKeys = new Map<string, string>()
 
   function consumeSuggestions(threadId: string): void {
     // Creating a PR appends a synthetic assistant card, not a new user turn.
     // Its store events must not re-fetch the offer we just accepted. Invalidate
     // pending fetches too, and allow suggestions again when a real run starts.
-    consumedThreads.add(threadId)
+    const exchange = lastExchange(store, threadId)
+    if (exchange) consumedTurnKeys.set(threadId, exchange.turnKey)
     suggestionsByThread.delete(threadId)
     nextFetchToken(threadId)
+    nextChangesRefreshToken(threadId)
     if (store.getState().activeThreadId === threadId) clearSuggestions()
   }
 
@@ -256,8 +236,12 @@ export function mountFollowUpSuggestions(
         // An action bubble does the thing itself; only a prompt bubble routes
         // through the composer. Either way the bubbles clear when the action
         // commits, not merely when it is offered.
-        if (suggestion.action === 'model-compare') {
-          void runComparisonFromBubble(store, api, sourceThreadId, clearSuggestions)
+        if (suggestion.action === 'review') {
+          // The click is the decision: Copse Reviewer runs on the thread's
+          // changes with the plugin's configured models, no picker and no
+          // spend prompt (the bubble was offered, not forced).
+          clearSuggestions()
+          startReview(store, api, sourceThreadId)
           return
         }
         if (suggestion.action === 'create-pr') {
@@ -276,13 +260,15 @@ export function mountFollowUpSuggestions(
   }
 
   async function maybeFetchSuggestions(threadId: string): Promise<void> {
-    if (consumedThreads.has(threadId)) return
     const exchange = lastExchange(store, threadId)
     if (!exchange) {
       suggestionsByThread.delete(threadId)
       if (store.getState().activeThreadId === threadId) clearSuggestions()
       return
     }
+    const consumedTurnKey = consumedTurnKeys.get(threadId)
+    if (consumedTurnKey === exchange.turnKey) return
+    if (consumedTurnKey) consumedTurnKeys.delete(threadId)
 
     const cached = suggestionsByThread.get(threadId)
     if (cached?.turnKey === exchange.turnKey) {
@@ -330,12 +316,19 @@ export function mountFollowUpSuggestions(
     // The bubbles only appear after a turn produces a set; nothing to maintain
     // mid-run (the reviewer pane covers live changes during a run).
     if (!cached) return
+    const token = nextChangesRefreshToken(activeId)
     let stats: { additions: number; deletions: number } | null
     try {
       stats = await api.git.changeStats(activeProjectId, activeId)
     } catch {
       return
     }
+    // A refresh can be in flight while the user accepts an action or another
+    // filesystem event starts a newer refresh. Never let that older result
+    // resurrect consumed suggestions or overwrite the newer snapshot.
+    if (token !== changesRefreshTokens.get(activeId)) return
+    if (consumedTurnKeys.has(activeId)) return
+    if (suggestionsByThread.get(activeId) !== cached) return
     const next = reconcileChangesSuggestion(cached.suggestions, stats)
     if (next === cached.suggestions) return
     suggestionsByThread.set(activeId, { turnKey: cached.turnKey, suggestions: next })
@@ -353,10 +346,6 @@ export function mountFollowUpSuggestions(
       clearSuggestions()
       return
     }
-    if (consumedThreads.has(activeId)) {
-      clearSuggestions()
-      return
-    }
     if (displayedThreadId === activeId) return
 
     const exchange = lastExchange(store, activeId)
@@ -364,6 +353,12 @@ export function mountFollowUpSuggestions(
       clearSuggestions()
       return
     }
+    const consumedTurnKey = consumedTurnKeys.get(activeId)
+    if (consumedTurnKey === exchange.turnKey) {
+      clearSuggestions()
+      return
+    }
+    if (consumedTurnKey) consumedTurnKeys.delete(activeId)
 
     const cached = suggestionsByThread.get(activeId)
     if (cached?.turnKey === exchange.turnKey) {
@@ -377,8 +372,8 @@ export function mountFollowUpSuggestions(
   const unsubs = [
     store.on('thread_status_changed', (tid, status) => {
       if (status === 'running') {
-        consumedThreads.delete(tid)
         suggestionsByThread.delete(tid)
+        nextChangesRefreshToken(tid)
         if (tid === store.getState().activeThreadId) {
           nextFetchToken(tid)
           clearSuggestions()
@@ -405,11 +400,13 @@ export function mountFollowUpSuggestions(
       // Invalidate every in-flight fetch: after clear(), get() returns undefined
       // so any pending `token !== fetchTokens.get(threadId)` check bails.
       fetchTokens.clear()
+      changesRefreshTokens.clear()
       if (changesRefreshTimer) clearTimeout(changesRefreshTimer)
       unsubs.forEach((u) => {
         u()
       })
       suggestionsByThread.clear()
+      consumedTurnKeys.clear()
       clearSuggestions()
     },
   }

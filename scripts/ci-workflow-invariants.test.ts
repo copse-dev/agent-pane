@@ -719,6 +719,147 @@ describe('gitleaks workflow invariants', () => {
   })
 })
 
+describe('Copse Reviewer workflow invariants', () => {
+  const triggerWorkflow = readFileSync(resolve('.github/workflows/review-trigger.yml'), 'utf8')
+  const groundWorkflow = readFileSync(resolve('.github/workflows/review-ground.yml'), 'utf8')
+  const findingsWorkflow = readFileSync(resolve('.github/workflows/review-findings.yml'), 'utf8')
+  const nightlyWorkflow = readFileSync(resolve('.github/workflows/review-nightly.yml'), 'utf8')
+  const forgeReview = readFileSync(resolve('packages/review/src/forge-review.ts'), 'utf8')
+
+  function workflowJobBlock(workflow: string, name: string): string {
+    const header = `  ${name}:\n`
+    const start = workflow.indexOf(header)
+    assert.ok(start >= 0, `expected a \`${name}:\` job`)
+    const rest = workflow.slice(start + header.length)
+    const next = rest.search(/^ {2}[a-z][a-z0-9_-]*:\n/m)
+    return next >= 0 ? workflow.slice(start, start + header.length + next) : workflow.slice(start)
+  }
+
+  it('executes pull-request code only in secret-free ephemeral-runner jobs', () => {
+    assert.match(triggerWorkflow, /^ {2}pull_request_target:\n {4}types: \[labeled\]$/m)
+    assert.doesNotMatch(triggerWorkflow, /actions\/checkout/)
+    assert.doesNotMatch(triggerWorkflow, /git fetch/)
+    assert.doesNotMatch(triggerWorkflow, /--backend ephemeral-runner/)
+    const dispatcher = workflowJobBlock(triggerWorkflow, 'dispatch')
+    assert.match(dispatcher, /if: github\.event\.label\.name == 'copse-review'/)
+    assert.match(dispatcher, /actions: write/)
+    assert.match(dispatcher, /pull-requests: read/)
+    assert.match(dispatcher, /gh workflow run review-ground\.yml/)
+
+    assert.match(groundWorkflow, /^ {2}workflow_dispatch:$/m)
+    assert.doesNotMatch(groundWorkflow, /^ {2}issues:$/m)
+    assert.doesNotMatch(groundWorkflow, /^ {2}pull_request:$/m)
+    assert.doesNotMatch(groundWorkflow, /^ {2}pull_request_target:$/m)
+    assert.doesNotMatch(groundWorkflow, /\$\{\{\s*secrets\./)
+    const groundJobs = [
+      workflowJobBlock(groundWorkflow, 'ground'),
+      workflowJobBlock(nightlyWorkflow, 'ground'),
+    ]
+    for (const job of groundJobs) {
+      assert.match(job, /permissions: \{\}/)
+      assert.doesNotMatch(job, /\$\{\{\s*secrets\./)
+      assert.match(job, /ref: \$\{\{ github\.event\.repository\.default_branch \}\}/)
+      assert.match(job, /persist-credentials: false/)
+      assert.match(job, /refs\/pull\/\$\{PR_NUMBER\}\/head/)
+      assert.match(job, /--backend ephemeral-runner/)
+    }
+
+    const handoff = workflowJobBlock(groundWorkflow, 'handoff')
+    assert.match(handoff, /needs: ground/)
+    assert.match(handoff, /actions: write/)
+    assert.doesNotMatch(handoff, /actions\/checkout/)
+    assert.doesNotMatch(handoff, /actions\/download-artifact/)
+    assert.match(handoff, /gh workflow run review-findings\.yml/)
+    assert.match(handoff, /ground_run_id=\$\{GROUND_RUN_ID\}/)
+
+    for (const job of [
+      workflowJobBlock(findingsWorkflow, 'findings'),
+      workflowJobBlock(nightlyWorkflow, 'findings'),
+    ]) {
+      assert.match(job, /--stage0-json ground\/report\.json/)
+      assert.doesNotMatch(job, /--backend ephemeral-runner/)
+    }
+  })
+
+  it('binds the findings dispatch to trusted successful ground-run metadata', () => {
+    assert.ok(groundWorkflow.includes('run-name: copse-review-ground pr=${{ inputs.pr }}'))
+    assert.match(findingsWorkflow, /^ {2}workflow_dispatch:$/m)
+    assert.doesNotMatch(findingsWorkflow, /^ {2}workflow_run:$/m)
+    assert.match(findingsWorkflow, /GROUND_RUN_ID: \$\{\{ inputs\.ground_run_id \}\}/)
+    assert.match(findingsWorkflow, /actions\/runs\/\$\{GROUND_RUN_ID\}/)
+    assert.match(findingsWorkflow, /test "\$conclusion" = "success"/)
+    assert.match(findingsWorkflow, /test "\$path" = "\.github\/workflows\/review-ground\.yml"/)
+    assert.match(findingsWorkflow, /test "\$head" = "\$EXPECTED_HEAD"/)
+    assert.match(findingsWorkflow, /test "\$base" = "\$EXPECTED_BASE"/)
+    assert.match(findingsWorkflow, /pulls\/\$\{number\}/)
+    assert.match(findingsWorkflow, /HEAD_SHA: \$\{\{ steps\.pr\.outputs\.head \}\}/)
+    assert.match(findingsWorkflow, /run-id: \$\{\{ inputs\.ground_run_id \}\}/)
+  })
+
+  it('primes the isolated checks from data-only files at the exact pull-request head', () => {
+    for (const workflow of [groundWorkflow, nightlyWorkflow]) {
+      const job = workflowJobBlock(workflow, 'ground')
+      assert.match(job, /git show "\$\{HEAD_SHA\}:pnpm-lock\.yaml"/)
+      assert.match(job, /git archive --format=tar "\$HEAD_SHA" patches/)
+      assert.match(job, /pnpm fetch --frozen-lockfile --dir "\$dependency_seed"/)
+      assert.doesNotMatch(job, /pnpm fetch[^\n]*--dir [^"$]/)
+      assert.ok(job.indexOf('test "$(git rev-parse') < job.indexOf('pnpm fetch'))
+      assert.ok(job.indexOf('pnpm fetch') < job.indexOf('--backend ephemeral-runner'))
+    }
+  })
+
+  it('provisions the scrubbed Stage 0 cell with the full Linux test toolchain', () => {
+    for (const workflow of [groundWorkflow, nightlyWorkflow]) {
+      const job = workflowJobBlock(workflow, 'ground')
+      assert.match(job, /apt-get install -y --no-install-recommends bubblewrap cargo ripgrep socat/)
+      assert.match(job, /apparmor_restrict_unprivileged_userns=0/)
+      assert.match(job, /bwrap --unshare-all --dev-bind \/ \/ --die-with-parent true/)
+      assert.match(job, /export PATH="\$\{setup_node_bin\}:\/usr\/bin:\$\{PATH\}"/)
+      assert.match(job, /test "\$\(command -v cargo\)" = \/usr\/bin\/cargo/)
+      assert.match(job, /test "\$\(command -v node\)" = "\$\{setup_node_bin\}\/node"/)
+      assert.ok(job.indexOf('apt-get install') < job.indexOf('refs/pull/'))
+      assert.ok(job.indexOf('export PATH=') < job.indexOf('--backend ephemeral-runner'))
+    }
+  })
+
+  it('pins the bounded Scaleway dogfood profile in both GitHub findings paths', () => {
+    for (const workflow of [findingsWorkflow, nightlyWorkflow]) {
+      assert.ok(workflow.includes("COPSE_REVIEW_PROVIDER || 'openai-compatible'"))
+      assert.ok(workflow.includes("COPSE_REVIEW_MODEL || 'qwen3.8-27b'"))
+      assert.ok(workflow.includes("'https://api.scaleway.ai/v1'"))
+      assert.ok(workflow.includes('secrets.COPSE_REVIEW_API_KEY || secrets.SCW_GENERATIVE_API_KEY'))
+      assert.ok(workflow.includes("COPSE_REVIEW_LENSES || 'correctness'"))
+      assert.ok(workflow.includes("COPSE_REVIEW_MAX_STEPS || '12'"))
+      assert.ok(workflow.includes("COPSE_REVIEW_MAX_VERIFY || '3'"))
+      assert.match(workflow, /--provider "\$REVIEW_PROVIDER"/)
+      assert.match(workflow, /--base-url "\$REVIEW_BASE_URL"/)
+      assert.match(workflow, /--max-steps "\$REVIEW_MAX_STEPS"/)
+      assert.match(workflow, /--max-verify "\$REVIEW_MAX_VERIFY"/)
+    }
+  })
+
+  it('samples at most one recent same-repository PR and has an explicit opt-out', () => {
+    assert.match(nightlyWorkflow, /^ {2}schedule:$/m)
+    assert.match(nightlyWorkflow, /^ {2}workflow_dispatch:$/m)
+    assert.match(nightlyWorkflow, /pull\.head\.repo\?\.full_name === `\$\{owner\}\/\$\{repo\}`/)
+    assert.match(nightlyWorkflow, /14 \* 24 \* 60 \* 60 \* 1000/)
+    assert.match(nightlyWorkflow, /!labels\.includes\('copse-review'\)/)
+    assert.match(nightlyWorkflow, /!labels\.includes\('copse-review-skip'\)/)
+    assert.match(nightlyWorkflow, /selected = candidates\[utcDay % candidates\.length\]/)
+    assert.doesNotMatch(nightlyWorkflow, /^ {2}pull_request:/m)
+  })
+
+  it('keeps reviews advisory and retains machine-readable dogfood evidence', () => {
+    assert.match(forgeReview, /event: 'COMMENT'/)
+    assert.doesNotMatch(forgeReview, /REQUEST_CHANGES/)
+    for (const workflow of [findingsWorkflow, nightlyWorkflow]) {
+      assert.match(workflow, /--json findings\.json/)
+      assert.match(workflow, /--sarif findings\.sarif/)
+      assert.match(workflow, /retention-days: 30/)
+    }
+  })
+})
+
 // Demos stopped carrying their own 34MB copy of Monaco and now share one
 // published tree. That only works if both halves agree, and neither half fails
 // on its own: the build succeeds, the publish succeeds, the deploy succeeds, and

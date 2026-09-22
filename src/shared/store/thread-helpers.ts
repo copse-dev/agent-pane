@@ -1,6 +1,8 @@
 // Use the Web Crypto API available in both browsers and Node 19+
 const randomUUID = (): string => globalThis.crypto.randomUUID()
 import type { ModelParameters } from '@copse/llm/model-parameters.ts'
+import { mergeModelUsage, usageAtServiceTier } from '@copse/llm/model-usage.ts'
+import { usageServiceTierForCall } from '@copse/llm/service-tier.ts'
 import type { AppStore } from './store.ts'
 import { at } from '@shared/array-utils.ts'
 import type {
@@ -22,8 +24,9 @@ import type {
   ModelComparison,
   Thread,
   ThreadReview,
+  ThreadReviewReport,
 } from '@shared/types'
-import type { PreparedThreadCheckout } from '@shared/types/worktree.ts'
+import type { PreparedThreadCheckout, ThreadWorktree } from '@shared/types/worktree.ts'
 import {
   clearThreadProposalDecision,
   recordThreadProposalDecision,
@@ -533,6 +536,22 @@ export function appendReasoning(store: AppStore, messageId: string, text: string
   store.emit('message_reasoning', messageId, text)
 }
 
+export function appendAcpContentBlock(
+  store: AppStore,
+  messageId: string,
+  channel: 'message' | 'thought',
+  block: import('../types/tools.ts').AcpContentBlock,
+): void {
+  updateMessage(store, messageId, (message) => {
+    if (channel === 'thought') {
+      message.reasoningBlocks = [...(message.reasoningBlocks ?? []), block]
+    } else {
+      message.contentBlocks = [...(message.contentBlocks ?? []), block]
+    }
+  })
+  store.emit('message_acp_content', messageId)
+}
+
 export function setMessageContent(store: AppStore, messageId: string, content: string): void {
   updateMessage(store, messageId, (m) => {
     m.content = content
@@ -686,15 +705,14 @@ export function addUsageDelta(store: AppStore, threadId: string, delta: UsageDel
   if (!thread) return
   const byModel = { ...(thread.usage.byModel ?? {}) }
   const prev = byModel[delta.model] ?? { inputTokens: 0, outputTokens: 0 }
-  byModel[delta.model] = addCacheTokens(
-    {
-      inputTokens: prev.inputTokens + delta.inputTokens,
-      outputTokens: prev.outputTokens + delta.outputTokens,
-    },
-    prev.cacheReadTokens,
-    prev.cacheCreationTokens,
-    delta,
-  )
+  const usage =
+    delta.serviceTierUsage !== undefined
+      ? delta
+      : usageAtServiceTier(
+          delta,
+          usageServiceTierForCall(delta.requestedServiceTier, delta.responseServiceTier),
+        )
+  byModel[delta.model] = mergeModelUsage(prev, usage)
   updateUsage(
     store,
     threadId,
@@ -784,7 +802,11 @@ export function setMessageTurnOutcome(
   store.emit('threads_changed')
 }
 
-/** Store the two-model comparison for a thread (clears with `null`). */
+/**
+ * Store (or with `null` clear) a thread's retired two-model comparison. Only
+ * the dismiss action on a historical card writes here now; nothing creates a
+ * comparison any more.
+ */
 export function setThreadComparison(
   store: AppStore,
   threadId: string,
@@ -797,6 +819,48 @@ export function setThreadComparison(
     return next
   })
   store.emit('comparison_changed', threadId)
+}
+
+/** Store the Copse Reviewer report for a thread (clears with `null`). */
+export function setThreadReviewReport(
+  store: AppStore,
+  threadId: string,
+  report: ThreadReviewReport | null,
+): void {
+  patchThreadAnywhere(store, threadId, (t) => {
+    const next = { ...t, updatedAt: Date.now() }
+    if (report) next.reviewReport = report
+    else delete next.reviewReport
+    return next
+  })
+  store.emit('review_report_changed', threadId)
+}
+
+/**
+ * Flip one finding's dismissed flag on the thread's report. The persisted
+ * dismissal lives in the knowledge store (main); this keeps the card in step
+ * without waiting for the next review to re-read it.
+ */
+export function setReviewFindingDismissed(
+  store: AppStore,
+  threadId: string,
+  findingId: string,
+  dismissed: boolean,
+): void {
+  patchThreadAnywhere(store, threadId, (t) => {
+    if (!t.reviewReport) return t
+    return {
+      ...t,
+      updatedAt: Date.now(),
+      reviewReport: {
+        ...t.reviewReport,
+        findings: t.reviewReport.findings.map((finding) =>
+          finding.id === findingId ? { ...finding, dismissed } : finding,
+        ),
+      },
+    }
+  })
+  store.emit('review_report_changed', threadId)
 }
 
 /** Suspend/resume FIFO draining of a thread's queued messages (e.g. while editing). */
@@ -862,6 +926,23 @@ export function setThreadGitBranch(store: AppStore, threadId: string, branch: st
   )
   store.setState({ threads: updated })
   store.emit('threads_changed')
+}
+
+/** Apply main's durable branch rename to active or carried renderer state. */
+export function applyRenamedThreadWorktree(
+  store: AppStore,
+  threadId: string,
+  worktree: ThreadWorktree,
+): void {
+  const applied = patchThreadAnywhere(store, threadId, (thread) => ({
+    ...thread,
+    worktree,
+    gitBranch: worktree.branch,
+    updatedAt: Date.now(),
+  }))
+  if (!applied) return
+  store.emit('threads_changed')
+  store.emit('git_branch_changed')
 }
 
 /**

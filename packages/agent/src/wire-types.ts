@@ -21,6 +21,39 @@ import type { PanelData } from './plugins/plugin-panel.ts'
 
 export type TodoStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled'
 
+/**
+ * ACP content normalized for Copse's renderer and thread store. Binary payloads
+ * use data URLs while live; the thread store replaces the collection with a
+ * blob reference, so neither the event spine nor Markdown contains base64.
+ */
+export type AcpContentBlock =
+  | { type: 'text'; text: string }
+  | { type: 'image'; dataUrl: string; mimeType: string; uri?: string | undefined }
+  | { type: 'audio'; dataUrl: string; mimeType: string }
+  | {
+      type: 'resource_link'
+      uri: string
+      name: string
+      title?: string | undefined
+      description?: string | undefined
+      mimeType?: string | undefined
+      size?: number | undefined
+    }
+  | { type: 'resource'; uri: string; mimeType?: string | undefined; text: string }
+  | { type: 'resource'; uri: string; mimeType?: string | undefined; dataUrl: string }
+
+/** Every display-content variant on an ACP v1 tool call. */
+export type AcpToolCallContent =
+  | { type: 'content'; content: AcpContentBlock }
+  | { type: 'diff'; path: string; oldText?: string | undefined; newText: string }
+  | { type: 'terminal'; terminalId: string }
+
+/** A file location the ACP agent associates with a tool call. */
+export interface AcpToolCallLocation {
+  path: string
+  line?: number
+}
+
 export type TodoCheck =
   | { kind: 'shell'; command: string; expectExit?: number | undefined }
   | { kind: 'fileExists'; path: string }
@@ -32,6 +65,8 @@ export interface TodoItem {
   id: string
   content: string
   status: TodoStatus
+  /** ACP plan priority; absent for Copse-authored plans created before support landed. */
+  priority?: 'high' | 'medium' | 'low'
   check?: TodoCheck
   assignedModel?: TodoAssignedModel
 }
@@ -127,6 +162,10 @@ export function normalizeToolExecuteResult(value: ToolExecuteResult): {
 export interface ToolCall {
   id: string
   name: string
+  /** ACP's human-readable title, kept distinct from its programmatic name. */
+  title?: string
+  /** ACP's unstable programmatic tool identity. */
+  programmaticName?: string
   args: unknown
   status: 'running' | 'done' | 'error'
   result: string | null
@@ -138,6 +177,10 @@ export interface ToolCall {
    * (see `getToolGroupKey`). Absent for the built-in agent loop.
    */
   kind?: string
+  /** Complete ACP display collection. A later update replaces this array wholesale. */
+  content?: AcpToolCallContent[]
+  /** Complete ACP follow-along location collection. */
+  locations?: AcpToolCallLocation[]
   /**
    * How to render `result`. External ACP agents author their tool output as
    * Markdown (fenced code, lists, prose), so it renders through the same
@@ -145,6 +188,8 @@ export interface ToolCall {
    * (plain text) for built-in tools, whose results are structured payloads.
    */
   resultFormat?: 'markdown'
+  /** Images returned by the tool, rendered beside its collapsed transcript card. */
+  images?: ToolResultImage[]
   subagent?: SubagentSession
 }
 
@@ -236,6 +281,8 @@ export type AgentStreamChunk =
       fillRatio: number
       /** Present when an external agent reported the values instead of Copse estimating them. */
       source?: 'agent-reported'
+      /** Cumulative cost reported by an ACP session. */
+      cost?: { amount: number; currency: string }
     }
   | { type: 'subagent_start'; parentToolCallId: string; session: SubagentSession }
   | { type: 'subagent_reasoning'; parentToolCallId: string; messageId: string; text: string }
@@ -274,8 +321,17 @@ export interface ToolCallUpdateChunk {
   type: 'tool_call_update'
   toolCallId: string
   name?: string
+  title?: string
+  programmaticName?: string
   args?: unknown
+  kind?: string
   status?: 'running' | 'done' | 'error'
-  result?: string
+  /** `null` explicitly clears an earlier result after ACP content replacement. */
+  result?: string | null
   resultFormat?: 'markdown'
+  images?: ToolResultImage[]
+  /** Present (including `[]`) only when ACP replaced its display collection. */
+  content?: AcpToolCallContent[]
+  /** Present (including `[]`) only when ACP replaced its locations collection. */
+  locations?: AcpToolCallLocation[]
 }

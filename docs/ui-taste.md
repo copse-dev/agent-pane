@@ -207,7 +207,11 @@ A prompt interrupts because something is _already happening_ and cannot proceed
 without an answer. An **offer** — the model-proposed thread card
 (`.thread-proposal`, see [`docs/proposed-threads.md`](proposed-threads.md)) — is
 the opposite shape: nothing is running, nothing is blocked, and ignoring it
-forever is a valid outcome. Do not reach for the approval chrome for one:
+forever is a valid outcome.
+
+The same card is used when the user explicitly asks for a separate thread. The
+tool call does not create or dispatch it; `Start this thread` is the user's final
+approval. Do not reach for the approval chrome for one:
 
 - Offers render **inline in the transcript**, never modal and never over it.
   Nothing behind them is disabled while they wait.

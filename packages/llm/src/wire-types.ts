@@ -8,6 +8,8 @@
 // the app barrel is now a thin consumer of the module (app → package, the
 // direction extraction needs). See ./README-less note in packages/llm/README.md.
 
+import type { ServiceTier, UsageServiceTier } from './service-tier.ts'
+
 // ── Messages sent to a provider ──────────────────────────────────────────────
 
 export type UserContent =
@@ -48,10 +50,15 @@ export interface ToolCallContent {
  * An image a tool produced as part of its result (e.g. `video_frames` stills).
  * `name` is a short label — a frame's timestamped filename — so the model can
  * refer to a specific image by name in its reply and in follow-up tool calls.
+ * `kind` is presentation only: `'screenshot'` marks a self-contained visual
+ * (a generated render, a diagram, a page capture) the transcript previews
+ * inline at reading size; `'frames'` marks one of a batch of stills, which
+ * stay compact thumbnails. Absent `kind` is treated as `'frames'`.
  */
 export interface ToolResultImage {
   dataUrl: string
   name?: string
+  kind?: 'screenshot' | 'frames'
 }
 
 export interface ToolResult {
@@ -76,7 +83,7 @@ export interface LLMTool {
 
 // ── Token usage reported back by a provider ──────────────────────────────────
 
-export interface ModelUsage {
+export interface TokenUsage {
   inputTokens: number
   outputTokens: number
   /**
@@ -90,6 +97,15 @@ export interface ModelUsage {
    * `cache_creation_input_tokens`).
    */
   cacheCreationTokens?: number
+}
+
+export interface ModelUsage extends TokenUsage {
+  /**
+   * Token subsets served at non-standard OpenAI tiers. The remaining top-level
+   * tokens were billed at standard rates. Keeping buckets avoids applying one
+   * turn's tier to earlier turns of the same model.
+   */
+  serviceTierUsage?: Partial<Record<UsageServiceTier, TokenUsage>>
 }
 
 export interface ThreadUsage {
@@ -108,6 +124,10 @@ export interface ThreadUsage {
 export interface ToolCallChunk {
   id: string
   name: string
+  /** ACP's human-readable title, when this call originated from ACP. */
+  title?: string
+  /** ACP's unstable programmatic name, kept separate from the title. */
+  programmaticName?: string
   args: unknown
   /**
    * Set when the provider could not parse the tool-call arguments JSON (e.g. a
@@ -160,6 +180,12 @@ export type ProviderStreamChunk =
       outputTokens: number
       cacheReadTokens?: number
       cacheCreationTokens?: number
+      /** Tier requested by Copse for a first-party OpenAI call. */
+      requestedServiceTier?: ServiceTier
+      /** Tier OpenAI reports it actually used; this overrides the request for pricing. */
+      responseServiceTier?: ServiceTier
+      /** Already-resolved tier buckets from a helper that accumulated provider chunks. */
+      serviceTierUsage?: Partial<Record<UsageServiceTier, TokenUsage>>
       /** Token counts are a local ~4 chars/token estimate, not agent-reported. */
       estimated?: boolean
       /**

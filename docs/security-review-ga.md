@@ -11,6 +11,10 @@ described below; it is not a GA waiver.
 
 ## Review record
 
+This table is the **28 August review snapshot**. The
+[current product release evidence](product-release-evidence.md) reconciles later public releases
+and live GA blockers; it does not extend this security sign-off to a newer revision.
+
 | Field                   | Value                                                                                                                                                                                                                                                                                                     |
 | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Review date             | 2026-08-28                                                                                                                                                                                                                                                                                                |

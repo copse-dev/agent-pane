@@ -142,6 +142,28 @@ describe('linked-worktree sandbox integration', () => {
     assert.notEqual(writeHook.code, 0)
     assert.equal(existsSync(hookPath), false)
 
+    const primaryHeadPath = join(registration.commonGitDir, 'HEAD')
+    const primaryHeadBefore = await readFile(primaryHeadPath)
+    const writePrimaryHead = await runSandboxed(
+      process.execPath,
+      ['-e', 'require("node:fs").writeFileSync(process.argv[1], "blocked")', primaryHeadPath],
+      nested,
+    )
+    assert.notEqual(writePrimaryHead.code, 0)
+    assert.deepEqual(await readFile(primaryHeadPath), primaryHeadBefore)
+
+    const siblingGitDir = registration.siblingGitDirs[0]
+    assert.ok(siblingGitDir)
+    const siblingHead = join(siblingGitDir, 'HEAD')
+    const siblingHeadBefore = await readFile(siblingHead)
+    const writeSiblingHead = await runSandboxed(
+      process.execPath,
+      ['-e', 'require("node:fs").writeFileSync(process.argv[1], "blocked")', siblingHead],
+      nested,
+    )
+    assert.notEqual(writeSiblingHead.code, 0)
+    assert.deepEqual(await readFile(siblingHead), siblingHeadBefore)
+
     const readSibling = await runSandboxed(
       process.execPath,
       [
@@ -249,6 +271,88 @@ describe('linked-worktree sandbox integration', () => {
     )
     assert.notEqual(readSiblingPkg.code, 0)
     assert.equal(readSiblingPkg.stdout, '')
+  })
+
+  it('recovers a linked worktree after signing interrupts a sandboxed rebase', async (t) => {
+    if (process.platform === 'win32') {
+      t.skip('project sandbox integration is not enabled on Windows')
+      return
+    }
+
+    const root = await mkdtemp(join(tmpdir(), 'copse-rebase-sandbox-'))
+    cleanups.push(root)
+    const repo = join(root, 'repo')
+    const worktree = join(root, 'thread')
+    await mkdir(repo)
+    git(repo, ['init', '-q', '-b', 'main'])
+    await writeFile(join(repo, 'tracked.txt'), 'base\n')
+    git(repo, ['add', '.'])
+    git(repo, ['commit', '-q', '-m', 'initial'])
+    git(repo, ['worktree', 'add', '-q', '-b', 'thread-rebase', worktree])
+    await writeFile(join(worktree, 'tracked.txt'), 'feature\n')
+    git(worktree, ['add', 'tracked.txt'])
+    git(worktree, ['commit', '-q', '-m', 'feature'])
+    await writeFile(join(repo, 'main-only.txt'), 'main\n')
+    git(repo, ['add', 'main-only.txt'])
+    git(repo, ['commit', '-q', '-m', 'advance main'])
+
+    git(worktree, ['config', 'gpg.format', 'ssh'])
+    git(worktree, ['config', 'commit.gpgSign', 'true'])
+    git(worktree, ['config', 'user.signingKey', join(root, 'missing-signing-key.pub')])
+    await registerInternalWorkspaceRoot(worktree)
+    setGitAvailableForTest(true)
+    await initProjectSandbox()
+    if (!isProjectSandboxEnabled()) {
+      t.skip('ASRT sandbox unavailable')
+      return
+    }
+
+    // Positive control: ordinary branch commits can update this linked
+    // worktree's Git administration when signing is explicitly disabled.
+    await writeFile(join(worktree, 'sandbox-commit.txt'), 'sandbox\n')
+    const add = await runSandboxed('git', ['add', 'sandbox-commit.txt'], worktree)
+    assert.equal(add.code, 0, add.stderr)
+    const commit = await runSandboxed(
+      'git',
+      ['-c', 'commit.gpgSign=false', 'commit', '-q', '-m', 'sandbox commit'],
+      worktree,
+    )
+    assert.equal(commit.code, 0, commit.stderr)
+
+    // A packed branch deletion forces Git's atomic packed-refs lock-and-rename
+    // path, which the original worktree policy omitted.
+    git(repo, ['branch', 'packed-recovery-probe'])
+    git(repo, ['pack-refs', '--all'])
+    const deletePackedBranch = await runSandboxed(
+      'git',
+      ['branch', '-D', 'packed-recovery-probe'],
+      worktree,
+    )
+    assert.equal(deletePackedBranch.code, 0, deletePackedBranch.stderr)
+
+    // The missing signing key leaves a real detached rebase for the recovery
+    // command to clean up, including its per-worktree sequencer files.
+    const interrupted = await runSandboxed('git', ['rebase', 'main'], worktree)
+    assert.notEqual(interrupted.code, 0)
+    assert.match(
+      interrupted.stderr,
+      /failed to write commit object|couldn't load public key|signing failed/i,
+    )
+    assert.equal(git(worktree, ['branch', '--show-current']).trim(), '')
+
+    const abort = await runSandboxed('git', ['rebase', '--abort'], worktree)
+    assert.equal(abort.code, 0, abort.stderr)
+    assert.equal(git(worktree, ['branch', '--show-current']).trim(), 'thread-rebase')
+
+    const retry = await runSandboxed(
+      'git',
+      ['-c', 'commit.gpgSign=false', 'rebase', 'main'],
+      worktree,
+    )
+    assert.equal(retry.code, 0, retry.stderr)
+    assert.equal(git(worktree, ['branch', '--show-current']).trim(), 'thread-rebase')
+    assert.equal(await readFile(join(worktree, 'tracked.txt'), 'utf8'), 'feature\n')
+    assert.equal(await readFile(join(worktree, 'sandbox-commit.txt'), 'utf8'), 'sandbox\n')
   })
 
   it('creates a dirty-worktree backup with its temporary index in sandbox scratch', async (t) => {

@@ -3,7 +3,12 @@ import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { setTimeout as delay } from 'node:timers/promises'
 import { createStore } from '@shared/store/store.ts'
-import { addMessage, addToolCall, updateToolCall } from '@shared/store/thread-helpers.ts'
+import {
+  addMessage,
+  addToolCall,
+  appendAcpContentBlock,
+  updateToolCall,
+} from '@shared/store/thread-helpers.ts'
 import { createThread } from '@shared/store/thread-helpers.ts'
 import type { ToolCall } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -63,6 +68,214 @@ describe('collapsed tool card bodies render lazily', () => {
     assert.equal(card.open, false, 'a completed, never-opened card starts collapsed')
     assert.equal(card.querySelector('.tool-result'), null, 'result body should not exist yet')
     assert.equal(card.querySelector('.tool-args'), null, 'args body should not exist yet')
+  })
+
+  it('keeps tool-result images after a card that becomes a collapsed rollup', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    const messageId = addMessage(store, threadId, 'assistant', '')
+    addToolCall(store, messageId, {
+      ...doneCall,
+      images: [
+        {
+          dataUrl: 'data:image/png;base64,aW1hZ2U=',
+          name: 'generated-concept.png',
+        },
+      ],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+
+    const message = host.querySelector(`[data-message-id="${messageId}"]`)
+    assert.ok(message)
+    const initialCard = message.querySelector<HTMLDetailsElement>(':scope > .tool-card')
+    const initialImages = message.querySelector<HTMLElement>(':scope > .tool-result-images')
+    assert.ok(initialCard)
+    assert.ok(initialImages)
+    assert.strictEqual(initialCard.nextElementSibling, initialImages)
+
+    addToolCall(store, messageId, {
+      id: 'tc-done-2',
+      name: 'read_file',
+      args: { path: 'notes.md' },
+      status: 'done',
+      result: 'notes',
+    })
+
+    const rollup = message.querySelector<HTMLDetailsElement>(':scope > .tool-card-rollup')
+    const images = message.querySelector<HTMLElement>(':scope > .tool-result-images')
+    const image = images?.querySelector<HTMLImageElement>('.tool-result-image')
+    assert.ok(rollup)
+    assert.equal(rollup.open, false)
+    assert.ok(images, 'tool-result images render outside the collapsed rollup')
+    assert.equal(rollup.contains(images), false)
+    assert.strictEqual(rollup.nextElementSibling, images)
+    assert.ok(image)
+    assert.equal(image.alt, 'generated-concept.png')
+    assert.equal(image.getAttribute('role'), 'button')
+    assert.equal(image.getAttribute('aria-label'), 'Expand generated-concept.png')
+  })
+
+  it('previews a screenshot-kind tool image inline at reading size', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    const messageId = addMessage(store, threadId, 'assistant', '')
+    addToolCall(store, messageId, {
+      ...doneCall,
+      images: [
+        {
+          dataUrl: 'data:image/png;base64,aW1hZ2U=',
+          name: 'generated-concept.png',
+          kind: 'screenshot',
+        },
+      ],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+
+    const message = host.querySelector(`[data-message-id="${messageId}"]`)
+    assert.ok(message)
+    const preview = message.querySelector<HTMLElement>(':scope .tool-result-preview')
+    assert.ok(preview, 'a screenshot-kind image renders as an inline preview figure')
+    const image = preview.querySelector<HTMLImageElement>('.tool-result-preview-image')
+    assert.ok(image)
+    assert.equal(image.alt, 'generated-concept.png')
+    assert.equal(image.getAttribute('role'), 'button')
+    assert.equal(image.getAttribute('aria-label'), 'Expand generated-concept.png')
+    assert.equal(
+      preview.querySelector('.tool-result-preview-caption')?.textContent,
+      'generated-concept.png',
+    )
+    assert.equal(
+      message.querySelector('.tool-result-image'),
+      null,
+      'a previewed image does not also render as a thumbnail',
+    )
+  })
+
+  it('keeps frame batches as thumbnails when no image is screenshot-kind', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    const messageId = addMessage(store, threadId, 'assistant', '')
+    addToolCall(store, messageId, {
+      ...doneCall,
+      images: [
+        { dataUrl: 'data:image/png;base64,ZnJhbWUtMQ==', name: 'frame-1.png', kind: 'frames' },
+        { dataUrl: 'data:image/png;base64,ZnJhbWUtMg==', name: 'frame-2.png', kind: 'frames' },
+      ],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+
+    const message = host.querySelector(`[data-message-id="${messageId}"]`)
+    assert.ok(message)
+    assert.equal(message.querySelector('.tool-result-preview'), null)
+    assert.equal(message.querySelectorAll('.tool-result-image').length, 2)
+  })
+
+  it('renders rich ACP tool content outside the card and removes it on replacement', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    const messageId = addMessage(store, threadId, 'assistant', '')
+    addToolCall(store, messageId, {
+      ...doneCall,
+      id: 'tc-rich',
+      result: null,
+      images: [
+        {
+          dataUrl: 'data:image/png;base64,aW1hZ2U=',
+          name: 'concept.png',
+          kind: 'screenshot',
+        },
+      ],
+      content: [
+        {
+          type: 'content',
+          content: {
+            type: 'image',
+            dataUrl: 'data:image/png;base64,aW1hZ2U=',
+            mimeType: 'image/png',
+            uri: 'concept.png',
+          },
+        },
+        {
+          type: 'content',
+          content: {
+            type: 'resource_link',
+            uri: 'https://example.test/report',
+            name: 'report',
+            title: 'Open report',
+          },
+        },
+        { type: 'diff', path: 'src/a.ts', oldText: 'old', newText: 'new' },
+        { type: 'terminal', terminalId: 'terminal-1' },
+      ],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+
+    const message = host.querySelector(`[data-message-id="${messageId}"]`)
+    const card = message?.querySelector<HTMLElement>(':scope > .tool-card')
+    const rich = message?.querySelector<HTMLElement>(':scope > .tool-result-content')
+    assert.ok(card)
+    assert.ok(rich)
+    assert.equal(card.contains(rich), false)
+    assert.strictEqual(card.nextElementSibling, rich)
+    assert.equal(rich.querySelectorAll('.tool-result-preview-image').length, 1)
+    assert.equal(
+      rich.querySelector('a[href="https://example.test/report"]')?.textContent,
+      'Open report',
+    )
+    assert.match(rich.querySelector('.acp-tool-diff')?.textContent ?? '', /src\/a\.ts/)
+    assert.match(rich.querySelector('.acp-terminal-reference')?.textContent ?? '', /terminal-1/)
+
+    updateToolCall(store, messageId, 'tc-rich', {
+      result: 'replacement',
+      images: [],
+      content: [{ type: 'content', content: { type: 'text', text: 'replacement' } }],
+    })
+    assert.equal(
+      message?.querySelector(':scope > .tool-result-content'),
+      null,
+      'text-only replacement clears every earlier rich block',
+    )
+  })
+
+  it('renders ACP assistant media and embedded resources without Markdown data URLs', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    const messageId = addMessage(store, threadId, 'assistant', 'Rich answer')
+    appendAcpContentBlock(store, messageId, 'message', {
+      type: 'audio',
+      dataUrl: 'data:audio/ogg;base64,YXVkaW8=',
+      mimeType: 'audio/ogg',
+    })
+    appendAcpContentBlock(store, messageId, 'message', {
+      type: 'resource',
+      uri: 'file:///notes.txt',
+      mimeType: 'text/plain',
+      text: 'embedded notes',
+    })
+    appendAcpContentBlock(store, messageId, 'message', {
+      type: 'resource',
+      uri: 'file:///%E0%A4%A',
+      mimeType: 'text/plain',
+      text: 'malformed URI label',
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+
+    const message = host.querySelector(`[data-message-id="${messageId}"]`)
+    assert.ok(message)
+    assert.ok(message.querySelector('audio[src^="data:audio/ogg;base64,"]'))
+    assert.equal(message.querySelector('.acp-resource-text')?.textContent, 'embedded notes')
+    assert.match(message.textContent, /%E0%A4%A/)
+    assert.doesNotMatch(message.querySelector('.message-text')?.innerHTML ?? '', /base64/)
   })
 
   it('builds the body the first time the card is opened', () => {

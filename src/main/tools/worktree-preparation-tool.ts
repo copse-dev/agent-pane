@@ -11,7 +11,7 @@ import {
 export const preflightWorktreeTool = defineTool({
   name: 'preflight_worktree',
   description:
-    'Read-only project readiness check. Detects npm, pnpm, Yarn (Classic and modern), Bun, and locked uv Python projects. Other ecosystems and optional native setup use .copse/worktree-preparation.json. Reports runtime requirements, dependency state, declared checks, exact setup commands, and a plan fingerprint. Unknown or conflicting projects get configuration guidance. Checks run offline in the OS sandbox with disposable scratch; the project and shared caches remain read-only.',
+    'Read-only project readiness check. Detects npm, pnpm, Yarn (Classic and modern), Bun, locked uv Python projects, and Go modules/workspaces. Other ecosystems and optional native setup use .copse/worktree-preparation.json. Reports runtime requirements, dependency state, declared checks, exact setup commands, and a plan fingerprint. Unknown or conflicting projects get configuration guidance. Checks run offline in the OS sandbox with disposable scratch; the project and shared caches remain read-only.',
   parameters: z.object({
     directory: z
       .string()
@@ -39,7 +39,7 @@ export const preflightWorktreeTool = defineTool({
 export const prepareWorktreeTool = defineTool({
   name: 'prepare_worktree',
   description:
-    'Prepare the active project using the plan fingerprint returned by preflight_worktree. Approval displays the exact install and setup commands. Automatic JavaScript installs use frozen lockfiles and disabled lifecycle scripts through Socket Firewall. Locked uv projects sync their Python workspace without downloading Python; package builds may execute repository code. Declared setup runs in the same bounded OS sandbox. Writes stay in this worktree and managed caches. Offline mode blocks network for every subprocess.',
+    'Prepare the active project using the plan fingerprint returned by preflight_worktree. Approval displays the exact install and setup commands. Automatic JavaScript installs use frozen lockfiles and disabled lifecycle scripts through Socket Firewall. Locked uv projects sync their Python workspace without downloading Python; package builds may execute repository code. Go modules load locked package and test import metadata without running generators, builds, or tests; the project stays read-only. Declared setup runs in the same bounded OS sandbox. Writes stay in this worktree and managed caches. Offline mode blocks network for every subprocess.',
   parameters: z.object({
     directory: z
       .string()

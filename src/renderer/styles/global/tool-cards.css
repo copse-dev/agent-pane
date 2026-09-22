@@ -296,6 +296,17 @@
 .tool-result-markdown > :last-child {
   margin-bottom: 0;
 }
+.tool-locations {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs) var(--spacing-sm);
+  align-items: baseline;
+  font-size: var(--font-size-sm);
+}
+.tool-locations a {
+  color: var(--link);
+  overflow-wrap: anywhere;
+}
 .tool-args details summary {
   cursor: pointer;
   color: var(--text-muted);

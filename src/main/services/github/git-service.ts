@@ -5,7 +5,7 @@ import { errorMessage } from '@shared/errors.ts'
 import { resolvePathWithinRoot, toRelativePathWithinRoot } from '../workspace.ts'
 import { getActiveWorkspaceFs } from '../workspace-fs/get-workspace-fs.ts'
 import { runCommand, type CommandResult, type RunCommandOptions } from '../exec/command-runner.ts'
-import { snapshotWorkingTree } from '../git-snapshot.ts'
+import { snapshotWorkingTree, type WorkingTreeSnapshotHead } from '../git-snapshot.ts'
 import { envForRendererChildProcess } from '../exec/child-process-env.ts'
 import { afterSandboxedCommand, spawnInProjectSandbox } from '../../project-sandbox/spawn.ts'
 import { isSpawnableWorkingDirectory } from '../../project-sandbox/spawn-cwd.ts'
@@ -15,22 +15,16 @@ import {
   gitBackupSandboxOverlay,
   readOnlyWorkspaceSandboxOverlay,
 } from '../../project-sandbox/config.ts'
-import {
-  gitCommitSigningSandboxOverlay,
-  resolveInlineSshPublicSigningKey,
-  resolveSshAgentSocketAllowList,
-} from '../../project-sandbox/git-commit-signing.ts'
-import { leaseGitSshEnv, withGitInvocationArgs } from '../ssh-workspace/git-ssh-env.ts'
+import { leaseGitSshEnv } from '../ssh-workspace/git-ssh-env.ts'
+import { internalGitEnv, withGitInvocationArgs } from '../security/git-invocation.ts'
 import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
 import { isGitAvailableForTarget } from '../tool-availability.ts'
 import { detectLanguage } from '../language.ts'
 import { parseGithubRepoSlug } from '@shared/git/github-link-steering.ts'
-import { appendCommitAttribution } from '@shared/git/commit-attribution.ts'
 import { describeBranchCheckoutFailure } from '@shared/git/branch-held.ts'
 import { imageMimeType } from '@shared/fs/image-path.ts'
 import { computeLineDiffStats } from '@shared/diff/line-stats.ts'
 import { getAgentExecutionRoot } from '../execution-root.ts'
-import { getSetting } from '../storage/settings.ts'
 import {
   DEFAULT_GIT_BRANCH,
   type GitBranchInfo,
@@ -507,7 +501,7 @@ async function runGitBuffer(
   if (!cwd) return { stdout: Buffer.alloc(0), code: 1 }
   if (!(await isRootReachable(cwd))) return { stdout: Buffer.alloc(0), code: 1 }
   const baseEnv = envForRendererChildProcess()
-  const gitSsh = leaseGitSshEnv(baseEnv)
+  const gitSsh = leaseGitSshEnv(internalGitEnv(baseEnv))
   try {
     const prepared = withGitInvocationArgs(args)
     const proc = await spawnInProjectSandbox('git', prepared, {
@@ -635,6 +629,17 @@ export async function getGithubRepoSlug(
   return parseGithubRepoSlug(stdout.trim())
 }
 
+export interface CreateWorktreeBackupOptions {
+  /**
+   * The caller just completed a live Git operation that proves this same root
+   * is a worktree. Snapshot commands still fail closed if it disappears; this
+   * only avoids immediately repeating the membership probe.
+   */
+  workTreeAlreadyVerified?: boolean
+  /** HEAD commit/tree pair just read from this checkout. */
+  snapshotHead?: WorkingTreeSnapshotHead
+}
+
 /**
  * Snapshot the ENTIRE working tree — tracked modifications, staged changes, and
  * untracked files — into a commit object, protected from garbage collection
@@ -653,8 +658,10 @@ export async function getGithubRepoSlug(
 export async function createWorktreeBackup(
   label: string,
   root: string | null = getAgentExecutionRoot(),
+  options: CreateWorktreeBackupOptions = {},
 ): Promise<string | null> {
-  if (!(await isGitAvailableForTarget()) || !root || !(await isInsideGitWorkTree(root))) return null
+  if (!(await isGitAvailableForTarget()) || !root) return null
+  if (!options.workTreeAlreadyVerified && !(await isInsideGitWorkTree(root))) return null
 
   let tempIndex: TemporaryGitIndex | undefined
   try {
@@ -679,6 +686,7 @@ export async function createWorktreeBackup(
       message: `copse backup: ${label}`,
       identity: { name: 'Copse', email: 'copse@localhost' },
       indexPath: tempIndex.path,
+      ...(options.snapshotHead ? { head: options.snapshotHead } : {}),
     })
     const ref = `refs/copse/backups/${String(Date.now())}`
     let updateRef: Awaited<ReturnType<typeof runGit>>
@@ -1020,23 +1028,32 @@ async function sumUntrackedAdditions(root: string): Promise<number> {
 }
 
 /**
- * Live add/delete line totals across the working tree (staged + unstaged +
- * untracked text files), or null when there is nothing to show. Cheap enough to
- * call on every filesystem change so the "Changes" follow-up chip stays current
- * instead of freezing on a per-turn snapshot.
+ * Live staged, unstaged and untracked totals, optionally including the Changes
+ * pane's committed section. The chip opts into that review scope; PR drafting
+ * and advisor context still describe only uncommitted work by default. Review
+ * totals sum the separate layers rather than a single net diff.
  */
-export async function getGitChangeStats(root: string | null = getAgentExecutionRoot()): Promise<{
+export async function getGitChangeStats(
+  root: string | null = getAgentExecutionRoot(),
+  options: CommittedChangesOptions & { includeCommitted?: boolean } = {},
+): Promise<{
   additions: number
   deletions: number
 } | null> {
   if (!(await isGitAvailableForTarget()) || !root || !(await isInsideGitWorkTree(root))) return null
-  const unstaged = await runGit(['diff', '--numstat'], root)
-  const staged = await runGit(['diff', '--cached', '--numstat'], root)
+  const base = options.includeCommitted ? await resolveCommittedBase(root, options) : null
+  const unstaged = await runGitRead(['diff', '--numstat', '--', '.'], root)
+  const staged = await runGitRead(['diff', '--cached', '--numstat', '--', '.'], root)
+  const committed = base
+    ? await runGitRead(['diff', '--numstat', base.commit, 'HEAD', '--', '.'], root)
+    : null
   const u = unstaged.code === 0 ? sumDiffNumstat(unstaged.stdout) : { additions: 0, deletions: 0 }
   const s = staged.code === 0 ? sumDiffNumstat(staged.stdout) : { additions: 0, deletions: 0 }
+  const c =
+    committed?.code === 0 ? sumDiffNumstat(committed.stdout) : { additions: 0, deletions: 0 }
   const untrackedAdditions = await sumUntrackedAdditions(root)
-  const additions = u.additions + s.additions + untrackedAdditions
-  const deletions = u.deletions + s.deletions
+  const additions = c.additions + u.additions + s.additions + untrackedAdditions
+  const deletions = c.deletions + u.deletions + s.deletions
   return additions + deletions > 0 ? { additions, deletions } : null
 }
 
@@ -1542,87 +1559,6 @@ export async function getGitDiffText(
   }
 
   return combined || '(no output)'
-}
-
-export interface GitCommitSigningInvocation {
-  gitConfigArgs: string[]
-  runOptions: RunGitOptions
-}
-
-/**
- * Prepare the one native commit spawn that is allowed to reach ssh-agent.
- *
- * The opt-in alone is insufficient: the repository must actually request SSH
- * commit signing and the environment must name a real socket. A configured
- * private-key path is replaced with the sibling public identity, passed inline
- * to Git, so neither Git nor its hooks gain read access to the private key.
- */
-export async function resolveGitCommitSigningInvocation(
-  root: string,
-): Promise<GitCommitSigningInvocation | null> {
-  if (isActiveSshWorkspace()) return null
-  if (!getSetting<boolean>('gitCommitSshAgentSocketAccess', false)) return null
-
-  const signingEnabled = await runGitRead(['config', '--bool', '--get', 'commit.gpgSign'], root)
-  if (signingEnabled.code !== 0 || signingEnabled.stdout.trim() !== 'true') return null
-
-  const format = await runGitRead(['config', '--get', 'gpg.format'], root)
-  if (format.code !== 0 || format.stdout.trim().toLowerCase() !== 'ssh') return null
-
-  const childEnv = envForRendererChildProcess()
-  const socketPaths = await resolveSshAgentSocketAllowList({
-    enabled: true,
-    authSock: childEnv['SSH_AUTH_SOCK'],
-    platform: process.platform,
-  })
-  if (socketPaths.length === 0) return null
-
-  const gitConfigArgs: string[] = []
-  const rawKey = await runGitRead(['config', '--get', 'user.signingKey'], root)
-  if (rawKey.code === 0 && !rawKey.stdout.trim().startsWith('key::')) {
-    const pathKey = await runGitRead(['config', '--path', '--get', 'user.signingKey'], root)
-    if (pathKey.code === 0) {
-      const inlineKey = await resolveInlineSshPublicSigningKey(pathKey.stdout.trim())
-      if (inlineKey) gitConfigArgs.push('-c', `user.signingKey=${inlineKey}`)
-    }
-  }
-
-  return {
-    gitConfigArgs,
-    runOptions: {
-      sandboxConfig: gitCommitSigningSandboxOverlay(root, socketPaths),
-    },
-  }
-}
-
-/**
- * Create a commit, appending the Copse attribution trailer (co-author + the
- * `models` that ran in this thread). Optionally stages all changes first.
- * Local only — never pushes.
- */
-export async function commitWithAttribution(
-  message: string,
-  models: string[],
-  stageAll: boolean,
-  root: string | null = getAgentExecutionRoot(),
-): Promise<string> {
-  if (!(await isGitAvailableForTarget())) return 'git is not available on this system.'
-  if (!root) return 'No workspace open.'
-
-  if (stageAll) {
-    const add = await runGit(['add', '-A'], root)
-    if (add.code !== 0) return add.stderr.trim() || `git add exited with code ${String(add.code)}`
-  }
-
-  const fullMessage = appendCommitAttribution(message, models)
-  const signing = await resolveGitCommitSigningInvocation(root)
-  const commitArgs = [...(signing?.gitConfigArgs ?? []), 'commit', '-m', fullMessage]
-  const { stdout, stderr, code } = await runGit(commitArgs, root, signing?.runOptions)
-  if (code !== 0) {
-    // `git commit` reports "nothing to commit" and similar on stdout, not stderr.
-    return stderr.trim() || stdout.trim() || `git commit exited with code ${String(code)}`
-  }
-  return stdout.trim() || '(committed)'
 }
 
 /**

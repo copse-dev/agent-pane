@@ -32,6 +32,12 @@ import type { TurnTreeId } from './turn-tree.ts'
  */
 export const DEFAULT_CONTINUATION_BUDGET = 5
 
+/** The bounded mechanism that received an automatic-turn allowance. */
+export type ContinuationGrantReason =
+  | 'todo-closeout'
+  | 'pre-review-todo'
+  | 'post-review-remediation'
+
 /**
  * A turn-tree-bound view of the shared budget, handed to the in-run machine-turn
  * mechanisms (closeout / pre-review / remediation). Each asks for one grant per
@@ -48,7 +54,7 @@ export interface ContinuationGrant {
    * `false` when exhausted (the mechanism must stop — a further turn is held for
    * a human). First-come in completion order.
    */
-  tryGrant(): boolean
+  tryGrant(reason: ContinuationGrantReason): boolean
   /** Machine turns still available in the shared budget. */
   remaining(): number
 }

@@ -103,6 +103,11 @@
 }
 .mermaid-expand-tool {
   min-width: 32px;
+  /* Keep icon-only controls on the same vertical measure as the text Reset
+     control. Without a shared height the SVG buttons collapse to the 16px
+     glyph while Reset expands to the font's line box, leaving three different-
+     looking controls on one centred flex axis. */
+  min-height: var(--action-min-height);
   display: inline-flex;
   align-items: center;
   justify-content: center;

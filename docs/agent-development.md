@@ -4,6 +4,27 @@ Operational reference for running, seeding, and validating Copse. The rules that
 change stay in [`AGENTS.md`](../AGENTS.md); this guide holds environment-specific mechanics that are
 useful only when that workflow needs them.
 
+## Task brief and completion evidence
+
+Before implementation, record a short brief in the owning issue or task:
+
+- the user problem and observable acceptance examples;
+- scope, exclusions, and the current base revision;
+- risk and applicable contracts, especially permissions, persistence, auth/billing, and CI/release controls;
+- the smallest validation that can establish the outcome, plus required broader gates.
+
+Use the [product definition of done](product-definition-of-done-audit.md#definition-of-done).
+At handoff, state what changed, the exact checks and results (or immutable run links), independent
+review evidence when it exists, and anything unverified. Link remaining work instead of closing an
+issue based only on a related implementation. The PR template asks for the same evidence; do not
+paste an entire task transcript into it.
+
+Keep a small active queue with an accountable owner for each commitment. Historical plans remain
+design references. The [Shipping quality roadmap](plans/sdlc-improvement-roadmap.md) is tracked in
+[#1373](https://github.com/copse-dev/agent-pane/issues/1373); task-evidence adoption remains open in
+[#2718](https://github.com/copse-dev/agent-pane/issues/2718) until five completed changes demonstrate
+the convention. These records do not establish or change branch-review requirements.
+
 ## Runtime and standard scripts
 
 Copse is an Electron desktop app with no backend service. `make run` is the normal entry point: it
@@ -228,13 +249,23 @@ A typical Electron fixture flow is:
 5. Inspect the resulting image under `tests/e2e/screenshots/`.
 
 The test oracle defines screenshot ownership. The CI run remains read-only and attaches changed
-renders as an immutable artifact. After a successful same-repository run, a trusted follow-up puts
-those PNGs on a bot-owned branch, opens a child PR into the source branch, and posts its link on the
-parent PR. Review GitHub's image diffs there, then merge that child PR (or enable auto-merge) to apply
-the accepted references. A source-head change supersedes the child PR. Forks and promotion PRs whose
-source is an integration branch use the downloadable artifact and a manual commit because automation
-must not write to those branches. If a real visual change is not mapped, apply the
-`update-screenshots` label to render the complete reference set, then remove the label after the
-review PR is created. Local filtering is implemented by
+renders as an immutable artifact retained for 14 days. After a successful same-repository run, a
+trusted follow-up links that evidence from the parent PR. Ordinary runs do not open another PR or
+update references. Review the screenshots with the change; an artifact is evidence, not visual
+acceptance. The candidate artifact is filtered for noise, drift, and ownership; raw renders remain
+in the run's shard artifacts.
+
+CI invokes screenshot freshness checking with `--plan`, which is advisory. A broad regeneration
+plan alone does not require `update-screenshots`; reserve that label for an intentional reference
+refresh. The standalone `pnpm run check:screenshots` command reports stale references as a local
+diagnostic and is not part of `pnpm run check`.
+
+When references intentionally need updating, add `update-screenshots`. It runs the complete e2e
+reference set and asks the trusted publisher to open a bot-owned PNG review PR into the source
+branch. Review GitHub's image diffs, then merge the accepted references. Remove the label once the
+review PR is created to avoid repeating the full refresh. A newer successful source-head run closes
+stale review PRs. Do not accept unrelated drift just because CI captured it. You can also download
+and commit reviewed PNGs manually. Forks and promotion PRs whose source is an integration branch
+always use that manual path. Local filtering is implemented by
 `scripts/lib/screenshot-scope.mts`; fixture determinism and tier selection are documented in
 [`testing-strategy.md`](testing-strategy.md).

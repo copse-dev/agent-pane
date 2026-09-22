@@ -1,0 +1,22 @@
+{
+  "name": "@copse/review",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Copse Reviewer core: the evidenced finding schema, Stage 0's base-versus-head build and test delta, the isolation-backend contract every check runs behind, the single-model reviewer with its tools and lens, SARIF export, and the copse-review CLI",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "bin": {
+    "copse-review": "./bin/copse-review.mjs"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./*.ts": "./src/*.ts",
+    "./*": "./src/*.ts"
+  },
+  "dependencies": {
+    "@copse/agent": "workspace:*",
+    "@copse/llm": "workspace:*",
+    "@copse/std": "workspace:*",
+    "zod": "^4.5.4"
+  }
+}

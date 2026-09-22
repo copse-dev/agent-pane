@@ -209,6 +209,7 @@ jobs:
           done
       - run: npm run format:check
       - run: npm run check:dead-code
+      - run: npm run check:e2e-exclusions
       # Enforce the API protocol's compatibility rule (docs/api-protocol.md).
       # The unit test only pins that the committed manifest matches the sources,
       # which a breaking change satisfies by regenerating; this is the step that
@@ -652,7 +653,11 @@ jobs:
         continue-on-error: true
         with:
           name: unit-tests-tap
-          path: unit-tests.tap
+          path: |
+            unit-tests.tap
+            .tmp/test-run-*/unit-tests.tap
+            .tmp/test-run-*/run-meta.json
+          include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 7
       # Diagnostic HTML only — coverage:ci / coverage-gate already decided pass/fail.
@@ -740,6 +745,11 @@ jobs:
       # write → grading) and the --gate ratchet compares solve rate and
       # tokens-per-solve against benchmarks/bench-baseline.json. No model, ~30s.
       - run: npm run bench:agent -- --mock --gate
+      # Copse Reviewer measurement self-test (docs/plans/copse-reviewer.md, P6):
+      # the committed corpus through the whole review pipeline with scripted
+      # reviewers, scored for precision on surfaced findings, and the --gate
+      # ratchet against benchmarks/review/baseline.json. No model, a few seconds.
+      - run: npm run bench:review -- --mock --gate
       # Doctrine ablation harness self-test (#744): runs the full and omit-tools
       # arms through the real agent loop with a deterministic mock task. The
       # real-model matrix stays in doctrine-eval-model below.
@@ -1163,6 +1173,10 @@ jobs:
         shard: ${{ fromJSON(needs.precheck.outputs.e2e_shards) }}
     env:
       SHARD_TOTAL: ${{ needs.precheck.outputs.e2e_shard_total }}
+      # Keep reference rendering on Chromium's headed path in CI. The e2e
+      # launcher still provides Xvfb on Linux, while local runs remain headless
+      # by default unless developers opt out with the same variable.
+      COPSE_E2E_HEADLESS: '0'
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/setup
@@ -1653,9 +1667,9 @@ jobs:
   # uploads only PNGs that differ from the checked-out baseline; this job merges
   # those slices into one downloadable candidate set. It deliberately has no
   # write permission and never checks out or pushes the PR branch. The trusted
-  # publish-screenshot-candidates workflow consumes the finished artifact, opens
-  # a bot-owned child PR into the source branch, and links it from the parent for
-  # explicit image-diff review. Forks retain the artifact-only/manual path.
+  # publish-screenshot-candidates workflow links the finished artifact from the
+  # parent. Only `update-screenshots` requests a bot-owned child PR for accepting
+  # baseline changes. Forks retain the artifact-only/manual path.
   screenshot-artifacts:
     needs: [build, e2e]
     if: >-
@@ -1699,7 +1713,7 @@ jobs:
       # ignore / flap decision and was written for exactly this, but it was only
       # ever documented as a manual local step. Run it here, in the job that
       # merges the shard slices, so the candidate artifact carries only real
-      # changes and the downstream review PR is worth opening.
+      # changes and any explicitly requested review PR is worth opening.
       - name: Drop render noise from the candidate set
         env:
           # The filter's documented escape hatch: the label means "refresh
@@ -1745,12 +1759,12 @@ jobs:
             echo "## E2E screenshot candidates"
             echo
             if [ ${#files[@]} -eq 0 ]; then
-              echo "All rendered screenshots match the committed references."
+              echo "No baseline-update candidates remain after noise, ownership, and drift filtering."
             else
               echo "${#files[@]} changed reference screenshot(s) are attached as an immutable artifact."
               echo
-              echo "A trusted follow-up workflow will put these PNGs on a bot-owned branch,"
-              echo "open a child PR into the source branch, and link it from the parent for review."
+              echo "A trusted follow-up workflow links this evidence from the same-repository parent PR."
+              echo 'Only the `update-screenshots` label requests a separate PNG review PR.'
               echo "The artifact remains the immutable record and the manual fallback for forks."
               echo
               printf -- '- `%s`\n' "${files[@]#candidates/}"

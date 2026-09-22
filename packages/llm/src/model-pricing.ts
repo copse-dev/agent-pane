@@ -17,6 +17,15 @@
 
 import { OPENROUTER_MODEL_PREFIX } from './openrouter.ts'
 import { isRecord } from '@copse/std/unknown-value.ts'
+import type { UsageServiceTier } from './service-tier.ts'
+
+/** Rates published for one non-standard OpenAI processing tier. */
+export interface ServiceTierPricing {
+  inputPricePerMTok: number
+  outputPricePerMTok: number
+  cacheReadPricePerMTok?: number
+  cacheCreationPricePerMTok?: number
+}
 
 export interface ModelPricing {
   /** USD per million input tokens. */
@@ -27,6 +36,8 @@ export interface ModelPricing {
   cacheReadPricePerMTok?: number
   /** USD per million cache-write input tokens; falls back to the input rate. */
   cacheCreationPricePerMTok?: number
+  /** Non-standard processing rates, when the catalog publishes a complete pair. */
+  serviceTierPricing?: Partial<Record<UsageServiceTier, ServiceTierPricing>>
 }
 
 /** `model selection → pricing`, keyed exactly as the usage ledger records models. */

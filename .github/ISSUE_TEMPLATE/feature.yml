@@ -36,6 +36,16 @@ body:
     validations:
       required: true
   - type: textarea
+    id: acceptance
+    attributes:
+      label: How will we know it works?
+      description: Give observable examples, including a failure or recovery case where relevant. Implementation and test details can be refined during triage.
+      placeholder: |
+        Given …, when …, Copse should …
+        If the operation fails or is cancelled, …
+    validations:
+      required: true
+  - type: textarea
     id: existing
     attributes:
       label: Related issues or plans

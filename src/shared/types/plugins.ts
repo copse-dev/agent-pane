@@ -120,7 +120,7 @@ export interface PluginFollowUpSummary {
   id: string
   label: string
   /** What the click does — `prompt`, or a first-party host action. */
-  action: 'prompt' | 'model-compare'
+  action: 'prompt' | 'review'
   /** The workspace condition required before offering it. */
   when: 'always' | 'workspace-changes'
 }

@@ -1,22 +1,24 @@
 import assert from 'node:assert/strict'
-import { mkdirSync } from 'node:fs'
-import { join } from 'node:path'
+import { execFileSync } from 'node:child_process'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedFooterBranchPickerFixture } from './helpers/seed-config.ts'
-
-const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
+import { seedBranchWorkspace } from './helpers/branch-workspace.ts'
+import { writeE2eEnv } from './helpers/e2e-env.ts'
+import { saveElementScreenshot } from './helpers/screenshot.ts'
 
 describe('footer branch picker', () => {
   let seed: ReturnType<typeof seedFooterBranchPickerFixture>
+  let root = ''
 
   before(async () => {
-    mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    seed = seedFooterBranchPickerFixture(process.cwd())
+    root = seedBranchWorkspace()
+    seed = seedFooterBranchPickerFixture(root)
     await browser.reloadSession()
   })
 
   after(() => {
+    writeE2eEnv({})
     resetUserData()
   })
 
@@ -38,8 +40,7 @@ describe('footer branch picker', () => {
     await expect(branchOptions.length).toBeGreaterThan(0)
     await expect(branchOptions[0].$('.branch-picker-default-badge')).toBeDisplayed()
 
-    const inputBar = await $('#input-bar')
-    await inputBar.saveScreenshot(join(SCREENSHOT_DIR, 'footer-branch-picker-open.png'))
+    await saveElementScreenshot('#input-bar', 'footer-branch-picker-open.png')
   })
 
   it('records a picked branch as the thread base without moving the checkout', async () => {
@@ -50,8 +51,7 @@ describe('footer branch picker', () => {
     await expect(menu).toBeDisplayed()
     await expect(menu.$('.branch-picker-option')).toBeDisplayed({ wait: 10_000 })
 
-    // The e2e branch mock lists the reported branch plus the default, so there
-    // is always exactly one option that is not the checkout's own branch.
+    // The isolated fixture has a default branch and a checked-out work branch.
     let picked: string | null = null
     for (const option of await menu.$$('.branch-picker-option')) {
       const name = await option.$('.branch-picker-option-label').getText()
@@ -71,6 +71,9 @@ describe('footer branch picker', () => {
     await expect(trigger).toHaveAttribute('title', `Start this thread from: ${picked}`)
     await expect(trigger).not.toHaveElementClass('is-link')
     await expect(trigger.$('.branch-picker-label')).not.toHaveText(expect.stringMatching(/^PR #/))
+    expect(
+      execFileSync('git', ['branch', '--show-current'], { cwd: root, encoding: 'utf8' }).trim(),
+    ).toBe(seed.currentBranch)
 
     // Reopening shows the pick as selected, still with no PR row for it.
     await trigger.click()
@@ -82,7 +85,6 @@ describe('footer branch picker', () => {
     await browser.keys('Escape')
     await expect(menu).not.toBeDisplayed()
 
-    const inputBar = await $('#input-bar')
-    await inputBar.saveScreenshot(join(SCREENSHOT_DIR, 'footer-branch-picker-pending.png'))
+    await saveElementScreenshot('#input-bar', 'footer-branch-picker-pending.png')
   })
 })

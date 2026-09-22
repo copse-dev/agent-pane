@@ -5,6 +5,7 @@ import {
   SERVICE_TIER_CHOICES,
   isServiceTier,
   serviceTierBody,
+  usageServiceTierForCall,
 } from './service-tier.ts'
 
 describe('serviceTierBody', () => {
@@ -23,19 +24,15 @@ describe('serviceTierBody', () => {
 
 describe('isServiceTier', () => {
   it('accepts exactly the tiers OpenAI documents', () => {
-    assert.deepEqual([...SERVICE_TIERS], ['auto', 'default', 'flex', 'priority', 'scale'])
+    assert.deepEqual([...SERVICE_TIERS], ['auto', 'default', 'flex', 'fast', 'priority', 'scale'])
     for (const tier of SERVICE_TIERS) {
       assert.equal(isServiceTier(tier), true)
     }
   })
 
-  it('rejects `fast`, a product name rather than a request value', () => {
-    // OpenAI markets Priority processing as "Fast mode", and `llm` exposes it as
-    // `-o service_tier fast` — but `fast` is not an API value and produces a 400.
-    // An earlier revision passed it through, on the theory that the SDK union
-    // lagged the API. It does not: the union matches OpenAI's documented set
-    // exactly, so accepting `fast` only steered users into a guaranteed error.
-    assert.equal(isServiceTier('fast'), false)
+  it('accepts both Fast mode request spellings', () => {
+    assert.equal(isServiceTier('fast'), true)
+    assert.equal(isServiceTier('priority'), true)
   })
 
   it('rejects anything else rather than guessing', () => {
@@ -47,29 +44,43 @@ describe('isServiceTier', () => {
   })
 })
 
+describe('usageServiceTierForCall', () => {
+  it('uses the completed response tier over the requested tier', () => {
+    assert.equal(usageServiceTierForCall('flex', 'priority'), 'priority')
+  })
+
+  it('uses the requested tier only when the response did not report one', () => {
+    assert.equal(usageServiceTierForCall('flex', undefined), 'flex')
+    assert.equal(usageServiceTierForCall('fast', undefined), 'priority')
+    assert.equal(usageServiceTierForCall('priority', 'default'), undefined)
+  })
+
+  it('keeps the actual response authoritative when Fast mode is downgraded', () => {
+    assert.equal(usageServiceTierForCall('fast', 'default'), undefined)
+    assert.equal(usageServiceTierForCall('default', 'fast'), 'priority')
+  })
+})
+
 describe('SERVICE_TIER_CHOICES', () => {
-  it('offers standard, flex and priority in that order', () => {
+  it('offers project default, standard, flex and Fast in that order', () => {
     assert.deepEqual(
       SERVICE_TIER_CHOICES.map((c) => c.value),
-      ['', 'flex', 'priority'],
+      ['auto', 'default', 'flex', 'fast'],
     )
   })
 
   it('only offers values the request layer accepts', () => {
     for (const choice of SERVICE_TIER_CHOICES) {
-      // '' is the unset sentinel; everything else must be a real tier.
-      assert.equal(choice.value === '' || isServiceTier(choice.value), true)
+      assert.equal(isServiceTier(choice.value), true)
       assert.ok(choice.label.length > 0)
       assert.ok(choice.description.length > 0)
     }
   })
 
-  it('withholds scale and the standard-processing synonyms', () => {
+  it('withholds contract-only scale and the legacy Fast spelling', () => {
     const offered = new Set(SERVICE_TIER_CHOICES.map((c) => c.value))
     // `scale` needs committed reserved throughput, so it is not a per-chat toggle.
     assert.equal(offered.has('scale'), false)
-    // `auto` and `default` both mean standard processing, which '' already covers.
-    assert.equal(offered.has('auto'), false)
-    assert.equal(offered.has('default'), false)
+    assert.equal(offered.has('priority'), false)
   })
 })

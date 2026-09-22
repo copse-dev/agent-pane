@@ -216,19 +216,20 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   modelParameters: modelParametersMapSchema,
   openRouterModel: z.string().max(256),
   // OpenAI `service_tier` for first-party gpt-* models: 'flex' for slower and
-  // cheaper, 'priority' for quicker at a higher price. Empty (the default) omits
-  // the field, leaving OpenAI on standard processing.
+  // cheaper, 'fast' / 'priority' for quicker at a higher price. Empty (the
+  // legacy default) omits the field, which OpenAI treats as 'auto' and resolves
+  // through the Project service-tier setting.
   //
   // Pinned to the documented tiers. `SERVICE_TIERS` matches OpenAI's set exactly
-  // — including that Priority is marketed as "Fast mode" but is never sent as
-  // `fast`. Accepting arbitrary strings here would let a plausible-looking value
+  // — including both the current `fast` spelling and legacy `priority` spelling.
+  // Accepting arbitrary strings here would let a plausible-looking value
   // through to a guaranteed 400 at request time, which is a worse failure than
   // refusing the write.
   //
-  // NOTE: the usage ledger prices turns from the standard-tier catalog, so a
-  // non-default tier makes those figures wrong (flex overstates, priority
-  // understates) — see #1543. Tier-aware pricing is a follow-up; LiteLLM already
-  // publishes `input_cost_per_token_flex` / `_priority` for these models.
+  // The usage ledger preserves per-tier token buckets and prices flex/priority
+  // turns from LiteLLM's published tier catalog (#1543). When a tier has no
+  // complete published rate (including scale), it intentionally uses and labels
+  // a standard-rate fallback instead of presenting that estimate as exact.
   openAiServiceTier: z.enum(['', ...SERVICE_TIERS]),
   // Pin reasoning-capable OpenAI models (gpt-5*, o-series) back to
   // /v1/chat/completions instead of /v1/responses. Default OFF.
@@ -356,15 +357,6 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // cheaper worker model implements delegated steps. See orchestration-strategy.ts.
   orchestrationStrategyEnabled: z.boolean(),
   orchestrationWorkerModel: z.string().max(256),
-  // Experimental model comparison harness: run the working-diff review through
-  // two models plus a judge that compares their verdicts. See model-comparison.ts.
-  // P5: the former top-level `modelComparisonEnabled` boolean is retired —
-  // the `copse.model-comparison` first-party plugin toggle in Settings > Plugins
-  // is the atomic master switch. The sub-toggle below is still top-level.
-  modelComparisonAutoOnReview: z.boolean(),
-  comparisonModelA: z.string().max(256),
-  comparisonModelB: z.string().max(256),
-  comparisonJudgeModel: z.string().max(256),
   // Background tasks moved to the `copse.background-tasks` first-party plugin
   // (Settings > Plugins), which also DECLARES the `loopback-bind` sandbox
   // relaxation (issue #1190), so the former `backgroundTasksEnabled` top-level

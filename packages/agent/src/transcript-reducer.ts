@@ -33,6 +33,10 @@ export class TranscriptReducer {
         const call: ToolCall = {
           id: chunk.toolCall.id,
           name: chunk.toolCall.name,
+          ...(chunk.toolCall.title !== undefined ? { title: chunk.toolCall.title } : {}),
+          ...(chunk.toolCall.programmaticName !== undefined
+            ? { programmaticName: chunk.toolCall.programmaticName }
+            : {}),
           args: chunk.toolCall.args,
           status: 'running',
           result: null,
@@ -55,10 +59,16 @@ export class TranscriptReducer {
         if (!entry) return null
         const call = entry.call
         if (chunk.name !== undefined) call.name = chunk.name
+        if (chunk.title !== undefined) call.title = chunk.title
+        if (chunk.programmaticName !== undefined) call.programmaticName = chunk.programmaticName
         if (chunk.args !== undefined) call.args = chunk.args
+        if (chunk.kind !== undefined) call.kind = chunk.kind
         if (chunk.status !== undefined) call.status = chunk.status
         if (chunk.result !== undefined) call.result = chunk.result
         if (chunk.resultFormat !== undefined) call.resultFormat = chunk.resultFormat
+        if (chunk.images !== undefined) call.images = chunk.images
+        if (chunk.content !== undefined) call.content = chunk.content
+        if (chunk.locations !== undefined) call.locations = chunk.locations
         return entry.message
       }
       default:

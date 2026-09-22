@@ -4,7 +4,11 @@ import { isOpenRouterModel, openRouterModelId } from '@copse/llm/openrouter.ts'
 import { isDynamicModel } from '@copse/llm/dynamic-model.ts'
 import { hostRoutedNamespace, type HostRoutedNamespace } from '@copse/llm/model-selection.ts'
 import { SERVICE_TIERS, isServiceTier, type ServiceTier } from '@copse/llm/service-tier.ts'
-import { extraProviderForModel, extraProviderModelId } from '@copse/llm/extra-providers.ts'
+import {
+  extraProviderForModel,
+  extraProviderModelId,
+  isExtraProviderModel,
+} from '@copse/llm/extra-providers.ts'
 import { getApprovedProviderHosts } from './approved-provider-hosts.ts'
 import { getResolvedExtraProviders } from './extra-providers-store.ts'
 import type { LLMProvider } from '@shared/types'
@@ -340,6 +344,16 @@ export async function describeProvider(
     }
   }
   const extra = extraProviderForModel(getResolvedExtraProviders(), model)
+  // The shared selection parser identifies a `<slug>:<model>` route as an
+  // extra provider even after its custom provider record has been removed.
+  // Never pass that stale route to the generic cloud fallback below: with an
+  // Anthropic or OpenAI key configured, it would make a billable request to an
+  // unrelated provider using the deleted route as its model id.
+  if (isExtraProviderModel(model) && !extra) {
+    throw new Error(
+      `The provider for ${model} is no longer configured. Choose a configured model using the model picker.`,
+    )
+  }
   if (extra) {
     // Local servers (Ollama, llama.cpp, …) typically run without auth, so a
     // missing key is fine; createExtraCloudProvider supplies a placeholder.
@@ -392,15 +406,12 @@ function openAiTransport(): Pick<
 }
 
 /**
- * The per-request OpenAI knobs read from settings: processing tier and
- * transport.
- *
-/**
  * Per-request OpenAI options resolved from settings.
  *
- * `serviceTier` is trimmed and dropped when blank, so a cleared field means
- * "standard processing" (omitted) rather than `service_tier: ""`, which OpenAI
- * rejects. `forceChatCompletions` pins reasoning-capable models back to
+ * `serviceTier` is trimmed and dropped when blank, so a legacy cleared field
+ * means OpenAI's project default (`auto`, via omission) rather than
+ * `service_tier: ""`, which OpenAI rejects. `forceChatCompletions` pins
+ * reasoning-capable models back to
  * /v1/chat/completions; off by default, since the Responses path is what
  * surfaces their reasoning at all. `createProvider` forwards both only to its
  * OpenAI branches.

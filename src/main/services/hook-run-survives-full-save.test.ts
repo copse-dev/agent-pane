@@ -27,6 +27,7 @@ import {
 import {
   beginHookRunRecording,
   endHookRunRecording,
+  recordAppliedNudgeRun,
   recordCommandHookRun,
   recordFunctionHookRun,
   setHookRunStep,
@@ -134,6 +135,40 @@ describe('hook_run survives full save (decision 6)', () => {
     const loaded = await loadProjectThreads(PROJECT)
     assert.deepEqual(
       loaded[0]?.messages.map((m) => m.id),
+      ['m1', 'm2'],
+    )
+  })
+
+  it('persists finalize reason and budget through the real recorder and full save', async () => {
+    storageSet('activeProjectId', PROJECT)
+    const m1 = userMsg('m1', 'finalize me')
+    const nudge = 'Based on your exploration so far, write a clear final answer for the user.'
+    await saveProjectThread(PROJECT, thread([m1]))
+    beginHookRunRecording(THREAD)
+    setHookRunStep(1)
+    recordAppliedNudgeRun({
+      hookId: 'finalize-nudge',
+      mechanism: 'text-only-turn',
+      text: nudge,
+      finalizeReason: 'pending-tool-calls',
+      budget: { steps: 1, maxSteps: 1, llmCalls: 2, maxLlmCalls: 4 },
+    })
+    await flushStore()
+
+    await saveProjectThread(PROJECT, thread([m1, userMsg('m2', 'after finalize')]))
+
+    const runs = readHookRuns(root)
+    assert.equal(runs.length, 1)
+    assert.deepEqual(runs[0]?.decision, {
+      nudgeApplied: true,
+      nudgeMechanism: 'text-only-turn',
+      injectContextChars: nudge.length,
+      finalizeReason: 'pending-tool-calls',
+      finalizeBudget: { steps: 1, maxSteps: 1, llmCalls: 2, maxLlmCalls: 4 },
+    })
+    const loaded = await loadProjectThreads(PROJECT)
+    assert.deepEqual(
+      loaded[0]?.messages.map((message) => message.id),
       ['m1', 'm2'],
     )
   })

@@ -87,6 +87,7 @@ import type { ExternalEditorList } from '@shared/types/editors.ts'
 import type {
   PreparedThreadCheckout,
   ThreadCheckoutPreview,
+  ThreadWorktree,
   ThreadWorktreeChoice,
   WorktreeInventoryEntry,
   WorktreePackageCleanupResult,
@@ -216,6 +217,8 @@ export interface ApiClient {
   }
   fs: {
     readFile: (projectId: string, threadId: string, path: string) => Promise<string>
+    /** A contained image preview, capped at 15 MiB and encoded as a data URL. */
+    readImage: (projectId: string, threadId: string, path: string) => Promise<string>
     writeFile: (projectId: string, threadId: string, path: string, content: string) => Promise<void>
     readdir: (projectId: string, threadId: string, path: string) => Promise<string[]>
     listDir: (
@@ -247,6 +250,11 @@ export interface ApiClient {
       /** Branch the blank-thread footer picker selected to start from. */
       baseBranch?: string,
     ) => Promise<PreparedThreadCheckout>
+    renameCheckoutBranch: (
+      projectId: string,
+      threadId: string,
+      title: string,
+    ) => Promise<ThreadWorktree | null>
     previewCheckout: (
       projectId: string,
       choice: ThreadWorktreeChoice,
@@ -262,9 +270,6 @@ export interface ApiClient {
     abort: (threadId: string) => Promise<void>
     runningThreadIds: () => Promise<string[]>
     retryReview: (projectId: string, threadId: string, payload: string) => Promise<void>
-    retryComparison: (projectId: string, threadId: string, payload: string) => Promise<void>
-    /** Defaults for the "Compare models" bubble's picker (settings + defaults, resolved). */
-    comparisonModels: (payload: string) => Promise<{ a: string; b: string; judge: string }>
     clearHistory: (projectId: string, threadId: string) => Promise<void>
     refreshModelContext: () => Promise<void>
     suggestTitle: (text: string) => Promise<string | null>
@@ -304,7 +309,6 @@ export interface ApiClient {
         collapseDetails?: boolean
         approveOnceLabel?: string
         showWhileSettingsOpen?: boolean
-        comparisonModels?: { a: string; b: string; judge: string }
         allowTurnTreeLease?: boolean
         turnTreeLeaseLabel?: string
         turnTreeLeaseDefault?: boolean
@@ -368,9 +372,26 @@ export interface ApiClient {
       id: string,
       approved: boolean,
       remember?: boolean,
-      comparisonModels?: { a: string; b: string; judge: string },
       grantScope?: 'once' | 'turn-tree',
     ) => Promise<void>
+  }
+  /** Copse Reviewer: the app shell of `@copse/review` (docs/plans/copse-reviewer.md). */
+  review: {
+    /**
+     * Review the thread's changes on demand — the Changes view's "Review" and
+     * the "Review changes" bubble. Emits `review_report` chunks on the thread's
+     * stream, bracketed with a `done`; the payload mirrors `retryReview`'s.
+     */
+    run: (projectId: string, threadId: string, payload: string) => Promise<void>
+    /** Persist a finding's dismissal (knowledge store, per project) so it stays dismissed. */
+    dismissFinding: (finding: {
+      findingId: string
+      path: string
+      claim: string
+      class: string
+    }) => Promise<void>
+    /** Drop a persisted dismissal so the finding shows again. */
+    restoreFinding: (findingId: string) => Promise<void>
   }
   ask: {
     respond: (id: string, answers: string[]) => Promise<void>
@@ -678,6 +699,11 @@ export interface ApiClient {
       skippedWrongRepo: number
       skippedInactive: number
     }>
+    /** Fetch one selected imported Cursor agent's terminal run snapshot. */
+    refreshImportedThread: (
+      projectId: string,
+      threadId: string,
+    ) => Promise<import('@shared/types').Message | null>
   }
   acp: {
     /** Detect known ACP agents installed/running on this device (for the Settings panel). */

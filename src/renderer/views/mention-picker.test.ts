@@ -67,6 +67,7 @@ function fakeApi(
       fs: {
         ...base['fs'],
         readFile: async (): Promise<string> => 'file body',
+        readImage: async (): Promise<string> => 'data:image/png;base64,iVBORw0KGgo=',
       },
       settings: {
         ...base['settings'],
@@ -108,6 +109,8 @@ describe('mention picker (files + threads + shells)', () => {
     onAttachThread: (t: AttachedThreadRef) => void = () => {},
     onAttachShell: (s: AttachedShellRef) => void = () => {},
     readTerminalEnabled = true,
+    onAttach: (file: { path: string; content: string }) => void = () => {},
+    onAttachImage: (dataUrl: string, mimeType: string) => void = () => {},
   ): HTMLTextAreaElement {
     const store = createStore({
       activeProjectId: 'p1',
@@ -124,7 +127,8 @@ describe('mention picker (files + threads + shells)', () => {
       inputBar,
       store,
       api: fakeApi(threads, files, readTerminalEnabled),
-      onAttach: () => {},
+      onAttach,
+      onAttachImage,
       onAttachThread,
       onAttachShell,
     })
@@ -203,6 +207,54 @@ describe('mention picker (files + threads + shells)', () => {
     assert.ok(shell)
     assert.equal(shell.label, 'npm test')
     assert.equal(shell.content, 'PASS\n2 tests')
+  })
+
+  it('attaches a workspace image as an image instead of text', async () => {
+    const files: { path: string; content: string }[] = []
+    const images: { dataUrl: string; mimeType: string }[] = []
+    const textarea = mount(
+      [],
+      ['images/chart.PNG'],
+      () => {},
+      () => {},
+      true,
+      (file) => files.push(file),
+      (dataUrl, mimeType) => images.push({ dataUrl, mimeType }),
+    )
+    await typeMention(textarea, '@chart')
+
+    const row = inputBar.querySelector<HTMLElement>('.mention-picker .mention-item')
+    assert.ok(row)
+    row.dispatchEvent(new Event('mousedown'))
+    await flush()
+
+    assert.deepEqual(images, [
+      { dataUrl: 'data:image/png;base64,iVBORw0KGgo=', mimeType: 'image/png' },
+    ])
+    assert.deepEqual(files, [])
+  })
+
+  it('keeps a workspace SVG as a text-file attachment', async () => {
+    const files: { path: string; content: string }[] = []
+    const images: { dataUrl: string; mimeType: string }[] = []
+    const textarea = mount(
+      [],
+      ['images/diagram.svg'],
+      () => {},
+      () => {},
+      true,
+      (file) => files.push(file),
+      (dataUrl, mimeType) => images.push({ dataUrl, mimeType }),
+    )
+    await typeMention(textarea, '@diagram')
+
+    const row = inputBar.querySelector<HTMLElement>('.mention-picker .mention-item')
+    assert.ok(row)
+    row.dispatchEvent(new Event('mousedown'))
+    await flush()
+
+    assert.deepEqual(files, [{ path: 'images/diagram.svg', content: 'file body' }])
+    assert.deepEqual(images, [])
   })
 
   it('hides shells when readTerminalEnabled is off', async () => {

@@ -10,6 +10,7 @@ import {
   buildSubagentRoute,
   buildReviewRoute,
   buildProvider,
+  describeProvider,
   normalizeRoleModelSelection,
 } from './provider-selection.ts'
 import { setSetting, setApiKey } from '../storage/settings.test-shim.ts'
@@ -588,6 +589,31 @@ describe('buildProvider refuses host-routed selections (issue #2478)', () => {
       })
       assert.ok(provider instanceof AnthropicProvider)
       await Promise.resolve()
+    })
+  })
+
+  it('refuses a stale custom-provider route instead of falling through to Anthropic', async () => {
+    await withoutMockMode(async () => {
+      await setSetting('extraProviders', [
+        { slug: 'acme', label: 'Acme', baseUrl: 'https://api.acme.example/v1' },
+      ])
+      setApiKey('acme', 'sk-acme-test')
+      try {
+        const beforeDeletion = await describeProvider('acme:model-1')
+        assert.equal(beforeDeletion.kind, 'openai-compatible')
+
+        // A thread or model setting can keep this exact value after the user
+        // deletes its custom provider. The parser still recognizes the route,
+        // but no configured provider owns the slug any more.
+        await setSetting('extraProviders', [])
+        await assert.rejects(
+          () => describeProvider('acme:model-1'),
+          /provider for acme:model-1 is no longer configured.*Choose a configured model using the model picker/i,
+        )
+      } finally {
+        setApiKey('acme', '')
+        await setSetting('extraProviders', [])
+      }
     })
   })
 

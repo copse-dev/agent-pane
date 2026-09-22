@@ -514,6 +514,11 @@ export function attachAutosave(store: AppStore, api: ApiClient): Autosave {
     store.on('comparison_changed', () => {
       schedule()
     }),
+    // Same for the review report: a dismissed finding or a cleared card is a
+    // metadata-only change on an idle thread.
+    store.on('review_report_changed', () => {
+      schedule()
+    }),
     store.on('projects_changed', () => {
       projectsDirty = true
       schedule()

@@ -1,4 +1,4 @@
-import { runCommand } from '../exec/command-runner.ts'
+import { runCommand, type RunCommandOptions } from '../exec/command-runner.ts'
 import { isRgAvailableForTarget } from '../tool-availability.ts'
 import {
   isSshExecutionTarget,
@@ -57,6 +57,20 @@ export function setIndexedGrepCommandRunnerForTest(runner: typeof runCommand | n
   executeCommand = runner ?? runCommand
 }
 
+/**
+ * `runCommand` builds its project sandbox around `cwd`. Agent tools can execute
+ * in a linked worktree while the renderer still points at the shared checkout,
+ * so relying on its global default makes rg see the worktree as an external,
+ * unreadable path. Keep the sandbox on the agent-visible root. `searchRoot`
+ * may instead be a read-only chat-store path, so it is only the fallback.
+ */
+function searchCommandOptions(opts: CodeContentSearchOptions): RunCommandOptions {
+  return {
+    cwd: opts.displayRoot ?? opts.searchRoot,
+    ...(opts.signal ? { signal: opts.signal } : {}),
+  }
+}
+
 async function probe(cmd: string, args: string[]): Promise<boolean> {
   try {
     await executeCommand(cmd, args)
@@ -103,11 +117,7 @@ async function searchWithIndexedCli(
   opts: CodeContentSearchOptions,
 ): Promise<string[]> {
   const args = buildIndexedCliArgs(backend, opts)
-  const { stdout, code } = await executeCommand(
-    backend,
-    args,
-    opts.signal ? { signal: opts.signal } : {},
-  )
+  const { stdout, code } = await executeCommand(backend, args, searchCommandOptions(opts))
   if (code !== 0) return []
   return await parseGrepStdout(stdout, opts.maxResults, opts.displayRoot)
 }
@@ -171,11 +181,7 @@ async function searchWithRipgrep(opts: CodeContentSearchOptions): Promise<string
     opts.searchRoot,
   ]
 
-  const { stdout, stderr, code } = await executeCommand(
-    'rg',
-    args,
-    opts.signal ? { signal: opts.signal } : {},
-  )
+  const { stdout, stderr, code } = await executeCommand('rg', args, searchCommandOptions(opts))
   if (code !== 0 && code !== 1)
     throw new Error(stderr.trim() || `ripgrep exited with code ${String(code)}`)
   return await parseRipgrepJson(stdout, opts.maxResults, opts.displayRoot)
@@ -193,11 +199,7 @@ async function searchWithGrepRecursive(opts: CodeContentSearchOptions): Promise<
     opts.pattern,
     opts.searchRoot,
   ]
-  const { stdout, stderr, code } = await executeCommand(
-    'grep',
-    args,
-    opts.signal ? { signal: opts.signal } : {},
-  )
+  const { stdout, stderr, code } = await executeCommand('grep', args, searchCommandOptions(opts))
   if (code !== 0 && code !== 1)
     throw new Error(stderr.trim() || `grep exited with code ${String(code)}`)
   return await parseGrepStdout(stdout, opts.maxResults, opts.displayRoot)
