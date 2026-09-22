@@ -817,7 +817,8 @@ CI shell needs (`stage0-report.ts`, `forge-review.ts`) and the workflows
   (Forgejo: `FORGEJO_TOKEN` too); a review that could not be posted is exit 1.
 - **Copse dogfoods the shell, still as an adviser.** _Added 2026-09-22._ The label-triggered
   GitHub path uses the existing Scaleway OpenAI-compatible account, pinned by default to
-  `qwen3.6-35b-a3b`, the correctness lens and at most three challenged findings. A separate
+  `qwen3.8-27b`, the correctness lens, at most 12 tool-using steps and at most three
+  challenged findings. A separate
   schedule samples no more than one recent, non-draft, unlabelled same-repository pull
   request per night; `copse-review-skip` is the opt-out. Both paths run the trusted default-branch CLI,
   preserve the secret-free Stage 0 / read-only model-job boundary, post `COMMENT` reviews
@@ -832,11 +833,14 @@ CI shell needs (`stage0-report.ts`, `forge-review.ts`) and the workflows
   and a job-crossing loop for it is a follow-up. The reports say "unverified" or "survived
   challenge" accordingly, never "confirmed" without execution.
 - **Known limit: the dependency store across platforms.** The cell resolves the offline
-  install from the host's pnpm store, which holds the host platform's packages. On a Linux
-  host (CI, a Linux desktop) that is the guest's platform too; on macOS the Linux guest
-  finds no Linux binaries for native packages and the prepare step fails, which Stage 0
-  reports as "not checked" rather than pretending. Pointing the cell at the runtime's
-  shared store volume, populated by an installing container run, is the follow-up.
+  install from the host's pnpm store, which holds the host platform's packages. The GitHub
+  ground jobs prime that store from the exact contributor lockfile and patch data with
+  `pnpm fetch` in the secret-free job; manifests and lifecycle scripts still run only in
+  the isolated cell. On a Linux host (CI, a Linux desktop) the host and guest platforms
+  match. On macOS the Linux guest finds no Linux binaries for native packages and the
+  prepare step fails, which Stage 0 reports as "not checked" rather than pretending.
+  Pointing the cell at the runtime's shared store volume, populated by an installing
+  container run, is the follow-up there.
 
 Not in Phase 4: reproducers in CI (above), `bench:review` (Phase 5), and a foreign-diff
 gesture in the app (the app reviews the thread's own tree; a "review this pull request"

@@ -796,16 +796,30 @@ describe('Copse Reviewer workflow invariants', () => {
     assert.match(findingsWorkflow, /run-id: \$\{\{ inputs\.ground_run_id \}\}/)
   })
 
+  it('primes the isolated checks from data-only files at the exact pull-request head', () => {
+    for (const workflow of [groundWorkflow, nightlyWorkflow]) {
+      const job = workflowJobBlock(workflow, 'ground')
+      assert.match(job, /git show "\$\{HEAD_SHA\}:pnpm-lock\.yaml"/)
+      assert.match(job, /git archive --format=tar "\$HEAD_SHA" patches/)
+      assert.match(job, /pnpm fetch --frozen-lockfile --dir "\$dependency_seed"/)
+      assert.doesNotMatch(job, /pnpm fetch[^\n]*--dir [^"$]/)
+      assert.ok(job.indexOf('test "$(git rev-parse') < job.indexOf('pnpm fetch'))
+      assert.ok(job.indexOf('pnpm fetch') < job.indexOf('--backend ephemeral-runner'))
+    }
+  })
+
   it('pins the bounded Scaleway dogfood profile in both GitHub findings paths', () => {
     for (const workflow of [findingsWorkflow, nightlyWorkflow]) {
       assert.ok(workflow.includes("COPSE_REVIEW_PROVIDER || 'openai-compatible'"))
-      assert.ok(workflow.includes("COPSE_REVIEW_MODEL || 'qwen3.6-35b-a3b'"))
+      assert.ok(workflow.includes("COPSE_REVIEW_MODEL || 'qwen3.8-27b'"))
       assert.ok(workflow.includes("'https://api.scaleway.ai/v1'"))
       assert.ok(workflow.includes('secrets.COPSE_REVIEW_API_KEY || secrets.SCW_GENERATIVE_API_KEY'))
       assert.ok(workflow.includes("COPSE_REVIEW_LENSES || 'correctness'"))
+      assert.ok(workflow.includes("COPSE_REVIEW_MAX_STEPS || '12'"))
       assert.ok(workflow.includes("COPSE_REVIEW_MAX_VERIFY || '3'"))
       assert.match(workflow, /--provider "\$REVIEW_PROVIDER"/)
       assert.match(workflow, /--base-url "\$REVIEW_BASE_URL"/)
+      assert.match(workflow, /--max-steps "\$REVIEW_MAX_STEPS"/)
       assert.match(workflow, /--max-verify "\$REVIEW_MAX_VERIFY"/)
     }
   })

@@ -161,7 +161,10 @@ out and executes nothing; it resolves current PR metadata and dispatches the sep
 workflow. Job A has `permissions: {}` and no secrets, runs Stage 0 on the head with the runner as
 the cell (`--backend ephemeral-runner`), and uploads the report. It uses the reviewed CLI from the
 default branch, so an older PR need not contain `@copse/review`; pull-request code is fetched only
-after checkout credentials have been removed.
+after checkout credentials have been removed. Before entering the cell, the secret-free job copies
+only the exact head's `pnpm-lock.yaml` and patch data into runner scratch and runs `pnpm fetch`;
+that primes Stage 0's read-only offline store without loading a contributor manifest or lifecycle
+script on the host.
 A fresh successor job checks out and downloads nothing, receives only `actions: write`, and
 explicitly dispatches the findings workflow after grounding succeeds. This uses the documented
 `workflow_dispatch` exception because GitHub suppresses an implicit `workflow_run` event after a
@@ -176,13 +179,14 @@ The token is `COPSE_REVIEW_FORGE_TOKEN`, else `GITHUB_TOKEN`; the model key
 `COPSE_REVIEW_API_KEY`. Provider-specific keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
 `OPENROUTER_API_KEY`) take precedence over that shared model key when set.
 
-This repository dogfoods the GitHub path with `qwen3.6-35b-a3b` through Scaleway's
+This repository dogfoods the GitHub path with `qwen3.8-27b` through Scaleway's
 OpenAI-compatible endpoint. `SCW_GENERATIVE_API_KEY` is the fallback for a dedicated
 `COPSE_REVIEW_API_KEY`; `COPSE_REVIEW_PROVIDER`, `COPSE_REVIEW_MODEL`,
-`COPSE_REVIEW_BASE_URL`, `COPSE_REVIEW_LENSES` and `COPSE_REVIEW_MAX_VERIFY` repository
-variables override the pinned profile. The default is one correctness lens and at most
-three challenged findings. Review context is secret-redacted before it leaves the runner,
-but it does leave GitHub for the configured model endpoint.
+`COPSE_REVIEW_BASE_URL`, `COPSE_REVIEW_LENSES`, `COPSE_REVIEW_MAX_STEPS` and
+`COPSE_REVIEW_MAX_VERIFY` repository variables override the pinned profile. The default is
+one correctness lens, at most 12 tool-using steps and at most three challenged findings.
+Review context is secret-redacted before it leaves the runner, but it does leave GitHub for
+the configured model endpoint.
 
 `.github/workflows/review-nightly.yml` samples at most one recent, non-draft branch from
 this repository each night (already-labelled PRs, generated screenshot-review PRs and

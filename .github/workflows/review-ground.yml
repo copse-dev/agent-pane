@@ -92,6 +92,19 @@ jobs:
             "+refs/pull/${PR_NUMBER}/head:refs/remotes/pr/${PR_NUMBER}" \
             "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}"
           test "$(git rev-parse "refs/remotes/pr/${PR_NUMBER}")" = "$HEAD_SHA"
+
+          # Stage 0 installs with --offline inside the isolated cell. Prime the
+          # host store from data-only files at the exact contributor commit;
+          # pnpm fetch ignores manifests and never runs lifecycle scripts. This
+          # job has no token permissions or secrets if the lockfile is hostile.
+          dependency_seed="$RUNNER_TEMP/copse-review-dependencies"
+          mkdir -p "$dependency_seed"
+          git show "${HEAD_SHA}:pnpm-lock.yaml" > "$dependency_seed/pnpm-lock.yaml"
+          if git cat-file -e "${HEAD_SHA}:patches" 2>/dev/null; then
+            git archive --format=tar "$HEAD_SHA" patches | tar -xf - -C "$dependency_seed"
+          fi
+          pnpm fetch --frozen-lockfile --dir "$dependency_seed"
+
           mkdir -p ground
           printf '{"pr":%s,"headSha":"%s","baseRef":"%s"}\n' "$PR_NUMBER" "$HEAD_SHA" "$BASE_REF" > ground/meta.json
           # Findings never affect the exit code; a refused execution (3) or an
