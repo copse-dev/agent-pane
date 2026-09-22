@@ -1,0 +1,5 @@
+{
+  "commands": {
+    "prepare": ["node", "scripts/prepare-review-stage0.mts"]
+  }
+}
