@@ -99,6 +99,17 @@ function createInlineWebview(
   }
 
   webview.addEventListener('dom-ready', () => {
+    // Reconciliation can replace a transcript card while its initial blank
+    // guest is still becoming ready. Do not navigate that detached guest:
+    // Electron otherwise rejects its stale guest id asynchronously.
+    if (!webview.isConnected || !stage.isConnected) {
+      if (timer) clearTimeout(timer)
+      timer = null
+      observer?.disconnect()
+      observer = null
+      settled = true
+      return
+    }
     // The transcript is commonly assembled in a detached fragment. ResizeObserver
     // can report that zero-sized state before the card mounts, so every guest
     // lifecycle boundary also re-pins the explicit Electron viewport.
@@ -120,6 +131,9 @@ function createInlineWebview(
   observer = new ResizeObserver(syncSize)
   observer.observe(stage)
   webview.addEventListener('destroyed', () => {
+    if (timer) clearTimeout(timer)
+    timer = null
+    settled = true
     observer?.disconnect()
     observer = null
   })
@@ -195,6 +209,9 @@ export function createInlineArtefact(
   )
   let annotation: AnnotationLayer | null = null
   let inlineWebview: HTMLElement | null = null
+  let disposed = false
+  let firstMountFrame: number | null = null
+  let stableMountFrame: number | null = null
   // A live guest is captured through the same IPC as a Browser pane tab; a
   // card still on its snapshot falls back to that snapshot.
   const captureBase = async (): Promise<string | null> => {
@@ -243,6 +260,9 @@ export function createInlineArtefact(
     ),
   )
   inlineArtefactDisposers.set(card, () => {
+    disposed = true
+    if (firstMountFrame !== null) cancelAnimationFrame(firstMountFrame)
+    if (stableMountFrame !== null) cancelAnimationFrame(stableMountFrame)
     annotation?.dispose()
     annotation = null
   })
@@ -256,7 +276,7 @@ export function createInlineArtefact(
   }
 
   const mount = (artefact: CanvasArtefact | null): void => {
-    if (!artefact || !card.isConnected) {
+    if (disposed || !artefact || !card.isConnected) {
       if (card.isConnected) showFallback()
       return
     }
@@ -266,10 +286,13 @@ export function createInlineArtefact(
       projectId,
       threadId,
       () => {
+        if (disposed) return
         card.dataset['canvasState'] = 'interactive'
         status.textContent = 'Interactive'
       },
-      showFallback,
+      () => {
+        if (!disposed) showFallback()
+      },
     )
     if (!webview) {
       showFallback()
@@ -279,13 +302,26 @@ export function createInlineArtefact(
     stage.append(webview)
   }
 
+  const scheduleMount = (artefact: CanvasArtefact | null): void => {
+    // Hydration replaces the initial transcript in the next frame. Wait until
+    // this card has remained connected across two frames before creating an
+    // Electron guest; removing a guest while Chromium is still attaching it
+    // rejects asynchronously with Invalid guestInstanceId.
+    firstMountFrame = requestAnimationFrame(() => {
+      firstMountFrame = null
+      if (disposed || !card.isConnected) return
+      stableMountFrame = requestAnimationFrame(() => {
+        stableMountFrame = null
+        mount(artefact)
+      })
+    })
+  }
+
   const cached = getArtefactContent(projectId, threadId, title)
   if (cached) {
-    queueMicrotask(() => {
-      mount(cached)
-    })
+    scheduleMount(cached)
   } else {
-    void loadArtefactContent(api, projectId, threadId, title).then(mount)
+    void loadArtefactContent(api, projectId, threadId, title).then(scheduleMount)
   }
 
   return card
