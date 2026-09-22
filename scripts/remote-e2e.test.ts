@@ -20,6 +20,15 @@ import {
   splitSshHost,
 } from './remote-e2e.mts'
 
+describe('remote e2e CLI', () => {
+  it('loads its TypeScript dependencies directly under the pinned Node runtime', () => {
+    const output = execFileSync(process.execPath, ['scripts/remote-e2e.mts', '--help'], {
+      encoding: 'utf8',
+    })
+    assert.match(output, /Run e2e from the working tree/)
+  })
+})
+
 describe('parseOraclePlan', () => {
   it('parses the mode/count/specs plan the oracle emits', () => {
     const plan = parseOraclePlan(

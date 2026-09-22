@@ -10,7 +10,7 @@ import {
 } from '@shared/git/worktree-policy.ts'
 import { describeBranchCheckoutFailure } from '@shared/git/branch-held.ts'
 import { runCommand } from './exec/command-runner.ts'
-import { parseWorkingTreeSnapshotHead } from './git-snapshot.ts'
+import { parseWorkingTreeSnapshotHead } from './git-snapshot.mts'
 import { runSerialized } from './storage/write-queue.ts'
 import { copseWorktreesDir } from './storage/copse-paths.ts'
 import {
