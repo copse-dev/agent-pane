@@ -35,7 +35,7 @@ import {
 import type { VideoAttachmentRef } from '@shared/video/video-media.ts'
 import type { ArchiveAttachmentRef } from '@shared/archive/archive-media.ts'
 
-import { isHumanUserPrompt } from '@copse/thread-store/thread-sort.ts'
+import { isHumanUserPrompt, sortThreadsNewestFirst } from '@copse/thread-store/thread-sort.ts'
 export {
   isHumanUserPrompt,
   lastHumanPromptAt,
@@ -410,15 +410,30 @@ export function addMessage(
     toolCalls: [],
     createdAt: Date.now(),
   }
+  const isHumanPrompt = isHumanUserPrompt(message)
   patchThreadAnywhere(store, threadId, (t) => ({
     ...t,
     messages: [...t.messages, message],
     // The sidebar sorts on this and never reads transcripts, so it has to be
     // recorded as the prompt lands rather than derived at display time.
-    ...(isHumanUserPrompt(message) ? { lastPromptAt: message.createdAt } : {}),
+    ...(isHumanPrompt ? { lastPromptAt: message.createdAt } : {}),
     updatedAt: Date.now(),
   }))
+
+  // Loading a project already applies this order. Apply the same comparator to
+  // the live active-project list so returning to an older thread moves it in the
+  // sidebar immediately, without waiting for a project switch or app reload.
+  let reorderedActiveThreads = false
+  if (isHumanPrompt) {
+    const { threads } = store.getState()
+    if (threads.some((thread) => thread.id === threadId)) {
+      const sortedThreads = sortThreadsNewestFirst(threads)
+      reorderedActiveThreads = sortedThreads.some((thread, index) => thread !== threads[index])
+      if (reorderedActiveThreads) store.setState({ threads: sortedThreads })
+    }
+  }
   store.emit('message_added', threadId, id)
+  if (reorderedActiveThreads) store.emit('threads_changed')
 
   // Blank-thread pruning is an active-project concern; a carried background
   // thread is never blank (it has a live run).
