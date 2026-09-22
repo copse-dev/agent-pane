@@ -220,6 +220,20 @@ schedule B2 into the next free slot before E integration; F last. The execution 
 multiple agents simultaneous ownership of `register-handlers.ts`, preload files, settings schemas,
 or `package.json`. Agents share the frozen contract; the lead integrates and validates their changes.
 
+## Review follow-up
+
+The review follow-up keeps this feature in the same PR and rebases it onto main at `d8fd74bb17`.
+SemIf discards progress logs, scales the default batch deadline by question count, preserves
+runtime cache and library paths, and cleans up child process groups on normal parent exit.
+HTTP credentials are trimmed before use, and saved environment fallbacks are restricted to
+dedicated classifier variables or each preset's official endpoint. Settings rounds fractional
+timeouts to milliseconds and reconciles a saved profile even when its credential write fails.
+Saved-profile evals snapshot credentials and redaction secrets once per run; validation occurs
+once at each public boundary, with internal dispatch using the validated values. Separate eval
+processes retain their startup host approvals, so stopping an active run is required for immediate
+revocation. Regression tests cover these cases, including real Electron process cleanup and the
+partial-save settings flow.
+
 ## Acceptance and validation
 
 The feature is complete when a user can save a hosted key, restart Copse, make an explicit typed

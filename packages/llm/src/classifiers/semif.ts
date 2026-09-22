@@ -1,13 +1,13 @@
 import { spawn } from 'node:child_process'
-import { createReadStream } from 'node:fs'
+import { createReadStream, rmSync } from 'node:fs'
 import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import { z } from 'zod'
 import { ClassifierError } from './error.ts'
 import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
-import { classifierProfileSchema, classifierRequestSchema } from './schemas.ts'
+import { parseClassifierBatch } from './validation.ts'
 import type {
   ClassifierAnswer,
   ClassifierCallOptions,
@@ -19,7 +19,8 @@ import type {
 } from './types.ts'
 
 const MAX_FILE_BYTES = 16 * 1024 * 1024
-const MAX_PROCESS_LOG_BYTES = 64 * 1024
+// Node clamps larger timer delays to 1 ms; cap scaled batch deadlines here.
+const MAX_TIMER_MS = 2 ** 31 - 1
 const nativeRowSchema = z
   .object({
     id: z.string(),
@@ -42,7 +43,6 @@ interface InputRow {
 
 function rowsFor(requests: readonly ClassifierRequest[]): InputRow[] {
   return requests.flatMap((request, requestIndex) => {
-    classifierRequestSchema.parse(request)
     if (Object.keys(request.state).length === 0) {
       throw new ClassifierError('invalid-request', 'SemIf requires nonempty state.')
     }
@@ -94,6 +94,14 @@ function runtimeEnvironment(): NodeJS.ProcessEnv {
     'TMP',
     'TEMP',
     'VIRTUAL_ENV',
+    // Python installs and native model backends may live outside system defaults.
+    'PYTHONPATH',
+    'PYTHONHOME',
+    'LD_LIBRARY_PATH',
+    'DYLD_LIBRARY_PATH',
+    'DYLD_FALLBACK_LIBRARY_PATH',
+    // Hugging Face's default cache location follows XDG when HF_HOME is unset.
+    'XDG_CACHE_HOME',
     'HF_HOME',
     'HF_HUB_CACHE',
     'TRANSFORMERS_CACHE',
@@ -156,12 +164,13 @@ function runScorer(
       windowsHide: true,
       detached: process.platform !== 'win32',
       env: runtimeEnvironment(),
-      stdio: ['ignore', 'pipe', 'pipe'],
+      // Progress bars and model-load diagnostics can be arbitrarily chatty.
+      // Results come exclusively from the bounded JSONL file.
+      stdio: 'ignore',
     })
     let settled = false
     let failure: Error | undefined
     let escalation: NodeJS.Timeout | undefined
-    let logBytes = 0
     const kill = (hard: boolean): void => {
       if (!child.pid) return
       try {
@@ -171,6 +180,17 @@ function runScorer(
         /* The process may already have exited. */
       }
     }
+    const onParentExit = (): void => {
+      // Detached groups survive their parent unless explicitly terminated.
+      // Exit handlers cannot wait for graceful escalation or asynchronous cleanup.
+      kill(true)
+      try {
+        rmSync(dirname(input), { recursive: true, force: true })
+      } catch {
+        /* Shutdown must continue even if temporary-file cleanup fails. */
+      }
+    }
+    process.once('exit', onParentExit)
     const stop = (error: Error): void => {
       if (failure || settled) return
       failure = error
@@ -194,13 +214,6 @@ function runScorer(
       )
     }
     const interval = setInterval(checkSize, 50)
-    const consume = (chunk: Buffer): void => {
-      logBytes += chunk.length
-      if (logBytes > MAX_PROCESS_LOG_BYTES)
-        stop(new ClassifierError('invalid-response', 'SemIf process logs exceeded the size limit.'))
-    }
-    child.stdout.on('data', consume)
-    child.stderr.on('data', consume)
     signal.addEventListener('abort', abort, { once: true })
     if (signal.aborted) abort()
     child.once('error', () => {
@@ -213,6 +226,7 @@ function runScorer(
     })
     child.once('close', (code) => {
       settled = true
+      process.removeListener('exit', onParentExit)
       clearInterval(interval)
       clearTimeout(escalation)
       signal.removeEventListener('abort', abort)
@@ -278,7 +292,16 @@ export async function classifySemIfBatch(
   requests: readonly ClassifierRequest[],
   options: ClassifierCallOptions = {},
 ): Promise<ClassifierResult[]> {
-  classifierProfileSchema.parse(profile)
+  const parsed = parseClassifierBatch(profile, requests)
+  return classifySemIfBatchValidated(parsed.profile, parsed.requests, options)
+}
+
+/** @internal Call only after the shared request/profile validation boundary. */
+export async function classifySemIfBatchValidated(
+  profile: ClassifierProfile,
+  requests: readonly ClassifierRequest[],
+  options: ClassifierCallOptions = {},
+): Promise<ClassifierResult[]> {
   if (profile.connection.type !== 'semif')
     throw new ClassifierError('invalid-request', 'Expected a SemIf profile.')
   const connection = profile.connection
@@ -287,11 +310,13 @@ export async function classifySemIfBatch(
   const input = rows.map((row) => JSON.stringify(row)).join('\n') + '\n'
   if (Buffer.byteLength(input) > MAX_FILE_BYTES)
     throw new ClassifierError('invalid-request', 'SemIf input exceeded the batch size limit.')
-  const timeoutMs = options.timeoutMs ?? profile.timeoutMs
-  if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 600_000)
+  // The profile budget is per native question row. One process serves the batch,
+  // so an explicit override instead bounds the entire invocation, including startup.
+  const timeoutMs = options.timeoutMs ?? Math.min(profile.timeoutMs * rows.length, MAX_TIMER_MS)
+  if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > MAX_TIMER_MS)
     throw new ClassifierError(
       'invalid-request',
-      'Classifier timeout must be between 1 and 600000 milliseconds.',
+      `SemIf timeout must be between 1 and ${String(MAX_TIMER_MS)} milliseconds.`,
     )
   const signal = AbortSignal.any([
     AbortSignal.timeout(timeoutMs),
@@ -353,6 +378,7 @@ export async function classifySemIfBatch(
           mode: connection.mode,
           requestedRevision: connection.revision,
           processElapsedMs: elapsedMs,
+          deadlineMs: timeoutMs,
           batchRequests: requests.length,
           rows: metadata,
         },

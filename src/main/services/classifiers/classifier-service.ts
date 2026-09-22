@@ -1,5 +1,6 @@
-import { classifyBatch } from '@copse/llm/classifiers/index.ts'
-import { classifierProfileSchema, classifierRequestSchema } from '@copse/llm/classifiers/schemas.ts'
+import { runValidatedClassifierBatch } from '@copse/llm/classifiers/validated.ts'
+import { parseClassifierRequests } from '@copse/llm/classifiers/validation.ts'
+import { classifierProfileSchema } from '@copse/llm/classifiers/schemas.ts'
 import { classifierCredentialId, CLASSIFIER_TEST_REQUEST } from '@copse/llm/classifiers/presets.ts'
 import type {
   ClassifierCallOptions,
@@ -56,15 +57,41 @@ export function getClassifierProfile(id: string): ClassifierProfile {
   credentialForProfile(id)
   const profile = configuredProfiles().find((entry) => entry.id === id)
   if (!profile) throw new Error('Classifier profile is not configured')
-  return classifierProfileSchema.parse(profile)
+  const parsed = classifierProfileSchema.parse(profile)
+  assertEnvironmentKeyAllowed(parsed)
+  return parsed
+}
+
+function environmentKeyAllowed(profile: ClassifierProfile): boolean {
+  const connection = profile.connection
+  if (connection.type !== 'http' || connection.auth === 'none' || !connection.apiKeyEnv) return true
+  if (/^COPSE_CLASSIFIER_[A-Z0-9_]+$/.test(connection.apiKeyEnv)) return true
+  const url = new URL(connection.baseUrl)
+  if (url.pathname.replace(/\/+$/, '') !== '/v1') return false
+  return (
+    (connection.apiKeyEnv === 'TYPESAFE_API_KEY' &&
+      connection.protocol === 'systemone' &&
+      url.origin === 'https://api.typesafe.ai') ||
+    (connection.apiKeyEnv === 'FEATHERLESS_API_KEY' &&
+      connection.protocol === 'featherless' &&
+      url.origin === 'https://api.featherless.ai')
+  )
+}
+
+function assertEnvironmentKeyAllowed(profile: ClassifierProfile): void {
+  if (!environmentKeyAllowed(profile)) {
+    throw new Error(
+      'This environment variable is not allowed for this classifier endpoint. Save a key, use a COPSE_CLASSIFIER_* variable, or use the provider variable with its official endpoint.',
+    )
+  }
 }
 
 function environmentKey(profile: ClassifierProfile): string | undefined {
-  if (getExplicitSettingsProfile()) return undefined
+  if (getExplicitSettingsProfile() || !environmentKeyAllowed(profile)) return undefined
   const connection = profile.connection
   if (connection.type !== 'http' || connection.auth === 'none' || !connection.apiKeyEnv)
     return undefined
-  return firstNonEmptyString(process.env[connection.apiKeyEnv])
+  return firstNonEmptyString(process.env[connection.apiKeyEnv]?.trim())
 }
 
 function profileKey(profile: ClassifierProfile): string | undefined {
@@ -84,6 +111,7 @@ export async function saveClassifierProfile(
   raw: ClassifierProfile,
 ): Promise<ClassifierProfileStatus[]> {
   const profile = classifierProfileSchema.parse(raw)
+  assertEnvironmentKeyAllowed(profile)
   const credential = credentialForProfile(profile.id)
   if (profile.connection.type === 'http') {
     await ensureProviderHostApproved(profile.connection.baseUrl)
@@ -219,25 +247,51 @@ function redactRequest(request: ClassifierRequest, secrets: readonly string[]): 
   }
 }
 
-/** Main-process API used by explicit calls and the saved-profile eval entry point. */
+export interface ClassifierSession {
+  /** Non-secret copy of the configuration frozen for this run. */
+  profile: ClassifierProfile
+  invokeBatch(
+    requests: ClassifierRequest[],
+    options?: Pick<ClassifierCallOptions, 'signal' | 'timeoutMs'>,
+  ): Promise<ClassifierResult[]>
+}
+
+/**
+ * Resolve credentials once for an explicit run. No global cache: a new session
+ * observes changed keys/settings, and one eval never mixes credential snapshots.
+ * The internal configuration stays private; callers receive a separate copy.
+ */
+export function createClassifierSession(id: string): ClassifierSession {
+  const profile = getClassifierProfile(id)
+  const remote = profile.connection.type === 'http' && !isLocalBaseUrl(profile.connection.baseUrl)
+  if (profile.connection.type === 'http') assertApprovedProviderHost(profile.connection.baseUrl)
+  const apiKey = profileKey(profile)
+  const secrets = remote ? knownSecrets() : []
+  return {
+    profile: structuredClone(profile),
+    async invokeBatch(requests, options = {}): Promise<ClassifierResult[]> {
+      if (requests.length < 1 || requests.length > 1000)
+        throw new Error('Provide 1–1000 classifier requests')
+      let validated = parseClassifierRequests(profile, requests)
+      // Recheck this process's approval policy before each batch. Separate eval
+      // processes retain their startup settings snapshot.
+      if (profile.connection.type === 'http') assertApprovedProviderHost(profile.connection.baseUrl)
+      if (remote) validated = validated.map((request) => redactRequest(request, secrets))
+      return runValidatedClassifierBatch(profile, validated, {
+        ...options,
+        ...(apiKey ? { apiKey } : {}),
+      })
+    },
+  }
+}
+
+/** A one-off app call resolves fresh settings and keys each time. */
 export async function invokeClassifierBatch(
   id: string,
   requests: ClassifierRequest[],
   options: Pick<ClassifierCallOptions, 'signal' | 'timeoutMs'> = {},
 ): Promise<ClassifierResult[]> {
-  const profile = getClassifierProfile(id)
-  if (requests.length < 1 || requests.length > 1000)
-    throw new Error('Provide 1–1000 classifier requests')
-  let validated = requests.map((request) => classifierRequestSchema.parse(request))
-  if (profile.connection.type === 'http') {
-    assertApprovedProviderHost(profile.connection.baseUrl)
-    if (!isLocalBaseUrl(profile.connection.baseUrl)) {
-      const secrets = knownSecrets()
-      validated = validated.map((request) => redactRequest(request, secrets))
-    }
-  }
-  const apiKey = profileKey(profile)
-  return classifyBatch(profile, validated, { ...options, ...(apiKey ? { apiKey } : {}) })
+  return createClassifierSession(id).invokeBatch(requests, options)
 }
 
 export async function testClassifierProfile(id: string): Promise<ClassifierResult> {

@@ -46,6 +46,8 @@ function setup(initial: ClassifierProfile[] = [HTTP_PROFILE]): {
     plaintext: boolean
     plaintextDisabled: boolean
     failure: string | null
+    keyFailure: string | null
+    removals: string[]
   }
 } {
   const state = {
@@ -60,6 +62,8 @@ function setup(initial: ClassifierProfile[] = [HTTP_PROFILE]): {
     plaintext: false,
     plaintextDisabled: false,
     failure: null as string | null,
+    keyFailure: null as string | null,
+    removals: new Array<string>(),
   }
   const api: Parameters<typeof createClassifiersSection>[0] = {
     classifiers: {
@@ -74,6 +78,7 @@ function setup(initial: ClassifierProfile[] = [HTTP_PROFILE]): {
         return structuredClone(state.profiles)
       },
       remove: async (id) => {
+        state.removals.push(id)
         state.profiles = state.profiles.filter((item) => item.profile.id !== id)
         return structuredClone(state.profiles)
       },
@@ -86,6 +91,7 @@ function setup(initial: ClassifierProfile[] = [HTTP_PROFILE]): {
     settings: {
       setKey: async (id, key, options) => {
         state.keys.push({ id, key, allowPlaintext: options?.allowPlaintext === true })
+        if (state.keyFailure) throw new Error(state.keyFailure)
         if (state.plaintextDisabled) return { ok: false, reason: 'plaintext-storage-disabled' }
         if (state.plaintext && !options?.allowPlaintext)
           return { ok: false, reason: 'plaintext-consent-required' }
@@ -137,6 +143,70 @@ describe('classifier connections settings', () => {
     assert.deepEqual(state.tests, ['fixture'])
     assert.match(section.root.textContent, /Test succeeded · color: red · 24 ms/)
   })
+
+  it('rounds fractional timeout seconds to integer milliseconds', async () => {
+    const { section, state } = setup()
+    await section.refresh()
+    enter(section.root, 'Timeout', '1.005')
+    assert.equal(field(section.root, 'Timeout').step, '0.001')
+    button(section.root, 'save').click()
+    await setImmediate()
+    assert.equal(state.saves[0]?.timeoutMs, 1005)
+    assert.equal(field(section.root, 'Timeout').value, '1.005')
+  })
+
+  for (const mode of ['declined', 'disabled', 'thrown'] as const) {
+    it(`keeps a newly persisted profile removable after a ${mode} key save`, async () => {
+      const { section, state } = setup([])
+      state.plaintext = mode === 'declined'
+      state.plaintextDisabled = mode === 'disabled'
+      state.keyFailure =
+        mode === 'thrown'
+          ? 'Error invoking remote method \'settings:set-key\': IpcValidationError: [{"code":"too_big"}]'
+          : null
+      await section.refresh()
+      button(section.root, 'create').click()
+      enter(section.root, 'Label', 'Persisted connection')
+      enter(section.root, 'Key', 'retry-key')
+      button(section.root, 'save').click()
+      await setImmediate()
+      if (mode === 'declined') {
+        clickActiveConfirmDialogCancel()
+        await setImmediate()
+      }
+      const profileId = state.profiles[0]?.profile.id
+      assert.ok(profileId)
+      assert.equal(state.profiles.length, 1)
+      assert.equal(section.root.querySelectorAll('[data-classifier-id]').length, 1)
+      assert.equal(button(section.root, 'remove').textContent, 'Remove classifier')
+      assert.match(
+        qsRequired(section.root, '.classifier-status').textContent,
+        /Connection saved; key (?:not saved|save failed)/,
+      )
+      if (mode === 'thrown') {
+        assert.match(
+          qsRequired(section.root, '.classifier-status').textContent,
+          /Check the field values/,
+        )
+        assert.equal(section.root.textContent.includes('IpcValidationError'), false)
+      }
+      assert.equal(field(section.root, 'Key').value, 'retry-key')
+      assert.equal(button(section.root, 'test').disabled, true)
+      enter(section.root, 'Key', '')
+      assert.equal(
+        button(section.root, 'test').disabled,
+        false,
+        'profile edits were saved; only the key was pending',
+      )
+      button(section.root, 'remove').click()
+      await setImmediate()
+      assert.deepEqual(state.removals, [profileId])
+      assert.equal(state.profiles.length, 0)
+      assert.equal(section.root.querySelectorAll('[data-classifier-id]').length, 0)
+      await section.refresh()
+      assert.equal(section.root.querySelectorAll('[data-classifier-id]').length, 0)
+    })
+  }
 
   it('explains key removal when editing a saved destination, but ignores equivalent trailing slashes', async () => {
     const { section, state } = setup()

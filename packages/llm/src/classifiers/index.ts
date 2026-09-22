@@ -1,6 +1,5 @@
-import { classifyHttp, validateHttpLimits } from './http.ts'
-import { classifySemIfBatch } from './semif.ts'
-import { classifierProfileSchema, classifierRequestSchema } from './schemas.ts'
+import { parseClassifierBatch } from './validation.ts'
+import { runValidatedClassifierBatch } from './validated.ts'
 import { ClassifierError } from './error.ts'
 import type {
   ClassifierCallOptions,
@@ -20,24 +19,8 @@ export async function classifyBatch(
   requests: readonly ClassifierRequest[],
   options: ClassifierCallOptions = {},
 ): Promise<ClassifierResult[]> {
-  const parsedProfile = classifierProfileSchema.safeParse(profile)
-  if (!parsedProfile.success) {
-    throw new ClassifierError('invalid-request', 'Invalid classifier profile or request.')
-  }
-  profile = parsedProfile.data
-  const validated: ClassifierRequest[] = []
-  for (const request of requests) {
-    const parsed = classifierRequestSchema.safeParse(request)
-    if (!parsed.success)
-      throw new ClassifierError('invalid-request', 'Invalid classifier profile or request.')
-    if (profile.connection.type === 'http') validateHttpLimits(profile, parsed.data)
-    validated.push(parsed.data)
-  }
-  if (requests.length === 0) return []
-  if (profile.connection.type === 'semif') return classifySemIfBatch(profile, validated, options)
-  const results: ClassifierResult[] = []
-  for (const request of validated) results.push(await classifyHttp(profile, request, options))
-  return results
+  const parsed = parseClassifierBatch(profile, requests)
+  return runValidatedClassifierBatch(parsed.profile, parsed.requests, options)
 }
 
 export async function classify(

@@ -15,6 +15,12 @@ Changing an existing profile's HTTP destination, protocol, or authentication mod
 key before applying the change. Save a replacement key or select a named environment variable for
 the new destination. Classifier credential IDs are reserved from custom chat-provider IDs.
 
+Saved Copse profiles can use `TYPESAFE_API_KEY` only with the official TypeSafe endpoint and
+`FEATHERLESS_API_KEY` only with the official Featherless endpoint. Custom saved profiles use a
+dedicated `COPSE_CLASSIFIER_*` environment variable or a saved key. Other app/cloud credentials
+cannot be selected as classifier tokens. The explicit headless `--config` mode can name any
+environment variable supplied by the caller.
+
 ## Run an eval
 
 Use Node 24+ and the repository's installed pnpm dependencies. Fixtures are a JSON array or JSONL
@@ -56,6 +62,9 @@ no agent or conversation and does not rewrite settings or migrate secrets. The p
 already exist in the current Copse data directory; `COPSE_DIR` or `COPSE_PANEL_USER_DATA` can select
 another existing profile. Open Copse normally first if legacy app data still needs migration.
 A locked or unavailable OS keyring produces a credential error.
+Each saved-profile eval snapshots its configuration, credentials, redaction secrets, and host
+approvals for the run. A new run observes updated settings. Stop an active eval to revoke access
+immediately; its separate process does not observe settings changes made in the running app.
 
 Omit `--output` to write JSONL to stdout. `--concurrency 1..16` bounds HTTP concurrency and defaults
 to one request at a time. SemIf always receives the entire fixture batch in one process. Interrupt
@@ -80,8 +89,17 @@ commit according to SemIf; local models use an explicit manifest/revision identi
 
 Copse invokes the scorer directly, with private temporary input/output JSONL files and offline
 Hugging Face/Transformers settings. It passes only runtime-related environment variables, excludes
-provider keys, bounds files/logs, enforces the deadline, and cleans up after completion or
-cancellation. It does not install dependencies, download weights, or manage an inference server.
+provider keys, bounds JSONL files, and cleans up after completion or cancellation. Scorer progress
+logs are discarded without a size limit, so verbose model loading cannot fail an otherwise valid
+run. Runtime cache and library settings such as `XDG_CACHE_HOME`, `PYTHONPATH`, and
+`LD_LIBRARY_PATH` are preserved. Normal parent-process exit terminates the scorer process group
+on macOS/Linux and removes its private files. It does not install dependencies, download weights,
+or manage an inference server.
+
+For SemIf, the configured timeout is a budget per native question row. The default batch deadline
+is that timeout multiplied by the number of rows, capped at 2,147,483,647 ms (the runtime timer
+limit). An API call's explicit `timeoutMs` override is a hard whole-batch deadline. Results record
+the effective `deadlineMs` alongside startup/scoring timing; cancellation can stop a long batch.
 
 The [native CLI](https://github.com/TheoLeeCJ/SemIf/blob/master/src/semif_phase1/cli.py) supports
 `direct`, `serial`, and `shared` modes exposed here; `direct` is the default. Each named question

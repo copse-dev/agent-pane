@@ -30,11 +30,11 @@ async function main(): Promise<number> {
       throw new Error('The classifier eval runner cannot write saved keys.')
     },
   })
-  const { getClassifierProfile, invokeClassifierBatch } =
+  const { createClassifierSession } =
     await import('../src/main/services/classifiers/classifier-service.ts')
-  const profile = getClassifierProfile(args.profile)
-  return writeClassifierEval(args, profile, (requests, options) =>
-    invokeClassifierBatch(profile.id, requests, options),
+  const session = createClassifierSession(args.profile)
+  return writeClassifierEval(args, session.profile, (requests, options) =>
+    session.invokeBatch(requests, options),
   )
 }
 

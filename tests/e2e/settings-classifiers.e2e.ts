@@ -94,6 +94,12 @@ describe('classifier connections settings', () => {
     await action.click()
   }
 
+  async function toggleOptions(): Promise<void> {
+    const summary = $('#settings-classifiers-host .provider-advanced summary')
+    await summary.scrollIntoView({ block: 'center' })
+    await summary.click()
+  }
+
   async function saveClassifier(): Promise<void> {
     await clickAction('save')
     await browser.waitUntil(
@@ -116,6 +122,17 @@ describe('classifier connections settings', () => {
     await host.$('[name="classifierModel"]').setValue('fixture-model')
     await host.$('[name="classifierUrl"]').setValue(baseUrl)
     await host.$('[name="classifierKey"]').setValue('classifier-e2e-secret')
+    await toggleOptions()
+    await host.$('[name="classifierKeyEnv"]').setValue('')
+    await expect(host.$('label:has([name="classifierKeyEnv"])')).toHaveText(
+      expect.stringContaining('COPSE_CLASSIFIER_*'),
+    )
+    await host.$('[name="classifierTimeout"]').setValue('1.005')
+    await saveElementScreenshot(
+      '#settings-classifiers-host .provider-advanced',
+      'settings-classifiers-options.png',
+    )
+    await toggleOptions()
     await expect(host.$('.classifier-test')).toBeDisabled()
     assert.equal(requests, 0, 'opening and editing must not call inference')
     await saveClassifier()
@@ -125,6 +142,7 @@ describe('classifier connections settings', () => {
     )
     assert.equal(savedProfiles.length, 1)
     assert.equal(savedProfiles[0]?.hasKey, true)
+    assert.equal(savedProfiles[0]?.profile.timeoutMs, 1005)
     assert.equal(
       JSON.stringify(savedProfiles).includes('classifier-e2e-secret'),
       false,
@@ -281,5 +299,46 @@ describe('classifier connections settings', () => {
     await browser.waitUntil(async () => (await host.$$('[data-classifier-id]')).length === 0, {
       timeout: 10_000,
     })
+  })
+
+  it('keeps a connection removable when its first key save fails validation', async () => {
+    const host = $('#settings-classifiers-host')
+    await host.$('[name="classifierPreset"]').selectByAttribute('value', 'custom')
+    await host.$('.classifier-create').click()
+    await host.$('[name="classifierLabel"]').setValue('Key storage retry')
+    await host.$('[name="classifierModel"]').setValue('fixture-model')
+    await host.$('[name="classifierUrl"]').setValue(baseUrl)
+    // A real IPC validation error happens after the separate profile save has succeeded.
+    await browser.execute(() => {
+      const input = document.querySelector<HTMLInputElement>(
+        '#settings-classifiers-host [name="classifierKey"]',
+      )
+      if (!input) throw new Error('Missing classifier key field')
+      input.value = 'x'.repeat(8193)
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await clickAction('save')
+    await browser.waitUntil(
+      async () =>
+        /Connection saved; key save failed/.test(await host.$('.classifier-status').getText()),
+      { timeout: 10_000 },
+    )
+    const savedProfiles: ReturnType<typeof listClassifierProfiles> = await browser.execute(
+      async () => window.api.classifiers.list(),
+    )
+    assert.equal(savedProfiles.length, 1)
+    assert.equal(savedProfiles[0]?.hasKey, false)
+    assert.equal((await host.$$('[data-classifier-id]')).length, 1)
+    await expect(host.$('.classifier-remove')).toHaveText('Remove classifier')
+    await expect(host.$('.classifier-test')).toBeDisabled()
+    await expect(host.$('.classifier-status')).not.toHaveText(
+      expect.stringContaining('IpcValidationError'),
+    )
+    await saveElementScreenshot('#settings-dialog', 'settings-classifiers-key-failure.png')
+    await clickAction('remove')
+    await browser.waitUntil(async () => (await host.$$('[data-classifier-id]')).length === 0, {
+      timeout: 10_000,
+    })
+    assert.deepEqual(await browser.execute(async () => window.api.classifiers.list()), [])
   })
 })

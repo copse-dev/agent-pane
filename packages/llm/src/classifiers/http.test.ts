@@ -79,6 +79,31 @@ describe('classifier HTTP adapters', () => {
     })
   })
 
+  it('uses the same trimmed API key for authentication and reflected-key redaction', async () => {
+    const key = 'private-classifier-key-with-padding'
+    const result = await classifyHttp(profile('typesafe'), CLASSIFIER_TEST_REQUEST, {
+      apiKey: `\r\n  ${key}  \t\n`,
+      fetchImpl: async (_url, init) => {
+        assert.equal(new Headers(init?.headers).get('Authorization'), `Bearer ${key}`)
+        return Response.json({ ...success(), model: `server-${key}`, checkpoint: `/models/${key}` })
+      },
+    })
+    assert.equal(result.model, 'server-[REDACTED_SECRET]')
+    assert.equal(result.metadata?.['checkpoint'], '/models/[REDACTED_SECRET]')
+    assert.equal(JSON.stringify(result).includes(key), false)
+    for (const apiKey of [' \r\n\t ', `first-line\nsecond-line`]) {
+      await assert.rejects(
+        classifyHttp(profile('typesafe'), CLASSIFIER_TEST_REQUEST, {
+          apiKey,
+          fetchImpl: async () => {
+            assert.fail('Invalid keys must not be sent')
+          },
+        }),
+        { code: 'authentication' },
+      )
+    }
+  })
+
   it('scrubs reflected keys from provider text while preserving semantic identifiers', async () => {
     const apiKey = 'private-classifier-key-123456789'
     const questionId = `ghp_${'a'.repeat(36)}`

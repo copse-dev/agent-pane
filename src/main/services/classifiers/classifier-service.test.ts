@@ -11,6 +11,7 @@ import { deleteApiKey, getApiKey, getSetting, setApiKey, setSetting } from '../s
 import { runWithExplicitSettings } from '../storage/settings-context.ts'
 import {
   getClassifierProfile,
+  createClassifierSession,
   invokeClassifierBatch,
   listClassifierProfiles,
   removeClassifierProfile,
@@ -187,7 +188,7 @@ describe('configured classifiers', () => {
         apiKeyEnv: 'COPSE_CLASSIFIER_TEST_KEY',
       },
     }
-    process.env['COPSE_CLASSIFIER_TEST_KEY'] = 'environment-secret'
+    process.env['COPSE_CLASSIFIER_TEST_KEY'] = '  environment-secret\n'
     await saveClassifierProfile(profile)
     const fetchMock = mock.method(
       globalThis,
@@ -206,6 +207,126 @@ describe('configured classifiers', () => {
         await assert.rejects(testClassifierProfile(profile.id), { code: 'authentication' })
       },
     )
+    assert.equal(fetchMock.mock.callCount(), 1)
+  })
+
+  it('rejects unrelated environment secrets and binds preset variables to their official endpoints', async () => {
+    const invalidConnections = [
+      {
+        apiKeyEnv: 'AWS_SECRET_ACCESS_KEY',
+        baseUrl: 'https://api.typesafe.ai/v1',
+        protocol: 'systemone',
+      },
+      {
+        apiKeyEnv: 'ANTHROPIC_API_KEY',
+        baseUrl: 'https://api.typesafe.ai/v1',
+        protocol: 'systemone',
+      },
+      {
+        apiKeyEnv: 'TYPESAFE_API_KEY',
+        baseUrl: 'https://api.featherless.ai/v1',
+        protocol: 'systemone',
+      },
+      {
+        apiKeyEnv: 'TYPESAFE_API_KEY',
+        baseUrl: 'https://api.typesafe.ai/collector',
+        protocol: 'systemone',
+      },
+      { apiKeyEnv: 'TYPESAFE_API_KEY', baseUrl: 'http://127.0.0.1:8009/v1', protocol: 'systemone' },
+    ]
+    const fetchMock = mock.method(globalThis, 'fetch', async () => response())
+    for (const connection of invalidConnections) {
+      const profile: ClassifierProfile = {
+        ...preset('typesafe'),
+        connection: {
+          type: 'http',
+          auth: 'bearer',
+          protocol: 'systemone',
+          baseUrl: connection.baseUrl,
+          apiKeyEnv: connection.apiKeyEnv,
+        },
+      }
+      await assert.rejects(saveClassifierProfile(profile), /environment variable is not allowed/)
+      // Also guard settings written by an older version, not only today's save API.
+      await setSetting('classifierProviders', { version: 1, profiles: [profile] })
+      await assert.rejects(testClassifierProfile(profile.id), /environment variable is not allowed/)
+      assert.equal(listClassifierProfiles().length, 1, 'invalid legacy entries remain editable')
+    }
+    assert.equal(fetchMock.mock.callCount(), 0)
+    await saveClassifierProfile(preset('typesafe'))
+    await saveClassifierProfile(preset('featherless'))
+  })
+
+  it('resolves keys once per eval session while fresh sessions observe updated credentials', async () => {
+    const profile = preset('typesafe')
+    const keys: Record<string, string> = {
+      'classifier-typesafe': 'first-classifier-key',
+      openai: 'snapshot-chat-key',
+    }
+    let reads = 0
+    const apiKeys = new Proxy(keys, {
+      get(target, property, receiver): unknown {
+        reads++
+        return Reflect.get(target, property, receiver)
+      },
+    })
+    const authorization: (string | null)[] = []
+    mock.method(globalThis, 'fetch', async (_url: string | URL | Request, init?: RequestInit) => {
+      authorization.push(new Headers(init?.headers).get('Authorization'))
+      const body = init?.body
+      assert.equal(typeof body, 'string')
+      if (typeof body !== 'string') assert.fail('Expected JSON request body')
+      assert.equal(body.includes('snapshot-chat-key'), false)
+      return response()
+    })
+    await runWithExplicitSettings(
+      { values: { classifierProviders: { version: 1, profiles: [profile] } }, apiKeys },
+      async () => {
+        const session = createClassifierSession('typesafe')
+        const initialReads = reads
+        assert.ok(initialReads > 0)
+        keys['classifier-typesafe'] = 'second-classifier-key'
+        const request = { ...CLASSIFIER_TEST_REQUEST, state: 'snapshot-chat-key' }
+        await Promise.all([session.invokeBatch([request]), session.invokeBatch([request])])
+        assert.equal(reads, initialReads, 'no repeated keyring lookups between fixtures')
+        const next = createClassifierSession('typesafe')
+        await next.invokeBatch([request])
+        assert.ok(reads > initialReads)
+      },
+    )
+    assert.deepEqual(authorization, [
+      'Bearer first-classifier-key',
+      'Bearer first-classifier-key',
+      'Bearer second-classifier-key',
+    ])
+  })
+
+  it('keeps a session configuration private and respects host approval revocation', async () => {
+    const profile: ClassifierProfile = {
+      ...preset('kev'),
+      connection: {
+        type: 'http',
+        auth: 'none',
+        protocol: 'systemone',
+        baseUrl: 'https://classifier.example/v1',
+      },
+    }
+    setApprovalHandler(async () => ({ approved: true, remember: false }))
+    await saveClassifierProfile(profile)
+    const session = createClassifierSession(profile.id)
+    session.profile.connection = {
+      type: 'http',
+      auth: 'none',
+      protocol: 'systemone',
+      baseUrl: 'https://another.example/v1',
+    }
+    const fetchMock = mock.method(globalThis, 'fetch', async (url: string | URL | Request) => {
+      assert.equal(url, 'https://classifier.example/v1/systemone')
+      return response()
+    })
+    await session.invokeBatch([CLASSIFIER_TEST_REQUEST])
+    await setSetting('approvedProviderHosts', [])
+    await assert.rejects(session.invokeBatch([CLASSIFIER_TEST_REQUEST]), /not approved/)
     assert.equal(fetchMock.mock.callCount(), 1)
   })
 

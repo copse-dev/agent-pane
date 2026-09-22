@@ -2,7 +2,7 @@ import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
 import { z } from 'zod'
 import { redactSecrets } from '../redact-secrets.ts'
 import { ClassifierError } from './error.ts'
-import { classifierProfileSchema, classifierRequestSchema } from './schemas.ts'
+import { parseClassifierBatch } from './validation.ts'
 import type {
   ClassifierAnswer,
   ClassifierCallOptions,
@@ -128,26 +128,6 @@ function encodeQuestion(question: ClassifierQuestion): object {
   }
 }
 
-export function validateHttpLimits(profile: ClassifierProfile, request: ClassifierRequest): void {
-  if (profile.connection.type !== 'http')
-    throw new ClassifierError('unsupported-capability', 'This adapter requires an HTTP classifier.')
-  const featherless = profile.connection.protocol === 'featherless'
-  for (const question of Object.values(request.questions)) {
-    if (
-      question.type === 'choice' &&
-      Object.keys(question.options).length > (featherless ? 50 : 255)
-    ) {
-      throw new ClassifierError('invalid-request', 'Too many options for this classifier protocol.')
-    }
-    if (question.type === 'score' && question.levels.length > (featherless ? 50 : 10)) {
-      throw new ClassifierError(
-        'invalid-request',
-        'Too many score levels for this classifier protocol.',
-      )
-    }
-  }
-}
-
 async function readResponse(response: Response, signal: AbortSignal): Promise<string> {
   const declared = Number(response.headers.get('content-length') ?? 0)
   if (declared > MAX_RESPONSE_BYTES) {
@@ -217,21 +197,35 @@ export async function classifyHttp(
   request: ClassifierRequest,
   options: ClassifierCallOptions = {},
 ): Promise<ClassifierResult> {
-  const parsedProfile = classifierProfileSchema.safeParse(profile)
-  const parsedRequest = classifierRequestSchema.safeParse(request)
-  if (!parsedProfile.success || !parsedRequest.success)
-    throw new ClassifierError('invalid-request', 'Invalid classifier profile or request.')
-  profile = parsedProfile.data
-  request = parsedRequest.data
-  validateHttpLimits(profile, request)
+  const parsed = parseClassifierBatch(profile, [request])
+  const [validatedRequest] = parsed.requests
+  if (!validatedRequest)
+    throw new ClassifierError('invalid-request', 'A classifier request is required.')
+  return classifyHttpValidated(parsed.profile, validatedRequest, options)
+}
+
+/**
+ * @internal Transport for normalized copies from parseClassifierBatch only.
+ * Trusted host redaction may change text values but must preserve structure and
+ * identifiers. This deliberately does not walk the request schemas again.
+ */
+export async function classifyHttpValidated(
+  profile: ClassifierProfile,
+  request: ClassifierRequest,
+  options: ClassifierCallOptions = {},
+): Promise<ClassifierResult> {
   const connection = profile.connection
   if (connection.type !== 'http')
     throw new ClassifierError('unsupported-capability', 'This adapter requires an HTTP classifier.')
-  if (connection.auth === 'bearer' && !options.apiKey?.trim())
+  const apiKey = connection.auth === 'bearer' ? options.apiKey?.trim() : undefined
+  if (connection.auth === 'bearer' && !apiKey)
     throw new ClassifierError(
       'authentication',
       'Save an API key or configure its environment variable before calling this classifier.',
     )
+  if (apiKey && /[\r\n]/.test(apiKey)) {
+    throw new ClassifierError('authentication', 'Classifier API keys must not contain line breaks.')
+  }
   const timeoutMs = options.timeoutMs ?? profile.timeoutMs
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 600_000)
     throw new ClassifierError(
@@ -265,7 +259,7 @@ export async function classifyHttp(
       'Content-Type': 'application/json',
       Accept: 'application/json',
     }
-    if (connection.auth === 'bearer') headers['Authorization'] = `Bearer ${options.apiKey ?? ''}`
+    if (connection.auth === 'bearer') headers['Authorization'] = `Bearer ${apiKey ?? ''}`
     const endpoint = `${connection.baseUrl.replace(/\/+$/, '')}/${connection.protocol === 'systemone' ? 'systemone' : 'classifier'}`
     const response = await (options.fetchImpl ?? fetch)(endpoint, {
       method: 'POST',
@@ -308,7 +302,7 @@ export async function classifyHttp(
     // Successful responses can reflect credentials too. Scrub provider text
     // before it crosses IPC or is written by the Node eval runner, while
     // leaving caller-owned question/option identifiers intact.
-    const activeSecrets = connection.auth === 'bearer' && options.apiKey ? [options.apiKey] : []
+    const activeSecrets = apiKey ? [apiKey] : []
     const redactProviderText = (value: string): string => redactSecrets(value, activeSecrets)
     if (decoded.latency_ms !== undefined) metadata['providerLatencyMs'] = decoded.latency_ms
     if (decoded.model_revision !== undefined)

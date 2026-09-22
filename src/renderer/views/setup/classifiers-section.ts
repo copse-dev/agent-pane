@@ -22,12 +22,14 @@ export interface ClassifiersSection {
 }
 
 function classifierErrorMessage(error: unknown): string {
-  return (
-    errorMessage(error).replace(
-      /^(?:Error invoking remote method '[^']+':\s*|(?:ClassifierError|Error):\s*)+/,
-      '',
-    ) || 'Classifier request failed.'
+  const message = errorMessage(error).replace(
+    /^(?:Error invoking remote method '[^']+':\s*|(?:ClassifierError|Error):\s*)+/,
+    '',
   )
+  if (message.startsWith('IpcValidationError:')) {
+    return 'The supplied settings are invalid. Check the field values and try again.'
+  }
+  return message || 'Classifier request failed.'
 }
 
 function describeResult(result: ClassifierResult): string {
@@ -176,7 +178,8 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
     const label = input('Label', profile.label)
     const model = input('Model', profile.model)
     const timeout = input('Timeout', String(profile.timeoutMs / 1000), 'number')
-    timeout.min = '1'
+    timeout.min = '0.1'
+    timeout.step = '0.001'
     timeout.max = '600'
     const form = el(
       'div',
@@ -262,7 +265,17 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
         keyStatus,
         remove,
       )
-      const envField = el('label', {}, 'Environment variable (optional)', env)
+      const envField = el(
+        'label',
+        {},
+        'Environment variable (optional)',
+        env,
+        el(
+          'span',
+          { class: 'field-hint' },
+          'Custom connections use COPSE_CLASSIFIER_* variables. TYPESAFE_API_KEY and FEATHERLESS_API_KEY work only with their matching official endpoints. Leave blank to use a saved key.',
+        ),
+      )
       const updateAuth = (): void => {
         envField.hidden = auth.value !== 'bearer'
         credentials.hidden = auth.value !== 'bearer'
@@ -400,42 +413,66 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
           id: profile.id,
           label: read('Label'),
           model: read('Model'),
-          timeoutMs: Number(read('Timeout')) * 1000,
+          timeoutMs: Math.round(Number(read('Timeout')) * 1000),
           connection,
         }
         profiles = await api.classifiers.save(next)
-        // Keys are never included in the connection payload. Only the secure-key IPC sees them.
-        if (key?.value.trim() || removeKey?.checked) {
-          const secret = removeKey?.checked ? '' : (key?.value.trim() ?? '')
-          let result = await api.settings.setKey(classifierCredentialId(profile.id), secret)
-          if (!result.ok && result.reason === 'plaintext-consent-required') {
-            const approved = await showConfirmDialog({
-              message: `No OS keyring is available to encrypt the key for ${next.label}.`,
-              detail: 'Store it unencrypted on this machine anyway?',
-              confirmLabel: 'Store anyway',
-            })
-            if (approved)
-              result = await api.settings.setKey(classifierCredentialId(profile.id), secret, {
-                allowPlaintext: true,
-              })
-          }
-          if (!result.ok) {
-            setInlineStatus(
-              status,
-              'error',
-              result.reason === 'plaintext-storage-disabled'
-                ? 'Connection saved; key not saved because secure storage is unavailable and plaintext storage is disabled.'
-                : 'Connection saved; key not saved because unencrypted storage was declined.',
-            )
-            return
-          }
-        }
-        pending.delete(profile.id)
-        profiles = await api.classifiers.list()
+        // From here the connection exists on disk, including when credential storage fails.
         selectedId = profile.id
         drafts.delete(profile.id)
+        let keyError: string | null = null
+        const enteredKey = key?.value.trim() ?? ''
+        const removingKey = removeKey?.checked === true
+        // Keys are never included in the connection payload. Only the secure-key IPC sees them.
+        if (enteredKey || removingKey) {
+          const secret = removingKey ? '' : enteredKey
+          try {
+            let result = await api.settings.setKey(classifierCredentialId(profile.id), secret)
+            if (!result.ok && result.reason === 'plaintext-consent-required') {
+              const approved = await showConfirmDialog({
+                message: `No OS keyring is available to encrypt the key for ${next.label}.`,
+                detail: 'Store it unencrypted on this machine anyway?',
+                confirmLabel: 'Store anyway',
+              })
+              if (approved)
+                result = await api.settings.setKey(classifierCredentialId(profile.id), secret, {
+                  allowPlaintext: true,
+                })
+            }
+            if (!result.ok) {
+              keyError =
+                result.reason === 'plaintext-storage-disabled'
+                  ? 'Connection saved; key not saved because secure storage is unavailable and plaintext storage is disabled.'
+                  : 'Connection saved; key not saved because unencrypted storage was declined.'
+            }
+          } catch (error) {
+            keyError = `Connection saved; key save failed: ${classifierErrorMessage(error)}`
+          }
+        }
+        // Reset saved-field baselines to the persisted profile; preserve only the failed key edit.
+        pending.delete(profile.id)
+        if (keyError) {
+          pending.set(
+            profile.id,
+            new Map([
+              ['Key', enteredKey],
+              ['RemoveKey', String(removingKey)],
+            ]),
+          )
+        }
+        let refreshError: string | null = null
+        try {
+          profiles = await api.classifiers.list()
+        } catch (error) {
+          refreshError = `Connection saved; could not refresh key status: ${classifierErrorMessage(error)}`
+        }
         render()
-        setInlineStatus(status, 'ok', 'Classifier saved. No test call has been made.')
+        const failure = keyError ?? refreshError
+        setInlineStatus(
+          status,
+          failure ? 'error' : 'ok',
+          failure ?? 'Classifier saved. No test call has been made.',
+        )
       })
     })
     test.addEventListener('click', () => {
