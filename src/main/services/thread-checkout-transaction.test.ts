@@ -815,6 +815,10 @@ describe('reclaiming a linked checkout with no recovery marker', () => {
     git(repo, ['add', '.'])
     git(repo, ['commit', '-q', '-m', 'initial'])
 
+    // The absent managed path is sufficient evidence that there is no checkout
+    // to reclaim; the ordinary first-submit path must not pay for Git discovery.
+    setGitAvailableForTest(false)
+
     assert.equal(
       await recoverUnpersistedWorktree({
         projectId: 'project-1',

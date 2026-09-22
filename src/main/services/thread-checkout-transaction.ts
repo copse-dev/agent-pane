@@ -204,11 +204,15 @@ export async function recoverUnpersistedWorktree(input: {
   baseBranch: string
 }): Promise<ThreadWorktree | null> {
   const target = expectedThreadWorktreePath(input.projectId, input.threadId)
+  // A normal first submit has never created this path, so there cannot be a
+  // checkout to reclaim. Prove that locally before paying for repository-root
+  // resolution plus `git worktree list`; allocation still performs Git's
+  // authoritative registration check, including for missing/prunable records.
+  const canonicalPath = await realpath(target).catch(() => null)
+  if (!canonicalPath) return null
   const records = await listProjectWorktrees(input.projectRoot)
   const existing = records.find((record) => sameWorktreePath(record.path, target))
   if (!existing?.branch || !existing.head) return null
-  const canonicalPath = await realpath(existing.path).catch(() => null)
-  if (!canonicalPath) return null
   // The recovery marker sharpens the reclaim — it carries the original base and
   // whether the checkout was dirty-seeded — but it cannot gate it. Git has
   // already registered this linked checkout, so returning null here does not

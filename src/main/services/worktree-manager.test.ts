@@ -186,6 +186,21 @@ describe('worktree manager', () => {
     assert.ok(!(await listProjectWorktrees(repo)).some((record) => record.path === worktree.path))
   })
 
+  it('keeps the specific error when the base ref cannot resolve to a commit', async () => {
+    const { repo } = await setup()
+
+    await assert.rejects(
+      allocateThreadWorktree({
+        projectId: 'project-1',
+        threadId: 'thread-missing-base',
+        projectRoot: repo,
+        prompt: 'Use a missing base',
+        baseBranch: 'missing',
+      }),
+      /Base branch "missing" does not exist in this repository/,
+    )
+  })
+
   it('validates a managed checkout when the project is itself a linked checkout', async () => {
     const { temp, repo } = await setup()
     const linkedProject = join(temp, 'linked-project')
