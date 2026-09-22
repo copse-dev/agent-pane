@@ -81,9 +81,15 @@ export async function worktreeManagerSandboxOverlay(
   const writes = repository
     ? [
         repository.gitDir,
-        ...['objects', 'refs', 'logs', 'worktrees', 'packed-refs', 'packed-refs.lock'].map((name) =>
-          join(repository.commonDir, name),
-        ),
+        ...[
+          'objects',
+          'refs',
+          'logs',
+          'worktrees',
+          'packed-refs',
+          'packed-refs.lock',
+          'packed-refs.new',
+        ].map((name) => join(repository.commonDir, name)),
       ]
     : []
   // ASRT canonicalizes grants. Never let a repo symlink turn objects/refs/etc.

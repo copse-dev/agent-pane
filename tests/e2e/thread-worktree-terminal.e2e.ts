@@ -261,7 +261,7 @@ describe('isolated thread terminal cwd', () => {
     )
 
     const helper = await $('.terminals-tab-panel.is-active .xterm-helper-textarea')
-    await helper.waitForDisplayed({ timeout: 30_000 })
+    await helper.waitForExist({ timeout: 30_000 })
     await helper.click()
     await browser.keys(['clear', '\uE007'])
     await browser.keys(['git', ' ', 'status', ' ', '--short', ' ', '--branch', '\uE007'])

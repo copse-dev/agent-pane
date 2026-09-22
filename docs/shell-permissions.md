@@ -51,8 +51,9 @@ that prompt.
 ### Linked worktree recovery
 
 A contained command in a validated linked thread worktree may update that worktree's own Git
-administration plus the shared object, ref, reflog, and atomic `packed-refs.lock` paths. Shared Git
-configuration, hooks, and sibling worktree administration remain outside its writable surface.
+administration plus the shared object, ref, reflog, and atomic `packed-refs.lock` /
+`packed-refs.new` paths. Shared Git configuration, hooks, and sibling worktree administration remain
+outside its writable surface.
 
 Agent execution still rejects a detached thread checkout. Terminal creation has one recovery-only
 fallback: main must validate the persisted checkout path, Git registration, repository identity, and
