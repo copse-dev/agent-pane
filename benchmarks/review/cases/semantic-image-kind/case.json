@@ -1,0 +1,18 @@
+{
+  "id": "semantic-image-kind",
+  "description": "The change adds a second image producer but omits the semantic kind used by an unchanged renderer. The new image therefore falls back to the compact thumbnail path even though its closest analogue renders at reading size; the changed test checks only the data URL.",
+  "truth": [
+    {
+      "id": "generated-image-loses-reading-layout",
+      "class": "contract",
+      "anchors": [{ "path": "src/images.cjs", "startLine": 6, "endLine": 6 }],
+      "claimSignals": [
+        ["generatedImage", "generated image"],
+        ["kind"],
+        ["screenshot"],
+        ["thumbnail", "reading-size", "reading size", "layout"]
+      ],
+      "note": "generatedImage omits kind: 'screenshot', so renderClass chooses thumbnail instead of reading-size"
+    }
+  ]
+}

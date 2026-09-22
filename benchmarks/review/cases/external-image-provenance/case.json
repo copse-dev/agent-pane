@@ -1,0 +1,18 @@
+{
+  "id": "external-image-provenance",
+  "description": "The change adds a browser screenshot tool but omits the external provenance carried by the closest network-image analogue. The unchanged result boundary therefore treats page-derived output as trusted internal content; the changed test calls execute directly and never exercises the wrapper.",
+  "truth": [
+    {
+      "id": "screenshot-bypasses-untrusted-wrapper",
+      "class": "security",
+      "anchors": [{ "path": "src/tools.cjs", "startLine": 12, "endLine": 15 }],
+      "claimSignals": [
+        ["browser_screenshot", "browserScreenshotTool", "browser screenshot"],
+        ["provenance"],
+        ["external"],
+        ["untrusted", "wrapped", "wrapper", "internal", "trusted"]
+      ],
+      "note": "browserScreenshotTool inherits internal provenance, so page-derived output bypasses wrapToolResult's external-content envelope"
+    }
+  ]
+}

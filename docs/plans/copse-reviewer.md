@@ -17,7 +17,7 @@ pull request runs Stage 0 on a secret-free runner and posts the findings as one 
 from a second, read-only job (see §What Phase 4 delivered). `pnpm run bench:review` scores
 the pipeline for precision on surfaced findings over a corpus of cases with known defects,
 with a mock self-test CI gates per PR, exact-configuration regression baselines, and a
-separate model-only target gate; the five-case local corpus cannot establish B8 (see §What
+separate model-only target gate; the seven-case local corpus cannot establish B8 (see §What
 Phase 5 delivered). See also §What Phase 0 delivered, §What Phase 1 delivered and §What
 Phase 2 delivered.
 Binding decisions B1 (execution isolation, 2026-09-03), B2–B6 (packaging, backend
@@ -445,9 +445,10 @@ Changing one of these requires updating this document in the same change — the
    Recorded 2026-09-04; answers Q5. _Amended 2026-09-22 (Phase 5 audit):_ a regression
    baseline never proves an absolute claim. `--target-gate` accepts real-model runs only
    and requires point precision ≥85%, the Wilson lower edge of a two-sided 95% interval
-   ≥85%, recall ≥50%, and zero duplicates. The five-case synthetic corpus is a smoke/trend
-   suite: its mock profile scores 80% by construction, and even 5/5 would fail the confidence
-   condition. B8 remains unmeasured until the Martian offline set is mapped and run.
+   ≥85%, recall ≥50%, and zero duplicates. The seven-case synthetic corpus is a smoke/trend
+   suite: its mock profile scores 85.7% by construction with a 48.7% Wilson lower bound, and
+   even 5/5 would fail the confidence condition. B8 remains unmeasured until the Martian
+   offline set is mapped and run.
 9. **B9 — SARIF is the interchange export.** The findings JSON (P2) stays the canonical
    contract; the CLI and the CI shell also emit SARIF 2.1.0, carrying the finding identity in
    `partialFingerprints` and the evidence, provenance and verdict in each result's
@@ -871,15 +872,17 @@ On `main`: the scorer (`packages/review/src/eval.ts`), the harness
   reproducer counts. Reported beside precision: its Wilson 95% lower bound, recall
   (secondary), duplicate count, reproducer rate, and output tokens per unique confirmed
   finding.
-- **The corpus is small and deliberate.** Five cases, each a two-tree project with a
+- **The corpus is small and deliberate.** Seven cases, each a two-tree project with a
   `review.config.json` that runs its own test with `node` so Stage 0 needs no install: a
   defect the project's test catches (Stage 0 mints it, a reviewer anchors it, a reproducer
   confirms it); a resource leak no test covers (the challenger is the verdict); a clean
   rename where the mock reviewer's wrong candidate is refuted and dropped; a dropped null
   guard reported by two lenses in different words (one finding after Stage 3, confirmed by
   a reproducer); and a harmless change where a wrong claim the challenger cannot settle
-  reaches the human. That last one is the point: the corpus scores 80%, not 100%, so the
-  metric visibly bites, and a change that lets one more wrong claim through moves it.
+  reaches the human; and two semantic-boundary defects model new image producers that omit
+  metadata used by unchanged rendering and trust consumers. The false alarm is deliberate:
+  the corpus scores 85.7%, not 100%, so the metric visibly bites, and a change that lets one
+  more wrong claim through moves it.
 - **Two profiles, one harness.** `--mock` plays each case's `mock.json` through the same
   `ScriptedProvider` the CLI's `--provider mock` uses — deterministic, no model, a few
   seconds — and is the self-test CI runs per PR with `--gate`. A model profile goes through
@@ -890,7 +893,8 @@ On `main`: the scorer (`packages/review/src/eval.ts`), the harness
   read.
 - **The ratchet.** `benchmarks/review/baseline.json` is coverage-baseline style. Each entry
   is keyed by evaluator version, provider, reviewer and challenger models, credential-free
-  endpoint identity, lenses, verification mode, selected cases and corpus fingerprint.
+  endpoint identity, lenses, verification mode, reviewer and verification budgets, selected
+  cases and corpus fingerprint.
   `--gate` fails closed when that exact baseline is absent, when precision drops (the mock
   gets no tolerance, a model profile five points), when true positives fall, when
   duplicates rise, or when tokens per confirmed finding grow past 1.25×;
@@ -901,10 +905,10 @@ On `main`: the scorer (`packages/review/src/eval.ts`), the harness
   point precision ≥85%, a two-sided 95% Wilson lower bound ≥85%, recall ≥50%, and no
   duplicates. This is the gate for evidence behind B8; a historical baseline only detects
   regressions and can never substantiate the claim by itself.
-- **What is and is not measured.** The mock's 80% is a property of the corpus and of the
+- **What is and is not measured.** The mock's 85.7% is a property of the corpus and of the
   pipeline's non-model parts; it says nothing about any reviewer. The corpus is also small
   enough that any model number over it is a smoke figure, not a claim: its five surfaced
-  observations give the 80% mock score a 37.6% Wilson lower bound, and even a perfect 5/5
+  observations give the 85.7% mock score a 48.7% Wilson lower bound, and even a perfect 5/5
   would not pass. Mapping Martian's offline set — or a comparably sized, independently
   labelled real-PR corpus — is the work that makes B8 measurable and is not faked here.
 
@@ -1016,7 +1020,7 @@ comparable leaderboard):
 
 Martian's offline track instead fixes 50 real pull requests and 173 golden comments and
 uses a semantic judge. Results from the live online track cannot establish the offline B8
-claim, and neither can this repository's five synthetic cases.
+claim, and neither can this repository's seven synthetic cases.
 
 Greptile's online point estimate implies roughly one wrong or ignored comment in four in
 that setting; it does not transfer to the offline track. Price floor for context: Gemini

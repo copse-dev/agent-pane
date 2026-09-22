@@ -733,6 +733,10 @@ describe('Copse Reviewer workflow invariants', () => {
   const groundWorkflow = readFileSync(resolve('.github/workflows/review-ground.yml'), 'utf8')
   const findingsWorkflow = readFileSync(resolve('.github/workflows/review-findings.yml'), 'utf8')
   const nightlyWorkflow = readFileSync(resolve('.github/workflows/review-nightly.yml'), 'utf8')
+  const modelBenchWorkflow = readFileSync(
+    resolve('.github/workflows/review-model-bench.yml'),
+    'utf8',
+  )
   const forgeReview = readFileSync(resolve('packages/review/src/forge-review.ts'), 'utf8')
 
   function workflowJobBlock(workflow: string, name: string): string {
@@ -831,8 +835,8 @@ describe('Copse Reviewer workflow invariants', () => {
     }
   })
 
-  it('pins the bounded Scaleway dogfood profile in both GitHub findings paths', () => {
-    for (const workflow of [findingsWorkflow, nightlyWorkflow]) {
+  it('pins the bounded Scaleway profile in every model-backed reviewer workflow', () => {
+    for (const workflow of [findingsWorkflow, nightlyWorkflow, modelBenchWorkflow]) {
       assert.ok(workflow.includes("COPSE_REVIEW_PROVIDER || 'openai-compatible'"))
       assert.ok(workflow.includes("COPSE_REVIEW_MODEL || 'qwen3.8-27b'"))
       assert.ok(workflow.includes("'https://api.scaleway.ai/v1'"))
@@ -857,6 +861,18 @@ describe('Copse Reviewer workflow invariants', () => {
       assert.match(workflow, /--max-steps "\$REVIEW_MAX_STEPS"/)
       assert.match(workflow, /--max-verify "\$REVIEW_MAX_VERIFY"/)
     }
+  })
+
+  it('runs the real-model corpus manually over trusted default-branch fixtures', () => {
+    assert.match(modelBenchWorkflow, /^ {2}workflow_dispatch:$/m)
+    assert.doesNotMatch(modelBenchWorkflow, /^ {2}(?:pull_request|pull_request_target|schedule):/m)
+    assert.match(modelBenchWorkflow, /ref: \$\{\{ github\.event\.repository\.default_branch \}\}/)
+    assert.match(modelBenchWorkflow, /persist-credentials: false/)
+    assert.doesNotMatch(modelBenchWorkflow, /git fetch|refs\/pull|--stage0-json|GITHUB_TOKEN/)
+    assert.match(modelBenchWorkflow, /scripts\/bench-review\.mts/)
+    assert.match(modelBenchWorkflow, /--challenger "\$REVIEW_MODEL"/)
+    assert.match(modelBenchWorkflow, /--out bench-results\/review-scaleway/)
+    assert.match(modelBenchWorkflow, /retention-days: 30/)
   })
 
   it('samples at most one recent same-repository PR, including drafts, and has an explicit opt-out', () => {

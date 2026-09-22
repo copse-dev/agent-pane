@@ -1,0 +1,54 @@
+{
+  "roles": {
+    "review:correctness": [
+      { "type": "tool_call", "name": "read_file", "args": { "path": "src/images.cjs" } },
+      {
+        "type": "tool_call",
+        "name": "report_finding",
+        "args": {
+          "path": "src/images.cjs",
+          "startLine": 6,
+          "class": "contract",
+          "severity": "medium",
+          "confidence": "high",
+          "claim": "generatedImage omits kind: 'screenshot', so generated images render as a thumbnail instead of the reading-size layout.",
+          "reason": "The unchanged renderClass consumer selects reading-size only for the semantic screenshot kind, while the new producer supplies no kind and takes the fallback."
+        }
+      },
+      {
+        "type": "tool_call",
+        "name": "finish_review",
+        "args": {
+          "checked": "Both image producers, the renderClass consumer, and the changed test.",
+          "couldNotVerify": "Nothing"
+        }
+      },
+      { "type": "text", "text": "Done." }
+    ],
+    "review:contracts": [
+      {
+        "type": "tool_call",
+        "name": "finish_review",
+        "args": {
+          "checked": "The image result shape and its renderer consumer.",
+          "couldNotVerify": "Nothing"
+        }
+      },
+      { "type": "text", "text": "Done." }
+    ],
+    "reproduce": [
+      { "type": "text", "text": "The generatedImage export does not exist on the base, so a comparative reproducer cannot settle it." }
+    ],
+    "challenge": [
+      {
+        "type": "tool_call",
+        "name": "verdict",
+        "args": {
+          "status": "stands",
+          "reason": "generatedImage has no kind and renderClass sends every non-screenshot kind through the thumbnail fallback"
+        }
+      },
+      { "type": "text", "text": "Stands." }
+    ]
+  }
+}

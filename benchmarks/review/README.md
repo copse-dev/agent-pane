@@ -24,13 +24,15 @@ Equivalent surfaced comments are reported as duplicates and excluded from both p
 counts, so repeating a true claim cannot inflate the score; the absolute target requires
 zero duplicates.
 
-| case                  | head                                           | truth                                   | what it exercises                                                                |
-| --------------------- | ---------------------------------------------- | --------------------------------------- | -------------------------------------------------------------------------------- |
-| `paginate-off-by-one` | every page one item short; the test catches it | one `contract` defect, regresses `test` | Stage 0's delta minting a finding, plus a reviewer's anchored one; a reproducer  |
-| `timer-leak`          | the abort path stops clearing the timer        | one `resource` defect                   | a defect no test covers; anchor slack; the challenger as the only verdict        |
-| `clean-rename`        | a local variable renamed                       | none                                    | a wrong candidate refuted by the challenger and dropped: precision kept          |
-| `null-check-dropped`  | the null guard removed; tests never pass null  | one `contract` defect                   | two lenses, one defect, one finding (Stage 3), confirmed by a reproducer         |
-| `false-alarm`         | a harmless early return                        | none                                    | a wrong claim the challenger cannot settle reaches the human: the false positive |
+| case                        | head                                               | truth                                   | what it exercises                                                                |
+| --------------------------- | -------------------------------------------------- | --------------------------------------- | -------------------------------------------------------------------------------- |
+| `paginate-off-by-one`       | every page one item short; the test catches it     | one `contract` defect, regresses `test` | Stage 0's delta minting a finding, plus a reviewer's anchored one; a reproducer  |
+| `timer-leak`                | the abort path stops clearing the timer            | one `resource` defect                   | a defect no test covers; anchor slack; the challenger as the only verdict        |
+| `clean-rename`              | a local variable renamed                           | none                                    | a wrong candidate refuted by the challenger and dropped: precision kept          |
+| `null-check-dropped`        | the null guard removed; tests never pass null      | one `contract` defect                   | two lenses, one defect, one finding (Stage 3), confirmed by a reproducer         |
+| `false-alarm`               | a harmless early return                            | none                                    | a wrong claim the challenger cannot settle reaches the human: the false positive |
+| `semantic-image-kind`       | a new image producer omits its semantic kind       | one `contract` defect                   | tracing an omitted field through an unchanged renderer fallback                  |
+| `external-image-provenance` | a page-image producer inherits internal provenance | one `security` defect                   | comparing the closest analogue and tracing trust metadata through its wrapper    |
 
 Add a case by adding a directory with those four things and running
 `pnpm run bench:review --mock --update-baseline`; any corpus-content change creates a new
@@ -44,6 +46,7 @@ pnpm run bench:review --mock --gate                 # the self-test CI runs per 
 pnpm run bench:review --provider lmstudio --model qwen3-coder
 pnpm run bench:review --model claude-sonnet-5 --model gpt-5 --out bench-results/review-ensemble
 pnpm run bench:review --model claude-sonnet-5 --no-verify --out bench-results/review-noverify
+pnpm run bench:review --model qwen3.8-27b --max-steps 12 --max-verify 3
 pnpm run bench:review --compare bench-results/review/summary.json bench-results/review-noverify/summary.json
 pnpm run bench:review --model claude-sonnet-5 --update-baseline
 pnpm run bench:review --model claude-sonnet-5 --cases /path/to/large-corpus --target-gate
@@ -61,7 +64,7 @@ off; lenses).
 `baseline.json` is a regression ratchet, not evidence for an absolute quality claim. Each
 entry is keyed by a digest of the complete run identity: evaluator version, provider,
 reviewer and challenger models, credential-free custom endpoint, lenses, verification
-mode, selected case IDs and corpus-content fingerprint. `--gate` fails on a missing exact
+mode, reviewer/verification budgets, selected case IDs and corpus-content fingerprint. `--gate` fails on a missing exact
 baseline, when precision drops (a model profile gets five points of tolerance, the mock
 none), when true positives fall, when duplicates rise, or when output tokens per confirmed
 finding exceed 1.25× the baseline. `--update-baseline` moves it deliberately.
@@ -72,10 +75,11 @@ least 50% recall, and zero duplicate comments. The confidence requirement means 
 perfect sample is not enough (5/5 fails; 22/22 is the first all-correct sample that passes).
 
 **What the mock number is, and is not.** The mock profile plays each case's script, so the
-80% it scores is a property of the corpus and the pipeline's non-model parts — Stage 0's
-delta, clustering across lenses, the verdicts, the ranking — and of nothing else. It is the
-harness's self-test and the per-PR regression gate for those parts. It is not a precision
-claim for Copse Reviewer. Nor can this five-case synthetic corpus establish B8's 85% claim:
-it is a smoke/trend suite and is too small to pass the confidence gate. A public B8 claim
-requires an appropriately mapped run over Martian's offline track (or a comparably sized,
-independently labelled corpus); numbers from Martian's online track are not interchangeable.
+85.7% it scores is a property of the corpus and the pipeline's non-model parts — Stage 0's
+delta, clustering across lenses, the verdicts, the ranking — and of nothing else. It clears
+the point target by construction; it is the harness's self-test and the per-PR regression
+gate for those parts, not a precision claim for Copse Reviewer. Nor can this seven-case
+synthetic corpus establish B8's 85% claim: its Wilson lower bound is only 48.7%, and it is a
+smoke/trend suite. A public B8 claim requires an appropriately mapped run over Martian's
+offline track (or a comparably sized, independently labelled corpus); numbers from
+Martian's online track are not interchangeable.

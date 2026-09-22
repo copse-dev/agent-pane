@@ -1,5 +1,5 @@
 {
-  "mock:1173ba6c9560": {
+  "mock:6f68bc1d30f9": {
     "configuration": {
       "evaluationVersion": 2,
       "reviewers": [
@@ -15,6 +15,8 @@
         "endpoint": null
       },
       "lenses": ["correctness", "contracts"],
+      "reviewerMaxSteps": null,
+      "maxVerifiedFindings": 10,
       "verify": true,
       "corpus": {
         "cases": [
@@ -33,7 +35,7 @@
     "duplicates": 0,
     "outputTokensPerConfirmed": 207
   },
-  "mock:371ff4441f36": {
+  "mock:e5a2a14a35a4": {
     "configuration": {
       "evaluationVersion": 2,
       "reviewers": [
@@ -49,6 +51,8 @@
         "endpoint": null
       },
       "lenses": ["correctness", "contracts"],
+      "reviewerMaxSteps": null,
+      "maxVerifiedFindings": 10,
       "verify": true,
       "corpus": {
         "cases": [
@@ -66,5 +70,43 @@
     "truePositives": 4,
     "duplicates": 0,
     "outputTokensPerConfirmed": 273
+  },
+  "mock:056e09be2edf": {
+    "configuration": {
+      "evaluationVersion": 2,
+      "reviewers": [
+        {
+          "model": "mock",
+          "provider": "mock",
+          "endpoint": null
+        }
+      ],
+      "challenger": {
+        "model": "mock",
+        "provider": "mock",
+        "endpoint": null
+      },
+      "lenses": ["correctness", "contracts"],
+      "reviewerMaxSteps": null,
+      "maxVerifiedFindings": 10,
+      "verify": true,
+      "corpus": {
+        "cases": [
+          "clean-rename",
+          "external-image-provenance",
+          "false-alarm",
+          "null-check-dropped",
+          "paginate-off-by-one",
+          "semantic-image-kind",
+          "timer-leak"
+        ],
+        "fingerprint": "35d858dd9ef7110686bf231834113f4c638cddf4d4c2355353fd7c5187de528b"
+      }
+    },
+    "cases": 7,
+    "precision": 0.857,
+    "truePositives": 6,
+    "duplicates": 0,
+    "outputTokensPerConfirmed": 387
   }
 }
