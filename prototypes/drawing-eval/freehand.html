@@ -1,99 +1,119 @@
 <!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>perfect-freehand</title>
-<link rel="stylesheet" href="shared.css" />
-<style>
-  #svg { cursor: crosshair; }
-</style>
-</head>
-<body>
-  <div class="toolbar">
-    <label>Colour <input type="color" id="color" value="#1d4ed8" /></label>
-    <label>Size <input type="range" id="size" min="2" max="40" value="10" /></label>
-    <label>Thinning <input type="range" id="thinning" min="-1" max="1" step="0.05" value="0.6" /></label>
-    <label>Smoothing <input type="range" id="smoothing" min="0" max="1" step="0.05" value="0.5" /></label>
-    <label>Streamline <input type="range" id="streamline" min="0" max="1" step="0.05" value="0.5" /></label>
-    <label><input type="checkbox" id="simulate" checked /> Simulate pressure (mouse)</label>
-    <label><input type="checkbox" id="taper" /> Taper ends</label>
-    <span class="grow"></span>
-    <button id="undo">Undo</button>
-    <button id="redo">Redo</button>
-    <button id="clear">Clear</button>
-    <button id="send" class="primary">Send to agent</button>
-  </div>
-  <div class="stage">
-    <svg id="svg"></svg>
-  </div>
-  <div class="status" id="status">perfect-freehand 1.2.3 · MIT · tldraw's ink algorithm · ~300 lines core · pen only, everything else here is ~120 lines of glue</div>
-
-  <script src="bridge.js"></script>
-  <script type="module">
-    import { attachPointer, outlinePath, svgEl, createHistory } from './freehand-core.js'
-
-    const svg = document.getElementById('svg')
-    const $ = (id) => document.getElementById(id)
-    const history = createHistory(svg)
-
-    function options(pointerType) {
-      const taper = $('taper').checked
-      return {
-        size: Number($('size').value),
-        thinning: Number($('thinning').value),
-        smoothing: Number($('smoothing').value),
-        streamline: Number($('streamline').value),
-        // Real pressure from a stylus; simulate from velocity for mouse/touch.
-        simulatePressure: $('simulate').checked && pointerType !== 'pen',
-        start: { taper: taper ? 20 : 0, cap: true },
-        end: { taper: taper ? 20 : 0, cap: true },
-        last: true,
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>perfect-freehand</title>
+    <link rel="stylesheet" href="shared.css" />
+    <style>
+      #svg {
+        cursor: crosshair;
       }
-    }
+    </style>
+  </head>
+  <body>
+    <div class="toolbar">
+      <label>Colour <input type="color" id="color" value="#1d4ed8" /></label>
+      <label>Size <input type="range" id="size" min="2" max="40" value="10" /></label>
+      <label
+        >Thinning <input type="range" id="thinning" min="-1" max="1" step="0.05" value="0.6"
+      /></label>
+      <label
+        >Smoothing <input type="range" id="smoothing" min="0" max="1" step="0.05" value="0.5"
+      /></label>
+      <label
+        >Streamline <input type="range" id="streamline" min="0" max="1" step="0.05" value="0.5"
+      /></label>
+      <label><input type="checkbox" id="simulate" checked /> Simulate pressure (mouse)</label>
+      <label><input type="checkbox" id="taper" /> Taper ends</label>
+      <span class="grow"></span>
+      <button id="undo">Undo</button>
+      <button id="redo">Redo</button>
+      <button id="clear">Clear</button>
+      <button id="send" class="primary">Send to agent</button>
+    </div>
+    <div class="stage">
+      <svg id="svg"></svg>
+    </div>
+    <div class="status" id="status">
+      perfect-freehand 1.2.3 · MIT · tldraw's ink algorithm · ~300 lines core · pen only, everything
+      else here is ~120 lines of glue
+    </div>
 
-    let live = null
-    attachPointer(svg, {
-      start({ points, pointerType }) {
-        live = svgEl('path', { fill: $('color').value, 'data-pointer': pointerType })
-        live.setAttribute('d', outlinePath(points, { ...options(pointerType), last: false }))
-        svg.appendChild(live)
-      },
-      move({ points, pointerType }) {
-        live?.setAttribute('d', outlinePath(points, { ...options(pointerType), last: false }))
-      },
-      end({ points, pointerType }) {
-        if (!live) return
-        live.setAttribute('d', outlinePath(points, options(pointerType)))
-        // Keep the raw input so an agent (or a re-render) can recompute the
-        // outline with different options later.
-        live.setAttribute('data-points', JSON.stringify(points.map(([x, y, p]) => [+x.toFixed(1), +y.toFixed(1), +p.toFixed(2)])))
-        live.remove()
-        history.commit(live)
-        live = null
-        agentBridge.setStatus(`${history.size} strokes · last stroke ${points.length} input points, ${pointerType}`)
-      },
-    })
+    <script src="bridge.js"></script>
+    <script type="module">
+      import { attachPointer, outlinePath, svgEl, createHistory } from './freehand-core.js'
 
-    $('undo').addEventListener('click', () => history.undo())
-    $('redo').addEventListener('click', () => history.redo())
-    $('clear').addEventListener('click', () => history.clear())
-    $('send').addEventListener('click', () => {
-      // Strip the raw-point attributes from the agent copy; they are for us.
-      const clone = svg.cloneNode(true)
-      for (const p of clone.querySelectorAll('[data-points]')) p.removeAttribute('data-points')
-      const rect = svg.getBoundingClientRect()
-      clone.style.width = `${rect.width}px`
-      clone.style.height = `${rect.height}px`
-      svg.parentElement.appendChild(clone)
-      agentBridge.sendSvgElement('perfect-freehand', clone, { strokes: history.size }).finally(() => clone.remove())
-    })
-    window.addEventListener('keydown', (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
-        e.preventDefault()
-        e.shiftKey ? history.redo() : history.undo()
+      const svg = document.getElementById('svg')
+      const $ = (id) => document.getElementById(id)
+      const history = createHistory(svg)
+
+      function options(pointerType) {
+        const taper = $('taper').checked
+        return {
+          size: Number($('size').value),
+          thinning: Number($('thinning').value),
+          smoothing: Number($('smoothing').value),
+          streamline: Number($('streamline').value),
+          // Real pressure from a stylus; simulate from velocity for mouse/touch.
+          simulatePressure: $('simulate').checked && pointerType !== 'pen',
+          start: { taper: taper ? 20 : 0, cap: true },
+          end: { taper: taper ? 20 : 0, cap: true },
+          last: true,
+        }
       }
-    })
-  </script>
-</body>
+
+      let live = null
+      attachPointer(svg, {
+        start({ points, pointerType }) {
+          live = svgEl('path', { fill: $('color').value, 'data-pointer': pointerType })
+          live.setAttribute('d', outlinePath(points, { ...options(pointerType), last: false }))
+          svg.appendChild(live)
+        },
+        move({ points, pointerType }) {
+          live?.setAttribute('d', outlinePath(points, { ...options(pointerType), last: false }))
+        },
+        end({ points, pointerType }) {
+          if (!live) return
+          live.setAttribute('d', outlinePath(points, options(pointerType)))
+          // Keep the raw input so an agent (or a re-render) can recompute the
+          // outline with different options later.
+          live.setAttribute(
+            'data-points',
+            JSON.stringify(
+              points.map(([x, y, p]) => [+x.toFixed(1), +y.toFixed(1), +p.toFixed(2)]),
+            ),
+          )
+          live.remove()
+          history.commit(live)
+          live = null
+          agentBridge.setStatus(
+            `${history.size} strokes · last stroke ${points.length} input points, ${pointerType}`,
+          )
+        },
+      })
+
+      $('undo').addEventListener('click', () => history.undo())
+      $('redo').addEventListener('click', () => history.redo())
+      $('clear').addEventListener('click', () => history.clear())
+      $('send').addEventListener('click', () => {
+        // Strip the raw-point attributes from the agent copy; they are for us.
+        const clone = svg.cloneNode(true)
+        for (const p of clone.querySelectorAll('[data-points]')) p.removeAttribute('data-points')
+        const rect = svg.getBoundingClientRect()
+        clone.style.width = `${rect.width}px`
+        clone.style.height = `${rect.height}px`
+        svg.parentElement.appendChild(clone)
+        agentBridge
+          .sendSvgElement('perfect-freehand', clone, { strokes: history.size })
+          .finally(() => clone.remove())
+      })
+      window.addEventListener('keydown', (e) => {
+        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
+          e.preventDefault()
+          e.shiftKey ? history.redo() : history.undo()
+        }
+      })
+    </script>
+  </body>
 </html>

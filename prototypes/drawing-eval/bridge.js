@@ -84,7 +84,7 @@
         `Sent to agent panel: ${message.svg.length.toLocaleString()} bytes of SVG${message.png ? ' + PNG' : ''}`,
       )
     } else {
-      console.log('[drawing-eval] export', message)
+      window.console.log('[drawing-eval] export', message)
       setStatus(
         `Export ready (see console): ${message.svg.length.toLocaleString()} bytes of SVG${message.png ? ' + PNG' : ''}`,
       )
@@ -99,7 +99,7 @@
     try {
       png = await svgToPng(svg, width, height, background)
     } catch (e) {
-      console.warn('[drawing-eval] PNG rasterisation failed', e)
+      window.console.warn('[drawing-eval] PNG rasterisation failed', e)
     }
     return send({ source, svg, png, meta })
   }
