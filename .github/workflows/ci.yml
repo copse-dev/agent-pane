@@ -1653,6 +1653,15 @@ jobs:
           # default 90-day retention made this the largest draw on the org's
           # Actions storage quota. Expire fast, keeping a small debug window.
           retention-days: 3
+      # Keep successful responsiveness measurements too; timing is report-only
+      # while fixed-worker base/head variance is being calibrated.
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: responsiveness-shard-${{ matrix.shard }}
+          path: e2e-failure-artifacts/responsiveness/*.json
+          if-no-files-found: ignore
+          retention-days: 3
       # On failure, surface the screenshot + page source captured in afterTest,
       # plus the per-attempt cgroup/process snapshot above. The latter is still
       # available when ChromeDriver is too dead to capture browser artifacts.
