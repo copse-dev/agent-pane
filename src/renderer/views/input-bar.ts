@@ -114,6 +114,7 @@ import { isLocalModel } from '@copse/llm/estimate-cost.ts'
 import type { ReasoningLevel } from '@copse/llm/model-parameters.ts'
 import { commitThreadModelSelection } from '../controller/model-selection.ts'
 import { mark as perfMark } from '../perf.ts'
+import type { GitPromptState } from '@shared/types/git.ts'
 
 interface MountInputBarOptions {
   /**
@@ -943,6 +944,12 @@ export function mountInputBar(
   async function refreshAutomaticCheckoutPreview(): Promise<void> {
     const seq = ++automaticCheckoutPreviewSeq
     const { activeProjectId } = store.getState()
+    const thread = getActiveThread(store)
+    // The preview only labels the checkout picker on an uncommitted blank
+    // thread. Once checkout preparation binds a choice, synchronous
+    // threads/git events still fire, but refreshing then launches Git work for
+    // a control that is already hidden and competes with first-token dispatch.
+    if (!thread || thread.messages.length > 0 || thread.worktreeChoice) return
     const model = footerChatModel()
     let next: 'shared' | 'worktree' = 'shared'
     if (activeProjectId) {
@@ -1725,6 +1732,7 @@ export function mountInputBar(
           ? branchResult.value
           : await api.git.currentBranch(projectId, id)
     const prefetchedPromptState = prefetchedGitState?.[1]
+    let preparedPromptState: GitPromptState | undefined
     const threadBranch = thread?.gitBranch
     const isolatedWorktree = thread !== undefined && thread.worktree !== undefined
     // Worktree threads keep the project checkout on its original branch; the
@@ -1842,6 +1850,7 @@ export function mountInputBar(
           // becomes the worktree's base, or the shared checkout's branch.
           branchControl.pendingBaseBranch(id),
         )
+        preparedPromptState = prepared.promptState
         applyPreparedThreadCheckout(store, id, prepared)
         // The user may switch threads while Git is preparing the checkout. The
         // decision remains durable, but their prompt must stay with its composer.
@@ -1865,9 +1874,10 @@ export function mountInputBar(
     // the commit the turn actually starts from — not the HEAD before the move.
     if (prefetchedPromptState?.status === 'rejected') throw prefetchedPromptState.reason
     const promptState =
-      prefetchedPromptState?.status === 'fulfilled'
+      preparedPromptState ??
+      (prefetchedPromptState?.status === 'fulfilled'
         ? prefetchedPromptState.value
-        : await api.git.promptState(projectId, id)
+        : await api.git.promptState(projectId, id))
 
     const priorTodos = thread?.todos ?? []
     const workingBrief = nextWorkingBrief(thread?.workingBrief, fullContent)
@@ -2409,11 +2419,9 @@ export function mountInputBar(
       scheduleContextEstimate(0)
     }),
     store.on('workspace_changed', () => {
-      branchControl.refresh()
       void refreshAutomaticCheckoutPreview()
     }),
     store.on('git_branch_changed', () => {
-      branchControl.refresh()
       void refreshAutomaticCheckoutPreview()
     }),
   ]
