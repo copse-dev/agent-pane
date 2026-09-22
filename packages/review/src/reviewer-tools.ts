@@ -61,6 +61,11 @@ export const reviewCompletionSchema = z.object({
 })
 export type ReviewCompletion = z.infer<typeof reviewCompletionSchema>
 
+const reviewClosureSchema = reviewCompletionSchema.extend({
+  /** Findings not already emitted through report_finding, carried by the final attestation. */
+  findings: z.array(candidateFindingSchema).max(20).optional().default([]),
+})
+
 export interface ReportedCandidate {
   readonly candidate: CandidateFinding
   /** The source lines the candidate is anchored to, read at report time. */
@@ -77,6 +82,59 @@ export interface ReviewerToolHost {
   readonly shellDecision: HeadlessPermissionDecision
   /** Redacts host secrets from anything that came out of the cell. */
   scrub(text: string): string
+}
+
+function candidateFindingParameters(): Record<string, unknown> {
+  return {
+    type: 'object',
+    properties: {
+      path: { type: 'string' },
+      startLine: { type: 'integer' },
+      endLine: { type: 'integer' },
+      class: { type: 'string', enum: [...FINDING_CLASSES] },
+      severity: { type: 'string', enum: [...FINDING_SEVERITIES] },
+      confidence: { type: 'string', enum: [...FINDING_CONFIDENCES] },
+      claim: { type: 'string', description: 'One sentence, falsifiable' },
+      reason: { type: 'string', description: 'Why these lines are wrong' },
+      commandCallIds: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Ids of run_command calls whose output demonstrates the defect',
+      },
+    },
+    required: ['path', 'startLine', 'class', 'severity', 'confidence', 'claim', 'reason'],
+  }
+}
+
+function finishReviewTool(requireFindings: boolean): LLMTool {
+  return {
+    name: 'finish_review',
+    description:
+      'Required final tool call. Attest what you actually checked and what you could not verify. Include every defect not already sent through report_finding in findings. Call exactly once, after all other tools; a review without it is incomplete.',
+    parameters: {
+      type: 'object',
+      properties: {
+        checked: {
+          type: 'string',
+          description: 'Concise account of the files, callers, tests, or boundaries inspected',
+        },
+        couldNotVerify: {
+          type: 'string',
+          description: 'Material uncertainty or unverified work; use "Nothing" when there was none',
+        },
+        findings: {
+          type: 'array',
+          items: candidateFindingParameters(),
+          maxItems: 20,
+          description:
+            'Every concrete defect from the review that was not already emitted through report_finding; [] for a clean review',
+        },
+      },
+      required: requireFindings
+        ? ['checked', 'couldNotVerify', 'findings']
+        : ['checked', 'couldNotVerify'],
+    },
+  }
 }
 
 export function reviewerTools(): LLMTool[] {
@@ -162,47 +220,15 @@ export function reviewerTools(): LLMTool[] {
       name: 'report_finding',
       description:
         'Report one defect in the change. Anchor it at the exact lines; give a falsifiable one-sentence claim and the specific reason.',
-      parameters: {
-        type: 'object',
-        properties: {
-          path: { type: 'string' },
-          startLine: { type: 'integer' },
-          endLine: { type: 'integer' },
-          class: { type: 'string', enum: [...FINDING_CLASSES] },
-          severity: { type: 'string', enum: [...FINDING_SEVERITIES] },
-          confidence: { type: 'string', enum: [...FINDING_CONFIDENCES] },
-          claim: { type: 'string', description: 'One sentence, falsifiable' },
-          reason: { type: 'string', description: 'Why these lines are wrong' },
-          commandCallIds: {
-            type: 'array',
-            items: { type: 'string' },
-            description: 'Ids of run_command calls whose output demonstrates the defect',
-          },
-        },
-        required: ['path', 'startLine', 'class', 'severity', 'confidence', 'claim', 'reason'],
-      },
+      parameters: candidateFindingParameters(),
     },
-    {
-      name: 'finish_review',
-      description:
-        'Required final tool call. Attest what you actually checked and what you could not verify. Call exactly once, after all report_finding calls; a review without it is incomplete.',
-      parameters: {
-        type: 'object',
-        properties: {
-          checked: {
-            type: 'string',
-            description: 'Concise account of the files, callers, tests, or boundaries inspected',
-          },
-          couldNotVerify: {
-            type: 'string',
-            description:
-              'Material uncertainty or unverified work; use "Nothing" when there was none',
-          },
-        },
-        required: ['checked', 'couldNotVerify'],
-      },
-    },
+    finishReviewTool(false),
   ]
+}
+
+/** A one-tool protocol-repair surface for a reviewer that ended in prose. */
+export function reviewerClosureTools(): LLMTool[] {
+  return [finishReviewTool(true)]
 }
 
 const readFileArgs = decodeWithSchema(
@@ -226,7 +252,7 @@ const runCommandArgs = decodeWithSchema(
   }),
 )
 const decodeCandidate = decodeWithSchema(candidateFindingSchema)
-const decodeCompletion = decodeWithSchema(reviewCompletionSchema)
+const decodeClosure = decodeWithSchema(reviewClosureSchema)
 
 class ToolInputError extends Error {}
 
@@ -285,6 +311,27 @@ export function createReviewerToolExecutor(host: ReviewerToolHost): ReviewerTool
       return Promise.resolve(readCheckoutFile(root, path))
     } catch (err) {
       return Promise.reject(new ToolInputError(`Cannot read ${path}: ${errorMessage(err)}`))
+    }
+  }
+
+  async function prepareCandidate(
+    candidate: CandidateFinding,
+    toolCallId: string,
+  ): Promise<ReportedCandidate> {
+    const lines = (await readSource(candidate.path)).split(/\r?\n/)
+    const end = candidate.endLine ?? candidate.startLine
+    if (end < candidate.startLine || end > lines.length) {
+      throw new ToolInputError(
+        `${candidate.path} has ${String(lines.length)} lines; the anchor ${String(candidate.startLine)}–${String(end)} is out of range`,
+      )
+    }
+    for (const id of candidate.commandCallIds ?? []) {
+      if (!commandRuns.has(id)) throw new ToolInputError(`No run_command call with id ${id}`)
+    }
+    return {
+      candidate,
+      anchoredText: lines.slice(candidate.startLine - 1, end).join('\n'),
+      toolCallId,
     }
   }
 
@@ -402,31 +449,24 @@ export function createReviewerToolExecutor(host: ReviewerToolHost): ReviewerTool
             'report_finding needs path, startLine, class, severity, confidence, a claim (8–400 chars) and a reason (8–1200 chars)',
           )
         }
-        const lines = (await readSource(candidate.path)).split(/\r?\n/)
-        const end = candidate.endLine ?? candidate.startLine
-        if (end < candidate.startLine || end > lines.length) {
-          throw new ToolInputError(
-            `${candidate.path} has ${String(lines.length)} lines; the anchor ${String(candidate.startLine)}–${String(end)} is out of range`,
-          )
-        }
-        for (const id of candidate.commandCallIds ?? []) {
-          if (!commandRuns.has(id)) throw new ToolInputError(`No run_command call with id ${id}`)
-        }
-        reported.push({
-          candidate,
-          anchoredText: lines.slice(candidate.startLine - 1, end).join('\n'),
-          toolCallId,
-        })
+        reported.push(await prepareCandidate(candidate, toolCallId))
         return `Recorded finding ${String(reported.length)} at ${candidate.path}:${String(candidate.startLine)}.`
       }
       case 'finish_review': {
-        const input = decodeCompletion(args)
+        const input = decodeClosure(args)
         if (input === null) {
           throw new ToolInputError(
-            'finish_review needs { checked, couldNotVerify }; use "Nothing" when everything was verified',
+            'finish_review needs { checked, couldNotVerify, findings? }; use "Nothing" and [] when everything was verified',
           )
         }
-        completion = input
+        // Validate the whole closure before recording any of it. A malformed
+        // later candidate must not leave a half-applied review that duplicates
+        // findings when the model retries the tool call.
+        const closureFindings = await Promise.all(
+          input.findings.map((candidate) => prepareCandidate(candidate, toolCallId)),
+        )
+        reported.push(...closureFindings)
+        completion = { checked: input.checked, couldNotVerify: input.couldNotVerify }
         return 'Review completion recorded. Stop now.'
       }
       default:

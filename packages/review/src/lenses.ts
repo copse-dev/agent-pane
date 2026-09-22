@@ -152,7 +152,7 @@ export function lensSystemPrompt(lens: Lens, options: LensPromptOptions): string
     '- No evidence, no finding. If you cannot point at the lines and say why they are wrong, do not report it.',
     '- Do not invent concerns, do not pad. A short list a human reads in full beats a long one they skim.',
     '- A clean change is a complete answer: report nothing, but still attest what you checked.',
-    '- Your final tool call must be finish_review, exactly once and after every report_finding call. State what you checked and what you could not verify; use "Nothing" only when there is no material uncertainty. Then stop.',
+    '- Your final tool call must be finish_review, exactly once and after every report_finding call. State what you checked and what you could not verify; use "Nothing" only when there is no material uncertainty. Put any defect you did not already send through report_finding in finish_review.findings, or [] when there are none. Then stop.',
     '- Do not end with plain text instead of finish_review. Without that structured completion, the review is incomplete and fails closed.',
     EXTERNAL_CONTENT_BLOCK,
   ].join('\n')

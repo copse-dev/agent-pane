@@ -161,6 +161,54 @@ describe('runStage2', () => {
     assert.equal(end.outcome, 'failed')
   })
 
+  it('repairs a prose draft into one structured closure without losing its finding', async () => {
+    const provider = new ScriptedProvider([
+      {
+        type: 'text',
+        text: 'I found one defect: add subtracts at src/math.ts line 1. I checked the implementation but could not run tests.',
+      },
+      {
+        type: 'tool_call',
+        name: 'finish_review',
+        args: {
+          checked: 'src/math.ts and the changed implementation.',
+          couldNotVerify: 'Tests, because run_command was unavailable.',
+          findings: [finding],
+        },
+      },
+      { type: 'text', text: 'Done.' },
+    ])
+    const result = await runStage2({
+      provider,
+      model: 'scripted',
+      lens: CORRECTNESS_LENS,
+      context,
+      headCheckout: checkouts.head,
+      cell: null,
+      shellDecision: 'deny',
+      scrub: (text) => text,
+      threadId: 'thread-repaired',
+      turnId: 'turn-repaired',
+    })
+    assert.equal(result.outcome, 'completed')
+    assert.equal(result.error, undefined)
+    assert.equal(result.toolCalls, 1)
+    assert.equal(result.candidates.length, 1)
+    assert.equal(result.candidates[0]?.candidate.claim, finding.claim)
+    assert.equal(
+      result.summary,
+      'Checked: src/math.ts and the changed implementation.\nCould not verify: Tests, because run_command was unavailable.',
+    )
+    assert.equal(result.events.filter((event) => event.type === 'turn_start').length, 1)
+    assert.equal(result.events.filter((event) => event.type === 'turn_end').length, 1)
+    const repairCall = provider.calls[1]
+    assert.ok(repairCall)
+    const repairPrompt = repairCall.at(-1)
+    assert.ok(repairPrompt && repairPrompt.role === 'user')
+    assert.match(textOf(repairPrompt), /Call finish_review exactly once now/)
+    assert.match(textOf(repairPrompt), /already 0 structured finding/)
+  })
+
   it('reports a provider failure as a failed turn, never as findings', async () => {
     const broken: LLMProvider = {
       stream: () => ({

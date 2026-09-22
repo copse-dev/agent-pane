@@ -7,7 +7,12 @@ import type { ReviewContext } from './context.ts'
 import { createHostProcessBackend } from './host-process-backend.ts'
 import { cellEnvironment, type ExecutionCell } from './isolation.ts'
 import { createTestRepo, type TestRepo } from './test-repo.ts'
-import { createReviewerToolExecutor, jailPath, type ReviewerToolHost } from './reviewer-tools.ts'
+import {
+  createReviewerToolExecutor,
+  jailPath,
+  reviewerClosureTools,
+  type ReviewerToolHost,
+} from './reviewer-tools.ts'
 
 const signal = new AbortController().signal
 
@@ -234,6 +239,63 @@ describe('reviewer tools', () => {
       ),
       /^Error: finish_review needs/,
     )
+  })
+
+  it('anchors findings bundled into the final completion atomically', async () => {
+    const executor = createReviewerToolExecutor(host)
+    const finding = {
+      path: 'src/a.ts',
+      startLine: 2,
+      class: 'security',
+      severity: 'high',
+      confidence: 'medium',
+      claim: 'A secret is hard-coded in the module.',
+      reason: 'Line 2 assigns a literal credential.',
+    }
+    assert.match(
+      await executor.execute(
+        'finish_review',
+        {
+          checked: 'The changed source and its direct callers.',
+          couldNotVerify: 'Nothing',
+          findings: [finding],
+        },
+        signal,
+        'done-with-findings',
+      ),
+      /completion recorded/i,
+    )
+    assert.equal(executor.reported().length, 1)
+    assert.equal(executor.reported()[0]?.anchoredText, 'const secret = 1')
+    assert.equal(executor.reported()[0]?.toolCallId, 'done-with-findings')
+    assert.deepEqual(executor.completion(), {
+      checked: 'The changed source and its direct callers.',
+      couldNotVerify: 'Nothing',
+    })
+
+    const invalid = createReviewerToolExecutor(host)
+    assert.match(
+      await invalid.execute(
+        'finish_review',
+        {
+          checked: 'The changed source and its direct callers.',
+          couldNotVerify: 'Nothing',
+          findings: [finding, { ...finding, startLine: 99 }],
+        },
+        signal,
+        'bad-closure',
+      ),
+      /out of range/,
+    )
+    assert.equal(invalid.reported().length, 0)
+    assert.equal(invalid.completion(), null)
+  })
+
+  it('requires the findings array on the one-tool closure-repair surface', () => {
+    const [tool] = reviewerClosureTools()
+    assert.ok(tool)
+    assert.equal(tool.name, 'finish_review')
+    assert.deepEqual(tool.parameters['required'], ['checked', 'couldNotVerify', 'findings'])
   })
 
   it('names an unknown tool without throwing', async () => {

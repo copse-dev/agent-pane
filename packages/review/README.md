@@ -77,7 +77,11 @@ shell's hand-offs (Phase 4).
   content and secret-scrubbed; and `report_finding`, through which every candidate
   arrives as a structured, anchored object rather than prose. Every reviewer must close
   with `finish_review`, a structured attestation of what it checked and could not verify;
-  a missing attestation fails the run instead of being reported as clean.
+  that closure can also carry findings the model held until its final response. If a
+  provider ends in prose, one bounded continuation keeps the same transcript but exposes
+  only the closure tool, converting that draft into anchored data. A still-missing
+  attestation fails the run instead of being reported as clean, and preserves the draft
+  for diagnosis.
 - **`turn.ts`** / **`stage2.ts`** — one model turn over `@copse/agent`'s loop, projected live
   onto the headless contract's `turn_start … turn_end` event envelope; `runReviewers` fans
   out every model over every lens, a few at a time, over one serialised cell.
