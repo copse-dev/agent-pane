@@ -1,18 +1,20 @@
-import { mkdirSync } from 'node:fs'
-import { join } from 'node:path'
+import type { WebviewTag } from 'electron'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedBrowserLinkChatFixture } from './helpers/seed-config.ts'
-
-const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
+import {
+  resetUserData,
+  seedBrowserLinkChatFixture,
+  seedE2eViewport,
+  seedStableWorkspace,
+} from './helpers/seed-config.ts'
+import { startBrowserPageFixture } from './helpers/browser-page-fixture.ts'
+import { saveAppScreenshot } from './helpers/screenshot.ts'
 
 async function waitForWebviewTitle(expected: string, timeoutMs = 25_000): Promise<void> {
   await browser.waitUntil(
     async () => {
       const title = await browser.execute(() => {
-        const webview = document.querySelector('.browser-tab-panel.is-active webview') as {
-          getTitle?: () => string
-        } | null
-        return webview?.getTitle?.() ?? ''
+        const webview = document.querySelector<WebviewTag>('.browser-tab-panel.is-active webview')
+        return webview && !webview.isLoading() ? webview.getTitle() : ''
       })
       return title.toLowerCase().includes(expected.toLowerCase())
     },
@@ -24,16 +26,20 @@ async function waitForWebviewTitle(expected: string, timeoutMs = 25_000): Promis
 }
 
 describe('chat browser links', () => {
+  let page: Awaited<ReturnType<typeof startBrowserPageFixture>>
+
   before(async () => {
-    mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    seedBrowserLinkChatFixture(process.cwd())
+    seedE2eViewport()
+    page = await startBrowserPageFixture(43121)
+    seedBrowserLinkChatFixture(seedStableWorkspace(), page.url)
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
   })
 
-  after(() => {
+  after(async () => {
     resetUserData()
+    await page?.close()
   })
 
   it('opens chat links in the browser panel and navigates to the URL', async () => {
@@ -42,10 +48,9 @@ describe('chat browser links', () => {
 
     const link = await message.$('a')
     await link.waitForDisplayed({ timeout: 5_000 })
-    await expect(link).toHaveAttribute('href', expect.stringContaining('example.com'))
+    await expect(link).toHaveAttribute('href', page.url)
 
     await link.click()
-    await browser.pause(300)
 
     await $('#pane-files').waitForDisplayed({ timeout: 5_000 })
     await browser.waitUntil(
@@ -62,13 +67,16 @@ describe('chat browser links', () => {
 
     const urlInput = await $('.browser-tab-panel.is-active .browser-url-input')
     await urlInput.waitForDisplayed({ timeout: 5_000 })
-    await browser.waitUntil(async () => (await urlInput.getValue()).includes('example.com'), {
-      timeout: 5_000,
-      timeoutMsg: 'expected address bar to show example.com',
-    })
+    await expect(urlInput).toHaveValue(page.url)
 
-    await waitForWebviewTitle('Example Domain')
-    await browser.pause(300)
-    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'browser-link-chat-example-com.png'))
+    await waitForWebviewTitle('Copse browser fixture')
+    expect(page.requests).toContain('/page')
+    const heading = await browser.execute(async () => {
+      const webview = document.querySelector<WebviewTag>('.browser-tab-panel.is-active webview')
+      if (!webview) throw new Error('active browser webview missing')
+      return webview.executeJavaScript("document.querySelector('h1')?.textContent")
+    })
+    expect(heading).toBe('Local browser page')
+    await saveAppScreenshot('browser-link-chat-local-page.png')
   })
 })
