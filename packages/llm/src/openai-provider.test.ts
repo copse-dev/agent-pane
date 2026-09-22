@@ -2,7 +2,7 @@ import { createServer, type ServerResponse } from 'node:http'
 import { describe, it, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { at } from '@copse/std/array-utils.ts'
-import type { ImageDetail, LLMTool, ProviderStreamChunk } from './wire-types.ts'
+import type { ImageDetail, LLMStreamOptions, LLMTool, ProviderStreamChunk } from './wire-types.ts'
 import { OpenAIProvider } from './openai-provider.ts'
 
 interface CapturedChatCompletionRequest {
@@ -13,6 +13,7 @@ interface CapturedChatCompletionRequest {
   provider?: { require_parameters?: boolean }
   prompt_cache_key?: string
   max_tokens?: number
+  tool_choice?: { type: 'function'; function: { name: string } }
   tools?: Array<{
     type: 'function'
     function: { name: string; description: string; parameters: Record<string, unknown> }
@@ -82,9 +83,15 @@ function withFakeStream(provider: OpenAIProvider, events: ChatCompletionChunk[])
 async function collect(
   provider: OpenAIProvider,
   tools: LLMTool[] = [],
+  options?: LLMStreamOptions,
 ): Promise<ProviderStreamChunk[]> {
   const out: ProviderStreamChunk[] = []
-  for await (const chunk of provider.stream([{ role: 'user', content: 'hi' }], tools)) {
+  for await (const chunk of provider.stream(
+    [{ role: 'user', content: 'hi' }],
+    tools,
+    undefined,
+    options,
+  )) {
     out.push(chunk)
   }
   return out
@@ -466,6 +473,30 @@ describe('OpenAIProvider request options', () => {
 
     assert.deepEqual(captured.request?.provider, { require_parameters: true })
     assert.equal(captured.request.stream_options?.include_usage, true)
+  })
+
+  it('forces one named function for a call-scoped tool choice', async () => {
+    const provider = new OpenAIProvider('qwen-compatible', {
+      baseURL: 'https://example.test/v1',
+      apiKey: 'test-key',
+      // A provider default must not be able to weaken a completion invariant.
+      extraBody: { tool_choice: 'auto' },
+    })
+    const captured: { request?: CapturedChatCompletionRequest } = {}
+    withFakeCreate(provider, (request) => {
+      captured.request = request
+      return streamEvents([{ choices: [{ delta: {}, finish_reason: 'tool_calls' }] }])
+    })
+    const tools: LLMTool[] = [
+      { name: 'finish_review', description: 'Finish', parameters: { type: 'object' } },
+    ]
+
+    await collect(provider, tools, { toolChoice: { name: 'finish_review' } })
+
+    assert.deepEqual(captured.request?.tool_choice, {
+      type: 'function',
+      function: { name: 'finish_review' },
+    })
   })
 
   it('sends prompt_cache_key when a promptCacheKey is configured', async () => {

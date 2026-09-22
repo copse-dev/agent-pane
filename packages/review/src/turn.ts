@@ -15,7 +15,7 @@ import { runAgentLoop } from '@copse/agent/run-agent-loop.ts'
 import { CHARS_PER_TOKEN } from '@copse/agent/token-estimate.ts'
 import type { AgentStreamChunk } from '@copse/agent/wire-types.ts'
 import { hasLastUsage } from '@copse/llm/provider-usage.ts'
-import type { LLMMessage, LLMProvider, LLMTool } from '@copse/llm/wire-types.ts'
+import type { LLMMessage, LLMProvider, LLMStreamOptions, LLMTool } from '@copse/llm/wire-types.ts'
 import { errorMessage } from '@copse/std/errors.ts'
 
 export interface TurnUsage {
@@ -48,6 +48,7 @@ export interface TurnOptions {
     | {
         readonly tools: readonly LLMTool[]
         readonly maxSteps: number
+        readonly toolChoice?: LLMStreamOptions['toolChoice']
         prompt(summary: string, completionError: string): string
       }
     | undefined
@@ -100,7 +101,11 @@ export async function runTurn(options: TurnOptions): Promise<TurnResult> {
   let error: string | undefined
   let repairDraftSummary: string | undefined
 
-  const runLoop = async (tools: readonly LLMTool[], maxSteps: number): Promise<void> => {
+  const runLoop = async (
+    tools: readonly LLMTool[],
+    maxSteps: number,
+    initialToolChoice?: LLMStreamOptions['toolChoice'],
+  ): Promise<void> => {
     await runAgentLoop({
       provider: options.provider,
       messages,
@@ -109,6 +114,7 @@ export async function runTurn(options: TurnOptions): Promise<TurnResult> {
         options.execute(name, args, signal, toolCallId),
       ...(options.signal ? { signal: options.signal } : {}),
       maxSteps,
+      ...(initialToolChoice ? { initialToolChoice } : {}),
       adaptiveExtensions: false,
       usageModel: options.model,
       getLastUsage: () => (hasLastUsage(options.provider) ? options.provider.lastUsage : null),
@@ -172,7 +178,11 @@ export async function runTurn(options: TurnOptions): Promise<TurnResult> {
       summary = ''
       doneStopReason = undefined
       try {
-        await runLoop(options.completionRepair.tools, options.completionRepair.maxSteps)
+        await runLoop(
+          options.completionRepair.tools,
+          options.completionRepair.maxSteps,
+          options.completionRepair.toolChoice,
+        )
       } catch (err) {
         error = errorMessage(err)
       }

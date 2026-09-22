@@ -203,10 +203,16 @@ export type ProviderStreamChunk =
 
 // ── The provider contract ────────────────────────────────────────────────────
 
+export interface LLMStreamOptions {
+  /** Request one named function tool when the provider supports exact tool choice. */
+  readonly toolChoice?: { readonly name: string } | undefined
+}
+
 export interface LLMProvider {
   stream(
     messages: LLMMessage[],
     tools: LLMTool[],
     signal?: AbortSignal,
+    options?: LLMStreamOptions,
   ): AsyncIterable<ProviderStreamChunk>
 }

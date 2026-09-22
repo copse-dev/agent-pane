@@ -207,6 +207,11 @@ describe('runStage2', () => {
     assert.ok(repairPrompt && repairPrompt.role === 'user')
     assert.match(textOf(repairPrompt), /Call finish_review exactly once now/)
     assert.match(textOf(repairPrompt), /already 0 structured finding/)
+    assert.equal(provider.streamOptions[0], undefined)
+    assert.deepEqual(provider.streamOptions[1], { toolChoice: { name: 'finish_review' } })
+    // The exact choice is one-shot: after the tool result, the provider may
+    // emit its ordinary terminal response without being forced to call again.
+    assert.equal(provider.streamOptions[2], undefined)
   })
 
   it('reports a provider failure as a failed turn, never as findings', async () => {

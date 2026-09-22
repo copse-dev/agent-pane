@@ -79,6 +79,7 @@ export async function runStage2(options: Stage2Options): Promise<Stage2Result> {
         : undefined,
     completionRepair: {
       tools: reviewerClosureTools(),
+      toolChoice: { name: 'finish_review' },
       // One invalid call may be corrected; a third step lets the provider emit
       // its normal post-tool terminal response without turning this into a new
       // investigation budget.

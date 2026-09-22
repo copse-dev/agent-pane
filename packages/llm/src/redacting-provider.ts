@@ -1,4 +1,10 @@
-import type { LLMProvider, LLMMessage, LLMTool, ProviderStreamChunk } from './wire-types.ts'
+import type {
+  LLMProvider,
+  LLMMessage,
+  LLMStreamOptions,
+  LLMTool,
+  ProviderStreamChunk,
+} from './wire-types.ts'
 import { redactMessages } from './redact-secrets.ts'
 import { hasLastUsage } from './provider-usage.ts'
 
@@ -20,8 +26,9 @@ export function withSecretRedaction(
       messages: LLMMessage[],
       tools: LLMTool[],
       signal?: AbortSignal,
+      options?: LLMStreamOptions,
     ): AsyncIterable<ProviderStreamChunk> {
-      return inner.stream(redactMessages(messages, literalSecrets), tools, signal)
+      return inner.stream(redactMessages(messages, literalSecrets), tools, signal, options)
     },
   }
   Object.defineProperty(wrapped, 'lastUsage', {
