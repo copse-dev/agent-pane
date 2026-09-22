@@ -1828,9 +1828,9 @@ function transcriptChip(
 }
 
 /**
- * Render a sent user message with its attachment chips: each pasted block sits
- * inline at its U+FFFC placeholder (in `content`), and file/thread references
- * follow in a trailing row. Pastes are matched to placeholders by order.
+ * Render a sent user message with its attachment chips: positional paste/thread
+ * references sit inline at U+FFFC placeholders in `content`; remaining
+ * attachments follow in a trailing row. Chips are matched by document order.
  */
 function renderUserTranscript(
   host: HTMLElement,
@@ -1838,23 +1838,31 @@ function renderUserTranscript(
   attachments: TranscriptAttachment[],
   api: ApiClient,
 ): void {
-  const pastes = attachments.filter((a) => a.kind === 'paste')
-  const trailing = attachments.filter((a) => a.kind !== 'paste')
+  // Positional composer attachments lead the array in the same order as the
+  // placeholders. Anything after the final placeholder belongs in the trailing
+  // row. This also keeps older messages compatible: their paste attachments
+  // already led the array, while legacy thread refs followed them.
+  const inlineCount = countChipPlaceholders(content)
+  const firstNonPositional = attachments.findIndex(
+    (attachment) => attachment.kind !== 'paste' && attachment.kind !== 'thread',
+  )
+  const positionalPrefixLength = firstNonPositional === -1 ? attachments.length : firstNonPositional
+  const boundInlineCount = Math.min(inlineCount, positionalPrefixLength)
+  const inline = attachments.slice(0, boundInlineCount)
+  const trailing = attachments.slice(boundInlineCount)
 
-  // Text with its inline paste chips restored at each placeholder. `firstChip`
-  // is where this run of placeholders starts in the message's paste list, so a
-  // region painted on its own — one bookend of a fold — still binds its chips to
-  // the right snapshots instead of restarting from the first paste.
+  // Restore each positional paste/thread chip at its placeholder. `firstChip`
+  // is where this fold region starts in the message's attachment list.
   const paintRegion = (sink: HTMLElement, text: string, firstChip: number): void => {
     const parts = text.split(CHIP_CHAR)
     parts.forEach((part, i) => {
       if (part) sink.append(document.createTextNode(part))
       if (i < parts.length - 1) {
-        // Pass the whole attachment, not just its label: the snapshot behind a
-        // paste is what makes its chip openable in the preview modal. A
-        // placeholder with no attachment left to match stays display-only.
+        // Pass the whole attachment, not just its label: paste snapshots remain
+        // openable in the preview modal. An unmatched placeholder stays
+        // display-only for legacy/truncated messages.
         sink.append(
-          transcriptChip(pastes[firstChip + i] ?? { kind: 'paste', label: 'Pasted text' }, api),
+          transcriptChip(inline[firstChip + i] ?? { kind: 'paste', label: 'Pasted text' }, api),
         )
       }
     })
@@ -1863,7 +1871,7 @@ function renderUserTranscript(
   // A prompt carrying attachments is still a prompt: fold its middle when it is
   // long, exactly as the plain-text path does. The head/middle/tail are
   // contiguous slices of `content`, so counting placeholders in the earlier
-  // regions gives each one its offset into `pastes`.
+  // regions gives each one its offset into the positional attachments.
   const fold = splitUserPromptForFold(content)
   if (fold) {
     const headChips = countChipPlaceholders(fold.head)
@@ -1879,8 +1887,8 @@ function renderUserTranscript(
     paintRegion(host, content, 0)
   }
 
-  // Outside the fold: file/thread chips stay visible while the middle is
-  // collapsed, so a folded prompt still shows what was attached to it.
+  // Outside the fold: non-positional and legacy attachments stay visible while
+  // the middle is collapsed, so a folded prompt still shows what was attached.
   if (trailing.length) {
     const row = el('div', { class: 'transcript-attachment-row' })
     for (const a of trailing) row.append(transcriptChip(a, api))

@@ -803,7 +803,19 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       // The demo has no provider history sidecar to inherit; the forked thread's
       // transcript copy (which the renderer owns) is the whole demo story.
       fork: () => resolved({ source: 'empty' as const, messageCount: 0 }),
-      catalog: emptyArray,
+      catalog: () =>
+        resolved(
+          threads.map((thread) => ({
+            id: thread.id,
+            title: thread.title,
+            createdAt: thread.createdAt,
+            updatedAt: thread.updatedAt,
+            digest: thread.messages.at(-1)?.content ?? '',
+            path: thread.id,
+            spinePath: `/demo/${scenario.project.id}/${thread.id}/events.jsonl`,
+            prRefs: [],
+          })),
+        ),
       listOrphans: emptyArray,
     },
     openRouter: { models: emptyArray },

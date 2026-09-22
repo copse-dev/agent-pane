@@ -1,0 +1,999 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Inline thread mentions</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --page: light-dark(#f2f0ed, #151515);
+        --page-grid: light-dark(rgba(31, 27, 23, 0.045), rgba(255, 255, 255, 0.025));
+        --surface: light-dark(#fffefc, #1d1d1d);
+        --surface-raised: light-dark(#ffffff, #252525);
+        --surface-soft: light-dark(#f6f3ef, #292929);
+        --text: light-dark(#26221e, #efedeb);
+        --muted: light-dark(#766f68, #9f9b97);
+        --faint: light-dark(#a39c95, #706d6a);
+        --border: light-dark(#d9d3cc, #484848);
+        --border-soft: light-dark(#e7e2dc, #363636);
+        --mention-bg: transparent;
+        --mention-hover: light-dark(rgba(38, 34, 30, 0.055), rgba(255, 255, 255, 0.055));
+        --mention-border: var(--border);
+        --mention-text: var(--text);
+        --pink: light-dark(#db4e9e, #f080c4);
+        --pink-hover: light-dark(#c73d8c, #ff92d2);
+        --pink-ink: light-dark(#ffffff, #342232);
+        --green: #63c08a;
+        --amber: #e3ae5b;
+        --blue: #74a9ee;
+        --shadow: 0 22px 70px light-dark(rgba(49, 40, 32, 0.13), rgba(0, 0, 0, 0.44));
+        --sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        min-height: 100%;
+      }
+
+      body {
+        margin: 0;
+        background:
+          radial-gradient(
+            circle at 50% -20%,
+            light-dark(rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.04)),
+            transparent 55%
+          ),
+          linear-gradient(var(--page-grid) 1px, transparent 1px),
+          linear-gradient(90deg, var(--page-grid) 1px, transparent 1px), var(--page);
+        background-size:
+          auto,
+          48px 48px,
+          48px 48px,
+          auto;
+        color: var(--text);
+        font-family: var(--sans);
+        min-width: 320px;
+      }
+
+      button {
+        font: inherit;
+      }
+
+      .stage {
+        min-height: 690px;
+        padding: clamp(22px, 5vw, 68px);
+        display: grid;
+        align-content: center;
+      }
+
+      .app {
+        width: min(1320px, 100%);
+        margin: 0 auto;
+      }
+
+      .eyebrow {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        margin: 0 0 16px 18px;
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 500;
+        letter-spacing: 0.01em;
+      }
+
+      .eyebrow-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--green);
+        box-shadow: 0 0 0 4px color-mix(in srgb, var(--green) 16%, transparent);
+      }
+
+      .conversation {
+        min-height: 120px;
+        padding: 0 28px 26px;
+        display: flex;
+        justify-content: flex-end;
+        align-items: flex-end;
+      }
+
+      .sent-message {
+        display: none;
+        max-width: min(790px, 92%);
+        padding: 15px 18px;
+        background: light-dark(#ebe6e1, #282828);
+        border: 1px solid var(--border-soft);
+        border-radius: 18px 18px 5px 18px;
+        color: var(--text);
+        font-size: 16px;
+        line-height: 1.58;
+        box-shadow: 0 8px 30px light-dark(rgba(38, 32, 26, 0.08), rgba(0, 0, 0, 0.18));
+      }
+
+      .sent-message.is-visible {
+        display: block;
+      }
+
+      .composer {
+        position: relative;
+        overflow: visible;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        box-shadow: var(--shadow);
+      }
+
+      .compose-main {
+        min-height: 188px;
+        padding: 28px 30px 22px;
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 20px;
+        align-items: end;
+      }
+
+      .editor-wrap {
+        align-self: stretch;
+        display: grid;
+        grid-template-rows: 1fr auto;
+        gap: 18px;
+        min-width: 0;
+      }
+
+      .editor {
+        min-height: 92px;
+        outline: none;
+        color: var(--text);
+        font-size: clamp(19px, 2.3vw, 25px);
+        font-weight: 500;
+        line-height: 1.62;
+        letter-spacing: -0.02em;
+        overflow-wrap: anywhere;
+        caret-color: var(--pink);
+      }
+
+      .editor:empty::before {
+        content: attr(data-placeholder);
+        color: var(--faint);
+        pointer-events: none;
+      }
+
+      .editor::selection {
+        background: color-mix(in srgb, var(--pink) 30%, transparent);
+      }
+
+      /* Mirrors the transcript thread chip: the label, not the leading SVG,
+       exports the inline-flex baseline to the surrounding sentence. */
+      .mention {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        max-width: 260px;
+        margin: 0 2px;
+        padding: 1px 7px;
+        background: var(--surface-raised);
+        border: 1px solid var(--mention-border);
+        border-radius: 10px;
+        color: var(--mention-text);
+        font-size: 0.72em;
+        font-weight: 500;
+        line-height: 1.45;
+        vertical-align: baseline;
+        white-space: nowrap;
+        transition: background 140ms ease;
+        user-select: all;
+      }
+
+      .mention:hover,
+      .mention:focus-within {
+        background: var(--mention-hover);
+      }
+
+      .thread-icon {
+        display: block;
+        width: 14px;
+        height: 14px;
+        flex: none;
+        color: var(--muted);
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.75;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      .mention-label {
+        align-self: baseline;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .mention-remove {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 14px;
+        height: 14px;
+        margin-left: 1px;
+        color: var(--muted);
+        opacity: 0.56;
+      }
+
+      .mention-remove .thread-icon {
+        width: 12px;
+        height: 12px;
+      }
+
+      .mention:hover .mention-remove {
+        opacity: 1;
+      }
+
+      .editor-hint {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 500;
+      }
+
+      .key {
+        display: inline-grid;
+        place-items: center;
+        min-width: 23px;
+        height: 22px;
+        padding: 0 6px;
+        border: 1px solid var(--border);
+        border-bottom-width: 2px;
+        border-radius: 6px;
+        background: var(--surface-soft);
+        color: var(--text);
+        font-size: 12px;
+        line-height: 1;
+      }
+
+      .send {
+        width: 112px;
+        height: 68px;
+        border: 0;
+        border-radius: 999px;
+        background: var(--pink);
+        color: var(--pink-ink);
+        font-size: 21px;
+        font-weight: 650;
+        letter-spacing: -0.025em;
+        cursor: pointer;
+        transition:
+          transform 140ms ease,
+          background 140ms ease,
+          box-shadow 140ms ease;
+        box-shadow: 0 8px 24px color-mix(in srgb, var(--pink) 20%, transparent);
+      }
+
+      .send:hover {
+        background: var(--pink-hover);
+        transform: translateY(-1px);
+      }
+      .send:active {
+        transform: translateY(1px);
+      }
+      .send:focus-visible {
+        outline: 3px solid color-mix(in srgb, var(--pink) 35%, transparent);
+        outline-offset: 3px;
+      }
+
+      .compose-footer {
+        min-height: 62px;
+        padding: 0 26px;
+        display: flex;
+        align-items: center;
+        gap: 26px;
+        border-top: 1px solid var(--border-soft);
+        color: var(--muted);
+        font-size: 14px;
+        font-weight: 500;
+      }
+
+      .footer-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        white-space: nowrap;
+      }
+
+      .footer-item .chev {
+        color: var(--faint);
+        font-size: 12px;
+      }
+
+      .footer-more {
+        margin-left: auto;
+        color: var(--faint);
+        letter-spacing: 0.2em;
+      }
+
+      .picker {
+        position: absolute;
+        z-index: 20;
+        left: 28px;
+        top: 122px;
+        width: min(430px, calc(100% - 56px));
+        padding: 8px;
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        background: var(--surface-raised);
+        box-shadow: 0 20px 55px light-dark(rgba(44, 35, 28, 0.18), rgba(0, 0, 0, 0.55));
+        display: none;
+      }
+
+      .picker.is-open {
+        display: block;
+        animation: picker-in 130ms ease-out;
+      }
+
+      @keyframes picker-in {
+        from {
+          opacity: 0;
+          transform: translateY(-5px) scale(0.985);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+      }
+
+      .picker-label {
+        padding: 8px 10px 7px;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+      }
+
+      .thread-option {
+        width: 100%;
+        border: 0;
+        border-radius: 10px;
+        padding: 10px;
+        display: grid;
+        grid-template-columns: 18px 1fr auto;
+        align-items: center;
+        gap: 9px;
+        background: transparent;
+        color: var(--text);
+        text-align: left;
+        cursor: pointer;
+      }
+
+      .thread-option:hover,
+      .thread-option.is-active {
+        background: var(--surface-soft);
+      }
+
+      .option-icon {
+        width: 18px;
+        height: 18px;
+        display: grid;
+        place-items: center;
+        color: var(--muted);
+      }
+
+      .option-icon .thread-icon {
+        width: 16px;
+        height: 16px;
+      }
+
+      .option-copy {
+        min-width: 0;
+      }
+      .option-title {
+        display: block;
+        font-size: 14px;
+        font-weight: 600;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .option-meta {
+        display: block;
+        margin-top: 2px;
+        color: var(--muted);
+        font-size: 12px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .option-state {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--muted);
+        font-size: 12px;
+        white-space: nowrap;
+      }
+
+      .state-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--green);
+      }
+
+      .thread-option[data-status='review'] .state-dot {
+        background: var(--amber);
+      }
+      .thread-option[data-status='quiet'] .state-dot {
+        background: var(--blue);
+      }
+
+      .preview {
+        position: absolute;
+        z-index: 30;
+        width: min(340px, calc(100vw - 32px));
+        padding: 14px 15px;
+        border: 1px solid var(--border);
+        border-radius: 13px;
+        background: var(--surface-raised);
+        color: var(--text);
+        box-shadow: 0 16px 44px light-dark(rgba(44, 35, 28, 0.16), rgba(0, 0, 0, 0.5));
+        pointer-events: none;
+        opacity: 0;
+        transform: translateY(4px);
+        transition:
+          opacity 100ms ease,
+          transform 100ms ease;
+      }
+
+      .preview.is-visible {
+        opacity: 1;
+        transform: translateY(0);
+      }
+
+      .preview-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 7px;
+      }
+
+      .preview-title {
+        font-size: 14px;
+        font-weight: 650;
+      }
+      .preview-state {
+        color: var(--muted);
+        font-size: 12px;
+        white-space: nowrap;
+      }
+      .preview-snippet {
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .toast {
+        position: absolute;
+        right: 20px;
+        top: -48px;
+        padding: 10px 13px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--surface-raised);
+        color: var(--text);
+        box-shadow: 0 12px 34px light-dark(rgba(44, 35, 28, 0.14), rgba(0, 0, 0, 0.42));
+        font-size: 13px;
+        opacity: 0;
+        transform: translateY(6px);
+        pointer-events: none;
+        transition:
+          opacity 150ms ease,
+          transform 150ms ease;
+      }
+
+      .toast.is-visible {
+        opacity: 1;
+        transform: translateY(0);
+      }
+
+      @media (max-width: 720px) {
+        .stage {
+          padding: 18px 12px 30px;
+          min-height: 620px;
+          align-content: start;
+        }
+        .eyebrow {
+          margin: 6px 0 12px 10px;
+        }
+        .conversation {
+          min-height: 74px;
+          padding: 0 8px 18px;
+        }
+        .compose-main {
+          min-height: 210px;
+          padding: 22px 18px 18px;
+          grid-template-columns: 1fr;
+          gap: 14px;
+        }
+        .editor {
+          min-height: 100px;
+          font-size: 19px;
+        }
+        .send {
+          width: 100%;
+          height: 48px;
+          font-size: 17px;
+        }
+        .compose-footer {
+          min-height: 58px;
+          padding: 0 18px;
+          gap: 14px;
+          overflow: hidden;
+        }
+        .footer-item:nth-child(2) {
+          display: none;
+        }
+        .picker {
+          left: 14px;
+          top: 110px;
+          width: calc(100% - 28px);
+        }
+        .option-state {
+          display: none;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          animation-duration: 0.01ms !important;
+          transition-duration: 0.01ms !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="stage">
+      <section class="app" aria-label="Copse composer prototype">
+        <div class="eyebrow">
+          <span class="eyebrow-dot" aria-hidden="true"></span>New conversation · inline thread
+          context
+        </div>
+
+        <div class="conversation" aria-live="polite">
+          <div class="sent-message" id="sentMessage"></div>
+        </div>
+
+        <div class="composer">
+          <div class="toast" id="toast" role="status">Message sent with thread context</div>
+
+          <div class="compose-main">
+            <div class="editor-wrap">
+              <div
+                class="editor"
+                id="editor"
+                contenteditable="true"
+                role="textbox"
+                aria-multiline="true"
+                aria-label="Message"
+                spellcheck="true"
+                data-placeholder="Ask Copse anything…"
+              >
+                From
+                <span
+                  class="mention"
+                  contenteditable="false"
+                  data-thread-id="thread-typesafe-inference"
+                  data-title="TypeSafe inference"
+                  data-status="open"
+                  data-meta="Open · 23 messages"
+                  data-snippet="We narrowed the proposal failure to the inferred tool-result union after the latest schema change."
+                  ><svg
+                    class="thread-icon"
+                    viewBox="0 0 24 24"
+                    width="16"
+                    height="16"
+                    aria-hidden="true"
+                    focusable="false"
+                    data-icon="thread"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.75"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4c0-1.1.9-2 2-2h8a2 2 0 0 1 2 2Z"></path>
+                    <path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"></path></svg
+                  ><span class="mention-label">TypeSafe inference</span
+                  ><span class="mention-remove" aria-label="Remove thread mention"
+                    ><svg
+                      class="thread-icon"
+                      viewBox="0 0 24 24"
+                      width="16"
+                      height="16"
+                      aria-hidden="true"
+                      focusable="false"
+                      data-icon="close"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.75"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <path d="M18 6 6 18"></path>
+                      <path d="m6 6 12 12"></path></svg></span></span
+                >&nbsp;can you see why we're not allowing propose thread? Is this still an open PR?
+              </div>
+              <div class="editor-hint">
+                <span class="key">@</span><span>Insert another thread anywhere in the message</span>
+              </div>
+            </div>
+            <button class="send" id="sendButton" type="button">Send</button>
+          </div>
+
+          <div class="compose-footer" aria-label="Conversation settings">
+            <span class="footer-item">GPT-5.6 Sol — intellect 59 <span class="chev">⌄</span></span>
+            <span class="footer-item">Isolated worktree</span>
+            <span class="footer-item">main <span class="chev">⌄</span></span>
+            <span class="footer-more" aria-label="More settings">···</span>
+          </div>
+
+          <div class="picker" id="picker" role="listbox" aria-label="Thread suggestions">
+            <div class="picker-label">Mention a thread</div>
+          </div>
+        </div>
+
+        <div class="preview" id="preview" role="tooltip">
+          <div class="preview-top">
+            <span class="preview-title" id="previewTitle"></span>
+            <span class="preview-state" id="previewState"></span>
+          </div>
+          <div class="preview-snippet" id="previewSnippet"></div>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      ;(function () {
+        var editor = document.getElementById('editor')
+        var picker = document.getElementById('picker')
+        var preview = document.getElementById('preview')
+        var sendButton = document.getElementById('sendButton')
+        var sentMessage = document.getElementById('sentMessage')
+        var toast = document.getElementById('toast')
+
+        var threads = [
+          {
+            id: 'thread-mermaid-rendering',
+            title: 'Mermaid rendering issue',
+            meta: 'Open PR #482',
+            status: 'open',
+            state: 'Open',
+            snippet:
+              'The renderer now preserves diagram state across streaming updates; visual evidence is still pending.',
+          },
+          {
+            id: 'thread-streaming-markdown',
+            title: 'Fix streaming markdown',
+            meta: 'Updated 18m ago',
+            status: 'review',
+            state: 'In review',
+            snippet:
+              'List indentation is fixed in the parser branch. The focused markdown spec is passing locally.',
+          },
+          {
+            id: 'thread-permission-gate',
+            title: 'Permission gate copy',
+            meta: 'Updated yesterday',
+            status: 'quiet',
+            state: 'Paused',
+            snippet:
+              'Waiting on the final macOS wording before the native permission flow is recorded.',
+          },
+        ]
+
+        var activeIndex = 0
+        var mentionRange = null
+        var filteredThreads = threads.slice()
+
+        function escapeHtml(value) {
+          return value.replace(/[&<>"']/g, function (char) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[char]
+          })
+        }
+
+        function threadIconMarkup() {
+          return '<svg class="thread-icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false" data-icon="thread" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4c0-1.1.9-2 2-2h8a2 2 0 0 1 2 2Z"></path><path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"></path></svg>'
+        }
+
+        function closeIconMarkup() {
+          return '<svg class="thread-icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false" data-icon="close" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>'
+        }
+
+        function optionMarkup(thread, index) {
+          return (
+            '<button class="thread-option' +
+            (index === activeIndex ? ' is-active' : '') +
+            '" type="button" role="option" aria-selected="' +
+            (index === activeIndex) +
+            '" data-id="' +
+            escapeHtml(thread.id) +
+            '" data-status="' +
+            escapeHtml(thread.status) +
+            '">' +
+            '<span class="option-icon" aria-hidden="true">' +
+            threadIconMarkup() +
+            '</span>' +
+            '<span class="option-copy"><span class="option-title">' +
+            escapeHtml(thread.title) +
+            '</span><span class="option-meta">' +
+            escapeHtml(thread.meta) +
+            '</span></span>' +
+            '<span class="option-state"><span class="state-dot" aria-hidden="true"></span>' +
+            escapeHtml(thread.state) +
+            '</span>' +
+            '</button>'
+          )
+        }
+
+        function renderPicker(query) {
+          var normalized = query.toLowerCase()
+          filteredThreads = threads.filter(function (thread) {
+            return thread.title.toLowerCase().indexOf(normalized) !== -1
+          })
+          activeIndex = Math.min(activeIndex, Math.max(0, filteredThreads.length - 1))
+          picker.innerHTML =
+            '<div class="picker-label">Mention a thread</div>' +
+            (filteredThreads.length
+              ? filteredThreads.map(optionMarkup).join('')
+              : '<div class="picker-label" style="text-transform:none">No matching threads</div>')
+          picker.classList.add('is-open')
+        }
+
+        function closePicker() {
+          picker.classList.remove('is-open')
+          mentionRange = null
+        }
+
+        function findMentionRange() {
+          var selection = window.getSelection()
+          if (!selection || !selection.rangeCount || !editor.contains(selection.anchorNode))
+            return null
+          var range = selection.getRangeAt(0)
+          if (!range.collapsed || range.startContainer.nodeType !== Node.TEXT_NODE) return null
+          var text = range.startContainer.textContent.slice(0, range.startOffset)
+          var match = text.match(/(?:^|\s)@([^\s@]*)$/)
+          if (!match) return null
+          var atIndex = range.startOffset - match[1].length - 1
+          var replace = document.createRange()
+          replace.setStart(range.startContainer, atIndex)
+          replace.setEnd(range.startContainer, range.startOffset)
+          return { range: replace, query: match[1] }
+        }
+
+        function createMention(thread) {
+          var span = document.createElement('span')
+          span.className = 'mention'
+          span.contentEditable = 'false'
+          span.dataset.threadId = thread.id
+          span.dataset.title = thread.title
+          span.dataset.status = thread.status
+          span.dataset.meta = thread.meta
+          span.dataset.snippet = thread.snippet
+          span.innerHTML =
+            threadIconMarkup() +
+            '<span class="mention-label"></span>' +
+            '<span class="mention-remove" aria-label="Remove thread mention">' +
+            closeIconMarkup() +
+            '</span>'
+          span.querySelector('.mention-label').textContent = thread.title
+          return span
+        }
+
+        function insertThread(thread) {
+          if (!mentionRange) return
+          mentionRange.deleteContents()
+          var mention = createMention(thread)
+          var space = document.createTextNode('\u00a0')
+          mentionRange.insertNode(space)
+          mentionRange.insertNode(mention)
+          var selection = window.getSelection()
+          var after = document.createRange()
+          after.setStartAfter(space)
+          after.collapse(true)
+          selection.removeAllRanges()
+          selection.addRange(after)
+          closePicker()
+          editor.focus()
+        }
+
+        function nodeBeforeCaret() {
+          var selection = window.getSelection()
+          if (!selection || !selection.rangeCount) return null
+          var range = selection.getRangeAt(0)
+          if (!range.collapsed) return null
+          var container = range.startContainer
+          var offset = range.startOffset
+          if (container.nodeType === Node.TEXT_NODE) {
+            if (offset > 0) return null
+            return container.previousSibling
+          }
+          return container.childNodes[offset - 1] || null
+        }
+
+        function nodeAfterCaret() {
+          var selection = window.getSelection()
+          if (!selection || !selection.rangeCount) return null
+          var range = selection.getRangeAt(0)
+          if (!range.collapsed) return null
+          var container = range.startContainer
+          var offset = range.startOffset
+          if (container.nodeType === Node.TEXT_NODE) {
+            if (offset < container.textContent.length) return null
+            return container.nextSibling
+          }
+          return container.childNodes[offset] || null
+        }
+
+        function adjacentMention(node, direction) {
+          var current = node
+          while (
+            current &&
+            current.nodeType === Node.TEXT_NODE &&
+            current.textContent.replace(/\u00a0/g, '').trim() === ''
+          ) {
+            current = direction === 'before' ? current.previousSibling : current.nextSibling
+          }
+          return current &&
+            current.nodeType === Node.ELEMENT_NODE &&
+            current.classList.contains('mention')
+            ? current
+            : null
+        }
+
+        editor.addEventListener('input', function () {
+          var found = findMentionRange()
+          if (found) {
+            mentionRange = found.range
+            renderPicker(found.query)
+          } else {
+            closePicker()
+          }
+        })
+
+        editor.addEventListener('keydown', function (event) {
+          if (picker.classList.contains('is-open')) {
+            if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+              event.preventDefault()
+              var delta = event.key === 'ArrowDown' ? 1 : -1
+              activeIndex = (activeIndex + delta + filteredThreads.length) % filteredThreads.length
+              var found = findMentionRange()
+              renderPicker(found ? found.query : '')
+              return
+            }
+            if (event.key === 'Enter' && filteredThreads.length) {
+              event.preventDefault()
+              insertThread(filteredThreads[activeIndex])
+              return
+            }
+            if (event.key === 'Escape') {
+              event.preventDefault()
+              closePicker()
+              return
+            }
+          }
+
+          if (event.key === 'Backspace') {
+            var previous = adjacentMention(nodeBeforeCaret(), 'before')
+            if (previous) {
+              event.preventDefault()
+              var maybeSpace = previous.nextSibling
+              previous.remove()
+              if (
+                maybeSpace &&
+                maybeSpace.nodeType === Node.TEXT_NODE &&
+                maybeSpace.textContent.charAt(0) === '\u00a0'
+              ) {
+                maybeSpace.textContent = maybeSpace.textContent.slice(1)
+              }
+            }
+          }
+
+          if (event.key === 'Delete') {
+            var next = adjacentMention(nodeAfterCaret(), 'after')
+            if (next) {
+              event.preventDefault()
+              var afterMention = next.nextSibling
+              next.remove()
+              if (
+                afterMention &&
+                afterMention.nodeType === Node.TEXT_NODE &&
+                afterMention.textContent.charAt(0) === '\u00a0'
+              ) {
+                afterMention.textContent = afterMention.textContent.slice(1)
+              }
+            }
+          }
+        })
+
+        picker.addEventListener('mousedown', function (event) {
+          var option = event.target.closest('.thread-option')
+          if (!option) return
+          event.preventDefault()
+          var thread = threads.find(function (item) {
+            return item.id === option.dataset.id
+          })
+          if (thread) insertThread(thread)
+        })
+
+        editor.addEventListener('mousedown', function (event) {
+          var remove = event.target.closest('.mention-remove')
+          if (!remove) return
+          event.preventDefault()
+          event.stopPropagation()
+          var mention = remove.closest('.mention')
+          var next = mention.nextSibling
+          mention.remove()
+          if (next && next.nodeType === Node.TEXT_NODE && next.textContent.charAt(0) === '\u00a0') {
+            next.textContent = next.textContent.slice(1)
+          }
+        })
+
+        function showPreview(mention) {
+          document.getElementById('previewTitle').textContent = mention.dataset.title
+          document.getElementById('previewState').textContent = mention.dataset.meta
+          document.getElementById('previewSnippet').textContent = mention.dataset.snippet
+          var chipRect = mention.getBoundingClientRect()
+          var appRect = document.querySelector('.app').getBoundingClientRect()
+          var previewWidth = 340
+          var left = Math.min(chipRect.left - appRect.left, appRect.width - previewWidth)
+          left = Math.max(0, left)
+          preview.style.left = left + 'px'
+          preview.style.top = chipRect.bottom - appRect.top + 10 + 'px'
+          preview.classList.add('is-visible')
+        }
+
+        editor.addEventListener('mouseover', function (event) {
+          var mention = event.target.closest('.mention')
+          if (mention) showPreview(mention)
+        })
+
+        editor.addEventListener('mouseout', function (event) {
+          var mention = event.target.closest('.mention')
+          if (mention && !mention.contains(event.relatedTarget))
+            preview.classList.remove('is-visible')
+        })
+
+        document.addEventListener('mousedown', function (event) {
+          if (!picker.contains(event.target) && !editor.contains(event.target)) closePicker()
+        })
+
+        sendButton.addEventListener('click', function () {
+          var clone = editor.cloneNode(true)
+          clone.removeAttribute('contenteditable')
+          clone.querySelectorAll('.mention-remove').forEach(function (node) {
+            node.remove()
+          })
+          sentMessage.innerHTML = clone.innerHTML
+          sentMessage.classList.add('is-visible')
+          toast.classList.add('is-visible')
+          window.setTimeout(function () {
+            toast.classList.remove('is-visible')
+          }, 2200)
+        })
+      })()
+    </script>
+  </body>
+</html>

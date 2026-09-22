@@ -3,11 +3,12 @@ import { afterEach, before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
 import { addMessage, getThreadById, setThreadDraftPrompt } from '@shared/store/thread-helpers.ts'
-import type { Thread } from '@shared/types'
+import type { Thread, ThreadCatalogHit } from '@shared/types'
 import type { ContainerRunProgress } from '@shared/types/container-run.ts'
 import { containerRunToolCall } from '@shared/store/container-run-card.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountInputBar } from './input-bar.ts'
+import { CHIP_CHAR } from './composer-editor.ts'
 import { mountProjectsPane } from './projects-pane.ts'
 import type { ArchiveAttachmentRef } from '@shared/archive/archive-media.ts'
 import type { PreparedThreadCheckout, ThreadCheckoutPreview } from '@shared/types/worktree.ts'
@@ -84,6 +85,7 @@ function createApi(options: {
   onExportArchive?: (projectId: string, threadId: string) => void
   onAttachArchive?: (projectId: string, threadId: string, name: string, bytes?: Uint8Array) => void
   onRecordModelSelection?: ApiClient['threads']['recordModelSelection']
+  catalogThreads?: ThreadCatalogHit[]
 }): ApiClient {
   return ((): ApiClient => {
     const base = createFakeApi()
@@ -217,6 +219,7 @@ function createApi(options: {
       },
       threads: {
         ...base['threads'],
+        catalog: async (): Promise<ThreadCatalogHit[]> => options.catalogThreads ?? [],
         recordModelSelection:
           options.onRecordModelSelection ?? base['threads'].recordModelSelection,
         listOrphans: async () => [],
@@ -1736,6 +1739,94 @@ describe('input bar browse button', () => {
     assert.deepEqual(store.getState().threads[0]?.messages[0]?.attachments, [
       { kind: 'file', label: 'notes.txt', content: 'hello world' },
     ])
+  })
+})
+
+describe('input bar thread mentions', () => {
+  it('keeps the selected thread inline through a draft switch and send', async () => {
+    const first = thread()
+    const second: Thread = { ...thread(), id: 'thread-2', title: 'Second' }
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: first.id,
+      threads: [first, second],
+    })
+    const referencedThread: ThreadCatalogHit = {
+      id: 'thread-auth',
+      title: 'Auth refactor',
+      createdAt: 1,
+      updatedAt: 2,
+      digest: 'Authentication cleanup',
+      path: 'thread-auth',
+      spinePath: '/chat/project-1/thread-auth/events.jsonl',
+      prRefs: [],
+    }
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      createApi({ currentBranch: 'main', catalogThreads: [referencedThread] }),
+    )
+    await settle()
+
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    assert.ok(composer)
+    composer.textContent = 'From @auth please compare'
+    composer.focus()
+    const composerText = composer.firstChild
+    const selection = document.getSelection()
+    assert.ok(composerText)
+    assert.ok(selection)
+    const range = document.createRange()
+    range.setStart(composerText, 'From @auth'.length)
+    range.collapse(true)
+    selection.removeAllRanges()
+    selection.addRange(range)
+    composer.dispatchEvent(new Event('input', { bubbles: true }))
+    await flush()
+
+    const item = host.querySelector<HTMLElement>('.mention-item-thread')
+    assert.ok(item)
+    item.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+    await settle()
+
+    const chip = composer.querySelector<HTMLElement>('.inline-thread-chip')
+    assert.ok(chip, 'the thread chip is inside the editable sentence')
+    assert.equal(chip.dataset['threadId'], 'thread-auth')
+    assert.ok(chip.querySelector('svg[data-icon="thread"]'))
+    assert.equal(host.querySelector('.attachment-chips .thread-chip'), null)
+    assert.doesNotMatch(composer.textContent, /@auth/)
+
+    store.setState({ activeThreadId: second.id })
+    store.emit('threads_changed')
+    await settle()
+    assert.equal(composer.querySelector('.inline-thread-chip'), null)
+
+    store.setState({ activeThreadId: first.id })
+    store.emit('threads_changed')
+    await settle()
+    assert.deepEqual(
+      Array.from(composer.childNodes).map((node) =>
+        node instanceof HTMLElement && node.classList.contains('inline-thread-chip')
+          ? '[thread]'
+          : node.textContent,
+      ),
+      ['From ', '[thread]', ' please compare'],
+      'the thread chip returns to its original sentence position',
+    )
+
+    const submit = host.querySelector<HTMLButtonElement>('.submit-btn')
+    assert.ok(submit)
+    submit.click()
+    await flush()
+
+    const message = getThreadById(store, first.id)?.messages[0]
+    assert.ok(message)
+    assert.equal(message.content, `From ${CHIP_CHAR} please compare`)
+    assert.deepEqual(message.attachments, [{ kind: 'thread', label: 'Auth refactor' }])
   })
 })
 

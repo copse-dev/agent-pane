@@ -1,14 +1,15 @@
 import { renderTextBlock, textBlockLabel } from '@copse/agent/build-text-with-attachments.ts'
 import { attachTextExpand } from '../attachments/text-expand.ts'
+import { attachmentIcon } from '../dom/attachment-icons.ts'
 import { closeIcon } from '../dom/icons.ts'
 import { isDefined } from '@shared/nullish.ts'
 
 /**
- * The composer's rich input: a `contenteditable` that renders pasted text
- * blocks as atomic chips *inline with the typed text*, instead of a plain
- * `<textarea>` plus a detached chip row (issue: an attachment chip above the
- * composer loses its position in the sentence — "The editor points: [chip]"
- * reads as one thought and should stay one).
+ * The composer's rich input: a `contenteditable` that renders pasted text and
+ * referenced threads as atomic chips *inline with the typed text*, instead of a
+ * plain `<textarea>` plus a detached chip row (issue: a chip above the composer
+ * loses its position in the sentence — "The editor points: [chip]" reads as one
+ * thought and should stay one).
  *
  * The editor exposes a textarea-shaped surface so the mention/skill pickers and
  * the input bar port without rethinking their string logic:
@@ -18,8 +19,9 @@ import { isDefined } from '@shared/nullish.ts'
  *   object-replacement character — its standard meaning). Setting `value` with
  *   CHIP_CHARs re-binds the existing chips to those slots in order, so the
  *   pickers' slice-and-reassemble edits pass chips through untouched.
- * - `expandedValue()` renders each chip as its fenced attachment block at its
- *   exact position — this is what submit, drafts, and the context estimate use.
+ * - `expandedValue()` renders pasted-text chips as fenced attachment blocks at
+ *   their exact positions and removes thread placeholders. Thread context stays
+ *   in the existing structured attachment path.
  *
  * Editing this file? The chips must stay atomic: `contenteditable="false"`
  * children inside a `plaintext-only` root, so the caret treats a chip like one
@@ -27,7 +29,7 @@ import { isDefined } from '@shared/nullish.ts'
  * removal are DOM surgery, so the browser's undo stack does not restore them.
  */
 
-/** Stand-in for one inline paste chip in `value` (U+FFFC OBJECT REPLACEMENT). */
+/** Stand-in for one inline composer chip in `value` (U+FFFC OBJECT REPLACEMENT). */
 export const CHIP_CHAR = '\uFFFC'
 
 export interface InlinePasteBlock {
@@ -35,6 +37,15 @@ export interface InlinePasteBlock {
   label: string
   content: string
 }
+
+export interface InlineThreadChip {
+  threadId: string
+  label: string
+}
+
+export type InlineComposerChip =
+  | { kind: 'paste'; block: InlinePasteBlock }
+  | { kind: 'thread'; thread: InlineThreadChip }
 
 /**
  * The textarea-shaped slice of the editor the autocomplete pickers depend on:
@@ -54,16 +65,22 @@ export interface ComposerTextInput {
 export interface ComposerEditor extends ComposerTextInput {
   isFocused(): boolean
   setPlaceholder(text: string): void
-  /** Blocks backing the chips, in document order. */
+  /** Blocks backing pasted-text chips, in document order. */
   getBlocks(): InlinePasteBlock[]
+  /** Every positional chip, in document order. */
+  getInlineChips(): InlineComposerChip[]
   /** Insert a paste chip at the caret (end when unfocused) and emit `input`. */
   insertPasteChip(content: string, label?: string): void
-  /** Text with each chip expanded to its fenced block, in place. */
+  /** Insert a thread chip at the caret and keep its attachment state in sync. */
+  insertThreadChip(thread: InlineThreadChip, onRemove: () => void): void
+  /** Text with paste chips expanded and thread placeholders removed. */
   expandedValue(): string
+  /** Draft text with paste chips expanded and thread positions preserved. */
+  draftValue(): string
   clear(): void
 }
 
-const CHIP_SELECTOR = '.inline-paste-chip'
+const CHIP_SELECTOR = '.inline-paste-chip, .inline-thread-chip'
 
 /** Visible-space text of a node tree: text as-is, `<br>` → `\n`, chip → CHIP_CHAR. */
 function visibleText(node: Node): string {
@@ -73,7 +90,11 @@ function visibleText(node: Node): string {
   if (node.nodeType === Node.ELEMENT_NODE) {
     if (!(node instanceof HTMLElement)) return ''
     const elNode = node
-    if (elNode.classList.contains('inline-paste-chip')) return CHIP_CHAR
+    if (
+      elNode.classList.contains('inline-paste-chip') ||
+      elNode.classList.contains('inline-thread-chip')
+    )
+      return CHIP_CHAR
     if (elNode.tagName === 'BR') return '\n'
   }
   let out = ''
@@ -90,6 +111,7 @@ export function mountComposerEditor(): ComposerEditor {
   root.setAttribute('aria-label', 'Message')
 
   const blocks = new Map<string, InlinePasteBlock>()
+  const threadChips = new Map<string, { thread: InlineThreadChip; onRemove: () => void }>()
 
   function emitInput(): void {
     root.dispatchEvent(new Event('input', { bubbles: true }))
@@ -99,17 +121,32 @@ export function mountComposerEditor(): ComposerEditor {
     return Array.from(root.querySelectorAll<HTMLElement>(CHIP_SELECTOR))
   }
 
-  /** Drop block entries whose chip is no longer in the DOM (user deleted it). */
-  function pruneBlocks(): void {
-    const present = new Set(chipElements().map((c) => c.dataset['blockId']))
-    for (const id of blocks.keys()) if (!present.has(id)) blocks.delete(id)
+  function inlineChipsInOrder(): InlineComposerChip[] {
+    return chipElements().flatMap((chip): InlineComposerChip[] => {
+      const id = chip.dataset['chipId'] ?? ''
+      const block = blocks.get(id)
+      if (block) return [{ kind: 'paste', block }]
+      const thread = threadChips.get(id)?.thread
+      return thread ? [{ kind: 'thread', thread }] : []
+    })
   }
 
-  function makeChip(block: InlinePasteBlock): HTMLElement {
+  /** Drop entries whose chip is no longer in the DOM (Backspace/Delete). */
+  function pruneChips(): void {
+    const present = new Set(chipElements().map((chip) => chip.dataset['chipId']))
+    for (const id of blocks.keys()) if (!present.has(id)) blocks.delete(id)
+    for (const [id, state] of threadChips) {
+      if (present.has(id)) continue
+      threadChips.delete(id)
+      state.onRemove()
+    }
+  }
+
+  function makePasteChip(block: InlinePasteBlock): HTMLElement {
     const chip = document.createElement('span')
     chip.className = 'inline-paste-chip'
     chip.setAttribute('contenteditable', 'false')
-    chip.dataset['blockId'] = block.id
+    chip.dataset['chipId'] = block.id
     chip.title = block.label
     const label = document.createElement('span')
     label.className = 'inline-paste-chip-label'
@@ -123,8 +160,8 @@ export function mountComposerEditor(): ComposerEditor {
     remove.className = 'inline-paste-chip-remove'
     remove.append(closeIcon('ui-icon ui-icon-sm'))
     remove.setAttribute('aria-label', `Remove pasted text: ${block.label}`)
-    remove.addEventListener('click', (e) => {
-      e.preventDefault()
+    remove.addEventListener('click', (event) => {
+      event.preventDefault()
       chip.remove()
       blocks.delete(block.id)
       root.focus()
@@ -132,6 +169,55 @@ export function mountComposerEditor(): ComposerEditor {
     })
     chip.append(label, remove)
     return chip
+  }
+
+  function makeThreadChip(
+    id: string,
+    state: { thread: InlineThreadChip; onRemove: () => void },
+  ): HTMLElement {
+    const chip = document.createElement('span')
+    chip.className = 'inline-thread-chip'
+    chip.setAttribute('contenteditable', 'false')
+    chip.dataset['chipId'] = id
+    chip.dataset['threadId'] = state.thread.threadId
+    chip.title = state.thread.label
+
+    const label = document.createElement('span')
+    label.className = 'inline-thread-chip-label'
+    label.textContent = state.thread.label
+
+    const remove = document.createElement('button')
+    remove.type = 'button'
+    remove.className = 'inline-thread-chip-remove'
+    remove.append(closeIcon('ui-icon ui-icon-sm'))
+    remove.setAttribute('aria-label', `Remove thread: ${state.thread.label}`)
+    remove.addEventListener('click', (event) => {
+      event.preventDefault()
+      chip.remove()
+      threadChips.delete(id)
+      state.onRemove()
+      root.focus()
+      emitInput()
+    })
+
+    chip.append(attachmentIcon('thread', 'thread-chip-icon'), label, remove)
+    return chip
+  }
+
+  function insertChip(chip: HTMLElement): void {
+    const selection = editor.isFocused() ? selectionInRoot() : null
+    if (selection) {
+      const range = selection.getRangeAt(0)
+      range.deleteContents()
+      range.insertNode(chip)
+      range.setStartAfter(chip)
+      range.collapse(true)
+      selection.removeAllRanges()
+      selection.addRange(range)
+    } else {
+      root.append(chip)
+    }
+    emitInput()
   }
 
   /** Visible-space offset of a DOM point, counting chips crossed as one char. */
@@ -166,7 +252,9 @@ export function mountComposerEditor(): ComposerEditor {
       return null
     }
     const isAtomic = (elNode: HTMLElement): boolean =>
-      elNode.classList.contains('inline-paste-chip') || elNode.tagName === 'BR'
+      elNode.classList.contains('inline-paste-chip') ||
+      elNode.classList.contains('inline-thread-chip') ||
+      elNode.tagName === 'BR'
     return walk(root) ?? { node: root, offset: root.childNodes.length }
   }
 
@@ -194,8 +282,34 @@ export function mountComposerEditor(): ComposerEditor {
     if (root.childNodes.length === 1 && root.firstChild?.nodeName === 'BR') {
       root.replaceChildren()
     }
-    pruneBlocks()
+    pruneChips()
   })
+
+  function serializedValue(preserveThreadPlaceholders: boolean): string {
+    const ordered = inlineChipsInOrder()
+    let chipIdx = 0
+    const parts = visibleText(root).split(CHIP_CHAR)
+    let out = parts[0] ?? ''
+    for (let i = 1; i < parts.length; i++) {
+      const chip = ordered[chipIdx++]
+      if (chip?.kind === 'thread') {
+        out += preserveThreadPlaceholders ? CHIP_CHAR : `@${chip.thread.label}`
+        out += parts[i] ?? ''
+        continue
+      }
+      const block = chip?.kind === 'paste' ? chip.block : undefined
+      const fence = block ? renderTextBlock(block.label, block.content) : ''
+      if (fence) {
+        if (out !== '' && !out.endsWith('\n')) out += '\n\n'
+        else if (out.endsWith('\n') && !out.endsWith('\n\n')) out += '\n'
+        out += fence
+        const rest = parts[i] ?? ''
+        if (rest !== '' && !rest.startsWith('\n')) out += '\n\n'
+      }
+      out += parts[i] ?? ''
+    }
+    return out
+  }
 
   const editor: ComposerEditor = {
     el: root,
@@ -218,7 +332,7 @@ export function mountComposerEditor(): ComposerEditor {
         }
       })
       root.replaceChildren(frag)
-      pruneBlocks()
+      pruneChips()
       if (editor.isFocused()) caretToEnd()
     },
 
@@ -255,9 +369,14 @@ export function mountComposerEditor(): ComposerEditor {
     },
 
     getBlocks(): InlinePasteBlock[] {
-      return chipElements()
-        .map((c) => blocks.get(c.dataset['blockId'] ?? ''))
+      return editor
+        .getInlineChips()
+        .map((chip) => (chip.kind === 'paste' ? chip.block : undefined))
         .filter(isDefined)
+    },
+
+    getInlineChips(): InlineComposerChip[] {
+      return inlineChipsInOrder()
     },
 
     insertPasteChip(content: string, label?: string): void {
@@ -267,45 +386,28 @@ export function mountComposerEditor(): ComposerEditor {
         content,
       }
       blocks.set(block.id, block)
-      const chip = makeChip(block)
-      const sel = editor.isFocused() ? selectionInRoot() : null
-      if (sel) {
-        const range = sel.getRangeAt(0)
-        range.deleteContents()
-        range.insertNode(chip)
-        range.setStartAfter(chip)
-        range.collapse(true)
-        sel.removeAllRanges()
-        sel.addRange(range)
-      } else {
-        root.append(chip)
-      }
-      emitInput()
+      insertChip(makePasteChip(block))
+    },
+
+    insertThreadChip(thread: InlineThreadChip, onRemove: () => void): void {
+      const id = crypto.randomUUID()
+      const state = { thread, onRemove }
+      threadChips.set(id, state)
+      insertChip(makeThreadChip(id, state))
     },
 
     expandedValue(): string {
-      const ordered = editor.getBlocks()
-      let chipIdx = 0
-      const parts = visibleText(root).split(CHIP_CHAR)
-      let out = parts[0] ?? ''
-      for (let i = 1; i < parts.length; i++) {
-        const block = ordered[chipIdx++]
-        const fence = block ? renderTextBlock(block.label, block.content) : ''
-        if (fence) {
-          if (out !== '' && !out.endsWith('\n')) out += '\n\n'
-          else if (out.endsWith('\n') && !out.endsWith('\n\n')) out += '\n'
-          out += fence
-          const rest = parts[i] ?? ''
-          if (rest !== '' && !rest.startsWith('\n')) out += '\n\n'
-        }
-        out += parts[i] ?? ''
-      }
-      return out
+      return serializedValue(false)
+    },
+
+    draftValue(): string {
+      return serializedValue(true)
     },
 
     clear(): void {
       root.replaceChildren()
       blocks.clear()
+      threadChips.clear()
     },
   }
 
