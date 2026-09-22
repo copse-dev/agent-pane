@@ -205,6 +205,37 @@ describe('reviewer tools', () => {
     assert.equal(executor.reported().length, 1)
   })
 
+  it('requires a structured completion and refuses tool calls after it', async () => {
+    const executor = createReviewerToolExecutor(host)
+    assert.equal(executor.completion(), null)
+    assert.match(
+      await executor.execute(
+        'finish_review',
+        { checked: 'The changed source and its direct callers.', couldNotVerify: 'Nothing' },
+        signal,
+        'done-1',
+      ),
+      /completion recorded/i,
+    )
+    assert.deepEqual(executor.completion(), {
+      checked: 'The changed source and its direct callers.',
+      couldNotVerify: 'Nothing',
+    })
+    assert.match(
+      await executor.execute('read_file', { path: 'src/a.ts' }, signal, 'late-1'),
+      /already finished/,
+    )
+    assert.match(
+      await createReviewerToolExecutor(host).execute(
+        'finish_review',
+        { checked: 'short', couldNotVerify: 'Nothing' },
+        signal,
+        'bad-1',
+      ),
+      /^Error: finish_review needs/,
+    )
+  })
+
   it('names an unknown tool without throwing', async () => {
     const executor = createReviewerToolExecutor(host)
     assert.equal(

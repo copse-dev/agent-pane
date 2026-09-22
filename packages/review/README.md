@@ -75,7 +75,9 @@ shell's hand-offs (Phase 4).
   `git_diff` (complete per-file diffs paged by character offset); `run_command`, brokered into the
   cell and gated by the run's permission profile, with its output wrapped as external
   content and secret-scrubbed; and `report_finding`, through which every candidate
-  arrives as a structured, anchored object rather than prose.
+  arrives as a structured, anchored object rather than prose. Every reviewer must close
+  with `finish_review`, a structured attestation of what it checked and could not verify;
+  a missing attestation fails the run instead of being reported as clean.
 - **`turn.ts`** / **`stage2.ts`** — one model turn over `@copse/agent`'s loop, projected live
   onto the headless contract's `turn_start … turn_end` event envelope; `runReviewers` fans
   out every model over every lens, a few at a time, over one serialised cell.
@@ -97,7 +99,8 @@ shell's hand-offs (Phase 4).
 - **`provider-selection.ts`** / **`cli.ts`** / **`bin/copse-review.mjs`** — the shell.
   Keys come from the environment only; remote providers get the diff with secrets
   redacted; `--provider mock` plays a scripted reviewer for harness self-tests.
-- **`report-text.ts`** — the terminal projection. "Clean." is a complete answer.
+- **`report-text.ts`** — the terminal projection. "Clean." is a complete answer only when
+  every configured reviewer completed its attestation.
 - **`stage0-report.ts`** — the Stage 0 report as a decoder, for the file the CI shell's
   secret-free job hands to the job with the model key: untrusted input, validated shape by
   shape (findings included) before a field of it reaches a model or a comment.

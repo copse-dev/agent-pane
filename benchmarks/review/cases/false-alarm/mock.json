@@ -14,9 +14,21 @@
           "reason": "reduce over an empty array without an initial value throws or yields NaN."
         }
       },
+      {
+        "type": "tool_call",
+        "name": "finish_review",
+        "args": { "checked": "The total implementation and empty-list behavior.", "couldNotVerify": "The claim was not executed." }
+      },
       { "type": "text", "text": "One possible empty-list issue." }
     ],
-    "review:contracts": [{ "type": "text", "text": "Nothing to add." }],
+    "review:contracts": [
+      {
+        "type": "tool_call",
+        "name": "finish_review",
+        "args": { "checked": "The total function input and return contract.", "couldNotVerify": "Nothing" }
+      },
+      { "type": "text", "text": "Done." }
+    ],
     "reproduce": [{ "type": "text", "text": "Could not write a failing test." }],
     "challenge": [
       {

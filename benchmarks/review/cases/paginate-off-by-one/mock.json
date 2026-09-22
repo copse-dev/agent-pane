@@ -15,9 +15,21 @@
           "reason": "The slice end is start + size - 1, so a page of size n holds n - 1 items."
         }
       },
-      { "type": "text", "text": "Checked src/paginate.cjs." }
+      {
+        "type": "tool_call",
+        "name": "finish_review",
+        "args": { "checked": "src/paginate.cjs and the page-size calculation.", "couldNotVerify": "Nothing" }
+      },
+      { "type": "text", "text": "Done." }
     ],
-    "review:contracts": [{ "type": "text", "text": "No contract issue beyond the pagination one." }],
+    "review:contracts": [
+      {
+        "type": "tool_call",
+        "name": "finish_review",
+        "args": { "checked": "The paginate size and page-index contract.", "couldNotVerify": "Nothing" }
+      },
+      { "type": "text", "text": "Done." }
+    ],
     "reproduce": [
       {
         "type": "tool_call",

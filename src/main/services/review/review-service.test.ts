@@ -38,7 +38,12 @@ const FINDING = {
 const REVIEWER_SCRIPT: ScriptedStep[] = [
   { type: 'tool_call', name: 'read_file', args: { path: 'src/math.ts' } },
   { type: 'tool_call', name: 'report_finding', args: FINDING },
-  { type: 'text', text: 'Checked src/math.ts.' },
+  {
+    type: 'tool_call',
+    name: 'finish_review',
+    args: { checked: 'src/math.ts and the changed implementation.', couldNotVerify: 'Nothing' },
+  },
+  { type: 'text', text: 'Done.' },
 ]
 
 function challengerScript(status: 'stands' | 'refuted'): ScriptedStep[] {

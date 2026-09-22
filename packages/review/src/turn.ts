@@ -36,6 +36,8 @@ export interface TurnOptions {
   readonly threadId: string
   readonly turnId: string
   readonly maxSteps: number
+  /** A role-specific completion invariant, checked before the terminal event is emitted. */
+  readonly completionError?: (() => string | undefined) | undefined
   readonly signal?: AbortSignal | undefined
   /** Receives each contract event as it happens. */
   readonly onEvent?: ((event: HeadlessEvent) => void) | undefined
@@ -133,6 +135,13 @@ export async function runTurn(options: TurnOptions): Promise<TurnResult> {
   flushPending()
 
   const cancelled = options.signal?.aborted ?? false
+  if (!cancelled && error === undefined && options.completionError !== undefined) {
+    try {
+      error = options.completionError()
+    } catch (err) {
+      error = errorMessage(err)
+    }
+  }
   const outcome: HeadlessOutcome = cancelled
     ? 'cancelled'
     : error !== undefined

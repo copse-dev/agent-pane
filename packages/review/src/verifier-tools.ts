@@ -69,7 +69,9 @@ export interface VerifierToolHost extends ReviewerToolHost {
 
 export function challengerTools(): LLMTool[] {
   return [
-    ...reviewerTools().filter((tool) => tool.name !== 'report_finding'),
+    ...reviewerTools().filter(
+      (tool) => tool.name !== 'report_finding' && tool.name !== 'finish_review',
+    ),
     {
       name: 'verdict',
       description:
@@ -88,7 +90,9 @@ export function challengerTools(): LLMTool[] {
 
 export function reproducerTools(): LLMTool[] {
   return [
-    ...reviewerTools().filter((tool) => tool.name !== 'report_finding'),
+    ...reviewerTools().filter(
+      (tool) => tool.name !== 'report_finding' && tool.name !== 'finish_review',
+    ),
     {
       name: 'write_reproducer',
       description: `Write a test file under ${REPRODUCER_DIR}/ that fails because of the defect and passes without it, and say how to run it (argv from the repository root, no shell). It is run on the change and on the base it was made against; both results come back. Call again to revise.`,

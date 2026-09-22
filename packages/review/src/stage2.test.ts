@@ -67,7 +67,15 @@ describe('runStage2', () => {
     const script: ScriptedStep[] = [
       { type: 'tool_call', name: 'read_file', args: { path: 'src/math.ts' }, text: 'Reading.' },
       { type: 'tool_call', name: 'report_finding', args: finding },
-      { type: 'text', text: 'Checked src/math.ts. Could not run the tests.' },
+      {
+        type: 'tool_call',
+        name: 'finish_review',
+        args: {
+          checked: 'src/math.ts and the changed implementation.',
+          couldNotVerify: 'Tests, because run_command was unavailable.',
+        },
+      },
+      { type: 'text', text: 'Done.' },
     ]
     const provider = new ScriptedProvider(script)
     const events: string[] = []
@@ -94,12 +102,17 @@ describe('runStage2', () => {
       reported.anchoredText,
       'export const add = (a: number, b: number): number => a - b',
     )
-    assert.equal(result.summary, 'Checked src/math.ts. Could not run the tests.')
-    assert.equal(result.toolCalls, 2)
+    assert.equal(
+      result.summary,
+      'Checked: src/math.ts and the changed implementation.\nCould not verify: Tests, because run_command was unavailable.',
+    )
+    assert.equal(result.toolCalls, 3)
     assert.equal(result.usage.estimated, false)
     assert.deepEqual(events, [
       'turn_start',
       'message',
+      'tool_call',
+      'tool_result',
       'tool_call',
       'tool_result',
       'tool_call',
@@ -121,6 +134,31 @@ describe('runStage2', () => {
   it('says in the system prompt whether commands can run', () => {
     assert.match(lensSystemPrompt(CORRECTNESS_LENS, { canRun: true }), /You may run commands/)
     assert.match(lensSystemPrompt(CORRECTNESS_LENS, { canRun: false }), /not available in this run/)
+    assert.match(lensSystemPrompt(CORRECTNESS_LENS, { canRun: false }), /finish_review/)
+  })
+
+  it('fails closed when the model ends without the completion attestation', async () => {
+    const result = await runStage2({
+      provider: new ScriptedProvider([
+        { type: 'text', text: 'I inspected the diff and found nothing.' },
+      ]),
+      model: 'scripted',
+      lens: CORRECTNESS_LENS,
+      context,
+      headCheckout: checkouts.head,
+      cell: null,
+      shellDecision: 'deny',
+      scrub: (text) => text,
+      threadId: 'thread-incomplete',
+      turnId: 'turn-incomplete',
+    })
+    assert.equal(result.outcome, 'failed')
+    assert.equal(result.stopReason, 'error')
+    assert.match(result.error ?? '', /without calling the required finish_review tool/)
+    assert.equal(result.summary, 'I inspected the diff and found nothing.')
+    const end = result.events.at(-1)
+    assert.equal(end?.type, 'turn_end')
+    assert.equal(end.outcome, 'failed')
   })
 
   it('reports a provider failure as a failed turn, never as findings', async () => {
@@ -161,12 +199,29 @@ describe('runStage2', () => {
         {
           model: 'm1',
           providerFor: (): ScriptedProvider =>
-            new ScriptedProvider([{ type: 'text', text: 'm1 done' }]),
+            new ScriptedProvider([
+              {
+                type: 'tool_call',
+                name: 'finish_review',
+                args: { checked: 'm1 reviewed the changed code.', couldNotVerify: 'Nothing' },
+              },
+              { type: 'text', text: 'Done.' },
+            ]),
         },
         {
           model: 'm2',
           providerFor: (lens): ScriptedProvider =>
-            new ScriptedProvider([{ type: 'text', text: `m2 ${lens.id}` }]),
+            new ScriptedProvider([
+              {
+                type: 'tool_call',
+                name: 'finish_review',
+                args: {
+                  checked: `m2 reviewed the ${lens.id} boundary.`,
+                  couldNotVerify: 'Nothing',
+                },
+              },
+              { type: 'text', text: 'Done.' },
+            ]),
         },
       ],
       lenses: [CORRECTNESS_LENS, CONTRACTS_LENS],
@@ -177,10 +232,30 @@ describe('runStage2', () => {
     assert.deepEqual(
       results.map((result) => [result.model, result.lens, result.summary, result.turnId]),
       [
-        ['m1', 'correctness', 'm1 done', 'turn:m1:correctness'],
-        ['m1', 'contracts', 'm1 done', 'turn:m1:contracts'],
-        ['m2', 'correctness', 'm2 correctness', 'turn:m2:correctness'],
-        ['m2', 'contracts', 'm2 contracts', 'turn:m2:contracts'],
+        [
+          'm1',
+          'correctness',
+          'Checked: m1 reviewed the changed code.\nCould not verify: Nothing',
+          'turn:m1:correctness',
+        ],
+        [
+          'm1',
+          'contracts',
+          'Checked: m1 reviewed the changed code.\nCould not verify: Nothing',
+          'turn:m1:contracts',
+        ],
+        [
+          'm2',
+          'correctness',
+          'Checked: m2 reviewed the correctness boundary.\nCould not verify: Nothing',
+          'turn:m2:correctness',
+        ],
+        [
+          'm2',
+          'contracts',
+          'Checked: m2 reviewed the contracts boundary.\nCould not verify: Nothing',
+          'turn:m2:contracts',
+        ],
       ],
     )
   })

@@ -122,6 +122,17 @@ function bodyHeader(report: ReviewReport, options: ForgeReviewOptions): string[]
   }
   const models = [...new Set(report.reviews.map((review) => review.model))]
   if (models.length > 0) lines.push(`Reviewers: ${models.join(', ')}.`)
+  const incomplete = report.reviews.filter((review) => review.outcome !== 'completed')
+  if (incomplete.length > 0) {
+    lines.push(
+      `Review incomplete: ${String(incomplete.length)} of ${String(report.reviews.length)} reviewer run(s) did not complete; this is not a clean result.`,
+    )
+    for (const review of incomplete) {
+      const reason =
+        review.error?.replace(/\s+/g, ' ') ?? `${review.outcome} (${review.stopReason})`
+      lines.push(`Incomplete reviewer: ${review.model} (${review.lens}) — ${reason}.`)
+    }
+  }
   if (options.headCommit !== null) lines.push(`Head: \`${options.headCommit.slice(0, 12)}\`.`)
   return lines
 }
@@ -152,7 +163,14 @@ export function buildForgeReview(
   const lines = bodyHeader(report, options)
   lines.push('')
   if (report.findings.length === 0) {
-    lines.push(report.reviews.length === 0 ? 'No findings from Stage 0.' : 'No findings.')
+    const incomplete = report.reviews.some((review) => review.outcome !== 'completed')
+    lines.push(
+      report.reviews.length === 0
+        ? 'No findings from Stage 0.'
+        : incomplete
+          ? 'No findings were produced before the incomplete review stopped.'
+          : 'No findings.',
+    )
   } else {
     lines.push(
       `${String(report.findings.length)} finding(s)${comments.length > 0 ? `, ${String(comments.length)} as inline comments` : ''}.`,
