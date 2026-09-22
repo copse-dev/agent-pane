@@ -96,7 +96,10 @@ describe('settings automations plugin', function () {
       'Every weekday at 09:00 · local time',
     )
     await expect(detail.$('.automation-worktree-limit-select')).toHaveValue('1')
+    await expect(dialog.$('.settings-buttons')).not.toBeDisplayed()
     await detail.$('.automation-form').scrollIntoView({ block: 'center' })
     await saveElementScreenshot('.automation-form', 'settings-automation-form.png')
+    await detail.$('.automation-cancel-btn').click()
+    await expect(dialog.$('.settings-buttons')).toBeDisplayed()
   })
 })
