@@ -84,8 +84,11 @@ export interface AnnotationLayerOptions {
   label: string
   /** The pixels beneath the layer as a PNG data URL; null when the host cannot capture. */
   captureBase?: () => Promise<string | null>
-  /** The user pressed Send. */
-  onSend: (payload: AnnotationExport) => void | Promise<void>
+  /**
+   * The user pressed Send. Return false to keep the marks in place when the
+   * caller could not attach them, or true to consume the annotation.
+   */
+  onSend: (payload: AnnotationExport) => boolean | Promise<boolean>
   /** The user left annotation mode (Done, Escape, or `deactivate()`). */
   onDeactivate?: () => void
 }
@@ -176,6 +179,7 @@ export function mountAnnotationLayer(
   let sendBtn: HTMLButtonElement | null = null
   let undoBtn: HTMLButtonElement | null = null
   let clearBtn: HTMLButtonElement | null = null
+  let sending = false
 
   const applyBrush = (): void => {
     if (!drauu) return
@@ -205,7 +209,7 @@ export function mountAnnotationLayer(
 
   const syncButtons = (): void => {
     const empty = isEmpty()
-    if (sendBtn) sendBtn.disabled = empty
+    if (sendBtn) sendBtn.disabled = empty || sending
     if (clearBtn) clearBtn.disabled = empty
     if (undoBtn) undoBtn.disabled = !drauu?.canUndo()
     if (root) root.hidden = !active && empty
@@ -285,12 +289,25 @@ export function mountAnnotationLayer(
       'Send to agent',
     )
     sendBtn.addEventListener('click', () => {
+      if (sending) return
+      sending = true
       sendBtn?.setAttribute('aria-busy', 'true')
+      syncButtons()
       void layer
         .export()
-        .then((payload) => options.onSend(payload))
+        .then(async (payload) => {
+          const accepted = await options.onSend(payload)
+          if (!accepted) return
+          layer.clear()
+          layer.deactivate()
+        })
+        // Callers surface expected attachment failures by returning false. Keep
+        // unexpected failures contained too: the marks remain available to retry.
+        .catch(() => {})
         .finally(() => {
+          sending = false
           sendBtn?.removeAttribute('aria-busy')
+          syncButtons()
         })
     })
     const doneBtn = el(
@@ -426,13 +443,19 @@ export function mountAnnotationLayer(
       // result is well-formed XML as well as HTML; no XMLSerializer needed.
       const serialised = clone.outerHTML
       const base = await options.captureBase?.().catch((): null => null)
-      const png = await composeAnnotationPng(serialised, width, height, base ?? null).catch(
-        (): null => null,
-      )
+      let png: string | null = null
+      let captured = false
+      if (base) {
+        png = await composeAnnotationPng(serialised, width, height, base).catch((): null => null)
+        captured = png !== null
+      }
+      // A bad or undecodable surface capture must not lose the annotation. The
+      // marks-only raster is still useful and is the fallback promised by the UI.
+      png ??= await composeAnnotationPng(serialised, width, height, null).catch((): null => null)
       return {
         svg: serialised,
         png,
-        captured: base !== null && base !== undefined,
+        captured,
         width,
         height,
         marks,

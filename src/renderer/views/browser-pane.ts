@@ -1138,8 +1138,8 @@ export function mountBrowserPane(
           if (contentsId === null || !capture) return null
           return (await capture(contentsId)).dataUrl
         },
-        onSend: (payload): void => {
-          attachAnnotation(
+        onSend: (payload): boolean => {
+          return attachAnnotation(
             payload,
             firstNonEmptyString(tab.artefactTitle, webviewTitle(tab), webviewUrl(tab)) ??
               'browser page',

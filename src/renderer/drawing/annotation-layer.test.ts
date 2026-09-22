@@ -56,7 +56,7 @@ function surfaceOf(el: HTMLElement): SVGSVGElement {
 describe('annotation layer', () => {
   it('mounts nothing until activated, then shows the tool strip over the host', () => {
     const el = host()
-    const layer = mountAnnotationLayer(el, { label: 'Pricing page', onSend: () => {} })
+    const layer = mountAnnotationLayer(el, { label: 'Pricing page', onSend: () => true })
     try {
       assert.equal(el.querySelector('.annotation-layer'), null)
       assert.equal(layer.active, false)
@@ -81,7 +81,7 @@ describe('annotation layer', () => {
 
   it('a pen drag adds a mark, enables Send, and export carries it as sized SVG', async () => {
     const el = host()
-    const layer = mountAnnotationLayer(el, { label: 'page', onSend: () => {} })
+    const layer = mountAnnotationLayer(el, { label: 'page', onSend: () => true })
     try {
       layer.activate()
       const svg = surfaceOf(el)
@@ -109,7 +109,7 @@ describe('annotation layer', () => {
 
   it('tools map onto drauu modes: rect draws a rect, a swatch recolours, arrow adds a marker', () => {
     const el = host()
-    const layer = mountAnnotationLayer(el, { label: 'page', onSend: () => {} })
+    const layer = mountAnnotationLayer(el, { label: 'page', onSend: () => true })
     try {
       layer.activate()
       const svg = surfaceOf(el)
@@ -142,7 +142,7 @@ describe('annotation layer', () => {
     let deactivated = 0
     const layer = mountAnnotationLayer(el, {
       label: 'page',
-      onSend: () => {},
+      onSend: () => true,
       onDeactivate: () => {
         deactivated += 1
       },
@@ -172,7 +172,7 @@ describe('annotation layer', () => {
     }
   })
 
-  it('Send hands the export to onSend and the base capture is composed when available', async () => {
+  it('Send hands the export to onSend, then consumes an accepted annotation', async () => {
     const el = host()
     const sent: AnnotationExport[] = []
     let captured = 0
@@ -184,6 +184,7 @@ describe('annotation layer', () => {
       },
       onSend: (payload) => {
         sent.push(payload)
+        return true
       },
     })
     try {
@@ -197,9 +198,34 @@ describe('annotation layer', () => {
       const payload = sent[0]
       assert.ok(payload)
       assert.equal(payload.marks.length, 1)
-      // happy-dom has no canvas, so the raster is null here; the SVG is the payload.
+      // happy-dom has no canvas, so neither composition attempt can produce a raster.
       assert.equal(payload.png, null)
-      assert.equal(payload.captured, true)
+      assert.equal(payload.captured, false)
+      assert.equal(layer.isEmpty(), true)
+      assert.equal(layer.active, false)
+      assert.equal(el.querySelector<HTMLElement>('.annotation-layer')?.hidden, true)
+    } finally {
+      layer.dispose()
+      el.remove()
+    }
+  })
+
+  it('keeps marks available when the caller cannot attach the export', async () => {
+    const el = host()
+    const layer = mountAnnotationLayer(el, {
+      label: 'page',
+      onSend: () => false,
+    })
+    try {
+      layer.activate()
+      drag(surfaceOf(el), 0, 0, 80, 20)
+      el.querySelector<HTMLButtonElement>('.annotation-send')?.click()
+      await new Promise((r) => setTimeout(r, 0))
+      await new Promise((r) => setTimeout(r, 0))
+
+      assert.equal(layer.isEmpty(), false)
+      assert.equal(layer.active, true)
+      assert.equal(el.querySelector<HTMLButtonElement>('.annotation-send')?.disabled, false)
     } finally {
       layer.dispose()
       el.remove()
@@ -208,7 +234,7 @@ describe('annotation layer', () => {
 
   it('dispose removes the overlay and its window listeners', () => {
     const el = host()
-    const layer = mountAnnotationLayer(el, { label: 'page', onSend: () => {} })
+    const layer = mountAnnotationLayer(el, { label: 'page', onSend: () => true })
     layer.activate()
     const svg = surfaceOf(el)
     layer.dispose()

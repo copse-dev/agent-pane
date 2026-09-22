@@ -19,6 +19,22 @@ import {
 
 const WEBVIEW_PREFS = 'contextIsolation=true'
 const LOAD_TIMEOUT_MS = 30_000
+const inlineArtefactDisposers = new WeakMap<HTMLElement, () => void>()
+
+/** Release lazy annotation listeners before transcript reconciliation removes a card. */
+export function disposeInlineArtefacts(root: ParentNode): void {
+  const cards = new Set<HTMLElement>()
+  if (root instanceof HTMLElement && root.classList.contains('canvas-inline-artefact')) {
+    cards.add(root)
+  }
+  root.querySelectorAll<HTMLElement>('.canvas-inline-artefact').forEach((card) => {
+    cards.add(card)
+  })
+  for (const card of cards) {
+    inlineArtefactDisposers.get(card)?.()
+    inlineArtefactDisposers.delete(card)
+  }
+}
 
 function supportsElectronWebview(element: HTMLElement): boolean {
   return typeof Reflect.get(element, 'getURL') === 'function'
@@ -197,8 +213,8 @@ export function createInlineArtefact(
     annotation ??= mountAnnotationLayer(stage, {
       label: title,
       captureBase,
-      onSend: (payload): void => {
-        attachAnnotation(payload, title)
+      onSend: (payload): boolean => {
+        return attachAnnotation(payload, title)
       },
       onDeactivate: (): void => {
         annotate.setAttribute('aria-pressed', 'false')
@@ -226,6 +242,10 @@ export function createInlineArtefact(
       el('span', { class: 'canvas-preview-actions' }, open, annotate),
     ),
   )
+  inlineArtefactDisposers.set(card, () => {
+    annotation?.dispose()
+    annotation = null
+  })
 
   const showFallback = (): void => {
     card.dataset['canvasState'] = preview ? 'snapshot' : 'unavailable'

@@ -33,6 +33,24 @@ function fakeApi(): ApiClient {
   })()
 }
 
+function pointer(type: string, x: number, y: number): PointerEvent {
+  return new PointerEvent(type, {
+    bubbles: true,
+    cancelable: true,
+    clientX: x,
+    clientY: y,
+    pointerId: 1,
+    pointerType: 'mouse',
+    pressure: 0.5,
+  })
+}
+
+function drag(surface: Element): void {
+  surface.dispatchEvent(pointer('pointerdown', 10, 10))
+  window.dispatchEvent(pointer('pointermove', 40, 40))
+  window.dispatchEvent(pointer('pointerup', 80, 60))
+}
+
 function mountWithUserMessage(
   content: string,
   attachments: Parameters<typeof addMessage>[5],
@@ -351,5 +369,26 @@ describe('assistant inline visualization references', () => {
 
     card.querySelector<HTMLButtonElement>('.canvas-preview-open')?.click()
     assert.deepEqual(opened, { threadId, title: 'Chart' })
+  })
+
+  it('disposes a removed inline annotation surface during transcript reconciliation', () => {
+    const store = createStore({ activeProjectId: 'project-1' })
+    const threadId = createThread(store)
+    const messageId = addMessage(store, threadId, 'assistant', 'Here is the chart.')
+    addMessageCanvasArtefact(store, messageId, { title: 'Chart' })
+    setArtefactPreview(threadId, 'Chart', 'data:image/png;base64,AAAA')
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+
+    document.querySelector<HTMLButtonElement>('.canvas-preview-annotate')?.click()
+    const oldSurface = document.querySelector<SVGSVGElement>('.annotation-layer-svg')
+    assert.ok(oldSurface)
+    assert.equal(oldSurface.childElementCount, 0)
+
+    store.emit('threads_changed')
+    assert.equal(oldSurface.isConnected, false)
+    drag(oldSurface)
+    assert.equal(oldSurface.childElementCount, 0, 'the removed surface no longer handles input')
   })
 })
