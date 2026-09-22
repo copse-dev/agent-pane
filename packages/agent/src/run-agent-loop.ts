@@ -986,11 +986,10 @@ async function executeToolBatch(ctx: ToolBatchContext): Promise<void> {
         if (recentToolProgress.length > RECENT_FINGERPRINT_WINDOW) {
           recentToolProgress.shift()
         }
-        // Images ride on the history message (so the model sees them on the
-        // next provider call) but not on the stream chunk: the transcript
-        // persists tool results as text, not megabytes of base64. After a
-        // reload the model must rerun the tool or use whatever explicit,
-        // durable reference the text result names.
+        // Images ride on both the provider history and the live stream. The
+        // provider sees them on the next call; the renderer persists their
+        // data URLs out of line in the thread store so the inline result also
+        // survives a reload without trusting a local-path Markdown image.
         toolResults.push({
           toolCallId: tc.id,
           result,
@@ -1010,6 +1009,7 @@ async function executeToolBatch(ctx: ToolBatchContext): Promise<void> {
           isError: false,
           ...(editStats ? { editStats } : {}),
           ...(resultFormat ? { resultFormat } : {}),
+          ...(images && images.length > 0 ? { images } : {}),
         })
       } catch (err) {
         recentToolProgress.push(null)

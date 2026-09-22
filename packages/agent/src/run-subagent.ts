@@ -318,6 +318,7 @@ export async function runSubagent(opts: RunSubagentOptions): Promise<RunSubagent
             result: chunk.result,
             isError: chunk.isError,
             ...(chunk.editStats ? { editStats: chunk.editStats } : {}),
+            ...(chunk.images ? { images: chunk.images } : {}),
           })
         }
       },

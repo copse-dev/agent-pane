@@ -4060,6 +4060,9 @@ export function seedEmptyMcpToolFixture(workspaceRoot: string): void {
 export function seedBrowserToolsFixture(workspaceRoot: string): void {
   const projectId = 'e2e-browser-tools-project'
   const threadId = 'e2e-browser-tools-thread'
+  const screenshot = readFileSync(
+    join(workspaceRoot, 'tests/e2e/fixtures/inline-rollup-prototype.png'),
+  )
   mkdirSync(USER_DATA, { recursive: true })
   writeSeedConfig({
     projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
@@ -4107,6 +4110,13 @@ export function seedBrowserToolsFixture(workspaceRoot: string): void {
                   'Source: http://localhost:3000/\n' +
                   'Capture handle (thread-scoped and short-lived): capture_11111111-1111-4111-8111-111111111111\n' +
                   'The screenshot is attached to this tool result.',
+                images: [
+                  {
+                    dataUrl: `data:image/png;base64,${screenshot.toString('base64')}`,
+                    name: 'browser-tab-1.png',
+                    kind: 'screenshot',
+                  },
+                ],
               },
             ],
             createdAt: Date.now(),

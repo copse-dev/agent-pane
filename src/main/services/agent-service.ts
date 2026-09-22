@@ -1617,12 +1617,30 @@ export async function runAgent(
     // One nested-AGENTS.md walk per turn: the prompt build below seeds the memo
     // and every file tool call of this turn reuses it.
     const nestedInstructionTurn = createNestedInstructionTurn()
+    // Resolve the exact turn toolset before building the skill catalog. Portable
+    // skills may depend on host tools (notably Codex's imagegen -> image_gen), so
+    // the prompt must not advertise one this turn has filtered out.
+    const readonlyMode = getSetting<boolean>('defaultReadonlyMode', false)
+    const [threadVideos, threadArchives] = await Promise.all([
+      getThreadVideos(),
+      getThreadArchives(),
+    ])
+    const parentLoopTools = parentTools(
+      registry,
+      subagentsEnabled,
+      readonlyMode,
+      model,
+      threadId,
+      threadVideos,
+      threadArchives,
+    )
     const systemPromptBuild = await buildSystemPromptWithMetadata({
       subagentsEnabled,
       invokedSkills,
       threadId,
       userPrompt: outboundPrompt,
       model,
+      availableToolNames: parentLoopTools.map((tool) => tool.name),
       trackInstructionActivation: true,
       nestedInstructionTurn,
     })
@@ -1666,20 +1684,6 @@ export async function runAgent(
     // Fingerprint the toolset offered to the model before any hook can fire, so
     // every hook_run spine record — including turnStart's — references it
     // (decision 6). The tool list is fixed for the whole run.
-    const readonlyMode = getSetting<boolean>('defaultReadonlyMode', false)
-    const [threadVideos, threadArchives] = await Promise.all([
-      getThreadVideos(),
-      getThreadArchives(),
-    ])
-    const parentLoopTools = parentTools(
-      registry,
-      subagentsEnabled,
-      readonlyMode,
-      model,
-      threadId,
-      threadVideos,
-      threadArchives,
-    )
     setHookRunToolset(parentLoopTools)
 
     const turnStart = await createHookRegistry().emit(

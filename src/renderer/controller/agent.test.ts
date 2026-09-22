@@ -359,10 +359,18 @@ test('tool_call then tool_result transitions the tool card running -> done', () 
   assert.equal(tc.status, 'running')
   assert.equal(tc.name, 'read_file')
 
-  send({ type: 'tool_result', toolCallId: 'tc1', result: 'file body', isError: false })
+  const images = [{ dataUrl: 'data:image/png;base64,cGl4ZWxz', name: 'capture.png' }]
+  send({
+    type: 'tool_result',
+    toolCallId: 'tc1',
+    result: 'file body',
+    isError: false,
+    images,
+  })
   tc = at(at(messages(), 0).toolCalls, 0)
   assert.equal(tc.status, 'done')
   assert.equal(tc.result, 'file body')
+  assert.deepEqual(tc.images, images)
 })
 
 test('visual evidence attaches once to the assistant turn that owns its tool call', () => {

@@ -92,6 +92,8 @@ export interface BuildSystemPromptOptions {
    * and the prompt stays model-agnostic.
    */
   model?: string
+  /** Exact tool names offered for this turn, used to hide incompatible portable skills. */
+  availableToolNames?: readonly string[]
   /** Persist nested-source activation for Settings; real local turns set this. */
   trackInstructionActivation?: boolean
   /**
@@ -167,7 +169,7 @@ export async function buildSystemPromptWithMetadata(
     (readTerminalEnabled ? READ_TERMINAL_BLOCK : '') +
     (okfMemoriesEnabled ? MEMORY_TOOLS_BLOCK : '') +
     (piiRedactionEnabled ? PII_REDACTION_BLOCK : '') +
-    buildSkillsCatalogBlock() +
+    buildSkillsCatalogBlock(opts.availableToolNames) +
     (await buildInvokedSkillsBlock(invokedSkills, {
       sandboxActive: isProjectSandboxActive(),
       ...(threadId ? { threadId } : {}),

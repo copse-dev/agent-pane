@@ -34,6 +34,7 @@ const TOOL_DISPLAY_NAMES: Record<string, DualLabel | string> = {
   browser_navigate: { running: 'Opening browser', done: 'Opened browser' },
   browser_snapshot: { running: 'Taking page snapshot', done: 'Took page snapshot' },
   browser_screenshot: { running: 'Taking screenshot', done: 'Took screenshot' },
+  image_gen: { running: 'Generating image', done: 'Generated image' },
   browser_click: { running: 'Clicking element', done: 'Clicked element' },
   browser_type: { running: 'Typing text', done: 'Typed text' },
   browser_tabs: { running: 'Listing browser tabs', done: 'Listed browser tabs' },

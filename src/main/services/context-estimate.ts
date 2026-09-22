@@ -56,16 +56,19 @@ export async function estimateContextBreakdown(
   const subagentsEnabled = getSetting<boolean>(SUBAGENTS_ENABLED_SETTING, SUBAGENTS_ENABLED_DEFAULT)
   const contextWindow = await resolveContextWindow(model)
 
+  const availableToolNames = registry.names()
   const systemPrompt = await buildSystemPrompt({
     subagentsEnabled,
     invokedSkills: input.invokedSkills,
     model,
     userPrompt: input.draftText,
+    availableToolNames,
   })
   // Skill blocks are part of the system prompt string; measure them separately so
   // they can be attributed to "Skills" instead of inflating "System prompt".
   const skillsChars =
-    buildSkillsCatalogBlock().length + (await buildInvokedSkillsBlock(input.invokedSkills)).length
+    buildSkillsCatalogBlock(availableToolNames).length +
+    (await buildInvokedSkillsBlock(input.invokedSkills)).length
   const skillsTokens = skillsChars / CHARS_PER_TOKEN
   const systemTokens = Math.max(0, systemPrompt.length / CHARS_PER_TOKEN - skillsTokens)
 

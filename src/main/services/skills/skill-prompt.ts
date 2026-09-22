@@ -43,11 +43,29 @@ export function buildSkillsToolsPromptLine(): string {
   )
 }
 
+const SKILL_TOOL_REQUIREMENTS: Readonly<Record<string, readonly string[]>> = {
+  // The Codex system skill assumes its host exposes this built-in. Copse can
+  // discover that portable skill from ~/.codex, but should not advertise it to
+  // the model when the credential-gated implementation is absent.
+  imagegen: ['image_gen'],
+}
+
+function hasRequiredTools(skillName: string, availableToolNames?: readonly string[]): boolean {
+  const required = SKILL_TOOL_REQUIREMENTS[skillName]
+  if (!required || availableToolNames === undefined) return true
+  const available = new Set(availableToolNames)
+  return required.every((name) => available.has(name))
+}
+
 /** Tier 1 — skill catalog (name, description, path) without full instructions. */
-export function buildSkillsCatalogBlock(): string {
+export function buildSkillsCatalogBlock(availableToolNames?: readonly string[]): string {
   // Only advertise model-invocable skills — a skill with
   // `disable-model-invocation: true` stays user-only and is never shown here.
-  const skills = listModelInvocableSkills()
+  // Host-specific portable skills are also withheld when their required tool is
+  // not in this turn's actual toolset, avoiding instructions the agent cannot run.
+  const skills = listModelInvocableSkills().filter((skill) =>
+    hasRequiredTools(skill.name, availableToolNames),
+  )
   if (skills.length === 0) return ''
 
   const entries = skills

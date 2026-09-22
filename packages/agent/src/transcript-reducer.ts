@@ -52,6 +52,7 @@ export class TranscriptReducer {
         entry.call.result = chunk.result
         if (chunk.editStats) entry.call.editStats = chunk.editStats
         if (chunk.resultFormat) entry.call.resultFormat = chunk.resultFormat
+        if (chunk.images) entry.call.images = chunk.images
         return entry.message
       }
       case 'tool_call_update': {

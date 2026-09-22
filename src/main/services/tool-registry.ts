@@ -234,8 +234,7 @@ export class ToolRegistry {
     editStats?: { additions: number; deletions: number }
     resultFormat?: 'markdown'
     /**
-     * Images a tool produced alongside its text (for example, `video_frames`
-     * or `browser_screenshot`). Always returned
+     * Images a tool produced alongside its text (screenshots, generations, frames). Always returned
      * by `normalizeToolExecuteResult`; declared here so callers that can render
      * them — the ACP native-tool bridge — are not silently handed text only.
      */

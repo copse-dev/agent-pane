@@ -225,6 +225,7 @@ import {
   syncCiInvestigatorTools,
   syncLongHorizonTasksTools,
   syncReviewTools,
+  syncImageGenerationTools,
   syncBackgroundTasksTools,
   syncOkfMemoryTools,
   syncParallelSearchTools,
@@ -1479,7 +1480,10 @@ export function registerAllHandlers(
     // renderer never offers a retry the process is not allowed to perform.
     if (!result.ok) return result
     invalidateProviderKeyStatus(p)
-    if (p === 'openai') invalidateOpenAiModelAvailability()
+    if (p === 'openai') {
+      invalidateOpenAiModelAvailability()
+      syncImageGenerationTools(registry)
+    }
     if (p === 'cursor') invalidateCursorCloudModelsCache()
     // The live Intelligence Index feed caches its result (successes AND failures)
     // for hours, so a stored 403/empty would otherwise survive the user fixing

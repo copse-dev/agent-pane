@@ -172,6 +172,8 @@ export type ProviderStreamChunk =
        * and should render through the Markdown pipeline rather than a raw `<pre>`.
        */
       resultFormat?: 'markdown'
+      /** Images returned by the tool, rendered beside its transcript card. */
+      images?: ToolResultImage[]
     }
   | {
       type: 'usage'

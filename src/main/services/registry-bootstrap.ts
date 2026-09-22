@@ -85,6 +85,7 @@ import {
   openSimulatorDesktopTool,
 } from '../tools/simulator-desktop-tool.ts'
 import { launchGuiAppTool } from '../tools/gui-app-launch-tool.ts'
+import { IMAGE_GEN_TOOL_NAME, imageGenTool } from '../tools/image-gen-tool.ts'
 
 export function createRegistry(): ToolRegistry {
   const registry = new ToolRegistry()
@@ -209,10 +210,23 @@ export function createRegistry(): ToolRegistry {
   // Always-on setup health check ("doctor"). Read-only — gathers diagnostics and
   // returns a report; the agent proposes any fixes for the user to approve.
   registry.register(runCheckupTool)
+  // A portable Codex imagegen skill may be present in ~/.codex/skills. Offer its
+  // expected host tool only when Copse can actually execute it with a configured
+  // OpenAI credential; live key changes call the same sync from the IPC handler.
+  syncImageGenerationTools(registry)
   if (getSetting<boolean>(BROWSER_TOOLS_ENABLED_SETTING, BROWSER_TOOLS_DEFAULT_ENABLED)) {
     registerBrowserTools(registry)
   }
   return registry
+}
+
+/** Keep the OpenAI-backed image tool aligned with live credential changes. */
+export function syncImageGenerationTools(registry: ToolRegistry): void {
+  if (resolveApiKey('openai')) {
+    if (!registry.has(IMAGE_GEN_TOOL_NAME)) registry.register(imageGenTool)
+  } else {
+    registry.unregister(IMAGE_GEN_TOOL_NAME)
+  }
 }
 
 /** Keep the Simulator panel bridge aligned with the experimental Apple plugin. */
