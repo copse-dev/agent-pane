@@ -28172,9 +28172,7 @@ function createDemoApi(scenario, options = {}) {
         }
         emitChunk(threadId, {
           type: "text",
-          text: `Demo response to: ${prompt}
-
-This response is streamed through the real renderer event path.`
+          text: "The renderer receives each response chunk, appends it to the conversation, and marks the turn complete when streaming ends."
         });
         emitChunk(threadId, {
           type: "usage",
