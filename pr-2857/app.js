@@ -31320,7 +31320,9 @@ function mountTitlebar(root, store2, api2) {
     }
   }
   let branchToken = 0;
+  let syncedThreadId = store2.getState().activeThreadId;
   function syncBranch() {
+    syncedThreadId = store2.getState().activeThreadId;
     const token = ++branchToken;
     const rootPath = store2.getState().workspaceRoot;
     const owner = getActiveThreadOwner(store2);
@@ -31345,26 +31347,42 @@ function mountTitlebar(root, store2, api2) {
     );
   }
   let branchTimer = null;
+  function syncBranchNow() {
+    if (branchTimer) {
+      clearTimeout(branchTimer);
+      branchTimer = null;
+    }
+    syncBranch();
+  }
   function scheduleBranchSync() {
     if (branchTimer) clearTimeout(branchTimer);
-    branchTimer = setTimeout(syncBranch, 500);
+    branchTimer = setTimeout(() => {
+      branchTimer = null;
+      syncBranch();
+    }, 500);
   }
   syncName();
   syncBranch();
   const unsubs = [
     store2.on("workspace_changed", () => {
       syncName();
-      syncBranch();
+      syncBranchNow();
       syncRunApp();
     }),
     store2.on("projects_changed", syncName),
-    store2.on("threads_changed", syncBranch),
+    store2.on("threads_changed", () => {
+      if (store2.getState().activeThreadId !== syncedThreadId) {
+        syncBranchNow();
+        return;
+      }
+      scheduleBranchSync();
+    }),
     store2.on("threads_changed", () => {
       if (store2.getState().activeThreadId !== detectedThread) syncRunApp();
     }),
     store2.on("thread_checkout_changed", syncRunApp),
     store2.on("message_done", syncRunApp),
-    store2.on("git_branch_changed", syncBranch),
+    store2.on("git_branch_changed", scheduleBranchSync),
     api2.fs.onChanged(scheduleBranchSync),
     api2.git.onWorkingTreeChanged(scheduleBranchSync)
   ];
@@ -64559,7 +64577,7 @@ function attentionBell(label) {
   return svg2;
 }
 function runningStatus(label) {
-  const svg2 = runningStatusIcon("ui-icon ui-icon-sm chat-running-status");
+  const svg2 = runningStatusIcon("ui-icon chat-running-status");
   svg2.setAttribute("role", "img");
   svg2.setAttribute("aria-label", label);
   svg2.setAttribute("data-tooltip", label);
@@ -85181,6 +85199,7 @@ function mountFooterBranchStatus(host, store2, api2) {
     }
   }
   async function refresh() {
+    refreshedThreadId = store2.getState().activeThreadId;
     const token = ++refreshToken;
     pruneBaseBranches();
     if (!store2.getState().workspaceRoot) {
@@ -85224,9 +85243,26 @@ function mountFooterBranchStatus(host, store2, api2) {
     renderTrigger();
     if (open2) renderMenu();
   }
+  let refreshedThreadId = store2.getState().activeThreadId;
+  function refreshNow() {
+    if (refreshTimer) {
+      clearTimeout(refreshTimer);
+      refreshTimer = null;
+    }
+    void refresh();
+  }
   function scheduleRefresh() {
     if (refreshTimer) clearTimeout(refreshTimer);
-    refreshTimer = setTimeout(() => void refresh(), 500);
+    refreshTimer = setTimeout(() => {
+      refreshTimer = null;
+      void refresh();
+    }, 500);
+  }
+  function scheduleStoreRefresh() {
+    pruneBaseBranches();
+    renderTrigger();
+    if (open2) renderMenu();
+    scheduleRefresh();
   }
   function copyBranchName() {
     const branch = branchToCopy;
@@ -85261,13 +85297,23 @@ function mountFooterBranchStatus(host, store2, api2) {
     }
   });
   const unsubs = [
-    store2.on("workspace_changed", () => void refresh()),
-    store2.on("threads_changed", () => void refresh()),
+    store2.on("workspace_changed", refreshNow),
+    store2.on("threads_changed", () => {
+      if (store2.getState().activeThreadId !== refreshedThreadId) {
+        refreshNow();
+        return;
+      }
+      scheduleStoreRefresh();
+    }),
     store2.on("thread_status_changed", () => {
       scheduleRefresh();
     }),
-    store2.on("message_added", () => void refresh()),
-    store2.on("git_branch_changed", () => void refresh()),
+    store2.on("message_added", () => {
+      scheduleStoreRefresh();
+    }),
+    store2.on("git_branch_changed", () => {
+      scheduleRefresh();
+    }),
     api2.fs.onChanged(() => {
       scheduleRefresh();
     }),
@@ -85284,7 +85330,7 @@ function mountFooterBranchStatus(host, store2, api2) {
   ];
   void refresh();
   return {
-    refresh: () => void refresh(),
+    refresh: refreshNow,
     pendingBaseBranch: (threadId) => baseBranchByThread.get(threadId),
     destroy: () => {
       refreshToken += 1;
@@ -88341,6 +88387,8 @@ ${description}
   async function refreshAutomaticCheckoutPreview() {
     const seq = ++automaticCheckoutPreviewSeq;
     const { activeProjectId } = store2.getState();
+    const thread = getActiveThread(store2);
+    if (!thread || thread.messages.length > 0 || thread.worktreeChoice) return;
     const model = footerChatModel();
     let next = "shared";
     if (activeProjectId) {
@@ -88901,6 +88949,7 @@ ${description}
     if (branchResult?.status === "rejected") throw branchResult.reason;
     const currentBranch = requiresCheckoutPreparation && !thread.gitBranch ? null : branchResult?.status === "fulfilled" ? branchResult.value : await api2.git.currentBranch(projectId, id);
     const prefetchedPromptState = prefetchedGitState?.[1];
+    let preparedPromptState;
     const threadBranch = thread?.gitBranch;
     const isolatedWorktree = thread !== void 0 && thread.worktree !== void 0;
     if (threadBranch && threadGitBranchMismatch(threadBranch, currentBranch, { isolatedWorktree })) {
@@ -88981,6 +89030,7 @@ ${description}
           // becomes the worktree's base, or the shared checkout's branch.
           branchControl.pendingBaseBranch(id)
         );
+        preparedPromptState = prepared.promptState;
         applyPreparedThreadCheckout(store2, id, prepared);
         if (getActiveThreadId() !== id) return;
       } catch (error62) {
@@ -88994,7 +89044,7 @@ ${description}
       }
     }
     if (prefetchedPromptState?.status === "rejected") throw prefetchedPromptState.reason;
-    const promptState = prefetchedPromptState?.status === "fulfilled" ? prefetchedPromptState.value : await api2.git.promptState(projectId, id);
+    const promptState = preparedPromptState ?? (prefetchedPromptState?.status === "fulfilled" ? prefetchedPromptState.value : await api2.git.promptState(projectId, id));
     const priorTodos = thread?.todos ?? [];
     const workingBrief = nextWorkingBrief(thread?.workingBrief, fullContent);
     if (workingBrief && workingBrief !== thread?.workingBrief) {
@@ -89457,11 +89507,9 @@ ${description}
       scheduleContextEstimate(0);
     }),
     store2.on("workspace_changed", () => {
-      branchControl.refresh();
       void refreshAutomaticCheckoutPreview();
     }),
     store2.on("git_branch_changed", () => {
-      branchControl.refresh();
       void refreshAutomaticCheckoutPreview();
     })
   ];

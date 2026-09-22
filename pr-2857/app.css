@@ -1263,6 +1263,7 @@ copse-ui-field input[type=password],
   transform: translateY(-50%);
   color: var(--accent);
   pointer-events: none;
+  stroke-width: 3;
 }
 .chat-unread-dot {
   position: absolute;
