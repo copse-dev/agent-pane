@@ -175,6 +175,27 @@ describe('modern CSS adoptions', () => {
     )
   })
 
+  it('keeps inline thread chips outlined, stationary, and on the text baseline', () => {
+    const css = read('composer-extras.css')
+    assert.ok(
+      declares(css, '.inline-thread-chip', /border:\s*1px solid var\(--border\)/),
+      '.inline-thread-chip must use the transcript chip outline',
+    )
+    assert.ok(
+      declares(css, '.inline-thread-chip', /vertical-align:\s*baseline/),
+      '.inline-thread-chip must sit on the surrounding text baseline',
+    )
+    assert.ok(
+      declares(css, '.inline-thread-chip-label', /align-self:\s*baseline/),
+      '.inline-thread-chip-label must establish the flex baseline',
+    )
+    assert.equal(
+      declares(css, '.inline-thread-chip:hover', /transform:/),
+      false,
+      'hover must not move the inline thread chip',
+    )
+  })
+
   it('strokes transcript attachment icons instead of filling them', () => {
     const css = read('conversation.css')
     // outline-icon.ts emits lucide-style paths with no presentation attributes,

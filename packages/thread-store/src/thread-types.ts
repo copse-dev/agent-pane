@@ -492,9 +492,9 @@ export interface ThreadCatalogHit extends ThreadCatalogEntry {
 /**
  * A display-only attachment chip shown in a user message's transcript. The agent
  * receives the expanded fenced blocks in its run payload, not these — so this is
- * purely how the sent message renders. `paste` chips are positional: each maps,
- * in order, to a U+FFFC (object-replacement) placeholder in the message
- * `content`; `file`/`thread` chips render as a trailing row.
+ * purely how the sent message renders. Positional `paste`/`thread` attachments
+ * lead the array and map, in order, to U+FFFC (object-replacement) placeholders
+ * in the message `content`; remaining attachments render in a trailing row.
  */
 export interface TranscriptAttachment {
   kind: 'paste' | 'file' | 'thread' | 'shell' | 'video' | 'archive'

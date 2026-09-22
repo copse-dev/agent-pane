@@ -14,10 +14,10 @@ import {
   setArtefactShowHandler,
 } from '../canvas/artefact-previews.ts'
 
-// Renders a sent user message carrying transcript attachments (input-bar.ts
-// builds these on send) and asserts the composer's paste chip appears inline at
-// its U+FFFC placeholder while file/thread refs follow in a trailing row — each
-// an SVG-icon chip, no emoji.
+// Renders sent user messages carrying transcript attachments (input-bar.ts
+// builds these on send). Positional paste/thread chips replace U+FFFC placeholders;
+// remaining and legacy attachments follow in a trailing row — each with the shared
+// outline SVG icon, never an emoji.
 
 function fakeApi(): ApiClient {
   return ((): ApiClient => {
@@ -111,6 +111,45 @@ describe('user transcript attachment chips', () => {
 
     // No object-replacement placeholder leaks into the visible text.
     assert.doesNotMatch(textEl.textContent, new RegExp(CHIP_CHAR))
+  })
+
+  it('renders thread and paste chips inline in placeholder order', () => {
+    mountWithUserMessage(`From ${CHIP_CHAR}, apply ${CHIP_CHAR} here`, [
+      { kind: 'thread', label: 'Auth refactor' },
+      { kind: 'paste', label: 'Editor feedback', content: 'Make the heading shorter.' },
+      { kind: 'file', label: 'notes.txt', content: 'release checklist' },
+    ])
+
+    const textEl = document.querySelector('.msg-user .message-text')
+    assert.ok(textEl)
+    const chips = textEl.querySelectorAll('.transcript-attachment-chip')
+    assert.equal(chips.length, 3)
+    assert.ok(chips[0]?.classList.contains('transcript-attachment-thread'))
+    assert.ok(chips[1]?.classList.contains('transcript-attachment-paste'))
+    assert.ok(chips[2]?.classList.contains('transcript-attachment-file'))
+    assert.ok(chips[0]?.querySelector('svg[data-icon="thread"]'))
+    assert.match(textEl.textContent, /From Auth refactor, apply Editor feedback here/)
+    assert.equal(
+      textEl.querySelectorAll('.transcript-attachment-row .transcript-attachment-chip').length,
+      1,
+      'only the non-positional file stays in the trailing row',
+    )
+  })
+
+  it('never consumes a trailing file to satisfy an unmatched placeholder', () => {
+    mountWithUserMessage(`From ${CHIP_CHAR} and ${CHIP_CHAR}`, [
+      { kind: 'thread', label: 'Auth refactor' },
+      { kind: 'file', label: 'notes.txt', content: 'release checklist' },
+    ])
+
+    const textEl = document.querySelector('.msg-user .message-text')
+    assert.ok(textEl)
+    assert.equal(textEl.querySelectorAll(':scope > .transcript-attachment-thread').length, 1)
+    assert.equal(textEl.querySelectorAll(':scope > .transcript-attachment-file').length, 0)
+    assert.equal(
+      textEl.querySelectorAll('.transcript-attachment-row .transcript-attachment-file').length,
+      1,
+    )
   })
 
   /**
