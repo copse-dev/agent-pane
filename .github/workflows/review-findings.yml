@@ -2,8 +2,9 @@ name: Copse review findings
 
 # Shell C, job B (docs/plans/copse-reviewer.md, §Execution isolation, "Backend
 # per shell — CI"). Runs after "Copse review ground" succeeds and its fresh
-# handoff job dispatches this default-branch workflow with the model key and a
-# token that can write a review. It fetches the pull request's head to READ it — the reviewers'
+# handoff job dispatches this default-branch workflow with the model key. This
+# job mints the existing Copse App's narrowly scoped review token only after it
+# has verified the ground run. It fetches the pull request's head to READ it — the reviewers'
 # context, their file tools, the challenger — and never executes it: the
 # Stage 0 report the ground job uploaded is the only execution this job
 # consumes, and it is validated as untrusted input before a field of it
@@ -42,7 +43,7 @@ run-name: copse-review-findings pr=${{ inputs.pr }} ground=${{ inputs.ground_run
 
 permissions:
   contents: read
-  pull-requests: write
+  pull-requests: read
   actions: read
 
 concurrency:
@@ -145,12 +146,23 @@ jobs:
           run-id: ${{ inputs.ground_run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
+      # Reviews should carry the same Copse App identity as the repository's
+      # deploy automation. Keep the workflow token read-only and mint only the
+      # one write permission the final REST call needs.
+      - name: Mint the Copse GitHub App review token
+        id: review-app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-pull-requests: write
+
       - name: Review read-only over the uploaded ground and post the findings
         shell: bash
         env:
           COPSE_REVIEW_API_KEY: ${{ secrets.COPSE_REVIEW_API_KEY || secrets.SCW_GENERATIVE_API_KEY }}
+          COPSE_REVIEW_FORGE_TOKEN: ${{ steps.review-app-token.outputs.token }}
           SCW_DEFAULT_PROJECT_ID: ${{ secrets.SCW_DEFAULT_PROJECT_ID }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HEAD_SHA: ${{ steps.pr.outputs.head }}
           PR_NUMBER: ${{ steps.pr.outputs.number }}
           BASE_REF: ${{ steps.pr.outputs.base }}

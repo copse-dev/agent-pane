@@ -809,6 +809,43 @@ describe('Copse Reviewer workflow invariants', () => {
     assert.match(findingsWorkflow, /run-id: \$\{\{ inputs\.ground_run_id \}\}/)
   })
 
+  it('posts GitHub reviews as the least-privilege Copse App identity', () => {
+    assert.match(
+      findingsWorkflow,
+      /^permissions:\n {2}contents: read\n {2}pull-requests: read\n {2}actions: read$/m,
+      'the default workflow token must not retain review-write permission',
+    )
+    const nightlyFindings = workflowJobBlock(nightlyWorkflow, 'findings')
+    assert.match(
+      nightlyFindings,
+      /^ {4}permissions:\n {6}contents: read\n {6}pull-requests: read$/m,
+    )
+
+    for (const job of [workflowJobBlock(findingsWorkflow, 'findings'), nightlyFindings]) {
+      assert.match(
+        job,
+        /- name: Mint the Copse GitHub App review token\n {8}id: review-app-token\n {8}uses: actions\/create-github-app-token@v3/,
+      )
+      assert.match(job, /app-id: \$\{\{ secrets\.RELEASE_APP_ID \}\}/)
+      assert.match(job, /private-key: \$\{\{ secrets\.RELEASE_APP_PRIVATE_KEY \}\}/)
+      assert.match(job, /permission-pull-requests: write/)
+
+      const postingStep = job.match(
+        / {6}- name: Review read-only over the uploaded ground and post the findings\n[\s\S]*?(?=\n {6}- uses: actions\/upload-artifact)/,
+      )?.[0]
+      assert.ok(postingStep, 'expected the review generation and posting step')
+      assert.match(
+        postingStep,
+        /COPSE_REVIEW_FORGE_TOKEN: \$\{\{ steps\.review-app-token\.outputs\.token \}\}/,
+      )
+      assert.doesNotMatch(
+        postingStep,
+        /^\s+GITHUB_TOKEN:/m,
+        'the posting step must not silently fall back to the workflow identity',
+      )
+    }
+  })
+
   it('primes the isolated checks from data-only files at the exact pull-request head', () => {
     for (const workflow of [groundWorkflow, nightlyWorkflow]) {
       const job = workflowJobBlock(workflow, 'ground')

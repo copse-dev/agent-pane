@@ -202,7 +202,7 @@ jobs:
     timeout-minutes: 60
     permissions:
       contents: read
-      pull-requests: write
+      pull-requests: read
     env:
       REVIEW_PROVIDER: ${{ vars.COPSE_REVIEW_PROVIDER || 'openai-compatible' }}
       REVIEW_MODEL: ${{ vars.COPSE_REVIEW_MODEL || 'qwen3.8-27b' }}
@@ -239,12 +239,22 @@ jobs:
           name: copse-review-nightly-ground-${{ needs.select.outputs.number }}
           path: ground
 
+      # Use the repository's existing deploy App as the public reviewer
+      # identity, scoped to the single write permission used by review posting.
+      - name: Mint the Copse GitHub App review token
+        id: review-app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-pull-requests: write
+
       - name: Review read-only over the uploaded ground and post the findings
         shell: bash
         env:
           COPSE_REVIEW_API_KEY: ${{ secrets.COPSE_REVIEW_API_KEY || secrets.SCW_GENERATIVE_API_KEY }}
+          COPSE_REVIEW_FORGE_TOKEN: ${{ steps.review-app-token.outputs.token }}
           SCW_DEFAULT_PROJECT_ID: ${{ secrets.SCW_DEFAULT_PROJECT_ID }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HEAD_SHA: ${{ needs.select.outputs.head_sha }}
           PR_NUMBER: ${{ needs.select.outputs.number }}
           BASE_REF: ${{ needs.select.outputs.base_ref }}
