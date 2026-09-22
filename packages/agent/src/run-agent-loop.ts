@@ -987,8 +987,9 @@ async function executeToolBatch(ctx: ToolBatchContext): Promise<void> {
         }
         // Images ride on the history message (so the model sees them on the
         // next provider call) but not on the stream chunk: the transcript
-        // persists tool results as text, and a reloaded thread re-reads them
-        // from the paths the result names rather than replaying base64.
+        // persists tool results as text, not megabytes of base64. After a
+        // reload the model must rerun the tool or use whatever explicit,
+        // durable reference the text result names.
         toolResults.push({
           toolCallId: tc.id,
           result,

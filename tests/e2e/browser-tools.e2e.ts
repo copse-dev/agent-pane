@@ -1,13 +1,9 @@
-import { mkdirSync } from 'node:fs'
-import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedBrowserToolsFixture } from './helpers/seed-config.ts'
-
-const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
+import { saveAppScreenshot } from './helpers/screenshot.ts'
 
 describe('browser tool display', () => {
   before(async () => {
-    mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     seedBrowserToolsFixture(process.cwd())
     await browser.reloadSession()
@@ -25,11 +21,27 @@ describe('browser tool display', () => {
     await expect(rollup.$('summary.tool-card-header .tool-name')).toHaveText('Used browser')
     await expect(rollup.$('summary.tool-card-header .tool-count')).toHaveText('×3')
 
-    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'browser-tools-collapsed.png'))
+    await saveAppScreenshot('browser-tools-collapsed.png')
 
     await rollup.$('summary.tool-card-header').click()
     await expect(rollup).toHaveAttribute('open')
-    await expect(rollup.$('.tool-card-group .tool-name')).toHaveText('Used browser')
-    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'browser-tools-expanded.png'))
+    const group = await rollup.$('.tool-card-group')
+    await expect(group.$('.tool-name')).toHaveText('Used browser')
+    await saveAppScreenshot('browser-tools-expanded.png')
+
+    await group.$(':scope > summary').click()
+    await expect(group).toHaveAttribute('open')
+
+    const screenshot = await group.$('[data-tool-id="tc-browser-screenshot"]')
+    await expect(screenshot).toBeDisplayed()
+    await screenshot.$(':scope > summary').click()
+    await expect(screenshot).toHaveAttribute('open')
+
+    const result = await screenshot.$('.tool-result')
+    await expect(result).toHaveText(
+      expect.stringContaining('Capture handle (thread-scoped and short-lived):'),
+    )
+    await expect(result).not.toHaveText(expect.stringContaining('/tmp/browser-screenshots'))
+    await saveAppScreenshot('browser-tools-screenshot-handle.png')
   })
 })

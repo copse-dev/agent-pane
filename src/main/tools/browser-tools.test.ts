@@ -7,8 +7,25 @@ import {
   BROWSER_TOOLS,
   READ_ONLY_BROWSER_TOOLS,
 } from '../services/browser/browser-origin-policy.ts'
-import { browserShowTool } from './browser-tools.ts'
-import { setBrowserSessionPlatform } from '../services/browser/session-manager.ts'
+import { browserScreenshotTool, browserShowTool } from './browser-tools.ts'
+import {
+  getBrowserSession,
+  setBrowserSessionPlatform,
+} from '../services/browser/session-manager.ts'
+import {
+  runWithThreadExecutionContext,
+  type ThreadExecutionContext,
+} from '../services/thread-execution-context.ts'
+import { resolveCaptureHandle } from '../services/visual-evidence/capture-handle-store.ts'
+
+const THREAD_CONTEXT: ThreadExecutionContext = {
+  projectId: 'project-a',
+  threadId: 'thread-a',
+  projectRoot: '/project',
+  root: '/project',
+  checkoutMode: 'shared',
+  branch: 'main',
+}
 
 describe('browser tools registration', () => {
   afterEach(async () => {
@@ -122,5 +139,44 @@ describe('browser_show', () => {
     assert.ok(typeof out === 'string')
     assert.doesNotMatch(out, /^Brought /)
     assert.match(out, /changes nothing if this thread never rendered that title/i)
+  })
+})
+
+describe('browser_screenshot', () => {
+  const signal = new AbortController().signal
+
+  it('returns the captured pixels with a thread-scoped handle instead of a path', async (t) => {
+    const png = Buffer.from('png pixels')
+    const result = await runWithThreadExecutionContext(THREAD_CONTEXT, () => {
+      t.mock.method(getBrowserSession(), 'screenshot', async () => ({
+        png,
+        viewId: 'tab-1',
+        title: 'Local preview',
+        url: 'http://localhost:3000/',
+        width: 1280,
+        height: 800,
+        capturedAt: 1_000,
+      }))
+      return browserScreenshotTool.execute({ viewId: 'tab-1' }, signal)
+    })
+    assert.notEqual(typeof result, 'string')
+    if (typeof result === 'string') return
+
+    assert.match(result.result, /Captured a 1280×800 PNG of tab-1/)
+    assert.match(result.result, /The screenshot is attached to this tool result/)
+    assert.doesNotMatch(result.result, /browser-screenshots|Saved screenshot|\/tmp\//)
+    assert.deepEqual(result.images, [
+      {
+        dataUrl: `data:image/png;base64,${png.toString('base64')}`,
+        name: 'browser-tab-1.png',
+        kind: 'screenshot',
+      },
+    ])
+
+    const id = /capture_[0-9a-f-]+/.exec(result.result)?.[0]
+    assert.ok(id)
+    const owner = { projectId: THREAD_CONTEXT.projectId, threadId: THREAD_CONTEXT.threadId }
+    assert.deepEqual(resolveCaptureHandle(id, owner)?.bytes, png)
+    assert.equal(resolveCaptureHandle(id, { ...owner, threadId: 'other-thread' }), null)
   })
 })

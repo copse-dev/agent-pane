@@ -142,7 +142,8 @@ export type ToolExecuteResult =
       resultFormat?: 'markdown'
       /**
        * Images to put in front of the model alongside `result` — currently the
-       * stills `video_frames` pulls out of a screen recording. Provider support
+       * stills `video_frames` pulls out of a screen recording or a browser
+       * screenshot. Provider support
        * differs (see `@copse/llm/tool-result-images.ts`) and a trimmed history
        * drops them first, so `result` must stand on its own as text.
        */
