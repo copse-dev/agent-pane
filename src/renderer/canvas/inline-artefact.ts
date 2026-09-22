@@ -223,7 +223,7 @@ export function createInlineArtefact(
         el('span', { class: 'canvas-preview-title' }, title),
         status,
       ),
-      el('span', { class: 'canvas-preview-actions' }, annotate, open),
+      el('span', { class: 'canvas-preview-actions' }, open, annotate),
     ),
   )
 

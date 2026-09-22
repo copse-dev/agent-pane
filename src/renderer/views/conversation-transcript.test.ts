@@ -349,7 +349,7 @@ describe('assistant inline visualization references', () => {
     assert.equal(card.querySelector('.canvas-preview-open')?.textContent, 'Open canvas')
     assert.equal(document.querySelector('.tool-card'), null)
 
-    card.querySelector<HTMLButtonElement>('button')?.click()
+    card.querySelector<HTMLButtonElement>('.canvas-preview-open')?.click()
     assert.deepEqual(opened, { threadId, title: 'Chart' })
   })
 })
