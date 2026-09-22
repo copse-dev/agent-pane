@@ -24,15 +24,41 @@
 // answer as its own check run, `Base Current`. No checkout, no dependency
 // restore, no fleet — one comparison and one check run per candidate.
 //
+// ## This REPORTS. It must never become a required check.
+//
+// `Base Current` is advisory, and the limit is structural rather than a gap to
+// be tightened later. The authorizing artifact would be a `success` check run
+// already attached to a head SHA, and the only way to withdraw one is to
+// successfully POST a newer check run to that same head. Check runs have no
+// expiry and there is no atomic bulk invalidation, so ANY failure of the
+// fan-out — a single API error, a lost runner, an aborted run, the listing call
+// failing before a single candidate is reached, the workflow not dispatching at
+// all — leaves earlier `success` results in place on every head it did not
+// reach. Those pull requests then carry an authorizing success across a base
+// that has moved, which is precisely the case this is written to expose. The
+// run's own failure is attached to the base commit, not to those heads, so
+// nothing on the candidate reflects it.
+//
+// Continuing past per-candidate errors (below) narrows that window and makes
+// the incompleteness visible; it cannot close it. Revocation by push is
+// best-effort by construction, so requiring this context would reintroduce the
+// stale authorization it is meant to surface, but harder to see.
+//
+// Sound enforcement of the same property already exists and needs no
+// revocation because GitHub evaluates it at merge time: the branch-protection
+// setting "Require branches to be up to date before merging", or a merge queue.
+// Choosing between those is a repository-settings decision, not something this
+// workflow can substitute for. docs/plans/ci-base-freshness.md carries that
+// reasoning and the open enforcement question.
+//
 // Deliberately ADDITIVE. `CI Passed` keeps its exact current meaning, so no
 // existing branch rule or consumer changes, and nothing here can open a merge
-// window that was closed before. Making `Base Current` required is a separate,
-// owner-sequenced repository-settings change; until then this reports without
-// enforcing. docs/plans/ci-base-freshness.md records that sequence.
+// window that was closed before.
 //
-// Fails closed on purpose: when freshness cannot be established the verdict is
-// `failure`, never a quiet pass. Every path self-heals — the next push to the
-// base and the pull request's own next event both re-evaluate it.
+// Within a candidate this run does reach, the report is conservative: when
+// freshness cannot be established the verdict is `failure`, never a quiet pass.
+// Every path self-heals — the next push to the base and the pull request's own
+// next event both re-evaluate it.
 //
 // Run locally:  GITHUB_REPOSITORY=owner/repo GITHUB_TOKEN=... BASE_REF=main \
 //                 pnpm run ci:base-freshness -- --dry-run
@@ -42,7 +68,7 @@
 // that decides whether a merge is authorized must not be able to fail because a
 // dependency restore did. The small decoders below exist for that reason.
 
-/** The additive check context this script publishes. */
+/** The additive, advisory check context this script publishes. */
 export const CHECK_NAME = 'Base Current'
 
 /**
@@ -89,10 +115,9 @@ export function decideBaseFreshness(candidate: Candidate, behindBy: number | nul
       title: 'Base freshness could not be established',
       summary:
         `Could not establish how far ${candidate.headSha} is behind ${where}, so this ` +
-        `pull request's ` +
-        `CI result cannot be shown to describe the commit that would land. This check fails ` +
-        `closed. It is re-evaluated on the next push to ${where} and on this pull request's ` +
-        `next push, retarget or reopen.`,
+        `pull request's CI result cannot be shown to describe the commit that would land. ` +
+        `Reported as not current rather than assumed current. It is re-evaluated on the next ` +
+        `push to ${where} and on this pull request's next push, retarget or reopen.`,
     }
   }
   if (behindBy > 0) {
@@ -244,18 +269,48 @@ export async function publish(api: Api, candidate: Candidate, verdict: Verdict):
   })
 }
 
+export type Outcome = {
+  candidate: Candidate
+  verdict: Verdict
+  /** False when this candidate's verdict could not be posted to its head. */
+  published: boolean
+  error?: string
+}
+
+/**
+ * Evaluate every candidate, and keep going when one cannot be published.
+ *
+ * Aborting on the first failed POST was worse than useless: every candidate
+ * after it kept whatever `Base Current` it already had — a `success` from
+ * before the base moved, for most of them — while the run's own red was
+ * attached to the base commit where no candidate shows it.
+ *
+ * Continuing narrows that window to the candidates that individually failed,
+ * and the caller turns any of those into a red run naming them. It does NOT
+ * make the fan-out sound; see the header. That is why this context reports and
+ * must not be required.
+ */
 export async function evaluate(
   api: Api,
   candidates: Candidate[],
   publishImpl: (candidate: Candidate, verdict: Verdict) => Promise<void>,
-): Promise<Verdict[]> {
-  const verdicts: Verdict[] = []
+): Promise<Outcome[]> {
+  const outcomes: Outcome[] = []
   for (const candidate of candidates) {
     const verdict = decideBaseFreshness(candidate, await behindBy(api, candidate))
-    verdicts.push(verdict)
-    await publishImpl(candidate, verdict)
+    try {
+      await publishImpl(candidate, verdict)
+      outcomes.push({ candidate, verdict, published: true })
+    } catch (error: unknown) {
+      outcomes.push({
+        candidate,
+        verdict,
+        published: false,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
   }
-  return verdicts
+  return outcomes
 }
 
 function requireEnv(name: string): string {
@@ -277,16 +332,32 @@ async function main(): Promise<void> {
       ? await listCandidates(api, requireEnv('BASE_REF'))
       : [decodeCandidateResponse(await api.get(`/pulls/${pullNumber}`))]
 
-  const verdicts = await evaluate(api, candidates, async (candidate, verdict) => {
+  const outcomes = await evaluate(api, candidates, async (candidate, verdict) => {
     console.log(`#${String(candidate.number)} ${verdict.conclusion}: ${verdict.title}`)
     if (!dryRun) await publish(api, candidate, verdict)
   })
 
-  const stale = verdicts.filter((verdict) => verdict.conclusion === 'failure').length
-  console.log(`${CHECK_NAME}: ${String(verdicts.length)} evaluated, ${String(stale)} not current`)
+  const stale = outcomes.filter((outcome) => outcome.verdict.conclusion === 'failure').length
+  const unpublished = outcomes.filter((outcome) => !outcome.published)
+  console.log(`${CHECK_NAME}: ${String(outcomes.length)} evaluated, ${String(stale)} not current`)
 
-  // Reporting a stale candidate is this workflow succeeding at its job. Only a
-  // failure to evaluate should redden the run itself.
+  // Reporting a stale candidate is this workflow succeeding at its job, so it
+  // does not redden the run. A candidate whose verdict never reached its head
+  // does: that pull request is now showing a result this run could not refresh,
+  // and the report is knowingly incomplete. Naming them is the most this can
+  // do — the red lands on the base commit, not on their heads.
+  for (const outcome of unpublished) {
+    console.error(
+      `#${String(outcome.candidate.number)} (${outcome.candidate.headSha}) kept its previous ` +
+        `${CHECK_NAME}: ${outcome.error ?? 'publish failed'}`,
+    )
+  }
+  if (unpublished.length > 0) {
+    console.error(
+      `${String(unpublished.length)} of ${String(outcomes.length)} candidates were not refreshed.`,
+    )
+    process.exitCode = 1
+  }
 }
 
 if (process.argv[1]?.endsWith('base-freshness.mts') === true) {

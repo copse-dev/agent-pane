@@ -50,10 +50,11 @@ Acceptance cases:
 A new check context, `Base Current`, published by
 `.github/workflows/base-freshness.yml` from `scripts/base-freshness.mts`.
 
+- **Advisory, and never a required check.** This reports; it does not
+  authorize. The reason is structural, not a gap to be tightened later — see
+  _Why this cannot be the enforcement_ below.
 - **Additive.** Nothing renames or republishes `CI Passed`, so no existing rule
   or consumer changes meaning and no merge window that was closed can open.
-  Requiring `Base Current` is a separate repository-settings change, sequenced
-  by the owner — see _Adoption_ below. Until then this reports without enforcing.
 - **Re-evaluate, never re-run.** One comparison and one check run per candidate.
   No checkout of candidate code, no build, no test, no fleet.
 - **Fixed hosted capacity**, never `SELF_HOSTED_CHECKS`, and inside a timeout —
@@ -87,6 +88,52 @@ Cost control: drafts are skipped on the push fan-out (they cannot merge, and
 group collapses a burst of merges into a single evaluation whose answer is the
 current one.
 
+## Why this cannot be the enforcement
+
+An earlier revision of this plan proposed requiring `Base Current` once its
+verdicts had been observed. Review of [#2974](https://github.com/copse-dev/agent-pane/pull/2974)
+established that it must not be, and the reasoning belongs here because it is a
+property of the mechanism rather than of this implementation.
+
+The authorizing artifact would be a `success` check run already attached to a
+head SHA. The only way to withdraw one is to successfully POST a newer check run
+to that same head: check runs have no expiry, and there is no atomic bulk
+invalidation. So any failure of the fan-out leaves earlier `success` results in
+place on every head it did not reach —
+
+- a single check-run POST failing,
+- the pull request listing failing before one candidate is reached,
+- the runner being lost or the run aborted,
+- the workflow never dispatching at all.
+
+Each of those leaves untouched pull requests carrying an authorizing `success`
+across a base that has moved, which is exactly the case this was written to
+expose. The run's own red is attached to the base commit, not to those heads, so
+nothing on the candidate reflects it. Requiring the context would therefore
+reintroduce stale authorization in a form that is harder to see than the one it
+replaced.
+
+Continuing past per-candidate failures (and reddening the run while naming the
+candidates that were not refreshed) narrows the window to the candidates that
+individually failed, and makes the incompleteness visible. It does not close it.
+Revocation by push is best-effort by construction.
+
+Sound enforcement of the same property already exists, needs no revocation
+because GitHub evaluates it at merge time, and is a repository-settings
+decision:
+
+- **"Require branches to be up to date before merging"** — the branch-protection
+  setting, using the same `behind_by` relation this reports on. The cost is
+  throughput: on a busy `main` every candidate must refresh before it merges.
+  Applying it to `release` only is the cheaper option, and a stale promotion is
+  the expensive case.
+- **A merge queue** — unavailable on this plan (Enterprise Cloud for a private
+  repository; see ci.yml's `merge_group` note).
+
+That choice is the remaining R11 base-advancement work. This workflow's job is
+to make the condition visible while it is being made, and afterwards to explain
+on the pull request what the rule is blocking on.
+
 ## Validation evidence
 
 `scripts/base-freshness.test.ts` covers the policy, the decoders, the fan-out,
@@ -104,12 +151,8 @@ Full local validation is recorded in the pull request.
   publishing `Base Current` on a disposable branch, advancing its base, and
   recording the check-run conclusions either side — need repository write
   access to dispatch and were not run for this change.
-- **Adoption.** `Base Current` has no teeth until a branch rule requires it.
-  Sequence: land this and let it report for long enough to see its verdicts on
-  real traffic; confirm the `main` volume it would block is acceptable, or
-  require it on `release` only, where a stale promotion is the expensive case;
-  then add the context to the rule. Requiring it before it is observed to be
-  correct would block merges on an unproven control.
+- **The enforcement decision.** Still open, and it is a repository-settings
+  choice rather than workflow work — see below.
 - **Fork pull requests.** They already have no `CI Passed` and must go through a
   same-repository branch, so `Base Current` adds nothing to that path.
 - **Independent acceptance (R06).** Unchanged by this slice.

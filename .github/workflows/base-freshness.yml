@@ -17,8 +17,18 @@ name: Base freshness
 #
 # Also deliberately additive. It creates a new check context and changes nothing
 # about `CI Passed`, so no existing branch rule or consumer changes meaning and
-# no merge window that was closed can open. Requiring `Base Current` is a
-# separate repository-settings change the owner sequences.
+# no merge window that was closed can open.
+#
+# `Base Current` REPORTS and must never be made a required check. Withdrawing an
+# already-published `success` means successfully posting a newer check run to
+# that head, and check runs have no expiry and no atomic bulk invalidation — so
+# any failed or undispatched fan-out leaves authorizing successes on every head
+# it did not reach, with the run's own red attached to the base commit instead.
+# Sound enforcement of the same property is the branch-protection setting
+# "Require branches to be up to date before merging", or a merge queue, both of
+# which GitHub evaluates at merge time and neither of which needs a revocation
+# push. scripts/base-freshness.mts and docs/plans/ci-base-freshness.md carry the
+# full reasoning.
 
 on:
   # The base moved. Every mergeable pull request targeting it is now, by

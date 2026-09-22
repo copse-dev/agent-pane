@@ -71,13 +71,14 @@ describe('base freshness policy', () => {
     assert.match(decideBaseFreshness(candidate, 1).title, /^1 commit behind main$/)
   })
 
-  it('fails closed when the comparison could not be established', () => {
-    // An unestablished base is indistinguishable from a stale one at merge
-    // time, so it must never resolve to success or to a neutral that branch
-    // protection would accept.
+  it('reports not-current when the comparison could not be established', () => {
+    // Within a candidate the run reaches, an unestablished base is
+    // indistinguishable from a stale one, so it must never resolve to success
+    // or to a neutral. Conservative reporting, not an authorization guarantee:
+    // the header explains why the fan-out cannot be made fail-closed.
     const verdict = decideBaseFreshness(candidate, null)
     assert.equal(verdict.conclusion, 'failure')
-    assert.match(verdict.summary, /fails\s*\n?\s*closed|fails closed/)
+    assert.match(verdict.summary, /not current rather than assumed current/)
   })
 
   it('never returns a conclusion branch protection treats as passing but untested', () => {
@@ -192,7 +193,7 @@ describe('base freshness fan-out', () => {
       '/compare/main...sha-1': '{"behind_by":0}',
       '/compare/main...sha-2': '{"behind_by":4}',
     })
-    const verdicts = await evaluate(
+    const outcomes = await evaluate(
       api,
       [
         { number: 1, headSha: 'sha-1', baseRef: 'main', draft: false },
@@ -207,20 +208,21 @@ describe('base freshness fan-out', () => {
       },
     )
     assert.deepEqual(
-      verdicts.map((v) => v.conclusion),
+      outcomes.map((o) => o.verdict.conclusion),
       ['success', 'failure'],
     )
+    assert.ok(outcomes.every((o) => o.published))
     assert.deepEqual(posted, [
       { path: '/check-runs', body: { name: CHECK_NAME, head_sha: 'sha-1', conclusion: 'success' } },
       { path: '/check-runs', body: { name: CHECK_NAME, head_sha: 'sha-2', conclusion: 'failure' } },
     ])
   })
 
-  it('fails a candidate closed when its comparison errors, without abandoning the rest', async () => {
+  it('reports a candidate whose comparison errors, without abandoning the rest', async () => {
     // A transient comparison failure must not silently drop the candidate from
     // the run: no check run at all reads as "not configured", not as "unknown".
     const { api } = stubApi({ '/compare/main...sha-2': '{"behind_by":0}' })
-    const verdicts = await evaluate(
+    const outcomes = await evaluate(
       api,
       [
         { number: 1, headSha: 'sha-1', baseRef: 'main', draft: false },
@@ -231,9 +233,41 @@ describe('base freshness fan-out', () => {
       },
     )
     assert.deepEqual(
-      verdicts.map((v) => v.conclusion),
+      outcomes.map((o) => o.verdict.conclusion),
       ['failure', 'success'],
     )
+  })
+  it('keeps refreshing later candidates after one fails to publish', async () => {
+    // The abort this replaces left every later candidate showing the `success`
+    // it held from before the base moved, while the run's own red landed on the
+    // base commit, where none of those candidates shows it. Continuing narrows
+    // the stale window to the candidate that actually failed — it does not make
+    // the fan-out sound, which is why this context must not be required.
+    const { api } = stubApi({
+      '/compare/main...sha-1': '{"behind_by":2}',
+      '/compare/main...sha-2': '{"behind_by":3}',
+      '/compare/main...sha-3': '{"behind_by":4}',
+    })
+    const outcomes = await evaluate(
+      api,
+      [1, 2, 3].map((number) => ({
+        number,
+        headSha: `sha-${String(number)}`,
+        baseRef: 'main',
+        draft: false,
+      })),
+      async (c) => {
+        if (c.number === 2) throw new Error('503 from check-runs')
+        await Promise.resolve()
+      },
+    )
+    assert.deepEqual(
+      outcomes.map((o) => o.published),
+      [true, false, true],
+    )
+    assert.match(outcomes[1]?.error ?? '', /503 from check-runs/)
+    // Every candidate still carries a verdict, so the caller can name the gap.
+    assert.equal(outcomes.length, 3)
   })
 })
 
