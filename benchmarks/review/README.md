@@ -47,6 +47,7 @@ pnpm run bench:review --provider lmstudio --model qwen3-coder
 pnpm run bench:review --model claude-sonnet-5 --model gpt-5 --out bench-results/review-ensemble
 pnpm run bench:review --model claude-sonnet-5 --no-verify --out bench-results/review-noverify
 pnpm run bench:review --model qwen3.8-27b --max-steps 12 --max-verify 3
+pnpm run bench:review --model qwen3.8-27b --lenses boundaries --case semantic-image-kind
 pnpm run bench:review --compare bench-results/review/summary.json bench-results/review-noverify/summary.json
 pnpm run bench:review --model claude-sonnet-5 --update-baseline
 pnpm run bench:review --model claude-sonnet-5 --cases /path/to/large-corpus --target-gate
@@ -55,7 +56,7 @@ pnpm run bench:review --model claude-sonnet-5 --cases /path/to/large-corpus --ta
 Keys come from the environment the way the CLI takes them (`ANTHROPIC_API_KEY`,
 `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `LM_STUDIO_URL` / `LM_STUDIO_MODEL`,
 `COPSE_REVIEW_API_KEY`). Reports land under `bench-results/review/` (one JSON per case and
-a `summary.json`); `--compare` prints the delta between two summaries, which is how an
+a matching event-stream JSONL plus `summary.json`); `--compare` prints the delta between two summaries, which is how an
 ablation is read (Q6: cross-model ensembling against one model; verification on against
 off; lenses).
 

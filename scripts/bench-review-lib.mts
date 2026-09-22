@@ -27,6 +27,7 @@ import { tmpdir } from 'node:os'
 import { join, relative, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { z } from 'zod'
+import type { HeadlessEvent } from '@copse/agent/headless-contract.ts'
 import type { LLMProvider } from '@copse/llm/wire-types.ts'
 import { safeJsonParse } from '@copse/std/safe-json.ts'
 import { errorMessage } from '@copse/std/errors.ts'
@@ -390,6 +391,8 @@ export async function runCase(reviewCase: ReviewCase, options: RunOptions): Prom
   const verify = options.verify ?? true
   const materialised = await materialiseCase(reviewCase)
   const reportPath = join(options.outDir, `${reviewCase.spec.id}.json`)
+  const eventsPath = join(options.outDir, `${reviewCase.spec.id}.events.jsonl`)
+  const events: HeadlessEvent[] = []
   let report: ReviewReport | null = null
   let error: string | null = null
   try {
@@ -432,6 +435,7 @@ export async function runCase(reviewCase: ReviewCase, options: RunOptions): Prom
         lenses,
         threadId,
         turnPrefix: reviewCase.spec.id,
+        onEvent: (event) => events.push(event),
         ...(options.maxSteps !== undefined ? { maxSteps: options.maxSteps } : {}),
       })
       let findings: Finding[] = canonicalFindings(stage0, reviews)
@@ -453,6 +457,7 @@ export async function runCase(reviewCase: ReviewCase, options: RunOptions): Prom
           },
           threadId,
           turnPrefix: reviewCase.spec.id,
+          onEvent: (event) => events.push(event),
           ...(options.maxVerify !== undefined ? { maxVerified: options.maxVerify } : {}),
         })
         findings = [...verification.findings]
@@ -506,6 +511,11 @@ export async function runCase(reviewCase: ReviewCase, options: RunOptions): Prom
   })
   const scored = report ?? emptyReport()
   writeFileSync(reportPath, `${JSON.stringify(scored, null, 2)}\n`, 'utf8')
+  writeFileSync(
+    eventsPath,
+    events.length === 0 ? '' : `${events.map((event) => JSON.stringify(event)).join('\n')}\n`,
+    'utf8',
+  )
   const score = scoreCase(reviewCase.spec.id, scored, reviewCase.spec.truth)
   const usage = reportUsage(scored)
   log(

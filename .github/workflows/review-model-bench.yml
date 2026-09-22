@@ -6,12 +6,22 @@ name: Copse Reviewer model benchmark
 
 on:
   workflow_dispatch:
+    inputs:
+      case:
+        description: One corpus case to run; leave empty for the full corpus
+        required: false
+        type: string
+      lenses:
+        description: Comma-separated reviewer lenses
+        required: true
+        default: correctness,boundaries
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: copse-review-model-bench
+  group: copse-review-model-bench-${{ inputs.case || 'all' }}
   cancel-in-progress: false
 
 jobs:
@@ -23,7 +33,8 @@ jobs:
       REVIEW_PROVIDER: ${{ vars.COPSE_REVIEW_PROVIDER || 'openai-compatible' }}
       REVIEW_MODEL: ${{ vars.COPSE_REVIEW_MODEL || 'qwen3.8-27b' }}
       REVIEW_BASE_URL: ${{ vars.COPSE_REVIEW_BASE_URL || vars.SCW_GENERATIVE_API_URL || 'https://api.scaleway.ai/v1' }}
-      REVIEW_LENSES: ${{ vars.COPSE_REVIEW_LENSES || 'correctness' }}
+      REVIEW_LENSES: ${{ inputs.lenses || 'correctness,boundaries' }}
+      REVIEW_CASE: ${{ inputs.case }}
       REVIEW_MAX_STEPS: ${{ vars.COPSE_REVIEW_MAX_STEPS || '12' }}
       REVIEW_MAX_VERIFY: ${{ vars.COPSE_REVIEW_MAX_VERIFY || '3' }}
     steps:
@@ -67,15 +78,21 @@ jobs:
             review_base_url="https://api.scaleway.ai/${SCW_DEFAULT_PROJECT_ID}/v1"
             echo "::notice::Copse Reviewer benchmark is using an explicit Scaleway project endpoint"
           fi
-          pnpm exec node scripts/bench-review.mts \
-            --provider "$REVIEW_PROVIDER" \
-            --model "$REVIEW_MODEL" \
-            --challenger "$REVIEW_MODEL" \
-            --base-url "$review_base_url" \
-            --lenses "$REVIEW_LENSES" \
-            --max-steps "$REVIEW_MAX_STEPS" \
-            --max-verify "$REVIEW_MAX_VERIFY" \
+          bench_args=(
+            scripts/bench-review.mts
+            --provider "$REVIEW_PROVIDER"
+            --model "$REVIEW_MODEL"
+            --challenger "$REVIEW_MODEL"
+            --base-url "$review_base_url"
+            --lenses "$REVIEW_LENSES"
+            --max-steps "$REVIEW_MAX_STEPS"
+            --max-verify "$REVIEW_MAX_VERIFY"
             --out bench-results/review-scaleway
+          )
+          if test -n "$REVIEW_CASE"; then
+            bench_args+=(--case "$REVIEW_CASE")
+          fi
+          pnpm exec node "${bench_args[@]}"
 
       - uses: actions/upload-artifact@v7
         if: always()
