@@ -99,13 +99,6 @@ export function parseProbeWorkerOutput(stdout: string): AcpAgentProbe | null {
   return null
 }
 
-let workerDisabledForTest = false
-
-/** Force the fallback path in tests that must not spawn a helper process. */
-export function setAcpProbeWorkerDisabledForTest(disabled: boolean): void {
-  workerDisabledForTest = disabled
-}
-
 function runProbeWorker(
   config: AcpAgentSpawnConfig,
   timeoutMs: number,
@@ -187,15 +180,13 @@ export async function probeAcpAgentIsolated(
   config: AcpAgentSpawnConfig,
   timeoutMs = 15_000,
 ): Promise<AcpAgentProbe> {
-  if (!workerDisabledForTest) {
-    try {
-      const probe = await runProbeWorker(config, timeoutMs)
-      if (probe) return probe
-    } catch (err) {
-      console.warn(
-        `[acp-probe] isolated probe unavailable, falling back in-process (this widens the global network scope): ${errorMessage(err)}`,
-      )
-    }
+  try {
+    const probe = await runProbeWorker(config, timeoutMs)
+    if (probe) return probe
+  } catch (err) {
+    console.warn(
+      `[acp-probe] isolated probe unavailable, falling back in-process (this widens the global network scope): ${errorMessage(err)}`,
+    )
   }
   return probeAcpAgent(config, timeoutMs)
 }

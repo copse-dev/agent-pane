@@ -65,14 +65,6 @@ export function declareContainerRuntime(attestation: ContainerRuntimeAttestation
   declared = attestation
 }
 
-export function declaredContainerRuntime(): ContainerRuntimeAttestation | null {
-  return declared
-}
-
-export function isContainerRuntime(): boolean {
-  return declared !== null
-}
-
 /** The containment tier of the runtime this process executes commands in. */
 export function runtimeContainmentTier(): RuntimeContainmentTier {
   if (declared !== null) return 'container'
