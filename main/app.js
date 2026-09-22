@@ -22099,15 +22099,26 @@ function addMessage(store2, threadId, role, content = "", images, attachments, o
     toolCalls: [],
     createdAt: Date.now()
   };
+  const isHumanPrompt = isHumanUserPrompt(message2);
   patchThreadAnywhere(store2, threadId, (t) => ({
     ...t,
     messages: [...t.messages, message2],
     // The sidebar sorts on this and never reads transcripts, so it has to be
     // recorded as the prompt lands rather than derived at display time.
-    ...isHumanUserPrompt(message2) ? { lastPromptAt: message2.createdAt } : {},
+    ...isHumanPrompt ? { lastPromptAt: message2.createdAt } : {},
     updatedAt: Date.now()
   }));
+  let reorderedActiveThreads = false;
+  if (isHumanPrompt) {
+    const { threads } = store2.getState();
+    if (threads.some((thread2) => thread2.id === threadId)) {
+      const sortedThreads = sortThreadsNewestFirst(threads);
+      reorderedActiveThreads = sortedThreads.some((thread2, index) => thread2 !== threads[index]);
+      if (reorderedActiveThreads) store2.setState({ threads: sortedThreads });
+    }
+  }
   store2.emit("message_added", threadId, id);
+  if (reorderedActiveThreads) store2.emit("threads_changed");
   const thread = store2.getState().threads.find((t) => t.id === threadId);
   if (thread && thread.messages.length === 1) {
     pruneBlankThreads(store2, /* @__PURE__ */ new Set([threadId]));
