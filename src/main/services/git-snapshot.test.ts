@@ -5,7 +5,11 @@ import { mkdtempSync, rmSync, writeFileSync, unlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
-import { snapshotWorkingTree, type SnapshotGitRunner } from './git-snapshot.ts'
+import {
+  parseWorkingTreeSnapshotHead,
+  snapshotWorkingTree,
+  type SnapshotGitRunner,
+} from './git-snapshot.ts'
 
 const execFileAsync = promisify(execFile)
 
@@ -51,7 +55,16 @@ describe('snapshotWorkingTree', () => {
       writeFileSync(join(dir, 'new.txt'), 'brand new\n')
       unlinkSync(join(dir, 'gone.txt'))
       const status = await git(['status', '--porcelain'])
-      const snapshot = await snapshotWorkingTree(git, { message: 'snap', identity: IDENTITY })
+      let headReads = 0
+      const trackedGit: SnapshotGitRunner = (args, env) => {
+        if (args[0] === 'show' && args.at(-1) === 'HEAD') headReads += 1
+        return git(args, env)
+      }
+      const snapshot = await snapshotWorkingTree(trackedGit, {
+        message: 'snap',
+        identity: IDENTITY,
+      })
+      assert.equal(headReads, 1, 'reads the HEAD commit and tree in one Git process')
       assert.equal(snapshot.dirty, true)
       assert.equal(await git(['show', `${snapshot.sha}:kept.txt`]), 'changed')
       assert.equal(await git(['show', `${snapshot.sha}:new.txt`]), 'brand new')
@@ -86,6 +99,35 @@ describe('snapshotWorkingTree', () => {
       await assert.rejects(git(['rev-parse', '--verify', `${snapshot.sha}^`]), 'no parent')
     } finally {
       rmSync(fresh, { recursive: true, force: true })
+    }
+  })
+
+  it('reuses a caller-provided HEAD commit and tree without reading them again', async () => {
+    const { dir, git } = await repo()
+    try {
+      const head = parseWorkingTreeSnapshotHead(
+        await git(['show', '-s', '--format=%H%x00%T', 'HEAD']),
+      )
+      assert.ok(head)
+      writeFileSync(join(dir, 'kept.txt'), 'changed\n')
+      let headReads = 0
+      const trackedGit: SnapshotGitRunner = (args, env) => {
+        if (args[0] === 'show' && args.at(-1) === 'HEAD') headReads += 1
+        return git(args, env)
+      }
+
+      const snapshot = await snapshotWorkingTree(trackedGit, {
+        message: 'snap',
+        identity: IDENTITY,
+        head,
+      })
+
+      assert.equal(headReads, 0)
+      assert.equal(snapshot.dirty, true)
+      assert.equal(await git(['rev-parse', `${snapshot.sha}^`]), head.sha)
+      assert.equal(await git(['show', `${snapshot.sha}:kept.txt`]), 'changed')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
     }
   })
 })

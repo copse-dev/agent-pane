@@ -5,7 +5,7 @@ import { errorMessage } from '@shared/errors.ts'
 import { resolvePathWithinRoot, toRelativePathWithinRoot } from '../workspace.ts'
 import { getActiveWorkspaceFs } from '../workspace-fs/get-workspace-fs.ts'
 import { runCommand, type CommandResult, type RunCommandOptions } from '../exec/command-runner.ts'
-import { snapshotWorkingTree } from '../git-snapshot.ts'
+import { snapshotWorkingTree, type WorkingTreeSnapshotHead } from '../git-snapshot.ts'
 import { envForRendererChildProcess } from '../exec/child-process-env.ts'
 import { afterSandboxedCommand, spawnInProjectSandbox } from '../../project-sandbox/spawn.ts'
 import { isSpawnableWorkingDirectory } from '../../project-sandbox/spawn-cwd.ts'
@@ -629,6 +629,17 @@ export async function getGithubRepoSlug(
   return parseGithubRepoSlug(stdout.trim())
 }
 
+export interface CreateWorktreeBackupOptions {
+  /**
+   * The caller just completed a live Git operation that proves this same root
+   * is a worktree. Snapshot commands still fail closed if it disappears; this
+   * only avoids immediately repeating the membership probe.
+   */
+  workTreeAlreadyVerified?: boolean
+  /** HEAD commit/tree pair just read from this checkout. */
+  snapshotHead?: WorkingTreeSnapshotHead
+}
+
 /**
  * Snapshot the ENTIRE working tree — tracked modifications, staged changes, and
  * untracked files — into a commit object, protected from garbage collection
@@ -647,8 +658,10 @@ export async function getGithubRepoSlug(
 export async function createWorktreeBackup(
   label: string,
   root: string | null = getAgentExecutionRoot(),
+  options: CreateWorktreeBackupOptions = {},
 ): Promise<string | null> {
-  if (!(await isGitAvailableForTarget()) || !root || !(await isInsideGitWorkTree(root))) return null
+  if (!(await isGitAvailableForTarget()) || !root) return null
+  if (!options.workTreeAlreadyVerified && !(await isInsideGitWorkTree(root))) return null
 
   let tempIndex: TemporaryGitIndex | undefined
   try {
@@ -673,6 +686,7 @@ export async function createWorktreeBackup(
       message: `copse backup: ${label}`,
       identity: { name: 'Copse', email: 'copse@localhost' },
       indexPath: tempIndex.path,
+      ...(options.snapshotHead ? { head: options.snapshotHead } : {}),
     })
     const ref = `refs/copse/backups/${String(Date.now())}`
     let updateRef: Awaited<ReturnType<typeof runGit>>

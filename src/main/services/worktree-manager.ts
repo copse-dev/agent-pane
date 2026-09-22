@@ -6,6 +6,7 @@ import type { ThreadWorktree } from '@shared/types/worktree.ts'
 import { threadWorktreeBranchName } from '@shared/git/worktree-policy.ts'
 import { describeBranchCheckoutFailure } from '@shared/git/branch-held.ts'
 import { runCommand } from './exec/command-runner.ts'
+import { parseWorkingTreeSnapshotHead } from './git-snapshot.ts'
 import { runSerialized } from './storage/write-queue.ts'
 import { copseWorktreesDir } from './storage/copse-paths.ts'
 import {
@@ -399,6 +400,7 @@ export async function runWorktreeGit(
     ['check-ignore', 'check-ref-format', 'merge-base', 'rev-parse', 'show-ref', 'status'].includes(
       args[0] ?? '',
     ) ||
+    (args[0] === 'remote' && args[1] === 'get-url' && args[2] === 'origin' && args.length === 3) ||
     (args[0] === 'config' && args[1] === '--local' && args[2] === '--get' && args.length === 4) ||
     (args[0] === 'symbolic-ref' &&
       args[1] === '--quiet' &&
@@ -573,6 +575,10 @@ async function fetchDefaultBranch(projectRoot: string, branch: string): Promise<
   await git(projectRoot, ['fetch', '--quiet', 'origin', branch])
 }
 
+async function hasOriginRemote(projectRoot: string): Promise<boolean> {
+  return (await git(projectRoot, ['remote', 'get-url', 'origin'])).code === 0
+}
+
 async function chooseBranch(
   projectRoot: string,
   prompt: string,
@@ -604,10 +610,22 @@ async function verifySnapshotContent(worktreePath: string, snapshotRef: string):
       })
     const expected = await run(['read-tree', snapshotRef])
     if (expected.code !== 0) return false
-    const trackedDifference = await run(['diff', '--quiet', '--'])
-    if (trackedDifference.code !== 0) return false
-    const extra = await run(['ls-files', '--others', '--exclude-standard', '-z'])
-    return extra.code === 0 && extra.stdout.length === 0
+    // With the snapshot loaded into the throwaway index, porcelain's second
+    // status column describes worktree differences and `??` covers files the
+    // snapshot did not contain. The first column is intentionally ignored: it
+    // compares the snapshot to the linked checkout's real HEAD. One status
+    // process therefore replaces the former serial diff + ls-files probes.
+    const status = await run([
+      'status',
+      '--porcelain=v1',
+      '-z',
+      '--untracked-files=all',
+      '--no-renames',
+    ])
+    return (
+      status.code === 0 &&
+      status.stdout.split('\0').every((record) => record.length === 0 || record[1] === ' ')
+    )
   } finally {
     await rm(temp, { recursive: true, force: true })
   }
@@ -654,21 +672,23 @@ export async function allocateThreadWorktree(
     // None of these probes mutates repository state or depends on another.
     // Each Git invocation pays the sandbox/process startup cost, so keep them
     // concurrent on the first-submit path instead of serializing that overhead.
-    const [, defaultBranch, dirtyProject, headResult, branch] = await Promise.all([
+    const [, defaultBranch, dirtyProject, headResult, branch, hasOrigin] = await Promise.all([
       assertBranchName(projectRoot, input.baseBranch, 'Base branch'),
       getDefaultBranch(projectRoot),
       repositoryIsDirty(projectRoot),
-      git(projectRoot, ['rev-parse', 'HEAD']),
+      git(projectRoot, ['show', '-s', '--format=%H%x00%T', 'HEAD']),
       chooseBranch(projectRoot, input.prompt, input.threadId),
+      hasOriginRemote(projectRoot),
     ])
     const isDefaultBranch = defaultBranch !== null && defaultBranch === input.baseBranch
-    if (isDefaultBranch) await fetchDefaultBranch(projectRoot, input.baseBranch)
+    if (isDefaultBranch && hasOrigin) await fetchDefaultBranch(projectRoot, input.baseBranch)
     const remoteRef = `refs/remotes/origin/${input.baseBranch}`
     // Resolving a ref proves both that it exists and that it names a commit.
     // Do that once per candidate instead of spawning `show-ref` and then
     // immediately spawning `rev-parse` for the same ref. The freshly fetched
     // remote default still wins, with the local branch as the exact fallback.
-    const remoteCommit = isDefaultBranch ? await resolveCommit(projectRoot, remoteRef) : null
+    const remoteCommit =
+      isDefaultBranch && hasOrigin ? await resolveCommit(projectRoot, remoteRef) : null
     const baseCommit =
       remoteCommit ?? (await resolveCommit(projectRoot, branchRef(input.baseBranch)))
     if (!baseCommit) {
@@ -680,7 +700,9 @@ export async function allocateThreadWorktree(
     // checkout parked on another branch — would have those edits pasted onto an
     // unrelated tree, silently mixing two states. Start clean instead; the
     // user's own checkout still holds the work, untouched.
-    const headCommit = headResult.stdout.trim()
+    const snapshotHead =
+      headResult.code === 0 ? parseWorkingTreeSnapshotHead(headResult.stdout) : null
+    const headCommit = snapshotHead?.sha ?? ''
     const seedable = (input.seedFromDirtyProject ?? true) && headCommit === baseCommit
     if (dirtyProject && !seedable) {
       console.info(
@@ -692,7 +714,16 @@ export async function allocateThreadWorktree(
     // safe — it just means the new worktree won't include those edits.
     const dirty = dirtyProject && seedable
     const snapshotRef = dirty
-      ? await createWorktreeBackup(`thread ${input.threadId} seed`, projectRoot)
+      ? await createWorktreeBackup(`thread ${input.threadId} seed`, projectRoot, {
+          // repositoryIsDirty completed successfully in the probe wave above,
+          // so repeating the live worktree-membership process here adds no
+          // evidence. The snapshot's own Git commands still fail closed.
+          workTreeAlreadyVerified: true,
+          // The same probe wave already pinned HEAD's commit and tree. Reusing
+          // them keeps the snapshot internally consistent without another
+          // serial Git process; malformed/failed probes stay unseedable above.
+          ...(snapshotHead ? { snapshotHead } : {}),
+        })
       : null
     if (dirty && !snapshotRef) {
       console.warn(
