@@ -638,7 +638,7 @@ guarantee, and the record must say so.
   proxy carries HTTP only. The description's schema is its type, as the supervisor's task
   schema is. Two smaller consolidations from the same review: the working-tree snapshot
   (throwaway index → tree → commit) that the carry-in, the worktree backup and the remote
-  e2e push had each written out lives once in `git-snapshot.ts` over an injected git, and
+  e2e push had each written out lives once in `git-snapshot.mts` over an injected git, and
   the follow-up's cherry-pick is serialized per checkout through the thread store's
   `runSerialized` rather than a mutex of its own; and `runHeadlessAgent` returns the
   turn's own `turnOutcome`, so the worker reports a failed turn from the loop's verdict

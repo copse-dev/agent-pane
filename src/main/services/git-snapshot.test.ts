@@ -9,7 +9,7 @@ import {
   parseWorkingTreeSnapshotHead,
   snapshotWorkingTree,
   type SnapshotGitRunner,
-} from './git-snapshot.ts'
+} from './git-snapshot.mts'
 
 const execFileAsync = promisify(execFile)
 

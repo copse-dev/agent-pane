@@ -65,7 +65,7 @@ import {
 } from './guest-transcript.ts'
 import type { AcpAgentConfig } from '@shared/types/acp.ts'
 import { runSerialized } from '@copse/thread-store/write-queue.ts'
-import { snapshotWorkingTree } from '../git-snapshot.ts'
+import { snapshotWorkingTree } from '../git-snapshot.mts'
 import { providerEndpointUrl, type ProviderDescription } from '../providers/provider-description.ts'
 
 const execFileAsync = promisify(execFile)
