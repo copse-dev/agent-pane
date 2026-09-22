@@ -242,7 +242,7 @@ describe('ACP unfinished-turn recovery fallback', () => {
     const toolCard = await $('.tool-card[data-tool-id="tc-acp-upstream-search"]')
     const fallback = await $('[data-message-id="msg-assistant-acp-fallback"] .message-text')
     await expect(toolCard).toHaveAttribute('data-status', 'error')
-    await toolCard.$('summary.tool-card-header').click()
+    await expect(toolCard).toHaveAttribute('open')
     await expect(toolCard).toHaveText('may have partially run or produced effects', {
       containing: true,
     })
@@ -367,7 +367,7 @@ describe('ACP successful turn with an unterminated tool call', () => {
     )
     await expect(anchor.$('[data-status="running"]')).not.toExist()
 
-    await rollup.$('summary.tool-card-header').click()
+    await expect(rollup).toHaveAttribute('open')
     const failedSearch = await anchor.$('[data-tool-id="tc-acp-settled-web-search"]')
     await expect(failedSearch).toHaveAttribute('data-status', 'error')
     await expect(

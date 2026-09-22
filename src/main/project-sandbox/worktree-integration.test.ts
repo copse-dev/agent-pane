@@ -515,4 +515,32 @@ describe('linked-worktree sandbox integration', () => {
     assert.notEqual(readSibling.code, 0)
     assert.equal(readSibling.stdout, '')
   })
+
+  it('lets sips stage an SVG conversion in the Darwin user temp directory', async (t) => {
+    if (process.platform !== 'darwin') {
+      t.skip('sips and the Darwin user temp directory are macOS-specific')
+      return
+    }
+
+    const root = await mkdtemp(join(homedir(), 'copse-sips-sandbox-'))
+    cleanups.push(root)
+    const source = join(root, 'source.svg')
+    const output = join(root, 'output.png')
+    await writeFile(
+      source,
+      '<svg xmlns="http://www.w3.org/2000/svg" width="2" height="2"><rect width="2" height="2" fill="#16825d"/></svg>',
+    )
+
+    await initProjectSandbox()
+    assert.equal(isProjectSandboxEnabled(), true, 'macOS regression must run inside ASRT')
+
+    const conversion = await runSandboxed(
+      '/usr/bin/sips',
+      ['-s', 'format', 'png', source, '--out', output],
+      root,
+    )
+    assert.equal(conversion.code, 0, conversion.stderr)
+    const png = await readFile(output)
+    assert.deepEqual([...png.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10])
+  })
 })

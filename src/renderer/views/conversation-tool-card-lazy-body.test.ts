@@ -336,10 +336,10 @@ describe('collapsed tool card bodies render lazily', () => {
     assert.equal(card.open, true, 'a failed tool card starts expanded')
     const resultEl = card.querySelector('.tool-result')
     assert.ok(resultEl, 'error body must be built without a click')
-    assert.match(resultEl.textContent ?? '', /Error 13/)
+    assert.match(resultEl.textContent, /Error 13/)
     const name = card.querySelector('.tool-name')
     assert.ok(name)
-    assert.match(name.textContent ?? '', /Image generation/)
+    assert.match(name.textContent, /Image generation/)
   })
 
   it('keeps a failed card expanded after a reconcile tick', () => {

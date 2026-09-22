@@ -365,11 +365,6 @@ export function darwinUserTempDir(): string | null {
   return cachedDarwinUserTempDir
 }
 
-/** Test-only: drop the memo so a stubbed getconf path can be re-resolved. */
-export function resetDarwinUserTempDirCacheForTests(): void {
-  cachedDarwinUserTempDir = undefined
-}
-
 function resolveDarwinUserTempDir(): string | null {
   try {
     const raw = execFileSync('/usr/bin/getconf', ['DARWIN_USER_TEMP_DIR'], {
@@ -389,13 +384,18 @@ function resolveDarwinUserTempDir(): string | null {
 }
 
 /**
- * Seatbelt allowRead/allowWrite entries for macOS's per-user temp dir, or [] off
- * Darwin. Grants only that directory tree — not all of `/var/folders` or `/tmp`.
+ * Seatbelt allowWrite entries for direct children of macOS's per-user temp dir,
+ * or [] off Darwin.
+ *
+ * Apple converters stage files directly beneath this directory. `*` excludes
+ * `/` in the macOS seatbelt glob syntax, so workspaces nested beneath the temp
+ * root do not inherit this grant. Reads are already allowed outside the home
+ * deny and need no matching exception.
  */
-export function darwinUserTempAllowEntries(): string[] {
+export function darwinUserTempWriteEntries(): string[] {
   const dir = darwinUserTempDir()
   if (!dir) return []
-  return [dir, `${dir}/**`]
+  return [`${dir}/*`]
 }
 
 function sandboxAllowedDomainsFromSettings(): string[] {
@@ -888,10 +888,10 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
   // points $TMPDIR at it. Falls under the home denyRead, so it must be
   // re-allowed for both read and write.
   const tmpDir = ensureWorkspaceTmpDir()
-  // macOS Apple converters (`sips`, ImageIO) ignore $TMPDIR and stage under
-  // confstr(_CS_DARWIN_USER_TEMP_DIR). Grant only that per-user temp tree —
-  // never all of /var/folders or /tmp — so SVG→PNG stays contained.
-  const darwinUserTemp = darwinUserTempAllowEntries()
+  // macOS Apple converters (`sips`, ImageIO) ignore $TMPDIR and stage directly
+  // under confstr(_CS_DARWIN_USER_TEMP_DIR). Grant only those direct children —
+  // never nested workspaces or all of /var/folders — so SVG→PNG stays contained.
+  const darwinUserTempWrite = darwinUserTempWriteEntries()
   // Scratch dirs a configured ACP agent hardcodes (see `agent-scratch-roots.ts`).
   // Allowed for every contained command, not only the declaring agent's own
   // process, because `shell-scope.ts` waives the same entries when it classifies
@@ -1029,7 +1029,6 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
         `${root}/**`,
         tmpDir,
         `${tmpDir}/**`,
-        ...darwinUserTemp,
         ...toolchainRead,
         ...sandboxRuntimeRead,
         ...preparationCacheRead,
@@ -1047,7 +1046,7 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
         `${root}/**`,
         tmpDir,
         `${tmpDir}/**`,
-        ...darwinUserTemp,
+        ...darwinUserTempWrite,
         ...gitAdminWrite,
         ...agentScratch,
       ],

@@ -31,9 +31,8 @@ import {
   threadReadRootAllowEntries,
   uncoveredSiblingDenyPaths,
   workspaceMandatoryWriteDenyPaths,
-  darwinUserTempAllowEntries,
+  darwinUserTempWriteEntries,
   darwinUserTempDir,
-  resetDarwinUserTempDirCacheForTests,
   workspaceSandboxOverlay,
   workspaceTmpDir,
 } from './config.ts'
@@ -649,14 +648,13 @@ describe('workspaceSandboxOverlay', () => {
     assert.ok(allowRead.some((p) => p === `${tmpDir}/**`))
   })
 
-  it('allows only the Darwin per-user temp tree for Apple converter staging (sips)', () => {
+  it('allows only direct Darwin per-user temp children for Apple converter staging (sips)', () => {
     // `sips` ignores $TMPDIR and stages under confstr(_CS_DARWIN_USER_TEMP_DIR).
-    // Grant that tree alone — never all of /var/folders or /tmp.
-    resetDarwinUserTempDirCacheForTests()
+    // Grant direct children alone — never nested workspaces or all of /var/folders.
     const overlay = workspaceSandboxOverlay('/Users/me/project')
     const allowWrite = overlay.filesystem?.allowWrite ?? []
     const allowRead = overlay.filesystem?.allowRead ?? []
-    const entries = darwinUserTempAllowEntries()
+    const entries = darwinUserTempWriteEntries()
     if (process.platform !== 'darwin') {
       assert.deepEqual(entries, [])
       assert.ok(!allowWrite.some((p) => p.includes('/var/folders/')))
@@ -667,12 +665,13 @@ describe('workspaceSandboxOverlay', () => {
     assert.ok(dir.includes('/var/folders/'), dir)
     assert.ok(dir.endsWith('/T'), dir)
     assert.ok(!dir.endsWith('/T/'), 'Darwin user temp must not carry a trailing slash')
-    assert.ok(entries.includes(dir))
-    assert.ok(entries.includes(`${dir}/**`))
+    assert.deepEqual(entries, [`${dir}/*`])
     for (const entry of entries) {
       assert.ok(allowWrite.includes(entry), `write ${entry}`)
-      assert.ok(allowRead.includes(entry), `read ${entry}`)
+      assert.ok(!allowRead.includes(entry), `read ${entry}`)
     }
+    assert.ok(!allowWrite.includes(dir))
+    assert.ok(!allowWrite.includes(`${dir}/**`))
     // Must not open the parent /var/folders tree.
     assert.ok(!allowWrite.includes('/var/folders'))
     assert.ok(!allowWrite.includes('/var/folders/**'))
@@ -790,16 +789,8 @@ describe('readAllowedSandboxOverlay', () => {
       // traversable — but only as a literal path, never as a `/**` subtree.
       assert.ok(allowRead.includes(dir))
       assert.ok(!allowRead.includes(`${file}/**`))
-      // On macOS, mkdtemp under the system temp lands inside the Darwin user
-      // temp tree we deliberately allow as `/**` for Apple converters (sips).
-      // That parent glob is expected there; elsewhere it must stay absent.
       const parentGlob = `${dirname(dir)}/**`
-      const darwinTemp = darwinUserTempDir()
-      if (darwinTemp && dirname(dir) === darwinTemp) {
-        assert.ok(allowRead.includes(parentGlob))
-      } else {
-        assert.ok(!allowRead.includes(parentGlob))
-      }
+      assert.ok(!allowRead.includes(parentGlob))
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
