@@ -439,7 +439,11 @@
 .msg-actions {
   position: absolute;
   right: 0;
-  bottom: 0;
+  /* The containing block is `.message-body`, while the visible user bubble
+     adds its own block padding. Let the row sit halfway into that lower padding
+     so a one-line prompt and its 28px actions share a visual centre; keeping the
+     offset small preserves the bottom-right placement on wrapped prompts. */
+  bottom: calc(-1 * var(--spacing-xs));
   display: flex;
   gap: var(--spacing-xs);
   opacity: 0;
