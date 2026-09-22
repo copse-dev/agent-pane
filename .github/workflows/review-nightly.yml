@@ -243,12 +243,26 @@ jobs:
         shell: bash
         env:
           COPSE_REVIEW_API_KEY: ${{ secrets.COPSE_REVIEW_API_KEY || secrets.SCW_GENERATIVE_API_KEY }}
+          SCW_DEFAULT_PROJECT_ID: ${{ secrets.SCW_DEFAULT_PROJECT_ID }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HEAD_SHA: ${{ needs.select.outputs.head_sha }}
           PR_NUMBER: ${{ needs.select.outputs.number }}
           BASE_REF: ${{ needs.select.outputs.base_ref }}
         run: |
           set -euo pipefail
+          review_base_url="${REVIEW_BASE_URL%/}"
+          if test "$review_base_url" = "https://api.scaleway.ai/v1"; then
+            if test -z "$SCW_DEFAULT_PROJECT_ID"; then
+              echo "::error::SCW_DEFAULT_PROJECT_ID is required for explicit Scaleway billing attribution"
+              exit 1
+            fi
+            if [[ ! "$SCW_DEFAULT_PROJECT_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
+              echo "::error::SCW_DEFAULT_PROJECT_ID is not a lowercase UUID"
+              exit 1
+            fi
+            review_base_url="https://api.scaleway.ai/${SCW_DEFAULT_PROJECT_ID}/v1"
+            echo "::notice::Copse Reviewer is using an explicit Scaleway project endpoint"
+          fi
           git fetch --no-tags --quiet origin \
             "+refs/pull/${PR_NUMBER}/head:refs/remotes/pr/${PR_NUMBER}" \
             "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}"
@@ -260,7 +274,7 @@ jobs:
             --stage0-json ground/report.json \
             --provider "$REVIEW_PROVIDER" \
             --model "$REVIEW_MODEL" \
-            --base-url "$REVIEW_BASE_URL" \
+            --base-url "$review_base_url" \
             --lenses "$REVIEW_LENSES" \
             --max-steps "$REVIEW_MAX_STEPS" \
             --max-verify "$REVIEW_MAX_VERIFY" \
