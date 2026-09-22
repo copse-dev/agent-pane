@@ -1702,10 +1702,12 @@ export function mountInputBar(
       }
     }
     const thread = getThreadById(store, id)
-    // A blank thread's checkout transaction can move HEAD, so its prompt state
-    // must still be read afterwards. Established threads cannot move checkout
-    // here: start their two independent Git reads together to keep both
-    // subprocess round trips off the serial submit path.
+    // A genuinely new thread has no branch contract to validate yet. Its
+    // checkout transaction is authoritative and returns the branch it binds, so
+    // skip both pre-transaction Git reads. A legacy blank thread may already
+    // carry gitBranch: validate that contract, but still read prompt state after
+    // checkout because the transaction can move HEAD. Established threads cannot
+    // move checkout here, so start their two independent Git reads together.
     const requiresCheckoutPreparation =
       thread !== undefined && thread.messages.length === 0 && !thread.worktreeChoice
     const prefetchedGitState = requiresCheckoutPreparation
@@ -1717,9 +1719,11 @@ export function mountInputBar(
     const branchResult = prefetchedGitState?.[0]
     if (branchResult?.status === 'rejected') throw branchResult.reason
     const currentBranch =
-      branchResult?.status === 'fulfilled'
-        ? branchResult.value
-        : await api.git.currentBranch(projectId, id)
+      requiresCheckoutPreparation && !thread.gitBranch
+        ? null
+        : branchResult?.status === 'fulfilled'
+          ? branchResult.value
+          : await api.git.currentBranch(projectId, id)
     const prefetchedPromptState = prefetchedGitState?.[1]
     const threadBranch = thread?.gitBranch
     const isolatedWorktree = thread !== undefined && thread.worktree !== undefined
@@ -1821,7 +1825,7 @@ export function mountInputBar(
     // Blank threads commit their checkout decision in main before the renderer
     // records or clears the first message. Allocation/persistence failures are
     // therefore retryable without losing or accidentally dispatching the prompt.
-    if (thread && thread.messages.length === 0 && !thread.worktreeChoice) {
+    if (requiresCheckoutPreparation) {
       const projectId = store.getState().activeProjectId
       if (!projectId) return
       hideCheckoutError()

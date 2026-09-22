@@ -458,6 +458,47 @@ describe('input bar first-message checkout', () => {
     assert.equal(composer.textContent, '')
   })
 
+  it('lets checkout bind an unbound blank thread without reading the old branch', async () => {
+    let branchReads = 0
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        readCurrentBranch: async () => {
+          branchReads += 1
+          return 'main'
+        },
+        onPrepareCheckout: async () => ({
+          checkoutMode: 'shared',
+          choice: 'automatic',
+          branch: 'release/2026-09',
+        }),
+      }),
+    )
+    await settle()
+
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    const submit = host.querySelector<HTMLButtonElement>('.submit-btn')
+    assert.ok(composer)
+    assert.ok(submit)
+    composer.textContent = 'Start on the selected branch'
+    submit.click()
+    await flush()
+
+    assert.equal(branchReads, 0)
+    assert.equal(getThreadById(store, 'thread-1')?.gitBranch, 'release/2026-09')
+  })
+
   it('sends the blank-thread branch selection to prepareCheckout instead of switching', async () => {
     const order: string[] = []
     const currentBranch = 'main'
