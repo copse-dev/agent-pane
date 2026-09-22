@@ -1,6 +1,6 @@
 import { after, before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { access, mkdtemp, mkdir, readFile, rm, stat } from 'node:fs/promises'
+import { access, chmod, mkdtemp, mkdir, readFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
@@ -100,6 +100,40 @@ describe('host-process backend', () => {
     assert.equal(result.exitCode, 3)
     assert.match(result.output, /boom/)
   })
+
+  it('destroys cache trees whose tools made their directories read-only', async () => {
+    const cleanupScratch = await mkdtemp(join(tmpdir(), 'review-host-cleanup-'))
+    const base = join(cleanupScratch, 'base')
+    const head = join(cleanupScratch, 'head')
+    await mkdir(base)
+    await mkdir(head)
+    await chmod(head, 0o500)
+    const cleanupCell = await createHostProcessBackend().createCell({
+      checkouts: { base, head },
+      scratchDir: cleanupScratch,
+      readOnlyPaths: [],
+      env: cellEnvironment(process.env),
+    })
+    try {
+      const result = await cleanupCell.run({
+        target: 'head',
+        argv: [
+          process.execPath,
+          '-e',
+          "const fs=require('node:fs');const path=require('node:path');const cache=path.join(process.env.TMPDIR,'cache');const nested=path.join(cache,'module');fs.mkdirSync(nested,{recursive:true});fs.writeFileSync(path.join(nested,'dep.go'),'package dep');fs.symlinkSync(process.cwd(),path.join(cache,'outside'));fs.chmodSync(nested,0o555);fs.chmodSync(cache,0o555)",
+        ],
+        timeoutMs: 30_000,
+        maxOutputBytes: 1024,
+      })
+      assert.equal(result.exitCode, 0)
+      await cleanupCell.destroy()
+      await assert.rejects(access(join(cleanupScratch, 'tmp')), /ENOENT/)
+      assert.equal((await stat(head)).mode & 0o777, 0o500)
+    } finally {
+      await rm(cleanupScratch, { recursive: true, force: true })
+    }
+  })
+
   it('kills an active command on abort and refuses a pre-cancelled command', async () => {
     const controller = new AbortController()
     const marker = join(scratch, 'abort-ready')

@@ -14,6 +14,7 @@ import { cp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { z } from 'zod'
+import { removeTree } from './remove-tree.ts'
 
 const execFileAsync = promisify(execFile)
 
@@ -160,7 +161,7 @@ export async function materialiseCheckouts(
   const cleanup = async (): Promise<void> => {
     for (const path of worktrees.splice(0)) {
       await git(repositoryRoot, ['worktree', 'remove', '--force', path])
-      await rm(path, { recursive: true, force: true })
+      await removeTree(path)
     }
     await git(repositoryRoot, ['worktree', 'prune'])
   }
