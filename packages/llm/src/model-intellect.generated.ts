@@ -716,6 +716,50 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
       asOf: '2026-09-22',
     },
   ],
+  'claude-opus-5-5': [
+    {
+      value: 57.6,
+      indexVersion: 'v4.3',
+      source: "Artificial Analysis API (index v4.3), model 'claude-opus-5-5', fetched 2026-09-22",
+      asOf: '2026-09-22',
+    },
+  ],
+  'claude-opus-5-5-high': [
+    {
+      value: 53.6,
+      indexVersion: 'v4.3',
+      source:
+        "Artificial Analysis API (index v4.3), model 'claude-opus-5-5-high', fetched 2026-09-22",
+      asOf: '2026-09-22',
+    },
+  ],
+  'claude-opus-5-5-low': [
+    {
+      value: 42.3,
+      indexVersion: 'v4.3',
+      source:
+        "Artificial Analysis API (index v4.3), model 'claude-opus-5-5-low', fetched 2026-09-22",
+      asOf: '2026-09-22',
+    },
+  ],
+  'claude-opus-5-5-medium': [
+    {
+      value: 51.2,
+      indexVersion: 'v4.3',
+      source:
+        "Artificial Analysis API (index v4.3), model 'claude-opus-5-5-medium', fetched 2026-09-22",
+      asOf: '2026-09-22',
+    },
+  ],
+  'claude-opus-5-5-xhigh': [
+    {
+      value: 56,
+      indexVersion: 'v4.3',
+      source:
+        "Artificial Analysis API (index v4.3), model 'claude-opus-5-5-xhigh', fetched 2026-09-22",
+      asOf: '2026-09-22',
+    },
+  ],
   'claude-opus-5-high': [
     {
       value: 61.5,
@@ -4091,6 +4135,104 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
       value: 52.4,
       indexVersion: 'v4.3',
       source: "Artificial Analysis API (index v4.3), model 'gpt-6-astra-xhigh', fetched 2026-09-22",
+      asOf: '2026-09-22',
+    },
+  ],
+  'gpt-6-luna': [
+    {
+      value: 37.3,
+      indexVersion: 'v4.3',
+      source: "Artificial Analysis API (index v4.3), model 'gpt-6-luna', fetched 2026-09-22",
+      asOf: '2026-09-22',
+    },
+  ],
+  'gpt-6-luna-high': [
+    {
+      value: 32.1,
+      indexVersion: 'v4.3',
+      source: "Artificial Analysis API (index v4.3), model 'gpt-6-luna-high', fetched 2026-09-22",
+      asOf: '2026-09-22',
+    },
+  ],
+  'gpt-6-luna-low': [
+    {
+      value: 20.9,
+      indexVersion: 'v4.3',
+      source: "Artificial Analysis API (index v4.3), model 'gpt-6-luna-low', fetched 2026-09-22",
+      asOf: '2026-09-22',
+    },
+  ],
+  'gpt-6-luna-medium': [
+    {
+      value: 29.5,
+      indexVersion: 'v4.3',
+      source: "Artificial Analysis API (index v4.3), model 'gpt-6-luna-medium', fetched 2026-09-22",
+      asOf: '2026-09-22',
+    },
+  ],
+  'gpt-6-luna-non-reasoning': [
+    {
+      value: 18.3,
+      indexVersion: 'v4.3',
+      source:
+        "Artificial Analysis API (index v4.3), model 'gpt-6-luna-non-reasoning', fetched 2026-09-22",
+      asOf: '2026-09-22',
+    },
+  ],
+  'gpt-6-luna-xhigh': [
+    {
+      value: 33.9,
+      indexVersion: 'v4.3',
+      source: "Artificial Analysis API (index v4.3), model 'gpt-6-luna-xhigh', fetched 2026-09-22",
+      asOf: '2026-09-22',
+    },
+  ],
+  'gpt-6-sol': [
+    {
+      value: 47.5,
+      indexVersion: 'v4.3',
+      source: "Artificial Analysis API (index v4.3), model 'gpt-6-sol', fetched 2026-09-22",
+      asOf: '2026-09-22',
+    },
+  ],
+  'gpt-6-sol-high': [
+    {
+      value: 42.8,
+      indexVersion: 'v4.3',
+      source: "Artificial Analysis API (index v4.3), model 'gpt-6-sol-high', fetched 2026-09-22",
+      asOf: '2026-09-22',
+    },
+  ],
+  'gpt-6-sol-low': [
+    {
+      value: 33.9,
+      indexVersion: 'v4.3',
+      source: "Artificial Analysis API (index v4.3), model 'gpt-6-sol-low', fetched 2026-09-22",
+      asOf: '2026-09-22',
+    },
+  ],
+  'gpt-6-sol-medium': [
+    {
+      value: 39.8,
+      indexVersion: 'v4.3',
+      source: "Artificial Analysis API (index v4.3), model 'gpt-6-sol-medium', fetched 2026-09-22",
+      asOf: '2026-09-22',
+    },
+  ],
+  'gpt-6-sol-non-reasoning': [
+    {
+      value: 28.1,
+      indexVersion: 'v4.3',
+      source:
+        "Artificial Analysis API (index v4.3), model 'gpt-6-sol-non-reasoning', fetched 2026-09-22",
+      asOf: '2026-09-22',
+    },
+  ],
+  'gpt-6-sol-xhigh': [
+    {
+      value: 44.1,
+      indexVersion: 'v4.3',
+      source: "Artificial Analysis API (index v4.3), model 'gpt-6-sol-xhigh', fetched 2026-09-22",
       asOf: '2026-09-22',
     },
   ],
