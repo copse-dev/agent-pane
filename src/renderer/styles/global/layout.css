@@ -511,6 +511,9 @@
   transform: translateY(-50%);
   color: var(--accent);
   pointer-events: none;
+  /* Dots are zero-length paths — stroke-width alone sets their size, so the
+     running mark needs more than the shared 2px icon stroke to read at rest. */
+  stroke-width: 3;
 }
 .chat-unread-dot {
   position: absolute;
