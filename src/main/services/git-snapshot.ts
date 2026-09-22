@@ -49,8 +49,14 @@ export async function snapshotWorkingTree(
   git: SnapshotGitRunner,
   options: WorkingTreeSnapshotOptions,
 ): Promise<WorkingTreeSnapshot> {
-  const head = await git(['rev-parse', '--verify', 'HEAD']).then(
-    (sha) => sha,
+  // Read the parent commit and its tree in one process. Besides removing a
+  // serial Git spawn, pinning both values now keeps a concurrent HEAD move
+  // from mixing one commit's parent with another commit's tree comparison.
+  const head = await git(['show', '-s', '--format=%H%x00%T', 'HEAD']).then(
+    (value) => {
+      const [sha, tree] = value.split('\0')
+      return sha && tree ? { sha, tree } : null
+    },
     () => null,
   )
   const own = options.indexPath === undefined ? mkdtempSync(join(tmpdir(), 'copse-index-')) : null
@@ -58,11 +64,11 @@ export async function snapshotWorkingTree(
   try {
     const index = { GIT_INDEX_FILE: indexPath }
     // Seed the throwaway index from HEAD so deletions show up in the snapshot.
-    if (head !== null) await git(['read-tree', 'HEAD'], index)
+    if (head !== null) await git(['read-tree', head.sha], index)
     await git(['add', '-A'], index)
     const tree = await git(['write-tree'], index)
-    if (head !== null && tree === (await git(['rev-parse', 'HEAD^{tree}']))) {
-      return { sha: head, dirty: false }
+    if (head !== null && tree === head.tree) {
+      return { sha: head.sha, dirty: false }
     }
     const sha = await git([
       '-c',
@@ -71,7 +77,7 @@ export async function snapshotWorkingTree(
       `user.email=${options.identity.email}`,
       'commit-tree',
       tree,
-      ...(head !== null ? ['-p', head] : []),
+      ...(head !== null ? ['-p', head.sha] : []),
       '-m',
       options.message,
     ])

@@ -51,7 +51,16 @@ describe('snapshotWorkingTree', () => {
       writeFileSync(join(dir, 'new.txt'), 'brand new\n')
       unlinkSync(join(dir, 'gone.txt'))
       const status = await git(['status', '--porcelain'])
-      const snapshot = await snapshotWorkingTree(git, { message: 'snap', identity: IDENTITY })
+      let headReads = 0
+      const trackedGit: SnapshotGitRunner = (args, env) => {
+        if (args[0] === 'show' && args.at(-1) === 'HEAD') headReads += 1
+        return git(args, env)
+      }
+      const snapshot = await snapshotWorkingTree(trackedGit, {
+        message: 'snap',
+        identity: IDENTITY,
+      })
+      assert.equal(headReads, 1, 'reads the HEAD commit and tree in one Git process')
       assert.equal(snapshot.dirty, true)
       assert.equal(await git(['show', `${snapshot.sha}:kept.txt`]), 'changed')
       assert.equal(await git(['show', `${snapshot.sha}:new.txt`]), 'brand new')
