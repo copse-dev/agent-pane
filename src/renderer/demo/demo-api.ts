@@ -467,6 +467,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       onOpenTab: subscribe,
       sharePageText: unsupported,
       shareScreenshot: unsupported,
+      captureScreenshot: unsupported,
       exportPdf: unsupported,
       onShareText: subscribe,
       onShareImage: subscribe,

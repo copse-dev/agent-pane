@@ -688,6 +688,10 @@ export function registerAllHandlers(
     if (!win.isDestroyed()) win.webContents.send('browser:share-image', share)
   })
 
+  ipcMain.handle('browser:capture-screenshot', async (event, rawId: unknown) => {
+    return await captureBrowserScreenshot(interactiveBrowserContents(event, rawId))
+  })
+
   ipcMain.handle('browser:export-pdf', async (event, rawId: unknown) => {
     const contents = interactiveBrowserContents(event, rawId)
     return await exportBrowserPagePdf(

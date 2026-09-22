@@ -179,6 +179,7 @@
     "electron-updater": "^6.8.9",
     "jsdom": "^30.0.1",
     "node-pty": "^1.1.0",
+    "perfect-freehand": "1.2.3",
     "shell-quote": "^1.10.0",
     "turndown": "^7.2.0",
     "xcodebuildmcp": "2.7.0"

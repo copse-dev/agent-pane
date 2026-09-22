@@ -7,7 +7,9 @@ import {
 } from '@shared/browser-session.ts'
 import type { CanvasArtefact } from '@shared/types/canvas.ts'
 import { el } from '../dom/helpers.ts'
-import { maximizeIcon, spinnerIcon } from '../dom/icons.ts'
+import { maximizeIcon, penLineIcon, spinnerIcon } from '../dom/icons.ts'
+import { mountAnnotationLayer, type AnnotationLayer } from '../drawing/annotation-layer.ts'
+import { attachAnnotation } from '../drawing/attach-annotation.ts'
 import {
   getArtefactContent,
   getArtefactPreview,
@@ -164,6 +166,47 @@ export function createInlineArtefact(
     requestArtefactShow(threadId, title)
   })
 
+  const annotate = el(
+    'button',
+    {
+      type: 'button',
+      class: 'ui-btn ui-btn-ghost canvas-preview-annotate',
+      'aria-label': `Annotate ${title}`,
+      'aria-pressed': 'false',
+    },
+    penLineIcon('ui-icon ui-icon-sm'),
+    'Annotate',
+  )
+  let annotation: AnnotationLayer | null = null
+  let inlineWebview: HTMLElement | null = null
+  // A live guest is captured through the same IPC as a Browser pane tab; a
+  // card still on its snapshot falls back to that snapshot.
+  const captureBase = async (): Promise<string | null> => {
+    const getId: unknown = inlineWebview
+      ? Reflect.get(inlineWebview, 'getWebContentsId')
+      : undefined
+    if (typeof getId === 'function' && card.dataset['canvasState'] === 'interactive') {
+      const contentsId: unknown = Reflect.apply(getId, inlineWebview, [])
+      if (typeof contentsId === 'number') {
+        return (await api.browser.captureScreenshot(contentsId)).dataUrl
+      }
+    }
+    return getArtefactPreview(threadId, title) ?? null
+  }
+  annotate.addEventListener('click', () => {
+    annotation ??= mountAnnotationLayer(stage, {
+      label: title,
+      captureBase,
+      onSend: (payload): void => {
+        attachAnnotation(payload, title)
+      },
+      onDeactivate: (): void => {
+        annotate.setAttribute('aria-pressed', 'false')
+      },
+    })
+    annotate.setAttribute('aria-pressed', String(annotation.toggle()))
+  })
+
   const card = el(
     'figure',
     {
@@ -180,7 +223,7 @@ export function createInlineArtefact(
         el('span', { class: 'canvas-preview-title' }, title),
         status,
       ),
-      open,
+      el('span', { class: 'canvas-preview-actions' }, annotate, open),
     ),
   )
 
@@ -212,6 +255,7 @@ export function createInlineArtefact(
       showFallback()
       return
     }
+    inlineWebview = webview
     stage.append(webview)
   }
 
