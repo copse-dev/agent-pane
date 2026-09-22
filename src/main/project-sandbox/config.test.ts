@@ -485,6 +485,7 @@ describe('workspaceSandboxOverlay', () => {
       const allowRead = overlay.filesystem?.allowRead ?? []
       const allowWrite = overlay.filesystem?.allowWrite ?? []
       const denyRead = overlay.filesystem?.denyRead ?? []
+      const denyWrite = overlay.filesystem?.denyWrite ?? []
 
       assert.equal(registration.primaryCheckoutRoot, repo)
       assert.equal(registration.root, worktree)
@@ -497,9 +498,18 @@ describe('workspaceSandboxOverlay', () => {
       assert.ok(!allowWrite.includes(join(repo, 'notes.md')))
       assert.ok(!allowWrite.includes(repo))
       assert.ok(allowRead.includes(join(registration.commonGitDir, 'packed-refs.lock')))
-      assert.ok(allowWrite.includes(join(registration.commonGitDir, 'packed-refs.lock')))
       assert.ok(allowRead.includes(join(registration.commonGitDir, 'packed-refs.new')))
-      assert.ok(allowWrite.includes(join(registration.commonGitDir, 'packed-refs.new')))
+      if (process.platform === 'linux') {
+        assert.ok(allowWrite.includes(registration.commonGitDir))
+        assert.ok(!allowWrite.includes(join(registration.commonGitDir, 'packed-refs.lock')))
+        assert.ok(!allowWrite.includes(join(registration.commonGitDir, 'packed-refs.new')))
+        assert.ok(denyWrite.includes(join(registration.commonGitDir, 'HEAD')))
+        assert.ok(denyWrite.includes(join(registration.commonGitDir, 'index')))
+        assert.ok(denyWrite.includes(join(registration.commonGitDir, 'info/**')))
+      } else {
+        assert.ok(allowWrite.includes(join(registration.commonGitDir, 'packed-refs.lock')))
+        assert.ok(allowWrite.includes(join(registration.commonGitDir, 'packed-refs.new')))
+      }
       // …and the worktree the agent actually runs in stays fully readable —
       // the non-nested branch does not add `${checkoutRoot}/**` to denyRead.
       assert.ok(!denyRead.includes(worktree))
