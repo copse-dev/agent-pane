@@ -2712,9 +2712,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // Keep dataset.status aligned with the live tool status so compaction can
     // leave failed cards open (it only inspects this attribute).
     const itemStatus =
-      item.type === 'individual'
-        ? item.toolCall.status
-        : aggregateToolStatus(item.toolCalls)
+      item.type === 'individual' ? item.toolCall.status : aggregateToolStatus(item.toolCalls)
     card.dataset['status'] = itemStatus
     disclosureElements.set(key, card)
     wireDisclosurePreference(card, key)
