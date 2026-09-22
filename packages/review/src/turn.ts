@@ -38,6 +38,19 @@ export interface TurnOptions {
   readonly maxSteps: number
   /** A role-specific completion invariant, checked before the terminal event is emitted. */
   readonly completionError?: (() => string | undefined) | undefined
+  /**
+   * One bounded continuation when the provider ends normally but misses the
+   * role-specific completion invariant. The continuation keeps the same
+   * transcript and emits no intermediate turn_end, so a successful protocol
+   * correction is still one logical turn.
+   */
+  readonly completionRepair?:
+    | {
+        readonly tools: readonly LLMTool[]
+        readonly maxSteps: number
+        prompt(summary: string, completionError: string): string
+      }
+    | undefined
   readonly signal?: AbortSignal | undefined
   /** Receives each contract event as it happens. */
   readonly onEvent?: ((event: HeadlessEvent) => void) | undefined
@@ -85,23 +98,17 @@ export async function runTurn(options: TurnOptions): Promise<TurnResult> {
   let outputTokens = 0
   let doneStopReason: string | undefined
   let error: string | undefined
+  let repairDraftSummary: string | undefined
 
-  emit({
-    v: 1,
-    type: 'turn_start',
-    threadId: options.threadId,
-    turnId: options.turnId,
-    protocolVersion: HEADLESS_PROTOCOL_VERSION,
-  })
-  try {
+  const runLoop = async (tools: readonly LLMTool[], maxSteps: number): Promise<void> => {
     await runAgentLoop({
       provider: options.provider,
       messages,
-      tools: [...options.tools],
+      tools: [...tools],
       executeTool: (name, args, signal, toolCallId) =>
         options.execute(name, args, signal, toolCallId),
       ...(options.signal ? { signal: options.signal } : {}),
-      maxSteps: options.maxSteps,
+      maxSteps,
       adaptiveExtensions: false,
       usageModel: options.model,
       getLastUsage: () => (hasLastUsage(options.provider) ? options.provider.lastUsage : null),
@@ -129,19 +136,60 @@ export async function runTurn(options: TurnOptions): Promise<TurnResult> {
         }
       },
     })
+  }
+
+  const readCompletionError = (): string | undefined => {
+    if (options.completionError === undefined) return undefined
+    try {
+      return options.completionError()
+    } catch (err) {
+      return errorMessage(err)
+    }
+  }
+
+  emit({
+    v: 1,
+    type: 'turn_start',
+    threadId: options.threadId,
+    turnId: options.turnId,
+    protocolVersion: HEADLESS_PROTOCOL_VERSION,
+  })
+  try {
+    await runLoop(options.tools, options.maxSteps)
   } catch (err) {
     error = errorMessage(err)
   }
   flushPending()
 
+  if (!(options.signal?.aborted ?? false) && error === undefined && options.completionRepair) {
+    const incomplete = readCompletionError()
+    if (incomplete !== undefined) {
+      repairDraftSummary = summary.trim()
+      messages.push({
+        role: 'user',
+        content: options.completionRepair.prompt(repairDraftSummary, incomplete),
+      })
+      summary = ''
+      doneStopReason = undefined
+      try {
+        await runLoop(options.completionRepair.tools, options.completionRepair.maxSteps)
+      } catch (err) {
+        error = errorMessage(err)
+      }
+      flushPending()
+    }
+  }
   const cancelled = options.signal?.aborted ?? false
-  if (!cancelled && error === undefined && options.completionError !== undefined) {
+  if (!cancelled && error === undefined) {
     try {
-      error = options.completionError()
+      error = readCompletionError()
     } catch (err) {
       error = errorMessage(err)
     }
   }
+  // A failed repair must not overwrite the useful draft analysis that prompted
+  // it with a generic second refusal or exhausted-script message.
+  if (error !== undefined && repairDraftSummary !== undefined) summary = repairDraftSummary
   const outcome: HeadlessOutcome = cancelled
     ? 'cancelled'
     : error !== undefined

@@ -8,6 +8,7 @@ import { renderReviewContext } from './context.ts'
 import { lensSystemPrompt, type Lens } from './lenses.ts'
 import {
   createReviewerToolExecutor,
+  reviewerClosureTools,
   reviewerTools,
   type ReportedCandidate,
   type ReviewerToolHost,
@@ -46,6 +47,17 @@ export interface Stage2Result {
   readonly error?: string
 }
 
+function completionRepairPrompt(reported: number, error: string): string {
+  return [
+    `Protocol correction: ${error}.`,
+    'Your immediately preceding assistant response is draft analysis, not an accepted review result.',
+    'Call finish_review exactly once now and emit no plain text.',
+    `There are already ${String(reported)} structured finding(s). Do not repeat them.`,
+    'In finish_review.findings, include every additional concrete defect stated in your draft; use [] only if the draft concluded there were no additional defects.',
+    'Copy the draft’s actual coverage into checked and its material uncertainty into couldNotVerify. Do not investigate, add, weaken, or omit conclusions during this protocol repair.',
+  ].join('\n')
+}
+
 /** One reviewer: one model under one lens. */
 export async function runStage2(options: Stage2Options): Promise<Stage2Result> {
   const executor = createReviewerToolExecutor(options)
@@ -65,6 +77,14 @@ export async function runStage2(options: Stage2Options): Promise<Stage2Result> {
       executor.completion() === null
         ? 'reviewer stopped without calling the required finish_review tool'
         : undefined,
+    completionRepair: {
+      tools: reviewerClosureTools(),
+      // One invalid call may be corrected; a third step lets the provider emit
+      // its normal post-tool terminal response without turning this into a new
+      // investigation budget.
+      maxSteps: 3,
+      prompt: (_summary, error) => completionRepairPrompt(executor.reported().length, error),
+    },
     signal: options.signal,
     onEvent: options.onEvent,
   })
