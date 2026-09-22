@@ -22407,6 +22407,17 @@ function setThreadGitBranch(store2, threadId, branch) {
   store2.setState({ threads: updated });
   store2.emit("threads_changed");
 }
+function applyRenamedThreadWorktree(store2, threadId, worktree) {
+  const applied = patchThreadAnywhere(store2, threadId, (thread) => ({
+    ...thread,
+    worktree,
+    gitBranch: worktree.branch,
+    updatedAt: Date.now()
+  }));
+  if (!applied) return;
+  store2.emit("threads_changed");
+  store2.emit("git_branch_changed");
+}
 function recordThreadVideos(store2, threadId, videos) {
   if (videos.length === 0) return;
   const { threads } = store2.getState();
@@ -28170,6 +28181,7 @@ This response is streamed through the real renderer event path.`
       // a retry error where the demo's answer should be. Nothing is checked out
       // in a browser; the demo always stays on the shared branch.
       prepareCheckout: (_projectId, _threadId, _prompt, choice) => resolved({ checkoutMode: "shared", choice, branch: currentBranch }),
+      renameCheckoutBranch: () => resolved(null),
       previewCheckout: () => resolved({ checkoutMode: "shared" }),
       resetDefaultBranchCache: () => resolvedVoid(),
       estimateContext: (_projectId, _threadId, payload) => resolved({
@@ -63910,6 +63922,118 @@ var init_attention = __esm({
   }
 });
 
+// src/shared/git/worktree-policy.ts
+function slugPrompt(prompt) {
+  const slug2 = prompt.normalize("NFKD").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 42).replace(/-+$/g, "");
+  return slug2 || "thread";
+}
+function shortThreadId(threadId) {
+  const compact = threadId.toLowerCase().replace(/[^a-z0-9]/g, "");
+  return (compact.slice(-6) || "thread").slice(0, 6);
+}
+function threadWorktreeBranchName(title, threadId, collision = 0) {
+  const base = `copse/${slugPrompt(title)}-${shortThreadId(threadId)}`;
+  return collision > 0 ? `${base}-${String(collision + 1)}` : base;
+}
+function initialThreadWorktreeBranchName(threadId, collision = 0) {
+  return threadWorktreeBranchName("thread", threadId, collision);
+}
+function isInitialThreadWorktreeBranchName(branch, threadId) {
+  for (let collision = 0; collision < 100; collision += 1) {
+    if (branch === initialThreadWorktreeBranchName(threadId, collision)) return true;
+  }
+  return false;
+}
+var init_worktree_policy = __esm({
+  "src/shared/git/worktree-policy.ts"() {
+  }
+});
+
+// src/renderer/controller/thread-naming.ts
+function namingMessages(thread) {
+  const queued = queuedMessageIds(thread);
+  return thread.messages.filter(
+    (m) => m.role === "user" && !m.origin && !queued.has(m.id) && m.content.trim()
+  );
+}
+function firstWords(text2, n = 6) {
+  return text2.split(/\s+/).slice(0, n).join(" ").slice(0, 60) || "New Thread";
+}
+function namingInput(userMessages) {
+  const first = userMessages[0];
+  if (!first) return "";
+  const recent = userMessages.slice(1).slice(-3);
+  return [first, ...recent].map((m) => m.content.trim().slice(0, 300)).join("\n\n");
+}
+function owningProjectId(store2, threadId) {
+  const background = backgroundProjectOf(store2, threadId);
+  if (background) return background;
+  const state = store2.getState();
+  if (!state.threads.some((thread) => thread.id === threadId)) return null;
+  return state.activeProjectId;
+}
+function maybeRenameThreadBranch(store2, api2, threadId) {
+  if (branchRenameInFlight.has(threadId)) return;
+  const thread = getThreadById(store2, threadId);
+  if (!thread?.worktree || thread.status !== "idle" || thread.title === "New Thread" || !isInitialThreadWorktreeBranchName(thread.worktree.branch, threadId)) {
+    return;
+  }
+  const projectId = owningProjectId(store2, threadId);
+  if (!projectId) return;
+  branchRenameInFlight.add(threadId);
+  void api2.agent.renameCheckoutBranch(projectId, threadId, thread.title).then((worktree) => {
+    if (worktree) applyRenamedThreadWorktree(store2, threadId, worktree);
+  }).catch((error62) => {
+    console.warn("[thread-naming] Could not rename thread branch:", error62);
+  }).finally(() => branchRenameInFlight.delete(threadId));
+}
+function maybeNameThread(store2, api2, threadId) {
+  if (inFlight2.has(threadId)) return;
+  const thread = getThreadById(store2, threadId);
+  if (!thread) return;
+  const passes = thread.autoTitleCount ?? 0;
+  if (passes === 0 && thread.title !== "New Thread") return;
+  const threshold = PASS_THRESHOLDS[passes];
+  if (threshold === void 0) return;
+  const userMessages = namingMessages(thread);
+  const first = userMessages[0];
+  if (!first || userMessages.length < threshold) return;
+  const titleBefore = thread.title;
+  const input2 = namingInput(userMessages);
+  inFlight2.add(threadId);
+  void (async () => {
+    let title;
+    try {
+      title = await api2.agent.suggestTitle(input2);
+    } catch {
+      title = null;
+    } finally {
+      inFlight2.delete(threadId);
+    }
+    const current = getThreadById(store2, threadId);
+    if (!current) return;
+    if (current.title !== titleBefore || (current.autoTitleCount ?? 0) !== passes) return;
+    const fallback = passes === 0 ? firstWords(first.content) : current.title;
+    setThreadTitle(store2, threadId, nonEmptyStringOr(title?.trim(), fallback), {
+      autoTitleCount: passes + 1
+    });
+    maybeRenameThreadBranch(store2, api2, threadId);
+  })();
+}
+var inFlight2, PASS_THRESHOLDS, branchRenameInFlight;
+var init_thread_naming = __esm({
+  "src/renderer/controller/thread-naming.ts"() {
+    init_thread_helpers();
+    init_unknown_value3();
+    init_worktree_policy();
+    init_message_queue();
+    init_background_threads();
+    inFlight2 = /* @__PURE__ */ new Set();
+    PASS_THRESHOLDS = [1, 3, 8];
+    branchRenameInFlight = /* @__PURE__ */ new Set();
+  }
+});
+
 // src/renderer/controller/project-tree.ts
 function projectGroupId(project2, groups) {
   const { groupId } = project2;
@@ -64433,8 +64557,12 @@ function mountProjectsPane(root, store2, api2) {
     const { threadId, draft } = renaming;
     renaming = null;
     const next = draft.trim();
-    if (save && next) setThreadTitle(store2, threadId, next);
-    else render();
+    if (save && next) {
+      setThreadTitle(store2, threadId, next);
+      maybeRenameThreadBranch(store2, api2, threadId);
+    } else {
+      render();
+    }
   }
   function forkProjectThread(projectId, threadId) {
     if (projectId !== store2.getState().activeProjectId) return;
@@ -65332,6 +65460,7 @@ var init_projects_pane = __esm({
     init_sidebar_thread();
     init_attention();
     init_ssh_workspace_ui();
+    init_thread_naming();
     init_project_tree();
     init_project_groups();
     init_projects_drag();
@@ -125613,65 +125742,6 @@ var init_diff_state = __esm({
   }
 });
 
-// src/renderer/controller/thread-naming.ts
-function namingMessages(thread) {
-  const queued = queuedMessageIds(thread);
-  return thread.messages.filter(
-    (m) => m.role === "user" && !m.origin && !queued.has(m.id) && m.content.trim()
-  );
-}
-function firstWords(text2, n = 6) {
-  return text2.split(/\s+/).slice(0, n).join(" ").slice(0, 60) || "New Thread";
-}
-function namingInput(userMessages) {
-  const first = userMessages[0];
-  if (!first) return "";
-  const recent = userMessages.slice(1).slice(-3);
-  return [first, ...recent].map((m) => m.content.trim().slice(0, 300)).join("\n\n");
-}
-function maybeNameThread(store2, api2, threadId) {
-  if (inFlight2.has(threadId)) return;
-  const thread = getThreadById(store2, threadId);
-  if (!thread) return;
-  const passes = thread.autoTitleCount ?? 0;
-  if (passes === 0 && thread.title !== "New Thread") return;
-  const threshold = PASS_THRESHOLDS[passes];
-  if (threshold === void 0) return;
-  const userMessages = namingMessages(thread);
-  const first = userMessages[0];
-  if (!first || userMessages.length < threshold) return;
-  const titleBefore = thread.title;
-  const input2 = namingInput(userMessages);
-  inFlight2.add(threadId);
-  void (async () => {
-    let title;
-    try {
-      title = await api2.agent.suggestTitle(input2);
-    } catch {
-      title = null;
-    } finally {
-      inFlight2.delete(threadId);
-    }
-    const current = getThreadById(store2, threadId);
-    if (!current) return;
-    if (current.title !== titleBefore || (current.autoTitleCount ?? 0) !== passes) return;
-    const fallback = passes === 0 ? firstWords(first.content) : current.title;
-    setThreadTitle(store2, threadId, nonEmptyStringOr(title?.trim(), fallback), {
-      autoTitleCount: passes + 1
-    });
-  })();
-}
-var inFlight2, PASS_THRESHOLDS;
-var init_thread_naming = __esm({
-  "src/renderer/controller/thread-naming.ts"() {
-    init_thread_helpers();
-    init_unknown_value3();
-    init_message_queue();
-    inFlight2 = /* @__PURE__ */ new Set();
-    PASS_THRESHOLDS = [1, 3, 8];
-  }
-});
-
 // src/shared/remote-agent-stream.ts
 function userContentToText(content) {
   if (typeof content === "string") return content;
@@ -126094,6 +126164,7 @@ function startAgentController(store2, api2) {
         state.delete(threadId);
         pendingTurn.delete(threadId);
         setThreadStatus(store2, threadId, "idle");
+        maybeRenameThreadBranch(store2, api2, threadId);
         store2.emit("agent_activity", threadId, null);
         if (threadId === store2.getState().activeThreadId) {
           void syncThreadGitBranchAfterShell(store2, api2, threadId);
