@@ -26553,7 +26553,7 @@ form.addEventListener('submit', (event) => {
           chunk: {
             type: "tool_result",
             toolCallId: "exec-d06a3ecf-21ee-4e84-98cd-59d0f0405a64",
-            result: "Saved screenshot of tab-1 to ~/debugging/agent-pane/.wdio-eval-userdata-a3a2d66b-7G38gL/browser-screenshots/tab-1-1786277869636.png",
+            result: 'Captured a 1280\xD7720 PNG of tab-1 \u2014 "Crumb & Bloom \u2014 Coming Soon".\nSource: http://localhost:61025/index.html\nCapture handle (thread-scoped and short-lived): capture_22222222-2222-4222-8222-222222222222\nThe screenshot is attached to this tool result.',
             isError: false,
             resultFormat: "markdown"
           },
