@@ -2,6 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   analyzeShellCommand,
+  configureShellScopeEnvironment,
   dangerousInSandboxReasons,
   describeShellScopeReasons,
   externalOnlyForOutsidePath,
@@ -197,6 +198,20 @@ describe('analyzeShellCommand', () => {
 
     const inside = analyzeShellCommand('cat /srv/project/src/x', '/srv/project')
     assert.equal(inside.verdict, 'sandbox')
+  })
+
+  it('honours a contained read root nested under global temp', () => {
+    configureShellScopeEnvironment({
+      containedReadRoots: () => ['/tmp/copse-cell/home/.copse/workspace'],
+    })
+    try {
+      const file = '/tmp/copse-cell/home/.copse/workspace/project/thread/agent-history.json'
+      assert.equal(analyzeShellCommand(`cat ${file}`, root).verdict, 'sandbox')
+      assert.equal(analyzeShellCommand(`cat ${file} /tmp/uncontained/x`, root).verdict, 'external')
+      assert.equal(analyzeShellCommand(`echo x > ${file}`, root).verdict, 'external')
+    } finally {
+      configureShellScopeEnvironment()
+    }
   })
 
   it('allows workspace-relative paths', () => {

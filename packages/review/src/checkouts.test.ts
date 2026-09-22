@@ -4,7 +4,7 @@ import { access, chmod, mkdtemp, readFile, realpath, rm } from 'node:fs/promises
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { materialiseCheckouts } from './checkouts.ts'
-import { createTestRepo, type TestRepo } from './test-repo.ts'
+import { createTestRepo, worktreeCount, type TestRepo } from './test-repo.ts'
 
 async function exists(path: string): Promise<boolean> {
   try {
@@ -60,7 +60,7 @@ describe('materialiseCheckouts', () => {
     }
     assert.equal(await exists(checkouts.base), false)
     assert.equal(await exists(checkouts.head), false)
-    assert.doesNotMatch(repo.git('worktree', 'list'), /copse-review|review-checkouts/)
+    assert.equal(worktreeCount(repo), 1)
   })
 
   it('leaves head at the commit when the working tree is excluded', async () => {

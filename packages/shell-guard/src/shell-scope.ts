@@ -610,18 +610,34 @@ function maskAgentScratchPaths(command: string): string {
   )
 }
 
+/**
+ * Hide absolute paths the sandbox explicitly mounts read-only before the broad
+ * `/tmp`, `/var`, `/usr` and absolute-outside-workspace rules inspect them.
+ *
+ * A contained root may itself live under one of those prefixes: `COPSE_DIR`
+ * supports relocation, and isolated reviewer cells deliberately put HOME under
+ * their private `/tmp` tree. Only structurally read-only commands receive roots,
+ * so writes keep the original path and still prompt.
+ */
+function maskContainedReadPaths(command: string, readRoots: readonly string[]): string {
+  if (readRoots.length === 0) return command
+  return command.replace(ABSOLUTE_PATH_TOKENS, (match, lead: string, path: string) =>
+    readRoots.some((root) => isInsideRoot(resolve(path), root)) ? `${lead}contained-read` : match,
+  )
+}
+
 function referencesOutsideWorkspace(
   rawCommand: string,
   workspaceRoot: string | null,
 ): string | null {
   const home = homedir()
-  const command = maskAgentScratchPaths(rawCommand)
   // Non-empty only for a structurally read-only command — see containedReadRoots.
   // Read against the raw text: masking only removes already-sanctioned paths,
   // and the read-only shape of the command is unchanged by it.
   const readRoots = containedReadRoots(rawCommand)
   const isContainedRead = (absPath: string): boolean =>
     readRoots.some((root) => isInsideRoot(absPath, root))
+  const command = maskContainedReadPaths(maskAgentScratchPaths(rawCommand), readRoots)
 
   for (const { re, reason } of OUTSIDE_PATH_PATTERNS) {
     if (!re.test(command)) continue

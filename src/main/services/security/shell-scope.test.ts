@@ -72,7 +72,7 @@ describe('analyzeShellCommand (app environment)', () => {
     it('still flags a sibling dir sharing the chat-store name prefix', () => {
       const r = analyzeShellCommand(`cat ${chatRoot}-stolen/x.json`, root)
       assert.equal(r.verdict, 'external')
-      assert.ok(r.reasons.some((x) => x.includes('outside workspace')))
+      assert.ok(r.reasons.some((x) => /outside workspace|global temp path/.test(x)))
     })
 
     it('still flags a non-chat-store path read in the same command', () => {

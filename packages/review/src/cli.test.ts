@@ -9,7 +9,7 @@ import { HEADLESS_EXIT, headlessEventSchema } from '@copse/agent/headless-contra
 import { main, reviewPermissionProfile } from './cli.ts'
 import { decodeFindings } from './finding.ts'
 import { REVIEW_CONFIG_FILENAME } from './project-commands.ts'
-import { createTestRepo, type TestRepo } from './test-repo.ts'
+import { createTestRepo, worktreeCount, type TestRepo } from './test-repo.ts'
 
 const CHECK_SCRIPT = `
 const { readFileSync } = require('node:fs')
@@ -539,7 +539,7 @@ describe('copse-review CLI', () => {
       controller.abort(new Error('cancel review'))
       assert.equal(await running, HEADLESS_EXIT.CANCELLED)
       await assert.rejects(access(later))
-      assert.doesNotMatch(repo.git('worktree', 'list'), /copse-review/)
+      assert.equal(worktreeCount(repo), 1)
     } finally {
       controller.abort()
     }
