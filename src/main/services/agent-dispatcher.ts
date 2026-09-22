@@ -193,6 +193,7 @@ function createHistoryCheckpointWriter(
 export class AgentDispatcher {
   private readonly histories = new Map<string, LLMMessage[]>()
   private readonly active = new Map<string, Promise<unknown>>()
+  private readonly deleting = new Set<string>()
   private readonly epochs = new Map<string, { turnTreeId: string; continuationUsed: number }>()
   private readonly epochWrites = new Map<string, Promise<void>>()
   private readonly machineOperations = new Map<string, Promise<MachineDispatchResult>>()
@@ -236,7 +237,8 @@ export class AgentDispatcher {
     await this.execute(request, key, host)
   }
 
-  dispatchMachine(request: MachineAgentDispatchRequest): Promise<MachineDispatchResult> {
+  async dispatchMachine(request: MachineAgentDispatchRequest): Promise<MachineDispatchResult> {
+    this.assertDispatchable(request.projectId, request.threadId)
     const operationKey = `${dispatchKey(request.projectId, request.threadId)}\0${request.operationId}`
     const existing = this.machineOperations.get(operationKey)
     if (existing) {
@@ -259,6 +261,28 @@ export class AgentDispatcher {
 
   isActive(projectId: string, threadId: string): boolean {
     return this.active.has(dispatchKey(projectId, threadId))
+  }
+
+  /** Permanently fence a deleted id so queued machine wakes cannot reclaim it. */
+  beginThreadDeletion(projectId: string, threadId: string): void {
+    this.deleting.add(dispatchKey(projectId, threadId))
+  }
+
+  /** Undo a deletion fence when cleanup failed before the store was removed. */
+  cancelThreadDeletion(projectId: string, threadId: string): void {
+    this.deleting.delete(dispatchKey(projectId, threadId))
+  }
+
+  /** Resolve once the thread no longer owns a dispatch slot, regardless of run outcome. */
+  async waitForIdle(projectId: string, threadId: string): Promise<void> {
+    const key = dispatchKey(projectId, threadId)
+    const operationPrefix = `${key}\0`
+    const pending = [...this.machineOperations]
+      .filter(([operationKey]) => operationKey.startsWith(operationPrefix))
+      .map(([, operation]) => operation)
+    const running = this.active.get(key)
+    if (running) pending.push(running.then(() => 'completed'))
+    await Promise.allSettled(pending)
   }
 
   async history(projectId: string, threadId: string): Promise<LLMMessage[]> {
@@ -314,6 +338,7 @@ export class AgentDispatcher {
         // A failed foreground turn still releases the per-thread dispatch slot.
       }
     }
+    this.assertDispatchable(request.projectId, request.threadId)
 
     let epoch = this.epochs.get(key)
     if (!epoch) {
@@ -413,6 +438,7 @@ export class AgentDispatcher {
     key: string,
     run: (host: AgentHost<StreamChunk>) => Promise<T>,
   ): Promise<T> {
+    this.assertDispatchable(request.projectId, request.threadId)
     const existing = this.active.get(key)
     if (existing) {
       throw new Error(`An agent turn is already running for thread "${request.threadId}"`)
@@ -450,6 +476,12 @@ export class AgentDispatcher {
         if (terminalOutcome !== undefined) this.host.emit(request.threadId, terminalOutcome)
         this.host.emit(request.threadId, terminalDone)
       }
+    }
+  }
+
+  private assertDispatchable(projectId: string, threadId: string): void {
+    if (this.deleting.has(dispatchKey(projectId, threadId))) {
+      throw new Error(`Thread "${threadId}" is being deleted`)
     }
   }
 

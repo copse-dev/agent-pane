@@ -562,8 +562,23 @@ app
     recordStartupPhase('register-handlers')
     perfMark('main:register-handlers')
     const agentDispatcher = new AgentDispatcher(agentHost, registry)
-    registerAllHandlers(win, registry, (projectId, threadId) =>
-      agentDispatcher.isActive(projectId, threadId),
+    registerAllHandlers(
+      win,
+      registry,
+      (projectId, threadId) => agentDispatcher.isActive(projectId, threadId),
+      {
+        stopAndWaitForAgent: async (projectId, threadId) => {
+          agentDispatcher.beginThreadDeletion(projectId, threadId)
+          abortAgent(threadId)
+          await agentDispatcher.waitForIdle(projectId, threadId)
+        },
+        resumeAfterFailedDeletion: (projectId, threadId) => {
+          agentDispatcher.cancelThreadDeletion(projectId, threadId)
+        },
+        forgetAgentHistory: (projectId, threadId) => {
+          agentDispatcher.forgetHistory(projectId, threadId)
+        },
+      },
     )
     getAutomationService().start((event) => {
       if (!win.isDestroyed()) win.webContents.send('automations:triggered', event)
