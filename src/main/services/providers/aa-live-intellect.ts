@@ -11,6 +11,7 @@
 import type { LiveAaModel } from '@copse/llm/live-intellect.ts'
 import { z } from 'zod'
 import { getApiKey } from '../storage/settings.ts'
+import { AsyncTtlCache } from '../async-ttl-cache.ts'
 import { optionalRecord } from '@shared/unknown-value.ts'
 import { isNonNull } from '@shared/nullish.ts'
 
@@ -141,17 +142,13 @@ function reportedIndexVersion(
   return undefined
 }
 
-let cache: { key: string; at: number; result: LiveIntellectFetch } | null = null
-let cacheGeneration = 0
-const inflight = new Map<
-  string,
-  { generation: number; token: symbol; promise: Promise<LiveIntellectFetch> }
->()
+const liveIntellectCache = new AsyncTtlCache<string, LiveIntellectFetch>({
+  ttlMs: liveCacheTtlMs,
+  maxEntries: 2,
+})
 
 export function invalidateLiveIntellectCache(): void {
-  cacheGeneration += 1
-  cache = null
-  inflight.clear()
+  liveIntellectCache.clear()
 }
 
 /**
@@ -273,7 +270,11 @@ export async function requestLiveIntellectModels(
     const endpoint = await requestAaEndpoint(AA_MODELS_URL, key, fetchImpl)
     const models = endpoint.models.map(reduceModel).filter(isNonNull)
     const indexVersion = reportedIndexVersion(endpoint.firstPayload, endpoint.models)
-    return { ok: true, models, ...(indexVersion !== undefined ? { indexVersion } : {}) }
+    return {
+      ok: true,
+      models,
+      ...(indexVersion !== undefined ? { indexVersion } : {}),
+    }
   } catch (err) {
     return { ok: false, models: [], error: errorMessage(err) }
   }
@@ -407,23 +408,5 @@ export async function fetchLiveIntellectModels(options?: {
   if (process.env[MOCK_ENV] === '1') return mockLiveIntellectFetch()
   const key = getApiKey('artificial-analysis')
   if (!key) return { ok: true, models: [] }
-  if (cache?.key === key && Date.now() - cache.at < liveCacheTtlMs(cache.result)) {
-    return cache.result
-  }
-  const existing = inflight.get(key)
-  if (existing?.generation === cacheGeneration) return existing.promise
-
-  const generation = cacheGeneration
-  const token = Symbol(key)
-  const promise = (async (): Promise<LiveIntellectFetch> => {
-    try {
-      const result = await requestLiveIntellectModels(key, options?.fetchImpl)
-      if (generation === cacheGeneration) cache = { key, at: Date.now(), result }
-      return result
-    } finally {
-      if (inflight.get(key)?.token === token) inflight.delete(key)
-    }
-  })()
-  inflight.set(key, { generation, token, promise })
-  return promise
+  return liveIntellectCache.get(key, () => requestLiveIntellectModels(key, options?.fetchImpl))
 }

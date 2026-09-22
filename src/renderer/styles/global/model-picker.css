@@ -336,8 +336,7 @@
 .model-picker-status.is-error {
   color: var(--error);
 }
-.approval-model-picker,
-.approval-comparison-row .model-picker-field-host {
+.approval-model-picker {
   max-width: none;
 }
 

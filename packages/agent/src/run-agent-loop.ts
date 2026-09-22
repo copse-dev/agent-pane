@@ -2,6 +2,7 @@ import { errorMessage } from '@copse/std/errors.ts'
 import type {
   LLMProvider,
   LLMMessage,
+  LLMStreamOptions,
   LLMTool,
   ToolCallChunk,
   ToolResult,
@@ -160,6 +161,8 @@ export interface AgentLoopOptions {
    * Defaults to true; benchmark hosts pass false to keep budgets exact.
    */
   adaptiveExtensions?: boolean
+  /** Exact function tool forced only on the first main-loop provider stream. */
+  initialToolChoice?: LLMStreamOptions['toolChoice']
   /**
    * Per-stream output cap used by the reasoning-runaway guard. Defaults to the
    * product-wide limit; benchmark hosts may lower it for slower local models.
@@ -1102,6 +1105,14 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
   let loopNudgeSent = false
   let forceTextAttempted = false
   let artifactCheckpointSent = false
+  const initialToolChoiceName = opts.initialToolChoice?.name
+  if (
+    initialToolChoiceName !== undefined &&
+    !tools.some((tool) => tool.name === initialToolChoiceName)
+  ) {
+    throw new Error(`Initial tool choice is not advertised: ${initialToolChoiceName}`)
+  }
+  let initialToolChoice = opts.initialToolChoice
   let trimEvents = 0
   // Consecutive streams cut off by the per-stream output cap while producing only
   // reasoning (no answer, no tool call). The first gets a force-answer nudge; a
@@ -1376,7 +1387,9 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
 
     budget.deadline.pause()
     try {
-      for await (const chunk of provider.stream(messages, tools, signal)) {
+      const streamOptions = initialToolChoice ? { toolChoice: initialToolChoice } : undefined
+      initialToolChoice = undefined
+      for await (const chunk of provider.stream(messages, tools, signal, streamOptions)) {
         if (signal?.aborted) break
         if (chunk.type === 'reasoning') {
           streamOutputChars += chunk.text.length

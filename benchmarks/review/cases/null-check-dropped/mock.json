@@ -1,0 +1,67 @@
+{
+  "roles": {
+    "review:correctness": [
+      {
+        "type": "tool_call",
+        "name": "report_finding",
+        "args": {
+          "path": "src/display.cjs",
+          "startLine": 3,
+          "class": "contract",
+          "severity": "high",
+          "confidence": "high",
+          "claim": "displayName throws a TypeError for a null user instead of returning null.",
+          "reason": "The null guard was removed, so user.nickname dereferences null."
+        }
+      },
+      {
+        "type": "tool_call",
+        "name": "finish_review",
+        "args": { "checked": "src/display.cjs and its null-input behavior.", "couldNotVerify": "Nothing" }
+      },
+      { "type": "text", "text": "Done." }
+    ],
+    "review:contracts": [
+      {
+        "type": "tool_call",
+        "name": "report_finding",
+        "args": {
+          "path": "src/display.cjs",
+          "startLine": 2,
+          "endLine": 3,
+          "class": "contract",
+          "severity": "high",
+          "confidence": "medium",
+          "claim": "displayName now throws a TypeError for a null user rather than returning null as documented.",
+          "reason": "The comment promises null for no user; the guard that delivered it is gone."
+        }
+      },
+      {
+        "type": "tool_call",
+        "name": "finish_review",
+        "args": { "checked": "The documented displayName contract and implementation.", "couldNotVerify": "Nothing" }
+      },
+      { "type": "text", "text": "Done." }
+    ],
+    "reproduce": [
+      {
+        "type": "tool_call",
+        "name": "write_reproducer",
+        "args": {
+          "path": ".copse-review/display-null.repro.cjs",
+          "content": "const { displayName } = require('../src/display.cjs')\nif (displayName(null) !== null) {\n  console.error('expected null for a null user')\n  process.exit(1)\n}\n",
+          "argv": ["node", ".copse-review/display-null.repro.cjs"]
+        }
+      },
+      { "type": "text", "text": "Reproduced." }
+    ],
+    "challenge": [
+      {
+        "type": "tool_call",
+        "name": "verdict",
+        "args": { "status": "stands", "reason": "user.nickname on null throws" }
+      },
+      { "type": "text", "text": "Stands." }
+    ]
+  }
+}

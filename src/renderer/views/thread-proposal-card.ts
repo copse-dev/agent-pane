@@ -13,10 +13,11 @@ import type { ThreadCheckoutMode } from '@shared/types/worktree.ts'
  * This is an **offer**, not a permission prompt, and the whole design follows
  * from that: it sits in the transcript instead of over it, nothing is disabled
  * behind it, and leaving it alone forever is a valid answer. A modal here would
- * be a lie — it would interrupt the user to ask about work that is not running,
- * was not requested, and costs nothing to ignore. So the card reads as a
- * suggestion card: what the run would do first, in prose the user can judge
- * without reading a prompt, with the prompt itself one disclosure away.
+ * be a lie — it would interrupt the user about work that is not running and
+ * costs nothing to ignore, even when the user requested the separate thread.
+ * So the card reads as an offer: what the run would do first, in prose the user
+ * can judge without reading a prompt, with the prompt itself one disclosure
+ * away.
  *
  * The two resolved states stay in place rather than vanishing. A started
  * proposal keeps a link to the thread it made (the transcript is where the user

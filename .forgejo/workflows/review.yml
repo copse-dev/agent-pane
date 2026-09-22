@@ -1,0 +1,124 @@
+name: Copse review
+
+# The Forgejo shape of Shell C (docs/plans/copse-reviewer.md, §Execution
+# isolation, "Backend per shell — CI"), after FFmpeg's Forgejo Fairy: opt in
+# by adding the `copse-review` label to a pull request.
+#
+# Two jobs, the same split as the GitHub pair: `ground` runs Stage 0 on the
+# pull request head with the runner as the cell and no secrets; `findings`
+# reads the head, never runs it, and posts one review with the model key.
+# Forgejo Actions has no `workflow_run`, so both are jobs of one workflow on
+# the `pull_request` event and `findings` is gated to pull requests from this
+# repository's own branches: a fork's pull request gets Stage 0 and the
+# uploaded ground, and no job that holds a secret runs against it. The
+# runners must be EPHEMERAL — a fresh container per job — because a
+# persistent runner is precisely what a malicious pull request would persist
+# on; `runs-on: ephemeral` names that pool, adjust it to yours.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+
+jobs:
+  ground:
+    name: Stage 0 on the pull request head
+    if: contains(github.event.pull_request.labels.*.name, 'copse-review')
+    runs-on: ephemeral
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+      - name: Activate the pinned pnpm
+        run: |
+          corepack enable
+          corepack prepare --activate
+      - name: Install the reviewer
+        run: pnpm install --frozen-lockfile --ignore-scripts --filter "@copse/review..."
+      - name: Run Stage 0 with the runner as the cell
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --quiet origin "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}"
+          mkdir -p ground
+          node packages/review/bin/copse-review.mjs \
+            --foreign \
+            --head "$HEAD_SHA" \
+            --base "origin/${BASE_REF}" \
+            --backend ephemeral-runner \
+            --no-model \
+            --json ground/report.json
+      - uses: actions/upload-artifact@v3
+        with:
+          name: copse-review-ground
+          path: ground/
+
+  findings:
+    name: Review the pull request read-only and post the findings
+    needs: ground
+    if: >-
+      contains(github.event.pull_request.labels.*.name, 'copse-review') &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ephemeral
+    timeout-minutes: 60
+    env:
+      REVIEW_MODEL: ${{ vars.COPSE_REVIEW_MODEL || 'claude-sonnet-5' }}
+      REVIEW_LENSES: ${{ vars.COPSE_REVIEW_LENSES || 'correctness' }}
+    steps:
+      # The base branch: this checkout's CLI reviews, the pull request's is
+      # only read.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+      - name: Activate the pinned pnpm
+        run: |
+          corepack enable
+          corepack prepare --activate
+      - name: Install the reviewer
+        run: pnpm install --frozen-lockfile --ignore-scripts --filter "@copse/review..."
+      - uses: actions/download-artifact@v3
+        with:
+          name: copse-review-ground
+          path: ground
+      - name: Review read-only over the uploaded ground and post the findings
+        env:
+          COPSE_REVIEW_API_KEY: ${{ secrets.COPSE_REVIEW_API_KEY }}
+          FORGEJO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --quiet origin \
+            "+refs/pull/${PR_NUMBER}/head:refs/remotes/pr/${PR_NUMBER}" \
+            "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}"
+          test "$(git rev-parse "refs/remotes/pr/${PR_NUMBER}")" = "$HEAD_SHA"
+          node packages/review/bin/copse-review.mjs \
+            --foreign \
+            --head "refs/remotes/pr/${PR_NUMBER}" \
+            --base "origin/${BASE_REF}" \
+            --stage0-json ground/report.json \
+            --model "$REVIEW_MODEL" \
+            --lenses "$REVIEW_LENSES" \
+            --post-review forgejo \
+            --forge-url "$GITHUB_SERVER_URL" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pr "$PR_NUMBER" \
+            --json findings.json
+      - uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: copse-review-findings
+          path: findings.json

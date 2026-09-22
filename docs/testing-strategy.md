@@ -174,6 +174,31 @@ list rather than adding e2e specs for DOM-only behavior.
 
 ## CI cost is a design input
 
+### Exclusion inventory
+
+`pnpm run check:e2e-exclusions` inventories WDIO `exclude` lists and conventional Mocha skip
+markers in `tests/e2e/**/*.e2e.ts`, without loading Electron or changing test selection. It compares
+them with [`tests/e2e/exclusions.json`](../tests/e2e/exclusions.json). Unrecorded, changed, duplicate,
+or stale entries fail the check. Add/remove the relevant record in the same PR as an exclusion.
+
+Each entry records its category, reason, tracking issue, accountable role, review deadline, and
+compensating evidence or an explicit gap. Existing records are **an inventory, not release waivers**;
+their initial dates schedule triage and do not assert a maintainer accepted the missing coverage.
+Due reviews are warnings until the owner/expiry enforcement slice in
+[#2719](https://github.com/copse-dev/agent-pane/issues/2719) is decided. Critical runtime repairs
+remain owned by [#1680](https://github.com/copse-dev/agent-pane/issues/1680).
+
+The static check recognizes literal/local-array config exclusions (including the existing inherited
+base config), CI skip helpers and their import aliases, Mocha `.skip`/`['skip']`, `this.skip()`,
+`xdescribe`, and `xit`. Exclusion arrays must be declared statically: mutations, escaped array
+references, and destructuring or mutation of `config.exclude` fail the check, as do dynamic/glob
+config exclusions. It is not
+a JavaScript interpreter: new conditional wrappers or runner-side selection mechanisms require
+extending the scanner and tests. Review semantic changes to existing conditions even when their
+marker count stays the same. Platform-only and live-service cases remain distinct from quarantine.
+
+### Cost and tier selection
+
 The e2e tier is the expensive, flake-prone one (runner OOM / disk / Electron
 startup, not assertion failures), so the recent refactoring trades it down — and
 new tests should keep that trend:
@@ -210,7 +235,9 @@ new tests should keep that trend:
   while iterating when a host or `COPSE_CI_REGISTRY` is available (see
   [`ci-runners/README.md`](../ci-runners/README.md#remote-e2e-dev-hosts-npm-run-e2eremote)).
   Local `test:e2e` stays for macOS-specific behaviour and machines without cloud
-  access.
+  access. It runs Electron without a visible window by default (Chromium headless
+  on macOS/Windows, Xvfb on Linux); set `COPSE_E2E_HEADLESS=0` for an intentionally
+  visible local debugging run.
 - Don't reintroduce per-spec rebuilds or hosted-runner e2e for ordinary
   changes; the shared `dist` artifact + self-hosted PR/push runners exist to
   avoid that cost.
@@ -300,6 +327,15 @@ loops driven by an actual local model rather than the mock:
   per-rule, and token deltas under `bench-results/doctrine/`. CI runs its mock
   smoke arm in the normal bench job; the real model matrix runs nightly or with
   the `bench-doctrine` label when `LM_EVAL_RUNNER` is configured.
+- `pnpm run bench:review --mock --gate` runs Copse Reviewer's corpus
+  (`benchmarks/review/cases/`) through the whole review pipeline with scripted
+  reviewers and scores precision on surfaced findings against each case's known
+  defects, ratcheted against `benchmarks/review/baseline.json`; CI runs it in the
+  `bench` job and the unit tier pins each case's counts (`scripts/bench-review.test.ts`).
+  A model profile (`--provider`, `--model`) measures the reviewer itself. Regression
+  baselines are keyed by the complete configuration and corpus fingerprint; the separate
+  absolute target gate also requires confidence, recall and zero duplicates. See
+  `benchmarks/review/README.md`.
 - The `eval-tool-preference` job scores whether a real model answers a read-only
   "what landed on main / is CI green?" question through the first-class
   git/gh/CI tools or drives `gh` and network `git` through `run_shell`, charging
@@ -439,11 +475,13 @@ Two consequences of running e2e on those PRs, both intended:
 - `screenshot-artifacts` preserves reference shots touched by the specs that ran
   as immutable review evidence. It only includes shots the shards actually
   produced, and never edits the branch. A separate trusted `workflow_run`
-  publishes same-repository candidates on a bot-owned branch, opens a child PR
-  into the source branch, and links that review PR from the parent. Merging the
-  child applies the reviewed PNGs without granting write credentials to the job
-  that executed PR code. Forks and promotion PRs sourced from an integration
-  branch keep the downloadable-artifact/manual path.
+  links the filtered artifact from the same-repository parent PR. Ordinary runs
+  create no child PR. Only an explicit `update-screenshots` request publishes
+  candidates on a bot-owned branch and opens a PNG review PR into the source
+  branch. Merging that child applies reviewed references without granting write
+  credentials to the job that executed PR code. Artifacts expire after 14 days;
+  they are evidence to review, not automatic acceptance. Forks and promotion PRs
+  sourced from an integration branch keep the downloadable-artifact/manual path.
 
 Two escape hatches on a `main`-targeted PR, both labels:
 

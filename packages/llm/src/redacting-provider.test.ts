@@ -1,21 +1,32 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import type { LLMProvider, LLMMessage, LLMTool, ProviderStreamChunk } from './wire-types.ts'
+import type {
+  LLMProvider,
+  LLMMessage,
+  LLMStreamOptions,
+  LLMTool,
+  ProviderStreamChunk,
+} from './wire-types.ts'
 import { withSecretRedaction } from './redacting-provider.ts'
 
 function fakeProvider(): {
   provider: LLMProvider & { lastUsage: unknown }
-  seen: { messages: LLMMessage[] | null }
+  seen: { messages: LLMMessage[] | null; options: LLMStreamOptions | null }
 } {
-  const seen: { messages: LLMMessage[] | null } = { messages: null }
+  const seen: { messages: LLMMessage[] | null; options: LLMStreamOptions | null } = {
+    messages: null,
+    options: null,
+  }
   const provider: LLMProvider & { lastUsage: unknown } = {
     lastUsage: { inputTokens: 7, outputTokens: 3 },
     stream(
       messages: LLMMessage[],
       _tools: LLMTool[],
       _signal?: AbortSignal,
+      options?: LLMStreamOptions,
     ): AsyncIterable<ProviderStreamChunk> {
       seen.messages = messages
+      seen.options = options ?? null
       return (async function* (): AsyncIterable<ProviderStreamChunk> {
         yield { type: 'done' }
       })()
@@ -51,5 +62,18 @@ describe('withSecretRedaction', () => {
     const wrapped = withSecretRedaction(provider)
     assert.ok('lastUsage' in wrapped)
     assert.deepEqual(wrapped.lastUsage, { inputTokens: 7, outputTokens: 3 })
+  })
+
+  it('preserves a call-scoped exact tool choice', async () => {
+    const { provider, seen } = fakeProvider()
+    const wrapped = withSecretRedaction(provider)
+
+    for await (const _ of wrapped.stream([], [], undefined, {
+      toolChoice: { name: 'finish_review' },
+    })) {
+      // Drain the stream so the wrapper forwards and captures the request.
+    }
+
+    assert.deepEqual(seen.options, { toolChoice: { name: 'finish_review' } })
   })
 })

@@ -17,7 +17,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PluginRegistry } from '@copse/agent/plugins/plugin-registry.ts'
 import { definePlugin } from '@copse/agent/plugins/plugin-manifest.ts'
-import { MODEL_COMPARISON_PLUGIN_ID } from '@copse/agent/plugins/model-comparison-plugin.ts'
+import {
+  CHALLENGER_MODEL_SETTING_ID,
+  RETIRED_MODEL_COMPARISON_PLUGIN_ID,
+  REVIEW_PLUGIN_ID,
+  REVIEWER_MODEL_SETTING_ID,
+} from '@copse/agent/plugins/review-plugin.ts'
 import { POST_TURN_REVIEW_PLUGIN_ID } from '@copse/agent/plugins/post-turn-review-plugin.ts'
 import { LONG_HORIZON_TASKS_PLUGIN_ID } from '@copse/agent/plugins/long-horizon-tasks-plugin.ts'
 import { ROADMAP_PLANS_PLUGIN_ID } from '@copse/agent/plugins/roadmap-plans-plugin.ts'
@@ -58,6 +63,7 @@ const ARTIFACT_CHECKPOINT_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.artifactCh
 const BACKGROUND_TASKS_STABLE_MIGRATION_KEY = 'pluginMigration.backgroundTasksStable'
 const APPLE_DEVELOPMENT_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.appleDevelopmentEnablement'
 const AGENTS_MD_MODE_MIGRATION_KEY = 'pluginMigration.agentsMdInstructionFiles'
+const REVIEW_PLUGIN_MIGRATION_KEY = 'pluginMigration.reviewFromModelComparison'
 const PLUGIN_SOURCES_KEY = 'pluginSources'
 const pluginSettingsKey = (id: string): string => `plugin.${id}.settings`
 const localPluginRoots: string[] = []
@@ -132,6 +138,7 @@ function clearStorage(): void {
   storageSet(AUTOMATIONS_ENABLEMENT_MIGRATION_KEY, true)
   storageSet(PARALLEL_SEARCH_ENABLEMENT_MIGRATION_KEY, true)
   storageSet(ARTIFACT_CHECKPOINT_ENABLEMENT_MIGRATION_KEY, true)
+  storageSet(REVIEW_PLUGIN_MIGRATION_KEY, true)
   storageSet(BACKGROUND_TASKS_STABLE_MIGRATION_KEY, true)
   storageSet(APPLE_DEVELOPMENT_ENABLEMENT_MIGRATION_KEY, true)
   storageSet(AGENTS_MD_MODE_MIGRATION_KEY, true)
@@ -370,7 +377,7 @@ describe('PluginService', () => {
     assert.equal(service.registry.isEnabled(POST_TURN_REVIEW_PLUGIN_ID), true)
     assert.equal(service.registry.isEnabled(BACKGROUND_TASKS_PLUGIN_ID), true)
     for (const id of [
-      MODEL_COMPARISON_PLUGIN_ID,
+      REVIEW_PLUGIN_ID,
       LONG_HORIZON_TASKS_PLUGIN_ID,
       ROADMAP_PLANS_PLUGIN_ID,
       ADVISOR_STRATEGY_PLUGIN_ID,
@@ -392,7 +399,7 @@ describe('PluginService', () => {
     assert.deepEqual(
       storageGet(PLUGIN_DISABLED_KEY),
       [
-        MODEL_COMPARISON_PLUGIN_ID,
+        REVIEW_PLUGIN_ID,
         LONG_HORIZON_TASKS_PLUGIN_ID,
         ROADMAP_PLANS_PLUGIN_ID,
         ADVISOR_STRATEGY_PLUGIN_ID,
@@ -479,8 +486,69 @@ describe('PluginService', () => {
     assert.equal(later.registry.isEnabled(ARTIFACT_CHECKPOINT_PLUGIN_ID), true)
   })
 
+  it('carries a comparison opt-in across to the review plugin once, models included', async () => {
+    // A profile that had turned the retired `copse.model-comparison` on (absent
+    // from its list) and chosen reviewer A and a judge. The replacement starts
+    // on, with those two as its reviewer and challenger, and the retired id is
+    // gone from the list. A later opt-out is the user's and survives a restart.
+    storageDelete(REVIEW_PLUGIN_MIGRATION_KEY)
+    storageSet(PLUGIN_DISABLED_KEY, [LONG_HORIZON_TASKS_PLUGIN_ID])
+    storageSet(`plugin.${RETIRED_MODEL_COMPARISON_PLUGIN_ID}.settings`, {
+      comparisonModelA: 'gpt-5',
+      comparisonModelB: 'auto:best-intellect',
+      comparisonJudgeModel: 'claude-opus-4-8',
+    })
+
+    const service = getPluginService()
+
+    assert.equal(service.registry.isEnabled(REVIEW_PLUGIN_ID), true)
+    assert.equal(service.getSetting(REVIEW_PLUGIN_ID, REVIEWER_MODEL_SETTING_ID), 'gpt-5')
+    assert.equal(
+      service.getSetting(REVIEW_PLUGIN_ID, CHALLENGER_MODEL_SETTING_ID),
+      'claude-opus-4-8',
+    )
+    assert.deepEqual(parseStringList(storageGet(PLUGIN_DISABLED_KEY)), [
+      LONG_HORIZON_TASKS_PLUGIN_ID,
+    ])
+    assert.equal(storageGet(REVIEW_PLUGIN_MIGRATION_KEY), true)
+
+    await service.setEnabled(REVIEW_PLUGIN_ID, false)
+    __resetPluginServiceForTests()
+    const later = getPluginService()
+    assert.equal(later.registry.isEnabled(REVIEW_PLUGIN_ID), false)
+  })
+
+  it('keeps the review plugin off for a profile that had the comparison off', () => {
+    storageDelete(REVIEW_PLUGIN_MIGRATION_KEY)
+    storageDelete(`plugin.${REVIEW_PLUGIN_ID}.settings`)
+    storageDelete(`plugin.${RETIRED_MODEL_COMPARISON_PLUGIN_ID}.settings`)
+    storageSet(PLUGIN_DISABLED_KEY, [
+      RETIRED_MODEL_COMPARISON_PLUGIN_ID,
+      LONG_HORIZON_TASKS_PLUGIN_ID,
+    ])
+
+    const service = getPluginService()
+
+    assert.equal(service.registry.isEnabled(REVIEW_PLUGIN_ID), false)
+    const disabled = parseStringList(storageGet(PLUGIN_DISABLED_KEY))
+    assert.ok(disabled.includes(REVIEW_PLUGIN_ID))
+    assert.ok(!disabled.includes(RETIRED_MODEL_COMPARISON_PLUGIN_ID))
+    // Nothing to carry: the review bag stays empty rather than gaining a key.
+    assert.equal(service.getSetting(REVIEW_PLUGIN_ID, REVIEWER_MODEL_SETTING_ID), undefined)
+  })
+
+  it('leaves a seeded review entry alone when the retired id was never listed', () => {
+    // A profile written after the rename (an e2e seed, a fresh install that
+    // later upgrades) lists `copse.review` off and never knew the comparison.
+    // The absence of the retired id is not an opt-in there.
+    storageDelete(REVIEW_PLUGIN_MIGRATION_KEY)
+    storageSet(PLUGIN_DISABLED_KEY, [REVIEW_PLUGIN_ID, LONG_HORIZON_TASKS_PLUGIN_ID])
+    const service = getPluginService()
+    assert.equal(service.registry.isEnabled(REVIEW_PLUGIN_ID), false)
+  })
+
   it('never re-seeds over a plugin list the user already owns', () => {
-    // Everything default-off except model comparison, which the user enabled.
+    // Everything default-off except Copse Reviewer, which the user enabled.
     storageSet(PLUGIN_DISABLED_KEY, [
       LONG_HORIZON_TASKS_PLUGIN_ID,
       ROADMAP_PLANS_PLUGIN_ID,
@@ -493,12 +561,9 @@ describe('PluginService', () => {
 
     const service = getPluginService()
 
-    assert.equal(service.registry.isEnabled(MODEL_COMPARISON_PLUGIN_ID), true)
+    assert.equal(service.registry.isEnabled(REVIEW_PLUGIN_ID), true)
     assert.equal(service.registry.isEnabled(PII_REDACTION_PLUGIN_ID), false)
-    assert.equal(
-      parseStringList(storageGet(PLUGIN_DISABLED_KEY)).includes(MODEL_COMPARISON_PLUGIN_ID),
-      false,
-    )
+    assert.equal(parseStringList(storageGet(PLUGIN_DISABLED_KEY)).includes(REVIEW_PLUGIN_ID), false)
   })
 
   it('treats an empty plugin list as the user turning everything on', () => {
@@ -572,12 +637,9 @@ describe('migratePackKeysToPlugin', () => {
     getPluginService()
 
     assert.deepEqual(parseStringList(storageGet('pluginDisabled')), ['copse.todos'])
-    // The seeding path must not have fired: `copse.model-comparison` ships
-    // disabled, and its absence here is the user's explicit opt-in.
-    assert.equal(
-      parseStringList(storageGet('pluginDisabled')).includes(MODEL_COMPARISON_PLUGIN_ID),
-      false,
-    )
+    // The seeding path must not have fired: `copse.review` ships disabled,
+    // and its absence here is the user's explicit opt-in.
+    assert.equal(parseStringList(storageGet('pluginDisabled')).includes(REVIEW_PLUGIN_ID), false)
   })
 
   it('treats an empty disable set as a value, not a blank', () => {

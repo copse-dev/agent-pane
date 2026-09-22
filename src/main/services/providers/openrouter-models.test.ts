@@ -9,6 +9,7 @@ import {
   invalidateOpenRouterModelsCache,
   filterToZdrModels,
 } from './openrouter-models.ts'
+import { getPersistedOpenRouterPricing, OPENROUTER_PRICING_KEY } from './model-pricing-store.ts'
 
 const SAMPLE = {
   data: [
@@ -146,6 +147,7 @@ describe('listFreeOpenRouterModels', () => {
     invalidateOpenRouterModelsCache()
     await setSetting('openRouterZdrOnly', true)
     await setSetting('openRouterFreeMode', false)
+    await setSetting(OPENROUTER_PRICING_KEY, {})
     await deleteSetting('openRouterApiBase')
   })
 
@@ -315,6 +317,59 @@ describe('listFreeOpenRouterModels', () => {
     await fetchOpenRouterModelsCached()
 
     assert.equal(newBaseFetchCount, 1)
+  })
+
+  it('does not let an invalidated same-base request overwrite newer persisted pricing', async () => {
+    invalidateOpenRouterModelsCache()
+    await setSetting('openRouterApiBase', 'https://pricing.example')
+    await setSetting(OPENROUTER_PRICING_KEY, {})
+    let calls = 0
+    let releaseOld: (() => void) | undefined
+    const oldReleased = new Promise<void>((resolve) => {
+      releaseOld = resolve
+    })
+    const original = globalThis.fetch
+    globalThis.fetch = async (): Promise<Response> => {
+      calls += 1
+      const isOld = calls === 1
+      if (isOld) await oldReleased
+      return new Response(
+        JSON.stringify({
+          data: [
+            {
+              id: 'vendor/priced-model',
+              pricing: {
+                prompt: isOld ? '0.000001' : '0.000009',
+                completion: isOld ? '0.000002' : '0.000010',
+              },
+              supported_parameters: ['tools'],
+            },
+          ],
+        }),
+        { status: 200 },
+      )
+    }
+    restore = (): void => {
+      globalThis.fetch = original
+    }
+
+    const oldRequest = fetchOpenRouterModelsCached()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    invalidateOpenRouterModelsCache()
+    const freshRequest = fetchOpenRouterModelsCached()
+    await freshRequest
+    assert.equal(
+      getPersistedOpenRouterPricing()['openrouter:vendor/priced-model']?.inputPricePerMTok,
+      9,
+    )
+
+    releaseOld?.()
+    await oldRequest
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(
+      getPersistedOpenRouterPricing()['openrouter:vendor/priced-model']?.inputPricePerMTok,
+      9,
+    )
   })
 })
 

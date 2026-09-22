@@ -55,6 +55,8 @@ import { stripInlineVisualizationReferences } from '@shared/inline-visualization
 import type {
   Message,
   MessageOrigin,
+  AcpContentBlock,
+  AcpToolCallContent,
   SubagentSession,
   Thread,
   ToolCall,
@@ -91,11 +93,15 @@ import { TODOS_PLUGIN_ID, TODOS_PANEL_CONTRIBUTION_ID } from '@copse/agent/plugi
 import { createAppleDevelopmentPanel } from './apple-development-panel.ts'
 import { createReviewCardEl } from './review-panel.ts'
 import { createComparisonCardEl } from './comparison-panel.ts'
+import { createReviewFindingsCardEl } from './review-findings-card.ts'
 import {
   dismissComparison,
-  retryComparison,
+  dismissReviewFinding,
+  dismissReviewReport,
+  restoreReviewFinding,
   retryReview,
-} from '../controller/retry-review-comparison.ts'
+  startReview,
+} from '../controller/review-actions.ts'
 import { renderToolArgs } from './tool-args-format.ts'
 import {
   createThreadProposalToolCard,
@@ -161,6 +167,20 @@ function createToolResultSection(
     return wrap
   }
   return el('div', { class: 'tool-result' }, el('pre', {}, renderToolArgs(result)))
+}
+
+function createToolLocationsSection(locations: ToolCall['locations']): HTMLElement | null {
+  if (!locations?.length) return null
+  return el(
+    'div',
+    { class: 'tool-locations' },
+    el('span', { class: 'acp-content-label' }, locations.length === 1 ? 'Location' : 'Locations'),
+    ...locations.map((location) => {
+      const label = `${location.path}${location.line !== undefined ? `:${String(location.line)}` : ''}`
+      const href = `${location.path}${location.line !== undefined ? `#L${String(location.line)}` : ''}`
+      return el('a', { href, 'data-workspace-link': 'true' }, label)
+    }),
+  )
 }
 
 function createToolHeader(
@@ -282,6 +302,7 @@ function appendStandardToolSections(
         tc.resultFormat,
         argsSection === null && tc.status !== 'running',
       ),
+      ...appendIfPresent(createToolLocationsSection(tc.locations)),
     )
   }
   if (card.open) {
@@ -333,6 +354,57 @@ function createCanvasPreviewSection(tc: ToolCall, threadId: string): HTMLElement
   if (tc.status !== 'done') return null
   const uri = artefactUriFromToolResult(tc.result)
   return uri ? createCanvasPreviewCard(threadId, artefactTitleFromUri(uri)) : null
+}
+
+const toolResultContentSignatures = new WeakMap<HTMLElement, string>()
+
+/** Keep rich tool output beside the collapsed card that represents it. */
+function syncToolResultContent(msgEl: HTMLElement, toolCalls: readonly ToolCall[]): void {
+  const previewImageDataUrls = new Set(
+    toolCalls.flatMap((toolCall) =>
+      (toolCall.images ?? [])
+        .filter((image) => image.kind === 'screenshot')
+        .map((image) => image.dataUrl),
+    ),
+  )
+  const content = toolCalls.flatMap((toolCall): AcpToolCallContent[] => {
+    if (toolCall.content !== undefined) return toolCall.content
+    return (toolCall.images ?? []).map((image) => ({
+      type: 'content',
+      content: {
+        type: 'image',
+        dataUrl: image.dataUrl,
+        mimeType: image.dataUrl.match(/^data:([^;,]+)/)?.[1] ?? 'image/png',
+        ...(image.name ? { uri: image.name } : {}),
+      },
+    }))
+  })
+  const visible = content.filter((item) => item.type !== 'content' || item.content.type !== 'text')
+  const current = msgEl.querySelector<HTMLElement>(':scope > .tool-result-content')
+  if (visible.length === 0) {
+    current?.remove()
+    return
+  }
+
+  const signature = renderSignature({
+    content: visible,
+    previewImageDataUrls: [...previewImageDataUrls],
+  })
+  let rendered = current
+  if (!rendered || toolResultContentSignatures.get(rendered) !== signature) {
+    rendered = createToolResultContent(visible, previewImageDataUrls)
+    toolResultContentSignatures.set(rendered, signature)
+    if (current) current.replaceWith(rendered)
+    else msgEl.append(rendered)
+  }
+
+  const toolCards = Array.from(msgEl.children).filter((node) =>
+    node.classList.contains('tool-card'),
+  )
+  const lastToolCard = toolCards.at(-1)
+  if (lastToolCard && lastToolCard.nextElementSibling !== rendered) {
+    msgEl.insertBefore(rendered, lastToolCard.nextSibling)
+  }
 }
 
 /**
@@ -1168,6 +1240,154 @@ function createMessageImages(images: string[]): HTMLElement {
   return wrap
 }
 
+function acpResourceLabel(uri: string, title?: string): string {
+  if (title) return title
+  const tail = uri.split('/').filter(Boolean).at(-1)
+  if (!tail) return uri
+  try {
+    return decodeURIComponent(tail)
+  } catch {
+    return tail
+  }
+}
+
+/** Render one non-text ACP content block without passing binary through Markdown. */
+function createAcpContentBlock(
+  block: AcpContentBlock,
+  context: 'message' | 'reasoning' | 'tool',
+  previewImageDataUrls?: ReadonlySet<string>,
+): HTMLElement | null {
+  if (block.type === 'text') return null
+  if (block.type === 'image') {
+    const label = block.uri ? acpResourceLabel(block.uri) : 'Agent image'
+    if (context === 'tool' && previewImageDataUrls?.has(block.dataUrl)) {
+      const img = el('img', {
+        class: 'tool-result-preview-image',
+        src: block.dataUrl,
+        alt: label,
+        loading: 'lazy',
+      })
+      attachImageExpand(img, label)
+      return el(
+        'figure',
+        { class: 'tool-result-preview' },
+        img,
+        ...(block.uri ? [el('figcaption', { class: 'tool-result-preview-caption' }, label)] : []),
+      )
+    }
+    const img = el('img', {
+      class: `message-image acp-content-image${context === 'tool' ? ' tool-result-image' : ''}`,
+      src: block.dataUrl,
+      alt: label,
+      loading: 'lazy',
+    })
+    attachImageExpand(img, label)
+    return img
+  }
+  if (block.type === 'audio') {
+    return el(
+      'div',
+      { class: 'acp-audio-content' },
+      el('span', { class: 'acp-content-label' }, 'Audio'),
+      el('audio', { controls: true, preload: 'metadata', src: block.dataUrl }),
+    )
+  }
+  if (block.type === 'resource_link') {
+    const label = block.title ?? block.name
+    const description = block.description
+      ? el('span', { class: 'acp-resource-description' }, block.description)
+      : null
+    const metadata = [block.mimeType, block.size !== undefined ? `${String(block.size)} B` : null]
+      .filter(Boolean)
+      .join(' · ')
+    const labelNode = /^https?:\/\//i.test(block.uri)
+      ? el('a', { class: 'acp-resource-title', href: block.uri }, label)
+      : el('span', { class: 'acp-resource-title' }, label)
+    return el(
+      'div',
+      { class: 'acp-resource-content acp-resource-link' },
+      labelNode,
+      ...(description ? [description] : []),
+      ...(metadata ? [el('span', { class: 'acp-resource-meta' }, metadata)] : []),
+      el('code', { class: 'acp-resource-uri' }, block.uri),
+    )
+  }
+
+  const label = acpResourceLabel(block.uri)
+  if ('text' in block) {
+    return el(
+      'details',
+      { class: 'acp-resource-content acp-embedded-resource' },
+      el('summary', {}, label),
+      ...(block.mimeType ? [el('span', { class: 'acp-resource-meta' }, block.mimeType)] : []),
+      el('pre', { class: 'acp-resource-text' }, block.text),
+    )
+  }
+  return el(
+    'div',
+    { class: 'acp-resource-content acp-embedded-resource-binary' },
+    el('span', { class: 'acp-resource-title' }, label),
+    ...(block.mimeType ? [el('span', { class: 'acp-resource-meta' }, block.mimeType)] : []),
+    el('a', { class: 'ui-btn ui-btn-secondary', href: block.dataUrl, download: label }, 'Save'),
+  )
+}
+
+function createAcpContentBlocks(
+  blocks: readonly AcpContentBlock[],
+  context: 'message' | 'reasoning',
+): HTMLElement | null {
+  const nodes = blocks.flatMap((block) => {
+    const node = createAcpContentBlock(block, context)
+    return node ? [node] : []
+  })
+  if (nodes.length === 0) return null
+  return el('div', { class: `acp-content-blocks acp-${context}-content` }, ...nodes)
+}
+
+function createToolResultContent(
+  content: readonly AcpToolCallContent[],
+  previewImageDataUrls: ReadonlySet<string>,
+): HTMLElement {
+  const imageCount = content.filter(
+    (item) => item.type === 'content' && item.content.type === 'image',
+  ).length
+  const wrap = el('div', {
+    class: 'tool-result-content tool-result-images',
+    'data-tool-result-image-count': String(imageCount),
+  })
+  for (const item of content) {
+    if (item.type === 'content') {
+      const node = createAcpContentBlock(item.content, 'tool', previewImageDataUrls)
+      if (node) wrap.append(node)
+    } else if (item.type === 'diff') {
+      const diff = el(
+        'details',
+        { class: 'acp-tool-diff' },
+        el('summary', {}, `Diff · ${item.path}`),
+        ...(item.oldText !== undefined
+          ? [
+              el('div', { class: 'acp-content-label' }, 'Before'),
+              el('pre', { class: 'acp-tool-diff-text' }, item.oldText),
+            ]
+          : []),
+        el('div', { class: 'acp-content-label' }, 'After'),
+        el('pre', { class: 'acp-tool-diff-text' }, item.newText),
+      )
+      wrap.append(diff)
+    } else {
+      wrap.append(
+        el(
+          'div',
+          { class: 'acp-terminal-reference' },
+          el('span', { class: 'acp-content-label' }, 'Terminal'),
+          el('code', {}, item.terminalId),
+        ),
+      )
+    }
+  }
+  return wrap
+}
+
 // --- Hook cards (decision 10) ------------------------------------------------
 // Hook executions / deny-ask decisions / halts render as a distinct tool-call
 // family: right-aligned, blue, but clearly *not* a user message. Built purely
@@ -1460,6 +1680,8 @@ function appendMessageContent(
     content: string
     images?: string[]
     reasoning?: string
+    contentBlocks?: AcpContentBlock[]
+    reasoningBlocks?: AcpContentBlock[]
     attachments?: TranscriptAttachment[]
   },
   api: ApiClient,
@@ -1471,8 +1693,14 @@ function appendMessageContent(
   // Reasoning usually sits above the answer. When this segment also has tools,
   // it nests inside the tool rollup instead — collapsed view is just the italic
   // summary heading. History renders as settled ("Reasoned").
-  if (msg.role === 'assistant' && msg.reasoning && opts?.nestReasoningInTools !== true) {
-    body.append(buildReasoningEl(msg.reasoning, !msg.content.trim(), false))
+  if (
+    msg.role === 'assistant' &&
+    (msg.reasoning || msg.reasoningBlocks?.length) &&
+    opts?.nestReasoningInTools !== true
+  ) {
+    body.append(
+      buildReasoningEl(msg.reasoning ?? '', !msg.content.trim(), false, msg.reasoningBlocks),
+    )
   }
   const textEl = el('div', { class: 'message-text streaming-markdown' })
   // Attach before markdown so ACP transport-noise disclosure can find a parent
@@ -1487,6 +1715,23 @@ function appendMessageContent(
   } else {
     textEl.textContent = msg.content
   }
+  if (msg.role === 'assistant' && msg.contentBlocks?.length) {
+    const richContent = createAcpContentBlocks(msg.contentBlocks, 'message')
+    if (richContent) body.append(richContent)
+  }
+}
+
+function syncAcpMessageContent(msgEl: HTMLElement, blocks: readonly AcpContentBlock[]): void {
+  const body = msgEl.querySelector<HTMLElement>(':scope > .message-body')
+  if (!body) return
+  const current = body.querySelector<HTMLElement>(':scope > .acp-message-content')
+  const replacement = createAcpContentBlocks(blocks, 'message')
+  if (!replacement) {
+    current?.remove()
+    return
+  }
+  if (current) current.replaceWith(replacement)
+  else body.append(replacement)
 }
 
 /** True when reasoning should fold into the tool rollup for this message. */
@@ -1510,11 +1755,13 @@ function messageToolCardOpts(msg: Message): {
   commandSummary?: string
   toolSummary?: string
   reasoning?: string
+  reasoningBlocks?: AcpContentBlock[]
 } {
   return {
     ...(msg.commandSummary !== undefined ? { commandSummary: msg.commandSummary } : {}),
     ...(msg.toolSummary !== undefined ? { toolSummary: msg.toolSummary } : {}),
     ...(msg.reasoning !== undefined ? { reasoning: msg.reasoning } : {}),
+    ...(msg.reasoningBlocks !== undefined ? { reasoningBlocks: msg.reasoningBlocks } : {}),
   }
 }
 
@@ -1537,8 +1784,14 @@ function reasoningDisclosureTitle(live: boolean): string {
 
 function setReasoningDisclosureTitle(details: HTMLDetailsElement, live: boolean): void {
   const title = details.querySelector('.message-reasoning-title')
-  if (title) title.textContent = reasoningDisclosureTitle(live)
+  const label = reasoningDisclosureTitle(live)
+  if (title && title.textContent !== label) title.textContent = label
   details.classList.toggle('message-reasoning-live', live)
+  if (!live) {
+    const textEl = details.querySelector<HTMLElement>('.message-reasoning-text')
+    const state = textEl && reasoningRenders.get(textEl)
+    if (textEl && state?.live) renderReasoningText(textEl, state.text, false, state.blocks)
+  }
 }
 
 /** Live = running thread, this is the latest bubble, and no answer text yet. */
@@ -1646,7 +1899,12 @@ function countChipPlaceholders(text: string): number {
  * A click on the summary marks it user-controlled so later streaming updates
  * never fight the user's choice.
  */
-function buildReasoningEl(reasoning: string, open: boolean, live: boolean): HTMLDetailsElement {
+function buildReasoningEl(
+  reasoning: string,
+  open: boolean,
+  live: boolean,
+  blocks: readonly AcpContentBlock[] = emptyReasoningBlocks,
+): HTMLDetailsElement {
   const details = el('details', {
     class: `message-reasoning${live ? ' message-reasoning-live' : ''}`,
     open,
@@ -1662,7 +1920,7 @@ function buildReasoningEl(reasoning: string, open: boolean, live: boolean): HTML
     el('span', { class: 'message-reasoning-title' }, reasoningDisclosureTitle(live)),
   )
   const text = el('div', { class: 'message-reasoning-text' })
-  renderReasoningText(text, reasoning)
+  renderReasoningText(text, reasoning, live, blocks)
   summary.addEventListener('click', () => {
     details.dataset['userToggled'] = '1'
   })
@@ -1670,13 +1928,52 @@ function buildReasoningEl(reasoning: string, open: boolean, live: boolean): HTML
   return details
 }
 
-/**
- * Render reasoning text as markdown into a <div>. Uses the same pipeline as
- * the answer body but without post-processing (file links, mermaid, remote
- * images) — reasoning is self-contained and doesn't reference external resources.
- */
-function renderReasoningText(el: HTMLElement, text: string): void {
-  el.innerHTML = renderMarkdown(text)
+// A disclosure keeps its render state while moving between the bubble and run steps.
+const emptyReasoningBlocks: readonly AcpContentBlock[] = []
+const reasoningRenders = new WeakMap<
+  HTMLElement,
+  {
+    text: string
+    blocks: readonly AcpContentBlock[]
+    live: boolean
+    renderer: StreamingMarkdownRenderer | null
+    richContent: HTMLElement | null
+  }
+>()
+
+/** Incremental markdown while live, one final render when settled; no answer post-processing. */
+function renderReasoningText(
+  el: HTMLElement,
+  text: string,
+  live: boolean,
+  blocks: readonly AcpContentBlock[] = emptyReasoningBlocks,
+): void {
+  const previous = reasoningRenders.get(el)
+  const markdownChanged = previous?.text !== text || previous.live !== live
+  // Store updates replace ACP block arrays; text-only chunks retain their identity.
+  const blocksChanged = previous?.blocks !== blocks
+  if (!markdownChanged && !blocksChanged) return
+
+  let renderer = previous?.renderer ?? null
+  if (markdownChanged) {
+    if (live) {
+      renderer ??= new StreamingMarkdownRenderer(el)
+      renderer.update(text)
+    } else {
+      // Converge once when the segment settles, including stop/error without prose.
+      renderer = null
+      el.innerHTML = renderMarkdown(text)
+    }
+  }
+  let richContent = previous?.richContent ?? null
+  if (blocksChanged) {
+    richContent?.remove()
+    richContent = createAcpContentBlocks(blocks, 'reasoning')
+  }
+  // The incremental scaffold (or final render) can replace the host's children.
+  // Keep rich blocks after the markdown and restore the same nodes when needed.
+  if (richContent && richContent.parentElement !== el) el.append(richContent)
+  reasoningRenders.set(el, { text, blocks, live, renderer, richContent })
 }
 
 /**
@@ -1687,7 +1984,7 @@ function renderReasoningText(el: HTMLElement, text: string): void {
  */
 function syncReasoningEl(
   msgEl: HTMLElement,
-  msg: { content: string; reasoning?: string },
+  msg: { content: string; reasoning?: string; reasoningBlocks?: AcpContentBlock[] },
   live: boolean,
 ): void {
   const body = msgEl.querySelector('.message-body')
@@ -1697,17 +1994,17 @@ function syncReasoningEl(
   )
   const host = rollupBody ?? body
   let details = msgEl.querySelector<HTMLDetailsElement>('.message-reasoning')
-  if (!msg.reasoning) {
+  if (!msg.reasoning && !msg.reasoningBlocks?.length) {
     details?.remove()
     return
   }
   if (!details) {
-    details = buildReasoningEl(msg.reasoning, true, live)
+    details = buildReasoningEl(msg.reasoning ?? '', true, live, msg.reasoningBlocks)
     host.prepend(details)
   } else {
     if (details.parentElement !== host) host.prepend(details)
     const textEl = details.querySelector<HTMLElement>('.message-reasoning-text')
-    if (textEl) renderReasoningText(textEl, msg.reasoning)
+    if (textEl) renderReasoningText(textEl, msg.reasoning ?? '', live, msg.reasoningBlocks)
     setReasoningDisclosureTitle(details, live)
   }
   // Keep the trail open while it is still live, unless the user collapsed it.
@@ -1722,6 +2019,7 @@ function syncNestedRollupReasoning(
   card: HTMLElement,
   msgEl: HTMLElement,
   reasoning: string | undefined,
+  reasoningBlocks: readonly AcpContentBlock[] | undefined,
   live: boolean,
 ): void {
   const rollupBody = card.querySelector<HTMLElement>(':scope > .tool-rollup-body')
@@ -1730,15 +2028,15 @@ function syncNestedRollupReasoning(
   let details =
     rollupBody.querySelector<HTMLDetailsElement>(':scope > .message-reasoning') ??
     msgEl.querySelector<HTMLDetailsElement>('.message-reasoning')
-  if (!reasoning?.trim()) {
+  if (!reasoning?.trim() && !reasoningBlocks?.length) {
     details?.remove()
     return
   }
   if (!details) {
-    details = buildReasoningEl(reasoning, true, live)
+    details = buildReasoningEl(reasoning ?? '', true, live, reasoningBlocks)
   } else {
     const textEl = details.querySelector<HTMLElement>('.message-reasoning-text')
-    if (textEl) renderReasoningText(textEl, reasoning)
+    if (textEl) renderReasoningText(textEl, reasoning ?? '', live, reasoningBlocks)
     setReasoningDisclosureTitle(details, live)
   }
   if (details.parentElement !== rollupBody) rollupBody.prepend(details)
@@ -1765,18 +2063,18 @@ function syncRunStepReasoning(card: HTMLElement, run: ToolRun, liveStepId: strin
     )
     if (!body) continue
     let details = body.querySelector<HTMLDetailsElement>(':scope > .message-reasoning')
-    if (!step.reasoning?.trim()) {
+    if (!step.reasoning?.trim() && !step.reasoningBlocks?.length) {
       details?.remove()
       continue
     }
     const live = step.messageId === liveStepId
     if (!details) {
-      details = buildReasoningEl(step.reasoning, live, live)
+      details = buildReasoningEl(step.reasoning ?? '', live, live, step.reasoningBlocks)
       body.prepend(details)
       continue
     }
     const textEl = details.querySelector<HTMLElement>('.message-reasoning-text')
-    if (textEl) renderReasoningText(textEl, step.reasoning)
+    if (textEl) renderReasoningText(textEl, step.reasoning ?? '', live, step.reasoningBlocks)
     setReasoningDisclosureTitle(details, live)
   }
 }
@@ -2450,13 +2748,19 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     if (card.classList.contains('thread-proposal')) return
     const key = `${threadId}:${messageId}:${toolCardKey(item)}`
     card.dataset['disclosureKey'] = key
+    // Keep dataset.status aligned with the live tool status so compaction can
+    // leave failed cards open (it only inspects this attribute).
+    const itemStatus =
+      item.type === 'individual' ? item.toolCall.status : aggregateToolStatus(item.toolCalls)
+    card.dataset['status'] = itemStatus
     disclosureElements.set(key, card)
     wireDisclosurePreference(card, key)
     const preference = disclosurePreferences.get(key)
     const running =
       item.type === 'individual'
         ? item.toolCall.status === 'running' || item.toolCall.subagent?.status === 'running'
-        : aggregateToolStatus(item.toolCalls) === 'running'
+        : itemStatus === 'running'
+    const failed = itemStatus === 'error'
 
     if (running) runningDisclosures.add(key)
     else {
@@ -2466,6 +2770,13 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
 
     if (preference !== undefined) {
       card.open = preference
+    } else if (failed) {
+      // Failed tools stay expanded so the error body is visible without a click.
+      // Compaction already skips data-status=error; auto-open here covers the
+      // case where the tool never ran long enough for revealAfterDelay.
+      card.open = true
+      autoOpenedDisclosures.add(key)
+      if (!autoOpenedAt.has(key)) autoOpenedAt.set(key, Date.now())
     } else if (autoOpenedDisclosures.has(key)) {
       card.open = true
     } else {
@@ -2496,7 +2807,17 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
           entry.dataset['disclosureKey'] = itemKey
           disclosureElements.set(itemKey, entry)
           wireDisclosurePreference(entry, itemKey)
-          entry.open = disclosurePreferences.get(itemKey) ?? false
+          const preference = disclosurePreferences.get(itemKey)
+          const entryFailed = entry.dataset['status'] === 'error'
+          if (preference !== undefined) {
+            entry.open = preference
+          } else if (entryFailed) {
+            entry.open = true
+            autoOpenedDisclosures.add(itemKey)
+            if (!autoOpenedAt.has(itemKey)) autoOpenedAt.set(itemKey, Date.now())
+          } else {
+            entry.open = false
+          }
           if (entry.open) ensureToolCardBodyRendered(entry)
         })
     }
@@ -2509,6 +2830,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       commandSummary?: string
       toolSummary?: string
       reasoning?: string
+      reasoningBlocks?: AcpContentBlock[]
       reasoningLive?: boolean
       /**
        * The multi-message run this message belongs to. The run's combined
@@ -2549,7 +2871,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     msgEl.classList.toggle('msg-tool-run-member', isRunMember)
 
     const nestReasoning =
-      run === undefined && Boolean(opts.reasoning?.trim()) && shouldNestReasoningInTools(toolCalls)
+      run === undefined &&
+      (Boolean(opts.reasoning?.trim()) || Boolean(opts.reasoningBlocks?.length)) &&
+      shouldNestReasoningInTools(toolCalls)
     const items = run
       ? isRunMember
         ? buildSubagentDisplayItems(toolCalls)
@@ -2610,7 +2934,13 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
 
       applyToolCardOpenState(card, item, threadId, msgId, true)
       if (item.type === 'rollup' && nestReasoning) {
-        syncNestedRollupReasoning(card, msgEl, opts.reasoning, opts.reasoningLive === true)
+        syncNestedRollupReasoning(
+          card,
+          msgEl,
+          opts.reasoning,
+          opts.reasoningBlocks,
+          opts.reasoningLive === true,
+        )
       }
       if (item.type === 'rollup' && run && item.key === RUN_ROLLUP_KEY) {
         syncRunStepReasoning(card, run, opts.liveStepId ?? null)
@@ -2653,6 +2983,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         msgEl.insertBefore(node, msgEl.children[base + i] ?? null)
       }
     }
+    syncToolResultContent(msgEl, run ? (isRunMember ? [] : run.toolCalls) : toolCalls)
     registerReasoningDisclosures(msgEl)
     syncToolRunMemberVisibility(msgEl)
   }
@@ -2863,15 +3194,16 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const msgEl = buildMessageEl(threadId, msgId)
     if (!msgEl) return
 
-    // Keep the trailing comparison card (if any) last in the transcript: a new
-    // message belongs above a comparison produced for an earlier turn. Review
-    // cards are anchored inline after their own message (see renderMessageReview)
-    // and stay put — a new message naturally lands after them.
-    const trailingCard = list.querySelector('[data-comparison-card]')
+    // Keep the trailing cards (a review report, or a retired comparison) last
+    // in the transcript: a new message belongs above a report produced for an
+    // earlier state of the tree. Post-turn review cards are anchored inline
+    // after their own message (see renderMessageReview) and stay put — a new
+    // message naturally lands after them.
+    const trailingCard = firstTrailingCard()
     if (trailingCard) {
-      // The activity row sits immediately above a trailing comparison. Insert
+      // The activity row sits immediately above the trailing cards. Insert
       // the message above both so the status remains the transcript's live tail
-      // while the comparison preserves its last-child contract.
+      // while the cards preserve their last-children contract.
       list.insertBefore(msgEl, activityBar.isConnected ? activityBar : trailingCard)
     } else list.insertBefore(msgEl, activityBar.isConnected ? activityBar : null)
     finalizeMessageEl(threadId, msgId)
@@ -3123,26 +3455,53 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     msgEl.after(card)
   }
 
+  /** The first of the trailing cards, which sit after every message. */
+  function firstTrailingCard(): Element | null {
+    return list.querySelector('[data-review-report-card], [data-comparison-card]')
+  }
+
   function syncComparisonPanel(): void {
-    // Render the comparison card inline as the last child of the message list,
-    // after the review card, so it joins the transcript flow. Replace on sync.
+    // A retired two-model comparison from before Copse Reviewer: still
+    // rendered from thread data so old threads keep their card (decision 17),
+    // dismissible, no longer re-runnable. Sits after the review report.
     list.querySelector('[data-comparison-card]')?.remove()
     const thread = getActiveThread(store)
     if (thread?.comparison) {
       const threadId = thread.id
-      const card = createComparisonCardEl(
-        thread.comparison,
-        api,
-        () => {
-          retryComparison(store, api, threadId)
-        },
-        () => {
-          dismissComparison(store, threadId)
-        },
-      )
+      const card = createComparisonCardEl(thread.comparison, api, undefined, () => {
+        dismissComparison(store, threadId)
+      })
       card.setAttribute('data-comparison-card', '')
       list.append(card)
     }
+  }
+
+  function syncReviewReportCard(): void {
+    // The Copse Reviewer findings card renders inline as a trailing child of
+    // the message list, after the post-turn review cards, so it joins the
+    // transcript flow. Replaced on every sync (status transitions, dismissals).
+    list.querySelector('[data-review-report-card]')?.remove()
+    const thread = getActiveThread(store)
+    if (!thread?.reviewReport) return
+    const threadId = thread.id
+    const card = createReviewFindingsCardEl(thread.reviewReport, {
+      onRetry: () => {
+        startReview(store, api, threadId)
+      },
+      onDismissCard: () => {
+        dismissReviewReport(store, threadId)
+      },
+      onDismissFinding: (finding) => {
+        dismissReviewFinding(store, api, threadId, finding)
+      },
+      onRestoreFinding: (finding) => {
+        restoreReviewFinding(store, api, threadId, finding.id)
+      },
+    })
+    card.setAttribute('data-review-report-card', '')
+    const comparison = list.querySelector('[data-comparison-card]')
+    if (comparison) list.insertBefore(card, comparison)
+    else list.append(card)
   }
 
   /** The chrome around the message list — todos, comparison, queued panel, the
@@ -3154,6 +3513,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     syncTodoPanel()
     appleDevelopmentHost.dispatchEvent(new Event('apple-development-refresh'))
     // Inline review cards are rendered per message by appendMessageEl above.
+    syncReviewReportCard()
     syncComparisonPanel()
     if (thread) {
       renderQueuedPanel(thread.id)
@@ -3164,8 +3524,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       queuedHost.hidden = true
     }
     // Activity is transcript content, not composer chrome. Keep it beneath the
-    // messages but above a trailing comparison card, which remains last.
-    list.insertBefore(activityBar, list.querySelector('[data-comparison-card]'))
+    // messages but above the trailing cards, which remain last.
+    list.insertBefore(activityBar, firstTrailingCard())
     updateScrollButton()
   }
 
@@ -3285,7 +3645,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   } | null {
     const listRect = list.getBoundingClientRect()
     const candidates = list.querySelectorAll<HTMLElement>(
-      ':scope > .msg, :scope > [data-review-card], :scope > [data-comparison-card]',
+      ':scope > .msg, :scope > [data-review-card], :scope > [data-review-report-card], :scope > [data-comparison-card]',
     )
     for (const element of candidates) {
       const rect = element.getBoundingClientRect()
@@ -3374,6 +3734,20 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         scrollToBottom()
       }
     }),
+    store.on('message_acp_content', (mid) => {
+      const thread = getActiveThread(store)
+      const msg = thread?.messages.find((message) => message.id === mid)
+      const msgEl = list.querySelector<HTMLElement>(`[data-message-id="${mid}"]`)
+      if (msg?.role === 'assistant' && msgEl) {
+        syncAcpMessageContent(msgEl, msg.contentBlocks ?? [])
+        const run = multiStepRunFor(thread, mid)
+        if (run) syncRunStepTrail(thread, run)
+        else syncReasoningEl(msgEl, msg, isReasoningDisclosureLive(thread, msg))
+        registerReasoningDisclosures(msgEl)
+        syncToolRunMemberVisibility(msgEl)
+        scrollToBottom()
+      }
+    }),
     store.on('message_reasoning', (mid) => {
       const thread = getActiveThread(store)
       const msg = thread?.messages.find((m) => m.id === mid)
@@ -3449,6 +3823,10 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       syncComparisonPanel()
       scrollToBottom()
     }),
+    store.on('review_report_changed', () => {
+      syncReviewReportCard()
+      scrollToBottom()
+    }),
     store.on('settings_changed', () => {
       // Developer mode gates the collapsed transport-note disclosure; resync
       // without rebuilding markdown so streaming renderers stay intact.
@@ -3473,6 +3851,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         })
       } else {
         setActivity(null)
+        list.querySelectorAll<HTMLDetailsElement>('.message-reasoning-live').forEach((details) => {
+          setReasoningDisclosureTitle(details, false)
+        })
         const last = getThreadById(store, tid)?.messages.at(-1)
         if (last?.role === 'assistant') renderMessageTurnRecovery(tid, last.id)
       }

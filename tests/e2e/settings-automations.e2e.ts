@@ -55,7 +55,7 @@ describe('settings automations plugin', function () {
     resetUserData()
   })
 
-  it('renders project scope, cron, model, and the permission boundary', async () => {
+  it('renders project scope, a readable schedule, model, and the permission boundary', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await $('[aria-label="Settings"]').click()
     const dialog = $('#settings-dialog')
@@ -74,7 +74,8 @@ describe('settings automations plugin', function () {
     await expect(detail).toBeDisplayed()
     assert.match(await detail.getText(), /Project: workspace · local time/)
     assert.match(await detail.getText(), /Weekday project review/)
-    assert.match(await detail.getText(), /0 9 \* \* 1-5/)
+    assert.match(await detail.getText(), /Every weekday at 09:00/)
+    assert.doesNotMatch(await detail.getText(), /0 9 \* \* 1-5/)
     assert.match(await detail.getText(), /Claude Sonnet 4\.6/)
     assert.match(await detail.getText(), /Each run starts a fresh isolated task/i)
     assert.match(await detail.getText(), /One live worktree is the safe default/i)
@@ -88,8 +89,17 @@ describe('settings automations plugin', function () {
     await detail.$('.automation-add-btn').click()
     await expect(detail.$('.automation-form')).toBeDisplayed()
     await expect(detail.$('.automation-form .model-picker-field')).toBeDisplayed()
+    await expect(detail.$('.automation-cron-input')).not.toExist()
+    await expect(detail.$('.automation-repeat-select')).toHaveValue('weekdays')
+    await expect(detail.$('.automation-time-input')).toHaveValue('09:00')
+    await expect(detail.$('.automation-schedule-summary')).toHaveText(
+      'Every weekday at 09:00 · local time',
+    )
     await expect(detail.$('.automation-worktree-limit-select')).toHaveValue('1')
+    await expect(dialog.$('.settings-buttons')).not.toBeDisplayed()
     await detail.$('.automation-form').scrollIntoView({ block: 'center' })
     await saveElementScreenshot('.automation-form', 'settings-automation-form.png')
+    await detail.$('.automation-cancel-btn').click()
+    await expect(dialog.$('.settings-buttons')).toBeDisplayed()
   })
 })

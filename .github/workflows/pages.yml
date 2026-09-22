@@ -27,7 +27,8 @@ on:
   # dispatches this workflow rather than calling it, so a deploy superseded on
   # the queue below cancels a run of its own instead of a PR's preview run.
   workflow_dispatch:
-  # Invoked by demo-preview-cleanup.yml after it prunes a closed PR's preview.
+  # Invoked by demo-preview-cleanup.yml after it prunes a closed PR's preview,
+  # or after its scheduled sweep prunes every closed PR's preview at once.
   # NOT a `push:` trigger on demo-previews — for either path: that branch is an
   # orphan holding preview content only, with no .github/ of its own, and a push
   # event runs the workflow definitions from the pushed branch, so such a trigger

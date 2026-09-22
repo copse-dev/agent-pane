@@ -1,7 +1,7 @@
 # Approval runtime coverage — #1680
 
 Baseline: `main` at `74a8a61c4b5571fab0e7e83d94cf6c0829e7e4a0`, 20 September 2026.
-Tracking: [#1680](https://github.com/copse-dev/agent-pane/issues/1680), SDLC roadmap R12.
+Tracking: [#1680](https://github.com/copse-dev/agent-pane/issues/1680), Shipping quality roadmap R12.
 
 ## Acceptance and scope
 

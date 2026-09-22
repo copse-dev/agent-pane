@@ -7,6 +7,7 @@ export interface StoreEvents {
   message_queued: [threadId: string, messageId: string]
   message_token: [messageId: string, text: string]
   message_reasoning: [messageId: string, text: string]
+  message_acp_content: [messageId: string]
   message_canvas_artefacts_changed: [messageId: string]
   message_done: [messageId: string]
   tool_call_started: [messageId: string, toolCall: ToolCall]
@@ -55,6 +56,9 @@ export interface StoreEvents {
   // just that message's hook-card family live, mirroring `tool_call_updated`.
   hook_card_added: [threadId: string, messageId: string]
   comparison_changed: [threadId: string]
+  // The thread's Copse Reviewer report was set, replaced, cleared, or one of
+  // its findings was dismissed or restored.
+  review_report_changed: [threadId: string]
   git_branch_changed: []
   // A blank thread committed its checkout decision. Shells created before an
   // isolated worktree existed use this to stop presenting the shared checkout

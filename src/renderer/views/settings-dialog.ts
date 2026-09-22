@@ -301,9 +301,6 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'nextStepSuggestionEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'containerRunsEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'orchestrationStrategyEnabled', kind: 'checkbox', default: false, save: true },
-  // P5: the master model-comparison toggle moved to Settings > Plugins
-  // (`copse.model-comparison`); the auto-on-review sub-toggle stays here.
-  { name: 'modelComparisonAutoOnReview', kind: 'checkbox', default: false, save: true },
   { name: DEVELOPER_MODE_SETTING, kind: 'checkbox', default: false, save: true },
   // Background tasks moved to Settings > Plugins (`copse.background-tasks`), which
   // also declares the `loopback-bind` sandbox relaxation (issue #1190).
@@ -1440,25 +1437,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 How to choose the model that carries out the delegated steps — resolved against
                 your configured providers each time a step is handed off. Prefer a rule that lands
                 cheaper and faster than your chat model.
-              </p>
-            </fieldset>
-
-            <fieldset>
-              <legend>Model comparison</legend>
-              <p class="field-hint">
-                Reviews your current changes through two models independently, then has a third
-                compare their verdicts. Turn it on under <strong>Plugins</strong>, where you also
-                choose how the three models are picked — they always resolve to different models,
-                so there is something to compare. A run makes up to three model calls, so it asks
-                before spending on a paid model.
-              </p>
-              <label class="checkbox-label">
-                <input type="checkbox" name="modelComparisonAutoOnReview" />
-                Run the comparison automatically after editing turns
-              </label>
-              <p class="field-hint">
-                When on, the comparison runs as part of the post-turn review, still asking before
-                it spends. When off, ask for it when you want it.
               </p>
             </fieldset>
 
@@ -4335,8 +4313,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         await settingsModelPickers.smallTasksModel.refresh(
           roleModels['small-tasks'] ?? smallTasksModel ?? '',
         )
-        // The advisor model and the three comparison models are no longer form
-        // fields: they are plugin-scoped `model` settings rendered in Settings →
+        // The advisor model and the reviewer models are no longer form fields:
+        // they are plugin-scoped `model` settings rendered in Settings →
         // Plugins (advisor pair hint included), populated by `refreshPlugins()`.
         const orchestrationWorkerModel = storedString(
           await api.settings.get('orchestrationWorkerModel'),
@@ -4530,9 +4508,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
       saveIfDirty('model', model)
       saveIfDirty('smallTasksModel', formDataString(data, 'smallTasksModel').trim())
-      // `advisorModel` and the three `comparisonModel*` values are no longer
-      // saved here — they are plugin-scoped `model` settings persisted on change
-      // via `plugins:set-setting` from Settings → Plugins.
+      // `advisorModel` and the reviewer models are no longer saved here — they
+      // are plugin-scoped `model` settings persisted on change via
+      // `plugins:set-setting` from Settings → Plugins.
       saveIfDirty(
         'orchestrationWorkerModel',
         formDataString(data, 'orchestrationWorkerModel').trim(),

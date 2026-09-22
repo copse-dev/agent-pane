@@ -75,8 +75,8 @@ describe('Codex MCP startup failures', () => {
     const rollup = $('.tool-card-rollup')
     await rollup.waitForExist({ timeout: 30_000 })
     await expect(rollup).toHaveAttribute('data-status', 'error')
+    await expect(rollup).toHaveAttribute('open')
     await expect(rollup.$('.tool-name')).toHaveText('Used 2 tools · 2 failed')
-    await rollup.$('summary.tool-card-header').click()
 
     const docs = $('[data-tool-id="startup-docs"]')
     const tracker = $('[data-tool-id="startup-issue-tracker"]')
@@ -84,15 +84,28 @@ describe('Codex MCP startup failures', () => {
     await expect(tracker.$('.tool-name')).toHaveText('issue_tracker startup')
     await expect(docs).toHaveAttribute('data-status', 'error')
     await expect(tracker).toHaveAttribute('data-status', 'error')
+    await expect(docs).toHaveAttribute('open')
+    await expect(tracker).toHaveAttribute('open')
     await expect($$('.tool-card [data-icon="reasoning-activity"]')).toBeElementsArrayOfSize(0)
 
-    await docs.$('summary.tool-card-header').click()
-    await tracker.$('summary.tool-card-header').click()
     await expect(docs.$('.tool-result')).toHaveText(expect.stringContaining('connection refused'))
     await expect(tracker.$('.tool-result')).toHaveText(
       expect.stringContaining('startup was cancelled'),
     )
     await expect(docs.$('.tool-result code')).toHaveText('docs')
+    const failedLabelStyle = await browser.execute(() => {
+      const name = document.querySelector<HTMLElement>('[data-tool-id="startup-docs"] .tool-name')
+      if (!name) throw new Error('Expected the failed tool label')
+      const probe = document.createElement('span')
+      probe.style.color = 'var(--error)'
+      document.body.append(probe)
+      const expectedColor = getComputedStyle(probe).color
+      probe.remove()
+      const style = getComputedStyle(name)
+      return { color: style.color, expectedColor, fontWeight: style.fontWeight }
+    })
+    expect(failedLabelStyle.color).toBe(failedLabelStyle.expectedColor)
+    expect(failedLabelStyle.fontWeight).toBe('600')
     await $('[data-message-id="startup-user"]').moveTo()
     await savePreparedElementScreenshot(
       '[data-message-id="startup-assistant"]',

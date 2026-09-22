@@ -1,6 +1,7 @@
 import { getLmStudioApiKey } from '../storage/settings.ts'
 import { DEFAULT_LM_STUDIO_URL, preferIpv4LoopbackUrl } from '@shared/lm-studio-defaults.ts'
 import { FETCH_TIMEOUTS } from '../fetch-timeouts.ts'
+import { AsyncTtlCache } from '../async-ttl-cache.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 
 export interface LmStudioModelInfo {
@@ -228,7 +229,12 @@ function mergeOpenAiWithNativeContext(
 async function fetchJson(
   url: string,
   apiKey: string,
-): Promise<{ ok: boolean; json?: unknown; status?: number; statusText?: string }> {
+): Promise<{
+  ok: boolean
+  json?: unknown
+  status?: number
+  statusText?: string
+}> {
   try {
     const res = await fetch(url, {
       signal: AbortSignal.timeout(FETCH_TIMEOUTS.modelList),
@@ -298,21 +304,13 @@ type LmStudioModelsResult = {
   models: LmStudioModelInfo[]
   error?: string
 }
-let lmModelsCache: {
-  key: string
-  at: number
-  result: LmStudioModelsResult
-} | null = null
-let lmModelsCacheGeneration = 0
-const lmModelsInflight = new Map<
-  string,
-  { generation: number; token: symbol; promise: Promise<LmStudioModelsResult> }
->()
+const lmModelsCache = new AsyncTtlCache<string, LmStudioModelsResult>({
+  ttlMs: LM_MODELS_TTL_MS,
+  maxEntries: 4,
+})
 
 export function invalidateLmStudioModelsCache(): void {
-  lmModelsCacheGeneration += 1
-  lmModelsCache = null
-  lmModelsInflight.clear()
+  lmModelsCache.clear()
 }
 
 /** Cached models list (URL + API key); failures cached to avoid repeated timeouts. */
@@ -324,30 +322,5 @@ export async function fetchLmStudioModelsCached(
   const url = preferIpv4LoopbackUrl(stripTrailingSlash(openAiBaseUrl || DEFAULT_LM_STUDIO_URL))
   const key = lmStudioApiKey(apiKey)
   const cacheKey = JSON.stringify([url, key])
-  const now = Date.now()
-  if (
-    lmModelsCache &&
-    lmModelsCache.key === cacheKey &&
-    now - lmModelsCache.at < LM_MODELS_TTL_MS
-  ) {
-    return lmModelsCache.result
-  }
-  const existing = lmModelsInflight.get(cacheKey)
-  if (existing?.generation === lmModelsCacheGeneration) return existing.promise
-
-  const generation = lmModelsCacheGeneration
-  const token = Symbol(cacheKey)
-  const promise = (async (): Promise<LmStudioModelsResult> => {
-    try {
-      const result = await fetchLmStudioModels(url, key)
-      if (generation === lmModelsCacheGeneration) {
-        lmModelsCache = { key: cacheKey, at: Date.now(), result }
-      }
-      return result
-    } finally {
-      if (lmModelsInflight.get(cacheKey)?.token === token) lmModelsInflight.delete(cacheKey)
-    }
-  })()
-  lmModelsInflight.set(cacheKey, { generation, token, promise })
-  return promise
+  return lmModelsCache.get(cacheKey, () => fetchLmStudioModels(url, key))
 }

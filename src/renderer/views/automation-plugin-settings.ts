@@ -32,6 +32,103 @@ function liveWorktreeLimit(value: string): AutomationLiveWorktreeLimit {
   return 1
 }
 
+type SimpleSchedule =
+  | { repeat: 'daily'; hour: number; minute: number }
+  | { repeat: 'weekdays'; hour: number; minute: number }
+  | { repeat: 'weekly'; hour: number; minute: number; on: number }
+  | { repeat: 'monthly'; hour: number; minute: number; on: number }
+
+const WEEKDAYS = [
+  'Sunday',
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+] as const
+
+function parseCronNumber(value: string, min: number, max: number): number | null {
+  if (!/^\d+$/.test(value)) return null
+  const parsed = Number(value)
+  return parsed >= min && parsed <= max ? parsed : null
+}
+
+/** Convert the common schedules offered by the editor from their stored cron form. */
+function parseSimpleSchedule(cron: string): SimpleSchedule | null {
+  const [minuteRaw, hourRaw, dayOfMonth, month, dayOfWeek, ...extra] = cron.trim().split(/\s+/)
+  if (
+    minuteRaw === undefined ||
+    hourRaw === undefined ||
+    dayOfMonth === undefined ||
+    month === undefined ||
+    dayOfWeek === undefined ||
+    extra.length > 0 ||
+    month !== '*'
+  ) {
+    return null
+  }
+  const minute = parseCronNumber(minuteRaw, 0, 59)
+  const hour = parseCronNumber(hourRaw, 0, 23)
+  if (minute === null || hour === null) return null
+
+  if (dayOfMonth === '*' && dayOfWeek === '*') return { repeat: 'daily', hour, minute }
+  if (dayOfMonth === '*' && dayOfWeek === '1-5') {
+    return { repeat: 'weekdays', hour, minute }
+  }
+  if (dayOfMonth === '*') {
+    const weekday = parseCronNumber(dayOfWeek, 0, 7)
+    if (weekday !== null) return { repeat: 'weekly', hour, minute, on: weekday % 7 }
+  }
+  if (dayOfWeek === '*') {
+    const monthDay = parseCronNumber(dayOfMonth, 1, 31)
+    if (monthDay !== null) return { repeat: 'monthly', hour, minute, on: monthDay }
+  }
+  return null
+}
+
+function twoDigits(value: number): string {
+  return String(value).padStart(2, '0')
+}
+
+function scheduleTime(schedule: SimpleSchedule): string {
+  return `${twoDigits(schedule.hour)}:${twoDigits(schedule.minute)}`
+}
+
+function ordinal(value: number): string {
+  const finalTwo = value % 100
+  if (finalTwo >= 11 && finalTwo <= 13) return `${String(value)}th`
+  if (value % 10 === 1) return `${String(value)}st`
+  if (value % 10 === 2) return `${String(value)}nd`
+  if (value % 10 === 3) return `${String(value)}rd`
+  return `${String(value)}th`
+}
+
+function weekdayName(value: number): string {
+  if (value === 0) return 'Sunday'
+  if (value === 1) return 'Monday'
+  if (value === 2) return 'Tuesday'
+  if (value === 3) return 'Wednesday'
+  if (value === 4) return 'Thursday'
+  if (value === 5) return 'Friday'
+  return 'Saturday'
+}
+
+function simpleScheduleDescription(schedule: SimpleSchedule): string {
+  const time = scheduleTime(schedule)
+  if (schedule.repeat === 'daily') return `Every day at ${time}`
+  if (schedule.repeat === 'weekdays') return `Every weekday at ${time}`
+  if (schedule.repeat === 'weekly') {
+    return `Every ${weekdayName(schedule.on)} at ${time}`
+  }
+  return `On the ${ordinal(schedule.on)} of every month at ${time}`
+}
+
+function scheduleDescription(cron: string): string {
+  const schedule = parseSimpleSchedule(cron)
+  return schedule ? simpleScheduleDescription(schedule) : 'Custom schedule'
+}
+
 export interface AutomationEditor extends HTMLElement {
   setPluginEnabled: (enabled: boolean) => void
 }
@@ -99,14 +196,64 @@ export function createAutomationPluginSettings(
     maxlength: '160',
     required: true,
   })
-  const cronInput = el('input', {
-    type: 'text',
-    class: 'automation-input automation-cron-input',
-    placeholder: '0 9 * * 1-5',
-    maxlength: '160',
+  const repeatSelect = el(
+    'select',
+    { class: 'automation-input automation-repeat-select', required: true },
+    el('option', { value: 'daily' }, 'Every day'),
+    el('option', { value: 'weekdays' }, 'Weekdays'),
+    el('option', { value: 'weekly' }, 'Every week'),
+    el('option', { value: 'monthly' }, 'Every month'),
+  )
+  const timeInput = el('input', {
+    type: 'time',
+    class: 'automation-input automation-time-input',
+    value: '09:00',
     required: true,
-    spellcheck: false,
   })
+  const weeklyDaySelect = el('select', {
+    class: 'automation-input automation-weekly-day-select',
+  })
+  WEEKDAYS.forEach((day, index) => {
+    weeklyDaySelect.append(el('option', { value: String(index) }, day))
+  })
+  const monthlyDaySelect = el('select', {
+    class: 'automation-input automation-monthly-day-select',
+  })
+  for (let day = 1; day <= 31; day += 1) {
+    monthlyDaySelect.append(el('option', { value: String(day) }, ordinal(day)))
+  }
+  const repeatLabel = el('label', { class: 'automation-label' }, 'Repeat', repeatSelect)
+  const timeLabel = el('label', { class: 'automation-label' }, 'At', timeInput)
+  const weeklyDayLabel = el(
+    'label',
+    { class: 'automation-label automation-weekly-day-label' },
+    'On',
+    weeklyDaySelect,
+  )
+  const monthlyDayLabel = el(
+    'label',
+    { class: 'automation-label automation-monthly-day-label' },
+    'On day',
+    monthlyDaySelect,
+  )
+  const scheduleSummary = el('span', {
+    class: 'automation-hint automation-schedule-summary',
+    'aria-live': 'polite',
+  })
+  const scheduleFields = el(
+    'fieldset',
+    { class: 'automation-schedule-fields' },
+    el('legend', {}, 'Schedule'),
+    el(
+      'div',
+      { class: 'automation-schedule-controls' },
+      repeatLabel,
+      weeklyDayLabel,
+      monthlyDayLabel,
+      timeLabel,
+    ),
+    scheduleSummary,
+  )
   const modelSelect = el('select', {
     class: 'automation-input automation-model-select',
     required: true,
@@ -130,14 +277,8 @@ export function createAutomationPluginSettings(
   form.append(
     formTitle,
     el('label', { class: 'automation-label' }, 'Name', nameInput),
-    el(
-      'label',
-      { class: 'automation-label' },
-      'Cron',
-      cronInput,
-      el('span', { class: 'automation-hint' }, 'minute hour day month weekday'),
-    ),
     el('label', { class: 'automation-label' }, 'Model', modelSelect),
+    scheduleFields,
     el('label', { class: 'automation-label' }, 'Prompt', promptInput),
     el(
       'label',
@@ -166,6 +307,7 @@ export function createAutomationPluginSettings(
 
   let schedules: AutomationSchedule[] = []
   let editingId: string | null = null
+  let customCron: string | null = null
   // Consumed by the first successful load; later refreshes (a save, a delete)
   // must not re-open the editor behind the user.
   let pendingReveal = revealScheduleId
@@ -190,6 +332,76 @@ export function createAutomationPluginSettings(
     heading.hidden = false
   }
 
+  function selectedSimpleSchedule(): SimpleSchedule | null {
+    const [hourRaw, minuteRaw] = timeInput.value.split(':')
+    if (hourRaw === undefined || minuteRaw === undefined) return null
+    const hour = parseCronNumber(hourRaw, 0, 23)
+    const minute = parseCronNumber(minuteRaw, 0, 59)
+    if (hour === null || minute === null) return null
+    if (repeatSelect.value === 'daily') return { repeat: 'daily', hour, minute }
+    if (repeatSelect.value === 'weekdays') return { repeat: 'weekdays', hour, minute }
+    if (repeatSelect.value === 'weekly') {
+      const on = parseCronNumber(weeklyDaySelect.value, 0, 6)
+      return on === null ? null : { repeat: 'weekly', hour, minute, on }
+    }
+    if (repeatSelect.value === 'monthly') {
+      const on = parseCronNumber(monthlyDaySelect.value, 1, 31)
+      return on === null ? null : { repeat: 'monthly', hour, minute, on }
+    }
+    return null
+  }
+
+  function cronFromScheduleControls(): string | null {
+    const schedule = selectedSimpleSchedule()
+    if (!schedule) {
+      if (repeatSelect.value === 'custom' && customCron) return customCron
+      return null
+    }
+    const prefix = `${String(schedule.minute)} ${String(schedule.hour)}`
+    if (schedule.repeat === 'daily') return `${prefix} * * *`
+    if (schedule.repeat === 'weekdays') return `${prefix} * * 1-5`
+    if (schedule.repeat === 'weekly') return `${prefix} * * ${String(schedule.on)}`
+    return `${prefix} ${String(schedule.on)} * *`
+  }
+
+  function updateScheduleControls(): void {
+    const custom = repeatSelect.value === 'custom'
+    const weekly = repeatSelect.value === 'weekly'
+    const monthly = repeatSelect.value === 'monthly'
+    timeLabel.hidden = custom
+    timeInput.disabled = custom
+    timeInput.required = !custom
+    weeklyDayLabel.hidden = !weekly
+    weeklyDaySelect.disabled = !weekly
+    weeklyDaySelect.required = weekly
+    monthlyDayLabel.hidden = !monthly
+    monthlyDaySelect.disabled = !monthly
+    monthlyDaySelect.required = monthly
+    const schedule = selectedSimpleSchedule()
+    scheduleSummary.textContent = custom
+      ? 'This automation has an older custom schedule. Choose a repeat pattern to replace it.'
+      : schedule
+        ? `${simpleScheduleDescription(schedule)} · local time`
+        : 'Choose when this automation should run.'
+  }
+
+  function setScheduleControls(cron: string): void {
+    repeatSelect.querySelector('option[value="custom"]')?.remove()
+    const schedule = parseSimpleSchedule(cron)
+    customCron = schedule ? null : cron
+    if (!schedule) {
+      repeatSelect.append(el('option', { value: 'custom' }, 'Keep existing custom schedule'))
+      repeatSelect.value = 'custom'
+      updateScheduleControls()
+      return
+    }
+    repeatSelect.value = schedule.repeat
+    timeInput.value = scheduleTime(schedule)
+    if (schedule.repeat === 'weekly') weeklyDaySelect.value = String(schedule.on)
+    if (schedule.repeat === 'monthly') monthlyDaySelect.value = String(schedule.on)
+    updateScheduleControls()
+  }
+
   async function openForm(schedule?: AutomationSchedule): Promise<void> {
     hideStatus()
     editingId = schedule?.id ?? null
@@ -197,7 +409,7 @@ export function createAutomationPluginSettings(
     list.hidden = true
     heading.hidden = true
     nameInput.value = schedule?.name ?? ''
-    cronInput.value = schedule?.cron ?? '0 9 * * 1-5'
+    setScheduleControls(schedule?.cron ?? '0 9 * * 1-5')
     promptInput.value = schedule?.prompt ?? ''
     enabledInput.checked = schedule?.enabled ?? true
     worktreeLimitSelect.value = String(schedule?.maxLiveWorktrees ?? 1)
@@ -235,7 +447,7 @@ export function createAutomationPluginSettings(
         el(
           'div',
           { class: 'automation-row-meta' },
-          el('code', {}, schedule.cron),
+          el('span', { class: 'automation-row-schedule' }, scheduleDescription(schedule.cron)),
           el('span', {}, modelDisplayLabel(schedule.model)),
           el('span', {}, schedule.enabled ? 'Armed' : 'Paused'),
           el(
@@ -342,15 +554,32 @@ export function createAutomationPluginSettings(
 
   addButton.addEventListener('click', () => void openForm())
   cancelButton.addEventListener('click', closeForm)
+  repeatSelect.addEventListener('change', () => {
+    if (repeatSelect.value !== 'custom') {
+      repeatSelect.querySelector('option[value="custom"]')?.remove()
+      customCron = null
+    }
+    updateScheduleControls()
+  })
+  timeInput.addEventListener('input', updateScheduleControls)
+  weeklyDaySelect.addEventListener('change', updateScheduleControls)
+  monthlyDaySelect.addEventListener('change', updateScheduleControls)
   form.addEventListener('submit', (event) => {
     event.preventDefault()
     if (!projectId) return
     hideStatus()
+    const cron = cronFromScheduleControls()
+    if (cron === null) {
+      showStatus('Choose a valid schedule before saving.', true)
+      if (repeatSelect.value === 'custom') repeatSelect.focus()
+      else timeInput.focus()
+      return
+    }
     saveButton.setAttribute('disabled', '')
     const input: AutomationScheduleInput = {
       ...(editingId ? { id: editingId } : {}),
       name: nameInput.value,
-      cron: cronInput.value,
+      cron,
       prompt: promptInput.value,
       model: modelSelect.value,
       enabled: enabledInput.checked,

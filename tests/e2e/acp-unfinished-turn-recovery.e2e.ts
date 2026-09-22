@@ -70,6 +70,78 @@ function seedAcpTrailingToolUpdateFixture(workspaceRoot: string): void {
   })
 }
 
+function seedAcpBudgetDeniedFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-acp-budget-denied-project'
+  const threadId = 'e2e-acp-budget-denied-thread'
+  const now = Date.now()
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'ACP continuation limit',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-user-acp-unfinished',
+            role: 'user',
+            content: 'Update the Selenium ADR with the spec findings.',
+            toolCalls: [],
+            createdAt: now,
+          },
+          {
+            id: 'msg-assistant-acp-tools',
+            role: 'assistant',
+            content:
+              'Confirmed the key spec facts. Let me check the upstream issue before I write.',
+            toolCalls: [
+              {
+                id: 'tc-acp-upstream-search',
+                name: 'run_shell',
+                args: { command: 'rg "WebDriver BiDi" docs/' },
+                status: 'error',
+                result:
+                  'Interrupted before completion — no final output was received. This tool may have partially run or produced effects; inspect the current state before retrying it.',
+                kind: 'search',
+              },
+            ],
+            createdAt: now + 1,
+          },
+          {
+            id: 'msg-assistant-acp-fallback',
+            role: 'assistant',
+            content:
+              'Copse could not request a final response automatically because this turn reached its continuation limit. Send “continue” to resume.',
+            turnOutcome: {
+              status: 'failed',
+              stopReason: 'error',
+              rawStopReason: 'end_turn',
+              source: 'host',
+              executor: 'acp',
+              provider: 'claude-agent-acp',
+              model: 'acp:claude-agent-acp#opus[1m]',
+              lastEvent: 'text',
+              recovery: {
+                reason: 'ended_after_tools',
+                attempted: false,
+                recovered: false,
+              },
+              endedAt: now + 2,
+            },
+            toolCalls: [],
+            createdAt: now + 2,
+          },
+        ],
+        usage: { inputTokens: 800, outputTokens: 120 },
+        createdAt: now,
+        updatedAt: now + 2,
+      },
+    ],
+  })
+}
+
 function seedAcpSettledOpenToolFixture(workspaceRoot: string): void {
   const projectId = 'e2e-acp-settled-open-tool-project'
   const threadId = 'e2e-acp-settled-open-tool-thread'
@@ -170,7 +242,7 @@ describe('ACP unfinished-turn recovery fallback', () => {
     const toolCard = await $('.tool-card[data-tool-id="tc-acp-upstream-search"]')
     const fallback = await $('[data-message-id="msg-assistant-acp-fallback"] .message-text')
     await expect(toolCard).toHaveAttribute('data-status', 'error')
-    await toolCard.$('summary.tool-card-header').click()
+    await expect(toolCard).toHaveAttribute('open')
     await expect(toolCard).toHaveText('may have partially run or produced effects', {
       containing: true,
     })
@@ -196,6 +268,34 @@ describe('ACP unfinished-turn recovery fallback', () => {
     expect(positions?.fallbackTop ?? 0).toBeGreaterThan(positions?.toolBottom ?? 0)
 
     await savePreparedElementScreenshot('.messages-list', 'acp-unfinished-turn-recovery.png')
+  })
+})
+
+describe('ACP unfinished-turn recovery with exhausted continuation budget', () => {
+  before(async () => {
+    process.env.COPSE_PANEL_MOCK_LLM = '1'
+    process.env.ANTHROPIC_API_KEY = ''
+    process.env.OPENAI_API_KEY = ''
+    resetUserData()
+    seedAcpBudgetDeniedFixture(process.cwd())
+    await browser.reloadSession()
+    await $('[data-message-id="msg-assistant-acp-fallback"] .message-text').waitForExist({
+      timeout: 30_000,
+    })
+  })
+
+  after(() => {
+    resetUserData()
+  })
+
+  it('attributes the skipped recovery to the continuation limit and offers a next step', async () => {
+    const fallback = await $('[data-message-id="msg-assistant-acp-fallback"] .message-text')
+    await expect(fallback).toHaveText(
+      'Copse could not request a final response automatically because this turn reached its continuation limit. Send “continue” to resume.',
+    )
+    await expect(fallback).not.toHaveText('The external agent stopped', { containing: true })
+
+    await savePreparedElementScreenshot('.messages-list', 'acp-unfinished-turn-budget-denied.png')
   })
 })
 
@@ -267,7 +367,7 @@ describe('ACP successful turn with an unterminated tool call', () => {
     )
     await expect(anchor.$('[data-status="running"]')).not.toExist()
 
-    await rollup.$('summary.tool-card-header').click()
+    await expect(rollup).toHaveAttribute('open')
     const failedSearch = await anchor.$('[data-tool-id="tc-acp-settled-web-search"]')
     await expect(failedSearch).toHaveAttribute('data-status', 'error')
     await expect(

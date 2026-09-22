@@ -1,7 +1,7 @@
 import { ipcMain, type BrowserWindow, type WebContents } from 'electron'
 import { runWithRendererPromptTarget } from '../services/renderer-prompt-target.ts'
 import { ensureTerminalPermitted } from '../services/security/permission-gate.ts'
-import { resolveThreadExecutionContext } from '../services/thread-execution-context.ts'
+import { resolveThreadTerminalExecutionContext } from '../services/thread-execution-context.ts'
 import { getProjectRoot } from '../services/workspace.ts'
 import { z } from 'zod'
 import {
@@ -56,7 +56,7 @@ async function resolveTerminalRoot(meta: {
   threadId: string | null
 }): Promise<{ root: string; checkoutMode: 'shared' | 'worktree' }> {
   if (meta.threadId) {
-    const context = await resolveThreadExecutionContext(meta.projectId, meta.threadId)
+    const context = await resolveThreadTerminalExecutionContext(meta.projectId, meta.threadId)
     return { root: context.root, checkoutMode: context.checkoutMode }
   }
   const projectRoot = getProjectRoot(meta.projectId)

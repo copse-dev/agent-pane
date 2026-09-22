@@ -42,6 +42,7 @@
     "packages/plan-usage/src/**/*",
     "packages/plugin-sdk/src/**/*",
     "packages/procwatch/src/**/*",
+    "packages/review/src/**/*",
     "packages/shell-guard/src/**/*",
     "packages/std/src/**/*",
     "packages/store-kit/src/**/*",

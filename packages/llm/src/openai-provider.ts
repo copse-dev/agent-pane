@@ -3,6 +3,7 @@ import type {
   ImageDetail,
   LLMProvider,
   LLMMessage,
+  LLMStreamOptions,
   LLMTool,
   ModelUsage,
   ProviderStreamChunk,
@@ -135,6 +136,10 @@ export class OpenAIProvider implements LLMProvider {
       apiKey: opts.apiKey ?? process.env['OPENAI_API_KEY'] ?? 'not-needed',
       ...(opts.baseURL ? { baseURL: opts.baseURL } : {}),
       defaultHeaders: withAppAttribution(opts.defaultHeaders),
+      // yieldStreamWithRetry owns the request budget. Leaving the SDK's two
+      // retries enabled would multiply that outer budget — most importantly,
+      // one routing-policy replay could become six HTTP requests for a 503.
+      maxRetries: 0,
     })
   }
 
@@ -157,6 +162,7 @@ export class OpenAIProvider implements LLMProvider {
     messages: LLMMessage[],
     tools: LLMTool[],
     signal?: AbortSignal,
+    options?: LLMStreamOptions,
   ): AsyncIterable<ProviderStreamChunk> {
     const { client, model } = this
     const self = this
@@ -205,10 +211,19 @@ export class OpenAIProvider implements LLMProvider {
               ...(self.promptCacheKey ? { prompt_cache_key: self.promptCacheKey } : {}),
               ...serviceTierBody(self.serviceTier),
               ...(ceiling === undefined ? {} : { max_tokens: ceiling }),
-              // Last, so an explicit extraBody entry still wins — that field is
-              // the user's own escape hatch for provider-specific overrides.
+              // Provider-specific defaults normally win. A call-scoped exact
+              // tool choice comes last because it enforces a host completion
+              // invariant and must not be weakened back to `auto`.
               ...self.tuned,
               ...(self.extraBody ?? {}),
+              ...(options?.toolChoice
+                ? {
+                    tool_choice: {
+                      type: 'function' as const,
+                      function: { name: options.toolChoice.name },
+                    },
+                  }
+                : {}),
             }
             const leading = request.messages[0]
             reportCache = self.cacheDiagnostics.begin(

@@ -19,6 +19,8 @@ import {
   expectedThreadWorktreePath,
   listProjectWorktrees,
   readThreadWorktreeRecoveryMetadata,
+  renameThreadWorktreeBranch,
+  restoreThreadWorktreeBranch,
   retireThreadWorktree,
   sameWorktreePath,
   validateThreadWorktree,
@@ -204,11 +206,21 @@ export async function recoverUnpersistedWorktree(input: {
   baseBranch: string
 }): Promise<ThreadWorktree | null> {
   const target = expectedThreadWorktreePath(input.projectId, input.threadId)
+  // A normal first submit has never created this path, so there cannot be a
+  // checkout to reclaim. Prove that locally before paying for repository-root
+  // resolution plus `git worktree list`; allocation still performs Git's
+  // authoritative registration check, including for missing/prunable records.
+  const canonicalPath = await realpath(target).catch((error: unknown) => {
+    if (isRecord(error)) {
+      const code = error['code']
+      if (code === 'ENOENT' || code === 'ENOTDIR') return null
+    }
+    throw error
+  })
+  if (!canonicalPath) return null
   const records = await listProjectWorktrees(input.projectRoot)
   const existing = records.find((record) => sameWorktreePath(record.path, target))
   if (!existing?.branch || !existing.head) return null
-  const canonicalPath = await realpath(existing.path).catch(() => null)
-  if (!canonicalPath) return null
   // The recovery marker sharpens the reclaim — it carries the original base and
   // whether the checkout was dirty-seeded — but it cannot gate it. Git has
   // already registered this linked checkout, so returning null here does not
@@ -445,9 +457,104 @@ export function createThreadCheckoutTransaction(
         choice: input.choice,
         branch: worktree.branch,
         worktree,
+        // Allocation just created HEAD at baseCommit and is the only code that
+        // can seed edits before returning. Recovered worktrees may have changed
+        // since their failed first attempt, so those deliberately fall back to
+        // a live prompt-state read in the renderer.
+        ...(recovered
+          ? {}
+          : {
+              promptState: {
+                startingCommit: worktree.baseCommit,
+                dirty: worktree.seededFromDirtyProject,
+              },
+            }),
       }
     })
 }
 
+export interface ThreadWorktreeBranchRenameDependencies {
+  getProject: (projectId: string) => Project | null
+  getThread: (projectId: string, threadId: string) => Promise<Thread | null>
+  updateMeta: (
+    projectId: string,
+    threadId: string,
+    patch: Partial<Omit<Thread, 'messages'>>,
+  ) => Promise<void>
+  rename: (input: {
+    projectId: string
+    threadId: string
+    projectRoot: string
+    title: string
+    worktree: ThreadWorktree
+  }) => Promise<ThreadWorktree | null>
+  restore: (
+    input: {
+      projectId: string
+      threadId: string
+      projectRoot: string
+      worktree: ThreadWorktree
+    },
+    branch: string,
+  ) => Promise<ThreadWorktree>
+}
+
+/** Rename the allocator-owned initial branch and keep durable thread metadata in step. */
+export function createThreadWorktreeBranchRename(
+  dependencies: ThreadWorktreeBranchRenameDependencies,
+): (projectId: string, threadId: string, title: string) => Promise<ThreadWorktree | null> {
+  return async (projectId, threadId, title) => {
+    const project = dependencies.getProject(projectId)
+    if (!project) return null
+    const thread = await dependencies.getThread(projectId, threadId)
+    if (!thread?.worktree) return null
+    const previous = thread.worktree
+    const renamed = await dependencies.rename({
+      projectId,
+      threadId,
+      projectRoot: project.path,
+      title,
+      worktree: previous,
+    })
+    if (!renamed) return null
+    try {
+      await dependencies.updateMeta(projectId, threadId, {
+        worktree: renamed,
+        gitBranch: renamed.branch,
+      })
+    } catch (error) {
+      await dependencies
+        .restore(
+          {
+            projectId,
+            threadId,
+            projectRoot: project.path,
+            worktree: renamed,
+          },
+          previous.branch,
+        )
+        .catch((restoreError: unknown) => {
+          console.error(
+            '[thread-checkout] Could not restore branch after persistence failed:',
+            restoreError,
+          )
+        })
+      throw error
+    }
+    return renamed
+  }
+}
+
+const defaultBranchRenameDependencies: ThreadWorktreeBranchRenameDependencies = {
+  getProject: projectById,
+  getThread: getProjectThread,
+  updateMeta: updateMetaOrThrow,
+  rename: renameThreadWorktreeBranch,
+  restore: restoreThreadWorktreeBranch,
+}
+
 export const prepareThreadCheckout = createThreadCheckoutTransaction(defaultDependencies)
 export const previewThreadCheckout = createThreadCheckoutPreview(defaultDependencies)
+export const renameThreadWorktreeBranchAfterTitle = createThreadWorktreeBranchRename(
+  defaultBranchRenameDependencies,
+)

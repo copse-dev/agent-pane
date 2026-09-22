@@ -379,6 +379,7 @@ test('tool_call_update patches ACP arguments, output, and status in place', () =
     status: 'running',
     result: 'starting',
     resultFormat: 'markdown',
+    images: [{ dataUrl: 'data:image/png;base64,cGl4ZWxz' }],
   })
 
   let tc = at(at(messages(), 0).toolCalls, 0)
@@ -387,11 +388,133 @@ test('tool_call_update patches ACP arguments, output, and status in place', () =
   assert.equal(tc.status, 'running')
   assert.equal(tc.result, 'starting')
   assert.equal(tc.resultFormat, 'markdown')
+  assert.deepEqual(tc.images, [{ dataUrl: 'data:image/png;base64,cGl4ZWxz' }])
 
   send({ type: 'tool_call_update', toolCallId: 'tc1', status: 'done' })
   tc = at(at(messages(), 0).toolCalls, 0)
   assert.equal(tc.status, 'done')
   assert.equal(tc.result, 'starting')
+})
+
+test('ACP tool content updates replace mixed, text, image, and empty collections', () => {
+  const { send, messages } = setup()
+  send({
+    type: 'tool_call',
+    toolCall: {
+      id: 'replace-me',
+      name: 'render_output',
+      title: 'Render output',
+      programmaticName: 'render_output',
+      args: {},
+    },
+  })
+  send({
+    type: 'tool_call_update',
+    toolCallId: 'replace-me',
+    result: 'caption',
+    images: [{ dataUrl: 'data:image/png;base64,b2xk' }],
+    content: [
+      { type: 'content', content: { type: 'text', text: 'caption' } },
+      {
+        type: 'content',
+        content: {
+          type: 'image',
+          dataUrl: 'data:image/png;base64,b2xk',
+          mimeType: 'image/png',
+        },
+      },
+    ],
+  })
+
+  let call = at(at(messages(), 0).toolCalls, 0)
+  assert.equal(call.title, 'Render output')
+  assert.equal(call.programmaticName, 'render_output')
+  assert.equal(call.result, 'caption')
+  assert.equal(call.images?.length, 1)
+  assert.equal(call.content?.length, 2)
+
+  send({
+    type: 'tool_call_update',
+    toolCallId: 'replace-me',
+    result: 'replacement',
+    images: [],
+    content: [{ type: 'content', content: { type: 'text', text: 'replacement' } }],
+  })
+  call = at(at(messages(), 0).toolCalls, 0)
+  assert.equal(call.result, 'replacement')
+  assert.deepEqual(call.images, [])
+
+  send({
+    type: 'tool_call_update',
+    toolCallId: 'replace-me',
+    result: null,
+    images: [{ dataUrl: 'data:image/webp;base64,bmV3' }],
+    content: [
+      {
+        type: 'content',
+        content: {
+          type: 'image',
+          dataUrl: 'data:image/webp;base64,bmV3',
+          mimeType: 'image/webp',
+        },
+      },
+    ],
+  })
+  call = at(at(messages(), 0).toolCalls, 0)
+  assert.equal(call.result, null)
+  assert.equal(call.images?.length, 1)
+
+  send({
+    type: 'tool_call_update',
+    toolCallId: 'replace-me',
+    result: null,
+    images: [],
+    content: [],
+  })
+  call = at(at(messages(), 0).toolCalls, 0)
+  assert.equal(call.result, null)
+  assert.deepEqual(call.images, [])
+  assert.deepEqual(call.content, [])
+})
+
+test('ACP assistant blocks preserve media and messageId boundaries', () => {
+  const { send, messages, messageDone } = setup()
+  send({
+    type: 'acp_content',
+    channel: 'message',
+    messageId: 'm-1',
+    content: { type: 'text', text: 'First' },
+  })
+  send({
+    type: 'acp_content',
+    channel: 'message',
+    messageId: 'm-1',
+    content: {
+      type: 'resource_link',
+      uri: 'https://example.test/report',
+      name: 'report',
+      title: 'Report',
+    },
+  })
+  send({
+    type: 'acp_content',
+    channel: 'message',
+    messageId: 'm-2',
+    content: { type: 'text', text: 'Second' },
+  })
+
+  assert.equal(messages().length, 2)
+  assert.equal(at(messages(), 0).content, 'First')
+  assert.deepEqual(at(messages(), 0).contentBlocks, [
+    {
+      type: 'resource_link',
+      uri: 'https://example.test/report',
+      name: 'report',
+      title: 'Report',
+    },
+  ])
+  assert.equal(at(messages(), 1).content, 'Second')
+  assert.deepEqual(messageDone, [at(messages(), 0).id])
 })
 
 test('an ACP startup failure settles with its error before any later notification', () => {
@@ -412,10 +535,13 @@ test('an ACP startup failure settles with its error before any later notificatio
   assert.deepEqual(calls[0], {
     id: 'startup-docs',
     name: 'mcp__docs__startup',
+    title: 'mcp__docs__startup',
     args: {},
     status: 'error',
     result: error,
     resultFormat: 'markdown',
+    images: [],
+    content: [{ type: 'content', content: { type: 'text', text: error } }],
   })
 })
 
@@ -602,6 +728,7 @@ test('context pressure persists the agent-reported used and window values', () =
     conversationTokens: 80_000,
     fillRatio: 0.4,
     source: 'agent-reported',
+    cost: { amount: 0.25, currency: 'USD' },
   })
 
   assert.deepEqual(requireThread(store, 't1').contextSnapshot, {
@@ -610,6 +737,7 @@ test('context pressure persists the agent-reported used and window values', () =
     conversationTokens: 80_000,
     fillRatio: 0.4,
     source: 'agent-reported',
+    cost: { amount: 0.25, currency: 'USD' },
     updatedAt: requireThread(store, 't1').contextSnapshot?.updatedAt,
   })
 })
@@ -698,8 +826,8 @@ test('done does not alert between queued turns', () => {
 test('done does not alert for a run the user launched and is watching', () => {
   const { send, store, finishedAlerts } = setup()
 
-  // The comparison the "Compare models" bubble starts is marked quiet: the
-  // click was a second ago and its card renders in front of the user, so the
+  // The review the "Review changes" bubble starts is marked quiet: the click
+  // was a second ago and its card renders in front of the user, so the
   // completion chime would be noise, not a summons.
   markQuietRun('t1')
   send({ type: 'done' })

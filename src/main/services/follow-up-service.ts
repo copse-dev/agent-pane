@@ -23,7 +23,7 @@ import {
 import { getSetting } from './storage/settings.ts'
 import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { CI_INVESTIGATOR_PLUGIN_ID } from '@copse/agent/plugins/ci-investigator-plugin.ts'
-import { MODEL_COMPARISON_FOLLOW_UP_ID } from '@copse/agent/plugins/model-comparison-plugin.ts'
+import { REVIEW_FOLLOW_UP_ID } from '@copse/agent/plugins/review-plugin.ts'
 import { getPrWorkspaceContext } from './github/pr-context-service.ts'
 import { getWorkspaceRoot } from './workspace.ts'
 import { safeJsonParse } from '@shared/safe-json.ts'
@@ -109,7 +109,7 @@ export function pluginFollowUpConditionMet(
 
 /** The host action a plugin's declared action maps to on the rendered bubble. */
 function pluginFollowUpAction(action: PluginFollowUpAction): FollowUpAction {
-  return action === 'model-compare' ? 'model-compare' : 'prompt'
+  return action === 'review' ? 'review' : 'prompt'
 }
 
 /**
@@ -197,7 +197,7 @@ export function buildDeterministicFollowUps(
 
 /**
  * Fixed suggestions for e2e / headless screenshot validation (no LM Studio or gh
- * required). Includes the model-comparison bubble unconditionally — the fixture
+ * required). Includes the review bubble unconditionally — the fixture
  * exists so a spec can drive each bubble kind without standing up the plugin
  * registry and a dirty worktree, which is exactly what the real gates need.
  */
@@ -218,7 +218,7 @@ export function mockFollowUpSuggestions(): FollowUpSuggestion[] {
     },
     { id: createPr.id, label: createPr.label, action: 'create-pr' },
     { id: ci.id, label: ci.label, prompt: ci.prompt },
-    { id: MODEL_COMPARISON_FOLLOW_UP_ID, label: 'Compare models', action: 'model-compare' },
+    { id: REVIEW_FOLLOW_UP_ID, label: 'Review changes', action: 'review' },
     // Present so the continue-plan bubble kind is drivable headlessly; the real
     // gate needs a thread whose persisted plan has open items.
     { id: plan.id, label: plan.label, prompt: plan.prompt },
@@ -237,20 +237,31 @@ export async function suggestFollowUps(
     return mockFollowUpSuggestions()
   }
   const workspaceCtx = await getPrWorkspaceContext(root)
-  const deterministic = buildDeterministicFollowUps(workspaceCtx, context)
-  const modelPicks = await pickModelFollowUps(context)
+  const prioritized = [
+    ...buildDeterministicFollowUps(workspaceCtx, context),
+    ...buildPluginFollowUps(workspaceCtx),
+  ]
+  return fillFollowUpSuggestions(prioritized, () => pickModelFollowUps(context))
+}
 
-  // Order: deterministic git/PR signals, then plugin offers, then the small
-  // model's picks. A merge conflict or red CI is a fact about the branch and
-  // outranks an offer; an offer outranks a guess.
-  const seen = new Set(deterministic.map((s) => s.id))
-  const merged = [...deterministic]
-  for (const suggestion of [...buildPluginFollowUps(workspaceCtx), ...modelPicks]) {
-    if (seen.has(suggestion.id)) continue
-    seen.add(suggestion.id)
-    merged.push(suggestion)
-    if (merged.length >= MAX_SUGGESTIONS) break
+/** Only ask the model when its suggestions can occupy a visible slot. */
+export async function fillFollowUpSuggestions(
+  prioritized: readonly FollowUpSuggestion[],
+  pickModel: () => Promise<FollowUpSuggestion[]>,
+): Promise<FollowUpSuggestion[]> {
+  // Facts outrank plugin offers, which outrank model picks. Deduplicate before
+  // deciding whether there is room, so repeated ids do not consume a slot.
+  const seen = new Set<string>()
+  const merged: FollowUpSuggestion[] = []
+  const append = (suggestions: readonly FollowUpSuggestion[]): void => {
+    for (const suggestion of suggestions) {
+      if (merged.length >= MAX_SUGGESTIONS) break
+      if (seen.has(suggestion.id)) continue
+      seen.add(suggestion.id)
+      merged.push(suggestion)
+    }
   }
-
-  return merged.slice(0, MAX_SUGGESTIONS)
+  append(prioritized)
+  if (merged.length < MAX_SUGGESTIONS) append(await pickModel())
+  return merged
 }

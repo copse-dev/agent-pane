@@ -16,7 +16,7 @@ import {
 } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { threadWorktreeBranchName } from '@shared/git/worktree-policy.ts'
+import { initialThreadWorktreeBranchName } from '@shared/git/worktree-policy.ts'
 import { setGitAvailableForTest } from './tool-availability.ts'
 import {
   clearAllowedWorkspaceRootsForTest,
@@ -32,11 +32,13 @@ import {
   pruneSafeOrphans,
   readThreadWorktreeRecoveryMetadata,
   removeRegisteredWorktreeCheckout,
+  renameThreadWorktreeBranch,
   restoreRetiredThreadWorktree,
   retireThreadWorktree,
   sameWorktreePath,
   ThreadWorktreeDetachedError,
   validateThreadWorktree,
+  validateThreadWorktreeRecovery,
 } from './worktree-manager.ts'
 
 function git(cwd: string, args: string[]): string {
@@ -158,6 +160,7 @@ describe('worktree manager', () => {
     })
 
     assert.equal(worktree.path, expectedThreadWorktreePath('project-1', 'thread-1'))
+    assert.equal(worktree.branch, initialThreadWorktreeBranchName('thread-1'))
     assert.equal(worktree.seededFromDirtyProject, false)
     assert.equal(git(repo, ['branch', '--show-current']).trim(), beforeBranch)
     assert.equal(git(worktree.path, ['branch', '--show-current']).trim(), worktree.branch)
@@ -186,6 +189,67 @@ describe('worktree manager', () => {
     assert.ok(!(await listProjectWorktrees(repo)).some((record) => record.path === worktree.path))
   })
 
+  it('keeps the specific error when the base ref cannot resolve to a commit', async () => {
+    const { repo } = await setup()
+
+    await assert.rejects(
+      allocateThreadWorktree({
+        projectId: 'project-1',
+        threadId: 'thread-missing-base',
+        projectRoot: repo,
+        prompt: 'Use a missing base',
+        baseBranch: 'missing',
+      }),
+      /Base branch "missing" does not exist in this repository/,
+    )
+  })
+
+  it('does not interpret a local origin path or stale ref as a configured remote', async () => {
+    const { repo } = await setup()
+    const staleRemoteCommit = git(repo, ['rev-parse', 'HEAD']).trim()
+    await writeFile(join(repo, '.gitignore'), 'origin/\n')
+    git(repo, ['add', '.gitignore'])
+    git(repo, ['commit', '-q', '-m', 'ignore local origin path'])
+    git(repo, ['update-ref', 'refs/remotes/origin/main', staleRemoteCommit])
+    const localOriginPath = join(repo, 'origin')
+    git(repo, ['init', '-q', '--bare', '-b', 'main', localOriginPath])
+    git(repo, ['push', '-q', localOriginPath, 'main'])
+
+    const worktree = await allocateThreadWorktree({
+      projectId: 'project-1',
+      threadId: 'thread-no-origin',
+      projectRoot: repo,
+      prompt: 'Do not fetch a path named origin',
+      baseBranch: 'main',
+    })
+
+    await assert.rejects(readFile(join(repo, '.git', 'FETCH_HEAD'), 'utf-8'), /ENOENT/)
+    assert.equal(worktree.baseCommit, git(repo, ['rev-parse', 'main']).trim())
+  })
+
+  it('validates a managed checkout when the project is itself a linked checkout', async () => {
+    const { temp, repo } = await setup()
+    const linkedProject = join(temp, 'linked-project')
+    git(repo, ['worktree', 'add', '-q', '-b', 'project-root', linkedProject])
+
+    const worktree = await allocateThreadWorktree({
+      projectId: 'project-linked',
+      threadId: 'thread-1',
+      projectRoot: linkedProject,
+      prompt: 'Validate the fallback',
+      baseBranch: 'project-root',
+    })
+    const validated = await validateThreadWorktree({
+      projectId: 'project-linked',
+      threadId: 'thread-1',
+      projectRoot: linkedProject,
+      worktree,
+    })
+
+    assert.equal(validated.root, worktree.path)
+    assert.equal(validated.commonGitDir, await realpath(join(repo, '.git')))
+  })
+
   it('removes an empty checkout root left after Git has finished its bookkeeping', async () => {
     const { temp, repo } = await setup()
     const path = join(temp, 'leftover-checkout')
@@ -198,6 +262,65 @@ describe('worktree manager', () => {
 
     assert.equal(removed.code, 0)
     await assert.rejects(lstat(canonicalPath), /ENOENT/)
+  })
+
+  it('renames an anonymous branch from the settled thread title', async () => {
+    const { repo } = await setup()
+    const worktree = await allocateThreadWorktree({
+      projectId: 'project-1',
+      threadId: 'thread-title-abc123',
+      projectRoot: repo,
+      prompt: 'A raw prompt that is deliberately ignored',
+      baseBranch: 'main',
+    })
+
+    const renamed = await renameThreadWorktreeBranch({
+      projectId: 'project-1',
+      threadId: 'thread-title-abc123',
+      projectRoot: repo,
+      title: 'Repair Auth Sessions',
+      worktree,
+    })
+
+    assert.ok(renamed)
+    assert.equal(renamed.branch, 'copse/repair-auth-sessions-abc123')
+    assert.equal(git(worktree.path, ['branch', '--show-current']).trim(), renamed.branch)
+    assert.throws(() =>
+      git(repo, ['show-ref', '--verify', '--quiet', `refs/heads/${worktree.branch}`]),
+    )
+    assert.deepEqual(await readThreadWorktreeRecoveryMetadata(repo, renamed.branch), {
+      baseBranch: renamed.baseBranch,
+      baseCommit: renamed.baseCommit,
+      createdAt: renamed.createdAt,
+      seededFromDirtyProject: renamed.seededFromDirtyProject,
+    })
+  })
+
+  it('does not rename an anonymous branch after it has been pushed', async () => {
+    const { temp, repo } = await setup()
+    const remote = join(temp, 'rename-remote.git')
+    git(temp, ['init', '-q', '--bare', remote])
+    git(repo, ['remote', 'add', 'origin', remote])
+    const worktree = await allocateThreadWorktree({
+      projectId: 'project-1',
+      threadId: 'thread-pushed',
+      projectRoot: repo,
+      prompt: 'Ship it',
+      baseBranch: 'main',
+    })
+    // A plain push publishes the branch without configuring an upstream.
+    git(worktree.path, ['push', '-q', 'origin', worktree.branch])
+
+    const renamed = await renameThreadWorktreeBranch({
+      projectId: 'project-1',
+      threadId: 'thread-pushed',
+      projectRoot: repo,
+      title: 'A Better Name',
+      worktree,
+    })
+
+    assert.equal(renamed, null)
+    assert.equal(git(worktree.path, ['branch', '--show-current']).trim(), worktree.branch)
   })
 
   it('parks a clean pushed PR branch and restores it without deleting the branch', async () => {
@@ -526,7 +649,7 @@ describe('worktree manager', () => {
 
   it('serializes concurrent allocations and suffixes branch collisions deterministically', async () => {
     const { repo } = await setup()
-    const colliding = threadWorktreeBranchName('Same prompt', 'thread-a')
+    const colliding = initialThreadWorktreeBranchName('thread-a')
     git(repo, ['branch', colliding])
 
     const [first, second] = await Promise.all([
@@ -584,6 +707,8 @@ describe('worktree manager', () => {
       prompt: 'Validate authority',
       baseBranch: 'main',
     })
+    const registered = getInternalWorkspaceRootRegistration(worktree.path)
+    assert.ok(registered)
     git(worktree.path, ['checkout', '-q', '--detach', 'HEAD'])
     await assert.rejects(
       validateThreadWorktree({
@@ -598,7 +723,46 @@ describe('worktree manager', () => {
         return true
       },
     )
+    await assert.rejects(
+      validateThreadWorktreeRecovery({
+        projectId: 'project-1',
+        threadId: 'thread-1',
+        projectRoot: repo,
+        worktree,
+      }),
+      ThreadWorktreeDetachedError,
+    )
+
+    const rebaseMarker = join(registered.gitDir, 'rebase-merge')
+    await mkdir(rebaseMarker)
+    const recovery = await validateThreadWorktreeRecovery({
+      projectId: 'project-1',
+      threadId: 'thread-1',
+      projectRoot: repo,
+      worktree,
+    })
+    assert.equal(recovery.branch, null)
+    assert.equal(recovery.root, worktree.path)
+    assert.equal(recovery.gitDir, registered.gitDir)
+    await rm(rebaseMarker, { recursive: true })
     git(worktree.path, ['checkout', '-q', worktree.branch])
+
+    const headPath = git(worktree.path, ['rev-parse', '--git-path', 'HEAD']).trim()
+    const validHead = await readFile(headPath, 'utf8')
+    await writeFile(headPath, 'ref: refs/heads/-invalid..branch\n')
+    try {
+      await assert.rejects(
+        validateThreadWorktree({
+          projectId: 'project-1',
+          threadId: 'thread-1',
+          projectRoot: repo,
+          worktree,
+        }),
+        /Cannot (inspect thread worktree HEAD|list Git worktrees)/,
+      )
+    } finally {
+      await writeFile(headPath, validHead)
+    }
 
     await assert.rejects(
       validateThreadWorktree({

@@ -6,10 +6,29 @@ name: Demo preview cleanup
 # preview, and their closed-event token is read-only anyway. Like pull_request
 # generally, the workflow definition is read from the base branch, so a fork
 # head cannot alter this cleanup.
+#
+# The per-PR path above is best-effort: a PR that closed before this workflow
+# existed, or whose closed-event run failed or was cancelled, leaves its two
+# directories behind forever, and nothing else ever looks at them. By
+# 2026-09-21 that had accumulated 393 pr-<n>/ + pr-<n>-preview/ pairs for a
+# repo with two dozen open PRs, and the Pages artifact pages.yml assembles from
+# the branch had grown to 3.08 GB — past the 1 GB Pages deploy limit, so every
+# "Deploy site" run failed with "Artifact could not be deployed" and no preview
+# or site change could ship. The `prune` job below is the sweep that keeps that
+# from recurring: on a weekly schedule, or on demand, it lists every pr-<n>
+# slot on the branch, asks the API whether that PR is still open, and removes
+# the slots whose PR is closed or merged. Non-PR slots (main/, release/,
+# develop/, vendor/) are never touched.
 
 on:
   pull_request:
     types: [closed]
+  schedule:
+    # Sundays 03:00 UTC — an hour before demo-previews-compact.yml rewrites the
+    # branch as a single commit, so the compaction discards the pruned
+    # directories' history along with everything else.
+    - cron: '0 3 * * 0'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -18,7 +37,7 @@ permissions:
 
 jobs:
   cleanup:
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
     outputs:
       removed: ${{ steps.remove.outputs.removed }}
@@ -52,12 +71,145 @@ jobs:
           git -C previews-branch push origin demo-previews
           echo "removed=true" >> "$GITHUB_OUTPUT"
 
+  # The bulk sweep. Same permissions as `cleanup` (the workflow-level block),
+  # same clone, same `git rm` — just over every slot on the branch rather than
+  # the one PR an event named.
+  prune:
+    if: github.event_name != 'pull_request'
+    runs-on: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
+    outputs:
+      removed: ${{ steps.remove.outputs.removed }}
+    steps:
+      - id: slots
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          remote="https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git"
+          if ! git clone --depth=1 --branch demo-previews "$remote" previews-branch 2>/dev/null; then
+            echo "No demo-previews branch — nothing to prune."
+            echo "numbers=[]" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Every PR number that owns a slot, from either pr-<n>/ or
+          # pr-<n>-preview/, deduplicated. Only these two shapes are ever
+          # published (demo-preview.yml validates the target), so anything
+          # else on the branch is deliberately not a candidate.
+          numbers="$(
+            find previews-branch -mindepth 1 -maxdepth 1 -type d -name 'pr-*' -exec basename {} \; \
+              | sed -nE 's/^pr-([0-9]+)(-preview)?$/\1/p' \
+              | sort -un \
+              | jq -cs '.'
+          )"
+          echo "PR slots on demo-previews: $(jq 'length' <<<"$numbers")"
+          echo "numbers=${numbers}" >> "$GITHUB_OUTPUT"
+      # Ask about each PR individually and remove a slot only when the API
+      # positively says its PR is closed. A PR the API cannot describe (404,
+      # rate limit, transient error) is kept — a stale preview costs a few tens
+      # of MB, whereas dropping an open PR's preview breaks its links until the
+      # next push to that branch republishes them. Merged PRs report `closed`.
+      - id: closed
+        if: steps.slots.outputs.numbers != '[]'
+        uses: actions/github-script@v9
+        env:
+          NUMBERS: ${{ steps.slots.outputs.numbers }}
+        with:
+          script: |
+            const numbers = JSON.parse(process.env.NUMBERS);
+            const closed = [];
+            let open = 0;
+            let unknown = 0;
+            for (const number of numbers) {
+              try {
+                const { data } = await github.rest.pulls.get({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: number,
+                });
+                if (data.state === 'closed') {
+                  closed.push(number);
+                } else {
+                  open += 1;
+                }
+              } catch (err) {
+                unknown += 1;
+                core.warning(`Keeping pr-${number}: could not read its state (${err.message})`);
+              }
+            }
+            core.info(`${closed.length} closed, ${open} open, ${unknown} unknown of ${numbers.length}`);
+            core.setOutput('closed', JSON.stringify(closed));
+      - id: remove
+        if: steps.slots.outputs.numbers != '[]'
+        env:
+          CLOSED: ${{ steps.closed.outputs.closed }}
+        run: |
+          set -euo pipefail
+          if [ "$CLOSED" = "[]" ]; then
+            echo "No closed PRs have a preview — nothing to prune."
+            echo "removed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git -C previews-branch config user.name "github-actions[bot]"
+          git -C previews-branch config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Publishes to this branch are not serialised against us (see the
+          # restack note in demo-preview.yml), so a push can lose the race.
+          # Removals never conflict with a publish — a closed PR's slot is not
+          # being written to — so the loser just re-applies the same removals
+          # onto the winner's tip and pushes again.
+          attempts=6
+          for attempt in $(seq 1 "$attempts"); do
+            if [ "$attempt" -gt 1 ]; then
+              echo "Push rejected; restacking onto the new demo-previews tip (attempt ${attempt}/${attempts})"
+              sleep $(( attempt * 5 + RANDOM % 10 ))
+              git -C previews-branch fetch --depth=1 origin demo-previews
+              git -C previews-branch reset --hard FETCH_HEAD
+            fi
+            count=0
+            for number in $(jq -r '.[]' <<<"$CLOSED"); do
+              for target in "pr-${number}" "pr-${number}-preview"; do
+                if [ -d "previews-branch/${target}" ]; then
+                  git -C previews-branch rm -r -q "$target"
+                  count=$((count + 1))
+                fi
+              done
+            done
+            if git -C previews-branch diff --cached --quiet; then
+              # Only on a retry: the winning push already removed them.
+              echo "Nothing left to prune on the new tip."
+              echo "removed=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            git -C previews-branch commit -q -m "demo preview: prune previews for closed PRs ($(jq 'length' <<<"$CLOSED") PRs, ${count} directories)"
+            if git -C previews-branch push origin demo-previews; then
+              echo "Removed ${count} directories for $(jq 'length' <<<"$CLOSED") closed PRs."
+              echo "removed=true" >> "$GITHUB_OUTPUT"
+              # What the next deploy will carry, so the size of the artifact
+              # pages.yml is about to build can be read off this run rather
+              # than discovered when the deploy fails. develop/ is listed but
+              # not deployed (pages.yml mounts main, release, vendor and pr-*).
+              echo "Remaining slots, MB:"
+              (cd previews-branch && du -sm -- */ | sort -rn)
+              echo "Total, MB: $(cd previews-branch && du -sm -- */ | awk '{ s += $1 } END { print s }')"
+              exit 0
+            fi
+          done
+          echo "Could not push the prune after ${attempts} attempts" >&2
+          exit 1
+
   deploy:
-    needs: cleanup
-    if: needs.cleanup.outputs.removed == 'true'
+    needs: [cleanup, prune]
+    # One of the two is always skipped (they are keyed on the event), and a
+    # skipped `needs` entry skips the dependent by default; `!cancelled()`
+    # keeps this eligible so the outputs decide.
+    if: ${{ !cancelled() && (needs.cleanup.outputs.removed == 'true' || needs.prune.outputs.removed == 'true') }}
     uses: ./.github/workflows/pages.yml
     with:
-      # The preview is already removed from demo-previews by this point; a failed
-      # deploy only delays it disappearing from the site, so don't fail the run.
-      tolerate-deploy-failure: true
+      # On a PR's closed event the preview is already removed from
+      # demo-previews by this point; a failed deploy only delays it
+      # disappearing from the site, and would redden a closed PR over a shared
+      # problem, so don't fail the run. The sweep has no PR to redden and a
+      # failed deploy IS its news (an artifact still over the limit), so it
+      # fails loudly.
+      tolerate-deploy-failure: ${{ github.event_name == 'pull_request' }}
     secrets: inherit

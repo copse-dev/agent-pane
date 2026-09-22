@@ -3,10 +3,6 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import { isSettingsDialogOpen, onSettingsDialogClose } from './settings-dialog.ts'
 import { setAttentionThreads } from '../controller/attention.ts'
-import {
-  createComparisonModelPickers,
-  type ComparisonModelSelection,
-} from './approval-comparison-pickers.ts'
 import { uiActions } from '../ui/actions.ts'
 
 /**
@@ -51,6 +47,39 @@ function adviceElement(advice: string): HTMLElement {
     )
   })
   return el('div', { class: 'approval-advice' }, ...children)
+}
+
+/**
+ * Combine the distinct explanations for one grouped decision. Permission copy
+ * commonly shares a lead line followed by request-specific bullets; keep that
+ * lead once and preserve every unique detail below it. Unstructured advice stays
+ * intact as separate paragraphs.
+ */
+function mergeApprovalAdvice(values: readonly (string | undefined)[]): string | undefined {
+  const unique: string[] = []
+  const seen = new Set<string>()
+  for (const value of values) {
+    if (!value || seen.has(value)) continue
+    seen.add(value)
+    unique.push(value)
+  }
+  if (unique.length <= 1) return unique[0]
+
+  const lines = unique.map((value) => value.split('\n'))
+  const sharedLead = lines[0]?.[0]
+  if (sharedLead === undefined || !lines.every((parts) => parts[0] === sharedLead)) {
+    return unique.join('\n\n')
+  }
+
+  const merged = [sharedLead]
+  const seenDetails = new Set<string>()
+  for (const parts of lines) {
+    const details = parts.slice(1).join('\n')
+    if (!details || seenDetails.has(details)) continue
+    seenDetails.add(details)
+    merged.push(details)
+  }
+  return merged.join('\n')
 }
 
 /**
@@ -158,7 +187,6 @@ export function mountApprovalDialog(
     collapseDetails: boolean | undefined
     approveOnceLabel: string | undefined
     showWhileSettingsOpen: boolean | undefined
-    comparisonModels?: ComparisonModelSelection
     allowTurnTreeLease: boolean | undefined
     turnTreeLeaseLabel: string | undefined
     turnTreeLeaseDefault: boolean | undefined
@@ -178,8 +206,6 @@ export function mountApprovalDialog(
   let cancelCoalesce: (() => void) | null = null
   // Cancels the pending Approve re-enable while the appended batch settles.
   let cancelSettle: (() => void) | null = null
-  /** Live reader for model-compare pickers on the open prompt (single-item batch). */
-  let readComparisonModels: (() => ComparisonModelSelection) | null = null
   /** Whether the user expanded a collapsed body on the open prompt. */
   let detailsExpanded = false
   function closeDialog(): void {
@@ -219,16 +245,6 @@ export function mountApprovalDialog(
     setAttentionThreads(store, 'approval', waiting)
   }
 
-  /**
-   * Model comparison owns three interactive pickers and returns one selection
-   * with its answer. Folding any sibling into that prompt removes the pickers
-   * (the batched layout has no coherent way to submit one selection per row),
-   * so it must take a dialog turn by itself.
-   */
-  function requiresSoloPrompt(req: PendingApproval): boolean {
-    return req.type === 'model-compare'
-  }
-
   /** Move every currently-showable queued request onto the on-screen batch,
    * preserving arrival order (older requests stay at the top of the list). */
   function drainShowableIntoBatch(): number {
@@ -236,8 +252,6 @@ export function mountApprovalDialog(
     for (let i = 0; i < queue.length;) {
       const req = queue[i]
       if (req && isShowable(req)) {
-        const first = batch[0]
-        if (first && (requiresSoloPrompt(first) || requiresSoloPrompt(req))) break
         queue.splice(i, 1)
         batch.push(req)
         moved++
@@ -297,11 +311,8 @@ export function mountApprovalDialog(
   }
 
   function renderBatch(): void {
-    readComparisonModels = null
     const count = batch.length
     const collapseDetails = soloRequest()?.collapseDetails === true
-    const singleModelCompare =
-      count === 1 && batch[0]?.type === 'model-compare' && batch[0].comparisonModels !== undefined
     // Collapse the per-request title into one heading when the whole batch asks
     // the same question (parallel fetches/reads/shell — the common case). A mixed
     // batch gets a count heading and keeps a light per-row label so the rows stay
@@ -309,21 +320,27 @@ export function mountApprovalDialog(
     const uniqueTitles = new Set(batch.map((req) => req.title))
     const sharedTitle = uniqueTitles.size === 1 ? (batch[0]?.title ?? '') : null
     const showRowTitles = count > 1 && sharedTitle === null
-    const firstRequest = batch[0]
-    // A homogeneous batch is one approval question with several subjects. Keep
-    // its explanatory copy around the group instead of repeating it around
-    // every command. Matching the visible context (not just `type`) ensures a
-    // command-specific warning or answer prompt is never hidden by grouping.
-    const hasSharedContext =
-      count > 1 &&
-      firstRequest !== undefined &&
-      batch.every(
-        (req) =>
-          req.type === firstRequest.type &&
-          req.title === firstRequest.title &&
-          req.bodyAdvice === firstRequest.bodyAdvice &&
-          req.bodyFooter === firstRequest.bodyFooter,
-      )
+    // Collapse each adjacent run that asks the same question and offers the same
+    // answer. Keeping groups contiguous preserves request order: an A/B/A batch
+    // stays A, B, A. Advice may still differ within a group; it is merged above
+    // one continuous body list so every safety reason remains visible without
+    // splitting one decision into several bordered sections.
+    const presentationGroups: PendingApproval[][] = []
+    for (const req of batch) {
+      const previousGroup = presentationGroups.at(-1)
+      const previous = previousGroup?.[0]
+      if (
+        previousGroup &&
+        previous &&
+        req.type === previous.type &&
+        req.title === previous.title &&
+        req.bodyFooter === previous.bodyFooter
+      ) {
+        previousGroup.push(req)
+      } else {
+        presentationGroups.push([req])
+      }
+    }
 
     heading.textContent =
       count <= 1 ? (batch[0]?.title ?? '') : (sharedTitle ?? `${String(count)} requests`)
@@ -337,51 +354,42 @@ export function mountApprovalDialog(
       return body
     }
 
-    if (hasSharedContext) {
-      const sharedChildren: (Node | string)[] = []
-      if (firstRequest.bodyAdvice) {
-        sharedChildren.push(adviceElement(firstRequest.bodyAdvice))
-      }
-      const bodyLabel = firstRequest.type === 'shell' ? 'Commands requiring approval' : 'Requests'
-      sharedChildren.push(
-        el(
-          'div',
-          { class: 'approval-body-list', role: 'list', 'aria-label': bodyLabel },
-          ...batch.map((req) => {
-            const body = requestBody(req)
-            body.setAttribute('role', 'listitem')
-            return body
-          }),
-        ),
-      )
-      if (firstRequest.bodyFooter) {
-        sharedChildren.push(el('div', { class: 'approval-footer' }, firstRequest.bodyFooter))
-      }
-      items.replaceChildren(el('div', { class: 'approval-item' }, ...sharedChildren))
-    } else {
-      items.replaceChildren(
-        ...batch.map((req) => {
-          const rowChildren: (Node | string)[] = []
-          if (showRowTitles)
-            rowChildren.push(el('div', { class: 'approval-item-title' }, req.title))
-          if (singleModelCompare && req.comparisonModels && req === batch[0]) {
-            const pickers = createComparisonModelPickers(api, req.comparisonModels, req.body)
-            readComparisonModels = pickers.read
-            rowChildren.push(pickers.root)
-          } else {
-            if (req.bodyAdvice) {
-              rowChildren.push(adviceElement(req.bodyAdvice))
-            }
-            if (collapseDetails) rowChildren.push(detailsToggle())
-            rowChildren.push(requestBody(req))
-            if (req.bodyFooter) {
-              rowChildren.push(el('div', { class: 'approval-footer' }, req.bodyFooter))
-            }
-          }
-          return el('div', { class: 'approval-item' }, ...rowChildren)
-        }),
-      )
-    }
+    items.replaceChildren(
+      ...presentationGroups.map((group) => {
+        const firstRequest = group[0]
+        if (!firstRequest) throw new Error('approval presentation group must not be empty')
+        const rowChildren: (Node | string)[] = []
+        if (showRowTitles) {
+          rowChildren.push(el('div', { class: 'approval-item-title' }, firstRequest.title))
+        }
+        const advice = mergeApprovalAdvice(group.map((request) => request.bodyAdvice))
+        if (advice) {
+          rowChildren.push(adviceElement(advice))
+        }
+        if (collapseDetails) rowChildren.push(detailsToggle())
+        if (group.length > 1) {
+          const bodyLabel =
+            firstRequest.type === 'shell' ? 'Commands requiring approval' : 'Requests'
+          rowChildren.push(
+            el(
+              'div',
+              { class: 'approval-body-list', role: 'list', 'aria-label': bodyLabel },
+              ...group.map((req) => {
+                const body = requestBody(req)
+                body.setAttribute('role', 'listitem')
+                return body
+              }),
+            ),
+          )
+        } else {
+          rowChildren.push(requestBody(firstRequest))
+        }
+        if (firstRequest.bodyFooter) {
+          rowChildren.push(el('div', { class: 'approval-footer' }, firstRequest.bodyFooter))
+        }
+        return el('div', { class: 'approval-item' }, ...rowChildren)
+      }),
+    )
 
     approveButton.textContent = count > 1 ? `Approve all (${String(count)})` : 'Approve'
     rejectButton.textContent = count > 1 ? `Reject all (${String(count)})` : 'Reject'
@@ -536,7 +544,6 @@ export function mountApprovalDialog(
     if (batch.length === 0) {
       closeDialog()
       active = false
-      readComparisonModels = null
       clearSettle()
       return
     }
@@ -574,7 +581,6 @@ export function mountApprovalDialog(
       if (batch.length === 0) {
         closeDialog()
         active = false
-        readComparisonModels = null
         clearSettle()
         show()
       } else {
@@ -593,23 +599,15 @@ export function mountApprovalDialog(
   function resolve(approved: boolean, remember: boolean): void {
     if (!active || batch.length === 0) return
     const answered = batch
-    const comparisonModels = approved && readComparisonModels ? readComparisonModels() : undefined
     const grantScope =
       approved && !turnTreeLeaseLabel.hidden && turnTreeLeaseInput.checked ? 'turn-tree' : 'once'
     closeDialog()
     batch = []
     active = false
-    readComparisonModels = null
     turnTreeLeaseInput.checked = false
     clearSettle()
     for (const req of answered) {
-      void api.approval.respond(
-        req.id,
-        approved,
-        remember,
-        req.type === 'model-compare' ? comparisonModels : undefined,
-        grantScope,
-      )
+      void api.approval.respond(req.id, approved, remember, grantScope)
     }
     // Surface anything that was waiting behind this batch immediately — it has
     // already sat through its own coalesce window, so no extra delay.
@@ -630,7 +628,6 @@ export function mountApprovalDialog(
       collapseDetails,
       approveOnceLabel,
       showWhileSettingsOpen,
-      comparisonModels,
       allowTurnTreeLease,
       turnTreeLeaseLabel,
       turnTreeLeaseDefault,
@@ -654,7 +651,6 @@ export function mountApprovalDialog(
         turnTreeLeaseDefault,
         turnTreeLeaseSubject,
       }
-      if (comparisonModels) pending.comparisonModels = comparisonModels
       queue.push(pending)
       if (active && isSettingsDialogOpen() && pending.showWhileSettingsOpen) {
         // Settings may have been opened after an ordinary inline approval was
@@ -666,7 +662,6 @@ export function mountApprovalDialog(
         batch = []
         closeDialog()
         active = false
-        readComparisonModels = null
         clearSettle()
         show()
       } else if (active) appendToOpen()

@@ -117,6 +117,11 @@ describe('local provider default worktree isolation', () => {
 
     const initialHead = git(projectRoot, ['rev-parse', 'HEAD'])
     const initialStatus = git(projectRoot, ['status', '--porcelain=v1'])
+    const initialTrackedStatus = git(projectRoot, [
+      'status',
+      '--porcelain=v1',
+      '--untracked-files=no',
+    ])
     assert.equal(git(projectRoot, ['branch', '--show-current']), 'main')
     assert.equal(initialStatus, '')
 
@@ -175,7 +180,15 @@ describe('local provider default worktree isolation', () => {
     assert.equal(existsSync(join(projectRoot, OUTPUT_FILE)), false)
     assert.equal(git(projectRoot, ['branch', '--show-current']), 'main')
     assert.equal(git(projectRoot, ['rev-parse', 'HEAD']), initialHead)
-    assert.equal(git(projectRoot, ['status', '--porcelain=v1']), initialStatus)
+    // Linux bubblewrap can leave its empty protected-config mount points visible
+    // until every concurrent sandbox lease is released. The deterministic model
+    // writes only OUTPUT_FILE, whose source-checkout absence is asserted above;
+    // compare tracked state here so those ASRT placeholders cannot obscure a
+    // real modification to the original checkout.
+    assert.equal(
+      git(projectRoot, ['status', '--porcelain=v1', '--untracked-files=no']),
+      initialTrackedStatus,
+    )
     assert.ok(
       (model?.completionRequests ?? 0) >= 2,
       'expected the local HTTP provider to serve both agent steps',

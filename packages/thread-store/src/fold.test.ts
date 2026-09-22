@@ -246,6 +246,104 @@ test('round-trips ACP tool-call display metadata (kind + resultFormat)', () => {
   deepStrictEqual(roundTrip(messages).messages, messages)
 })
 
+test('round-trips tool-result images through referenced blobs', () => {
+  const dataUrl = 'data:image/png;base64,aW1hZ2UtYnl0ZXM='
+  const messages: Message[] = [
+    {
+      id: 'a1',
+      role: 'assistant',
+      content: '',
+      toolCalls: [
+        {
+          id: 'tc-image',
+          name: 'Generate image',
+          args: {},
+          status: 'done',
+          result: 'Created the image.',
+          resultFormat: 'markdown',
+          images: [{ dataUrl, name: 'concept.png', kind: 'screenshot' }],
+        },
+      ],
+      createdAt: 5,
+    },
+  ]
+  const { spine, files } = explodeThread(messages, hash)
+  const imageRef = spine[0]?.toolCalls[0]?.images?.[0]?.dataUrl
+  ok(imageRef)
+  strictEqual(imageRef.ref, 'blobs/tc-image-img-0.dataurl')
+  strictEqual(files.find((file) => file.ref === imageRef.ref)?.contents, dataUrl)
+  strictEqual(
+    JSON.stringify(spine).includes(dataUrl),
+    false,
+    'the spine must not inline base64 data',
+  )
+  deepStrictEqual(foldThread(meta(), spine, resolverFor(files), { hash }).messages, messages)
+})
+
+test('round-trips ACP rich content through blob refs without leaking base64 into spine or Markdown', () => {
+  const image = 'data:image/png;base64,YWNwLWltYWdl'
+  const audio = 'data:audio/ogg;base64,YWNwLWF1ZGlv'
+  const binary = 'data:application/octet-stream;base64,YWNwLWJpbmFyeQ=='
+  const messages: Message[] = [
+    {
+      id: 'a-rich',
+      role: 'assistant',
+      content: 'Here are the outputs.',
+      contentBlocks: [
+        { type: 'image', dataUrl: image, mimeType: 'image/png', uri: 'concept.png' },
+        {
+          type: 'resource_link',
+          uri: 'https://example.test/report',
+          name: 'report',
+          title: 'Report',
+        },
+      ],
+      reasoning: 'Checked the artefacts.',
+      reasoningBlocks: [{ type: 'audio', dataUrl: audio, mimeType: 'audio/ogg' }],
+      toolCalls: [
+        {
+          id: 'tc-rich',
+          name: 'inspect_outputs',
+          title: 'Inspect outputs',
+          programmaticName: 'inspect_outputs',
+          args: {},
+          status: 'done',
+          result: null,
+          kind: 'search',
+          locations: [{ path: 'src/a.ts', line: 12 }],
+          content: [
+            {
+              type: 'content',
+              content: {
+                type: 'resource',
+                uri: 'file:///archive.bin',
+                mimeType: 'application/octet-stream',
+                dataUrl: binary,
+              },
+            },
+            { type: 'diff', path: 'src/a.ts', oldText: 'old', newText: 'new' },
+            { type: 'terminal', terminalId: 'terminal-1' },
+          ],
+        },
+      ],
+      createdAt: 5,
+    },
+  ]
+
+  const { spine, files } = explodeThread(messages, hash)
+  const line = spine[0]
+  ok(line)
+  const serializedSpine = JSON.stringify(spine)
+  strictEqual(serializedSpine.includes('base64,'), false)
+  strictEqual(line.contentBlocks?.ref, 'blobs/a-rich.acp-content.json')
+  strictEqual(line.reasoningBlocks?.ref, 'blobs/a-rich.acp-reasoning.json')
+  strictEqual(line.toolCalls[0]?.content?.ref, 'blobs/tc-rich.acp-content.json')
+  for (const file of files.filter((entry) => entry.ref.endsWith('.md'))) {
+    strictEqual(file.contents.includes('base64,'), false)
+  }
+  deepStrictEqual(foldThread(meta(), spine, resolverFor(files), { hash }).messages, messages)
+})
+
 test('distinguishes a null result from an empty-string result', () => {
   const messages: Message[] = [
     {

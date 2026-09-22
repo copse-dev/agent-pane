@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { accessSync, lstatSync, mkdirSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
@@ -341,6 +342,60 @@ export function ensureWorkspaceTmpDir(): string {
     // Best-effort: a missing dir only means the redirect is a no-op this run.
   }
   return dir
+}
+
+/**
+ * macOS per-user temp directory (`confstr(_CS_DARWIN_USER_TEMP_DIR)`).
+ *
+ * Several Apple host tools (`sips`, parts of ImageIO, `qlmanage`) stage through
+ * this path even when `$TMPDIR` points at {@link workspaceTmpDir}. Without a
+ * matching seatbelt write grant those converters fail with Error 13 under the
+ * project sandbox. Returns null off Darwin or when the path cannot be resolved.
+ *
+ * Resolved via `/usr/bin/getconf` rather than `os.tmpdir()`, because spawn
+ * redirects `$TMPDIR` into the workspace scratch dir and confstr still names
+ * the real Darwin user temp. Result is memoized: overlay construction is hot.
+ */
+let cachedDarwinUserTempDir: string | null | undefined
+
+export function darwinUserTempDir(): string | null {
+  if (process.platform !== 'darwin') return null
+  if (cachedDarwinUserTempDir !== undefined) return cachedDarwinUserTempDir
+  cachedDarwinUserTempDir = resolveDarwinUserTempDir()
+  return cachedDarwinUserTempDir
+}
+
+function resolveDarwinUserTempDir(): string | null {
+  try {
+    const raw = execFileSync('/usr/bin/getconf', ['DARWIN_USER_TEMP_DIR'], {
+      encoding: 'utf8',
+      timeout: 2_000,
+      // Empty env so a redirected TMPDIR cannot change getconf's answer.
+      env: {},
+    }).trim()
+    // getconf often returns a trailing slash; strip it so seatbelt entries and
+    // dirname comparisons match Node path joins (`…/T` not `…/T/`).
+    const normalized = raw.replace(/\/+$/, '')
+    if (!normalized || !isAbsolute(normalized)) return null
+    return canonicalizePathCached(normalized)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Seatbelt allowWrite entries for direct children of macOS's per-user temp dir,
+ * or [] off Darwin.
+ *
+ * Apple converters stage files directly beneath this directory. `*` excludes
+ * `/` in the macOS seatbelt glob syntax, so workspaces nested beneath the temp
+ * root do not inherit this grant. Reads are already allowed outside the home
+ * deny and need no matching exception.
+ */
+export function darwinUserTempWriteEntries(): string[] {
+  const dir = darwinUserTempDir()
+  if (!dir) return []
+  return [`${dir}/*`]
 }
 
 function sandboxAllowedDomainsFromSettings(): string[] {
@@ -833,6 +888,10 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
   // points $TMPDIR at it. Falls under the home denyRead, so it must be
   // re-allowed for both read and write.
   const tmpDir = ensureWorkspaceTmpDir()
+  // macOS Apple converters (`sips`, ImageIO) ignore $TMPDIR and stage directly
+  // under confstr(_CS_DARWIN_USER_TEMP_DIR). Grant only those direct children —
+  // never nested workspaces or all of /var/folders — so SVG→PNG stays contained.
+  const darwinUserTempWrite = darwinUserTempWriteEntries()
   // Scratch dirs a configured ACP agent hardcodes (see `agent-scratch-roots.ts`).
   // Allowed for every contained command, not only the declaring agent's own
   // process, because `shell-scope.ts` waives the same entries when it classifies
@@ -867,9 +926,10 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
   }
   // Linked worktrees keep their index/HEAD in a per-worktree admin directory
   // and share objects/refs with the parent repository. These paths come only
-  // from a main-process-validated internal-root registration. Do not allow the
-  // common directory wholesale: sibling worktree admin state, hooks, and config
-  // remain outside the writable surface.
+  // from a main-process-validated internal-root registration. Linux bubblewrap
+  // cannot bind a not-yet-created `packed-refs.lock` file, so that platform
+  // receives the common directory as the atomic rename boundary and carves the
+  // protected entries back out below. Other platforms keep the narrower paths.
   const gitAdminRead = internalRoot
     ? [
         join(internalRoot.checkoutRoot, '.git'),
@@ -881,6 +941,8 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
         join(internalRoot.commonGitDir, 'info/**'),
         join(internalRoot.commonGitDir, 'config'),
         join(internalRoot.commonGitDir, 'packed-refs'),
+        join(internalRoot.commonGitDir, 'packed-refs.lock'),
+        join(internalRoot.commonGitDir, 'packed-refs.new'),
         join(internalRoot.commonGitDir, 'shallow'),
         // The primary checkout's own state, read-only: its HEAD (without it
         // `git worktree list` reported the primary at 0000000), its index (so
@@ -899,6 +961,7 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
         ...(listingOnlyDirEntriesSupported() ? [join(internalRoot.commonGitDir, 'worktrees')] : []),
       ]
     : []
+  const linuxAtomicGitAdminWrite = internalRoot !== null && process.platform === 'linux'
   const gitAdminWrite = internalRoot
     ? [
         internalRoot.gitDir,
@@ -906,7 +969,13 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
         join(internalRoot.commonGitDir, 'objects/**'),
         join(internalRoot.commonGitDir, 'refs/**'),
         join(internalRoot.commonGitDir, 'logs/**'),
-        join(internalRoot.commonGitDir, 'packed-refs'),
+        ...(linuxAtomicGitAdminWrite
+          ? [internalRoot.commonGitDir]
+          : [
+              join(internalRoot.commonGitDir, 'packed-refs'),
+              join(internalRoot.commonGitDir, 'packed-refs.lock'),
+              join(internalRoot.commonGitDir, 'packed-refs.new'),
+            ]),
       ]
     : []
   const siblingDeny = internalRoot ? uncoveredSiblingDenyPaths(internalRoot.siblingRoots) : []
@@ -928,8 +997,22 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
   const gitAdminDenyWrite = internalRoot
     ? [
         join(internalRoot.commonGitDir, 'config'),
+        join(internalRoot.commonGitDir, 'config.worktree'),
         join(internalRoot.commonGitDir, 'hooks'),
         join(internalRoot.commonGitDir, 'hooks/**'),
+        ...(linuxAtomicGitAdminWrite
+          ? [
+              join(internalRoot.commonGitDir, 'HEAD'),
+              join(internalRoot.commonGitDir, 'ORIG_HEAD'),
+              join(internalRoot.commonGitDir, 'FETCH_HEAD'),
+              join(internalRoot.commonGitDir, 'index'),
+              join(internalRoot.commonGitDir, 'description'),
+              join(internalRoot.commonGitDir, 'shallow'),
+              join(internalRoot.commonGitDir, 'info'),
+              join(internalRoot.commonGitDir, 'info/**'),
+              ...internalRoot.siblingGitDirs.flatMap((dir) => [dir, `${dir}/**`]),
+            ]
+          : []),
       ]
     : []
   return {
@@ -958,7 +1041,15 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
         // Read-only roots the active thread earned (invoked skill directories).
         ...threadReadRootAllowEntries(),
       ],
-      allowWrite: [root, `${root}/**`, tmpDir, `${tmpDir}/**`, ...gitAdminWrite, ...agentScratch],
+      allowWrite: [
+        root,
+        `${root}/**`,
+        tmpDir,
+        `${tmpDir}/**`,
+        ...darwinUserTempWrite,
+        ...gitAdminWrite,
+        ...agentScratch,
+      ],
       denyWrite: [...workspaceMandatoryWriteDenyPaths(root), ...siblingDeny, ...gitAdminDenyWrite],
       allowGitConfig: true,
     },

@@ -105,7 +105,7 @@ describe('copse.todos plugin (P4)', () => {
   it('disabling the plugin atomically drops tool + hooks + prompt + panel', () => {
     // Pinned end-to-end: from the shipped seed, one flag flip must clear
     // every one of the todos plugin's contribution kinds. P5 added two more
-    // first-party plugins (`copse.post-turn-review` and `copse.model-comparison`)
+    // first-party plugins (`copse.post-turn-review` and `copse.review`)
     // that ship enabled — so this test asserts specifically that the *todos*
     // plugin's own contributions leave the active set on disable, not that the
     // whole registry drops to zero. The sibling plugins' state is unaffected.

@@ -583,6 +583,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       // in a browser; the demo always stays on the shared branch.
       prepareCheckout: (_projectId: string, _threadId: string, _prompt: string, choice) =>
         resolved({ checkoutMode: 'shared' as const, choice, branch: currentBranch }),
+      renameCheckoutBranch: () => resolved(null),
       previewCheckout: () => resolved({ checkoutMode: 'shared' as const }),
       resetDefaultBranchCache: () => resolvedVoid(),
       estimateContext: (_projectId: string, _threadId: string, payload: string) =>
@@ -607,8 +608,6 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       runningThreadIds: () =>
         resolved(threads.filter((t) => t.status === 'running').map((t) => t.id)),
       retryReview: resolvedVoid,
-      retryComparison: resolvedVoid,
-      comparisonModels: () => resolved({ a: '', b: '', judge: '' }),
       clearHistory: resolvedVoid,
       refreshModelContext: resolvedVoid,
       suggestTitle: () => resolved(null),
@@ -667,6 +666,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       onConflict: subscribe,
     },
     approval: { respond: resolvedVoid },
+    review: { run: resolvedVoid, dismissFinding: resolvedVoid, restoreFinding: resolvedVoid },
     ask: { respond: resolvedVoid },
     alerts: { threadFinished: resolvedVoid },
     sshPrompt: {

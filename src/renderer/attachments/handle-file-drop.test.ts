@@ -1,3 +1,4 @@
+import '../../../tests/setup-dom.ts'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import type {
@@ -13,9 +14,15 @@ import {
   type FileDropEvent,
 } from './handle-file-drop.ts'
 
+Object.assign(globalThis, {
+  Blob: window.Blob,
+  File: window.File,
+  FileReader: window.FileReader,
+})
+
 interface Recorded {
   files: { path: string; content: string }[]
-  images: string[]
+  images: { dataUrl: string; mimeType: string }[]
   videos: PromptVideoAttachment[]
   archives: PromptArchiveAttachment[]
 }
@@ -29,8 +36,8 @@ function recordingHandlers(): { handlers: PromptAttachmentHandlers; recorded: Re
         recorded.files.push(f)
       },
       attachTextBlock: (): void => {},
-      attachImage: (dataUrl): void => {
-        recorded.images.push(dataUrl)
+      attachImage: (dataUrl, mimeType): void => {
+        recorded.images.push({ dataUrl, mimeType })
       },
       attachVideo: (video): Promise<void> => {
         recorded.videos.push(video)
@@ -45,7 +52,10 @@ function recordingHandlers(): { handlers: PromptAttachmentHandlers; recorded: Re
 }
 
 const api: FileDropApi = {
-  fs: { readFile: (): Promise<string> => Promise.resolve('file contents') },
+  fs: {
+    readFile: (): Promise<string> => Promise.resolve('file contents'),
+    readImage: (): Promise<string> => Promise.resolve('data:image/png;base64,iVBORw0KGgo='),
+  },
 }
 
 function fakeFile(name: string, type: string): File {
@@ -83,6 +93,18 @@ describe('attaching dropped files', () => {
     assert.equal(recorded.videos.at(0)?.mimeType, 'video/mp4', 'falls back to a decodable default')
   })
 
+  it('recognises an image by extension when the browser reports no MIME type', async () => {
+    const { handlers, recorded } = recordingHandlers()
+    await attachFiles([fakeFile('chart.PNG', '')], handlers, api, null)
+    assert.equal(recorded.files.length, 0)
+    assert.deepEqual(recorded.images, [
+      {
+        dataUrl: 'data:image/png;base64,AQID',
+        mimeType: 'image/png',
+      },
+    ])
+  })
+
   it('leaves non-video files on their existing path', async () => {
     const { handlers, recorded } = recordingHandlers()
     await attachFiles([fakeFile('notes.md', 'text/markdown')], handlers, api, null)
@@ -97,6 +119,62 @@ describe('attaching dropped files', () => {
       { name: 'demo.mp4', mimeType: '', path: '/repo/docs/demo.mp4' },
     ])
     assert.equal(recorded.files.length, 0)
+  })
+
+  it('attaches a workspace image through the binary image reader', async () => {
+    const { handlers, recorded } = recordingHandlers()
+    let textReads = 0
+    const imageApi: FileDropApi = {
+      fs: {
+        readFile: async (): Promise<string> => {
+          textReads += 1
+          return 'binary garbage'
+        },
+        readImage: async (projectId, threadId, path): Promise<string> => {
+          assert.deepEqual(
+            [projectId, threadId, path],
+            ['project-1', 'thread-1', 'images/chart.PNG'],
+          )
+          return 'data:image/png;base64,iVBORw0KGgo='
+        },
+      },
+    }
+
+    await handleFileDrop(workspacePathDrop('images/chart.PNG'), handlers, imageApi, '/repo', {
+      projectId: 'project-1',
+      threadId: 'thread-1',
+    })
+
+    assert.equal(textReads, 0)
+    assert.deepEqual(recorded.images, [
+      { dataUrl: 'data:image/png;base64,iVBORw0KGgo=', mimeType: 'image/png' },
+    ])
+    assert.equal(recorded.files.length, 0)
+  })
+
+  it('keeps workspace SVG on the text-file path', async () => {
+    const { handlers, recorded } = recordingHandlers()
+    let imageReads = 0
+    const svgApi: FileDropApi = {
+      fs: {
+        readFile: async (): Promise<string> => '<svg>diagram</svg>',
+        readImage: async (): Promise<string> => {
+          imageReads += 1
+          return 'data:image/svg+xml;base64,PHN2Zz4='
+        },
+      },
+    }
+
+    await handleFileDrop(workspacePathDrop('images/diagram.svg'), handlers, svgApi, '/repo', {
+      projectId: 'project-1',
+      threadId: 'thread-1',
+    })
+
+    assert.equal(imageReads, 0)
+    assert.deepEqual(recorded.files, [
+      { path: 'images/diagram.svg', content: '<svg>diagram</svg>' },
+    ])
+    assert.deepEqual(recorded.images, [])
   })
 
   it('routes a zip to the archive handler instead of inlining its bytes', async () => {

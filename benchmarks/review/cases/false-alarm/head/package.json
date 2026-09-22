@@ -1,0 +1,7 @@
+{
+  "name": "total",
+  "private": true,
+  "scripts": {
+    "test": "node test.cjs"
+  }
+}

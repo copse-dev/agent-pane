@@ -33,6 +33,7 @@ import {
   ensureShellCommandPermitted,
   ensureTerminalPermitted,
   ensureToolPermitted,
+  promptExpectedSandboxBlock,
   promptUnsandboxedShell,
 } from './permission-gate.ts'
 import { decideMcpPermission, describeMcpAnnotations } from './permission-policy.ts'
@@ -341,6 +342,39 @@ describe('ensureToolPermitted', () => {
       } finally {
         setApprovalHandler(null)
       }
+    }
+  })
+
+  it('prompts for every host GUI launch even with a stale allow override', async () => {
+    setPermissionGateForTests(null)
+    setSetting('toolPermissionOverrides', {
+      [copseToolPermissionId('launch_gui_app')]: 'allow',
+    })
+    let prompts = 0
+    setApprovalHandler(async (request) => {
+      prompts++
+      assert.equal(request.title, 'Launch GUI app?')
+      assert.equal(request.cause, 'gui-app-launch')
+      assert.equal(request.allowRemember, false)
+      assert.match(request.body, /\/Applications\/Safari\.app/u)
+      assert.match(request.body, /Environment: COPSE_PANEL_USER_DATA/u)
+      return { approved: false, remember: false }
+    })
+    try {
+      assert.equal(
+        await ensureToolPermitted({
+          toolName: 'launch_gui_app',
+          args: {
+            target: '/Applications/Safari.app',
+            env: { COPSE_PANEL_USER_DATA: '/tmp/copse-review' },
+          },
+        }),
+        false,
+      )
+      assert.equal(prompts, 1)
+    } finally {
+      setApprovalHandler(null)
+      setSetting('toolPermissionOverrides', {})
     }
   })
 
@@ -1535,7 +1569,7 @@ describe('decideShellPermission', () => {
     })
     assert.equal(d.action, 'allow')
     assert.equal(shellRequiresOutsideSandbox('gh pr create --fill', root, true), false)
-    assert.equal(shellSandboxFailureShouldOfferUnsandboxedRetry('gh pr create', root), true)
+    assert.equal(shellSandboxFailureShouldOfferUnsandboxedRetry('gh pr create', root, false), true)
   })
 
   it('still prompts for a writing gh CLI subcommand when there is no OS sandbox', () => {
@@ -1579,13 +1613,17 @@ describe('decideShellPermission', () => {
 
   it('does not offer unsandboxed retries for network-only sandbox failures', () => {
     assert.equal(
-      shellSandboxFailureShouldOfferUnsandboxedRetry('curl https://example.com', root),
+      shellSandboxFailureShouldOfferUnsandboxedRetry('curl https://example.com', root, false),
       false,
     )
   })
 
-  it('still offers unsandboxed retries for outside-filesystem sandbox failures', () => {
-    assert.equal(shellSandboxFailureShouldOfferUnsandboxedRetry('ls ~/.ssh', root), true)
+  it('does not retry an outside-filesystem failure after the attempt already ran outside', () => {
+    assert.equal(shellSandboxFailureShouldOfferUnsandboxedRetry('ls ~/.ssh', root, true), false)
+  })
+
+  it('still offers a retry when an outside-filesystem command actually ran contained', () => {
+    assert.equal(shellSandboxFailureShouldOfferUnsandboxedRetry('ls ~/.ssh', root, false), true)
   })
 
   // Pins the policy-level half of the ambiguous-command escalation contract: a fuzzy
@@ -1601,7 +1639,7 @@ describe('decideShellPermission', () => {
     // outside the seatbelt), so they are no longer part of the ambiguous set (#581).
     for (const cmd of ['gh pr create', 'nc -l 4000', 'aws s3 cp a b', 'npx some-cli@latest']) {
       assert.equal(
-        shellSandboxFailureShouldOfferUnsandboxedRetry(cmd, root) && blocked.likely,
+        shellSandboxFailureShouldOfferUnsandboxedRetry(cmd, root, false) && blocked.likely,
         true,
         `expected retry offer for: ${cmd}`,
       )
@@ -2326,6 +2364,35 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
       assert.equal(spent.approved, false)
       assert.equal(spent.title, 'Run outside sandbox?')
     })
+  })
+
+  it('forces output-signature escalations through an interactive prompt', async () => {
+    setPermissionGateForTests(null)
+    const titles: string[] = []
+    setApprovalHandler(async (request) => {
+      titles.push(request.title)
+      return { approved: false, remember: false }
+    })
+    try {
+      assert.equal(
+        await promptUnsandboxedShell('git fetch origin main', ['signature match'], undefined, {
+          requireInteractiveApproval: true,
+        }),
+        false,
+      )
+      assert.equal(
+        await promptExpectedSandboxBlock(
+          'git fetch origin main',
+          ['cached signature match'],
+          undefined,
+          { requireInteractiveApproval: true },
+        ),
+        false,
+      )
+      assert.deepEqual(titles, ['Run outside sandbox?', 'Run outside sandbox?'])
+    } finally {
+      setApprovalHandler(null)
+    }
   })
 
   it('leaves commands that are not plain reads on the existing prompt', async () => {

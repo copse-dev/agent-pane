@@ -1,4 +1,5 @@
 import type { ModelParameters } from '@copse/llm/model-parameters.ts'
+import type { ToolResultImage } from '@copse/llm/wire-types.ts'
 import type { CanvasArtefactReference } from './canvas-types.ts'
 import type {
   ModelUsage,
@@ -49,6 +50,9 @@ export interface ImageRef {
   sha256: string
 }
 
+/** Tool-image metadata stays inline while its data URL lives in a blob. */
+export type SpineToolResultImage = Omit<ToolResultImage, 'dataUrl'> & { dataUrl: ImageRef }
+
 /** Transcript metadata stays inline; potentially large text snapshots do not. */
 export type SpineTranscriptAttachment = Omit<TranscriptAttachment, 'content'> & {
   content?: ContentRef
@@ -58,6 +62,8 @@ export type SpineTranscriptAttachment = Omit<TranscriptAttachment, 'content'> & 
 export interface SpineToolCall {
   id: string
   name: string
+  title?: string
+  programmaticName?: string
   args: unknown
   status: 'done' | 'error'
   /** null when the tool produced no result; a ref (possibly to empty contents) otherwise. */
@@ -65,8 +71,14 @@ export interface SpineToolCall {
   editStats?: { additions: number; deletions: number }
   /** ACP tool-call kind (`'execute'`, `'read'`, …) from an external ACP agent. */
   kind?: string
+  /** Complete ACP content JSON, including binary data URLs, stored out of the spine. */
+  content?: ContentRef
+  /** ACP follow-along locations are small metadata and stay inline. */
+  locations?: import('@copse/agent/wire-types.ts').AcpToolCallLocation[]
   /** Render `result` as Markdown (external ACP agents author Markdown output). */
   resultFormat?: 'markdown'
+  /** Image data is persisted out of line; this list retains order and labels. */
+  images?: SpineToolResultImage[]
   subagent?: SpineSubagentRef
 }
 
@@ -97,6 +109,9 @@ export interface SpineMessageLine {
   /** The message content OKF file. Always present (body may be empty). */
   content: ContentRef
   reasoning?: ContentRef
+  /** Non-text ACP assistant/reasoning blocks, stored out of line as JSON. */
+  contentBlocks?: ContentRef
+  reasoningBlocks?: ContentRef
   images?: ImageRef[]
   /** Canvas artefacts presented inline with this assistant message. */
   canvasArtefacts?: CanvasArtefactReference[]
@@ -479,6 +494,8 @@ const MESSAGE_LINE_FIELDS: RequiredFieldChecks<SpineMessageLine, 'toolCalls'> = 
 }
 
 const MESSAGE_LINE_OPTIONAL: OptionalFieldChecks<SpineMessageLine, 'canvasArtefacts'> = {
+  contentBlocks: isContentRef,
+  reasoningBlocks: isContentRef,
   // Only `title` is inspected; the rest of an artefact is passed through as the
   // renderer's problem, exactly as before.
   canvasArtefacts: (value) =>

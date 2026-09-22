@@ -1,14 +1,18 @@
-# Model-proposed threads (`propose_thread`)
+# Thread offers (`propose_thread`)
 
-An agent working on one task keeps noticing others. The parser it just fixed sits
+Sometimes the user explicitly asks for work to move into a new thread. Other
+times an agent working on one task notices another: the parser it just fixed sits
 behind a settings loader that swallows malformed input; the module it read has no
-tests; the migration it worked around should just be done. Every one of those has
-three bad endings and one good one. It can silently widen the task and hand back a
-diff nobody asked for. It can bury the suggestion in a paragraph of prose that
-scrolls away. It can block the turn asking permission for work that is not
-running. Or it can **offer** the work as a thread the user starts with one click.
+tests; the migration it worked around should just be done. In either case, the
+agent can **offer** the work as a separate thread the user starts with one click.
+The call itself creates nothing and runs nothing; the card is the approval
+boundary.
 
-`propose_thread` is the fourth one.
+For noticed follow-up work, this avoids three bad endings: silently widening the
+task and handing back a diff nobody asked for, burying the suggestion in prose
+that scrolls away, or blocking the turn for work that has not started. For an
+explicit request, it gives the agent a supported route to a new thread without
+driving the application menu.
 
 ## What it is not
 
@@ -21,15 +25,16 @@ blocked, and "decide later" is not on the menu. That is why approvals are modal
 prompt, and why Approve is briefly disabled when the batch changes underneath a
 click.
 
-A proposal is the opposite shape. Nothing is running. Nothing is blocked. The
-agent has already moved on. Ignoring the card forever is a perfectly good
-outcome — it costs nobody anything, and the offer is still there next week. So it
-renders inline in the transcript, as a card among the turn's other cards, and the
-only thing it asks for is a click it will never chase.
+A proposal is the opposite shape. Nothing is running. Nothing is blocked.
+Ignoring the card forever is a valid outcome — even after an explicit request,
+the user may change their mind before approving it. So it renders inline in the
+transcript, as a card among the turn's other cards, and the only thing it asks for
+is a click it will never chase.
 
 ## The offer
 
-The agent calls `propose_thread` with four things that matter:
+The agent calls `propose_thread` when the user requests a separate thread or when
+it offers worthwhile follow-up work. The call carries four things that matter:
 
 | Argument    | What it is                                                     |
 | ----------- | -------------------------------------------------------------- |

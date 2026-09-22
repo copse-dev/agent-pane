@@ -1,6 +1,7 @@
 import { OPENROUTER_BASE_URL } from '@copse/llm/openrouter.ts'
 import { FETCH_TIMEOUTS } from '../fetch-timeouts.ts'
 import { getSetting } from '../storage/settings.ts'
+import { AsyncTtlCache } from '../async-ttl-cache.ts'
 import { rememberOpenRouterPricing } from './model-pricing-store.ts'
 import { isRecord, optionalRecord } from '@shared/unknown-value.ts'
 
@@ -140,12 +141,13 @@ export function parseOpenRouterModelsPayload(json: unknown): OpenRouterModelSumm
   return out
 }
 
-async function fetchOpenRouterModels(): Promise<{
+type OpenRouterModelsResult = {
   ok: boolean
   models: OpenRouterModelSummary[]
   error?: string
-}> {
-  const base = openRouterApiBase()
+}
+
+async function fetchOpenRouterModels(base: string): Promise<OpenRouterModelsResult> {
   try {
     const res = await fetch(`${base}/models`, {
       signal: AbortSignal.timeout(FETCH_TIMEOUTS.modelList),
@@ -168,21 +170,19 @@ async function fetchOpenRouterModels(): Promise<{
 }
 
 const MODELS_TTL_MS = 5 * 60_000
-let cache: {
-  key: string
-  at: number
-  result: Awaited<ReturnType<typeof fetchOpenRouterModels>>
-} | null = null
-const modelFetches = new Map<string, Promise<Awaited<ReturnType<typeof fetchOpenRouterModels>>>>()
-const zdrFetches = new Map<string, Promise<Set<string>>>()
-let cacheGeneration = 0
+const modelsCache = new AsyncTtlCache<string, OpenRouterModelsResult>({
+  ttlMs: MODELS_TTL_MS,
+  maxEntries: 2,
+})
+const persistedPricingResults = new WeakSet<OpenRouterModelsResult>()
+const zdrIdentifiersCache = new AsyncTtlCache<string, Set<string>>({
+  ttlMs: MODELS_TTL_MS,
+  maxEntries: 2,
+})
 
 export function invalidateOpenRouterModelsCache(): void {
-  cacheGeneration += 1
-  cache = null
-  zdrCache = null
-  modelFetches.clear()
-  zdrFetches.clear()
+  modelsCache.clear()
+  zdrIdentifiersCache.clear()
 }
 
 /** All OpenRouter models (cached); failures are cached too to avoid repeat timeouts. */
@@ -192,32 +192,23 @@ export async function fetchOpenRouterModelsCached(): Promise<{
   error?: string
 }> {
   const key = openRouterApiBase()
-  const now = Date.now()
-  if (cache && cache.key === key && now - cache.at < MODELS_TTL_MS) return cache.result
-  const activeFetch = modelFetches.get(key)
-  if (activeFetch) return activeFetch
-
-  const generation = cacheGeneration
-  const pending = fetchOpenRouterModels()
-    .then((result) => {
-      // An invalidation or API-base change while the request was in flight means
-      // this response belongs to an older cache epoch. Return it to its original
-      // caller, but never let it overwrite the newer base's cache.
-      if (cacheGeneration === generation && openRouterApiBase() === key) {
-        cache = { key, at: Date.now(), result }
-        // Snapshot the catalog's rates so the usage ledger can price OpenRouter turns
-        // without a network round-trip (and after a model leaves the catalog). Best
-        // effort by design: pricing is a display concern, never a reason to fail a
-        // model list. Fire-and-forget so the picker isn't held up by a settings write.
-        if (result.ok) void rememberOpenRouterPricing(result.models).catch(() => {})
-      }
-      return result
-    })
-    .finally(() => {
-      if (modelFetches.get(key) === pending) modelFetches.delete(key)
-    })
-  modelFetches.set(key, pending)
-  return pending
+  const result = await modelsCache.get(key, () => fetchOpenRouterModels(key))
+  const current = modelsCache.peek(key)
+  // Persist only the result that still owns this cache key. Invalidation can
+  // orphan a request without changing the API base; that stale response must
+  // not overwrite prices saved by the newer refresh. Coalesced callers all see
+  // the same result object, so the WeakSet also keeps the settings write single.
+  if (
+    result.ok &&
+    openRouterApiBase() === key &&
+    current.hit &&
+    current.value === result &&
+    !persistedPricingResults.has(result)
+  ) {
+    persistedPricingResults.add(result)
+    void rememberOpenRouterPricing(result.models).catch(() => {})
+  }
+  return result
 }
 
 // ---- ZDR endpoint list ----------------------------------------------------
@@ -243,8 +234,7 @@ function collectZdrIdentifiers(json: unknown): Set<string> {
   return out
 }
 
-async function fetchZdrIdentifiers(): Promise<Set<string>> {
-  const base = openRouterApiBase()
+async function fetchZdrIdentifiers(base: string): Promise<Set<string>> {
   try {
     const res = await fetch(`${base}/endpoints/zdr`, {
       signal: AbortSignal.timeout(FETCH_TIMEOUTS.modelList),
@@ -256,30 +246,9 @@ async function fetchZdrIdentifiers(): Promise<Set<string>> {
   }
 }
 
-let zdrCache: { key: string; at: number; identifiers: Set<string> } | null = null
-
 async function fetchZdrIdentifiersCached(): Promise<Set<string>> {
   const key = openRouterApiBase()
-  const now = Date.now()
-  if (zdrCache && zdrCache.key === key && now - zdrCache.at < MODELS_TTL_MS) {
-    return zdrCache.identifiers
-  }
-  const activeFetch = zdrFetches.get(key)
-  if (activeFetch) return activeFetch
-
-  const generation = cacheGeneration
-  const pending = fetchZdrIdentifiers()
-    .then((identifiers) => {
-      if (cacheGeneration === generation && openRouterApiBase() === key) {
-        zdrCache = { key, at: Date.now(), identifiers }
-      }
-      return identifiers
-    })
-    .finally(() => {
-      if (zdrFetches.get(key) === pending) zdrFetches.delete(key)
-    })
-  zdrFetches.set(key, pending)
-  return pending
+  return zdrIdentifiersCache.get(key, () => fetchZdrIdentifiers(key))
 }
 
 /**

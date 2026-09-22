@@ -18,6 +18,7 @@ import type {
   GhPrSummary,
   PrActionResult,
 } from '@shared/types/git.ts'
+import { AsyncTtlCache } from '../../async-ttl-cache.ts'
 import type { GhIssuePage, GitHubBackend, PrRef } from './backend.ts'
 
 const TTL = {
@@ -31,81 +32,6 @@ const TTL = {
   search: 20_000,
   diff: 60_000,
 } as const
-
-class CacheSlot<T> {
-  private entry: { value: T; storedAt: number } | null = null
-  private inflight: Promise<T> | null = null
-  /**
-   * Bumped by {@link clear}. A read issued before a refresh must not answer or
-   * fill the slot after it: `clear` used to drop only `entry`, so a refresh that
-   * landed while a read was in flight was handed that same pre-refresh promise
-   * and then cached its answer for the whole TTL — the one thing "manual refresh
-   * makes the next read live" is supposed to rule out. `KeyedCache` never had
-   * the problem because clearing replaces the map, so the next key builds a
-   * fresh slot.
-   */
-  private generation = 0
-  private readonly ttlMs: number
-
-  constructor(ttlMs: number) {
-    this.ttlMs = ttlMs
-  }
-
-  async get(load: () => Promise<T>): Promise<T> {
-    const existing = this.entry
-    if (existing && Date.now() - existing.storedAt < this.ttlMs) return existing.value
-    if (this.inflight) return this.inflight
-    const generation = this.generation
-    // Only settle the slot this read still owns; a newer read has its own.
-    const release = (): void => {
-      if (generation === this.generation) this.inflight = null
-    }
-    const promise = load().then(
-      (value) => {
-        if (generation === this.generation) this.entry = { value, storedAt: Date.now() }
-        release()
-        return value
-      },
-      (err: unknown) => {
-        release()
-        throw err
-      },
-    )
-    this.inflight = promise
-    return promise
-  }
-
-  clear(): void {
-    this.entry = null
-    this.inflight = null
-    this.generation += 1
-  }
-}
-
-class KeyedCache<T> {
-  private readonly slots = new Map<string, CacheSlot<T>>()
-  private readonly ttlMs: number
-
-  constructor(ttlMs: number) {
-    this.ttlMs = ttlMs
-  }
-
-  slot(key: string): CacheSlot<T> {
-    const existing = this.slots.get(key)
-    if (existing) return existing
-    const created = new CacheSlot<T>(this.ttlMs)
-    this.slots.set(key, created)
-    return created
-  }
-
-  delete(key: string): void {
-    this.slots.delete(key)
-  }
-
-  clear(): void {
-    this.slots.clear()
-  }
-}
 
 function prKey(ref: PrRef): string {
   return `${ref.owner}/${ref.repo}#${String(ref.number)}`
@@ -123,15 +49,42 @@ export function resetGitHubReadCacheForTest(): void {
 }
 
 export function cachingGitHubBackend(inner: GitHubBackend): GitHubBackend {
-  const status = new CacheSlot<GhCliStatus>(TTL.status)
-  const workspacePrs = new KeyedCache<GhPrSummary[]>(TTL.workspacePrs)
-  const myPrs = new KeyedCache<GhPrSummary[] | null>(TTL.myPrs)
-  const details = new KeyedCache<GhPrDetails | null>(TTL.details)
-  const checks = new KeyedCache<GhPrChecksState>(TTL.checks)
-  const diffs = new KeyedCache<GhPrFileDiff | null>(TTL.diff)
-  const issuePages = new KeyedCache<GhIssuePage>(TTL.issues)
-  const issues = new KeyedCache<GhIssueSummary | null>(TTL.issue)
-  const searches = new KeyedCache<GhIssueSummary[]>(TTL.search)
+  const status = new AsyncTtlCache<string, GhCliStatus>({
+    ttlMs: TTL.status,
+    maxEntries: 1,
+  })
+  const workspacePrs = new AsyncTtlCache<string, GhPrSummary[]>({
+    ttlMs: TTL.workspacePrs,
+    maxEntries: 8,
+  })
+  const myPrs = new AsyncTtlCache<string, GhPrSummary[] | null>({
+    ttlMs: TTL.myPrs,
+    maxEntries: 8,
+  })
+  const details = new AsyncTtlCache<string, GhPrDetails | null>({
+    ttlMs: TTL.details,
+    maxEntries: 64,
+  })
+  const checks = new AsyncTtlCache<string, GhPrChecksState>({
+    ttlMs: TTL.checks,
+    maxEntries: 128,
+  })
+  const diffs = new AsyncTtlCache<string, GhPrFileDiff | null>({
+    ttlMs: TTL.diff,
+    maxEntries: 128,
+  })
+  const issuePages = new AsyncTtlCache<string, GhIssuePage>({
+    ttlMs: TTL.issues,
+    maxEntries: 8,
+  })
+  const issues = new AsyncTtlCache<string, GhIssueSummary | null>({
+    ttlMs: TTL.issue,
+    maxEntries: 128,
+  })
+  const searches = new AsyncTtlCache<string, GhIssueSummary[]>({
+    ttlMs: TTL.search,
+    maxEntries: 64,
+  })
 
   const handle = {
     clear(): void {
@@ -150,8 +103,8 @@ export function cachingGitHubBackend(inner: GitHubBackend): GitHubBackend {
 
   function invalidatePr(ref: PrRef): void {
     const key = prKey(ref)
-    details.delete(key)
-    checks.delete(key)
+    details.invalidate(key)
+    checks.invalidate(key)
     diffs.clear()
     workspacePrs.clear()
     myPrs.clear()
@@ -160,32 +113,29 @@ export function cachingGitHubBackend(inner: GitHubBackend): GitHubBackend {
   const backend: GitHubBackend = {
     kind: inner.kind,
 
-    getStatus: () => status.get(() => inner.getStatus()),
+    getStatus: () => status.get('status', () => inner.getStatus()),
 
-    listMyOpenPrs: (limit) =>
-      myPrs.slot(`me:${String(limit)}`).get(() => inner.listMyOpenPrs(limit)),
+    listMyOpenPrs: (limit) => myPrs.get(`me:${String(limit)}`, () => inner.listMyOpenPrs(limit)),
 
     listWorkspaceOpenPrs: (limit) =>
-      workspacePrs.slot(`ws:${String(limit)}`).get(() => inner.listWorkspaceOpenPrs(limit)),
+      workspacePrs.get(`ws:${String(limit)}`, () => inner.listWorkspaceOpenPrs(limit)),
 
-    getPrDetails: (ref) => details.slot(prKey(ref)).get(() => inner.getPrDetails(ref)),
+    getPrDetails: (ref) => details.get(prKey(ref), () => inner.getPrDetails(ref)),
 
     getPrFileDiff: (ref, path) =>
-      diffs.slot(`${prKey(ref)}:${path}`).get(() => inner.getPrFileDiff(ref, path)),
+      diffs.get(`${prKey(ref)}:${path}`, () => inner.getPrFileDiff(ref, path)),
 
-    getPrChecksState: (ref) => checks.slot(prKey(ref)).get(() => inner.getPrChecksState(ref)),
+    getPrChecksState: (ref) => checks.get(prKey(ref), () => inner.getPrChecksState(ref)),
 
     listWorkspaceOpenIssues: (page, pageSize) =>
-      issuePages
-        .slot(`${String(page)}:${String(pageSize)}`)
-        .get(() => inner.listWorkspaceOpenIssues(page, pageSize)),
+      issuePages.get(`${String(page)}:${String(pageSize)}`, () =>
+        inner.listWorkspaceOpenIssues(page, pageSize),
+      ),
 
-    getIssue: (ref) => issues.slot(prKey(ref)).get(() => inner.getIssue(ref)),
+    getIssue: (ref) => issues.get(prKey(ref), () => inner.getIssue(ref)),
 
     searchWorkspaceIssues: (query, limit) =>
-      searches
-        .slot(`${query}:${String(limit)}`)
-        .get(() => inner.searchWorkspaceIssues(query, limit)),
+      searches.get(`${query}:${String(limit)}`, () => inner.searchWorkspaceIssues(query, limit)),
 
     async createPr(input) {
       const result = await inner.createPr(input)

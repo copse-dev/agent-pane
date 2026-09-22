@@ -37,7 +37,7 @@ export const DETERMINISTIC_FOLLOW_UP_IDS = {
  * and, once confirmed, runs `createPrForThread` directly — no prompt is sent
  * and no model is involved in the create, so unlike the prompt presets this
  * carries no `prompt`. The shape matches the other action-only bubble
- * (`model-compare`): an id and a label, with the renderer keyed on `action`.
+ * (`review`): an id and a label, with the renderer keyed on `action`.
  */
 export function buildCreatePrSuggestion(): { id: string; label: string } {
   return {

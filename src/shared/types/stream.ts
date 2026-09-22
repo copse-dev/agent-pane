@@ -1,5 +1,5 @@
 import type { ToolCallUpdateChunk } from '@copse/agent/wire-types.ts'
-import type { MachineMessageOrigin, ModelComparison } from './thread.ts'
+import type { MachineMessageOrigin, ThreadReviewReport } from './thread.ts'
 import type { HookCard } from '../hooks/hook-card.ts'
 import type { CanvasArtefactReference } from './canvas.ts'
 import type { TodoItem } from './todo.ts'
@@ -8,7 +8,7 @@ import type { ModelParameters } from '@copse/llm/model-parameters.ts'
 // chunks (provider contract + text rewrites, context pressure, subagents) are
 // owned by the agent module. The app's StreamChunk is that loop contract plus
 // the app-level orchestration events below.
-import type { AgentStreamChunk } from '@copse/agent/wire-types.ts'
+import type { AcpContentBlock, AgentStreamChunk } from '@copse/agent/wire-types.ts'
 import type { TurnOutcome } from './turn-outcome.ts'
 import type { UserContent } from '@copse/llm/wire-types.ts'
 
@@ -23,12 +23,19 @@ export type { ProviderStreamChunk, ToolCallChunk } from '@copse/llm/wire-types.t
  * the agent loop emits (`AgentStreamChunk`: the provider contract plus text
  * rewrites, context-pressure signals, and subagent lifecycle) plus the
  * app-level orchestration events injected around the loop — todos, history
- * trimming, post-turn review, and the two-model diff comparison. The loop only
+ * trimming, post-turn review, and the Copse Reviewer report. The loop only
  * ever emits the `AgentStreamChunk` subset, so a loop stream is always
  * assignable to a `StreamChunk` sink.
  */
 export type StreamChunk =
   | AgentStreamChunk
+  /** One v1 ACP assistant/reasoning content item, retaining message boundaries. */
+  | {
+      type: 'acp_content'
+      channel: 'message' | 'thought'
+      content: AcpContentBlock
+      messageId?: string
+    }
   /** A provider presentation reference resolved through Copse's canvas. */
   | {
       type: 'canvas_artefact'
@@ -64,8 +71,12 @@ export type StreamChunk =
       /** Present on terminal done chunks from a structured review verdict. */
       issuesFound?: boolean
     }
-  /** Two-model diff-review comparison (running placeholder, then the full result). */
-  | { type: 'model_comparison'; comparison: ModelComparison }
+  /**
+   * Copse Reviewer over the thread's changes: a running placeholder, then the
+   * report (or an error). The typed chunk the `copse.review` first-party pack
+   * emits for its findings card (hooks-and-feature-packs decision 15).
+   */
+  | { type: 'review_report'; report: ThreadReviewReport }
   /**
    * Auto-continuation budget fold-back (C3 run→drain direction, decision 5).
    * Emitted once just before the terminal `done`: `used` is the machine turns

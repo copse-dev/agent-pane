@@ -73,3 +73,9 @@ describe('run_shell tool description (issue #1714)', () => {
     assert.match(runShellTool.description, /same files by a different path/)
   })
 })
+
+describe('run_shell tool description (issue #1436)', () => {
+  it('limits reactive elevation to a sandbox-contained failure', () => {
+    assert.match(runShellTool.description, /A sandbox-contained failure.*may be retried once/)
+  })
+})

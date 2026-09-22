@@ -1,9 +1,11 @@
 import * as esbuild from 'esbuild'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { spawnSync } from 'node:child_process'
 import { resolve } from 'node:path'
 
-const outputDir = await mkdtemp(resolve('dist-test/agent-path-import-'))
+const outputRoot = resolve('dist-test')
+await mkdir(outputRoot, { recursive: true })
+const outputDir = await mkdtemp(resolve(outputRoot, 'agent-path-import-'))
 const entry = resolve(outputDir, 'entry.ts')
 const bundle = resolve(outputDir, 'entry.cjs')
 

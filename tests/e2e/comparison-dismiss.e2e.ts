@@ -5,8 +5,9 @@ import { resetUserData, seedComparisonErrorFixture } from './helpers/seed-config
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
-// Visual eval for dismissing a failed model comparison: the error card renders
-// with both a Retry and a dismiss (×) action in its header; clicking dismiss
+// Visual eval for dismissing a retired failed model comparison (history only:
+// nothing can run one any more, so the card offers dismiss (×) and no Retry);
+// clicking dismiss
 // removes the card, and the removal is persisted so the card stays gone after
 // an app restart. Component tests cover the DOM shape and store mutation; this
 // spec proves the click-through and the on-disk persistence in the real
@@ -23,7 +24,7 @@ describe('dismissing a failed model comparison', () => {
     resetUserData()
   })
 
-  it('shows retry and dismiss actions on the failed card, then dismisses it', async () => {
+  it('shows a dismiss action and no retry on the failed card, then dismisses it', async () => {
     await $('.messages-list').waitForExist({ timeout: 30_000 })
     const card = $('.messages-list [data-comparison-card][data-status="error"]')
     await card.waitForExist({ timeout: 30_000 })
@@ -42,7 +43,7 @@ describe('dismissing a failed model comparison', () => {
     })
     expect(header.title).toBe('Comparison failed')
     expect(header.errorText).toContain('spend approval declined')
-    expect(header.hasRetry).toBe(true)
+    expect(header.hasRetry).toBe(false)
     expect(header.hasDismiss).toBe(true)
 
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'comparison-dismiss-before.png'))

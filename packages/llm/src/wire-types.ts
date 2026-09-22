@@ -50,10 +50,15 @@ export interface ToolCallContent {
  * An image a tool produced as part of its result (e.g. `video_frames` stills).
  * `name` is a short label — a frame's timestamped filename — so the model can
  * refer to a specific image by name in its reply and in follow-up tool calls.
+ * `kind` is presentation only: `'screenshot'` marks a self-contained visual
+ * (a generated render, a diagram, a page capture) the transcript previews
+ * inline at reading size; `'frames'` marks one of a batch of stills, which
+ * stay compact thumbnails. Absent `kind` is treated as `'frames'`.
  */
 export interface ToolResultImage {
   dataUrl: string
   name?: string
+  kind?: 'screenshot' | 'frames'
 }
 
 export interface ToolResult {
@@ -119,6 +124,10 @@ export interface ThreadUsage {
 export interface ToolCallChunk {
   id: string
   name: string
+  /** ACP's human-readable title, when this call originated from ACP. */
+  title?: string
+  /** ACP's unstable programmatic name, kept separate from the title. */
+  programmaticName?: string
   args: unknown
   /**
    * Set when the provider could not parse the tool-call arguments JSON (e.g. a
@@ -194,10 +203,16 @@ export type ProviderStreamChunk =
 
 // ── The provider contract ────────────────────────────────────────────────────
 
+export interface LLMStreamOptions {
+  /** Request one named function tool when the provider supports exact tool choice. */
+  readonly toolChoice?: { readonly name: string } | undefined
+}
+
 export interface LLMProvider {
   stream(
     messages: LLMMessage[],
     tools: LLMTool[],
     signal?: AbortSignal,
+    options?: LLMStreamOptions,
   ): AsyncIterable<ProviderStreamChunk>
 }

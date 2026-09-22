@@ -3,9 +3,14 @@ import { realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { ThreadWorktree } from '@shared/types/worktree.ts'
-import { threadWorktreeBranchName } from '@shared/git/worktree-policy.ts'
+import {
+  initialThreadWorktreeBranchName,
+  isInitialThreadWorktreeBranchName,
+  threadWorktreeBranchName,
+} from '@shared/git/worktree-policy.ts'
 import { describeBranchCheckoutFailure } from '@shared/git/branch-held.ts'
 import { runCommand } from './exec/command-runner.ts'
+import { parseWorkingTreeSnapshotHead } from './git-snapshot.ts'
 import { runSerialized } from './storage/write-queue.ts'
 import { copseWorktreesDir } from './storage/copse-paths.ts'
 import {
@@ -85,12 +90,21 @@ export interface ValidateWorktreeInput {
   worktree: ThreadWorktree
 }
 
+export interface RenameWorktreeBranchInput extends ValidateWorktreeInput {
+  title: string
+}
+
 export interface ValidatedThreadWorktree extends ThreadWorktree {
   /** Canonical linked-checkout top level and effective thread execution root. */
   path: string
   root: string
   gitDir: string
   commonGitDir: string
+}
+
+export interface ValidatedThreadWorktreeRecovery extends Omit<ValidatedThreadWorktree, 'branch'> {
+  /** A recovery terminal is authorized only while Git has detached this checkout. */
+  branch: null
 }
 
 export type RetireWorktreeResult =
@@ -388,17 +402,18 @@ export async function runWorktreeGit(
 ): Promise<{ stdout: string; stderr: string; code: number }> {
   // These host-owned bookkeeping operations update branch metadata. Config
   // inspection/updates do not execute repository helpers; hooks remain off for
-  // branch deletion. No general Git invocation receives writable configuration.
+  // branch deletion and rename. No general Git invocation receives writable configuration.
   const writeConfig =
     (args[0] === 'config' &&
       args[1] === '--local' &&
       /^branch\..+\.copse-worktree-recovery$/.test(args[2] ?? '') &&
       args.length === 4) ||
-    (args[0] === 'branch' && args[1] === '-d' && args.length === 3)
+    (args[0] === 'branch' && (args[1] === '-d' || args[1] === '-m') && args.length === 3)
   const readOnly =
     ['check-ignore', 'check-ref-format', 'merge-base', 'rev-parse', 'show-ref', 'status'].includes(
       args[0] ?? '',
     ) ||
+    (args[0] === 'remote' && args[1] === 'get-url' && args[2] === 'origin' && args.length === 3) ||
     (args[0] === 'config' && args[1] === '--local' && args[2] === '--get' && args.length === 4) ||
     (args[0] === 'symbolic-ref' &&
       args[1] === '--quiet' &&
@@ -506,6 +521,18 @@ export async function repositoryLocation(projectRoot: string): Promise<Repositor
 }
 
 async function commonGitDir(root: string): Promise<string> {
+  // `repositoryLocation` already proved `root` is Git's top-level checkout.
+  // In the ordinary non-bare layout its `.git` directory is the common Git
+  // directory by definition, so resolve it directly instead of paying for a
+  // final sandboxed `git rev-parse` on every dispatch. A project that is itself
+  // a linked checkout, or has any other non-directory `.git` layout, retains
+  // Git as the authoritative fallback.
+  const dotGit = join(root, '.git')
+  try {
+    if ((await lstat(dotGit)).isDirectory()) return await realpath(dotGit)
+  } catch {
+    // Let Git produce the actionable repository error below.
+  }
   const value = await requireGitValue(
     root,
     ['rev-parse', '--git-common-dir'],
@@ -522,6 +549,12 @@ async function listRecords(projectRoot: string): Promise<WorktreeRecord[]> {
 
 async function refExists(projectRoot: string, ref: string): Promise<boolean> {
   return (await git(projectRoot, ['show-ref', '--verify', '--quiet', ref])).code === 0
+}
+
+async function resolveCommit(projectRoot: string, ref: string): Promise<string | null> {
+  const result = await git(projectRoot, ['rev-parse', '--verify', `${ref}^{commit}`])
+  const value = result.stdout.trim()
+  return result.code === 0 && value ? value : null
 }
 
 async function branchExists(projectRoot: string, branch: string): Promise<boolean> {
@@ -555,16 +588,30 @@ async function fetchDefaultBranch(projectRoot: string, branch: string): Promise<
   await git(projectRoot, ['fetch', '--quiet', 'origin', branch])
 }
 
-async function chooseBranch(
-  projectRoot: string,
-  prompt: string,
-  threadId: string,
-): Promise<string> {
-  for (let collision = 0; collision < 100; collision++) {
-    const candidate = threadWorktreeBranchName(prompt, threadId, collision)
+async function hasOriginRemote(projectRoot: string): Promise<boolean> {
+  return (await git(projectRoot, ['remote', 'get-url', 'origin'])).code === 0
+}
+
+async function chooseInitialBranch(projectRoot: string, threadId: string): Promise<string> {
+  for (let collision = 0; collision < 100; collision += 1) {
+    const candidate = initialThreadWorktreeBranchName(threadId, collision)
     if (!(await branchExists(projectRoot, candidate))) return candidate
   }
-  throw new Error('Could not find an available worktree branch name')
+  throw new Error('Could not find an available initial worktree branch name')
+}
+
+async function chooseTitledBranch(
+  projectRoot: string,
+  title: string,
+  threadId: string,
+  currentBranch: string,
+): Promise<string | null> {
+  for (let collision = 0; collision < 100; collision += 1) {
+    const candidate = threadWorktreeBranchName(title, threadId, collision)
+    if (candidate === currentBranch) return null
+    if (!(await branchExists(projectRoot, candidate))) return candidate
+  }
+  throw new Error('Could not find an available titled worktree branch name')
 }
 
 async function deleteRef(projectRoot: string, ref: string): Promise<void> {
@@ -586,10 +633,22 @@ async function verifySnapshotContent(worktreePath: string, snapshotRef: string):
       })
     const expected = await run(['read-tree', snapshotRef])
     if (expected.code !== 0) return false
-    const trackedDifference = await run(['diff', '--quiet', '--'])
-    if (trackedDifference.code !== 0) return false
-    const extra = await run(['ls-files', '--others', '--exclude-standard', '-z'])
-    return extra.code === 0 && extra.stdout.length === 0
+    // With the snapshot loaded into the throwaway index, porcelain's second
+    // status column describes worktree differences and `??` covers files the
+    // snapshot did not contain. The first column is intentionally ignored: it
+    // compares the snapshot to the linked checkout's real HEAD. One status
+    // process therefore replaces the former serial diff + ls-files probes.
+    const status = await run([
+      'status',
+      '--porcelain=v1',
+      '-z',
+      '--untracked-files=all',
+      '--no-renames',
+    ])
+    return (
+      status.code === 0 &&
+      status.stdout.split('\0').every((record) => record.length === 0 || record[1] === ' ')
+    )
   } finally {
     await rm(temp, { recursive: true, force: true })
   }
@@ -617,6 +676,92 @@ async function repositoryIsDirty(projectRoot: string): Promise<boolean> {
   return result.stdout.length > 0
 }
 
+async function branchIsPublished(projectRoot: string, branch: string): Promise<boolean> {
+  const upstream = await git(projectRoot, [
+    'for-each-ref',
+    '--format=%(upstream)',
+    branchRef(branch),
+  ])
+  if (upstream.code !== 0) throw commandFailure('Cannot inspect thread branch upstream', upstream)
+  if (upstream.stdout.trim()) return true
+
+  const remoteRefs = await git(projectRoot, ['for-each-ref', '--format=%(refname)', 'refs/remotes'])
+  if (remoteRefs.code !== 0) {
+    throw commandFailure('Cannot inspect remote thread branches', remoteRefs)
+  }
+  return remoteRefs.stdout.split('\n').some((ref) => ref.endsWith(`/${branch}`))
+}
+
+async function renameAttachedWorktreeBranch(
+  projectRoot: string,
+  target: string,
+  worktree: ThreadWorktree,
+  branch: string,
+): Promise<ThreadWorktree> {
+  await assertBranchName(projectRoot, branch, 'Renamed thread branch')
+  if (await branchExists(projectRoot, branch)) {
+    throw new Error(`Renamed thread branch "${branch}" already exists`)
+  }
+  const canonicalPath = await realpath(target)
+  const registered = (await listRecords(projectRoot)).some((record) =>
+    sameWorktreePath(record.path, canonicalPath),
+  )
+  if (!registered) throw new Error('Thread worktree is not registered with Git')
+  const liveBranch = await symbolicHeadBranch(canonicalPath)
+  if (!liveBranch) throw new ThreadWorktreeDetachedError(worktree.branch)
+  if (liveBranch !== worktree.branch) {
+    throw new Error('Thread worktree branch changed before it could be renamed')
+  }
+  const result = await git(canonicalPath, ['branch', '-m', branch])
+  if (result.code !== 0) throw commandFailure('Cannot rename thread worktree branch', result)
+  return { ...worktree, path: canonicalPath, branch }
+}
+
+/**
+ * Replace an allocator-owned anonymous branch with the first settled thread title.
+ * A branch already renamed by the user, pushed upstream, or linked to a PR is left alone.
+ */
+export async function renameThreadWorktreeBranch(
+  input: RenameWorktreeBranchInput,
+): Promise<ThreadWorktree | null> {
+  assertOwnerId('project id', input.projectId)
+  assertOwnerId('thread id', input.threadId)
+  assertWorktreeMetadata(input.worktree)
+  if (input.worktree.retiredAt !== undefined || input.worktree.pullRequestUrl) return null
+  if (!isInitialThreadWorktreeBranchName(input.worktree.branch, input.threadId)) return null
+  const location = await repositoryLocation(input.projectRoot)
+  const projectRoot = location.repositoryRoot
+  const target = expectedThreadWorktreePath(input.projectId, input.threadId)
+  if (!sameWorktreePath(input.worktree.path, target)) {
+    throw new Error('Persisted worktree path does not match the configured thread path')
+  }
+
+  return runSerialized(`worktree-manager:${projectRoot}`, async () => {
+    const liveBranch = await symbolicHeadBranch(target)
+    if (liveBranch !== input.worktree.branch) return null
+    if (await branchIsPublished(projectRoot, liveBranch)) return null
+    const branch = await chooseTitledBranch(projectRoot, input.title, input.threadId, liveBranch)
+    if (!branch) return null
+    return renameAttachedWorktreeBranch(projectRoot, target, input.worktree, branch)
+  })
+}
+
+/** Restore the prior branch name when metadata persistence fails after a rename. */
+export async function restoreThreadWorktreeBranch(
+  input: ValidateWorktreeInput,
+  branch: string,
+): Promise<ThreadWorktree> {
+  assertOwnerId('project id', input.projectId)
+  assertOwnerId('thread id', input.threadId)
+  assertWorktreeMetadata(input.worktree)
+  const location = await repositoryLocation(input.projectRoot)
+  const projectRoot = location.repositoryRoot
+  const target = expectedThreadWorktreePath(input.projectId, input.threadId)
+  return runSerialized(`worktree-manager:${projectRoot}`, () =>
+    renameAttachedWorktreeBranch(projectRoot, target, input.worktree, branch),
+  )
+}
+
 /** Allocate one linked checkout, preserving dirty project content without touching it. */
 export async function allocateThreadWorktree(
   input: AllocateWorktreeInput,
@@ -633,29 +778,40 @@ export async function allocateThreadWorktree(
     )
     if (existing) throw new Error(`Thread worktree is already registered: ${target}`)
 
-    await assertBranchName(projectRoot, input.baseBranch, 'Base branch')
-    const defaultBranch = await getDefaultBranch(projectRoot)
+    // None of these probes mutates repository state or depends on another.
+    // Each Git invocation pays the sandbox/process startup cost, so keep them
+    // concurrent on the first-submit path instead of serializing that overhead.
+    const [, defaultBranch, dirtyProject, headResult, branch, hasOrigin] = await Promise.all([
+      assertBranchName(projectRoot, input.baseBranch, 'Base branch'),
+      getDefaultBranch(projectRoot),
+      repositoryIsDirty(projectRoot),
+      git(projectRoot, ['show', '-s', '--format=%H%x00%T', 'HEAD']),
+      chooseInitialBranch(projectRoot, input.threadId),
+      hasOriginRemote(projectRoot),
+    ])
     const isDefaultBranch = defaultBranch !== null && defaultBranch === input.baseBranch
-    if (isDefaultBranch) await fetchDefaultBranch(projectRoot, input.baseBranch)
+    if (isDefaultBranch && hasOrigin) await fetchDefaultBranch(projectRoot, input.baseBranch)
     const remoteRef = `refs/remotes/origin/${input.baseBranch}`
-    const useRemoteRef = isDefaultBranch && (await refExists(projectRoot, remoteRef))
-    const baseRef = useRemoteRef ? remoteRef : branchRef(input.baseBranch)
-    if (!(await refExists(projectRoot, baseRef))) {
+    // Resolving a ref proves both that it exists and that it names a commit.
+    // Do that once per candidate instead of spawning `show-ref` and then
+    // immediately spawning `rev-parse` for the same ref. The freshly fetched
+    // remote default still wins, with the local branch as the exact fallback.
+    const remoteCommit =
+      isDefaultBranch && hasOrigin ? await resolveCommit(projectRoot, remoteRef) : null
+    const baseCommit =
+      remoteCommit ?? (await resolveCommit(projectRoot, branchRef(input.baseBranch)))
+    if (!baseCommit) {
       throw new Error(`Base branch "${input.baseBranch}" does not exist in this repository`)
     }
-    const baseCommit = await requireGitValue(
-      projectRoot,
-      ['rev-parse', '--verify', `${baseRef}^{commit}`],
-      `Cannot resolve base branch ${input.baseBranch}`,
-    )
-    const dirtyProject = await repositoryIsDirty(projectRoot)
     // Seeding restores the snapshot over the worktree wholesale rather than
     // merging it, so it only means anything when both start from the same
     // commit. A base that moved — a fetched `origin/<default>`, or a project
     // checkout parked on another branch — would have those edits pasted onto an
     // unrelated tree, silently mixing two states. Start clean instead; the
     // user's own checkout still holds the work, untouched.
-    const headCommit = (await git(projectRoot, ['rev-parse', 'HEAD'])).stdout.trim()
+    const snapshotHead =
+      headResult.code === 0 ? parseWorkingTreeSnapshotHead(headResult.stdout) : null
+    const headCommit = snapshotHead?.sha ?? ''
     const seedable = (input.seedFromDirtyProject ?? true) && headCommit === baseCommit
     if (dirtyProject && !seedable) {
       console.info(
@@ -667,7 +823,16 @@ export async function allocateThreadWorktree(
     // safe — it just means the new worktree won't include those edits.
     const dirty = dirtyProject && seedable
     const snapshotRef = dirty
-      ? await createWorktreeBackup(`thread ${input.threadId} seed`, projectRoot)
+      ? await createWorktreeBackup(`thread ${input.threadId} seed`, projectRoot, {
+          // repositoryIsDirty completed successfully in the probe wave above,
+          // so repeating the live worktree-membership process here adds no
+          // evidence. The snapshot's own Git commands still fail closed.
+          workTreeAlreadyVerified: true,
+          // The same probe wave already pinned HEAD's commit and tree. Reusing
+          // them keeps the snapshot internally consistent without another
+          // serial Git process; malformed/failed probes stay unseedable above.
+          ...(snapshotHead ? { snapshotHead } : {}),
+        })
       : null
     if (dirty && !snapshotRef) {
       console.warn(
@@ -675,7 +840,6 @@ export async function allocateThreadWorktree(
       )
     }
 
-    const branch = await chooseBranch(projectRoot, input.prompt, input.threadId)
     const createdTarget = await prepareManagedWorktreeDestination(input.projectId, target)
     const add = await git(
       projectRoot,
@@ -830,10 +994,31 @@ export async function restoreRetiredThreadWorktree(
   })
 }
 
+type ValidatedThreadWorktreeState = Omit<ValidatedThreadWorktree, 'branch'> & {
+  branch: string | null
+}
+
+const GIT_RECOVERY_MARKERS = ['rebase-merge', 'rebase-apply', 'CHERRY_PICK_HEAD'] as const
+
+async function hasActiveGitRecovery(gitDir: string): Promise<boolean> {
+  const markers = await Promise.all(
+    GIT_RECOVERY_MARKERS.map(async (marker) => {
+      try {
+        await lstat(join(gitDir, marker))
+        return true
+      } catch (error) {
+        if (ownErrorCode(error) === 'ENOENT') return false
+        throw error
+      }
+    }),
+  )
+  return markers.some(Boolean)
+}
+
 /** Reconstruct and validate persisted metadata; failure never falls back to shared mode. */
-export async function validateThreadWorktree(
+async function validateThreadWorktreeState(
   input: ValidateWorktreeInput,
-): Promise<ValidatedThreadWorktree> {
+): Promise<ValidatedThreadWorktreeState> {
   assertOwnerId('project id', input.projectId)
   assertOwnerId('thread id', input.threadId)
   assertWorktreeMetadata(input.worktree)
@@ -890,10 +1075,15 @@ export async function validateThreadWorktree(
   // but a missing branch field there is not evidence that this HEAD detached.
   if (liveBranchCheck.status === 'rejected') throw liveBranchCheck.reason
   const liveBranch = liveBranchCheck.value
-  if (!liveBranch) throw new ThreadWorktreeDetachedError(input.worktree.branch)
-  await assertBranchName(projectRoot, liveBranch, 'Thread branch')
-  if (liveBranch === input.worktree.baseBranch) {
-    throw new Error('Thread worktree branch must differ from its recorded base branch')
+  // `symbolicHeadBranch` delegates to `git symbolic-ref`, which rejects a
+  // malformed ref before returning its short name. Running `check-ref-format`
+  // on that same Git-authored value would add another sandboxed subprocess to
+  // every agent dispatch without strengthening this validation. A null value
+  // is retained here for the recovery-only validator below.
+  if (liveBranch) {
+    if (liveBranch === input.worktree.baseBranch) {
+      throw new Error('Thread worktree branch must differ from its recorded base branch')
+    }
   }
 
   const executionRoot = executionRootCheck.status === 'fulfilled' ? executionRootCheck.value : null
@@ -903,7 +1093,10 @@ export async function validateThreadWorktree(
     commonGitDir(projectRoot),
   ])
   if (registrationCheck.status === 'rejected') throw registrationCheck.reason
-  if (commonGitDirCheck.status === 'rejected') throw commonGitDirCheck.reason
+  if (commonGitDirCheck.status === 'rejected') {
+    releaseWorktreeRoot(executionRoot)
+    throw commonGitDirCheck.reason
+  }
   const registration = registrationCheck.value
   const projectCommonGitDir = commonGitDirCheck.value
   if (registration.commonGitDir !== projectCommonGitDir) {
@@ -917,6 +1110,38 @@ export async function validateThreadWorktree(
     root: executionRoot,
     gitDir: registration.gitDir,
     commonGitDir: registration.commonGitDir,
+  }
+}
+
+export async function validateThreadWorktree(
+  input: ValidateWorktreeInput,
+): Promise<ValidatedThreadWorktree> {
+  const validated = await validateThreadWorktreeState(input)
+  const branch = validated.branch
+  if (!branch) {
+    releaseWorktreeRoot(validated.root)
+    throw new ThreadWorktreeDetachedError(input.worktree.branch)
+  }
+  return { ...validated, branch }
+}
+
+/**
+ * Validate a detached checkout for a terminal that can repair an interrupted
+ * Git operation. Detached checkouts without a sequencer marker stay blocked.
+ */
+export async function validateThreadWorktreeRecovery(
+  input: ValidateWorktreeInput,
+): Promise<ValidatedThreadWorktreeRecovery> {
+  const validated = await validateThreadWorktreeState(input)
+  try {
+    if (validated.branch) throw new Error('Thread worktree does not need Git recovery')
+    if (!(await hasActiveGitRecovery(validated.gitDir))) {
+      throw new ThreadWorktreeDetachedError(input.worktree.branch)
+    }
+    return { ...validated, branch: null }
+  } catch (error) {
+    releaseWorktreeRoot(validated.root)
+    throw error
   }
 }
 

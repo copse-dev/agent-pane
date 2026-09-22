@@ -1,6 +1,7 @@
-import { describe, it } from 'node:test'
+import { describe, it, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { ToolCallRequestError } from '@lmstudio/sdk'
+import OpenAI from 'openai'
 import {
   DEFAULT_STREAM_MAX_ATTEMPTS,
   isImageUnsupportedError,
@@ -14,6 +15,23 @@ import {
 /** An Error carrying an HTTP status, matching the duck-typed retry path. */
 function httpError(status: number): Error {
   return Object.assign(new Error(`HTTP ${String(status)}`), { status })
+}
+
+function providerError(status: number, message: string, retryAfterSeconds = 0): Error {
+  return new OpenAI.APIError(
+    status,
+    { message },
+    message,
+    new Headers({ 'retry-after': String(retryAfterSeconds) }),
+  )
+}
+
+function routingPolicyError(status = 404, retryAfterSeconds = 0): Error {
+  return providerError(
+    status,
+    'No endpoints found matching your data policy (Zero data retention).',
+    retryAfterSeconds,
+  )
 }
 
 /**
@@ -47,6 +65,28 @@ describe('isRetryableStreamError', () => {
   it('retries 429 and 529 by status code', () => {
     assert.equal(isRetryableStreamError({ status: 429 }), true)
     assert.equal(isRetryableStreamError({ status: 529 }), true)
+  })
+
+  it('retains the SDK retry policy for request timeout and conflict statuses', () => {
+    assert.equal(isRetryableStreamError({ status: 408 }), true)
+    assert.equal(isRetryableStreamError({ status: 409 }), true)
+  })
+
+  it('retains explicit OpenAI server retry overrides', () => {
+    const forced = new OpenAI.APIError(
+      400,
+      { message: 'retry this request' },
+      'retry this request',
+      new Headers({ 'x-should-retry': 'true' }),
+    )
+    const forbidden = new OpenAI.APIError(
+      503,
+      { message: 'do not retry this request' },
+      'do not retry this request',
+      new Headers({ 'x-should-retry': 'false' }),
+    )
+    assert.equal(isRetryableStreamError(forced), true)
+    assert.equal(isRetryableStreamError(forbidden), false)
   })
 
   it('retries any 5xx status', () => {
@@ -96,7 +136,7 @@ describe('isRetryableStreamError', () => {
     assert.equal(isRetryableStreamError(new Error('LM Studio: model failed to load')), false)
   })
 
-  it('does not retry a deterministic OpenRouter routing-policy failure, even as a 5xx', () => {
+  it('keeps OpenRouter routing-policy failures out of the generic retry bucket', () => {
     const current = Object.assign(
       new Error(
         '503 {"error":{"message":"There is no available model provider that meets your routing requirements.","code":503}}',
@@ -140,6 +180,32 @@ describe('streamRetryDelayMs', () => {
     // is ignored and backoff still applies.
     const err = { headers: new Headers({ 'retry-after': '5' }) }
     assert.equal(streamRetryDelayMs(err, 0), 1000)
+  })
+
+  it('preserves the SDK retry-after-ms override with a bounded finite delay', () => {
+    const error = new OpenAI.APIError(
+      503,
+      { message: 'temporary' },
+      'temporary',
+      new Headers({ 'retry-after': '9', 'retry-after-ms': '125' }),
+    )
+    assert.equal(streamRetryDelayMs(error, 0), 125)
+
+    const capped = new OpenAI.APIError(
+      503,
+      { message: 'temporary' },
+      'temporary',
+      new Headers({ 'retry-after-ms': '999999' }),
+    )
+    assert.equal(streamRetryDelayMs(capped, 0), 120_000)
+
+    const invalid = new OpenAI.APIError(
+      503,
+      { message: 'temporary' },
+      'temporary',
+      new Headers({ 'retry-after': '2', 'retry-after-ms': 'Infinity' }),
+    )
+    assert.equal(streamRetryDelayMs(invalid, 0), 2000)
   })
 })
 
@@ -189,6 +255,193 @@ describe('yieldStreamWithRetry', () => {
     assert.equal(attempts, 2)
   })
 
+  it('retries a routing-policy failure once and logs recovery without provider contents', async () => {
+    const warn = mock.method(console, 'warn', () => {})
+    try {
+      let attempts = 0
+      async function* run(): AsyncGenerator<string> {
+        attempts++
+        if (attempts === 1) throw routingPolicyError()
+        yield 'ok'
+      }
+
+      const out: string[] = []
+      for await (const value of yieldStreamWithRetry(run, { maxAttempts: 4 })) {
+        out.push(value)
+      }
+
+      assert.deepEqual(out, ['ok'])
+      assert.equal(attempts, 2)
+      assert.equal(warn.mock.callCount(), 1)
+      const call = warn.mock.calls[0]
+      assert.ok(call)
+      assert.deepEqual(call.arguments, ['[llm] routing-policy retry succeeded'])
+    } finally {
+      warn.mock.restore()
+    }
+  })
+
+  it('stops after one repeated routing-policy failure and logs the terminal outcome', async () => {
+    const warn = mock.method(console, 'warn', () => {})
+    try {
+      let attempts = 0
+      const run = failingStream(() => {
+        attempts++
+        throw routingPolicyError(503)
+      })
+
+      await assert.rejects(async () => {
+        for await (const _ of yieldStreamWithRetry(run, { maxAttempts: 4 })) {
+          // Drain until the second policy failure terminates the stream.
+        }
+      }, routingPolicyError(503))
+
+      assert.equal(attempts, 2)
+      assert.equal(warn.mock.callCount(), 1)
+      const call = warn.mock.calls[0]
+      assert.ok(call)
+      assert.deepEqual(call.arguments, ['[llm] routing-policy retry failed'])
+    } finally {
+      warn.mock.restore()
+    }
+  })
+
+  it('does not retry an unrelated 404', async () => {
+    let attempts = 0
+    const run = failingStream(() => {
+      attempts++
+      throw httpError(404)
+    })
+
+    await assert.rejects(async () => {
+      for await (const _ of yieldStreamWithRetry(run, { maxAttempts: 4 })) {
+        // Drain until the unrelated client error terminates the stream.
+      }
+    })
+
+    assert.equal(attempts, 1)
+  })
+
+  it('gives routing-policy 503 one replay while generic 503 uses the normal budget', async () => {
+    let routingAttempts = 0
+    const routing = failingStream(() => {
+      routingAttempts++
+      throw routingPolicyError(503)
+    })
+    await assert.rejects(async () => {
+      for await (const _ of yieldStreamWithRetry(routing, { maxAttempts: 4 })) {
+        // Drain until the second policy failure terminates the stream.
+      }
+    })
+
+    let genericAttempts = 0
+    const generic = failingStream(() => {
+      genericAttempts++
+      throw providerError(503, 'temporary provider failure')
+    })
+    await assert.rejects(async () => {
+      for await (const _ of yieldStreamWithRetry(generic, { maxAttempts: 4 })) {
+        // Drain until the generic retry budget is exhausted.
+      }
+    })
+
+    assert.equal(routingAttempts, 2)
+    assert.equal(genericAttempts, 4)
+  })
+
+  it('lets the global attempt limit win over the routing-policy allowance', async () => {
+    let attempts = 0
+    const run = failingStream(() => {
+      attempts++
+      throw routingPolicyError()
+    })
+
+    await assert.rejects(async () => {
+      for await (const _ of yieldStreamWithRetry(run, { maxAttempts: 1 })) {
+        // Drain until the first failure reaches the global attempt cap.
+      }
+    })
+
+    assert.equal(attempts, 1)
+  })
+
+  it('allows one policy replay after a generic failure without exceeding maxAttempts', async () => {
+    const errors = [
+      providerError(503, 'temporary provider failure'),
+      routingPolicyError(),
+      providerError(503, 'temporary provider failure'),
+      routingPolicyError(),
+    ]
+    let attempts = 0
+    const run = failingStream(() => {
+      const err = errors[attempts]
+      attempts++
+      assert.ok(err)
+      throw err
+    })
+
+    await assert.rejects(async () => {
+      for await (const _ of yieldStreamWithRetry(run, { maxAttempts: 6 })) {
+        // Drain until the second policy failure terminates the stream.
+      }
+    }, errors[3])
+
+    // The second policy failure is terminal even though two global attempts
+    // remain. The one policy-triggered replay still counted toward maxAttempts.
+    assert.equal(attempts, 4)
+  })
+
+  it('can recover from a generic failure during the one policy replay', async () => {
+    const warn = mock.method(console, 'warn', () => {})
+    try {
+      let attempts = 0
+      async function* run(): AsyncGenerator<string> {
+        attempts++
+        if (attempts === 1) throw routingPolicyError()
+        if (attempts === 2) throw providerError(503, 'temporary provider failure')
+        yield 'ok'
+      }
+
+      const out: string[] = []
+      for await (const value of yieldStreamWithRetry(run, { maxAttempts: 4 })) out.push(value)
+
+      assert.deepEqual(out, ['ok'])
+      assert.equal(attempts, 3)
+      assert.deepEqual(
+        warn.mock.calls.map((call) => call.arguments),
+        [['[llm] routing-policy retry failed']],
+      )
+    } finally {
+      warn.mock.restore()
+    }
+  })
+
+  it('keeps generic failures during the policy replay inside the global cap', async () => {
+    const warn = mock.method(console, 'warn', () => {})
+    try {
+      let attempts = 0
+      const run = failingStream(() => {
+        attempts++
+        if (attempts === 1) throw routingPolicyError()
+        throw providerError(503, 'temporary provider failure')
+      })
+
+      await assert.rejects(async () => {
+        for await (const _ of yieldStreamWithRetry(run, { maxAttempts: 4 })) {
+          // Drain until the generic retry budget is exhausted.
+        }
+      }, /temporary provider failure/)
+
+      assert.equal(attempts, 4)
+      assert.deepEqual(
+        warn.mock.calls.map((call) => call.arguments),
+        [['[llm] routing-policy retry failed']],
+      )
+    } finally {
+      warn.mock.restore()
+    }
+  })
+
   it('does NOT retry once an item has been yielded (no duplicate output)', async () => {
     let attempts = 0
     async function* run(): AsyncGenerator<string> {
@@ -200,6 +453,25 @@ describe('yieldStreamWithRetry', () => {
     await assert.rejects(async () => {
       for await (const v of yieldStreamWithRetry(run, { maxAttempts: 3 })) out.push(v)
     })
+    assert.deepEqual(out, ['partial'])
+    assert.equal(attempts, 1)
+  })
+
+  it('does not retry a routing-policy failure after stream content', async () => {
+    let attempts = 0
+    async function* run(): AsyncGenerator<string> {
+      attempts++
+      yield 'partial'
+      throw routingPolicyError()
+    }
+
+    const out: string[] = []
+    await assert.rejects(async () => {
+      for await (const value of yieldStreamWithRetry(run, { maxAttempts: 4 })) {
+        out.push(value)
+      }
+    })
+
     assert.deepEqual(out, ['partial'])
     assert.equal(attempts, 1)
   })
@@ -270,6 +542,61 @@ describe('yieldStreamWithRetry', () => {
       }
     })
     assert.equal(attempts, 1)
+  })
+
+  it('cancels a routing-policy retry during its delay', async () => {
+    const ac = new AbortController()
+    const timer = setTimeout(() => {
+      ac.abort()
+    }, 10)
+    let attempts = 0
+    const run = failingStream(() => {
+      attempts++
+      throw routingPolicyError(404, 1)
+    })
+
+    await assert.rejects(async () => {
+      for await (const _ of yieldStreamWithRetry(run, {
+        maxAttempts: 4,
+        signal: ac.signal,
+      })) {
+        // Drain until cancellation interrupts the backoff.
+      }
+    }, /Abort/)
+    clearTimeout(timer)
+
+    assert.equal(attempts, 1)
+  })
+
+  it('logs cancellation instead of failure when the policy replay is aborted', async () => {
+    const warn = mock.method(console, 'warn', () => {})
+    try {
+      const ac = new AbortController()
+      let attempts = 0
+      async function* run(): AsyncGenerator<string> {
+        attempts++
+        if (attempts === 1) throw routingPolicyError()
+        ac.abort()
+        yield await Promise.reject(new DOMException('Aborted', 'AbortError'))
+      }
+
+      await assert.rejects(async () => {
+        for await (const _ of yieldStreamWithRetry(run, {
+          maxAttempts: 4,
+          signal: ac.signal,
+        })) {
+          // Drain until cancellation terminates the policy replay.
+        }
+      }, /Abort/)
+
+      assert.equal(attempts, 2)
+      assert.deepEqual(
+        warn.mock.calls.map((call) => call.arguments),
+        [['[llm] routing-policy retry cancelled']],
+      )
+    } finally {
+      warn.mock.restore()
+    }
   })
 
   it('defaults to DEFAULT_STREAM_MAX_ATTEMPTS', () => {

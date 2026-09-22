@@ -37,4 +37,8 @@
 // v10 conservatively versions optional local-device presentation intent.
 // v11 versions the instruction-source contributions exposed in plugin summaries.
 // v12 conservatively versions optional tier-pricing fallback metadata in usage summaries.
-export const API_PROTOCOL_VERSION = 12 as const
+// v13 retires the model-comparison channels (`agent:comparison-models`,
+// `agent:retry-comparison`), drops the comparison models from `approval:respond`,
+// and replaces the `model_comparison` chunk with `review_report` (copse.review).
+// v14 versions ACP rich-content blocks on streamed agent chunks.
+export const API_PROTOCOL_VERSION = 14 as const

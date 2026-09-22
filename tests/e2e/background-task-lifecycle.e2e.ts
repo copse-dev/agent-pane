@@ -1,13 +1,19 @@
 import assert from 'node:assert/strict'
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
 import type { MockScriptStep } from '../../src/shared/llm/mock-script.ts'
-import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
+import {
+  E2E_WORKSPACE_ROOT,
+  resetUserData,
+  seedEmptyProject,
+  seedStableWorkspace,
+} from './helpers/seed-config.ts'
 import { setComposerValue } from './helpers/composer.ts'
 import { waitForAgentIdle } from './helpers.ts'
 
-const COMMAND = `node -e "setTimeout(() => console.log('background-complete'), 5000)"`
+const COMPLETION_SIGNAL = join(E2E_WORKSPACE_ROOT, '.e2e-background-task-complete')
+const COMMAND = `node -e "const fs=require('node:fs');const timer=setInterval(()=>{if(fs.existsSync(process.argv[1])){clearInterval(timer);console.log('background-complete')}},50)" ${JSON.stringify(COMPLETION_SIGNAL)}`
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 const WAKE_SCRIPT = [
   {
@@ -53,36 +59,35 @@ async function runBackgroundDirective(args: Record<string, unknown>): Promise<vo
 }
 
 async function latestToolResult(): Promise<WebdriverIO.Element> {
-  const rollups = await $$('.tool-card-rollup')
-  const rollup = rollups.at(-1)
-  assert.ok(rollup, 'expected a background tool rollup')
-  if ((await rollup.getAttribute('open')) === null) {
-    await rollup.scrollIntoView({ block: 'center', inline: 'nearest' })
-    await rollup.$('summary.tool-card-header').click()
-  }
-  await expect(rollup).toHaveAttribute('open')
-
-  const cards = await rollup.$$('.tool-card[data-tool-id]')
-  const card = cards.at(-1)
-  assert.ok(card, 'expected a background tool card')
-  await card.waitForDisplayed({ timeout: 10_000 })
-  if ((await card.getAttribute('open')) === null) {
-    const toolId = await card.getAttribute('data-tool-id')
-    assert.ok(toolId, 'expected the background tool card to have an id')
-    const opened = await browser.execute((id: string) => {
-      const rollups = document.querySelectorAll<HTMLDetailsElement>('.tool-card-rollup')
-      const rollup = rollups.item(rollups.length - 1)
-      const cards = rollup?.querySelectorAll<HTMLDetailsElement>('.tool-card[data-tool-id]')
-      const target = [...(cards ?? [])].find((candidate) => candidate.dataset['toolId'] === id)
-      target?.querySelector<HTMLElement>('summary.tool-card-header')?.click()
-      return target?.open ?? false
-    }, toolId)
-    assert.equal(opened, true, 'expected the background tool card to open')
-  }
-  await expect(card).toHaveAttribute('open')
-
-  const result = card.$('.tool-result')
-  await result.waitForExist({ timeout: 10_000 })
+  // Disclosure interaction is not under test here. Open the lazy rollup/card
+  // bodies directly so headless Chrome cannot reject a covered summary click.
+  await browser.execute(() => {
+    const rollups = document.querySelectorAll<HTMLDetailsElement>('details.tool-card-rollup')
+    const rollup = rollups.item(rollups.length - 1)
+    if (rollup) rollup.open = true
+  })
+  await browser.waitUntil(async () => (await $$('details.tool-card[data-tool-id]')).length > 0, {
+    timeout: 5_000,
+    interval: 100,
+    timeoutMsg: 'expected a background tool card',
+  })
+  await browser.execute(() => {
+    const cards = document.querySelectorAll<HTMLDetailsElement>('details.tool-card[data-tool-id]')
+    const card = cards.item(cards.length - 1)
+    if (!card) return
+    card.open = false
+    card
+      .querySelector(':scope > summary')
+      ?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+  })
+  await browser.waitUntil(async () => (await $$('.tool-result')).length > 0, {
+    timeout: 5_000,
+    interval: 100,
+    timeoutMsg: 'expected a background tool result',
+  })
+  const results = await $$('.tool-result')
+  const result = results.at(-1)
+  assert.ok(result)
   return result
 }
 
@@ -91,6 +96,7 @@ describe('session-scoped background task lifecycle', function () {
 
   before(async () => {
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
+    rmSync(COMPLETION_SIGNAL, { force: true })
     resetUserData()
     seedEmptyProject(seedStableWorkspace(), 'e2e-background-task-lifecycle', {
       subagentsEnabled: false,
@@ -100,6 +106,9 @@ describe('session-scoped background task lifecycle', function () {
   })
 
   after(async () => {
+    writeFileSync(COMPLETION_SIGNAL, '')
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    rmSync(COMPLETION_SIGNAL, { force: true })
     await browser.execute(async () => {
       await (
         window as unknown as { __copseE2e?: { clearMockScript: () => Promise<void> } }
@@ -114,13 +123,14 @@ describe('session-scoped background task lifecycle', function () {
       action: 'start',
       command: COMMAND,
       wake_on_completion: true,
-      timeout_ms: 15_000,
+      timeout_ms: 60_000,
     })
     await expect(await latestToolResult()).toHaveText(expect.stringContaining('running'))
 
     const assistantCount = (await $$('.msg-assistant')).length
     await browser.execute(() => window.location.reload())
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
+    writeFileSync(COMPLETION_SIGNAL, '')
     await browser.waitUntil(
       async () => (await $$('.msg-assistant')).length === assistantCount + 1,
       {

@@ -48,6 +48,56 @@ describe('worktree semantic overlay', () => {
     await Promise.all(tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
   })
 
+  it('refreshes semantic source hits even beyond the alphabetical scan budget', async () => {
+    const { projectRoot, worktreeRoot } = await createLinkedFixture()
+    await mkdir(join(worktreeRoot, 'docs'))
+    await Promise.all(
+      Array.from({ length: 205 }, (_, index) =>
+        writeFile(
+          join(worktreeRoot, 'docs', `note-${String(index).padStart(3, '0')}.md`),
+          'authentication notes\n',
+        ),
+      ),
+    )
+    await writeFile(join(worktreeRoot, 'z-auth.ts'), 'export const authenticationCurrent = true\n')
+    const result = await overlayWorktreeSemanticResults({
+      query: 'authentication',
+      projectRoot,
+      worktreeRoot,
+      maxResults: 2,
+      baselineHits: [{ path: 'z-auth.ts', startLine: 99, text: 'stale authentication' }],
+    })
+    const first = result.hits[0]
+    assert.ok(first)
+    assert.equal(first.path, 'z-auth.ts')
+    assert.equal(first.startLine, 1)
+    assert.match(first.text, /authenticationCurrent/)
+    assert.doesNotMatch(first.text, /stale/)
+    assert.equal(result.changedPathCount, 206)
+  })
+
+  it('keeps native relevance alongside new matches and prioritizes matching filenames', async () => {
+    const { projectRoot, worktreeRoot } = await createLinkedFixture()
+    await mkdir(join(worktreeRoot, 'docs'))
+    await Promise.all(
+      Array.from({ length: 205 }, (_, index) =>
+        writeFile(join(worktreeRoot, 'docs', `note-${String(index)}.md`), 'authentication\n'),
+      ),
+    )
+    await writeFile(join(worktreeRoot, 'z-authentication.ts'), 'export const current = true\n')
+    const result = await overlayWorktreeSemanticResults({
+      query: 'authentication',
+      projectRoot,
+      worktreeRoot,
+      maxResults: 2,
+      baselineHits: [{ path: 'stable.ts', startLine: 1, text: 'native semantic match' }],
+    })
+    assert.deepEqual(
+      result.hits.map((hit) => hit.path),
+      ['stable.ts', 'z-authentication.ts'],
+    )
+  })
+
   it('finds committed, dirty, untracked, deleted, and shared-checkout-dirty paths', async () => {
     const { projectRoot, worktreeRoot } = await createLinkedFixture()
     await writeFile(join(worktreeRoot, 'changed.ts'), 'export function authenticateUser() {}\n')

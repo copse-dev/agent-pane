@@ -5,6 +5,7 @@ import {
   PROTOCOL_VERSION,
   type ClientConnection,
   type ContentBlock,
+  type AvailableCommand,
   type McpCapabilities,
   type McpServer,
   type NewSessionResponse,
@@ -642,6 +643,10 @@ export interface OpenAcpSession {
    * Copse forwards attached images as ACP image content blocks (issue #831).
    */
   promptImage: boolean
+  /** The agent's current slash-command registry, refreshed by session updates. */
+  availableCommands: AvailableCommand[]
+  /** Mutable ACP-owned metadata for the live session. */
+  sessionInfo: { title?: string; updatedAt?: string }
   /** True when this connection restored a prior ACP session rather than creating one. */
   resumed: boolean
   /** Last model applied via `session/set_config_option` (avoid re-sending). */
@@ -681,6 +686,47 @@ export interface OpenAcpSession {
    */
   resourceFault: () => AcpAgentResourceFault | null
   dispose: () => void
+}
+
+/**
+ * Apply ACP's state-replacement notifications even when turn output is being
+ * suppressed. The session pool reads `response` when it reapplies selections,
+ * so keeping it current prevents stale mode/config state on the next prompt.
+ * Available commands and session info stay ACP-owned until Copse has a product
+ * surface that consumes them.
+ */
+export function refreshAcpSessionState(
+  open: Pick<OpenAcpSession, 'session' | 'availableCommands' | 'sessionInfo'>,
+  update: SessionUpdate,
+): void {
+  switch (update.sessionUpdate) {
+    case 'available_commands_update':
+      open.availableCommands = update.availableCommands
+      return
+    case 'current_mode_update':
+      if (open.session.response.modes) {
+        open.session.response.modes = {
+          ...open.session.response.modes,
+          currentModeId: update.currentModeId,
+        }
+      }
+      return
+    case 'config_option_update':
+      open.session.response.configOptions = update.configOptions
+      return
+    case 'session_info_update':
+      if (update.title !== undefined) {
+        if (update.title === null) delete open.sessionInfo.title
+        else open.sessionInfo.title = update.title
+      }
+      if (update.updatedAt !== undefined) {
+        if (update.updatedAt === null) delete open.sessionInfo.updatedAt
+        else open.sessionInfo.updatedAt = update.updatedAt
+      }
+      return
+    default:
+      return
+  }
 }
 
 /** A live connection to an agent, however it was reached (local, sandboxed, SSH). */
@@ -849,6 +895,7 @@ function startAcpUpdatePump(open: OpenAcpSession): void {
         open.turnStop?.reject(err)
         continue
       }
+      refreshAcpSessionState(open, update)
       if (open.suppressChunks) continue
       try {
         // Dismiss a permission modal as soon as the agent marks that tool call
@@ -935,7 +982,7 @@ export async function openAcpSession(
       const patch = {
         ...(toolCall.rawInput !== undefined ? { rawInput: toolCall.rawInput } : {}),
         ...(typeof toolCall.title === 'string' && toolCall.title.trim() !== ''
-          ? { title: toolCall.title }
+          ? { title: toolCall.title, name: toolCall.title }
           : {}),
       }
       if (Object.keys(patch).length > 0) {
@@ -1055,6 +1102,8 @@ export async function openAcpSession(
       mcpCapabilities,
       canResume,
       promptImage,
+      availableCommands: [],
+      sessionInfo: {},
       resumed,
       appliedModel: undefined,
       desiredConfigOptions: config.configOptions,

@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { RequestError } from '@agentclientprotocol/sdk'
+import OpenAI from 'openai'
 import {
   acpTurnInterruptionMarker,
   classifyAcpAuthFailure,
@@ -135,6 +136,35 @@ describe('classifyAgentError', () => {
     const acp = new Error('Internal error: API Error: Overloaded')
     assert.match(classifyAgentError(acp), /temporarily overloaded/)
     assert.doesNotMatch(classifyAgentError(acp), /Internal error/)
+  })
+
+  it('turns terminal OpenRouter policy failures into privacy-setting guidance', () => {
+    const expected =
+      'No provider endpoint satisfies the current OpenRouter privacy routing (zero-data-retention / no-training). Pick another model, or relax the routing toggles in Settings → Providers → OpenRouter.'
+    assert.equal(
+      classifyAgentError(
+        new OpenAI.NotFoundError(
+          404,
+          { message: 'No endpoints found matching your data policy (Zero data retention).' },
+          undefined,
+          new Headers(),
+        ),
+      ),
+      expected,
+    )
+    assert.equal(
+      classifyAgentError(
+        new OpenAI.InternalServerError(
+          503,
+          {
+            message: 'There is no available model provider that meets your routing requirements.',
+          },
+          undefined,
+          new Headers(),
+        ),
+      ),
+      expected,
+    )
   })
 
   it('extracts the provider message from JSON error blobs', () => {

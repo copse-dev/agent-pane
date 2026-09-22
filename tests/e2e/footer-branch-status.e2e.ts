@@ -8,7 +8,9 @@ import {
   seedFooterBranchMismatchFixture,
   writeSeedConfig,
 } from './helpers/seed-config.ts'
-import { describeSkipInCi } from './helpers/ci-gate.ts'
+import { seedBranchWorkspace } from './helpers/branch-workspace.ts'
+import { writeE2eEnv } from './helpers/e2e-env.ts'
+import { saveElementScreenshot } from './helpers/screenshot.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
@@ -18,11 +20,12 @@ describe('footer branch status match', () => {
   before(async () => {
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    seed = seedFooterBranchFixture(process.cwd())
+    seed = seedFooterBranchFixture(seedBranchWorkspace())
     await browser.reloadSession()
   })
 
   after(() => {
+    writeE2eEnv({})
     resetUserData()
   })
 
@@ -35,22 +38,22 @@ describe('footer branch status match', () => {
     await expect(branchBtn.$('.footer-branch-label')).toHaveText(seed.currentBranch)
     await expect(branchBtn.$('.branch-picker-chevron')).not.toBeDisplayed()
 
-    const inputBar = await $('#input-bar')
-    await inputBar.saveScreenshot(join(SCREENSHOT_DIR, 'footer-branch-match.png'))
+    await saveElementScreenshot('#input-bar', 'footer-branch-match.png')
   })
 })
 
-describeSkipInCi('footer branch status mismatch', () => {
+describe('footer branch status mismatch', () => {
   let seed: ReturnType<typeof seedFooterBranchMismatchFixture>
 
   before(async () => {
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    seed = seedFooterBranchMismatchFixture(process.cwd())
+    seed = seedFooterBranchMismatchFixture(seedBranchWorkspace())
     await browser.reloadSession()
   })
 
   after(() => {
+    writeE2eEnv({})
     resetUserData()
   })
 
@@ -63,14 +66,8 @@ describeSkipInCi('footer branch status mismatch', () => {
       wait: 10_000,
     })
 
-    const inputBar = await $('#input-bar')
-    await inputBar.saveScreenshot(join(SCREENSHOT_DIR, 'footer-branch-mismatch.png'))
-
-    // Warning styling needs live git checkout detection (may be unavailable in headless e2e).
-    const hasMismatchClass = (await branchBtn.getAttribute('class'))?.includes('is-mismatch')
-    if (hasMismatchClass) {
-      await expect(branchBtn).toHaveElementClass('is-mismatch')
-    }
+    await expect(branchBtn).toHaveElementClass('is-mismatch')
+    await saveElementScreenshot('#input-bar', 'footer-branch-mismatch.png')
   })
 })
 
@@ -90,6 +87,7 @@ describe('footer branch status for a detached thread worktree', () => {
     this.timeout(120_000)
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
+    writeE2eEnv({ COPSE_PANEL_MOCK_BRANCH: undefined })
 
     const worktreesRoot = process.env['COPSE_WORKTREES_DIR']
     if (!worktreesRoot) throw new Error('COPSE_WORKTREES_DIR is not configured for e2e')
@@ -99,6 +97,7 @@ describe('footer branch status for a detached thread worktree', () => {
     git(projectRoot, ['init', '-q'])
     git(projectRoot, ['config', 'user.email', 'e2e@example.invalid'])
     git(projectRoot, ['config', 'user.name', 'Copse E2E'])
+    git(projectRoot, ['config', 'commit.gpgsign', 'false'])
     writeFileSync(join(projectRoot, 'README.md'), 'detached footer fixture\n')
     git(projectRoot, ['add', 'README.md'])
     git(projectRoot, ['commit', '-qm', 'seed'])
@@ -162,6 +161,7 @@ describe('footer branch status for a detached thread worktree', () => {
   })
 
   after(() => {
+    writeE2eEnv({})
     resetUserData()
     // Reclaim the checkout *and* its worktree: e2e containers are reused, and a
     // worktree orphaned by deleting its repository outlives the spec otherwise.
@@ -179,7 +179,6 @@ describe('footer branch status for a detached thread worktree', () => {
     await expect(branchBtn.$('.footer-branch-label')).toHaveText(detachedBranch)
     await expect($('.toast-error')).not.toExist()
 
-    const inputBar = await $('#input-bar')
-    await inputBar.saveScreenshot(join(SCREENSHOT_DIR, 'footer-branch-detached-worktree.png'))
+    await saveElementScreenshot('#input-bar', 'footer-branch-detached-worktree.png')
   })
 })

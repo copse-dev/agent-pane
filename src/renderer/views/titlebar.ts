@@ -106,7 +106,9 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
   // independent of which thread's branch is bound. A request token guards against
   // a slow response landing after the workspace has already changed.
   let branchToken = 0
+  let syncedThreadId = store.getState().activeThreadId
   function syncBranch(): void {
+    syncedThreadId = store.getState().activeThreadId
     const token = ++branchToken
     const rootPath = store.getState().workspaceRoot
     const owner = getActiveThreadOwner(store)
@@ -132,9 +134,20 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
   }
 
   let branchTimer: ReturnType<typeof setTimeout> | null = null
+  function syncBranchNow(): void {
+    if (branchTimer) {
+      clearTimeout(branchTimer)
+      branchTimer = null
+    }
+    syncBranch()
+  }
+
   function scheduleBranchSync(): void {
     if (branchTimer) clearTimeout(branchTimer)
-    branchTimer = setTimeout(syncBranch, 500)
+    branchTimer = setTimeout(() => {
+      branchTimer = null
+      syncBranch()
+    }, 500)
   }
 
   // Titlebar mounts before persisted projects restore on boot; sync on mount
@@ -144,17 +157,23 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
   const unsubs = [
     store.on('workspace_changed', () => {
       syncName()
-      syncBranch()
+      syncBranchNow()
       syncRunApp()
     }),
     store.on('projects_changed', syncName),
-    store.on('threads_changed', syncBranch),
+    store.on('threads_changed', () => {
+      if (store.getState().activeThreadId !== syncedThreadId) {
+        syncBranchNow()
+        return
+      }
+      scheduleBranchSync()
+    }),
     store.on('threads_changed', () => {
       if (store.getState().activeThreadId !== detectedThread) syncRunApp()
     }),
     store.on('thread_checkout_changed', syncRunApp),
     store.on('message_done', syncRunApp),
-    store.on('git_branch_changed', syncBranch),
+    store.on('git_branch_changed', scheduleBranchSync),
     api.fs.onChanged(scheduleBranchSync),
     api.git.onWorkingTreeChanged(scheduleBranchSync),
   ]

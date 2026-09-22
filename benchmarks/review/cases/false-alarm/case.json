@@ -1,0 +1,5 @@
+{
+  "id": "false-alarm",
+  "description": "A harmless early return is added. The mock reviewer raises a claim that is false on both checkouts and the challenger cannot decide, so the finding survives as unverified and reaches the human: a false positive the metric must count.",
+  "truth": []
+}

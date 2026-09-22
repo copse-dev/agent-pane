@@ -123,17 +123,18 @@ export interface PluginPermissionDecl {
  * What clicking a plugin-contributed follow-up bubble does.
  *  - `prompt` — send the decl's `prompt` to the agent, exactly what every
  *    follow-up bubble did before plugins could contribute one.
- *  - `model-compare` — open the comparison model picker, then run the
- *    comparison with what the user chose.
+ *  - `review` — run Copse Reviewer over the thread's changes and show the
+ *    findings card, the same thing the Changes view's "Review" does.
  *
  * A host action is a first-party privilege. It drives app UI (and, for
- * `model-compare`, spends money) without passing through the agent, so a
+ * `review`, spends money and executes the repository's own checks) without
+ * passing through the agent, so a
  * discovered manifest is forced back to `prompt` in
  * {@link pluginManifestFromPluginJson} and {@link PluginRegistry.register} rejects a
  * non-first-party plugin that contributes one — the same tiering the `trusted`
  * prompt block gets.
  */
-export type PluginFollowUpAction = 'prompt' | 'model-compare'
+export type PluginFollowUpAction = 'prompt' | 'review'
 
 /**
  * When the host should offer a plugin's bubble. A bounded vocabulary rather than a
@@ -496,7 +497,7 @@ export function pluginManifestFromPluginJson(
   if (raw.prompt) manifest.prompt = raw.prompt.map((b) => ({ ...b, trust: 'untrusted' }))
   if (raw.ui) manifest.ui = raw.ui
   // A discovered plugin may *suggest* a follow-up, never bind one to a host action:
-  // `model-compare` opens a picker that spends money, and the rest of the action
+  // `review` starts a run that spends money, and the rest of the action
   // vocabulary drives app UI outside the agent. Force every declared action back
   // to `prompt` here (the same self-grant this function denies prompt blocks), so
   // a repo-supplied plugin.json can only ever put words in the composer.
