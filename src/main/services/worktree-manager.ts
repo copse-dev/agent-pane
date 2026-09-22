@@ -536,6 +536,12 @@ async function refExists(projectRoot: string, ref: string): Promise<boolean> {
   return (await git(projectRoot, ['show-ref', '--verify', '--quiet', ref])).code === 0
 }
 
+async function resolveCommit(projectRoot: string, ref: string): Promise<string | null> {
+  const result = await git(projectRoot, ['rev-parse', '--verify', `${ref}^{commit}`])
+  const value = result.stdout.trim()
+  return result.code === 0 && value ? value : null
+}
+
 async function branchExists(projectRoot: string, branch: string): Promise<boolean> {
   return refExists(projectRoot, `refs/heads/${branch}`)
 }
@@ -658,16 +664,16 @@ export async function allocateThreadWorktree(
     const isDefaultBranch = defaultBranch !== null && defaultBranch === input.baseBranch
     if (isDefaultBranch) await fetchDefaultBranch(projectRoot, input.baseBranch)
     const remoteRef = `refs/remotes/origin/${input.baseBranch}`
-    const useRemoteRef = isDefaultBranch && (await refExists(projectRoot, remoteRef))
-    const baseRef = useRemoteRef ? remoteRef : branchRef(input.baseBranch)
-    if (!(await refExists(projectRoot, baseRef))) {
+    // Resolving a ref proves both that it exists and that it names a commit.
+    // Do that once per candidate instead of spawning `show-ref` and then
+    // immediately spawning `rev-parse` for the same ref. The freshly fetched
+    // remote default still wins, with the local branch as the exact fallback.
+    const remoteCommit = isDefaultBranch ? await resolveCommit(projectRoot, remoteRef) : null
+    const baseCommit =
+      remoteCommit ?? (await resolveCommit(projectRoot, branchRef(input.baseBranch)))
+    if (!baseCommit) {
       throw new Error(`Base branch "${input.baseBranch}" does not exist in this repository`)
     }
-    const baseCommit = await requireGitValue(
-      projectRoot,
-      ['rev-parse', '--verify', `${baseRef}^{commit}`],
-      `Cannot resolve base branch ${input.baseBranch}`,
-    )
     // Seeding restores the snapshot over the worktree wholesale rather than
     // merging it, so it only means anything when both start from the same
     // commit. A base that moved — a fetched `origin/<default>`, or a project
