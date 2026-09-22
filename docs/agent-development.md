@@ -106,6 +106,12 @@ the runtime's [host-only network issue](https://github.com/apple/container/issue
 remains open. These development/eval workloads retain the same network access their
 Docker versions had.
 
+Unattended **thread-in-container** runs from the app (`containerRunsEnabled`) still require
+a reachable Docker daemon. They preflight with the same style of engine probe and name a
+ready Apple container when Docker is down, but they do not switch engines: the guest
+attestation and stdio egress link are Docker-shaped today
+(`docs/plans/thread-in-container.md`).
+
 The shared CI runner image can also run on Apple container without Compose. See
 [`ci-runners/README.md`](../ci-runners/README.md#apple-container--apple-silicon-macs)
 and `pnpm run runners:apple -- --help`. Linux/cloud fleets, remote e2e hosts, and

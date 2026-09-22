@@ -1,4 +1,8 @@
 import type { ThreadContainerRunSpec } from './run-spec.ts'
+import {
+  dockerDaemonReachable,
+  requireDockerForThreadContainer,
+} from './container-engine.ts'
 /**
  * Run one Copse thread inside a disposable, hardened local Docker container
  * (`docs/plans/thread-in-container.md`).
@@ -749,6 +753,7 @@ export function stageSandboxRuntime(contextDir: string, fromDir = __dirname): st
  * repository, never the app's node_modules, never a credential.
  */
 export async function buildWorkerImage(options: BuildImageOptions = {}): Promise<string> {
+  assertThreadContainerEngine()
   const image = options.image ?? WORKER_IMAGE
   const workerBundle = options.workerBundle ?? defaultWorkerBundlePath()
   if (!existsSync(workerBundle)) {
@@ -791,12 +796,15 @@ async function runDocker(args: string[]): Promise<string> {
 }
 
 export async function dockerAvailable(): Promise<boolean> {
-  try {
-    await runDocker(['info', '--format', '{{.ServerVersion}}'])
-    return true
-  } catch {
-    return false
-  }
+  return dockerDaemonReachable()
+}
+
+/**
+ * Fail closed before build/run when Docker is down. Surfaces Apple container
+ * when it is ready but not yet a supported engine for this product path.
+ */
+export function assertThreadContainerEngine(): void {
+  requireDockerForThreadContainer()
 }
 
 /** Whether the worker image is present locally (no pull is ever attempted). */
@@ -1199,6 +1207,7 @@ export async function runThreadInContainer(
   }
   const canary = options.canary ?? `copse-canary-${randomBytes(8).toString('hex')}`
   process.env['COPSE_SECRET_CANARY'] = canary
+  assertThreadContainerEngine()
 
   for (const sub of ['', 'state', 'out']) {
     mkdirSync(join(runDir, sub), { recursive: true })

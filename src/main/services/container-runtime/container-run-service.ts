@@ -14,6 +14,7 @@ import { resolveContainerProvider } from '../providers/container-provider.ts'
 import { DEPENDENCY_INSTALL_ORIGINS } from './guest-install.ts'
 import {
   adoptCarryOut,
+  assertThreadContainerEngine,
   buildWorkerImage,
   loadCarryOutForAdoption,
   loadRunForContinuation,
@@ -49,6 +50,12 @@ const LOG_TAIL = 60
 interface RunDependencies {
   run: typeof runThreadInContainer
   ensureImage: () => Promise<void>
+  /**
+   * Reachable Docker daemon for this product path. Injected so tests can
+   * refuse a start without spawning docker; production uses
+   * {@link assertThreadContainerEngine}.
+   */
+  assertEngine: () => void
   /** Force-remove a live run's container; the runner's wait then settles. */
   stop: typeof teardownRuntime
   /**
@@ -73,6 +80,7 @@ const productionDependencies: RunDependencies = {
   adopt: adoptCarryOut,
   loadCarryOut: loadCarryOutForAdoption,
   loadContinuation: loadRunForContinuation,
+  assertEngine: assertThreadContainerEngine,
   // Rebuild whenever the shipped worker differs from the one the existing
   // image was built from. Reusing on tag alone would keep an app upgrade
   // running the previous guest — and its previous security behaviour.
@@ -120,8 +128,8 @@ export class ContainerRunService {
   private supervisor: TaskSupervisor | null = null
   private readonly deps: RunDependencies
 
-  constructor(deps: RunDependencies = productionDependencies) {
-    this.deps = deps
+  constructor(deps: Partial<RunDependencies> = {}) {
+    this.deps = { ...productionDependencies, ...deps }
   }
 
   /** Track Docker as an external task; the supervisor never replays a container run. */
@@ -298,8 +306,9 @@ export class ContainerRunService {
   /**
    * Start a run and return its first snapshot. The run continues in the
    * background; progress arrives through {@link onChanged}. Throws for a thread
-   * that already has a live run, a remote (SSH) project, and a model the
-   * container cannot reach — all decided before Docker is touched.
+   * that already has a live run, a remote (SSH) project, a model the
+   * container cannot reach, and a missing Docker daemon — all decided before
+   * Docker is touched.
    */
   async start(request: ContainerRunRequest): Promise<ContainerRunProgress> {
     if (this.isActive(request.threadId)) {
@@ -337,6 +346,9 @@ export class ContainerRunService {
         ...(request.extraEgress ?? []),
       ]),
     ]
+    // Decided before Docker is touched: a down daemon (or Apple-only host) must
+    // fail here with a recovery path, not mid-build as a raw socket error.
+    this.deps.assertEngine()
 
     const progress: ContainerRunProgress = {
       threadId: request.threadId,

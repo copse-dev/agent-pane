@@ -2,7 +2,7 @@
  * `pnpm run thread:container -- --workspace <dir> --prompt "<task>" …`
  * (`scripts/run-thread-container.mts` bundles this entry and runs it.)
  *
- * Run one thread unattended inside a disposable local Docker container
+ * Run one thread unattended inside a disposable local container (Docker daemon required)
  * (`docs/plans/thread-in-container.md`). Builds the worker image on first use,
  * carries the workspace in as a git snapshot, runs the product's headless agent
  * with an unattended run armed (no prompts: contained effects run, outward
@@ -32,8 +32,8 @@
  *   --forget-store          remove the shared pnpm store volume; the next install refills it
  */
 import {
+  assertThreadContainerEngine,
   buildWorkerImage,
-  dockerAvailable,
   listManagedRuntimes,
   forgetPnpmStoreVolume,
   sweepOrphanedRuntimes,
@@ -76,9 +76,7 @@ function required(value: string | undefined, what: string): string {
 
 async function main(): Promise<void> {
   const cli = parseCli(process.argv.slice(2))
-  if (!(await dockerAvailable())) {
-    throw new Error('Docker is not available (is the daemon running?)')
-  }
+  assertThreadContainerEngine()
   if (cli.has('list')) {
     for (const runtime of await listManagedRuntimes()) {
       console.log(`${runtime.runtimeId}\t${runtime.status}`)
