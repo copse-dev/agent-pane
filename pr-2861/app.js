@@ -111,6 +111,9 @@ var init_model_catalog_generated = __esm({
         inputPricePerMTok: 2.5,
         outputPricePerMTok: 10,
         cacheReadPricePerMTok: 1.25,
+        serviceTierPricing: {
+          priority: { inputPricePerMTok: 4.25, outputPricePerMTok: 17, cacheReadPricePerMTok: 2.125 }
+        },
         contextWindow: 128e3,
         maxOutputTokens: 16384
       },
@@ -118,6 +121,9 @@ var init_model_catalog_generated = __esm({
         inputPricePerMTok: 0.15,
         outputPricePerMTok: 0.6,
         cacheReadPricePerMTok: 0.075,
+        serviceTierPricing: {
+          priority: { inputPricePerMTok: 0.25, outputPricePerMTok: 1, cacheReadPricePerMTok: 0.125 }
+        },
         contextWindow: 128e3,
         maxOutputTokens: 16384
       },
@@ -125,6 +131,10 @@ var init_model_catalog_generated = __esm({
         inputPricePerMTok: 1.25,
         outputPricePerMTok: 10,
         cacheReadPricePerMTok: 0.125,
+        serviceTierPricing: {
+          flex: { inputPricePerMTok: 0.625, outputPricePerMTok: 5, cacheReadPricePerMTok: 0.0625 },
+          priority: { inputPricePerMTok: 2.5, outputPricePerMTok: 20, cacheReadPricePerMTok: 0.25 }
+        },
         contextWindow: 272e3,
         maxOutputTokens: 128e3
       },
@@ -132,6 +142,10 @@ var init_model_catalog_generated = __esm({
         inputPricePerMTok: 0.25,
         outputPricePerMTok: 2,
         cacheReadPricePerMTok: 0.025,
+        serviceTierPricing: {
+          flex: { inputPricePerMTok: 0.125, outputPricePerMTok: 1, cacheReadPricePerMTok: 0.0125 },
+          priority: { inputPricePerMTok: 0.45, outputPricePerMTok: 3.6, cacheReadPricePerMTok: 0.045 }
+        },
         contextWindow: 272e3,
         maxOutputTokens: 128e3
       },
@@ -139,6 +153,9 @@ var init_model_catalog_generated = __esm({
         inputPricePerMTok: 0.05,
         outputPricePerMTok: 0.4,
         cacheReadPricePerMTok: 5e-3,
+        serviceTierPricing: {
+          flex: { inputPricePerMTok: 0.025, outputPricePerMTok: 0.2, cacheReadPricePerMTok: 25e-4 }
+        },
         contextWindow: 272e3,
         maxOutputTokens: 128e3
       },
@@ -146,6 +163,10 @@ var init_model_catalog_generated = __esm({
         inputPricePerMTok: 5,
         outputPricePerMTok: 30,
         cacheReadPricePerMTok: 0.5,
+        serviceTierPricing: {
+          flex: { inputPricePerMTok: 2.5, outputPricePerMTok: 15, cacheReadPricePerMTok: 0.25 },
+          priority: { inputPricePerMTok: 12.5, outputPricePerMTok: 75, cacheReadPricePerMTok: 1.25 }
+        },
         contextWindow: 105e4,
         maxOutputTokens: 128e3
       },
@@ -154,6 +175,20 @@ var init_model_catalog_generated = __esm({
         outputPricePerMTok: 1.2,
         cacheReadPricePerMTok: 0.02,
         cacheCreationPricePerMTok: 0.25,
+        serviceTierPricing: {
+          flex: {
+            inputPricePerMTok: 0.1,
+            outputPricePerMTok: 0.6,
+            cacheReadPricePerMTok: 0.01,
+            cacheCreationPricePerMTok: 0.125
+          },
+          priority: {
+            inputPricePerMTok: 0.4,
+            outputPricePerMTok: 2.4,
+            cacheReadPricePerMTok: 0.04,
+            cacheCreationPricePerMTok: 0.5
+          }
+        },
         contextWindow: 922e3,
         maxOutputTokens: 128e3
       },
@@ -162,6 +197,20 @@ var init_model_catalog_generated = __esm({
         outputPricePerMTok: 20,
         cacheReadPricePerMTok: 0.4,
         cacheCreationPricePerMTok: 5,
+        serviceTierPricing: {
+          flex: {
+            inputPricePerMTok: 2,
+            outputPricePerMTok: 10,
+            cacheReadPricePerMTok: 0.2,
+            cacheCreationPricePerMTok: 2.5
+          },
+          priority: {
+            inputPricePerMTok: 8,
+            outputPricePerMTok: 40,
+            cacheReadPricePerMTok: 0.8,
+            cacheCreationPricePerMTok: 10
+          }
+        },
         contextWindow: 922e3,
         maxOutputTokens: 128e3
       },
@@ -170,6 +219,20 @@ var init_model_catalog_generated = __esm({
         outputPricePerMTok: 12,
         cacheReadPricePerMTok: 0.2,
         cacheCreationPricePerMTok: 2.5,
+        serviceTierPricing: {
+          flex: {
+            inputPricePerMTok: 1,
+            outputPricePerMTok: 6,
+            cacheReadPricePerMTok: 0.1,
+            cacheCreationPricePerMTok: 1.25
+          },
+          priority: {
+            inputPricePerMTok: 4,
+            outputPricePerMTok: 24,
+            cacheReadPricePerMTok: 0.4,
+            cacheCreationPricePerMTok: 5
+          }
+        },
         contextWindow: 922e3,
         maxOutputTokens: 128e3
       },
@@ -178,6 +241,20 @@ var init_model_catalog_generated = __esm({
         outputPricePerMTok: 50,
         cacheReadPricePerMTok: 1,
         cacheCreationPricePerMTok: 12.5,
+        serviceTierPricing: {
+          flex: {
+            inputPricePerMTok: 5,
+            outputPricePerMTok: 25,
+            cacheReadPricePerMTok: 0.5,
+            cacheCreationPricePerMTok: 6.25
+          },
+          priority: {
+            inputPricePerMTok: 20,
+            outputPricePerMTok: 100,
+            cacheReadPricePerMTok: 2,
+            cacheCreationPricePerMTok: 25
+          }
+        },
         contextWindow: 922e3,
         maxOutputTokens: 128e3
       }
@@ -853,7 +930,7 @@ var init_model_parameters = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/core/util.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/core/util.js
 var util_exports = {};
 __export(util_exports, {
   BIGINT_FORMAT_RANGES: () => BIGINT_FORMAT_RANGES,
@@ -882,6 +959,7 @@ __export(util_exports, {
   createTransparentProxy: () => createTransparentProxy,
   defineLazy: () => defineLazy,
   defineLazyInternal: () => defineLazyInternal,
+  derived: () => derived,
   esc: () => esc,
   escapeRegex: () => escapeRegex,
   explicitlyAborted: () => explicitlyAborted,
@@ -919,6 +997,7 @@ __export(util_exports, {
   promiseAllObject: () => promiseAllObject,
   propertyKeyTypes: () => propertyKeyTypes,
   randomString: () => randomString,
+  rawShape: () => rawShape,
   required: () => required,
   safeExtend: () => safeExtend,
   shallowClone: () => shallowClone,
@@ -960,17 +1039,7 @@ function jsonStringifyReplacer(_2, value) {
   return value;
 }
 function cached(getter) {
-  const set2 = false;
-  return {
-    get value() {
-      if (!set2) {
-        const value = getter();
-        Object.defineProperty(this, "value", { value });
-        return value;
-      }
-      throw new Error("cached value already set");
-    }
-  };
+  return new Cached(getter);
 }
 function nullish(input2) {
   return input2 === null || input2 === void 0;
@@ -1020,6 +1089,56 @@ function assignProp(target, prop, value) {
     enumerable: true,
     configurable: true
   });
+}
+function rawShape(def) {
+  const desc = Object.getOwnPropertyDescriptor(def, "shape");
+  return desc?.get ? desc.get.raw : desc?.value;
+}
+function sourceShape(schema) {
+  return rawShape(schema._zod.def) ?? schema._zod.def.shape;
+}
+function deferProp(target, key, getter) {
+  Object.defineProperty(target, key, {
+    get() {
+      const value = getter();
+      assignProp(this, key, value);
+      return value;
+    },
+    enumerable: true,
+    configurable: true
+  });
+}
+function putProp(target, key, value) {
+  if (key in target)
+    assignProp(target, key, value);
+  else
+    target[key] = value;
+}
+function mirrorShape(target, source, keys, wrap) {
+  const raw = sourceShape(source);
+  for (const key of keys) {
+    const desc = Object.getOwnPropertyDescriptor(raw, key);
+    if (!desc.enumerable)
+      continue;
+    if (desc.get) {
+      deferProp(target, key, () => {
+        const value = source._zod.def.shape[key];
+        return wrap ? wrap(value, key) : value;
+      });
+    } else
+      putProp(target, key, wrap ? wrap(desc.value, key) : desc.value);
+  }
+}
+function mirrorProps(target, source) {
+  for (const key of Reflect.ownKeys(source)) {
+    const desc = Object.getOwnPropertyDescriptor(source, key);
+    if (!desc.enumerable)
+      continue;
+    if (desc.get)
+      deferProp(target, key, () => source[key]);
+    else
+      putProp(target, key, desc.value);
+  }
 }
 function mergeDefs(...defs) {
   const mergedDescriptors = {};
@@ -1178,23 +1297,21 @@ function pick(schema, mask) {
   if (hasChecks) {
     throw new Error(".pick() cannot be used on object schemas containing refinements");
   }
-  const def = mergeDefs(schema._zod.def, {
-    get shape() {
-      const newShape = {};
-      for (const key of Reflect.ownKeys(mask)) {
-        if (!Object.prototype.hasOwnProperty.call(currDef.shape, key)) {
-          throw new Error(`Unrecognized key: "${String(key)}"`);
-        }
-        if (!mask[key])
-          continue;
-        assignProp(newShape, key, currDef.shape[key]);
-      }
-      assignProp(this, "shape", newShape);
-      return newShape;
-    },
-    checks: []
-  });
-  return clone(schema, def);
+  const newShape = {};
+  mirrorShape(newShape, schema, maskedKeys(schema, mask));
+  return clone(schema, mergeDefs(currDef, { shape: newShape, checks: [] }));
+}
+function maskedKeys(schema, mask) {
+  const raw = sourceShape(schema);
+  const keys = [];
+  for (const key of Reflect.ownKeys(mask)) {
+    if (!Object.getOwnPropertyDescriptor(raw, key)?.enumerable) {
+      throw new Error(`Unrecognized key: "${String(key)}"`);
+    }
+    if (mask[key])
+      keys.push(key);
+  }
+  return keys;
 }
 function omit(schema, mask) {
   const currDef = schema._zod.def;
@@ -1203,23 +1320,10 @@ function omit(schema, mask) {
   if (hasChecks) {
     throw new Error(".omit() cannot be used on object schemas containing refinements");
   }
-  const def = mergeDefs(schema._zod.def, {
-    get shape() {
-      const newShape = { ...schema._zod.def.shape };
-      for (const key of Reflect.ownKeys(mask)) {
-        if (!Object.prototype.hasOwnProperty.call(currDef.shape, key)) {
-          throw new Error(`Unrecognized key: "${String(key)}"`);
-        }
-        if (!mask[key])
-          continue;
-        delete newShape[key];
-      }
-      assignProp(this, "shape", newShape);
-      return newShape;
-    },
-    checks: []
-  });
-  return clone(schema, def);
+  const omitted = new Set(maskedKeys(schema, mask));
+  const newShape = {};
+  mirrorShape(newShape, schema, Reflect.ownKeys(sourceShape(schema)).filter((key) => !omitted.has(key)));
+  return clone(schema, mergeDefs(currDef, { shape: newShape, checks: [] }));
 }
 function extend(schema, shape) {
   if (!isPlainObject(shape)) {
@@ -1228,34 +1332,26 @@ function extend(schema, shape) {
   const checks = schema._zod.def.checks;
   const hasChecks = checks && checks.length > 0;
   if (hasChecks) {
-    const existingShape = schema._zod.def.shape;
+    const existingShape = sourceShape(schema);
     for (const key of Reflect.ownKeys(shape)) {
       if (Object.getOwnPropertyDescriptor(existingShape, key) !== void 0) {
         throw new Error("Cannot overwrite keys on object schemas containing refinements. Use `.safeExtend()` instead.");
       }
     }
   }
-  const def = mergeDefs(schema._zod.def, {
-    get shape() {
-      const _shape = { ...schema._zod.def.shape, ...shape };
-      assignProp(this, "shape", _shape);
-      return _shape;
-    }
-  });
-  return clone(schema, def);
+  return clone(schema, mergeDefs(schema._zod.def, { shape: extended(schema, shape) }));
+}
+function extended(schema, shape) {
+  const newShape = {};
+  mirrorShape(newShape, schema, Reflect.ownKeys(sourceShape(schema)));
+  mirrorProps(newShape, shape);
+  return newShape;
 }
 function safeExtend(schema, shape) {
   if (!isPlainObject(shape)) {
     throw new Error("Invalid input to safeExtend: expected a plain object");
   }
-  const def = mergeDefs(schema._zod.def, {
-    get shape() {
-      const _shape = { ...schema._zod.def.shape, ...shape };
-      assignProp(this, "shape", _shape);
-      return _shape;
-    }
-  });
-  return clone(schema, def);
+  return clone(schema, mergeDefs(schema._zod.def, { shape: extended(schema, shape) }));
 }
 function merge(a2, b3) {
   if (!b3?._zod?.def) {
@@ -1264,12 +1360,11 @@ function merge(a2, b3) {
   if (a2._zod.def.checks?.length) {
     throw new Error(".merge() cannot be used on object schemas containing refinements. Use .safeExtend() instead.");
   }
+  const newShape = {};
+  mirrorShape(newShape, a2, Reflect.ownKeys(sourceShape(a2)));
+  mirrorShape(newShape, b3, Reflect.ownKeys(sourceShape(b3)));
   const def = mergeDefs(a2._zod.def, {
-    get shape() {
-      const _shape = { ...a2._zod.def.shape, ...b3._zod.def.shape };
-      assignProp(this, "shape", _shape);
-      return _shape;
-    },
+    shape: newShape,
     get catchall() {
       return b3._zod.def.catchall;
     },
@@ -1284,67 +1379,19 @@ function partial(Class2, schema, mask, name = "partial") {
   if (hasChecks) {
     throw new Error(`.${name}() cannot be used on object schemas containing refinements`);
   }
-  const def = mergeDefs(schema._zod.def, {
-    get shape() {
-      const oldShape = schema._zod.def.shape;
-      const shape = { ...oldShape };
-      if (mask) {
-        for (const key of Reflect.ownKeys(mask)) {
-          if (!Object.prototype.hasOwnProperty.call(oldShape, key)) {
-            throw new Error(`Unrecognized key: "${String(key)}"`);
-          }
-          if (!mask[key])
-            continue;
-          shape[key] = Class2 ? new Class2({
-            type: "optional",
-            innerType: oldShape[key]
-          }) : oldShape[key];
-        }
-      } else {
-        for (const key of Reflect.ownKeys(oldShape)) {
-          shape[key] = Class2 ? new Class2({
-            type: "optional",
-            innerType: oldShape[key]
-          }) : oldShape[key];
-        }
-      }
-      assignProp(this, "shape", shape);
-      return shape;
-    },
-    checks: []
-  });
-  return clone(schema, def);
+  const selected = mask ? new Set(maskedKeys(schema, mask)) : void 0;
+  const newShape = {};
+  mirrorShape(newShape, schema, Reflect.ownKeys(sourceShape(schema)), Class2 && ((value, key) => selected && !selected.has(key) ? value : new Class2({ type: "optional", innerType: value })));
+  return clone(schema, mergeDefs(schema._zod.def, { shape: newShape, checks: [] }));
 }
 function required(Class2, schema, mask) {
-  const def = mergeDefs(schema._zod.def, {
-    get shape() {
-      const oldShape = schema._zod.def.shape;
-      const shape = { ...oldShape };
-      if (mask) {
-        for (const key of Reflect.ownKeys(mask)) {
-          if (!Object.prototype.hasOwnProperty.call(shape, key)) {
-            throw new Error(`Unrecognized key: "${String(key)}"`);
-          }
-          if (!mask[key])
-            continue;
-          shape[key] = new Class2({
-            type: "nonoptional",
-            innerType: oldShape[key]
-          });
-        }
-      } else {
-        for (const key of Reflect.ownKeys(oldShape)) {
-          shape[key] = new Class2({
-            type: "nonoptional",
-            innerType: oldShape[key]
-          });
-        }
-      }
-      assignProp(this, "shape", shape);
-      return shape;
-    }
-  });
-  return clone(schema, def);
+  const selected = mask ? new Set(maskedKeys(schema, mask)) : void 0;
+  const newShape = {};
+  mirrorShape(newShape, schema, Reflect.ownKeys(sourceShape(schema)), (value, key) => (
+    // overwrite with non-optional
+    selected && !selected.has(key) ? value : new Class2({ type: "nonoptional", innerType: value })
+  ));
+  return clone(schema, mergeDefs(schema._zod.def, { shape: newShape }));
 }
 function aborted(x, startIndex = 0) {
   if (x.aborted === true)
@@ -1394,13 +1441,18 @@ function finalizeIssue(iss, ctx, config2) {
   }
   const schemaError = iss.schema !== iss.inst ? iss.schema?._zod.def?.error : void 0;
   const message2 = iss.message ? iss.message : unwrapMessage(iss.inst?._zod.def?.error?.(iss)) ?? unwrapMessage(schemaError?.(iss)) ?? unwrapMessage(ctx?.error?.(iss)) ?? unwrapMessage(config2.customError?.(iss)) ?? unwrapMessage(config2.localeError?.(iss)) ?? "Invalid input";
-  const { inst: _inst, schema: _schema, continue: _continue, input: _input, ...rest } = iss;
-  rest.path ?? (rest.path = []);
-  rest.message = message2;
-  if (ctx?.reportInput) {
-    rest.input = _input;
+  const full = {};
+  for (const k of Object.keys(iss)) {
+    if (k === "inst" || k === "schema" || k === "continue" || k === "input" || k === "__proto__")
+      continue;
+    full[k] = iss[k];
   }
-  return rest;
+  full.path ?? (full.path = []);
+  full.message = message2;
+  if (ctx?.reportInput) {
+    full.input = iss.input;
+  }
+  return full;
 }
 function getSizableOrigin(input2) {
   if (input2 instanceof Set)
@@ -1522,6 +1574,23 @@ function own(inst, key, value, enumerable = true) {
 function hide(inst, key, value) {
   return own(inst, key, value, false);
 }
+// @__NO_SIDE_EFFECTS__
+function derived(computes, table) {
+  for (const key in computes) {
+    const compute = computes[key];
+    Object.defineProperty(table, key, {
+      configurable: true,
+      enumerable: true,
+      get() {
+        return own(this, key, compute(this));
+      },
+      set(value) {
+        own(this, key, value);
+      }
+    });
+  }
+  return table;
+}
 function defineBound(proto, key, fn2) {
   Object.defineProperty(proto, key, {
     configurable: true,
@@ -1592,10 +1661,24 @@ function constantCatch(value) {
   fn2[CONSTANT_CATCH] = true;
   return fn2;
 }
-var EVALUATING, captureStackTrace, allowsEval, getParsedType, propertyKeyTypes, primitiveTypes, NUMBER_FORMAT_RANGES, BIGINT_FORMAT_RANGES, highSurrogate, Class, installing, broke, breaker, CONSTANT_CATCH;
+var Cached, EVALUATING, captureStackTrace, allowsEval, getParsedType, propertyKeyTypes, primitiveTypes, NUMBER_FORMAT_RANGES, BIGINT_FORMAT_RANGES, highSurrogate, Class, installing, broke, breaker, CONSTANT_CATCH;
 var init_util = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/core/util.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/core/util.js"() {
     init_core();
+    Cached = class {
+      constructor(getter) {
+        this._getter = getter;
+        this._value = void 0;
+      }
+      get value() {
+        const getter = this._getter;
+        if (getter !== void 0) {
+          this._value = getter();
+          this._getter = void 0;
+        }
+        return this._value;
+      }
+    };
     EVALUATING = /* @__PURE__ */ Symbol("evaluating");
     captureStackTrace = "captureStackTrace" in Error ? Error.captureStackTrace : (..._args) => {
     };
@@ -1695,7 +1778,7 @@ var init_util = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/core/core.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/core/core.js
 function newError(Definition) {
   const E = _E;
   if (E) {
@@ -1735,8 +1818,7 @@ function $constructor(name, initializer3, proto, params) {
       } finally {
         _zodDesc.value = void 0;
       }
-    }
-    if (inst._zod.traits.has(name)) {
+    } else if (inst._zod.traits.has(name)) {
       return;
     }
     inst._zod.traits.add(name);
@@ -1799,7 +1881,7 @@ function config(newConfig) {
 }
 var _a, NEVER, _zodDesc, _E, $brand, $ZodAsyncError, $ZodEncodeError, globalConfig;
 var init_core = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/core/core.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/core/core.js"() {
     init_util();
     NEVER = /* @__PURE__ */ Object.freeze({
       status: "aborted"
@@ -1823,7 +1905,7 @@ var init_core = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/core/errors.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/core/errors.js
 function _getMessage() {
   const internals = this._zod;
   internals.message ?? (internals.message = JSON.stringify(internals.def, jsonStringifyReplacer, 2));
@@ -1842,10 +1924,10 @@ function node(obj, key, make) {
   }
   return obj[key];
 }
-function flattenError(error61, mapper = (issue2) => issue2.message) {
+function flattenError(error62, mapper = (issue2) => issue2.message) {
   const fieldErrors = {};
   const formErrors = [];
-  for (const sub of error61.issues) {
+  for (const sub of error62.issues) {
     if (sub.path.length > 0) {
       node(fieldErrors, sub.path[0], () => []).push(mapper(sub));
     } else {
@@ -1854,10 +1936,10 @@ function flattenError(error61, mapper = (issue2) => issue2.message) {
   }
   return { formErrors, fieldErrors };
 }
-function formatError(error61, mapper = (issue2) => issue2.message) {
+function formatError(error62, mapper = (issue2) => issue2.message) {
   const fieldErrors = { _errors: [] };
-  const processError = (error62, path = []) => {
-    for (const issue2 of error62.issues) {
+  const processError = (error63, path = []) => {
+    for (const issue2 of error63.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
         issue2.errors.map((issues) => processError({ issues }, [...path, ...issue2.path]));
       } else if (issue2.code === "invalid_key") {
@@ -1899,14 +1981,14 @@ function formatError(error61, mapper = (issue2) => issue2.message) {
       }
     }
   };
-  processError(error61);
+  processError(error62);
   return fieldErrors;
 }
-function treeifyError(error61, mapper = (issue2) => issue2.message) {
+function treeifyError(error62, mapper = (issue2) => issue2.message) {
   const result = { errors: [] };
-  const processError = (error62, path = []) => {
+  const processError = (error63, path = []) => {
     var _a3;
-    for (const issue2 of error62.issues) {
+    for (const issue2 of error63.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
         issue2.errors.map((issues) => processError({ issues }, [...path, ...issue2.path]));
       } else if (issue2.code === "invalid_key") {
@@ -1948,7 +2030,7 @@ function treeifyError(error61, mapper = (issue2) => issue2.message) {
       }
     }
   };
-  processError(error61);
+  processError(error62);
   return result;
 }
 function toDotPath(_path) {
@@ -1969,9 +2051,9 @@ function toDotPath(_path) {
   }
   return segs.join("");
 }
-function prettifyError(error61) {
+function prettifyError(error62) {
   const lines = [];
-  const issues = [...error61.issues].sort((a2, b3) => (a2.path ?? []).length - (b3.path ?? []).length);
+  const issues = [...error62.issues].sort((a2, b3) => (a2.path ?? []).length - (b3.path ?? []).length);
   for (const issue2 of issues) {
     lines.push(`\u2716 ${issue2.message}`);
     if (issue2.path?.length)
@@ -1979,9 +2061,9 @@ function prettifyError(error61) {
   }
   return lines.join("\n");
 }
-var _messageDesc, _zodDesc2, _issuesDesc, _installedToString, initializer, $ZodError, $ZodRealError;
+var _messageDesc, _issuesDesc, _installedToString, initializer, $ZodError, $ZodRealError;
 var init_errors = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/core/errors.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/core/errors.js"() {
     init_core();
     init_util();
     _messageDesc = {
@@ -1990,16 +2072,12 @@ var init_errors = __esm({
       enumerable: true,
       configurable: true
     };
-    _zodDesc2 = { value: void 0, enumerable: false };
     _issuesDesc = { value: void 0, enumerable: false };
     _installedToString = /* @__PURE__ */ new WeakSet([Object.prototype, Error.prototype]);
     initializer = (inst, def) => {
       inst.name = "$ZodError";
-      _zodDesc2.value = inst._zod;
-      Object.defineProperty(inst, "_zod", _zodDesc2);
       _issuesDesc.value = def;
       Object.defineProperty(inst, "issues", _issuesDesc);
-      _zodDesc2.value = void 0;
       _issuesDesc.value = void 0;
       Object.defineProperty(inst, "message", _messageDesc);
       const proto = Object.getPrototypeOf(inst);
@@ -2026,12 +2104,31 @@ var init_errors = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/core/parse.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/core/parse.js
 function finalizeParams(callee, params) {
   return { callee: params?.callee ?? callee, Err: params?.Err };
 }
+function failure(Err, issues, ctx) {
+  let error62;
+  return {
+    success: false,
+    get error() {
+      if (!error62) {
+        error62 = new Err(issues.map((iss) => finalizeIssue(iss, ctx, config())));
+        issues = void 0;
+        ctx = void 0;
+      }
+      return error62;
+    },
+    set error(e2) {
+      error62 = e2;
+      issues = void 0;
+      ctx = void 0;
+    }
+  };
+}
 function validateFallback(schema, value, _ctx) {
-  const ctx = _ctx ? { ..._ctx, async: false } : { async: false };
+  const ctx = _ctx ? { ..._ctx, async: false, abortEarly: true } : { async: false, abortEarly: true };
   const fallbackRun = schema._zod.bag.fallbackRun;
   let result;
   if (fallbackRun) {
@@ -2047,7 +2144,7 @@ function validateFallback(schema, value, _ctx) {
 }
 var _parse, parse, _parseAsync, parseAsync, _safeParse, safeParse, _safeParseAsync, safeParseAsync, COMPILE_INVALID, COMPILE_FALLBACK, validate, validateAsync, _encode, encode, _decode, decode, _encodeAsync, encodeAsync, _decodeAsync, decodeAsync, _safeEncode, safeEncode, _safeDecode, safeDecode, _safeEncodeAsync, safeEncodeAsync, _safeDecodeAsync, safeDecodeAsync;
 var init_parse = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/core/parse.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/core/parse.js"() {
     init_core();
     init_errors();
     init_util();
@@ -2090,10 +2187,7 @@ var init_parse = __esm({
       if (result instanceof Promise) {
         throw new $ZodAsyncError();
       }
-      return result.issues.length ? {
-        success: false,
-        error: new (_Err ?? $ZodError)(result.issues.map((iss) => finalizeIssue(iss, ctx, config())))
-      } : { success: true, data: result.value };
+      return result.issues.length ? failure(_Err, result.issues, ctx) : { success: true, data: result.value };
     };
     safeParse = /* @__PURE__ */ _safeParse($ZodRealError);
     _safeParseAsync = (_Err) => async (schema, value, _ctx) => {
@@ -2101,22 +2195,23 @@ var init_parse = __esm({
       let result = schema._zod.run({ value, issues: [] }, ctx);
       if (result instanceof Promise)
         result = await result;
-      return result.issues.length ? {
-        success: false,
-        error: new _Err(result.issues.map((iss) => finalizeIssue(iss, ctx, config())))
-      } : { success: true, data: result.value };
+      return result.issues.length ? failure(_Err, result.issues, ctx) : { success: true, data: result.value };
     };
     safeParseAsync = /* @__PURE__ */ _safeParseAsync($ZodRealError);
     COMPILE_INVALID = /* @__PURE__ */ Symbol.for("zod.compile.invalid");
     COMPILE_FALLBACK = /* @__PURE__ */ Symbol.for("zod.compile.fallback");
     validate = ((schema, value, _ctx) => {
       const validator = schema._zod.bag.validator;
-      if (validator !== void 0 && validator(value) !== COMPILE_INVALID)
-        return true;
+      if (validator !== void 0) {
+        if (validator(value) !== COMPILE_INVALID)
+          return true;
+        if (validator.definite === true && _ctx === void 0)
+          return false;
+      }
       return validateFallback(schema, value, _ctx);
     });
     validateAsync = async (schema, value, _ctx) => {
-      const ctx = _ctx ? { ..._ctx, async: true } : { async: true };
+      const ctx = _ctx ? { ..._ctx, async: true, abortEarly: true } : { async: true, abortEarly: true };
       let result = schema._zod.run({ value, issues: [] }, ctx);
       if (result instanceof Promise)
         result = await result;
@@ -2177,9 +2272,10 @@ var init_parse = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/core/regexes.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/core/regexes.js
 var regexes_exports = {};
 __export(regexes_exports, {
+  anyString: () => anyString,
   base64: () => base64,
   base64url: () => base64url,
   bigint: () => bigint,
@@ -2190,6 +2286,7 @@ __export(regexes_exports, {
   creditCard: () => creditCard,
   cuid: () => cuid,
   cuid2: () => cuid2,
+  currencyCode: () => currencyCode,
   date: () => date,
   datetime: () => datetime,
   domain: () => domain,
@@ -2203,6 +2300,7 @@ __export(regexes_exports, {
   hostname: () => hostname,
   html5Email: () => html5Email,
   httpProtocol: () => httpProtocol,
+  iban: () => iban,
   idnEmail: () => idnEmail,
   integer: () => integer,
   ipv4: () => ipv4,
@@ -2273,9 +2371,9 @@ function fixedBase64(bodyLength, padding) {
 function fixedBase64url(length) {
   return new RegExp(`^[A-Za-z0-9_-]{${length}}$`);
 }
-var cuid, cuid2, ulid, xid, ksuid, nanoid, duration, extendedDuration, guid, uuid, uuid4, uuid6, uuid7, email, html5Email, rfc5322Email, unicodeEmail, idnEmail, browserEmail, _emoji, ipv4, ipv6, mac, cidrv4, cidrv6, base64, base64url, hostname, domain, httpProtocol, e164, creditCard, dateSource, date, string, bigint, integer, number, boolean, _null, _undefined, lowercase, uppercase, hex, md5_hex, md5_base64, md5_base64url, sha1_hex, sha1_base64, sha1_base64url, sha256_hex, sha256_base64, sha256_base64url, sha384_hex, sha384_base64, sha384_base64url, sha512_hex, sha512_base64, sha512_base64url;
+var cuid, cuid2, ulid, xid, ksuid, nanoid, duration, extendedDuration, guid, uuid, uuid4, uuid6, uuid7, email, html5Email, rfc5322Email, unicodeEmail, idnEmail, browserEmail, _emoji, ipv4, ipv6, mac, cidrv4, cidrv6, base64, base64url, hostname, domain, httpProtocol, e164, creditCard, currencyCode, iban, dateSource, date, anyString, string, bigint, integer, number, boolean, _null, _undefined, lowercase, uppercase, hex, md5_hex, md5_base64, md5_base64url, sha1_hex, sha1_base64, sha1_base64url, sha256_hex, sha256_base64, sha256_base64url, sha384_hex, sha384_base64, sha384_base64url, sha512_hex, sha512_base64, sha512_base64url;
 var init_regexes = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/core/regexes.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/core/regexes.js"() {
     init_util();
     cuid = /^[cC][0-9a-z]{6,}$/;
     cuid2 = /^[0-9a-z]+$/;
@@ -2294,13 +2392,13 @@ var init_regexes = __esm({
     uuid4 = /* @__PURE__ */ uuid(4);
     uuid6 = /* @__PURE__ */ uuid(6);
     uuid7 = /* @__PURE__ */ uuid(7);
-    email = /^(?!\.)(?!.*\.\.)([A-Za-z0-9_'+\-\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\-]*\.)+[A-Za-z]{2,}$/;
+    email = /^(?:[A-Za-z0-9_'+\-]+\.)*[A-Za-z0-9_'+\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\-]*\.)+[A-Za-z]{2,}$/;
     html5Email = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
     rfc5322Email = /^(([^<>()\[\]\\.,;:\s@"]+(\.[^<>()\[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
     unicodeEmail = /^[^\s@"]{1,64}@[^\s@]{1,255}$/u;
     idnEmail = unicodeEmail;
     browserEmail = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
-    _emoji = `^[\\p{Extended_Pictographic}\\p{Emoji_Component}]+$`;
+    _emoji = `^(?=[\\s\\S]*[\\p{Extended_Pictographic}\\p{Regional_Indicator}\\u20E3])[\\p{Extended_Pictographic}\\p{Emoji_Component}]+$`;
     ipv4 = /^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])$/;
     ipv6 = /^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:))$/;
     mac = (delimiter) => {
@@ -2310,14 +2408,17 @@ var init_regexes = __esm({
     cidrv4 = /^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\/([0-9]|[1-2][0-9]|3[0-2])$/;
     cidrv6 = /^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:))\/(12[0-8]|1[01][0-9]|[1-9]?[0-9])$/;
     base64 = /^$|^(?:[0-9a-zA-Z+/]{4})*(?:(?:[0-9a-zA-Z+/]{2}==)|(?:[0-9a-zA-Z+/]{3}=))?$/;
-    base64url = /^[A-Za-z0-9_-]*$/;
+    base64url = /^(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-]{2,3})?$/;
     hostname = /^(?=.{1,253}\.?$)[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[-0-9a-zA-Z]{0,61}[0-9a-zA-Z])?)*\.?$/;
     domain = /^(?=.{1,253}$)([a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,63}$/;
     httpProtocol = /^https?$/;
     e164 = /^\+[1-9]\d{6,14}$/;
     creditCard = /^\d(?:[ -]?\d){11,18}$/;
+    currencyCode = /^(?:AED|AFN|ALL|AMD|AOA|ARS|AUD|AWG|AZN|BAM|BBD|BDT|BHD|BIF|BMD|BND|BOB|BOV|BRL|BSD|BTN|BWP|BYN|BZD|CAD|CDF|CHE|CHF|CHW|CLF|CLP|CNY|COP|COU|CRC|CUP|CVE|CZK|DJF|DKK|DOP|DZD|EGP|ERN|ETB|EUR|FJD|FKP|GBP|GEL|GHS|GIP|GMD|GNF|GTQ|GYD|HKD|HNL|HTG|HUF|IDR|ILS|INR|IQD|IRR|ISK|JMD|JOD|JPY|KES|KGS|KHR|KMF|KPW|KRW|KWD|KYD|KZT|LAK|LBP|LKR|LRD|LSL|LYD|MAD|MDL|MGA|MKD|MMK|MNT|MOP|MRU|MUR|MVR|MWK|MXN|MXV|MYR|MZN|NAD|NGN|NIO|NOK|NPR|NZD|OMR|PAB|PEN|PGK|PHP|PKR|PLN|PYG|QAR|RON|RSD|RUB|RWF|SAR|SBD|SCR|SDG|SEK|SGD|SHP|SLE|SOS|SRD|SSP|STN|SVC|SYP|SZL|THB|TJS|TMT|TND|TOP|TRY|TTD|TWD|TZS|UAH|UGX|USD|USN|UYI|UYU|UYW|UZS|VED|VES|VND|VUV|WST|XAD|XAF|XAG|XAU|XBA|XBB|XBC|XBD|XCD|XCG|XDR|XOF|XPD|XPF|XPT|XSU|XTS|XUA|XXX|YER|ZAR|ZMW|ZWG)$/;
+    iban = /^[A-Z]{2}(?!00|01|99)\d{2}[A-Z0-9]{11,30}$/;
     dateSource = `(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))`;
     date = /* @__PURE__ */ anchor(dateSource);
+    anyString = /^[\s\S]{0,}$/;
     string = (params) => {
       const regex = params ? `[\\s\\S]{${params?.minimum ?? 0},${params?.maximum ?? ""}}` : `[\\s\\S]*`;
       return new RegExp(`^${regex}$`);
@@ -2349,15 +2450,15 @@ var init_regexes = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/core/checks.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/core/checks.js
 function handleCheckPropertyResult(result, payload, property) {
   if (result.issues.length) {
     payload.issues.push(...prefixIssues(property, result.issues));
   }
 }
-var $ZodCheck, _whenHasSize, _whenHasLength, numericOriginMap, $ZodCheckLessThan, $ZodCheckGreaterThan, $ZodCheckMultipleOf, $ZodCheckNumberFormat, $ZodCheckBigIntFormat, $ZodCheckMaxSize, $ZodCheckMinSize, $ZodCheckSizeEquals, $ZodCheckMaxLength, $ZodCheckMinLength, $ZodCheckLengthEquals, $ZodCheckStringFormat, $ZodCheckRegex, $ZodCheckLowerCase, $ZodCheckUpperCase, $ZodCheckIncludes, $ZodCheckStartsWith, $ZodCheckEndsWith, $ZodCheckProperty, $ZodCheckMimeType, $ZodCheckOverwrite;
+var $ZodCheck, _whenHasSize, _whenHasLength, numericOriginMap, $ZodCheckLessThan, $ZodCheckGreaterThan, $ZodCheckMultipleOf, $ZodCheckNumberFormat, $ZodCheckBigIntFormat, $ZodCheckMaxSize, $ZodCheckMinSize, $ZodCheckSizeEquals, $ZodCheckMaxLength, $ZodCheckMinLength, $ZodCheckLengthEquals, $ZodCheckStringFormat, $ZodCheckRegex, $ZodCheckLowerCase, $ZodCheckUpperCase, $ZodCheckIncludes, $ZodCheckStartsWith, $ZodCheckEndsWith, $ZodCheckProperty, $ZodCheckProperties, $ZodCheckMimeType, $ZodCheckOverwrite;
 var init_checks = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/core/checks.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/core/checks.js"() {
     init_core();
     init_regexes();
     init_util();
@@ -2383,16 +2484,6 @@ var init_checks = __esm({
     $ZodCheckLessThan = /* @__PURE__ */ $constructor("$ZodCheckLessThan", (inst, def) => {
       $ZodCheck.init(inst, def);
       const origin = numericOriginMap[typeof def.value];
-      inst._zod.onattach.push((inst2) => {
-        const bag = inst2._zod.bag;
-        const curr = (def.inclusive ? bag.maximum : bag.exclusiveMaximum) ?? Number.POSITIVE_INFINITY;
-        if (def.value < curr) {
-          if (def.inclusive)
-            bag.maximum = def.value;
-          else
-            bag.exclusiveMaximum = def.value;
-        }
-      });
       inst._zod.check = (payload) => {
         if (def.inclusive ? payload.value <= def.value : payload.value < def.value) {
           return;
@@ -2411,16 +2502,6 @@ var init_checks = __esm({
     $ZodCheckGreaterThan = /* @__PURE__ */ $constructor("$ZodCheckGreaterThan", (inst, def) => {
       $ZodCheck.init(inst, def);
       const origin = numericOriginMap[typeof def.value];
-      inst._zod.onattach.push((inst2) => {
-        const bag = inst2._zod.bag;
-        const curr = (def.inclusive ? bag.minimum : bag.exclusiveMinimum) ?? Number.NEGATIVE_INFINITY;
-        if (def.value > curr) {
-          if (def.inclusive)
-            bag.minimum = def.value;
-          else
-            bag.exclusiveMinimum = def.value;
-        }
-      });
       inst._zod.check = (payload) => {
         if (def.inclusive ? payload.value >= def.value : payload.value > def.value) {
           return;
@@ -2438,10 +2519,6 @@ var init_checks = __esm({
     });
     $ZodCheckMultipleOf = /* @__PURE__ */ $constructor("$ZodCheckMultipleOf", (inst, def) => {
       $ZodCheck.init(inst, def);
-      inst._zod.onattach.push((inst2) => {
-        var _a3;
-        (_a3 = inst2._zod.bag).multipleOf ?? (_a3.multipleOf = def.value);
-      });
       inst._zod.check = (payload) => {
         if (typeof payload.value !== typeof def.value)
           throw new Error("Cannot mix number and bigint in multiple_of check.");
@@ -2467,14 +2544,6 @@ var init_checks = __esm({
       const isInt = def.format?.includes("int");
       const origin = isInt ? "int" : "number";
       const [minimum, maximum] = NUMBER_FORMAT_RANGES[def.format];
-      inst._zod.onattach.push((inst2) => {
-        const bag = inst2._zod.bag;
-        bag.format = def.format;
-        bag.minimum = minimum;
-        bag.maximum = maximum;
-        if (isInt)
-          bag.pattern = integer;
-      });
       inst._zod.check = (payload) => {
         const input2 = payload.value;
         if (isInt) {
@@ -2543,12 +2612,6 @@ var init_checks = __esm({
     $ZodCheckBigIntFormat = /* @__PURE__ */ $constructor("$ZodCheckBigIntFormat", (inst, def) => {
       $ZodCheck.init(inst, def);
       const [minimum, maximum] = BIGINT_FORMAT_RANGES[def.format];
-      inst._zod.onattach.push((inst2) => {
-        const bag = inst2._zod.bag;
-        bag.format = def.format;
-        bag.minimum = minimum;
-        bag.maximum = maximum;
-      });
       inst._zod.check = (payload) => {
         const input2 = payload.value;
         if (input2 < minimum) {
@@ -2579,11 +2642,6 @@ var init_checks = __esm({
       var _a3;
       $ZodCheck.init(inst, def);
       (_a3 = inst._zod.def).when ?? (_a3.when = _whenHasSize);
-      inst._zod.onattach.push((inst2) => {
-        const curr = inst2._zod.bag.maximum ?? Number.POSITIVE_INFINITY;
-        if (def.maximum < curr)
-          inst2._zod.bag.maximum = def.maximum;
-      });
       inst._zod.check = (payload) => {
         const input2 = payload.value;
         const size = input2.size;
@@ -2604,11 +2662,6 @@ var init_checks = __esm({
       var _a3;
       $ZodCheck.init(inst, def);
       (_a3 = inst._zod.def).when ?? (_a3.when = _whenHasSize);
-      inst._zod.onattach.push((inst2) => {
-        const curr = inst2._zod.bag.minimum ?? Number.NEGATIVE_INFINITY;
-        if (def.minimum > curr)
-          inst2._zod.bag.minimum = def.minimum;
-      });
       inst._zod.check = (payload) => {
         const input2 = payload.value;
         const size = input2.size;
@@ -2629,12 +2682,6 @@ var init_checks = __esm({
       var _a3;
       $ZodCheck.init(inst, def);
       (_a3 = inst._zod.def).when ?? (_a3.when = _whenHasSize);
-      inst._zod.onattach.push((inst2) => {
-        const bag = inst2._zod.bag;
-        bag.minimum = def.size;
-        bag.maximum = def.size;
-        bag.size = def.size;
-      });
       inst._zod.check = (payload) => {
         const input2 = payload.value;
         const size = input2.size;
@@ -2656,11 +2703,6 @@ var init_checks = __esm({
       var _a3;
       $ZodCheck.init(inst, def);
       (_a3 = inst._zod.def).when ?? (_a3.when = _whenHasLength);
-      inst._zod.onattach.push((inst2) => {
-        const curr = inst2._zod.bag.maximum ?? Number.POSITIVE_INFINITY;
-        if (def.maximum < curr)
-          inst2._zod.bag.maximum = def.maximum;
-      });
       inst._zod.check = (payload) => {
         const input2 = payload.value;
         const units = input2.length;
@@ -2683,11 +2725,6 @@ var init_checks = __esm({
       var _a3;
       $ZodCheck.init(inst, def);
       (_a3 = inst._zod.def).when ?? (_a3.when = _whenHasLength);
-      inst._zod.onattach.push((inst2) => {
-        const curr = inst2._zod.bag.minimum ?? Number.NEGATIVE_INFINITY;
-        if (def.minimum > curr)
-          inst2._zod.bag.minimum = def.minimum;
-      });
       inst._zod.check = (payload) => {
         const input2 = payload.value;
         const units = input2.length;
@@ -2710,12 +2747,6 @@ var init_checks = __esm({
       var _a3;
       $ZodCheck.init(inst, def);
       (_a3 = inst._zod.def).when ?? (_a3.when = _whenHasLength);
-      inst._zod.onattach.push((inst2) => {
-        const bag = inst2._zod.bag;
-        bag.minimum = def.length;
-        bag.maximum = def.length;
-        bag.length = def.length;
-      });
       inst._zod.check = (payload) => {
         const input2 = payload.value;
         const units = input2.length;
@@ -2738,14 +2769,6 @@ var init_checks = __esm({
     $ZodCheckStringFormat = /* @__PURE__ */ $constructor("$ZodCheckStringFormat", (inst, def) => {
       var _a3, _b;
       $ZodCheck.init(inst, def);
-      inst._zod.onattach.push((inst2) => {
-        const bag = inst2._zod.bag;
-        bag.format = def.format;
-        if (def.pattern) {
-          bag.patterns ?? (bag.patterns = /* @__PURE__ */ new Set());
-          bag.patterns.add(def.pattern);
-        }
-      });
       if (def.pattern)
         (_a3 = inst._zod).check ?? (_a3.check = (payload) => {
           def.pattern.lastIndex = 0;
@@ -2795,11 +2818,6 @@ var init_checks = __esm({
       const escapedRegex = escapeRegex(def.includes);
       const pattern = new RegExp(typeof def.position === "number" ? `^.{${def.position},}${escapedRegex}` : escapedRegex);
       def.pattern = pattern;
-      inst._zod.onattach.push((inst2) => {
-        const bag = inst2._zod.bag;
-        bag.patterns ?? (bag.patterns = /* @__PURE__ */ new Set());
-        bag.patterns.add(pattern);
-      });
       inst._zod.check = (payload) => {
         if (payload.value.includes(def.includes, def.position))
           return;
@@ -2818,11 +2836,6 @@ var init_checks = __esm({
       $ZodCheck.init(inst, def);
       const pattern = new RegExp(`^${escapeRegex(def.prefix)}.*`);
       def.pattern ?? (def.pattern = pattern);
-      inst._zod.onattach.push((inst2) => {
-        const bag = inst2._zod.bag;
-        bag.patterns ?? (bag.patterns = /* @__PURE__ */ new Set());
-        bag.patterns.add(pattern);
-      });
       inst._zod.check = (payload) => {
         if (payload.value.startsWith(def.prefix))
           return;
@@ -2841,11 +2854,6 @@ var init_checks = __esm({
       $ZodCheck.init(inst, def);
       const pattern = new RegExp(`.*${escapeRegex(def.suffix)}$`);
       def.pattern ?? (def.pattern = pattern);
-      inst._zod.onattach.push((inst2) => {
-        const bag = inst2._zod.bag;
-        bag.patterns ?? (bag.patterns = /* @__PURE__ */ new Set());
-        bag.patterns.add(pattern);
-      });
       inst._zod.check = (payload) => {
         if (payload.value.endsWith(def.suffix))
           return;
@@ -2874,12 +2882,37 @@ var init_checks = __esm({
         return;
       };
     });
+    $ZodCheckProperties = /* @__PURE__ */ $constructor("$ZodCheckProperties", (inst, def) => {
+      $ZodCheck.init(inst, def);
+      hide(inst, Symbol.iterator, function* () {
+        yield inst;
+      });
+      let entries2;
+      inst._zod.check = (payload) => {
+        if (payload.value == null) {
+          payload.issues.push({ expected: "object", code: "invalid_type", input: payload.value, inst });
+          return void 0;
+        }
+        entries2 ?? (entries2 = Reflect.ownKeys(def.shape).map((key) => [key, def.shape[key]]));
+        const input2 = payload.value;
+        let proms;
+        for (const [key, schema] of entries2) {
+          const result = schema._zod.run({ value: input2[key], issues: [] }, {});
+          if (result instanceof Promise) {
+            proms ?? (proms = []);
+            proms.push(result.then((result2) => handleCheckPropertyResult(result2, payload, key)));
+          } else {
+            handleCheckPropertyResult(result, payload, key);
+          }
+        }
+        if (proms)
+          return Promise.all(proms).then(() => void 0);
+        return void 0;
+      };
+    });
     $ZodCheckMimeType = /* @__PURE__ */ $constructor("$ZodCheckMimeType", (inst, def) => {
       $ZodCheck.init(inst, def);
       const mimeSet = new Set(def.mime);
-      inst._zod.onattach.push((inst2) => {
-        inst2._zod.bag.mime = def.mime;
-      });
       inst._zod.check = (payload) => {
         if (mimeSet.has(payload.value.type))
           return;
@@ -2901,10 +2934,10 @@ var init_checks = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/core/doc.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/core/doc.js
 var Doc;
 var init_doc = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/core/doc.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/core/doc.js"() {
     Doc = class {
       constructor(args = [], closed = {}) {
         this.content = [];
@@ -2912,10 +2945,14 @@ var init_doc = __esm({
         this.args = args;
         this.closed = closed;
       }
+      // the compiler catches a child's throw and keeps writing into this doc, so the indent has to unwind with it
       indented(fn2) {
         this.indent += 1;
-        fn2(this);
-        this.indent -= 1;
+        try {
+          fn2(this);
+        } finally {
+          this.indent -= 1;
+        }
       }
       write(arg) {
         if (typeof arg === "function") {
@@ -2943,37 +2980,65 @@ ${content.join("\n")}
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/core/versions.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/core/versions.js
 var version;
 var init_versions = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/core/versions.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/core/versions.js"() {
     version = {
       major: 4,
-      minor: 5,
-      patch: 4
+      minor: 6,
+      patch: 5
     };
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/core/schemas.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/core/schemas.js
+async function validateAsync2(inst, value) {
+  const ctx = { async: true };
+  return toStandardResult(await inst._zod.run({ value, issues: [] }, ctx), ctx);
+}
 function standardProps(inst) {
   return {
     validate: (value) => {
+      const ctx = { async: false };
       try {
-        return toStandardResult(safeParse(inst, value));
+        const r = inst._zod.run({ value, issues: [] }, ctx);
+        if (!(r instanceof Promise))
+          return toStandardResult(r, ctx);
       } catch (_2) {
-        return safeParseAsync(inst, value).then(toStandardResult);
       }
+      return validateAsync2(inst, value);
     },
     vendor: "zod",
     version: 1
   };
+}
+function canParseURL(input2) {
+  try {
+    if (typeof URL !== "undefined" && typeof URL.canParse === "function")
+      return URL.canParse(input2);
+    new URL(input2);
+    return true;
+  } catch {
+    return false;
+  }
+}
+function validateURL(trimmed2, def) {
+  if (!("normalize" in def) && !("hostname" in def) && !("protocol" in def)) {
+    return canParseURL(trimmed2) || URL_UNPARSEABLE;
+  }
+  return parseURLObject(trimmed2, def);
 }
 function parseURLObject(trimmed2, def) {
   if (!def.normalize && def.protocol?.source === httpProtocol.source && !/^https?:\/\//i.test(trimmed2)) {
     return URL_BAD_FORMAT;
   }
   try {
+    if (typeof URL !== "undefined") {
+      const URLStatic = URL;
+      if (typeof URLStatic.parse === "function")
+        return URLStatic.parse(trimmed2) ?? URL_UNPARSEABLE;
+    }
     return new URL(trimmed2);
   } catch {
     return URL_UNPARSEABLE;
@@ -2993,12 +3058,7 @@ function urlProtocolOk(url2, protocol) {
 function isValidIPv6(value) {
   if (!ipv6Alphabet.test(value))
     return false;
-  try {
-    new URL(`http://[${value}]`);
-    return true;
-  } catch {
-    return false;
-  }
+  return canParseURL(`http://[${value}]`);
 }
 function isValidCIDRv6(value) {
   const parts = value.split("/");
@@ -3029,7 +3089,7 @@ function isValidBase64(data) {
   }
 }
 function isValidBase64URL(data) {
-  if (!base64url.test(data))
+  if (!base64urlCharset.test(data))
     return false;
   const base643 = data.replace(/[-_]/g, (c2) => c2 === "-" ? "+" : "/");
   const padded = base643.padEnd(Math.ceil(base643.length / 4) * 4, "=");
@@ -3040,7 +3100,7 @@ function isLuhnAlgo(digits) {
   let bit = 1;
   let sum = 0;
   while (length) {
-    const value = +digits[--length];
+    const value = digits.charCodeAt(--length) - 48;
     bit ^= 1;
     sum += bit ? [0, 2, 4, 6, 8, 1, 3, 5, 7, 9][value] : value;
   }
@@ -3050,6 +3110,24 @@ function isValidCreditCard(input2) {
   if (!creditCard.test(input2))
     return false;
   return isLuhnAlgo(input2.replace(CC_SANITIZE, ""));
+}
+function isIso7064Mod97(iban3) {
+  let remainder = 0;
+  const len = iban3.length;
+  for (let i = 4; i < len; i++) {
+    const code = iban3.charCodeAt(i);
+    remainder = (code >= 65 ? remainder * 100 + (code - 55) : remainder * 10 + (code - 48)) % 97;
+  }
+  for (let i = 0; i < 4; i++) {
+    const code = iban3.charCodeAt(i);
+    remainder = (code >= 65 ? remainder * 100 + (code - 55) : remainder * 10 + (code - 48)) % 97;
+  }
+  return remainder === 1;
+}
+function isValidIBAN(input2) {
+  if (!iban.test(input2))
+    return false;
+  return isIso7064Mod97(input2);
 }
 function isValidJWT(token, algorithm = null) {
   try {
@@ -3101,7 +3179,7 @@ function handlePropertyResult(result, final, key, input2, optin, optout) {
     return;
   }
   if (result.value === void 0) {
-    if (isPresent) {
+    if (isPresent || optin === "defaulted" && !isOptionalOut) {
       final.value[key] = void 0;
     }
   } else {
@@ -3129,14 +3207,20 @@ function normalizeDef(def) {
     optionalKeys: new Set(okeys)
   };
 }
-function handleCatchall(proms, input2, payload, ctx, def, inst) {
+function handleCatchall(proms, input2, payload, ctx, def, inst, abortEarly) {
   const unrecognized = [];
   const keySet = def.keySet;
   const _catchall = def.catchall._zod;
   const t = _catchall.def.type;
   const optin = _catchall.optin;
   const optout = _catchall.optout;
+  let seen = 0;
   for (const key in input2) {
+    if (abortEarly && payload.issues.length !== seen) {
+      if (aborted(payload, seen))
+        break;
+      seen = payload.issues.length;
+    }
     if (keySet.has(key))
       continue;
     if (key === "__proto__") {
@@ -3224,16 +3308,31 @@ function getDiscriminatedOption(union3, value) {
   const internals = union3._zod;
   let map2 = internals.bag.optionsMap;
   if (!map2) {
-    map2 = /* @__PURE__ */ new Map();
-    const { options, discriminator } = internals.def;
-    for (const option of options) {
-      for (const v2 of option._zod.propValues?.[discriminator] ?? [])
-        if (!map2.has(v2))
-          map2.set(v2, option);
-    }
+    map2 = discriminatorMap(internals.def);
     internals.bag.optionsMap = map2;
   }
-  return map2.get(value);
+  const option = map2.get(value);
+  if (option === null)
+    throw new Error(`Ambiguous discriminator value "${String(value)}"`);
+  return option;
+}
+function discriminatorMap(def) {
+  const map2 = /* @__PURE__ */ new Map();
+  for (const option of def.options) {
+    const values = option._zod.propValues?.[def.discriminator];
+    if (!values || values.size === 0)
+      throw new Error(`Invalid discriminated union option at index "${def.options.indexOf(option)}"`);
+    for (const value of values) {
+      if (map2.has(value)) {
+        if (value !== void 0)
+          throw new Error(`Duplicate discriminator value "${String(value)}"`);
+        map2.set(value, null);
+      } else {
+        map2.set(value, option);
+      }
+    }
+  }
+  return map2;
 }
 function mergeValues(a2, b3) {
   if (a2 === b3) {
@@ -3487,6 +3586,52 @@ function handleReadonlyResult(payload) {
     payload.value = Object.freeze(payload.value);
   return payload;
 }
+function leafPattern(schema) {
+  const def = schema._zod.def;
+  let pattern = def.pattern;
+  let isInt = !!def.format?.includes("int");
+  let minimum;
+  let maximum;
+  for (const ch of def.checks ?? []) {
+    const d2 = ch._zod.def;
+    if (d2.pattern)
+      pattern = d2.pattern;
+    isInt || (isInt = !!d2.format?.includes("int"));
+    const lo2 = d2.minimum ?? d2.length;
+    const hi2 = d2.maximum ?? d2.length;
+    if (lo2 !== void 0 && (minimum === void 0 || lo2 > minimum))
+      minimum = lo2;
+    if (hi2 !== void 0 && (maximum === void 0 || hi2 < maximum))
+      maximum = hi2;
+  }
+  if (pattern)
+    return pattern.source;
+  if (minimum !== void 0 && maximum !== void 0 && minimum > maximum)
+    return "(?!)";
+  if (minimum !== void 0 || maximum !== void 0)
+    return string({ minimum, maximum }).source;
+  const own2 = schema._zod.pattern;
+  return (isInt && own2 === number ? integer : own2)?.source;
+}
+function partPattern(schema) {
+  const def = schema._zod.def;
+  const own2 = schema._zod.pattern?.source;
+  const inner = def.innerType ?? schema._zod.innerType;
+  if (inner) {
+    const before = inner._zod.pattern?.source;
+    const after = partPattern(inner);
+    if (own2 && before && after && after !== before) {
+      return own2.replace(cleanRegex(before), () => cleanRegex(after));
+    }
+    return own2;
+  }
+  if (def.options) {
+    const sources2 = def.options.map(partPattern);
+    if (sources2.every(Boolean))
+      return `^(${sources2.map((s15) => cleanRegex(s15)).join("|")})$`;
+  }
+  return leafPattern(schema);
+}
 function handleRefineResult(result, payload, input2, inst) {
   if (!result) {
     const _iss = {
@@ -3504,9 +3649,9 @@ function handleRefineResult(result, payload, input2, inst) {
     payload.issues.push(issue(_iss));
   }
 }
-var $ZodType, toStandardResult, $ZodString, $ZodStringFormat, $ZodGUID, $ZodUUID, $ZodEmail, URL_BAD_FORMAT, URL_UNPARSEABLE, asciiTabOrNewline, $ZodURL, $ZodEmoji, $ZodNanoID, $ZodCUID, $ZodCUID2, $ZodULID, $ZodXID, $ZodKSUID, $ZodISODateTime, $ZodISODate, $ZodISOTime, $ZodISODuration, $ZodIPv4, ipv6Alphabet, $ZodIPv6, $ZodMAC, $ZodCIDRv4, $ZodCIDRv6, $ZodBase64, $ZodBase64URL, $ZodE164, CC_SANITIZE, $ZodCreditCard, $ZodJWT, $ZodCustomStringFormat, $ZodNumber, $ZodNumberFormat, $ZodBoolean, $ZodBigInt, $ZodBigIntFormat, $ZodSymbol, $ZodUndefined, $ZodNull, $ZodAny, $ZodUnknown, $ZodNever, $ZodVoid, $ZodDate, $ZodArray, NO_SYMBOL_KEYS, propShapes, $ZodObject, $ZodObjectJIT, $ZodUnion, $ZodXor, $ZodDiscriminatedUnion, $ZodIntersection, $ZodTuple, $ZodRecord, $ZodMap, $ZodSet, $ZodEnum, $ZodLiteral, $ZodFile, $ZodTransform, $ZodOptional, $ZodExactOptional, $ZodNullable, $ZodDefault, $ZodPrefault, $ZodNonOptional, $ZodSuccess, $ZodCatch, $ZodNaN, $ZodPipe, $ZodCodec, $ZodPreprocess, $ZodReadonly, $ZodTemplateLiteral, $ZodFunction, $ZodPromise, $ZodLazy, $ZodCustom;
+var $ZodType, toStandardResult, $ZodString, $ZodStringFormat, $ZodGUID, $ZodUUID, $ZodEmail, URL_BAD_FORMAT, URL_UNPARSEABLE, asciiTabOrNewline, $ZodURL, $ZodEmoji, $ZodNanoID, $ZodCUID, $ZodCUID2, $ZodULID, $ZodXID, $ZodKSUID, $ZodISODateTime, $ZodISODate, $ZodISOTime, $ZodISODuration, $ZodIPv4, ipv6Alphabet, $ZodIPv6, $ZodMAC, $ZodCIDRv4, $ZodCIDRv6, base64Charset, $ZodBase64, base64urlCharset, $ZodBase64URL, $ZodE164, CC_SANITIZE, $ZodCreditCard, $ZodIBAN, $ZodJWT, $ZodCustomStringFormat, $ZodNumber, $ZodNumberFormat, $ZodBoolean, $ZodBigInt, $ZodBigIntFormat, $ZodSymbol, $ZodUndefined, $ZodNull, $ZodAny, $ZodUnknown, $ZodNever, $ZodVoid, $ZodDate, $ZodArray, NO_SYMBOL_KEYS, $ZodObject, $ZodObjectJIT, $ZodUnion, $ZodXor, $ZodDiscriminatedUnion, $ZodIntersection, $ZodTuple, $ZodRecord, $ZodMap, $ZodSet, $ZodEnum, $ZodLiteral, $ZodFile, $ZodTransform, $ZodOptional, $ZodExactOptional, $ZodNullable, $ZodDefault, $ZodPrefault, $ZodNonOptional, $ZodSuccess, $ZodCatch, $ZodNaN, $ZodPipe, $ZodCodec, $ZodPreprocess, $ZodReadonly, $ZodTemplateLiteral, $ZodFunction, $ZodPromise, $ZodLazy, $ZodCustom;
 var init_schemas = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/core/schemas.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/core/schemas.js"() {
     init_checks();
     init_core();
     init_doc();
@@ -3624,10 +3769,10 @@ var init_schemas = __esm({
         own(this, "~standard", value);
       }
     });
-    toStandardResult = (r) => r.success ? { value: r.data } : { issues: r.error?.issues };
+    toStandardResult = (r, ctx) => r.issues.length ? { issues: r.issues.map((iss) => finalizeIssue(iss, ctx, config())) } : { value: r.value };
     $ZodString = /* @__PURE__ */ $constructor("$ZodString", (inst, def) => {
       $ZodType.init(inst, def);
-      inst._zod.pattern = [...inst?._zod.bag?.patterns ?? []].pop() ?? string(inst._zod.bag);
+      inst._zod.pattern = def.pattern ?? anyString;
       inst._zod.parse = (payload, _2) => {
         if (def.coerce)
           try {
@@ -3685,7 +3830,7 @@ var init_schemas = __esm({
       inst._zod.check = (payload) => {
         try {
           const trimmed2 = payload.value.trim();
-          const url2 = parseURLObject(trimmed2, def);
+          const url2 = validateURL(trimmed2, def);
           if (url2 === URL_BAD_FORMAT) {
             payload.issues.push({
               code: "invalid_format",
@@ -3705,6 +3850,10 @@ var init_schemas = __esm({
               inst,
               continue: !def.abort
             });
+            return;
+          }
+          if (url2 === true) {
+            payload.value = stripTabAndNewline(trimmed2);
             return;
           }
           if (def.hostname && !urlHostnameOk(url2, def.hostname)) {
@@ -3775,12 +3924,6 @@ var init_schemas = __esm({
     $ZodISODateTime = /* @__PURE__ */ $constructor("$ZodISODateTime", (inst, def) => {
       def.pattern ?? (def.pattern = datetime(def));
       $ZodStringFormat.init(inst, def);
-      if (def.local || def.precision === -1) {
-        inst._zod.bag.laxFormat = true;
-        inst._zod.onattach.push((s15) => {
-          s15._zod.bag.laxFormat = true;
-        });
-      }
     });
     $ZodISODate = /* @__PURE__ */ $constructor("$ZodISODate", (inst, def) => {
       def.pattern ?? (def.pattern = date);
@@ -3797,13 +3940,11 @@ var init_schemas = __esm({
     $ZodIPv4 = /* @__PURE__ */ $constructor("$ZodIPv4", (inst, def) => {
       def.pattern ?? (def.pattern = ipv4);
       $ZodStringFormat.init(inst, def);
-      inst._zod.bag.format = `ipv4`;
     });
     ipv6Alphabet = /^[0-9a-fA-F:.]+$/;
     $ZodIPv6 = /* @__PURE__ */ $constructor("$ZodIPv6", (inst, def) => {
       def.pattern ?? (def.pattern = ipv6);
       $ZodStringFormat.init(inst, def);
-      inst._zod.bag.format = `ipv6`;
       inst._zod.check = (payload) => {
         if (!isValidIPv6(payload.value)) {
           payload.issues.push({
@@ -3819,7 +3960,6 @@ var init_schemas = __esm({
     $ZodMAC = /* @__PURE__ */ $constructor("$ZodMAC", (inst, def) => {
       def.pattern ?? (def.pattern = mac(def.delimiter));
       $ZodStringFormat.init(inst, def);
-      inst._zod.bag.format = `mac`;
     });
     $ZodCIDRv4 = /* @__PURE__ */ $constructor("$ZodCIDRv4", (inst, def) => {
       def.pattern ?? (def.pattern = cidrv4);
@@ -3840,10 +3980,10 @@ var init_schemas = __esm({
         }
       };
     });
+    base64Charset = /^[0-9a-zA-Z+/]*={0,2}$/;
     $ZodBase64 = /* @__PURE__ */ $constructor("$ZodBase64", (inst, def) => {
-      def.pattern ?? (def.pattern = base64);
+      def.pattern ?? (def.pattern = base64Charset);
       $ZodStringFormat.init(inst, def);
-      inst._zod.bag.contentEncoding = "base64";
       inst._zod.check = (payload) => {
         if (isValidBase64(payload.value))
           return;
@@ -3856,10 +3996,10 @@ var init_schemas = __esm({
         });
       };
     });
+    base64urlCharset = /^[A-Za-z0-9_-]*$/;
     $ZodBase64URL = /* @__PURE__ */ $constructor("$ZodBase64URL", (inst, def) => {
-      def.pattern ?? (def.pattern = base64url);
+      def.pattern ?? (def.pattern = base64urlCharset);
       $ZodStringFormat.init(inst, def);
-      inst._zod.bag.contentEncoding = "base64url";
       inst._zod.check = (payload) => {
         if (isValidBase64URL(payload.value))
           return;
@@ -3886,6 +4026,21 @@ var init_schemas = __esm({
         payload.issues.push({
           code: "invalid_format",
           format: "credit_card",
+          input: payload.value,
+          inst,
+          continue: !def.abort
+        });
+      };
+    });
+    $ZodIBAN = /* @__PURE__ */ $constructor("$ZodIBAN", (inst, def) => {
+      def.pattern ?? (def.pattern = iban);
+      $ZodStringFormat.init(inst, def);
+      inst._zod.check = (payload) => {
+        if (isValidIBAN(payload.value))
+          return;
+        payload.issues.push({
+          code: "invalid_format",
+          format: "iban",
           input: payload.value,
           inst,
           continue: !def.abort
@@ -3922,7 +4077,7 @@ var init_schemas = __esm({
     });
     $ZodNumber = /* @__PURE__ */ $constructor("$ZodNumber", (inst, def) => {
       $ZodType.init(inst, def);
-      inst._zod.pattern = inst._zod.bag.pattern ?? number;
+      inst._zod.pattern = number;
       inst._zod.parse = (payload, _ctx) => {
         if (def.coerce)
           try {
@@ -4118,6 +4273,7 @@ var init_schemas = __esm({
         }
         payload.value = memo2 ? memo2.alloc(inst, payload, Array(input2.length), ctx) : Array(input2.length);
         const proms = [];
+        const abortEarly = ctx?.abortEarly;
         for (let i = 0; i < input2.length; i++) {
           const item = input2[i];
           const result = def.element._zod.run({
@@ -4128,6 +4284,8 @@ var init_schemas = __esm({
             proms.push(result.then((result2) => handleArrayResult(result2, payload, i)));
           } else {
             handleArrayResult(result, payload, i);
+            if (abortEarly && result.issues.length !== 0 && aborted(result))
+              break;
           }
         }
         if (proms.length) {
@@ -4137,23 +4295,19 @@ var init_schemas = __esm({
       };
     });
     NO_SYMBOL_KEYS = [];
-    propShapes = /* @__PURE__ */ new WeakMap();
     $ZodObject = /* @__PURE__ */ $constructor("$ZodObject", (inst, def) => {
       $ZodType.init(inst, def);
       const desc = Object.getOwnPropertyDescriptor(def, "shape");
-      if (!desc?.get) {
-        const sh = def.shape;
-        propShapes.set(def, sh);
-        Object.defineProperty(def, "shape", {
-          get: () => {
-            const newSh = { ...sh };
-            Object.defineProperty(def, "shape", {
-              value: newSh
-            });
-            propShapes.set(def, newSh);
-            return newSh;
-          }
-        });
+      const sh = desc?.get ? desc.get.raw : def.shape ?? {};
+      if (sh) {
+        const get = () => {
+          const newSh = { ...sh };
+          Object.defineProperty(def, "shape", { value: newSh });
+          get.raw = newSh;
+          return newSh;
+        };
+        get.raw = sh;
+        Object.defineProperty(def, "shape", { get });
       }
       const _normalized = cached(() => normalizeDef(def));
       defineLazyInternal(inst, "propValues", (zod) => {
@@ -4193,7 +4347,14 @@ var init_schemas = __esm({
         payload.value = memo2 ? memo2.alloc(inst, payload, {}, ctx) : {};
         const proms = [];
         const shape = value.shape;
+        const abortEarly = ctx?.abortEarly;
+        let seen = payload.issues.length;
         for (const key of value.allKeys) {
+          if (abortEarly && payload.issues.length !== seen) {
+            if (aborted(payload, seen))
+              break;
+            seen = payload.issues.length;
+          }
           if (key === "__proto__")
             continue;
           const el3 = shape[key];
@@ -4209,7 +4370,7 @@ var init_schemas = __esm({
         if (!catchall) {
           return proms.length ? Promise.all(proms).then(() => payload) : payload;
         }
-        return handleCatchall(proms, input2, payload, ctx, _normalized.value, inst);
+        return handleCatchall(proms, input2, payload, ctx, _normalized.value, inst, abortEarly === true);
       };
     });
     $ZodObjectJIT = /* @__PURE__ */ $constructor("$ZodObjectJIT", (inst, def) => {
@@ -4223,10 +4384,16 @@ var init_schemas = __esm({
         const doc = new Doc(["payload", "ctx"], { shape, inst, memo: memo2, syms });
         const parseStr = (k) => `shape[${k}]._zod.run({ value: input[${k}], issues: [] }, ctx)`;
         const prefixStr = (id, k) => `
+          let ${id}_ab = false;
           for (let i = 0; i < ${id}.issues.length; i++) {
             const iss = ${id}.issues[i];
             iss.path = iss.path ? [${k}, ...iss.path] : [${k}];
             payload.issues.push(iss);
+            if (iss.continue !== true) ${id}_ab = true;
+          }
+          if (${id}_ab && ctx && ctx.abortEarly) {
+            payload.value = newResult;
+            return payload;
           }`;
         doc.write(`const input = payload.value;`);
         const ids = /* @__PURE__ */ Object.create(null);
@@ -4272,6 +4439,10 @@ var init_schemas = __esm({
             input: undefined,
             path: [${k}]
           });
+          if (ctx && ctx.abortEarly) {
+            payload.value = newResult;
+            return payload;
+          }
         }
 
         if (${id}_present) {
@@ -4283,16 +4454,16 @@ var init_schemas = __esm({
             doc.write(`
         if (${id}.issues.length) {${prefixStr(id, k)}
         }
-        
-        if (${id}.value === undefined) {
-          if (${isPresent}) {
-            newResult[${k}] = undefined;
-          }
-        } else {
+      `);
+            if (optin === "defaulted") {
+              doc.write(`newResult[${k}] = ${id}.value;`);
+            } else {
+              doc.write(`
+        if (${id}.value !== undefined || ${isPresent}) {
           newResult[${k}] = ${id}.value;
         }
-
       `);
+            }
           }
         }
         doc.write(`payload.value = newResult;`);
@@ -4324,7 +4495,7 @@ var init_schemas = __esm({
           payload = fastpass(payload, ctx);
           if (!catchall)
             return payload;
-          return handleCatchall([], input2, payload, ctx, value, inst);
+          return handleCatchall([], input2, payload, ctx, value, inst, ctx?.abortEarly === true);
         }
         return superParse(payload, ctx);
       };
@@ -4409,10 +4580,13 @@ var init_schemas = __esm({
       const _super = inst._zod.parse;
       defineLazyInternal(inst, "propValues", (zod) => {
         const propValues = {};
+        let undefinedCount = 0;
         for (const option of zod.def.options) {
           const pv = option._zod.propValues;
           if (!pv || Object.keys(pv).length === 0)
             throw new Error(`Invalid discriminated union option at index "${zod.def.options.indexOf(option)}"`);
+          if (pv[zod.def.discriminator]?.has(void 0))
+            undefinedCount++;
           for (const [k, v2] of Object.entries(pv)) {
             if (!Object.prototype.hasOwnProperty.call(propValues, k)) {
               assignProp(propValues, k, /* @__PURE__ */ new Set());
@@ -4422,30 +4596,17 @@ var init_schemas = __esm({
             }
           }
         }
+        if (!zod.def.unionFallback && undefinedCount > 1)
+          propValues[zod.def.discriminator]?.delete(void 0);
         return propValues;
       });
       def.options.forEach((option, i) => {
-        const propShape = propShapes.get(option._zod.def);
+        const propShape = rawShape(option._zod.def);
         if (propShape && !Object.prototype.hasOwnProperty.call(propShape, def.discriminator)) {
           throw new Error(`Invalid discriminated union option at index "${i}"`);
         }
       });
-      const disc = cached(() => {
-        const opts = def.options;
-        const map2 = /* @__PURE__ */ new Map();
-        for (const o2 of opts) {
-          const values = o2._zod.propValues?.[def.discriminator];
-          if (!values || values.size === 0)
-            throw new Error(`Invalid discriminated union option at index "${def.options.indexOf(o2)}"`);
-          for (const v2 of values) {
-            if (map2.has(v2)) {
-              throw new Error(`Duplicate discriminator value "${String(v2)}"`);
-            }
-            map2.set(v2, o2);
-          }
-        }
-        return map2;
-      });
+      const disc = cached(() => discriminatorMap(def));
       inst._zod.parse = (payload, ctx) => {
         const input2 = payload.value;
         if (!isObject(input2)) {
@@ -4457,8 +4618,9 @@ var init_schemas = __esm({
           });
           return payload;
         }
-        const opt = disc.value.get(input2?.[def.discriminator]);
-        if (opt) {
+        const value = input2?.[def.discriminator];
+        const opt = disc.value.get(value);
+        if (opt && (value !== void 0 || ctx.direction !== "backward")) {
           return opt._zod.run(payload, ctx);
         }
         if (def.unionFallback || ctx.direction === "backward") {
@@ -4469,7 +4631,7 @@ var init_schemas = __esm({
           errors: [],
           note: "No matching discriminator",
           discriminator: def.discriminator,
-          options: Array.from(disc.value.keys()),
+          options: Array.from(disc.value.keys()).filter((value2) => disc.value.get(value2) !== null),
           input: input2,
           path: [def.discriminator],
           inst
@@ -4536,6 +4698,8 @@ var init_schemas = __esm({
           }
         }
         const itemResults = new Array(items.length);
+        const abortEarly = def.rest ? ctx?.abortEarly : void 0;
+        let itemAborted = false;
         for (let i = 0; i < items.length; i++) {
           const r = items[i]._zod.run({ value: input2[i], issues: [] }, ctx);
           if (r instanceof Promise) {
@@ -4544,12 +4708,20 @@ var init_schemas = __esm({
             }));
           } else {
             itemResults[i] = r;
+            if (abortEarly && !itemAborted && r.issues.length)
+              itemAborted = aborted(r);
           }
         }
-        if (def.rest) {
+        if (def.rest && !itemAborted) {
           let i = items.length - 1;
           const rest = input2.slice(items.length);
+          let seen = payload.issues.length;
           for (const el3 of rest) {
+            if (abortEarly && payload.issues.length !== seen) {
+              if (aborted(payload, seen))
+                break;
+              seen = payload.issues.length;
+            }
             i++;
             const result = def.rest._zod.run({ value: el3, issues: [] }, ctx);
             if (result instanceof Promise) {
@@ -4737,7 +4909,14 @@ var init_schemas = __esm({
         }
         const proms = [];
         payload.value = memo2 ? memo2.alloc(inst, payload, /* @__PURE__ */ new Map(), ctx) : /* @__PURE__ */ new Map();
+        const abortEarly = ctx?.abortEarly;
+        let seen = payload.issues.length;
         for (const [key, value] of input2) {
+          if (abortEarly && payload.issues.length !== seen) {
+            if (aborted(payload, seen))
+              break;
+            seen = payload.issues.length;
+          }
           const keyResult = def.keyType._zod.run({ value: key, issues: [] }, ctx);
           const valueResult = def.valueType._zod.run({ value, issues: [] }, ctx);
           if (keyResult instanceof Promise || valueResult instanceof Promise) {
@@ -4770,7 +4949,14 @@ var init_schemas = __esm({
         }
         const proms = [];
         payload.value = memo2 ? memo2.alloc(inst, payload, /* @__PURE__ */ new Set(), ctx) : /* @__PURE__ */ new Set();
+        const abortEarly = ctx?.abortEarly;
+        let seen = payload.issues.length;
         for (const item of input2) {
+          if (abortEarly && payload.issues.length !== seen) {
+            if (aborted(payload, seen))
+              break;
+            seen = payload.issues.length;
+          }
           const result = def.valueType._zod.run({ value: item, issues: [] }, ctx);
           if (result instanceof Promise) {
             proms.push(result.then((result2) => handleSetResult(result2, payload)));
@@ -4787,8 +4973,10 @@ var init_schemas = __esm({
       const values = getEnumValues(def.entries);
       const valuesSet = new Set(values);
       inst._zod.values = valuesSet;
-      const patternValues = values.filter((k) => propertyKeyTypes.has(typeof k));
-      inst._zod.pattern = new RegExp(patternValues.length ? `^(${patternValues.map((o2) => escapeRegex(o2.toString())).join("|")})$` : "^[^\\s\\S]$");
+      defineLazyInternal(inst, "pattern", (zod) => {
+        const patternValues = getEnumValues(zod.def.entries).filter((k) => propertyKeyTypes.has(typeof k));
+        return new RegExp(patternValues.length ? `^(${patternValues.map((o2) => escapeRegex(o2.toString())).join("|")})$` : "^[^\\s\\S]$");
+      });
       inst._zod.parse = (payload, _ctx) => {
         const input2 = payload.value;
         if (valuesSet.has(input2)) {
@@ -4807,7 +4995,10 @@ var init_schemas = __esm({
       $ZodType.init(inst, def);
       const values = new Set(def.values);
       inst._zod.values = values;
-      inst._zod.pattern = new RegExp(def.values.length ? `^(${def.values.map((o2) => typeof o2 === "string" ? escapeRegex(o2) : o2 ? escapeRegex(o2.toString()) : String(o2)).join("|")})$` : "^[^\\s\\S]$");
+      defineLazyInternal(inst, "pattern", (zod) => {
+        const vals = zod.def.values;
+        return new RegExp(vals.length ? `^(${vals.map((o2) => typeof o2 === "string" ? escapeRegex(o2) : o2 ? escapeRegex(o2.toString()) : String(o2)).join("|")})$` : "^[^\\s\\S]$");
+      });
       inst._zod.parse = (payload, _ctx) => {
         const input2 = payload.value;
         if (values.has(input2)) {
@@ -5073,15 +5264,11 @@ var init_schemas = __esm({
       const regexParts = [];
       for (const part of def.parts) {
         if (typeof part === "object" && part !== null) {
-          if (!part._zod.pattern) {
+          const source = partPattern(part);
+          if (!source) {
             throw new Error(`Invalid template literal part, no pattern found: ${[...part._zod.traits].shift()}`);
           }
-          const source = part._zod.pattern instanceof RegExp ? part._zod.pattern.source : part._zod.pattern;
-          if (!source)
-            throw new Error(`Invalid template literal part: ${part._zod.traits}`);
-          const start = source.startsWith("^") ? 1 : 0;
-          const end = source.endsWith("$") ? source.length - 1 : source.length;
-          regexParts.push(source.slice(start, end));
+          regexParts.push(cleanRegex(source));
         } else if (part === null || primitiveTypes.has(typeof part)) {
           regexParts.push(escapeRegex(`${part}`));
         } else {
@@ -5232,28 +5419,50 @@ var init_schemas = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/core/memoizer.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/core/memoizer.js
+function isRef(value) {
+  return value !== null && typeof value === "object";
+}
 function cloneIssues(issues) {
   return issues.map((iss) => iss.path ? { ...iss, path: iss.path.slice() } : { ...iss });
 }
-function isRecursive(inst, stack) {
+function isRecursive(inst, stack, resolve) {
   const cached2 = recursive.get(inst);
   if (cached2 !== void 0)
-    return cached2;
+    return cached2 ? PROVEN : NONE;
   if (stack.has(inst))
-    return true;
+    return PROVEN;
   stack.add(inst);
-  let result = false;
+  let result = NONE;
   const check2 = (child) => {
-    if (!result && child?._zod && isRecursive(child, stack))
-      result = true;
+    if (result !== PROVEN && child?._zod) {
+      const answer = isRecursive(child, stack, resolve);
+      if (answer > result)
+        result = answer;
+    }
+  };
+  const shape = (sh, spread) => {
+    let answer = NONE;
+    for (const key of Reflect.ownKeys(sh)) {
+      const desc = Object.getOwnPropertyDescriptor(sh, key);
+      if (spread && !desc.enumerable)
+        continue;
+      const child = desc.get ? ASSUMED : desc.value?._zod ? isRecursive(desc.value, stack, resolve) : NONE;
+      if (child > answer)
+        answer = child;
+    }
+    return answer;
+  };
+  const merge2 = (answer) => {
+    if (answer > result)
+      result = answer;
   };
   const def = inst._zod.def;
   const kind = def.type;
   switch (kind) {
     case "object": {
-      for (const key of Reflect.ownKeys(def.shape))
-        check2(def.shape[key]);
+      const raw = rawShape(def);
+      merge2(raw ? shape(raw, true) : ASSUMED);
       check2(def.catchall);
       break;
     }
@@ -5300,10 +5509,12 @@ function isRecursive(inst, stack) {
       check2(def.input);
       check2(def.output);
       break;
-    // reading `_zod.innerType` resolves the getter once and caches it
-    case "lazy":
-      check2(inst._zod.innerType);
+    // `$ZodLazy` caches its inner on the def, so a resolved edge is followed exactly
+    case "lazy": {
+      const inner = def._cachedInner ?? (resolve ? inst._zod.innerType : void 0);
+      merge2(inner ? isRecursive(inner, stack, false) : ASSUMED);
       break;
+    }
     // a leaf by choice: `parts` are regex fragments, not data positions
     case "template_literal":
     // leaves
@@ -5345,16 +5556,20 @@ function isRecursive(inst, stack) {
     }
   }
   stack.delete(inst);
-  recursive.set(inst, result);
-  return result;
+  return settle(inst, result);
+}
+function settle(inst, answer) {
+  if (answer !== ASSUMED)
+    recursive.set(inst, answer === PROVEN);
+  return answer;
 }
 function isRecursiveSchema(inst) {
-  return isRecursive(inst, /* @__PURE__ */ new Set());
+  return isRecursive(inst, /* @__PURE__ */ new Set(), true) !== NONE;
 }
 function bucketFor(state, inst) {
   let bucket = state.buckets.get(inst);
   if (!bucket) {
-    bucket = /* @__PURE__ */ new Map();
+    bucket = /* @__PURE__ */ new WeakMap();
     state.buckets.set(inst, bucket);
   }
   return bucket;
@@ -5364,11 +5579,12 @@ function memoizer() {
 }
 function isBackEdge(ctx, value) {
   const backEdges = ctx[STATE]?.backEdges;
-  return backEdges !== void 0 && value !== null && typeof value === "object" && backEdges.has(value);
+  return backEdges !== void 0 && isRef(value) && backEdges.has(value);
 }
-var $ZodCyclicError, STATE, NO_ISSUES, recursive, handoff, open, memo;
+var $ZodCyclicError, STATE, NO_ISSUES, recursive, NONE, ASSUMED, PROVEN, handoff, open, memo;
 var init_memoizer = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/core/memoizer.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/core/memoizer.js"() {
+    init_util();
     $ZodCyclicError = class extends Error {
       constructor() {
         super(`Cannot parse a reference cycle that closes through a transform`);
@@ -5378,6 +5594,9 @@ var init_memoizer = __esm({
     STATE = "~memo";
     NO_ISSUES = [];
     recursive = /* @__PURE__ */ new WeakMap();
+    NONE = 0;
+    ASSUMED = 1;
+    PROVEN = 2;
     open = [];
     memo = {
       alloc(_inst, payload, empty) {
@@ -5408,6 +5627,7 @@ var init_memoizer = __esm({
       attach(inst) {
         var _a3;
         let isRecursiveInst;
+        let rechecked = false;
         let lastCtx;
         let lastBucket;
         (_a3 = inst._zod).deferred ?? (_a3.deferred = []);
@@ -5415,20 +5635,24 @@ var init_memoizer = __esm({
           const base = inst._zod.parse;
           const wrapped = (payload, ctx) => {
             if (isRecursiveInst === void 0) {
-              isRecursiveInst = isRecursive(inst, /* @__PURE__ */ new Set());
-              if (!isRecursiveInst) {
+              const walked = isRecursive(inst, /* @__PURE__ */ new Set(), false);
+              if (walked === NONE) {
                 inst._zod.parse = base;
                 if (inst._zod.run === wrapped)
                   inst._zod.run = base;
                 return base(payload, ctx);
               }
+              if (walked === PROVEN || rechecked)
+                isRecursiveInst = true;
+              else
+                rechecked = true;
             }
             const input2 = payload.value;
-            if (input2 === null || typeof input2 !== "object")
+            if (!isRef(input2))
               return base(payload, ctx);
             let state = ctx[STATE];
             if (!state) {
-              state = { buckets: /* @__PURE__ */ new Map(), backEdges: void 0 };
+              state = { buckets: /* @__PURE__ */ new WeakMap(), backEdges: void 0 };
               ctx[STATE] = state;
             }
             let bucket;
@@ -5447,7 +5671,7 @@ var init_memoizer = __esm({
                   payload.issues.push(...cloneIssues(hit.issues));
               } else {
                 payload.memo = true;
-                state.backEdges ?? (state.backEdges = /* @__PURE__ */ new Set());
+                state.backEdges ?? (state.backEdges = /* @__PURE__ */ new WeakSet());
                 state.backEdges.add(hit.value);
               }
               return payload;
@@ -5477,7 +5701,7 @@ var init_memoizer = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/ar.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/ar.js
 function ar_default() {
   return {
     localeError: error()
@@ -5485,7 +5709,7 @@ function ar_default() {
 }
 var error;
 var init_ar = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/ar.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/ar.js"() {
     init_util();
     error = () => {
       const Sizable = {
@@ -5527,6 +5751,8 @@ var init_ar = __esm({
         json_string: "\u0646\u064E\u0635 \u0639\u0644\u0649 \u0647\u064A\u0626\u0629 JSON",
         e164: "\u0631\u0642\u0645 \u0647\u0627\u062A\u0641 \u0628\u0645\u0639\u064A\u0627\u0631 E.164",
         credit_card: "\u0631\u0642\u0645 \u0628\u0637\u0627\u0642\u0629 \u0627\u0644\u0627\u0626\u062A\u0645\u0627\u0646",
+        currency_code: "\u0631\u0645\u0632 \u0627\u0644\u0639\u0645\u0644\u0629",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "\u0645\u062F\u062E\u0644"
       };
@@ -5593,7 +5819,7 @@ var init_ar = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/az.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/az.js
 function az_default() {
   return {
     localeError: error2()
@@ -5601,7 +5827,7 @@ function az_default() {
 }
 var error2;
 var init_az = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/az.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/az.js"() {
     init_util();
     error2 = () => {
       const Sizable = {
@@ -5643,6 +5869,8 @@ var init_az = __esm({
         json_string: "JSON string",
         e164: "E.164 number",
         credit_card: "kredit kart\u0131 n\xF6mr\u0259si",
+        currency_code: "valyuta kodu",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "input"
       };
@@ -5708,7 +5936,7 @@ var init_az = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/be.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/be.js
 function getBelarusianPlural(count, one, few, many) {
   const absCount = Math.abs(count);
   const lastDigit = absCount % 10;
@@ -5731,7 +5959,7 @@ function be_default() {
 }
 var error3;
 var init_be = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/be.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/be.js"() {
     init_util();
     error3 = () => {
       const Sizable = {
@@ -5808,6 +6036,8 @@ var init_be = __esm({
         json_string: "JSON \u0440\u0430\u0434\u043E\u043A",
         e164: "\u043D\u0443\u043C\u0430\u0440 E.164",
         credit_card: "\u043D\u0443\u043C\u0430\u0440 \u043A\u0440\u044D\u0434\u044B\u0442\u043D\u0430\u0439 \u043A\u0430\u0440\u0442\u044B",
+        currency_code: "\u043A\u043E\u0434 \u0432\u0430\u043B\u044E\u0442\u044B",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "\u0443\u0432\u043E\u0434"
       };
@@ -5881,7 +6111,7 @@ var init_be = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/bg.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/bg.js
 function bg_default() {
   return {
     localeError: error4()
@@ -5889,7 +6119,7 @@ function bg_default() {
 }
 var error4;
 var init_bg = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/bg.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/bg.js"() {
     init_util();
     error4 = () => {
       const Sizable = {
@@ -5931,6 +6161,8 @@ var init_bg = __esm({
         json_string: "JSON \u043D\u0438\u0437",
         e164: "E.164 \u043D\u043E\u043C\u0435\u0440",
         credit_card: "\u043D\u043E\u043C\u0435\u0440 \u043D\u0430 \u043A\u0440\u0435\u0434\u0438\u0442\u043D\u0430 \u043A\u0430\u0440\u0442\u0430",
+        currency_code: "\u043A\u043E\u0434 \u043D\u0430 \u0432\u0430\u043B\u0443\u0442\u0430",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "\u0432\u0445\u043E\u0434"
       };
@@ -6011,7 +6243,7 @@ var init_bg = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/bn.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/bn.js
 function bn_default() {
   return {
     localeError: error5()
@@ -6019,7 +6251,7 @@ function bn_default() {
 }
 var error5;
 var init_bn = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/bn.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/bn.js"() {
     init_util();
     error5 = () => {
       const Sizable = {
@@ -6061,6 +6293,8 @@ var init_bn = __esm({
         json_string: "JSON \u09B8\u09CD\u099F\u09CD\u09B0\u09BF\u0982",
         e164: "E.164 \u09A8\u09AE\u09CD\u09AC\u09B0",
         credit_card: "\u0995\u09CD\u09B0\u09C7\u09A1\u09BF\u099F \u0995\u09BE\u09B0\u09CD\u09A1 \u09A8\u09AE\u09CD\u09AC\u09B0",
+        currency_code: "\u09AE\u09C1\u09A6\u09CD\u09B0\u09BE \u0995\u09CB\u09A1",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "\u0987\u09A8\u09AA\u09C1\u099F"
       };
@@ -6129,7 +6363,7 @@ var init_bn = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/ca.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/ca.js
 function ca_default() {
   return {
     localeError: error6()
@@ -6137,7 +6371,7 @@ function ca_default() {
 }
 var error6;
 var init_ca = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/ca.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/ca.js"() {
     init_util();
     error6 = () => {
       const Sizable = {
@@ -6179,6 +6413,8 @@ var init_ca = __esm({
         json_string: "cadena JSON",
         e164: "n\xFAmero E.164",
         credit_card: "n\xFAmero de targeta de cr\xE8dit",
+        currency_code: "codi de moneda",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "entrada"
       };
@@ -6247,7 +6483,7 @@ var init_ca = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/ckb.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/ckb.js
 function ckb_default() {
   return {
     localeError: error7()
@@ -6255,7 +6491,7 @@ function ckb_default() {
 }
 var error7;
 var init_ckb = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/ckb.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/ckb.js"() {
     init_util();
     error7 = () => {
       const Sizable = {
@@ -6297,6 +6533,8 @@ var init_ckb = __esm({
         json_string: "\u062F\u06D5\u0642\u06CC JSON",
         e164: "\u0698\u0645\u0627\u0631\u06D5\u06CC E.164",
         credit_card: "\u0698\u0645\u0627\u0631\u06D5\u06CC \u06A9\u0627\u0631\u062A\u06CC \u06A9\u0631\u06CE\u062F\u06CC\u062A",
+        currency_code: "\u06A9\u06C6\u062F\u06CC \u062F\u0631\u0627\u0648",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "\u062A\u06CE\u06A9\u0631\u062F\u06D5"
       };
@@ -6384,7 +6622,7 @@ var init_ckb = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/cs.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/cs.js
 function cs_default() {
   return {
     localeError: error8()
@@ -6392,7 +6630,7 @@ function cs_default() {
 }
 var error8;
 var init_cs = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/cs.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/cs.js"() {
     init_util();
     error8 = () => {
       const Sizable = {
@@ -6434,6 +6672,8 @@ var init_cs = __esm({
         json_string: "\u0159et\u011Bzec ve form\xE1tu JSON",
         e164: "\u010D\xEDslo E.164",
         credit_card: "\u010D\xEDslo kreditn\xED karty",
+        currency_code: "k\xF3d m\u011Bny",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "vstup"
       };
@@ -6505,7 +6745,7 @@ var init_cs = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/da.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/da.js
 function da_default() {
   return {
     localeError: error9()
@@ -6513,7 +6753,7 @@ function da_default() {
 }
 var error9;
 var init_da = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/da.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/da.js"() {
     init_util();
     error9 = () => {
       const Sizable = {
@@ -6555,6 +6795,8 @@ var init_da = __esm({
         json_string: "JSON-streng",
         e164: "E.164-nummer",
         credit_card: "kreditkortnummer",
+        currency_code: "valutakode",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "input"
       };
@@ -6630,7 +6872,7 @@ var init_da = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/de.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/de.js
 function de_default() {
   return {
     localeError: error10()
@@ -6638,7 +6880,7 @@ function de_default() {
 }
 var error10;
 var init_de = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/de.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/de.js"() {
     init_util();
     error10 = () => {
       const Sizable = {
@@ -6680,6 +6922,8 @@ var init_de = __esm({
         json_string: "JSON-String",
         e164: "E.164-Nummer",
         credit_card: "Kreditkartennummer",
+        currency_code: "W\xE4hrungscode",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "Eingabe"
       };
@@ -6748,7 +6992,7 @@ var init_de = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/el.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/el.js
 function el_default() {
   return {
     localeError: error11()
@@ -6756,7 +7000,7 @@ function el_default() {
 }
 var error11;
 var init_el = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/el.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/el.js"() {
     init_util();
     error11 = () => {
       const Sizable = {
@@ -6798,6 +7042,8 @@ var init_el = __esm({
         json_string: "\u03C3\u03C5\u03BC\u03B2\u03BF\u03BB\u03BF\u03C3\u03B5\u03B9\u03C1\u03AC JSON",
         e164: "\u03B1\u03C1\u03B9\u03B8\u03BC\u03CC\u03C2 E.164",
         credit_card: "\u03B1\u03C1\u03B9\u03B8\u03BC\u03CC\u03C2 \u03C0\u03B9\u03C3\u03C4\u03C9\u03C4\u03B9\u03BA\u03AE\u03C2 \u03BA\u03AC\u03C1\u03C4\u03B1\u03C2",
+        currency_code: "\u03BA\u03C9\u03B4\u03B9\u03BA\u03CC\u03C2 \u03BD\u03BF\u03BC\u03AF\u03C3\u03BC\u03B1\u03C4\u03BF\u03C2",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "\u03B5\u03AF\u03C3\u03BF\u03B4\u03BF\u03C2"
       };
@@ -6865,7 +7111,7 @@ var init_el = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/en.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/en.js
 function en_default() {
   return {
     localeError: error12()
@@ -6873,7 +7119,7 @@ function en_default() {
 }
 var error12;
 var init_en = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/en.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/en.js"() {
     init_util();
     error12 = () => {
       const Sizable = {
@@ -6914,7 +7160,9 @@ var init_en = __esm({
         base64url: "base64url-encoded string",
         json_string: "JSON string",
         e164: "E.164 number",
+        currency_code: "currency code",
         credit_card: "credit card number",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "input"
       };
@@ -6994,7 +7242,7 @@ var init_en = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/eo.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/eo.js
 function eo_default() {
   return {
     localeError: error13()
@@ -7002,7 +7250,7 @@ function eo_default() {
 }
 var error13;
 var init_eo = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/eo.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/eo.js"() {
     init_util();
     error13 = () => {
       const Sizable = {
@@ -7044,6 +7292,8 @@ var init_eo = __esm({
         json_string: "JSON-karaktraro",
         e164: "E.164-nombro",
         credit_card: "kreditkarta numero",
+        currency_code: "valuta kodo",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "enigo"
       };
@@ -7113,7 +7363,7 @@ var init_eo = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/es.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/es.js
 function es_default() {
   return {
     localeError: error14()
@@ -7121,7 +7371,7 @@ function es_default() {
 }
 var error14;
 var init_es = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/es.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/es.js"() {
     init_util();
     error14 = () => {
       const Sizable = {
@@ -7162,6 +7412,8 @@ var init_es = __esm({
         json_string: "cadena JSON",
         e164: "n\xFAmero E.164",
         credit_card: "n\xFAmero de tarjeta de cr\xE9dito",
+        currency_code: "c\xF3digo de moneda",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "entrada"
       };
@@ -7254,7 +7506,7 @@ var init_es = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/fa.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/fa.js
 function fa_default() {
   return {
     localeError: error15()
@@ -7262,7 +7514,7 @@ function fa_default() {
 }
 var error15;
 var init_fa = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/fa.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/fa.js"() {
     init_util();
     error15 = () => {
       const Sizable = {
@@ -7304,6 +7556,8 @@ var init_fa = __esm({
         json_string: "JSON \u0631\u0634\u062A\u0647",
         e164: "E.164 \u0639\u062F\u062F",
         credit_card: "\u0634\u0645\u0627\u0631\u0647 \u06A9\u0627\u0631\u062A \u0627\u0639\u062A\u0628\u0627\u0631\u06CC",
+        currency_code: "\u06A9\u062F \u0627\u0631\u0632",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "\u0648\u0631\u0648\u062F\u06CC"
       };
@@ -7378,7 +7632,7 @@ var init_fa = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/fi.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/fi.js
 function fi_default() {
   return {
     localeError: error16()
@@ -7386,7 +7640,7 @@ function fi_default() {
 }
 var error16;
 var init_fi = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/fi.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/fi.js"() {
     init_util();
     error16 = () => {
       const Sizable = {
@@ -7432,6 +7686,8 @@ var init_fi = __esm({
         json_string: "JSON-merkkijono",
         e164: "E.164-luku",
         credit_card: "luottokortin numero",
+        currency_code: "valuuttakoodi",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "templaattimerkkijono"
       };
@@ -7500,7 +7756,7 @@ var init_fi = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/fr.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/fr.js
 function fr_default() {
   return {
     localeError: error17()
@@ -7508,7 +7764,7 @@ function fr_default() {
 }
 var error17;
 var init_fr = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/fr.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/fr.js"() {
     init_util();
     error17 = () => {
       const Sizable = {
@@ -7549,6 +7805,8 @@ var init_fr = __esm({
         json_string: "cha\xEEne de caract\xE8res JSON",
         e164: "num\xE9ro au format E.164",
         credit_card: "num\xE9ro de carte de cr\xE9dit",
+        currency_code: "code de devise",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "entr\xE9e"
       };
@@ -7634,7 +7892,7 @@ var init_fr = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/fr-CA.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/fr-CA.js
 function fr_CA_default() {
   return {
     localeError: error18()
@@ -7642,7 +7900,7 @@ function fr_CA_default() {
 }
 var error18;
 var init_fr_CA = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/fr-CA.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/fr-CA.js"() {
     init_util();
     error18 = () => {
       const Sizable = {
@@ -7684,6 +7942,8 @@ var init_fr_CA = __esm({
         json_string: "cha\xEEne JSON",
         e164: "num\xE9ro E.164",
         credit_card: "num\xE9ro de carte de cr\xE9dit",
+        currency_code: "code de devise",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "entr\xE9e"
       };
@@ -7751,7 +8011,7 @@ var init_fr_CA = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/gu.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/gu.js
 function gu_default() {
   return {
     localeError: error19()
@@ -7759,7 +8019,7 @@ function gu_default() {
 }
 var error19;
 var init_gu = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/gu.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/gu.js"() {
     init_util();
     error19 = () => {
       const Sizable = {
@@ -7801,6 +8061,8 @@ var init_gu = __esm({
         json_string: "JSON \u0AB8\u0ACD\u0A9F\u0ACD\u0AB0\u0ABF\u0A82\u0A97",
         e164: "E.164 \u0AA8\u0A82\u0AAC\u0AB0",
         credit_card: "\u0A95\u0ACD\u0AB0\u0AC7\u0AA1\u0ABF\u0A9F \u0A95\u0ABE\u0AB0\u0ACD\u0AA1 \u0AA8\u0A82\u0AAC\u0AB0",
+        currency_code: "\u0A9A\u0AB2\u0AA3 \u0A95\u0ACB\u0AA1",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "\u0A87\u0AA8\u0AAA\u0AC1\u0A9F"
       };
@@ -7869,7 +8131,7 @@ var init_gu = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/he.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/he.js
 function he_default() {
   return {
     localeError: error20()
@@ -7877,7 +8139,7 @@ function he_default() {
 }
 var error20;
 var init_he = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/he.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/he.js"() {
     init_util();
     error20 = () => {
       const TypeNames = {
@@ -7955,6 +8217,8 @@ var init_he = __esm({
         json_string: { label: "\u05DE\u05D7\u05E8\u05D5\u05D6\u05EA JSON", gender: "f" },
         e164: { label: "\u05DE\u05E1\u05E4\u05E8 E.164", gender: "m" },
         credit_card: { label: "\u05DE\u05E1\u05E4\u05E8 \u05DB\u05E8\u05D8\u05D9\u05E1 \u05D0\u05E9\u05E8\u05D0\u05D9", gender: "m" },
+        currency_code: { label: "\u05E7\u05D5\u05D3 \u05DE\u05D8\u05D1\u05E2", gender: "m" },
+        iban: { label: "IBAN", gender: "m" },
         jwt: { label: "JWT", gender: "m" },
         template_literal: { label: "\u05E7\u05DC\u05D8", gender: "m" },
         ends_with: { label: "\u05E7\u05DC\u05D8", gender: "m" },
@@ -8075,7 +8339,7 @@ var init_he = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/hi.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/hi.js
 function hi_default() {
   return {
     localeError: error21()
@@ -8083,7 +8347,7 @@ function hi_default() {
 }
 var error21;
 var init_hi = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/hi.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/hi.js"() {
     init_util();
     error21 = () => {
       const Sizable = {
@@ -8125,6 +8389,8 @@ var init_hi = __esm({
         json_string: "JSON \u0938\u094D\u091F\u094D\u0930\u093F\u0902\u0917",
         e164: "E.164 \u0938\u0902\u0916\u094D\u092F\u093E",
         credit_card: "\u0915\u094D\u0930\u0947\u0921\u093F\u091F \u0915\u093E\u0930\u094D\u0921 \u0938\u0902\u0916\u094D\u092F\u093E",
+        currency_code: "\u092E\u0941\u0926\u094D\u0930\u093E \u0915\u094B\u0921",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "\u0907\u0928\u092A\u0941\u091F"
       };
@@ -8191,7 +8457,7 @@ var init_hi = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/hr.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/hr.js
 function hr_default() {
   return {
     localeError: error22()
@@ -8199,7 +8465,7 @@ function hr_default() {
 }
 var error22;
 var init_hr = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/hr.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/hr.js"() {
     init_util();
     error22 = () => {
       const Sizable = {
@@ -8240,6 +8506,8 @@ var init_hr = __esm({
         json_string: "JSON tekst",
         e164: "E.164 broj",
         credit_card: "broj kreditne kartice",
+        currency_code: "kod valute",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "unos"
       };
@@ -8322,7 +8590,7 @@ var init_hr = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/hu.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/hu.js
 function hu_default() {
   return {
     localeError: error23()
@@ -8330,7 +8598,7 @@ function hu_default() {
 }
 var error23;
 var init_hu = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/hu.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/hu.js"() {
     init_util();
     error23 = () => {
       const Sizable = {
@@ -8372,6 +8640,8 @@ var init_hu = __esm({
         json_string: "JSON string",
         e164: "E.164 sz\xE1m",
         credit_card: "hitelk\xE1rtyasz\xE1m",
+        currency_code: "p\xE9nznemk\xF3d",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "bemenet"
       };
@@ -8440,7 +8710,7 @@ var init_hu = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/hy.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/hy.js
 function getArmenianPlural(count, one, many) {
   return Math.abs(count) === 1 ? one : many;
 }
@@ -8458,7 +8728,7 @@ function hy_default() {
 }
 var error24;
 var init_hy = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/hy.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/hy.js"() {
     init_util();
     error24 = () => {
       const Sizable = {
@@ -8530,6 +8800,8 @@ var init_hy = __esm({
         json_string: "JSON \u057F\u0578\u0572",
         e164: "E.164 \u0570\u0561\u0574\u0561\u0580",
         credit_card: "\u056F\u0580\u0565\u0564\u056B\u057F \u0584\u0561\u0580\u057F\u056B \u0570\u0561\u0574\u0561\u0580",
+        currency_code: "\u0561\u0580\u056A\u0578\u0582\u0575\u0569\u056B \u056F\u0578\u0564",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "\u0574\u0578\u0582\u057F\u0584"
       };
@@ -8603,7 +8875,7 @@ var init_hy = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/id.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/id.js
 function id_default() {
   return {
     localeError: error25()
@@ -8611,7 +8883,7 @@ function id_default() {
 }
 var error25;
 var init_id = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/id.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/id.js"() {
     init_util();
     error25 = () => {
       const Sizable = {
@@ -8653,6 +8925,8 @@ var init_id = __esm({
         json_string: "string JSON",
         e164: "angka E.164",
         credit_card: "nomor kartu kredit",
+        currency_code: "kode mata uang",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "input"
       };
@@ -8719,7 +8993,7 @@ var init_id = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/is.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/is.js
 function is_default() {
   return {
     localeError: error26()
@@ -8727,7 +9001,7 @@ function is_default() {
 }
 var error26;
 var init_is = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/is.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/is.js"() {
     init_util();
     error26 = () => {
       const Sizable = {
@@ -8769,6 +9043,8 @@ var init_is = __esm({
         json_string: "JSON strengur",
         e164: "E.164 t\xF6lugildi",
         credit_card: "kreditkortan\xFAmer",
+        currency_code: "gjaldmi\xF0ilsk\xF3\xF0i",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "gildi"
       };
@@ -8838,7 +9114,7 @@ var init_is = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/it.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/it.js
 function it_default() {
   return {
     localeError: error27()
@@ -8846,7 +9122,7 @@ function it_default() {
 }
 var error27;
 var init_it = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/it.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/it.js"() {
     init_util();
     error27 = () => {
       const Sizable = {
@@ -8888,6 +9164,8 @@ var init_it = __esm({
         json_string: "stringa JSON",
         e164: "numero E.164",
         credit_card: "numero di carta di credito",
+        currency_code: "codice valuta",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "input"
       };
@@ -8956,7 +9234,7 @@ var init_it = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/ja.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/ja.js
 function ja_default() {
   return {
     localeError: error28()
@@ -8964,7 +9242,7 @@ function ja_default() {
 }
 var error28;
 var init_ja = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/ja.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/ja.js"() {
     init_util();
     error28 = () => {
       const Sizable = {
@@ -9006,6 +9284,8 @@ var init_ja = __esm({
         json_string: "JSON\u6587\u5B57\u5217",
         e164: "E.164\u756A\u53F7",
         credit_card: "\u30AF\u30EC\u30B8\u30C3\u30C8\u30AB\u30FC\u30C9\u756A\u53F7",
+        currency_code: "\u901A\u8CA8\u30B3\u30FC\u30C9",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "\u5165\u529B\u5024"
       };
@@ -9073,7 +9353,7 @@ var init_ja = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/ka.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/ka.js
 function ka_default() {
   return {
     localeError: error29()
@@ -9081,7 +9361,7 @@ function ka_default() {
 }
 var error29;
 var init_ka = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/ka.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/ka.js"() {
     init_util();
     error29 = () => {
       const Sizable = {
@@ -9123,6 +9403,8 @@ var init_ka = __esm({
         json_string: "JSON \u10D5\u10D4\u10DA\u10D8",
         e164: "E.164 \u10DC\u10DD\u10DB\u10D4\u10E0\u10D8",
         credit_card: "\u10E1\u10D0\u10D9\u10E0\u10D4\u10D3\u10D8\u10E2\u10DD \u10D1\u10D0\u10E0\u10D0\u10D7\u10D8\u10E1 \u10DC\u10DD\u10DB\u10D4\u10E0\u10D8",
+        currency_code: "\u10D5\u10D0\u10DA\u10E3\u10E2\u10D8\u10E1 \u10D9\u10DD\u10D3\u10D8",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "\u10E8\u10D4\u10E7\u10D5\u10D0\u10DC\u10D0"
       };
@@ -9195,7 +9477,7 @@ var init_ka = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/km.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/km.js
 function km_default() {
   return {
     localeError: error30()
@@ -9203,7 +9485,7 @@ function km_default() {
 }
 var error30;
 var init_km = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/km.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/km.js"() {
     init_util();
     error30 = () => {
       const Sizable = {
@@ -9245,6 +9527,8 @@ var init_km = __esm({
         json_string: "\u1781\u17D2\u179F\u17C2\u17A2\u1780\u17D2\u179F\u179A JSON",
         e164: "\u179B\u17C1\u1781 E.164",
         credit_card: "\u179B\u17C1\u1781\u1794\u17D0\u178E\u17D2\u178E\u17A5\u178E\u1791\u17B6\u1793",
+        currency_code: "\u1780\u17BC\u178A\u179A\u17BC\u1794\u17B7\u1799\u1794\u17D0\u178E\u17D2\u178E",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "\u1791\u17B7\u1793\u17D2\u1793\u1793\u17D0\u1799\u1794\u1789\u17D2\u1785\u17BC\u179B"
       };
@@ -9315,17 +9599,17 @@ var init_km = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/kh.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/kh.js
 function kh_default() {
   return km_default();
 }
 var init_kh = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/kh.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/kh.js"() {
     init_km();
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/kn.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/kn.js
 function kn_default() {
   return {
     localeError: error31()
@@ -9333,7 +9617,7 @@ function kn_default() {
 }
 var error31;
 var init_kn = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/kn.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/kn.js"() {
     init_util();
     error31 = () => {
       const Sizable = {
@@ -9375,6 +9659,8 @@ var init_kn = __esm({
         json_string: "JSON\u0CB8\u0CCD\u0C9F\u0CCD\u0CB0\u0CBF\u0C82\u0C97\u0CCD",
         e164: "E.164 \u0CB8\u0C82\u0C96\u0CCD\u0CAF\u0CC6",
         credit_card: "\u0C95\u0CCD\u0CB0\u0CC6\u0CA1\u0CBF\u0C9F\u0CCD \u0C95\u0CBE\u0CB0\u0CCD\u0CA1\u0CCD \u0CB8\u0C82\u0C96\u0CCD\u0CAF\u0CC6",
+        currency_code: "\u0C95\u0CB0\u0CC6\u0CA8\u0CCD\u0CB8\u0CBF \u0C95\u0CCB\u0CA1\u0CCD",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "\u0C87\u0CA8\u0CCD\u0CAA\u0CC1\u0C9F\u0CCD"
       };
@@ -9445,7 +9731,7 @@ var init_kn = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/ko.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/ko.js
 function ko_default() {
   return {
     localeError: error32()
@@ -9453,7 +9739,7 @@ function ko_default() {
 }
 var error32;
 var init_ko = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/ko.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/ko.js"() {
     init_util();
     error32 = () => {
       const Sizable = {
@@ -9495,6 +9781,8 @@ var init_ko = __esm({
         json_string: "JSON \uBB38\uC790\uC5F4",
         e164: "E.164 \uBC88\uD638",
         credit_card: "\uC2E0\uC6A9\uCE74\uB4DC \uBC88\uD638",
+        currency_code: "\uD1B5\uD654 \uCF54\uB4DC",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "\uC785\uB825"
       };
@@ -9566,7 +9854,7 @@ var init_ko = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/lt.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/lt.js
 function getUnitTypeFromNumber(number4) {
   const abs = Math.abs(number4);
   const last = abs % 10;
@@ -9584,7 +9872,7 @@ function lt_default() {
 }
 var capitalizeFirstCharacter, error33;
 var init_lt = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/lt.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/lt.js"() {
     init_util();
     capitalizeFirstCharacter = (text2) => {
       return text2.charAt(0).toUpperCase() + text2.slice(1);
@@ -9698,6 +9986,8 @@ var init_lt = __esm({
         json_string: "JSON eilut\u0117",
         e164: "E.164 numeris",
         credit_card: "kredito kortel\u0117s numeris",
+        currency_code: "valiutos kodas",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "\u012Fvestis"
       };
@@ -9778,7 +10068,7 @@ var init_lt = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/mk.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/mk.js
 function mk_default() {
   return {
     localeError: error34()
@@ -9786,7 +10076,7 @@ function mk_default() {
 }
 var error34;
 var init_mk = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/mk.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/mk.js"() {
     init_util();
     error34 = () => {
       const Sizable = {
@@ -9828,6 +10118,8 @@ var init_mk = __esm({
         json_string: "JSON \u043D\u0438\u0437\u0430",
         e164: "E.164 \u0431\u0440\u043E\u0458",
         credit_card: "\u0431\u0440\u043E\u0458 \u043D\u0430 \u043A\u0440\u0435\u0434\u0438\u0442\u043D\u0430 \u043A\u0430\u0440\u0442\u0438\u0447\u043A\u0430",
+        currency_code: "\u043A\u043E\u0434 \u043D\u0430 \u0432\u0430\u043B\u0443\u0442\u0430",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "\u0432\u043D\u0435\u0441"
       };
@@ -9897,7 +10189,7 @@ var init_mk = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/ms.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/ms.js
 function ms_default() {
   return {
     localeError: error35()
@@ -9905,7 +10197,7 @@ function ms_default() {
 }
 var error35;
 var init_ms = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/ms.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/ms.js"() {
     init_util();
     error35 = () => {
       const Sizable = {
@@ -9947,6 +10239,8 @@ var init_ms = __esm({
         json_string: "string JSON",
         e164: "nombor E.164",
         credit_card: "nombor kad kredit",
+        currency_code: "kod mata wang",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "input"
       };
@@ -10014,7 +10308,7 @@ var init_ms = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/ne.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/ne.js
 function ne_default() {
   return {
     localeError: error36()
@@ -10022,7 +10316,7 @@ function ne_default() {
 }
 var error36;
 var init_ne = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/ne.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/ne.js"() {
     init_util();
     error36 = () => {
       const Sizable = {
@@ -10064,6 +10358,8 @@ var init_ne = __esm({
         json_string: "JSON \u0938\u094D\u091F\u094D\u0930\u093F\u0919",
         e164: "E.164 \u0928\u092E\u094D\u092C\u0930",
         credit_card: "\u0915\u094D\u0930\u0947\u0921\u093F\u091F \u0915\u093E\u0930\u094D\u0921 \u0928\u092E\u094D\u092C\u0930",
+        currency_code: "\u092E\u0941\u0926\u094D\u0930\u093E \u0915\u094B\u0921",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "\u0907\u0928\u092A\u0941\u091F"
       };
@@ -10130,7 +10426,7 @@ var init_ne = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/nl.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/nl.js
 function nl_default() {
   return {
     localeError: error37()
@@ -10138,7 +10434,7 @@ function nl_default() {
 }
 var error37;
 var init_nl = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/nl.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/nl.js"() {
     init_util();
     error37 = () => {
       const Sizable = {
@@ -10180,6 +10476,8 @@ var init_nl = __esm({
         json_string: "JSON string",
         e164: "E.164-nummer",
         credit_card: "creditcardnummer",
+        currency_code: "valutacode",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "invoer"
       };
@@ -10250,7 +10548,7 @@ var init_nl = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/nn.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/nn.js
 function nn_default() {
   return {
     localeError: error38()
@@ -10258,7 +10556,7 @@ function nn_default() {
 }
 var error38;
 var init_nn = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/nn.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/nn.js"() {
     init_util();
     error38 = () => {
       const Sizable = {
@@ -10300,6 +10598,8 @@ var init_nn = __esm({
         json_string: "JSON-streng",
         e164: "E.164-nummer",
         credit_card: "kredittkortnummer",
+        currency_code: "valutakode",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "input"
       };
@@ -10368,7 +10668,7 @@ var init_nn = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/no.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/no.js
 function no_default() {
   return {
     localeError: error39()
@@ -10376,7 +10676,7 @@ function no_default() {
 }
 var error39;
 var init_no = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/no.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/no.js"() {
     init_util();
     error39 = () => {
       const Sizable = {
@@ -10418,6 +10718,8 @@ var init_no = __esm({
         json_string: "JSON-streng",
         e164: "E.164-nummer",
         credit_card: "kredittkortnummer",
+        currency_code: "valutakode",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "input"
       };
@@ -10486,7 +10788,7 @@ var init_no = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/ota.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/ota.js
 function ota_default() {
   return {
     localeError: error40()
@@ -10494,7 +10796,7 @@ function ota_default() {
 }
 var error40;
 var init_ota = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/ota.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/ota.js"() {
     init_util();
     error40 = () => {
       const Sizable = {
@@ -10536,6 +10838,8 @@ var init_ota = __esm({
         json_string: "JSON metin",
         e164: "E.164 say\u0131s\u0131",
         credit_card: "i'tib\xE2r kart\u0131 numaras\u0131",
+        currency_code: "para birimi kodu",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "giren"
       };
@@ -10605,7 +10909,7 @@ var init_ota = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/ps.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/ps.js
 function ps_default() {
   return {
     localeError: error41()
@@ -10613,7 +10917,7 @@ function ps_default() {
 }
 var error41;
 var init_ps = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/ps.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/ps.js"() {
     init_util();
     error41 = () => {
       const Sizable = {
@@ -10655,6 +10959,8 @@ var init_ps = __esm({
         json_string: "JSON \u0645\u062A\u0646",
         e164: "\u062F E.164 \u0634\u0645\u06D0\u0631\u0647",
         credit_card: "\u062F \u06A9\u0631\u06CC\u0689\u06CC\u067C \u06A9\u0627\u0631\u062A \u0634\u0645\u06CC\u0631\u0647",
+        currency_code: "\u062F \u0627\u0633\u0639\u0627\u0631\u0648 \u06A9\u0648\u0689",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "\u0648\u0631\u0648\u062F\u064A"
       };
@@ -10729,7 +11035,7 @@ var init_ps = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/pl.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/pl.js
 function pl_default() {
   return {
     localeError: error42()
@@ -10737,7 +11043,7 @@ function pl_default() {
 }
 var error42;
 var init_pl = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/pl.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/pl.js"() {
     init_util();
     error42 = () => {
       const Sizable = {
@@ -10779,6 +11085,8 @@ var init_pl = __esm({
         json_string: "ci\u0105g znak\xF3w w formacie JSON",
         e164: "liczba E.164",
         credit_card: "numer karty kredytowej",
+        currency_code: "kod waluty",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "wej\u015Bcie"
       };
@@ -10848,7 +11156,7 @@ var init_pl = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/pt.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/pt.js
 function pt_default() {
   return {
     localeError: error43()
@@ -10856,7 +11164,7 @@ function pt_default() {
 }
 var error43;
 var init_pt = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/pt.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/pt.js"() {
     init_util();
     error43 = () => {
       const Sizable = {
@@ -10898,6 +11206,8 @@ var init_pt = __esm({
         json_string: "o texto JSON",
         e164: "o n\xFAmero E.164",
         credit_card: "o n\xFAmero de cart\xE3o de cr\xE9dito",
+        currency_code: "o c\xF3digo de moeda",
+        iban: "o IBAN",
         jwt: "o JWT",
         template_literal: "a entrada"
       };
@@ -10975,8 +11285,8 @@ var init_pt = __esm({
           case "not_multiple_of":
             return `N\xFAmero inv\xE1lido: deve ser m\xFAltiplo de ${issue2.divisor}`;
           case "unrecognized_keys": {
-            const plural2 = issue2.keys.length > 1 ? "s" : "";
-            return `Chave${plural2} inv\xE1lida${plural2}: ${joinValues(issue2.keys, ", ")}`;
+            const plural3 = issue2.keys.length > 1 ? "s" : "";
+            return `Chave${plural3} inv\xE1lida${plural3}: ${joinValues(issue2.keys, ", ")}`;
           }
           case "invalid_key":
             return `Entrada inv\xE1lida n${translateOriginWithArticle(issue2.origin, "definite")}`;
@@ -10996,7 +11306,7 @@ var init_pt = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/pt-BR.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/pt-BR.js
 function pt_BR_default() {
   return {
     localeError: error44()
@@ -11004,7 +11314,7 @@ function pt_BR_default() {
 }
 var error44;
 var init_pt_BR = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/pt-BR.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/pt-BR.js"() {
     init_util();
     error44 = () => {
       const Sizable = {
@@ -11046,6 +11356,8 @@ var init_pt_BR = __esm({
         json_string: "o texto JSON",
         e164: "o n\xFAmero E.164",
         credit_card: "o n\xFAmero de cart\xE3o de cr\xE9dito",
+        currency_code: "o c\xF3digo de moeda",
+        iban: "o IBAN",
         jwt: "o JWT",
         template_literal: "a entrada"
       };
@@ -11124,8 +11436,8 @@ var init_pt_BR = __esm({
           case "not_multiple_of":
             return `N\xFAmero inv\xE1lido: deve ser m\xFAltiplo de ${issue2.divisor}`;
           case "unrecognized_keys": {
-            const plural2 = issue2.keys.length > 1 ? "s" : "";
-            return `Chave${plural2} inv\xE1lida${plural2}: ${joinValues(issue2.keys, ", ")}`;
+            const plural3 = issue2.keys.length > 1 ? "s" : "";
+            return `Chave${plural3} inv\xE1lida${plural3}: ${joinValues(issue2.keys, ", ")}`;
           }
           case "invalid_key":
             return `Entrada inv\xE1lida n${translateOriginWithArticle(issue2.origin, "definite")}`;
@@ -11145,7 +11457,7 @@ var init_pt_BR = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/ro.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/ro.js
 function ro_default() {
   return {
     localeError: error45()
@@ -11153,7 +11465,7 @@ function ro_default() {
 }
 var error45;
 var init_ro = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/ro.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/ro.js"() {
     init_util();
     error45 = () => {
       const Sizable = {
@@ -11195,6 +11507,8 @@ var init_ro = __esm({
         json_string: "\u0219ir JSON",
         e164: "num\u0103r E.164",
         credit_card: "num\u0103r de card de credit",
+        currency_code: "cod valutar",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "intrare"
       };
@@ -11272,7 +11586,7 @@ var init_ro = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/ru.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/ru.js
 function getRussianPlural(count, one, few, many) {
   const absCount = Math.abs(count);
   const lastDigit = absCount % 10;
@@ -11295,7 +11609,7 @@ function ru_default() {
 }
 var error46;
 var init_ru = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/ru.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/ru.js"() {
     init_util();
     error46 = () => {
       const Sizable = {
@@ -11372,6 +11686,8 @@ var init_ru = __esm({
         json_string: "JSON \u0441\u0442\u0440\u043E\u043A\u0430",
         e164: "\u043D\u043E\u043C\u0435\u0440 E.164",
         credit_card: "\u043D\u043E\u043C\u0435\u0440 \u043A\u0440\u0435\u0434\u0438\u0442\u043D\u043E\u0439 \u043A\u0430\u0440\u0442\u044B",
+        currency_code: "\u043A\u043E\u0434 \u0432\u0430\u043B\u044E\u0442\u044B",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "\u0432\u0432\u043E\u0434"
       };
@@ -11445,7 +11761,7 @@ var init_ru = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/sk.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/sk.js
 function sk_default() {
   return {
     localeError: error47()
@@ -11453,7 +11769,7 @@ function sk_default() {
 }
 var error47;
 var init_sk = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/sk.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/sk.js"() {
     init_util();
     error47 = () => {
       const Sizable = {
@@ -11495,6 +11811,8 @@ var init_sk = __esm({
         json_string: "re\u0165azec vo form\xE1te JSON",
         e164: "\u010D\xEDslo E.164",
         credit_card: "\u010D\xEDslo kreditnej karty",
+        currency_code: "k\xF3d meny",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "vstup"
       };
@@ -11566,7 +11884,7 @@ var init_sk = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/sl.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/sl.js
 function sl_default() {
   return {
     localeError: error48()
@@ -11574,7 +11892,7 @@ function sl_default() {
 }
 var error48;
 var init_sl = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/sl.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/sl.js"() {
     init_util();
     error48 = () => {
       const Sizable = {
@@ -11616,6 +11934,8 @@ var init_sl = __esm({
         json_string: "JSON niz",
         e164: "E.164 \u0161tevilka",
         credit_card: "\u0161tevilka kreditne kartice",
+        currency_code: "koda valute",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "vnos"
       };
@@ -11685,7 +12005,7 @@ var init_sl = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/sv.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/sv.js
 function sv_default() {
   return {
     localeError: error49()
@@ -11693,7 +12013,7 @@ function sv_default() {
 }
 var error49;
 var init_sv = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/sv.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/sv.js"() {
     init_util();
     error49 = () => {
       const Sizable = {
@@ -11735,6 +12055,8 @@ var init_sv = __esm({
         json_string: "JSON-str\xE4ng",
         e164: "E.164-nummer",
         credit_card: "kreditkortsnummer",
+        currency_code: "valutakod",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "mall-literal"
       };
@@ -11805,7 +12127,7 @@ var init_sv = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/ta.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/ta.js
 function ta_default() {
   return {
     localeError: error50()
@@ -11813,7 +12135,7 @@ function ta_default() {
 }
 var error50;
 var init_ta = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/ta.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/ta.js"() {
     init_util();
     error50 = () => {
       const Sizable = {
@@ -11855,6 +12177,8 @@ var init_ta = __esm({
         json_string: "JSON \u0B9A\u0BB0\u0BAE\u0BCD",
         e164: "E.164 \u0B8E\u0BA3\u0BCD",
         credit_card: "\u0B95\u0B9F\u0BA9\u0BCD \u0B85\u0B9F\u0BCD\u0B9F\u0BC8 \u0B8E\u0BA3\u0BCD",
+        currency_code: "\u0BA8\u0BBE\u0BA3\u0BAF\u0B95\u0BCD \u0B95\u0BC1\u0BB1\u0BBF\u0BAF\u0BC0\u0B9F\u0BC1",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "input"
       };
@@ -11925,17 +12249,140 @@ var init_ta = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/th.js
-function th_default() {
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/tg.js
+function tg_default() {
   return {
     localeError: error51()
   };
 }
 var error51;
-var init_th = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/th.js"() {
+var init_tg = __esm({
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/tg.js"() {
     init_util();
     error51 = () => {
+      const Sizable = {
+        string: { unit: "\u0430\u043B\u043E\u043C\u0430\u0442", verb: "\u0434\u043E\u0448\u0442\u0430 \u0431\u043E\u0448\u0430\u0434" },
+        file: { unit: "\u0431\u0430\u0439\u0442", verb: "\u0434\u043E\u0448\u0442\u0430 \u0431\u043E\u0448\u0430\u0434" },
+        array: { unit: "\u0443\u043D\u0441\u0443\u0440", verb: "\u0434\u043E\u0448\u0442\u0430 \u0431\u043E\u0448\u0430\u0434" },
+        set: { unit: "\u0443\u043D\u0441\u0443\u0440", verb: "\u0434\u043E\u0448\u0442\u0430 \u0431\u043E\u0448\u0430\u0434" },
+        map: { unit: "\u0441\u0430\u0431\u0442", verb: "\u0434\u043E\u0448\u0442\u0430 \u0431\u043E\u0448\u0430\u0434" }
+      };
+      function getSizing(origin) {
+        return Sizable[origin] ?? null;
+      }
+      const FormatDictionary = {
+        regex: "\u0432\u0443\u0440\u0443\u0434",
+        email: "\u0441\u0443\u0440\u043E\u0493\u0430\u0438 email",
+        url: "URL",
+        emoji: "\u044D\u043C\u043E\u04B7\u0438",
+        uuid: "UUID",
+        uuidv4: "UUIDv4",
+        uuidv6: "UUIDv6",
+        nanoid: "nanoid",
+        guid: "GUID",
+        cuid: "cuid",
+        cuid2: "cuid2",
+        ulid: "ULID",
+        xid: "XID",
+        ksuid: "KSUID",
+        datetime: "\u0441\u0430\u043D\u0430\u0432\u0443 \u0432\u0430\u049B\u0442\u0438 ISO",
+        date: "\u0441\u0430\u043D\u0430\u0438 ISO",
+        time: "\u0432\u0430\u049B\u0442\u0438 ISO",
+        duration: "\u0434\u0430\u0432\u043E\u043C\u043D\u043E\u043A\u0438\u0438 ISO",
+        ipv4: "\u0441\u0443\u0440\u043E\u0493\u0430\u0438 IPv4",
+        ipv6: "\u0441\u0443\u0440\u043E\u0493\u0430\u0438 IPv6",
+        mac: "\u0441\u0443\u0440\u043E\u0493\u0430\u0438 MAC",
+        cidrv4: "\u043C\u0430\u04B3\u0434\u0443\u0434\u0430\u0438 IPv4",
+        cidrv6: "\u043C\u0430\u04B3\u0434\u0443\u0434\u0430\u0438 IPv6",
+        base64: "\u0441\u0430\u0442\u0440\u0438 \u0434\u0430\u0440 \u0444\u043E\u0440\u043C\u0430\u0442\u0438 base64",
+        base64url: "\u0441\u0430\u0442\u0440\u0438 \u0434\u0430\u0440 \u0444\u043E\u0440\u043C\u0430\u0442\u0438 base64url",
+        json_string: "\u0441\u0430\u0442\u0440\u0438 JSON",
+        e164: "\u0440\u0430\u049B\u0430\u043C\u0438 E.164",
+        credit_card: "\u0440\u0430\u049B\u0430\u043C\u0438 \u043A\u043E\u0440\u0442\u0438 \u043A\u0440\u0435\u0434\u0438\u0442\u04E3",
+        currency_code: "\u0440\u0430\u043C\u0437\u0438 \u0430\u0441\u044A\u043E\u0440",
+        iban: "IBAN",
+        jwt: "JWT",
+        template_literal: "\u0432\u0443\u0440\u0443\u0434"
+      };
+      const TypeDictionary = {
+        nan: "NaN",
+        number: "\u0440\u0430\u049B\u0430\u043C",
+        string: "\u0441\u0430\u0442\u0440",
+        array: "\u043C\u0430\u0441\u0441\u0438\u0432",
+        object: "\u043E\u0431\u044A\u0435\u043A\u0442",
+        date: "\u0441\u0430\u043D\u0430"
+      };
+      return (issue2) => {
+        switch (issue2.code) {
+          case "invalid_type": {
+            const expected = TypeDictionary[issue2.expected] ?? issue2.expected;
+            const receivedType = parsedType(issue2.input);
+            const received = TypeDictionary[receivedType] ?? receivedType;
+            return `\u0412\u0443\u0440\u0443\u0434\u0438 \u043D\u043E\u0434\u0443\u0440\u0443\u0441\u0442: ${expected} \u0438\u043D\u0442\u0438\u0437\u043E\u0440 \u043C\u0435\u0440\u0430\u0444\u0442, ${received} \u0433\u0438\u0440\u0438\u0444\u0442\u0430 \u0448\u0443\u0434`;
+          }
+          case "invalid_value":
+            if (issue2.values.length === 1)
+              return `\u0412\u0443\u0440\u0443\u0434\u0438 \u043D\u043E\u0434\u0443\u0440\u0443\u0441\u0442: ${stringifyPrimitive(issue2.values[0])} \u0438\u043D\u0442\u0438\u0437\u043E\u0440 \u043C\u0435\u0440\u0430\u0444\u0442`;
+            return `\u0418\u043D\u0442\u0438\u0445\u043E\u0431\u0438 \u043D\u043E\u0434\u0443\u0440\u0443\u0441\u0442: \u044F\u043A\u0435 \u0430\u0437 ${joinValues(issue2.values, "|")} \u0438\u043D\u0442\u0438\u0437\u043E\u0440 \u043C\u0435\u0440\u0430\u0444\u0442`;
+          case "too_big": {
+            const adj = issue2.inclusive ? "<=" : "<";
+            const sizing = getSizing(issue2.origin);
+            if (sizing)
+              return `\u0425\u0435\u043B\u0435 \u043A\u0430\u043B\u043E\u043D: ${issue2.origin ?? "\u049B\u0438\u043C\u0430\u0442"} \u0431\u043E\u044F\u0434 ${adj}${issue2.maximum.toString()} ${sizing.unit} ${sizing.verb}`;
+            return `\u0425\u0435\u043B\u0435 \u043A\u0430\u043B\u043E\u043D: ${issue2.origin ?? "\u049B\u0438\u043C\u0430\u0442"} \u0431\u043E\u044F\u0434 ${adj}${issue2.maximum.toString()} \u0431\u043E\u0448\u0430\u0434`;
+          }
+          case "too_small": {
+            const adj = issue2.inclusive ? ">=" : ">";
+            const sizing = getSizing(issue2.origin);
+            if (sizing)
+              return `\u0425\u0435\u043B\u0435 \u0445\u0443\u0440\u0434: ${issue2.origin} \u0431\u043E\u044F\u0434 ${adj}${issue2.minimum.toString()} ${sizing.unit} ${sizing.verb}`;
+            return `\u0425\u0435\u043B\u0435 \u0445\u0443\u0440\u0434: ${issue2.origin} \u0431\u043E\u044F\u0434 ${adj}${issue2.minimum.toString()} \u0431\u043E\u0448\u0430\u0434`;
+          }
+          case "invalid_format": {
+            const _issue = issue2;
+            if (_issue.format === "starts_with")
+              return `\u0421\u0430\u0442\u0440\u0438 \u043D\u043E\u0434\u0443\u0440\u0443\u0441\u0442: \u0431\u043E\u044F\u0434 \u0431\u043E "${_issue.prefix}" \u043E\u0493\u043E\u0437 \u0448\u0430\u0432\u0430\u0434`;
+            if (_issue.format === "ends_with")
+              return `\u0421\u0430\u0442\u0440\u0438 \u043D\u043E\u0434\u0443\u0440\u0443\u0441\u0442: \u0431\u043E\u044F\u0434 \u0431\u043E "${_issue.suffix}" \u0430\u043D\u04B7\u043E\u043C \u0451\u0431\u0430\u0434`;
+            if (_issue.format === "includes")
+              return `\u0421\u0430\u0442\u0440\u0438 \u043D\u043E\u0434\u0443\u0440\u0443\u0441\u0442: \u0431\u043E\u044F\u0434 "${_issue.includes}"-\u0440\u043E \u0434\u0430\u0440 \u0431\u0430\u0440 \u0433\u0438\u0440\u0430\u0434`;
+            if (_issue.format === "regex")
+              return `\u0421\u0430\u0442\u0440\u0438 \u043D\u043E\u0434\u0443\u0440\u0443\u0441\u0442: \u0431\u043E\u044F\u0434 \u0431\u0430 \u043D\u0430\u043C\u0443\u043D\u0430\u0438 ${_issue.pattern} \u043C\u0443\u0432\u043E\u0444\u0438\u049B\u0430\u0442 \u043A\u0443\u043D\u0430\u0434`;
+            return `${FormatDictionary[_issue.format] ?? issue2.format}-\u0438 \u043D\u043E\u0434\u0443\u0440\u0443\u0441\u0442`;
+          }
+          case "not_multiple_of":
+            return `\u0420\u0430\u049B\u0430\u043C\u0438 \u043D\u043E\u0434\u0443\u0440\u0443\u0441\u0442: \u0431\u043E\u044F\u0434 \u0431\u0430 ${issue2.divisor} \u0431\u0435 \u0431\u0430\u049B\u0438\u044F \u0442\u0430\u049B\u0441\u0438\u043C \u0448\u0430\u0432\u0430\u0434`;
+          case "unrecognized_keys":
+            return `\u041A\u0430\u043B\u0438\u0434${issue2.keys.length > 1 ? "\u04B3\u043E\u0438" : "\u0438"} \u043D\u043E\u043C\u0430\u044A\u043B\u0443\u043C: ${joinValues(issue2.keys, ", ")}`;
+          case "invalid_key":
+            return `\u041A\u0430\u043B\u0438\u0434\u0438 \u043D\u043E\u0434\u0443\u0440\u0443\u0441\u0442 \u0434\u0430\u0440 ${issue2.origin}`;
+          case "invalid_union":
+            if (issue2.options && Array.isArray(issue2.options) && issue2.options.length > 0) {
+              const opts = issue2.options.map((o2) => `'${o2}'`).join(" | ");
+              return `\u049A\u0438\u043C\u0430\u0442\u0438 \u043D\u043E\u0434\u0443\u0440\u0443\u0441\u0442\u0438 \u0434\u0438\u0441\u043A\u0440\u0438\u043C\u0438\u043D\u0430\u0442\u043E\u0440: ${opts} \u0438\u043D\u0442\u0438\u0437\u043E\u0440 \u043C\u0435\u0440\u0430\u0444\u0442`;
+            }
+            return "\u0412\u0443\u0440\u0443\u0434\u0438 \u043D\u043E\u0434\u0443\u0440\u0443\u0441\u0442";
+          case "invalid_element":
+            return `\u049A\u0438\u043C\u0430\u0442\u0438 \u043D\u043E\u0434\u0443\u0440\u0443\u0441\u0442 \u0434\u0430\u0440 ${issue2.origin}`;
+          default:
+            return `\u0412\u0443\u0440\u0443\u0434\u0438 \u043D\u043E\u0434\u0443\u0440\u0443\u0441\u0442`;
+        }
+      };
+    };
+  }
+});
+
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/th.js
+function th_default() {
+  return {
+    localeError: error52()
+  };
+}
+var error52;
+var init_th = __esm({
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/th.js"() {
+    init_util();
+    error52 = () => {
       const Sizable = {
         string: { unit: "\u0E15\u0E31\u0E27\u0E2D\u0E31\u0E01\u0E29\u0E23", verb: "\u0E04\u0E27\u0E23\u0E21\u0E35" },
         file: { unit: "\u0E44\u0E1A\u0E15\u0E4C", verb: "\u0E04\u0E27\u0E23\u0E21\u0E35" },
@@ -11975,6 +12422,8 @@ var init_th = __esm({
         json_string: "\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E41\u0E1A\u0E1A JSON",
         e164: "\u0E40\u0E1A\u0E2D\u0E23\u0E4C\u0E42\u0E17\u0E23\u0E28\u0E31\u0E1E\u0E17\u0E4C\u0E23\u0E30\u0E2B\u0E27\u0E48\u0E32\u0E07\u0E1B\u0E23\u0E30\u0E40\u0E17\u0E28 (E.164)",
         credit_card: "\u0E2B\u0E21\u0E32\u0E22\u0E40\u0E25\u0E02\u0E1A\u0E31\u0E15\u0E23\u0E40\u0E04\u0E23\u0E14\u0E34\u0E15",
+        currency_code: "\u0E23\u0E2B\u0E31\u0E2A\u0E2A\u0E01\u0E38\u0E25\u0E40\u0E07\u0E34\u0E19",
+        iban: "IBAN",
         jwt: "\u0E42\u0E17\u0E40\u0E04\u0E19 JWT",
         template_literal: "\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E17\u0E35\u0E48\u0E1B\u0E49\u0E2D\u0E19"
       };
@@ -12045,17 +12494,17 @@ var init_th = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/tk.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/tk.js
 function tk_default() {
   return {
-    localeError: error52()
+    localeError: error53()
   };
 }
-var error52;
+var error53;
 var init_tk = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/tk.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/tk.js"() {
     init_util();
-    error52 = () => {
+    error53 = () => {
       const Sizable = {
         string: { unit: "simwol", verb: "bolmaly" },
         file: { unit: "ba\xFDt", verb: "bolmaly" },
@@ -12095,6 +12544,8 @@ var init_tk = __esm({
         json_string: "JSON setiri",
         e164: "E.164 nomeri",
         credit_card: "kredit kartyny\u0148 nomeri",
+        currency_code: "wal\xFDuta kody",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "\u015Fablon"
       };
@@ -12157,17 +12608,17 @@ var init_tk = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/tr.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/tr.js
 function tr_default() {
   return {
-    localeError: error53()
+    localeError: error54()
   };
 }
-var error53;
+var error54;
 var init_tr = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/tr.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/tr.js"() {
     init_util();
-    error53 = () => {
+    error54 = () => {
       const Sizable = {
         string: { unit: "karakter", verb: "olmal\u0131" },
         file: { unit: "bayt", verb: "olmal\u0131" },
@@ -12207,6 +12658,8 @@ var init_tr = __esm({
         json_string: "JSON dizesi",
         e164: "E.164 say\u0131s\u0131",
         credit_card: "kredi kart\u0131 numaras\u0131",
+        currency_code: "para birimi kodu",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "\u015Eablon dizesi"
       };
@@ -12272,17 +12725,17 @@ var init_tr = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/uk.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/uk.js
 function uk_default() {
   return {
-    localeError: error54()
+    localeError: error55()
   };
 }
-var error54;
+var error55;
 var init_uk = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/uk.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/uk.js"() {
     init_util();
-    error54 = () => {
+    error55 = () => {
       const Sizable = {
         string: { unit: "\u0441\u0438\u043C\u0432\u043E\u043B\u0456\u0432", verb: "\u043C\u0430\u0442\u0438\u043C\u0435" },
         file: { unit: "\u0431\u0430\u0439\u0442\u0456\u0432", verb: "\u043C\u0430\u0442\u0438\u043C\u0435" },
@@ -12322,6 +12775,8 @@ var init_uk = __esm({
         json_string: "\u0440\u044F\u0434\u043E\u043A JSON",
         e164: "\u043D\u043E\u043C\u0435\u0440 E.164",
         credit_card: "\u043D\u043E\u043C\u0435\u0440 \u043A\u0440\u0435\u0434\u0438\u0442\u043D\u043E\u0457 \u043A\u0430\u0440\u0442\u043A\u0438",
+        currency_code: "\u043A\u043E\u0434 \u0432\u0430\u043B\u044E\u0442\u0438",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "\u0432\u0445\u0456\u0434\u043D\u0456 \u0434\u0430\u043D\u0456"
       };
@@ -12390,27 +12845,27 @@ var init_uk = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/ua.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/ua.js
 function ua_default() {
   return uk_default();
 }
 var init_ua = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/ua.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/ua.js"() {
     init_uk();
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/ur.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/ur.js
 function ur_default() {
   return {
-    localeError: error55()
+    localeError: error56()
   };
 }
-var error55;
+var error56;
 var init_ur = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/ur.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/ur.js"() {
     init_util();
-    error55 = () => {
+    error56 = () => {
       const Sizable = {
         string: { unit: "\u062D\u0631\u0648\u0641", verb: "\u06C1\u0648\u0646\u0627" },
         file: { unit: "\u0628\u0627\u0626\u0679\u0633", verb: "\u06C1\u0648\u0646\u0627" },
@@ -12450,6 +12905,8 @@ var init_ur = __esm({
         json_string: "\u062C\u06D2 \u0627\u06CC\u0633 \u0627\u0648 \u0627\u06CC\u0646 \u0633\u0679\u0631\u0646\u06AF",
         e164: "\u0627\u06CC 164 \u0646\u0645\u0628\u0631",
         credit_card: "\u06A9\u0631\u06CC\u0688\u0679 \u06A9\u0627\u0631\u0688 \u0646\u0645\u0628\u0631",
+        currency_code: "\u06A9\u0631\u0646\u0633\u06CC \u06A9\u0648\u0688",
+        iban: "IBAN",
         jwt: "\u062C\u06D2 \u0688\u0628\u0644\u06CC\u0648 \u0679\u06CC",
         template_literal: "\u0627\u0646 \u067E\u0679"
       };
@@ -12520,17 +12977,17 @@ var init_ur = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/uz.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/uz.js
 function uz_default() {
   return {
-    localeError: error56()
+    localeError: error57()
   };
 }
-var error56;
+var error57;
 var init_uz = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/uz.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/uz.js"() {
     init_util();
-    error56 = () => {
+    error57 = () => {
       const Sizable = {
         string: { unit: "belgi", verb: "bo\u2018lishi kerak" },
         file: { unit: "bayt", verb: "bo\u2018lishi kerak" },
@@ -12570,6 +13027,8 @@ var init_uz = __esm({
         json_string: "JSON satr",
         e164: "E.164 raqam",
         credit_card: "kredit karta raqami",
+        currency_code: "valyuta kodi",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "kirish"
       };
@@ -12638,17 +13097,17 @@ var init_uz = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/vi.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/vi.js
 function vi_default() {
   return {
-    localeError: error57()
+    localeError: error58()
   };
 }
-var error57;
+var error58;
 var init_vi = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/vi.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/vi.js"() {
     init_util();
-    error57 = () => {
+    error58 = () => {
       const Sizable = {
         string: { unit: "k\xFD t\u1EF1", verb: "c\xF3" },
         file: { unit: "byte", verb: "c\xF3" },
@@ -12688,6 +13147,8 @@ var init_vi = __esm({
         json_string: "chu\u1ED7i JSON",
         e164: "s\u1ED1 E.164",
         credit_card: "s\u1ED1 th\u1EBB t\xEDn d\u1EE5ng",
+        currency_code: "m\xE3 ti\u1EC1n t\u1EC7",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "\u0111\u1EA7u v\xE0o"
       };
@@ -12756,17 +13217,17 @@ var init_vi = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/zh-CN.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/zh-CN.js
 function zh_CN_default() {
   return {
-    localeError: error58()
+    localeError: error59()
   };
 }
-var error58;
+var error59;
 var init_zh_CN = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/zh-CN.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/zh-CN.js"() {
     init_util();
-    error58 = () => {
+    error59 = () => {
       const Sizable = {
         string: { unit: "\u5B57\u7B26", verb: "\u5305\u542B" },
         file: { unit: "\u5B57\u8282", verb: "\u5305\u542B" },
@@ -12806,6 +13267,8 @@ var init_zh_CN = __esm({
         json_string: "JSON\u5B57\u7B26\u4E32",
         e164: "E.164\u53F7\u7801",
         credit_card: "\u4FE1\u7528\u5361\u53F7",
+        currency_code: "\u8D27\u5E01\u4EE3\u7801",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "\u8F93\u5165"
       };
@@ -12875,17 +13338,17 @@ var init_zh_CN = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/zh-TW.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/zh-TW.js
 function zh_TW_default() {
   return {
-    localeError: error59()
+    localeError: error60()
   };
 }
-var error59;
+var error60;
 var init_zh_TW = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/zh-TW.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/zh-TW.js"() {
     init_util();
-    error59 = () => {
+    error60 = () => {
       const Sizable = {
         string: { unit: "\u5B57\u5143", verb: "\u64C1\u6709" },
         file: { unit: "\u4F4D\u5143\u7D44", verb: "\u64C1\u6709" },
@@ -12925,6 +13388,8 @@ var init_zh_TW = __esm({
         json_string: "JSON \u5B57\u4E32",
         e164: "E.164 \u6578\u503C",
         credit_card: "\u4FE1\u7528\u5361\u865F",
+        currency_code: "\u8CA8\u5E63\u4EE3\u78BC",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "\u8F38\u5165"
       };
@@ -12992,17 +13457,17 @@ var init_zh_TW = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/yo.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/yo.js
 function yo_default() {
   return {
-    localeError: error60()
+    localeError: error61()
   };
 }
-var error60;
+var error61;
 var init_yo = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/yo.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/yo.js"() {
     init_util();
-    error60 = () => {
+    error61 = () => {
       const Sizable = {
         string: { unit: "\xE0mi", verb: "n\xED" },
         file: { unit: "bytes", verb: "n\xED" },
@@ -13042,6 +13507,8 @@ var init_yo = __esm({
         json_string: "\u1ECD\u0300r\u1ECD\u0300 JSON",
         e164: "n\u1ECD\u0301mb\xE0 E.164",
         credit_card: "n\u1ECDmba kaadi gbese",
+        currency_code: "koodu ow\xF3",
+        iban: "IBAN",
         jwt: "JWT",
         template_literal: "\u1EB9\u0300r\u1ECD \xECb\xE1w\u1ECDl\xE9"
       };
@@ -13109,7 +13576,7 @@ var init_yo = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/index.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/index.js
 var locales_exports = {};
 __export(locales_exports, {
   ar: () => ar_default,
@@ -13163,6 +13630,7 @@ __export(locales_exports, {
   sl: () => sl_default,
   sv: () => sv_default,
   ta: () => ta_default,
+  tg: () => tg_default,
   th: () => th_default,
   tk: () => tk_default,
   tr: () => tr_default,
@@ -13176,7 +13644,7 @@ __export(locales_exports, {
   zhTW: () => zh_TW_default
 });
 var init_locales = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/locales/index.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/locales/index.js"() {
     init_ar();
     init_az();
     init_be();
@@ -13228,6 +13696,7 @@ var init_locales = __esm({
     init_sl();
     init_sv();
     init_ta();
+    init_tg();
     init_th();
     init_tk();
     init_tr();
@@ -13242,13 +13711,13 @@ var init_locales = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/core/registries.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/core/registries.js
 function registry() {
   return new $ZodRegistry();
 }
 var _a2, $output, $input, $ZodRegistry, globalRegistry;
 var init_registries = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/core/registries.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/core/registries.js"() {
     $output = /* @__PURE__ */ Symbol("ZodOutput");
     $input = /* @__PURE__ */ Symbol("ZodInput");
     $ZodRegistry = class {
@@ -13296,7 +13765,7 @@ var init_registries = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/core/compile.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/core/compile.js
 function compileValidator(schema, parser) {
   try {
     return compileFn(schema, { assertOnly: true });
@@ -13307,37 +13776,45 @@ function compileValidator(schema, parser) {
 function compile(schema, options) {
   try {
     const parser = compileFn(schema);
-    const clone3 = clone(schema);
-    const liveRun = schema._zod.run;
-    const originalRun = liveRun.__originalRun ?? liveRun;
-    const wrapped = (payload, ctx) => {
-      if (ctx?.async || ctx?.direction === "backward" || ctx?.skipChecks || ctx?.[FALLBACK_FLAG]) {
-        return originalRun(payload, ctx);
-      }
-      if (ctx && isBackEdge(ctx, payload.value)) {
-        return originalRun(payload, ctx);
-      }
-      const out = parser(payload.value);
-      if (out !== INVALID) {
-        payload.value = out;
-        return payload;
-      }
-      if (ctx)
-        ctx[FALLBACK_FLAG] = true;
-      return originalRun(payload, ctx);
-    };
-    wrapped.__originalRun = originalRun;
-    clone3._zod.bag.fallbackRun = originalRun;
+    const clone3 = withParser(schema, parser);
     clone3._zod.bag.validator = compileValidator(schema, parser);
-    clone3._zod.run = wrapped;
-    if (!liveRun.__originalRun)
-      installCompiledUserMethods(clone3, schema, parser);
     return clone3;
   } catch (err2) {
     if (options?.strict)
       throw err2;
     return schema;
   }
+}
+function withParser(schema, parser) {
+  if (isRecursiveSchema(schema)) {
+    throw new ZodCompileUnsupportedError("a schema whose subtree contains a reference cycle");
+  }
+  const clone3 = clone(schema);
+  const liveRun = schema._zod.run;
+  const originalRun = liveRun.__originalRun ?? liveRun;
+  const wrapped = (payload, ctx) => {
+    if (ctx?.async || ctx?.direction === "backward" || ctx?.skipChecks || ctx?.[FALLBACK_FLAG]) {
+      return originalRun(payload, ctx);
+    }
+    if (ctx && isBackEdge(ctx, payload.value)) {
+      return originalRun(payload, ctx);
+    }
+    const out = parser(payload.value);
+    if (out !== INVALID) {
+      payload.value = out;
+      return payload;
+    }
+    if (ctx)
+      ctx[FALLBACK_FLAG] = true;
+    return originalRun(payload, ctx);
+  };
+  wrapped.__originalRun = originalRun;
+  clone3._zod.bag.fallbackRun = originalRun;
+  clone3._zod.bag.validator = parser;
+  clone3._zod.run = wrapped;
+  if (!liveRun.__originalRun)
+    installCompiledUserMethods(clone3, schema, parser);
+  return clone3;
 }
 function installCompiledUserMethods(target, source, parser) {
   const targetAny = target;
@@ -13375,7 +13852,8 @@ function compileFn(schema, options) {
   const ctx = {
     constants: /* @__PURE__ */ new Map(),
     constantCounter: 0,
-    varCounter: 0
+    varCounter: 0,
+    definite: true
   };
   const doc = new Doc(["input"]);
   const outputAccessor = generateCheck(doc, ctx, schema, "input", !options?.assertOnly);
@@ -13399,6 +13877,7 @@ ${code}
   if (options?.debug) {
     fn2.code = fullCode;
   }
+  fn2.definite = ctx.definite;
   return fn2;
 }
 function addConstant(ctx, value) {
@@ -13409,6 +13888,10 @@ function addConstant(ctx, value) {
   const name = `c${ctx.constantCounter++}`;
   ctx.constants.set(name, value);
   return name;
+}
+function addUserConstant(ctx, fn2) {
+  ctx.definite = false;
+  return addConstant(ctx, fn2);
 }
 function newVar(ctx) {
   return `v${ctx.varCounter++}`;
@@ -13442,6 +13925,7 @@ function compileChild(doc, ctx, schema, accessor, needsValue = true) {
   }
 }
 function emitRuntimeIsland(doc, ctx, schema, accessor) {
+  ctx.definite = false;
   const schemaConst = addConstant(ctx, schema);
   const runConst = addConstant(ctx, runtimeRun);
   const outVar = newVar(ctx);
@@ -13513,6 +13997,9 @@ function generateChecks(doc, ctx, schema, accessor) {
         break;
       case "property":
         generatePropertyCheck(doc, ctx, def, currentAccessor);
+        break;
+      case "properties":
+        generatePropertiesChecks(doc, ctx, def, currentAccessor);
         break;
       case "overwrite": {
         const newAccessor = newVar(ctx);
@@ -13622,6 +14109,19 @@ function generateMimeTypeCheck(doc, ctx, def, accessor) {
     doc.write(`if (!${mimeSet}.has(${accessor}.type)) return INVALID;`);
   }
 }
+function generatePropertiesChecks(doc, ctx, def, accessor) {
+  if (def.when) {
+    throw new ZodCompileUnsupportedError(`check with a custom "when" condition`);
+  }
+  doc.write(`if (${accessor} == null) return INVALID;`);
+  const shape = def.shape;
+  for (const key of Reflect.ownKeys(shape)) {
+    const keyExpr = typeof key === "symbol" ? addConstant(ctx, key) : esc(key);
+    const inputVar = newVar(ctx);
+    doc.write(`const ${inputVar} = ${accessor}[${keyExpr}];`);
+    compileChild(doc, ctx, shape[key], inputVar, false);
+  }
+}
 function generatePropertyCheck(doc, ctx, def, accessor) {
   const propAccessor = `${accessor}[${JSON.stringify(def.property)}]`;
   generateCheck(doc, ctx, def.schema, propAccessor);
@@ -13649,7 +14149,7 @@ function generateCustomRefineCheck(doc, ctx, check2, accessor) {
     if (isAsyncFunction(def.fn)) {
       throw new ZodCompileAsyncError("z.compile: async .refine() predicates are not supported");
     }
-    const fnConst = addConstant(ctx, def.fn);
+    const fnConst = addUserConstant(ctx, def.fn);
     const throwAsyncConst = addConstant(ctx, throwAsync);
     const resVar = newVar(ctx);
     doc.write(`const ${resVar} = ${fnConst}(${accessor});`);
@@ -13669,7 +14169,7 @@ function generateCustomRefineCheck(doc, ctx, check2, accessor) {
         throwAsync();
       return fakePayload.issues.length === 0 ? fakePayload.value : INVALID;
     };
-    const helperConst = addConstant(ctx, helperFn);
+    const helperConst = addUserConstant(ctx, helperFn);
     const outVar = newVar(ctx);
     doc.write(`const ${outVar} = ${helperConst}(${accessor});`);
     doc.write(`if (${outVar} === INVALID) return INVALID;`);
@@ -13677,7 +14177,7 @@ function generateCustomRefineCheck(doc, ctx, check2, accessor) {
   }
   throw new ZodCompileUnsupportedError("custom check without a predicate or check function");
 }
-function generateStringFormatCheck(doc, ctx, def, accessor) {
+function generateStringFormatCheck(doc, ctx, def, accessor, needsValue = true) {
   const fmt = def.format;
   if (fmt === "base64") {
     const validator = addConstant(ctx, isValidBase64);
@@ -13710,9 +14210,14 @@ function generateStringFormatCheck(doc, ctx, def, accessor) {
     doc.write(`if (!${validator}(${accessor})) return INVALID;`);
     return accessor;
   }
+  if (fmt === "iban") {
+    const validator = addConstant(ctx, isValidIBAN);
+    doc.write(`if (!${validator}(${accessor})) return INVALID;`);
+    return accessor;
+  }
   const formatDef = def;
   if (fmt === "url" || fmt === "httpurl" || formatDef.normalize || formatDef.hostname !== void 0 || formatDef.protocol !== void 0) {
-    const parseConst = addConstant(ctx, parseURLObject);
+    const parseConst = addConstant(ctx, validateURL);
     const defConst = addConstant(ctx, def);
     const trimVar = newVar(ctx);
     const urlVar = newVar(ctx);
@@ -13727,6 +14232,8 @@ function generateStringFormatCheck(doc, ctx, def, accessor) {
       const protocolConst = addConstant(ctx, urlProtocolOk);
       doc.write(`if (!${protocolConst}(${urlVar}, ${defConst}.protocol)) return INVALID;`);
     }
+    if (!needsValue)
+      return null;
     const outputVar = newVar(ctx);
     const outputExpr = formatDef.normalize ? `${urlVar}.href` : `${addConstant(ctx, stripTabAndNewline)}(${trimVar})`;
     doc.write(`const ${outputVar} = ${outputExpr};`);
@@ -13786,7 +14293,7 @@ function generateCheck(doc, ctx, schema, accessor, needsValue = true) {
   let typeAccessor;
   switch (type) {
     case "string":
-      typeAccessor = generateStringCheck(doc, ctx, schema, accessor);
+      typeAccessor = generateStringCheck(doc, ctx, schema, accessor, buildsValue);
       break;
     case "number":
       typeAccessor = generateNumberCheck(doc, schema, accessor);
@@ -13907,12 +14414,12 @@ function generateCheck(doc, ctx, schema, accessor, needsValue = true) {
     return null;
   return generateChecks(doc, ctx, schema, typeAccessor);
 }
-function generateStringCheck(doc, ctx, schema, accessor) {
+function generateStringCheck(doc, ctx, schema, accessor, needsValue = true) {
   doc.write(`if (typeof ${accessor} !== "string") return INVALID;`);
   const def = schema._zod.def;
   if (def.format === void 0)
     return accessor;
-  return generateStringFormatCheck(doc, ctx, def, accessor);
+  return generateStringFormatCheck(doc, ctx, def, accessor, needsValue);
 }
 function generateNumberCheck(doc, schema, accessor) {
   doc.write(`if (typeof ${accessor} !== "number" || !Number.isFinite(${accessor})) return INVALID;`);
@@ -14030,7 +14537,7 @@ function generateObjectCheck(doc, ctx, schema, accessor, buildsValue = true) {
     }
   }
   const outputVar = newVar(ctx);
-  const hasConditionalKeys = allKeys.some((k) => mayOutputUndefined(propShape[k]) || dropsWhenAbsent(propShape[k]));
+  const hasConditionalKeys = allKeys.some((k) => mayOmitUndefined(propShape[k]) || dropsWhenAbsent(propShape[k]));
   if (!buildsValue) {
     if (unknownKeysMode === "schema") {
       const knownSet = keys.length > 0 ? addConstant(ctx, new Set(keys)) : null;
@@ -14057,7 +14564,7 @@ function generateObjectCheck(doc, ctx, schema, accessor, buildsValue = true) {
       const out = propOutputs.get(k);
       if (dropsWhenAbsent(propShape[k])) {
         doc.write(`if (${kx} in ${accessor}) ${outputVar}[${kx}] = ${out};`);
-      } else if (mayOutputUndefined(propShape[k])) {
+      } else if (mayOmitUndefined(propShape[k])) {
         doc.write(`if (${out} !== undefined || ${kx} in ${accessor}) ${outputVar}[${kx}] = ${out};`);
       } else {
         doc.write(`${outputVar}[${kx}] = ${out};`);
@@ -14189,6 +14696,9 @@ function fastPathAcceptsAbsence(schema) {
 }
 function dropsWhenAbsent(schema) {
   return schema._zod.optin === "optional" && schema._zod.optout === "optional";
+}
+function mayOmitUndefined(schema) {
+  return (schema._zod.optin !== "defaulted" || schema._zod.optout === "optional") && mayOutputUndefined(schema);
 }
 function mayOutputUndefined(schema) {
   const def = schema._zod.def;
@@ -14532,6 +15042,7 @@ function literalEquality(ctx, accessor, value) {
 }
 function generateIntersectionCheck(doc, ctx, schema, accessor) {
   const def = schema._zod.def;
+  ctx.definite = false;
   const leftOutput = compileChild(doc, ctx, def.left, accessor);
   const rightOutput = compileChild(doc, ctx, def.right, accessor);
   const mergeConst = addConstant(ctx, mergeValues);
@@ -14585,14 +15096,13 @@ function generateRecordCheck(doc, ctx, schema, accessor) {
   const keyIsBareString = keyDef.type === "string" && keyDef.format === void 0 && !keyDef.coerce && (keyDef.checks?.length ?? 0) === 0;
   if (!keyIsBareString) {
     const isLoose = def.mode === "loose";
-    const keyFast = addConstant(ctx, compileFn(def.keyType));
+    const keyFn = compileFn(def.keyType);
+    if (keyFn.definite === false)
+      ctx.definite = false;
+    const keyFast = addConstant(ctx, keyFn);
     const numericConst = addConstant(ctx, number);
-    const propIsEnumerableConst = addConstant(ctx, Object.prototype.propertyIsEnumerable);
     const outKeyVar = newVar(ctx);
-    doc.write(`for (const ${kVar} of Reflect.ownKeys(${accessor})) {`);
-    doc.indented((d2) => {
-      d2.write(`if (${kVar} === "__proto__") continue;`);
-      d2.write(`if (!${propIsEnumerableConst}.call(${accessor}, ${kVar})) continue;`);
+    emitOwnKeys(doc, ctx, accessor, kVar, (d2) => {
       d2.write(`let ${outKeyVar} = ${keyFast}(${kVar});`);
       d2.write(`if (${outKeyVar} === INVALID && typeof ${kVar} === "string" && ${numericConst}.test(${kVar})) ${outKeyVar} = ${keyFast}(Number(${kVar}));`);
       if (isLoose) {
@@ -14606,21 +15116,39 @@ function generateRecordCheck(doc, ctx, schema, accessor) {
       const valOutput = compileChild(d2, ctx, def.valueType, valueVar);
       d2.write(`${outputVar}[${outKeyVar}] = ${valOutput};`);
     });
-    doc.write(`}`);
     return outputVar;
   }
-  const propIsEnumerable = addConstant(ctx, Object.prototype.propertyIsEnumerable);
-  doc.write(`for (const ${kVar} of Reflect.ownKeys(${accessor})) {`);
-  doc.indented((d2) => {
-    d2.write(`if (${kVar} === "__proto__") continue;`);
-    d2.write(`if (!${propIsEnumerable}.call(${accessor}, ${kVar})) continue;`);
-    d2.write(`if (typeof ${kVar} !== "string") return INVALID;`);
+  emitOwnKeys(doc, ctx, accessor, kVar, (d2) => {
     d2.write(`const ${valVar} = ${accessor}[${kVar}];`);
     const valOutput = compileChild(d2, ctx, def.valueType, valVar);
     d2.write(`${outputVar}[${kVar}] = ${valOutput};`);
+  }, `return INVALID;`);
+  return outputVar;
+}
+function emitOwnKeys(doc, ctx, accessor, kVar, body, onSymbol) {
+  const propIsEnumerableConst = addConstant(ctx, Object.prototype.propertyIsEnumerable);
+  const symsVar = newVar(ctx);
+  const keysVar = newVar(ctx);
+  const iVar = newVar(ctx);
+  doc.write(`const ${symsVar} = Object.getOwnPropertySymbols(${accessor});`);
+  doc.write(`const ${keysVar} = Object.getOwnPropertyNames(${accessor});`);
+  doc.write(`for (let ${iVar} = 0; ${iVar} < ${keysVar}.length; ${iVar}++) {`);
+  doc.indented((d2) => {
+    d2.write(`const ${kVar} = ${keysVar}[${iVar}];`);
+    d2.write(`if (${kVar} === "__proto__" || !${propIsEnumerableConst}.call(${accessor}, ${kVar})) continue;`);
+    body(d2);
   });
   doc.write(`}`);
-  return outputVar;
+  doc.write(`for (let ${iVar} = 0; ${iVar} < ${symsVar}.length; ${iVar}++) {`);
+  doc.indented((d2) => {
+    d2.write(`const ${kVar} = ${symsVar}[${iVar}];`);
+    d2.write(`if (!${propIsEnumerableConst}.call(${accessor}, ${kVar})) continue;`);
+    if (onSymbol)
+      d2.write(onSymbol);
+    else
+      body(d2);
+  });
+  doc.write(`}`);
 }
 function literalPropertyKey(ctx, key) {
   if (typeof key === "string")
@@ -14673,7 +15201,7 @@ function generateTemplateLiteralCheck(doc, ctx, schema, accessor) {
 }
 function generateLazyCheck(doc, ctx, schema, accessor) {
   const def = schema._zod.def;
-  const getterConst = addConstant(ctx, def.getter);
+  const getterConst = addUserConstant(ctx, def.getter);
   const cacheConst = addConstant(ctx, { parser: null });
   doc.write(`if (!${cacheConst}.parser) {`);
   doc.indented((d2) => {
@@ -14706,7 +15234,7 @@ function generatePipeCheck(doc, ctx, schema, accessor) {
         return INVALID;
       return fakePayload.issues.length === 0 ? result : INVALID;
     };
-    const helperConst = addConstant(ctx, helperFn);
+    const helperConst = addUserConstant(ctx, helperFn);
     const transformedVar = newVar(ctx);
     doc.write(`const ${transformedVar} = ${helperConst}(${inputOutput});`);
     doc.write(`if (${transformedVar} === INVALID) return INVALID;`);
@@ -14724,7 +15252,7 @@ function generateCustomCheck(doc, ctx, schema, accessor) {
     if (isAsyncFunction(def.fn)) {
       throw new ZodCompileAsyncError("z.compile: async custom predicates are not supported");
     }
-    const fnConst = addConstant(ctx, def.fn);
+    const fnConst = addUserConstant(ctx, def.fn);
     const throwAsyncConst = addConstant(ctx, throwAsync);
     const resVar = newVar(ctx);
     doc.write(`const ${resVar} = ${fnConst}(${accessor});`);
@@ -14757,7 +15285,7 @@ function generateCatchCheck(doc, ctx, schema, accessor) {
   });
   doc.write(`})();`);
   const innerConst = addConstant(ctx, def.innerType);
-  const catchConst = addConstant(ctx, def.catchValue);
+  const catchConst = addUserConstant(ctx, def.catchValue);
   const catchHelperConst = addConstant(ctx, runtimeCatch);
   doc.write(`if (${outputVar} === INVALID) {`);
   doc.indented((d2) => {
@@ -14781,7 +15309,7 @@ function generateTransformCheck(doc, ctx, schema, accessor) {
         return INVALID;
       return fakePayload.issues.length === 0 ? result : INVALID;
     };
-    const helperConst = addConstant(ctx, helperFn);
+    const helperConst = addUserConstant(ctx, helperFn);
     const outputVar = newVar(ctx);
     doc.write(`const ${outputVar} = ${helperConst}(${accessor});`);
     doc.write(`if (${outputVar} === INVALID) return INVALID;`);
@@ -14791,7 +15319,7 @@ function generateTransformCheck(doc, ctx, schema, accessor) {
 }
 var INVALID, FALLBACK_FLAG, ZodCompileAsyncError, ZodCompileUnsupportedError, WHEN_DEFAULTED_CHECKS, PATTERN_IS_COMPLETE;
 var init_compile = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/core/compile.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/core/compile.js"() {
     init_core();
     init_doc();
     init_memoizer();
@@ -14850,21 +15378,19 @@ var init_compile = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/core/api.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/core/api.js
+function snapshotChecks(def) {
+  if (def.checks)
+    def.checks = [...def.checks];
+  return def;
+}
 // @__NO_SIDE_EFFECTS__
 function _string(Class2, params) {
-  return new Class2({
-    type: "string",
-    ...normalizeParams(params)
-  });
+  return new Class2(snapshotChecks({ type: "string", ...normalizeParams(params) }));
 }
 // @__NO_SIDE_EFFECTS__
 function _coercedString(Class2, params) {
-  return new Class2({
-    type: "string",
-    coerce: true,
-    ...normalizeParams(params)
-  });
+  return new Class2(snapshotChecks({ type: "string", coerce: true, ...normalizeParams(params) }));
 }
 // @__NO_SIDE_EFFECTS__
 function _email(Class2, params) {
@@ -15100,6 +15626,16 @@ function _creditCard(Class2, params) {
   });
 }
 // @__NO_SIDE_EFFECTS__
+function _iban(Class2, params) {
+  return new Class2({
+    type: "string",
+    format: "iban",
+    check: "string_format",
+    abort: false,
+    ...normalizeParams(params)
+  });
+}
+// @__NO_SIDE_EFFECTS__
 function _jwt(Class2, params) {
   return new Class2({
     type: "string",
@@ -15151,20 +15687,11 @@ function _isoDuration(Class2, params) {
 }
 // @__NO_SIDE_EFFECTS__
 function _number(Class2, params) {
-  return new Class2({
-    type: "number",
-    checks: [],
-    ...normalizeParams(params)
-  });
+  return new Class2(snapshotChecks({ type: "number", checks: [], ...normalizeParams(params) }));
 }
 // @__NO_SIDE_EFFECTS__
 function _coercedNumber(Class2, params) {
-  return new Class2({
-    type: "number",
-    coerce: true,
-    checks: [],
-    ...normalizeParams(params)
-  });
+  return new Class2(snapshotChecks({ type: "number", coerce: true, checks: [], ...normalizeParams(params) }));
 }
 // @__NO_SIDE_EFFECTS__
 function _int(Class2, params) {
@@ -15506,8 +16033,12 @@ function _property(property, schema, params) {
   });
 }
 // @__NO_SIDE_EFFECTS__
-function _properties(shape) {
-  return Object.entries(shape).map(([property, schema]) => new $ZodCheckProperty({ check: "property", property, schema }));
+function _properties(shape, params) {
+  return new $ZodCheckProperties({
+    check: "properties",
+    shape,
+    ...normalizeParams(params)
+  });
 }
 // @__NO_SIDE_EFFECTS__
 function _mime(types, params) {
@@ -15900,7 +16431,7 @@ function _stringFormat(Class2, format, fnOrRegex, _params = {}) {
 }
 var TimePrecision;
 var init_api = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/core/api.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/core/api.js"() {
     init_checks();
     init_registries();
     init_schemas();
@@ -15915,7 +16446,7 @@ var init_api = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/core/to-json-schema.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/core/to-json-schema.js
 function assignProps(target, ...sources2) {
   for (const source of sources2) {
     for (const key of Reflect.ownKeys(source)) {
@@ -15960,7 +16491,7 @@ function handleUnrepresentable(schema, ctx, json3, params, message2) {
   Object.assign(json3, result);
   return true;
 }
-function process2(schema, ctx, _params = { path: [], schemaPath: [] }) {
+function processSchema(schema, ctx, _params = { path: [], schemaPath: [] }) {
   var _a3;
   const def = schema._zod.def;
   const seen = ctx.seen.get(schema);
@@ -15999,7 +16530,7 @@ function process2(schema, ctx, _params = { path: [], schemaPath: [] }) {
     if (parent) {
       if (!result.ref)
         result.ref = parent;
-      process2(parent, ctx, params);
+      processSchema(parent, ctx, params);
       ctx.seen.get(parent).isParent = true;
     }
   }
@@ -16106,7 +16637,6 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     if (seen.count > 1) {
       if (ctx.reused === "ref") {
         extractToDef(entry);
-        continue;
       }
     }
   }
@@ -16432,28 +16962,56 @@ function isTransforming(_schema, _ctx) {
 }
 var FOLDABLE_KEYS, UNION_KEYS, createToJSONSchemaMethod, createStandardJSONSchemaMethod;
 var init_to_json_schema = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/core/to-json-schema.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/core/to-json-schema.js"() {
     init_registries();
     init_util();
     FOLDABLE_KEYS = /* @__PURE__ */ new Set(["type", "properties", "required", "additionalProperties"]);
     UNION_KEYS = ["oneOf", "anyOf"];
     createToJSONSchemaMethod = (schema, processors = {}) => (params) => {
       const ctx = initializeContext({ ...params, processors });
-      process2(schema, ctx);
+      processSchema(schema, ctx);
       extractDefs(ctx, schema);
       return finalize(ctx, schema);
     };
     createStandardJSONSchemaMethod = (schema, io, processors = {}) => (params) => {
       const { libraryOptions, target } = params ?? {};
       const ctx = initializeContext({ ...libraryOptions ?? {}, target, io, processors });
-      process2(schema, ctx);
+      processSchema(schema, ctx);
       extractDefs(ctx, schema);
       return finalize(ctx, schema);
     };
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/core/json-schema-processors.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/core/json-schema-processors.js
+function aggregateChecks(schema) {
+  const agg = {};
+  const def = schema._zod.def;
+  const list = schema._zod.traits.has("$ZodCheck") ? [schema, ...def.checks ?? []] : def.checks ?? [];
+  for (const ch of list)
+    contributors[ch._zod.def.check]?.(agg, ch._zod.def);
+  const bag = schema._zod.bag;
+  if (bag.minimum !== void 0)
+    narrowMin(agg, "minimum", bag.minimum);
+  if (bag.exclusiveMinimum !== void 0)
+    narrowMin(agg, "exclusiveMinimum", bag.exclusiveMinimum);
+  if (bag.maximum !== void 0)
+    narrowMax(agg, "maximum", bag.maximum);
+  if (bag.exclusiveMaximum !== void 0)
+    narrowMax(agg, "exclusiveMaximum", bag.exclusiveMaximum);
+  if (bag.multipleOf !== void 0)
+    addDivisor(agg, bag.multipleOf);
+  if (bag.format !== void 0) {
+    agg.format ?? (agg.format = bag.format);
+    if (bag.format.includes("int"))
+      agg.isInt = true;
+  }
+  if (bag.mime)
+    intersectMime(agg, bag.mime);
+  for (const pattern of bag.patterns ?? [])
+    addPattern(agg, pattern);
+  return agg;
+}
 function inputOptin(schema) {
   const def = schema._zod.def;
   if (def.type === "pipe" && def.in._zod.traits.has("$ZodTransform")) {
@@ -16546,7 +17104,7 @@ function toJSONSchema(input2, params) {
     const defs = {};
     for (const entry of registry2._idmap.entries()) {
       const [_2, schema] = entry;
-      process2(schema, ctx2);
+      processSchema(schema, ctx2);
     }
     const schemas = {};
     const external = {
@@ -16569,16 +17127,77 @@ function toJSONSchema(input2, params) {
     return { schemas };
   }
   const ctx = initializeContext({ ...params, processors: allProcessors });
-  process2(input2, ctx);
+  processSchema(input2, ctx);
   extractDefs(ctx, input2);
   return finalize(ctx, input2);
 }
-var formatMap, stringProcessor, numberProcessor, booleanProcessor, bigintProcessor, symbolProcessor, nullProcessor, undefinedProcessor, voidProcessor, neverProcessor, anyProcessor, unknownProcessor, dateProcessor, enumProcessor, literalProcessor, nanProcessor, templateLiteralProcessor, fileProcessor, successProcessor, customProcessor, functionProcessor, transformProcessor, mapProcessor, setProcessor, arrayProcessor, objectProcessor, unionProcessor, intersectionProcessor, tupleProcessor, pendingRecords, recordProcessor, nullableProcessor, nonoptionalProcessor, UNREPRESENTABLE_DEFAULT, defaultProcessor, prefaultProcessor, catchProcessor, pipeProcessor, readonlyProcessor, promiseProcessor, optionalProcessor, lazyProcessor, allProcessors;
+var narrowMin, narrowMax, narrowBoth, addDivisor, addPattern, intersectMime, setFormat, minContributor, maxContributor, formatContributor, contributors, formatMap, exactPatterns, exactPattern, stringProcessor, numberProcessor, booleanProcessor, bigintProcessor, symbolProcessor, nullProcessor, undefinedProcessor, voidProcessor, neverProcessor, anyProcessor, unknownProcessor, dateProcessor, enumProcessor, literalProcessor, nanProcessor, templateLiteralProcessor, fileProcessor, successProcessor, customProcessor, functionProcessor, transformProcessor, mapProcessor, setProcessor, arrayProcessor, objectProcessor, unionProcessor, intersectionProcessor, tupleProcessor, pendingRecords, recordProcessor, nullableProcessor, nonoptionalProcessor, UNREPRESENTABLE_DEFAULT, defaultProcessor, prefaultProcessor, catchProcessor, pipeProcessor, readonlyProcessor, promiseProcessor, optionalProcessor, lazyProcessor, allProcessors;
 var init_json_schema_processors = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/core/json-schema-processors.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/core/json-schema-processors.js"() {
     init_regexes();
+    init_schemas();
     init_to_json_schema();
     init_util();
+    narrowMin = (agg, key, value) => {
+      if (agg[key] === void 0 || value > agg[key])
+        agg[key] = value;
+    };
+    narrowMax = (agg, key, value) => {
+      if (agg[key] === void 0 || value < agg[key])
+        agg[key] = value;
+    };
+    narrowBoth = (agg, value) => {
+      narrowMin(agg, "minimum", value);
+      narrowMax(agg, "maximum", value);
+    };
+    addDivisor = (agg, value) => {
+      agg.multipleOf ?? (agg.multipleOf = []);
+      if (!agg.multipleOf.includes(value))
+        agg.multipleOf.push(value);
+    };
+    addPattern = (agg, pattern) => {
+      agg.patterns ?? (agg.patterns = /* @__PURE__ */ new Set());
+      agg.patterns.add(pattern);
+    };
+    intersectMime = (agg, mime) => {
+      agg.mime = agg.mime ? agg.mime.filter((m) => mime.includes(m)) : [...mime];
+    };
+    setFormat = (agg, format) => {
+      agg.format = format;
+      if (format.includes("int"))
+        agg.isInt = true;
+    };
+    minContributor = (agg, def) => narrowMin(agg, "minimum", def.minimum);
+    maxContributor = (agg, def) => narrowMax(agg, "maximum", def.maximum);
+    formatContributor = (ranges) => (agg, def) => {
+      setFormat(agg, def.format);
+      const [minimum, maximum] = ranges[def.format];
+      narrowMin(agg, "minimum", minimum);
+      narrowMax(agg, "maximum", maximum);
+    };
+    contributors = {
+      greater_than: (agg, def) => narrowMin(agg, def.inclusive ? "minimum" : "exclusiveMinimum", def.value),
+      less_than: (agg, def) => narrowMax(agg, def.inclusive ? "maximum" : "exclusiveMaximum", def.value),
+      multiple_of: (agg, def) => addDivisor(agg, def.value),
+      number_format: formatContributor(NUMBER_FORMAT_RANGES),
+      bigint_format: formatContributor(BIGINT_FORMAT_RANGES),
+      min_length: minContributor,
+      max_length: maxContributor,
+      length_equals: (agg, def) => narrowBoth(agg, def.length),
+      min_size: minContributor,
+      max_size: maxContributor,
+      size_equals: (agg, def) => narrowBoth(agg, def.size),
+      string_format: (agg, def) => {
+        setFormat(agg, def.format);
+        if (def.pattern)
+          addPattern(agg, def.pattern);
+        if (def.format === "base64" || def.format === "base64url")
+          agg.contentEncoding = def.format;
+        if (def.local || def.precision === -1)
+          agg.laxFormat = true;
+      },
+      mime_type: (agg, def) => intersectMime(agg, def.mime)
+    };
     formatMap = {
       guid: "uuid",
       url: "uri",
@@ -16587,10 +17206,15 @@ var init_json_schema_processors = __esm({
       regex: ""
       // do not set
     };
+    exactPatterns = /* @__PURE__ */ new Map([
+      [base64Charset, base64],
+      [base64urlCharset, base64url]
+    ]);
+    exactPattern = (p) => exactPatterns.get(p) ?? p;
     stringProcessor = (schema, ctx, _json, _params) => {
       const json3 = _json;
       json3.type = "string";
-      const { minimum, maximum, format, patterns, contentEncoding, laxFormat } = schema._zod.bag;
+      const { minimum, maximum, format, patterns, contentEncoding, laxFormat } = aggregateChecks(schema);
       if (typeof minimum === "number")
         json3.minLength = minimum;
       if (typeof maximum === "number")
@@ -16606,7 +17230,7 @@ var init_json_schema_processors = __esm({
       if (contentEncoding)
         json3.contentEncoding = contentEncoding;
       if (patterns && patterns.size > 0) {
-        const patternList = [...patterns];
+        const patternList = [...patterns].map(exactPattern);
         if (patternList.length === 1)
           json3.pattern = patternList[0].source;
         else if (patternList.length > 1) {
@@ -16621,11 +17245,8 @@ var init_json_schema_processors = __esm({
     };
     numberProcessor = (schema, ctx, _json, params) => {
       const json3 = _json;
-      const { minimum, maximum, format, multipleOf, exclusiveMaximum, exclusiveMinimum } = schema._zod.bag;
-      if (typeof format === "string" && format.includes("int"))
-        json3.type = "integer";
-      else
-        json3.type = "number";
+      const { minimum, maximum, multipleOf, exclusiveMaximum, exclusiveMinimum, isInt } = aggregateChecks(schema);
+      json3.type = isInt ? "integer" : "number";
       const exMin = typeof exclusiveMinimum === "number" && exclusiveMinimum >= (minimum ?? Number.NEGATIVE_INFINITY);
       const exMax = typeof exclusiveMaximum === "number" && exclusiveMaximum <= (maximum ?? Number.POSITIVE_INFINITY);
       const legacy = ctx.target === "draft-04" || ctx.target === "openapi-3.0";
@@ -16649,11 +17270,19 @@ var init_json_schema_processors = __esm({
       } else if (typeof maximum === "number") {
         json3.maximum = maximum;
       }
-      if (typeof multipleOf === "number") {
-        if (Number.isFinite(multipleOf) && multipleOf !== 0)
-          json3.multipleOf = Math.abs(multipleOf);
-        else
-          handleUnrepresentable(schema, ctx, json3, params, `A multipleOf divisor of ${multipleOf} cannot be represented in JSON Schema`);
+      if (multipleOf) {
+        const divisors = /* @__PURE__ */ new Set();
+        for (const divisor of multipleOf) {
+          if (Number.isFinite(divisor) && divisor !== 0)
+            divisors.add(Math.abs(divisor));
+          else
+            handleUnrepresentable(schema, ctx, json3, params, `A multipleOf divisor of ${divisor} cannot be represented in JSON Schema`);
+        }
+        const [first, ...rest] = divisors;
+        if (first !== void 0)
+          json3.multipleOf = first;
+        if (rest.length)
+          json3.allOf = [...json3.allOf ?? [], ...rest.map((m) => ({ multipleOf: m }))];
       }
     };
     booleanProcessor = (_schema, _ctx, json3, _params) => {
@@ -16756,27 +17385,22 @@ var init_json_schema_processors = __esm({
     };
     fileProcessor = (schema, _ctx, json3, _params) => {
       const _json = json3;
-      const file2 = {
-        type: "string",
-        format: "binary",
-        contentEncoding: "binary"
-      };
-      const { minimum, maximum, mime } = schema._zod.bag;
+      _json.type = "string";
+      _json.format = "binary";
+      _json.contentEncoding = "binary";
+      const { minimum, maximum, mime } = aggregateChecks(schema);
       if (minimum !== void 0)
-        file2.minLength = minimum;
+        _json.minLength = minimum;
       if (maximum !== void 0)
-        file2.maxLength = maximum;
-      if (mime) {
-        if (mime.length === 1) {
-          file2.contentMediaType = mime[0];
-          Object.assign(_json, file2);
-        } else {
-          Object.assign(_json, file2);
-          _json.anyOf = mime.map((m) => ({ contentMediaType: m }));
-        }
-      } else {
-        Object.assign(_json, file2);
-      }
+        _json.maxLength = maximum;
+      if (!mime)
+        return;
+      if (mime.length === 0)
+        _json.not = {};
+      else if (mime.length === 1)
+        _json.contentMediaType = mime[0];
+      else
+        _json.anyOf = mime.map((m) => ({ contentMediaType: m }));
     };
     successProcessor = (_schema, _ctx, json3, _params) => {
       json3.type = "boolean";
@@ -16799,13 +17423,13 @@ var init_json_schema_processors = __esm({
     arrayProcessor = (schema, ctx, _json, params) => {
       const json3 = _json;
       const def = schema._zod.def;
-      const { minimum, maximum } = schema._zod.bag;
+      const { minimum, maximum } = aggregateChecks(schema);
       if (typeof minimum === "number")
         json3.minItems = minimum;
       if (typeof maximum === "number")
         json3.maxItems = maximum;
       json3.type = "array";
-      json3.items = process2(def.element, ctx, {
+      json3.items = processSchema(def.element, ctx, {
         ...params,
         path: [...params.path, "items"]
       });
@@ -16821,22 +17445,20 @@ var init_json_schema_processors = __esm({
       json3.type = "object";
       json3.properties = {};
       for (const key in shape) {
-        assignProp(json3.properties, key, process2(shape[key], ctx, {
+        assignProp(json3.properties, key, processSchema(shape[key], ctx, {
           ...params,
           path: [...params.path, "properties", key]
         }));
       }
-      const allKeys = new Set(Object.keys(shape));
-      const requiredKeys = new Set([...allKeys].filter((key) => {
+      const requiredKeys = [];
+      for (const key of Object.keys(shape)) {
         const field = def.shape[key];
-        if (ctx.io === "input") {
-          return inputOptin(field) === void 0;
-        } else {
-          return field._zod.optout === void 0;
+        if (ctx.io === "input" ? inputOptin(field) === void 0 : field._zod.optout === void 0) {
+          requiredKeys.push(key);
         }
-      }));
-      if (requiredKeys.size > 0) {
-        json3.required = Array.from(requiredKeys);
+      }
+      if (requiredKeys.length > 0) {
+        json3.required = requiredKeys;
       }
       if (def.catchall?._zod.def.type === "never") {
         json3.additionalProperties = false;
@@ -16844,7 +17466,7 @@ var init_json_schema_processors = __esm({
         if (ctx.io === "output")
           json3.additionalProperties = false;
       } else if (def.catchall) {
-        json3.additionalProperties = process2(def.catchall, ctx, {
+        json3.additionalProperties = processSchema(def.catchall, ctx, {
           ...params,
           path: [...params.path, "additionalProperties"]
         });
@@ -16853,7 +17475,7 @@ var init_json_schema_processors = __esm({
     unionProcessor = (schema, ctx, json3, params) => {
       const def = schema._zod.def;
       const isExclusive = def.inclusive === false;
-      const options = def.options.map((x, i) => process2(x, ctx, {
+      const options = def.options.map((x, i) => processSchema(x, ctx, {
         ...params,
         path: [...params.path, isExclusive ? "oneOf" : "anyOf", i]
       }));
@@ -16865,11 +17487,11 @@ var init_json_schema_processors = __esm({
     };
     intersectionProcessor = (schema, ctx, json3, params) => {
       const def = schema._zod.def;
-      const a2 = process2(def.left, ctx, {
+      const a2 = processSchema(def.left, ctx, {
         ...params,
         path: [...params.path, "allOf", 0]
       });
-      const b3 = process2(def.right, ctx, {
+      const b3 = processSchema(def.right, ctx, {
         ...params,
         path: [...params.path, "allOf", 1]
       });
@@ -16887,11 +17509,11 @@ var init_json_schema_processors = __esm({
       json3.type = "array";
       const prefixPath = ctx.target === "draft-2020-12" ? "prefixItems" : "items";
       const restPath = ctx.target === "draft-2020-12" ? "items" : ctx.target === "openapi-3.0" ? "items" : "additionalItems";
-      const prefixItems = def.items.map((x, i) => process2(x, ctx, {
+      const prefixItems = def.items.map((x, i) => processSchema(x, ctx, {
         ...params,
         path: [...params.path, prefixPath, i]
       }));
-      const rest = def.rest ? process2(def.rest, ctx, {
+      const rest = def.rest ? processSchema(def.rest, ctx, {
         ...params,
         path: [...params.path, restPath, ...ctx.target === "openapi-3.0" ? [def.items.length] : []]
       }) : null;
@@ -16939,7 +17561,7 @@ var init_json_schema_processors = __esm({
         if (isClosed)
           json3.maxItems = maxItems;
       }
-      const { minimum, maximum } = schema._zod.bag;
+      const { minimum, maximum } = aggregateChecks(schema);
       if (typeof minimum === "number")
         json3.minItems = minimum;
       if (typeof maximum === "number")
@@ -16951,20 +17573,19 @@ var init_json_schema_processors = __esm({
       const def = schema._zod.def;
       json3.type = "object";
       const keyType = def.keyType;
-      const keyBag = keyType._zod.bag;
-      const patterns = keyBag?.patterns;
+      const patterns = aggregateChecks(keyType).patterns;
       if (def.mode === "loose" && patterns && patterns.size > 0) {
-        const valueSchema = process2(def.valueType, ctx, {
+        const valueSchema = processSchema(def.valueType, ctx, {
           ...params,
           path: [...params.path, "patternProperties", "*"]
         });
         json3.patternProperties = {};
         for (const pattern of patterns) {
-          assignProp(json3.patternProperties, pattern.source, valueSchema);
+          assignProp(json3.patternProperties, exactPattern(pattern).source, valueSchema);
         }
       } else {
         if (ctx.target === "draft-07" || ctx.target === "draft-2020-12") {
-          json3.propertyNames = process2(def.keyType, ctx, {
+          json3.propertyNames = processSchema(def.keyType, ctx, {
             ...params,
             path: [...params.path, "propertyNames"]
           });
@@ -16976,7 +17597,7 @@ var init_json_schema_processors = __esm({
           }
           pending.push(schema);
         }
-        json3.additionalProperties = process2(def.valueType, ctx, {
+        json3.additionalProperties = processSchema(def.valueType, ctx, {
           ...params,
           path: [...params.path, "additionalProperties"]
         });
@@ -16992,7 +17613,7 @@ var init_json_schema_processors = __esm({
     };
     nullableProcessor = (schema, ctx, json3, params) => {
       const def = schema._zod.def;
-      const inner = process2(def.innerType, ctx, params);
+      const inner = processSchema(def.innerType, ctx, params);
       const seen = ctx.seen.get(schema);
       if (ctx.target === "openapi-3.0") {
         seen.ref = def.innerType;
@@ -17003,14 +17624,14 @@ var init_json_schema_processors = __esm({
     };
     nonoptionalProcessor = (schema, ctx, _json, params) => {
       const def = schema._zod.def;
-      process2(def.innerType, ctx, params);
+      processSchema(def.innerType, ctx, params);
       const seen = ctx.seen.get(schema);
       seen.ref = def.innerType;
     };
     UNREPRESENTABLE_DEFAULT = /* @__PURE__ */ Symbol();
     defaultProcessor = (schema, ctx, json3, params) => {
       const def = schema._zod.def;
-      process2(def.innerType, ctx, params);
+      processSchema(def.innerType, ctx, params);
       const seen = ctx.seen.get(schema);
       seen.ref = def.innerType;
       const value = serializeDefaultValue(def.defaultValue, schema, ctx, json3, params);
@@ -17019,7 +17640,7 @@ var init_json_schema_processors = __esm({
     };
     prefaultProcessor = (schema, ctx, json3, params) => {
       const def = schema._zod.def;
-      process2(def.innerType, ctx, params);
+      processSchema(def.innerType, ctx, params);
       const seen = ctx.seen.get(schema);
       seen.ref = def.innerType;
       if (ctx.io !== "input")
@@ -17030,7 +17651,7 @@ var init_json_schema_processors = __esm({
     };
     catchProcessor = (schema, ctx, json3, params) => {
       const def = schema._zod.def;
-      process2(def.innerType, ctx, params);
+      processSchema(def.innerType, ctx, params);
       const seen = ctx.seen.get(schema);
       seen.ref = def.innerType;
       let catchValue;
@@ -17046,32 +17667,32 @@ var init_json_schema_processors = __esm({
       const def = schema._zod.def;
       const inIsTransform = def.in._zod.traits.has("$ZodTransform");
       const innerType = ctx.io === "input" ? inIsTransform ? def.out : def.in : def.out;
-      process2(innerType, ctx, params);
+      processSchema(innerType, ctx, params);
       const seen = ctx.seen.get(schema);
       seen.ref = innerType;
     };
     readonlyProcessor = (schema, ctx, json3, params) => {
       const def = schema._zod.def;
-      process2(def.innerType, ctx, params);
+      processSchema(def.innerType, ctx, params);
       const seen = ctx.seen.get(schema);
       seen.ref = def.innerType;
       json3.readOnly = true;
     };
     promiseProcessor = (schema, ctx, _json, params) => {
       const def = schema._zod.def;
-      process2(def.innerType, ctx, params);
+      processSchema(def.innerType, ctx, params);
       const seen = ctx.seen.get(schema);
       seen.ref = def.innerType;
     };
     optionalProcessor = (schema, ctx, _json, params) => {
       const def = schema._zod.def;
-      process2(def.innerType, ctx, params);
+      processSchema(def.innerType, ctx, params);
       const seen = ctx.seen.get(schema);
       seen.ref = def.innerType;
     };
     lazyProcessor = (schema, ctx, _json, params) => {
       const innerType = schema._zod.innerType;
-      process2(innerType, ctx, params);
+      processSchema(innerType, ctx, params);
       const seen = ctx.seen.get(schema);
       seen.ref = innerType;
     };
@@ -17119,10 +17740,10 @@ var init_json_schema_processors = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/core/json-schema-generator.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/core/json-schema-generator.js
 var JSONSchemaGenerator;
 var init_json_schema_generator = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/core/json-schema-generator.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/core/json-schema-generator.js"() {
     init_json_schema_processors();
     init_to_json_schema();
     JSONSchemaGenerator = class {
@@ -17178,7 +17799,7 @@ var init_json_schema_generator = __esm({
        * This must be called before emit().
        */
       process(schema, _params = { path: [], schemaPath: [] }) {
-        return process2(schema, this.ctx, _params);
+        return processSchema(schema, this.ctx, _params);
       }
       /**
        * Emit the final JSON Schema after processing.
@@ -17204,14 +17825,14 @@ var init_json_schema_generator = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/core/json-schema.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/core/json-schema.js
 var json_schema_exports = {};
 var init_json_schema = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/core/json-schema.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/core/json-schema.js"() {
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/core/index.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/core/index.js
 var core_exports2 = {};
 __export(core_exports2, {
   $ZodAny: () => $ZodAny,
@@ -17243,6 +17864,7 @@ __export(core_exports2, {
   $ZodCheckMultipleOf: () => $ZodCheckMultipleOf,
   $ZodCheckNumberFormat: () => $ZodCheckNumberFormat,
   $ZodCheckOverwrite: () => $ZodCheckOverwrite,
+  $ZodCheckProperties: () => $ZodCheckProperties,
   $ZodCheckProperty: () => $ZodCheckProperty,
   $ZodCheckRegex: () => $ZodCheckRegex,
   $ZodCheckSizeEquals: () => $ZodCheckSizeEquals,
@@ -17267,6 +17889,7 @@ __export(core_exports2, {
   $ZodFile: () => $ZodFile,
   $ZodFunction: () => $ZodFunction,
   $ZodGUID: () => $ZodGUID,
+  $ZodIBAN: () => $ZodIBAN,
   $ZodIPv4: () => $ZodIPv4,
   $ZodIPv6: () => $ZodIPv6,
   $ZodISODate: () => $ZodISODate,
@@ -17368,6 +17991,7 @@ __export(core_exports2, {
   _gt: () => _gt,
   _gte: () => _gte,
   _guid: () => _guid,
+  _iban: () => _iban,
   _includes: () => _includes,
   _int: () => _int,
   _int32: () => _int32,
@@ -17459,6 +18083,9 @@ __export(core_exports2, {
   _void: () => _void,
   _xid: () => _xid,
   _xor: () => _xor,
+  base64Charset: () => base64Charset,
+  base64urlCharset: () => base64urlCharset,
+  canParseURL: () => canParseURL,
   clone: () => clone,
   compile: () => compile,
   compileFn: () => compileFn,
@@ -17485,6 +18112,7 @@ __export(core_exports2, {
   isValidBase64URL: () => isValidBase64URL,
   isValidCIDRv6: () => isValidCIDRv6,
   isValidCreditCard: () => isValidCreditCard,
+  isValidIBAN: () => isValidIBAN,
   isValidIPv6: () => isValidIPv6,
   isValidJWT: () => isValidJWT,
   locales: () => locales_exports,
@@ -17495,7 +18123,8 @@ __export(core_exports2, {
   parseAsync: () => parseAsync,
   parseURLObject: () => parseURLObject,
   prettifyError: () => prettifyError,
-  process: () => process2,
+  process: () => processSchema,
+  processSchema: () => processSchema,
   regexes: () => regexes_exports,
   registry: () => registry,
   safeDecode: () => safeDecode,
@@ -17515,10 +18144,12 @@ __export(core_exports2, {
   util: () => util_exports,
   validate: () => validate,
   validateAsync: () => validateAsync,
-  version: () => version
+  validateURL: () => validateURL,
+  version: () => version,
+  withParser: () => withParser
 });
 var init_core2 = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/core/index.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/core/index.js"() {
     init_core();
     init_parse();
     init_errors();
@@ -17541,7 +18172,7 @@ var init_core2 = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/classic/checks.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/classic/checks.js
 var checks_exports2 = {};
 __export(checks_exports2, {
   endsWith: () => _endsWith,
@@ -17576,12 +18207,12 @@ __export(checks_exports2, {
   uppercase: () => _uppercase
 });
 var init_checks2 = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/classic/checks.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/classic/checks.js"() {
     init_core2();
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/classic/errors.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/classic/errors.js
 function _lazyMethod(proto, key, make) {
   Object.defineProperty(proto, key, {
     configurable: true,
@@ -17598,7 +18229,7 @@ function _lazyMethod(proto, key, make) {
 }
 var _installedErrorProtos, initializer2, ZodError, ZodRealError;
 var init_errors2 = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/classic/errors.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/classic/errors.js"() {
     init_core2();
     init_core2();
     init_util();
@@ -17635,10 +18266,10 @@ var init_errors2 = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/classic/parse.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/classic/parse.js
 var parse2, parseAsync2, safeParse2, safeParseAsync2, encode2, decode2, encodeAsync2, decodeAsync2, safeEncode2, safeDecode2, safeEncodeAsync2, safeDecodeAsync2;
 var init_parse2 = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/classic/parse.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/classic/parse.js"() {
     init_core2();
     init_errors2();
     init_core2();
@@ -17657,7 +18288,7 @@ var init_parse2 = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/classic/schemas.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/classic/schemas.js
 var schemas_exports2 = {};
 __export(schemas_exports2, {
   ZodAny: () => ZodAny,
@@ -17687,12 +18318,14 @@ __export(schemas_exports2, {
   ZodFile: () => ZodFile,
   ZodFunction: () => ZodFunction,
   ZodGUID: () => ZodGUID,
+  ZodIBAN: () => ZodIBAN,
   ZodIPv4: () => ZodIPv4,
   ZodIPv6: () => ZodIPv6,
   ZodISODate: () => ZodISODate,
   ZodISODateTime: () => ZodISODateTime,
   ZodISODuration: () => ZodISODuration,
   ZodISOTime: () => ZodISOTime,
+  ZodInstanceOf: () => ZodInstanceOf,
   ZodIntersection: () => ZodIntersection,
   ZodJWT: () => ZodJWT,
   ZodKSUID: () => ZodKSUID,
@@ -17751,6 +18384,7 @@ __export(schemas_exports2, {
   creditCard: () => creditCard2,
   cuid: () => cuid3,
   cuid2: () => cuid22,
+  currencyCode: () => currencyCode2,
   custom: () => custom,
   date: () => date2,
   describe: () => describe2,
@@ -17769,6 +18403,7 @@ __export(schemas_exports2, {
   hex: () => hex2,
   hostname: () => hostname2,
   httpUrl: () => httpUrl,
+  iban: () => iban2,
   instanceof: () => _instanceof,
   int: () => int,
   int32: () => int32,
@@ -17867,8 +18502,8 @@ function url(params) {
 }
 function httpUrl(params) {
   return _url(ZodURL, {
-    protocol: regexes_exports.httpProtocol,
-    hostname: regexes_exports.domain,
+    protocol: httpProtocol,
+    hostname: domain,
     ...util_exports.normalizeParams(params)
   });
 }
@@ -17920,6 +18555,9 @@ function e1642(params) {
 function creditCard2(params) {
   return _creditCard(ZodCreditCard, params);
 }
+function iban2(params) {
+  return _iban(ZodIBAN, params);
+}
 function jwt(params) {
   return _jwt(ZodJWT, params);
 }
@@ -17927,10 +18565,13 @@ function stringFormat(format, fnOrRegex, _params = {}) {
   return _stringFormat(ZodCustomStringFormat, format, fnOrRegex, _params);
 }
 function hostname2(_params) {
-  return _stringFormat(ZodCustomStringFormat, "hostname", regexes_exports.hostname, _params);
+  return _stringFormat(ZodCustomStringFormat, "hostname", hostname, _params);
 }
 function hex2(_params) {
-  return _stringFormat(ZodCustomStringFormat, "hex", regexes_exports.hex, _params);
+  return _stringFormat(ZodCustomStringFormat, "hex", hex, _params);
+}
+function currencyCode2(_params) {
+  return _stringFormat(ZodCustomStringFormat, "currency_code", currencyCode, _params);
 }
 function hash(alg, params) {
   const enc = params?.enc ?? "hex";
@@ -18285,7 +18926,7 @@ function superRefine(fn2, params) {
   return _superRefine(fn2, params);
 }
 function _instanceof(cls, params = {}) {
-  const inst = new ZodCustom({
+  const inst = new ZodInstanceOf({
     type: "custom",
     check: "custom",
     fn: (data) => data instanceof cls,
@@ -18319,12 +18960,13 @@ function preprocess(fn2, schema) {
     out: schema
   });
 }
-var ZodType, _ZodString, ZodString, ZodStringFormat, ZodISODateTime, ZodISODate, ZodISOTime, ZodISODuration, ZodEmail, ZodGUID, ZodUUID, ZodURL, ZodEmoji, ZodNanoID, ZodCUID, ZodCUID2, ZodULID, ZodXID, ZodKSUID, ZodIPv4, ZodMAC, ZodIPv6, ZodCIDRv4, ZodCIDRv6, ZodBase64, ZodBase64URL, ZodE164, ZodCreditCard, ZodJWT, ZodCustomStringFormat, ZodNumber, ZodNumberFormat, ZodBoolean, ZodBigInt, ZodBigIntFormat, ZodSymbol, ZodUndefined, ZodNull, ZodAny, ZodUnknown, ZodNever, ZodVoid, ZodDate, ZodArray, ZodObject, ZodUnion, ZodXor, ZodDiscriminatedUnion, ZodIntersection, ZodTuple, ZodRecord, ZodMap, ZodSet, ZodEnum, ZodLiteral, ZodFile, ZodTransform, ZodOptional, ZodExactOptional, ZodNullable, ZodDefault, ZodPrefault, ZodNonOptional, ZodSuccess, ZodCatch, ZodNaN, ZodPipe, ZodCodec, ZodPreprocess, ZodReadonly, ZodTemplateLiteral, ZodLazy, ZodPromise, ZodFunction, ZodCustom, describe2, meta2, stringbool;
+var ZodType, _ZodString, ZodString, ZodStringFormat, ZodISODateTime, ZodISODate, ZodISOTime, ZodISODuration, ZodEmail, ZodGUID, ZodUUID, ZodURL, ZodEmoji, ZodNanoID, ZodCUID, ZodCUID2, ZodULID, ZodXID, ZodKSUID, ZodIPv4, ZodMAC, ZodIPv6, ZodCIDRv4, ZodCIDRv6, ZodBase64, ZodBase64URL, ZodE164, ZodCreditCard, ZodIBAN, ZodJWT, ZodCustomStringFormat, ZodNumber, ZodNumberFormat, ZodBoolean, ZodBigInt, ZodBigIntFormat, ZodSymbol, ZodUndefined, ZodNull, ZodAny, ZodUnknown, ZodNever, ZodVoid, ZodDate, ZodArray, ZodObject, ZodUnion, ZodXor, ZodDiscriminatedUnion, ZodIntersection, ZodTuple, ZodRecord, ZodMap, ZodSet, ZodEnum, ZodLiteral, ZodFile, ZodTransform, ZodOptional, ZodExactOptional, ZodNullable, ZodDefault, ZodPrefault, ZodNonOptional, ZodSuccess, ZodCatch, ZodNaN, ZodPipe, ZodCodec, ZodPreprocess, ZodReadonly, ZodTemplateLiteral, ZodLazy, ZodPromise, ZodFunction, ZodCustom, describe2, meta2, ZodInstanceOf, stringbool;
 var init_schemas2 = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/classic/schemas.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/classic/schemas.js"() {
     init_core2();
     init_core2();
     init_json_schema_processors();
+    init_regexes();
     init_to_json_schema();
     init_en();
     init_checks2();
@@ -18462,6 +19104,12 @@ var init_schemas2 = __esm({
       set spa(value) {
         util_exports.own(this, "spa", value);
       },
+      validate(data, params) {
+        return validate(this, data, params);
+      },
+      validateAsync(data, params) {
+        return validateAsync(this, data, params);
+      },
       encode: function _encode2(data, params) {
         return encode2(this, data, params, { callee: _encode2 });
       },
@@ -18498,61 +19146,65 @@ var init_schemas2 = __esm({
         return this._zod.def;
       }
     });
-    _ZodString = /* @__PURE__ */ $constructor("_ZodString", (inst, def) => {
-      $ZodString.init(inst, def);
-      ZodType.init(inst, def);
-      inst._zod.processJSONSchema = (ctx, json3, params) => stringProcessor(inst, ctx, json3, params);
-      const bag = inst._zod.bag;
-      inst.format = bag.format ?? null;
-      inst.minLength = bag.minimum ?? null;
-      inst.maxLength = bag.maximum ?? null;
-    }, {
-      regex(...args) {
-        return this.check(_regex(...args));
+    _ZodString = /* @__PURE__ */ $constructor(
+      "_ZodString",
+      (inst, def) => {
+        $ZodString.init(inst, def);
+        ZodType.init(inst, def);
+        inst._zod.processJSONSchema = (ctx, json3, params) => stringProcessor(inst, ctx, json3, params);
       },
-      includes(...args) {
-        return this.check(_includes(...args));
-      },
-      startsWith(...args) {
-        return this.check(_startsWith(...args));
-      },
-      endsWith(...args) {
-        return this.check(_endsWith(...args));
-      },
-      min(...args) {
-        return this.check(_minLength(...args));
-      },
-      max(...args) {
-        return this.check(_maxLength(...args));
-      },
-      length(...args) {
-        return this.check(_length(...args));
-      },
-      nonempty(...args) {
-        return this.check(_minLength(1, ...args));
-      },
-      lowercase(params) {
-        return this.check(_lowercase(params));
-      },
-      uppercase(params) {
-        return this.check(_uppercase(params));
-      },
-      trim() {
-        return this.check(_trim());
-      },
-      normalize(...args) {
-        return this.check(_normalize(...args));
-      },
-      toLowerCase() {
-        return this.check(_toLowerCase());
-      },
-      toUpperCase() {
-        return this.check(_toUpperCase());
-      },
-      slugify() {
-        return this.check(_slugify());
-      }
-    });
+      /* @__PURE__ */ util_exports.derived({
+        format: (inst) => aggregateChecks(inst).format ?? null,
+        minLength: (inst) => aggregateChecks(inst).minimum ?? null,
+        maxLength: (inst) => aggregateChecks(inst).maximum ?? null
+      }, {
+        regex(...args) {
+          return this.check(_regex(...args));
+        },
+        includes(...args) {
+          return this.check(_includes(...args));
+        },
+        startsWith(...args) {
+          return this.check(_startsWith(...args));
+        },
+        endsWith(...args) {
+          return this.check(_endsWith(...args));
+        },
+        min(...args) {
+          return this.check(_minLength(...args));
+        },
+        max(...args) {
+          return this.check(_maxLength(...args));
+        },
+        length(...args) {
+          return this.check(_length(...args));
+        },
+        nonempty(...args) {
+          return this.check(_minLength(1, ...args));
+        },
+        lowercase(params) {
+          return this.check(_lowercase(params));
+        },
+        uppercase(params) {
+          return this.check(_uppercase(params));
+        },
+        trim() {
+          return this.check(_trim());
+        },
+        normalize(...args) {
+          return this.check(_normalize(...args));
+        },
+        toLowerCase() {
+          return this.check(_toLowerCase());
+        },
+        toUpperCase() {
+          return this.check(_toUpperCase());
+        },
+        slugify() {
+          return this.check(_slugify());
+        }
+      })
+    );
     ZodString = /* @__PURE__ */ $constructor("ZodString", (inst, def) => {
       $ZodString.init(inst, def);
       _ZodString.init(inst, def);
@@ -18736,6 +19388,10 @@ var init_schemas2 = __esm({
       $ZodCreditCard.init(inst, def);
       ZodStringFormat.init(inst, def);
     });
+    ZodIBAN = /* @__PURE__ */ $constructor("ZodIBAN", (inst, def) => {
+      $ZodIBAN.init(inst, def);
+      ZodStringFormat.init(inst, def);
+    });
     ZodJWT = /* @__PURE__ */ $constructor("ZodJWT", (inst, def) => {
       $ZodJWT.init(inst, def);
       ZodStringFormat.init(inst, def);
@@ -18744,63 +19400,76 @@ var init_schemas2 = __esm({
       $ZodCustomStringFormat.init(inst, def);
       ZodStringFormat.init(inst, def);
     });
-    ZodNumber = /* @__PURE__ */ $constructor("ZodNumber", (inst, def) => {
-      $ZodNumber.init(inst, def);
-      ZodType.init(inst, def);
-      inst._zod.processJSONSchema = (ctx, json3, params) => numberProcessor(inst, ctx, json3, params);
-      const bag = inst._zod.bag;
-      inst.minValue = Math.max(bag.minimum ?? Number.NEGATIVE_INFINITY, bag.exclusiveMinimum ?? Number.NEGATIVE_INFINITY) ?? null;
-      inst.maxValue = Math.min(bag.maximum ?? Number.POSITIVE_INFINITY, bag.exclusiveMaximum ?? Number.POSITIVE_INFINITY) ?? null;
-      inst.isInt = (bag.format ?? "").includes("int") || Number.isSafeInteger(bag.multipleOf ?? 0.5);
-      inst.isFinite = true;
-      inst.format = bag.format ?? null;
-    }, {
-      gt(value, params) {
-        return this.check(_gt(value, params));
+    ZodNumber = /* @__PURE__ */ $constructor(
+      "ZodNumber",
+      (inst, def) => {
+        $ZodNumber.init(inst, def);
+        ZodType.init(inst, def);
+        inst._zod.processJSONSchema = (ctx, json3, params) => numberProcessor(inst, ctx, json3, params);
+        inst.isFinite = true;
       },
-      gte(value, params) {
-        return this.check(_gte(value, params));
-      },
-      min(value, params) {
-        return this.check(_gte(value, params));
-      },
-      lt(value, params) {
-        return this.check(_lt(value, params));
-      },
-      lte(value, params) {
-        return this.check(_lte(value, params));
-      },
-      max(value, params) {
-        return this.check(_lte(value, params));
-      },
-      int(params) {
-        return this.check(int(params));
-      },
-      safe(params) {
-        return this.check(int(params));
-      },
-      positive(params) {
-        return this.check(_gt(0, params));
-      },
-      nonnegative(params) {
-        return this.check(_gte(0, params));
-      },
-      negative(params) {
-        return this.check(_lt(0, params));
-      },
-      nonpositive(params) {
-        return this.check(_lte(0, params));
-      },
-      multipleOf(value, params) {
-        return this.check(_multipleOf(value, params));
-      },
-      step(value, params) {
-        return this.check(_multipleOf(value, params));
-      },
-      finite() {
-        return this;
-      }
-    });
+      /* @__PURE__ */ util_exports.derived({
+        minValue: (inst) => {
+          const { minimum, exclusiveMinimum } = aggregateChecks(inst);
+          return Math.max(minimum ?? Number.NEGATIVE_INFINITY, exclusiveMinimum ?? Number.NEGATIVE_INFINITY);
+        },
+        maxValue: (inst) => {
+          const { maximum, exclusiveMaximum } = aggregateChecks(inst);
+          return Math.min(maximum ?? Number.POSITIVE_INFINITY, exclusiveMaximum ?? Number.POSITIVE_INFINITY);
+        },
+        isInt: (inst) => {
+          const { isInt, multipleOf } = aggregateChecks(inst);
+          return !!isInt || !!multipleOf?.some(Number.isSafeInteger);
+        },
+        format: (inst) => aggregateChecks(inst).format ?? null
+      }, {
+        gt(value, params) {
+          return this.check(_gt(value, params));
+        },
+        gte(value, params) {
+          return this.check(_gte(value, params));
+        },
+        min(value, params) {
+          return this.check(_gte(value, params));
+        },
+        lt(value, params) {
+          return this.check(_lt(value, params));
+        },
+        lte(value, params) {
+          return this.check(_lte(value, params));
+        },
+        max(value, params) {
+          return this.check(_lte(value, params));
+        },
+        int(params) {
+          return this.check(int(params));
+        },
+        safe(params) {
+          return this.check(int(params));
+        },
+        positive(params) {
+          return this.check(_gt(0, params));
+        },
+        nonnegative(params) {
+          return this.check(_gte(0, params));
+        },
+        negative(params) {
+          return this.check(_lt(0, params));
+        },
+        nonpositive(params) {
+          return this.check(_lte(0, params));
+        },
+        multipleOf(value, params) {
+          return this.check(_multipleOf(value, params));
+        },
+        step(value, params) {
+          return this.check(_multipleOf(value, params));
+        },
+        finite() {
+          return this;
+        }
+      })
+    );
     ZodNumberFormat = /* @__PURE__ */ $constructor("ZodNumberFormat", (inst, def) => {
       $ZodNumberFormat.init(inst, def);
       ZodNumber.init(inst, def);
@@ -18810,49 +19479,53 @@ var init_schemas2 = __esm({
       ZodType.init(inst, def);
       inst._zod.processJSONSchema = (ctx, json3, params) => booleanProcessor(inst, ctx, json3, params);
     });
-    ZodBigInt = /* @__PURE__ */ $constructor("ZodBigInt", (inst, def) => {
-      $ZodBigInt.init(inst, def);
-      ZodType.init(inst, def);
-      inst._zod.processJSONSchema = (ctx, json3, params) => bigintProcessor(inst, ctx, json3, params);
-      const bag = inst._zod.bag;
-      inst.minValue = bag.minimum ?? null;
-      inst.maxValue = bag.maximum ?? null;
-      inst.format = bag.format ?? null;
-    }, {
-      gte(value, params) {
-        return this.check(_gte(value, params));
+    ZodBigInt = /* @__PURE__ */ $constructor(
+      "ZodBigInt",
+      (inst, def) => {
+        $ZodBigInt.init(inst, def);
+        ZodType.init(inst, def);
+        inst._zod.processJSONSchema = (ctx, json3, params) => bigintProcessor(inst, ctx, json3, params);
       },
-      min(value, params) {
-        return this.check(_gte(value, params));
-      },
-      gt(value, params) {
-        return this.check(_gt(value, params));
-      },
-      lt(value, params) {
-        return this.check(_lt(value, params));
-      },
-      lte(value, params) {
-        return this.check(_lte(value, params));
-      },
-      max(value, params) {
-        return this.check(_lte(value, params));
-      },
-      positive(params) {
-        return this.check(_gt(BigInt(0), params));
-      },
-      negative(params) {
-        return this.check(_lt(BigInt(0), params));
-      },
-      nonpositive(params) {
-        return this.check(_lte(BigInt(0), params));
-      },
-      nonnegative(params) {
-        return this.check(_gte(BigInt(0), params));
-      },
-      multipleOf(value, params) {
-        return this.check(_multipleOf(value, params));
-      }
-    });
+      /* @__PURE__ */ util_exports.derived({
+        minValue: (inst) => aggregateChecks(inst).minimum ?? null,
+        maxValue: (inst) => aggregateChecks(inst).maximum ?? null,
+        format: (inst) => aggregateChecks(inst).format ?? null
+      }, {
+        gte(value, params) {
+          return this.check(_gte(value, params));
+        },
+        min(value, params) {
+          return this.check(_gte(value, params));
+        },
+        gt(value, params) {
+          return this.check(_gt(value, params));
+        },
+        lt(value, params) {
+          return this.check(_lt(value, params));
+        },
+        lte(value, params) {
+          return this.check(_lte(value, params));
+        },
+        max(value, params) {
+          return this.check(_lte(value, params));
+        },
+        positive(params) {
+          return this.check(_gt(BigInt(0), params));
+        },
+        negative(params) {
+          return this.check(_lt(BigInt(0), params));
+        },
+        nonpositive(params) {
+          return this.check(_lte(BigInt(0), params));
+        },
+        nonnegative(params) {
+          return this.check(_gte(BigInt(0), params));
+        },
+        multipleOf(value, params) {
+          return this.check(_multipleOf(value, params));
+        }
+      })
+    );
     ZodBigIntFormat = /* @__PURE__ */ $constructor("ZodBigIntFormat", (inst, def) => {
       $ZodBigIntFormat.init(inst, def);
       ZodBigInt.init(inst, def);
@@ -18892,16 +19565,26 @@ var init_schemas2 = __esm({
       ZodType.init(inst, def);
       inst._zod.processJSONSchema = (ctx, json3, params) => voidProcessor(inst, ctx, json3, params);
     });
-    ZodDate = /* @__PURE__ */ $constructor("ZodDate", (inst, def) => {
-      $ZodDate.init(inst, def);
-      ZodType.init(inst, def);
-      inst._zod.processJSONSchema = (ctx, json3, params) => dateProcessor(inst, ctx, json3, params);
-      inst.min = (value, params) => inst.check(_gte(value, params));
-      inst.max = (value, params) => inst.check(_lte(value, params));
-      const c2 = inst._zod.bag;
-      inst.minDate = c2.minimum ? new Date(c2.minimum) : null;
-      inst.maxDate = c2.maximum ? new Date(c2.maximum) : null;
-    });
+    ZodDate = /* @__PURE__ */ $constructor(
+      "ZodDate",
+      (inst, def) => {
+        $ZodDate.init(inst, def);
+        ZodType.init(inst, def);
+        inst._zod.processJSONSchema = (ctx, json3, params) => dateProcessor(inst, ctx, json3, params);
+        inst.min = (value, params) => inst.check(_gte(value, params));
+        inst.max = (value, params) => inst.check(_lte(value, params));
+      },
+      /* @__PURE__ */ util_exports.derived({
+        minDate: (inst) => {
+          const { minimum } = aggregateChecks(inst);
+          return minimum ? new Date(minimum) : null;
+        },
+        maxDate: (inst) => {
+          const { maximum } = aggregateChecks(inst);
+          return maximum ? new Date(maximum) : null;
+        }
+      }, {})
+    );
     ZodArray = /* @__PURE__ */ $constructor("ZodArray", (inst, def) => {
       _ensureDefaultMemoizer();
       $ZodArray.init(inst, def);
@@ -18936,19 +19619,19 @@ var init_schemas2 = __esm({
         return _enum2(Object.keys(this._zod.def.shape));
       },
       catchall(catchall) {
-        return this.clone({ ...this._zod.def, catchall });
+        return this.clone(util_exports.mergeDefs(this._zod.def, { catchall }));
       },
       passthrough() {
-        return this.clone({ ...this._zod.def, catchall: unknown() });
+        return this.clone(util_exports.mergeDefs(this._zod.def, { catchall: unknown() }));
       },
       loose() {
-        return this.clone({ ...this._zod.def, catchall: unknown() });
+        return this.clone(util_exports.mergeDefs(this._zod.def, { catchall: unknown() }));
       },
       strict() {
-        return this.clone({ ...this._zod.def, catchall: never() });
+        return this.clone(util_exports.mergeDefs(this._zod.def, { catchall: never() }));
       },
       strip() {
-        return this.clone({ ...this._zod.def, catchall: void 0 });
+        return this.clone(util_exports.mergeDefs(this._zod.def, { catchall: void 0 }));
       },
       extend(incoming) {
         return util_exports.extend(this, incoming);
@@ -19053,7 +19736,7 @@ var init_schemas2 = __esm({
       ZodType.init(inst, def);
       inst._zod.processJSONSchema = (ctx, json3, params) => enumProcessor(inst, ctx, json3, params);
       inst.enum = def.entries;
-      inst.options = Object.values(def.entries);
+      inst.options = [...inst._zod.values];
       const keys = new Set(Object.keys(def.entries));
       inst.extract = (values, params) => {
         const newEntries = {};
@@ -19247,6 +19930,13 @@ var init_schemas2 = __esm({
     });
     describe2 = describe;
     meta2 = meta;
+    ZodInstanceOf = /* @__PURE__ */ $constructor("ZodInstanceOf", (inst, def) => {
+      ZodCustom.init(inst, def);
+    }, {
+      properties(shape, params) {
+        return this.check(_properties(shape, params));
+      }
+    });
     stringbool = (...args) => _stringbool({
       Codec: ZodCodec,
       Boolean: ZodBoolean,
@@ -19255,7 +19945,7 @@ var init_schemas2 = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/classic/compat.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/classic/compat.js
 function setErrorMap(map2) {
   config({
     customError: map2
@@ -19266,7 +19956,7 @@ function getErrorMap() {
 }
 var ZodIssueCode, ZodFirstPartyTypeKind;
 var init_compat = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/classic/compat.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/classic/compat.js"() {
     init_core2();
     ZodIssueCode = {
       invalid_type: "invalid_type",
@@ -19286,7 +19976,7 @@ var init_compat = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/classic/iso.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/classic/iso.js
 var iso_exports = {};
 __export(iso_exports, {
   ZodISODate: () => ZodISODate,
@@ -19311,14 +20001,14 @@ function duration2(params) {
   return _isoDuration(ZodISODuration, params);
 }
 var init_iso = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/classic/iso.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/classic/iso.js"() {
     init_core2();
     init_schemas2();
     init_schemas2();
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/classic/from-json-schema.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/classic/from-json-schema.js
 function detectVersion(schema, defaultTarget) {
   const $schema = schema.$schema;
   if ($schema === "https://json-schema.org/draft/2020-12/schema") {
@@ -19356,26 +20046,161 @@ function resolveRef(ref, ctx) {
   }
   throw new Error(`Reference not found: ${ref}`);
 }
-function checkPropertyNames(objectSchema, keySchema) {
+function checkObjectGuards(objectSchema, guards) {
   const guard = z.transform((value) => value).check((payload) => {
     const value = payload.value;
     if (typeof value !== "object" || value === null || Array.isArray(value))
       return;
-    for (const key of Object.getOwnPropertyNames(value)) {
-      const result = keySchema.safeParse(key);
-      if (result.success)
-        continue;
+    const keys = Object.getOwnPropertyNames(value);
+    if (guards.minProperties !== void 0 && keys.length < guards.minProperties) {
       payload.issues.push({
-        code: "invalid_key",
-        origin: "record",
-        issues: result.error.issues,
-        input: key,
-        path: [key],
+        origin: "object",
+        code: "too_small",
+        minimum: guards.minProperties,
+        inclusive: true,
+        message: `Too small: expected object to have >=${guards.minProperties} properties`,
+        input: value,
+        inst: objectSchema,
         continue: true
       });
     }
+    if (guards.maxProperties !== void 0 && keys.length > guards.maxProperties) {
+      payload.issues.push({
+        origin: "object",
+        code: "too_big",
+        maximum: guards.maxProperties,
+        inclusive: true,
+        message: `Too big: expected object to have <=${guards.maxProperties} properties`,
+        input: value,
+        inst: objectSchema,
+        continue: true
+      });
+    }
+    if (guards.keySchema) {
+      for (const key of keys) {
+        const result = guards.keySchema.safeParse(key);
+        if (result.success)
+          continue;
+        payload.issues.push({
+          code: "invalid_key",
+          origin: "record",
+          issues: result.error.issues,
+          input: key,
+          path: [key],
+          continue: true
+        });
+      }
+    }
   });
   return guard.pipe(objectSchema);
+}
+function canonicalKey(value, seen) {
+  if (value === null)
+    return "z";
+  const type = typeof value;
+  if (type !== "object") {
+    if (type === "number" && Number.isNaN(value))
+      return null;
+    const raw = String(value);
+    return `${type[0]}${raw.length}:${raw}`;
+  }
+  if (seen.has(value))
+    return null;
+  seen.add(value);
+  try {
+    if (Array.isArray(value)) {
+      const parts2 = [];
+      for (const item of value) {
+        const key = canonicalKey(item, seen);
+        if (key === null)
+          return null;
+        parts2.push(key);
+      }
+      return `a${parts2.length}:[${parts2.join(",")}]`;
+    }
+    const keys = Object.keys(value).sort();
+    const parts = [];
+    for (const k of keys) {
+      const key = canonicalKey(value[k], seen);
+      if (key === null)
+        return null;
+      parts.push(`${k.length}:${k}=${key}`);
+    }
+    return `o${parts.length}:{${parts.join(",")}}`;
+  } finally {
+    seen.delete(value);
+  }
+}
+function containsRef(value) {
+  if (typeof value !== "object" || value === null)
+    return false;
+  if (Array.isArray(value))
+    return value.some(containsRef);
+  if (typeof value.$ref === "string")
+    return true;
+  return Object.entries(value).some(([key, sub]) => {
+    if (SCHEMA_KEYWORDS.has(key))
+      return containsRef(sub);
+    if (!SCHEMA_MAP_KEYWORDS.has(key) || typeof sub !== "object" || sub === null)
+      return false;
+    return Object.values(sub).some(containsRef);
+  });
+}
+function plural(n) {
+  return n === 1 ? "element" : "elements";
+}
+function checkArrayGuards(arraySchema, guards) {
+  const guard = z.transform((value) => value).check((payload) => {
+    const items = payload.value;
+    if (!Array.isArray(items))
+      return;
+    if (guards.uniqueItems === true) {
+      const firstSeen = /* @__PURE__ */ new Map();
+      for (let i = 0; i < items.length; i++) {
+        const key = canonicalKey(items[i], /* @__PURE__ */ new Set());
+        if (key === null)
+          continue;
+        const first = firstSeen.get(key);
+        if (first === void 0) {
+          firstSeen.set(key, i);
+          continue;
+        }
+        payload.issues.push({
+          code: "custom",
+          message: `Array items must be unique: element at index ${i} duplicates the one at index ${first}`,
+          input: items,
+          path: [i],
+          continue: true
+        });
+      }
+    }
+    if (guards.containsSchema) {
+      const minContains = guards.minContains ?? 1;
+      const ceiling = guards.maxContains !== void 0 ? guards.maxContains + 1 : Number.POSITIVE_INFINITY;
+      let matches2 = 0;
+      for (const item of items) {
+        if (guards.containsSchema.safeParse(item).success && ++matches2 >= ceiling)
+          break;
+      }
+      if (matches2 < minContains) {
+        payload.issues.push({
+          code: "custom",
+          message: `Array must contain at least ${minContains} matching ${plural(minContains)}; found ${matches2}`,
+          input: items,
+          continue: true
+        });
+      }
+      if (guards.maxContains !== void 0 && matches2 > guards.maxContains) {
+        payload.issues.push({
+          code: "custom",
+          message: `Array must contain at most ${guards.maxContains} matching ${plural(guards.maxContains)}`,
+          input: items,
+          continue: true
+        });
+      }
+    }
+  });
+  return guard.pipe(arraySchema);
 }
 function getTupleRest(restSchema, ctx) {
   if (restSchema === false) {
@@ -19505,6 +20330,8 @@ function convertBaseSchema(schema, ctx) {
           stringSchema = stringSchema.check(z.e164());
         } else if (format === "credit_card") {
           stringSchema = stringSchema.check(z.creditCard());
+        } else if (format === "iban") {
+          stringSchema = stringSchema.check(z.iban());
         } else if (format === "jwt") {
           stringSchema = stringSchema.check(z.jwt());
         } else if (format === "emoji") {
@@ -19637,9 +20464,16 @@ function convertBaseSchema(schema, ctx) {
           zodSchema = objectSchema.passthrough();
         }
       }
-      if (schema.propertyNames !== void 0 && schema.propertyNames !== true) {
-        const keyJSONSchema = typeof schema.propertyNames === "object" && schema.propertyNames.type === void 0 ? { type: "string", ...schema.propertyNames } : schema.propertyNames;
-        zodSchema = checkPropertyNames(zodSchema, convertSchema(keyJSONSchema, ctx));
+      const hasKeyGuard = schema.propertyNames !== void 0 && schema.propertyNames !== true;
+      const minProperties = typeof schema.minProperties === "number" ? schema.minProperties : void 0;
+      const maxProperties = typeof schema.maxProperties === "number" ? schema.maxProperties : void 0;
+      if (hasKeyGuard || minProperties !== void 0 || maxProperties !== void 0) {
+        let keySchema;
+        if (hasKeyGuard) {
+          const keyJSONSchema = typeof schema.propertyNames === "object" && schema.propertyNames.type === void 0 ? { type: "string", ...schema.propertyNames } : schema.propertyNames;
+          keySchema = convertSchema(keyJSONSchema, ctx);
+        }
+        zodSchema = checkObjectGuards(zodSchema, { keySchema, minProperties, maxProperties });
       }
       break;
     }
@@ -19684,6 +20518,14 @@ function convertBaseSchema(schema, ctx) {
         zodSchema = arraySchema;
       } else {
         zodSchema = z.array(z.any());
+      }
+      if (schema.uniqueItems === true || schema.contains !== void 0) {
+        zodSchema = checkArrayGuards(zodSchema, {
+          uniqueItems: schema.uniqueItems === true,
+          containsSchema: schema.contains !== void 0 ? convertSchema(schema.contains, ctx) : void 0,
+          minContains: typeof schema.minContains === "number" ? schema.minContains : void 0,
+          maxContains: typeof schema.maxContains === "number" ? schema.maxContains : void 0
+        });
       }
       break;
     }
@@ -19742,8 +20584,23 @@ function convertSchema(schema, ctx) {
       extraMeta[key] = schema[key];
     }
   }
-  if (schema.propertyNames !== void 0 && schema.type === "object" && schema.$ref === void 0) {
-    extraMeta.propertyNames = schema.propertyNames;
+  if (schema.type === "object" && schema.$ref === void 0) {
+    if (schema.propertyNames !== void 0 && !containsRef(schema.propertyNames)) {
+      extraMeta.propertyNames = schema.propertyNames;
+    }
+    for (const key of ["minProperties", "maxProperties"]) {
+      if (schema[key] !== void 0)
+        extraMeta[key] = schema[key];
+    }
+  }
+  if (schema.type === "array" && schema.$ref === void 0) {
+    if (schema.contains !== void 0 && !containsRef(schema.contains)) {
+      extraMeta.contains = schema.contains;
+    }
+    for (const key of ["uniqueItems", "minContains", "maxContains"]) {
+      if (schema[key] !== void 0)
+        extraMeta[key] = schema[key];
+    }
   }
   for (const key of Object.keys(schema)) {
     if (!RECOGNIZED_KEYS.has(key)) {
@@ -19780,9 +20637,9 @@ function fromJSONSchema(schema, params) {
   };
   return convertSchema(normalized, ctx);
 }
-var z, RECOGNIZED_KEYS, fullTime;
+var z, RECOGNIZED_KEYS, SCHEMA_KEYWORDS, SCHEMA_MAP_KEYWORDS, fullTime;
 var init_from_json_schema = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/classic/from-json-schema.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/classic/from-json-schema.js"() {
     init_registries();
     init_util();
     init_checks2();
@@ -19864,11 +20721,37 @@ var init_from_json_schema = __esm({
       "nullable",
       "readOnly"
     ]);
+    SCHEMA_KEYWORDS = /* @__PURE__ */ new Set([
+      "items",
+      "prefixItems",
+      "additionalItems",
+      "additionalProperties",
+      "contains",
+      "propertyNames",
+      "not",
+      "if",
+      "then",
+      "else",
+      "allOf",
+      "anyOf",
+      "oneOf",
+      "unevaluatedItems",
+      "unevaluatedProperties",
+      "contentSchema"
+    ]);
+    SCHEMA_MAP_KEYWORDS = /* @__PURE__ */ new Set([
+      "properties",
+      "patternProperties",
+      "dependentSchemas",
+      "dependencies",
+      "$defs",
+      "definitions"
+    ]);
     fullTime = /^(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/;
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/core/visit.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/core/visit.js
 function visit(schema, fnOrHandlers) {
   const fn2 = typeof fnOrHandlers === "function" ? fnOrHandlers : (node2, rewritten) => {
     const h2 = fnOrHandlers[node2._zod.def.type];
@@ -20023,14 +20906,14 @@ function visit(schema, fnOrHandlers) {
 }
 var RESOLVING;
 var init_visit = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/core/visit.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/core/visit.js"() {
     init_schemas();
     init_util();
     RESOLVING = /* @__PURE__ */ Symbol("z.visit/resolving");
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/classic/deep-partial.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/classic/deep-partial.js
 function deepPartial(schema) {
   return visit(schema, {
     object: (s15) => s15.partial(),
@@ -20042,13 +20925,13 @@ function deepPartial(schema) {
   });
 }
 var init_deep_partial = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/classic/deep-partial.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/classic/deep-partial.js"() {
     init_visit();
     init_schemas2();
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/classic/in-out.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/classic/in-out.js
 function withChecks(side, checks) {
   if (!checks?.length)
     return side;
@@ -20078,14 +20961,14 @@ function output(schema) {
   });
 }
 var init_in_out = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/classic/in-out.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/classic/in-out.js"() {
     init_util();
     init_visit();
     init_schemas2();
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/classic/coerce.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/classic/coerce.js
 var coerce_exports = {};
 __export(coerce_exports, {
   bigint: () => bigint3,
@@ -20110,18 +20993,19 @@ function date4(params) {
   return _coercedDate(ZodDate, params);
 }
 var init_coerce = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/classic/coerce.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/classic/coerce.js"() {
     init_core2();
     init_schemas2();
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/classic/external.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/classic/external.js
 var external_exports = {};
 __export(external_exports, {
   $brand: () => $brand,
   $input: () => $input,
   $output: () => $output,
+  INVALID: () => INVALID,
   NEVER: () => NEVER,
   TimePrecision: () => TimePrecision,
   ZodAny: () => ZodAny,
@@ -20155,12 +21039,14 @@ __export(external_exports, {
   ZodFirstPartyTypeKind: () => ZodFirstPartyTypeKind,
   ZodFunction: () => ZodFunction,
   ZodGUID: () => ZodGUID,
+  ZodIBAN: () => ZodIBAN,
   ZodIPv4: () => ZodIPv4,
   ZodIPv6: () => ZodIPv6,
   ZodISODate: () => ZodISODate,
   ZodISODateTime: () => ZodISODateTime,
   ZodISODuration: () => ZodISODuration,
   ZodISOTime: () => ZodISOTime,
+  ZodInstanceOf: () => ZodInstanceOf,
   ZodIntersection: () => ZodIntersection,
   ZodIssueCode: () => ZodIssueCode,
   ZodJWT: () => ZodJWT,
@@ -20226,6 +21112,7 @@ __export(external_exports, {
   creditCard: () => creditCard2,
   cuid: () => cuid3,
   cuid2: () => cuid22,
+  currencyCode: () => currencyCode2,
   custom: () => custom,
   date: () => date2,
   decode: () => decode2,
@@ -20258,6 +21145,7 @@ __export(external_exports, {
   hex: () => hex2,
   hostname: () => hostname2,
   httpUrl: () => httpUrl,
+  iban: () => iban2,
   includes: () => _includes,
   input: () => input,
   instanceof: () => _instanceof,
@@ -20369,11 +21257,12 @@ __export(external_exports, {
   validate: () => validate,
   validateAsync: () => validateAsync,
   void: () => _void2,
+  withParser: () => withParser,
   xid: () => xid2,
   xor: () => xor
 });
 var init_external = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/classic/external.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/classic/external.js"() {
     init_core2();
     init_schemas2();
     init_checks2();
@@ -20392,9 +21281,9 @@ var init_external = __esm({
   }
 });
 
-// node_modules/.pnpm/zod@4.5.4/node_modules/zod/index.js
+// node_modules/.pnpm/zod@4.6.5/node_modules/zod/index.js
 var init_zod = __esm({
-  "node_modules/.pnpm/zod@4.5.4/node_modules/zod/index.js"() {
+  "node_modules/.pnpm/zod@4.6.5/node_modules/zod/index.js"() {
     init_external();
     init_external();
   }
@@ -20542,6 +21431,7 @@ var init_parse_agent_run_payload = __esm({
       id: external_exports.string(),
       content: external_exports.string(),
       status: external_exports.enum(["pending", "in_progress", "completed", "cancelled"]),
+      priority: external_exports.enum(["high", "medium", "low"]).optional(),
       check: external_exports.discriminatedUnion("kind", [
         external_exports.object({
           kind: external_exports.literal("shell"),
@@ -20654,6 +21544,194 @@ function requireActiveThreadOwner(store2) {
 }
 var init_active_thread_owner = __esm({
   "src/renderer/controller/active-thread-owner.ts"() {
+  }
+});
+
+// packages/llm/src/service-tier.ts
+function usageServiceTierFor(value) {
+  switch (value) {
+    case "flex":
+    case "priority":
+    case "scale":
+      return value;
+    case "fast":
+      return "priority";
+    case "auto":
+    case "default":
+      return void 0;
+  }
+}
+function usageServiceTierForCall(requested, response) {
+  return response === void 0 ? requested === void 0 ? void 0 : usageServiceTierFor(requested) : usageServiceTierFor(response);
+}
+var SERVICE_TIERS, isServiceTier, USAGE_SERVICE_TIERS, SERVICE_TIER_CHOICES;
+var init_service_tier = __esm({
+  "packages/llm/src/service-tier.ts"() {
+    init_member_of();
+    SERVICE_TIERS = ["auto", "default", "flex", "fast", "priority", "scale"];
+    isServiceTier = memberOf(SERVICE_TIERS);
+    USAGE_SERVICE_TIERS = ["flex", "priority", "scale"];
+    SERVICE_TIER_CHOICES = [
+      {
+        value: "auto",
+        label: "Project default",
+        description: "Follow the service tier configured for this OpenAI Project."
+      },
+      {
+        value: "default",
+        label: "Standard",
+        description: "Use standard pay-as-you-go pricing and performance."
+      },
+      {
+        value: "flex",
+        label: "Flex",
+        description: "Cheaper per token, slower, and may queue or fail under load. Suits batch work."
+      },
+      {
+        value: "fast",
+        label: "Fast",
+        description: "Faster and more consistent, at a higher per-token price."
+      }
+    ];
+  }
+});
+
+// packages/llm/src/model-usage.ts
+function nonNegative(value) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0;
+}
+function tokenUsageOrNull(value) {
+  if (!isRecord(value)) return null;
+  const usage = value;
+  if (typeof usage["inputTokens"] !== "number" || typeof usage["outputTokens"] !== "number") {
+    return null;
+  }
+  if (!Number.isFinite(usage["inputTokens"]) || !Number.isFinite(usage["outputTokens"])) return null;
+  const cacheReadTokens = usage["cacheReadTokens"];
+  const cacheCreationTokens = usage["cacheCreationTokens"];
+  if (cacheReadTokens !== void 0 && (typeof cacheReadTokens !== "number" || !Number.isFinite(cacheReadTokens))) {
+    return null;
+  }
+  if (cacheCreationTokens !== void 0 && (typeof cacheCreationTokens !== "number" || !Number.isFinite(cacheCreationTokens))) {
+    return null;
+  }
+  return {
+    inputTokens: usage["inputTokens"],
+    outputTokens: usage["outputTokens"],
+    ...typeof cacheReadTokens === "number" ? { cacheReadTokens } : {},
+    ...typeof cacheCreationTokens === "number" ? { cacheCreationTokens } : {}
+  };
+}
+function cappedTierUsage(requested, remaining) {
+  const inputTokens = Math.min(nonNegative(requested.inputTokens), remaining.inputTokens);
+  const outputTokens = Math.min(nonNegative(requested.outputTokens), remaining.outputTokens);
+  const availableCachedInput = inputTokens;
+  const cacheReadTokens = Math.min(
+    nonNegative(requested.cacheReadTokens),
+    remaining.cacheReadTokens ?? 0,
+    availableCachedInput
+  );
+  const cacheCreationTokens = Math.min(
+    nonNegative(requested.cacheCreationTokens),
+    remaining.cacheCreationTokens ?? 0,
+    availableCachedInput - cacheReadTokens
+  );
+  return {
+    inputTokens,
+    outputTokens,
+    ...requested.cacheReadTokens !== void 0 ? { cacheReadTokens } : {},
+    ...requested.cacheCreationTokens !== void 0 ? { cacheCreationTokens } : {}
+  };
+}
+function remainingAfter(remaining, used) {
+  const inputTokens = remaining.inputTokens - used.inputTokens;
+  const outputTokens = remaining.outputTokens - used.outputTokens;
+  const cacheReadTokens = Math.min(
+    remaining.cacheReadTokens === void 0 ? 0 : Math.max(0, remaining.cacheReadTokens - (used.cacheReadTokens ?? 0)),
+    inputTokens
+  );
+  const cacheCreationTokens = Math.min(
+    remaining.cacheCreationTokens === void 0 ? 0 : Math.max(0, remaining.cacheCreationTokens - (used.cacheCreationTokens ?? 0)),
+    inputTokens - cacheReadTokens
+  );
+  return {
+    inputTokens,
+    outputTokens,
+    ...remaining.cacheReadTokens !== void 0 ? { cacheReadTokens } : {},
+    ...remaining.cacheCreationTokens !== void 0 ? { cacheCreationTokens } : {}
+  };
+}
+function addTokens(prev, delta) {
+  const next = {
+    inputTokens: prev.inputTokens + delta.inputTokens,
+    outputTokens: prev.outputTokens + delta.outputTokens
+  };
+  if (delta.cacheReadTokens !== void 0 || prev.cacheReadTokens !== void 0) {
+    next.cacheReadTokens = (prev.cacheReadTokens ?? 0) + (delta.cacheReadTokens ?? 0);
+  }
+  if (delta.cacheCreationTokens !== void 0 || prev.cacheCreationTokens !== void 0) {
+    next.cacheCreationTokens = (prev.cacheCreationTokens ?? 0) + (delta.cacheCreationTokens ?? 0);
+  }
+  return next;
+}
+function mergeModelUsage(prev, delta) {
+  const next = addTokens(prev, delta);
+  const tiers = USAGE_SERVICE_TIERS.filter(
+    (tier) => prev.serviceTierUsage?.[tier] !== void 0 || delta.serviceTierUsage?.[tier] !== void 0
+  );
+  if (tiers.length > 0) {
+    const serviceTierUsage = {};
+    for (const tier of tiers) {
+      const before = prev.serviceTierUsage?.[tier];
+      const addition = delta.serviceTierUsage?.[tier];
+      if (before && addition) serviceTierUsage[tier] = addTokens(before, addition);
+      else if (before) serviceTierUsage[tier] = before;
+      else if (addition) serviceTierUsage[tier] = addition;
+    }
+    next.serviceTierUsage = serviceTierUsage;
+  }
+  return next;
+}
+function usageAtServiceTier(usage, tier) {
+  const base = {
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+    ...usage.cacheReadTokens !== void 0 ? { cacheReadTokens: usage.cacheReadTokens } : {},
+    ...usage.cacheCreationTokens !== void 0 ? { cacheCreationTokens: usage.cacheCreationTokens } : {}
+  };
+  if (tier !== void 0) {
+    base.serviceTierUsage = {
+      [tier]: {
+        inputTokens: base.inputTokens,
+        outputTokens: base.outputTokens,
+        ...base.cacheReadTokens !== void 0 ? { cacheReadTokens: base.cacheReadTokens } : {},
+        ...base.cacheCreationTokens !== void 0 ? { cacheCreationTokens: base.cacheCreationTokens } : {}
+      }
+    };
+  }
+  return base;
+}
+function splitServiceTierUsage(usage) {
+  let remaining = {
+    inputTokens: nonNegative(usage.inputTokens),
+    outputTokens: nonNegative(usage.outputTokens),
+    ...usage.cacheReadTokens !== void 0 ? { cacheReadTokens: nonNegative(usage.cacheReadTokens) } : {},
+    ...usage.cacheCreationTokens !== void 0 ? { cacheCreationTokens: nonNegative(usage.cacheCreationTokens) } : {}
+  };
+  const tiers = {};
+  for (const tier of USAGE_SERVICE_TIERS) {
+    const bucket = tokenUsageOrNull(usage.serviceTierUsage?.[tier]);
+    if (!bucket) continue;
+    const capped = cappedTierUsage(bucket, remaining);
+    tiers[tier] = capped;
+    remaining = remainingAfter(remaining, capped);
+  }
+  return { standard: remaining, tiers };
+}
+var init_model_usage = __esm({
+  "packages/llm/src/model-usage.ts"() {
+    init_unknown_value();
+    init_service_tier();
   }
 });
 
@@ -21096,6 +22174,16 @@ function appendReasoning(store2, messageId, text2) {
   });
   store2.emit("message_reasoning", messageId, text2);
 }
+function appendAcpContentBlock(store2, messageId, channel, block) {
+  updateMessage(store2, messageId, (message2) => {
+    if (channel === "thought") {
+      message2.reasoningBlocks = [...message2.reasoningBlocks ?? [], block];
+    } else {
+      message2.contentBlocks = [...message2.contentBlocks ?? [], block];
+    }
+  });
+  store2.emit("message_acp_content", messageId);
+}
 function setMessageContent(store2, messageId, content) {
   updateMessage(store2, messageId, (m) => {
     m.content = content;
@@ -21178,15 +22266,11 @@ function addUsageDelta(store2, threadId, delta) {
   if (!thread) return;
   const byModel = { ...thread.usage.byModel ?? {} };
   const prev = byModel[delta.model] ?? { inputTokens: 0, outputTokens: 0 };
-  byModel[delta.model] = addCacheTokens(
-    {
-      inputTokens: prev.inputTokens + delta.inputTokens,
-      outputTokens: prev.outputTokens + delta.outputTokens
-    },
-    prev.cacheReadTokens,
-    prev.cacheCreationTokens,
-    delta
+  const usage = delta.serviceTierUsage !== void 0 ? delta : usageAtServiceTier(
+    delta,
+    usageServiceTierForCall(delta.requestedServiceTier, delta.responseServiceTier)
   );
+  byModel[delta.model] = mergeModelUsage(prev, usage);
   updateUsage(
     store2,
     threadId,
@@ -21257,6 +22341,31 @@ function setThreadComparison(store2, threadId, comparison) {
     return next;
   });
   store2.emit("comparison_changed", threadId);
+}
+function setThreadReviewReport(store2, threadId, report) {
+  patchThreadAnywhere(store2, threadId, (t) => {
+    const next = { ...t, updatedAt: Date.now() };
+    if (report) next.reviewReport = report;
+    else delete next.reviewReport;
+    return next;
+  });
+  store2.emit("review_report_changed", threadId);
+}
+function setReviewFindingDismissed(store2, threadId, findingId, dismissed) {
+  patchThreadAnywhere(store2, threadId, (t) => {
+    if (!t.reviewReport) return t;
+    return {
+      ...t,
+      updatedAt: Date.now(),
+      reviewReport: {
+        ...t.reviewReport,
+        findings: t.reviewReport.findings.map(
+          (finding) => finding.id === findingId ? { ...finding, dismissed } : finding
+        )
+      }
+    };
+  });
+  store2.emit("review_report_changed", threadId);
 }
 function setQueuePaused(store2, threadId, paused) {
   const { threads } = store2.getState();
@@ -21371,6 +22480,8 @@ function applyPreparedThreadCheckout(store2, threadId, prepared) {
 var randomUUID, messageIndexByStore;
 var init_thread_helpers = __esm({
   "src/shared/store/thread-helpers.ts"() {
+    init_model_usage();
+    init_service_tier();
     init_array_utils2();
     init_thread_proposal2();
     init_thread_sort();
@@ -21463,8 +22574,8 @@ function serializedWrite(key, write) {
   } else {
     try {
       next = write();
-    } catch (error61) {
-      next = Promise.reject(error61 instanceof Error ? error61 : new Error(String(error61)));
+    } catch (error62) {
+      next = Promise.reject(error62 instanceof Error ? error62 : new Error(String(error62)));
     }
   }
   writeChains.set(key, next);
@@ -21684,6 +22795,11 @@ function attachAutosave(store2, api2) {
     store2.on("comparison_changed", () => {
       schedule();
     }),
+    // Same for the review report: a dismissed finding or a cleared card is a
+    // metadata-only change on an idle thread.
+    store2.on("review_report_changed", () => {
+      schedule();
+    }),
     store2.on("projects_changed", () => {
       projectsDirty = true;
       schedule();
@@ -21869,7 +22985,9 @@ function getToolCallLabel(tc2) {
   if (tc2.name === "run_shell" || tc2.kind === "execute") {
     const command = shellCommandArg(tc2.args);
     if (command) return shellCommandLabel(command);
+    if (tc2.title) return tc2.title;
   }
+  if (tc2.title && !/^MCP\s*:\s*tool$/i.test(tc2.title)) return tc2.title;
   return getToolDisplayName(tc2.name, tense);
 }
 function getToolGroupKey(name, kind) {
@@ -22915,16 +24033,16 @@ function ensureHost() {
   }
   return host;
 }
-function normalizeMessage(error61) {
-  if (error61 instanceof Error) return error61.message;
-  if (typeof error61 === "string") return error61;
-  if (typeof ErrorEvent !== "undefined" && error61 instanceof ErrorEvent) {
-    return describeErrorEvent(error61);
+function normalizeMessage(error62) {
+  if (error62 instanceof Error) return error62.message;
+  if (typeof error62 === "string") return error62;
+  if (typeof ErrorEvent !== "undefined" && error62 instanceof ErrorEvent) {
+    return describeErrorEvent(error62);
   }
-  if (typeof Event !== "undefined" && error61 instanceof Event) {
-    return describeEvent(error61);
+  if (typeof Event !== "undefined" && error62 instanceof Event) {
+    return describeEvent(error62);
   }
-  return String(error61);
+  return String(error62);
 }
 function describeErrorEvent(event) {
   if (event.error instanceof Error && event.error.message) return event.error.message;
@@ -22987,9 +24105,9 @@ function findVisibleToast(message2, variant) {
   }
   return null;
 }
-function showErrorToast(prefix, error61) {
-  const message2 = `${prefix}: ${normalizeMessage(error61)}`;
-  console.error(message2, error61);
+function showErrorToast(prefix, error62) {
+  const message2 = `${prefix}: ${normalizeMessage(error62)}`;
+  console.error(message2, error62);
   const e2e = window.__copseE2e;
   e2e?.pushErrorToast?.(message2);
   showToast(message2, { variant: "error" });
@@ -23246,7 +24364,7 @@ function openNewProjectDialog(api2, defaultParentDir) {
   parentInput.value = defaultParentDir;
   const browseBtn = el("button", { type: "button", class: "new-project-browse" }, "Browse\u2026");
   const pathPreview = el("p", { class: "field-hint new-project-path-preview" });
-  const error61 = el("p", { class: "new-project-error field-hint", hidden: true });
+  const error62 = el("p", { class: "new-project-error field-hint", hidden: true });
   const okBtn = el("button", { type: "button", class: "ui-btn ui-btn-primary" }, "Create");
   const cancelBtn = el("button", { type: "button", class: "ui-btn" }, "Cancel");
   function updatePathPreview() {
@@ -23255,8 +24373,8 @@ function openNewProjectDialog(api2, defaultParentDir) {
     pathPreview.textContent = name && parent ? `${parent}/${name}` : "";
   }
   function renderError(message2) {
-    error61.textContent = message2;
-    error61.hidden = false;
+    error62.textContent = message2;
+    error62.hidden = false;
   }
   nameInput.addEventListener("input", updatePathPreview);
   parentInput.addEventListener("input", updatePathPreview);
@@ -23282,7 +24400,7 @@ function openNewProjectDialog(api2, defaultParentDir) {
       el("div", { class: "new-project-parent-row" }, parentInput, browseBtn)
     ),
     pathPreview,
-    error61,
+    error62,
     el("div", { class: "new-project-actions" }, cancelBtn, okBtn)
   );
   return new Promise((resolve) => {
@@ -24145,12 +25263,12 @@ function paginateSidebarThreads(threads, visibleLimit, activeThreadId) {
     hasMore: visibleCount < total
   };
 }
-function settleActivationWaiter(projectId, error61) {
+function settleActivationWaiter(projectId, error62) {
   const waiter = activationWaiters.get(projectId);
   if (!waiter) return;
   activationWaiters.delete(projectId);
   waiter.unsub?.();
-  if (error61) waiter.reject(error61);
+  if (error62) waiter.reject(error62);
   else waiter.resolve();
 }
 function endSwitch(gen, projectId) {
@@ -24213,10 +25331,10 @@ function cancelPendingSwitch(store2, api2) {
   void setWorkspaceInOrder(api2, active2.path, active2.sshHost);
   void saveProjects(api2, projects, active2.id, store2.getState().activeThreadId);
 }
-function abortProjectActivation(store2, id, gen, outgoingId, error61) {
+function abortProjectActivation(store2, id, gen, outgoingId, error62) {
   if (gen !== switchGeneration) return;
   if (pendingSwitch?.gen === gen) pendingSwitch = null;
-  settleActivationWaiter(id, error61);
+  settleActivationWaiter(id, error62);
   const revertExpanded = outgoingId ?? store2.getState().activeProjectId;
   if (revertExpanded) {
     store2.setState({ expandedProjectId: revertExpanded });
@@ -24566,8 +25684,8 @@ async function restoreProject(store2, api2, id, preferredThreadId = null) {
   });
   const activeThreadId = store2.getState().activeThreadId;
   if (activeThreadId) markThreadRead(store2, activeThreadId);
-  await saveProjects(api2, store2.getState().projects, id, activeThreadId).catch((error61) => {
-    console.warn(`[projects] could not persist the restored project ${id}:`, error61);
+  await saveProjects(api2, store2.getState().projects, id, activeThreadId).catch((error62) => {
+    console.warn(`[projects] could not persist the restored project ${id}:`, error62);
   });
   if (merged.length === 0) createThread(store2);
   else normalizeBlankThreads(store2);
@@ -24951,12 +26069,12 @@ async function openWorkspaceFile(store2, api2, path, reveal) {
         return;
       }
       preview.setContent(el("img", { class: "image-expand-image", src, alt: path }));
-    } catch (error61) {
+    } catch (error62) {
       if (!isOwner()) {
         preview.close();
         return;
       }
-      preview.setStatus(`Could not preview ${path}: ${errorMessage(error61)}`);
+      preview.setStatus(`Could not preview ${path}: ${errorMessage(error62)}`);
     }
     return;
   }
@@ -26447,24 +27565,24 @@ var init_demo_scenarios = __esm({
           {
             id: "demo-approval-grouped-shell-commands-oracle",
             title: "Run outside sandbox?",
-            body: 'COREPACK_HOME="$TMPDIR/copse-corepack" corepack pnpm run check:oracle',
-            bodyAdvice: "The project sandbox would block this command:\n\u2022 Downloads package-manager binaries (corepack)",
+            body: "node .tmp/dep-candidates.mjs",
+            bodyAdvice: "The project sandbox would block this command:\n\u2022 Runs a script file from the project, so Copse can't tell what it does",
             bodyFooter: "Allow running it once outside the sandbox?",
             type: "shell"
           },
           {
             id: "demo-approval-grouped-shell-commands-syntax",
             title: "Run outside sandbox?",
-            body: 'COREPACK_HOME="$TMPDIR/copse-corepack" corepack pnpm run check:e2e-syntax',
-            bodyAdvice: "The project sandbox would block this command:\n\u2022 Downloads package-manager binaries (corepack)",
+            body: "mkdir -p node_modules && ln -s ../.tmp/validation/node_modules.partial/.pnpm/esbuild@0.28.2/node_modules/esbuild node_modules/esbuild",
+            bodyAdvice: "The project sandbox would block this command:\n\u2022 Reaches outside the project with a ../ path",
             bodyFooter: "Allow running it once outside the sandbox?",
             type: "shell"
           },
           {
             id: "demo-approval-grouped-shell-commands-test",
             title: "Run outside sandbox?",
-            body: 'COREPACK_HOME="$TMPDIR/copse-corepack" corepack pnpm test',
-            bodyAdvice: "The project sandbox would block this command:\n\u2022 Downloads package-manager binaries (corepack)",
+            body: "ln -s ../.tmp/validation/node_modules.partial/.pnpm/esbuild@0.28.2/node_modules/esbuild node_modules/esbuild",
+            bodyAdvice: "The project sandbox would block this command:\n\u2022 Reaches outside the project with a ../ path",
             bodyFooter: "Allow running it once outside the sandbox?",
             type: "shell"
           }
@@ -27074,8 +28192,6 @@ This response is streamed through the real renderer event path.`
       // crash leftover the moment the project loads (#1406's reconciliation).
       runningThreadIds: () => resolved(threads.filter((t) => t.status === "running").map((t) => t.id)),
       retryReview: resolvedVoid,
-      retryComparison: resolvedVoid,
-      comparisonModels: () => resolved({ a: "", b: "", judge: "" }),
       clearHistory: resolvedVoid,
       refreshModelContext: resolvedVoid,
       suggestTitle: () => resolved(null),
@@ -27132,6 +28248,7 @@ This response is streamed through the real renderer event path.`
       onConflict: subscribe
     },
     approval: { respond: resolvedVoid },
+    review: { run: resolvedVoid, dismissFinding: resolvedVoid, restoreFinding: resolvedVoid },
     ask: { respond: resolvedVoid },
     alerts: { threadFinished: resolvedVoid },
     sshPrompt: {
@@ -28089,9 +29206,9 @@ var init_tokens = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/default.css
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/default.css
 var init_default = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/default.css"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/default.css"() {
   }
 });
 
@@ -28441,6 +29558,7 @@ function createStore(initial) {
     message_queued: /* @__PURE__ */ new Set(),
     message_token: /* @__PURE__ */ new Set(),
     message_reasoning: /* @__PURE__ */ new Set(),
+    message_acp_content: /* @__PURE__ */ new Set(),
     message_canvas_artefacts_changed: /* @__PURE__ */ new Set(),
     message_done: /* @__PURE__ */ new Set(),
     tool_call_started: /* @__PURE__ */ new Set(),
@@ -28473,6 +29591,7 @@ function createStore(initial) {
     review_changed: /* @__PURE__ */ new Set(),
     hook_card_added: /* @__PURE__ */ new Set(),
     comparison_changed: /* @__PURE__ */ new Set(),
+    review_report_changed: /* @__PURE__ */ new Set(),
     git_branch_changed: /* @__PURE__ */ new Set(),
     thread_checkout_changed: /* @__PURE__ */ new Set(),
     composer_draft_flush: /* @__PURE__ */ new Set(),
@@ -28776,7 +29895,7 @@ function createAppRunPanel(api2, owner, onLaunched = () => {
     { type: "button", class: "ui-btn ui-btn-ghost app-run-stop" },
     "Stop app"
   );
-  const error61 = el("p", { class: "app-run-error", role: "alert", hidden: true });
+  const error62 = el("p", { class: "app-run-error", role: "alert", hidden: true });
   const log = el("pre", { class: "app-run-log" });
   const logs = el("details", { class: "app-run-logs" }, el("summary", {}, "View logs"), log);
   status.append(
@@ -28789,7 +29908,7 @@ function createAppRunPanel(api2, owner, onLaunched = () => {
       cancel,
       stop
     ),
-    error61,
+    error62,
     logs
   );
   element.append(notice, fields, issues, setupHost, actions, status);
@@ -28931,8 +30050,8 @@ function createAppRunPanel(api2, owner, onLaunched = () => {
     const end = isBusy(operation) ? Date.now() : operation.updatedAt;
     elapsed.textContent = `${String(Math.max(0, Math.round((end - operation.createdAt) / 1e3)))}s`;
     log.textContent = operation.logs || "Waiting for output\u2026";
-    error61.textContent = operation.error ?? "";
-    error61.hidden = !operation.error;
+    error62.textContent = operation.error ?? "";
+    error62.hidden = !operation.error;
     cancel.hidden = !isBusy(operation);
     stop.hidden = operation.stage !== "running" || !operation.appSessionId;
     updateEnabled();
@@ -31326,11 +32445,16 @@ function pricingForModel(model, pricing) {
   if (!info) return null;
   return info;
 }
+function pricingForTier(model, tier, pricing) {
+  const standard = pricingForModel(model, pricing);
+  if (!standard) return { pricing: null, fallback: false };
+  const tierPricing = standard.serviceTierPricing?.[tier];
+  return tierPricing ? { pricing: tierPricing, fallback: false } : { pricing: standard, fallback: true };
+}
 function hasModelPricing(model, pricing) {
   return pricingForModel(model, pricing) !== null;
 }
-function costForModelUsage(model, usage, pricing) {
-  const info = pricingForModel(model, pricing);
+function costForUsage(usage, info) {
   if (!info) return 0;
   const cacheRead = usage.cacheReadTokens ?? 0;
   const cacheCreation = usage.cacheCreationTokens ?? 0;
@@ -31341,6 +32465,23 @@ function costForModelUsage(model, usage, pricing) {
   const cacheCreationRate = info.cacheCreationPricePerMTok ?? inputRate;
   return freshInput / 1e6 * inputRate + cacheRead / 1e6 * cacheReadRate + cacheCreation / 1e6 * cacheCreationRate + usage.outputTokens / 1e6 * info.outputPricePerMTok;
 }
+function costForModelUsageWithDetails(model, usage, pricing) {
+  const standard = pricingForModel(model, pricing);
+  const split = splitServiceTierUsage(usage);
+  let costUsd = costForUsage(split.standard, standard);
+  let tierPricingFallback = false;
+  for (const tier of USAGE_SERVICE_TIERS) {
+    const tierUsage = split.tiers[tier];
+    if (!tierUsage) continue;
+    const resolved3 = pricingForTier(model, tier, pricing);
+    costUsd += costForUsage(tierUsage, resolved3.pricing);
+    tierPricingFallback ||= resolved3.fallback;
+  }
+  return { costUsd, tierPricingFallback };
+}
+function costForModelUsage(model, usage, pricing) {
+  return costForModelUsageWithDetails(model, usage, pricing).costUsd;
+}
 function estimateUsageCost(byModel, pricing) {
   const entries2 = Object.entries(byModel).filter(([, u]) => u.inputTokens > 0 || u.outputTokens > 0);
   if (entries2.length === 0) return "";
@@ -31348,6 +32489,7 @@ function estimateUsageCost(byModel, pricing) {
   let hasLocal = false;
   let hasPricedCloud = false;
   let hasUnpricedCloud = false;
+  let hasTierPricingFallback = false;
   for (const [model, usage] of entries2) {
     if (isLocalModel(model)) {
       hasLocal = true;
@@ -31355,18 +32497,20 @@ function estimateUsageCost(byModel, pricing) {
     }
     if (hasModelPricing(model, pricing)) hasPricedCloud = true;
     else hasUnpricedCloud = true;
-    const cost = costForModelUsage(model, usage, pricing);
-    totalCost += cost;
+    const cost = costForModelUsageWithDetails(model, usage, pricing);
+    totalCost += cost.costUsd;
+    hasTierPricingFallback ||= cost.tierPricingFallback;
   }
   if (totalCost === 0) {
     if (hasUnpricedCloud) return "";
-    if (hasPricedCloud) return "free";
+    if (hasPricedCloud) return hasTierPricingFallback ? "free (standard tier fallback)" : "free";
     if (hasLocal) return "free (local)";
     return "";
   }
   const costStr = totalCost < 0.01 ? "<$0.01" : `~$${totalCost.toFixed(2)}`;
-  if (hasUnpricedCloud) return `${costStr} (partial)`;
-  return hasLocal ? `${costStr} (+ local free)` : costStr;
+  const qualifiedCost = hasUnpricedCloud ? `${costStr} (partial)` : costStr;
+  const tierQualifiedCost = hasTierPricingFallback ? `${qualifiedCost} (standard tier fallback)` : qualifiedCost;
+  return hasLocal ? `${tierQualifiedCost} (+ local free)` : tierQualifiedCost;
 }
 function formatThreadUsageCost(usage, fallbackChatModel, pricing) {
   if (usage.byModel && Object.keys(usage.byModel).length > 0) {
@@ -31383,6 +32527,8 @@ function formatThreadUsageCost(usage, fallbackChatModel, pricing) {
 var init_estimate_cost = __esm({
   "packages/llm/src/estimate-cost.ts"() {
     init_model_catalog();
+    init_model_usage();
+    init_service_tier();
   }
 });
 
@@ -44661,7 +45807,7 @@ function createAcpAgentsSection(api2, opts = {}) {
       { type: "button", class: "provider-secondary" },
       "Detect models"
     );
-    const modelRow2 = el("div", { class: "acp-model-row" }, modelSelect, detectModels);
+    const modelRow = el("div", { class: "acp-model-row" }, modelSelect, detectModels);
     const modelStatus = el("span", { class: "field-hint" });
     const DEFAULT_MODE_LABEL = "Agent default";
     const modeSelect = el("select", {});
@@ -44768,9 +45914,9 @@ function createAcpAgentsSection(api2, opts = {}) {
       const args = parseArgsText(argsArea.value);
       const draft = { id, title: titleInput.value.trim(), command: commandInput.value.trim(), args };
       const existingIds = isEdit ? [] : agents.map((a2) => a2.id);
-      const error61 = validateDraft(draft, existingIds);
-      if (error61) {
-        setInlineStatus(status, "error", error61);
+      const error62 = validateDraft(draft, existingIds);
+      if (error62) {
+        setInlineStatus(status, "error", error62);
         status.className = "key-status err";
         return;
       }
@@ -44799,7 +45945,7 @@ function createAcpAgentsSection(api2, opts = {}) {
       el("label", {}, "Command", commandInput),
       el("label", {}, "Arguments", argsArea),
       el("label", {}, "Environment", envArea),
-      el("label", {}, "Model", modelRow2, modelStatus),
+      el("label", {}, "Model", modelRow, modelStatus),
       el(
         "label",
         { class: "acp-permission-mode-field" },
@@ -45031,7 +46177,77 @@ function createProvidersPanel(api2, opts = {}) {
   let deviceScanned = false;
   let providerPicked = false;
   let autoSetupRun = false;
+  let initialOpenAiTierChoice = "auto";
+  let pendingOpenAiTierChoice = "auto";
+  let openAiTierDirty = false;
   const deviceAutoSetup = opts.deviceAutoSetup ?? true;
+  const offeredOpenAiTier = new Set(SERVICE_TIER_CHOICES.map((choice) => choice.value));
+  function openAiTierChoiceForStored(value) {
+    if (value === "") return "auto";
+    if (value === "priority") return "fast";
+    return value;
+  }
+  function retainedOpenAiTierLabel(value) {
+    if (value === "scale") return "Scale \u2014 current advanced value";
+    const visible = value.length > 80 ? `${value.slice(0, 79)}\u2026` : value;
+    return `Current advanced value \u2014 ${visible || "(empty)"}`;
+  }
+  function openAiTierDescription(value) {
+    const choice = SERVICE_TIER_CHOICES.find((entry) => entry.value === value);
+    if (choice) return choice.description;
+    if (value === "scale") {
+      return "Uses committed Scale Tier capacity. It remains selected until you choose another tier.";
+    }
+    return "This value is not offered by this version. It remains selected until you choose another tier.";
+  }
+  async function refreshOpenAiTier() {
+    if (!opts.showOpenAiServiceTier) return;
+    const raw = await api2.settings.get("openAiServiceTier");
+    const stored = typeof raw === "string" ? raw : "";
+    initialOpenAiTierChoice = openAiTierChoiceForStored(stored);
+    pendingOpenAiTierChoice = initialOpenAiTierChoice;
+    openAiTierDirty = false;
+  }
+  function openAiTierBlock() {
+    const picker = el("select", {
+      name: "openAiServiceTier",
+      "data-testid": "openai-service-tier"
+    });
+    for (const choice of SERVICE_TIER_CHOICES) {
+      picker.append(el("option", { value: choice.value }, choice.label));
+    }
+    if (!offeredOpenAiTier.has(pendingOpenAiTierChoice)) {
+      picker.append(
+        el(
+          "option",
+          { value: pendingOpenAiTierChoice },
+          retainedOpenAiTierLabel(pendingOpenAiTierChoice)
+        )
+      );
+    }
+    picker.value = pendingOpenAiTierChoice;
+    const field = uiField({
+      label: "Global OpenAI service tier",
+      control: picker,
+      hint: openAiTierDescription(pendingOpenAiTierChoice)
+    });
+    picker.addEventListener("change", () => {
+      pendingOpenAiTierChoice = picker.value;
+      openAiTierDirty = pendingOpenAiTierChoice !== initialOpenAiTierChoice;
+      field.setAttribute("hint", openAiTierDescription(pendingOpenAiTierChoice));
+    });
+    const tierBlock = block(
+      "Request processing",
+      field,
+      el(
+        "p",
+        { class: "field-hint openai-service-tier-scope" },
+        "Applies to every first-party OpenAI model request. Copse records the tier OpenAI reports for each response, including a downgrade to Standard, and uses it when estimating cost."
+      )
+    );
+    tierBlock.dataset["testid"] = "openai-service-tier-block";
+    return tierBlock;
+  }
   function loadDeviceInfoOnce() {
     if (deviceAutoSetup && providerPicked && !autoSetupRun) {
       autoSetupRun = true;
@@ -45187,6 +46403,9 @@ function createProvidersPanel(api2, opts = {}) {
         body.append(block("API key", apiPanel.root));
       }
     }
+    if (vendor.id === "openai" && opts.showOpenAiServiceTier) {
+      body.append(openAiTierBlock());
+    }
     if (caps.cloud) {
       body.append(block("Cloud agent", caps.cloud.element));
       if (cloudAgentOptions) cloudAgentOptions.hidden = false;
@@ -45218,6 +46437,7 @@ function createProvidersPanel(api2, opts = {}) {
     await localPanel.refresh();
     await agentsPanel.reload();
     await refreshCloudAgentKeys();
+    await refreshOpenAiTier();
     if (selected !== ADD_KEY && !vendors().some((vendor) => vendor.id === selected)) {
       selected = "";
     }
@@ -45225,7 +46445,13 @@ function createProvidersPanel(api2, opts = {}) {
   }
   async function saveKeys() {
     const [apiSaved, localSaved] = await Promise.all([apiPanel.saveKeys(), localPanel.saveKeys()]);
-    return apiSaved && localSaved;
+    if (!apiSaved || !localSaved) return false;
+    if (openAiTierDirty) {
+      await api2.settings.set("openAiServiceTier", pendingOpenAiTierChoice);
+      initialOpenAiTierChoice = pendingOpenAiTierChoice;
+      openAiTierDirty = false;
+    }
+    return true;
   }
   return { root: fieldset, refresh, saveKeys };
 }
@@ -45235,6 +46461,8 @@ var init_providers_section = __esm({
     init_helpers();
     init_custom_providers_section();
     init_acp_agents_section();
+    init_service_tier();
+    init_ui();
     MERGED_VENDORS = [
       {
         id: "anthropic",
@@ -45871,7 +47099,7 @@ var init_lm_studio_section = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/config.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/config.js
 function activeConfig() {
   return active;
 }
@@ -45895,14 +47123,14 @@ function withConfig(config2, fn2) {
 }
 var baseDefaults, active, scopeDepth;
 var init_config = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/config.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/config.js"() {
     baseDefaults = {};
     active = baseDefaults;
     scopeDepth = 0;
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/entity-decoder.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/entity-decoder.js
 function replaceCodePoint(codePoint) {
   if (codePoint >= 55296 && codePoint <= 57343 || codePoint > 1114111)
     return 65533;
@@ -45942,7 +47170,7 @@ function decodeHtmlEntities(text2) {
 }
 var BUILTIN_NAMED_ENTITIES, C1_REMAP, ENTITY_TOKEN_RE, cachedNamedSource, cachedEffective;
 var init_entity_decoder = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/entity-decoder.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/entity-decoder.js"() {
     init_config();
     BUILTIN_NAMED_ENTITIES = Object.freeze({
       aacute: "\xE1",
@@ -46233,7 +47461,7 @@ var init_entity_decoder = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-code-spans.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-code-spans.js
 function nextCodeSpan(s15, from) {
   let i = from;
   while (i < s15.length && s15[i] !== "`")
@@ -46314,12 +47542,12 @@ function renderInlineCode(text2) {
 }
 var ANGLE_AUTOLINK_VERBATIM_RE;
 var init_inline_code_spans = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-code-spans.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-code-spans.js"() {
     ANGLE_AUTOLINK_VERBATIM_RE = /^<(?:[a-zA-Z][a-zA-Z0-9+.-]{1,31}:[^<>\s]*|[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[^<>\s@.]+(?:\.[^<>\s@.]+)+)>/;
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/backslash-escapes.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/backslash-escapes.js
 function isEscapablePunctuation(ch) {
   return /^[!-/:-@[-`{-~]$/.test(ch);
 }
@@ -46395,7 +47623,7 @@ function canonicalizeEscapedPunctuation(text2) {
 }
 var ESCAPED_BASE, ANGLE_AUTOLINK_RE, TAG_NAME, TAG_ATTR, RAW_TAG_LIKE_RE, ENTITY_CANDIDATE_RE, INCOMPLETE_ENTITY_RE, ENCODED_PUNCT_RE, DECODE_HTML_ESCAPES;
 var init_backslash_escapes = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/backslash-escapes.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/backslash-escapes.js"() {
     init_entity_decoder();
     init_inline_code_spans();
     ESCAPED_BASE = 57344;
@@ -46416,7 +47644,7 @@ var init_backslash_escapes = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-references.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-references.js
 function isLinkReferencesEnabled() {
   return activeConfig().linkReferences !== false;
 }
@@ -46694,7 +47922,7 @@ function parseReferenceLabel(source, openBracketIndex, fallbackLabel) {
 }
 var TITLE_TOKEN_RES, BLANK_LINE_RE;
 var init_link_references = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-references.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-references.js"() {
     init_entity_decoder();
     init_backslash_escapes();
     init_config();
@@ -46703,7 +47931,7 @@ var init_link_references = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-patterns.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-patterns.js
 function leadingIndentWidth(line) {
   let col = 0;
   for (let i = 0; i < line.length; i++) {
@@ -46853,7 +48081,7 @@ function parseOpenFenceContent(source) {
 }
 var FENCE_OPEN_RE, FENCE_CLOSE_RE, ATX_HEADING_DETECT_RE, ATX_HEADING_CAPTURE_RE, BLOCKQUOTE_DETECT_RE, FENCE_INFO_BACKSLASH_RE;
 var init_block_patterns = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-patterns.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-patterns.js"() {
     init_entity_decoder();
     FENCE_OPEN_RE = /^ {0,3}(?:(`{3,})([^\n`]*)|(~{3,})([^\n]*?))\s*$/;
     FENCE_CLOSE_RE = /^ {0,3}(`{3,}|~{3,})\s*$/;
@@ -46864,17 +48092,17 @@ var init_block_patterns = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-policy.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-policy.js
 function getHtmlPolicy() {
   return activeConfig().htmlPolicy ?? "passthrough";
 }
 var init_html_policy = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-policy.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-policy.js"() {
     init_config();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/escape.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/escape.js
 function escapeHtml(text2) {
   return text2.replace(/[&<>"']/g, (ch) => HTML_ESCAPES[ch] ?? ch);
 }
@@ -46970,7 +48198,7 @@ function decodeSafeMarkdownEntities(text2) {
 }
 var HTML_ESCAPES, SAFE_OUTER_TAG_RE, BENIGN_RAW_INLINE_TAG_RE, BR_TAG_RE, EVENT_HANDLER_ATTR_RE, URL_ATTR_RE, DANGEROUS_HREF_SCHEME_RE, PASSTHROUGH_TAG_RE, SAFE_ANCHOR_ATTR_NAME_RE, TAG_ATTR_RE, ANCHOR_OPEN_TAG_RE, QUOTED_HREF_RE, SAFE_MARKDOWN_ENTITY_SOURCE, SAFE_MARKDOWN_ENTITY_RE, COMPLETE_SAFE_MARKDOWN_ENTITY_RE, KNOWN_SAFE_ENTITIES;
 var init_escape = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/escape.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/escape.js"() {
     init_backslash_escapes();
     init_html_policy();
     init_link_references();
@@ -47006,7 +48234,7 @@ var init_escape = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-block.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-block.js
 function onelineMathBody(trimmed2, delimiter) {
   const [open2, close] = delimiter === "dollar" ? ["$$", "$$"] : ["\\[", "\\]"];
   if (!trimmed2.startsWith(open2) || !trimmed2.endsWith(close))
@@ -47101,7 +48329,7 @@ function syncFormingMathBlockDom(container, source, formingClass) {
 }
 var MATH_DOLLAR_LINE_RE, MATH_BRACKET_OPEN_LINE_RE, MATH_BRACKET_CLOSE_LINE_RE, MATH_OPEN_PREFIX_RE, PARTIAL_DOLLAR_CLOSER_RE, PARTIAL_BRACKET_CLOSER_RE, PARTIAL_DOLLAR_CLOSER_LINE_RE, PARTIAL_BRACKET_CLOSER_LINE_RE;
 var init_math_block = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-block.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-block.js"() {
     init_block_patterns();
     init_escape();
     MATH_DOLLAR_LINE_RE = /^ {0,3}\$\$\s*$/;
@@ -47115,7 +48343,7 @@ var init_math_block = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/footnotes.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/footnotes.js
 function isFootnotesEnabled() {
   return activeConfig().footnotes !== false;
 }
@@ -47251,7 +48479,7 @@ function isPendingFootnoteDefLine(pending) {
 }
 var FOOTNOTE_DEF_LINE_RE, FOOTNOTE_REF_RE, activeFootnotes;
 var init_footnotes = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/footnotes.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/footnotes.js"() {
     init_block_patterns();
     init_escape();
     init_link_references();
@@ -47262,17 +48490,17 @@ var init_footnotes = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-syntax.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-syntax.js
 function isMathSyntaxEnabled() {
   return activeConfig().mathSyntax ?? false;
 }
 var init_math_syntax = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-syntax.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-syntax.js"() {
     init_config();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-tokenizer.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-tokenizer.js
 function parseOrderedListMarker(line) {
   const m = line.match(ORDERED_LIST_MARKER_RE);
   if (!m?.[1])
@@ -48039,7 +49267,7 @@ function isAmbiguousBlockLine(line) {
 }
 var THEMATIC_BREAK_RE, UNORDERED_LIST_ITEM_RE, ORDERED_LIST_MARKER_RE, LIST_ITEM_RE, EMPTY_LIST_ITEM_RE, BLOCKQUOTE_RE, SETEXT_UNDERLINE_RE, TABLE_SEP_RE;
 var init_block_tokenizer = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-tokenizer.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-tokenizer.js"() {
     init_link_references();
     init_block_patterns();
     init_math_block();
@@ -48056,7 +49284,7 @@ var init_block_tokenizer = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/alerts.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/alerts.js
 function alertTypeFromMarker(bodyLine) {
   const word = ALERT_MARKER_RE.exec(bodyLine.trim())?.[1]?.toLowerCase();
   if (word !== void 0 && word in ALERT_TITLES)
@@ -48077,7 +49305,7 @@ function pendingBlockquoteAlertType(pendingLine) {
 }
 var ALERT_TITLES, ALERT_MARKER_RE;
 var init_alerts = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/alerts.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/alerts.js"() {
     init_block_patterns();
     ALERT_TITLES = {
       note: "Note",
@@ -48090,7 +49318,7 @@ var init_alerts = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/fence-handlers.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/fence-handlers.js
 function normalizeFenceLang(lang) {
   return lang.trim().toLowerCase();
 }
@@ -48116,7 +49344,7 @@ function getFenceHandler(lang) {
 }
 var FORMING_FENCE_PRE_CLASS, mermaidFenceHandler, mathFenceHandler, BUILTIN_FENCE_HANDLERS, cachedOverrideSource, cachedOverrideMap;
 var init_fence_handlers = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/fence-handlers.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/fence-handlers.js"() {
     init_config();
     init_escape();
     init_math_block();
@@ -48168,7 +49396,7 @@ var init_fence_handlers = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight.js
 function resolveLanguage(lang) {
   const key = lang.trim().toLowerCase();
   if (!key)
@@ -48200,7 +49428,7 @@ function fenceCodeClass(lang) {
 }
 var KNOWN_LANGUAGES, LANG_ALIASES;
 var init_highlight = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight.js"() {
     init_config();
     init_escape();
     KNOWN_LANGUAGES = /* @__PURE__ */ new Set([
@@ -48239,7 +49467,7 @@ var init_highlight = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/indented-html.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/indented-html.js
 function leadingSpaces(line) {
   return line.match(/^ */)?.[0].length ?? 0;
 }
@@ -48261,13 +49489,13 @@ function isIndentedHtmlBlock(content) {
 }
 var HTML_BLOCK_TAGS, HTML_BLOCK_START_RE;
 var init_indented_html = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/indented-html.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/indented-html.js"() {
     HTML_BLOCK_TAGS = "address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h1|h2|h3|h4|h5|h6|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|nav|noframes|ol|optgroup|option|p|param|section|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul";
     HTML_BLOCK_START_RE = new RegExp(`^</?(?:${HTML_BLOCK_TAGS})(?:[\\s/>]|$)`, "i");
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/raw-images.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/raw-images.js
 function parseHtmlAttributes(tag) {
   const attrs = {};
   const decodedTag = decodeEscapedHref(tag);
@@ -48300,7 +49528,7 @@ function restoreRawImages(text2, images) {
 }
 var RAW_IMAGE_RE, PLACEHOLDER_OPEN, PLACEHOLDER_CLOSE, PLACEHOLDER_RE;
 var init_raw_images = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/raw-images.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/raw-images.js"() {
     init_config();
     init_escape();
     RAW_IMAGE_RE = /(?:<img\b[\s\S]*?\/?>|&lt;img\b[\s\S]*?\/?&gt;)/gi;
@@ -48310,17 +49538,17 @@ var init_raw_images = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/autolink-syntax.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/autolink-syntax.js
 function isEmailAutolinksEnabled() {
   return activeConfig().emailAutolinks ?? true;
 }
 var init_autolink_syntax = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/autolink-syntax.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/autolink-syntax.js"() {
     init_config();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/workspace-link-href.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/workspace-link-href.js
 function workspaceLinkTargetFromHref(raw) {
   let pathPart = raw.trim();
   if (pathPart === "" || pathPart.startsWith("#") || pathPart.startsWith("//"))
@@ -48373,13 +49601,13 @@ function isWorkspaceMarkdownLinkHref(raw) {
 }
 var URL_SCHEME_RE, COMMONMARK_FIXTURE_SINGLE_SEGMENTS;
 var init_workspace_link_href = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/workspace-link-href.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/workspace-link-href.js"() {
     URL_SCHEME_RE = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
     COMMONMARK_FIXTURE_SINGLE_SEGMENTS = /* @__PURE__ */ new Set(["uri", "url"]);
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-links.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-links.js
 function lookupWithRenderedLabels(refs, label, renderForMatch) {
   const direct = lookupLinkReference(refs, label);
   if (direct || !renderForMatch || !label.includes("<") || !isValidReferenceLabel(label)) {
@@ -48582,7 +49810,7 @@ function rangeAt(index, ranges) {
 }
 var renderedLabelIndexCache, DEFAULT_SAFE_HREF_SCHEMES, HREF_SCHEME_RE, DEFAULT_SAFE_HREF_SCHEMES_SET, cachedSchemesSource, cachedSchemes, neutralLinkDecorator, appLinkDecorator, RENDERED_ANCHOR_RE, INLINE_SHIELD_RE;
 var init_inline_links = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-links.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-links.js"() {
     init_backslash_escapes();
     init_config();
     init_escape();
@@ -48611,7 +49839,7 @@ var init_inline_links = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-passes.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-passes.js
 function getInlinePasses(stage) {
   const passes = activeConfig().inlinePasses ?? NO_PASSES;
   if (stage === void 0)
@@ -48630,7 +49858,7 @@ function restoreInlinePassHtml(text2) {
 }
 var NO_PASSES, TOKEN_OPEN, TOKEN_CLOSE, TOKEN_RE, TOKEN_CHAR_RE, emitted, nextEmitId, inlinePassContext;
 var init_inline_passes = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-passes.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-passes.js"() {
     init_config();
     NO_PASSES = [];
     TOKEN_OPEN = "\uE100";
@@ -48649,7 +49877,7 @@ var init_inline_passes = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-math.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-math.js
 function inlineHtmlMask(text2) {
   const mask = new Array(text2.length).fill(false);
   for (const match of text2.matchAll(INLINE_HTML_SHIELD_RE)) {
@@ -48847,7 +50075,7 @@ function mathHoldStart(s15, mask) {
 }
 var ESCAPED_LPAREN, ESCAPED_RPAREN;
 var init_inline_math = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-math.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-math.js"() {
     init_backslash_escapes();
     init_escape();
     init_inline_emphasis();
@@ -48858,7 +50086,7 @@ var init_inline_math = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-strikethrough.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-strikethrough.js
 function inlineHtmlMask2(text2) {
   const mask = new Array(text2.length).fill(false);
   for (const match of text2.matchAll(INLINE_HTML_SHIELD_RE)) {
@@ -48953,12 +50181,12 @@ function strikethroughHoldStart(s15, mask) {
   return cut;
 }
 var init_inline_strikethrough = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-strikethrough.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-strikethrough.js"() {
     init_inline_emphasis();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-emphasis.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-emphasis.js
 function isFlankingWhitespace(ch) {
   return ch === "" || ch === HARD_BREAK_SENTINEL || /\s/.test(ch);
 }
@@ -49171,7 +50399,7 @@ function assembleMatch(s15, m, allMatches) {
   return wrapEmphasis(out.replace(/\n/g, " "), m.openLen, m.closeLen);
 }
 function maskLinkSpans(s15, mask, linkRefs) {
-  let extended = null;
+  let extended2 = null;
   let i = 0;
   while (i < s15.length) {
     if (mask[i]) {
@@ -49181,16 +50409,16 @@ function maskLinkSpans(s15, mask, linkRefs) {
     if (s15[i] === "[" || s15[i] === "!" && s15[i + 1] === "[") {
       const end = linkOrImageEndAt(s15, i, linkRefs);
       if (end !== null) {
-        extended ??= [...mask];
+        extended2 ??= [...mask];
         for (let k = i; k < end; k++)
-          extended[k] = true;
+          extended2[k] = true;
         i = end;
         continue;
       }
     }
     i++;
   }
-  return extended ?? mask;
+  return extended2 ?? mask;
 }
 function renderEmphasisSegment(s15, mask, linkRefs) {
   const matches2 = scanDelimiterMatches(s15, maskLinkSpans(s15, mask, linkRefs), linkRefs);
@@ -49255,7 +50483,7 @@ function renderEmphasisOutsideInlineHtml(text2, linkRefs = /* @__PURE__ */ new M
 }
 var UNICODE_PUNCTUATION_RE, HARD_BREAK_SENTINEL, INLINE_HTML_SHIELD_RE;
 var init_inline_emphasis = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-emphasis.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-emphasis.js"() {
     init_backslash_escapes();
     init_config();
     init_escape();
@@ -49272,7 +50500,7 @@ var init_inline_emphasis = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-autolinks.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-autolinks.js
 function autolinkHref(raw) {
   if (!isAllowedHref(raw))
     return null;
@@ -49322,7 +50550,7 @@ function renderAngleAutolinks(text2) {
 }
 var URI_AUTOLINK_RE, EMAIL_AUTOLINK_RE;
 var init_inline_autolinks = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-autolinks.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-autolinks.js"() {
     init_escape();
     init_inline_emphasis();
     init_inline_links();
@@ -49332,7 +50560,7 @@ var init_inline_autolinks = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-spans.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-spans.js
 function applyInlinePasses(t, stage) {
   const passes = getInlinePasses(stage);
   if (passes.length === 0)
@@ -49551,7 +50779,7 @@ function linkifyEmailAutolinks(segment) {
 }
 var URL_SCHEME_RE2, WWW_DOMAIN_RE, AUTOLINK_TRAILING_PUNCTUATION, EMAIL_LOCAL_CHAR_RE;
 var init_inline_spans = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-spans.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-spans.js"() {
     init_autolink_syntax();
     init_backslash_escapes();
     init_config();
@@ -49571,7 +50799,7 @@ var init_inline_spans = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-prose-inline.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-prose-inline.js
 function stripHtmlComments(text2) {
   return text2.replace(/<!--[\s\S]*?-->/g, "");
 }
@@ -49667,7 +50895,7 @@ function renderProseBlock(text2, linkRefs, softBreak = "newline") {
 }
 var HARD_BREAK;
 var init_render_prose_inline = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-prose-inline.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-prose-inline.js"() {
     init_backslash_escapes();
     init_escape();
     init_raw_images();
@@ -49677,7 +50905,7 @@ var init_render_prose_inline = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-blocks.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-blocks.js
 function renderFencedBlock(lang, code) {
   const handler = getFenceHandler(lang);
   if (handler)
@@ -50126,7 +51354,7 @@ function renderFootnoteSectionItems(ctx, linkRefs, startIndex = 0) {
 }
 var MAX_BLOCK_NESTING_DEPTH, blockNestingDepth, stripBlockquoteLine, TASK_LIST_MARKER_RE, SETEXT_UNDERLINE_SLICE_RE;
 var init_render_blocks = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-blocks.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-blocks.js"() {
     init_alerts();
     init_block_patterns();
     init_block_tokenizer();
@@ -50144,7 +51372,7 @@ var init_render_blocks = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-image-policy.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-image-policy.js
 function resolvedPolicy() {
   const source = activeConfig().linkImagePolicy ?? null;
   if (source !== cachedPolicySource) {
@@ -50244,7 +51472,7 @@ function applyLinkImagePolicy(node2, tagName) {
 }
 var DEFAULT_BLOCKED_LINK_CLASS, DEFAULT_BLOCKED_IMAGE_CLASS, cachedPolicySource, cachedResolved;
 var init_link_image_policy = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-image-policy.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-image-policy.js"() {
     init_config();
     DEFAULT_BLOCKED_LINK_CLASS = "blocked-link";
     DEFAULT_BLOCKED_IMAGE_CLASS = "blocked-image";
@@ -50252,16 +51480,16 @@ var init_link_image_policy = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/data-attributes.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/data-attributes.js
 var DATA_ATTR_NAME_SOURCE, DATA_ATTR_NAME_RE;
 var init_data_attributes = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/data-attributes.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/data-attributes.js"() {
     DATA_ATTR_NAME_SOURCE = "data-[a-z0-9-]+";
     DATA_ATTR_NAME_RE = /* @__PURE__ */ new RegExp(`^${DATA_ATTR_NAME_SOURCE}$`, "i");
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-browser.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-browser.js
 function isBrowserSanitizerSupported() {
   return typeof document !== "undefined" && typeof Element.prototype.setHTML === "function";
 }
@@ -50308,7 +51536,7 @@ function sanitizeIntoElement(target, html2, config2) {
 }
 var DROP_CONTENT_TAGS, browserSanitizerBackend;
 var init_sanitize_browser = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-browser.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-browser.js"() {
     init_data_attributes();
     DROP_CONTENT_TAGS = /* @__PURE__ */ new Set(["script", "style", "noscript", "template", "title"]);
     browserSanitizerBackend = {
@@ -50332,7 +51560,7 @@ var init_sanitize_browser = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize.js
 function getSanitizerBackend() {
   return activeConfig().sanitizerBackend ?? null;
 }
@@ -50401,7 +51629,7 @@ function sanitizeRenderedMarkdownInto(target, html2) {
 }
 var ALLOWED_TAGS, ALLOWED_ATTR, FOOTNOTE_ID_RE, DOUBLE_ENCODED_NBSP_RE, DOUBLE_ENCODED_NBSP_DATA_RE, SHOW_TEXT;
 var init_sanitize = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize.js"() {
     init_config();
     init_link_image_policy();
     init_sanitize_browser();
@@ -50483,7 +51711,7 @@ var init_sanitize = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/renderer.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/renderer.js
 function scopedConfig(options) {
   const { tokens, indentedCode, ...config2 } = options;
   return config2;
@@ -50521,7 +51749,7 @@ ${section}`;
 }
 var TOP_LEVEL_RENDER_OPTS;
 var init_renderer = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/renderer.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/renderer.js"() {
     init_block_tokenizer();
     init_footnotes();
     init_config();
@@ -50531,7 +51759,7 @@ var init_renderer = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-pending-line.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-pending-line.js
 function revealFormingLink(text2) {
   if (!text2.includes("["))
     return text2;
@@ -50705,7 +51933,7 @@ function renderPendingLine(pending, options = {}) {
 }
 var COMPLETE_LINK_AT_START_RE, TOP_LEVEL_LIST_MARKER_RE;
 var init_render_pending_line = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-pending-line.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-pending-line.js"() {
     init_alerts();
     init_block_patterns();
     init_block_tokenizer();
@@ -50719,7 +51947,7 @@ var init_render_pending_line = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-split.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-split.js
 function splitAtLastNewline(content) {
   const lastNl = content.lastIndexOf("\n");
   if (lastNl === -1)
@@ -50834,14 +52062,14 @@ function splitForStreamingCore(content, blocks) {
   };
 }
 var init_streaming_split = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-split.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-split.js"() {
     init_block_tokenizer();
     init_inline_code_spans();
     init_inline_emphasis();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/incremental-scan.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/incremental-scan.js
 function canExtendAcrossBlank(kind) {
   return kind === "list_item" || kind === "indented_code" || kind === "blockquote" || kind === "footnote_def";
 }
@@ -50893,7 +52121,7 @@ function advanceSafeBoundary(source, tokens, fromIdx, fromOffset, lastNonBlankKi
 }
 var IncrementalSourceScanner;
 var init_incremental_scan = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/incremental-scan.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/incremental-scan.js"() {
     init_block_tokenizer();
     IncrementalSourceScanner = class {
       tokens = [];
@@ -51078,7 +52306,7 @@ var init_incremental_scan = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/dom-scan.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/dom-scan.js
 function childMatches(el3, tagName, cls) {
   return (tagName === null || el3.tagName === tagName) && (cls === null || el3.classList.contains(cls));
 }
@@ -51107,11 +52335,11 @@ function findDescendantByClass(root, cls, tagName) {
   return null;
 }
 var init_dom_scan = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/dom-scan.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/dom-scan.js"() {
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-sink.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-sink.js
 function resolvePolicy() {
   const hostPolicy = activeConfig().trustedTypesPolicy;
   if (hostPolicy)
@@ -51160,13 +52388,13 @@ function setHostTrustedHtml(el3, html2) {
 }
 var defaultPolicy, defaultPolicyFactory;
 var init_html_sink = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-sink.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-sink.js"() {
     init_config();
     init_sanitize();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math.js
 function readMathSource(el3) {
   return (el3.querySelector("pre.math") ?? el3).textContent ?? "";
 }
@@ -51210,13 +52438,13 @@ async function hydratePendingMath(root, options = {}) {
 }
 var PENDING_MATH_SELECTOR;
 var init_math = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math.js"() {
     init_html_sink();
     PENDING_MATH_SELECTOR = ".math-block.math-block--pending, .math-inline.math-inline--pending";
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-source.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-source.js
 function decodeMermaidHtmlEntities(text2) {
   return text2.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
 }
@@ -51257,11 +52485,11 @@ function mermaidSourceCandidates(raw) {
   return [...new Set([gentle, aggressive].filter(Boolean))];
 }
 var init_mermaid_source = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-source.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-source.js"() {
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid.js
 function readDiagramSource(container) {
   return container.querySelector("pre.mermaid")?.textContent ?? "";
 }
@@ -51311,14 +52539,14 @@ async function hydratePendingDiagrams(root, options = {}) {
 }
 var PENDING_DIAGRAM_SELECTOR;
 var init_mermaid = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid.js"() {
     init_mermaid_source();
     init_html_sink();
     PENDING_DIAGRAM_SELECTOR = ".mermaid-diagram.mermaid-diagram--pending";
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-table-dom.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-table-dom.js
 function tableLines(source) {
   const trimmed2 = dropTrailingNewline(source);
   if (trimmed2 === "")
@@ -51424,7 +52652,7 @@ function removePendingTableRow(table) {
 }
 var FORMING_TABLE_CLASS, PENDING_ROW_CLASS, SEPARATOR_ROW_CLASS;
 var init_streaming_table_dom = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-table-dom.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-table-dom.js"() {
     init_dom_scan();
     init_block_tokenizer();
     init_block_patterns();
@@ -51437,7 +52665,7 @@ var init_streaming_table_dom = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-fence-dom.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-fence-dom.js
 function renderFormingFenceInner(lang, code) {
   const handler = getFenceHandler(lang);
   if (handler) {
@@ -51482,7 +52710,7 @@ function clearFormingFenceDom(container) {
   container.replaceChildren();
 }
 var init_streaming_fence_dom = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-fence-dom.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-fence-dom.js"() {
     init_block_patterns();
     init_fence_handlers();
     init_dom_scan();
@@ -51491,18 +52719,18 @@ var init_streaming_fence_dom = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-math-dom.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-math-dom.js
 function syncFormingMathDom(container, source) {
   syncFormingMathBlockDom(container, parseOpenMathBlock(source), FORMING_FENCE_PRE_CLASS);
 }
 var init_streaming_math_dom = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-math-dom.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-math-dom.js"() {
     init_fence_handlers();
     init_math_block();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-dom-morph.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-dom-morph.js
 function attributesEqual(a2, b3) {
   const aAttrs = a2.attributes;
   const bAttrs = b3.attributes;
@@ -51604,7 +52832,7 @@ function syncAttributes(el3, template) {
 }
 var TEXT_NODE, ELEMENT_NODE, COMMENT_NODE;
 var init_streaming_dom_morph = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-dom-morph.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-dom-morph.js"() {
     init_html_sink();
     TEXT_NODE = 3;
     ELEMENT_NODE = 1;
@@ -51612,7 +52840,7 @@ var init_streaming_dom_morph = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-frozen-tail.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-frozen-tail.js
 function settleClassOf(kind) {
   switch (kind) {
     case "fence":
@@ -51799,7 +53027,7 @@ function detailsBalance(html2) {
 }
 var RENDER_OPTS, INTRA_LIST_MIN_ITEMS, MAX_LINK_REF_PATCH_PARTS, BENIGN_BALANCED_TAGS, VOID_HTML_TAGS, HTML_TAG_SCAN_RE, SAFE_REROOT_TAGS, PROBE_TAG, PROBE_HTML, DETAILS_OPEN_RE, DETAILS_CLOSE_RE, FrozenTailRenderer;
 var init_streaming_frozen_tail = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-frozen-tail.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-frozen-tail.js"() {
     init_block_tokenizer();
     init_render_blocks();
     init_footnotes();
@@ -53035,7 +54263,7 @@ ${section}`;
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming.js
 function trailingFootnotesSection(completedEl) {
   const last = completedEl.lastElementChild;
   return last && last.tagName === "SECTION" && last.classList.contains("footnotes") ? last : null;
@@ -53477,7 +54705,7 @@ function clearFormingDom(container) {
 }
 var BLOCK_PENDING_CLASS, LIST_CONTINUATION_CLASS, PARAGRAPH_CONTINUATION_CLASS, PENDING_FAST_PATH_INERT_RE, StreamingMarkdownRenderer;
 var init_streaming = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming.js"() {
     init_alerts();
     init_block_tokenizer();
     init_render_pending_line();
@@ -53745,9 +54973,9 @@ var init_streaming = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/index.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/index.js
 var init_dist = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/index.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/index.js"() {
     init_renderer();
     init_config();
     init_streaming();
@@ -56653,7 +57881,7 @@ function renderPlanProvider(host, result, onClaudeSignIn) {
   }
   host.append(card);
 }
-function renderPlanSection(host, snapshot, error61, onClaudeSignIn) {
+function renderPlanSection(host, snapshot, error62, onClaudeSignIn) {
   host.replaceChildren();
   const heading = document.createElement("h3");
   heading.className = "usage-plan-heading";
@@ -56663,10 +57891,10 @@ function renderPlanSection(host, snapshot, error61, onClaudeSignIn) {
   intro.className = "field-hint";
   intro.textContent = "Live plan windows for the accounts you are signed in to. If a plan cannot be read, the local ledger below still tracks this app\u2019s usage.";
   host.append(intro);
-  if (error61) {
+  if (error62) {
     const err2 = document.createElement("p");
     err2.className = "usage-plan-status usage-plan-status-error field-hint";
-    err2.textContent = error61;
+    err2.textContent = error62;
     host.append(err2);
     return;
   }
@@ -56691,7 +57919,7 @@ function renderPlanSection(host, snapshot, error61, onClaudeSignIn) {
   }
   host.append(list);
 }
-function renderPlanWorthItSection(host, payload, error61, opts) {
+function renderPlanWorthItSection(host, payload, error62, opts) {
   host.replaceChildren();
   const heading = document.createElement("h3");
   heading.className = "usage-worth-heading";
@@ -56701,10 +57929,10 @@ function renderPlanWorthItSection(host, payload, error61, opts) {
   intro.className = "field-hint";
   intro.textContent = "Compares your Claude subscription\u2019s account-wide weekly API-equivalent burn (from plan windows, including other apps and devices) to paying catalog inference rates. Copse\u2019s local ledger is not used here.";
   host.append(intro);
-  if (error61) {
+  if (error62) {
     const err2 = document.createElement("p");
     err2.className = "usage-plan-status usage-plan-status-error field-hint";
-    err2.textContent = error61;
+    err2.textContent = error62;
     host.append(err2);
     return;
   }
@@ -56823,13 +58051,14 @@ function renderModelTable(host, title, rows, emptyText) {
     const approx = row2.estimatedTokens ? "~" : "";
     const model = escapeHtml(row2.model);
     const modelLabel2 = row2.estimatedTokens ? `${model} <span class="usage-estimated" title="Estimated locally, because the agent did not report usage">(est.)</span>` : model;
+    const costLabel = row2.isLocal ? "free (local)" : !row2.pricingKnown ? "unpriced" : `${row2.estimatedCostUsd === 0 ? "free" : formatUsd(row2.estimatedCostUsd)}${row2.tierPricingFallback ? ' <span class="usage-estimated" title="This service tier has no published catalog rate; shown at the standard rate.">(standard rate)</span>' : ""}`;
     tr2.innerHTML = `
       <td><code>${modelLabel2}</code></td>
       <td>${approx}${formatTokenCount(row2.inputTokens)}</td>
       <td>${approx}${formatTokenCount(row2.outputTokens)}</td>
       <td>${row2.cacheReadTokens ? formatTokenCount(row2.cacheReadTokens) : "-"}</td>
       <td>${row2.cacheCreationTokens ? formatTokenCount(row2.cacheCreationTokens) : "-"}</td>
-      <td>${row2.isLocal ? "free (local)" : !row2.pricingKnown ? "unpriced" : row2.estimatedCostUsd === 0 ? "free" : formatUsd(row2.estimatedCostUsd)}</td>
+      <td>${costLabel}</td>
     `;
     tbody.append(tr2);
   }
@@ -57379,9 +58608,9 @@ var init_automations_plugin = __esm({
 });
 
 // src/renderer/views/automation-plugin-settings.ts
-function cleanIpcError(error61) {
-  if (!(error61 instanceof Error)) return "Automation request failed.";
-  return error61.message.replace(/^Error invoking remote method '[^']+':\s*(?:Error:\s*)?/, "");
+function cleanIpcError(error62) {
+  if (!(error62 instanceof Error)) return "Automation request failed.";
+  return error62.message.replace(/^Error invoking remote method '[^']+':\s*(?:Error:\s*)?/, "");
 }
 function lastRunLabel(timestamp) {
   if (timestamp === void 0) return "Never run";
@@ -57495,10 +58724,10 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
   let editingId = null;
   let pendingReveal = revealScheduleId;
   let pendingCreate = createNew;
-  function showStatus(message2, error61 = false) {
+  function showStatus(message2, error62 = false) {
     status.hidden = false;
     status.textContent = message2;
-    status.classList.toggle("automation-status-error", error61);
+    status.classList.toggle("automation-status-error", error62);
   }
   function hideStatus() {
     status.hidden = true;
@@ -57586,8 +58815,8 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
             );
             void refresh();
           },
-          (error61) => {
-            showStatus(cleanIpcError(error61), true);
+          (error62) => {
+            showStatus(cleanIpcError(error62), true);
             run2.disabled = !pluginEnabled;
           }
         );
@@ -57603,8 +58832,8 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
           await api2.automations.remove(projectId, schedule.id);
           if (editingId === schedule.id) closeForm();
           await refresh();
-        }).catch((error61) => {
-          showStatus(cleanIpcError(error61), true);
+        }).catch((error62) => {
+          showStatus(cleanIpcError(error62), true);
         });
       });
       actions.append(edit, run2, remove);
@@ -57635,8 +58864,8 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
         pendingCreate = false;
         await openForm();
       }
-    } catch (error61) {
-      showStatus(cleanIpcError(error61), true);
+    } catch (error62) {
+      showStatus(cleanIpcError(error62), true);
     }
   }
   addButton.addEventListener("click", () => void openForm());
@@ -57660,8 +58889,8 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
         closeForm();
         await refresh();
       },
-      (error61) => {
-        showStatus(cleanIpcError(error61), true);
+      (error62) => {
+        showStatus(cleanIpcError(error62), true);
       }
     ).finally(() => {
       saveButton.removeAttribute("disabled");
@@ -57893,9 +59122,9 @@ function createToolPermissionsPanel(api2) {
     try {
       catalog = await request();
       status.textContent = "Saved";
-    } catch (error61) {
+    } catch (error62) {
       catalog = before;
-      status.textContent = "Could not save: " + errorMessage(error61);
+      status.textContent = "Could not save: " + errorMessage(error62);
       status.classList.add("is-error");
     } finally {
       pendingToolIds.clear();
@@ -58141,8 +59370,8 @@ function createToolPermissionsPanel(api2) {
     try {
       catalog = await api2.list();
       status.textContent = "";
-    } catch (error61) {
-      status.textContent = "Could not load tool permissions: " + errorMessage(error61);
+    } catch (error62) {
+      status.textContent = "Could not load tool permissions: " + errorMessage(error62);
       status.classList.add("is-error");
     } finally {
       loading = false;
@@ -58332,8 +59561,8 @@ function createAppleDevelopmentPanel(store2, api2, options) {
     try {
       await action();
       await refresh();
-    } catch (error61) {
-      const message2 = error61 instanceof Error ? error61.message : String(error61);
+    } catch (error62) {
+      const message2 = error62 instanceof Error ? error62.message : String(error62);
       host.querySelector(".apple-development-error")?.remove();
       host.append(el("p", { class: "apple-development-error", role: "alert" }, message2));
     } finally {
@@ -58502,12 +59731,12 @@ function createAppleDevelopmentPanel(store2, api2, options) {
             }
             destinationCache.set(key, items);
             fillDestinations(items);
-          } catch (error61) {
+          } catch (error62) {
             if (request !== destinationRequest) return;
             destination.replaceChildren(el("option", { value: "" }, "No destinations available"));
             destination.disabled = true;
             save.disabled = true;
-            destinationStatus.textContent = error61 instanceof Error ? error61.message : String(error61);
+            destinationStatus.textContent = error62 instanceof Error ? error62.message : String(error62);
             destinationStatus.hidden = false;
           }
         };
@@ -58699,14 +59928,14 @@ function createAppleDevelopmentPanel(store2, api2, options) {
     try {
       const state = await api2.appleDevelopment.state(owner.projectId, owner.threadId);
       if (current === generation) render(owner, state);
-    } catch (error61) {
+    } catch (error62) {
       if (current !== generation) return;
       host.hidden = false;
       host.replaceChildren(
         el(
           "p",
           { class: "apple-development-error", role: "alert" },
-          error61 instanceof Error ? error61.message : String(error61)
+          error62 instanceof Error ? error62.message : String(error62)
         )
       );
     }
@@ -59914,25 +61143,6 @@ function mountSettingsDialog(store2, api2) {
             </fieldset>
 
             <fieldset>
-              <legend>Model comparison</legend>
-              <p class="field-hint">
-                Reviews your current changes through two models independently, then has a third
-                compare their verdicts. Turn it on under <strong>Plugins</strong>, where you also
-                choose how the three models are picked \u2014 they always resolve to different models,
-                so there is something to compare. A run makes up to three model calls, so it asks
-                before spending on a paid model.
-              </p>
-              <label class="checkbox-label">
-                <input type="checkbox" name="modelComparisonAutoOnReview" />
-                Run the comparison automatically after editing turns
-              </label>
-              <p class="field-hint">
-                When on, the comparison runs as part of the post-turn review, still asking before
-                it spends. When off, ask for it when you want it.
-              </p>
-            </fieldset>
-
-            <fieldset>
               <legend>Developer mode</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="developerMode" />
@@ -60002,6 +61212,7 @@ function mountSettingsDialog(store2, api2) {
         refresh: () => lmStudioSection.refreshDetection()
       }
     ],
+    showOpenAiServiceTier: true,
     cloudAgents: [
       {
         vendor: "cursor",
@@ -60660,8 +61871,8 @@ function mountSettingsDialog(store2, api2) {
     try {
       await api2.worktrees.openTerminal(projectId, entry.path);
       statusEl.textContent = `Opened a terminal in ${entry.branch ?? entry.path}.`;
-    } catch (error61) {
-      statusEl.textContent = errorMessage(error61);
+    } catch (error62) {
+      statusEl.textContent = errorMessage(error62);
     } finally {
       button.disabled = false;
     }
@@ -60679,8 +61890,8 @@ function mountSettingsDialog(store2, api2) {
         } else if (preview.directories.length > 0) {
           previews2.push({ entry, preview });
         }
-      } catch (error61) {
-        problems.push(`${entry.branch ?? entry.path}: ${errorMessage(error61)}`);
+      } catch (error62) {
+        problems.push(`${entry.branch ?? entry.path}: ${errorMessage(error62)}`);
       }
     }
     if (previews2.length === 0) {
@@ -60740,8 +61951,8 @@ function mountSettingsDialog(store2, api2) {
           }
           await fillWorktreeSizes(projectId, [target]);
         }
-      } catch (error61) {
-        problems.push(`${entry.branch ?? entry.path}: ${errorMessage(error61)}`);
+      } catch (error62) {
+        problems.push(`${entry.branch ?? entry.path}: ${errorMessage(error62)}`);
       }
     }
     statusEl.textContent = [
@@ -60819,8 +62030,8 @@ function mountSettingsDialog(store2, api2) {
         );
       }
       statusEl.textContent = result.branchDeleted ? `Deleted ${name} and its branch.` : `Deleted ${name}.`;
-    } catch (error61) {
-      statusEl.textContent = errorMessage(error61);
+    } catch (error62) {
+      statusEl.textContent = errorMessage(error62);
     }
   }
   const worktreeRows = /* @__PURE__ */ new Map();
@@ -60961,10 +62172,10 @@ function mountSettingsDialog(store2, api2) {
       syncWorktreeSelection();
       statusEl.textContent = status;
       await fillWorktreeSizes(projectId, rendered);
-    } catch (error61) {
+    } catch (error62) {
       if (generation !== worktreeRefreshGeneration || projectId !== storageProjectId) return;
       fillSourceList("#sources-worktrees-list", [], "Could not list worktrees.");
-      statusEl.textContent = errorMessage(error61);
+      statusEl.textContent = errorMessage(error62);
     }
   }
   function openInstructionFile(file2) {
@@ -60979,8 +62190,8 @@ function mountSettingsDialog(store2, api2) {
       text2.className = "attachment-preview-text";
       text2.textContent = content;
       session.setContent(text2);
-    }).catch((error61) => {
-      session.setStatus(errorMessage(error61));
+    }).catch((error62) => {
+      session.setStatus(errorMessage(error62));
     });
   }
   function applyWorkspaceTrusted(statuses) {
@@ -61004,7 +62215,7 @@ function mountSettingsDialog(store2, api2) {
     statusEl.textContent = "Trusting workspace\u2026";
     const pending = api2.workspace.setTrusted(true).then(
       (statuses) => ({ statuses }),
-      (error61) => ({ error: error61 })
+      (error62) => ({ error: error62 })
     );
     await refreshSources();
     const result = await pending;
@@ -61724,8 +62935,8 @@ function mountSettingsDialog(store2, api2) {
         const warn = document.createElement("div");
         warn.className = "mcp-trust-banner trust-unsandboxed-hooks-warning";
         const label = document.createElement("span");
-        const plural2 = unsandboxed.length === 1 ? "hook" : "hooks";
-        label.textContent = `This workspace declares ${String(unsandboxed.length)} ${plural2} with "sandbox": false in .copse/hooks.json. Trusting this workspace allows ${unsandboxed.length === 1 ? "it" : "them"} to run OUTSIDE the project sandbox:`;
+        const plural3 = unsandboxed.length === 1 ? "hook" : "hooks";
+        label.textContent = `This workspace declares ${String(unsandboxed.length)} ${plural3} with "sandbox": false in .copse/hooks.json. Trusting this workspace allows ${unsandboxed.length === 1 ? "it" : "them"} to run OUTSIDE the project sandbox:`;
         const list = document.createElement("ul");
         for (const h2 of unsandboxed) {
           const li2 = document.createElement("li");
@@ -61954,8 +63165,8 @@ function mountSettingsDialog(store2, api2) {
     const status = qsRequired(overlay, "#plugins-reload-status");
     button.disabled = true;
     status.textContent = "Choose a folder containing copse-plugin.json\u2026";
-    void api2.plugins.addSource().then(() => refreshPlugins()).catch((error61) => {
-      status.textContent = errorMessage(error61);
+    void api2.plugins.addSource().then(() => refreshPlugins()).catch((error62) => {
+      status.textContent = errorMessage(error62);
     }).finally(() => {
       button.disabled = false;
     });
@@ -62409,9 +63620,6 @@ var init_settings_dialog = __esm({
       { name: "nextStepSuggestionEnabled", kind: "checkbox", default: false, save: true },
       { name: "containerRunsEnabled", kind: "checkbox", default: false, save: true },
       { name: "orchestrationStrategyEnabled", kind: "checkbox", default: false, save: true },
-      // P5: the master model-comparison toggle moved to Settings > Plugins
-      // (`copse.model-comparison`); the auto-on-review sub-toggle stays here.
-      { name: "modelComparisonAutoOnReview", kind: "checkbox", default: false, save: true },
       { name: DEVELOPER_MODE_SETTING, kind: "checkbox", default: false, save: true },
       // Background tasks moved to Settings > Plugins (`copse.background-tasks`), which
       // also declares the `loopback-bind` sandbox relaxation (issue #1190).
@@ -62521,8 +63729,8 @@ function openAutomationDialog(store2, api2, options = {}) {
         label.textContent = enabled ? "Automations plugin enabled" : "Automations plugin disabled";
         toggle.textContent = enabled ? "Disable plugin" : "Enable automations";
         toggle.disabled = false;
-      }).catch((error61) => {
-        status.textContent = error61 instanceof Error ? error61.message : "Could not update the plugin.";
+      }).catch((error62) => {
+        status.textContent = error62 instanceof Error ? error62.message : "Could not update the plugin.";
         toggle.disabled = false;
       });
     });
@@ -62537,8 +63745,8 @@ function openAutomationDialog(store2, api2, options = {}) {
       return;
     }
     render(plugin);
-  }).catch((error61) => {
-    status.textContent = error61 instanceof Error ? error61.message : "Could not load automations.";
+  }).catch((error62) => {
+    status.textContent = error62 instanceof Error ? error62.message : "Could not load automations.";
   });
 }
 var init_automation_dialog = __esm({
@@ -62660,8 +63868,8 @@ async function forkThread(store2, api2, sourceThreadId, options = {}) {
   let history = null;
   try {
     history = await api2.threads.fork(projectId, sourceThreadId, forked.id, options.throughMessageId);
-  } catch (error61) {
-    console.error("[fork] failed to seed forked thread history:", error61);
+  } catch (error62) {
+    console.error("[fork] failed to seed forked thread history:", error62);
   }
   return {
     threadId: forked.id,
@@ -63682,8 +64890,8 @@ function mountProjectsPane(root, store2, api2) {
             );
           }
           showContextMenu(rect.left, rect.bottom, [...entries2, ...projectMenuEntries]);
-        }).catch((error61) => {
-          showErrorToast("Could not load project menu", error61);
+        }).catch((error62) => {
+          showErrorToast("Could not load project menu", error62);
         }).finally(() => {
           menuButton.disabled = false;
         });
@@ -64463,7 +65671,7 @@ var init_preview_csp = __esm({
   }
 });
 
-// node_modules/.pnpm/tldts-core@7.4.11/node_modules/tldts-core/dist/es6/src/domain.js
+// node_modules/.pnpm/tldts-core@7.4.13/node_modules/tldts-core/dist/es6/src/domain.js
 function shareSameDomainSuffix(hostname3, vhost) {
   if (hostname3.endsWith(vhost)) {
     return hostname3.length === vhost.length || hostname3[hostname3.length - vhost.length - 1] === ".";
@@ -64505,20 +65713,20 @@ function getDomain(suffix, hostname3, options) {
   );
 }
 var init_domain = __esm({
-  "node_modules/.pnpm/tldts-core@7.4.11/node_modules/tldts-core/dist/es6/src/domain.js"() {
+  "node_modules/.pnpm/tldts-core@7.4.13/node_modules/tldts-core/dist/es6/src/domain.js"() {
   }
 });
 
-// node_modules/.pnpm/tldts-core@7.4.11/node_modules/tldts-core/dist/es6/src/domain-without-suffix.js
+// node_modules/.pnpm/tldts-core@7.4.13/node_modules/tldts-core/dist/es6/src/domain-without-suffix.js
 function getDomainWithoutSuffix(domain2, suffix) {
   return domain2.slice(0, -suffix.length - 1);
 }
 var init_domain_without_suffix = __esm({
-  "node_modules/.pnpm/tldts-core@7.4.11/node_modules/tldts-core/dist/es6/src/domain-without-suffix.js"() {
+  "node_modules/.pnpm/tldts-core@7.4.13/node_modules/tldts-core/dist/es6/src/domain-without-suffix.js"() {
   }
 });
 
-// node_modules/.pnpm/tldts-core@7.4.11/node_modules/tldts-core/dist/es6/src/extract-hostname.js
+// node_modules/.pnpm/tldts-core@7.4.13/node_modules/tldts-core/dist/es6/src/extract-hostname.js
 function isValidHostnameChar(code) {
   return code >= 97 && code <= 122 || // a-z
   code >= 48 && code <= 57 || // 0-9
@@ -64792,13 +66000,13 @@ function extractHostname(url2, urlIsValidHostname, validate2 = false) {
 }
 var CONTROL_CHARS, extractedHostnameValidated;
 var init_extract_hostname = __esm({
-  "node_modules/.pnpm/tldts-core@7.4.11/node_modules/tldts-core/dist/es6/src/extract-hostname.js"() {
+  "node_modules/.pnpm/tldts-core@7.4.13/node_modules/tldts-core/dist/es6/src/extract-hostname.js"() {
     CONTROL_CHARS = /[\t\n\r]/g;
     extractedHostnameValidated = false;
   }
 });
 
-// node_modules/.pnpm/tldts-core@7.4.11/node_modules/tldts-core/dist/es6/src/is-ip.js
+// node_modules/.pnpm/tldts-core@7.4.13/node_modules/tldts-core/dist/es6/src/is-ip.js
 function isProbablyIpv4(hostname3) {
   if (hostname3.length < 7) {
     return false;
@@ -64846,11 +66054,11 @@ function isIp(hostname3) {
   return isProbablyIpv6(hostname3) || isProbablyIpv4(hostname3);
 }
 var init_is_ip = __esm({
-  "node_modules/.pnpm/tldts-core@7.4.11/node_modules/tldts-core/dist/es6/src/is-ip.js"() {
+  "node_modules/.pnpm/tldts-core@7.4.13/node_modules/tldts-core/dist/es6/src/is-ip.js"() {
   }
 });
 
-// node_modules/.pnpm/tldts-core@7.4.11/node_modules/tldts-core/dist/es6/src/is-special-use.js
+// node_modules/.pnpm/tldts-core@7.4.13/node_modules/tldts-core/dist/es6/src/is-special-use.js
 function isSpecialUse(hostname3) {
   for (const name of SPECIAL_USE_DOMAINS) {
     if (hostname3.endsWith(name) && (hostname3.length === name.length || hostname3.charCodeAt(hostname3.length - name.length - 1) === 46)) {
@@ -64861,7 +66069,7 @@ function isSpecialUse(hostname3) {
 }
 var SPECIAL_USE_DOMAINS;
 var init_is_special_use = __esm({
-  "node_modules/.pnpm/tldts-core@7.4.11/node_modules/tldts-core/dist/es6/src/is-special-use.js"() {
+  "node_modules/.pnpm/tldts-core@7.4.13/node_modules/tldts-core/dist/es6/src/is-special-use.js"() {
     SPECIAL_USE_DOMAINS = [
       "test",
       // RFC 6761
@@ -64899,7 +66107,7 @@ var init_is_special_use = __esm({
   }
 });
 
-// node_modules/.pnpm/tldts-core@7.4.11/node_modules/tldts-core/dist/es6/src/is-valid.js
+// node_modules/.pnpm/tldts-core@7.4.13/node_modules/tldts-core/dist/es6/src/is-valid.js
 function isValidAscii(code) {
   return code >= 97 && code <= 122 || code >= 48 && code <= 57 || code > 127;
 }
@@ -64956,11 +66164,11 @@ function is_valid_default(hostname3) {
   );
 }
 var init_is_valid = __esm({
-  "node_modules/.pnpm/tldts-core@7.4.11/node_modules/tldts-core/dist/es6/src/is-valid.js"() {
+  "node_modules/.pnpm/tldts-core@7.4.13/node_modules/tldts-core/dist/es6/src/is-valid.js"() {
   }
 });
 
-// node_modules/.pnpm/tldts-core@7.4.11/node_modules/tldts-core/dist/es6/src/options.js
+// node_modules/.pnpm/tldts-core@7.4.13/node_modules/tldts-core/dist/es6/src/options.js
 function setDefaultsImpl({ allowIcannDomains = true, allowPrivateDomains = false, detectIp = true, detectSpecialUse = false, extractHostname: extractHostname2 = true, mixedInputs = true, validHosts = null, validateHostname = true }) {
   return {
     allowIcannDomains,
@@ -64984,13 +66192,13 @@ function setDefaults(options) {
 }
 var DEFAULT_OPTIONS;
 var init_options = __esm({
-  "node_modules/.pnpm/tldts-core@7.4.11/node_modules/tldts-core/dist/es6/src/options.js"() {
+  "node_modules/.pnpm/tldts-core@7.4.13/node_modules/tldts-core/dist/es6/src/options.js"() {
     DEFAULT_OPTIONS = /*@__INLINE__*/
     setDefaultsImpl({});
   }
 });
 
-// node_modules/.pnpm/tldts-core@7.4.11/node_modules/tldts-core/dist/es6/src/subdomain.js
+// node_modules/.pnpm/tldts-core@7.4.13/node_modules/tldts-core/dist/es6/src/subdomain.js
 function getSubdomain(hostname3, domain2) {
   if (domain2.length === hostname3.length) {
     return "";
@@ -64998,11 +66206,11 @@ function getSubdomain(hostname3, domain2) {
   return hostname3.slice(0, -domain2.length - 1);
 }
 var init_subdomain = __esm({
-  "node_modules/.pnpm/tldts-core@7.4.11/node_modules/tldts-core/dist/es6/src/subdomain.js"() {
+  "node_modules/.pnpm/tldts-core@7.4.13/node_modules/tldts-core/dist/es6/src/subdomain.js"() {
   }
 });
 
-// node_modules/.pnpm/tldts-core@7.4.11/node_modules/tldts-core/dist/es6/src/factory.js
+// node_modules/.pnpm/tldts-core@7.4.13/node_modules/tldts-core/dist/es6/src/factory.js
 function getEmptyResult() {
   return {
     domain: null,
@@ -65069,7 +66277,7 @@ function parseImpl(url2, step, suffixLookup2, partialOptions, result) {
   return result;
 }
 var init_factory = __esm({
-  "node_modules/.pnpm/tldts-core@7.4.11/node_modules/tldts-core/dist/es6/src/factory.js"() {
+  "node_modules/.pnpm/tldts-core@7.4.13/node_modules/tldts-core/dist/es6/src/factory.js"() {
     init_domain();
     init_domain_without_suffix();
     init_extract_hostname();
@@ -65081,7 +66289,7 @@ var init_factory = __esm({
   }
 });
 
-// node_modules/.pnpm/tldts-core@7.4.11/node_modules/tldts-core/dist/es6/src/lookup/fast-path.js
+// node_modules/.pnpm/tldts-core@7.4.13/node_modules/tldts-core/dist/es6/src/lookup/fast-path.js
 function fast_path_default(hostname3, options, out) {
   if (!options.allowPrivateDomains && hostname3.length > 3) {
     const last = hostname3.length - 1;
@@ -65124,34 +66332,34 @@ function fast_path_default(hostname3, options, out) {
   return false;
 }
 var init_fast_path = __esm({
-  "node_modules/.pnpm/tldts-core@7.4.11/node_modules/tldts-core/dist/es6/src/lookup/fast-path.js"() {
+  "node_modules/.pnpm/tldts-core@7.4.13/node_modules/tldts-core/dist/es6/src/lookup/fast-path.js"() {
   }
 });
 
-// node_modules/.pnpm/tldts-core@7.4.11/node_modules/tldts-core/dist/es6/index.js
+// node_modules/.pnpm/tldts-core@7.4.13/node_modules/tldts-core/dist/es6/index.js
 var init_es6 = __esm({
-  "node_modules/.pnpm/tldts-core@7.4.11/node_modules/tldts-core/dist/es6/index.js"() {
+  "node_modules/.pnpm/tldts-core@7.4.13/node_modules/tldts-core/dist/es6/index.js"() {
     init_factory();
     init_fast_path();
     init_options();
   }
 });
 
-// node_modules/.pnpm/tldts@7.4.11/node_modules/tldts/dist/es6/src/data/trie.js
+// node_modules/.pnpm/tldts@7.4.13/node_modules/tldts/dist/es6/src/data/trie.js
 var nodeFlags, edgeStart, edgeLength, edgeChild, labelText, rulesRoot, exceptionsRoot;
 var init_trie = __esm({
-  "node_modules/.pnpm/tldts@7.4.11/node_modules/tldts/dist/es6/src/data/trie.js"() {
-    nodeFlags = /* @__PURE__ */ new Uint8Array([1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 2, 2, 2, 0, 2, 2, 0, 2, 0, 0, 1, 0, 0, 2, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 2, 0, 0, 0, 0, 0, 0, 0, 2, 0, 2, 2, 0, 0, 2, 2, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 2, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 2, 2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 0, 0, 0, 1, 0, 2, 2, 0, 0, 0, 2, 0, 1, 1, 0, 2, 0, 2, 2, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 0, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 2, 2, 0, 2, 2, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 2, 0, 2, 2, 2, 2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 2, 2, 0, 0, 0, 2, 2, 1, 1, 1, 1, 2, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 2, 2, 0, 0, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 2, 2, 1, 2, 1, 1, 1, 2, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 2, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0]);
-    edgeStart = /* @__PURE__ */ new Uint16Array([0, 0, 0, 10, 11, 18, 106, 111, 117, 124, 130, 136, 145, 146, 147, 148, 149, 150, 151, 153, 154, 155, 157, 159, 225, 238, 240, 241, 242, 257, 264, 265, 268, 269, 270, 273, 275, 294, 295, 297, 306, 311, 328, 329, 332, 334, 335, 337, 371, 372, 374, 377, 378, 382, 384, 388, 391, 423, 426, 439, 440, 448, 449, 451, 461, 475, 476, 477, 486, 487, 524, 529, 545, 565, 571, 612, 613, 640, 667, 668, 816, 822, 825, 826, 827, 832, 837, 846, 868, 869, 870, 871, 872, 873, 874, 892, 894, 895, 898, 900, 901, 903, 905, 920, 935, 940, 941, 943, 944, 945, 946, 947, 949, 952, 957, 958, 959, 961, 962, 965, 968, 969, 970, 983, 985, 997, 1008, 1016, 1018, 1059, 1062, 1066, 1067, 1069, 1072, 1083, 1085, 1095, 1097, 1103, 1105, 1106, 1108, 1111, 1112, 1113, 1165, 1167, 1169, 1189, 1190, 1191, 1192, 1194, 1205, 1236, 1247, 1259, 1268, 1275, 1280, 1293, 1304, 1317, 1318, 1329, 1363, 1364, 1365, 1380, 1395, 1467, 1468, 1470, 1471, 1505, 1506, 1507, 1508, 1511, 1515, 1517, 1546, 1547, 1555, 1556, 1557, 1559, 1561, 1562, 1564, 1565, 1566, 1577, 1578, 1579, 1580, 1581, 1582, 1583, 1584, 1585, 1586, 1587, 1588, 1589, 1590, 1592, 1593, 1594, 1596, 2051, 2054, 2055, 2057, 2064, 2071, 2081, 2085, 2096, 2097, 2098, 2110, 2111, 2113, 2115, 2116, 2123, 2124, 2126, 2127, 2129, 2130, 2131, 2132, 2133, 2207, 2209, 2230, 2231, 2232, 2234, 2260, 2261, 2312, 2313, 2315, 2322, 2328, 2338, 2348, 2401, 2402, 2403, 2413, 2427, 2428, 2431, 2438, 2439, 2447, 2448, 2449, 2450, 2451, 2462, 2463, 2464, 2466, 2467, 2468, 2470, 2480, 2492, 2498, 2530, 2534, 2536, 2537, 2539, 2540, 2551, 2552, 2554, 2562, 2569, 2575, 2580, 2581, 2587, 2590, 2596, 2603, 2604, 2611, 2619, 2620, 2621, 2659, 2665, 2680, 2681, 2686, 2704, 2735, 2753, 2755, 2758, 2766, 2768, 2775, 2827, 2851, 2852, 2853, 2854, 2855, 2856, 2857, 2864, 2865, 2866, 2867, 2868, 2869, 2871, 2872, 2876, 2956, 2969, 2970, 3407, 3411, 3425, 3477, 3505, 3527, 3585, 3607, 3622, 3685, 3736, 3774, 3810, 3835, 3977, 4023, 4074, 4093, 4127, 4142, 4162, 4192, 4223, 4246, 4277, 4307, 4339, 4366, 4441, 4463, 4501, 4511, 4545, 4564, 4590, 4632, 4682, 4708, 4777, 4778, 4780, 4803, 4826, 4862, 4893, 4910, 4967, 4980, 5004, 5033, 5035, 5069, 5085, 5113, 5418, 5427, 5436, 5443, 5460, 5464, 5470, 5509, 5511, 5518, 5525, 5534, 5541, 5542, 5553, 5556, 5571, 5572, 5581, 5582, 5591, 5600, 5606, 5608, 5609, 5610, 5646, 5647, 5649, 5657, 5664, 5677, 5681, 5683, 5684, 5690, 5697, 5711, 5721, 5726, 5734, 5742, 5748, 5749, 5753, 5755, 5756, 5768, 5769, 5770, 5771, 5773, 5774, 5777, 5779, 5782, 5786, 5787, 5788, 5794, 5795, 5796, 5798, 5800, 5802, 5803, 5804, 5807, 5809, 5812, 5813, 5815, 6013, 6020, 6021, 6031, 6036, 6053, 6067, 6076, 6077, 6078, 6082, 6083, 6085, 6087, 6093, 6094, 6097, 6098, 6100, 6101, 6102, 7002, 7004, 7008, 7026, 7035, 7038, 7045, 7046, 7048, 7049, 7050, 7052, 7104, 7105, 7108, 7109, 7226, 7227, 7238, 7249, 7256, 7259, 7268, 7269, 7270, 7285, 7340, 7531, 7533, 7534, 7536, 7541, 7554, 7569, 7576, 7585, 7588, 7591, 7598, 7606, 7610, 7611, 7612, 7626, 7630, 7639, 7640, 7641, 7645, 7680, 7681, 7698, 7705, 7713, 7714, 7719, 7727, 7771, 7772, 7778, 7781, 7792, 7797, 7798, 7801, 7803, 7838, 7839, 7845, 7852, 7853, 7862, 7871, 7886, 7890, 7942, 7943, 7948, 7950, 7953, 7955, 7956, 7957, 7966, 7980, 7988, 8002, 8014, 8015, 8017, 8019, 8041, 8052, 8058, 8059, 8071, 8083, 8170, 8182, 8190, 8193, 8199, 8224, 8227, 8228, 8229, 8231, 8234, 8237, 8248, 8250, 8252, 8280, 8354, 8361, 8365, 8366, 8375, 8397, 8398, 8403, 8404, 8483, 8485, 8487, 8496, 8500, 8506, 8512, 8518, 8528, 8533, 8534, 8552, 8563, 8568, 8573, 8583, 8589, 8593, 8599, 8605, 10214, 10215, 10216, 10223, 10225]);
-    edgeLength = /* @__PURE__ */ new Uint8Array([3, 3, 3, 3, 3, 3, 3, 3, 5, 8, 8, 2, 2, 3, 3, 3, 3, 3, 8, 5, 5, 5, 5, 5, 3, 3, 5, 5, 9, 12, 19, 8, 19, 8, 11, 9, 9, 8, 7, 7, 6, 8, 9, 16, 10, 7, 7, 11, 8, 6, 6, 9, 7, 11, 7, 14, 4, 4, 4, 4, 4, 4, 10, 7, 6, 6, 6, 6, 10, 10, 6, 10, 10, 22, 11, 9, 10, 10, 10, 9, 10, 8, 7, 7, 7, 8, 21, 13, 11, 11, 9, 10, 9, 13, 10, 8, 8, 9, 12, 9, 7, 10, 7, 7, 13, 7, 3, 3, 3, 3, 3, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 8, 6, 3, 3, 3, 3, 3, 3, 2, 5, 3, 3, 3, 7, 2, 2, 2, 2, 2, 2, 3, 3, 3, 1, 1, 7, 8, 5, 2, 2, 7, 2, 2, 1, 4, 1, 11, 9, 9, 5, 5, 8, 5, 5, 5, 5, 5, 5, 5, 3, 3, 3, 3, 3, 5, 11, 9, 9, 13, 7, 14, 7, 6, 6, 6, 7, 6, 6, 6, 6, 6, 10, 7, 11, 9, 4, 4, 4, 4, 4, 6, 6, 6, 6, 6, 8, 7, 10, 9, 9, 9, 8, 9, 8, 7, 10, 6, 9, 8, 10, 10, 7, 8, 1, 9, 10, 12, 12, 12, 10, 9, 9, 10, 10, 9, 9, 1, 1, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 6, 6, 6, 4, 3, 3, 3, 7, 4, 4, 4, 3, 3, 6, 7, 3, 4, 1, 2, 2, 2, 6, 1, 2, 2, 2, 2, 2, 12, 5, 3, 8, 9, 13, 4, 4, 13, 9, 9, 11, 7, 3, 12, 9, 2, 2, 2, 3, 3, 3, 3, 3, 8, 2, 2, 3, 3, 3, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 3, 7, 10, 15, 7, 15, 15, 20, 15, 9, 10, 10, 12, 14, 14, 14, 12, 12, 12, 12, 12, 14, 14, 10, 10, 10, 10, 14, 9, 9, 9, 10, 14, 14, 14, 13, 13, 9, 9, 9, 9, 9, 9, 7, 8, 6, 8, 8, 6, 8, 13, 8, 8, 6, 13, 8, 11, 13, 8, 6, 13, 8, 6, 9, 10, 10, 12, 14, 14, 14, 12, 12, 12, 12, 14, 14, 10, 10, 10, 10, 9, 9, 9, 10, 14, 14, 11, 13, 13, 9, 9, 9, 9, 9, 9, 2, 6, 9, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 2, 3, 3, 3, 3, 3, 3, 7, 7, 2, 3, 2, 2, 5, 3, 3, 3, 3, 3, 3, 4, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 4, 5, 7, 2, 2, 12, 8, 10, 8, 10, 7, 18, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 5, 2, 2, 3, 3, 3, 5, 5, 3, 8, 8, 6, 8, 6, 6, 4, 6, 7, 7, 7, 10, 11, 2, 5, 5, 3, 3, 3, 3, 3, 3, 5, 5, 6, 11, 10, 7, 7, 7, 4, 4, 4, 2, 3, 3, 3, 3, 3, 2, 7, 5, 5, 3, 3, 3, 3, 3, 3, 3, 3, 7, 7, 7, 11, 7, 6, 9, 6, 6, 8, 10, 8, 6, 8, 13, 4, 4, 4, 4, 4, 10, 8, 11, 8, 8, 8, 10, 10, 7, 10, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 2, 2, 2, 2, 2, 2, 5, 5, 5, 5, 5, 5, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 7, 10, 13, 7, 8, 7, 11, 8, 8, 6, 9, 8, 8, 6, 6, 6, 8, 8, 6, 6, 6, 6, 6, 9, 7, 6, 4, 4, 4, 4, 4, 4, 4, 6, 6, 6, 9, 7, 8, 10, 8, 8, 2, 3, 3, 3, 3, 3, 2, 8, 9, 9, 2, 2, 2, 3, 3, 3, 2, 3, 3, 3, 9, 2, 2, 3, 3, 3, 3, 3, 3, 5, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 12, 5, 5, 3, 5, 4, 2, 3, 2, 4, 3, 9, 2, 2, 2, 2, 2, 5, 5, 3, 8, 8, 13, 6, 10, 9, 4, 7, 9, 11, 2, 3, 7, 3, 3, 4, 1, 3, 4, 2, 9, 3, 3, 12, 5, 3, 7, 10, 10, 7, 4, 4, 6, 14, 7, 9, 7, 13, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 8, 15, 4, 4, 2, 3, 3, 3, 7, 4, 9, 9, 2, 3, 3, 3, 5, 3, 2, 2, 7, 2, 7, 6, 6, 7, 2, 4, 2, 2, 2, 2, 2, 2, 8, 8, 8, 9, 5, 2, 3, 3, 3, 3, 3, 3, 10, 7, 4, 4, 4, 4, 3, 4, 2, 3, 3, 3, 3, 3, 10, 7, 4, 4, 4, 4, 2, 3, 3, 3, 3, 10, 7, 4, 4, 4, 4, 3, 9, 6, 6, 6, 9, 13, 9, 2, 2, 2, 8, 7, 9, 5, 3, 3, 3, 5, 5, 13, 12, 9, 10, 7, 8, 7, 6, 8, 6, 11, 12, 7, 9, 10, 4, 4, 7, 8, 11, 6, 7, 9, 8, 7, 10, 8, 9, 15, 7, 8, 5, 4, 7, 2, 3, 3, 3, 2, 14, 10, 2, 14, 10, 2, 14, 3, 9, 13, 13, 10, 14, 16, 17, 11, 2, 14, 2, 14, 3, 9, 13, 10, 14, 16, 17, 11, 14, 10, 14, 2, 7, 3, 10, 7, 14, 10, 2, 14, 10, 9, 9, 17, 6, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 10, 10, 10, 12, 9, 4, 10, 11, 8, 8, 8, 7, 9, 5, 3, 3, 3, 3, 3, 3, 3, 3, 5, 8, 4, 4, 4, 4, 4, 4, 6, 16, 3, 3, 14, 3, 14, 2, 14, 9, 13, 10, 10, 14, 16, 17, 11, 6, 9, 10, 10, 12, 14, 14, 14, 12, 12, 12, 12, 14, 14, 10, 10, 10, 10, 14, 9, 9, 9, 10, 14, 14, 14, 9, 9, 9, 9, 9, 9, 2, 14, 9, 13, 10, 10, 14, 16, 17, 11, 6, 2, 14, 9, 17, 13, 10, 10, 14, 16, 17, 11, 6, 2, 14, 9, 13, 10, 14, 16, 17, 11, 2, 14, 9, 13, 10, 16, 11, 2, 14, 10, 19, 7, 2, 14, 9, 13, 10, 19, 10, 7, 14, 16, 17, 11, 6, 2, 14, 9, 13, 10, 19, 7, 14, 16, 17, 11, 2, 14, 9, 13, 17, 13, 10, 10, 14, 16, 17, 11, 6, 3, 2, 14, 9, 13, 10, 10, 14, 16, 17, 11, 6, 9, 10, 12, 14, 14, 14, 12, 12, 12, 12, 12, 14, 14, 14, 10, 10, 10, 14, 9, 9, 9, 9, 14, 14, 14, 13, 13, 14, 9, 9, 9, 9, 9, 9, 4, 11, 2, 14, 9, 13, 17, 13, 10, 19, 10, 7, 14, 16, 17, 11, 6, 2, 14, 9, 13, 17, 13, 10, 19, 10, 7, 14, 16, 17, 11, 6, 2, 9, 10, 10, 7, 17, 3, 3, 12, 12, 16, 15, 15, 12, 14, 14, 14, 20, 20, 13, 12, 12, 12, 12, 12, 12, 20, 25, 14, 14, 12, 12, 10, 10, 10, 10, 9, 9, 9, 25, 4, 9, 17, 10, 7, 14, 16, 21, 13, 13, 14, 20, 14, 13, 17, 24, 9, 12, 13, 25, 13, 21, 20, 17, 9, 9, 9, 9, 9, 9, 12, 17, 4, 4, 9, 9, 9, 10, 10, 12, 14, 14, 14, 12, 12, 12, 12, 12, 14, 14, 10, 10, 10, 10, 14, 9, 9, 9, 10, 14, 14, 14, 13, 13, 9, 9, 9, 9, 9, 9, 1, 5, 8, 7, 11, 11, 1, 3, 3, 3, 4, 8, 9, 10, 14, 14, 12, 12, 12, 12, 14, 14, 10, 10, 10, 10, 14, 9, 9, 9, 10, 14, 14, 14, 13, 13, 9, 9, 9, 9, 9, 7, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 9, 12, 6, 14, 4, 12, 7, 2, 2, 1, 2, 7, 6, 4, 4, 4, 6, 8, 8, 7, 4, 5, 6, 3, 3, 3, 3, 4, 16, 8, 5, 4, 3, 3, 3, 5, 2, 2, 8, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 11, 12, 7, 7, 13, 9, 10, 17, 12, 8, 9, 7, 8, 5, 12, 10, 13, 14, 5, 5, 5, 13, 5, 5, 5, 3, 3, 3, 5, 16, 5, 5, 5, 5, 5, 7, 12, 14, 8, 12, 8, 10, 12, 9, 11, 7, 9, 7, 10, 7, 13, 9, 7, 12, 8, 17, 7, 7, 16, 10, 13, 13, 8, 10, 10, 14, 17, 7, 16, 16, 15, 8, 10, 10, 12, 17, 17, 7, 17, 14, 7, 10, 17, 8, 7, 7, 7, 8, 15, 15, 7, 14, 10, 10, 10, 11, 11, 7, 7, 13, 8, 10, 7, 16, 7, 8, 7, 14, 17, 12, 10, 11, 21, 8, 9, 7, 13, 9, 8, 13, 6, 12, 7, 6, 13, 10, 10, 10, 8, 18, 9, 17, 13, 10, 12, 6, 13, 6, 11, 8, 13, 10, 13, 18, 13, 11, 13, 8, 16, 7, 10, 8, 16, 12, 10, 8, 8, 14, 11, 8, 15, 8, 8, 7, 7, 12, 7, 8, 9, 14, 15, 8, 9, 10, 9, 15, 7, 8, 8, 12, 13, 9, 10, 15, 15, 13, 7, 10, 10, 20, 7, 6, 9, 6, 6, 14, 11, 14, 11, 12, 9, 10, 16, 16, 12, 7, 11, 28, 8, 11, 10, 7, 21, 8, 7, 9, 4, 4, 4, 17, 7, 8, 6, 9, 6, 6, 13, 6, 6, 6, 6, 18, 20, 14, 8, 11, 12, 9, 10, 13, 15, 19, 8, 9, 12, 7, 10, 16, 12, 9, 9, 9, 14, 12, 11, 9, 12, 11, 18, 9, 9, 9, 10, 7, 7, 16, 8, 9, 7, 13, 12, 10, 18, 7, 8, 11, 7, 7, 8, 8, 13, 7, 7, 7, 11, 15, 13, 11, 7, 8, 15, 11, 7, 8, 18, 14, 13, 18, 15, 10, 12, 12, 9, 7, 11, 11, 8, 7, 10, 8, 14, 12, 10, 18, 7, 10, 9, 7, 8, 13, 10, 14, 10, 8, 8, 23, 7, 7, 11, 12, 12, 17, 7, 7, 11, 11, 17, 16, 16, 7, 8, 11, 14, 14, 8, 10, 7, 7, 16, 16, 13, 9, 11, 9, 15, 15, 11, 11, 7, 7, 14, 7, 9, 7, 7, 16, 10, 13, 10, 11, 14, 7, 11, 10, 11, 7, 11, 10, 11, 15, 11, 15, 10, 12, 17, 10, 14, 13, 11, 11, 12, 13, 10, 7, 13, 10, 16, 12, 21, 9, 10, 10, 7, 11, 14, 17, 7, 7, 8, 11, 12, 8, 15, 14, 14, 8, 17, 12, 10, 10, 7, 9, 11, 7, 10, 7, 11, 18, 7, 11, 7, 12, 11, 8, 8, 14, 12, 7, 8, 15, 3, 7, 7, 5, 2, 9, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 2, 5, 3, 3, 3, 3, 3, 3, 4, 4, 3, 3, 3, 3, 3, 3, 5, 11, 6, 4, 7, 10, 7, 7, 11, 1, 10, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 5, 7, 3, 5, 6, 3, 3, 5, 2, 2, 5, 3, 4, 13, 11, 3, 3, 6, 3, 5, 14, 2, 2, 3, 8, 2, 2, 12, 5, 18, 5, 3, 3, 3, 16, 5, 5, 5, 10, 7, 13, 12, 13, 9, 12, 14, 19, 9, 9, 21, 9, 9, 10, 6, 9, 6, 15, 10, 6, 12, 8, 6, 10, 15, 4, 4, 6, 6, 9, 9, 12, 16, 14, 23, 7, 7, 7, 14, 9, 7, 7, 11, 14, 10, 7, 10, 10, 10, 12, 6, 11, 10, 13, 11, 15, 11, 7, 12, 10, 3, 7, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 4, 3, 7, 2, 5, 5, 3, 3, 5, 5, 5, 5, 7, 6, 6, 6, 4, 4, 4, 4, 4, 4, 6, 6, 6, 6, 6, 7, 10, 2, 2, 2, 5, 5, 5, 5, 3, 3, 3, 3, 3, 5, 5, 10, 9, 11, 8, 7, 12, 8, 9, 7, 6, 13, 11, 6, 13, 7, 9, 9, 4, 4, 4, 4, 4, 6, 10, 7, 8, 13, 8, 8, 9, 14, 7, 8, 10, 7, 7, 7, 9, 6, 9, 7, 2, 12, 5, 3, 3, 13, 4, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 3, 3, 3, 3, 3, 3, 3, 3, 4, 5, 5, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 8, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 9, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 2, 2, 2, 5, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 1, 7, 6, 4, 12, 3, 3, 3, 3, 3, 8, 7, 3, 3, 3, 3, 3, 3, 4, 4, 11, 14, 2, 8, 3, 5, 5, 8, 10, 8, 6, 4, 7, 17, 7, 4, 5, 2, 6, 3, 2, 4, 4, 2, 12, 5, 5, 3, 15, 13, 10, 8, 11, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 5, 3, 3, 3, 3, 4, 18, 2, 12, 5, 3, 3, 3, 3, 3, 5, 16, 8, 8, 9, 6, 6, 4, 4, 4, 4, 31, 6, 6, 10, 11, 21, 10, 9, 7, 10, 7, 7, 2, 4, 4, 4, 4, 6, 5, 3, 3, 4, 3, 3, 3, 3, 3, 3, 3, 3, 3, 6, 6, 6, 2, 2, 2, 5, 3, 3, 3, 7, 7, 4, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 3, 3, 3, 3, 8, 2, 3, 3, 3, 3, 3, 5, 9, 11, 3, 3, 3, 3, 4, 4, 3, 3, 3, 3, 3, 5, 10, 9, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 2, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 11, 10, 10, 10, 10, 10, 11, 10, 11, 10, 11, 10, 9, 9, 11, 3, 3, 3, 3, 3, 3, 5, 3, 7, 8, 8, 7, 6, 6, 11, 4, 4, 4, 7, 8, 9, 9, 2, 3, 7, 4, 4, 2, 5, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 2, 2, 5, 5, 5, 5, 5, 3, 3, 5, 5, 5, 7, 7, 6, 6, 6, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6, 8, 8, 1, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 4, 4, 6, 9, 12, 3, 7, 10, 7, 2, 2, 3, 3, 3, 3, 3, 4, 3, 3, 2, 2, 2, 2, 3, 3, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 5, 5, 8, 8, 6, 6, 8, 6, 7, 4, 4, 4, 4, 4, 4, 6, 7, 5, 5, 20, 19, 8, 10, 9, 7, 10, 6, 8, 11, 6, 6, 6, 6, 13, 12, 8, 6, 7, 14, 11, 9, 2, 5, 3, 6, 2, 3, 2, 2, 2, 2, 2, 2, 2, 5, 4, 3, 7, 6, 4, 7, 4, 3, 6, 4, 7, 2, 7, 7, 7, 5, 5, 5, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 5, 9, 10, 10, 11, 7, 8, 20, 7, 8, 9, 8, 12, 6, 6, 6, 8, 9, 8, 12, 6, 6, 8, 13, 10, 12, 6, 6, 7, 7, 9, 6, 4, 4, 4, 4, 4, 4, 10, 6, 6, 6, 7, 14, 11, 10, 7, 8, 10, 8, 11, 14, 11, 11, 9, 7, 9, 8, 11, 9, 17, 10, 9, 2, 2, 2, 9, 3, 3, 3, 3, 15, 14, 9, 5, 5, 2, 8, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 15, 12, 22, 19, 17, 18, 18, 19, 21, 7, 16, 16, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 7, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 9, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 5, 7, 16, 11, 11, 7, 7, 7, 7, 17, 7, 8, 12, 15, 9, 19, 7, 19, 8, 21, 11, 12, 19, 14, 22, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 16, 16, 19, 24, 12, 7, 14, 7, 12, 7, 8, 10, 10, 13, 7, 12, 12, 7, 7, 10, 18, 15, 12, 16, 7, 14, 12, 17, 10, 16, 17, 12, 17, 25, 7, 7, 7, 13, 6, 9, 6, 9, 18, 6, 6, 11, 20, 10, 6, 6, 6, 6, 6, 6, 17, 6, 6, 6, 15, 6, 6, 6, 6, 6, 8, 14, 11, 12, 11, 15, 13, 19, 17, 21, 7, 18, 8, 13, 13, 8, 12, 8, 6, 6, 13, 6, 15, 15, 16, 6, 6, 16, 6, 6, 6, 14, 6, 18, 6, 6, 6, 17, 18, 9, 13, 15, 8, 19, 8, 15, 15, 18, 14, 16, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 11, 10, 11, 6, 21, 23, 12, 17, 12, 11, 14, 13, 22, 15, 15, 11, 12, 14, 12, 7, 12, 8, 12, 14, 12, 18, 10, 8, 16, 19, 17, 12, 14, 15, 8, 19, 17, 12, 13, 13, 15, 18, 13, 23, 24, 23, 21, 17, 24, 8, 21, 8, 14, 14, 16, 20, 14, 8, 8, 15, 20, 8, 19, 21, 9, 8, 13, 12, 13, 15, 11, 8, 11, 9, 9, 8, 11, 8, 21, 14, 21, 15, 15, 13, 7, 19, 7, 7, 7, 7, 7, 7, 16, 12, 17, 18, 7, 7, 11, 11, 7, 9, 9, 2, 2, 3, 3, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 5, 5, 5, 5, 5, 5, 5, 5, 3, 3, 10, 10, 7, 9, 7, 7, 7, 6, 8, 6, 6, 6, 6, 6, 6, 6, 7, 6, 8, 6, 6, 9, 7, 7, 7, 4, 4, 4, 4, 4, 4, 4, 4, 8, 9, 8, 7, 8, 7, 8, 10, 7, 5, 5, 5, 5, 5, 5, 3, 9, 7, 7, 8, 6, 6, 6, 6, 6, 6, 6, 6, 9, 6, 6, 9, 11, 13, 7, 8, 9, 9, 5, 5, 5, 7, 8, 6, 6, 6, 6, 6, 6, 6, 7, 8, 9, 7, 10, 9, 10, 7, 8, 5, 5, 5, 5, 5, 5, 7, 7, 9, 8, 7, 7, 6, 6, 6, 6, 6, 6, 10, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 9, 10, 4, 4, 4, 4, 8, 7, 7, 10, 10, 9, 8, 8, 15, 9, 8, 8, 8, 8, 8, 9, 10, 9, 10, 7, 8, 13, 5, 5, 5, 5, 5, 3, 3, 7, 7, 8, 6, 6, 6, 4, 4, 11, 9, 7, 8, 9, 10, 7, 5, 5, 5, 5, 5, 3, 3, 7, 6, 6, 13, 7, 9, 8, 7, 5, 5, 5, 5, 5, 5, 5, 5, 3, 3, 3, 3, 7, 8, 7, 8, 13, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 8, 8, 6, 6, 6, 6, 7, 6, 7, 6, 6, 9, 7, 4, 4, 4, 4, 4, 4, 4, 7, 8, 7, 8, 9, 8, 8, 8, 7, 10, 7, 8, 5, 5, 5, 5, 5, 5, 5, 5, 3, 7, 7, 7, 7, 9, 7, 10, 9, 6, 6, 6, 6, 6, 8, 8, 6, 6, 6, 7, 6, 6, 6, 9, 9, 4, 4, 13, 7, 10, 9, 9, 12, 7, 8, 8, 10, 8, 8, 8, 8, 8, 8, 5, 5, 5, 5, 3, 7, 7, 11, 7, 9, 8, 8, 6, 6, 10, 6, 8, 8, 8, 6, 7, 6, 6, 12, 4, 4, 4, 4, 4, 4, 4, 4, 4, 9, 8, 8, 16, 8, 9, 8, 7, 5, 5, 5, 5, 5, 3, 3, 7, 7, 7, 10, 15, 8, 9, 8, 9, 9, 6, 6, 6, 6, 6, 6, 7, 4, 8, 7, 8, 8, 7, 8, 11, 8, 5, 5, 5, 5, 5, 3, 7, 7, 6, 11, 16, 7, 6, 4, 4, 4, 4, 9, 9, 8, 8, 8, 13, 12, 8, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 11, 7, 8, 8, 9, 13, 7, 7, 7, 9, 8, 8, 9, 12, 7, 12, 7, 12, 8, 7, 10, 12, 9, 9, 6, 6, 8, 8, 6, 6, 6, 6, 6, 6, 6, 9, 8, 9, 11, 8, 6, 6, 6, 6, 6, 12, 7, 6, 6, 6, 9, 7, 7, 6, 6, 6, 6, 6, 11, 9, 6, 6, 6, 6, 6, 7, 9, 4, 4, 4, 4, 4, 4, 4, 4, 9, 9, 9, 9, 7, 7, 7, 7, 7, 11, 7, 7, 8, 8, 8, 8, 8, 8, 9, 8, 9, 9, 7, 7, 11, 11, 7, 12, 8, 8, 8, 8, 8, 7, 8, 8, 8, 8, 8, 13, 12, 8, 8, 8, 8, 7, 7, 7, 9, 5, 5, 5, 5, 5, 5, 5, 3, 3, 7, 7, 11, 7, 8, 8, 8, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 10, 11, 6, 7, 9, 4, 4, 4, 4, 4, 4, 9, 9, 8, 9, 8, 8, 8, 7, 7, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 3, 3, 11, 7, 7, 7, 9, 6, 6, 11, 8, 10, 6, 6, 6, 12, 8, 8, 7, 6, 6, 8, 7, 4, 4, 4, 4, 4, 4, 4, 4, 9, 10, 9, 9, 8, 10, 9, 11, 8, 5, 5, 5, 7, 6, 6, 8, 7, 4, 4, 4, 4, 8, 7, 7, 8, 7, 8, 8, 5, 5, 5, 5, 7, 7, 8, 8, 8, 6, 6, 6, 6, 6, 10, 8, 9, 13, 6, 7, 6, 6, 8, 7, 8, 4, 4, 4, 4, 11, 8, 8, 8, 10, 5, 5, 8, 7, 8, 13, 8, 7, 6, 8, 6, 9, 7, 8, 7, 5, 5, 5, 5, 5, 5, 3, 3, 7, 8, 9, 6, 4, 8, 10, 10, 8, 12, 9, 13, 2, 7, 5, 5, 5, 5, 5, 7, 7, 10, 6, 6, 6, 6, 6, 6, 6, 8, 4, 4, 9, 8, 8, 8, 14, 8, 8, 8, 9, 8, 5, 5, 5, 5, 5, 3, 3, 9, 6, 6, 6, 6, 10, 12, 6, 6, 6, 6, 6, 6, 6, 4, 4, 4, 4, 11, 8, 7, 8, 8, 8, 5, 5, 3, 3, 3, 3, 7, 7, 6, 8, 6, 8, 11, 7, 6, 6, 6, 7, 4, 8, 11, 9, 10, 5, 5, 5, 3, 3, 3, 7, 7, 8, 9, 8, 15, 9, 6, 6, 6, 6, 6, 6, 11, 11, 4, 4, 4, 4, 4, 7, 9, 9, 10, 8, 7, 5, 5, 5, 5, 5, 5, 3, 3, 8, 6, 6, 6, 6, 6, 6, 6, 6, 6, 9, 7, 4, 4, 4, 4, 4, 9, 9, 8, 8, 10, 13, 5, 5, 5, 3, 17, 7, 7, 7, 7, 7, 8, 6, 8, 13, 6, 6, 6, 6, 6, 6, 6, 6, 4, 4, 4, 9, 10, 8, 8, 8, 5, 5, 5, 5, 3, 7, 7, 7, 8, 8, 6, 6, 6, 8, 8, 8, 9, 10, 8, 4, 8, 10, 9, 8, 8, 8, 9, 13, 10, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 3, 3, 7, 8, 9, 9, 7, 7, 7, 10, 9, 9, 8, 9, 8, 8, 8, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 8, 12, 6, 6, 6, 6, 6, 6, 6, 6, 6, 12, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 11, 8, 8, 9, 9, 10, 8, 9, 7, 7, 5, 5, 5, 5, 5, 5, 3, 7, 8, 7, 6, 6, 8, 6, 6, 10, 4, 7, 8, 9, 12, 8, 7, 7, 5, 5, 5, 5, 5, 5, 3, 3, 7, 14, 7, 9, 8, 8, 6, 6, 8, 12, 12, 6, 6, 7, 7, 10, 4, 4, 4, 4, 4, 9, 9, 14, 9, 13, 8, 7, 5, 5, 5, 6, 6, 6, 7, 4, 8, 7, 5, 5, 5, 5, 5, 5, 5, 5, 3, 3, 7, 7, 7, 8, 6, 6, 6, 6, 6, 6, 12, 6, 6, 6, 6, 4, 4, 9, 9, 8, 8, 11, 7, 7, 7, 5, 5, 5, 3, 9, 8, 6, 6, 7, 4, 4, 4, 4, 4, 4, 8, 8, 11, 5, 5, 5, 7, 7, 7, 9, 6, 6, 6, 6, 6, 6, 9, 8, 4, 4, 4, 4, 7, 12, 9, 8, 8, 8, 7, 10, 10, 5, 5, 5, 5, 5, 5, 5, 3, 11, 14, 8, 7, 8, 8, 6, 6, 6, 6, 6, 8, 7, 6, 6, 6, 7, 6, 8, 9, 4, 4, 4, 7, 8, 9, 7, 9, 7, 7, 9, 8, 5, 5, 5, 5, 5, 5, 5, 5, 5, 11, 3, 9, 7, 7, 12, 14, 8, 6, 6, 12, 11, 8, 6, 6, 6, 6, 6, 6, 6, 6, 6, 15, 7, 4, 4, 4, 16, 9, 9, 9, 8, 9, 9, 9, 9, 9, 8, 8, 8, 13, 11, 8, 5, 5, 5, 5, 3, 7, 6, 6, 8, 8, 8, 6, 6, 7, 10, 7, 4, 4, 4, 4, 9, 7, 8, 7, 7, 7, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 3, 7, 7, 7, 9, 6, 6, 6, 6, 6, 8, 8, 7, 7, 9, 6, 6, 6, 7, 6, 6, 6, 6, 6, 15, 4, 4, 4, 4, 4, 8, 8, 7, 8, 12, 9, 8, 8, 8, 8, 8, 9, 8, 8, 10, 8, 8, 8, 8, 16, 9, 10, 2, 5, 5, 5, 5, 5, 5, 5, 9, 7, 6, 8, 9, 4, 4, 4, 4, 4, 7, 8, 8, 8, 9, 8, 11, 10, 5, 5, 5, 5, 3, 7, 8, 6, 6, 6, 6, 6, 8, 6, 6, 6, 6, 4, 12, 10, 12, 7, 7, 7, 7, 7, 7, 7, 5, 5, 5, 5, 3, 3, 7, 7, 10, 8, 9, 7, 6, 10, 7, 6, 6, 4, 4, 8, 9, 7, 9, 9, 9, 9, 8, 8, 8, 8, 10, 5, 5, 5, 5, 5, 5, 8, 7, 6, 6, 6, 10, 6, 7, 10, 7, 4, 4, 4, 4, 4, 4, 4, 12, 9, 10, 7, 7, 10, 8, 10, 5, 12, 9, 6, 6, 6, 6, 6, 7, 6, 4, 4, 4, 10, 9, 9, 8, 7, 7, 5, 5, 5, 5, 5, 5, 3, 3, 13, 7, 7, 9, 7, 7, 7, 8, 9, 9, 7, 8, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 7, 13, 9, 15, 15, 4, 4, 4, 4, 4, 10, 10, 9, 8, 9, 8, 8, 9, 7, 8, 7, 8, 5, 5, 7, 6, 6, 6, 4, 4, 4, 7, 8, 11, 8, 5, 5, 5, 5, 5, 5, 5, 7, 6, 6, 6, 6, 6, 6, 9, 11, 10, 7, 4, 4, 4, 9, 8, 8, 5, 5, 5, 5, 5, 9, 9, 6, 6, 6, 6, 6, 6, 6, 9, 9, 4, 4, 4, 4, 8, 8, 8, 9, 9, 8, 8, 8, 13, 2, 4, 2, 7, 5, 5, 5, 5, 5, 5, 9, 9, 6, 6, 6, 6, 10, 8, 8, 8, 6, 6, 6, 4, 4, 9, 8, 10, 8, 9, 8, 8, 8, 9, 8, 8, 5, 3, 3, 3, 11, 6, 6, 6, 7, 6, 6, 6, 4, 4, 9, 8, 5, 5, 5, 5, 5, 3, 11, 8, 6, 6, 6, 6, 6, 9, 7, 4, 4, 14, 10, 9, 8, 12, 8, 8, 8, 11, 15, 8, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 11, 11, 11, 10, 10, 7, 7, 3, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 3, 3, 3, 7, 11, 7, 7, 11, 11, 7, 8, 9, 10, 7, 7, 9, 9, 9, 9, 7, 7, 10, 8, 13, 8, 8, 8, 8, 11, 10, 6, 6, 8, 10, 11, 14, 14, 6, 6, 6, 6, 6, 6, 9, 11, 7, 7, 6, 8, 12, 11, 11, 6, 6, 10, 6, 6, 6, 6, 6, 10, 7, 7, 6, 6, 11, 6, 6, 6, 11, 8, 9, 7, 6, 10, 11, 9, 10, 11, 7, 11, 8, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 8, 6, 6, 8, 9, 10, 9, 6, 6, 6, 10, 6, 6, 6, 6, 11, 10, 11, 10, 9, 8, 7, 7, 7, 7, 11, 14, 8, 10, 9, 9, 8, 8, 7, 11, 8, 8, 8, 11, 11, 10, 10, 9, 10, 8, 11, 10, 8, 11, 9, 12, 8, 10, 8, 11, 8, 9, 9, 11, 11, 10, 11, 13, 8, 7, 8, 8, 9, 7, 8, 8, 8, 8, 7, 8, 2, 2, 2, 2, 2, 2, 2, 4, 4, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 2, 3, 3, 3, 3, 3, 3, 3, 3, 8, 6, 4, 4, 4, 11, 7, 11, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 5, 5, 5, 5, 3, 3, 3, 3, 8, 7, 7, 8, 8, 4, 8, 7, 7, 7, 9, 7, 8, 9, 8, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 6, 3, 3, 3, 3, 3, 3, 3, 3, 4, 2, 2, 3, 3, 3, 3, 3, 4, 5, 5, 3, 8, 8, 6, 9, 4, 4, 10, 7, 3, 3, 3, 2, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 3, 2, 2, 2, 3, 3, 3, 3, 3, 4, 10, 2, 3, 3, 3, 3, 3, 3, 3, 4, 2, 3, 3, 3, 3, 3, 3, 3, 3, 2, 2, 3, 3, 3, 5, 2, 4, 2, 6, 2, 2, 9, 5, 5, 3, 3, 3, 3, 3, 3, 3, 5, 5, 5, 9, 8, 7, 6, 6, 11, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6, 7, 7, 11, 8, 8, 6, 5, 11, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 2, 2, 3, 3, 3, 3, 3, 3, 6, 4, 4, 4, 4, 3, 3, 3, 3, 5, 7, 2, 3, 3, 3, 3, 3, 8, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 6, 4, 4, 4, 4, 2, 2, 3, 3, 3, 3, 3, 3, 3, 4, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 2, 2, 3, 3, 3, 3, 3, 3, 2, 3, 3, 3, 3, 3, 6, 3, 3, 8, 10, 3, 4, 4, 1, 1, 1, 1, 1, 1, 1, 8, 9, 10, 7, 7, 1, 1, 3, 8, 7, 7, 8, 8, 8, 1, 6, 1, 1, 6, 3, 3, 4, 7, 3, 3, 5, 5, 4, 4, 4, 4, 4, 2, 7, 7, 8, 12, 3, 4, 5, 1, 3, 4, 4, 10, 4, 3, 3, 3, 8, 7, 7, 2, 2, 2, 2, 2, 2, 2, 2, 2, 12, 9, 20, 7, 5, 5, 5, 9, 13, 5, 5, 5, 5, 5, 3, 3, 3, 16, 5, 5, 5, 13, 7, 8, 8, 11, 8, 7, 9, 7, 11, 12, 9, 9, 8, 8, 11, 10, 14, 7, 12, 10, 11, 13, 7, 9, 11, 17, 17, 14, 13, 7, 8, 7, 10, 10, 7, 16, 13, 7, 8, 17, 12, 9, 8, 6, 7, 10, 6, 6, 12, 6, 8, 10, 8, 8, 8, 6, 8, 6, 14, 6, 6, 6, 13, 6, 10, 6, 6, 7, 14, 8, 6, 6, 10, 11, 10, 9, 9, 7, 7, 6, 6, 6, 9, 9, 7, 9, 10, 9, 13, 12, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6, 6, 8, 8, 6, 8, 9, 10, 9, 7, 10, 10, 8, 7, 8, 7, 10, 12, 9, 8, 15, 8, 7, 8, 8, 7, 7, 15, 13, 7, 10, 9, 14, 18, 16, 7, 24, 7, 8, 10, 11, 16, 8, 14, 7, 9, 9, 9, 13, 19, 14, 15, 14, 11, 7, 13, 9, 10, 7, 13, 9, 10, 11, 12, 8, 9, 2, 3, 5, 8, 7, 4, 4, 10, 5, 3, 3, 3, 3, 3, 5, 4, 4, 4, 2, 2, 2, 2, 2, 1, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 2, 12, 5, 3, 8, 10, 15, 6, 7, 2, 3, 2, 5, 5, 12, 2, 5, 5, 5, 5, 2, 2, 5, 5, 12, 9, 5, 2, 2, 9, 5, 5, 12, 12, 5, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 9, 12, 5, 8, 8, 9, 5, 5, 5, 8, 19, 7, 16, 15, 14, 9, 9, 9, 9, 7, 11, 11, 11, 7, 14, 10, 10, 5, 5, 5, 5, 5, 5, 5, 5, 5, 15, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 9, 9, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 15, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 5, 5, 5, 5, 5, 5, 5, 12, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 9, 9, 12, 9, 9, 12, 12, 12, 15, 7, 11, 7, 14, 11, 18, 13, 8, 18, 15, 18, 12, 14, 12, 8, 8, 8, 8, 9, 9, 9, 12, 7, 10, 10, 8, 8, 12, 12, 12, 7, 12, 12, 9, 7, 7, 7, 7, 7, 8, 15, 12, 9, 10, 10, 7, 10, 10, 13, 11, 10, 9, 22, 11, 9, 8, 8, 8, 8, 8, 13, 18, 13, 9, 15, 19, 9, 7, 7, 10, 7, 7, 7, 11, 8, 13, 17, 7, 7, 10, 10, 10, 7, 20, 16, 7, 7, 7, 7, 7, 7, 11, 21, 12, 12, 13, 11, 14, 16, 8, 8, 13, 11, 7, 7, 13, 7, 7, 14, 15, 15, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 13, 10, 18, 6, 6, 6, 6, 6, 6, 6, 6, 6, 11, 8, 8, 12, 12, 11, 11, 8, 12, 9, 9, 9, 13, 13, 9, 9, 9, 9, 9, 9, 6, 10, 12, 6, 6, 6, 6, 17, 11, 7, 7, 7, 7, 14, 14, 12, 6, 7, 7, 6, 6, 15, 10, 13, 10, 6, 8, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 7, 13, 9, 9, 15, 13, 6, 12, 12, 6, 19, 11, 10, 7, 7, 16, 8, 19, 17, 9, 9, 9, 9, 9, 6, 6, 6, 10, 8, 16, 8, 6, 6, 9, 6, 6, 6, 6, 6, 6, 6, 6, 8, 8, 8, 6, 7, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 14, 6, 6, 6, 6, 20, 6, 9, 6, 14, 9, 9, 9, 6, 9, 8, 8, 12, 9, 8, 8, 8, 8, 7, 8, 12, 7, 8, 8, 8, 6, 8, 6, 6, 6, 6, 6, 6, 6, 9, 8, 8, 6, 6, 13, 9, 12, 13, 12, 14, 13, 12, 11, 11, 6, 8, 8, 8, 6, 13, 12, 11, 11, 12, 6, 11, 12, 11, 13, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 15, 6, 6, 6, 6, 6, 6, 6, 13, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 8, 8, 8, 8, 6, 18, 6, 12, 13, 13, 13, 9, 10, 15, 9, 12, 6, 6, 6, 6, 6, 6, 6, 6, 9, 15, 10, 9, 10, 13, 9, 19, 8, 18, 17, 10, 10, 8, 8, 6, 6, 6, 6, 6, 6, 10, 14, 8, 16, 16, 9, 8, 15, 8, 8, 10, 12, 14, 7, 7, 8, 8, 7, 7, 7, 7, 8, 13, 13, 11, 9, 9, 9, 12, 10, 17, 8, 11, 9, 7, 7, 14, 8, 14, 14, 7, 7, 7, 7, 7, 7, 14, 7, 7, 7, 7, 7, 10, 10, 8, 14, 7, 7, 7, 7, 8, 8, 8, 8, 8, 17, 9, 7, 15, 7, 8, 12, 7, 9, 14, 7, 7, 7, 9, 13, 8, 14, 7, 16, 18, 13, 15, 14, 12, 13, 10, 15, 9, 7, 7, 7, 10, 13, 15, 15, 9, 9, 9, 9, 19, 11, 7, 11, 11, 13, 8, 8, 8, 8, 7, 12, 19, 17, 9, 9, 13, 7, 7, 7, 9, 7, 7, 7, 12, 13, 15, 10, 8, 8, 14, 15, 12, 13, 13, 8, 12, 14, 7, 11, 7, 14, 15, 13, 12, 8, 8, 8, 8, 11, 13, 15, 15, 8, 13, 12, 8, 8, 8, 13, 10, 16, 14, 11, 8, 8, 12, 12, 9, 15, 15, 12, 12, 13, 8, 8, 9, 12, 13, 9, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 11, 12, 11, 7, 14, 7, 13, 13, 13, 12, 18, 16, 7, 12, 11, 10, 10, 15, 9, 9, 9, 21, 7, 7, 7, 11, 16, 8, 8, 11, 11, 7, 7, 7, 7, 7, 19, 7, 7, 7, 7, 7, 7, 7, 7, 7, 12, 8, 9, 12, 14, 11, 9, 9, 9, 22, 12, 3, 4, 8, 8, 15, 4, 2, 2, 5, 5, 3, 3, 3, 3, 3, 3, 6, 6, 4, 4, 4, 12, 7, 10, 2, 3, 3, 3, 3, 3, 3, 3, 6, 7, 3, 7, 5, 14, 4, 4, 7, 8, 10, 4, 1, 3, 3, 6, 2, 4, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 4, 2, 2, 5, 3, 4, 2, 2, 2, 2, 2, 2, 11, 5, 5, 5, 11, 5, 5, 3, 5, 5, 5, 5, 11, 14, 13, 9, 11, 9, 12, 8, 11, 11, 8, 11, 16, 9, 9, 7, 10, 9, 12, 8, 15, 6, 7, 6, 6, 13, 10, 8, 11, 8, 6, 6, 6, 12, 16, 6, 11, 7, 8, 9, 18, 6, 6, 9, 4, 4, 6, 13, 6, 6, 6, 6, 8, 8, 9, 16, 7, 7, 14, 7, 8, 8, 8, 7, 7, 7, 7, 7, 7, 15, 13, 7, 10, 7, 7, 10, 12, 16, 15, 7, 9, 9, 14, 11, 11, 10, 9, 10, 8, 12, 7, 8, 7, 7, 10, 12, 7, 12, 8, 7, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 5, 3, 3, 5, 5, 5, 10, 4, 8, 7, 10, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 1, 3, 3, 3, 3, 3, 3, 3, 7, 4, 5, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 5, 5, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 5, 6, 6, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 9, 8, 2, 2, 2, 8, 12, 7, 7, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 8, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 5, 5, 5, 7, 11, 9, 8, 8, 8, 7, 8, 9, 7, 7, 9, 7, 7, 7, 10, 7, 7, 10, 9, 10, 6, 6, 6, 6, 6, 6, 15, 7, 8, 9, 9, 8, 6, 6, 10, 9, 6, 8, 13, 9, 7, 6, 6, 6, 6, 6, 6, 12, 6, 6, 7, 6, 7, 6, 6, 6, 10, 10, 7, 6, 6, 6, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 14, 6, 6, 7, 7, 9, 6, 6, 6, 6, 9, 9, 8, 9, 10, 9, 8, 9, 12, 7, 7, 7, 8, 7, 10, 12, 11, 9, 10, 7, 7, 7, 9, 10, 10, 8, 12, 9, 7, 7, 9, 8, 8, 8, 10, 7, 7, 8, 9, 9, 7, 7, 7, 8, 2, 4, 6, 3, 4, 2, 3, 3, 3, 3, 2, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 3, 3, 3, 3, 3, 3, 3, 3, 5, 8, 6, 4, 7, 3, 3, 3, 3, 3, 3, 3, 12, 3, 3, 3, 3, 3, 3, 4, 4, 2, 3, 5, 3, 4, 7, 3, 3, 3, 3, 3, 3, 4, 3, 3, 3, 3, 3, 3, 3, 4, 3, 3, 6, 4, 3, 4, 2, 2, 2, 5, 3, 3, 3, 3, 3, 5, 4, 4, 4, 4, 7, 6, 8, 9, 2, 2, 2, 2, 3, 3, 3, 5, 7, 2, 3, 3, 8, 7, 7, 2, 2, 8, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 5, 5, 8, 8, 7, 7, 6, 10, 6, 9, 7, 11, 4, 6, 8, 8, 7, 8, 4, 5, 5, 5, 3, 3, 11, 8, 9, 6, 6, 8, 7, 4, 4, 7, 8, 7, 2, 2, 3, 3, 3, 3, 4, 3, 3, 3, 3, 3, 3, 3, 3, 7, 2, 2, 5, 3, 3, 2, 3, 3, 3, 3, 3, 3, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 12, 5, 5, 3, 3, 3, 5, 10, 12, 6, 15, 4, 6, 6, 7, 14, 9, 3, 3, 3, 3, 3, 8, 2, 2, 3, 5, 3, 3, 3, 3, 3, 3, 8, 8, 8, 7, 5, 8, 4, 6, 11, 2, 2, 6, 7, 3, 3, 2, 9, 8, 5, 5, 3, 3, 3, 5, 5, 7, 7, 6, 6, 10, 6, 8, 6, 8, 9, 7, 4, 4, 4, 4, 7, 6, 6, 7, 7, 10, 9, 8, 11, 8, 3, 3, 3, 3, 3, 4, 4, 2, 3, 3, 3, 3, 3, 7, 6, 2, 5, 6, 7, 6, 4, 8, 9, 11, 2, 2, 3, 3, 3, 3, 3, 3, 3, 2, 2, 5, 3, 3, 3, 3, 3, 9, 9, 6, 4, 8, 7, 7, 5, 9, 8, 6, 8, 7, 8, 5, 5, 5, 5, 5, 3, 3, 3, 16, 8, 7, 7, 7, 8, 7, 7, 7, 7, 9, 6, 9, 6, 10, 7, 7, 7, 6, 10, 8, 9, 11, 11, 8, 4, 4, 10, 8, 8, 6, 9, 6, 11, 8, 8, 8, 15, 7, 8, 9, 5, 3, 3, 3, 3, 3, 5, 11, 2, 2, 3, 8, 9, 10, 3, 2, 2, 2, 2, 2, 2, 3, 6, 4, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 2, 3, 3, 3, 3, 3, 3, 3, 11, 5, 3, 3, 3, 3, 3, 3, 3, 3, 6, 7, 4, 4, 2, 3, 3, 3, 3, 3, 3, 3, 3, 12, 7, 4, 12, 4, 6, 5, 4, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 2, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 11, 10, 6, 4, 6, 10, 8, 3, 3, 3, 3, 3, 3, 3, 3, 5, 4, 4, 4, 2, 2, 2, 2, 2, 2, 2, 2, 5, 3, 4, 4, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 10, 5, 5, 5, 5, 5, 5, 3, 3, 3, 3, 3, 3, 3, 3, 7, 8, 8, 7, 13, 12, 10, 10, 8, 8, 7, 7, 9, 12, 11, 6, 6, 8, 8, 9, 7, 7, 7, 10, 15, 10, 4, 4, 4, 4, 4, 11, 8, 8, 9, 7, 9, 14, 14, 12, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 12, 5, 5, 5, 11, 10, 7, 9, 3, 8, 7, 3, 15, 13, 11, 4, 4, 2, 2, 2, 19, 7, 5, 5, 3, 3, 3, 3, 3, 3, 3, 5, 22, 18, 6, 14, 17, 4, 4, 19, 16, 18, 2, 3, 3, 2, 3, 2, 3, 3, 6, 4, 2, 3, 3, 2, 5, 3, 3, 3, 3, 3, 3, 3, 9, 9, 2, 3, 2, 2, 2, 3, 3, 3, 5, 7, 14, 7, 7, 12, 9, 13, 6, 11, 6, 10, 9, 7, 7, 8, 12, 12, 8, 8, 8, 10, 7, 7, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 5, 8, 10, 7, 8, 11, 8, 12, 9, 4, 7, 7, 9, 13, 2, 3, 3, 3, 3, 3, 3, 2, 3, 3, 3, 1, 2, 2, 3, 3, 3, 3, 3, 3, 5, 2, 2, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 8, 4, 4, 4, 3, 2, 3, 3, 3, 3, 5, 2, 2, 2, 2, 5, 5, 5, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 7, 7, 7, 7, 7, 8, 8, 8, 8, 8, 12, 9, 8, 8, 9, 8, 6, 17, 6, 6, 6, 8, 8, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 7, 4, 4, 8, 8, 9, 9, 9, 7, 7, 7, 7, 7, 7, 7, 9, 9, 9, 7, 8, 8, 8, 10, 7, 13, 10, 8, 9, 3, 3, 5, 13, 3, 3, 3, 3, 3, 7, 7, 6, 6, 10, 13, 11, 11, 8, 8, 9, 8, 9, 9, 10, 10, 10, 11, 10, 10, 13, 13, 16, 15, 11, 12, 9, 9, 10, 9, 11, 10, 9, 9, 14, 7, 8, 3, 10, 7, 7, 3, 2, 2, 2, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 6, 7, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 4, 11, 6, 7, 4, 6, 2, 2, 3, 3, 3, 1, 3, 3, 3, 3, 3, 3, 6, 4, 4, 2, 2, 2, 3, 3, 3, 3, 4, 4, 6, 6, 6, 6, 5, 4, 4, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 9, 11, 6, 10, 9, 12, 7, 7, 11, 14, 9, 7, 12, 3, 3, 7, 12, 11, 12, 7, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 9, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 3, 3, 3, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 11, 5, 5, 5, 5, 5, 5, 5, 5, 11, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 5, 5, 5, 5, 5, 5, 5, 3, 3, 3, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 3, 3, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 6, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 3, 10, 3, 3, 3, 11, 3, 5, 9, 11, 8, 12, 14, 9, 7, 8, 7, 7, 11, 11, 7, 7, 10, 9, 8, 10, 9, 7, 7, 7, 7, 7, 7, 8, 8, 7, 11, 8, 8, 8, 7, 7, 10, 8, 7, 13, 12, 7, 17, 10, 8, 8, 11, 7, 11, 11, 14, 7, 11, 7, 8, 6, 9, 20, 8, 7, 9, 16, 7, 10, 6, 11, 10, 8, 9, 7, 16, 11, 11, 9, 8, 9, 8, 8, 8, 11, 8, 15, 8, 8, 9, 7, 8, 8, 11, 10, 7, 5, 7, 10, 10, 15, 7, 7, 7, 8, 7, 8, 8, 10, 11, 10, 10, 10, 11, 11, 7, 8, 6, 8, 8, 8, 10, 6, 8, 6, 6, 7, 8, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 16, 6, 15, 6, 7, 11, 11, 7, 9, 10, 11, 13, 10, 6, 16, 8, 10, 12, 11, 6, 6, 6, 6, 6, 6, 6, 10, 6, 10, 7, 7, 7, 7, 11, 7, 11, 6, 6, 6, 6, 6, 6, 17, 7, 7, 6, 6, 12, 22, 6, 6, 6, 6, 6, 8, 6, 6, 6, 6, 7, 6, 6, 5, 6, 6, 8, 11, 6, 9, 14, 11, 9, 11, 7, 7, 8, 6, 6, 6, 8, 10, 9, 6, 6, 6, 6, 9, 7, 6, 6, 6, 6, 6, 15, 6, 4, 4, 4, 6, 4, 17, 8, 11, 6, 6, 9, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 7, 6, 6, 6, 6, 10, 6, 10, 6, 6, 6, 6, 12, 8, 6, 6, 6, 6, 6, 6, 6, 6, 6, 9, 6, 6, 6, 6, 18, 6, 6, 6, 8, 9, 10, 7, 8, 9, 10, 11, 7, 13, 6, 8, 8, 6, 6, 14, 7, 7, 7, 7, 10, 7, 14, 9, 6, 6, 9, 15, 9, 7, 14, 6, 11, 14, 13, 7, 12, 8, 7, 7, 7, 7, 7, 12, 7, 10, 9, 16, 6, 8, 6, 5, 17, 6, 8, 10, 4, 6, 4, 10, 15, 17, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 8, 4, 4, 11, 7, 4, 4, 7, 7, 7, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 19, 17, 6, 10, 11, 6, 6, 6, 6, 18, 6, 6, 11, 4, 4, 4, 5, 6, 6, 6, 9, 5, 6, 4, 6, 6, 4, 6, 6, 6, 6, 10, 6, 6, 4, 6, 6, 10, 6, 10, 6, 6, 6, 6, 11, 6, 6, 10, 6, 6, 8, 6, 6, 6, 8, 6, 11, 4, 11, 9, 10, 9, 11, 4, 8, 4, 11, 12, 7, 9, 8, 6, 7, 7, 8, 12, 12, 11, 13, 10, 11, 7, 7, 7, 9, 7, 11, 10, 7, 7, 7, 16, 11, 10, 11, 17, 9, 9, 8, 8, 7, 7, 7, 9, 7, 7, 7, 14, 7, 13, 9, 11, 10, 14, 10, 10, 12, 11, 10, 7, 10, 5, 14, 8, 8, 8, 9, 7, 8, 7, 7, 9, 8, 7, 8, 7, 7, 7, 7, 7, 7, 7, 11, 8, 10, 8, 7, 8, 14, 11, 8, 9, 9, 9, 8, 24, 10, 10, 12, 7, 7, 15, 11, 8, 8, 12, 11, 8, 9, 9, 7, 8, 9, 10, 11, 10, 11, 7, 12, 7, 7, 11, 9, 8, 14, 13, 12, 8, 11, 10, 8, 8, 7, 7, 14, 9, 10, 8, 9, 11, 7, 14, 8, 8, 13, 8, 8, 12, 7, 10, 14, 14, 11, 9, 10, 9, 9, 7, 7, 11, 11, 13, 9, 13, 5, 5, 5, 7, 9, 5, 11, 12, 14, 8, 7, 7, 11, 10, 9, 7, 8, 8, 7, 10, 11, 11, 5, 5, 7, 5, 5, 5, 7, 7, 15, 7, 7, 8, 7, 15, 12, 12, 10, 7, 8, 7, 11, 7, 7, 7, 23, 11, 8, 8, 11, 10, 7, 8, 11, 7, 19, 7, 7, 6, 9, 9, 9, 11, 3, 4, 7, 8, 6, 6, 4, 10, 8, 2, 2]);
-    edgeChild = /* @__PURE__ */ new Uint16Array([0, 0, 0, 1, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 12, 1, 1, 1, 1, 1, 17, 1, 1, 1, 12, 1, 12, 1, 12, 13, 1, 1, 1, 1, 12, 1, 12, 1, 1, 1, 1, 1, 14, 21, 1, 1, 1, 1, 1, 1, 1, 19, 12, 1, 1, 1, 1, 1, 1, 1, 20, 1, 1, 1, 16, 18, 1, 1, 15, 1, 1, 1, 1, 12, 1, 1, 1, 1, 1, 1, 22, 1, 1, 1, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 1, 24, 25, 26, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 1, 1, 12, 12, 12, 12, 1, 32, 0, 0, 0, 1, 1, 1, 1, 35, 34, 1, 1, 1, 1, 1, 33, 1, 1, 1, 1, 37, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 38, 0, 0, 0, 0, 39, 40, 0, 0, 0, 0, 12, 1, 1, 12, 1, 1, 1, 1, 43, 44, 44, 44, 43, 44, 43, 43, 45, 44, 43, 44, 43, 43, 43, 43, 43, 43, 45, 43, 43, 43, 43, 43, 43, 44, 46, 46, 44, 43, 43, 43, 43, 43, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 49, 51, 49, 49, 49, 51, 49, 50, 49, 52, 49, 50, 50, 49, 49, 49, 50, 52, 50, 52, 49, 50, 50, 12, 54, 54, 53, 55, 50, 52, 49, 49, 47, 48, 56, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 59, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 66, 1, 12, 1, 1, 65, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 77, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 75, 78, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 76, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1, 12, 1, 1, 1, 1, 88, 1, 90, 1, 1, 1, 1, 1, 1, 1, 1, 93, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 96, 96, 1, 1, 12, 1, 99, 1, 1, 1, 1, 1, 1, 1, 97, 1, 98, 1, 100, 1, 1, 1, 1, 1, 101, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 109, 110, 1, 1, 1, 1, 1, 1, 112, 112, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 120, 121, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 121, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 121, 1, 1, 1, 1, 1, 1, 1, 1, 1, 125, 122, 124, 119, 1, 123, 1, 1, 113, 1, 1, 1, 1, 116, 1, 126, 1, 1, 1, 1, 1, 1, 118, 1, 107, 1, 108, 1, 12, 127, 105, 1, 111, 1, 1, 1, 1, 1, 106, 114, 1, 12, 12, 12, 117, 115, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 12, 12, 1, 1, 1, 1, 1, 12, 133, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 12, 135, 1, 1, 1, 1, 1, 1, 1, 1, 136, 137, 12, 12, 134, 132, 44, 44, 139, 49, 49, 138, 141, 140, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 144, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 142, 0, 0, 0, 0, 1, 0, 143, 131, 1, 0, 1, 12, 12, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 147, 146, 20, 1, 1, 12, 12, 1, 20, 12, 12, 1, 1, 1, 1, 1, 133, 1, 1, 151, 1, 1, 1, 1, 152, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 1, 1, 135, 1, 1, 151, 1, 1, 1, 1, 152, 1, 1, 133, 1, 1, 1, 151, 1, 1, 1, 1, 152, 1, 1, 133, 1, 1, 1, 1, 1, 1, 1, 1, 133, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 159, 1, 1, 1, 151, 1, 1, 1, 1, 1, 152, 1, 1, 159, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 133, 1, 1, 1, 1, 151, 1, 1, 1, 1, 152, 1, 1, 1, 133, 1, 1, 151, 1, 1, 1, 1, 163, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 1, 166, 1, 1, 159, 1, 1, 1, 1, 1, 151, 1, 1, 1, 1, 1, 152, 1, 1, 159, 1, 1, 1, 1, 1, 151, 1, 1, 1, 1, 1, 152, 1, 153, 157, 157, 12, 1, 12, 165, 1, 1, 1, 1, 1, 157, 157, 157, 153, 1, 1, 1, 156, 157, 160, 164, 1, 1, 1, 1, 156, 156, 1, 1, 155, 153, 153, 156, 169, 155, 169, 1, 1, 167, 1, 155, 154, 156, 1, 1, 1, 1, 156, 1, 158, 1, 1, 1, 12, 1, 161, 1, 161, 1, 1, 1, 161, 160, 162, 168, 155, 153, 1, 1, 1, 1, 1, 1, 171, 171, 171, 171, 171, 171, 171, 171, 171, 171, 171, 171, 171, 171, 171, 171, 171, 171, 171, 172, 171, 172, 171, 171, 171, 171, 173, 173, 171, 172, 171, 172, 171, 171, 12, 1, 12, 12, 12, 12, 1, 12, 12, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 193, 1, 1, 1, 1, 12, 199, 200, 201, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 150, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 196, 1, 1, 1, 184, 1, 209, 1, 1, 1, 207, 1, 1, 204, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 12, 1, 1, 1, 1, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 176, 190, 1, 1, 1, 186, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 182, 1, 1, 1, 1, 1, 1, 1, 191, 1, 1, 1, 1, 195, 1, 1, 1, 1, 170, 1, 1, 189, 1, 1, 1, 192, 1, 1, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 180, 1, 12, 1, 1, 12, 1, 1, 1, 1, 183, 1, 1, 1, 188, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 12, 1, 1, 208, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 194, 1, 1, 1, 1, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 175, 12, 1, 1, 1, 178, 12, 1, 1, 1, 1, 1, 1, 1, 198, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 177, 1, 1, 1, 1, 1, 1, 203, 1, 1, 1, 181, 1, 1, 1, 187, 1, 12, 1, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 191, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 174, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 185, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 205, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 12, 1, 206, 1, 1, 12, 1, 1, 1, 1, 179, 1, 1, 1, 185, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 12, 1, 1, 1, 197, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 12, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 202, 1, 1, 12, 1, 1, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 219, 0, 0, 0, 0, 0, 220, 0, 0, 0, 0, 0, 0, 1, 12, 1, 1, 1, 224, 1, 1, 1, 0, 225, 222, 223, 1, 1, 1, 1, 1, 1, 230, 1, 232, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 228, 1, 1, 1, 1, 1, 234, 1, 1, 12, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 233, 1, 1, 1, 12, 1, 1, 1, 1, 229, 1, 1, 1, 227, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 231, 1, 1, 1, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 240, 13, 1, 1, 1, 12, 12, 237, 238, 1, 1, 1, 1, 239, 1, 1, 12, 1, 1, 1, 1, 1, 1, 1, 241, 1, 1, 12, 16, 1, 1, 1, 1, 1, 1, 242, 1, 1, 1, 12, 12, 1, 1, 1, 1, 1, 1, 242, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 251, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 255, 255, 1, 0, 0, 0, 0, 0, 1, 12, 0, 0, 0, 0, 0, 0, 0, 0, 171, 260, 261, 1, 12, 1, 1, 1, 1, 12, 263, 1, 1, 262, 1, 1, 265, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 269, 270, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 12, 1, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 12, 0, 281, 0, 0, 282, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 1, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 59, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 1, 0, 306, 0, 0, 0, 0, 0, 0, 0, 0, 0, 308, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 12, 1, 1, 1, 1, 1, 324, 324, 325, 324, 0, 185, 1, 1, 13, 320, 1, 318, 0, 0, 0, 0, 0, 0, 0, 321, 1, 1, 326, 1, 204, 1, 1, 1, 1, 319, 1, 316, 1, 322, 1, 314, 1, 323, 1, 315, 1, 1, 1, 1, 1, 1, 1, 12, 1, 1, 1, 1, 12, 317, 317, 1, 1, 1, 184, 1, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 12, 1, 1, 1, 1, 12, 1, 1, 1, 1, 313, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 329, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 265, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 369, 369, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 361, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 1, 1, 0, 1, 337, 348, 1, 1, 336, 371, 1, 342, 1, 1, 334, 366, 1, 1, 352, 333, 338, 1, 1, 1, 345, 376, 354, 1, 1, 1, 1, 1, 1, 355, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 0, 364, 368, 0, 0, 78, 1, 1, 0, 362, 339, 375, 340, 343, 350, 1, 365, 0, 1, 0, 78, 359, 357, 1, 0, 0, 1, 1, 1, 0, 0, 0, 0, 378, 1, 1, 349, 1, 78, 1, 0, 1, 1, 1, 381, 1, 0, 0, 78, 356, 0, 1, 335, 1, 1, 1, 0, 1, 1, 358, 1, 0, 1, 1, 1, 0, 1, 383, 346, 1, 1, 0, 1, 0, 0, 374, 0, 1, 1, 1, 78, 367, 1, 1, 363, 360, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 341, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 373, 0, 78, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 377, 1, 1, 1, 0, 0, 380, 0, 0, 0, 1, 353, 1, 0, 78, 379, 1, 0, 0, 0, 0, 382, 1, 1, 0, 0, 1, 0, 1, 0, 351, 0, 347, 0, 1, 1, 1, 0, 1, 1, 0, 370, 344, 372, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1, 1, 397, 397, 1, 1, 12, 12, 1, 397, 1, 1, 12, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 409, 1, 1, 0, 1, 1, 1, 1, 204, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 427, 427, 1, 1, 0, 0, 314, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 439, 1, 438, 1, 1, 1, 1, 1, 1, 1, 1, 1, 443, 1, 12, 12, 1, 1, 1, 1, 1, 12, 1, 1, 1, 1, 451, 1, 1, 1, 453, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 450, 1, 445, 1, 1, 1, 1, 432, 1, 1, 1, 1, 1, 1, 1, 1, 446, 12, 1, 1, 1, 1, 452, 1, 1, 1, 447, 441, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 314, 1, 430, 1, 1, 12, 449, 1, 1, 314, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 434, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 452, 1, 1, 1, 1, 314, 1, 448, 1, 1, 1, 442, 436, 1, 1, 1, 1, 1, 437, 1, 454, 440, 1, 1, 1, 1, 1, 435, 1, 1, 1, 1, 1, 1, 1, 1, 1, 431, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 444, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 433, 1, 1, 1, 1, 1, 1, 1, 219, 455, 1, 1, 1, 1, 1, 12, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 1, 0, 0, 0, 460, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 12, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 464, 0, 464, 464, 464, 464, 464, 464, 464, 0, 464, 464, 464, 464, 464, 1, 464, 464, 464, 0, 464, 464, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 469, 468, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 473, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 466, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 467, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 475, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 464, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 472, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 465, 0, 0, 476, 471, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 470, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 464, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 465, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 464, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 474, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 486, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 198, 198, 1, 490, 1, 1, 1, 489, 1, 1, 1, 1, 485, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 487, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 491, 1, 1, 488, 1, 1, 1, 1, 1, 1, 1, 1, 369, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 492, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 503, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 12, 1, 505, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 12, 12, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 1, 0, 0, 0, 1, 59, 1, 1, 12, 12, 12, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 524, 1, 1, 1, 1, 1, 1, 1, 525, 1, 1, 1, 1, 1, 1, 1, 523, 1, 1, 12, 1, 527, 238, 1, 1, 12, 12, 1, 1, 12, 1, 12, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 531, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 537, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 131, 1, 12, 542, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 106, 1, 1, 12, 1, 1, 1, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 547, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 143, 1, 1, 1, 227, 1, 1, 12, 30, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 571, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 219, 1, 325, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 576, 1, 1, 1, 1, 0, 578, 0, 78, 0, 577, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 12, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 584, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 580, 580, 0, 583, 581, 580, 580, 580, 580, 580, 585, 580, 580, 589, 580, 580, 580, 580, 580, 580, 580, 580, 580, 580, 586, 583, 580, 580, 583, 580, 580, 580, 580, 580, 580, 580, 580, 580, 580, 580, 580, 580, 581, 580, 580, 580, 580, 580, 587, 580, 580, 580, 580, 580, 580, 0, 0, 0, 1, 588, 1, 1, 1, 1, 582, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 12, 593, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 12, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 12, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 12, 1, 1, 12, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 95, 64, 278, 304, 408, 533, 0, 4, 67, 235, 253, 280, 305, 331, 385, 410, 0, 497, 517, 534, 595, 9, 0, 60, 87, 395, 406, 426, 574, 0, 495, 516, 530, 610, 0, 30, 6, 0, 459, 498, 600, 559, 69, 0, 7, 283, 254, 386, 461, 413, 536, 78, 596, 0, 575, 307, 415, 463, 9, 104, 286, 504, 6, 30, 0, 309, 78, 388, 78, 481, 10, 6, 130, 247, 273, 0, 611, 507, 0, 562, 0, 63, 6, 6, 250, 94, 2, 429, 396, 407, 594, 0, 6, 0, 6, 284, 102, 6, 560, 499, 538, 0, 462, 387, 271, 285, 8, 70, 103, 597, 541, 389, 310, 298, 416, 145, 73, 288, 545, 508, 599, 563, 332, 327, 477, 6, 74, 148, 11, 0, 248, 520, 546, 564, 512, 550, 569, 609, 36, 6, 259, 293, 330, 302, 217, 30, 526, 552, 217, 41, 215, 264, 294, 303, 403, 420, 479, 272, 0, 72, 561, 0, 400, 414, 297, 78, 246, 78, 0, 579, 544, 502, 290, 418, 78, 390, 384, 0, 0, 0, 9, 554, 570, 216, 0, 421, 404, 529, 514, 572, 613, 84, 217, 42, 295, 393, 422, 568, 0, 509, 291, 274, 78, 214, 79, 28, 387, 30, 6, 391, 328, 301, 602, 590, 522, 549, 511, 0, 257, 80, 30, 402, 419, 0, 30, 423, 0, 218, 591, 515, 9, 405, 424, 217, 247, 85, 221, 592, 573, 556, 480, 425, 394, 249, 226, 86, 58, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 618, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 411, 0, 0, 0, 0, 0, 0, 0, 0, 81, 0, 128, 0, 0, 83, 548, 0, 0, 0, 0, 0, 0, 0, 27, 0, 551, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 411, 0, 0, 0, 0, 501, 0, 256, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 292, 0, 0, 0, 0, 0, 0, 0, 615, 0, 0, 0, 0, 0, 614, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 392, 0, 0, 0, 482, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 68, 0, 0, 0, 0, 0, 0, 493, 0, 0, 0, 0, 0, 0, 401, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 210, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 513, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 494, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 268, 279, 0, 0, 0, 0, 0, 528, 275, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 510, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 456, 0, 0, 0, 312, 0, 0, 0, 0, 0, 0, 252, 0, 0, 0, 0, 0, 0, 23, 0, 0, 0, 0, 567, 0, 0, 0, 0, 598, 519, 0, 0, 0, 0, 243, 0, 0, 0, 0, 0, 0, 0, 0, 0, 478, 0, 0, 0, 0, 0, 61, 0, 0, 0, 266, 57, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 245, 0, 0, 0, 0, 0, 277, 608, 0, 71, 0, 0, 0, 0, 0, 0, 0, 0, 0, 617, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 149, 0, 276, 0, 0, 0, 0, 0, 0, 566, 0, 0, 0, 0, 0, 0, 521, 0, 0, 0, 0, 0, 0, 0, 0, 0, 565, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 62, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 212, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 83, 0, 500, 0, 0, 0, 0, 0, 553, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 83, 82, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 484, 0, 483, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 258, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 457, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 287, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 535, 0, 0, 0, 0, 0, 0, 0, 0, 296, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 68, 236, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 83, 0, 604, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 244, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 607, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 518, 0, 0, 0, 83, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 496, 0, 612, 0, 0, 428, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 399, 0, 0, 0, 543, 0, 92, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 0, 0, 0, 0, 0, 0, 29, 91, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 289, 0, 0, 0, 213, 0, 0, 0, 0, 0, 0, 557, 0, 0, 0, 0, 129, 0, 0, 0, 0, 0, 558, 0, 0, 0, 0, 0, 0, 0, 411, 417, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 311, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 299, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 532, 0, 0, 0, 412, 0, 0, 398, 0, 0, 0, 0, 0, 0, 601, 0, 0, 0, 539, 0, 0, 89, 0, 540, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 506, 458, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 267, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 411, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 606, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 605, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 616, 0, 0, 0, 0, 0, 555, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 300, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 603, 0, 0, 211, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 621, 621, 621, 621, 621, 621, 621, 620, 622]);
-    labelText = "orgmilcomschnetedugovdrrformsfeedbackofficialaccoorgmilschnetgovmagazinemediaunioncargopilotgroupcaarespressworksaerodromeworkinggroupair-traffic-controlaircraftaccident-preventioneducatormarketplaceambulanceinsurancecateringairportrepbodyenginesoftwaremodellingair-surveillanceconsultingchartertrainermaintenanceservicesdesignflightskydivingfreightassociationstudentgroundhandlingdgcafuelclubtaxicrewshowballooningexpresstraderbrokerauthoragentsairtrafficjournalistsafetyconsultantmicrolightaccident-investigationparachutingequipmentproductionfederationrecreationscientistnavigationengineertradingglidingleasingresearchpassenger-associationentertainmentparaglidinghangglidingaerobaticrotorcraftemergencycertificationgovernmentaeroclubexchangelogisticschampionshiphomebuiltcouncilconferencecontrolairlinecivilaviationjournalorgcomnetedugovcoorgcomnomnetobjofforgcomnetuwukiloappsframerorgmilcomnetedugovcoradioorgcomnetcommuneedogpbcoitgvorgedugov*spreviewfrontendrelayononstagingupid*mtls*privatelinktypedreamdeveloperbravemochawindsurfaivenmirenupsunwnextbegetngrokclerkwale2bwebcsbrunputerflutterflowspawnbaseshiptodaymagicpatternsnetlifyondigitaloceanrailwayhostedclaudehasurabotdashvercelgithubluyanigadgetreplitcloudflaretelebitedgecomputeevervaultexponyatnoopencrpplxzeaburwasmerframerzeropsconvexmedusajsspritesonherculeseasypanelstreamlitsnowflakemesserliloginlinehackclubcodepennorthflankbase44corespeedleapcellngrok-freeclerkstagelovableon-fleek*us-west-3ap-south-2us-central-2us-central-1eu-central-1ap-south-1us-west-2us-east-2eu-north-1ap-north-1us-west-1us-east-1*rcloudintsegorgmilcomgobbetnetintedugovturmusicasenasamutualcoopip6uriurnin-addre164homeirisgovdixdaemoncloudnssthwien*inexexkunden4accogvormymyspreadshop4lima2ixortsinfofuturecmsfuturehosting12hpprivfuturemailinglima-cityfunkfeuer123webseitednshomemelmyspreadshopcloudletswasantqldvicactnswtascatholicwasaqldvictasidwasantozqldorgcomvicasnactnetedugovnswtasconfcomairflowlambda-urltransfer-webappairflowtransfer-webapptransfer-webapptransfer-webapp-fipstransfer-webappeu-west-3ap-south-2eu-south-2eu-central-2ap-southeast-3ap-southeast-4ap-northeast-3eu-central-1mx-central-1me-central-1ca-central-1il-central-1ap-northeast-1ap-southeast-1me-south-1af-south-1eu-south-1ap-south-1ap-southeast-7us-west-2eu-west-2us-east-2eu-north-1ap-southeast-2ap-northeast-2ap-southeast-5us-gov-west-1us-gov-east-1ca-west-1us-west-1eu-west-1us-east-1ap-east-1sa-east-1privatenotebookstudiolabelingnotebookstudionotebooknotebook-fipslabelingnotebookstudionotebook-fipsnotebookstudio-fipsnotebook-fipsnotebookstudionotebook-fipsnotebookstudioeu-west-3ap-south-2eu-south-2eu-central-2ap-southeast-3ap-southeast-4ap-northeast-3eu-central-1me-central-1ca-central-1il-central-1ap-northeast-1ap-southeast-1me-south-1af-south-1eu-south-1ap-south-1us-west-2eu-west-2us-east-2eu-north-1ap-southeast-2ap-northeast-2experimentsus-gov-west-1us-gov-east-1ca-west-1us-west-1eu-west-1us-east-1ap-east-1sa-east-1onrepostsagemakercopporgmilcompronetintedugovbiznameinfoshoprsorgmilcomnetedugovbrendlyresolvenzauscotvstoreorgcomnetedugovbizinfoidacaicoittvorgmilcomschnetedugovinfocloudezproxyacmymyspreadshopkuleuvenwebhostingtransurl123websitecloudnsinterhostsolutionsddns5476103298edgfacbmlonihkjutwvqpsryxzbarsycoororgcomedumyftpno-iporxcloud-ipfor-somemmafanfor-morewebhopselfipjozidyndnscloudnsdscloudfor-thefor-betteractivetrailcoeconorestooteorgcomeconeteduassurmoneyafricaarchitectesrestaurantloisirstourismavocatsinfoagrounivcoorgcomnetedugovtvdeportesaludtksatorgmilcomwebgobnetinteducienciaboliviarevistacooperativaempresanombreindustriamusicapatriamedicinademocraciapoliticapuebloindigenaplurinacionalarteblogwikiinfoagrotransportenoticiasprofesionalacademiaeconomiaecologiamovimientotecnologianaturalsimplesitecepesebamapadfmgalampbacscpirngorotomtrjspaprrprrsesmscepesebamapadfmgalampbacscpirngorotomtrjspaprrprrsesms*biaamfmtcmptvfeirasampajampanatalbelemananiradiog12medindfndbmdtrdthepoaggfjdfdefinfenflegsegongengcngorgzlgslglogppgmillelqslcimcomnomadmjabimbbibbsbabcrectecsjcetcpscpvhudieticriapipsiecnbiorioecogeoteoodoproatoartfstmatvetdetbetnetcntnotfotgrueduajuespappreptmpemparqsrvadvdevgovntrturagrjorfarjusmusdesvixxyzcozfozslzbhzmaringasantamariacampinagrandegoianiasorocabafloripasaobernardocuritibaboavistarecifeaparecidasaogoncasalvadorcuiabamorenamacapalondrinacontagemsocialfortalmaceioleilaoosascoriobranconiteroi9guacutcheblogflogvlogwikitaxicoopmanauspalmascaxiasjoinvillebaruericampinassantoandreribeiraoriopretoweorgcomnetedugovv0windsurfshiptodaycloudsitecoaccoorgnetgovofmilcomgovmediatechzacoorgcomnetedugsjgovmydnspenfnlabnbmbgcbcqconcontnuyksknsmyspreadshopno-ipawdevboxbarsyonidatemfuinabusavinstanceseceuguukussryzespawncsxcloud-ipmyphotosfantasyleaguetwmailcleverappsscrappingccwucloudnsftpaccessgame-serverccgovobjectsrmalpgcust*svcalp1aeappenginermalpgmyspreadshop4lima2ixsquare7cloudscale123websitefirenet12hpflowgotdnslinkyard-cloudcloudnslima-citydnskingobjectstorageedaccogoorusorgcomnetintedua\xE9roportxn--aroport-byaassogouvcomilgobgovcloudnses-1eu-west-1us-east-1euvipit1eurarubait1s3lbwebsites3websiteru-spbru-mskelasticcsrunstnukukcaukusnl-ams-1fr-par-1fr-par-2functionsnodess3ddlwhmrdbfnck8sifrs3-websitecockpitscblmgdbdtwhkafkpubprivs3ddlwhmrdbk8sifrs3-websitecockpitscblmgdbdtwhkafks3ddlrdbk8sifrs3-websitecockpitscblmgdbdtwhkafkk8sscalebookpl-wawfr-parnl-amsbaremetalsmartlabelinginstancesdechk2kuleuvenlaravelvoorloperurownoxazapscwhstgrvaporonline-serverobservablehqelementorantagonistreclaimjoteluluencowaydiademjelasticmatlabmagentositetrendhostingaxarnetperspectajenv-arubajelejoteravendbemergenttrafficplexconvexkeliwebserveboltbegetcdnstaticson-rancherprimetelonstackitunison-servicesdnshomelinkyardbarsyjelecloudnscocomnetgovmycn-northwest-1cn-north-1s3s3-accesspoints3-websites3s3-accesspointrdsdualstacks3-deprecatedemrappui-prods3-websiteemrstudio-prods3-object-lambdaemrnotebooks-prodexecute-apis3s3-accesspoints3s3-accesspointrdsdualstackemrappui-prods3-websiteemrstudio-prods3-object-lambdaemrnotebooks-prodexecute-apicn-northwest-1cn-north-1cn-northwest-1ebcomputeelbcn-north-1airflowcn-northwest-1cn-north-1oncn-northwest-1cn-north-1amazonawssagemakeramazonwebservicesdirectasgdsdhehahljlnmhbacscahqhshhihnlnynsnmofjbjzjxjtjhkcqtwgsjssxnxjxgxxzgz\u7DB2\u7D61\u7F51\u7EDC\u516C\u53F8orgmilcomnetedugovxn--55qx5dcanva-appsxn--io0a7iquickconnectcanvasitekhsjxn--od0algmyqnapcloudsrvrlessclustersrealtimestorageleadpagescarrdcrdorgmilcomnomnetedugovhidnssupabaserdpareplmypiumsoxmitotaplpagesfirewalledreplitowodevwebview-assetsvfswebview-assetss3s3-accesspointdualstackemrappui-prods3-websiteaws-cloud9emrstudio-prods3-object-lambdaemrnotebooks-prodexecute-apicloud9eu-west-3ap-south-2eu-south-2eu-central-2ap-southeast-3ap-southeast-4ap-northeast-3eu-central-1me-central-1ca-central-1il-central-1ap-northeast-1ap-southeast-1me-south-1af-south-1eu-south-1ap-south-1ap-southeast-7us-west-2eu-west-2us-east-2eu-north-1ap-southeast-2ap-northeast-2ap-southeast-5ca-west-1us-west-1eu-west-1us-east-1ap-east-1sa-east-1s3s3-accesspointdualstackemrappui-prods3-websiteaws-cloud9emrstudio-prods3-object-lambdaemrnotebooks-prodexecute-apicloud9s3s3-accesspointdualstackanalytics-gatewayemrappui-prods3-websiteaws-cloud9emrstudio-prods3-object-lambdaemrnotebooks-prodexecute-apicloud9s3s3-accesspointdualstackemrappui-prods3-websiteemrstudio-prods3-object-lambdaemrnotebooks-prodexecute-apis3s3-accesspointdualstacks3-deprecateds3-websites3-object-lambdaexecute-apis3s3-accesspoints3-websites3-accesspoint-fipss3-fipss3s3-accesspointdualstackemrappui-prods3-websites3-accesspoint-fipsaws-cloud9s3-fipsemrstudio-prods3-object-lambdaemrnotebooks-prodexecute-apicloud9s3s3-accesspointdualstackemrappui-prods3-websites3-accesspoint-fipss3-fipsemrstudio-prods3-object-lambdaemrnotebooks-prodexecute-apis3s3-accesspointdualstacks3-deprecatedanalytics-gatewayemrappui-prods3-websiteaws-cloud9emrstudio-prods3-object-lambdaemrnotebooks-prodexecute-apicloud9vfss3s3-accesspointdualstackemrappui-prods3-websiteaws-cloud9emrstudio-prods3-object-lambdaemrnotebooks-prodexecute-apicloud9eu-west-3ap-south-2eu-central-2ap-southeast-3ap-southeast-4ap-northeast-3eu-central-1mx-central-1me-central-1ca-central-1il-central-1ap-northeast-1us-northeast-1ap-southeast-1me-south-1af-south-1ap-south-1ap-southeast-7us-west-2eu-west-2ap-east-2us-east-2ap-southeast-2ap-northeast-2ap-southeast-5us-gov-west-1us-gov-east-1ap-southeast-6ca-west-1us-west-1eu-west-1us-east-1ap-east-1sa-east-1mrapaccesspoints3s3-accesspointdualstacks3-deprecatedanalytics-gatewayemrappui-prods3-websites3-accesspoint-fipsaws-cloud9s3-fipsemrstudio-prods3-object-lambdaemrnotebooks-prodexecute-apicloud9s3s3-accesspointdualstacks3-deprecatedanalytics-gatewayemrappui-prods3-websites3-accesspoint-fipsaws-cloud9s3-fipsemrstudio-prods3-object-lambdaemrnotebooks-prodexecute-apicloud9s3eu-west-3ap-south-2eu-south-2computes3-ap-northeast-2elbrdss3-ap-east-1s3-sa-east-1s3-us-gov-west-1s3-eu-central-1s3-ca-central-1eu-central-2ap-southeast-3ap-southeast-4ap-northeast-3s3-website-us-west-2s3-website-eu-west-1s3-external-1eu-central-1me-central-1ca-central-1il-central-1s3-us-west-1s3-eu-west-1s3-website-sa-east-1s3-website-ap-southeast-2ap-northeast-1ap-southeast-1s3-us-west-2s3-eu-west-2me-south-1af-south-1eu-south-1ap-south-1us-west-2eu-west-2us-east-2s3-website-ap-southeast-1s3-1s3-globals3-ap-northeast-3eu-north-1airflowap-southeast-2s3-us-gov-east-1s3-fips-us-gov-east-1s3-me-south-1s3-ap-south-1ap-northeast-2s3-website-us-west-1ap-southeast-5s3-eu-north-1s3-ap-southeast-1s3-website-us-gov-west-1compute-1s3-eu-west-3us-gov-west-1s3-website-ap-northeast-1us-gov-east-1s3-fips-us-gov-west-1s3-website-us-east-1s3-ap-southeast-2ca-west-1us-west-1eu-west-1us-east-1ap-east-1sa-east-1s3-us-east-2s3-ap-northeast-1authauthauth-fipsauth-fipseu-west-3ap-south-2eu-south-2eu-central-2ap-southeast-3ap-southeast-4ap-northeast-3eu-central-1mx-central-1me-central-1ca-central-1il-central-1ap-northeast-1ap-southeast-1me-south-1af-south-1eu-south-1ap-south-1ap-southeast-7us-west-2eu-west-2us-east-2eu-north-1ap-southeast-2ap-northeast-2ap-southeast-5us-gov-west-1us-gov-east-1ca-west-1us-west-1eu-west-1us-east-1ap-east-1sa-east-1rframeservicesbuilderstg-builderdev-builder*ociocpocsdemoinstanceeu-west-3eu-south-2ap-southeast-3ap-northeast-3eu-central-1me-central-1ca-central-1il-central-1ap-northeast-1ap-southeast-1me-south-1af-south-1eu-south-1ap-south-1ap-southeast-7us-west-2eu-west-2us-east-2eu-north-1ap-southeast-2ap-northeast-2ap-southeast-5us-gov-west-1us-gov-east-1us-west-1eu-west-1us-east-1ap-east-1sa-east-1previeweu-4us-4us-1eu-1us-2eu-2us-3eu-3appspaasrag-cloudrag-cloud-chjcloudjcloud-ver-jpcdemonodebalancermembersipeuxvsoncillaocelotonzayalilynxsphinxfentigercustomercaracalo365cloudstaticxendevapp001testcode-builder-stgplatformmediasiteprojedrydpagesjsu2u2-localx0desazacncoitrueu4uhkukgrbrushatenadiarymyspreadshopfrom-flfrom-wvwebspace-hosttheworkpchatenablogcursorusercontentservesarcasmapplinzisakuratanwixsiteappchizigiizeis-into-carsdnsiskinkyadobeaemcloudis-a-therapistpgfogmyvncdojinis-an-actress1kappfldrvkozowqa2jpnmexprgmrfirewall-gatewaydynnscafjsfbsbxooguyxnbayfrom-gawoltlab-demois-a-anarchistwiardwebteaches-yogadattowebtb-hostinglive-websiteservegamegotpantheonfrom-nhsubsc-payfrom-ohvipsinaappfrom-cadyndns-officehomelinuxfrom-mahercules-appservebbsstreakusercontentfrom-okfrom-wyfastly-terrariumis-a-llamaqualyhqportalserveexchangeon-vaporvivenushopciscofreakgrayjayleaguesmetaaiusercontentfrom-iais-a-libertariansaves-the-whalestaveusercontentyolasiteoperaunitepoint2thisis-a-catererclaudeusercontentlinodeusercontentfrom-vagithubusercontentsells-for-lesshosteurcanva-appsplaystation-cloudddnsfreefrom-pafrom-prfrom-waddnskingoutsystemscloudhotelwithflightmydattois-a-nascarfanmydbserverminiserverdamnserverservehumouris-a-playerfrom-nvfrom-nmemergentagentgentappsamplifyappfrom-kyis-an-accountantnfshostserveircfrom-akpythonanywherestackhero-networkpostman-echolikescandydyndns-mailobservableusercontentserveftpfreeboxosfrom-utcdn77-storageamazonawsneat-urldyndns-serverlinodeis-a-teacherfrom-vtgleezemythic-beastsus1-pleniteu1-plenitla1-plenitpaywhirlservecounterstrikejdevcloudhealth-carereformis-into-animegoogleapisis-a-painterafricaisa-hockeynutatmetais-an-actora2hostedis-a-democratdatadetectest-le-patrondigitaloceanspacesis-a-designeris-a-hunterlinodeobjectstemp-dnsissmarterthanyoufrom-arsimplesiteevennodetownnews-stagingis-a-liberalgooglecodejelasticservemp3qualyhqpartnerdyndns-free1cooldnsest-a-la-masiondrayddnsdynuddnsfrom-orfrom-miis-a-bloggerfrom-himydobisscanvacodeis-an-engineerest-a-la-maisonupsunappdevinappswafflecellmyasustorwpenginepoweredfrom-ctservep2psame-appmyshopblocksthingdustdatalikes-piediscordsezis-with-thebanddev-myqnapcloudlpusercontentis-leetshopitsite3utilitiesis-a-personaltrainersinaappladeskis-a-cheflogoipselfipbase44-sandboxnospamproxyalibabacloudcsmesswithdnsauthgearappsiamallamawithgooglelutrausercontentmochausercontentframercanvasmytabitdyndns-homew-credentialless-staticblitzcpserverdiscordsaysis-a-nurseappspotatlassian-isolated-3premotewdfrom-mtwixstudiocode0emm180rmyactivedirectoryawsappsmytuleapdnsabrpolyspaceqbuserrenderbuiltwithdarkboutirgotdnsabrdnsdopaascanva-hosted-embedawsglobalacceleratorhomesecuritypcmyiphostditchyouripclever-clouddyndns-ipon-aptibleis-a-musiciansecuritytacticsappspaceusercontenthomeunixstrapiappsame-previewcf-ipfsmycloudnaselasticbeanstalkis-certifieddontexistkasserverik-serverdrive-platformatlassian-3pfirebaseappherokuappawsapprunnerbarsycenteris-a-cubicle-slaveservehttpmyshopifyis-a-guruquicksytessiiitesorsitesmagicpatternsappis-a-cpameteorappfrom-wiis-a-rockstarbumbleshrimpdattolocalreadthedocs-hostedfrom-rifamilydsdyndns-picsplesknsbplaceddnsaliasdynaliasdyndns-remotedoomdnsip-ddnsblogdnsis-a-doctorroutingthecloudamazoncognitobarsyonlinedsmynasddnsgurucloudflare-ipfsdeus-canvasfrom-idsmushcdnpagespeedmobilizerdyndns-at-homeunusualpersonhosted-by-previderis-a-republicandyn-o-saurstreamlitappworkisboringonthewificprapidqualifioappis-uberleetis-slickgetmyipwpdevcloudtypeformdyndns-at-workgentlentapismynascloudw-corp-staticblitzfrom-ingeekgalaxyservebeerfrom-mdonrenderspace-to-rentaivencloudappspacehostedwafaicloudcodespotblogspotatlassian-3p-us-gov-modfrom-ndfrom-msis-a-techieis-a-studentcustomer-ociis-a-photographerdurumisfrom-ksmassivegriddyndns-wikiis-an-entertaineris-a-hard-workermysecuritycamerafrom-mnrackmazedyndns-blogis-a-bulls-fanwritesthisblogfreemyipsimple-urlfrom-sdreservdauthgear-stagingest-mon-blogueuris-into-gamesrice-labsxtooldevicesakurawebis-an-anarchistoraclecloudappsdyndns-worksells-for-urhcloudfrom-dcfastvps-serverwpmucdnis-a-geekscrysecfrom-txis-into-cartoonsmodelscapetrycloudflarelocaltonetstreak-linkbalena-devicesfrom-njforgeblocksfreebox-oswebadorsitefrom-ncdoesntexisthobby-sitestreaklinkshomesecuritymacownprovidertuleap-partnersdattorelaywphostedmailalpha-myqnapcloudservequakeis-a-socialistservehalflifepivohostingdynuhostingquipelementsw-staticblitzdyndns-webfrom-deproject-studyaliases121is-not-certifiedhercules-devis-a-financialadvisorservepicsis-a-greenloseyouripfrom-ilwithyoutubemwcloudnonprodwiredbladehostingdnsdojofrom-tnpixolinomyqnapcloudis-an-artisthostedpiis-a-landscaperauiusercontentoaiusercontenton-forgeis-a-conservativedreamhostersnet-freaksapps-1and1is-goneencoreapifastly-edgefrom-nesalesforcefrom-scdeployagentoraclegovcloudappsfrom-alis-a-lawyercechirevultrobjectsstufftoreadisa-geekddnsgeeklovableprojecttry-snowplowfrom-moblogsyteis-a-bookkeepernogmyforumravendbmyboxdeelementoredsaacficogoorinforgcomgobnatneteduidstoreorgcomnetintedudevnomepublorgcomneteduathgovtestscalculatorspaynowinfoquizzesresearchedcloudnsfunnelsassessmentsjscaleforcetmacltdorgmilcompronetgovbizpresseklogesrsccloudcustomfltusrcloude4corealmgovmunicontentproxy9metacentrumdyndyndyndnsdynpagespages-researchitionoccustomercomymyspreadshopipv64diskussionsbereich4limacomrub2ixfirewall-gatewayddnssspdnsbarsykeymachinesquare7myhome-serverspeedpartnercommunity-proschuldockxenonconnectg\xFCnstigliefernbwcloud-os-instancedyndnssecmy-routerxn--gnstigliefern-wobin-butterl-o-g-i-nisteingeekin-dslin-berlinin-brbfuettertdasnetzleitungsenin-vpnlcube-serverdyn-ip24logoipdyn-berlinruhr-uni-bochum12hpgoipsrvdnsfruskygit-repossvn-reposinternet-dnsg\xFCnstigbestellenhome-webserverxn--gnstigbestellen-zvbbplacedheimdnscosidnswebspaceconfiglima-citydyndns1istmeinvirtualuserschulplattformmy-gatewayddnsseclebtimnetztest-iservmein-iservvirtual-userhome64iservschuletaifun-dnstraeumtgeradeschulserverdynamisches-dns123webseitednshomehs-heilbronndnsupdaterbssgraphicdwadpdwdaepeweaawapaafpfwfabwbpbacwcpcciwebuserapiobjectsidsiskospockkimodorikerbonesteamsparisjanewaypicardglobaltarpitreedpikekiraworfsulukirkarchertuckerhackercanarywesleystagingprereleaset3r2lpbravepanelngrokiservstglclcrmerpflypagesbarsyvivenushoplocalcertlocalplayerbearbloggatewaydeno-stagingis-not-ais-a-goodbotdashvercelmocha-sandboxplatter-appreplitgithubpreviewworkersinbrowserevervaultis-ahrsndenoxmitmodxmyaddrstorageapipayloadgrebedocruncontainersstgstagelclstageloginlineis-a-fullstackcodepenleapcellngrok-freeis-coolstoragewebharemediatechlibp2pdiscourseimaginecomyspreadshopstoreregbiz123hjemmesidefirmcoorgcomnetedugovsldorgmilcomwebgobartnetedugovtmorgpolcomsocartnetedugovassoagrondiscoodontk12medcuegyecpaabgengorgmilgalsaltulcomadmesmgobpubdocmonfindgnriouioproartlatvetnetfotedulojgovntrturibrbarxxxofficialbasechefprofmktgpsictechinfoarqtcontdentrrpppsiqgit-pagesritmedfieorgcomlibprieduaipgovriikmeactvsportorgmilcomscieunnetedugovnameinfopintouchtawktotawkmyspreadshoporgcomnomgobedu123miwebcomputeorgcomnetedugovbiznameinfocognito-idpeusc-de-east-1onjelasticnxaspdnsbarsydirectwpdeuxfleurstransurldogadoprvwcloudnsamazonwebservicesdnshomeuserpartycokoobinmkmfidemopaasdymyspreadshopalandkapsiikixn--hkkinen-5wacloudplatformdatacenterh\xE4kkinen123kotisivuidacorgmilcompronetedugovbiznameinforadioorgcomneteduuserexperts-comptablestmmyspreadshopgretaprdcomnomynhccifbxoshuissier-justicenotairesaeroportfreeboxoson-webavocatassoportgouvkdnschirurgiens-dentistes-en-franceavouesfbx-os123sitewebveterinairechirurgiens-dentistespharmacienchambagrimedecinfreebox-osdediboxgoupilemszicpyicpvicppleysheezypagesedugovcnpyorgcomcybllcpvtnetedugovtnxonlineschooldaemond6atcopanelorgnetplybotdashstackitkaasorgmilcomnetedugovbizmodltdorgcomedugovcoorgcomneteduappwriteacorgcomnetedugovcloudtranslateusercontentorgcomnetedumobiassoorgcomnetedugovbarsysimplesitediscourseindorgmilcomgobneteduorgcomwebnetedugovguaminfonxhra\u6559\u80B2\u654E\u80B2\u7DB2\u7D61\u7F51\u7D61\u7EC4\u7E54\u7D44\u7E54\u7F51\u7EDC\u7DB2\u7EDC\u7EC4\u7EC7\u7D44\u7EC7\u516C\u53F8\u653F\u5E9C\u500B\u4EBA\u4E2A\u4EBA\u7B87\u4EBAltdorgcomincneteduidvgovxn--uc0ay4axn--55qx5dxn--mk0axixn--io0a7ixn--uc0atvxn--zf0avxxn--lcvr32dxn--od0algxn--wcvs22dxn--gmqw5axn--od0aq3bxn--mxtq1mxn--ciqpnxn--tn0agxn--gmq050iorgmilcomgobneteduiservwp2tempurlmircloudfreesitewpmudevmyfastgadgetcloudaccessjelehalfboltfastvpsemergenteasypanelopencraftizcombrendlynamefromrtpersoadultmedorgpolrelcomproartnetedufirminfoassoshopcoopgouvtmcomediahotelforumvideosportorgsexagrargameslakaseroticaerotikatozsdereklamcasino2000filmsuliinfoboltshopprivnewsszexcityutazasjogaszkonyveloingatlaneacaicogoormy\u1B29\u1B2E\u1B36milwebschnetkopbizzonedesaponpesxn--9tfkymyspreadshopgovmytabittabitorderravpageaccok12idforgnetgovmuniltdplcaccotttvorgcomnetmeca6g5gpgamubacaicniocoukuptverdruscsdelhiindorgmilcomwebnicfingenpronetintedugovresbizbiharbarsyinternetbusinessschooltravelsupabasealumnigujaratfirminfoaeropostbankcoopindevscloudnsno-ipbarsybarrell-of-knowledgebarrel-of-knowledgensupdategroks-thisdnsupdatefor-ourknowsitalldvrcammittwalddynamic-dnsv-infowebhopselfipdyndnshere-for-moreilovecollegemayfirstforumzcloudnsmittwaldservertypo3servergroks-theeusekd1cdndyndnsidrawsainaueuapjpusstagemocksysdevicesclientcustreservdcustdevdisrecprodtestingcobeebyteutwenteboxfusebravepstmndedynngrokorgmilcomnomnetedugovqcxqzzbarsythingdustmo-siemensrb-hostingfh-muenstergitbookbluebitecloudbeesusercontentnodeartkiloappsforgerockdarklangresinstagingapigeebubbleb-datascryptedhypernodedappnodepantheonsitegitlabgithubkeeneticvirtualservercleverappshostyhostingon-rioedugitticketstelebitwixstudioon-k3sicp0icp12038jeleqotolairbubbleappsmyaddrstolosmyrdbxwebflowdrive-platformbeagleboardhasura-applolipopdefinimavaporcloudmusicianwebflowtestazurecontainerresindevicereadthedocsloginlineeditorxmoonscalesandcatsbasicserverwebthingsbrowsersafetymarkbeebyteappbitbucketidaccovistablogorgschnetgovxn--mgba3a4f16axn--mgba3a4fraarvanedge\u0627\u064A\u0631\u0627\u0646\u0627\u06CC\u0631\u0627\u0646jclaspeziapdudcefegelemeperetevebacanatavaparasabgagfgogrgpgalclblimfmrmcbmbvbfclcmcvcrcpcchlimifibicivipirisimncnbnanenrnpntnnolomobocoaogorosopotoptvtatctbtmtltotpusulunutpspapaqsvpvvvtvavvrtrsrprgrfrcrbrarorkrvstsssbscsmsispzczbzbozen-suedtirolmyspreadshopxn--bulsan-sdtirol-nsbxn--valledaoste-ebbtrentinoaltoadigetrentin-sued-tirolxn--forlcesena-c8axn--forl-cesena-fcbxn--bozen-sdtirol-2obtriestetrentinsuedtiroltrentino-s-tirollecceudineaostesienaparmaluccapaviagenoapaduaaostamonzaabruzzoternirietiturinmilanbozenlaziofermoleccocuneonuoropratola-speziavdataaligfvgpugmolcalcamlomumbsicpmnvenvaoedugovabrsarmaremrbastoslazibxosfirenzetrentinos\xFCdtirolval-d-aostavalle-aostamessinacremonaravennatoscanatrentin-suedtirolbolognacalabriaurbinopesarofriuli-v-giuliaogliastraxn--valle-aoste-ebblaquilaandriatranibarlettasyncloudxn--valle-d-aoste-ehbaostavalleyvalled-aostatrentino-alto-adigevallee-d-aostexn--balsan-sdtirol-nsbpistoiasicilialucaniacataniaiserniaperugiabresciaveneziagorizialiguriaimperiabulsan-suedtirolbalsan-suedtirolbarlettatraniandriaxn--trentino-sdtirol-szbforl\xEC-cesenatuscanyvall\xE9e-d-aostemantovavall\xE9e-aostecasertapiemontevalleaostaval-daostafriulivgiuliatrevisoforli-cesenavall\xE9edaosteferrarapescaravald-aostatrentino-altoadigefriuli-vegiuliavallee-aostecarboniaiglesiastarantomediocampidanovalleedaostetrentinosud-tirolcampobassotrentins\xFCd-tiroltrentinos\xFCd-tirolmonzabrianzatrentino-s\xFCdtirolxn--trentino-sd-tirol-c3bpotenzacosenzavicenzaemiliaromagnavenicefrosinonemarchepordenonetrentinosued-tirolvaresemolisevall\xE9eaostefriuli-veneziagiuliabasilicatalatinaanconasavonaveronamodenabiellabolzano-altoadigepugliafoggiaumbriatrentino-stirolgenovapadovamateranovararagusapiacenzatrentinostirolvalleeaostetempio-olbiasudsardegnatrentinsudtirolmassa-carrarafriuliveneziagiuliatrentinosuedtirolandria-barletta-tranitrapanixn--cesenaforl-i8amaceratacaltanissettaascoli-picenobrindisicarraramassacagliaririmininapolivibo-valentiachietibulsan-sudtirolbalsan-sudtiroltrentino-a-adigebulsanbalsaniglesiascarboniamilanotorinoteramodell-ogliastraarezzotrentinoalto-adigerovigotrentovenetoiglesias-carboniatrentino-sud-tirolaltoadigereggio-emiliareggio-calabriasardegnatranibarlettaandriapiedmontxn--sdtirol-n2amedio-campidanotrentino-s\xFCd-tirolfriuli-vgiuliafriuli-ve-giuliaromeennaromapisa32-b16-b64-blodiastibarineencomonaplesforlicesenailiadboxosalessandriasicilytrani-barletta-andriaxn--trentin-sdtirol-7vbpesarourbinotrentinsued-tirolcesena-forliforl\xECcesenaemilia-romagnamonzaebrianzaxn--trentinsdtirol-nsbtrentinos-tiroltrentins\xFCdtirolvalledaostaolbia-tempiocampidanomediovibovalentiasassarivalle-daostalombardysud-sardegnafriulivegiuliareggioemiliamonzaedellabrianzaalto-adigevercellitrentin-sudtiroltraniandriabarlettatrentino-sudtirolascolipicenobozen-s\xFCdtirolfriulive-giuliaflorencexn--cesena-forl-mcbcarbonia-iglesiasaosta-valleycarrara-massadellogliastratrentinoa-adigexn--valleaoste-e7apesaro-urbinoxn--trentinosdtirol-7vbxn--trentin-sd-tirol-rzbxn--trentinsd-tirol-6vbtrani-andria-barlettatrentin-s\xFCd-tirolxn--trentinosd-tirol-rzbgrossetomonza-e-della-brianzas\xFCdtirolreggiocalabriatrentinoaadigetrentin-s\xFCdtirolverbano-cusio-ossolafriuliv-giuliaverbaniacampaniatrentino-aadigefriulivenezia-giuliasardiniaandriabarlettatranibarletta-trani-andriacatanzarooristanourbino-pesarocesena-forl\xECvalle-d-aostacampidano-medio123homepagesiracusatempioolbiasuedtirollombardiaavellinocesenaforl\xECtrentinofriuli-venezia-giuliabozen-sudtirolandria-trani-barlettabulsan-s\xFCdtirolbalsan-s\xFCdtirolmonza-brianzabolzanotrentino-sued-tirolbellunosalernolivornocrotonesondriodnshometrentinsud-tirolmassacarraratrentin-sud-tiroltrentino-suedtirolviterbobergamocesenaforliolbiatempiopalermobeneventoagrigentoofcoorgnetfmaitvphdengorgmilcomschnetedugovperagrikanieasukehandachitatokaiaisaikonanoharuamaobuhigashiuraowariasahiinuyamatobishimaiwakurashitarainazawatoyonegamagorimihamatoyotataharakariyayatomioguchikomakimiyoshinishiotokonamekiyosuchiryutoyohashiokazakiisshikikasugaikotakiratoeianjotogofusosetohazutsushimashinshirotakahamanisshinshikatsuhekinantoyokawaichinomiyatoyoakeodateogataakitaikawakyowahonjoogayurihonjonoshirokamiokakatagamimitanegojomeyokotekosakadaisenkazunonikahohonjyomoriyoshimisatohappoukamikoanihachirogatahigashinarusesembokufujisatokitaakitaitayanagiowanitakkomutsutsurutahirosakigonoheoirasetowadamisawanohejiaomorishingohiranairokunohehashikamitsugarushichinohehachinohenakadomarisannohekuroishisakaeisumiasahiotakiinzaiabikomatsudoyachiyomutsuzawakujukuriomigawakashiwatoganemihamanaritasakuranagaramobarahanamigawachoshishiroichoseikozakishisuikatorimidorichonankyonanfuttsuonjukufunabashinagareyamanodasosatakochuotohnoshourayasukimitsuyokaichibayotsukaidosodegauratateyamakamagayayokoshibahikariyachimatakatsuuratomisatokisarazukamogawaichikawanarashinoichinomiyashimofusaminamibososhirakoichiharaoamishirasatoikatahonaiainansaijoseiyoiyoozuuwajimaniihamanamikatamasakiuchikokihokutobetoonshikokuchuomatsuyamaimabarikamijimakumakogenyawatahamamatsunosabaeikedaobamasakaifukuiohionotsurugamihamawakasaminamiechizeneiheijikatsuyamatakahamaechizensoedaukihaomutaokawanishiogoribuzenonojosueumiokiotochikugosasagurisaigawamizumakishinyoshitomikurumekurateyamadakasuganakamamiyamanogatatakatahakataiizukakawaratagawakasuyaashiyainatsukimunakataminamitsuikishonaikurogifukuchikeisenhigashimiyakoshinguyukuhashiokagakiyamekogaongausuikahotohochuotoyotsumiyawakadazaifuhisayamatachiaraiyanagawanakagawahirokawachikujochikushinochikuhochikuzennamieotamaokumashowateneiiwakikoorinangoononishigoshimogoomotegomishimafukushimaasakawakagamiishishirakawaiitatefutabahiratayugawahanawakitakatakawamatakunimiyabukibandaihigashihironoyamatomiharuyamatsuriaizubangedatesomaaizuwakamatsuyanaizuaizumisatonishiaizuizumizakikitashiobarataishinkaneyamakoriyamainawashirotanagurafurudonosamegawasukagawaishikawatamakawaikedaogakitaruiginanenahashimahichisonakatsugawaibigawashirakawamizunamiminokamomitakekawauesekigaharatomikasakahogikitagatayamagatatajimianpachimotosuyaotsukakamigaharahidakanisekitokigujominogodoyorogifukasamatsutakayamawanouchihigashishirakawakasaharashimonitatsumagoichiyodakannakanrashowameiwakiryuotaoratomiokafujiokaitakuranaganoharahigashiagatsumatakasakishibukawaminakamikatashinatsukiyonokawabanumataannakaoizumimidorishintoisesakiuenoyoshiokakusatsutakayamanakanojonanmokutamamuratatebayashimaebashiotakekaitadaiwahongofuchukuietajimashobaramiharahatsukaichihigashihiroshimamiyoshikumanokurenakasakaseraseranishiasaminamifukuyamashinichionomichiosakikamijimajinsekikogentakeharaotobenanaeikedatohmaozoraobiraabirakyowaeniwataikibibaisharirebunerimohiroooketootarupippunishiokoppechitosefurubirahakodateshiranukakitahiroshimakushiroobihironanporoiwamizawaniikappukunneppufukushimanakasatsunaitoyourakuromatsunaiakabirakamisunagawashibechaurakawakamifuranonakatombetsuasahikawashimokawakayabeokoppebiratoriabashirisaromaatsumanumatahidakabifukamukawamikasahorokanaitoyotomisarufutsuhigashikawaishikarikitamiyoichiesashiiwanaitomariminamifuranoakkeshifuranotoyakoyakumootoineppushikaoishiraoinemuronayorohaboroashorobihororishirifujiutashinaihokutotakasuebetsuurausuassabukikonaishimamakinaiedatetoyabieinikiesanuryuoumuteshikagarikubetsuashibetsukimobetsuaibetsutobetsusobetsuembetsushimizuchippubetsurishirihokuryuhoronobeshintokutsubetsushibetsuhonbetsumombetsutsukigatakuriyamakoshimizushiriuchikutchanmurorannoboribetsukamishihorowassamushinshinotsukembuchiwakkanaikamoenaikiyosatotakinoueshikabesunagawafukagawanakagawatakikawakamikawahigashikagurahamatonbetsumatsumaemoseushirankoshishakotanimakanemashikeotofuketomakomaisandatambaitamiawajikasaiasagoshisoonoakoyashirotoyookaminamiawajiinagawafukusakitakasagokamigorikasugaharimayokawaashiyahimejiakashitaishiaogakisannantakinosumototakarazukanishinomiyashingugoshikinishiwakiyokatakaaioimikisayoyabukawanishiamagasakisasayamashinonsenkakogawaichikawakamikawatatsunotsukubaiwamaogawaasahisakaitokaioaraiitakobandodaigosuifuinaamikasumigaurakashimaomitamayachiyoshimodatetomobetoridehitachinakainashikisakuragawakasamayawaramoriyahitachiomiyanamegatayamagatahitachikamisuushikutakahagiibarakitonekoganakasowayukimihojosomitoryugasakishimotsumafujishirotsuchiurachikuseihitachiotashirosatotamatsukuriuchiharashikahakuinanaotsubatawajimakahokukawakitatsurugikaganominotosuzuuchinadakomatsuanamizunakanotohakusannonoichikanazawaiwateshiwafudaikawaimoriokaofunatohanamakikuzumakikitakamininohekunoheyamadayahabasumitaichinosekitanohatahiraizumirikuzentakatajobojiotsuchihironomiyakoiwaizumikarumaiichinohenodakujitonooshushizukuishifujisawamizusawakamaishikanegasakimannoutazukotohiraayagawazentsujihigashikagawauchinomikanonjisanukimarugamemitoyotakamatsutadotsunaoshimatonoshoakuneamamiizumihiokiyusuikinkoisasookouyamanakatanekagoshimakanoyaisenkawanabeminamitanemakurazakitarumizunishinoomotematsumotosatsumasendaioimatsudaayaseebinamiurazushinakaiodawaraiseharasagamiharahakoneaikawakaiseiatsugitsukuihadanoyamatoyamakitazamaoisochigasakininomiyayokosukakamakuraminamiashigarafujisawasamukawakiyokawahiratsukayugawaraokawaumajikochitsunootoyoakiinonishitosayasudahidakamiharasakawaniyodogawahigashitsunokagamigeiseisusakiotsukinaharisukumomurototosakamiochitoyotosashimizumotoyamanankokunakamurakitagawayusuharaogunichoyoukiasoutoozugyokutoamakusamifunetakamoriyamagaminamataminamiogunikikuchisumotoyamatonagasumashikiaraokumamotokamiamakusanishiharayatsushiroayabeseikasakyoideineujinakagyokameokakyotangokyotanabekyotambaminamiyamashiroyamashinatanabeyawatawazukaminaminantanmiyazuhigashiyamafukuchiyamakitamukokamojoyokizumaizuruujitawaraoyamazakinagaokakyokumiyamakawagoeinabeshimameiwaasahitaikiudonoisetsukisosakikuwanamihamamiyamasuzukatamakimisuginabarikumanokomonominamiisewataraitobakiwatakikihotadomatsusakayokkaichikameyamaureshinoishinomakishichikashukuohirataiwaosakizaohigashimatsushimashikamaiwanumashibataogawaraonagawakawasakiseminemarumoriminamisanrikukakudamuratawakuyatomiyanatoriwataritagajomisatotomekamirifushiroishimatsushimayamamotoshiogamafurukawahyugaebinotsunosaitoayakushimanobeokakitauramiyazakitakazakigokaseshiibamimatashintomikunitomikitakatakobayashikawaminamitakaharukijotakanabemiyakonojonishimeranichinankitagawakadogawamorotsukakisofukushimaminamimakisakaeobuseikedaogawamiasaokayaasahiotakiotarichinoinaomichikumakomaganechikuhokukaruizawayasuokaooshikaikusakaminamiaikitogakushimatsukawakawakamitateshinatakamorikitaaikishiojirimiyadahakubaiizunaiijimaiiyamamiyotasuzakayasakatoguraookuwanagawaminowahirayayamagataminamiminowafujimiomachisakakitakaginaganonakanosakuhokomoronagisoshinanomachiwadauedaiidaharasuwatomiachiaokianankisosakunozawaonsenagematsutakayamashimosuwamatsumotoyamanouchinakagawamochizukiazuminotatsunoobamaomuraseihiunzenosetofutsuikichijiwanagasakiisahayahasamisaikaikawatanasasebohiradokuchinotsugototogitsutsushimashimabarashinkamigotomatsuurayamazoekashibaikomakawaitenrioyodosangokoryoudaojiikarugayamatokoriyamatenkawakatsuragikurotakikawakamimiyakemitsuetakatorikamikitayamayamatotakadahegurishinjokanmakisakuraitawaramotogoseoudanarasoniandokawanishishimoichihigashiyoshinokashiharashimokitayamanosegawayoshinomintsivorytopazsakuragehirnsumomoaseinetopalmail-boxmokurenyoitamuikaojiyagosensanjoaganomyokoseiroagaomishibataniigatanagaokamurakamiuonumayuzawakariwatagamitainaitsunanminamiuonumatochioyahikojoetsuseiroukamosadoizumozakitokamachiitoigawasekikawakashiwazakitsubamemitsukekokonoesaikiusukibeppuusahimeshimakunisakihasamataketatsukumihitaoitahijikusuyufukujukamitsuebungoonobungotakadaibaraniimibizentsuyamaokayamakasaokahayashimayakagemaniwaakaiwamisakishinjotamanotakahashikibichuowakesojanagishookumenannishiawakurakurashikiasakuchisetouchikagaminosatoshotomigusukunakagusukuyaeseizenaurumaiheyaaguniogiminanjokinminamidaitokitanakagusukuyonaguniokinawaishigakikunigamiurasoekadenataramahiraraginozataketomishimojizamamitonakiitomanhigashimotobuyonabarugushikamionnanahanagohaebarukumejimakitadaitonakijinnishiharayomitanginowantokashikiishikawaikedasuitaminohizuminishisakaikananabenodaitoosakasayamayaokishiwadatadaokakaizukatondabayashichihayaakasakakumatorikadomasayamahigashiosakashijonawatehirakatataishimisakitajirihannansennankatanotoyonominatosettsuhigashiyodogawaibarakinosekitachuohigashisumiyoshifujiiderakashiwaraizumiotsutoyonakamatsubaramoriguchiizumisanoshimamototakatsukineyagawahabikinotakaishikawachinaganoyoshinogarikamiminearitaouchiimarihizenogikashimaariakekiyamafukudomikitagatakitahataomachigenkaikanzakinishiaritakyuragisagataratosutakushiroishikaratsuhamatamakouhokukawagoeyoshidasatteogoseirumaasakaurawaogawaniizaomiyayoriiotakishikihonjooganohannohanyuinasaitamaokegawaarakawayoshikawayokozehasudasayamahidakafukayachichibuiwatsukiryokamiyoshimikamiizumifujimiwarabiranzanmiyoshiminanoyashiosakadosugitomisatohigashichichibutodasokakukiyonokazoshiraokakasukabekounosukawajimatsurugashimamiyashirokitamotohatoyamamoroyamahatogayakumagayakawaguchinagatorokamisatomatsubushinamegawatokigawakamikawafujiminohigashimatsuyamakoshigayatokorozawas3isk01isk02ryuohkoseikonanaishorittotakashimamaibarahikonetorahimenishiazaikokagamokotoyasuotsukusatsunagahamamoriyamatoyosatotakatsukinotogawaomihachimanhigashiomiakagiunnanizumogotsuamayatsukakakinokimatsuehamadamasudahikawahikimiokuizumoyasugiyakumomisatotamayuohdahigashiizumookinoshimanishinoshimatsuwanoshimaneshimadafujiedayoshidashimodagotembaiwataatamikosaiyaizuitoizumishimahaibaramakinoharaomaezakikawanehonkannamisusonohigashiizufukuroinumazukawazufujiaraishizuokahamamatsushimizuizunokunimatsuzakimorimachiminamiizunishiizukikugawakakegawafujikawafujinomiyaujiietsugaoyamayaitaohiranikkoashikagakuroisokanumasakurashioyakarasuyamamotegiichikaikaminokawatochigihagamokanogisanobatonasumibunasushiobaranishikatautsunomiyaiwafunemashikoshimotsukeohtawaratakanezawaitanokomatsushimatokushimaichibaminamiaizumiwajikikainanmiyoshinarutomimamugiananmatsushigesanagochishishikuinakagawamachidachiyodakomaefussainagitaitochofufuchuomeotahigashiyamatotoshimaokutamaaogashimakodairaedogawaarakawahachiojishinagawatachikawashibuyasuginamihinodekiyosesumidaoshimanerimamitakahamuraadachinakanomizuhobunkyomegurominatokoganeihigashikurumekokubunjihigashimurayamamusashimurayamatamakitahinochuokotokatsushikakouzushimaogasawaraakishimakunitachishinjukusetagayamusashinohachijoitabashiakirunohinoharachizunanbukotouramisasawakasayonagokogehinoyazutottorinichinansakaiminatokawaharaoyabetairainamiasahinantoimizufuchutakaokakurobeyamadajohanatoyamatonaminyuzenfunahashinakaniikawanamerikawaunazukitogahimiuozufukumitsutateyamakamiichiiwadearidayuasainamitaijikatsuragiaridagawatanabemihamahidakakainankiminomisatoshingushirahamakamitondayurakozakoyagobokitayamawakayamakudoyamahashimotokushimotokozagawahirogawakinokawanachikatsuurarsuseroeoishidasagaeoguniasahinagaitendonanyoobanazawanishikawasakataohkuratozawamikawamamurogawayamagatafunagatatakahatashonaishinjokahokuiideyuzakawanishitsuruokakaminoyamayamanobeshiratakamurayamanakayamakaneyamahigashineyonezawasakegawamitouubeyuuabushimonosekitabuseoshimatoyotaiwakunihikarishunannagatohagihofukudamatsutokuyamashowadoshitsurunanbukoshukaiminami-alpsnirasakikosugeotsukioshinohokutominobuyamanashifuefukichuokofuichikawamisatoyamanakakonakamichitabayamanishikatsuranarusawafujikawahayakawafujiyoshidafujikawaguchikouenohara\u9577\u91CE\u4EAC\u90FD\u5C90\u961C\u5927\u962A\u4E09\u91CD\u7FA4\u99AC\u5343\u8449\u6ECB\u8CC0\u4F50\u8CC0\u5948\u826Fadednelgaccogogror\u79CB\u7530\u611B\u77E5\u9AD8\u77E5\u57FC\u7389\u6C96\u7E04\u6803\u6728\u718A\u672C\u5CA9\u624B\u9752\u68EE\u5C71\u68A8\u65B0\u6F5F\u5CF6\u6839\u9CE5\u53D6\u9577\u5D0E\u9999\u5DDD\u5BAE\u57CE\u77F3\u5DDD\u5927\u5206\u5BAE\u5D0E\u8328\u57CE\u5C71\u53E3\u5175\u5EAB\u5C71\u5F62\u5FB3\u5CF6\u5E83\u5CF6\u798F\u5CF6\u798F\u5CA1\u5CA1\u5C71\u5BCC\u5C71\u9759\u5CA1\u611B\u5A9B\u798F\u4E95\u6771\u4EACxn--4it168dhatenadiaryxn--vgu402ckawaiishophatenablogcocottenamaste\u5317\u6D77\u9053penneehimeiwateversestabachibashigagonnagunmapermahaccaakitaosakauh-ohblushkochiaichifukuikuroncapooitigohyogotokyokyotopunyuthickcheap0t00g00j0mie2-ddaapyawjg0amfemsubxiiboomoobutchueekpgwrgrherskrboyrdyupperunderflierchipsmydnsheavyangryhippygirlyrulez\u795E\u5948\u5DDD\u9E7F\u5150\u5CF6\u548C\u6B4C\u5C71bambinaxn--nit225kokayamasaitamaxn--k7yn95exn--1lqs03nsapporoparasitelolipopmcxn--efvn9sniigatafukuokatokushimafukushimahiroshimakagoshimafakefurokinawaxn--8pvr4ucoolblogxn--0trq7p7nnkawasakinagasakimiyazakichilloutxn--8ltr62kxn--klty5xpeeweezombiecutegirlxn--rny31hxn--uuwu58axn--ntso0iqx3axn--djrs72d6uytoyamanikitanyantakagawamimozanagoyaboyfriendxn--2m4a15egreaterchowderegoismyamagatafashionstorexn--elqq16hxn--pssu33lsendaimiyagixn--rht27zpecoriaomorisaloonwatsonvivianxn--djty4knobushipigboatnaganopinokoxn--f6qx53asadistvelvetsecretxn--5js045dchicappayamanashiibarakidigickgirlfriendxn--1lqs71dmongolianxn--c3s14mxn--qqqt11mtochigixn--5rtq34kparallelo0o0mondkobesagabonadecaoitanarafoolkilldecimainhiholomosblokilociaoundopupugifutankcrapflopnooroopsmodsholyjeezstripperpepperbittershizuokaxn--rht3dkitakyushureadymadeicurusversusmatrixxn--rht61ehungryfloppygloomycrankyhandcraftedlittlestarxn--klt787dxn--kltx9awhitesnowsunnydaytottorilovepoptheshopbuyshopxn--5rtp49cxn--d5qv7z876cwebaccelxn--kbrq7oxn--4pvxsxn--1ctwolovesickkumamotocatfoodxn--tor131oyokohamawakayamatonkotsuxn--ehqz56nxn--uist22hxn--6btw5axn--kltp7dyamaguchifrenchkisspussycatxn--4it797kxn--uisz3gbabybluexn--zbx025dnetgamersxn--7t0a264ckanagawaxn--6orx2rishikawaxn--ntsq17ghalfmoonschoolbusjellybeanxn--mkru45iusercontentlolitapunkxn--32vp30hsakurastoragehokkaidoshimanecandypopbabymilksupersaleweblikeraindropbackdropwebsozaikikirarahateblodaynightmeneacsccogoormobiinfoaeusxxorgmilcomnetedugovorgcomnetedugovbizinfotmprdorgmilcomnomedugovassnotairespresseassocoopgouvveterinairemedecinpharmaciensorgnetedugovtraorgcomedurepgovmeneperekgacscaiiocogoitoresmshsseoulbusanulsandaeguc01milvkimmvchungnamjeonnamjeonbukeliv-dnsgyeonggijejueliv-cdnincheondaejeongangwongyeongbukgwangjuchungbukgyeongnameliv-apicoeduindorgcomembnetedugovorgmilcomnetedugovjcloudorgcomnetintedugovperbnrinfocooyorgcomnetedugovipfscanvamypepw3sstorachakeeneticjoinmcinbrowserdwebcyonnftstoragemyfritzaemewphlxachotelltdorgcomwebsocschngonetintedugrpgovassnomgacsccoorgnetedugovbizinfo123websiteidorgmilcomasnnetedugovconfidmedorgcomplcschnetedugovaccoorgnetgovpresstmassoirseproxaccosoundcasthoptocraftvp4c66orgnetedugovitsmcdirmyboxbarsyedgestacksynologylogintonohostwebhopdiskstationi234tcp4hoocgroknoipprivmydsddnsdnsforlohmustransipdscloudfilegear-sgbrasiliafilegearframerbarsybarsyonlinecoprdorgmilcomnomedugovinforgcomnetedugovnameacprorgcomartnetedugovpresseinfoassoinstgouvorgnycedugovbarsydscloudjuorgcomnetedugovminisiteaccoororgcomnetgovorgmilcompronetintedugovbizmuseumnameinfoaerocoopaccoorgcomnetintedugovbizcooporgcomgobneteduorgmilcomnetedugovbiznameaccoorgmilneteduadvgovcoorgcomnetaltgovforgotherhiskeeneticispmanagernomassoprod5476132eastasiacentraluswesteuropewestus2eastus2rucdnwest1-usfra1-desandboxjls-sto1jls-sto3jls-sto2aglobalabglobalsslmapprodfreetlsmapvpslon-1lon-2ny-1fr-1sg-1ny-2paassnwebpaashostingjelasticnordeste-idcsocuserpagescwebfileblobservicebuscoreatlricnjsjelasticwebsitestoragesezagbinruhuukjptsmyspreadshopmynetnameakamaiorigin-stagingfrom-coipv64dynv6cdn77serveblogadobeaemcloudhicamsprytdnsupno-ipownipde5ovhicpfirewall-gatewaysytesmypsxbarsyusgovcloudapimyamazemyradwebakamaihdsaveincloudfastlylbfrom-lasubsc-paysquare7in-the-bandblackbaudcdnhomelinuxoninfernoctfcloudservebbsdns-dynamiccloudfrontakamai-stagingipifonyham-radio-opsenseeringclickrisingcommunity-profrom-nylocalcertgrafana-devedgesuite-stagingcloudflareanycasteating-organicatlassian-devmydattofeste-iplocaltotorprojectknx-serveredgekeycloudflareglobalcloudyclustercasacamserveftpakamaized-stagingakamaiorigindns-cloudmyeffectboomlabotdashbuyshousestwmailhetemlazure-mobilein-dslthruhereredirectmedynuddnsbouncemesupabaseluyanicloudappakamaicloudfunctionsdebiannhlfanpgafanstatic-accessin-vpnmysynologymafeloappudohomeftptrafficmanagersiteleafseidatmemsetcloudflarecloudaccesskeyword-onazure-apiis-a-chefdoes-itgets-itwebhopselfiphomeipkicks-assedgesuitewindowsserver-ontunnelmolemydissentscrapper-sitecloudflarecnuni5srcfggffiobbzabchrsndenodynuopikddnsvpndnsakadnselastxkinghostvps-hostfastlyhomeunixazureedgeshopselectdontexistmyfritzcloudjiffyalwaysdatasells-itsquaresbroke-itazurefddattolocalat-band-campmeinforumfamilydsazurestaticappsdefinimabplaceddnsaliasdynaliasnow-dnsblogdnsroutingthecloudendofinternetdsmynasakamaiedgemymediapcadobeio-staticakamaiedge-stagingakamaihd-stagingddns-ipprivatizehealthinsurancelive-onkrellianschokokeksmassivegridmysecuritycamerarackmazeserveminecraftfrom-azis-a-geekakamaizedmoonscaleoffice-on-theusgovtrafficmanageradobeioruntimeedgekey-stagingreserve-onlinechannelsdvrdnsdojousgovcloudappcdn77-sslapps-1and1podzoneazurewebsitesdynathomescaleforceyandexcloudvusercontentisa-geekcdn-edgescoaemalcesappwriteazimuthtlonarvonoticeablestorecomwebrecnetperotherfirminfoartslgdloncogoiltdorgmilcolcomplcschgenngonetedugovbiznamefirmmobiacincoorgmilcomnomwebgobnetintedubizinfocomyspreadshopdemongovtransurl123websitehosting-clusterkhplaycistrongsnesosvalerv\xE5lerxn--vler-qoaossandeheroysandeher\xF8yb\xF8boheroyher\xF8yxn--hery-iraxn--b-5gavalerb\xF8boxn--b-5gasandesandexn--hery-iraxn--vler-qoav\xE5lerh\xE5re\xE5laahavaofsfvfhlolnlalrlhmfmtmahcostntbu\xE5strmreigersundmyspreadshopg\xE1ls\xE1eidsvolltingvollgildeskalflor\xF8vads\xF8vard\xF8vanylvenxn--bhccavuotna-k7astrandaxn--kvnangen-k0axn--sknland-fxaxn--mosjen-eyarakkestadhyllestadnannestadvevelstadvaapstenordre-landsondre-lands\xF8ndre-landtjieltexn--vrggt-xqads\xF8r-aurdalsor-aurdalheradstordmoldefordef\xF8rdeseljefedjeryggehemnexn--krehamn-dxasognegranes\xF8gnebrynetjomevallebykletokkegiskedovretj\xF8mehob\xF8lvoldasaudatolgas\xF8mnaviknad\xF8nnasomnadonnatranafrananesnaraumasmolatr\xE6nafr\xE6nalesjasm\xF8la\xF8rstaorstahitrafloraaukraloppafr\xF8yarissasnasahalsagalsaromsaraisar\xE1isafroyasn\xE5sagronghobolfjelltydal\xE5rdalardalaskimharamkraanghkekr\xE5anghkesorumbarumhurumb\xE6rums\xF8rummodums\xE1l\xE1tb\xE1l\xE1tfrognbjugnv\xE5ganvagangulenskienl\xF8tenlotenstrynvefsnxn--merker-kuaskaunsveiob\xF8mlobomloskj\xE5kvardoflorovadsosalatbalats\xE1latkl\xE6buklabuselbubarduulvikskjakkleppris\xF8rxn--nttery-byaefl\xE5eidflahofmilgolholsellomskifetvikdepvgsfhsaskerrisorhamarasnes\xE5snesr\xF8rosrorosxn--slat-5namasoynaroyvaroyluroydyroyaskoyradoyandoyrodoymeloyrad\xF8yand\xF8yr\xF8d\xF8ymel\xF8yask\xF8ylur\xF8ydyr\xF8ym\xE5s\xF8yv\xE6r\xF8yn\xE6r\xF8yhoylandeth\xF8ylandetdivtasvuodnal\xF8renskoglorenskognesoddtangenxn--tjme-hraxn--smla-hraxn--stjrdal-s1aunjargalillehammerunj\xE1rgaxn--hamary-fyadavvenjargaxn--bearalvhki-y4a123hjemmesidegjerdrumxn--brnnysund-m8acxn--tnsberg-q1axn--mlatvuopmi-s4axn--snsa-roaxn--skierv-utaxn--brum-voatysfjordkvafjordeidfjordkv\xE6fjordsongdalenmjondalenmj\xF8ndalenxn--gls-elackragerog\xE1\u014Bgaviikagangaviikas\xF8rreisasorreisas\xF8r-varangersor-varangerxn--risr-iraskiervaxn--frna-woaxn--trna-woakvinesdalleksvikleirvikr\xF8yrvikroyrviksvelvikvenneslaevje-og-hornnessandnessj\xF8enmarnardalvindafjordsandefjordenebakksnillfjordullensvangxn--trany-yuabr\xF8nn\xF8ysundnamsskoganaustevollxn--stjrdalshalsen-sqbnord-aurdalnord-frontr\xF8gstadtrogstadgrimstadflakstadgjerstadxn--sandy-yuaxn--leagaviika-52bnore-og-uvdalvegarsheixn--rlingen-mxaxn--ggaviika-8ya47hveg\xE5rsheikarlsoykvitsoymasfjordenhamaroyinderoyosteroydavvenj\xE1rgasauheradguovdageaidnuxn--vre-eiker-k8abronnoysiellakkr\xF8dsheradkrodsheradkvinnheradbr\xF8nn\xF8yxn--mtta-vrjjat-k7afxn--lrenskog-54akvits\xF8yv\xE1rgg\xE1tkarls\xF8yoster\xF8yinder\xF8yhamar\xF8ybronnoysundxn--aurskog-hland-jnbbahccavuotnab\xE1hccavuotnagiehtavuoatnastor-elvdalmidtre-gauldalxn--gildeskl-g0akarasjokevenassixn--bievt-0qaxn--yer-znalebesbynessebyxn--hbmer-xqamalselvm\xE5lselvxn--unjrga-rtam\xF8re-og-romsdalmore-og-romsdalhareidmeland\xF8rlandorlandstrand\xE5lg\xE5rdsolundalgardafjord\xE5fjorddielddanuorrikautokeinoxn--stre-toten-zcbskodjeaejriestangeliernebamblestokkefauskesn\xE5asesnaasekongsvingerlangevagberlevagxn--flor-jrahattfjelldalostre-toten\xF8stre-totenvestfoldxn--mely-ira\xE1laheadjualaheadjunordreisaxn--troms-zuaxn--lgrd-poacporsangerflatangerstavangerleikangerbremangersamnangergieldakarasjohkaxn--rdy-0nabfrostautsirasnoasatromsaxn--sr-aurdal-l8aflekkefjordj\xF8lsterjolsteraremarkhedmarkn\xE5\xE5mesjevuemienaamesjevuemiexn--vard-jrarollagmer\xE5kermerakerorskog\xF8rskogxn--bdddj-mrabd\xE1k\u014Boluoktaxn--osyro-wuaaknoluoktatrysilskjerv\xF8ymandaljondalbindalrindalmeldalsuldalorkdalsigdalalvdall\xE6rdalhurdalsirdalverdallerdallardaloppdal\xE5seralaseralhadselkrager\xF8divttasvuotnaoverhallasteinkjerxn--hnefoss-q1askedsmokorsettroms\xF8xn--dyry-iravestre-totenmuseumxn--sandnessjen-ogbrahkkeravjufylkesbiblb\xE1jddarbajddarxn--laheadju-7yarennes\xF8yxn--koluokta-7ya57hxn--hgebostad-g3aleirfjordstorfjordbalsfjordb\xE5tsfjordbatsfjordmuos\xE1tbiev\xE1tloab\xE1tk\xE1r\xE1\u0161johkan\xF8tter\xF8yxn--mjndalen-64anordkappl\xE1hppilahppialstahaugsiljanverranr\xF8ykenroykenhaldenlyngenbergenhortenh\xF8nefosshonefosstroandinbeiarnvarggatosoyroos\xF8yrotromsoidrettmuosatbievatruovatloabatvoagattynsetnessetxn--indery-fyask\xE1nitskanitraholtr\xE5holtxn--ystre-slidre-ujbandebusarpsborgbearduxn--karlsy-fyahordalandjorpelandj\xF8rpelanddeatnuringsakers\xF8r-odalsor-odalxn--slt-elabringerikeaudnedalnittedalnissedalhemsedalslattumsurnadalxn--blt-elabelverumstj\xF8rdalnaustdalhjartdalgj\xF8vikfyresdalhasviknarviklarvikgjovikmalvikgamviklenvikporsgrunnstjordalengerdaldrobakdr\xF8bakxn--msy-ula0hvestvagoyxn--vgan-qoaxn--ryken-vuaxn--lten-graxn--stfold-9xaxn--hpmir-xqaxn--lury-iram\xE1latvuopmimalatvuopmitysv\xE6rkirkenesbirkenesmoskenesb\xE1id\xE1rxn--fjord-lraxn--rdal-poabahcavuotnab\xE1hcavuotnaxn--frde-gralind\xE5sbearalvahkixn--hobl-irar\xE1hkker\xE1vjuxn--loabt-0qav\xE5g\xE5\xE1lt\xE1bod\xF8sundlundrader\xE5deetnetimeholeauregrueoddavagavegaranatanaarnasolasulaaltalekafusavangbergkvam\xE5mliamlibokntinnroangranosenoslobodor\xF8stroststat\xE5motamotivgupriv\xF8yeroyerliermossvossxn--nvuotna-hwalusterlunnermarkerh\xE1bmerhabmerhvalerfjalerxn--rholt-mratysvarbaidarfitjargaularh\xE1pmirhapmirmelhusfosnes\xF8ksnesoksnestysneshemnesevenesflesbergeidsbergtonsbergt\xF8nsberglindasxn--sndre-land-0cbnamsosxn--srum-gra\xF8ystre-slidreoystre-slidrevestre-slidretrondheimbalestrandxn--langevg-jxaaustrheimxn--skjk-soavagsoyaveroysandoykarmoyfinnoytranoyvestbytranbysykkylvenxn--hyanger-q1aspjelkavikandasuoloxn--fl-ziaxn--drbak-wuastathellexn--sr-varanger-ggbtelemarkxn--bhcavuotna-s4axn--porsgu-sta26f\u010D\xE1hcesuolocahcesuoloakrehamn\xE5krehamnsand\xF8ykarm\xF8yfinn\xF8ytran\xF8yv\xE5gs\xF8yaver\xF8ynamdalseidxn--lesund-huabadaddjaxn--vegrshei-c0axn--btsfjord-9zagildesk\xE5lporsanguxn--trgstad-r1an\xE1vuotnanavuotnahammerfestxn--sgne-graxn--brnny-wuacibestadharstadnarviikaeven\xE1\u0161\u0161ivestnesgjemnessandnesagdenesrennesoyxn--avery-yuaxn--tysvr-vrabearalv\xE1hkikongsbergspydebergrandabergxn--andy-iradavvesiidaxn--krdsherad-m8apors\xE1\u014Bgufredrikstadbjerkreimringeburennebuaurskog-holandnotteroyxn--vgsy-qoa0jxn--rmskog-byaskierv\xE1ivelandbyglandfrolandaurlandforsandxn--bjddar-ptamidsund\xE5lesundalesundfetsundfarsundovre-eiker\xF8vre-eikerakershusxn--moreke-juas\xF8rfold\xF8stfoldostfoldsorfoldh\xF8yangerhoyangerlevangerorkangertanangerxn--vestvgy-ixa6olillesandulsteinxn--rennesy-v1agranvinskjervoyxn--klbu-woalavagisxn--h-2faxn--ryrvik-byakafjordk\xE5fjordseljordfolkebiblxn--gjvik-wuajevnakerxn--kfjord-iuabudejjuxn--kranghke-b0axn--davvenjrga-y4axn--rland-uuaxn--ldingen-q1axn--mlselv-iuaxn--rady-iraxn--linds-prabrumunddalxn--ygarden-p1amo-i-ranaeidskogr\xF8mskogromskoghjelmelandxn--finny-yuaxn--sr-odal-q1axn--skjervy-v1aballangenkvanangenkv\xE6nangengratangenxn--hmmrfeasta-s4acvossevangensuohkanxn--rde-ulaxn--mli-tlaxn--ksnes-uuanordlandskanlandsk\xE5nlandsortlandfuoiskuxn--rros-graxn--hcesuolo-7ya35bxn--eveni-0qa01gagaivuotnag\xE1ivuotnaxn--seral-lradrammenmodalenmosjoenjan-mayentorskensteigengloppenxn--snes-poamatta-varjjatxn--sr-fron-q1aomasvuotnajessheimb\xE5d\xE5ddj\xE5xn--krager-gyaxn--kvfjord-nxaxn--asky-iraxn--snase-nraxn--bidr-5nacholt\xE5lenxn--vads-jraxn--jlster-byamosj\xF8enxn--rst-0nastavernxn--ostery-fyaxn--oppegrd-ixaxn--sknit-yqaxn--risa-5naoppeg\xE5rdskiptvetrendalenholtalenxn--mot-tlaxn--lhppi-xqaxn--holtlen-hxaxn--srreisa-q1akopervikxn--muost-0qaxn--bmlo-grahokksundkvalsundegersundxn--karmy-yuaullensakerxn--hylandet-54axn--kvitsy-fyaxn--bod-2nalangev\xE5gberlev\xE5gkristiansandxn--rsta-frahornindalstj\xF8rdalshalsenstjordalshalsensandnessjoenh\xE1mm\xE1rfeastaxn--lrdal-sras\xF8r-fronsor-fronnord-odalkristiansundm\xE1tta-v\xE1rjjatvestv\xE5g\xF8ynesoddennotoddenbuskerud\xF8ygardenoygardensalangenlavangenralingenr\xE6lingenlodingenl\xF8dingenlea\u014Bgaviikalaakesvuemieleangaviikauenorgexn--srfold-byaaskvollxn--rskog-uuaxn--nry-yla5gxn--vry-yla5ghammarfeastaxn--rhkkervju-01afxn--givuotna-8yakommunekrokstadelvanedre-eikerhagebostadh\xE6gebostadxn--berlevg-jxakviteseidxn--s-1faxn--l-1faxn--nmesjevuemie-tcbafuosskomo\xE5rekemoarekexn--lt-liacxn--jrpeland-54asvalbardoppegardholmestrandtvedestrandsogndalsokndalarendalsunndalfolldalxn--krjohka-hwab49jlyngdaletnedalnorddalsaltdalgausdalskedsmovaksdalgjesdalstordalxn--frya-hraaarbortedrangedalxn--smna-graaurskog-h\xF8landxn--vg-yiabtjeldsundhaugesundlindesnesxn--mre-og-romsdal-qqbxn--dnna-gradynheremerseineshacknetenterprisecloudmineaccomaorim\u0101oriorgmilcriiwigennetschoolhealthkiwigovtgeekxn--mori-qsacloudnsparliamentcomedorgcompronetedugovmuseumwebsitekinservicebarsywebsitebuildereerobookheimdnsleapcelleero-stagetechcrscsslorigingohomecdbedeeeiemesecabgngilnlalplchfisiincnnoroptatitmtltruauhulumkdkukskjplvtrgrfrkrhrusesismycynzcznetinteduassoososcloudstgbetaaezaeuhkusjshatenadiarycdn77hoptozaptois-a-knightmyftpno-ipjpnddnssdpdnsspdnsbarsysweetpepperis-a-bruinsfanis-very-sweetservegameis-a-soxfanhomelinuxcdn77-secureservebbsmisconfusedwebredirectblogsitefreedesktopcouchpotatofriestoolforgeaccesscamis-lostreadmyblogsmall-webfedorapeopleserveftpis-a-celticsfanmywirepotagertwmailin-dslsellsyourhomeread-booksfreeddnscable-modemis-savednflfanufcfanmlbfanstuff-4-saleendoftheinternetin-vpnmy-firewallhomeftpis-localis-a-chefboldlygoingnowherewebhopselfipkicks-assroxatunkcamdvrfedoraprojectgotdnsdvrdnsdyndnspubtlspimientahomeunixdontexistfedorainfracloudwmflabsfspagesbmoattachmentsteckidsfamilydsdnsaliasdynaliasnow-dnscloudnsdoomdnsduckdnsblogdnshomednsroutingthecloudendofinternetdsmynasip-dynamicpoivronhttpbinmyfirewallis-very-evilmysecuritycamerais-a-linux-userwmcloudis-a-geektuxfamilyis-a-candidatedoesntexistis-very-badhobby-sitegame-hostaltervistais-foundis-a-patsfandnsdojohepforgepodzonedynservcollegefanis-very-goodfrom-meis-very-niceisa-geeknerdpolacmedsldingorgcomnomgobabonetedupleskaemhlxmyboxrockyprvcydeuxfleurspdnscodebergheyflowstatichostorgmilcomnomgobneteduorgcomeduiorgmilcomngonetedugovcloudns1337ngrokacorggogfamcomwebgobnetedugokgopgkpgovgosbizpasaugumicsopozpapuwmwsrprusiskwpspkppspkmpspokeoiawsawifoumsdnskokwpmuppuppsppiwwiwoowuzswkzoschrzpisdnwzmiuwwitdpssewsseumigugimoirmpinbwinbwiihupporzgwgriwupowwskrwioswuozstarostwokonsulattmpccopruszkowmyspreadshopostrodakartuzyopolegminamediaustkazgorajgoraolawailawalomzawloclradombytomjaworznotargilubinkoninzagantorunkutnokepnonakloczestsopotsanokturekplockslasksklepzarowlukowmedaidgdaorgmilrelcomnomatmgsmartneteduelkgovwawsossexbiztgorysejnytychypomorzeboleslawiechomesklepsdscloudunicloudzakopanelegnicarawa-mazbydgoszczswidnikkrasnikwloclawekbielawamragowograjeworealestatebeskidykaszubymalopolskaprzeworskswiebodzinlecznadfirmaszkolawarmiagdyniamiastakazimierz-dolnymalborkswidnicadlugolekaostrolekapodlasieelblagtravelsimplesitezachpomormielecszczecinnieruchomosciwalbrzychlezajsklublinbedzinpoznanwielunmielnooleckostarachowicedkontopowiatwroclawrybniksuwalkileborkslupskgdanskostrowwlkptarnobrzegtourismwegrowkrakowglogowyou2pilanysamailwrocinfoagroautobeepshopprivlapypiszlodzcfolksecommerce-shopmazurypulawyskoczowrzeszowpomorskiezgierzkaliszolkuszlowiczostrowiecsosnowiecmazowszewodzislawbialowiezazgorzeleckatowicepabianicejelenia-gorawolominkarpaczsieradznowarudaczeladzkonskowolaskierniewiceswinoujscieturystykabieszczadycieszynketrzynolsztynbialystokbabia-goraprochowicewarszawastalowa-wolapolkowicegorlicegliwiceponiatowalimanowalubartowaugustowkobierzyceopocznognieznoszczytnokolobrzegshoparenapodhalebielskoklodzkostargardatwithplayitownnamecoorgnetedugovacorgcomproestnetedugovbiznameislaprofinforechtngrokmedaaaacacpaenglawjurbarbarsykeeneticavocatacctcloudnsorgcomsecplonetedugov123paginaweborgcomnetintedugovnomepublidkinbarsygovx443cloudnsorgmilcomnetedugovcooporgmilcomschnetedugovnamecomcannetlibassoaemclantmcontstoreorgcomnomrecwwwbarsyfirminfoshopartsstackitmyddnswebspacelima-cityacincooxorgedugovbarsybrendlyhbvpsvpsspectrumlandinghostingacppmordoviamcprecbgorgmilcomspbnetintedumsknovgovbirrasmcdirmytismircloudvladimirnalchikadygeyamarinepyatigorskmyjinobashkiriaeurodirvladikavkazna4ugroznykustanaikalmykiacldmaildagestaniranbuildcanvaliaravalwixdevelopmentappwritemigrationneedleverceldatabasestackitcodereplravendbonporterlovableaccoorgmilnetgovcoopmedorgcompubschnetedugovservicemecomygovorggovtvmedorgcomnetedugovinfoedgfacbmlonihkutwpsryxzbdtmacfhppmyspreadshopbrandpartiorgcomfhvpress123minsidaitcouldbeworlanbibkommunalforbundfhskiopsyskomvuxkomforbnaturbruksgymnloginlineorgcomnetedugovenscaledeuusentbotdaorgmilcomnetgovnowteleporthashbangplatformlovablebarsyshopwarebasehoplixbarsyonlinemsf5gitappgitpagewawamscofigma-govcaffeinefigmacanvasoltstscwputerbarsysupportchatgptsquareomniweopensocialcpanelplaycodenotionnovecorewpsquaredpreviewjelecyonbyensrhtfastvpspieboxconvexjouwwebheyflowplatformshloginlinemadethissourcecraftclouderaorgorgcomartedugouvunivmeorgcomnetedugovsurveysstatichfheiyuxs4allprojectmyfastubervibehostapp-ionosdeployagentmecoorgcomschnetedugovbizcncostoreorgmilcomneteduembaixadaconsuladokiraranohoprincipesaotomeheliohobarsystorebaseshopwaresellfyabkhaziavologdamordoviapenzalenugsochinavoiexnetspbmsknovnorth-kazakhstanashgabadkareliaarmeniageorgiavladimirnalchikivanovobukharaadygeyakhakassiakalugakrasnodarjambylaktyubinsktroitskbryanskobninskkurganazerbaijanpokrovskbashkiriatselinogradvladikavkazmurmansktulatuvamangyshlaktashkentchimkentgroznykaragandatermezarkhangelskkustanaikalmykiabalashoveast-kazakhstankaracoldagestantogliattibarsyredorgcomgobedumirenknightpointaccoorgjelasticdiscoursecleverappsschacmiincogoornetonlineshopcogoorgmilcomwebnicnetintedugovbiznametestcoorgmilcomnomnetedugovorangecloudpersoindorgcomfinnatnetgovensmincomtourismintlinfox0611oyaorgmilcomnetedugovquickconnectvpnplusnettprequalifymeaddrmyaddrntdllwadlnctvavdrk12orgmilpolbeltelcomwebgennetedutskkepgovbbsbiznameinfocoorgmilcompronetedugovbiznameinfobetter-thanworse-thansakurafromdyndnson-the-webmymailerorgmilurlcomneteduidvgovmydnsgameclubebizmeneacsccogotvorhotelmilmobiinfovodteiflgplkmsmsbcckhincndnvncoztltmkckppzpdprvcvkvlvcrkrkscxuzchernovtsyrivneyaltaodesavolynrovnolutskltdinforgcomnetedugovbizvinnicazhitomirternopilpoltavakropyvnytskyizaporizhzhiasevastopolsebastopoluzhgoroduzhhorodkharkovkharkivvinnytsiakhmelnytskyizaporizhzhecrimeaodessazhytomyrnikolaevcherkassydonetskluganskluhanskkirovogradivano-frankivskchernivtsikrymkievkyivlvivsumyzakarpattiamykolaivcherkasychernigovkhersonchernihivdnipropetrovskdnepropetrovskkhmelnitskiyneacsccogoorusorgmilcomedugovmyspreadshopadimono-ipbarsybarsyonlinelayershiftnh-servretrosnubapicampaignservicelugaffinitylotteryweeklylotteryraffleentrygluglugsmeaccoindependent-inquestnimsitecopropymntltdorgplcschnetgovnhsbarsyindependent-commissionindependent-reviewpolicepublic-inquiryindependent-panelconnhospindependent-inquiryroyal-commissionoraclegovcloudappscck12libccphxcclibpvtparochchtrcck12libcceatonk12coglibtecgendstmusann-arborwashtenawcck12glghcck12sealibforksolympiabainbridge-islkeyporthoquiamyarrow-pointcentraliaport-townsendsequimport-ludlowrentonsilverdalebremertonredmondsheltonbellevueport-orchardport-angeleskingstonchehalisaberdeengig-harborseattlepoulsboidmdndsddemenegacalamaiavawapailalflnmdcncscohnhmihiviwiriinmntnmocoutvtctmtgunjokakwvnvprarorasmskstxwynykyazisadninsnngosrvis-bymircloudservernamepointtoenscaledland-4-salefreeddnsstuff-4-saleazure-apinoipcloudnsgolffanheliohostazurewebsitesgvorgmilcomgubneteducoorgcomnetd0egvorgmilcomnetedugovmydnsiacostoree12orgmilcomnomwebgobbibrectecnetintedugovraremprendefirminfoartseducok12orgcomnethidnsidacaiiosonlahanamhanoicamauhueorgcompronetintedugovbizbacninhtayninhhoabinhnamdinhtravinhhaiphongvinhlonghaiduongquangnamquangtrithuathienhuequangninhbacgianghaugiangquangbinhsoctrangbentrethanhphohochiminhdanangkontumhatinhkhanhhoathanhhoahealthgialailaocaiyenbaibackanngheanlonganphuyenphuthocanthodaklakdongnainameinfovinhphucdongthapkiengiangtiengiangquangngailaichaulangsonlamdongdaknonghagiangangiangcaobangbinhduongninhthuanbinhthuanbaclieuthaibinhninhbinhbinhdinhtuyenquanghungyenbaria-vungtauthainguyendienbienbinhphuocschbizputerimagine-proxyorgcomnetedugovcloud66advisormypetsdyndnsxn--8dbq2axn--4dbgdty6cxn--5dbhl8dxn--hebda8bxn--80auxn--d1atxn--c1avgxn--o1acxn--o1achxn--90azhxn--55qx5dxn--uc0atvxn--od0algxn--wcvs22dxn--gmqw5axn--mxtq1mxn--12c1fe0brxn--h3cuzk1dixn--12co0c3b4evaxn--12cfi8ixb8lxn--o3cyx2axn--m3ch0j3axn--j1adpxn--90amcxn--90a1afxn--h1ahnxn--j1ael8bxn--h1alizxn--c1avgxn--j1aefxn--80aaa0cvacxn--41acaffeineexeopentunnelbotdashtelebitorgtmaccoagricorgmilnomwebnicngonetaltedugovlawnisschoolgrondaraccoorgmilcomschnetedugovbizinfoprg1-zeropstritonstackitlimazeropsaccoorgmilgov\u044F\u0441\u043F\u0431\u043E\u0440\u0433\u043A\u043E\u043C\u043C\u0441\u043A\u0431\u0438\u0437\u043C\u0438\u0440\u0441\u0430\u043C\u0430\u0440\u0430\u043A\u0440\u044B\u043C\u0441\u043E\u0447\u0438\u0430\u043A\u043E\u0434\u043F\u0440\u043E\u0440\u0433\u043E\u0431\u0440\u0443\u043F\u0440\u05E6\u05D4\u05DC\u05DE\u05DE\u05E9\u05DC\u05D9\u05E9\u05D5\u05D1\u05D0\u05E7\u05D3\u05DE\u05D9\u05D4\u0E2D\u0E07\u0E04\u0E4C\u0E01\u0E23\u0E18\u0E38\u0E23\u0E01\u0E34\u0E08\u0E23\u0E31\u0E10\u0E1A\u0E32\u0E25\u0E28\u0E36\u0E01\u0E29\u0E32\u0E17\u0E2B\u0E32\u0E23\u0E40\u0E19\u0E47\u0E15\u6559\u80B2\u7DB2\u7D61\u7D44\u7E54\u516C\u53F8\u653F\u5E9C\u500B\u4EBA\uB2F7\uB137\uD55C\uAD6D\u6FB3\u95E8\u65B0\u95FB\u6FB3\u9580\u8054\u901A\u5BB6\u96FB\u5609\u91CC\u62DB\u8058\u901A\u8CA9\uB2F7\uCEF4\uC0BC\uC131\u30B3\u30E0\u10D2\u10D4\u0431\u0433\u0440\u0444\u0435\u044Eadcdbdgdidmdsdtdaebedeeegeiejekemenepereseveyegabacalamanauavapaqasazacfbfafgfnfpfwftfbgcgagggegkgngmgsgpgvgtgugilmlnlalclglplsltlhmimjmkmmmomambmcmdmfmgmzmpmsmtmgbbblbsbecccacnclcmcvctcscmhkhghchbhthphshlinikifigiaibicivisikninhnmncnbngnsnpnvntnjoionomobocoaofodorosotoptstttytatbtetgtithtmtltrusuvuaucueuguhulumunufjdjbjtjsjlkmkhkfkdkcktkukskpkgpmpnpkpjpgqaqmqiqsvtvcvbvmvlvrwpwtwzwbwcwawgwkwmwtrsrprgrfrercrbrarnrmrlrkrirhrwsusrssspsgsesbsaslsmsissxmxaxcxuypysylymykygybycyuztzsznzmzkzdzczbzaz\u03B5\u03BB\u03B5\u03C5\u4E16\u754C\u53F0\u7063\u8D2D\u7269\u516C\u76CA\u70B9\u770B\u81FA\u7063\u7F51\u7EDC\u66F8\u7C4D\u5728\u7EBF\u7F51\u7AD9\u624B\u673A\u673A\u6784\u5927\u62FF\u6E38\u620F\u4FE1\u606F\u53F0\u6E7E\u8C37\u6B4C\u6148\u5584\u5546\u6807\u9999\u6E2F\u4E2D\u56FD\u9910\u5385\u7F51\u5740\u4E2D\u570B\u5546\u57CE\u98DF\u54C1\u5FAE\u535A\u653F\u52A1\u79FB\u52A8\u96C6\u56E2\u516C\u53F8\u516B\u5366\u5546\u5E97\u5065\u5EB7\u7F51\u5E97\u653F\u5E9C\u65F6\u5C1A\u4F5B\u5C71\u4E2D\u4FE1\u5A31\u4E50\u5E7F\u4E1C\u4F01\u4E1Ahomedepotengineering\u0627\u0645\u0627\u0631\u0627\u062Arepublicankuokgroupversicherungchannelcitadelxn--pgbs0dhxn--b4w605ferdstatebankwebsitexn--mgb9awbf\u4E9A\u9A6C\u900A\u6DE1\u9A6C\u9521alibabaxn--ngbc5azdxn--mgbbh1axn--45br5cyltoshibabuildworldcloudtradeguideplacespacedancemoviephoneprimesmilebiblestyleappleazurestoreskypegripexn--l1accdrivelottehorsehouseleasechasereisestadahondaomegaaetnaamicaninjanokiamediadeltavodkaedekaosakapizzaslingemailgmailtirolshelltmallfinallegaltotalhotelamfamforumrehabmusicciticricohcoachwatchboschearthfaithirishmiamiarchidubaiguccipraxi\u307F\u3093\u306A\u30B9\u30C8\u30A2\u30BB\u30FC\u30EBcanonsalononionnikonepsonkoelngreensevencrownikanoradioaudioweiboglobopromogalloyahoociscorodeovideomangobingotokyovolvolottokyotophotosmartsportquesttrusthyattjetztadultcymrubaidutushuxn--kprw13dubankclickblackmerckgroupsharpcheapnowtvxn--h2brj9c\u05E7\u05D5\u05DD\u0570\u0561\u0575\u043E\u0440\u0433\u0441\u0440\u0431\u043C\u043E\u043D\u043A\u043E\u043C\u0431\u0435\u043B\u043C\u043A\u0434\u049B\u0430\u0437\u0440\u0443\u0441\u0443\u043A\u0440\u0645\u0635\u0631\u0642\u0637\u0631\u0639\u0631\u0628\u0643\u0648\u0645dadcfdmedwedredphdthdbidpidkrdmsdltdiceonewmeglemoerwecfageacbanbambaaaammakianraspacpaaxawtfbcgaegongingaigvigorgdogdhlmilrilonlaolloluoljllcalgalnflafltelsrlfrllplkimibmcamcombommomifmabbjcbscbwebcabnabtabmlbpubabcbbcnecincpncllcstcwtcpwcnyckfhbzhovhmoiskiobisbitcifyituipinvinwinxincbnbcnmanfangdnmenrenkpnmtnyunrunfununobiojioriohbogmofooboooooacoecoceongoproartistottnttbbtcateatlatvetpetbetnethktmitfitintjothotgotdotbotprueduicujnjyouinknhktdkappsapgapmapdnptopgopllpjmpzipvipripesqtrvdtvitvdevmovgovhivnrwlawsewnewbmwwownowhowdvrftrmtrsfrbarcartvscrseusawsupsubssbsadsddsldssasbmsmlsxxxboxfoxgmxtjxsextaxbuyflydiysoyjoyskypaydaygayxyzanzbizwebersenerpokerlameractortatarsolar\u0EA5\u0EB2\u0EA7\u0E04\u0E2D\u0E21\u0E44\u0E17\u0E22tourslocusnexuslexusgiftsbeatsboatspartspressglassswiss\u0915\u0949\u092E\u0928\u0947\u091Ftiresgivescodeshomesgamestunesshoescardswalesloansvegastoolsdealsautosparis\u30D5\u30A1\u30C3\u30B7\u30E7\u30F3workssucksrocksxeroxforexfedexpartylillymoneystudyrugbytoraytoday\u4E2D\u6587\u7F51xn--unup4y\u5929\u4E3B\u6559\u98DE\u5229\u6D66\u65B0\u52A0\u5761enterprises\u6211\u7231\u4F60\u5609\u91CC\u5927\u9152\u5E97christmasxn--fct429kholdingsxn--8y0a063axn--mgbx4cd0ablifestyleabogadoallstatenetbank\u0643\u0627\u062B\u0648\u0644\u064A\u0643xn--s9brj9cxn--gk3at1ebestbuycharityxn--55qx5dmicrosoftpropertybasketballhomegoodscorsicajewelrygallerygrocerysurgerycountrybrusselsverisignferreroxn--czr694bhdfcbankcommbanksoftbank\u067E\u0627\u0643\u0633\u062A\u0627\u0646\u067E\u0627\u06A9\u0633\u062A\u0627\u0646nextdirect\u0627\u0644\u0633\u0639\u0648\u062F\u064A\u0647\u0627\u0644\u0639\u0644\u064A\u0627\u0646xn--h2brj9c8cxn--80adxhksshikshaxn--mgbai9azgqp6jcuisinellabarclayscatholicxn--kpry57dcompanyxn--xhq521bblackfridayxn--mgba3a3ejtsandvikxn--d1acj3bacademydownload\u0645\u0644\u064A\u0633\u064A\u0627xn--j1amhxn--w4r85el8fhu5dnraipirangaathletaxn--fhbeixn--mgbqly7cvafrzuerichxn--c2br7g\u0B87\u0BB2\u0B99\u0BCD\u0B95\u0BC8contractorsxn--io0a7igraphicsinsurancetemasekxn--xkc2al3hye2amotorcyclesphotographydirectoryplumbingxn--vhquvclothingtrainingcleaningwilliamhilllightingxn--mgba3a4f16ashoppingcateringeducationokinawapicturesventuresproductionsxn--9et52uwalmart\u0D2D\u0D3E\u0D30\u0D24\u0D02supportrealestatecapitalonexn--nqv7fs00emaauspostfloristdentistxn--qxamgodaddybradescobargainsmitsubishikerryhotelsxn--9dbq2axn--3pxu8kimmobilienxn--fjq720axn--mgbtx2bholidaymckinseymadridbusinessbuildershelsinkixn--4gbrim\u043C\u043E\u0441\u043A\u0432\u0430\u0627\u0644\u0633\u0639\u0648\u062F\u06CC\u0629coffeedegreelacaixapartnersalsaceofficeabbvievoyageorangegeorgeonlinechromemobilekindlegoogleoraclecircleschulesecureinsurexn--mgba7c0bbn0aestatexn--mgbc0a9azcgcruisehangoutxn--vuq861bxn--42c2d9arexrothfirestoneuniversityxn--nnx388alifeinsuranceextraspace\u043E\u043D\u043B\u0430\u0439\u043Dverm\xF6gensberatersoftwarexn--fiqs8sxn--mgbab2bdxn--w4rs40ltienda\u092D\u093E\u0930\u0924\u092E\u094Dafricatoyotaotsukasakuracameracreditcardnagoyaconsultingnetworkjunipertheatermonsterprogressivepioneerxn--55qw42gracingdatingvotingvikinglivinggivingxn--bck1b9a5dre4cbrotherweatherjoburg\u0641\u0644\u0633\u0637\u064A\u0646lplfinancialxn--clchc0ea0b2g2a9gcdfutbolschoolsocialglobaldentalwoodsidechanelairtelmatteltravelrealtorwebcamstream\u0C2D\u0C3E\u0C30\u0C24\u0C4Dunicomalstomxn--nodexn--6frz82gmuseumfurniturexn--rvc1e0am3exn--mix891faccenturexn--11b4c3dismailineustardiscountquebeccomsecclinicservicesxn--y9a3aqxn--c1avgswatchchurchsearch\u0627\u0644\u0627\u0631\u062F\u0646marketingcontacthealthmonashshoujisanofitaipeiamericanexpresssuzuki\u30A2\u30DE\u30BE\u30F3\u30AF\u30E9\u30A6\u30C9\u30DD\u30A4\u30F3\u30C8bharti\u30B0\u30FC\u30B0\u30EBxn--mgberp4a5d4armemorialxn--1qqw23alondonmormoninstitutevisionbostonnortoncouponmaisonamazonvirginberlindesigndurbanolayannissananquanxihuanhitachikaufengardenreisenbayerntechnologydatsunxn--90a3aclatinocasinostudiophysioxn--ngbe9e0apharmacytattootaobaoaramcoexpertreportabbottdirectselectimamatfairwindspictettargetmarketintuittravelersinsurancecreditdupontryukyusuppliesxn--tckwebnpparibasschmidtmerckmsdyodobashirestaurantbridgestonecricketxn--fpcrj9c3dbostikbroadwayattorneylefrakemerckxn--fiq228c5hscareersfarmerswinnersflowersxn--wgbh1cguitarsxn--54b7fta0ccxn--p1acfmakeupgalluplandroverxn--kcrx77d1x4agoldpointbauhausxn--mgbayh7gpahiphopplaystationxn--mgba3a4fraxn--eckvdtc9dhyundaixn--gckr3f0fistanbulticketsmarketsflightschintaireviewsxn--3e0b707ewindowsxn--fiqz9sfinancialxn--fzys8d69uvgm\u0627\u0628\u0648\u0638\u0628\u064Adiscoverreview\u09AC\u09BE\u0982\u09B2\u09BExn--5su34j936bgsgmoscowobserverapartments\u0434\u0435\u0442\u0438\u0627\u0631\u0627\u0645\u0643\u0648\u0441\u0430\u0439\u0442eurovisionxn--i1b6b1a6a2exn--xkc2dl3a5ee0h\u062A\u0648\u0646\u0633\u0645\u0648\u0642\u0639\u0628\u0627\u0631\u062A\u0680\u0627\u0631\u062A\u0634\u0628\u0643\u0629\u0639\u0645\u0627\u0646\u0628\u064A\u062A\u0643\u0639\u0631\u0627\u0642readkredbondlandbandfundfoodprodgoldfordtubecafesafelifeggeeieeefreefagepagegugezonewinememenamegamesaleablebikenikelikecarecbreherefiresaveloveliveblueartedatesitevotecaseluxebofamodaltdaasdatiaayogasinavanashiaasiajavabbvatevavivadatazaraarpacasavisasncfprofmaifsurfgolfdvagsongbingpingwangkpmggoogblogpohlfailcooldellcalldeallidlsarlfilmteamroomfarmimdbarabclubhdfcicbchsbcgmbhrichtechfishdishcashminiernikddiaudiwikimobitaxicitikiwidesiqponskinloanakdnwienopenporncerntownimmolimoolloinfonicofidolegosaxozeroaerovivoautovotomotofastbestresthostpostnextlgbtchatseatgiftmeetdietreitmintrentgentspotscotguruitausohumenucyoubanklinkpinkdclktalksilkbookseekworkrsvpaarpjeepshopcoophelpcamppccwshowbeerstarruhrflirweirhaircarsparsjprshausplusnewstipstoysjobskidsfanspicsdocsxboxamexsexynavycitysonyarmyallybabyplaydeliverybuzzgbizlamborghiniphilips\u0DBD\u0D82\u0D9A\u0DCF\u0CAD\u0CBE\u0CB0\u0CA4fitnessexpresslanxesspfizercenterwalterlawyersoccercareerkosherbrokerlockerdealerdoctorauthorxn--mgbqly7c0a67fbcverm\xF6gensberatungjaguarxn--pssy2uxn--hxt814eflickrrepairrogersairbusxn--mgbai9a5eva00beventsyachtsxn--t60b56a\u09AD\u09BE\u09F0\u09A4\u09AD\u09BE\u09B0\u09A4\u092D\u093E\u0930\u0924\u092D\u093E\u0930\u094B\u0924viajeshermeshughesxn--j1aef\u0938\u0902\u0917\u0920\u0928villas\u0B2D\u0B3E\u0B30\u0B24claimshotels\u0AAD\u0ABE\u0AB0\u0AA4zapposphotosjuegoscondostatamotorsgratistennis\u0A2D\u0A3E\u0A30\u0A24tkmaxxtjmaxxschaeffleryandexxn--80aswgrealtysafetybeautyluxuryxn--3ds443gsupplyfamilyxn--o3cw4hhockeysydneyxn--90aenissayalipayenergycomputeragencyxn--rovu88b\u96FB\u8A0A\u76C8\u79D1xn--gecrj9cstatefarmaccountantaquarelleolayangroup\u9999\u683C\u91CC\u62C9xn--p1ai\u7EC4\u7EC7\u673A\u6784xn--1ck2e1bxn--mgbt3dhdschwarz\u0645\u0648\u0631\u064A\u062A\u0627\u0646\u064A\u0627abudhabinowruzkomatsufujitsuhospitalxn--80asehdbxn--mgbtf8flxn--j6w193gxn--yfro4i67oprudentialxn--flw351ecruisescoursesrecipesxn--e1a4cferrarixn--ses554gxn--wgbl6awatchesstaplessinglesxn--mgbcpq6gpa1axn--otu796dpropertiescreditunionxn--mgbah1a3hjkrdstockholmhisamitsu\u0627\u0644\u0633\u0639\u0648\u062F\u064A\u0629stcgroupdomainsoriginscouponsbloombergclubmedfroganslimitedxn--80aqecdr1aexposedinternationalequipmentbarclaycardxn--q7ce6axn--mgbi4ecexpprotectionassociatesconstructionxn--cck2b3bxn--45q11candroidfoundation\u05D9\u05E9\u05E8\u05D0\u05DCxn--mgbca7dzdocliniqueboutiqueengineerxn--qxa6asystemsfirmdalefashionauctionxn--nqv7finfinitirentalsreliancetradingweddingfishinghostinggentingbookingcookingxn--3hcrj9cgraingerxn--czrs0tdemocratsamsungyokohamaxn--h2breg3evexn--nyqy26alundbeckmelbournevacationssolutionsfrontierxn--vermgensberatung-pwbmanagementxn--cg4bkixn--mgb2ddeslincolnhamburgsandvikcoromantblockbusterairforcebarefootxn--4dbrk0ceinvestmentsfeedbackcommunityxn--ngbrx\u0627\u0644\u0628\u062D\u0631\u064A\u0646diamondsamsterdamhealthcareredumbrellaxn--mxtq1mxn--2scrj9cagakhanxn--mgbpl2fh\u043A\u0430\u0442\u043E\u043B\u0438\u043Acaravan\u0B9A\u0BBF\u0B99\u0BCD\u0B95\u0BAA\u0BCD\u0BAA\u0BC2\u0BB0\u0BCDrichardlimortgageamericanfamilyxn--fzc2c9e2cscholarshipssaarlandxn--imr513nvlaanderensamsclubgoodyearkitchen\u0B87\u0BA8\u0BCD\u0BA4\u0BBF\u0BAF\u0BBEweatherchannelallfinanzxn--kput3i\u0627\u0644\u0633\u0639\u0648\u062F\u06CC\u06C3xn--90aisxn--efvy88h\u0627\u0644\u062C\u0632\u0627\u0626\u0631xn--mgbaam7a8hexchangejpmorganxn--tiq49xqyjfidelitysecurityxn--mk1bu44cwanggouxn--fiq64bxn--6qq986b3xlxn--mgbbh1a71exn--80ao21amarshallsxn--5tzm5gtravelerspanasoniclatrobeyoutubeaccountantsxn--rhqv96gxn--cckwcxetdanalyticsxn--ygbi2ammx\u0628\u0627\u0632\u0627\u0631\u0628\u06BE\u0627\u0631\u062A\u0633\u0648\u0631\u064A\u0629organicfresenius\u0633\u0648\u0631\u064A\u0627xn--9krt00axn--qcka1pmcxn--jlq480n2rgdeloittesciencefinancexn--jvr189mxn--30rr7yhomesensehotmailbaseballfootballleclercboehringerxn--q9jyb4cxn--mix082f\u0627\u0644\u064A\u0645\u0646\u0647\u0645\u0631\u0627\u0647politie\u0633\u0648\u062F\u0627\u0646\u0627\u064A\u0631\u0627\u0646\u0627\u06CC\u0631\u0627\u0646netflixyamaxunxn--lgbbat1ad8jcollegestoragecapetowncolognekerrypropertiesxn--mgbgu82axn--ogbpf8flxn--czru2dwhoswhociprianilasallexn--g2xx48cforsalebanamexaudiblexn--vermgensberater-ctbxn--zfr164bericssonvanguardxn--45brj9cindustriestheatremarriottxn--3bst00mcomparexn--mgberp4a5d4a87gcapitaldigital\u0627\u0644\u0645\u063A\u0631\u0628barcelonashangrilaxn--d1alfcalvinkleinwwwcitysapporokawasakinagoyasendaikobekitakyushuyokohamackjp";
-    rulesRoot = 619;
-    exceptionsRoot = 623;
+  "node_modules/.pnpm/tldts@7.4.13/node_modules/tldts/dist/es6/src/data/trie.js"() {
+    nodeFlags = /* @__PURE__ */ new Uint8Array([1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 2, 2, 2, 0, 2, 2, 0, 2, 0, 0, 1, 0, 0, 2, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 2, 0, 0, 0, 0, 0, 0, 0, 2, 0, 2, 2, 0, 0, 2, 2, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 2, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 2, 2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 0, 0, 0, 1, 0, 2, 2, 0, 0, 0, 2, 0, 1, 1, 0, 2, 0, 2, 2, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 2, 2, 0, 2, 2, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 2, 2, 0, 2, 2, 2, 2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 2, 2, 0, 0, 0, 2, 2, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 2, 2, 0, 0, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 2, 2, 1, 2, 1, 1, 1, 2, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 2, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0]);
+    edgeStart = /* @__PURE__ */ new Uint16Array([0, 0, 0, 10, 11, 18, 106, 111, 117, 124, 130, 136, 145, 146, 147, 148, 149, 150, 151, 153, 154, 155, 157, 159, 226, 239, 241, 242, 243, 258, 265, 266, 269, 270, 271, 274, 276, 295, 296, 298, 307, 312, 329, 330, 333, 335, 336, 338, 372, 373, 375, 378, 379, 383, 385, 389, 392, 424, 427, 440, 441, 449, 450, 452, 462, 476, 477, 478, 487, 488, 525, 530, 546, 566, 572, 614, 615, 642, 669, 670, 818, 824, 827, 828, 829, 834, 839, 848, 870, 871, 872, 873, 874, 875, 876, 894, 896, 897, 900, 902, 903, 905, 907, 922, 937, 942, 943, 945, 946, 947, 948, 949, 951, 954, 959, 960, 961, 963, 964, 967, 970, 971, 972, 985, 987, 999, 1010, 1018, 1020, 1061, 1064, 1068, 1069, 1071, 1074, 1085, 1087, 1097, 1099, 1105, 1107, 1108, 1110, 1113, 1114, 1115, 1168, 1170, 1172, 1192, 1193, 1194, 1195, 1197, 1208, 1239, 1250, 1262, 1271, 1278, 1283, 1296, 1307, 1320, 1321, 1332, 1366, 1367, 1368, 1383, 1398, 1470, 1471, 1473, 1474, 1508, 1509, 1510, 1511, 1514, 1518, 1520, 1549, 1550, 1558, 1559, 1560, 1562, 1564, 1565, 1567, 1568, 1569, 1580, 1581, 1582, 1583, 1584, 1585, 1586, 1587, 1588, 1589, 1590, 1591, 1592, 1593, 1595, 1596, 1597, 2051, 2054, 2055, 2057, 2064, 2071, 2081, 2085, 2096, 2097, 2098, 2110, 2111, 2113, 2115, 2116, 2123, 2124, 2126, 2127, 2129, 2130, 2131, 2132, 2133, 2207, 2209, 2230, 2231, 2232, 2234, 2260, 2261, 2312, 2313, 2315, 2322, 2328, 2338, 2348, 2401, 2402, 2403, 2413, 2427, 2428, 2431, 2438, 2439, 2447, 2448, 2449, 2450, 2451, 2462, 2463, 2464, 2466, 2467, 2468, 2477, 2489, 2495, 2527, 2531, 2533, 2534, 2536, 2537, 2548, 2549, 2551, 2559, 2566, 2572, 2577, 2578, 2584, 2587, 2593, 2600, 2601, 2608, 2616, 2617, 2618, 2656, 2662, 2677, 2678, 2683, 2701, 2732, 2750, 2752, 2755, 2763, 2765, 2772, 2824, 2848, 2849, 2850, 2851, 2852, 2853, 2854, 2861, 2862, 2863, 2864, 2865, 2866, 2868, 2869, 2873, 2953, 2966, 2967, 3404, 3408, 3422, 3474, 3502, 3524, 3582, 3604, 3619, 3682, 3733, 3771, 3807, 3832, 3974, 4020, 4071, 4090, 4124, 4139, 4159, 4189, 4220, 4243, 4274, 4304, 4336, 4363, 4438, 4460, 4498, 4508, 4542, 4561, 4587, 4629, 4679, 4705, 4774, 4775, 4777, 4800, 4823, 4859, 4890, 4907, 4964, 4977, 5001, 5030, 5032, 5066, 5082, 5110, 5415, 5424, 5433, 5440, 5457, 5461, 5467, 5506, 5508, 5515, 5522, 5531, 5538, 5539, 5540, 5552, 5555, 5570, 5571, 5580, 5581, 5590, 5599, 5605, 5607, 5608, 5609, 5646, 5647, 5649, 5657, 5664, 5677, 5681, 5683, 5684, 5690, 5697, 5711, 5721, 5726, 5734, 5742, 5748, 5749, 5753, 5755, 5756, 5768, 5840, 5841, 5842, 5843, 5845, 5846, 5849, 5851, 5854, 5858, 5859, 5860, 5866, 5867, 5868, 5870, 5872, 5874, 5875, 5876, 5879, 5881, 5884, 5885, 5887, 6085, 6092, 6093, 6094, 6104, 6109, 6126, 6140, 6149, 6150, 6151, 6155, 6156, 6158, 6160, 6166, 6167, 6170, 6171, 6173, 6174, 6175, 7075, 7078, 7082, 7100, 7109, 7112, 7119, 7120, 7122, 7123, 7124, 7126, 7178, 7179, 7182, 7183, 7300, 7301, 7312, 7323, 7330, 7333, 7342, 7343, 7344, 7359, 7414, 7605, 7607, 7608, 7610, 7615, 7628, 7643, 7650, 7659, 7662, 7665, 7672, 7680, 7684, 7685, 7686, 7700, 7704, 7713, 7714, 7715, 7719, 7754, 7755, 7773, 7780, 7788, 7789, 7794, 7802, 7846, 7847, 7853, 7856, 7867, 7872, 7873, 7876, 7878, 7913, 7914, 7920, 7927, 7928, 7937, 7946, 7961, 7965, 7966, 8018, 8019, 8024, 8026, 8029, 8031, 8032, 8033, 8042, 8056, 8064, 8078, 8090, 8091, 8093, 8095, 8117, 8128, 8134, 8135, 8147, 8159, 8246, 8258, 8266, 8269, 8275, 8300, 8303, 8304, 8305, 8307, 8310, 8313, 8324, 8326, 8328, 8356, 8430, 8437, 8441, 8442, 8451, 8473, 8474, 8479, 8480, 8559, 8561, 8563, 8572, 8576, 8582, 8588, 8594, 8604, 8609, 8610, 8628, 8639, 8644, 8649, 8659, 8665, 8669, 8675, 8681, 10290, 10291, 10292, 10299, 10301]);
+    edgeLength = /* @__PURE__ */ new Uint8Array([3, 3, 3, 3, 3, 3, 3, 3, 5, 8, 8, 2, 2, 3, 3, 3, 3, 3, 8, 5, 5, 5, 5, 5, 3, 3, 5, 5, 9, 12, 19, 8, 19, 8, 11, 9, 9, 8, 7, 7, 6, 8, 9, 16, 10, 7, 7, 11, 8, 6, 6, 9, 7, 11, 7, 14, 4, 4, 4, 4, 4, 4, 10, 7, 6, 6, 6, 6, 10, 10, 6, 10, 10, 22, 11, 9, 10, 10, 10, 9, 10, 8, 7, 7, 7, 8, 21, 13, 11, 11, 9, 10, 9, 13, 10, 8, 8, 9, 12, 9, 7, 10, 7, 7, 13, 7, 3, 3, 3, 3, 3, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 8, 6, 3, 3, 3, 3, 3, 3, 2, 5, 3, 3, 3, 7, 2, 2, 2, 2, 2, 2, 3, 3, 3, 1, 1, 7, 8, 5, 2, 2, 7, 2, 2, 1, 4, 1, 11, 9, 9, 5, 5, 8, 5, 5, 5, 5, 5, 5, 5, 3, 3, 3, 3, 3, 5, 11, 9, 9, 13, 7, 14, 7, 6, 6, 6, 7, 6, 6, 6, 6, 6, 10, 7, 11, 9, 4, 4, 4, 4, 4, 6, 6, 6, 6, 13, 6, 8, 7, 10, 9, 9, 9, 8, 9, 8, 7, 10, 6, 9, 8, 10, 10, 7, 8, 1, 9, 10, 12, 12, 12, 10, 9, 9, 10, 10, 9, 9, 1, 1, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 6, 6, 6, 4, 3, 3, 3, 7, 4, 4, 4, 3, 3, 6, 7, 3, 4, 1, 2, 2, 2, 6, 1, 2, 2, 2, 2, 2, 12, 5, 3, 8, 9, 13, 4, 4, 13, 9, 9, 11, 7, 3, 12, 9, 2, 2, 2, 3, 3, 3, 3, 3, 8, 2, 2, 3, 3, 3, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 3, 7, 10, 15, 7, 15, 15, 20, 15, 9, 10, 10, 12, 14, 14, 14, 12, 12, 12, 12, 12, 14, 14, 10, 10, 10, 10, 14, 9, 9, 9, 10, 14, 14, 14, 13, 13, 9, 9, 9, 9, 9, 9, 7, 8, 6, 8, 8, 6, 8, 13, 8, 8, 6, 13, 8, 11, 13, 8, 6, 13, 8, 6, 9, 10, 10, 12, 14, 14, 14, 12, 12, 12, 12, 14, 14, 10, 10, 10, 10, 9, 9, 9, 10, 14, 14, 11, 13, 13, 9, 9, 9, 9, 9, 9, 2, 6, 9, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 2, 3, 3, 3, 3, 3, 3, 7, 7, 2, 3, 2, 2, 5, 3, 3, 3, 3, 3, 3, 4, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 4, 5, 7, 2, 2, 12, 8, 10, 8, 10, 7, 18, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 5, 2, 2, 3, 3, 3, 5, 5, 3, 8, 8, 6, 8, 6, 6, 4, 6, 7, 7, 7, 10, 11, 2, 5, 5, 3, 3, 3, 3, 3, 3, 5, 5, 6, 11, 10, 7, 7, 7, 4, 4, 4, 2, 3, 3, 3, 3, 3, 2, 2, 7, 5, 5, 3, 3, 3, 3, 3, 3, 3, 3, 7, 7, 7, 11, 7, 6, 9, 6, 6, 8, 10, 8, 6, 8, 13, 4, 4, 4, 4, 4, 10, 8, 11, 8, 8, 8, 10, 10, 7, 10, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 2, 2, 2, 2, 2, 2, 5, 5, 5, 5, 5, 5, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 7, 10, 13, 7, 8, 7, 11, 8, 8, 6, 9, 8, 8, 6, 6, 6, 8, 8, 6, 6, 6, 6, 6, 9, 7, 6, 4, 4, 4, 4, 4, 4, 4, 6, 6, 6, 9, 7, 8, 10, 8, 8, 2, 3, 3, 3, 3, 3, 2, 8, 9, 9, 2, 2, 2, 3, 3, 3, 2, 3, 3, 3, 9, 2, 2, 3, 3, 3, 3, 3, 3, 5, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 12, 5, 5, 3, 5, 4, 2, 3, 2, 4, 3, 9, 2, 2, 2, 2, 2, 5, 5, 3, 8, 8, 13, 6, 10, 9, 4, 7, 9, 11, 2, 3, 7, 3, 3, 4, 1, 3, 4, 2, 9, 3, 3, 12, 5, 3, 7, 10, 10, 7, 4, 4, 6, 14, 7, 9, 7, 13, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 8, 15, 4, 4, 2, 3, 3, 3, 7, 4, 9, 9, 2, 3, 3, 3, 5, 3, 2, 2, 7, 2, 7, 6, 6, 7, 2, 4, 2, 2, 2, 2, 2, 2, 8, 8, 8, 9, 5, 2, 3, 3, 3, 3, 3, 3, 10, 7, 4, 4, 4, 4, 3, 4, 2, 3, 3, 3, 3, 3, 10, 7, 4, 4, 4, 4, 2, 3, 3, 3, 3, 10, 7, 4, 4, 4, 4, 3, 9, 6, 6, 6, 9, 13, 9, 2, 2, 2, 8, 7, 9, 5, 3, 3, 3, 5, 5, 13, 12, 9, 10, 7, 8, 7, 6, 8, 6, 11, 12, 7, 9, 10, 4, 4, 7, 8, 11, 6, 7, 9, 8, 7, 10, 8, 9, 15, 7, 8, 5, 4, 7, 2, 3, 3, 3, 2, 14, 10, 2, 14, 10, 2, 14, 3, 9, 13, 13, 10, 14, 16, 17, 11, 2, 14, 2, 14, 3, 9, 13, 10, 14, 16, 17, 11, 14, 10, 14, 2, 7, 3, 10, 7, 14, 10, 2, 14, 10, 9, 9, 17, 6, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 10, 10, 10, 12, 9, 4, 10, 10, 11, 8, 8, 8, 7, 9, 5, 3, 3, 3, 3, 3, 3, 3, 3, 5, 8, 4, 4, 4, 4, 4, 4, 6, 16, 3, 3, 14, 3, 14, 2, 14, 9, 13, 10, 10, 14, 16, 17, 11, 6, 9, 10, 10, 12, 14, 14, 14, 12, 12, 12, 12, 14, 14, 10, 10, 10, 10, 14, 9, 9, 9, 10, 14, 14, 14, 9, 9, 9, 9, 9, 9, 2, 14, 9, 13, 10, 10, 14, 16, 17, 11, 6, 2, 14, 9, 17, 13, 10, 10, 14, 16, 17, 11, 6, 2, 14, 9, 13, 10, 14, 16, 17, 11, 2, 14, 9, 13, 10, 16, 11, 2, 14, 10, 19, 7, 2, 14, 9, 13, 10, 19, 10, 7, 14, 16, 17, 11, 6, 2, 14, 9, 13, 10, 19, 7, 14, 16, 17, 11, 2, 14, 9, 13, 17, 13, 10, 10, 14, 16, 17, 11, 6, 3, 2, 14, 9, 13, 10, 10, 14, 16, 17, 11, 6, 9, 10, 12, 14, 14, 14, 12, 12, 12, 12, 12, 14, 14, 14, 10, 10, 10, 14, 9, 9, 9, 9, 14, 14, 14, 13, 13, 14, 9, 9, 9, 9, 9, 9, 4, 11, 2, 14, 9, 13, 17, 13, 10, 19, 10, 7, 14, 16, 17, 11, 6, 2, 14, 9, 13, 17, 13, 10, 19, 10, 7, 14, 16, 17, 11, 6, 2, 9, 10, 10, 7, 17, 3, 3, 12, 12, 16, 15, 15, 12, 14, 14, 14, 20, 20, 13, 12, 12, 12, 12, 12, 12, 20, 25, 14, 14, 12, 12, 10, 10, 10, 10, 9, 9, 9, 25, 4, 9, 17, 10, 7, 14, 16, 21, 13, 13, 14, 20, 14, 13, 17, 24, 9, 12, 13, 25, 13, 21, 20, 17, 9, 9, 9, 9, 9, 9, 12, 17, 4, 4, 9, 9, 9, 10, 10, 12, 14, 14, 14, 12, 12, 12, 12, 12, 14, 14, 10, 10, 10, 10, 14, 9, 9, 9, 10, 14, 14, 14, 13, 13, 9, 9, 9, 9, 9, 9, 1, 5, 8, 7, 11, 11, 1, 3, 3, 3, 4, 8, 9, 10, 14, 14, 12, 12, 12, 12, 14, 14, 10, 10, 10, 10, 14, 9, 9, 9, 10, 14, 14, 14, 13, 13, 9, 9, 9, 9, 9, 7, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 9, 12, 6, 14, 4, 12, 7, 2, 2, 1, 2, 7, 6, 4, 4, 4, 6, 8, 8, 7, 4, 5, 6, 3, 3, 3, 3, 4, 16, 8, 5, 4, 3, 3, 3, 5, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 11, 12, 7, 7, 13, 9, 10, 17, 12, 8, 9, 7, 8, 5, 12, 10, 13, 14, 5, 5, 5, 13, 5, 5, 5, 3, 3, 3, 5, 16, 5, 5, 5, 5, 7, 12, 14, 8, 12, 8, 10, 12, 9, 11, 7, 9, 7, 10, 7, 13, 9, 7, 12, 8, 17, 7, 7, 16, 10, 13, 13, 8, 10, 10, 14, 17, 7, 16, 16, 15, 8, 10, 10, 12, 17, 17, 7, 17, 14, 7, 10, 17, 8, 7, 7, 7, 8, 15, 15, 7, 14, 10, 10, 10, 11, 11, 7, 7, 13, 8, 10, 7, 16, 7, 8, 7, 14, 17, 12, 10, 11, 21, 8, 9, 7, 13, 9, 8, 13, 6, 12, 7, 6, 13, 10, 10, 10, 8, 18, 9, 17, 13, 10, 12, 6, 13, 6, 11, 8, 13, 10, 13, 18, 13, 11, 13, 8, 16, 7, 10, 8, 16, 12, 10, 8, 8, 14, 11, 8, 15, 8, 8, 7, 7, 12, 7, 8, 9, 14, 15, 8, 9, 10, 9, 15, 7, 8, 8, 12, 13, 9, 10, 15, 15, 13, 7, 10, 10, 20, 7, 6, 9, 6, 6, 14, 11, 14, 11, 12, 9, 10, 16, 16, 12, 7, 11, 28, 8, 11, 10, 7, 21, 8, 7, 9, 4, 4, 4, 17, 7, 8, 6, 9, 6, 6, 13, 6, 6, 6, 6, 18, 20, 14, 8, 11, 12, 9, 10, 13, 15, 19, 8, 9, 12, 7, 10, 16, 12, 9, 9, 9, 14, 12, 11, 9, 12, 11, 18, 9, 9, 9, 10, 7, 7, 16, 8, 9, 7, 13, 12, 10, 18, 7, 8, 11, 7, 7, 8, 8, 13, 7, 7, 7, 11, 15, 13, 11, 7, 8, 15, 11, 7, 8, 18, 14, 13, 18, 15, 10, 12, 12, 9, 7, 11, 11, 8, 7, 10, 8, 14, 12, 10, 18, 7, 10, 9, 7, 8, 13, 10, 14, 10, 8, 8, 23, 7, 7, 11, 12, 12, 17, 7, 7, 11, 11, 17, 16, 16, 7, 8, 11, 14, 14, 8, 10, 7, 7, 16, 16, 13, 9, 11, 9, 15, 15, 11, 11, 7, 7, 14, 7, 9, 7, 7, 16, 10, 13, 10, 11, 14, 7, 11, 10, 11, 7, 11, 10, 11, 15, 11, 15, 10, 12, 17, 10, 14, 13, 11, 11, 12, 13, 10, 7, 13, 10, 16, 12, 21, 9, 10, 10, 7, 11, 14, 17, 7, 7, 8, 11, 12, 8, 15, 14, 14, 8, 17, 12, 10, 10, 7, 9, 11, 7, 10, 7, 11, 18, 7, 11, 7, 12, 11, 8, 8, 14, 12, 7, 8, 15, 3, 7, 7, 5, 2, 9, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 2, 5, 3, 3, 3, 3, 3, 3, 4, 4, 3, 3, 3, 3, 3, 3, 5, 11, 6, 4, 7, 10, 7, 7, 11, 1, 10, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 5, 7, 3, 5, 6, 3, 3, 5, 2, 2, 5, 3, 4, 13, 11, 3, 3, 6, 3, 5, 14, 2, 2, 3, 8, 2, 2, 12, 5, 18, 5, 3, 3, 3, 16, 5, 5, 5, 10, 7, 13, 12, 13, 9, 12, 14, 19, 9, 9, 21, 9, 9, 10, 6, 9, 6, 15, 10, 6, 12, 8, 6, 10, 15, 4, 4, 6, 6, 9, 9, 12, 16, 14, 23, 7, 7, 7, 14, 9, 7, 7, 11, 14, 10, 7, 10, 10, 10, 12, 6, 11, 10, 13, 11, 15, 11, 7, 12, 10, 3, 7, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 4, 3, 7, 2, 5, 5, 3, 3, 5, 5, 5, 5, 7, 6, 6, 6, 4, 4, 4, 4, 4, 4, 6, 6, 6, 6, 6, 7, 10, 2, 2, 2, 5, 5, 5, 5, 3, 3, 3, 3, 3, 5, 5, 10, 9, 11, 8, 7, 12, 8, 9, 7, 6, 13, 11, 6, 13, 7, 9, 9, 4, 4, 4, 4, 4, 6, 10, 7, 8, 13, 8, 8, 9, 14, 7, 8, 10, 7, 7, 7, 9, 6, 9, 7, 2, 12, 5, 3, 3, 13, 4, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 3, 3, 3, 3, 3, 3, 3, 3, 4, 5, 5, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 8, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 9, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 2, 2, 2, 5, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 1, 7, 6, 4, 12, 3, 3, 3, 3, 3, 8, 7, 3, 3, 3, 3, 3, 3, 4, 4, 11, 14, 2, 8, 3, 5, 5, 8, 10, 8, 6, 4, 7, 17, 7, 4, 5, 2, 6, 3, 2, 2, 12, 5, 5, 3, 15, 13, 8, 11, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 5, 3, 3, 3, 3, 4, 18, 2, 12, 5, 3, 3, 3, 3, 3, 5, 16, 8, 8, 9, 6, 6, 4, 4, 4, 4, 31, 6, 6, 10, 11, 21, 10, 9, 7, 10, 7, 7, 2, 4, 4, 4, 4, 6, 5, 3, 3, 4, 3, 3, 3, 3, 3, 3, 3, 3, 3, 6, 6, 6, 2, 2, 2, 5, 3, 3, 3, 7, 7, 4, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 3, 3, 3, 3, 8, 2, 3, 3, 3, 3, 3, 5, 9, 11, 3, 3, 3, 3, 4, 4, 3, 3, 3, 3, 3, 5, 10, 9, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 2, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 11, 10, 10, 10, 10, 10, 11, 10, 11, 10, 11, 10, 9, 9, 11, 3, 3, 3, 3, 3, 3, 5, 3, 7, 8, 8, 7, 6, 6, 11, 4, 4, 4, 7, 8, 9, 9, 2, 3, 7, 4, 4, 2, 5, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 2, 2, 5, 5, 5, 5, 5, 3, 3, 5, 5, 5, 7, 7, 6, 6, 6, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6, 8, 8, 1, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 4, 4, 6, 9, 12, 3, 7, 10, 7, 2, 2, 3, 3, 3, 3, 3, 4, 3, 3, 2, 2, 2, 2, 3, 3, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 5, 5, 8, 8, 6, 6, 8, 6, 7, 4, 4, 4, 4, 4, 4, 6, 7, 5, 5, 20, 19, 8, 10, 9, 7, 10, 6, 8, 11, 6, 6, 6, 6, 13, 12, 8, 6, 7, 14, 11, 9, 2, 5, 3, 6, 2, 3, 2, 2, 2, 2, 2, 2, 2, 5, 4, 3, 7, 6, 4, 7, 4, 3, 6, 4, 7, 2, 7, 7, 7, 5, 5, 5, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 5, 9, 10, 10, 11, 7, 8, 20, 7, 8, 9, 8, 12, 6, 6, 6, 8, 9, 8, 12, 6, 6, 8, 13, 10, 12, 6, 6, 7, 7, 9, 6, 4, 4, 4, 4, 4, 4, 10, 6, 6, 6, 7, 14, 11, 10, 7, 8, 10, 8, 11, 14, 11, 11, 9, 7, 9, 8, 11, 9, 17, 10, 9, 2, 2, 2, 9, 3, 3, 3, 3, 15, 14, 9, 5, 5, 2, 8, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 15, 12, 22, 19, 17, 18, 18, 19, 21, 7, 16, 16, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 7, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 9, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 5, 7, 16, 11, 11, 7, 7, 7, 7, 17, 7, 8, 12, 15, 9, 19, 7, 19, 8, 21, 11, 12, 19, 14, 22, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 16, 16, 19, 24, 12, 7, 14, 7, 12, 7, 8, 10, 10, 13, 7, 12, 12, 7, 7, 10, 18, 15, 12, 16, 7, 14, 12, 17, 10, 16, 17, 12, 17, 25, 7, 7, 7, 13, 6, 9, 6, 9, 18, 6, 6, 11, 20, 10, 6, 6, 6, 6, 6, 6, 17, 6, 6, 6, 15, 6, 6, 6, 6, 6, 8, 14, 11, 12, 11, 15, 13, 19, 17, 21, 7, 18, 8, 13, 13, 8, 12, 8, 6, 6, 13, 6, 15, 15, 16, 6, 6, 16, 6, 6, 6, 14, 6, 18, 6, 6, 6, 17, 18, 9, 13, 15, 8, 19, 8, 15, 15, 18, 14, 16, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 11, 10, 11, 6, 21, 23, 12, 17, 12, 11, 14, 13, 22, 15, 15, 11, 12, 14, 12, 7, 12, 8, 12, 14, 12, 18, 10, 8, 16, 19, 17, 12, 14, 15, 8, 19, 17, 12, 13, 13, 15, 18, 13, 23, 24, 23, 21, 17, 24, 8, 21, 8, 14, 14, 16, 20, 14, 8, 8, 15, 20, 8, 19, 21, 9, 8, 13, 12, 13, 15, 11, 8, 11, 9, 9, 8, 11, 8, 21, 14, 21, 15, 15, 13, 7, 19, 7, 7, 7, 7, 7, 7, 16, 12, 17, 18, 7, 7, 11, 11, 7, 9, 9, 2, 2, 3, 3, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 5, 5, 5, 5, 5, 5, 5, 5, 3, 3, 10, 10, 7, 9, 7, 7, 7, 6, 8, 6, 6, 6, 6, 6, 6, 6, 7, 6, 8, 6, 6, 9, 7, 7, 7, 4, 4, 4, 4, 4, 4, 4, 4, 8, 9, 8, 7, 8, 7, 8, 10, 7, 5, 5, 5, 5, 5, 5, 3, 9, 7, 7, 8, 6, 6, 6, 6, 6, 6, 6, 6, 9, 6, 6, 9, 11, 13, 7, 8, 9, 9, 5, 5, 5, 7, 8, 6, 6, 6, 6, 6, 6, 6, 7, 8, 9, 7, 10, 9, 10, 7, 8, 5, 5, 5, 5, 5, 5, 7, 7, 9, 8, 7, 7, 6, 6, 6, 6, 6, 6, 10, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 9, 10, 4, 4, 4, 4, 8, 7, 7, 10, 10, 9, 8, 8, 15, 9, 8, 8, 8, 8, 8, 9, 10, 9, 10, 7, 8, 13, 5, 5, 5, 5, 5, 3, 3, 7, 7, 8, 6, 6, 6, 4, 4, 11, 9, 7, 8, 9, 10, 7, 5, 5, 5, 5, 5, 3, 3, 7, 6, 6, 13, 7, 9, 8, 7, 5, 5, 5, 5, 5, 5, 5, 5, 3, 3, 3, 3, 7, 8, 7, 8, 13, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 8, 8, 6, 6, 6, 6, 7, 6, 7, 6, 6, 9, 7, 4, 4, 4, 4, 4, 4, 4, 7, 8, 7, 8, 9, 8, 8, 8, 7, 10, 7, 8, 5, 5, 5, 5, 5, 5, 5, 5, 3, 7, 7, 7, 7, 9, 7, 10, 9, 6, 6, 6, 6, 6, 8, 8, 6, 6, 6, 7, 6, 6, 6, 9, 9, 4, 4, 13, 7, 10, 9, 9, 12, 7, 8, 8, 10, 8, 8, 8, 8, 8, 8, 5, 5, 5, 5, 3, 7, 7, 11, 7, 9, 8, 8, 6, 6, 10, 6, 8, 8, 8, 6, 7, 6, 6, 12, 4, 4, 4, 4, 4, 4, 4, 4, 4, 9, 8, 8, 16, 8, 9, 8, 7, 5, 5, 5, 5, 5, 3, 3, 7, 7, 7, 10, 15, 8, 9, 8, 9, 9, 6, 6, 6, 6, 6, 6, 7, 4, 8, 7, 8, 8, 7, 8, 11, 8, 5, 5, 5, 5, 5, 3, 7, 7, 6, 11, 16, 7, 6, 4, 4, 4, 4, 9, 9, 8, 8, 8, 13, 12, 8, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 11, 7, 8, 8, 9, 13, 7, 7, 7, 9, 8, 8, 9, 12, 7, 12, 7, 12, 8, 7, 10, 12, 9, 9, 6, 6, 8, 8, 6, 6, 6, 6, 6, 6, 6, 9, 8, 9, 11, 8, 6, 6, 6, 6, 6, 12, 7, 6, 6, 6, 9, 7, 7, 6, 6, 6, 6, 6, 11, 9, 6, 6, 6, 6, 6, 7, 9, 4, 4, 4, 4, 4, 4, 4, 4, 9, 9, 9, 9, 7, 7, 7, 7, 7, 11, 7, 7, 8, 8, 8, 8, 8, 8, 9, 8, 9, 9, 7, 7, 11, 11, 7, 12, 8, 8, 8, 8, 8, 7, 8, 8, 8, 8, 8, 13, 12, 8, 8, 8, 8, 7, 7, 7, 9, 5, 5, 5, 5, 5, 5, 5, 3, 3, 7, 7, 11, 7, 8, 8, 8, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 10, 11, 6, 7, 9, 4, 4, 4, 4, 4, 4, 9, 9, 8, 9, 8, 8, 8, 7, 7, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 3, 3, 11, 7, 7, 7, 9, 6, 6, 11, 8, 10, 6, 6, 6, 12, 8, 8, 7, 6, 6, 8, 7, 4, 4, 4, 4, 4, 4, 4, 4, 9, 10, 9, 9, 8, 10, 9, 11, 8, 5, 5, 5, 7, 6, 6, 8, 7, 4, 4, 4, 4, 8, 7, 7, 8, 7, 8, 8, 5, 5, 5, 5, 7, 7, 8, 8, 8, 6, 6, 6, 6, 6, 10, 8, 9, 13, 6, 7, 6, 6, 8, 7, 8, 4, 4, 4, 4, 11, 8, 8, 8, 10, 5, 5, 8, 7, 8, 13, 8, 7, 6, 8, 6, 9, 7, 8, 7, 5, 5, 5, 5, 5, 5, 3, 3, 7, 8, 9, 6, 4, 8, 10, 10, 8, 12, 9, 13, 2, 7, 5, 5, 5, 5, 5, 7, 7, 10, 6, 6, 6, 6, 6, 6, 6, 8, 4, 4, 9, 8, 8, 8, 14, 8, 8, 8, 9, 8, 5, 5, 5, 5, 5, 3, 3, 9, 6, 6, 6, 6, 10, 12, 6, 6, 6, 6, 6, 6, 6, 4, 4, 4, 4, 11, 8, 7, 8, 8, 8, 5, 5, 3, 3, 3, 3, 7, 7, 6, 8, 6, 8, 11, 7, 6, 6, 6, 7, 4, 8, 11, 9, 10, 5, 5, 5, 3, 3, 3, 7, 7, 8, 9, 8, 15, 9, 6, 6, 6, 6, 6, 6, 11, 11, 4, 4, 4, 4, 4, 7, 9, 9, 10, 8, 7, 5, 5, 5, 5, 5, 5, 3, 3, 8, 6, 6, 6, 6, 6, 6, 6, 6, 6, 9, 7, 4, 4, 4, 4, 4, 9, 9, 8, 8, 10, 13, 5, 5, 5, 3, 17, 7, 7, 7, 7, 7, 8, 6, 8, 13, 6, 6, 6, 6, 6, 6, 6, 6, 4, 4, 4, 9, 10, 8, 8, 8, 5, 5, 5, 5, 3, 7, 7, 7, 8, 8, 6, 6, 6, 8, 8, 8, 9, 10, 8, 4, 8, 10, 9, 8, 8, 8, 9, 13, 10, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 3, 3, 7, 8, 9, 9, 7, 7, 7, 10, 9, 9, 8, 9, 8, 8, 8, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 8, 12, 6, 6, 6, 6, 6, 6, 6, 6, 6, 12, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 11, 8, 8, 9, 9, 10, 8, 9, 7, 7, 5, 5, 5, 5, 5, 5, 3, 7, 8, 7, 6, 6, 8, 6, 6, 10, 4, 7, 8, 9, 12, 8, 7, 7, 5, 5, 5, 5, 5, 5, 3, 3, 7, 14, 7, 9, 8, 8, 6, 6, 8, 12, 12, 6, 6, 7, 7, 10, 4, 4, 4, 4, 4, 9, 9, 14, 9, 13, 8, 7, 5, 5, 5, 6, 6, 6, 7, 4, 8, 7, 5, 5, 5, 5, 5, 5, 5, 5, 3, 3, 7, 7, 7, 8, 6, 6, 6, 6, 6, 6, 12, 6, 6, 6, 6, 4, 4, 9, 9, 8, 8, 11, 7, 7, 7, 5, 5, 5, 3, 9, 8, 6, 6, 7, 4, 4, 4, 4, 4, 4, 8, 8, 11, 5, 5, 5, 7, 7, 7, 9, 6, 6, 6, 6, 6, 6, 9, 8, 4, 4, 4, 4, 7, 12, 9, 8, 8, 8, 7, 10, 10, 5, 5, 5, 5, 5, 5, 5, 3, 11, 14, 8, 7, 8, 8, 6, 6, 6, 6, 6, 8, 7, 6, 6, 6, 7, 6, 8, 9, 4, 4, 4, 7, 8, 9, 7, 9, 7, 7, 9, 8, 5, 5, 5, 5, 5, 5, 5, 5, 5, 11, 3, 9, 7, 7, 12, 14, 8, 6, 6, 12, 11, 8, 6, 6, 6, 6, 6, 6, 6, 6, 6, 15, 7, 4, 4, 4, 16, 9, 9, 9, 8, 9, 9, 9, 9, 9, 8, 8, 8, 13, 11, 8, 5, 5, 5, 5, 3, 7, 6, 6, 8, 8, 8, 6, 6, 7, 10, 7, 4, 4, 4, 4, 9, 7, 8, 7, 7, 7, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 3, 7, 7, 7, 9, 6, 6, 6, 6, 6, 8, 8, 7, 7, 9, 6, 6, 6, 7, 6, 6, 6, 6, 6, 15, 4, 4, 4, 4, 4, 8, 8, 7, 8, 12, 9, 8, 8, 8, 8, 8, 9, 8, 8, 10, 8, 8, 8, 8, 16, 9, 10, 2, 5, 5, 5, 5, 5, 5, 5, 9, 7, 6, 8, 9, 4, 4, 4, 4, 4, 7, 8, 8, 8, 9, 8, 11, 10, 5, 5, 5, 5, 3, 7, 8, 6, 6, 6, 6, 6, 8, 6, 6, 6, 6, 4, 12, 10, 12, 7, 7, 7, 7, 7, 7, 7, 5, 5, 5, 5, 3, 3, 7, 7, 10, 8, 9, 7, 6, 10, 7, 6, 6, 4, 4, 8, 9, 7, 9, 9, 9, 9, 8, 8, 8, 8, 10, 5, 5, 5, 5, 5, 5, 8, 7, 6, 6, 6, 10, 6, 7, 10, 7, 4, 4, 4, 4, 4, 4, 4, 12, 9, 10, 7, 7, 10, 8, 10, 5, 12, 9, 6, 6, 6, 6, 6, 7, 6, 4, 4, 4, 10, 9, 9, 8, 7, 7, 5, 5, 5, 5, 5, 5, 3, 3, 13, 7, 7, 9, 7, 7, 7, 8, 9, 9, 7, 8, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 7, 13, 9, 15, 15, 4, 4, 4, 4, 4, 10, 10, 9, 8, 9, 8, 8, 9, 7, 8, 7, 8, 5, 5, 7, 6, 6, 6, 4, 4, 4, 7, 8, 11, 8, 5, 5, 5, 5, 5, 5, 5, 7, 6, 6, 6, 6, 6, 6, 9, 11, 10, 7, 4, 4, 4, 9, 8, 8, 5, 5, 5, 5, 5, 9, 9, 6, 6, 6, 6, 6, 6, 6, 9, 9, 4, 4, 4, 4, 8, 8, 8, 9, 9, 8, 8, 8, 13, 2, 4, 2, 7, 5, 5, 5, 5, 5, 5, 9, 9, 6, 6, 6, 6, 10, 8, 8, 8, 6, 6, 6, 4, 4, 9, 8, 10, 8, 9, 8, 8, 8, 9, 8, 8, 5, 3, 3, 3, 11, 6, 6, 6, 7, 6, 6, 6, 4, 4, 9, 8, 5, 5, 5, 5, 5, 3, 11, 8, 6, 6, 6, 6, 6, 9, 7, 4, 4, 14, 10, 9, 8, 12, 8, 8, 8, 11, 15, 8, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 11, 11, 11, 10, 10, 7, 7, 3, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 3, 3, 3, 7, 11, 7, 7, 11, 11, 7, 8, 9, 10, 7, 7, 9, 9, 9, 9, 7, 7, 10, 8, 13, 8, 8, 8, 8, 11, 10, 6, 6, 8, 10, 11, 14, 14, 6, 6, 6, 6, 6, 6, 9, 11, 7, 7, 6, 8, 12, 11, 11, 6, 6, 10, 6, 6, 6, 6, 6, 10, 7, 7, 6, 6, 11, 6, 6, 6, 11, 8, 9, 7, 6, 10, 11, 9, 10, 11, 7, 11, 8, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 8, 6, 6, 8, 9, 10, 9, 6, 6, 6, 10, 6, 6, 6, 6, 11, 10, 11, 10, 9, 8, 7, 7, 7, 7, 11, 14, 8, 10, 9, 9, 8, 8, 7, 11, 8, 8, 8, 11, 11, 10, 10, 9, 10, 8, 11, 10, 8, 11, 9, 12, 8, 10, 8, 11, 8, 9, 9, 11, 11, 10, 11, 13, 8, 7, 8, 8, 9, 7, 8, 8, 8, 8, 7, 8, 2, 2, 2, 2, 2, 2, 2, 4, 4, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 2, 3, 3, 3, 3, 3, 3, 3, 3, 8, 6, 4, 4, 4, 11, 7, 11, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 5, 5, 5, 5, 3, 3, 3, 3, 8, 7, 7, 8, 8, 4, 8, 7, 7, 7, 9, 7, 8, 9, 8, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 6, 3, 3, 3, 3, 3, 3, 3, 3, 4, 2, 2, 3, 3, 3, 3, 3, 3, 4, 5, 5, 3, 3, 8, 8, 6, 9, 4, 4, 10, 7, 3, 3, 3, 2, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 3, 2, 2, 2, 3, 3, 3, 3, 3, 4, 10, 2, 3, 3, 3, 3, 3, 3, 3, 4, 2, 3, 3, 3, 3, 3, 3, 3, 3, 2, 2, 3, 3, 3, 5, 2, 4, 2, 6, 2, 2, 9, 5, 5, 3, 3, 3, 3, 3, 3, 3, 5, 5, 5, 9, 8, 7, 9, 6, 6, 11, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6, 7, 7, 11, 8, 8, 6, 5, 11, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 2, 2, 3, 3, 3, 3, 3, 3, 6, 4, 4, 4, 4, 3, 3, 3, 3, 5, 7, 2, 3, 3, 3, 3, 3, 8, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 6, 4, 4, 4, 4, 2, 2, 3, 3, 3, 3, 3, 3, 3, 4, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 2, 2, 3, 3, 3, 3, 3, 3, 2, 3, 3, 3, 3, 3, 6, 3, 3, 8, 10, 3, 4, 4, 1, 1, 1, 1, 1, 1, 1, 8, 9, 10, 7, 7, 1, 14, 18, 13, 18, 13, 10, 10, 16, 13, 18, 16, 13, 16, 18, 13, 22, 16, 16, 16, 14, 21, 16, 9, 14, 16, 9, 9, 14, 10, 10, 14, 12, 14, 19, 12, 11, 18, 13, 17, 15, 15, 15, 15, 16, 14, 13, 19, 18, 15, 19, 18, 12, 18, 12, 11, 20, 14, 15, 10, 17, 17, 16, 19, 20, 21, 15, 13, 16, 15, 15, 15, 1, 1, 3, 8, 7, 7, 8, 8, 8, 1, 6, 1, 1, 6, 3, 3, 4, 7, 3, 3, 5, 5, 4, 4, 4, 4, 4, 2, 7, 7, 8, 12, 3, 4, 5, 1, 3, 4, 4, 10, 4, 3, 3, 3, 8, 7, 7, 2, 2, 2, 2, 2, 2, 2, 2, 2, 12, 9, 20, 7, 5, 5, 5, 9, 13, 5, 5, 5, 5, 5, 3, 3, 3, 16, 5, 5, 5, 13, 7, 8, 8, 11, 8, 7, 9, 7, 11, 12, 9, 9, 8, 8, 11, 10, 14, 7, 12, 10, 11, 13, 7, 9, 11, 17, 17, 14, 13, 7, 8, 7, 10, 10, 7, 16, 13, 7, 8, 17, 12, 9, 8, 6, 7, 10, 6, 6, 12, 6, 8, 10, 8, 8, 8, 6, 8, 6, 14, 6, 6, 6, 13, 6, 10, 6, 6, 7, 14, 8, 6, 6, 10, 11, 10, 9, 9, 7, 7, 6, 6, 6, 9, 9, 7, 9, 10, 9, 13, 12, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6, 6, 8, 8, 6, 8, 9, 10, 9, 7, 10, 10, 8, 7, 8, 7, 10, 12, 9, 8, 15, 8, 7, 8, 8, 7, 7, 15, 13, 7, 10, 9, 14, 18, 16, 7, 24, 7, 8, 10, 11, 16, 8, 14, 7, 9, 9, 9, 13, 19, 14, 15, 14, 11, 7, 13, 9, 10, 7, 13, 9, 10, 11, 12, 8, 9, 2, 3, 5, 8, 7, 4, 4, 15, 10, 5, 3, 3, 3, 3, 3, 5, 4, 4, 4, 2, 2, 2, 2, 2, 1, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 2, 12, 5, 3, 8, 10, 15, 6, 7, 2, 3, 2, 5, 5, 12, 2, 5, 5, 5, 5, 2, 2, 5, 5, 12, 9, 5, 2, 2, 9, 5, 5, 12, 12, 5, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 9, 12, 5, 8, 8, 9, 5, 5, 5, 8, 19, 7, 16, 15, 14, 9, 9, 9, 9, 7, 11, 11, 11, 7, 14, 10, 10, 5, 5, 5, 5, 5, 5, 5, 5, 5, 15, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 9, 9, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 15, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 5, 5, 5, 5, 5, 5, 5, 12, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 9, 9, 12, 9, 9, 12, 12, 12, 15, 7, 11, 7, 14, 11, 18, 13, 8, 18, 15, 18, 12, 14, 12, 8, 8, 8, 8, 9, 9, 9, 12, 7, 10, 10, 8, 8, 12, 12, 12, 7, 12, 12, 9, 7, 7, 7, 7, 7, 8, 15, 12, 9, 10, 10, 7, 10, 10, 13, 11, 10, 9, 22, 11, 9, 8, 8, 8, 8, 8, 13, 18, 13, 9, 15, 19, 9, 7, 7, 10, 7, 7, 7, 11, 8, 13, 17, 7, 7, 10, 10, 10, 7, 20, 16, 7, 7, 7, 7, 7, 7, 11, 21, 12, 12, 13, 11, 14, 16, 8, 8, 13, 11, 7, 7, 13, 7, 7, 14, 15, 15, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 13, 10, 18, 6, 6, 6, 6, 6, 6, 6, 6, 6, 11, 8, 8, 12, 12, 11, 11, 8, 12, 9, 9, 9, 13, 13, 9, 9, 9, 9, 9, 9, 6, 10, 12, 6, 6, 6, 6, 17, 11, 7, 7, 7, 7, 14, 14, 12, 6, 7, 7, 6, 6, 15, 10, 13, 10, 6, 8, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 7, 13, 9, 9, 15, 13, 6, 12, 12, 6, 19, 11, 10, 7, 7, 16, 8, 19, 17, 9, 9, 9, 9, 9, 6, 6, 6, 10, 8, 16, 8, 6, 6, 9, 6, 6, 6, 6, 6, 6, 6, 6, 8, 8, 8, 6, 7, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 14, 6, 6, 6, 6, 20, 6, 9, 6, 14, 9, 9, 9, 6, 9, 8, 8, 12, 9, 8, 8, 8, 8, 7, 8, 12, 7, 8, 8, 8, 6, 8, 6, 6, 6, 6, 6, 6, 6, 9, 8, 8, 6, 6, 13, 9, 12, 13, 12, 14, 13, 12, 11, 11, 6, 8, 8, 8, 6, 13, 12, 11, 11, 12, 6, 11, 12, 11, 13, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 15, 6, 6, 6, 6, 6, 6, 6, 13, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 8, 8, 8, 8, 6, 18, 6, 12, 13, 13, 13, 9, 10, 15, 9, 12, 6, 6, 6, 6, 6, 6, 6, 6, 9, 15, 10, 9, 10, 13, 9, 19, 8, 18, 17, 10, 10, 8, 8, 6, 6, 6, 6, 6, 6, 10, 14, 8, 16, 16, 9, 8, 15, 8, 8, 10, 12, 14, 7, 7, 8, 8, 7, 7, 7, 7, 8, 13, 13, 11, 9, 9, 9, 12, 10, 17, 8, 11, 9, 7, 7, 14, 8, 14, 14, 7, 7, 7, 7, 7, 7, 14, 7, 7, 7, 7, 7, 10, 10, 8, 14, 7, 7, 7, 7, 8, 8, 8, 8, 8, 17, 9, 7, 15, 7, 8, 12, 7, 9, 14, 7, 7, 7, 9, 13, 8, 14, 7, 16, 18, 13, 15, 14, 12, 13, 10, 15, 9, 7, 7, 7, 10, 13, 15, 15, 9, 9, 9, 9, 19, 11, 7, 11, 11, 13, 8, 8, 8, 8, 7, 12, 19, 17, 9, 9, 13, 7, 7, 7, 9, 7, 7, 7, 12, 13, 15, 10, 8, 8, 14, 15, 12, 13, 13, 8, 12, 14, 7, 11, 7, 14, 15, 13, 12, 8, 8, 8, 8, 11, 13, 15, 15, 8, 13, 12, 8, 8, 8, 13, 10, 16, 14, 11, 8, 8, 12, 12, 9, 15, 15, 12, 12, 13, 8, 8, 9, 12, 13, 9, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 11, 12, 11, 7, 14, 7, 13, 13, 13, 12, 18, 16, 7, 12, 11, 10, 10, 15, 9, 9, 9, 21, 7, 7, 7, 11, 16, 8, 8, 11, 11, 7, 7, 7, 7, 7, 19, 7, 7, 7, 7, 7, 7, 7, 7, 7, 12, 8, 9, 12, 14, 11, 9, 9, 9, 22, 12, 3, 3, 4, 8, 8, 15, 4, 2, 2, 5, 5, 3, 3, 3, 3, 3, 3, 6, 6, 4, 4, 4, 12, 7, 10, 2, 3, 3, 3, 3, 3, 3, 3, 6, 7, 3, 7, 5, 14, 4, 4, 7, 8, 10, 4, 1, 3, 3, 6, 2, 4, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 4, 2, 2, 5, 3, 4, 2, 2, 2, 2, 2, 2, 11, 5, 5, 5, 11, 5, 5, 3, 5, 5, 5, 5, 11, 14, 13, 9, 11, 9, 12, 8, 11, 11, 8, 11, 16, 9, 9, 7, 10, 9, 12, 8, 15, 6, 7, 6, 6, 13, 10, 8, 11, 8, 6, 6, 6, 12, 16, 6, 11, 7, 8, 9, 18, 6, 6, 9, 4, 4, 6, 13, 6, 6, 6, 6, 8, 8, 9, 16, 7, 7, 14, 7, 8, 8, 8, 7, 7, 7, 7, 7, 7, 15, 13, 7, 10, 7, 7, 10, 12, 16, 15, 7, 9, 9, 14, 11, 11, 10, 9, 10, 8, 12, 7, 8, 7, 7, 10, 12, 7, 12, 8, 7, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 5, 3, 3, 5, 5, 5, 10, 4, 8, 7, 10, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 1, 3, 3, 3, 3, 3, 3, 3, 7, 4, 5, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 5, 5, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 5, 6, 6, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 9, 8, 2, 2, 2, 8, 12, 7, 7, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 8, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 5, 5, 5, 7, 11, 9, 8, 8, 8, 7, 8, 9, 7, 7, 9, 7, 7, 7, 10, 7, 7, 10, 9, 10, 6, 6, 6, 6, 6, 6, 15, 7, 8, 9, 9, 8, 6, 6, 10, 9, 6, 8, 13, 9, 7, 6, 6, 6, 6, 6, 6, 12, 6, 6, 7, 6, 7, 6, 6, 6, 10, 10, 7, 6, 6, 6, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 14, 6, 6, 7, 7, 9, 6, 6, 6, 6, 9, 9, 8, 9, 10, 9, 8, 9, 12, 7, 7, 7, 8, 7, 10, 12, 11, 9, 10, 7, 7, 7, 9, 10, 10, 8, 12, 9, 7, 7, 9, 8, 8, 8, 10, 7, 7, 8, 9, 9, 7, 7, 7, 8, 2, 4, 6, 3, 4, 2, 3, 3, 3, 3, 2, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 3, 3, 3, 3, 3, 3, 3, 3, 5, 8, 6, 4, 7, 3, 3, 3, 3, 3, 3, 3, 12, 3, 3, 3, 3, 3, 3, 4, 4, 2, 3, 5, 3, 4, 7, 3, 3, 3, 3, 3, 3, 4, 3, 3, 3, 3, 3, 3, 3, 4, 3, 3, 6, 4, 3, 4, 2, 2, 2, 5, 3, 3, 3, 3, 3, 5, 4, 4, 4, 4, 7, 6, 8, 9, 2, 2, 2, 2, 3, 3, 3, 5, 7, 2, 3, 3, 8, 7, 7, 2, 2, 8, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 5, 5, 8, 8, 7, 7, 6, 10, 6, 9, 7, 11, 4, 6, 8, 8, 7, 8, 4, 5, 5, 5, 5, 3, 3, 11, 8, 9, 6, 6, 8, 7, 4, 4, 7, 8, 7, 2, 2, 3, 3, 3, 3, 4, 3, 3, 3, 3, 3, 3, 3, 3, 7, 2, 2, 5, 3, 3, 2, 3, 3, 3, 3, 3, 3, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 12, 5, 5, 3, 3, 3, 5, 10, 12, 6, 15, 4, 6, 6, 7, 14, 9, 3, 3, 3, 3, 3, 8, 2, 2, 3, 5, 3, 3, 3, 3, 3, 3, 8, 8, 8, 7, 5, 8, 4, 6, 11, 2, 2, 6, 7, 3, 3, 2, 9, 8, 5, 5, 3, 3, 3, 5, 5, 7, 7, 6, 6, 10, 6, 8, 6, 8, 9, 7, 4, 4, 4, 4, 7, 6, 6, 7, 7, 10, 9, 8, 11, 8, 3, 3, 3, 3, 3, 4, 4, 2, 3, 3, 3, 3, 3, 7, 6, 2, 5, 6, 7, 6, 4, 8, 9, 11, 2, 2, 3, 3, 3, 3, 3, 3, 3, 2, 2, 5, 3, 3, 3, 3, 3, 9, 9, 6, 4, 8, 7, 7, 5, 9, 8, 6, 2, 8, 7, 8, 5, 5, 5, 5, 5, 3, 3, 3, 16, 8, 7, 7, 7, 8, 7, 7, 7, 7, 9, 6, 9, 6, 10, 7, 7, 7, 6, 10, 8, 9, 11, 11, 8, 4, 4, 10, 8, 8, 6, 9, 6, 11, 8, 8, 8, 15, 7, 8, 9, 5, 3, 3, 3, 3, 3, 5, 11, 2, 2, 3, 8, 9, 10, 3, 2, 2, 2, 2, 2, 2, 3, 6, 4, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 2, 3, 3, 3, 3, 3, 3, 3, 11, 5, 3, 3, 3, 3, 3, 3, 3, 3, 6, 7, 4, 4, 2, 3, 3, 3, 3, 3, 3, 3, 3, 12, 7, 4, 12, 4, 6, 5, 4, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 2, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 11, 10, 6, 4, 6, 10, 8, 3, 3, 3, 3, 3, 3, 3, 3, 5, 4, 4, 4, 2, 2, 2, 2, 2, 2, 2, 2, 5, 3, 4, 4, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 10, 5, 5, 5, 5, 5, 5, 3, 3, 3, 3, 3, 3, 3, 3, 7, 8, 8, 7, 13, 12, 10, 10, 8, 8, 7, 7, 9, 12, 11, 6, 6, 8, 8, 9, 7, 7, 7, 10, 15, 10, 4, 4, 4, 4, 4, 11, 8, 8, 9, 7, 9, 14, 14, 12, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 12, 5, 5, 5, 11, 10, 7, 9, 3, 8, 7, 3, 15, 13, 11, 4, 4, 2, 2, 2, 19, 7, 5, 5, 3, 3, 3, 3, 3, 3, 3, 5, 22, 18, 6, 14, 17, 4, 4, 19, 16, 18, 2, 3, 3, 2, 3, 2, 3, 3, 6, 4, 2, 3, 3, 2, 5, 3, 3, 3, 3, 3, 3, 3, 9, 9, 2, 3, 2, 2, 2, 3, 3, 3, 5, 7, 14, 7, 7, 12, 9, 13, 6, 11, 6, 10, 9, 7, 7, 8, 12, 12, 8, 8, 8, 10, 7, 7, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 5, 8, 10, 7, 8, 11, 8, 12, 9, 4, 7, 7, 9, 13, 2, 3, 3, 3, 3, 3, 3, 2, 3, 3, 3, 1, 2, 2, 3, 3, 3, 3, 3, 3, 5, 2, 2, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 8, 4, 4, 4, 3, 2, 3, 3, 3, 3, 5, 2, 2, 2, 2, 5, 5, 5, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 7, 7, 7, 7, 7, 8, 8, 8, 8, 8, 12, 9, 8, 8, 9, 8, 6, 17, 6, 6, 6, 8, 8, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 7, 4, 4, 8, 8, 9, 9, 9, 7, 7, 7, 7, 7, 7, 7, 9, 9, 9, 7, 8, 8, 8, 10, 7, 13, 10, 8, 9, 3, 3, 5, 13, 3, 3, 3, 3, 3, 7, 7, 6, 6, 10, 13, 11, 11, 8, 8, 9, 8, 9, 9, 10, 10, 10, 11, 10, 10, 13, 13, 16, 15, 11, 12, 9, 9, 10, 9, 11, 10, 9, 9, 14, 7, 8, 3, 10, 7, 7, 3, 2, 2, 2, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 6, 7, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 4, 11, 6, 7, 4, 6, 2, 2, 3, 3, 3, 1, 3, 3, 3, 3, 3, 3, 6, 4, 4, 2, 2, 2, 3, 3, 3, 3, 4, 4, 6, 6, 6, 6, 5, 4, 4, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 9, 11, 6, 10, 9, 12, 7, 7, 11, 14, 9, 7, 12, 3, 3, 7, 12, 11, 12, 7, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 9, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 3, 3, 3, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 11, 5, 5, 5, 5, 5, 5, 5, 5, 11, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 5, 5, 5, 5, 5, 5, 5, 3, 3, 3, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 3, 3, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 6, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 3, 10, 3, 3, 3, 11, 3, 5, 9, 11, 8, 12, 14, 9, 7, 8, 7, 7, 11, 11, 7, 7, 10, 9, 8, 10, 9, 7, 7, 7, 7, 7, 7, 8, 8, 7, 11, 8, 8, 8, 7, 7, 10, 8, 7, 13, 12, 7, 17, 10, 8, 8, 11, 7, 11, 11, 14, 7, 11, 7, 8, 6, 9, 20, 8, 7, 9, 16, 7, 10, 6, 11, 10, 8, 9, 7, 16, 11, 11, 9, 8, 9, 8, 8, 8, 11, 8, 15, 8, 8, 9, 7, 8, 8, 11, 10, 7, 5, 7, 10, 10, 15, 7, 7, 7, 8, 7, 8, 8, 10, 11, 10, 10, 10, 11, 11, 7, 8, 6, 8, 8, 8, 10, 6, 8, 6, 6, 7, 8, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 16, 6, 15, 6, 7, 11, 11, 7, 9, 10, 11, 13, 10, 6, 16, 8, 10, 12, 11, 6, 6, 6, 6, 6, 6, 6, 10, 6, 10, 7, 7, 7, 7, 11, 7, 11, 6, 6, 6, 6, 6, 6, 17, 7, 7, 6, 6, 12, 22, 6, 6, 6, 6, 6, 8, 6, 6, 6, 6, 7, 6, 6, 5, 6, 6, 8, 11, 6, 9, 14, 11, 9, 11, 7, 7, 8, 6, 6, 6, 8, 10, 9, 6, 6, 6, 6, 9, 7, 6, 6, 6, 6, 6, 15, 6, 4, 4, 4, 6, 4, 17, 8, 11, 6, 6, 9, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 7, 6, 6, 6, 6, 10, 6, 10, 6, 6, 6, 6, 12, 8, 6, 6, 6, 6, 6, 6, 6, 6, 6, 9, 6, 6, 6, 6, 18, 6, 6, 6, 8, 9, 10, 7, 8, 9, 10, 11, 7, 13, 6, 8, 8, 6, 6, 14, 7, 7, 7, 7, 10, 7, 14, 9, 6, 6, 9, 15, 9, 7, 14, 6, 11, 14, 13, 7, 12, 8, 7, 7, 7, 7, 7, 12, 7, 10, 9, 16, 6, 8, 6, 5, 17, 6, 8, 10, 4, 6, 4, 10, 15, 17, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 8, 4, 4, 11, 7, 4, 4, 7, 7, 7, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 19, 17, 6, 10, 11, 6, 6, 6, 6, 18, 6, 6, 11, 4, 4, 4, 5, 6, 6, 6, 9, 5, 6, 4, 6, 6, 4, 6, 6, 6, 6, 10, 6, 6, 4, 6, 6, 10, 6, 10, 6, 6, 6, 6, 11, 6, 6, 10, 6, 6, 8, 6, 6, 6, 8, 6, 11, 4, 11, 9, 10, 9, 11, 4, 8, 4, 11, 12, 7, 9, 8, 6, 7, 7, 8, 12, 12, 11, 13, 10, 11, 7, 7, 7, 9, 7, 11, 10, 7, 7, 7, 16, 11, 10, 11, 17, 9, 9, 8, 8, 7, 7, 7, 9, 7, 7, 7, 14, 7, 13, 9, 11, 10, 14, 10, 10, 12, 11, 10, 7, 10, 5, 14, 8, 8, 8, 9, 7, 8, 7, 7, 9, 8, 7, 8, 7, 7, 7, 7, 7, 7, 7, 11, 8, 10, 8, 7, 8, 14, 11, 8, 9, 9, 9, 8, 24, 10, 10, 12, 7, 7, 15, 11, 8, 8, 12, 11, 8, 9, 9, 7, 8, 9, 10, 11, 10, 11, 7, 12, 7, 7, 11, 9, 8, 14, 13, 12, 8, 11, 10, 8, 8, 7, 7, 14, 9, 10, 8, 9, 11, 7, 14, 8, 8, 13, 8, 8, 12, 7, 10, 14, 14, 11, 9, 10, 9, 9, 7, 7, 11, 11, 13, 9, 13, 5, 5, 5, 7, 9, 5, 11, 12, 14, 8, 7, 7, 11, 10, 9, 7, 8, 8, 7, 10, 11, 11, 5, 5, 7, 5, 5, 5, 7, 7, 15, 7, 7, 8, 7, 15, 12, 12, 10, 7, 8, 7, 11, 7, 7, 7, 23, 11, 8, 8, 11, 10, 7, 8, 11, 7, 19, 7, 7, 6, 9, 9, 9, 11, 3, 4, 7, 8, 6, 6, 4, 10, 8, 2, 2]);
+    edgeChild = /* @__PURE__ */ new Uint16Array([0, 0, 0, 1, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 12, 1, 1, 1, 1, 1, 17, 1, 1, 1, 12, 1, 12, 1, 12, 13, 1, 1, 1, 1, 12, 1, 12, 1, 1, 1, 1, 1, 14, 21, 1, 1, 1, 1, 1, 1, 1, 19, 12, 1, 1, 1, 1, 1, 1, 1, 20, 1, 1, 1, 16, 18, 1, 1, 15, 1, 1, 1, 1, 12, 1, 1, 1, 1, 1, 1, 1, 22, 1, 1, 1, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 1, 24, 25, 26, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 1, 1, 12, 12, 12, 12, 1, 32, 0, 0, 0, 1, 1, 1, 1, 35, 34, 1, 1, 1, 1, 1, 33, 1, 1, 1, 1, 37, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 38, 0, 0, 0, 0, 39, 40, 0, 0, 0, 0, 12, 1, 1, 12, 1, 1, 1, 1, 43, 44, 44, 44, 43, 44, 43, 43, 45, 44, 43, 44, 43, 43, 43, 43, 43, 43, 45, 43, 43, 43, 43, 43, 43, 44, 46, 46, 44, 43, 43, 43, 43, 43, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 49, 51, 49, 49, 49, 51, 49, 50, 49, 52, 49, 50, 50, 49, 49, 49, 50, 52, 50, 52, 49, 50, 50, 12, 54, 54, 53, 55, 50, 52, 49, 49, 47, 48, 56, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 59, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 66, 1, 12, 1, 1, 65, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 77, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 75, 78, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 76, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1, 12, 1, 1, 1, 1, 88, 1, 90, 1, 1, 1, 1, 1, 1, 1, 1, 93, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 96, 96, 1, 1, 12, 1, 99, 1, 1, 1, 1, 1, 1, 1, 97, 1, 98, 1, 100, 1, 1, 1, 1, 1, 101, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 109, 110, 1, 1, 1, 1, 1, 1, 112, 112, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 120, 121, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 121, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 121, 1, 1, 1, 1, 1, 1, 1, 1, 1, 125, 122, 124, 119, 1, 123, 1, 1, 113, 1, 1, 1, 1, 116, 1, 126, 1, 1, 1, 1, 1, 1, 118, 1, 107, 1, 108, 1, 12, 127, 105, 1, 111, 1, 1, 1, 1, 1, 106, 114, 1, 12, 12, 12, 117, 115, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 12, 12, 1, 1, 1, 1, 1, 12, 133, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 12, 135, 1, 1, 1, 1, 1, 1, 1, 1, 136, 137, 12, 12, 134, 132, 44, 44, 139, 49, 49, 138, 141, 140, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 144, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 142, 0, 0, 0, 0, 1, 0, 143, 131, 1, 0, 1, 1, 12, 12, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 147, 146, 20, 1, 1, 12, 12, 1, 20, 12, 12, 1, 1, 1, 1, 1, 133, 1, 1, 151, 1, 1, 1, 1, 152, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 1, 1, 135, 1, 1, 151, 1, 1, 1, 1, 152, 1, 1, 133, 1, 1, 1, 151, 1, 1, 1, 1, 152, 1, 1, 133, 1, 1, 1, 1, 1, 1, 1, 1, 133, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 159, 1, 1, 1, 151, 1, 1, 1, 1, 1, 152, 1, 1, 159, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 133, 1, 1, 1, 1, 151, 1, 1, 1, 1, 152, 1, 1, 1, 133, 1, 1, 151, 1, 1, 1, 1, 163, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 1, 166, 1, 1, 159, 1, 1, 1, 1, 1, 151, 1, 1, 1, 1, 1, 152, 1, 1, 159, 1, 1, 1, 1, 1, 151, 1, 1, 1, 1, 1, 152, 1, 153, 157, 157, 12, 1, 12, 165, 1, 1, 1, 1, 1, 157, 157, 157, 153, 1, 1, 1, 156, 157, 160, 164, 1, 1, 1, 1, 156, 156, 1, 1, 155, 153, 153, 156, 169, 155, 169, 1, 1, 167, 1, 155, 154, 156, 1, 1, 1, 1, 156, 1, 158, 1, 1, 1, 12, 1, 161, 1, 161, 1, 1, 1, 161, 160, 162, 168, 155, 153, 1, 1, 1, 1, 1, 1, 171, 171, 171, 171, 171, 171, 171, 171, 171, 171, 171, 171, 171, 171, 171, 171, 171, 171, 171, 172, 171, 172, 171, 171, 171, 171, 173, 173, 171, 172, 171, 172, 171, 171, 12, 1, 12, 12, 12, 12, 1, 12, 12, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 193, 1, 1, 1, 1, 12, 199, 200, 201, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 150, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 196, 1, 1, 1, 184, 1, 1, 1, 1, 207, 1, 1, 204, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 12, 1, 1, 1, 1, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 176, 190, 1, 1, 1, 186, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 182, 1, 1, 1, 1, 1, 1, 1, 191, 1, 1, 1, 1, 195, 1, 1, 1, 1, 170, 1, 1, 189, 1, 1, 1, 192, 1, 1, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 180, 1, 12, 1, 1, 12, 1, 1, 1, 1, 183, 1, 1, 1, 188, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 12, 1, 1, 208, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 194, 1, 1, 1, 1, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 175, 12, 1, 1, 1, 178, 12, 1, 1, 1, 1, 1, 1, 1, 198, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 177, 1, 1, 1, 1, 1, 1, 203, 1, 1, 1, 181, 1, 1, 1, 187, 1, 12, 1, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 191, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 174, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 185, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 205, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 12, 1, 206, 1, 1, 12, 1, 1, 1, 1, 179, 1, 1, 1, 185, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 12, 1, 1, 1, 197, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 12, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 202, 1, 1, 12, 1, 1, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 218, 0, 0, 0, 0, 0, 219, 0, 0, 0, 0, 0, 0, 1, 12, 1, 1, 1, 223, 1, 1, 1, 0, 224, 221, 222, 1, 1, 1, 1, 1, 1, 229, 1, 231, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 227, 1, 1, 1, 1, 1, 233, 1, 1, 12, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 232, 1, 1, 1, 12, 1, 1, 1, 1, 228, 1, 1, 1, 226, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 230, 1, 1, 1, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 239, 13, 1, 1, 1, 12, 12, 236, 237, 1, 1, 1, 1, 238, 1, 1, 12, 1, 1, 1, 1, 1, 1, 1, 240, 1, 1, 12, 16, 1, 1, 1, 1, 1, 1, 241, 1, 1, 1, 12, 12, 1, 1, 1, 1, 1, 1, 241, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 250, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 254, 254, 1, 0, 0, 0, 0, 0, 1, 12, 0, 0, 0, 0, 0, 0, 0, 0, 171, 259, 260, 1, 12, 1, 1, 1, 1, 12, 262, 1, 1, 261, 1, 1, 264, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 268, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 12, 1, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 12, 0, 279, 0, 0, 280, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 1, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 59, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 1, 0, 304, 0, 0, 0, 0, 0, 0, 0, 0, 0, 306, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 12, 1, 1, 1, 1, 1, 322, 322, 323, 322, 0, 185, 1, 1, 13, 318, 1, 316, 0, 0, 0, 0, 0, 0, 0, 319, 1, 1, 324, 1, 204, 1, 1, 1, 1, 317, 1, 314, 1, 320, 1, 312, 1, 321, 1, 313, 1, 1, 1, 1, 1, 1, 1, 12, 1, 1, 1, 1, 12, 315, 315, 1, 1, 1, 184, 1, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 12, 1, 1, 1, 1, 12, 1, 1, 1, 1, 311, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 327, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 264, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 367, 367, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 359, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 1, 1, 0, 1, 335, 346, 1, 1, 334, 369, 1, 340, 1, 1, 332, 364, 1, 1, 350, 331, 336, 1, 1, 1, 343, 374, 352, 1, 1, 1, 1, 1, 1, 353, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 0, 362, 366, 0, 0, 78, 1, 1, 0, 360, 337, 373, 338, 341, 348, 1, 363, 0, 1, 0, 78, 357, 355, 1, 0, 0, 1, 1, 1, 0, 0, 0, 0, 376, 1, 1, 347, 1, 78, 1, 0, 1, 1, 1, 379, 1, 0, 0, 78, 354, 0, 1, 333, 1, 1, 1, 0, 1, 1, 356, 1, 0, 1, 1, 1, 0, 1, 381, 344, 1, 1, 0, 1, 0, 0, 372, 0, 1, 1, 1, 78, 365, 1, 1, 361, 358, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 339, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 371, 0, 78, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 375, 1, 1, 1, 0, 0, 378, 0, 0, 0, 1, 351, 1, 0, 78, 377, 1, 0, 0, 0, 0, 380, 1, 1, 0, 0, 1, 0, 1, 0, 349, 0, 345, 0, 1, 1, 1, 0, 1, 1, 0, 368, 342, 370, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 12, 1, 1, 1, 12, 396, 396, 1, 1, 12, 12, 1, 396, 1, 1, 12, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 408, 1, 1, 0, 1, 1, 1, 1, 204, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 426, 426, 1, 1, 0, 0, 312, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 439, 1, 438, 1, 1, 1, 1, 1, 1, 1, 1, 1, 443, 1, 12, 12, 1, 1, 1, 1, 1, 12, 1, 1, 1, 1, 451, 1, 1, 1, 453, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 450, 1, 445, 1, 1, 1, 1, 432, 1, 1, 1, 1, 1, 1, 1, 1, 446, 12, 1, 1, 1, 1, 452, 1, 1, 1, 447, 441, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 312, 1, 429, 1, 1, 12, 449, 1, 1, 312, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 434, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 452, 1, 1, 1, 1, 312, 1, 448, 1, 1, 1, 442, 436, 1, 1, 1, 1, 1, 437, 1, 454, 440, 1, 1, 1, 1, 1, 435, 1, 1, 1, 1, 1, 1, 1, 1, 1, 430, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 444, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 433, 1, 1, 1, 1, 1, 431, 1, 218, 455, 1, 1, 1, 1, 1, 12, 1, 1, 1, 1, 12, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 1, 0, 0, 0, 461, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 12, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 465, 0, 465, 465, 465, 465, 465, 465, 465, 0, 465, 465, 465, 465, 465, 1, 465, 465, 465, 0, 465, 465, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 470, 469, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 474, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 467, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 468, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 476, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 465, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 473, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 466, 0, 0, 477, 472, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 471, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 465, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 466, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 465, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 475, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 487, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 198, 198, 1, 491, 1, 1, 1, 490, 1, 1, 1, 1, 486, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 488, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 492, 1, 1, 489, 1, 1, 1, 1, 1, 1, 1, 1, 367, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 493, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 504, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 12, 1, 506, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 12, 12, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 1, 0, 0, 0, 1, 59, 1, 1, 12, 12, 12, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 525, 1, 1, 1, 1, 1, 1, 1, 526, 1, 1, 1, 1, 1, 1, 1, 524, 1, 1, 12, 1, 1, 528, 237, 1, 1, 12, 12, 1, 1, 12, 1, 12, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 532, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 538, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 131, 1, 12, 543, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 106, 1, 1, 12, 1, 1, 1, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 548, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 143, 1, 1, 1, 226, 1, 1, 12, 30, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 573, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 218, 1, 323, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 578, 1, 1, 1, 1, 0, 580, 0, 78, 0, 579, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 12, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 586, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 582, 582, 0, 585, 583, 582, 582, 582, 582, 582, 587, 582, 582, 591, 582, 582, 582, 582, 582, 582, 582, 582, 582, 582, 588, 585, 582, 582, 585, 582, 582, 582, 582, 582, 582, 582, 582, 582, 582, 582, 582, 582, 583, 582, 582, 582, 582, 582, 589, 582, 582, 582, 582, 582, 582, 0, 0, 0, 1, 590, 1, 1, 1, 1, 584, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 12, 595, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 12, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 12, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 12, 1, 1, 12, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 95, 64, 276, 302, 407, 534, 0, 4, 67, 234, 252, 278, 303, 329, 383, 409, 0, 498, 518, 535, 597, 9, 0, 60, 87, 393, 405, 425, 576, 0, 496, 517, 531, 612, 0, 30, 6, 0, 460, 499, 602, 561, 69, 0, 7, 281, 253, 384, 462, 412, 537, 78, 598, 0, 577, 305, 414, 464, 9, 104, 284, 505, 6, 30, 0, 307, 78, 386, 78, 482, 10, 6, 130, 246, 271, 0, 613, 508, 0, 564, 0, 63, 6, 6, 249, 94, 2, 428, 394, 406, 596, 0, 6, 0, 6, 282, 102, 6, 562, 500, 539, 0, 463, 385, 269, 283, 8, 70, 103, 599, 542, 387, 308, 296, 415, 145, 73, 286, 546, 509, 601, 565, 330, 325, 478, 6, 74, 148, 11, 0, 247, 521, 547, 566, 513, 551, 571, 611, 36, 6, 258, 291, 328, 300, 216, 30, 527, 554, 216, 41, 214, 263, 292, 301, 402, 419, 480, 270, 0, 72, 563, 0, 399, 413, 295, 78, 245, 78, 0, 581, 545, 503, 288, 417, 78, 388, 382, 0, 0, 0, 9, 556, 572, 215, 0, 420, 403, 530, 515, 574, 615, 84, 216, 42, 293, 391, 421, 570, 0, 510, 289, 272, 78, 213, 79, 28, 385, 30, 6, 389, 326, 299, 604, 592, 523, 550, 512, 0, 256, 80, 30, 401, 418, 0, 30, 422, 0, 217, 593, 516, 9, 404, 423, 216, 246, 85, 220, 594, 575, 558, 481, 424, 392, 248, 225, 86, 58, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 620, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 410, 0, 0, 0, 0, 0, 0, 0, 0, 81, 0, 128, 0, 0, 83, 549, 0, 0, 0, 0, 0, 0, 0, 27, 0, 552, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 410, 0, 0, 0, 0, 502, 0, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 290, 0, 0, 0, 0, 0, 0, 0, 617, 0, 0, 0, 0, 0, 616, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 390, 0, 0, 0, 483, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 68, 0, 0, 0, 0, 0, 0, 494, 0, 0, 0, 0, 0, 0, 400, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 209, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 514, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 495, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 267, 277, 0, 0, 0, 0, 0, 529, 273, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 511, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 456, 0, 0, 0, 310, 0, 0, 0, 0, 0, 0, 251, 0, 0, 0, 0, 0, 0, 23, 0, 0, 0, 0, 569, 0, 0, 0, 0, 600, 520, 0, 0, 0, 0, 242, 0, 0, 0, 0, 0, 0, 458, 0, 0, 479, 0, 0, 0, 0, 0, 61, 0, 0, 0, 265, 57, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 244, 0, 0, 0, 0, 0, 275, 610, 0, 71, 0, 0, 0, 0, 0, 0, 0, 0, 0, 619, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 149, 0, 274, 0, 0, 0, 0, 0, 0, 568, 0, 0, 0, 0, 0, 0, 522, 0, 0, 0, 0, 0, 0, 0, 0, 0, 567, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 62, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 211, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 83, 0, 501, 0, 0, 0, 0, 0, 555, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 83, 82, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 485, 0, 484, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 257, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 457, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 285, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 536, 0, 0, 0, 0, 0, 0, 0, 0, 294, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 68, 235, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 83, 0, 606, 0, 0, 553, 0, 0, 0, 0, 0, 0, 0, 0, 0, 243, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 609, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 519, 0, 0, 0, 83, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 497, 0, 614, 0, 0, 427, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 398, 0, 0, 0, 544, 0, 92, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 0, 0, 0, 0, 0, 0, 29, 91, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 287, 0, 0, 0, 212, 0, 0, 0, 0, 0, 0, 559, 0, 0, 0, 0, 129, 0, 0, 0, 0, 0, 560, 0, 0, 0, 0, 0, 0, 0, 410, 416, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 395, 0, 309, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 297, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 533, 0, 0, 0, 411, 0, 0, 397, 0, 0, 0, 0, 0, 0, 603, 0, 0, 0, 540, 0, 0, 89, 0, 541, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 507, 459, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 266, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 410, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 608, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 607, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 618, 0, 0, 0, 0, 0, 557, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 298, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 605, 0, 0, 210, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 623, 623, 623, 623, 623, 623, 623, 622, 624]);
+    labelText = "orgmilcomschnetedugovdrrformsfeedbackofficialaccoorgmilschnetgovmagazinemediaunioncargopilotgroupcaarespressworksaerodromeworkinggroupair-traffic-controlaircraftaccident-preventioneducatormarketplaceambulanceinsurancecateringairportrepbodyenginesoftwaremodellingair-surveillanceconsultingchartertrainermaintenanceservicesdesignflightskydivingfreightassociationstudentgroundhandlingdgcafuelclubtaxicrewshowballooningexpresstraderbrokerauthoragentsairtrafficjournalistsafetyconsultantmicrolightaccident-investigationparachutingequipmentproductionfederationrecreationscientistnavigationengineertradingglidingleasingresearchpassenger-associationentertainmentparaglidinghangglidingaerobaticrotorcraftemergencycertificationgovernmentaeroclubexchangelogisticschampionshiphomebuiltcouncilconferencecontrolairlinecivilaviationjournalorgcomnetedugovcoorgcomnomnetobjofforgcomnetuwukiloappsframerorgmilcomnetedugovcoradioorgcomnetcommuneedogpbcoitgvorgedugov*spreviewfrontendrelayononstagingupid*mtls*privatelinktypedreamdeveloperbravemochawindsurfaivenmirenupsunwnextbegetngrokclerkwale2bwebcsbrunputerflutterflowspawnbaseshiptodaymagicpatternsnetlifyondigitaloceanrailwayhostedclaudehasurabotdashvercelgithubluyanigadgetreplitcloudflaretelebitedgecomputeevervaultexponyatnoopencrpplxzeaburwasmerframerzeropsrocketpreviewconvexmedusajsspritesonherculeseasypanelstreamlitsnowflakemesserliloginlinehackclubcodepennorthflankbase44corespeedleapcellngrok-freeclerkstagelovableon-fleek*us-west-3ap-south-2us-central-2us-central-1eu-central-1ap-south-1us-west-2us-east-2eu-north-1ap-north-1us-west-1us-east-1*rcloudintsegorgmilcomgobbetnetintedugovturmusicasenasamutualcoopip6uriurnin-addre164homeirisgovdixdaemoncloudnssthwien*inexexkunden4accogvormymyspreadshop4lima2ixortsinfofuturecmsfuturehosting12hpprivfuturemailinglima-cityfunkfeuer123webseitednshomemelmyspreadshopcloudletswasantqldvicactnswtascatholicwasaqldvictasidwasantozqldorgcomvicasnactnetedugovnswtasconfcomairflowlambda-urltransfer-webappairflowtransfer-webapptransfer-webapptransfer-webapp-fipstransfer-webappeu-west-3ap-south-2eu-south-2eu-central-2ap-southeast-3ap-southeast-4ap-northeast-3eu-central-1mx-central-1me-central-1ca-central-1il-central-1ap-northeast-1ap-southeast-1me-south-1af-south-1eu-south-1ap-south-1ap-southeast-7us-west-2eu-west-2us-east-2eu-north-1ap-southeast-2ap-northeast-2ap-southeast-5us-gov-west-1us-gov-east-1ca-west-1us-west-1eu-west-1us-east-1ap-east-1sa-east-1privatenotebookstudiolabelingnotebookstudionotebooknotebook-fipslabelingnotebookstudionotebook-fipsnotebookstudio-fipsnotebook-fipsnotebookstudionotebook-fipsnotebookstudioeu-west-3ap-south-2eu-south-2eu-central-2ap-southeast-3ap-southeast-4ap-northeast-3eu-central-1me-central-1ca-central-1il-central-1ap-northeast-1ap-southeast-1me-south-1af-south-1eu-south-1ap-south-1us-west-2eu-west-2us-east-2eu-north-1ap-southeast-2ap-northeast-2experimentsus-gov-west-1us-gov-east-1ca-west-1us-west-1eu-west-1us-east-1ap-east-1sa-east-1onrepostsagemakercopporgmilcompronetintedugovbiznameinfoshoprsorgmilcomnetedugovbrendlyresolvenzauscotvstoreorgcomnetedugovbizinfoidacaicoittvorgmilcomschnetedugovinfocloudezproxyacmymyspreadshopkuleuvenwebhostingtransurl123websitecloudnsinterhostsolutionsddns5476103298edgfacbmlonihkjutwvqpsryxzbarsycoororgcomedumyftpno-iporxcloud-ipfor-somemmafanfor-morewebhopselfipjozidyndnscloudnsdscloudfor-thefor-betteractivetrailcoeconorestooteorgcomeconeteduassurmoneyafricaarchitectesrestaurantloisirstourismavocatsinfoagrounivcoorgcomnetedugoviatvdeportesaludtksatorgmilcomwebgobnetinteducienciaboliviarevistacooperativaempresanombreindustriamusicapatriamedicinademocraciapoliticapuebloindigenaplurinacionalarteblogwikiinfoagrotransportenoticiasprofesionalacademiaeconomiaecologiamovimientotecnologianaturalsimplesitecepesebamapadfmgalampbacscpirngorotomtrjspaprrprrsesmscepesebamapadfmgalampbacscpirngorotomtrjspaprrprrsesms*biaamfmtcmptvfeirasampajampanatalbelemananiradiog12medindfndbmdtrdthepoaggfjdfdefinfenflegsegongengcngorgzlgslglogppgmillelqslcimcomnomadmjabimbbibbsbabcrectecsjcetcpscpvhudieticriapipsiecnbiorioecogeoteoodoproatoartfstmatvetdetbetnetcntnotfotgrueduajuespappreptmpemparqsrvadvdevgovntrturagrjorfarjusmusdesvixxyzcozfozslzbhzmaringasantamariacampinagrandegoianiasorocabafloripasaobernardocuritibaboavistarecifeaparecidasaogoncasalvadorcuiabamorenamacapalondrinacontagemsocialfortalmaceioleilaoosascoriobranconiteroi9guacutcheblogflogvlogwikitaxicoopmanauspalmascaxiasjoinvillebaruericampinassantoandreribeiraoriopretoweorgcomnetedugovv0windsurfshiptodaycloudsitecoaccoorgnetgovofmilcomgovmediatechzacoorgcomnetedugsjgovmydnspenfnlabnbmbgcbcqconcontnuyksknsmyspreadshopno-ipawdevboxbarsyonidatemfuinabusavinstanceseceuguukussryzespawncsxcloud-ipmyphotosfantasyleaguetwmailcleverappsscrappingccwucloudnsftpaccessgame-serverccgovobjectsrmalpgcust*svcalp1aeappenginermalpgmyspreadshop4lima2ixsquare7cloudscale123websitefirenet12hpflowgotdnslinkyard-cloudcloudnslima-citydnskingobjectstorageedaccogoorusorgcomnetintedua\xE9roportxn--aroport-byaassogouvcomilgobgovcloudnses-1eu-west-1us-east-1euvipit1eurarubait1s3lbwebsites3websiteru-spbru-mskelasticcsrunstnukukcaukusnl-ams-1fr-par-1fr-par-2functionsnodess3ddlwhmrdbfnck8sifrs3-websitecockpitscblmgdbdtwhkafkpubprivs3ddlwhmrdbk8sifrs3-websitecockpitscblmgdbdtwhkafks3ddlrdbk8sifrs3-websitecockpitscblmgdbdtwhkafkk8sscalebookpl-wawfr-parnl-amsbaremetalsmartlabelinginstancesdechk2kuleuvenlaravelvoorloperurownoxazapscwhstgrvaporonline-serverobservablehqelementorantagonistreclaimjoteluluencowaydiademjelasticmatlabmagentositetrendhostingaxarnetperspectajenv-arubajelejoteravendbemergenttrafficplexconvexkeliwebserveboltbegetcdnstaticson-rancherprimetelonstackitunison-servicesdnshomelinkyardbarsyjelecloudnscocomnetgovmycn-northwest-1cn-north-1s3s3-accesspoints3-websites3s3-accesspointrdsdualstacks3-deprecatedemrappui-prods3-websiteemrstudio-prods3-object-lambdaemrnotebooks-prodexecute-apis3s3-accesspoints3s3-accesspointrdsdualstackemrappui-prods3-websiteemrstudio-prods3-object-lambdaemrnotebooks-prodexecute-apicn-northwest-1cn-north-1cn-northwest-1ebcomputeelbcn-north-1airflowcn-northwest-1cn-north-1oncn-northwest-1cn-north-1amazonawssagemakeramazonwebservicesdirectasgdsdhehahljlnmhbacscahqhshhihnlnynsnmofjbjzjxjtjhkcqtwgsjssxnxjxgxxzgz\u7DB2\u7D61\u7F51\u7EDC\u516C\u53F8orgmilcomnetedugovxn--55qx5dcanva-appsxn--io0a7iquickconnectcanvasitekhsjxn--od0algcanva-codemyqnapcloudsrvrlessclustersrealtimestorageleadpagescarrdcrdorgmilcomnomnetedugovhidnssupabaserdpareplmypiumsoxmitotaplpagesfirewalledreplitowodevwebview-assetsvfswebview-assetss3s3-accesspointdualstackemrappui-prods3-websiteaws-cloud9emrstudio-prods3-object-lambdaemrnotebooks-prodexecute-apicloud9eu-west-3ap-south-2eu-south-2eu-central-2ap-southeast-3ap-southeast-4ap-northeast-3eu-central-1me-central-1ca-central-1il-central-1ap-northeast-1ap-southeast-1me-south-1af-south-1eu-south-1ap-south-1ap-southeast-7us-west-2eu-west-2us-east-2eu-north-1ap-southeast-2ap-northeast-2ap-southeast-5ca-west-1us-west-1eu-west-1us-east-1ap-east-1sa-east-1s3s3-accesspointdualstackemrappui-prods3-websiteaws-cloud9emrstudio-prods3-object-lambdaemrnotebooks-prodexecute-apicloud9s3s3-accesspointdualstackanalytics-gatewayemrappui-prods3-websiteaws-cloud9emrstudio-prods3-object-lambdaemrnotebooks-prodexecute-apicloud9s3s3-accesspointdualstackemrappui-prods3-websiteemrstudio-prods3-object-lambdaemrnotebooks-prodexecute-apis3s3-accesspointdualstacks3-deprecateds3-websites3-object-lambdaexecute-apis3s3-accesspoints3-websites3-accesspoint-fipss3-fipss3s3-accesspointdualstackemrappui-prods3-websites3-accesspoint-fipsaws-cloud9s3-fipsemrstudio-prods3-object-lambdaemrnotebooks-prodexecute-apicloud9s3s3-accesspointdualstackemrappui-prods3-websites3-accesspoint-fipss3-fipsemrstudio-prods3-object-lambdaemrnotebooks-prodexecute-apis3s3-accesspointdualstacks3-deprecatedanalytics-gatewayemrappui-prods3-websiteaws-cloud9emrstudio-prods3-object-lambdaemrnotebooks-prodexecute-apicloud9vfss3s3-accesspointdualstackemrappui-prods3-websiteaws-cloud9emrstudio-prods3-object-lambdaemrnotebooks-prodexecute-apicloud9eu-west-3ap-south-2eu-central-2ap-southeast-3ap-southeast-4ap-northeast-3eu-central-1mx-central-1me-central-1ca-central-1il-central-1ap-northeast-1us-northeast-1ap-southeast-1me-south-1af-south-1ap-south-1ap-southeast-7us-west-2eu-west-2ap-east-2us-east-2ap-southeast-2ap-northeast-2ap-southeast-5us-gov-west-1us-gov-east-1ap-southeast-6ca-west-1us-west-1eu-west-1us-east-1ap-east-1sa-east-1mrapaccesspoints3s3-accesspointdualstacks3-deprecatedanalytics-gatewayemrappui-prods3-websites3-accesspoint-fipsaws-cloud9s3-fipsemrstudio-prods3-object-lambdaemrnotebooks-prodexecute-apicloud9s3s3-accesspointdualstacks3-deprecatedanalytics-gatewayemrappui-prods3-websites3-accesspoint-fipsaws-cloud9s3-fipsemrstudio-prods3-object-lambdaemrnotebooks-prodexecute-apicloud9s3eu-west-3ap-south-2eu-south-2computes3-ap-northeast-2elbrdss3-ap-east-1s3-sa-east-1s3-us-gov-west-1s3-eu-central-1s3-ca-central-1eu-central-2ap-southeast-3ap-southeast-4ap-northeast-3s3-website-us-west-2s3-website-eu-west-1s3-external-1eu-central-1me-central-1ca-central-1il-central-1s3-us-west-1s3-eu-west-1s3-website-sa-east-1s3-website-ap-southeast-2ap-northeast-1ap-southeast-1s3-us-west-2s3-eu-west-2me-south-1af-south-1eu-south-1ap-south-1us-west-2eu-west-2us-east-2s3-website-ap-southeast-1s3-1s3-globals3-ap-northeast-3eu-north-1airflowap-southeast-2s3-us-gov-east-1s3-fips-us-gov-east-1s3-me-south-1s3-ap-south-1ap-northeast-2s3-website-us-west-1ap-southeast-5s3-eu-north-1s3-ap-southeast-1s3-website-us-gov-west-1compute-1s3-eu-west-3us-gov-west-1s3-website-ap-northeast-1us-gov-east-1s3-fips-us-gov-west-1s3-website-us-east-1s3-ap-southeast-2ca-west-1us-west-1eu-west-1us-east-1ap-east-1sa-east-1s3-us-east-2s3-ap-northeast-1authauthauth-fipsauth-fipseu-west-3ap-south-2eu-south-2eu-central-2ap-southeast-3ap-southeast-4ap-northeast-3eu-central-1mx-central-1me-central-1ca-central-1il-central-1ap-northeast-1ap-southeast-1me-south-1af-south-1eu-south-1ap-south-1ap-southeast-7us-west-2eu-west-2us-east-2eu-north-1ap-southeast-2ap-northeast-2ap-southeast-5us-gov-west-1us-gov-east-1ca-west-1us-west-1eu-west-1us-east-1ap-east-1sa-east-1rframeservicesbuilderstg-builderdev-builder*ociocpocsdemoinstanceeu-west-3eu-south-2ap-southeast-3ap-northeast-3eu-central-1me-central-1ca-central-1il-central-1ap-northeast-1ap-southeast-1me-south-1af-south-1eu-south-1ap-south-1ap-southeast-7us-west-2eu-west-2us-east-2eu-north-1ap-southeast-2ap-northeast-2ap-southeast-5us-gov-west-1us-gov-east-1us-west-1eu-west-1us-east-1ap-east-1sa-east-1previeweu-4us-4us-1eu-1us-2eu-2us-3eu-3appspaasrag-cloudrag-cloud-chjcloudjcloud-ver-jpcdemonodebalancermembersipeuxvsoncillaocelotonzayalilynxsphinxfentigercustomercaracalo365cloudstaticxendevapp001testcode-builder-stgplatformmediasiteprojedrydpagesjsx0desazacncoitrueu4uhkukgrbrushatenadiarymyspreadshopfrom-flfrom-wvwebspace-hosttheworkpchatenablogcursorusercontentservesarcasmapplinzisakuratanwixsiteappchizigiizeis-into-carsdnsiskinkyadobeaemcloudis-a-therapistpgfogmyvncdojinis-an-actress1kappfldrvkozowqa2jpnmexprgmrfirewall-gatewaydynnscafjsfbsbxooguyfrom-gawoltlab-demois-a-anarchistwiardwebteaches-yogadattowebtb-hostinglive-websiteservegamegotpantheonfrom-nhsubsc-payfrom-ohvipsinaappfrom-cadyndns-officehomelinuxfrom-mahercules-appservebbsstreakusercontentfrom-okfrom-wyfastly-terrariumis-a-llamaqualyhqportalserveexchangeon-vaporvivenushopciscofreakgrayjayleaguesmetaaiusercontentfrom-iais-a-libertariansaves-the-whalestaveusercontentyolasiteoperaunitepoint2thisis-a-catererclaudeusercontentlinodeusercontentfrom-vagithubusercontentsells-for-lesshosteurcanva-appsplaystation-cloudddnsfreefrom-pafrom-prfrom-waddnskingoutsystemscloudhotelwithflightmydattois-a-nascarfanmydbserverminiserverdamnserverservehumouris-a-playerfrom-nvfrom-nmemergentagentgentappsamplifyappfrom-kyis-an-accountantnfshostserveircfrom-akpythonanywherestackhero-networkpostman-echolikescandydyndns-mailobservableusercontentserveftpfreeboxosfrom-utcdn77-storageamazonawsneat-urldyndns-serverlinodeis-a-teacherfrom-vtgleezemythic-beastsus1-pleniteu1-plenitla1-plenitpaywhirlservecounterstrikejdevcloudhealth-carereformis-into-animegoogleapisis-a-painterafricaisa-hockeynutatmetais-an-actora2hostedis-a-democratdatadetectest-le-patrondigitaloceanspacesis-a-designeris-a-hunterlinodeobjectstemp-dnsissmarterthanyoufrom-arsimplesiteevennodetownnews-stagingis-a-liberalgooglecodejelasticservemp3qualyhqpartnerdyndns-free1cooldnsest-a-la-masiondrayddnsdynuddnsfrom-orfrom-miis-a-bloggerfrom-himydobisscanvacodeis-an-engineerest-a-la-maisonupsunappdevinappswafflecellmyasustorwpenginepoweredfrom-ctservep2psame-appmyshopblocksthingdustdatalikes-piediscordsezis-with-thebanddev-myqnapcloudlpusercontentis-leetshopitsite3utilitiesis-a-personaltrainersinaappladeskis-a-cheflogoipselfipbase44-sandboxnospamproxyalibabacloudcsmesswithdnsauthgearappsiamallamawithgooglelutrausercontentmochausercontentframercanvasmytabitdyndns-homew-credentialless-staticblitzcpserverdiscordsaysis-a-nurseappspotatlassian-isolated-3premotewdfrom-mtwixstudiocode0emm180rmyactivedirectoryawsappsmytuleapdnsabrpolyspaceqbuserrenderbuiltwithdarkboutirgotdnsabrdnsdopaascanva-hosted-embedawsglobalacceleratorhomesecuritypcmyiphostditchyouripclever-clouddyndns-ipon-aptibleis-a-musiciansecuritytacticsappspaceusercontenthomeunixstrapiappsame-previewcf-ipfsmycloudnaselasticbeanstalkis-certifieddontexistkasserverik-serverdrive-platformatlassian-3pfirebaseappherokuappawsapprunnerbarsycenteris-a-cubicle-slaveservehttpmyshopifyis-a-guruquicksytessiiitesorsitesmagicpatternsappis-a-cpameteorappfrom-wiis-a-rockstarbumbleshrimpdattolocalreadthedocs-hostedfrom-rifamilydsdyndns-picsplesknsbplaceddnsaliasdynaliasdyndns-remotedoomdnsip-ddnsblogdnsis-a-doctorroutingthecloudamazoncognitobarsyonlinedsmynasddnsgurucloudflare-ipfsdeus-canvasfrom-idsmushcdnpagespeedmobilizerdyndns-at-homeunusualpersonhosted-by-previderis-a-republicandyn-o-saurstreamlitappworkisboringonthewificprapidqualifioappis-uberleetis-slickgetmyipwpdevcloudtypeformdyndns-at-workgentlentapismynascloudw-corp-staticblitzfrom-ingeekgalaxyservebeerfrom-mdonrenderspace-to-rentaivencloudappspacehostedwafaicloudcodespotblogspotatlassian-3p-us-gov-modfrom-ndfrom-msis-a-techieis-a-studentcustomer-ociis-a-photographerdurumisfrom-ksmassivegriddyndns-wikiis-an-entertaineris-a-hard-workermysecuritycamerafrom-mnrackmazedyndns-blogis-a-bulls-fanwritesthisblogfreemyipsimple-urlfrom-sdreservdauthgear-stagingest-mon-blogueuris-into-gamesrice-labsxtooldevicesakurawebis-an-anarchistoraclecloudappsdyndns-worksells-for-urhcloudfrom-dcfastvps-serverwpmucdnis-a-geekscrysecfrom-txis-into-cartoonsmodelscapetrycloudflarelocaltonetstreak-linkbalena-devicesfrom-njforgeblocksfreebox-oswebadorsitefrom-ncdoesntexisthobby-sitestreaklinkshomesecuritymacownprovidertuleap-partnersdattorelaywphostedmailalpha-myqnapcloudservequakeis-a-socialistservehalflifepivohostingdynuhostingquipelementsw-staticblitzdyndns-webfrom-deproject-studyaliases121is-not-certifiedhercules-devis-a-financialadvisorservepicsis-a-greenloseyouripfrom-ilwithyoutubemwcloudnonprodwiredbladehostingdnsdojofrom-tnpixolinomyqnapcloudis-an-artisthostedpiis-a-landscaperauiusercontentoaiusercontenton-forgeis-a-conservativedreamhostersnet-freaksapps-1and1is-goneencoreapifastly-edgefrom-nesalesforcefrom-scdeployagentoraclegovcloudappsfrom-alis-a-lawyercechirevultrobjectsstufftoreadisa-geekddnsgeeklovableprojecttry-snowplowfrom-moblogsyteis-a-bookkeepernogmyforumravendbmyboxdeelementoredsaacficogoorinforgcomgobnatneteduidstoreorgcomnetintedudevnomepublorgcomneteduathgovtestscalculatorspaynowinfoquizzesresearchedcloudnsfunnelsassessmentsjscaleforcetmacltdorgmilcompronetgovbizpresseklogesrsccloudcustomfltusrcloude4corealmgovmunicontentproxy9metacentrumdyndyndyndnsdynpagespages-researchitionoccustomercomymyspreadshopipv64diskussionsbereich4limacomrub2ixfirewall-gatewayddnssspdnsbarsykeymachinesquare7myhome-serverspeedpartnercommunity-proschuldockxenonconnectg\xFCnstigliefernbwcloud-os-instancedyndnssecmy-routerxn--gnstigliefern-wobin-butterl-o-g-i-nisteingeekin-dslin-berlinin-brbfuettertdasnetzleitungsenin-vpnlcube-serverdyn-ip24logoipdyn-berlinruhr-uni-bochum12hpgoipsrvdnsfruskygit-repossvn-reposinternet-dnsg\xFCnstigbestellenhome-webserverxn--gnstigbestellen-zvbbplacedheimdnscosidnswebspaceconfiglima-citydyndns1istmeinvirtualuserschulplattformmy-gatewayddnsseclebtimnetztest-iservmein-iservvirtual-userhome64iservschuletaifun-dnstraeumtgeradeschulserverdynamisches-dns123webseitednshomehs-heilbronndnsupdaterbssgraphicdwadpdwdaepeweaawapaafpfwfabwbpbacwcpcciwebuserapiobjectsidsiskospockkimodorikerbonesteamsparisjanewaypicardglobaltarpitreedpikekiraworfsulukirkarchertuckerhackercanarywesleystagingprereleaset3r2lpbravepanelngrokiservstglclcrmerpflypagesbarsyvivenushoplocalcertlocalplayerbearbloggatewaydeno-stagingis-not-ais-a-goodbotdashvercelmocha-sandboxplatter-appreplitgithubpreviewworkersinbrowserevervaultis-ahrsndenoxmitmodxmyaddrstorageapipayloadgrebedocruncontainersstgstagelclstageloginlineis-a-fullstackcodepenleapcellngrok-freeis-coolstoragewebharemediatechlibp2pdiscourseimaginecomyspreadshopstoreregbiz123hjemmesidefirmcoorgcomnetedugovsldorgmilcomwebgobartnetedugovtmorgpolcomsocartnetedugovassoagrondiscoodontk12medcuegyecpaabgengorgmilgalsaltulcomadmesmgobpubdocmonfindgnriouioproartlatvetnetfotedulojgovntrturibrbarxxxofficialbasechefprofmktgpsictechinfoarqtcontdentrrpppsiqgit-pagesritmedfieorgcomlibprieduaipgovriikmeactvsportorgmilcomscieunnetedugovnameinfopintouchtawktotawkmyspreadshoporgcomnomgobedu123miwebcomputeorgcomnetedugovbiznameinfocognito-idpeusc-de-east-1onjelasticnxaspdnsbarsydirectwpdeuxfleurstransurldogadoprvwcloudnsamazonwebservicesdnshomeuserpartycokoobinmkmfidymyspreadshopalandkapsiikixn--hkkinen-5wacloudplatformh\xE4kkinen123kotisivuidacorgmilcompronetedugovbiznameinforadioorgcomneteduuserexperts-comptablestmmyspreadshopgretaprdcomnomynhccifbxoshuissier-justicenotairesaeroportfreeboxoson-webavocatassoportgouvkdnschirurgiens-dentistes-en-franceavouesfbx-os123sitewebveterinairechirurgiens-dentistespharmacienchambagrimedecinfreebox-osdediboxgoupilemszicpyicpvicppleysheezypagesedugovcnpyorgcomcybllcpvtnetedugovtnxonlineschooldaemond6atcopanelorgnetplybotdashstackitkaasorgmilcomnetedugovbizmodltdorgcomedugovcoorgcomneteduappwriteacorgcomnetedugovcloudtranslateusercontentorgcomnetedumobiassoorgcomnetedugovbarsysimplesitediscourseindorgmilcomgobneteduorgcomwebnetedugovguaminfonxhra\u6559\u80B2\u654E\u80B2\u7DB2\u7D61\u7F51\u7D61\u7EC4\u7E54\u7D44\u7E54\u7F51\u7EDC\u7DB2\u7EDC\u7EC4\u7EC7\u7D44\u7EC7\u516C\u53F8\u653F\u5E9C\u500B\u4EBA\u4E2A\u4EBA\u7B87\u4EBAltdorgcomincneteduidvgovxn--uc0ay4axn--55qx5dxn--mk0axixn--io0a7ixn--uc0atvxn--zf0avxxn--lcvr32dxn--od0algxn--wcvs22dxn--gmqw5axn--od0aq3bxn--mxtq1mxn--ciqpnxn--tn0agxn--gmq050iorgmilcomgobneteduiservwp2tempurlmircloudfreesitewpmudevmyfastgadgetcloudaccessjelehalfboltfastvpsemergenteasypanelopencraftizcombrendlynamefromrtpersoadultmedorgpolrelcomproartnetedufirminfoassoshopcoopgouvtmcomediahotelforumvideosportorgsexagrargameslakaseroticaerotikatozsdereklamcasino2000filmsuliinfoboltshopprivnewsszexcityutazasjogaszkonyveloingatlaneacaicogoormy\u1B29\u1B2E\u1B36milwebschnetkopbizzonedesaponpesxn--9tfkymyspreadshopgovmytabittabitorderravpageaccok12idforgnetgovmuniltdplcaccotttvorgcomnetmeca6g5gpgamubacaicniocoukuptverdruscsdelhiindorgmilcomwebnicfingenpronetintedugovresbizbiharbarsyinternetbusinessschooltravelsupabasealumnigujaratfirminfoaeropostbankcoopindevscloudnsno-ipbarsybarrell-of-knowledgebarrel-of-knowledgensupdategroks-thisdnsupdatefor-ourknowsitalldvrcammittwalddynamic-dnsv-infowebhopselfipdyndnshere-for-moreilovecollegemayfirstforumzcloudnsmittwaldservertypo3servergroks-theeusekd1cdndyndnsidrawsainaueuapjpusstagemocksysdevicesclientcustreservdcustdevdisrecprodtestingcobeebyteutwenteboxfusebravepstmndedynngrokorgmilcomnomnetedugovqcxqzzbarsythingdustmo-siemensrb-hostingfh-muenstergitbookbluebitecloudbeesusercontentnodeartkiloappsforgerockdarklangresinstagingapigeebubbleb-datascryptedhypernodedappnodepantheonsitegitlabgithubkeeneticvirtualservercleverappshostyhostingon-rioedugitticketstelebitwixstudioon-k3sicp0icp12038jeleqotolairbubbleappsmyaddrstolosmyrdbxwebflowdrive-platformbeagleboardhasura-applolipopdefinimavaporcloudmusicianwebflowtestazurecontainerresindevicereadthedocsloginlineeditorxmoonscalesandcatsbasicserverwebthingsbrowsersafetymarkbeebyteappbitbucketidaccovistablogorgschnetgovxn--mgba3a4f16axn--mgba3a4fraarvanedge\u0627\u064A\u0631\u0627\u0646\u0627\u06CC\u0631\u0627\u0646jclaspeziapdudcefegelemeperetevebacanatavaparasabgagfgogrgpgalclblimfmrmcbmbvbfclcmcvcrcpcchlimifibicivipirisimncnbnanenrnpntnnolomobocoaogorosopotoptvtatctbtmtltotpusulunutpspapaqsvpvvvtvavvrtrsrprgrfrcrbrarorkrvstsssbscsmsispzczbzbozen-suedtirolmyspreadshopxn--bulsan-sdtirol-nsbxn--valledaoste-ebbtrentinoaltoadigetrentin-sued-tirolxn--forlcesena-c8axn--forl-cesena-fcbxn--bozen-sdtirol-2obtriestetrentinsuedtiroltrentino-s-tirollecceudineaostesienaparmaluccapaviagenoapaduaaostamonzaabruzzoternirietiturinmilanbozenlaziofermoleccocuneonuoropratola-speziavdataaligfvgpugmolcalcamlomumbsicpmnvenvaoedugovabrsarmaremrbastoslazibxosfirenzetrentinos\xFCdtirolval-d-aostavalle-aostamessinacremonaravennatoscanatrentin-suedtirolbolognacalabriaurbinopesarofriuli-v-giuliaogliastraxn--valle-aoste-ebblaquilaandriatranibarlettasyncloudxn--valle-d-aoste-ehbaostavalleyvalled-aostatrentino-alto-adigevallee-d-aostexn--balsan-sdtirol-nsbpistoiasicilialucaniacataniaiserniaperugiabresciaveneziagorizialiguriaimperiabulsan-suedtirolbalsan-suedtirolbarlettatraniandriaxn--trentino-sdtirol-szbforl\xEC-cesenatuscanyvall\xE9e-d-aostemantovavall\xE9e-aostecasertapiemontevalleaostaval-daostafriulivgiuliatrevisoforli-cesenavall\xE9edaosteferrarapescaravald-aostatrentino-altoadigefriuli-vegiuliavallee-aostecarboniaiglesiastarantomediocampidanovalleedaostetrentinosud-tirolcampobassotrentins\xFCd-tiroltrentinos\xFCd-tirolmonzabrianzatrentino-s\xFCdtirolxn--trentino-sd-tirol-c3bpotenzacosenzavicenzaemiliaromagnavenicefrosinonemarchepordenonetrentinosued-tirolvaresemolisevall\xE9eaostefriuli-veneziagiuliabasilicatalatinaanconasavonaveronamodenabiellabolzano-altoadigepugliafoggiaumbriatrentino-stirolgenovapadovamateranovararagusapiacenzatrentinostirolvalleeaostetempio-olbiasudsardegnatrentinsudtirolmassa-carrarafriuliveneziagiuliatrentinosuedtirolandria-barletta-tranitrapanixn--cesenaforl-i8amaceratacaltanissettaascoli-picenobrindisicarraramassacagliaririmininapolivibo-valentiachietibulsan-sudtirolbalsan-sudtiroltrentino-a-adigebulsanbalsaniglesiascarboniamilanotorinoteramodell-ogliastraarezzotrentinoalto-adigerovigotrentovenetoiglesias-carboniatrentino-sud-tirolaltoadigereggio-emiliareggio-calabriasardegnatranibarlettaandriapiedmontxn--sdtirol-n2amedio-campidanotrentino-s\xFCd-tirolfriuli-vgiuliafriuli-ve-giuliaromeennaromapisa32-b16-b64-blodiastibarineencomonaplesforlicesenailiadboxosalessandriasicilytrani-barletta-andriaxn--trentin-sdtirol-7vbpesarourbinotrentinsued-tirolcesena-forliforl\xECcesenaemilia-romagnamonzaebrianzaxn--trentinsdtirol-nsbtrentinos-tiroltrentins\xFCdtirolvalledaostaolbia-tempiocampidanomediovibovalentiasassarivalle-daostalombardysud-sardegnafriulivegiuliareggioemiliamonzaedellabrianzaalto-adigevercellitrentin-sudtiroltraniandriabarlettatrentino-sudtirolascolipicenobozen-s\xFCdtirolfriulive-giuliaflorencexn--cesena-forl-mcbcarbonia-iglesiasaosta-valleycarrara-massadellogliastratrentinoa-adigexn--valleaoste-e7apesaro-urbinoxn--trentinosdtirol-7vbxn--trentin-sd-tirol-rzbxn--trentinsd-tirol-6vbtrani-andria-barlettatrentin-s\xFCd-tirolxn--trentinosd-tirol-rzbgrossetomonza-e-della-brianzas\xFCdtirolreggiocalabriatrentinoaadigetrentin-s\xFCdtirolverbano-cusio-ossolafriuliv-giuliaverbaniacampaniatrentino-aadigefriulivenezia-giuliasardiniaandriabarlettatranibarletta-trani-andriacatanzarooristanourbino-pesarocesena-forl\xECvalle-d-aostacampidano-medio123homepagesiracusatempioolbiasuedtirollombardiaavellinocesenaforl\xECtrentinofriuli-venezia-giuliabozen-sudtirolandria-trani-barlettabulsan-s\xFCdtirolbalsan-s\xFCdtirolmonza-brianzabolzanotrentino-sued-tirolbellunosalernolivornocrotonesondriodnshometrentinsud-tirolmassacarraratrentin-sud-tiroltrentino-suedtirolviterbobergamocesenaforliolbiatempiopalermobeneventoagrigentoofcoorgnetfmaitvphdengorgmilcomschnetedugovperagrikanieasukehandachitatokaiaisaikonanoharuamaobuhigashiuraowariasahiinuyamatobishimaiwakurashitarainazawatoyonegamagorimihamatoyotataharakariyayatomioguchikomakimiyoshinishiotokonamekiyosuchiryutoyohashiokazakiisshikikasugaikotakiratoeianjotogofusosetohazutsushimashinshirotakahamanisshinshikatsuhekinantoyokawaichinomiyatoyoakeodateogataakitaikawakyowahonjoogayurihonjonoshirokamiokakatagamimitanegojomeyokotekosakadaisenkazunonikahohonjyomoriyoshimisatohappoukamikoanihachirogatahigashinarusesembokufujisatokitaakitaitayanagiowanitakkomutsutsurutahirosakigonoheoirasetowadamisawanohejiaomorishingohiranairokunohehashikamitsugarushichinohehachinohenakadomarisannohekuroishisakaeisumiasahiotakiinzaiabikomatsudoyachiyomutsuzawakujukuriomigawakashiwatoganemihamanaritasakuranagaramobarahanamigawachoshishiroichoseikozakishisuikatorimidorichonankyonanfuttsuonjukufunabashinagareyamanodasosatakochuotohnoshourayasukimitsuyokaichibayotsukaidosodegauratateyamakamagayayokoshibahikariyachimatakatsuuratomisatokisarazukamogawaichikawanarashinoichinomiyashimofusaminamibososhirakoichiharaoamishirasatoikatahonaiainansaijoseiyoiyoozuuwajimaniihamanamikatamasakiuchikokihokutobetoonshikokuchuomatsuyamaimabarikamijimakumakogenyawatahamamatsunosabaeikedaobamasakaifukuiohionotsurugamihamawakasaminamiechizeneiheijikatsuyamatakahamaechizensoedaukihaomutaokawanishiogoribuzenonojosueumiokiotochikugosasagurisaigawamizumakishinyoshitomikurumekurateyamadakasuganakamamiyamanogatatakatahakataiizukakawaratagawakasuyaashiyainatsukimunakataminamitsuikishonaikurogifukuchikeisenhigashimiyakoshinguyukuhashiokagakiyamekogaongausuikahotohochuotoyotsumiyawakadazaifuhisayamatachiaraiyanagawanakagawahirokawachikujochikushinochikuhochikuzennamieotamaokumashowateneiiwakikoorinangoononishigoshimogoomotegomishimafukushimaasakawakagamiishishirakawaiitatefutabahiratayugawahanawakitakatakawamatakunimiyabukibandaihigashihironoyamatomiharuyamatsuriaizubangedatesomaaizuwakamatsuyanaizuaizumisatonishiaizuizumizakikitashiobarataishinkaneyamakoriyamainawashirotanagurafurudonosamegawasukagawaishikawatamakawaikedaogakitaruiginanenahashimahichisonakatsugawaibigawashirakawamizunamiminokamomitakekawauesekigaharatomikasakahogikitagatayamagatatajimianpachimotosuyaotsukakamigaharahidakanisekitokigujominogodoyorogifukasamatsutakayamawanouchihigashishirakawakasaharashimonitatsumagoichiyodakannakanrashowameiwakiryuotaoratomiokafujiokaitakuranaganoharahigashiagatsumatakasakishibukawaminakamikatashinatsukiyonokawabanumataannakaoizumimidorishintoisesakiuenoyoshiokakusatsutakayamanakanojonanmokutamamuratatebayashimaebashiotakekaitadaiwahongofuchukuietajimashobaramiharahatsukaichihigashihiroshimamiyoshikumanokurenakasakaseraseranishiasaminamifukuyamashinichionomichiosakikamijimajinsekikogentakeharaotobenanaeikedatohmaozoraobiraabirakyowaeniwataikibibaisharirebunerimohiroooketootarupippunishiokoppechitosefurubirahakodateshiranukakitahiroshimakushiroobihironanporoiwamizawaniikappukunneppufukushimanakasatsunaitoyourakuromatsunaiakabirakamisunagawashibechaurakawakamifuranonakatombetsuasahikawashimokawakayabeokoppebiratoriabashirisaromaatsumanumatahidakabifukamukawamikasahorokanaitoyotomisarufutsuhigashikawaishikarikitamiyoichiesashiiwanaitomariminamifuranoakkeshifuranotoyakoyakumootoineppushikaoishiraoinemuronayorohaboroashorobihororishirifujiutashinaihokutotakasuebetsuurausuassabukikonaishimamakinaiedatetoyabieinikiesanuryuoumuteshikagarikubetsuashibetsukimobetsuaibetsutobetsusobetsuembetsushimizuchippubetsurishirihokuryuhoronobeshintokutsubetsushibetsuhonbetsumombetsutsukigatakuriyamakoshimizushiriuchikutchanmurorannoboribetsukamishihorowassamushinshinotsukembuchiwakkanaikamoenaikiyosatotakinoueshikabesunagawafukagawanakagawatakikawakamikawahigashikagurahamatonbetsumatsumaemoseushirankoshishakotanimakanemashikeotofuketomakomaisandatambaitamiawajikasaiasagoshisoonoakoyashirotoyookaminamiawajiinagawafukusakitakasagokamigorikasugaharimayokawaashiyahimejiakashitaishiaogakisannantakinosumototakarazukanishinomiyashingugoshikinishiwakiyokatakaaioimikisayoyabukawanishiamagasakisasayamashinonsenkakogawaichikawakamikawatatsunotsukubaiwamaogawaasahisakaitokaioaraiitakobandodaigosuifuinaamikasumigaurakashimaomitamayachiyoshimodatetomobetoridehitachinakainashikisakuragawakasamayawaramoriyahitachiomiyanamegatayamagatahitachikamisuushikutakahagiibarakitonekoganakasowayukimihojosomitoryugasakishimotsumafujishirotsuchiurachikuseihitachiotashirosatotamatsukuriuchiharashikahakuinanaotsubatawajimakahokukawakitatsurugikaganominotosuzuuchinadakomatsuanamizunakanotohakusannonoichikanazawaiwateshiwafudaikawaimoriokaofunatohanamakikuzumakikitakamininohekunoheyamadayahabasumitaichinosekitanohatahiraizumirikuzentakatajobojiotsuchihironomiyakoiwaizumikarumaiichinohenodakujitonooshushizukuishifujisawamizusawakamaishikanegasakimannoutazukotohiraayagawazentsujihigashikagawauchinomikanonjisanukimarugamemitoyotakamatsutadotsunaoshimatonoshoakuneamamiizumihiokiyusuikinkoisasookouyamanakatanekagoshimakanoyaisenkawanabeminamitanemakurazakitarumizunishinoomotematsumotosatsumasendaioimatsudaayaseebinamiurazushinakaiodawaraiseharasagamiharahakoneaikawakaiseiatsugitsukuihadanoyamatoyamakitazamaoisochigasakininomiyayokosukakamakuraminamiashigarafujisawasamukawakiyokawahiratsukayugawaraokawaumajikochitsunootoyoakiinonishitosayasudahidakamiharasakawaniyodogawahigashitsunokagamigeiseisusakiotsukinaharisukumomurototosakamiochitoyotosashimizumotoyamanankokunakamurakitagawayusuharaogunichoyoukiasoutoozugyokutoamakusamifunetakamoriyamagaminamataminamiogunikikuchisumotoyamatonagasumashikiaraokumamotokamiamakusanishiharayatsushiroayabeseikasakyoideineujinakagyokameokakyotangokyotanabekyotambaminamiyamashiroyamashinatanabeyawatawazukaminaminantanmiyazuhigashiyamafukuchiyamakitamukokamojoyokizumaizuruujitawaraoyamazakinagaokakyokumiyamakawagoeinabeshimameiwaasahitaikiudonoisetsukisosakikuwanamihamamiyamasuzukatamakimisuginabarikumanokomonominamiisewataraitobakiwatakikihotadomatsusakayokkaichikameyamaureshinoishinomakishichikashukuohirataiwaosakizaohigashimatsushimashikamaiwanumashibataogawaraonagawakawasakiseminemarumoriminamisanrikukakudamuratawakuyatomiyanatoriwataritagajomisatotomekamirifushiroishimatsushimayamamotoshiogamafurukawahyugaebinotsunosaitoayakushimanobeokakitauramiyazakitakazakigokaseshiibamimatashintomikunitomikitakatakobayashikawaminamitakaharukijotakanabemiyakonojonishimeranichinankitagawakadogawamorotsukakisofukushimaminamimakisakaeobuseikedaogawamiasaokayaasahiotakiotarichinoinaomichikumakomaganechikuhokukaruizawayasuokaooshikaikusakaminamiaikitogakushimatsukawakawakamitateshinatakamorikitaaikishiojirimiyadahakubaiizunaiijimaiiyamamiyotasuzakayasakatoguraookuwanagawaminowahirayayamagataminamiminowafujimiomachisakakitakaginaganonakanosakuhokomoronagisoshinanomachiwadauedaiidaharasuwatomiachiaokianankisosakunozawaonsenagematsutakayamashimosuwamatsumotoyamanouchinakagawamochizukiazuminotatsunoobamaomuraseihiunzenosetofutsuikichijiwanagasakiisahayahasamisaikaikawatanasasebohiradokuchinotsugototogitsutsushimashimabarashinkamigotomatsuurayamazoekashibaikomakawaitenrioyodosangokoryoudaojiikarugayamatokoriyamatenkawakatsuragikurotakikawakamimiyakemitsuetakatorikamikitayamayamatotakadahegurishinjokanmakisakuraitawaramotogoseoudanarasoniandokawanishishimoichihigashiyoshinokashiharashimokitayamanosegawayoshinomintsivorytopazsakuragehirnsumomoaseinetopalmail-boxmokurenyoitamuikaojiyagosensanjoaganomyokoseiroagaomishibataniigatanagaokamurakamiuonumayuzawakariwatagamitainaitsunanminamiuonumatochioyahikojoetsuseiroukamosadoizumozakitokamachiitoigawasekikawakashiwazakitsubamemitsukekokonoesaikiusukibeppuusahimeshimakunisakihasamataketatsukumihitaoitahijikusuyufukujukamitsuebungoonobungotakadaibaraniimibizentsuyamaokayamakasaokahayashimayakagemaniwaakaiwamisakishinjotamanotakahashikibichuowakesojanagishookumenannishiawakurakurashikiasakuchisetouchikagaminosatoshotomigusukunakagusukuyaeseizenaurumaiheyaaguniogiminanjokinminamidaitokitanakagusukuyonaguniokinawaishigakikunigamiurasoekadenataramahiraraginozataketomishimojizamamitonakiitomanhigashimotobuyonabarugushikamionnanahanagohaebarukumejimakitadaitonakijinnishiharayomitanginowantokashikiishikawaikedasuitaminohizuminishisakaikananabenodaitoosakasayamayaokishiwadatadaokakaizukatondabayashichihayaakasakakumatorikadomasayamahigashiosakashijonawatehirakatataishimisakitajirihannansennankatanotoyonominatosettsuhigashiyodogawaibarakinosekitachuohigashisumiyoshifujiiderakashiwaraizumiotsutoyonakamatsubaramoriguchiizumisanoshimamototakatsukineyagawahabikinotakaishikawachinaganoyoshinogarikamiminearitaouchiimarihizenogikashimaariakekiyamafukudomikitagatakitahataomachigenkaikanzakinishiaritakyuragisagataratosutakushiroishikaratsuhamatamakouhokukawagoeyoshidasatteogoseirumaasakaurawaogawaniizaomiyayoriiotakishikihonjooganohannohanyuinasaitamaokegawaarakawayoshikawayokozehasudasayamahidakafukayachichibuiwatsukiryokamiyoshimikamiizumifujimiwarabiranzanmiyoshiminanoyashiosakadosugitomisatohigashichichibutodasokakukiyonokazoshiraokakasukabekounosukawajimatsurugashimamiyashirokitamotohatoyamamoroyamahatogayakumagayakawaguchinagatorokamisatomatsubushinamegawatokigawakamikawafujiminohigashimatsuyamakoshigayatokorozawas3isk01isk02ryuohkoseikonanaishorittotakashimamaibarahikonetorahimenishiazaikokagamokotoyasuotsukusatsunagahamamoriyamatoyosatotakatsukinotogawaomihachimanhigashiomiakagiunnanizumogotsuamayatsukakakinokimatsuehamadamasudahikawahikimiokuizumoyasugiyakumomisatotamayuohdahigashiizumookinoshimanishinoshimatsuwanoshimaneshimadafujiedayoshidashimodagotembaiwataatamikosaiyaizuitoizumishimahaibaramakinoharaomaezakikawanehonkannamisusonohigashiizufukuroinumazukawazufujiaraishizuokahamamatsushimizuizunokunimatsuzakimorimachiminamiizunishiizukikugawakakegawafujikawafujinomiyaujiietsugaoyamayaitaohiranikkoashikagakuroisokanumasakurashioyakarasuyamamotegiichikaikaminokawatochigihagamokanogisanobatonasumibunasushiobaranishikatautsunomiyaiwafunemashikoshimotsukeohtawaratakanezawaitanokomatsushimatokushimaichibaminamiaizumiwajikikainanmiyoshinarutomimamugiananmatsushigesanagochishishikuinakagawamachidachiyodakomaefussainagitaitochofufuchuomeotahigashiyamatotoshimaokutamaaogashimakodairaedogawaarakawahachiojishinagawatachikawashibuyasuginamihinodekiyosesumidaoshimanerimamitakahamuraadachinakanomizuhobunkyomegurominatokoganeihigashikurumekokubunjihigashimurayamamusashimurayamatamakitahinochuokotokatsushikakouzushimaogasawaraakishimakunitachishinjukusetagayamusashinohachijoitabashiakirunohinoharachizunanbukotouramisasawakasayonagokogehinoyazutottorinichinansakaiminatokawaharaoyabetairainamiasahinantoimizufuchutakaokakurobeyamadajohanatoyamatonaminyuzenfunahashinakaniikawanamerikawaunazukitogahimiuozufukumitsutateyamakamiichiiwadearidayuasainamitaijikatsuragiaridagawatanabemihamahidakakainankiminomisatoshingushirahamakamitondayurakozakoyagobokitayamawakayamakudoyamahashimotokushimotokozagawahirogawakinokawanachikatsuurarsuseroeoishidasagaeoguniasahinagaitendonanyoobanazawanishikawasakataohkuratozawamikawamamurogawayamagatafunagatatakahatashonaishinjokahokuiideyuzakawanishitsuruokakaminoyamayamanobeshiratakamurayamanakayamakaneyamahigashineyonezawasakegawamitouubeyuuabushimonosekitabuseoshimatoyotaiwakunihikarishunannagatohagihofukudamatsutokuyamashowadoshitsurunanbukoshukaiminami-alpsnirasakikosugeotsukioshinohokutominobuyamanashifuefukichuokofuichikawamisatoyamanakakonakamichitabayamanishikatsuranarusawafujikawahayakawafujiyoshidafujikawaguchikouenohara\u9577\u91CE\u4EAC\u90FD\u5C90\u961C\u5927\u962A\u4E09\u91CD\u7FA4\u99AC\u5343\u8449\u6ECB\u8CC0\u4F50\u8CC0\u5948\u826Fadednelgaccogogror\u79CB\u7530\u611B\u77E5\u9AD8\u77E5\u57FC\u7389\u6C96\u7E04\u6803\u6728\u718A\u672C\u5CA9\u624B\u9752\u68EE\u5C71\u68A8\u65B0\u6F5F\u5CF6\u6839\u9CE5\u53D6\u9577\u5D0E\u9999\u5DDD\u5BAE\u57CE\u77F3\u5DDD\u5927\u5206\u5BAE\u5D0E\u8328\u57CE\u5C71\u53E3\u5175\u5EAB\u5C71\u5F62\u5FB3\u5CF6\u5E83\u5CF6\u798F\u5CF6\u798F\u5CA1\u5CA1\u5C71\u5BCC\u5C71\u9759\u5CA1\u611B\u5A9B\u798F\u4E95\u6771\u4EACxn--4it168dhatenadiaryxn--vgu402ckawaiishophatenablogcocottenamaste\u5317\u6D77\u9053penneehimeiwateversestabachibashigagonnagunmapermahaccaakitaosakauh-ohblushkochiaichifukuikuroncapooitigohyogotokyokyotopunyuthickcheap0t00g00j0mie2-ddaapyawjg0amfemsubxiiboomoobutchueekpgwrgrherskrboyrdyupperunderflierchipsmydnsheavyangryhippygirlyrulez\u795E\u5948\u5DDD\u9E7F\u5150\u5CF6\u548C\u6B4C\u5C71bambinaxn--nit225kokayamasaitamaxn--k7yn95exn--1lqs03nsapporoparasitelolipopmcxn--efvn9sniigatafukuokatokushimafukushimahiroshimakagoshimafakefurokinawaxn--8pvr4ucoolblogxn--0trq7p7nnkawasakinagasakimiyazakichilloutxn--8ltr62kxn--klty5xpeeweezombiecutegirlxn--rny31hxn--uuwu58axn--ntso0iqx3axn--djrs72d6uytoyamanikitanyantakagawamimozanagoyaboyfriendxn--2m4a15egreaterchowderegoismyamagatafashionstorexn--elqq16hxn--pssu33lsendaimiyagixn--rht27zpecoriaomorisaloonwatsonvivianxn--djty4knobushipigboatnaganopinokoxn--f6qx53asadistvelvetsecretxn--5js045dchicappayamanashiibarakidigickgirlfriendxn--1lqs71dmongolianxn--c3s14mxn--qqqt11mtochigixn--5rtq34kparallelo0o0mondkobesagabonadecaoitanarafoolkilldecimainhiholomosblokilociaoundopupugifutankcrapflopnooroopsmodsholyjeezstripperpepperbittershizuokaxn--rht3dkitakyushureadymadeicurusversusmatrixxn--rht61ehungryfloppygloomycrankyhandcraftedlittlestarxn--klt787dxn--kltx9awhitesnowsunnydaytottorilovepoptheshopbuyshopxn--5rtp49cxn--d5qv7z876cwebaccelxn--kbrq7oxn--4pvxsxn--1ctwolovesickkumamotocatfoodxn--tor131oyokohamawakayamatonkotsuxn--ehqz56nxn--uist22hxn--6btw5axn--kltp7dyamaguchifrenchkisspussycatxn--4it797kxn--uisz3gbabybluexn--zbx025dnetgamersxn--7t0a264ckanagawaxn--6orx2rishikawaxn--ntsq17ghalfmoonschoolbusjellybeanxn--mkru45iusercontentlolitapunkxn--32vp30hsakurastoragehokkaidoshimanecandypopbabymilksupersaleweblikeraindropbackdropwebsozaikikirarahateblodaynightmeneacsccogoormobiinfoaeusxxorgmilcomnetedugovorgcomnetedugovbizinfotmprdorgmilcomnomedugovassnotairespresseassocoopgouvveterinairemedecinpharmaciensorgnetedugovtraorgcomedurepgovmeneperekgacscaiiocogoitoresmshsseoulbusanulsandaeguc01milvkimmvchungnamjeonnamjeonbukeliv-dnsgyeonggijejueliv-cdnincheondaejeongangwongyeongbukgwangjuchungbukgyeongnameliv-apicoeduindorgcomembnetedugovorgmilcomnetedugovjcloudorgcomnetintedugovperbnrinfocooyorgcomnetedugovethipfscanvamypepethw3sstorachakeeneticjoinmcinbrowserdwebcyonnftstoragemyfritzaemewphlxachotelltdorgcomwebsocschngonetintedugrpgovassnomgacsccoorgnetedugovbizinfo123websiteidorgmilcomasnnetedugovconfidmedorgcomplcschnetedugovaccoorgnetgovpresstmassoirseproxaccosoundcasthoptocraftvp4c66orgnetedugovitsmcdirmyboxbarsyedgestacksynologylogintoopencloudnohostwebhopdiskstationi234tcp4hoocgroknoipprivmydsddnsdnsforlohmustransipdscloudfilegear-sgbrasiliafilegearframerbarsybarsyonlinecoprdorgmilcomnomedugovinforgcomnetedugovnameacprorgcomartnetedugovpresseinfoassoinstgouvorgnycedugovbarsydscloudjuorgcomnetedugovminisiteaccoororgcomnetgovorgmilcompronetintedugovbizmuseumnameinfoaerocoopaccoorgcomnetintedugovbizcooporgcomgobneteduorgmilcomnetedugovbiznameaccoorgmilneteduadvgovcoorgcomnetaltgovforgotherhiskeeneticispmanagernomassoprod5476132eastasiacentraluswesteuropewestus2eastus2pnortheurope-01newzealandnorth-01southindia-01southcentralus2-01norwaywest-01eastus2-01westus2-01australiaeast-01italynorth-01israelnorthwest-01swedencentral-01westeurope-01centraluseuap-01taiwannorthwest-01uaecentral-01northcentralusstage-01israelcentral-01mexicocentral-01canadacentral-01austriaeast-01germanywestcentral-01francecentral-01ukwest-01denmarkeast-01polandcentral-01eastus-01westus-01swedensouth-01eastus3-01westus3-01brazilsouth-01centralus-01francesouth-01australiacentral-01westindia-01uaenorth-01jioindiacentral-01canadaeast-01belgiumcentral-01spaincentral-01koreacentral-01chilecentral-01qatarcentral-01westcentralus-01eastus2euap-01norwayeast-01southafricanorth-01brazilsoutheast-01germanynorth-01switzerlandnorth-01switzerlandwest-01japanwest-01southafricawest-01japaneast-01eastasia-01indiasouthcentral-01taiwannorth-01centralindia-01uksouth-01southcentralus-01northcentralus-01eastasiastage-01indonesiacentral-01australiacentral2-01australiasoutheast-01malaysiawest-01koreasouth-01southeastasia-01southeastus5-01northeastus5-01jioindiawest-01rucdnwest1-usfra1-desandboxjls-sto1jls-sto3jls-sto2aglobalabglobalsslmapprodfreetlsmapvpslon-1lon-2ny-1fr-1sg-1ny-2paassnwebpaashostingjelasticnordeste-idcsocuserpagescwebfileblobservicebuscoreatlricnjsjelasticwebsitestoragesezagbinruhuukjptsmyspreadshopmynetnameakamaiorigin-stagingfrom-coipv64dynv6cdn77serveblogadobeaemcloudhicamsprytdnsupno-ipownipde5ovhicpfirewall-gatewaysytesmypsxbarsyusgovcloudapimyamazemyradwebakamaihdsaveincloudfastlylbfrom-lasubsc-paysquare7in-the-bandblackbaudcdnhomelinuxoninfernoctfcloudservebbsdns-dynamiccloudfrontakamai-stagingipifonyham-radio-opsenseeringclickrisingcommunity-profrom-nylocalcertgrafana-devedgesuite-stagingcloudflareanycasteating-organicatlassian-devmydattofeste-iplocaltotorprojectknx-serveredgekeycloudflareglobalcloudyclustercasacamserveftpakamaized-stagingakamaiorigindns-cloudmyeffectboomlabotdashbuyshousestwmailhetemlazure-mobilein-dslthruhereredirectmedynuddnsbouncemesupabaseluyanicloudappakamaicloudfunctionsdebiannhlfanpgafanstatic-accessin-vpnmysynologymafeloappudohomeftptrafficmanagersiteleafseidatmemsetcloudflarecloudaccesskeyword-onazure-apiis-a-chefdoes-itgets-itwebhopselfiphomeipkicks-assedgesuitewindowsserver-ontunnelmolemydissentscrapper-sitecloudflarecnuni5srcfggffiobbzabchrsndenodynuopikddnsvpndnsakadnselastxkinghostvps-hostfastlyhomeunixazureedgeshopselectdontexistmyfritzcloudjiffyalwaysdatasells-itsquaresbroke-itazurefddattolocalat-band-campmeinforumfamilydsazurestaticappsdefinimabplaceddnsaliasdynaliasnow-dnsblogdnsroutingthecloudendofinternetdsmynasakamaiedgemymediapcadobeio-staticakamaiedge-stagingakamaihd-stagingddns-ipprivatizehealthinsurancelive-onkrellianschokokeksmassivegridmysecuritycamerarackmazeserveminecraftfrom-azis-a-geekakamaizedmoonscaleoffice-on-theusgovtrafficmanageradobeioruntimeedgekey-stagingreserve-onlinechannelsdvrdnsdojousgovcloudappcdn77-sslapps-1and1podzoneazurewebsitesdynathomescaleforceyandexcloudvusercontentisa-geekcdn-edgescoaemalcesappwriteazimuthtlonarvobuiltwithrocketnoticeablestorecomwebrecnetperotherfirminfoartslgdloncogoiltdorgmilcolcomplcschgenngonetedugovbiznamefirmmobiacincoorgmilcomnomwebgobnetintedubizinfocomyspreadshopdemongovtransurl123websitehosting-clusterkhplaycistrongsnesosvalerv\xE5lerxn--vler-qoaossandeheroysandeher\xF8yb\xF8boheroyher\xF8yxn--hery-iraxn--b-5gavalerb\xF8boxn--b-5gasandesandexn--hery-iraxn--vler-qoav\xE5lerh\xE5re\xE5laahavaofsfvfhlolnlalrlhmfmtmahcostntbu\xE5strmreigersundmyspreadshopg\xE1ls\xE1eidsvolltingvollgildeskalflor\xF8vads\xF8vard\xF8vanylvenxn--bhccavuotna-k7astrandaxn--kvnangen-k0axn--sknland-fxaxn--mosjen-eyarakkestadhyllestadnannestadvevelstadvaapstenordre-landsondre-lands\xF8ndre-landtjieltexn--vrggt-xqads\xF8r-aurdalsor-aurdalheradstordmoldefordef\xF8rdeseljefedjeryggehemnexn--krehamn-dxasognegranes\xF8gnebrynetjomevallebykletokkegiskedovretj\xF8mehob\xF8lvoldasaudatolgas\xF8mnaviknad\xF8nnasomnadonnatranafrananesnaraumasmolatr\xE6nafr\xE6nalesjasm\xF8la\xF8rstaorstahitrafloraaukraloppafr\xF8yarissasnasahalsagalsaromsaraisar\xE1isafroyasn\xE5sagronghobolfjelltydal\xE5rdalardalaskimharamkraanghkekr\xE5anghkesorumbarumhurumb\xE6rums\xF8rummodums\xE1l\xE1tb\xE1l\xE1tfrognbjugnv\xE5ganvagangulenskienl\xF8tenlotenstrynvefsnxn--merker-kuaskaunsveiob\xF8mlobomloskj\xE5kvardoflorovadsosalatbalats\xE1latkl\xE6buklabuselbubarduulvikskjakkleppris\xF8rxn--nttery-byaefl\xE5eidflahofmilgolholsellomskifetvikdepvgsfhsaskerrisorhamarasnes\xE5snesr\xF8rosrorosxn--slat-5namasoynaroyvaroyluroydyroyaskoyradoyandoyrodoymeloyrad\xF8yand\xF8yr\xF8d\xF8ymel\xF8yask\xF8ylur\xF8ydyr\xF8ym\xE5s\xF8yv\xE6r\xF8yn\xE6r\xF8yhoylandeth\xF8ylandetdivtasvuodnal\xF8renskoglorenskognesoddtangenxn--tjme-hraxn--smla-hraxn--stjrdal-s1aunjargalillehammerunj\xE1rgaxn--hamary-fyadavvenjargaxn--bearalvhki-y4a123hjemmesidegjerdrumxn--brnnysund-m8acxn--tnsberg-q1axn--mlatvuopmi-s4axn--snsa-roaxn--skierv-utaxn--brum-voatysfjordkvafjordeidfjordkv\xE6fjordsongdalenmjondalenmj\xF8ndalenxn--gls-elackragerog\xE1\u014Bgaviikagangaviikas\xF8rreisasorreisas\xF8r-varangersor-varangerxn--risr-iraskiervaxn--frna-woaxn--trna-woakvinesdalleksvikleirvikr\xF8yrvikroyrviksvelvikvenneslaevje-og-hornnessandnessj\xF8enmarnardalvindafjordsandefjordenebakksnillfjordullensvangxn--trany-yuabr\xF8nn\xF8ysundnamsskoganaustevollxn--stjrdalshalsen-sqbnord-aurdalnord-frontr\xF8gstadtrogstadgrimstadflakstadgjerstadxn--sandy-yuaxn--leagaviika-52bnore-og-uvdalvegarsheixn--rlingen-mxaxn--ggaviika-8ya47hveg\xE5rsheikarlsoykvitsoymasfjordenhamaroyinderoyosteroydavvenj\xE1rgasauheradguovdageaidnuxn--vre-eiker-k8abronnoysiellakkr\xF8dsheradkrodsheradkvinnheradbr\xF8nn\xF8yxn--mtta-vrjjat-k7afxn--lrenskog-54akvits\xF8yv\xE1rgg\xE1tkarls\xF8yoster\xF8yinder\xF8yhamar\xF8ybronnoysundxn--aurskog-hland-jnbbahccavuotnab\xE1hccavuotnagiehtavuoatnastor-elvdalmidtre-gauldalxn--gildeskl-g0akarasjokevenassixn--bievt-0qaxn--yer-znalebesbynessebyxn--hbmer-xqamalselvm\xE5lselvxn--unjrga-rtam\xF8re-og-romsdalmore-og-romsdalhareidmeland\xF8rlandorlandstrand\xE5lg\xE5rdsolundalgardafjord\xE5fjorddielddanuorrikautokeinoxn--stre-toten-zcbskodjeaejriestangeliernebamblestokkefauskesn\xE5asesnaasekongsvingerlangevagberlevagxn--flor-jrahattfjelldalostre-toten\xF8stre-totenvestfoldxn--mely-ira\xE1laheadjualaheadjunordreisaxn--troms-zuaxn--lgrd-poacporsangerflatangerstavangerleikangerbremangersamnangergieldakarasjohkaxn--rdy-0nabfrostautsirasnoasatromsaxn--sr-aurdal-l8aflekkefjordj\xF8lsterjolsteraremarkhedmarkn\xE5\xE5mesjevuemienaamesjevuemiexn--vard-jrarollagmer\xE5kermerakerorskog\xF8rskogxn--bdddj-mrabd\xE1k\u014Boluoktaxn--osyro-wuaaknoluoktatrysilskjerv\xF8ymandaljondalbindalrindalmeldalsuldalorkdalsigdalalvdall\xE6rdalhurdalsirdalverdallerdallardaloppdal\xE5seralaseralhadselkrager\xF8divttasvuotnaoverhallasteinkjerxn--hnefoss-q1askedsmokorsettroms\xF8xn--dyry-iravestre-totenmuseumxn--sandnessjen-ogbrahkkeravjufylkesbiblb\xE1jddarbajddarxn--laheadju-7yarennes\xF8yxn--koluokta-7ya57hxn--hgebostad-g3aleirfjordstorfjordbalsfjordb\xE5tsfjordbatsfjordmuos\xE1tbiev\xE1tloab\xE1tk\xE1r\xE1\u0161johkan\xF8tter\xF8yxn--mjndalen-64anordkappl\xE1hppilahppialstahaugsiljanverranr\xF8ykenroykenhaldenlyngenbergenhortenh\xF8nefosshonefosstroandinbeiarnvarggatosoyroos\xF8yrotromsoidrettmuosatbievatruovatloabatvoagattynsetnessetxn--indery-fyask\xE1nitskanitraholtr\xE5holtxn--ystre-slidre-ujbandebusarpsborgbearduxn--karlsy-fyahordalandjorpelandj\xF8rpelanddeatnuringsakers\xF8r-odalsor-odalxn--slt-elabringerikeaudnedalnittedalnissedalhemsedalslattumsurnadalxn--blt-elabelverumstj\xF8rdalnaustdalhjartdalgj\xF8vikfyresdalhasviknarviklarvikgjovikmalvikgamviklenvikporsgrunnstjordalengerdaldrobakdr\xF8bakxn--msy-ula0hvestvagoyxn--vgan-qoaxn--ryken-vuaxn--lten-graxn--stfold-9xaxn--hpmir-xqaxn--lury-iram\xE1latvuopmimalatvuopmitysv\xE6rkirkenesbirkenesmoskenesb\xE1id\xE1rxn--fjord-lraxn--rdal-poabahcavuotnab\xE1hcavuotnaxn--frde-gralind\xE5sbearalvahkixn--hobl-irar\xE1hkker\xE1vjuxn--loabt-0qav\xE5g\xE5\xE1lt\xE1bod\xF8sundlundrader\xE5deetnetimeholeauregrueoddavagavegaranatanaarnasolasulaaltalekafusavangbergkvam\xE5mliamlibokntinnroangranosenoslobodor\xF8stroststat\xE5motamotivgupriv\xF8yeroyerliermossvossxn--nvuotna-hwalusterlunnermarkerh\xE1bmerhabmerhvalerfjalerxn--rholt-mratysvarbaidarfitjargaularh\xE1pmirhapmirmelhusfosnes\xF8ksnesoksnestysneshemnesevenesflesbergeidsbergtonsbergt\xF8nsberglindasxn--sndre-land-0cbnamsosxn--srum-gra\xF8ystre-slidreoystre-slidrevestre-slidretrondheimbalestrandxn--langevg-jxaaustrheimxn--skjk-soavagsoyaveroysandoykarmoyfinnoytranoyvestbytranbysykkylvenxn--hyanger-q1aspjelkavikandasuoloxn--fl-ziaxn--drbak-wuastathellexn--sr-varanger-ggbtelemarkxn--bhcavuotna-s4axn--porsgu-sta26f\u010D\xE1hcesuolocahcesuoloakrehamn\xE5krehamnsand\xF8ykarm\xF8yfinn\xF8ytran\xF8yv\xE5gs\xF8yaver\xF8ynamdalseidxn--lesund-huabadaddjaxn--vegrshei-c0axn--btsfjord-9zagildesk\xE5lporsanguxn--trgstad-r1an\xE1vuotnanavuotnahammerfestxn--sgne-graxn--brnny-wuacibestadharstadnarviikaeven\xE1\u0161\u0161ivestnesgjemnessandnesagdenesrennesoyxn--avery-yuaxn--tysvr-vrabearalv\xE1hkikongsbergspydebergrandabergxn--andy-iradavvesiidaxn--krdsherad-m8apors\xE1\u014Bgufredrikstadbjerkreimringeburennebuaurskog-holandnotteroyxn--vgsy-qoa0jxn--rmskog-byaskierv\xE1ivelandbyglandfrolandaurlandforsandxn--bjddar-ptamidsund\xE5lesundalesundfetsundfarsundovre-eiker\xF8vre-eikerakershusxn--moreke-juas\xF8rfold\xF8stfoldostfoldsorfoldh\xF8yangerhoyangerlevangerorkangertanangerxn--vestvgy-ixa6olillesandulsteinxn--rennesy-v1agranvinskjervoyxn--klbu-woalavagisxn--h-2faxn--ryrvik-byakafjordk\xE5fjordseljordfolkebiblxn--gjvik-wuajevnakerxn--kfjord-iuabudejjuxn--kranghke-b0axn--davvenjrga-y4axn--rland-uuaxn--ldingen-q1axn--mlselv-iuaxn--rady-iraxn--linds-prabrumunddalxn--ygarden-p1amo-i-ranaeidskogr\xF8mskogromskoghjelmelandxn--finny-yuaxn--sr-odal-q1axn--skjervy-v1aballangenkvanangenkv\xE6nangengratangenxn--hmmrfeasta-s4acvossevangensuohkanxn--rde-ulaxn--mli-tlaxn--ksnes-uuanordlandskanlandsk\xE5nlandsortlandfuoiskuxn--rros-graxn--hcesuolo-7ya35bxn--eveni-0qa01gagaivuotnag\xE1ivuotnaxn--seral-lradrammenmodalenmosjoenjan-mayentorskensteigengloppenxn--snes-poamatta-varjjatxn--sr-fron-q1aomasvuotnajessheimb\xE5d\xE5ddj\xE5xn--krager-gyaxn--kvfjord-nxaxn--asky-iraxn--snase-nraxn--bidr-5nacholt\xE5lenxn--vads-jraxn--jlster-byamosj\xF8enxn--rst-0nastavernxn--ostery-fyaxn--oppegrd-ixaxn--sknit-yqaxn--risa-5naoppeg\xE5rdskiptvetrendalenholtalenxn--mot-tlaxn--lhppi-xqaxn--holtlen-hxaxn--srreisa-q1akopervikxn--muost-0qaxn--bmlo-grahokksundkvalsundegersundxn--karmy-yuaullensakerxn--hylandet-54axn--kvitsy-fyaxn--bod-2nalangev\xE5gberlev\xE5gkristiansandxn--rsta-frahornindalstj\xF8rdalshalsenstjordalshalsensandnessjoenh\xE1mm\xE1rfeastaxn--lrdal-sras\xF8r-fronsor-fronnord-odalkristiansundm\xE1tta-v\xE1rjjatvestv\xE5g\xF8ynesoddennotoddenbuskerud\xF8ygardenoygardensalangenlavangenralingenr\xE6lingenlodingenl\xF8dingenlea\u014Bgaviikalaakesvuemieleangaviikauenorgexn--srfold-byaaskvollxn--rskog-uuaxn--nry-yla5gxn--vry-yla5ghammarfeastaxn--rhkkervju-01afxn--givuotna-8yakommunekrokstadelvanedre-eikerhagebostadh\xE6gebostadxn--berlevg-jxakviteseidxn--s-1faxn--l-1faxn--nmesjevuemie-tcbafuosskomo\xE5rekemoarekexn--lt-liacxn--jrpeland-54asvalbardoppegardholmestrandtvedestrandsogndalsokndalarendalsunndalfolldalxn--krjohka-hwab49jlyngdaletnedalnorddalsaltdalgausdalskedsmovaksdalgjesdalstordalxn--frya-hraaarbortedrangedalxn--smna-graaurskog-h\xF8landxn--vg-yiabtjeldsundhaugesundlindesnesxn--mre-og-romsdal-qqbxn--dnna-gradyntmpheremerseineshacknetenterprisecloudmineaccomaorim\u0101oriorgmilcriiwigennetschoolhealthkiwigovtgeekxn--mori-qsacloudnsparliamentcomedorgcompronetedugovmuseumwebsitekinservicebarsywebsitebuildereerobookheimdnsleapcelleero-stagetechcrscsslorigingohomecdbedeeeiemesecabgngilnlalplchfisiincnnoroptatitmtltruauhulumkdkukskjplvtrgrfrkrhrusesismycynzcznetinteduassoososcloudstgbetaaezaeuhkusjshatenadiarycdn77hoptozaptois-a-knightmyftpno-ipjpnddnssdpdnsspdnsbarsysweetpepperis-a-bruinsfanis-very-sweetservegameis-a-soxfanhomelinuxcdn77-secureservebbsmisconfusedwebredirectblogsitefreedesktopcouchpotatofriestoolforgeaccesscamis-lostreadmyblogsmall-webfedorapeopleserveftpis-a-celticsfanmywirepotagertwmailin-dslsellsyourhomeread-booksfreeddnscable-modemis-savednflfanufcfanmlbfanstuff-4-saleendoftheinternetin-vpnmy-firewallhomeftpis-localis-a-chefboldlygoingnowherewebhopselfipkicks-assroxatunkcamdvrfedoraprojectgotdnsdvrdnsdyndnspubtlspimientahomeunixdontexistfedorainfracloudwmflabsfspagesbmoattachmentsteckidsfamilydsdnsaliasdynaliasnow-dnscloudnsdoomdnsduckdnsblogdnshomednsroutingthecloudendofinternetdsmynasip-dynamicpoivronhttpbinmyfirewallis-very-evilmysecuritycamerais-a-linux-userwmcloudis-a-geektuxfamilyis-a-candidatedoesntexistis-very-badhobby-sitegame-hostaltervistais-foundis-a-patsfandnsdojohepforgepodzonedynservcollegefanis-very-goodfrom-meis-very-niceisa-geeknerdpolacmedsldingorgcomnomgobabonetedupleskaemhlxmyboxrockyprvcydeuxfleurspdnscodebergheyflowstatichostorgmilcomnomgobneteduorgcomeduiorgmilcomngonetedugovcloudns1337ngrokacorggogfamcomwebgobnetedugokgopgkpgovgosbizpasaugumicsopozpapuwmwsrprusiskwpspkppspkmpspokeoiawsawifoumsdnskokwpmuppuppsppiwwiwoowuzswkzoschrzpisdnwzmiuwwitdpssewsseumigugimoirmpinbwinbwiihupporzgwgriwupowwskrwioswuozstarostwokonsulattmpccopruszkowmyspreadshopostrodakartuzyopolegminamediaustkazgorajgoraolawailawalomzawloclradombytomjaworznotargilubinkoninzagantorunkutnokepnonakloczestsopotsanokturekplockslasksklepzarowlukowmedaidgdaorgmilrelcomnomatmgsmartneteduelkgovwawsossexbiztgorysejnytychypomorzeboleslawiechomesklepsdscloudunicloudzakopanelegnicarawa-mazbydgoszczswidnikkrasnikwloclawekbielawamragowograjeworealestatebeskidykaszubymalopolskaprzeworskswiebodzinlecznadfirmaszkolawarmiagdyniamiastakazimierz-dolnymalborkswidnicadlugolekaostrolekapodlasieelblagtravelsimplesitezachpomormielecszczecinnieruchomosciwalbrzychlezajsklublinbedzinpoznanwielunmielnooleckostarachowicedkontopowiatwroclawrybniksuwalkileborkslupskgdanskostrowwlkptarnobrzegtourismwegrowkrakowglogowyou2pilanysamailwrocinfoagroautobeepshopprivlapypiszlodzcfolksecommerce-shopmazurypulawyskoczowrzeszowpomorskiezgierzkaliszolkuszlowiczostrowiecsosnowiecmazowszewodzislawbialowiezazgorzeleckatowicepabianicejelenia-gorawolominkarpaczsieradznowarudaczeladzkonskowolaskierniewiceswinoujscieturystykabieszczadycieszynketrzynolsztynbialystokbabia-goraprochowicewarszawastalowa-wolapolkowicegorlicegliwiceponiatowalimanowalubartowaugustowkobierzyceopocznognieznoszczytnokolobrzegshoparenapodhalebielskoklodzkostargardatwithplayitownnamecoorgnetedugovacorgcomproestnetedugovbiznameislaprofinforechtngrokmedaaaacacpaenglawjurbarbarsykeeneticavocatacctcloudnsorgcomsecplonetedugov123paginaweborgcomnetintedugovnomepublidkinbarsygovx443cloudnsorgmilcomnetedugovcooporgmilcomschnetedugovnamecomcannetlibassoaemclantmcontstoreorgcomnomrecwwwbarsyfirminfoshopartsstackitmyddnswebspacelima-cityacincooxorgedugovbarsybrendlyhbvpsvpsspectrumlandinghostingacppmordoviamcprecbgorgmilcomspbnetintedumsknovgovbirrasmcdirmytismircloudvladimirnalchikadygeyamarinepyatigorskmyjinobashkiriaeurodirvladikavkazna4ugroznykustanaikalmykiacldmaildagestaniranbuildcloudcanvaliaravalwixdevelopmentappwritemigrationneedleverceldatabasestackitcodereplravendbonporterlovableaccoorgmilnetgovcoopmedorgcompubschnetedugovservicemecomygovorggovtvmedorgcomnetedugovinfoedgfacbmlonihkutwpsryxzbdtmacfhppmyspreadshopbrandpartiorgcomfhvpress123minsidaitcouldbeworlanbibkommunalforbundfhskiopsyskomvuxkomforbnaturbruksgymnloginlineorgcomnetedugovenscaledeuusentbotdaorgmilcomnetgovnowteleporthashbangplatformlovablebarsyshopwarebasehoplixbarsyonlinemsf5gitappgitpagewawamscofigma-govcaffeinefigmacanvasoltstscwputerbarsysupportchatgptsquareomniweopensocialcpanelplaycodenotionnovecorewpsquaredpreviewjelecyonbyensrhtfastvpspieboxconvexjouwwebheyflowplatformshloginlinemadethissourcecraftclouderaorgorgcomartedugouvunivmeorgcomnetedugovsurveysstatichfheiyuxs4allprojectmyfastubervibehostapp-ionosdeployagentmecoorgcomschnetedugovbizcncostoreorgmilcomneteduembaixadaconsuladokiraranohoprincipesaotomeheliohobarsystorebaseshopwaresellfyaiabkhaziavologdamordoviapenzalenugsochinavoiexnetspbmsknovnorth-kazakhstanashgabadkareliaarmeniageorgiavladimirnalchikivanovobukharaadygeyakhakassiakalugakrasnodarjambylaktyubinsktroitskbryanskobninskkurganazerbaijanpokrovskbashkiriatselinogradvladikavkazmurmansktulatuvamangyshlaktashkentchimkentgroznykaragandatermezarkhangelskkustanaikalmykiabalashoveast-kazakhstankaracoldagestantogliattibarsyredorgcomgobedumirenknightpointaccoorgjelasticdiscoursecleverappsschacmiincogoornetonlineshopcogoorgmilcomwebnicnetintedugovbiznametestcoorgmilcomnomnetedugovorangecloudpersoindorgcomfinnatnetgovensmincomtourismintlinfox0611oyaorgmilcomnetedugovquickconnectvpnplusnettprequalifymeaddrmyaddrntdllwadlnctvavdrk12orgmilpolbeltelcomwebgennetedutskkepgovbbsbiznameinfocoorgmilcompronetedugovbiznameinfobetter-thanworse-thansakurafromdyndnson-the-webmymailerorgmilurlcomneteduidvgovmydnsgameclubebizmeneacsccogotvorhotelmilmobiinfovodteiflgplkmsmsbcckhincndnvncoztltmkckppzpdprvcvkvlvcrkrkscxuzchernovtsyrivneyaltaodesavolynrovnolutskltdinforgcomnetedugovbizvinnicazhitomirternopilpoltavakropyvnytskyizaporizhzhiasevastopolsebastopoluzhgoroduzhhorodkharkovkharkivvinnytsiakhmelnytskyizaporizhzhecrimeaodessazhytomyrnikolaevcherkassydonetskluganskluhanskkirovogradivano-frankivskchernivtsikrymkievkyivlvivsumyzakarpattiamykolaivcherkasychernigovkhersonchernihivdnipropetrovskdnepropetrovskkhmelnitskiyneacsccogoorusorgmilcomedugovmyspreadshopadimono-ipbarsybarsyonlinelayershiftnh-servretrosnubapicampaignservicelugaffinitylotteryweeklylotteryraffleentrygluglugsmeaccoindependent-inquestnimsitecopropymntltdorgplcschnetgovnhsbarsyindependent-commissionindependent-reviewpolicepublic-inquiryindependent-panelconnhospindependent-inquiryroyal-commissionoraclegovcloudappscck12libccphxcclibpvtparochchtrcck12libcceatonk12coglibtecgendstmusann-arborwashtenawcck12glghcck12sealibforksolympiabainbridge-islkeyporthoquiamyarrow-pointcentraliaport-townsendsequimport-ludlowrentonsilverdalebremertonredmondsheltonbellevueport-orchardport-angeleskingstonchehalisaberdeengig-harborseattlepoulsboidmdndsddemenegacalamaiavawapailalflnmdcncscohnhmihiviwiriinmntnmocoutvtctmtgunjokakwvnvprarorasmskstxwynykyazisadninsnngosrvis-bymircloudservernamepointtoenscaledland-4-salefreeddnsstuff-4-saleazure-apinoipcloudnsgolffanheliohostazurewebsitesgvorgmilcomgubneteducoorgcomnetd0egvorgmilcomnetedugovmydnsiacostoree12orgmilcomnomwebgobbibrectecnetintedugovraremprendefirminfoartseducok12orgcomnethidnsidacaiiosonlahanamhanoicamauhueorgcompronetintedugovbizbacninhtayninhhoabinhnamdinhtravinhhaiphongvinhlonghaiduongquangnamquangtrithuathienhuequangninhbacgianghaugiangquangbinhsoctrangbentrethanhphohochiminhdanangkontumhatinhkhanhhoathanhhoahealthgialailaocaiyenbaibackanngheanlonganphuyenphuthocanthodaklakdongnainameinfovinhphucdongthapkiengiangtiengiangquangngailaichaulangsonlamdongdaknonghagiangangiangcaobangbinhduongninhthuanbinhthuanbaclieuthaibinhninhbinhbinhdinhtuyenquanghungyenbaria-vungtauthainguyendienbienbinhphuocschbizputerimagine-proxyorgcomnetedugovcloud66advisormypetsdyndnsxn--8dbq2axn--4dbgdty6cxn--5dbhl8dxn--hebda8bxn--80auxn--d1atxn--c1avgxn--o1acxn--o1achxn--90azhxn--55qx5dxn--uc0atvxn--od0algxn--wcvs22dxn--gmqw5axn--mxtq1mxn--12c1fe0brxn--h3cuzk1dixn--12co0c3b4evaxn--12cfi8ixb8lxn--o3cyx2axn--m3ch0j3axn--j1adpxn--90amcxn--90a1afxn--h1ahnxn--j1ael8bxn--h1alizxn--c1avgxn--j1aefxn--80aaa0cvacxn--41acaffeineexeopentunnelbotdashtelebitorgtmaccoagricorgmilnomwebnicngonetaltedugovlawnisschoolgrondaraccoorgmilcomschnetedugovbizinfoprg1-zeropstritonstackitlimazeropsaccoorgmilgov\u044F\u0441\u043F\u0431\u043E\u0440\u0433\u043A\u043E\u043C\u043C\u0441\u043A\u0431\u0438\u0437\u043C\u0438\u0440\u0441\u0430\u043C\u0430\u0440\u0430\u043A\u0440\u044B\u043C\u0441\u043E\u0447\u0438\u0430\u043A\u043E\u0434\u043F\u0440\u043E\u0440\u0433\u043E\u0431\u0440\u0443\u043F\u0440\u05E6\u05D4\u05DC\u05DE\u05DE\u05E9\u05DC\u05D9\u05E9\u05D5\u05D1\u05D0\u05E7\u05D3\u05DE\u05D9\u05D4\u0E2D\u0E07\u0E04\u0E4C\u0E01\u0E23\u0E18\u0E38\u0E23\u0E01\u0E34\u0E08\u0E23\u0E31\u0E10\u0E1A\u0E32\u0E25\u0E28\u0E36\u0E01\u0E29\u0E32\u0E17\u0E2B\u0E32\u0E23\u0E40\u0E19\u0E47\u0E15\u6559\u80B2\u7DB2\u7D61\u7D44\u7E54\u516C\u53F8\u653F\u5E9C\u500B\u4EBA\uB2F7\uB137\uD55C\uAD6D\u6FB3\u95E8\u65B0\u95FB\u6FB3\u9580\u8054\u901A\u5BB6\u96FB\u5609\u91CC\u62DB\u8058\u901A\u8CA9\uB2F7\uCEF4\uC0BC\uC131\u30B3\u30E0\u10D2\u10D4\u0431\u0433\u0440\u0444\u0435\u044Eadcdbdgdidmdsdtdaebedeeegeiejekemenepereseveyegabacalamanauavapaqasazacfbfafgfnfpfwftfbgcgagggegkgngmgsgpgvgtgugilmlnlalclglplsltlhmimjmkmmmomambmcmdmfmgmzmpmsmtmgbbblbsbecccacnclcmcvctcscmhkhghchbhthphshlinikifigiaibicivisikninhnmncnbngnsnpnvntnjoionomobocoaofodorosotoptstttytatbtetgtithtmtltrusuvuaucueuguhulumunufjdjbjtjsjlkmkhkfkdkcktkukskpkgpmpnpkpjpgqaqmqiqsvtvcvbvmvlvrwpwtwzwbwcwawgwkwmwtrsrprgrfrercrbrarnrmrlrkrirhrwsusrssspsgsesbsaslsmsissxmxaxcxuypysylymykygybycyuztzsznzmzkzdzczbzaz\u03B5\u03BB\u03B5\u03C5\u4E16\u754C\u53F0\u7063\u8D2D\u7269\u516C\u76CA\u70B9\u770B\u81FA\u7063\u7F51\u7EDC\u66F8\u7C4D\u5728\u7EBF\u7F51\u7AD9\u624B\u673A\u673A\u6784\u5927\u62FF\u6E38\u620F\u4FE1\u606F\u53F0\u6E7E\u8C37\u6B4C\u6148\u5584\u5546\u6807\u9999\u6E2F\u4E2D\u56FD\u9910\u5385\u7F51\u5740\u4E2D\u570B\u5546\u57CE\u98DF\u54C1\u5FAE\u535A\u653F\u52A1\u79FB\u52A8\u96C6\u56E2\u516C\u53F8\u516B\u5366\u5546\u5E97\u5065\u5EB7\u7F51\u5E97\u653F\u5E9C\u65F6\u5C1A\u4F5B\u5C71\u4E2D\u4FE1\u5A31\u4E50\u5E7F\u4E1C\u4F01\u4E1Ahomedepotengineering\u0627\u0645\u0627\u0631\u0627\u062Arepublicankuokgroupversicherungchannelcitadelxn--pgbs0dhxn--b4w605ferdstatebankwebsitexn--mgb9awbf\u4E9A\u9A6C\u900A\u6DE1\u9A6C\u9521alibabaxn--ngbc5azdxn--mgbbh1axn--45br5cyltoshibabuildworldcloudtradeguideplacespacedancemoviephoneprimesmilebiblestyleappleazurestoreskypegripexn--l1accdrivelottehorsehouseleasechasereisestadahondaomegaaetnaamicaninjanokiamediadeltavodkaedekaosakapizzaslingemailgmailtirolshelltmallfinallegaltotalhotelamfamforumrehabmusicciticricohcoachwatchboschearthfaithirishmiamiarchidubaiguccipraxi\u307F\u3093\u306A\u30B9\u30C8\u30A2\u30BB\u30FC\u30EBcanonsalononionnikonepsonkoelngreensevencrownikanoradioaudioweiboglobopromogalloyahoociscorodeovideomangobingotokyovolvolottokyotophotosmartsportquesttrusthyattjetztadultcymrubaidutushuxn--kprw13dubankclickblackmerckgroupsharpcheapnowtvxn--h2brj9c\u05E7\u05D5\u05DD\u0570\u0561\u0575\u043E\u0440\u0433\u0441\u0440\u0431\u043C\u043E\u043D\u043A\u043E\u043C\u0431\u0435\u043B\u043C\u043A\u0434\u049B\u0430\u0437\u0440\u0443\u0441\u0443\u043A\u0440\u0645\u0635\u0631\u0642\u0637\u0631\u0639\u0631\u0628\u0643\u0648\u0645dadcfdmedwedredphdthdbidpidkrdmsdltdiceonewmeglemoerwecfageacbanbambaaaammakianraspacpaaxawtfbcgaegongingaigvigorgdogdhlmilrilonlaolloluoljllcalgalnflafltelsrlfrllplkimibmcamcombommomifmabbjcbscbwebcabnabtabmlbpubabcbbcnecincpncllcstcwtcpwcnyckfhbzhovhmoiskiobisbitcifyituipinvinwinxincbnbcnmanfangdnmenrenkpnmtnyunrunfununobiojioriohbogmofooboooooacoecoceongoproartistottnttbbtcateatlatvetpetbetnethktmitfitintjothotgotdotbotprueduicujnjyouinknhktdkappsapgapmapdnptopgopllpjmpzipvipripesqtrvdtvitvdevmovgovhivnrwlawsewnewbmwwownowhowdvrftrmtrsfrbarcartvscrseusawsupsubssbsadsddsldssasbmsmlsxxxboxfoxgmxtjxsextaxbuyflydiysoyjoyskypaydaygayxyzanzbizwebersenerpokerlameractortatarsolar\u0EA5\u0EB2\u0EA7\u0E04\u0E2D\u0E21\u0E44\u0E17\u0E22tourslocusnexuslexusgiftsbeatsboatspartspressglassswiss\u0915\u0949\u092E\u0928\u0947\u091Ftiresgivescodeshomesgamestunesshoescardswalesloansvegastoolsdealsautosparis\u30D5\u30A1\u30C3\u30B7\u30E7\u30F3workssucksrocksxeroxforexfedexpartylillymoneystudyrugbytoraytoday\u4E2D\u6587\u7F51xn--unup4y\u5929\u4E3B\u6559\u98DE\u5229\u6D66\u65B0\u52A0\u5761enterprises\u6211\u7231\u4F60\u5609\u91CC\u5927\u9152\u5E97christmasxn--fct429kholdingsxn--8y0a063axn--mgbx4cd0ablifestyleabogadoallstatenetbank\u0643\u0627\u062B\u0648\u0644\u064A\u0643xn--s9brj9cxn--gk3at1ebestbuycharityxn--55qx5dmicrosoftpropertybasketballhomegoodscorsicajewelrygallerygrocerysurgerycountrybrusselsverisignferreroxn--czr694bhdfcbankcommbanksoftbank\u067E\u0627\u0643\u0633\u062A\u0627\u0646\u067E\u0627\u06A9\u0633\u062A\u0627\u0646nextdirect\u0627\u0644\u0633\u0639\u0648\u062F\u064A\u0647\u0627\u0644\u0639\u0644\u064A\u0627\u0646xn--h2brj9c8cxn--80adxhksshikshaxn--mgbai9azgqp6jcuisinellabarclayscatholicxn--kpry57dcompanyxn--xhq521bblackfridayxn--mgba3a3ejtsandvikxn--d1acj3bacademydownload\u0645\u0644\u064A\u0633\u064A\u0627xn--j1amhxn--w4r85el8fhu5dnraipirangaathletaxn--fhbeixn--mgbqly7cvafrzuerichxn--c2br7g\u0B87\u0BB2\u0B99\u0BCD\u0B95\u0BC8contractorsxn--io0a7igraphicsinsurancetemasekxn--xkc2al3hye2amotorcyclesphotographydirectoryplumbingxn--vhquvclothingtrainingcleaningwilliamhilllightingxn--mgba3a4f16ashoppingcateringeducationokinawapicturesventuresproductionsxn--9et52uwalmart\u0D2D\u0D3E\u0D30\u0D24\u0D02supportrealestatecapitalonexn--nqv7fs00emaauspostfloristdentistxn--qxamgodaddybradescobargainsmitsubishikerryhotelsxn--9dbq2axn--3pxu8kimmobilienxn--fjq720axn--mgbtx2bholidaymckinseymadridbusinessbuildershelsinkixn--4gbrim\u043C\u043E\u0441\u043A\u0432\u0430\u0627\u0644\u0633\u0639\u0648\u062F\u06CC\u0629coffeedegreelacaixapartnersalsaceofficeabbvievoyageorangegeorgeonlinechromemobilekindlegoogleoraclecircleschulesecureinsurexn--mgba7c0bbn0aestatexn--mgbc0a9azcgcruisehangoutxn--vuq861bxn--42c2d9arexrothfirestoneuniversityxn--nnx388alifeinsuranceextraspace\u043E\u043D\u043B\u0430\u0439\u043Dverm\xF6gensberatersoftwarexn--fiqs8sxn--mgbab2bdxn--w4rs40ltienda\u092D\u093E\u0930\u0924\u092E\u094Dafricatoyotaotsukasakuracameracreditcardnagoyaconsultingnetworkjunipertheatermonsterprogressivepioneerxn--55qw42gracingdatingvotingvikinglivinggivingxn--bck1b9a5dre4cbrotherweatherjoburg\u0641\u0644\u0633\u0637\u064A\u0646lplfinancialxn--clchc0ea0b2g2a9gcdfutbolschoolsocialglobaldentalwoodsidechanelairtelmatteltravelrealtorwebcamstream\u0C2D\u0C3E\u0C30\u0C24\u0C4Dunicomalstomxn--nodexn--6frz82gmuseumfurniturexn--rvc1e0am3exn--mix891faccenturexn--11b4c3dismailineustardiscountquebeccomsecclinicservicesxn--y9a3aqxn--c1avgswatchchurchsearch\u0627\u0644\u0627\u0631\u062F\u0646marketingcontacthealthmonashshoujisanofitaipeiamericanexpresssuzuki\u30A2\u30DE\u30BE\u30F3\u30AF\u30E9\u30A6\u30C9\u30DD\u30A4\u30F3\u30C8bharti\u30B0\u30FC\u30B0\u30EBxn--mgberp4a5d4armemorialxn--1qqw23alondonmormoninstitutevisionbostonnortoncouponmaisonamazonvirginberlindesigndurbanolayannissananquanxihuanhitachikaufengardenreisenbayerntechnologydatsunxn--90a3aclatinocasinostudiophysioxn--ngbe9e0apharmacytattootaobaoaramcoexpertreportabbottdirectselectimamatfairwindspictettargetmarketintuittravelersinsurancecreditdupontryukyusuppliesxn--tckwebnpparibasschmidtmerckmsdyodobashirestaurantbridgestonecricketxn--fpcrj9c3dbostikbroadwayattorneylefrakemerckxn--fiq228c5hscareersfarmerswinnersflowersxn--wgbh1cguitarsxn--54b7fta0ccxn--p1acfmakeupgalluplandroverxn--kcrx77d1x4agoldpointbauhausxn--mgbayh7gpahiphopplaystationxn--mgba3a4fraxn--eckvdtc9dhyundaixn--gckr3f0fistanbulticketsmarketsflightschintaireviewsxn--3e0b707ewindowsxn--fiqz9sfinancialxn--fzys8d69uvgm\u0627\u0628\u0648\u0638\u0628\u064Adiscoverreview\u09AC\u09BE\u0982\u09B2\u09BExn--5su34j936bgsgmoscowobserverapartments\u0434\u0435\u0442\u0438\u0627\u0631\u0627\u0645\u0643\u0648\u0441\u0430\u0439\u0442eurovisionxn--i1b6b1a6a2exn--xkc2dl3a5ee0h\u062A\u0648\u0646\u0633\u0645\u0648\u0642\u0639\u0628\u0627\u0631\u062A\u0680\u0627\u0631\u062A\u0634\u0628\u0643\u0629\u0639\u0645\u0627\u0646\u0628\u064A\u062A\u0643\u0639\u0631\u0627\u0642readkredbondlandbandfundfoodprodgoldfordtubecafesafelifeggeeieeefreefagepagegugezonewinememenamegamesaleablebikenikelikecarecbreherefiresaveloveliveblueartedatesitevotecaseluxebofamodaltdaasdatiaayogasinavanashiaasiajavabbvatevavivadatazaraarpacasavisasncfprofmaifsurfgolfdvagsongbingpingwangkpmggoogblogpohlfailcooldellcalldeallidlsarlfilmteamroomfarmimdbarabclubhdfcicbchsbcgmbhrichtechfishdishcashminiernikddiaudiwikimobitaxicitikiwidesiqponskinloanakdnwienopenporncerntownimmolimoolloinfonicofidolegosaxozeroaerovivoautovotomotofastbestresthostpostnextlgbtchatseatgiftmeetdietreitmintrentgentspotscotguruitausohumenucyoubanklinkpinkdclktalksilkbookseekworkrsvpaarpjeepshopcoophelpcamppccwshowbeerstarruhrflirweirhaircarsparsjprshausplusnewstipstoysjobskidsfanspicsdocsxboxamexsexynavycitysonyarmyallybabyplaydeliverybuzzgbizlamborghiniphilips\u0DBD\u0D82\u0D9A\u0DCF\u0CAD\u0CBE\u0CB0\u0CA4fitnessexpresslanxesspfizercenterwalterlawyersoccercareerkosherbrokerlockerdealerdoctorauthorxn--mgbqly7c0a67fbcverm\xF6gensberatungjaguarxn--pssy2uxn--hxt814eflickrrepairrogersairbusxn--mgbai9a5eva00beventsyachtsxn--t60b56a\u09AD\u09BE\u09F0\u09A4\u09AD\u09BE\u09B0\u09A4\u092D\u093E\u0930\u0924\u092D\u093E\u0930\u094B\u0924viajeshermeshughesxn--j1aef\u0938\u0902\u0917\u0920\u0928villas\u0B2D\u0B3E\u0B30\u0B24claimshotels\u0AAD\u0ABE\u0AB0\u0AA4zapposphotosjuegoscondostatamotorsgratistennis\u0A2D\u0A3E\u0A30\u0A24tkmaxxtjmaxxschaeffleryandexxn--80aswgrealtysafetybeautyluxuryxn--3ds443gsupplyfamilyxn--o3cw4hhockeysydneyxn--90aenissayalipayenergycomputeragencyxn--rovu88b\u96FB\u8A0A\u76C8\u79D1xn--gecrj9cstatefarmaccountantaquarelleolayangroup\u9999\u683C\u91CC\u62C9xn--p1ai\u7EC4\u7EC7\u673A\u6784xn--1ck2e1bxn--mgbt3dhdschwarz\u0645\u0648\u0631\u064A\u062A\u0627\u0646\u064A\u0627abudhabinowruzkomatsufujitsuhospitalxn--80asehdbxn--mgbtf8flxn--j6w193gxn--yfro4i67oprudentialxn--flw351ecruisescoursesrecipesxn--e1a4cferrarixn--ses554gxn--wgbl6awatchesstaplessinglesxn--mgbcpq6gpa1axn--otu796dpropertiescreditunionxn--mgbah1a3hjkrdstockholmhisamitsu\u0627\u0644\u0633\u0639\u0648\u062F\u064A\u0629stcgroupdomainsoriginscouponsbloombergclubmedfroganslimitedxn--80aqecdr1aexposedinternationalequipmentbarclaycardxn--q7ce6axn--mgbi4ecexpprotectionassociatesconstructionxn--cck2b3bxn--45q11candroidfoundation\u05D9\u05E9\u05E8\u05D0\u05DCxn--mgbca7dzdocliniqueboutiqueengineerxn--qxa6asystemsfirmdalefashionauctionxn--nqv7finfinitirentalsreliancetradingweddingfishinghostinggentingbookingcookingxn--3hcrj9cgraingerxn--czrs0tdemocratsamsungyokohamaxn--h2breg3evexn--nyqy26alundbeckmelbournevacationssolutionsfrontierxn--vermgensberatung-pwbmanagementxn--cg4bkixn--mgb2ddeslincolnhamburgsandvikcoromantblockbusterairforcebarefootxn--4dbrk0ceinvestmentsfeedbackcommunityxn--ngbrx\u0627\u0644\u0628\u062D\u0631\u064A\u0646diamondsamsterdamhealthcareredumbrellaxn--mxtq1mxn--2scrj9cagakhanxn--mgbpl2fh\u043A\u0430\u0442\u043E\u043B\u0438\u043Acaravan\u0B9A\u0BBF\u0B99\u0BCD\u0B95\u0BAA\u0BCD\u0BAA\u0BC2\u0BB0\u0BCDrichardlimortgageamericanfamilyxn--fzc2c9e2cscholarshipssaarlandxn--imr513nvlaanderensamsclubgoodyearkitchen\u0B87\u0BA8\u0BCD\u0BA4\u0BBF\u0BAF\u0BBEweatherchannelallfinanzxn--kput3i\u0627\u0644\u0633\u0639\u0648\u062F\u06CC\u06C3xn--90aisxn--efvy88h\u0627\u0644\u062C\u0632\u0627\u0626\u0631xn--mgbaam7a8hexchangejpmorganxn--tiq49xqyjfidelitysecurityxn--mk1bu44cwanggouxn--fiq64bxn--6qq986b3xlxn--mgbbh1a71exn--80ao21amarshallsxn--5tzm5gtravelerspanasoniclatrobeyoutubeaccountantsxn--rhqv96gxn--cckwcxetdanalyticsxn--ygbi2ammx\u0628\u0627\u0632\u0627\u0631\u0628\u06BE\u0627\u0631\u062A\u0633\u0648\u0631\u064A\u0629organicfresenius\u0633\u0648\u0631\u064A\u0627xn--9krt00axn--qcka1pmcxn--jlq480n2rgdeloittesciencefinancexn--jvr189mxn--30rr7yhomesensehotmailbaseballfootballleclercboehringerxn--q9jyb4cxn--mix082f\u0627\u0644\u064A\u0645\u0646\u0647\u0645\u0631\u0627\u0647politie\u0633\u0648\u062F\u0627\u0646\u0627\u064A\u0631\u0627\u0646\u0627\u06CC\u0631\u0627\u0646netflixyamaxunxn--lgbbat1ad8jcollegestoragecapetowncolognekerrypropertiesxn--mgbgu82axn--ogbpf8flxn--czru2dwhoswhociprianilasallexn--g2xx48cforsalebanamexaudiblexn--vermgensberater-ctbxn--zfr164bericssonvanguardxn--45brj9cindustriestheatremarriottxn--3bst00mcomparexn--mgberp4a5d4a87gcapitaldigital\u0627\u0644\u0645\u063A\u0631\u0628barcelonashangrilaxn--d1alfcalvinkleinwwwcitysapporokawasakinagoyasendaikobekitakyushuyokohamackjp";
+    rulesRoot = 621;
+    exceptionsRoot = 625;
   }
 });
 
-// node_modules/.pnpm/tldts@7.4.11/node_modules/tldts/dist/es6/src/suffix-trie.js
+// node_modules/.pnpm/tldts@7.4.13/node_modules/tldts/dist/es6/src/suffix-trie.js
 function labelEquals(edge, hostname3, start, length) {
   if (edgeLength[edge] !== length) {
     return false;
@@ -65254,7 +66462,7 @@ function suffixLookup(hostname3, options, out) {
 }
 var numberOfNodes, numberOfEdges, edgeOffset, edgeHash, wildcardEdge, matchNode, matchStart, matchEnd2;
 var init_suffix_trie = __esm({
-  "node_modules/.pnpm/tldts@7.4.11/node_modules/tldts/dist/es6/src/suffix-trie.js"() {
+  "node_modules/.pnpm/tldts@7.4.13/node_modules/tldts/dist/es6/src/suffix-trie.js"() {
     init_es6();
     init_trie();
     numberOfNodes = nodeFlags.length;
@@ -65283,13 +66491,13 @@ var init_suffix_trie = __esm({
   }
 });
 
-// node_modules/.pnpm/tldts@7.4.11/node_modules/tldts/dist/es6/index.js
+// node_modules/.pnpm/tldts@7.4.13/node_modules/tldts/dist/es6/index.js
 function parse3(url2, options) {
   return parseImpl(url2, 5, suffixLookup, options, getEmptyResult());
 }
 var RESULT;
 var init_es62 = __esm({
-  "node_modules/.pnpm/tldts@7.4.11/node_modules/tldts/dist/es6/index.js"() {
+  "node_modules/.pnpm/tldts@7.4.13/node_modules/tldts/dist/es6/index.js"() {
     init_es6();
     init_suffix_trie();
     RESULT = getEmptyResult();
@@ -65631,7 +66839,7 @@ function cardStatus(progress) {
   if (isLive(progress)) return "running";
   return progress.phase === "finished" ? "done" : "error";
 }
-function plural(count, noun) {
+function plural2(count, noun) {
   return `${String(count)} ${noun}${count === 1 ? "" : "s"}`;
 }
 function minutes(from, to) {
@@ -65644,8 +66852,8 @@ function containerRunSummary(progress) {
   const ref = progress.record?.carryOut.ref ?? null;
   if (progress.phase === "failed") return `Failed: ${progress.error ?? "the run did not complete"}`;
   if (!result) return "Finished without a result";
-  const commits = result.commits.length === 0 ? "no commits" : `${plural(result.commits.length, "commit")} ${ref ? `on ${ref}` : "made but not fetched"}`;
-  return `Finished: ${commits}, ${plural(result.deferrals.length, "effect")} waiting for review, ${plural(result.denials.length, "effect")} refused.`;
+  const commits = result.commits.length === 0 ? "no commits" : `${plural2(result.commits.length, "commit")} ${ref ? `on ${ref}` : "made but not fetched"}`;
+  return `Finished: ${commits}, ${plural2(result.deferrals.length, "effect")} waiting for review, ${plural2(result.denials.length, "effect")} refused.`;
 }
 function containerRunResultMarkdown(progress) {
   if (isLive(progress)) return null;
@@ -65763,7 +66971,7 @@ function noteAdoptionOnCard(store2, threadId, toolCallId, adoption) {
   if (owner === void 0) return;
   const thread = getThreadById(store2, threadId);
   const existing = thread?.messages.find((message2) => message2.id === owner)?.toolCalls.find((toolCall) => toolCall.id === toolCallId)?.result ?? "";
-  const note = adoption.applied.length === 0 ? `**Already in this checkout** (${plural(adoption.alreadyApplied, "commit")}).` : `**Applied to this checkout:** ${plural(adoption.applied.length, "commit")}${adoption.alreadyApplied > 0 ? ` (${String(adoption.alreadyApplied)} already present)` : ""}`;
+  const note = adoption.applied.length === 0 ? `**Already in this checkout** (${plural2(adoption.alreadyApplied, "commit")}).` : `**Applied to this checkout:** ${plural2(adoption.applied.length, "commit")}${adoption.alreadyApplied > 0 ? ` (${String(adoption.alreadyApplied)} already present)` : ""}`;
   updateToolCall(store2, owner, toolCallId, {
     result: existing.length > 0 ? `${existing}
 
@@ -66369,8 +67577,8 @@ function bindFileReferenceClicks(root, store2, api2) {
     const line = link.dataset["fileReferenceLine"];
     const column = link.dataset["fileReferenceColumn"];
     const reveal = line ? { line: Number(line), ...column ? { column: Number(column) } : {} } : void 0;
-    void activateWorkspaceReference(store2, api2, path, kind, reveal).catch((error61) => {
-      showErrorToast(`Failed to open ${path}`, error61);
+    void activateWorkspaceReference(store2, api2, path, kind, reveal).catch((error62) => {
+      showErrorToast(`Failed to open ${path}`, error62);
     });
   };
   root.addEventListener("click", onClick);
@@ -66461,9 +67669,9 @@ var init_browser_links = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/host-workspace.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/host-workspace.js
 var init_host_workspace = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/host-workspace.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/host-workspace.js"() {
     init_inline_links();
     init_workspace_link_href();
   }
@@ -66504,11 +67712,11 @@ function bindWorkspaceLinkClicks(root, store2, api2) {
         ...parsed2.column !== void 0 ? { column: parsed2.column } : {}
       } : void 0;
       return activateWorkspaceReference(store2, api2, match.path, match.kind, reveal);
-    }).catch((error61) => {
+    }).catch((error62) => {
       const currentOwner = getActiveThreadOwner(store2);
       if (currentOwner?.projectId !== owner?.projectId || currentOwner?.threadId !== owner?.threadId)
         return;
-      showErrorToast(`Failed to open ${parsed2.candidate}`, error61);
+      showErrorToast(`Failed to open ${parsed2.candidate}`, error62);
     });
   };
   root.addEventListener("click", onClick);
@@ -67387,15 +68595,17 @@ function isAnchorable(msg) {
 function isAbsorbable(msg) {
   if (!msg || msg.role !== "assistant") return false;
   if (hasText(msg.content)) return false;
-  return regularToolCalls(msg).length > 0 || hasText(msg.reasoning);
+  return regularToolCalls(msg).length > 0 || hasText(msg.reasoning) || Boolean(msg.reasoningBlocks?.length);
 }
 function stepOf(msg) {
   const reasoning = msg.reasoning;
+  const reasoningBlocks = msg.reasoningBlocks;
   const summary = trimmed(msg.toolSummary);
   return {
     messageId: msg.id,
     toolCalls: regularToolCalls(msg),
     ...reasoning !== void 0 && hasText(reasoning) ? { reasoning } : {},
+    ...reasoningBlocks?.length ? { reasoningBlocks } : {},
     ...summary !== null ? { summary } : {}
   };
 }
@@ -67961,6 +69171,315 @@ var init_comparison_panel = __esm({
   }
 });
 
+// src/renderer/views/review-findings-card.ts
+function statusLabel3(report) {
+  switch (report.status) {
+    case "running":
+      return "Reviewing\u2026";
+    case "error":
+      return "Review failed";
+    default:
+      return "Review";
+  }
+}
+function findingLocation(finding) {
+  if (finding.startLine === void 0) return finding.path;
+  const end = finding.endLine !== void 0 && finding.endLine !== finding.startLine;
+  return `${finding.path}:${String(finding.startLine)}${end ? `\u2013${String(finding.endLine)}` : ""}`;
+}
+function verdictLabel(finding) {
+  switch (finding.verdict.status) {
+    case "confirmed":
+      return finding.evidence.some((evidence) => evidence.kind === "reproducer") ? "confirmed by reproducer" : "confirmed";
+    case "refuted":
+      return "refuted";
+    default:
+      return finding.challengedBy.length > 0 ? "survived challenge" : "unverified";
+  }
+}
+function evidenceEl(evidence) {
+  const item = el("li", { class: "review-finding-evidence", "data-kind": evidence.kind });
+  switch (evidence.kind) {
+    case "command": {
+      const exit = evidence.exitCode === null ? "killed" : `exit ${String(evidence.exitCode)}`;
+      item.append(
+        el("code", { class: "review-finding-command" }, evidence.command),
+        el("span", { class: "review-finding-evidence-meta" }, ` on ${evidence.target}, ${exit}`)
+      );
+      if (evidence.excerpt.trim() !== "") {
+        item.append(el("pre", { class: "review-finding-excerpt" }, evidence.excerpt.trimEnd()));
+      }
+      return item;
+    }
+    case "reproducer": {
+      const outcome = `${evidence.failsOnHead ? "fails" : "passes"} on head, ${evidence.passesOnBase ? "passes" : "fails"} on base`;
+      item.append(
+        el("code", { class: "review-finding-command" }, evidence.testPath),
+        el("span", { class: "review-finding-evidence-meta" }, ` \u2014 reproducer ${outcome}`)
+      );
+      return item;
+    }
+    default: {
+      const lines = evidence.startLine === evidence.endLine ? String(evidence.startLine) : `${String(evidence.startLine)}\u2013${String(evidence.endLine)}`;
+      item.append(
+        el("span", { class: "review-finding-evidence-meta" }, "cites "),
+        el("code", { class: "review-finding-command" }, `${evidence.path}:${lines}`)
+      );
+      return item;
+    }
+  }
+}
+function provenanceEl(finding) {
+  const parts = [`Raised by ${finding.raisedBy.join(", ")}`];
+  if (finding.corroboratedBy.length > 0) {
+    parts.push(`corroborated by ${finding.corroboratedBy.join(", ")}`);
+  }
+  if (finding.challengedBy.length > 0) {
+    parts.push(`challenged by ${finding.challengedBy.join(", ")}`);
+  }
+  return el("div", { class: "review-finding-provenance" }, `${parts.join("; ")}.`);
+}
+function findingEl(finding, actions) {
+  const item = el("li", {
+    class: "review-finding",
+    "data-finding-id": finding.id,
+    "data-severity": finding.severity,
+    "data-verdict": finding.verdict.status,
+    ...finding.dismissed ? { "data-dismissed": "" } : {}
+  });
+  const details = el("details", { class: "review-finding-details" });
+  const summary = el("summary", { class: "review-finding-summary" });
+  summary.append(
+    el("span", { class: "review-finding-severity" }, finding.severity),
+    el("span", { class: "review-finding-class" }, finding.class),
+    el("code", { class: "review-finding-location" }, findingLocation(finding)),
+    el("span", { class: "review-finding-claim" }, finding.claim),
+    el(
+      "span",
+      { class: "review-finding-verdict", "data-verdict": finding.verdict.status },
+      verdictLabel(finding)
+    )
+  );
+  details.append(summary);
+  const body = el("div", { class: "review-finding-body" });
+  body.append(el("p", { class: "review-finding-reason" }, finding.verdict.reason));
+  if (finding.anchoredText !== void 0 && finding.anchoredText.trim() !== "") {
+    body.append(el("pre", { class: "review-finding-anchor" }, finding.anchoredText));
+  }
+  if (finding.evidence.length > 0) {
+    const list = el("ul", { class: "review-finding-evidence-list" });
+    for (const evidence of finding.evidence) list.append(evidenceEl(evidence));
+    body.append(list);
+  }
+  body.append(provenanceEl(finding));
+  const footer = el("div", { class: "review-finding-actions" });
+  footer.append(
+    el(
+      "span",
+      { class: "review-finding-confidence" },
+      `${finding.confidence} confidence \xB7 ${finding.id}`
+    )
+  );
+  if (finding.dismissed) {
+    if (actions.onRestoreFinding) {
+      const restore = el("button", { type: "button", class: "review-finding-restore" }, "Restore");
+      on(restore, "click", () => {
+        restore.disabled = true;
+        actions.onRestoreFinding?.(finding);
+      });
+      footer.append(restore);
+    }
+  } else if (actions.onDismissFinding) {
+    const dismiss = el(
+      "button",
+      {
+        type: "button",
+        class: "review-finding-dismiss",
+        "data-tooltip": "Hide this finding, here and in later reviews of the same lines"
+      },
+      "Dismiss"
+    );
+    on(dismiss, "click", () => {
+      dismiss.disabled = true;
+      actions.onDismissFinding?.(finding);
+    });
+    footer.append(dismiss);
+  }
+  body.append(footer);
+  details.append(body);
+  item.append(details);
+  return item;
+}
+function metaLine(report) {
+  const parts = [];
+  if (report.models.reviewer !== "") {
+    parts.push(
+      report.models.challenger !== null && report.models.challenger !== report.models.reviewer ? `${report.models.reviewer}, challenged by ${report.models.challenger}` : report.models.reviewer
+    );
+  }
+  if (report.baseRef !== "") {
+    parts.push(
+      report.dirtyWorkingTree ? `working tree against ${report.baseRef}` : `HEAD against ${report.baseRef}`
+    );
+  }
+  return parts.join(" \xB7 ");
+}
+function groundEl(report) {
+  if (report.status !== "done") return null;
+  const ground = el("div", { class: "review-report-ground" });
+  if (!report.execution.executed) {
+    ground.append(
+      el(
+        "span",
+        { class: "review-report-ground-note", "data-executed": "false" },
+        `Read-only review \u2014 nothing was executed: ${report.execution.reason}`
+      )
+    );
+    return ground;
+  }
+  for (const check2 of report.checks) {
+    const mark2 = check2.verdict === "clean" || check2.verdict === "fixed" ? "\u2713" : "\u2717";
+    ground.append(
+      el(
+        "span",
+        { class: "review-report-check", "data-verdict": check2.verdict },
+        `${check2.kind} ${mark2} ${check2.verdict}`
+      )
+    );
+  }
+  for (const note of report.notChecked) {
+    ground.append(el("span", { class: "review-report-ground-note" }, `not checked: ${note}`));
+  }
+  return ground.childElementCount === 0 ? null : ground;
+}
+function footerEl(report, dismissedCount, onToggleDismissed) {
+  const parts = [];
+  if (report.appendix > 0) {
+    parts.push(`${String(report.appendix)} more below the cut`);
+  }
+  if (report.refuted > 0) {
+    parts.push(`${String(report.refuted)} refuted by the challenger`);
+  }
+  if (report.verification !== null && report.verification.skipped > 0) {
+    parts.push(`${String(report.verification.skipped)} left unverified`);
+  }
+  if (dismissedCount > 0 && onToggleDismissed) {
+    const toggle = el(
+      "button",
+      { type: "button", class: "review-report-dismissed-toggle", "aria-pressed": "false" },
+      `${String(dismissedCount)} dismissed`
+    );
+    on(toggle, "click", () => {
+      const shown = toggle.getAttribute("aria-pressed") === "true";
+      toggle.setAttribute("aria-pressed", shown ? "false" : "true");
+      onToggleDismissed();
+    });
+    parts.push(toggle);
+  }
+  if (parts.length === 0) return null;
+  const footer = el("div", { class: "review-report-footer" });
+  parts.forEach((part, index) => {
+    if (index > 0) footer.append(el("span", { class: "review-report-footer-sep" }, " \xB7 "));
+    footer.append(part);
+  });
+  return footer;
+}
+function createDismissCardButton(onDismiss) {
+  const button = el(
+    "button",
+    {
+      type: "button",
+      class: "card-dismiss-button",
+      "data-tooltip": "Dismiss",
+      "aria-label": "Dismiss"
+    },
+    closeIcon("ui-icon ui-icon-sm")
+  );
+  on(button, "click", () => {
+    button.disabled = true;
+    onDismiss();
+  });
+  return button;
+}
+function createReviewFindingsCardEl(report, actions = {}) {
+  const panel = el("div", {
+    class: `review-report review-report-${report.status}`,
+    "data-status": report.status
+  });
+  const header = el("div", { class: "review-report-header" });
+  header.append(
+    el(
+      "span",
+      { class: "review-report-icon", "aria-hidden": "true" },
+      searchIcon("ui-icon ui-icon-sm")
+    ),
+    el("span", { class: "review-report-title" }, statusLabel3(report))
+  );
+  const meta3 = metaLine(report);
+  if (meta3 !== "") header.append(el("span", { class: "review-report-meta" }, meta3));
+  if (report.cost !== void 0) {
+    header.append(el("span", { class: "review-report-cost" }, report.cost));
+  }
+  if (report.status === "error" && actions.onRetry)
+    header.append(createRetryButton(actions.onRetry));
+  if (report.status === "error" && actions.onDismissCard) {
+    header.append(createDismissCardButton(actions.onDismissCard));
+  }
+  panel.append(header);
+  if (report.status === "running") return panel;
+  if (report.status === "error") {
+    panel.append(
+      el(
+        "div",
+        { class: "review-report-error message-text" },
+        nonEmptyStringOr(report.error, "Review failed.")
+      )
+    );
+    return panel;
+  }
+  const ground = groundEl(report);
+  if (ground) panel.append(ground);
+  const visible = report.findings.filter((finding) => !finding.dismissed);
+  const dismissed = report.findings.filter((finding) => finding.dismissed);
+  if (report.findings.length === 0) {
+    panel.append(el("div", { class: "review-report-clean" }, report.note ?? "Clean."));
+  } else {
+    if (report.note !== void 0) {
+      panel.append(el("div", { class: "review-report-note" }, report.note));
+    }
+    const list = el("ol", { class: "review-report-findings" });
+    for (const finding of visible) list.append(findingEl(finding, actions));
+    if (visible.length === 0) {
+      panel.append(
+        el("div", { class: "review-report-clean" }, "Nothing left: every finding is dismissed.")
+      );
+    }
+    panel.append(list);
+    if (dismissed.length > 0) {
+      const dismissedList = el("ol", { class: "review-report-findings review-report-dismissed" });
+      dismissedList.hidden = true;
+      for (const finding of dismissed) dismissedList.append(findingEl(finding, actions));
+      panel.append(dismissedList);
+      const footer2 = footerEl(report, dismissed.length, () => {
+        dismissedList.hidden = !dismissedList.hidden;
+      });
+      if (footer2) panel.append(footer2);
+      return panel;
+    }
+  }
+  const footer = footerEl(report, 0, null);
+  if (footer) panel.append(footer);
+  return panel;
+}
+var init_review_findings_card = __esm({
+  "src/renderer/views/review-findings-card.ts"() {
+    init_helpers();
+    init_icons();
+    init_retry_button();
+    init_unknown_value3();
+  }
+});
+
 // src/renderer/controller/quiet-runs.ts
 function markQuietRun(threadId) {
   quietThreads.add(threadId);
@@ -67975,17 +69494,13 @@ var init_quiet_runs = __esm({
   }
 });
 
-// src/renderer/controller/retry-review-comparison.ts
-function retryPayload(store2, threadId, comparisonModels) {
+// src/renderer/controller/review-actions.ts
+function reviewPayload(store2, threadId) {
   const thread = store2.getState().threads.find((t) => t.id === threadId);
   return JSON.stringify({
     ...thread?.workingBrief !== void 0 ? { workingBrief: thread.workingBrief } : {},
-    ...thread?.model !== void 0 ? { model: thread.model } : {},
-    ...comparisonModels ? { comparisonModels } : {}
+    ...thread?.model !== void 0 ? { model: thread.model } : {}
   });
-}
-function comparisonModelsPayload(store2, threadId) {
-  return retryPayload(store2, threadId);
 }
 function retryReview(store2, api2, threadId, messageId) {
   const projectId = store2.getState().activeProjectId;
@@ -67993,43 +69508,82 @@ function retryReview(store2, api2, threadId, messageId) {
   setMessageReview(store2, threadId, messageId, { status: "running", summary: "" });
   setThreadStatus(store2, threadId, "running");
   syncAgentActivity(store2, threadId, false);
-  void api2.agent.retryReview(projectId, threadId, retryPayload(store2, threadId));
+  void api2.agent.retryReview(projectId, threadId, reviewPayload(store2, threadId));
 }
 function dismissComparison(store2, threadId) {
   setThreadComparison(store2, threadId, null);
 }
-function retryComparison(store2, api2, threadId) {
+function startReview(store2, api2, threadId) {
   const projectId = store2.getState().activeProjectId;
   if (!projectId) return;
   const thread = store2.getState().threads.find((t) => t.id === threadId);
-  const comparison = thread?.comparison;
-  if (comparison) {
-    setThreadComparison(store2, threadId, { ...comparison, status: "running" });
-  }
-  setThreadStatus(store2, threadId, "running");
-  syncAgentActivity(store2, threadId, false);
-  void api2.agent.retryComparison(projectId, threadId, retryPayload(store2, threadId));
-}
-function startComparison(store2, api2, threadId, models) {
-  const projectId = store2.getState().activeProjectId;
-  if (!projectId) return;
-  setThreadComparison(store2, threadId, {
+  if (thread?.status === "running") return;
+  setThreadReviewReport(store2, threadId, {
     status: "running",
-    models,
-    reviewA: "",
-    reviewB: "",
-    synthesis: ""
+    startedAt: Date.now(),
+    models: { reviewer: thread?.model ?? "", challenger: null },
+    lenses: [],
+    baseRef: "",
+    headCommit: null,
+    dirtyWorkingTree: false,
+    execution: { backend: "", strength: "none", executed: false, reason: "" },
+    checks: [],
+    notChecked: [],
+    findings: [],
+    appendix: 0,
+    refuted: 0,
+    reviewers: [],
+    verification: null,
+    durationMs: 0
   });
   setThreadStatus(store2, threadId, "running");
   syncAgentActivity(store2, threadId, false);
   markQuietRun(threadId);
-  void api2.agent.retryComparison(projectId, threadId, retryPayload(store2, threadId, models));
+  void api2.review.run(projectId, threadId, reviewPayload(store2, threadId)).catch((err2) => {
+    const report = store2.getState().threads.find((t) => t.id === threadId)?.reviewReport;
+    if (report?.status === "running") {
+      setThreadReviewReport(store2, threadId, {
+        ...report,
+        status: "error",
+        error: errorMessage(err2),
+        durationMs: Date.now() - report.startedAt
+      });
+      setThreadStatus(store2, threadId, "idle");
+      syncAgentActivity(store2, threadId, false);
+      takeQuietRun(threadId);
+    }
+    showErrorToast("Review could not start", err2);
+  });
 }
-var init_retry_review_comparison = __esm({
-  "src/renderer/controller/retry-review-comparison.ts"() {
+function dismissReviewReport(store2, threadId) {
+  setThreadReviewReport(store2, threadId, null);
+}
+function dismissReviewFinding(store2, api2, threadId, finding) {
+  setReviewFindingDismissed(store2, threadId, finding.id, true);
+  void api2.review.dismissFinding({
+    findingId: finding.id,
+    path: finding.path,
+    claim: finding.claim,
+    class: finding.class
+  }).catch((err2) => {
+    setReviewFindingDismissed(store2, threadId, finding.id, false);
+    showErrorToast("Could not save the dismissal", err2);
+  });
+}
+function restoreReviewFinding(store2, api2, threadId, findingId) {
+  setReviewFindingDismissed(store2, threadId, findingId, false);
+  void api2.review.restoreFinding(findingId).catch((err2) => {
+    setReviewFindingDismissed(store2, threadId, findingId, true);
+    showErrorToast("Could not restore the finding", err2);
+  });
+}
+var init_review_actions = __esm({
+  "src/renderer/controller/review-actions.ts"() {
     init_thread_helpers();
     init_agent_activity();
     init_quiet_runs();
+    init_toast();
+    init_errors3();
   }
 });
 
@@ -68077,10 +69631,10 @@ function terminalPayloadFrom(value) {
     const { success: _success2, error: _error, ...meta3 } = normalized;
     return { status: "success", payload: success2, meta: meta3 };
   }
-  const error61 = normalizeValue(normalized["error"]);
-  if (isRecord(error61)) {
+  const error62 = normalizeValue(normalized["error"]);
+  if (isRecord(error62)) {
     const { success: _success2, error: _error, ...meta3 } = normalized;
-    return { status: "error", payload: error61, meta: meta3 };
+    return { status: "error", payload: error62, meta: meta3 };
   }
   if (isTerminalPayload(normalized)) return { status: null, payload: normalized, meta: {} };
   return null;
@@ -68282,25 +69836,25 @@ function buildPendingActions(proposal, handlers3, rerender) {
     { type: "button", class: "ui-btn ui-btn-secondary thread-proposal-dismiss" },
     "Not now"
   );
-  const error61 = el("span", { class: "thread-proposal-error", role: "alert", hidden: "" });
+  const error62 = el("span", { class: "thread-proposal-error", role: "alert", hidden: "" });
   start.addEventListener("click", () => {
     start.disabled = true;
     dismiss.disabled = true;
     start.textContent = "Starting\u2026";
-    error61.hidden = true;
+    error62.hidden = true;
     void handlers3.onStart(proposal).catch((cause) => {
       start.disabled = false;
       dismiss.disabled = false;
       start.textContent = "Start this thread";
-      error61.textContent = cause instanceof Error ? `Could not start the thread: ${cause.message}` : "Could not start the thread.";
-      error61.hidden = false;
+      error62.textContent = cause instanceof Error ? `Could not start the thread: ${cause.message}` : "Could not start the thread.";
+      error62.hidden = false;
     });
   });
   dismiss.addEventListener("click", () => {
     handlers3.onDismiss(proposal);
     rerender({ status: "dismissed" });
   });
-  return el("div", { class: "thread-proposal-actions" }, start, dismiss, error61);
+  return el("div", { class: "thread-proposal-actions" }, start, dismiss, error62);
 }
 function buildDismissedActions(proposal, handlers3, rerender) {
   const restore = el(
@@ -68587,8 +70141,8 @@ function commitThreadModelSelection(store2, api2, threadId, by, from, to) {
       })
     });
     store2.emit("threads_changed");
-  }).catch((error61) => {
-    console.error("[models] could not record thread model selection", error61);
+  }).catch((error62) => {
+    console.error("[models] could not record thread model selection", error62);
   });
 }
 var init_model_selection2 = __esm({
@@ -68755,6 +70309,19 @@ function createToolResultSection(result, format, showEmptyState = false) {
   }
   return el("div", { class: "tool-result" }, el("pre", {}, renderToolArgs(result)));
 }
+function createToolLocationsSection(locations) {
+  if (!locations?.length) return null;
+  return el(
+    "div",
+    { class: "tool-locations" },
+    el("span", { class: "acp-content-label" }, locations.length === 1 ? "Location" : "Locations"),
+    ...locations.map((location) => {
+      const label = `${location.path}${location.line !== void 0 ? `:${String(location.line)}` : ""}`;
+      const href = `${location.path}${location.line !== void 0 ? `#L${String(location.line)}` : ""}`;
+      return el("a", { href, "data-workspace-link": "true" }, label);
+    })
+  );
+}
 function createToolHeader(label, status, summaryClass, count, editStats, editPath) {
   const activityIcon = el("span", {
     class: "tool-activity-icon-slot",
@@ -68828,7 +70395,8 @@ function appendStandardToolSections(card, tc2, label, summaryClass, count) {
         tc2.result,
         tc2.resultFormat,
         argsSection === null && tc2.status !== "running"
-      )
+      ),
+      ...appendIfPresent(createToolLocationsSection(tc2.locations))
     );
   };
   if (card.open) {
@@ -68870,6 +70438,49 @@ function createCanvasPreviewSection(tc2, threadId) {
   if (tc2.status !== "done") return null;
   const uri = artefactUriFromToolResult(tc2.result);
   return uri ? createCanvasPreviewCard(threadId, artefactTitleFromUri(uri)) : null;
+}
+function syncToolResultContent(msgEl, toolCalls) {
+  const previewImageDataUrls = new Set(
+    toolCalls.flatMap(
+      (toolCall) => (toolCall.images ?? []).filter((image) => image.kind === "screenshot").map((image) => image.dataUrl)
+    )
+  );
+  const content = toolCalls.flatMap((toolCall) => {
+    if (toolCall.content !== void 0) return toolCall.content;
+    return (toolCall.images ?? []).map((image) => ({
+      type: "content",
+      content: {
+        type: "image",
+        dataUrl: image.dataUrl,
+        mimeType: image.dataUrl.match(/^data:([^;,]+)/)?.[1] ?? "image/png",
+        ...image.name ? { uri: image.name } : {}
+      }
+    }));
+  });
+  const visible = content.filter((item) => item.type !== "content" || item.content.type !== "text");
+  const current = msgEl.querySelector(":scope > .tool-result-content");
+  if (visible.length === 0) {
+    current?.remove();
+    return;
+  }
+  const signature = renderSignature({
+    content: visible,
+    previewImageDataUrls: [...previewImageDataUrls]
+  });
+  let rendered = current;
+  if (!rendered || toolResultContentSignatures.get(rendered) !== signature) {
+    rendered = createToolResultContent(visible, previewImageDataUrls);
+    toolResultContentSignatures.set(rendered, signature);
+    if (current) current.replaceWith(rendered);
+    else msgEl.append(rendered);
+  }
+  const toolCards = Array.from(msgEl.children).filter(
+    (node2) => node2.classList.contains("tool-card")
+  );
+  const lastToolCard = toolCards.at(-1);
+  if (lastToolCard && lastToolCard.nextElementSibling !== rendered) {
+    msgEl.insertBefore(rendered, lastToolCard.nextSibling);
+  }
 }
 function syncToolRunMemberVisibility(msgEl) {
   if (!msgEl.classList.contains("msg-tool-run-member")) {
@@ -69425,6 +71036,130 @@ function createMessageImages(images) {
   }
   return wrap;
 }
+function acpResourceLabel(uri, title) {
+  if (title) return title;
+  const tail = uri.split("/").filter(Boolean).at(-1);
+  if (!tail) return uri;
+  try {
+    return decodeURIComponent(tail);
+  } catch {
+    return tail;
+  }
+}
+function createAcpContentBlock(block, context, previewImageDataUrls) {
+  if (block.type === "text") return null;
+  if (block.type === "image") {
+    const label2 = block.uri ? acpResourceLabel(block.uri) : "Agent image";
+    if (context === "tool" && previewImageDataUrls?.has(block.dataUrl)) {
+      const img2 = el("img", {
+        class: "tool-result-preview-image",
+        src: block.dataUrl,
+        alt: label2,
+        loading: "lazy"
+      });
+      attachImageExpand(img2, label2);
+      return el(
+        "figure",
+        { class: "tool-result-preview" },
+        img2,
+        ...block.uri ? [el("figcaption", { class: "tool-result-preview-caption" }, label2)] : []
+      );
+    }
+    const img = el("img", {
+      class: `message-image acp-content-image${context === "tool" ? " tool-result-image" : ""}`,
+      src: block.dataUrl,
+      alt: label2,
+      loading: "lazy"
+    });
+    attachImageExpand(img, label2);
+    return img;
+  }
+  if (block.type === "audio") {
+    return el(
+      "div",
+      { class: "acp-audio-content" },
+      el("span", { class: "acp-content-label" }, "Audio"),
+      el("audio", { controls: true, preload: "metadata", src: block.dataUrl })
+    );
+  }
+  if (block.type === "resource_link") {
+    const label2 = block.title ?? block.name;
+    const description = block.description ? el("span", { class: "acp-resource-description" }, block.description) : null;
+    const metadata = [block.mimeType, block.size !== void 0 ? `${String(block.size)} B` : null].filter(Boolean).join(" \xB7 ");
+    const labelNode = /^https?:\/\//i.test(block.uri) ? el("a", { class: "acp-resource-title", href: block.uri }, label2) : el("span", { class: "acp-resource-title" }, label2);
+    return el(
+      "div",
+      { class: "acp-resource-content acp-resource-link" },
+      labelNode,
+      ...description ? [description] : [],
+      ...metadata ? [el("span", { class: "acp-resource-meta" }, metadata)] : [],
+      el("code", { class: "acp-resource-uri" }, block.uri)
+    );
+  }
+  const label = acpResourceLabel(block.uri);
+  if ("text" in block) {
+    return el(
+      "details",
+      { class: "acp-resource-content acp-embedded-resource" },
+      el("summary", {}, label),
+      ...block.mimeType ? [el("span", { class: "acp-resource-meta" }, block.mimeType)] : [],
+      el("pre", { class: "acp-resource-text" }, block.text)
+    );
+  }
+  return el(
+    "div",
+    { class: "acp-resource-content acp-embedded-resource-binary" },
+    el("span", { class: "acp-resource-title" }, label),
+    ...block.mimeType ? [el("span", { class: "acp-resource-meta" }, block.mimeType)] : [],
+    el("a", { class: "ui-btn ui-btn-secondary", href: block.dataUrl, download: label }, "Save")
+  );
+}
+function createAcpContentBlocks(blocks, context) {
+  const nodes = blocks.flatMap((block) => {
+    const node2 = createAcpContentBlock(block, context);
+    return node2 ? [node2] : [];
+  });
+  if (nodes.length === 0) return null;
+  return el("div", { class: `acp-content-blocks acp-${context}-content` }, ...nodes);
+}
+function createToolResultContent(content, previewImageDataUrls) {
+  const imageCount = content.filter(
+    (item) => item.type === "content" && item.content.type === "image"
+  ).length;
+  const wrap = el("div", {
+    class: "tool-result-content tool-result-images",
+    "data-tool-result-image-count": String(imageCount)
+  });
+  for (const item of content) {
+    if (item.type === "content") {
+      const node2 = createAcpContentBlock(item.content, "tool", previewImageDataUrls);
+      if (node2) wrap.append(node2);
+    } else if (item.type === "diff") {
+      const diff = el(
+        "details",
+        { class: "acp-tool-diff" },
+        el("summary", {}, `Diff \xB7 ${item.path}`),
+        ...item.oldText !== void 0 ? [
+          el("div", { class: "acp-content-label" }, "Before"),
+          el("pre", { class: "acp-tool-diff-text" }, item.oldText)
+        ] : [],
+        el("div", { class: "acp-content-label" }, "After"),
+        el("pre", { class: "acp-tool-diff-text" }, item.newText)
+      );
+      wrap.append(diff);
+    } else {
+      wrap.append(
+        el(
+          "div",
+          { class: "acp-terminal-reference" },
+          el("span", { class: "acp-content-label" }, "Terminal"),
+          el("code", {}, item.terminalId)
+        )
+      );
+    }
+  }
+  return wrap;
+}
 function hookCardStatusIcon(status) {
   if (status === "ask") return warningIcon("ui-icon ui-icon-sm");
   if (isHookCardBlocking(status)) return closeIcon("ui-icon ui-icon-sm");
@@ -69437,7 +71172,7 @@ function hookCardDetailLines(card) {
   if (card.status === "halted") lines.push("Stopped the agent run");
   if (card.updatedInput) lines.push("Rewrote the tool input");
   if (card.nudgeApplied) {
-    const via = card.nudgeMechanism === "text-only-turn" ? "as a forced text-only turn" : "appended to the next turn";
+    const via = card.nudgeMechanism === "text-only-turn" ? "as a forced text-only turn" : card.nudgeMechanism === "tool-enabled-turn" ? "as a tool-enabled finalization turn" : "appended to the next turn";
     lines.push(`Applied this nudge to the conversation \u2014 ${via}`);
   }
   if (card.injectContextChars !== void 0 && card.injectContextChars > 0) {
@@ -69646,8 +71381,10 @@ function appendMessageContent(body, msg, api2, opts) {
   if (msg.role === "user" && msg.images?.length) {
     body.append(createMessageImages(msg.images));
   }
-  if (msg.role === "assistant" && msg.reasoning && opts?.nestReasoningInTools !== true) {
-    body.append(buildReasoningEl(msg.reasoning, !msg.content.trim(), false));
+  if (msg.role === "assistant" && (msg.reasoning || msg.reasoningBlocks?.length) && opts?.nestReasoningInTools !== true) {
+    body.append(
+      buildReasoningEl(msg.reasoning ?? "", !msg.content.trim(), false, msg.reasoningBlocks)
+    );
   }
   const textEl = el("div", { class: "message-text streaming-markdown" });
   body.append(textEl);
@@ -69660,6 +71397,22 @@ function appendMessageContent(body, msg, api2, opts) {
   } else {
     textEl.textContent = msg.content;
   }
+  if (msg.role === "assistant" && msg.contentBlocks?.length) {
+    const richContent = createAcpContentBlocks(msg.contentBlocks, "message");
+    if (richContent) body.append(richContent);
+  }
+}
+function syncAcpMessageContent(msgEl, blocks) {
+  const body = msgEl.querySelector(":scope > .message-body");
+  if (!body) return;
+  const current = body.querySelector(":scope > .acp-message-content");
+  const replacement = createAcpContentBlocks(blocks, "message");
+  if (!replacement) {
+    current?.remove();
+    return;
+  }
+  if (current) current.replaceWith(replacement);
+  else body.append(replacement);
 }
 function shouldNestReasoningInTools(toolCalls) {
   return toolCalls.some((tc2) => !tc2.subagent);
@@ -69673,7 +71426,8 @@ function messageToolCardOpts(msg) {
   return {
     ...msg.commandSummary !== void 0 ? { commandSummary: msg.commandSummary } : {},
     ...msg.toolSummary !== void 0 ? { toolSummary: msg.toolSummary } : {},
-    ...msg.reasoning !== void 0 ? { reasoning: msg.reasoning } : {}
+    ...msg.reasoning !== void 0 ? { reasoning: msg.reasoning } : {},
+    ...msg.reasoningBlocks !== void 0 ? { reasoningBlocks: msg.reasoningBlocks } : {}
   };
 }
 function liveStepMessageId(thread) {
@@ -69746,7 +71500,7 @@ function renderUserTranscript(host, content, attachments, api2) {
 function countChipPlaceholders(text2) {
   return text2.split(CHIP_CHAR).length - 1;
 }
-function buildReasoningEl(reasoning, open2, live) {
+function buildReasoningEl(reasoning, open2, live, blocks = []) {
   const details = el("details", {
     class: `message-reasoning${live ? " message-reasoning-live" : ""}`,
     open: open2
@@ -69762,15 +71516,17 @@ function buildReasoningEl(reasoning, open2, live) {
     el("span", { class: "message-reasoning-title" }, reasoningDisclosureTitle(live))
   );
   const text2 = el("div", { class: "message-reasoning-text" });
-  renderReasoningText(text2, reasoning);
+  renderReasoningText(text2, reasoning, blocks);
   summary.addEventListener("click", () => {
     details.dataset["userToggled"] = "1";
   });
   details.append(summary, text2);
   return details;
 }
-function renderReasoningText(el3, text2) {
+function renderReasoningText(el3, text2, blocks = []) {
   el3.innerHTML = renderMarkdown(text2);
+  const richContent = createAcpContentBlocks(blocks, "reasoning");
+  if (richContent) el3.append(richContent);
 }
 function syncReasoningEl(msgEl, msg, live) {
   const body = msgEl.querySelector(".message-body");
@@ -69780,35 +71536,35 @@ function syncReasoningEl(msgEl, msg, live) {
   );
   const host = rollupBody ?? body;
   let details = msgEl.querySelector(".message-reasoning");
-  if (!msg.reasoning) {
+  if (!msg.reasoning && !msg.reasoningBlocks?.length) {
     details?.remove();
     return;
   }
   if (!details) {
-    details = buildReasoningEl(msg.reasoning, true, live);
+    details = buildReasoningEl(msg.reasoning ?? "", true, live, msg.reasoningBlocks);
     host.prepend(details);
   } else {
     if (details.parentElement !== host) host.prepend(details);
     const textEl = details.querySelector(".message-reasoning-text");
-    if (textEl) renderReasoningText(textEl, msg.reasoning);
+    if (textEl) renderReasoningText(textEl, msg.reasoning ?? "", msg.reasoningBlocks);
     setReasoningDisclosureTitle(details, live);
   }
   if (!details.dataset["userToggled"] && !msg.content.trim()) details.open = true;
 }
-function syncNestedRollupReasoning(card, msgEl, reasoning, live) {
+function syncNestedRollupReasoning(card, msgEl, reasoning, reasoningBlocks, live) {
   const rollupBody = card.querySelector(":scope > .tool-rollup-body");
   if (!rollupBody) return;
   const body = msgEl.querySelector(".message-body");
   let details = rollupBody.querySelector(":scope > .message-reasoning") ?? msgEl.querySelector(".message-reasoning");
-  if (!reasoning?.trim()) {
+  if (!reasoning?.trim() && !reasoningBlocks?.length) {
     details?.remove();
     return;
   }
   if (!details) {
-    details = buildReasoningEl(reasoning, true, live);
+    details = buildReasoningEl(reasoning ?? "", true, live, reasoningBlocks);
   } else {
     const textEl = details.querySelector(".message-reasoning-text");
-    if (textEl) renderReasoningText(textEl, reasoning);
+    if (textEl) renderReasoningText(textEl, reasoning ?? "", reasoningBlocks);
     setReasoningDisclosureTitle(details, live);
   }
   if (details.parentElement !== rollupBody) rollupBody.prepend(details);
@@ -69823,18 +71579,18 @@ function syncRunStepReasoning(card, run2, liveStepId) {
     );
     if (!body) continue;
     let details = body.querySelector(":scope > .message-reasoning");
-    if (!step.reasoning?.trim()) {
+    if (!step.reasoning?.trim() && !step.reasoningBlocks?.length) {
       details?.remove();
       continue;
     }
     const live = step.messageId === liveStepId;
     if (!details) {
-      details = buildReasoningEl(step.reasoning, live, live);
+      details = buildReasoningEl(step.reasoning ?? "", live, live, step.reasoningBlocks);
       body.prepend(details);
       continue;
     }
     const textEl = details.querySelector(".message-reasoning-text");
-    if (textEl) renderReasoningText(textEl, step.reasoning);
+    if (textEl) renderReasoningText(textEl, step.reasoning ?? "", step.reasoningBlocks);
     setReasoningDisclosureTitle(details, live);
   }
 }
@@ -70402,7 +72158,7 @@ function mountConversation(root, store2, api2) {
     const run2 = opts.run && (opts.run.anchorId === msgId || list.querySelector(`[data-message-id="${opts.run.anchorId}"]`) !== null) ? opts.run : void 0;
     const isRunMember = run2 !== void 0 && run2.anchorId !== msgId;
     msgEl.classList.toggle("msg-tool-run-member", isRunMember);
-    const nestReasoning = run2 === void 0 && Boolean(opts.reasoning?.trim()) && shouldNestReasoningInTools(toolCalls);
+    const nestReasoning = run2 === void 0 && (Boolean(opts.reasoning?.trim()) || Boolean(opts.reasoningBlocks?.length)) && shouldNestReasoningInTools(toolCalls);
     const items = run2 ? isRunMember ? buildSubagentDisplayItems(toolCalls) : [...buildToolRunDisplayItems(run2), ...buildSubagentDisplayItems(toolCalls)] : buildToolCallDisplayItems(toolCalls, {
       ...nestReasoning || messageKey !== null && liveRollupMessages.has(messageKey) ? { forceRollup: true } : {}
     });
@@ -70432,7 +72188,13 @@ function mountConversation(root, store2, api2) {
       }
       applyToolCardOpenState(card, item, threadId, msgId, true);
       if (item.type === "rollup" && nestReasoning) {
-        syncNestedRollupReasoning(card, msgEl, opts.reasoning, opts.reasoningLive === true);
+        syncNestedRollupReasoning(
+          card,
+          msgEl,
+          opts.reasoning,
+          opts.reasoningBlocks,
+          opts.reasoningLive === true
+        );
       }
       if (item.type === "rollup" && run2 && item.key === RUN_ROLLUP_KEY) {
         syncRunStepReasoning(card, run2, opts.liveStepId ?? null);
@@ -70462,6 +72224,7 @@ function mountConversation(root, store2, api2) {
         msgEl.insertBefore(node2, msgEl.children[base + i] ?? null);
       }
     }
+    syncToolResultContent(msgEl, run2 ? isRunMember ? [] : run2.toolCalls : toolCalls);
     registerReasoningDisclosures(msgEl);
     syncToolRunMemberVisibility(msgEl);
   }
@@ -70583,7 +72346,7 @@ function mountConversation(root, store2, api2) {
     }
     const msgEl = buildMessageEl(threadId, msgId);
     if (!msgEl) return;
-    const trailingCard = list.querySelector("[data-comparison-card]");
+    const trailingCard = firstTrailingCard();
     if (trailingCard) {
       list.insertBefore(msgEl, activityBar.isConnected ? activityBar : trailingCard);
     } else list.insertBefore(msgEl, activityBar.isConnected ? activityBar : null);
@@ -70759,28 +72522,49 @@ function mountConversation(root, store2, api2) {
     card.setAttribute("data-turn-recovery-for", messageId);
     msgEl.after(card);
   }
+  function firstTrailingCard() {
+    return list.querySelector("[data-review-report-card], [data-comparison-card]");
+  }
   function syncComparisonPanel() {
     list.querySelector("[data-comparison-card]")?.remove();
     const thread = getActiveThread(store2);
     if (thread?.comparison) {
       const threadId = thread.id;
-      const card = createComparisonCardEl(
-        thread.comparison,
-        api2,
-        () => {
-          retryComparison(store2, api2, threadId);
-        },
-        () => {
-          dismissComparison(store2, threadId);
-        }
-      );
+      const card = createComparisonCardEl(thread.comparison, api2, void 0, () => {
+        dismissComparison(store2, threadId);
+      });
       card.setAttribute("data-comparison-card", "");
       list.append(card);
     }
   }
+  function syncReviewReportCard() {
+    list.querySelector("[data-review-report-card]")?.remove();
+    const thread = getActiveThread(store2);
+    if (!thread?.reviewReport) return;
+    const threadId = thread.id;
+    const card = createReviewFindingsCardEl(thread.reviewReport, {
+      onRetry: () => {
+        startReview(store2, api2, threadId);
+      },
+      onDismissCard: () => {
+        dismissReviewReport(store2, threadId);
+      },
+      onDismissFinding: (finding) => {
+        dismissReviewFinding(store2, api2, threadId, finding);
+      },
+      onRestoreFinding: (finding) => {
+        restoreReviewFinding(store2, api2, threadId, finding.id);
+      }
+    });
+    card.setAttribute("data-review-report-card", "");
+    const comparison = list.querySelector("[data-comparison-card]");
+    if (comparison) list.insertBefore(card, comparison);
+    else list.append(card);
+  }
   function finishThreadChrome(thread) {
     syncTodoPanel();
     appleDevelopmentHost.dispatchEvent(new Event("apple-development-refresh"));
+    syncReviewReportCard();
     syncComparisonPanel();
     if (thread) {
       renderQueuedPanel(thread.id);
@@ -70788,7 +72572,7 @@ function mountConversation(root, store2, api2) {
       queuedHost.replaceChildren();
       queuedHost.hidden = true;
     }
-    list.insertBefore(activityBar, list.querySelector("[data-comparison-card]"));
+    list.insertBefore(activityBar, firstTrailingCard());
     updateScrollButton();
   }
   function backfillOlderMessages(thread, cursor, generation) {
@@ -70865,7 +72649,7 @@ function mountConversation(root, store2, api2) {
   function captureReadingAnchor() {
     const listRect = list.getBoundingClientRect();
     const candidates = list.querySelectorAll(
-      ":scope > .msg, :scope > [data-review-card], :scope > [data-comparison-card]"
+      ":scope > .msg, :scope > [data-review-card], :scope > [data-review-report-card], :scope > [data-comparison-card]"
     );
     for (const element of candidates) {
       const rect = element.getBoundingClientRect();
@@ -70931,6 +72715,20 @@ function mountConversation(root, store2, api2) {
       const msgEl = list.querySelector(`[data-message-id="${mid}"]`);
       if (thread && msg?.role === "assistant" && msgEl) {
         syncMessageCanvasPreviews(msgEl, msg, store2.getState().activeProjectId, thread.id, api2);
+        scrollToBottom();
+      }
+    }),
+    store2.on("message_acp_content", (mid) => {
+      const thread = getActiveThread(store2);
+      const msg = thread?.messages.find((message2) => message2.id === mid);
+      const msgEl = list.querySelector(`[data-message-id="${mid}"]`);
+      if (msg?.role === "assistant" && msgEl) {
+        syncAcpMessageContent(msgEl, msg.contentBlocks ?? []);
+        const run2 = multiStepRunFor(thread, mid);
+        if (run2) syncRunStepTrail(thread, run2);
+        else syncReasoningEl(msgEl, msg, isReasoningDisclosureLive(thread, msg));
+        registerReasoningDisclosures(msgEl);
+        syncToolRunMemberVisibility(msgEl);
         scrollToBottom();
       }
     }),
@@ -71002,6 +72800,10 @@ function mountConversation(root, store2, api2) {
       syncComparisonPanel();
       scrollToBottom();
     }),
+    store2.on("review_report_changed", () => {
+      syncReviewReportCard();
+      scrollToBottom();
+    }),
     store2.on("settings_changed", () => {
       const thread = getActiveThread(store2);
       if (!thread) return;
@@ -71070,7 +72872,7 @@ function attachCopyButton(body, msgId, store2) {
   });
   body.append(copyBtn);
 }
-var lazyToolCardBodies, streamingRenderers, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolCardKeys, toolCardSignatures, toolGroupItemSignatures, SCROLL_PIN_THRESHOLD_PX, USER_SCROLL_UP_DEBOUNCE_MS, TOOL_AUTO_REVEAL_DELAY_MS, TOOL_AUTO_REVEAL_MIN_DWELL_MS, TOOL_AUTO_COMPACT_DELAY_MS, INITIAL_RENDER_WINDOW, BACKFILL_CHUNK_SIZE;
+var lazyToolCardBodies, toolResultContentSignatures, streamingRenderers, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolCardKeys, toolCardSignatures, toolGroupItemSignatures, SCROLL_PIN_THRESHOLD_PX, USER_SCROLL_UP_DEBOUNCE_MS, TOOL_AUTO_REVEAL_DELAY_MS, TOOL_AUTO_REVEAL_MIN_DWELL_MS, TOOL_AUTO_COMPACT_DELAY_MS, INITIAL_RENDER_WINDOW, BACKFILL_CHUNK_SIZE;
 var init_conversation = __esm({
   "src/renderer/views/conversation.ts"() {
     init_helpers();
@@ -71115,7 +72917,8 @@ var init_conversation = __esm({
     init_apple_development_panel();
     init_review_panel();
     init_comparison_panel();
-    init_retry_review_comparison();
+    init_review_findings_card();
+    init_review_actions();
     init_tool_args_format();
     init_thread_proposal_tool_card();
     init_render_signature();
@@ -71127,6 +72930,7 @@ var init_conversation = __esm({
     init_image_input_support();
     init_toast();
     lazyToolCardBodies = /* @__PURE__ */ new WeakMap();
+    toolResultContentSignatures = /* @__PURE__ */ new WeakMap();
     streamingRenderers = /* @__PURE__ */ new WeakMap();
     showAcpTransportNoiseDisclosure = () => false;
     subagentMessageCommitted = /* @__PURE__ */ new WeakMap();
@@ -81746,15 +83550,26 @@ async function attachWorkspacePath(path, handlers3, api2, workspaceRoot, owner) 
   }
   if (!owner) return;
   try {
+    const imageMime = isRasterImagePath(name) ? imageMimeType(name) : null;
+    if (imageMime) {
+      const dataUrl = await api2.fs.readImage(owner.projectId, owner.threadId, path);
+      handlers3.attachImage(dataUrl, imageMime);
+      return;
+    }
     const content = await api2.fs.readFile(owner.projectId, owner.threadId, path);
     handlers3.attachFile({ path: relativeWorkspacePath(path, workspaceRoot) || path, content });
   } catch {
   }
 }
 async function attachDroppedFile(file2, handlers3, api2, workspaceRoot, owner = null) {
-  if (file2.type.startsWith("image/")) {
+  const imageMime = file2.type.startsWith("image/") ? file2.type : imageMimeType(file2.name);
+  if (imageMime) {
     const dataUrl = await readAsDataUrl(file2);
-    handlers3.attachImage(dataUrl, file2.type);
+    const separator = dataUrl.indexOf(",");
+    handlers3.attachImage(
+      separator === -1 ? dataUrl : `data:${imageMime};base64,${dataUrl.slice(separator + 1)}`,
+      imageMime
+    );
     return;
   }
   if (isVideoFile(file2)) {
@@ -81831,6 +83646,7 @@ var init_handle_file_drop = __esm({
     init_video_media();
     init_archive_media();
     init_unknown_value3();
+    init_image_path();
     WORKSPACE_PATH_MIME = "application/x-copse-panel-path";
   }
 });
@@ -82144,7 +83960,7 @@ function matchesQuery(label, query) {
   return label.toLowerCase().includes(query.toLowerCase());
 }
 function initMentionPicker(opts) {
-  const { input: input2, inputBar, store: store2, api: api2, onAttach, onAttachThread, onAttachShell } = opts;
+  const { input: input2, inputBar, store: store2, api: api2, onAttach, onAttachImage, onAttachThread, onAttachShell } = opts;
   const picker = document.createElement("div");
   picker.className = "mention-picker";
   picker.setAttribute("role", "listbox");
@@ -82236,11 +84052,13 @@ function initMentionPicker(opts) {
     try {
       const { activeProjectId, activeThreadId } = store2.getState();
       if (!activeProjectId || !activeThreadId) return;
-      const content = await api2.fs.readFile(activeProjectId, activeThreadId, item.path);
+      const imageMime = isRasterImagePath(item.path) ? imageMimeType(item.path) : null;
+      const content = imageMime ? await api2.fs.readImage(activeProjectId, activeThreadId, item.path) : await api2.fs.readFile(activeProjectId, activeThreadId, item.path);
       const current = store2.getState();
       if (current.activeProjectId !== activeProjectId || current.activeThreadId !== activeThreadId)
         return;
-      onAttach({ path: item.path, content });
+      if (imageMime) onAttachImage(content, imageMime);
+      else onAttach({ path: item.path, content });
     } catch {
     }
     removeMentionText();
@@ -82296,6 +84114,7 @@ var init_mention_picker = __esm({
     init_attachment_icons();
     init_shell_catalog();
     init_read_terminal();
+    init_image_path();
     MAX_THREADS = 5;
   }
 });
@@ -82835,8 +84654,8 @@ var init_thread_branch = __esm({
 });
 
 // src/renderer/views/footer-branch-status.ts
-function reportBranchFailure(what, error61) {
-  console.warn(`[footer-branch-status] failed to ${what}:`, error61);
+function reportBranchFailure(what, error62) {
+  console.warn(`[footer-branch-status] failed to ${what}:`, error62);
 }
 function orderBranchesWithDefaultFirst(branches, defaultBranch) {
   if (!defaultBranch) return branches;
@@ -83054,25 +84873,25 @@ function mountFooterBranchStatus(host, store2, api2) {
       const nextStatus = await api2.git.branchStatus(owner.projectId, owner.threadId, threadBranch);
       if (token !== refreshToken) return;
       status = nextStatus;
-    } catch (error61) {
+    } catch (error62) {
       if (token !== refreshToken) return;
-      reportBranchFailure("read branch status", error61);
+      reportBranchFailure("read branch status", error62);
       status = null;
     }
     if (isPickerMode()) {
       try {
         await loadBranches(token);
-      } catch (error61) {
+      } catch (error62) {
         if (token !== refreshToken) return;
-        reportBranchFailure("list branches", error61);
+        reportBranchFailure("list branches", error62);
       }
       if (token !== refreshToken) return;
     } else {
       try {
         defaultBranch = await api2.git.getDefaultBranch(owner.projectId, owner.threadId);
-      } catch (error61) {
+      } catch (error62) {
         if (token !== refreshToken) return;
-        reportBranchFailure("read default branch", error61);
+        reportBranchFailure("read default branch", error62);
       }
       if (token !== refreshToken) return;
     }
@@ -83086,8 +84905,8 @@ function mountFooterBranchStatus(host, store2, api2) {
   function copyBranchName() {
     const branch = branchToCopy;
     if (!branch) return;
-    void navigator.clipboard.writeText(branch).then(() => showToast(COPIED_BRANCH_TOAST, { durationMs: COPY_FEEDBACK_MS })).catch((error61) => {
-      showErrorToast("Failed to copy branch name", error61);
+    void navigator.clipboard.writeText(branch).then(() => showToast(COPIED_BRANCH_TOAST, { durationMs: COPY_FEEDBACK_MS })).catch((error62) => {
+      showErrorToast("Failed to copy branch name", error62);
     });
   }
   trigger.addEventListener("click", () => {
@@ -83107,8 +84926,8 @@ function mountFooterBranchStatus(host, store2, api2) {
         const token = refreshToken;
         try {
           await loadBranches(token);
-        } catch (error61) {
-          reportBranchFailure("list branches", error61);
+        } catch (error62) {
+          reportBranchFailure("list branches", error62);
         }
         if (token !== refreshToken) return;
         renderMenu();
@@ -84184,186 +86003,11 @@ var init_last_exchange = __esm({
   }
 });
 
-// src/renderer/views/approval-comparison-pickers.ts
-async function reviewerOptions(api2, current) {
-  const options = await fetchModelOptions(api2, current, REVIEWER_OPTIONS);
-  return options.map(
-    (option) => option.value === current && UNRUNNABLE_CURRENT_SUFFIX.test(option.label) ? { ...option, disabled: true } : option
-  );
-}
-async function refreshReviewer(picker, select, current) {
-  await picker.refresh(current);
-  const selected = select.selectedOptions[0];
-  if (selected?.disabled !== true) return;
-  const replacement = [...select.options].find(
-    (option) => !option.disabled && option.value.length > 0
-  );
-  if (!replacement) return;
-  select.value = replacement.value;
-  select.dispatchEvent(new Event("change", { bubbles: true }));
-}
-function modelRow(label, select) {
-  return el(
-    "label",
-    { class: "approval-comparison-row" },
-    el("span", { class: "approval-comparison-label" }, label),
-    select
-  );
-}
-function createComparisonModelPickers(api2, models, intro) {
-  const selectA = el("select", { class: "approval-model-select" });
-  const selectB = el("select", { class: "approval-model-select" });
-  const selectJudge = el("select", { class: "approval-model-select" });
-  for (const select of [selectA, selectB, selectJudge]) {
-    select.append(el("option", { value: "" }, "(loading\u2026)"));
-  }
-  const root = el(
-    "div",
-    { class: "approval-comparison-models" },
-    el("p", { class: "approval-comparison-intro" }, intro),
-    modelRow("Reviewer A", selectA),
-    modelRow("Reviewer B", selectB),
-    modelRow("Judge", selectJudge)
-  );
-  const pickerA = mountModelSelectPicker(selectA, {
-    loadOptions: (current) => reviewerOptions(api2, current),
-    className: "approval-model-picker",
-    ariaLabel: "Reviewer A model",
-    loadOnMount: false
-  });
-  const pickerB = mountModelSelectPicker(selectB, {
-    loadOptions: (current) => reviewerOptions(api2, current),
-    className: "approval-model-picker",
-    ariaLabel: "Reviewer B model",
-    loadOnMount: false
-  });
-  const pickerJudge = mountModelSelectPicker(selectJudge, {
-    loadOptions: (current) => reviewerOptions(api2, current),
-    className: "approval-model-picker",
-    ariaLabel: "Judge model",
-    loadOnMount: false
-  });
-  void Promise.all([
-    refreshReviewer(pickerA, selectA, models.a),
-    refreshReviewer(pickerB, selectB, models.b),
-    refreshReviewer(pickerJudge, selectJudge, models.judge)
-  ]);
-  return {
-    root,
-    read: () => ({
-      a: selectA.value,
-      b: selectB.value,
-      judge: selectJudge.value
-    })
-  };
-}
-var REVIEWER_OPTIONS, UNRUNNABLE_CURRENT_SUFFIX;
-var init_approval_comparison_pickers = __esm({
-  "src/renderer/views/approval-comparison-pickers.ts"() {
-    init_helpers();
-    init_model_options();
-    init_model_picker();
-    REVIEWER_OPTIONS = { includeAgentModels: false };
-    UNRUNNABLE_CURRENT_SUFFIX = / \((?:no key|not available|offline)\)$/i;
-  }
-});
-
-// src/renderer/views/comparison-model-dialog.ts
-function ensureDialog5() {
-  if (dialogEl4) return dialogEl4;
-  dialogEl4 = el("dialog", {
-    id: "comparison-model-dialog",
-    class: "comparison-model-dialog"
-  });
-  document.body.append(dialogEl4);
-  return dialogEl4;
-}
-function openComparisonModelDialog(api2, models) {
-  const dialog2 = ensureDialog5();
-  clear(dialog2);
-  const pickers = createComparisonModelPickers(
-    api2,
-    models,
-    "Each reviewer independently reads the working diff; a judge compares their verdicts."
-  );
-  const runBtn = el(
-    "button",
-    { type: "button", class: "ui-btn ui-btn-primary comparison-model-dialog-run" },
-    "Run comparison"
-  );
-  const cancelBtn = el(
-    "button",
-    { type: "button", class: "ui-btn comparison-model-dialog-cancel" },
-    "Cancel"
-  );
-  dialog2.append(
-    el("h3", {}, "Compare models on this diff"),
-    pickers.root,
-    // Three inferences, and the picker is the only place their cost is named
-    // before they run — there is no follow-up prompt to disclose it later.
-    el(
-      "p",
-      { class: "field-hint comparison-model-dialog-cost" },
-      "Runs three model calls: two reviews and one judgement. Any model that is not local is billed."
-    ),
-    el("div", { class: "comparison-model-dialog-actions" }, cancelBtn, runBtn)
-  );
-  return new Promise((resolve) => {
-    let settled = false;
-    const perOpen = new AbortController();
-    const finish = (value) => {
-      if (settled) return;
-      settled = true;
-      perOpen.abort();
-      dialog2.close();
-      resolve(value);
-    };
-    dialog2.addEventListener(
-      "cancel",
-      () => {
-        finish(null);
-      },
-      { signal: perOpen.signal }
-    );
-    cancelBtn.addEventListener("click", () => {
-      finish(null);
-    });
-    runBtn.addEventListener("click", () => {
-      const picked = pickers.read();
-      if (!picked.a || !picked.b || !picked.judge) return;
-      finish(picked);
-    });
-    dialog2.showModal();
-    runBtn.focus();
-  });
-}
-var dialogEl4;
-var init_comparison_model_dialog = __esm({
-  "src/renderer/views/comparison-model-dialog.ts"() {
-    init_helpers();
-    init_approval_comparison_pickers();
-    dialogEl4 = null;
-  }
-});
-
 // src/renderer/views/follow-up-suggestions.ts
 function openChangesReviewer(store2) {
   store2.setState({ rightPanelMode: "changes", filesPaneOpen: true });
   store2.emit("right_panel_mode_changed");
   store2.emit("files_pane_changed");
-}
-async function runComparisonFromBubble(store2, api2, threadId, onStarted) {
-  let defaults;
-  try {
-    defaults = await api2.agent.comparisonModels(comparisonModelsPayload(store2, threadId));
-  } catch (err2) {
-    showErrorToast("Could not load comparison models", err2);
-    return;
-  }
-  const picked = await openComparisonModelDialog(api2, defaults);
-  if (!picked) return;
-  onStarted();
-  startComparison(store2, api2, threadId, picked);
 }
 async function createPrFromBubble(store2, api2, threadId, onConfirmed) {
   const { activeProjectId } = store2.getState();
@@ -84377,9 +86021,9 @@ async function createPrFromBubble(store2, api2, threadId, onConfirmed) {
     ...bodyPromise ? { bodyPromise } : {}
   });
   if (!picked) return;
-  onConfirmed();
   const request = { title: picked.title, body: picked.body, draft: picked.draft };
   const card = openPrCardInTranscript(store2, threadId, request);
+  onConfirmed();
   try {
     const result = await api2.gh.createPrForThread(activeProjectId, threadId, request);
     settlePrCard(store2, card, result.ok ? "done" : "error", result.message);
@@ -84419,14 +86063,22 @@ function mountFollowUpSuggestions(store2, api2, onSelect) {
     fetchTokens.set(threadId, token);
     return token;
   };
+  const changesRefreshTokens = /* @__PURE__ */ new Map();
+  const nextChangesRefreshToken = (threadId) => {
+    const token = (changesRefreshTokens.get(threadId) ?? 0) + 1;
+    changesRefreshTokens.set(threadId, token);
+    return token;
+  };
   let changesRefreshTimer = null;
   let displayedThreadId = null;
   const suggestionsByThread = /* @__PURE__ */ new Map();
-  const consumedThreads = /* @__PURE__ */ new Set();
+  const consumedTurnKeys = /* @__PURE__ */ new Map();
   function consumeSuggestions(threadId) {
-    consumedThreads.add(threadId);
+    const exchange = lastExchange(store2, threadId);
+    if (exchange) consumedTurnKeys.set(threadId, exchange.turnKey);
     suggestionsByThread.delete(threadId);
     nextFetchToken(threadId);
+    nextChangesRefreshToken(threadId);
     if (store2.getState().activeThreadId === threadId) clearSuggestions();
   }
   function clearSuggestions() {
@@ -84475,8 +86127,9 @@ function mountFollowUpSuggestions(store2, api2, onSelect) {
         if (store2.getState().activeThreadId !== sourceThreadId) {
           switchThread(store2, sourceThreadId);
         }
-        if (suggestion.action === "model-compare") {
-          void runComparisonFromBubble(store2, api2, sourceThreadId, clearSuggestions);
+        if (suggestion.action === "review") {
+          clearSuggestions();
+          startReview(store2, api2, sourceThreadId);
           return;
         }
         if (suggestion.action === "create-pr") {
@@ -84494,13 +86147,15 @@ function mountFollowUpSuggestions(store2, api2, onSelect) {
     displayedThreadId = threadId;
   }
   async function maybeFetchSuggestions(threadId) {
-    if (consumedThreads.has(threadId)) return;
     const exchange = lastExchange(store2, threadId);
     if (!exchange) {
       suggestionsByThread.delete(threadId);
       if (store2.getState().activeThreadId === threadId) clearSuggestions();
       return;
     }
+    const consumedTurnKey = consumedTurnKeys.get(threadId);
+    if (consumedTurnKey === exchange.turnKey) return;
+    if (consumedTurnKey) consumedTurnKeys.delete(threadId);
     const cached2 = suggestionsByThread.get(threadId);
     if (cached2?.turnKey === exchange.turnKey) {
       if (store2.getState().activeThreadId === threadId) {
@@ -84534,12 +86189,16 @@ function mountFollowUpSuggestions(store2, api2, onSelect) {
     if (!activeProjectId || !activeId) return;
     const cached2 = suggestionsByThread.get(activeId);
     if (!cached2) return;
+    const token = nextChangesRefreshToken(activeId);
     let stats;
     try {
       stats = await api2.git.changeStats(activeProjectId, activeId);
     } catch {
       return;
     }
+    if (token !== changesRefreshTokens.get(activeId)) return;
+    if (consumedTurnKeys.has(activeId)) return;
+    if (suggestionsByThread.get(activeId) !== cached2) return;
     const next = reconcileChangesSuggestion(cached2.suggestions, stats);
     if (next === cached2.suggestions) return;
     suggestionsByThread.set(activeId, { turnKey: cached2.turnKey, suggestions: next });
@@ -84555,16 +86214,18 @@ function mountFollowUpSuggestions(store2, api2, onSelect) {
       clearSuggestions();
       return;
     }
-    if (consumedThreads.has(activeId)) {
-      clearSuggestions();
-      return;
-    }
     if (displayedThreadId === activeId) return;
     const exchange = lastExchange(store2, activeId);
     if (!exchange) {
       clearSuggestions();
       return;
     }
+    const consumedTurnKey = consumedTurnKeys.get(activeId);
+    if (consumedTurnKey === exchange.turnKey) {
+      clearSuggestions();
+      return;
+    }
+    if (consumedTurnKey) consumedTurnKeys.delete(activeId);
     const cached2 = suggestionsByThread.get(activeId);
     if (cached2?.turnKey === exchange.turnKey) {
       renderSuggestions(activeId, cached2.suggestions);
@@ -84575,8 +86236,8 @@ function mountFollowUpSuggestions(store2, api2, onSelect) {
   const unsubs = [
     store2.on("thread_status_changed", (tid, status) => {
       if (status === "running") {
-        consumedThreads.delete(tid);
         suggestionsByThread.delete(tid);
+        nextChangesRefreshToken(tid);
         if (tid === store2.getState().activeThreadId) {
           nextFetchToken(tid);
           clearSuggestions();
@@ -84600,11 +86261,13 @@ function mountFollowUpSuggestions(store2, api2, onSelect) {
     clearSuggestions,
     destroy: () => {
       fetchTokens.clear();
+      changesRefreshTokens.clear();
       if (changesRefreshTimer) clearTimeout(changesRefreshTimer);
       unsubs.forEach((u) => {
         u();
       });
       suggestionsByThread.clear();
+      consumedTurnKeys.clear();
       clearSuggestions();
     }
   };
@@ -84616,8 +86279,7 @@ var init_follow_up_suggestions = __esm({
     init_create_pr_dialog();
     init_thread_helpers();
     init_last_exchange();
-    init_comparison_model_dialog();
-    init_retry_review_comparison();
+    init_review_actions();
     init_toast();
   }
 });
@@ -84824,8 +86486,8 @@ function mountGuardedYoloControl(api2, getActiveThreadId, onStateChanged) {
     }
     void api2.security.getGuardedYolo(threadId).then((state) => {
       if (sequence === refreshSequence) update(state);
-    }).catch((error61) => {
-      showErrorToast("Could not read Guarded YOLO state", error61);
+    }).catch((error62) => {
+      showErrorToast("Could not read Guarded YOLO state", error62);
     });
   }
   function toggle() {
@@ -84833,8 +86495,8 @@ function mountGuardedYoloControl(api2, getActiveThreadId, onStateChanged) {
     if (!threadId) return;
     const state = states.get(threadId) ?? OFF_STATE(threadId);
     const action = state.phase === "off" ? api2.security.enableGuardedYolo(threadId) : api2.security.disableGuardedYolo(threadId);
-    void action.then(update).catch((error61) => {
-      showErrorToast("Could not change Guarded YOLO mode", error61);
+    void action.then(update).catch((error62) => {
+      showErrorToast("Could not change Guarded YOLO mode", error62);
     });
   }
   disable.addEventListener("click", toggle);
@@ -85027,7 +86689,7 @@ function mountContainerRunControl(api2, context, onStateChanged) {
     text2.textContent = `Container run: ${PHASE_LABEL[run2.phase].toLowerCase()}. ${summary}`;
     onStateChanged();
   }
-  function ensureDialog6() {
+  function ensureDialog5() {
     if (!overlay) {
       overlay = createOverlayDialog({
         id: "container-run-dialog",
@@ -85113,8 +86775,8 @@ function mountContainerRunControl(api2, context, onStateChanged) {
       loadOnMount: false
     });
     let rosterLoaded = false;
-    void modelPicker.refresh(chosenModel).catch(async (error61) => {
-      console.error("[container-run] could not list models:", error61);
+    void modelPicker.refresh(chosenModel).catch(async (error62) => {
+      console.error("[container-run] could not list models:", error62);
       if (parseAcpModel(chosenModel) !== null) {
         const answered = await api2.container.modelAvailability([chosenModel]).catch(() => ({}));
         for (const [model, verdict] of Object.entries(answered)) verdicts.set(model, verdict);
@@ -85471,9 +87133,9 @@ function mountContainerRunControl(api2, context, onStateChanged) {
         stop.disabled = true;
         void api2.container.stopRun(run2.threadId).then((progress) => {
           if (progress) update(progress);
-        }).catch((error61) => {
+        }).catch((error62) => {
           stop.disabled = false;
-          showErrorToast("Could not stop the container run", error61);
+          showErrorToast("Could not stop the container run", error62);
         });
       });
       actions.push(stop);
@@ -85527,8 +87189,8 @@ function mountContainerRunControl(api2, context, onStateChanged) {
       update(progress);
       overlay?.close();
       return true;
-    } catch (error61) {
-      showErrorToast("Could not start the container run", error61);
+    } catch (error62) {
+      showErrorToast("Could not start the container run", error62);
       return false;
     }
   }
@@ -85582,7 +87244,7 @@ function mountContainerRunControl(api2, context, onStateChanged) {
     });
   }
   const usageFolded = /* @__PURE__ */ new Set();
-  function settle(progress) {
+  function settle2(progress) {
     const thread = getThreadById(context.store, progress.threadId);
     const usage = progress.record?.result?.usage;
     if (usage && progress.runtimeId !== null && !usageFolded.has(progress.runtimeId)) {
@@ -85594,8 +87256,8 @@ function mountContainerRunControl(api2, context, onStateChanged) {
       });
     }
     markThreadUnread(context.store, progress.threadId);
-    void api2.alerts.threadFinished(progress.threadId, thread?.title ?? "Container run").catch((error61) => {
-      console.error("[container-run] could not signal the finished run:", error61);
+    void api2.alerts.threadFinished(progress.threadId, thread?.title ?? "Container run").catch((error62) => {
+      console.error("[container-run] could not signal the finished run:", error62);
     });
   }
   async function adopt(runtimeId, toolCallId) {
@@ -85611,8 +87273,8 @@ function mountContainerRunControl(api2, context, onStateChanged) {
         adoption.applied.length === 0 ? `All ${String(adoption.alreadyApplied)} commit(s) from the run are already in this checkout.` : `Applied ${String(adoption.applied.length)} commit(s) from the run to this checkout.`,
         { variant: "info", durationMs: 8e3 }
       );
-    } catch (error61) {
-      showErrorToast("Could not apply the run's commits", error61);
+    } catch (error62) {
+      showErrorToast("Could not apply the run's commits", error62);
     }
   }
   const onCardAdopt = (event) => {
@@ -85630,7 +87292,7 @@ function mountContainerRunControl(api2, context, onStateChanged) {
     runs.set(progress.threadId, progress);
     syncContainerRunCard(context.store, progress);
     if (previous && isLive2(previous) && !isLive2(progress)) {
-      settle(progress);
+      settle2(progress);
       const result = progress.record?.result;
       if (progress.phase === "finished" && result) {
         showToast(
@@ -85664,13 +87326,13 @@ function mountContainerRunControl(api2, context, onStateChanged) {
       }
       renderBanner();
       renderDialog();
-    }).catch((error61) => {
-      showErrorToast("Could not read the container run", error61);
+    }).catch((error62) => {
+      showErrorToast("Could not read the container run", error62);
     });
   }
   function open2() {
     if (!context.getActiveThreadId()) return;
-    const dialog2 = ensureDialog6();
+    const dialog2 = ensureDialog5();
     dialog2.open();
     renderDialog();
   }
@@ -86052,24 +87714,24 @@ function mountInputBar(root, store2, api2, opts = {}) {
   function copyThreadId() {
     const id = getActiveThreadId();
     if (!id) return;
-    void navigator.clipboard.writeText(id).then(() => showToast("Copied thread ID", { durationMs: 1500 })).catch((error61) => {
-      showErrorToast("Failed to copy thread ID", error61);
+    void navigator.clipboard.writeText(id).then(() => showToast("Copied thread ID", { durationMs: 1500 })).catch((error62) => {
+      showErrorToast("Failed to copy thread ID", error62);
     });
   }
   function exportThreadArchive() {
     const thread = getActiveThread(store2);
     const projectId = store2.getState().activeProjectId;
     if (projectId === null || !threadHasExportableContent(thread)) return;
-    void downloadThreadArchive(api2, projectId, thread).catch((error61) => {
-      showErrorToast("Export thread folder failed", error61);
+    void downloadThreadArchive(api2, projectId, thread).catch((error62) => {
+      showErrorToast("Export thread folder failed", error62);
     });
   }
   function shareTrace() {
     const thread = getActiveThread(store2);
     if (!threadHasExportableContent(thread)) return;
     downloadThreadJsonl(thread);
-    void api2.shell.openExternal(buildShareTraceIssueUrl(thread)).catch((error61) => {
-      showErrorToast("Share trace failed", error61);
+    void api2.shell.openExternal(buildShareTraceIssueUrl(thread)).catch((error62) => {
+      showErrorToast("Share trace failed", error62);
     });
   }
   async function startDebugTrace() {
@@ -86088,8 +87750,8 @@ function mountInputBar(root, store2, api2, opts = {}) {
     composer.focus();
   }
   function debugTrace() {
-    void startDebugTrace().catch((error61) => {
-      showErrorToast("Debug trace failed", error61);
+    void startDebugTrace().catch((error62) => {
+      showErrorToast("Debug trace failed", error62);
     });
   }
   usageBtn.addEventListener("mouseenter", usagePopover.show);
@@ -86325,9 +87987,9 @@ ${description}
       hideImageCompatibilityWarning();
       scheduleContextEstimate();
       composer.focus();
-    }).catch((error61) => {
+    }).catch((error62) => {
       if (seq !== imageDescriptionSeq) return;
-      showErrorToast(`Could not describe the image with ${modelLabel2}`, error61);
+      showErrorToast(`Could not describe the image with ${modelLabel2}`, error62);
     }).finally(() => {
       if (seq !== imageDescriptionSeq) return;
       setImageDescriptionBusy(false);
@@ -86388,8 +88050,8 @@ ${description}
     checkoutError.hidden = true;
     checkoutErrorText.textContent = "";
   }
-  function checkoutErrorMessage(error61) {
-    const message2 = error61 instanceof Error ? error61.message : "Could not prepare the checkout";
+  function checkoutErrorMessage(error62) {
+    const message2 = error62 instanceof Error ? error62.message : "Could not prepare the checkout";
     return message2.replace(/^Error invoking remote method 'agent:prepare-checkout': Error:\s*/, "");
   }
   function selectCheckout(choice) {
@@ -86811,10 +88473,10 @@ ${description}
       hideBranchMismatch();
       showToast(`Checked out ${branch}`);
       store2.emit("git_branch_changed");
-    }).catch((error61) => {
+    }).catch((error62) => {
       checkoutInProgress = false;
       showBranchMismatch(branch);
-      showErrorToast(`Failed to check out ${branch}`, error61);
+      showErrorToast(`Failed to check out ${branch}`, error62);
     });
   });
   continueBranchBtn.addEventListener("click", () => {
@@ -86829,8 +88491,8 @@ ${description}
       }
       hideBranchMismatch();
       void submit();
-    }).catch((error61) => {
-      showErrorToast("Failed to read the current branch", error61);
+    }).catch((error62) => {
+      showErrorToast("Failed to read the current branch", error62);
     });
   });
   function isAutocompletePickerOpen() {
@@ -86903,8 +88565,16 @@ ${description}
         return;
       }
     }
-    const currentBranch = await api2.git.currentBranch(projectId, id);
     const thread = getThreadById(store2, id);
+    const requiresCheckoutPreparation = thread !== void 0 && thread.messages.length === 0 && !thread.worktreeChoice;
+    const prefetchedGitState = requiresCheckoutPreparation ? null : await Promise.allSettled([
+      api2.git.currentBranch(projectId, id),
+      api2.git.promptState(projectId, id)
+    ]);
+    const branchResult = prefetchedGitState?.[0];
+    if (branchResult?.status === "rejected") throw branchResult.reason;
+    const currentBranch = requiresCheckoutPreparation && !thread.gitBranch ? null : branchResult?.status === "fulfilled" ? branchResult.value : await api2.git.currentBranch(projectId, id);
+    const prefetchedPromptState = prefetchedGitState?.[1];
     const threadBranch = thread?.gitBranch;
     const isolatedWorktree = thread !== void 0 && thread.worktree !== void 0;
     if (threadBranch && threadGitBranchMismatch(threadBranch, currentBranch, { isolatedWorktree })) {
@@ -86968,7 +88638,7 @@ ${description}
         archiveRefs: currentArchiveRefs()
       });
     }
-    if (thread && thread.messages.length === 0 && !thread.worktreeChoice) {
+    if (requiresCheckoutPreparation) {
       const projectId2 = store2.getState().activeProjectId;
       if (!projectId2) return;
       hideCheckoutError();
@@ -86987,9 +88657,9 @@ ${description}
         );
         applyPreparedThreadCheckout(store2, id, prepared);
         if (getActiveThreadId() !== id) return;
-      } catch (error61) {
+      } catch (error62) {
         await api2.agent.resetDefaultBranchCache().catch(() => void 0);
-        checkoutErrorText.textContent = checkoutErrorMessage(error61);
+        checkoutErrorText.textContent = checkoutErrorMessage(error62);
         checkoutError.hidden = false;
         return;
       } finally {
@@ -86997,7 +88667,8 @@ ${description}
         updateCheckoutControl();
       }
     }
-    const promptState = await api2.git.promptState(projectId, id);
+    if (prefetchedPromptState?.status === "rejected") throw prefetchedPromptState.reason;
+    const promptState = prefetchedPromptState?.status === "fulfilled" ? prefetchedPromptState.value : await api2.git.promptState(projectId, id);
     const priorTodos = thread?.todos ?? [];
     const workingBrief = nextWorkingBrief(thread?.workingBrief, fullContent);
     if (workingBrief && workingBrief !== thread?.workingBrief) {
@@ -87340,6 +89011,7 @@ ${description}
     store: store2,
     api: api2,
     onAttach: addChip,
+    onAttachImage: addImageChip,
     onAttachThread: addThreadChip,
     onAttachShell: addShellChip
   });
@@ -97531,8 +99203,8 @@ function installTerminalFileLinks(term, store2, api2) {
           activate: (event) => {
             if (!event.metaKey && !event.ctrlKey) return;
             void activateWorkspaceReference(store2, api2, path, kind, reveal).catch(
-              (error61) => {
-                showErrorToast(`Failed to open ${path}`, error61);
+              (error62) => {
+                showErrorToast(`Failed to open ${path}`, error62);
               }
             );
           },
@@ -98457,11 +100129,11 @@ function mountAgentTasks(listRoot, viewerHost, store2, api2) {
   function updateTask(id, patch) {
     const task = tasks.get(id);
     if (!task) return;
-    const command = shellCommandFromArgs(patch.args) ?? patch.name;
+    const command = shellCommandFromArgs(patch.args) ?? patch.title ?? patch.name;
     if (command) setCommand(task, command);
     if (patch.args !== void 0) setArgs(task, patch.args);
     if (patch.result !== void 0) {
-      task.output = stripAnsi(patch.result);
+      task.output = stripAnsi(patch.result ?? "");
       task.outputNode.data = task.output;
     }
     if (patch.status !== void 0) setStatus(task, patch.status);
@@ -98496,7 +100168,7 @@ function mountAgentTasks(listRoot, viewerHost, store2, api2) {
     if (chunk.type === "tool_call") {
       const isAcpShell = chunk.toolCall.kind === "execute";
       if (chunk.toolCall.name === "run_shell" || isAcpShell) {
-        const command = shellCommandFromArgs(chunk.toolCall.args) ?? (isAcpShell ? chunk.toolCall.name : null);
+        const command = shellCommandFromArgs(chunk.toolCall.args) ?? (isAcpShell ? chunk.toolCall.title ?? chunk.toolCall.name : null);
         if (command) addTask(chunk.toolCall.id, command, chunk.toolCall.args, threadId);
       }
     } else if (chunk.type === "tool_result" && tasks.has(chunk.toolCallId)) {
@@ -98559,8 +100231,8 @@ function mountSupervisedTasks(listRoot, store2, api2) {
   const expanded = /* @__PURE__ */ new Set();
   const feedback = el("p", { class: "supervised-task-feedback", role: "status", hidden: true });
   section.append(feedback);
-  function report(error61) {
-    feedback.textContent = error61 instanceof Error ? error61.message : "Unable to update background tasks";
+  function report(error62) {
+    feedback.textContent = error62 instanceof Error ? error62.message : "Unable to update background tasks";
     feedback.hidden = false;
   }
   function render(tasks) {
@@ -98589,9 +100261,9 @@ function mountSupervisedTasks(listRoot, store2, api2) {
           resume.addEventListener("click", () => {
             resume.disabled = true;
             feedback.hidden = true;
-            void api2.supervisor.resume(value.projectId, value.threadId, value.taskId).then(() => refresh()).catch((error61) => {
+            void api2.supervisor.resume(value.projectId, value.threadId, value.taskId).then(() => refresh()).catch((error62) => {
               resume.disabled = false;
-              report(error61);
+              report(error62);
             });
           });
           detail.append(resume);
@@ -98635,9 +100307,9 @@ function mountSupervisedTasks(listRoot, store2, api2) {
       );
       cancel.addEventListener("click", () => {
         cancel.disabled = true;
-        void api2.supervisor.cancel(task.projectId, task.taskId).then(() => refresh()).catch((error61) => {
+        void api2.supervisor.cancel(task.projectId, task.taskId).then(() => refresh()).catch((error62) => {
           cancel.disabled = false;
-          report(error61);
+          report(error62);
         });
       });
       cancel.hidden = task.state === "failed" || task.state === "completed" || task.state === "cancelled";
@@ -98668,8 +100340,8 @@ function mountSupervisedTasks(listRoot, store2, api2) {
       const result = await api2.supervisor.list(projectId);
       if (token !== loadToken || projectId !== store2.getState().activeProjectId) return;
       render(result.tasks);
-    } catch (error61) {
-      if (token === loadToken) report(error61);
+    } catch (error62) {
+      if (token === loadToken) report(error62);
     }
   }
   const unsubs = [
@@ -98702,6 +100374,82 @@ var init_pane_loading = __esm({
   "src/renderer/dom/pane-loading.ts"() {
     init_helpers();
     init_inline_status();
+  }
+});
+
+// packages/agent/src/plugins/review-plugin.ts
+var REVIEW_PLUGIN_ID, REVIEW_TOOL_NAME, REVIEW_FOLLOW_UP_ID, REVIEWER_MODEL_SETTING_ID, CHALLENGER_MODEL_SETTING_ID, REVIEW_LENSES_SETTING_ID, REVIEW_VERIFY_SETTING_ID, DEFAULT_CHALLENGER_MODEL_ID, REVIEW_LENS_CHOICES, DEFAULT_REVIEW_LENS_CHOICE, reviewPlugin;
+var init_review_plugin = __esm({
+  "packages/agent/src/plugins/review-plugin.ts"() {
+    init_dynamic_model();
+    init_plugin_manifest();
+    REVIEW_PLUGIN_ID = "copse.review";
+    REVIEW_TOOL_NAME = "review_changes";
+    REVIEW_FOLLOW_UP_ID = "review-changes";
+    REVIEWER_MODEL_SETTING_ID = "reviewerModel";
+    CHALLENGER_MODEL_SETTING_ID = "challengerModel";
+    REVIEW_LENSES_SETTING_ID = "lenses";
+    REVIEW_VERIFY_SETTING_ID = "verify";
+    DEFAULT_CHALLENGER_MODEL_ID = BEST_INTELLECT_MODEL_SELECTOR;
+    REVIEW_LENS_CHOICES = ["correctness", "all"];
+    DEFAULT_REVIEW_LENS_CHOICE = "correctness";
+    reviewPlugin = definePlugin(
+      {
+        name: REVIEW_PLUGIN_ID,
+        description: 'Copse Reviewer \u2014 builds and tests your changes against their base, has a model review them under a lens, and tries to refute every finding before it reaches you. On demand from the Changes view, the "Review changes" bubble, or the `review_changes` tool.',
+        trust: "first-party",
+        stability: "experimental",
+        tools: { native: [REVIEW_TOOL_NAME] },
+        // Offered only when the working tree has uncommitted changes: with a clean
+        // tree on its base branch there is nothing to review.
+        followUps: [
+          {
+            id: REVIEW_FOLLOW_UP_ID,
+            label: "Review changes",
+            action: "review",
+            when: "workspace-changes"
+          }
+        ],
+        settings: {
+          [REVIEWER_MODEL_SETTING_ID]: {
+            kind: "model",
+            title: "Reviewer",
+            description: "How to choose the model that reads the change and reports findings. Leave unset to review with the model this chat is already on."
+          },
+          [CHALLENGER_MODEL_SETTING_ID]: {
+            kind: "model",
+            title: "Challenger",
+            description: "How to choose the model that tries to refute each finding and writes the reproducing test. A different family from the reviewer catches more.",
+            default: DEFAULT_CHALLENGER_MODEL_ID
+          },
+          [REVIEW_LENSES_SETTING_ID]: {
+            kind: "enum",
+            title: "Lenses",
+            description: "Which briefs the reviewer runs under: bugs and regressions only, or every lens (contracts, tests, security, concurrency too). More lenses cost more calls.",
+            options: [...REVIEW_LENS_CHOICES],
+            default: DEFAULT_REVIEW_LENS_CHOICE
+          },
+          [REVIEW_VERIFY_SETTING_ID]: {
+            kind: "boolean",
+            title: "Verify findings",
+            description: "Run the challenger over every finding and, where a test can show it, a reproducer on head and base. Off reports the unverified candidates as such.",
+            default: true
+          }
+        },
+        storage: { namespace: REVIEW_PLUGIN_ID }
+      },
+      {
+        toolNames: [REVIEW_TOOL_NAME],
+        followUps: [
+          {
+            id: REVIEW_FOLLOW_UP_ID,
+            label: "Review changes",
+            action: "review",
+            when: "workspace-changes"
+          }
+        ]
+      }
+    );
   }
 });
 
@@ -98850,13 +100598,43 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     },
     refreshIcon("ui-icon ui-icon-sm")
   );
+  const reviewBtn = el(
+    "button",
+    {
+      type: "button",
+      class: "git-changes-review-btn",
+      "data-tooltip": "Review these changes with Copse Reviewer"
+    },
+    "Review"
+  );
+  reviewBtn.hidden = true;
   listHeader.append(
     headerTitle,
     bulkActions,
+    reviewBtn,
     panePopoutButton(store2, api2, "changes", "changes"),
     paneMaximizeButton(store2, "changes"),
     refreshBtn
   );
+  function syncReviewButton() {
+    const thread = store2.getState().threads.find((t) => t.id === store2.getState().activeThreadId);
+    reviewBtn.disabled = thread === void 0 || thread.status === "running";
+  }
+  function syncReviewGate() {
+    void api2.plugins.list().then((res) => {
+      reviewBtn.hidden = !res.plugins.some((p) => p.id === REVIEW_PLUGIN_ID && p.enabled);
+    }).catch(() => {
+      reviewBtn.hidden = true;
+    });
+  }
+  reviewBtn.addEventListener("click", () => {
+    const threadId = store2.getState().activeThreadId;
+    if (!threadId) return;
+    startReview(store2, api2, threadId);
+    syncReviewButton();
+  });
+  syncReviewGate();
+  syncReviewButton();
   const restoreBanner = el("div", { class: "git-changes-restore" });
   const restoreLabel = el("span", { class: "git-changes-restore-label" });
   const restoreBtn = el(
@@ -98900,10 +100678,10 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
   const proposedDiffCachesByOwner = /* @__PURE__ */ new Map();
   let pendingNavigate = null;
   let pendingProposedNavigate = null;
-  function markGitUnavailable(scope, error61) {
+  function markGitUnavailable(scope, error62) {
     if (gitFailureLogged) return;
     gitFailureLogged = true;
-    console.warn(`[git-changes-pane] ${scope} failed:`, error61);
+    console.warn(`[git-changes-pane] ${scope} failed:`, error62);
   }
   let seededProposedPath = null;
   const snapshotsByOwner = /* @__PURE__ */ new Map();
@@ -99191,8 +100969,8 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
       } else {
         showToast("Could not restore pre-session changes.", { variant: "error" });
       }
-    } catch (error61) {
-      showErrorToast("Restore failed", error61);
+    } catch (error62) {
+      showErrorToast("Restore failed", error62);
     } finally {
       restoreInFlight = false;
       await refresh();
@@ -99294,8 +101072,8 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     let diff = null;
     try {
       diff = await api2.git.fileDiff(owner.projectId, owner.threadId, path, staged);
-    } catch (error61) {
-      markGitUnavailable(`diff read for ${path}`, error61);
+    } catch (error62) {
+      markGitUnavailable(`diff read for ${path}`, error62);
     }
     if (requestId !== selectRequestId || activeOwner2()?.projectId !== owner.projectId || activeOwner2()?.threadId !== owner.threadId || pendingSelect.path !== path || pendingSelect.staged !== staged) {
       return;
@@ -99353,8 +101131,8 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     let diff = null;
     try {
       diff = await api2.git.committedFileDiff(owner.projectId, owner.threadId, path);
-    } catch (error61) {
-      markGitUnavailable(`committed diff read for ${path}`, error61);
+    } catch (error62) {
+      markGitUnavailable(`committed diff read for ${path}`, error62);
     }
     if (requestId !== selectRequestId || activeOwner2()?.projectId !== owner.projectId || activeOwner2()?.threadId !== owner.threadId || pendingSelect.path !== path) {
       return;
@@ -99541,9 +101319,9 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     let availabilityFailed = false;
     try {
       available = await api2.git.isAvailable(owner.projectId, owner.threadId);
-    } catch (error61) {
+    } catch (error62) {
       availabilityFailed = true;
-      markGitUnavailable("git availability check", error61);
+      markGitUnavailable("git availability check", error62);
     }
     const currentOwner = activeOwner2();
     if (requestId !== refreshRequestId || currentOwner?.projectId !== owner.projectId || currentOwner.threadId !== owner.threadId)
@@ -99571,8 +101349,8 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
       if (requestId !== refreshRequestId) return;
       nextBackup = await api2.git.sessionBackup(owner.projectId, owner.threadId);
       if (requestId !== refreshRequestId) return;
-    } catch (error61) {
-      markGitUnavailable("git status read", error61);
+    } catch (error62) {
+      markGitUnavailable("git status read", error62);
       if (requestId !== refreshRequestId) return;
       if (displayedOwnerKey) snapshotsByOwner.delete(displayedOwnerKey);
       status = null;
@@ -99652,6 +101430,9 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     store2.on("panel_changed", () => {
       if (changesModeActive(store2)) void syncFromStore();
     }),
+    store2.on("settings_changed", syncReviewGate),
+    store2.on("thread_status_changed", syncReviewButton),
+    store2.on("threads_changed", syncReviewButton),
     api2.fs.onChanged(() => {
       scheduleRefresh();
     }),
@@ -99701,6 +101482,8 @@ var init_git_changes_pane = __esm({
     init_array_utils2();
     init_toast();
     init_confirm_dialog();
+    init_review_actions();
+    init_review_plugin();
     init_staged_diff_ui();
     init_git_diff_viewer();
     init_selection_to_chat();
@@ -100967,7 +102750,7 @@ function mountMemoriesPane(listRoot, viewerRoot, store2, api2) {
     placeholder: "Memory content (markdown)\u2026",
     "aria-label": "Memory content"
   });
-  const metaLine = el("div", { class: "memories-meta" });
+  const metaLine2 = el("div", { class: "memories-meta" });
   const errorLine = el("div", { class: "memories-error", hidden: true });
   const saveBtn = el(
     "button",
@@ -100988,7 +102771,7 @@ function mountMemoriesPane(listRoot, viewerRoot, store2, api2) {
     tagsInput,
     el("label", { class: "memories-label" }, "Content"),
     bodyInput,
-    metaLine,
+    metaLine2,
     errorLine,
     actions
   );
@@ -101020,14 +102803,14 @@ function mountMemoriesPane(listRoot, viewerRoot, store2, api2) {
     }
     deleteBtn.hidden = !note;
     if (note?.updatedAt) {
-      metaLine.hidden = false;
-      metaLine.textContent = `Updated ${knowledgeDate(note.updatedAt)}`;
+      metaLine2.hidden = false;
+      metaLine2.textContent = `Updated ${knowledgeDate(note.updatedAt)}`;
       if (note.fields["externalContext"] === "true") {
-        metaLine.textContent += " \xB7 saved with external content in context \u2014 saving clears this";
+        metaLine2.textContent += " \xB7 saved with external content in context \u2014 saving clears this";
       }
     } else {
-      metaLine.hidden = true;
-      metaLine.textContent = "";
+      metaLine2.hidden = true;
+      metaLine2.textContent = "";
     }
   }
   function renderList() {
@@ -102054,8 +103837,8 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
     plusIcon("ui-icon ui-icon-sm"),
     "Attach"
   );
-  const statusLabel3 = el("label", { class: "memories-label" }, "Status");
-  const metaLine = el("div", { class: "memories-meta" });
+  const statusLabel4 = el("label", { class: "memories-label" }, "Status");
+  const metaLine2 = el("div", { class: "memories-meta" });
   const errorLine = el("div", { class: "memories-error", hidden: true });
   const fitResult = el("div", { class: "roadmap-fit-result", hidden: true });
   const reviewResult = el("div", { class: "roadmap-review-result", hidden: true });
@@ -102148,9 +103931,9 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
     attachFileInput,
     el("label", { class: "memories-label" }, "Category"),
     categorySelect,
-    statusLabel3,
+    statusLabel4,
     statusSelect,
-    metaLine,
+    metaLine2,
     errorLine,
     fitResult,
     reviewResult,
@@ -102449,7 +104232,7 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
       }
     }
     renderAttachments();
-    statusLabel3.hidden = !item;
+    statusLabel4.hidden = !item;
     statusSelect.hidden = !item;
     startBtn.hidden = !item;
     reopenBtn.hidden = !item || !getThreadById(store2, itemThreadId(item));
@@ -102509,15 +104292,15 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
       reviewResultBody.hidden = true;
     }
     if (item?.updatedAt) {
-      metaLine.hidden = false;
+      metaLine2.hidden = false;
       const updatedTime = new Date(item.updatedAt).toLocaleTimeString([], {
         hour: "2-digit",
         minute: "2-digit"
       });
-      metaLine.textContent = `Updated ${knowledgeDate(item.updatedAt)} at ${updatedTime}`;
+      metaLine2.textContent = `Updated ${knowledgeDate(item.updatedAt)} at ${updatedTime}`;
     } else {
-      metaLine.hidden = true;
-      metaLine.textContent = "";
+      metaLine2.hidden = true;
+      metaLine2.textContent = "";
     }
   }
   function matchesSearch(item) {
@@ -103343,7 +105126,7 @@ Notes: ${notes}` : prompt;
     reviewMarkResolvedBtn.disabled = false;
     reviewArchiveResolvedBtn.disabled = false;
   }
-  async function startReview() {
+  async function startReview2() {
     cancelResolutionCheckUi();
     const runToken = ++reviewRunToken;
     reviewing = true;
@@ -103386,6 +105169,7 @@ Notes: ${notes}` : prompt;
       }
       bulkReviewFinished = true;
       reviewStatus.textContent = `Review complete \u2014 ${String(reviewResults.length)} item(s) judged. Use the row actions to mark done, archive, or open an item. Close when finished to advance the commit checkpoint.`;
+      reviewInFlight = false;
       syncReviewActionVisibility();
       renderReviewResults();
     } catch (err2) {
@@ -103415,7 +105199,7 @@ Notes: ${notes}` : prompt;
     renderEditor();
   }
   importBtn.addEventListener("click", startImport);
-  reviewBtn.addEventListener("click", () => void startReview());
+  reviewBtn.addEventListener("click", () => void startReview2());
   reviewBackBtn.addEventListener("click", () => {
     returnToReview();
   });
@@ -104466,16 +106250,16 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       setMenuOpen(false);
       const id2 = shareableWebContentsId(tab);
       if (id2 === null || !api2) return;
-      void api2.browser.sharePageText(id2).catch((error61) => {
-        showErrorToast("Could not share browser text", error61);
+      void api2.browser.sharePageText(id2).catch((error62) => {
+        showErrorToast("Could not share browser text", error62);
       });
     });
     shareScreenshotItem.addEventListener("click", () => {
       setMenuOpen(false);
       const id2 = shareableWebContentsId(tab);
       if (id2 === null || !api2) return;
-      void api2.browser.shareScreenshot(id2).catch((error61) => {
-        showErrorToast("Could not share browser screenshot", error61);
+      void api2.browser.shareScreenshot(id2).catch((error62) => {
+        showErrorToast("Could not share browser screenshot", error62);
       });
     });
     exportPdfItem.addEventListener("click", () => {
@@ -104485,8 +106269,8 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       if (id2 === null || !exportPdf) return;
       void exportPdf(id2).then((filePath) => {
         if (filePath) showToast(`Exported PDF to ${filePath}`);
-      }).catch((error61) => {
-        showErrorToast("Could not export PDF", error61);
+      }).catch((error62) => {
+        showErrorToast("Could not export PDF", error62);
       });
     });
     openExternalItem.addEventListener("click", () => {
@@ -104680,16 +106464,16 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
   function whenProjectActive() {
     if (store2.getState().activeProjectId) return Promise.resolve(true);
     return new Promise((resolve) => {
-      const settle = (active2) => {
+      const settle2 = (active2) => {
         stop();
         pendingProjectWaits.delete(cancel);
         resolve(active2);
       };
       const cancel = () => {
-        settle(false);
+        settle2(false);
       };
       const stop = store2.on("workspace_changed", () => {
-        if (store2.getState().activeProjectId) settle(true);
+        if (store2.getState().activeProjectId) settle2(true);
       });
       pendingProjectWaits.add(cancel);
     });
@@ -105142,14 +106926,14 @@ async function _checkWebCodecsH264DecodeSupport() {
     "AAAAAWdCwBTZnpuAgICgAAADACAAAAZB4oVNAAAAAWjJYyyAAAABBgX//4HcRem95tlIt5Ys2CDZI+7veDI2NCAtIGNvcmUgMTY0IHIzMTA4IDMxZTE5ZjkgLSBILjI2NC9NUEVHLTQgQVZDIGNvZGVjIC0gQ29weWxlZnQgMjAwMy0yMDIzIC0gaHR0cDovL3d3dy52aWRlb2xhbi5vcmcveDI2NC5odG1sIC0gb3B0aW9uczogY2FiYWM9MCByZWY9NSBkZWJsb2NrPTE6MDowIGFuYWx5c2U9MHgxOjB4MTExIG1lPWhleCBzdWJtZT04IHBzeT0xIHBzeV9yZD0xLjAwOjAuMDAgbWl4ZWRfcmVmPTEgbWVfcmFuZ2U9MTYgY2hyb21hX21lPTEgdHJlbGxpcz0yIDh4OGRjdD0wIGNxbT0wIGRlYWR6b25lPTIxLDExIGZhc3RfcHNraXA9MSBjaHJvbWFfcXBfb2Zmc2V0PS0yIHRocmVhZHM9MSBsb29rYWhlYWRfdGhyZWFkcz0xIHNsaWNlZF90aHJlYWRzPTAgbnI9MCBkZWNpbWF0ZT0xIGludGVybGFjZWQ9MCBibHVyYXlfY29tcGF0PTAgY29uc3RyYWluZWRfaW50cmE9MCBiZnJhbWVzPTAgd2VpZ2h0cD0wIGtleWludD1pbmZpbml0ZSBrZXlpbnRfbWluPTI1IHNjZW5lY3V0PTQwIGludHJhX3JlZnJlc2g9MCByY19sb29rYWhlYWQ9NTAgcmM9YWJyIG1idHJlZT0xIGJpdHJhdGU9NDAwIHJhdGV0b2w9MS4wIHFjb21wPTAuNjAgcXBtaW49MCBxcG1heD02OSBxcHN0ZXA9NCBpcF9yYXRpbz0xLjQwIGFxPTE6MS4wMACAAAABZYiEBrxmKAAPVccAAS044AA5DRJMnkycJk4TPw=="
   ));
   let gotframe = false;
-  let error61 = null;
+  let error62 = null;
   let decoder = new VideoDecoder({
     output: (frame) => {
       gotframe = true;
       frame.close();
     },
     error: (e2) => {
-      error61 = e2;
+      error62 = e2;
     }
   });
   let chunk = new EncodedVideoChunk({
@@ -105162,12 +106946,12 @@ async function _checkWebCodecsH264DecodeSupport() {
   try {
     await decoder.flush();
   } catch (e2) {
-    error61 = e2;
+    error62 = e2;
   }
   if (!gotframe) {
     return false;
   }
-  if (error61 !== null) {
+  if (error62 !== null) {
     return false;
   }
   return true;
@@ -119073,13 +120857,13 @@ var init_rfb = __esm({
         }
         RFB.messages.clientCutText(sock, data, true);
       },
-      clientCutText(sock, data, extended = false) {
+      clientCutText(sock, data, extended2 = false) {
         sock.sQpush8(6);
         sock.sQpush8(0);
         sock.sQpush8(0);
         sock.sQpush8(0);
         let length;
-        if (extended) {
+        if (extended2) {
           length = toUnsigned32bit(-data.length);
         } else {
           length = data.length;
@@ -119275,8 +121059,8 @@ var init_vnc_channel = __esm({
           return;
         }
         this.readyState = WebSocket.CLOSING;
-        void this.api.vnc.close(this.connectionId).catch((error61) => {
-          this.fail(error61 instanceof Error ? error61.message : String(error61));
+        void this.api.vnc.close(this.connectionId).catch((error62) => {
+          this.fail(error62 instanceof Error ? error62.message : String(error62));
         });
       }
       receive(bytes) {
@@ -119442,8 +121226,8 @@ function createSimulatorDesktopView(options) {
   let decoding = false;
   let pendingFrame = null;
   const send = (input2) => {
-    void options.sendInput(input2).catch((error61) => {
-      options.onInputError(error61);
+    void options.sendInput(input2).catch((error62) => {
+      options.onInputError(error62);
     });
   };
   const point = (event) => {
@@ -120508,10 +122292,10 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
       discoveryStatus.dataset["kind"] = ports.length > 0 ? "ok" : "idle";
       discoveryStatus.textContent = ports.length === 0 ? "Screen sharing wasn\u2019t found automatically. You can still connect using Advanced." : ports.length === 1 ? "Screen sharing is available." : `${String(ports.length)} shared desktops found.`;
       discoverButton.hidden = ports.length > 0;
-    } catch (error61) {
+    } catch (error62) {
       if (generation !== discoveryGeneration) return;
       discoveryStatus.dataset["kind"] = "error";
-      discoveryStatus.textContent = error61 instanceof Error ? error61.message : String(error61);
+      discoveryStatus.textContent = error62 instanceof Error ? error62.message : String(error62);
       discoverButton.hidden = false;
     } finally {
       if (generation === discoveryGeneration) discoverButton.disabled = channel !== null;
@@ -120536,10 +122320,10 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
       updateMachineUi();
       updateNearbyStatus();
       nearbyButton.hidden = allNearbyServers.length > 0;
-    } catch (error61) {
+    } catch (error62) {
       if (generation !== nearbyGeneration) return;
       nearbyStatus.dataset["kind"] = "error";
-      nearbyStatus.textContent = error61 instanceof Error ? error61.message : String(error61);
+      nearbyStatus.textContent = error62 instanceof Error ? error62.message : String(error62);
       nearbyButton.hidden = false;
     } finally {
       if (generation === nearbyGeneration) nearbyButton.disabled = channel !== null;
@@ -120552,8 +122336,8 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     let discoveryError = "";
     const [canStoreCredentials, devices] = await Promise.all([
       api2.vnc.canStoreCredentials().catch(() => false),
-      api2.simulatorDesktop.list().catch((error61) => {
-        discoveryError = error61 instanceof Error ? error61.message : String(error61);
+      api2.simulatorDesktop.list().catch((error62) => {
+        discoveryError = error62 instanceof Error ? error62.message : String(error62);
         return [];
       })
     ]);
@@ -120604,19 +122388,19 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
           setSessionUi(true, true);
           renderConnectedStatus();
         },
-        onInputError: (error61) => {
+        onInputError: (error62) => {
           if (simulatorSessionId !== connection.id) return;
           setStatus(
             `Connected to ${device.name}`,
             "error",
-            error61 instanceof Error ? error61.message : String(error61)
+            error62 instanceof Error ? error62.message : String(error62)
           );
         }
       });
       simulatorView = view;
       screen.replaceChildren(view.canvas);
       await api2.simulatorDesktop.start(connection.id);
-    } catch (error61) {
+    } catch (error62) {
       if (openedConnectionId) {
         await api2.simulatorDesktop.close(openedConnectionId).catch(() => {
         });
@@ -120624,7 +122408,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
       clearViewer(
         android ? "Couldn\u2019t open the Android emulator" : "Couldn\u2019t open the Simulator",
         "error",
-        error61 instanceof Error ? error61.message : String(error61)
+        error62 instanceof Error ? error62.message : String(error62)
       );
     } finally {
       connectButton.disabled = false;
@@ -120830,8 +122614,8 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
       queueMicrotask(() => {
         nextChannel.open();
       });
-    } catch (error61) {
-      clearViewer(error61 instanceof Error ? error61.message : String(error61), "error");
+    } catch (error62) {
+      clearViewer(error62 instanceof Error ? error62.message : String(error62), "error");
     } finally {
       connectButton.disabled = false;
     }
@@ -120841,11 +122625,11 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     setStatus("Disconnecting\u2026", "working");
     if (simulatorSessionId) {
       const connectionId = simulatorSessionId;
-      void api2.simulatorDesktop.close(connectionId).catch((error61) => {
+      void api2.simulatorDesktop.close(connectionId).catch((error62) => {
         clearViewer(
           "Couldn\u2019t close the Simulator stream",
           "error",
-          error61 instanceof Error ? error61.message : String(error61)
+          error62 instanceof Error ? error62.message : String(error62)
         );
       });
       return;
@@ -120892,11 +122676,11 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
   const sendDeviceButton = (name) => {
     const connectionId = simulatorSessionId;
     if (!connectionId || !controlEnabled) return;
-    void api2.simulatorDesktop.input(connectionId, { type: "button-tap", name }).catch((error61) => {
+    void api2.simulatorDesktop.input(connectionId, { type: "button-tap", name }).catch((error62) => {
       setStatus(
         "Device control failed",
         "error",
-        error61 instanceof Error ? error61.message : String(error61)
+        error62 instanceof Error ? error62.message : String(error62)
       );
     });
   };
@@ -121577,7 +123361,7 @@ function mountOnboardingDialog(store2, api2) {
     for (const group of groups) {
       resultsEl.append(el("p", { class: "onboarding-scan-group" }, group.title), ...group.rows);
     }
-    const failures = found.errors.map((error61) => `${error61.probe}: ${error61.message}`);
+    const failures = found.errors.map((error62) => `${error62.probe}: ${error62.message}`);
     setStatus(
       failures.length ? `Some checks failed (${failures.join("; ")}) \u2014 the rest is listed below.` : "Here\u2019s what Copse found. Untick anything you don\u2019t want.",
       failures.length ? "warn" : "ok"
@@ -121911,6 +123695,30 @@ function adviceElement(advice) {
   });
   return el("div", { class: "approval-advice" }, ...children);
 }
+function mergeApprovalAdvice(values) {
+  const unique = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const value of values) {
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    unique.push(value);
+  }
+  if (unique.length <= 1) return unique[0];
+  const lines = unique.map((value) => value.split("\n"));
+  const sharedLead = lines[0]?.[0];
+  if (sharedLead === void 0 || !lines.every((parts) => parts[0] === sharedLead)) {
+    return unique.join("\n\n");
+  }
+  const merged = [sharedLead];
+  const seenDetails = /* @__PURE__ */ new Set();
+  for (const parts of lines) {
+    const details = parts.slice(1).join("\n");
+    if (!details || seenDetails.has(details)) continue;
+    seenDetails.add(details);
+    merged.push(details);
+  }
+  return merged.join("\n");
+}
 function mountApprovalDialog(api2, store2, options = {}) {
   const coalesceMs = options.coalesceMs ?? APPROVAL_COALESCE_MS;
   const settleMs = options.settleMs ?? APPROVAL_SETTLE_MS;
@@ -121975,7 +123783,6 @@ function mountApprovalDialog(api2, store2, options = {}) {
   let coalesceScheduled = false;
   let cancelCoalesce = null;
   let cancelSettle = null;
-  let readComparisonModels = null;
   let detailsExpanded = false;
   function closeDialog() {
     dialog2.close();
@@ -121995,16 +123802,11 @@ function mountApprovalDialog(api2, store2, options = {}) {
     const waiting = queue.map((req) => req.threadId).filter((id) => !!id && (hidden || id !== activeThreadId));
     setAttentionThreads(store2, "approval", waiting);
   }
-  function requiresSoloPrompt(req) {
-    return req.type === "model-compare";
-  }
   function drainShowableIntoBatch() {
     let moved = 0;
     for (let i = 0; i < queue.length; ) {
       const req = queue[i];
       if (req && isShowable(req)) {
-        const first = batch[0];
-        if (first && (requiresSoloPrompt(first) || requiresSoloPrompt(req))) break;
         queue.splice(i, 1);
         batch.push(req);
         moved++;
@@ -122044,17 +123846,21 @@ function mountApprovalDialog(api2, store2, options = {}) {
     return toggle;
   }
   function renderBatch() {
-    readComparisonModels = null;
     const count = batch.length;
     const collapseDetails = soloRequest()?.collapseDetails === true;
-    const singleModelCompare = count === 1 && batch[0]?.type === "model-compare" && batch[0].comparisonModels !== void 0;
     const uniqueTitles = new Set(batch.map((req) => req.title));
     const sharedTitle = uniqueTitles.size === 1 ? batch[0]?.title ?? "" : null;
     const showRowTitles = count > 1 && sharedTitle === null;
-    const firstRequest = batch[0];
-    const hasSharedContext = count > 1 && firstRequest !== void 0 && batch.every(
-      (req) => req.type === firstRequest.type && req.title === firstRequest.title && req.bodyAdvice === firstRequest.bodyAdvice && req.bodyFooter === firstRequest.bodyFooter
-    );
+    const presentationGroups = [];
+    for (const req of batch) {
+      const previousGroup = presentationGroups.at(-1);
+      const previous = previousGroup?.[0];
+      if (previousGroup && previous && req.type === previous.type && req.title === previous.title && req.bodyFooter === previous.bodyFooter) {
+        previousGroup.push(req);
+      } else {
+        presentationGroups.push([req]);
+      }
+    }
     heading.textContent = count <= 1 ? batch[0]?.title ?? "" : sharedTitle ?? `${String(count)} requests`;
     const requestBody = (req) => {
       const bodyClass = req.type === "shell" ? "approval-body approval-body-code" : "approval-body";
@@ -122062,51 +123868,41 @@ function mountApprovalDialog(api2, store2, options = {}) {
       if (collapseDetails && !detailsExpanded) body.hidden = true;
       return body;
     };
-    if (hasSharedContext) {
-      const sharedChildren = [];
-      if (firstRequest.bodyAdvice) {
-        sharedChildren.push(adviceElement(firstRequest.bodyAdvice));
-      }
-      const bodyLabel = firstRequest.type === "shell" ? "Commands requiring approval" : "Requests";
-      sharedChildren.push(
-        el(
-          "div",
-          { class: "approval-body-list", role: "list", "aria-label": bodyLabel },
-          ...batch.map((req) => {
-            const body = requestBody(req);
-            body.setAttribute("role", "listitem");
-            return body;
-          })
-        )
-      );
-      if (firstRequest.bodyFooter) {
-        sharedChildren.push(el("div", { class: "approval-footer" }, firstRequest.bodyFooter));
-      }
-      items.replaceChildren(el("div", { class: "approval-item" }, ...sharedChildren));
-    } else {
-      items.replaceChildren(
-        ...batch.map((req) => {
-          const rowChildren = [];
-          if (showRowTitles)
-            rowChildren.push(el("div", { class: "approval-item-title" }, req.title));
-          if (singleModelCompare && req.comparisonModels && req === batch[0]) {
-            const pickers = createComparisonModelPickers(api2, req.comparisonModels, req.body);
-            readComparisonModels = pickers.read;
-            rowChildren.push(pickers.root);
-          } else {
-            if (req.bodyAdvice) {
-              rowChildren.push(adviceElement(req.bodyAdvice));
-            }
-            if (collapseDetails) rowChildren.push(detailsToggle());
-            rowChildren.push(requestBody(req));
-            if (req.bodyFooter) {
-              rowChildren.push(el("div", { class: "approval-footer" }, req.bodyFooter));
-            }
-          }
-          return el("div", { class: "approval-item" }, ...rowChildren);
-        })
-      );
-    }
+    items.replaceChildren(
+      ...presentationGroups.map((group) => {
+        const firstRequest = group[0];
+        if (!firstRequest) throw new Error("approval presentation group must not be empty");
+        const rowChildren = [];
+        if (showRowTitles) {
+          rowChildren.push(el("div", { class: "approval-item-title" }, firstRequest.title));
+        }
+        const advice = mergeApprovalAdvice(group.map((request) => request.bodyAdvice));
+        if (advice) {
+          rowChildren.push(adviceElement(advice));
+        }
+        if (collapseDetails) rowChildren.push(detailsToggle());
+        if (group.length > 1) {
+          const bodyLabel = firstRequest.type === "shell" ? "Commands requiring approval" : "Requests";
+          rowChildren.push(
+            el(
+              "div",
+              { class: "approval-body-list", role: "list", "aria-label": bodyLabel },
+              ...group.map((req) => {
+                const body = requestBody(req);
+                body.setAttribute("role", "listitem");
+                return body;
+              })
+            )
+          );
+        } else {
+          rowChildren.push(requestBody(firstRequest));
+        }
+        if (firstRequest.bodyFooter) {
+          rowChildren.push(el("div", { class: "approval-footer" }, firstRequest.bodyFooter));
+        }
+        return el("div", { class: "approval-item" }, ...rowChildren);
+      })
+    );
     approveButton.textContent = count > 1 ? `Approve all (${String(count)})` : "Approve";
     rejectButton.textContent = count > 1 ? `Reject all (${String(count)})` : "Reject";
     const onceLabel = approveOnceGrant();
@@ -122194,7 +123990,6 @@ function mountApprovalDialog(api2, store2, options = {}) {
     if (batch.length === 0) {
       closeDialog();
       active2 = false;
-      readComparisonModels = null;
       clearSettle();
       return;
     }
@@ -122219,7 +124014,6 @@ function mountApprovalDialog(api2, store2, options = {}) {
       if (batch.length === 0) {
         closeDialog();
         active2 = false;
-        readComparisonModels = null;
         clearSettle();
         show2();
       } else {
@@ -122232,22 +124026,14 @@ function mountApprovalDialog(api2, store2, options = {}) {
   function resolve(approved, remember) {
     if (!active2 || batch.length === 0) return;
     const answered = batch;
-    const comparisonModels = approved && readComparisonModels ? readComparisonModels() : void 0;
     const grantScope = approved && !turnTreeLeaseLabel.hidden && turnTreeLeaseInput.checked ? "turn-tree" : "once";
     closeDialog();
     batch = [];
     active2 = false;
-    readComparisonModels = null;
     turnTreeLeaseInput.checked = false;
     clearSettle();
     for (const req of answered) {
-      void api2.approval.respond(
-        req.id,
-        approved,
-        remember,
-        req.type === "model-compare" ? comparisonModels : void 0,
-        grantScope
-      );
+      void api2.approval.respond(req.id, approved, remember, grantScope);
     }
     show2();
   }
@@ -122265,7 +124051,6 @@ function mountApprovalDialog(api2, store2, options = {}) {
       collapseDetails,
       approveOnceLabel,
       showWhileSettingsOpen,
-      comparisonModels,
       allowTurnTreeLease,
       turnTreeLeaseLabel: turnTreeLeaseLabel2,
       turnTreeLeaseDefault,
@@ -122289,14 +124074,12 @@ function mountApprovalDialog(api2, store2, options = {}) {
         turnTreeLeaseDefault,
         turnTreeLeaseSubject
       };
-      if (comparisonModels) pending.comparisonModels = comparisonModels;
       queue.push(pending);
       if (active2 && isSettingsDialogOpen() && pending.showWhileSettingsOpen) {
         queue.unshift(...batch);
         batch = [];
         closeDialog();
         active2 = false;
-        readComparisonModels = null;
         clearSettle();
         show2();
       } else if (active2) appendToOpen();
@@ -122339,7 +124122,6 @@ var init_approval_dialog = __esm({
     init_helpers();
     init_settings_dialog();
     init_attention();
-    init_approval_comparison_pickers();
     init_actions();
     APPROVAL_COALESCE_MS = 120;
     APPROVAL_SETTLE_MS = 500;
@@ -122733,10 +124515,10 @@ function openFileSearchDialog() {
   openImpl?.();
 }
 function closeFileSearchDialog() {
-  if (dialogEl5?.open) dialogEl5.close();
+  if (dialogEl4?.open) dialogEl4.close();
 }
 function isFileSearchDialogOpen() {
-  return !!dialogEl5?.open;
+  return !!dialogEl4?.open;
 }
 function mountFileSearchDialog(store2, api2) {
   const dialog2 = document.createElement("dialog");
@@ -122756,7 +124538,7 @@ function mountFileSearchDialog(store2, api2) {
   const shell3 = el("div", { class: "file-search-shell" }, input2, list, empty);
   dialog2.append(shell3);
   document.body.append(dialog2);
-  dialogEl5 = dialog2;
+  dialogEl4 = dialog2;
   let results = [];
   let selectedIdx = 0;
   let roadmapItems = [];
@@ -122906,7 +124688,7 @@ function mountFileSearchDialog(store2, api2) {
     void runQuery("");
   };
 }
-var ROADMAP_RESULT_LIMIT, ROADMAP_ICON_PATHS, dialogEl5, openImpl;
+var ROADMAP_RESULT_LIMIT, ROADMAP_ICON_PATHS, dialogEl4, openImpl;
 var init_file_search_dialog = __esm({
   "src/renderer/views/file-search-dialog.ts"() {
     init_helpers();
@@ -122917,7 +124699,7 @@ var init_file_search_dialog = __esm({
     init_roadmap_plans_plugin();
     ROADMAP_RESULT_LIMIT = 8;
     ROADMAP_ICON_PATHS = ["M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4Z", "M8 2v16", "M16 6v16"];
-    dialogEl5 = null;
+    dialogEl4 = null;
     openImpl = null;
   }
 });
@@ -122940,14 +124722,14 @@ function keyLabel(token, isMac2) {
   }
 }
 function openKeyboardShortcutsDialog() {
-  if (!dialogEl6 || dialogEl6.open) return;
-  dialogEl6.showModal();
+  if (!dialogEl5 || dialogEl5.open) return;
+  dialogEl5.showModal();
 }
 function closeKeyboardShortcutsDialog() {
-  if (dialogEl6?.open) dialogEl6.close();
+  if (dialogEl5?.open) dialogEl5.close();
 }
 function isKeyboardShortcutsDialogOpen() {
-  return !!dialogEl6?.open;
+  return !!dialogEl5?.open;
 }
 function mountKeyboardShortcutsDialog() {
   const dialog2 = document.createElement("dialog");
@@ -122983,12 +124765,12 @@ function mountKeyboardShortcutsDialog() {
   clear(dialog2);
   dialog2.append(shell3);
   document.body.append(dialog2);
-  dialogEl6 = dialog2;
+  dialogEl5 = dialog2;
   dialog2.addEventListener("mousedown", (e2) => {
     if (e2.target === dialog2) closeKeyboardShortcutsDialog();
   });
 }
-var SECTIONS, dialogEl6;
+var SECTIONS, dialogEl5;
 var init_keyboard_shortcuts_dialog = __esm({
   "src/renderer/views/keyboard-shortcuts-dialog.ts"() {
     init_helpers();
@@ -123030,7 +124812,7 @@ var init_keyboard_shortcuts_dialog = __esm({
         ]
       }
     ];
-    dialogEl6 = null;
+    dialogEl5 = null;
   }
 });
 
@@ -123294,10 +125076,10 @@ function openCommandPalette() {
   openImpl3?.();
 }
 function closeCommandPalette() {
-  if (dialogEl7?.open) dialogEl7.close();
+  if (dialogEl6?.open) dialogEl6.close();
 }
 function isCommandPaletteOpen() {
-  return !!dialogEl7?.open;
+  return !!dialogEl6?.open;
 }
 function mountCommandPalette(store2, api2) {
   const dialog2 = document.createElement("dialog");
@@ -123317,7 +125099,7 @@ function mountCommandPalette(store2, api2) {
   const shell3 = el("div", { class: "command-palette-shell" }, input2, list, empty);
   dialog2.append(shell3);
   document.body.append(dialog2);
-  dialogEl7 = dialog2;
+  dialogEl6 = dialog2;
   let entries2 = [];
   let selectedIdx = 0;
   let threadHits = [];
@@ -123529,7 +125311,7 @@ function mountCommandPalette(store2, api2) {
     void loadThreads2();
   };
 }
-var PANEL_ITEMS, THREAD_LIMIT, PROJECT_LIMIT, dialogEl7, openImpl3;
+var PANEL_ITEMS, THREAD_LIMIT, PROJECT_LIMIT, dialogEl6, openImpl3;
 var init_command_palette = __esm({
   "src/renderer/views/command-palette.ts"() {
     init_helpers();
@@ -123552,7 +125334,7 @@ var init_command_palette = __esm({
     ];
     THREAD_LIMIT = 25;
     PROJECT_LIMIT = 25;
-    dialogEl7 = null;
+    dialogEl6 = null;
     openImpl3 = null;
   }
 });
@@ -123929,7 +125711,9 @@ function startAgentController(store2, api2) {
         runSummaryAnchorId: null,
         runSummaryCount: 0,
         lastActivityLabel: null,
-        firstActivityTraced: false
+        firstActivityTraced: false,
+        acpMessageId: null,
+        acpThoughtMessageId: null
       };
       state.set(tid, st2);
     }
@@ -123946,7 +125730,7 @@ function startAgentController(store2, api2) {
   const detachDiffState = attachDiffState(store2, api2, { revealOnShowDiff: true });
   const unsub = api2.agent.onChunk((threadId, chunk) => {
     const st2 = get(threadId);
-    const firstVisibleActivity = chunk.type === "tool_call" || chunk.type === "text" && chunk.text.trim() !== "" || chunk.type === "reasoning" && chunk.text.trim() !== "";
+    const firstVisibleActivity = chunk.type === "tool_call" || chunk.type === "acp_content" || chunk.type === "text" && chunk.text.trim() !== "" || chunk.type === "reasoning" && chunk.text.trim() !== "";
     if (firstVisibleActivity && !st2.firstActivityTraced) {
       st2.firstActivityTraced = true;
       mark("ttft:renderer-first-activity", { kind: chunk.type });
@@ -124001,6 +125785,60 @@ function startAgentController(store2, api2) {
         activity(threadId);
         break;
       }
+      case "acp_content": {
+        const previousId = chunk.channel === "message" ? st2.acpMessageId : st2.acpThoughtMessageId;
+        const boundaryChanged = chunk.messageId !== void 0 && previousId !== null && chunk.messageId !== previousId;
+        if (boundaryChanged && st2.msgId) {
+          store2.emit("message_done", st2.msgId);
+          st2.msgId = null;
+          st2.toolSinceText = false;
+          st2.currentText = "";
+        }
+        if (chunk.messageId !== void 0) {
+          if (chunk.channel === "message") st2.acpMessageId = chunk.messageId;
+          else st2.acpThoughtMessageId = chunk.messageId;
+        }
+        if (chunk.content.type === "text") {
+          if (chunk.channel === "thought") {
+            if (!st2.msgId || st2.toolSinceText) {
+              if (st2.toolSinceText && st2.msgId) store2.emit("message_done", st2.msgId);
+              st2.msgId = addAssistantMessage(store2, threadId);
+              st2.toolSinceText = false;
+              st2.currentText = "";
+            }
+            appendReasoning(store2, st2.msgId, chunk.content.text);
+            st2.writing = false;
+          } else {
+            const { plan, state: nextState } = planAgentTextChunk(
+              { msgId: st2.msgId, toolSinceText: st2.toolSinceText, currentText: st2.currentText },
+              chunk.content.text
+            );
+            if (plan.action === "ignore") break;
+            if (plan.startNewMessage) {
+              if (plan.finalizeMsgId) store2.emit("message_done", plan.finalizeMsgId);
+              st2.msgId = addAssistantMessage(store2, threadId);
+            }
+            st2.toolSinceText = nextState.toolSinceText;
+            st2.currentText = nextState.currentText ?? "";
+            if (st2.msgId === null) throw new Error("assistant message id missing for ACP text");
+            appendToken(store2, st2.msgId, plan.text);
+            st2.writing = plan.text.trim().length > 0;
+            if (st2.writing) maybeNameThread(store2, api2, threadId);
+          }
+        } else {
+          if (!st2.msgId || st2.toolSinceText) {
+            if (st2.toolSinceText && st2.msgId) store2.emit("message_done", st2.msgId);
+            st2.msgId = addAssistantMessage(store2, threadId);
+            st2.toolSinceText = false;
+            st2.currentText = "";
+          }
+          appendAcpContentBlock(store2, st2.msgId, chunk.channel, chunk.content);
+          st2.writing = false;
+          maybeNameThread(store2, api2, threadId);
+        }
+        activity(threadId);
+        break;
+      }
       case "text_replace": {
         st2.msgId ??= addAssistantMessage(store2, threadId);
         setMessageContent(store2, st2.msgId, chunk.text);
@@ -124023,6 +125861,8 @@ function startAgentController(store2, api2) {
         addToolCall(store2, st2.msgId, {
           id: chunk.toolCall.id,
           name: chunk.toolCall.name,
+          ...chunk.toolCall.title !== void 0 ? { title: chunk.toolCall.title } : {},
+          ...chunk.toolCall.programmaticName !== void 0 ? { programmaticName: chunk.toolCall.programmaticName } : {},
           args: chunk.toolCall.args,
           status: "running",
           result: null,
@@ -124039,10 +125879,16 @@ function startAgentController(store2, api2) {
         if (ownerId) {
           updateToolCall(store2, ownerId, chunk.toolCallId, {
             ...chunk.name !== void 0 ? { name: chunk.name } : {},
+            ...chunk.title !== void 0 ? { title: chunk.title } : {},
+            ...chunk.programmaticName !== void 0 ? { programmaticName: chunk.programmaticName } : {},
             ...chunk.args !== void 0 ? { args: chunk.args } : {},
+            ...chunk.kind !== void 0 ? { kind: chunk.kind } : {},
             ...chunk.status !== void 0 ? { status: chunk.status } : {},
             ...chunk.result !== void 0 ? { result: chunk.result } : {},
-            ...chunk.resultFormat !== void 0 ? { resultFormat: chunk.resultFormat } : {}
+            ...chunk.resultFormat !== void 0 ? { resultFormat: chunk.resultFormat } : {},
+            ...chunk.images !== void 0 ? { images: chunk.images } : {},
+            ...chunk.content !== void 0 ? { content: chunk.content } : {},
+            ...chunk.locations !== void 0 ? { locations: chunk.locations } : {}
           });
         }
         st2.writing = false;
@@ -124102,7 +125948,10 @@ function startAgentController(store2, api2) {
           inputTokens: chunk.inputTokens,
           outputTokens: chunk.outputTokens,
           ...chunk.cacheReadTokens !== void 0 ? { cacheReadTokens: chunk.cacheReadTokens } : {},
-          ...chunk.cacheCreationTokens !== void 0 ? { cacheCreationTokens: chunk.cacheCreationTokens } : {}
+          ...chunk.cacheCreationTokens !== void 0 ? { cacheCreationTokens: chunk.cacheCreationTokens } : {},
+          ...chunk.requestedServiceTier !== void 0 ? { requestedServiceTier: chunk.requestedServiceTier } : {},
+          ...chunk.responseServiceTier !== void 0 ? { responseServiceTier: chunk.responseServiceTier } : {},
+          ...chunk.serviceTierUsage !== void 0 ? { serviceTierUsage: chunk.serviceTierUsage } : {}
         };
         addUsageDelta(store2, threadId, delta);
         break;
@@ -124118,7 +125967,8 @@ function startAgentController(store2, api2) {
           conversationBudget: chunk.conversationBudget,
           conversationTokens: chunk.conversationTokens,
           fillRatio: chunk.fillRatio,
-          ...chunk.source !== void 0 ? { source: chunk.source } : {}
+          ...chunk.source !== void 0 ? { source: chunk.source } : {},
+          ...chunk.cost !== void 0 ? { cost: chunk.cost } : {}
         });
         break;
       }
@@ -124217,10 +126067,10 @@ function startAgentController(store2, api2) {
         if (chunk.status === "running") emitActivity(threadId, "Reviewing changes\u2026");
         break;
       }
-      case "model_comparison": {
-        setThreadComparison(store2, threadId, chunk.comparison);
-        if (chunk.comparison.status === "running") {
-          emitActivity(threadId, "Comparing models\u2026");
+      case "review_report": {
+        setThreadReviewReport(store2, threadId, chunk.report);
+        if (chunk.report.status === "running") {
+          emitActivity(threadId, "Reviewing changes\u2026");
         }
         break;
       }
@@ -124271,8 +126121,8 @@ function startAgentController(store2, api2) {
         if (finishedThread?.status === "idle") {
           markThreadUnread(store2, threadId);
           if (!quiet) {
-            void api2.alerts.threadFinished(threadId, finishedThread.title).catch((error61) => {
-              console.error("[alerts] failed to signal thread completion:", error61);
+            void api2.alerts.threadFinished(threadId, finishedThread.title).catch((error62) => {
+              console.error("[alerts] failed to signal thread completion:", error62);
             });
           }
         }
@@ -124384,9 +126234,9 @@ var init_agent = __esm({
 });
 
 // src/renderer/controller/automations.ts
-function startFailureDetail(error61) {
-  if (!(error61 instanceof Error)) return "the checkout could not be prepared";
-  return error61.message.replace(/^Error invoking remote method '[^']+':\s*(?:Error:\s*)?/, "");
+function startFailureDetail(error62) {
+  if (!(error62 instanceof Error)) return "the checkout could not be prepared";
+  return error62.message.replace(/^Error invoking remote method '[^']+':\s*(?:Error:\s*)?/, "");
 }
 function isPendingAutomation(thread) {
   return thread.automation !== void 0 && thread.status === "idle" && Boolean(thread.draftPrompt?.trim());
@@ -124422,14 +126272,14 @@ function attachAutomationController(store2, api2) {
       setThreadDraftPrompt(store2, threadId, "");
       startAutomationTurnTree(store2, threadId);
       dispatchAgentRun(store2, api2, threadId, { content: prompt });
-    } catch (error61) {
-      console.error("[automations] Failed to start scheduled task:", error61);
+    } catch (error62) {
+      console.error("[automations] Failed to start scheduled task:", error62);
       if (hydrated) {
         addMessage(
           store2,
           threadId,
           "error",
-          `This scheduled run could not start: ${startFailureDetail(error61)}
+          `This scheduled run could not start: ${startFailureDetail(error62)}
 
 Its prompt is kept as a draft, so nothing is lost \u2014 send it once the cause is resolved, or leave it for the next run.`
         );
@@ -124622,8 +126472,8 @@ function probePopover() {
       Reflect.apply(show2, el3, []);
       showResult = "ok";
       displayAfter = getComputedStyle(el3).display;
-    } catch (error61) {
-      showResult = String(error61);
+    } catch (error62) {
+      showResult = String(error62);
     }
   }
   const result = {
@@ -124652,8 +126502,8 @@ function probeCapabilities() {
       Reflect.apply(showModal, dialog2, []);
       out["dialogOpens"] = dialog2.hasAttribute("open");
       out["dialogDisplay"] = getComputedStyle(dialog2).display;
-    } catch (error61) {
-      out["dialogOpens"] = `threw: ${String(error61)}`;
+    } catch (error62) {
+      out["dialogOpens"] = `threw: ${String(error62)}`;
     }
   }
   dialog2.remove();
@@ -125836,7 +127686,7 @@ var init_artifact_image_policy = __esm({
   }
 });
 
-// node_modules/.pnpm/dompurify@3.4.14/node_modules/dompurify/dist/purify.es.mjs
+// node_modules/.pnpm/dompurify@3.4.15/node_modules/dompurify/dist/purify.es.mjs
 function _arrayLikeToArray(r, a2) {
   (null == a2 || a2 > r.length) && (a2 = r.length);
   for (var e2 = 0, n = Array(a2); e2 < a2; e2++) n[e2] = r[e2];
@@ -126015,7 +127865,7 @@ function isRegex(value) {
 function createDOMPurify() {
   let window2 = arguments.length > 0 && arguments[0] !== void 0 ? arguments[0] : getGlobal();
   const DOMPurify = (root) => createDOMPurify(root);
-  DOMPurify.version = "3.4.14";
+  DOMPurify.version = "3.4.15";
   DOMPurify.removed = [];
   if (!window2 || !window2.document || window2.document.nodeType !== NODE_TYPE.document || !window2.Element) {
     DOMPurify.isSupported = false;
@@ -126032,6 +127882,7 @@ function createDOMPurify() {
   const ElementPrototype = Element2.prototype;
   const cloneNode = lookupGetter(ElementPrototype, "cloneNode");
   const remove = lookupGetter(ElementPrototype, "remove");
+  const removeAttributeNode = lookupGetter(ElementPrototype, "removeAttributeNode");
   const getNextSibling = lookupGetter(ElementPrototype, "nextSibling");
   const getChildNodes = lookupGetter(ElementPrototype, "childNodes");
   const getParentNode = lookupGetter(ElementPrototype, "parentNode");
@@ -126374,9 +128225,9 @@ function createDOMPurify() {
       trustedTypesPolicy = cfg.TRUSTED_TYPES_POLICY;
       try {
         emptyHTML = _createTrustedHTML("");
-      } catch (error61) {
+      } catch (error62) {
         trustedTypesPolicy = previousTrustedTypesPolicy;
-        throw error61;
+        throw error62;
       }
     } else if (cfg.TRUSTED_TYPES_POLICY === null) {
       trustedTypesPolicy = void 0;
@@ -126465,7 +128316,7 @@ function createDOMPurify() {
   };
   const _stripAttributeNode = function _stripAttributeNode2(element, attribute, name) {
     try {
-      element.removeAttributeNode(attribute);
+      removeAttributeNode(element, attribute);
     } catch (_2) {
       try {
         element.removeAttribute(name);
@@ -126513,7 +128364,7 @@ function createDOMPurify() {
     });
     try {
       if (attr) {
-        element.removeAttributeNode(attr);
+        removeAttributeNode(element, attr);
       } else {
         element.removeAttribute(name);
       }
@@ -126701,7 +128552,16 @@ function createDOMPurify() {
     // makes the direct read diverge from the cached read; a clean form
     // (same-realm OR foreign-realm) has both reads pointing at the same
     // canonical NamedNodeMap.
-    element.attributes !== getAttributes(element) || typeof element.removeAttribute !== "function" || typeof element.setAttribute !== "function" || typeof element.namespaceURI !== "string" || typeof element.insertBefore !== "function" || typeof element.hasChildNodes !== "function" || // NodeType clobbering probe. Cached Node.prototype.nodeType getter
+    element.attributes !== getAttributes(element) || typeof element.removeAttribute !== "function" || // A form descendant named "removeAttributeNode" or "getAttributeNode"
+    // shadows these Attr-node methods via [LegacyOverrideBuiltIns].
+    // _removeAttribute() / _stripAttributeNode() reach for
+    // element.removeAttributeNode(attr) first; when it is shadowed the call
+    // throws and the name-based fallback element.removeAttribute(name)
+    // ASCII-lowercases its lookup key in an HTML document, silently missing
+    // a case-preserved event-handler attribute (e.g. an ONANIMATIONSTART
+    // that reached the sanitizer through an XML/XHTML parse). Flag the form
+    // so it is removed wholesale, exactly as for the other shadowed methods.
+    typeof element.removeAttributeNode !== "function" || typeof element.getAttributeNode !== "function" || typeof element.setAttribute !== "function" || typeof element.namespaceURI !== "string" || typeof element.insertBefore !== "function" || typeof element.hasChildNodes !== "function" || // NodeType clobbering probe. Cached Node.prototype.nodeType getter
     // returns the integer 1 for any Element regardless of realm; direct
     // read on a clobbered form (e.g. <input name="nodeType">) returns
     // the named child element. Cheap addition — nodeType is read from
@@ -126927,11 +128787,12 @@ function createDOMPurify() {
       }
       if (_isClobbered(currentNode)) {
         _forceRemove(currentNode);
-      } else {
-        arrayPop(DOMPurify.removed);
+        return false;
       }
+      return true;
     } catch (_2) {
       _removeAttribute(name, currentNode);
+      return false;
     }
   };
   const _sanitizeAttributes = function _sanitizeAttributes2(currentNode) {
@@ -126956,6 +128817,7 @@ function createDOMPurify() {
       const lcName = transformCaseFunc(name);
       const initValue = attrValue;
       let value = name === "value" ? initValue : stringTrim(initValue);
+      let recreatedNamedProp = false;
       hookEvent.attrName = lcName;
       hookEvent.attrValue = value;
       hookEvent.keepAttr = true;
@@ -126965,6 +128827,7 @@ function createDOMPurify() {
       if (SANITIZE_NAMED_PROPS && (lcName === "id" || lcName === "name") && stringIndexOf(value, SANITIZE_NAMED_PROPS_PREFIX) !== 0) {
         _removeAttribute(name, currentNode, attr);
         value = SANITIZE_NAMED_PROPS_PREFIX + value;
+        recreatedNamedProp = true;
       }
       if (SAFE_FOR_XML && regExpTest(/((--!?|])>)|<\/(style|script|title|xmp|textarea|noscript|iframe|noembed|noframes)/i, value)) {
         _removeAttribute(name, currentNode, attr);
@@ -126994,7 +128857,10 @@ function createDOMPurify() {
       }
       value = _applyTrustedTypesToAttribute(lcTag, lcName, namespaceURI, value);
       if (value !== initValue) {
-        _setAttributeValue(currentNode, name, namespaceURI, value);
+        const cleanWrite = _setAttributeValue(currentNode, name, namespaceURI, value);
+        if (cleanWrite && recreatedNamedProp) {
+          arrayPop(DOMPurify.removed);
+        }
       }
     }
     _executeHooks(hooks.afterSanitizeAttributes, currentNode, null);
@@ -127118,9 +128984,9 @@ function createDOMPurify() {
       }
       try {
         _sanitizeAttachedShadowRoots(dirty);
-      } catch (error61) {
+      } catch (error62) {
         _neutralizeRoot(dirty);
-        throw error61;
+        throw error62;
       }
     } else if (_isNode(dirty)) {
       body = _initDocument("<!---->");
@@ -127132,7 +128998,7 @@ function createDOMPurify() {
       } else {
         body.appendChild(importedNode);
       }
-      _sanitizeAttachedShadowRoots(importedNode);
+      _sanitizeAttachedShadowRoots(body);
     } else {
       if (!RETURN_DOM && !SAFE_FOR_TEMPLATES && !WHOLE_DOCUMENT && // eslint-disable-next-line unicorn/prefer-includes
       dirty.indexOf("<") === -1) {
@@ -127156,7 +129022,7 @@ function createDOMPurify() {
           _sanitizeShadowDOM2(currentNode.content);
         }
       }
-    } catch (error61) {
+    } catch (error62) {
       if (inPlace) {
         _neutralizeRoot(dirty);
         arrayForEach(DOMPurify.removed, (entry) => {
@@ -127165,7 +129031,7 @@ function createDOMPurify() {
           }
         });
       }
-      throw error61;
+      throw error62;
     }
     if (inPlace) {
       arrayForEach(DOMPurify.removed, (entry) => {
@@ -127259,7 +129125,7 @@ function createDOMPurify() {
 }
 var entries, setPrototypeOf, isFrozen, getPrototypeOf, getOwnPropertyDescriptor, freeze, seal, create, _ref, apply, construct, arrayForEach, arrayLastIndexOf, arrayPop, arrayPush, arraySplice, arrayIsArray, stringToLowerCase, stringToString, stringMatch, stringReplace, stringIndexOf, stringTrim, numberToString, booleanToString, bigintToString, symbolToString, objectHasOwnProperty, objectToString, regExpTest, typeErrorCreate, html$1, svg$1, svgFilters, svgDisallowed, mathMl$1, mathMlDisallowed, text, html, svg, mathMl, xml, MUSTACHE_EXPR, ERB_EXPR, TMPLIT_EXPR, DATA_ATTR, ARIA_ATTR, IS_ALLOWED_URI, IS_SCRIPT_OR_DATA, ATTR_WHITESPACE, DOCTYPE_NAME, CUSTOM_ELEMENT, ELEMENT_MARKUP_PROBE, COMMENT_MARKUP_PROBE, FALLBACK_TAG_CLOSE, SELF_CLOSING_TAG, NODE_TYPE, LITERAL_TEXT_ELEMENT_NAMES, LITERAL_TEXT_ELEMENTS, LITERAL_TEXT_CLOSE, getGlobal, _createTrustedTypesPolicy, _createHooksMap, _resolveSetOption, _resolveObjectOption, purify;
 var init_purify_es = __esm({
-  "node_modules/.pnpm/dompurify@3.4.14/node_modules/dompurify/dist/purify.es.mjs"() {
+  "node_modules/.pnpm/dompurify@3.4.15/node_modules/dompurify/dist/purify.es.mjs"() {
     entries = Object.entries;
     setPrototypeOf = Object.setPrototypeOf;
     isFrozen = Object.isFrozen;
@@ -127425,7 +129291,7 @@ var init_purify_es = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-dompurify.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-dompurify.js
 var sanitize_dompurify_exports = {};
 __export(sanitize_dompurify_exports, {
   dompurifyBackend: () => dompurifyBackend
@@ -127449,7 +129315,7 @@ function withGate(config2, run2) {
 }
 var hookInstalled, activeOnElement, dompurifyBackend;
 var init_sanitize_dompurify = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-dompurify.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-dompurify.js"() {
     init_purify_es();
     hookInstalled = false;
     dompurifyBackend = {
@@ -128127,7 +129993,7 @@ var require_core = __commonJS({
       return COMMON_KEYWORDS.includes(keyword.toLowerCase());
     }
     var seenDeprecations = {};
-    var error61 = (message2) => {
+    var error62 = (message2) => {
       console.error(message2);
     };
     var warn = (message2, ...args) => {
@@ -128156,11 +130022,11 @@ var require_core = __commonJS({
     function beginMultiClass(mode) {
       if (!Array.isArray(mode.begin)) return;
       if (mode.skip || mode.excludeBegin || mode.returnBegin) {
-        error61("skip, excludeBegin, returnBegin not compatible with beginScope: {}");
+        error62("skip, excludeBegin, returnBegin not compatible with beginScope: {}");
         throw MultiClassError;
       }
       if (typeof mode.beginScope !== "object" || mode.beginScope === null) {
-        error61("beginScope must be object");
+        error62("beginScope must be object");
         throw MultiClassError;
       }
       remapScopeNames(mode, mode.begin, { key: "beginScope" });
@@ -128169,11 +130035,11 @@ var require_core = __commonJS({
     function endMultiClass(mode) {
       if (!Array.isArray(mode.end)) return;
       if (mode.skip || mode.excludeEnd || mode.returnEnd) {
-        error61("skip, excludeEnd, returnEnd not compatible with endScope: {}");
+        error62("skip, excludeEnd, returnEnd not compatible with endScope: {}");
         throw MultiClassError;
       }
       if (typeof mode.endScope !== "object" || mode.endScope === null) {
-        error61("endScope must be object");
+        error62("endScope must be object");
         throw MultiClassError;
       }
       remapScopeNames(mode, mode.end, { key: "endScope" });
@@ -128726,7 +130592,7 @@ var require_core = __commonJS({
         }
         const language = getLanguage(languageName);
         if (!language) {
-          error61(LANGUAGE_NOT_FOUND.replace("{}", languageName));
+          error62(LANGUAGE_NOT_FOUND.replace("{}", languageName));
           throw new Error('Unknown language: "' + languageName + '"');
         }
         const md = compileLanguage(language);
@@ -128919,11 +130785,11 @@ var require_core = __commonJS({
         try {
           lang = languageDefinition(hljs);
         } catch (error$1) {
-          error61("Language definition for '{}' could not be registered.".replace("{}", languageName));
+          error62("Language definition for '{}' could not be registered.".replace("{}", languageName));
           if (!SAFE_MODE) {
             throw error$1;
           } else {
-            error61(error$1);
+            error62(error$1);
           }
           lang = PLAINTEXT_LANGUAGE;
         }
@@ -134247,7 +136113,7 @@ var init_yaml = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight-hljs.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight-hljs.js
 var highlight_hljs_exports = {};
 __export(highlight_hljs_exports, {
   highlightjsHighlighter: () => highlightjsHighlighter,
@@ -134258,7 +136124,7 @@ function loadHighlightjs() {
 }
 var highlightjsHighlighter;
 var init_highlight_hljs = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight-hljs.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight-hljs.js"() {
     init_core3();
     init_bash();
     init_css();
@@ -134902,5 +136768,5 @@ export default require_main();
    *)
 
 dompurify/dist/purify.es.mjs:
-  (*! @license DOMPurify 3.4.14 | (c) Cure53 and other contributors | Released under the Apache license 2.0 and Mozilla Public License 2.0 | github.com/cure53/DOMPurify/blob/3.4.14/LICENSE *)
+  (*! @license DOMPurify 3.4.15 | (c) Cure53 and other contributors | Released under the Apache license 2.0 and Mozilla Public License 2.0 | github.com/cure53/DOMPurify/blob/3.4.15/LICENSE *)
 */
