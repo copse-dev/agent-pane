@@ -260,6 +260,12 @@ describe('collapsed tool card bodies render lazily', () => {
       mimeType: 'text/plain',
       text: 'embedded notes',
     })
+    appendAcpContentBlock(store, messageId, 'message', {
+      type: 'resource',
+      uri: 'file:///%E0%A4%A',
+      mimeType: 'text/plain',
+      text: 'malformed URI label',
+    })
     const host = document.createElement('div')
     document.body.append(host)
     mountConversation(host, store, fakeApi())
@@ -268,6 +274,7 @@ describe('collapsed tool card bodies render lazily', () => {
     assert.ok(message)
     assert.ok(message.querySelector('audio[src^="data:audio/ogg;base64,"]'))
     assert.equal(message.querySelector('.acp-resource-text')?.textContent, 'embedded notes')
+    assert.match(message.textContent, /%E0%A4%A/)
     assert.doesNotMatch(message.querySelector('.message-text')?.innerHTML ?? '', /base64/)
   })
 

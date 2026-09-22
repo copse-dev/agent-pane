@@ -300,6 +300,7 @@ function sessionUpdateToStreamChunk(update: SessionUpdate): StreamChunk | null {
         displayContent === undefined &&
         locations === undefined &&
         programmaticName === undefined &&
+        title === undefined &&
         update.kind === undefined &&
         update.rawInput === undefined
       ) {

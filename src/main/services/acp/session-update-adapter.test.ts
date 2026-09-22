@@ -415,6 +415,23 @@ describe('sessionUpdateToStreamChunks (client role)', () => {
     ])
   })
 
+  it('preserves a title-only tool update', () => {
+    assert.deepEqual(
+      sessionUpdateToStreamChunks({
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'renamed',
+        title: 'Read the generated report',
+      }),
+      [
+        {
+          type: 'tool_call_update',
+          toolCallId: 'renamed',
+          title: 'Read the generated report',
+        },
+      ],
+    )
+  })
+
   it('carries the ACP kind so the UI can spot the agent’s shell commands', () => {
     const update: SessionUpdate = {
       sessionUpdate: 'tool_call',

@@ -1243,7 +1243,12 @@ function createMessageImages(images: string[]): HTMLElement {
 function acpResourceLabel(uri: string, title?: string): string {
   if (title) return title
   const tail = uri.split('/').filter(Boolean).at(-1)
-  return tail ? decodeURIComponent(tail) : uri
+  if (!tail) return uri
+  try {
+    return decodeURIComponent(tail)
+  } catch {
+    return tail
+  }
 }
 
 /** Render one non-text ACP content block without passing binary through Markdown. */
