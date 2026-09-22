@@ -53,6 +53,91 @@ describe('addMessage prompt provenance', () => {
     assert.equal('startingCommit' in message, false)
     assert.equal('dirty' in message, false)
   })
+
+  function orderedThread(id: string, createdAt: number, lastPromptAt: number): Thread {
+    return {
+      id,
+      title: id,
+      status: 'idle',
+      messages: [
+        {
+          id: `${id}-message`,
+          role: 'user',
+          content: 'Earlier prompt',
+          toolCalls: [],
+          createdAt: lastPromptAt,
+        },
+      ],
+      usage: { inputTokens: 0, outputTokens: 0 },
+      lastPromptAt,
+      createdAt,
+      updatedAt: lastPromptAt,
+    }
+  }
+
+  it('immediately moves a newly prompted older thread to the front', () => {
+    const older = orderedThread('older', 1, 100)
+    const newer = orderedThread('newer', 2, 200)
+    const store = createStore({ threads: [newer, older], activeThreadId: older.id })
+    let threadsChanged = 0
+    store.on('threads_changed', () => threadsChanged++)
+
+    addMessage(store, older.id, 'user', 'Continue the older thread')
+
+    assert.deepEqual(
+      store.getState().threads.map((thread) => thread.id),
+      [older.id, newer.id],
+    )
+    assert.equal(threadsChanged, 1)
+  })
+
+  it('does not reorder the active project for a carried background prompt', () => {
+    const older = orderedThread('older', 1, 100)
+    const newer = orderedThread('newer', 2, 200)
+    const background = orderedThread('background', 3, 50)
+    const store = createStore({
+      threads: [newer, older],
+      backgroundThreads: [{ projectId: 'background-project', thread: background }],
+      activeThreadId: newer.id,
+    })
+    let threadsChanged = 0
+    store.on('threads_changed', () => threadsChanged++)
+
+    addMessage(store, background.id, 'user', 'Continue in the background')
+
+    assert.deepEqual(
+      store.getState().threads.map((thread) => thread.id),
+      [newer.id, older.id],
+    )
+    assert.ok((getThreadById(store, background.id)?.lastPromptAt ?? 0) > 50)
+    assert.equal(threadsChanged, 0)
+  })
+
+  it('does not reorder a thread for hook or machine continuations', () => {
+    const origins = [
+      { kind: 'hook', hookId: 'hook-1', event: 'stop' },
+      { kind: 'machine', operationId: 'operation-1' },
+    ] as const
+
+    for (const origin of origins) {
+      const older = orderedThread('older', 1, 100)
+      const newer = orderedThread('newer', 2, 200)
+      const store = createStore({ threads: [newer, older], activeThreadId: older.id })
+      let threadsChanged = 0
+      store.on('threads_changed', () => threadsChanged++)
+
+      addMessage(store, older.id, 'user', 'Automated continuation', undefined, undefined, {
+        origin,
+      })
+
+      assert.deepEqual(
+        store.getState().threads.map((thread) => thread.id),
+        [newer.id, older.id],
+      )
+      assert.equal(getThreadById(store, older.id)?.lastPromptAt, 100)
+      assert.equal(threadsChanged, 0)
+    }
+  })
 })
 
 describe('prepared thread checkout', () => {
