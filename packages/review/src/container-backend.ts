@@ -20,7 +20,7 @@
 // row. The engine is Docker by default; Podman speaks the same argv.
 import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { mkdir, rm } from 'node:fs/promises'
+import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { errorMessage } from '@copse/std/errors.ts'
 import type {
@@ -31,6 +31,7 @@ import type {
   IsolationBackend,
 } from './isolation.ts'
 import { collectProcess } from './process-collect.ts'
+import { removeTree } from './remove-tree.ts'
 
 export const CONTAINER_BACKEND_ID = 'container'
 
@@ -282,8 +283,8 @@ class ContainerCell implements ExecutionCell {
     for (const { controller } of commands) controller.abort(new Error('Review cell destroyed'))
     await Promise.all(commands.map(({ done }) => done.catch(() => undefined)))
     this.live.clear()
-    await rm(this.homeDir, { recursive: true, force: true })
-    await rm(this.tmpDir, { recursive: true, force: true })
+    await removeTree(this.homeDir)
+    await removeTree(this.tmpDir)
   }
 }
 

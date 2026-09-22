@@ -7,7 +7,7 @@
 // nothing from the orchestrator's environment, that `HOME` and `TMPDIR` point
 // inside the cell, and that the cell's state is destroyed with it.
 import { spawn } from 'node:child_process'
-import { mkdir, rm } from 'node:fs/promises'
+import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import type {
   CellCommand,
@@ -17,6 +17,7 @@ import type {
   IsolationBackend,
 } from './isolation.ts'
 import { collectProcess, killProcessTree } from './process-collect.ts'
+import { removeTree } from './remove-tree.ts'
 
 export const HOST_PROCESS_BACKEND_ID = 'host-process'
 
@@ -67,8 +68,8 @@ class HostProcessCell implements ExecutionCell {
     for (const child of this.live) killProcessTree(child, 'SIGKILL')
     await Promise.all(closed)
     this.live.clear()
-    await rm(this.homeDir, { recursive: true, force: true })
-    await rm(this.tmpDir, { recursive: true, force: true })
+    await removeTree(this.homeDir)
+    await removeTree(this.tmpDir)
   }
 }
 
@@ -104,8 +105,8 @@ export const EPHEMERAL_RUNNER_BACKEND_ID = 'ephemeral-runner'
  * foreign diff execute here (B3) — so declaring it is the caller's assertion
  * about where it runs, never a detection. The CLI takes it only from an
  * explicit `--backend ephemeral-runner`; the workflows that pass it are the
- * ones built to the plan's job-A shape: the `pull_request` event, no secrets,
- * `permissions: {}`, a fresh hosted runner. Inside the process it guarantees
+ * ones built to the plan's job-A shape: a trusted default-branch workflow, no
+ * secrets, `permissions: {}`, a fresh hosted runner. Inside the process it guarantees
  * what the host-process backend guarantees (a scrubbed environment, `HOME`
  * and `TMPDIR` inside the cell) and declares nothing more, so the conformance
  * test holds it to exactly that.

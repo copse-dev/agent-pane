@@ -735,6 +735,13 @@ describe('Copse Reviewer workflow invariants', () => {
   }
 
   it('executes pull-request code only in secret-free ephemeral-runner jobs', () => {
+    assert.match(groundWorkflow, /^ {2}issues:$/m)
+    assert.doesNotMatch(groundWorkflow, /^ {2}pull_request:$/m)
+    assert.doesNotMatch(groundWorkflow, /^ {2}pull_request_target:$/m)
+    const resolver = workflowJobBlock(groundWorkflow, 'resolve')
+    assert.match(resolver, /pull-requests: read/)
+    assert.doesNotMatch(resolver, /actions\/checkout/)
+    assert.doesNotMatch(resolver, /--backend ephemeral-runner/)
     const groundJobs = [
       workflowJobBlock(groundWorkflow, 'ground'),
       workflowJobBlock(nightlyWorkflow, 'ground'),
@@ -743,6 +750,7 @@ describe('Copse Reviewer workflow invariants', () => {
       assert.match(job, /permissions: \{\}/)
       assert.doesNotMatch(job, /\$\{\{\s*secrets\./)
       assert.match(job, /ref: \$\{\{ github\.event\.repository\.default_branch \}\}/)
+      assert.match(job, /persist-credentials: false/)
       assert.match(job, /refs\/pull\/\$\{PR_NUMBER\}\/head/)
       assert.match(job, /--backend ephemeral-runner/)
     }
@@ -754,6 +762,23 @@ describe('Copse Reviewer workflow invariants', () => {
       assert.match(job, /--stage0-json ground\/report\.json/)
       assert.doesNotMatch(job, /--backend ephemeral-runner/)
     }
+  })
+
+  it('resolves the reviewed commit from trusted workflow-run metadata', () => {
+    assert.ok(
+      groundWorkflow.includes('run-name: copse-review-ground pr=${{ github.event.issue.number }}'),
+    )
+    assert.match(
+      findingsWorkflow,
+      /GROUND_RUN_NAME: \$\{\{ github\.event\.workflow_run\.display_title \}\}/,
+    )
+    assert.match(findingsWorkflow, /BASH_REMATCH\[1\]/)
+    assert.match(findingsWorkflow, /pulls\/\$\{number\}/)
+    assert.match(findingsWorkflow, /HEAD_SHA: \$\{\{ steps\.pr\.outputs\.head \}\}/)
+    assert.doesNotMatch(
+      findingsWorkflow,
+      /HEAD_SHA: \$\{\{ github\.event\.workflow_run\.head_sha \}\}/,
+    )
   })
 
   it('pins the bounded Scaleway dogfood profile in both GitHub findings paths', () => {

@@ -371,13 +371,14 @@ scope.
   (`container-backend.ts`, Docker or Podman over a pinned image, never pulled) is what a
   `--foreign` diff executes in; without it the CLI reviews a foreign diff read-only and
   says so. There is no flag that executes a foreign diff unisolated.
-- **CI:** a GitHub-hosted runner is ephemeral but not secret-free, so the workflow is two
-  jobs. **Job A** checks out the PR head on the `pull_request` event — never
-  `pull_request_target` — with `permissions: {}` and no secrets, runs Stage 0 and the
-  reproducers, and uploads results as an artefact. **Job B** runs on the base ref with the
-  model key and a write token, downloads the artefact, runs the model stages, and posts
-  findings. Self-hosted Forgejo runners must be ephemeral (a fresh container per job): a
-  persistent runner is precisely what a malicious PR would persist on.
+- **CI:** a GitHub-hosted runner is ephemeral but not secret-free, so the workflow has two
+  privilege domains. The default-branch `issues:labeled` workflow first resolves PR metadata
+  in a tiny read-only job that checks out and executes nothing. **Job A** is a separate fresh
+  runner with `permissions: {}` and no secrets; it fetches the exact resolved head, runs Stage
+  0 and the reproducers, and uploads results as an artefact. **Job B** runs on the base ref
+  with the model key and a write token, downloads the artefact, runs the model stages, and
+  posts findings. Self-hosted Forgejo runners must be ephemeral (a fresh container per job):
+  a persistent runner is precisely what a malicious PR would persist on.
 
 **Conformance test, in Phase 0.** A review of a deliberately hostile fixture — a
 `postinstall` that reads the environment and tries to exfiltrate it, a repo-controlled linter
@@ -772,13 +773,18 @@ CI shell needs (`stage0-report.ts`, `forge-review.ts`) and the workflows
   run, holding no secrets, discarded after. It is an assertion the caller makes about
   where it runs, never a detection, and the conformance test holds it to what it
   guarantees inside the process (a scrubbed environment, `HOME` and `TMPDIR` in the cell).
-- **The CI shell, in two jobs.** `review-ground.yml` runs on `pull_request` (never
-  `pull_request_target`), only for a pull request carrying the `copse-review` label, with
-  `permissions: {}` and no secrets: it installs only the reviewer's workspace subtree with
-  scripts off, runs Stage 0 on the head with the runner as the cell, and uploads the
-  report. `review-findings.yml` runs on that workflow's completion in the base
-  repository's context with the model key and a token that can write a review; it resolves
-  the pull request from the event's head commit (never from the artefact), fetches the head
+- **The CI shell, in two privilege domains.** `review-ground.yml` runs from the default
+  branch on `issues:labeled` (pull requests are issues), only for the `copse-review` label.
+  Its small resolver job has PR-read permission but checks out and executes nothing; it
+  passes the PR number, exact head and base as outputs to a separate fresh hosted runner
+  with `permissions: {}`, no secrets and removed checkout credentials. That runner installs
+  only the reviewer's workspace subtree with scripts off, runs Stage 0 on the head, and
+  uploads the report. Reapplying the label is the explicit retrigger after a new head.
+  `review-findings.yml` runs on that workflow's completion in the base repository's context
+  with the model key and a token that can write a review. It parses the PR number the trusted
+  ground workflow stamped into its run name, resolves the current contributor commit and
+  base from GitHub's Pull Request API, and never trusts the artefact or a dynamic run
+  association. It fetches the head
   to read it, imports the Stage 0 report through `--stage0-json` — which makes the run
   read-only whatever else is asked, and refuses a report for another commit — runs the
   reviewers and the challenger over the checkouts, and posts one review. The Forgejo

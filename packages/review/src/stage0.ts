@@ -11,7 +11,7 @@
 // that passes on head can produce no finding, so the base run would only be
 // spent on the "fixed" note, and the common case — a clean head — costs one
 // pass instead of two.
-import { access, mkdtemp, realpath, rm } from 'node:fs/promises'
+import { access, mkdtemp, realpath } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { redactSecrets } from '@copse/llm/redact-secrets.ts'
@@ -42,6 +42,7 @@ import {
   type ProjectCommands,
   type UnsupportedProject,
 } from './project-commands.ts'
+import { removeTree } from './remove-tree.ts'
 import { newDiagnostics, parseTscDiagnostics, type TscDiagnostic } from './tsc-diagnostics.ts'
 
 export const STAGE0_REPORT_VERSION = 1
@@ -399,7 +400,7 @@ export async function openReviewGround(options: Stage0Options): Promise<ReviewGr
     closed = true
     if (cell !== null) await cell.destroy()
     if (checkouts !== null) await checkouts.cleanup()
-    if (scratchDir !== null) await rm(scratchDir, { recursive: true, force: true })
+    if (scratchDir !== null) await removeTree(scratchDir)
   }
   const ground = (project: ReviewGround['project']): ReviewGround => ({
     options,

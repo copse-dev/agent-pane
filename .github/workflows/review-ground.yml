@@ -1,10 +1,15 @@
 name: Copse review ground
+run-name: copse-review-ground pr=${{ github.event.issue.number }}
 
 # Shell C, job A (docs/plans/copse-reviewer.md, §Execution isolation, "Backend
 # per shell — CI"). Opt-in by label: add `copse-review` to a pull request and
-# this job starts from the default branch's trusted reviewer on the
-# `pull_request` event — never `pull_request_target` — then fetches the PR head
-# as data. With `permissions: {}` and no secrets, it runs Stage 0 (build,
+# this workflow starts from the default branch on the `issues:labeled` event,
+# which fires for pull requests too. A small resolver job reads the PR metadata
+# but checks out and executes nothing. A separate `permissions: {}` job receives
+# only the resolved number, head and base, checks out the trusted default-branch
+# reviewer, then fetches the PR head as data. With no secrets, credentials removed
+# after checkout and a fresh hosted runner, contributor code has nothing privileged
+# to reach. It runs Stage 0 (build,
 # typecheck, lint, test on head, and on base for whatever failed on head) with
 # the runner itself as the execution cell and uploads the report. Nothing here
 # can reach a model or a token: the runner is ephemeral and holds neither,
@@ -16,19 +21,48 @@ name: Copse review ground
 # that crosses between them, and it is validated there before use.
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, labeled]
+  issues:
+    types: [labeled]
 
 permissions: {}
 
 concurrency:
-  group: copse-review-ground-${{ github.event.pull_request.number }}
+  group: copse-review-ground-${{ github.event.issue.number }}
   cancel-in-progress: true
 
 jobs:
+  resolve:
+    name: Resolve the labelled pull request without executing it
+    if: github.event.issue.pull_request != null && github.event.label.name == 'copse-review'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: read
+    outputs:
+      number: ${{ steps.pr.outputs.number }}
+      head: ${{ steps.pr.outputs.head }}
+      base: ${{ steps.pr.outputs.base }}
+    steps:
+      - name: Resolve the current pull request head and base
+        id: pr
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          set -euo pipefail
+          IFS=$'\t' read -r head base state < <(
+            gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" \
+              --jq '[.head.sha, .base.ref, .state] | @tsv'
+          )
+          test -n "$head" && test -n "$base" && test "$state" = "open"
+          echo "number=${PR_NUMBER}" >> "$GITHUB_OUTPUT"
+          echo "head=${head}" >> "$GITHUB_OUTPUT"
+          echo "base=${base}" >> "$GITHUB_OUTPUT"
+
   ground:
     name: Stage 0 on the pull request head
-    if: contains(github.event.pull_request.labels.*.name, 'copse-review')
+    needs: resolve
     runs-on: ubuntu-latest
     timeout-minutes: 45
     # Repeat the workflow-level denial at the execution boundary so a future
@@ -64,9 +98,9 @@ jobs:
       - name: Run Stage 0 with the runner as the cell
         shell: bash
         env:
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          BASE_REF: ${{ github.event.pull_request.base.ref }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ needs.resolve.outputs.head }}
+          BASE_REF: ${{ needs.resolve.outputs.base }}
+          PR_NUMBER: ${{ needs.resolve.outputs.number }}
         run: |
           set -euo pipefail
           git fetch --no-tags --quiet origin \

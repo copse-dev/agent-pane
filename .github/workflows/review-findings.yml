@@ -27,7 +27,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: copse-review-findings-${{ github.event.workflow_run.head_sha }}
+  group: copse-review-findings-${{ github.event.workflow_run.id }}
   cancel-in-progress: true
 
 jobs:
@@ -74,20 +74,31 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       # The artefact names a pull request, but a pull request could have
-      # written that file: the number is resolved from the head commit the
-      # event itself carries, never read from the artefact.
-      - name: Resolve the pull request from the event's head commit
+      # written that file. The trusted ground workflow therefore stamps the PR
+      # number into its Actions run name before contributor code executes. Use
+      # that number to resolve the exact current head and base from GitHub.
+      - name: Resolve the pull request from the ground run
         id: pr
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          GROUND_RUN_NAME: ${{ github.event.workflow_run.display_title }}
         run: |
           set -euo pipefail
-          number="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${HEAD_SHA}/pulls" --jq '.[0].number')"
-          base="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${number}" --jq '.base.ref')"
-          test -n "$number" && test -n "$base"
+          if [[ "$GROUND_RUN_NAME" =~ ^copse-review-ground\ pr=([0-9]+)$ ]]; then
+            number="${BASH_REMATCH[1]}"
+          else
+            echo "Unexpected ground run name: ${GROUND_RUN_NAME}" >&2
+            exit 1
+          fi
+          IFS=$'\t' read -r head base state < <(
+            gh api "repos/${GITHUB_REPOSITORY}/pulls/${number}" \
+              --jq '[.head.sha, .base.ref, .state] | @tsv'
+          )
+          test -n "$number" && test -n "$head" && test -n "$base"
+          test "$state" = "open"
           echo "number=${number}" >> "$GITHUB_OUTPUT"
+          echo "head=${head}" >> "$GITHUB_OUTPUT"
           echo "base=${base}" >> "$GITHUB_OUTPUT"
 
       - name: Review read-only over the uploaded ground and post the findings
@@ -95,7 +106,7 @@ jobs:
         env:
           COPSE_REVIEW_API_KEY: ${{ secrets.COPSE_REVIEW_API_KEY || secrets.SCW_GENERATIVE_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          HEAD_SHA: ${{ steps.pr.outputs.head }}
           PR_NUMBER: ${{ steps.pr.outputs.number }}
           BASE_REF: ${{ steps.pr.outputs.base }}
         run: |

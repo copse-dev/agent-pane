@@ -157,6 +157,13 @@ Two workflows, the plan's job A and job B (`.github/workflows/review-ground.yml`
 `copse-review` label on a pull request. Job A runs Stage 0 on the head with the runner as
 the cell (`--backend ephemeral-runner`) and no secrets, and uploads the report; it uses the
 reviewed CLI from the default branch, so an older PR need not contain `@copse/review`.
+The ground workflow uses the default-branch `issues:labeled` event (pull requests are issues): a
+small resolver job has PR-read permission but checks out and executes nothing, then a separate
+`permissions: {}` job receives only the resolved PR number, head and base and becomes the
+disposable execution cell. The secret-bearing findings job parses the trusted PR number from the
+ground run name and resolves the current contributor commit and base from GitHub's Pull Request
+API, rather than trusting the artefact or a dynamic run association. Remove and re-add the label
+to review a newer head.
 Job B, on the base ref with the model key, imports that report (`--stage0-json`, which makes
 the run read-only and refuses a report for another commit), reviews the head without
 executing it, and posts one advisory review (`--post-review github --repo owner/name --pr n`).
