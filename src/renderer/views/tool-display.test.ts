@@ -273,13 +273,13 @@ describe('tool call display (component)', () => {
     assert.equal(settledSlot.childElementCount, 0, 'settled slot stays reserved but empty')
   })
 
-  it('rolls the turn into one collapsed italic summary with reasoning nested inside', () => {
+  it('rolls the turn into one expanded failed summary with reasoning nested inside', () => {
     mountWithTools()
 
     const rollup = document.querySelector('.tool-card-rollup')
     assert.ok(rollup, 'expected a turn rollup card')
-    // Collapsed by default once settled; expand to inspect nested groups.
-    assert.equal(rollup.hasAttribute('open'), false)
+    // A failed child keeps the settled rollup open so its diagnostic is visible.
+    assert.equal(rollup.hasAttribute('open'), true)
     // toolSummary polish + failure callout (not the canned "Used 3 tools").
     assert.equal(
       rollup.querySelector(':scope > .tool-card-header .tool-name')?.textContent,
@@ -320,6 +320,9 @@ describe('tool call display (component)', () => {
     const rollup = qsRequired<HTMLDetailsElement>(document, '.tool-card-rollup')
     const group = qsRequired<HTMLDetailsElement>(rollup, '.tool-card-group')
     const item = qsRequired<HTMLDetailsElement>(group, '[data-tool-id="tc-read-1"]')
+    // The failed rollup auto-opens. Close and reopen it so the final open state
+    // is an explicit user preference, just like the nested group and item.
+    rollup.querySelector<HTMLElement>(':scope > summary')?.click()
     rollup.querySelector<HTMLElement>(':scope > summary')?.click()
     group.querySelector<HTMLElement>(':scope > summary')?.click()
     item.querySelector<HTMLElement>(':scope > summary')?.click()

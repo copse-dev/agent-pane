@@ -291,6 +291,12 @@ heredocs independently of `TMPDIR`; leaving its default `/tmp/zsh` breaks patch 
 when every destination file is inside the workspace. This redirect does not widen the sandbox's
 writable roots or change the approval policy.
 
+On macOS the project seatbelt also allows writes to direct children of the per-user Darwin temp
+directory returned by `getconf DARWIN_USER_TEMP_DIR` (typically `/var/folders/…/T`). Apple
+converters such as `sips` ignore `$TMPDIR` and stage files there. The shallow `T/*` grant keeps
+SVG→PNG (and similar) contained without making nested workspaces, all of `/var/folders`, or `/tmp`
+writable. Linux and Windows are unchanged.
+
 - `permission-policy.ts`: pure permission decisions, MCP decisions, outside-sandbox classification,
   and prompt-body formatting.
 - `@copse/shell-guard` (`packages/shell-guard/`): the deterministic classifiers, host-free.

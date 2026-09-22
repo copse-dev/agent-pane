@@ -112,7 +112,7 @@ describe('tool call turn rollup', () => {
   it('expands the run into one step per message, each with its own reasoning and tools', async () => {
     const run = await $('.tool-card-rollup[data-rollup-key="run"]')
     await run.scrollIntoView()
-    await run.$('summary.tool-card-header').click()
+    // The failed run opens automatically so the diagnostic is immediately visible.
     await expect(run).toHaveAttribute('open')
 
     // One step per persisted message, in the order they streamed, each headed
@@ -134,7 +134,7 @@ describe('tool call turn rollup', () => {
     // not on the run and not on the message bubble.
     const mixed = steps[1]!
     await mixed.scrollIntoView()
-    await mixed.$('summary.tool-card-header').click()
+    // The failed step opens with its parent for the same reason.
     await expect(mixed).toHaveAttribute('open')
     await expect(mixed.$('.tool-rollup-body > .message-reasoning')).toExist()
     await expect(mixed.$('.message-reasoning-title')).toHaveText('Reasoned')

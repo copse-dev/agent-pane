@@ -31,6 +31,8 @@ import {
   threadReadRootAllowEntries,
   uncoveredSiblingDenyPaths,
   workspaceMandatoryWriteDenyPaths,
+  darwinUserTempWriteEntries,
+  darwinUserTempDir,
   workspaceSandboxOverlay,
   workspaceTmpDir,
 } from './config.ts'
@@ -646,6 +648,37 @@ describe('workspaceSandboxOverlay', () => {
     assert.ok(allowRead.some((p) => p === `${tmpDir}/**`))
   })
 
+  it('allows only direct Darwin per-user temp children for Apple converter staging (sips)', () => {
+    // `sips` ignores $TMPDIR and stages under confstr(_CS_DARWIN_USER_TEMP_DIR).
+    // Grant direct children alone — never nested workspaces or all of /var/folders.
+    const overlay = workspaceSandboxOverlay('/Users/me/project')
+    const allowWrite = overlay.filesystem?.allowWrite ?? []
+    const allowRead = overlay.filesystem?.allowRead ?? []
+    const entries = darwinUserTempWriteEntries()
+    if (process.platform !== 'darwin') {
+      assert.deepEqual(entries, [])
+      assert.ok(!allowWrite.some((p) => p.includes('/var/folders/')))
+      return
+    }
+    const dir = darwinUserTempDir()
+    assert.ok(dir, 'expected confstr Darwin user temp on macOS')
+    assert.ok(dir.includes('/var/folders/'), dir)
+    assert.ok(dir.endsWith('/T'), dir)
+    assert.ok(!dir.endsWith('/T/'), 'Darwin user temp must not carry a trailing slash')
+    assert.deepEqual(entries, [`${dir}/*`])
+    for (const entry of entries) {
+      assert.ok(allowWrite.includes(entry), `write ${entry}`)
+      assert.ok(!allowRead.includes(entry), `read ${entry}`)
+    }
+    assert.ok(!allowWrite.includes(dir))
+    assert.ok(!allowWrite.includes(`${dir}/**`))
+    // Must not open the parent /var/folders tree.
+    assert.ok(!allowWrite.includes('/var/folders'))
+    assert.ok(!allowWrite.includes('/var/folders/**'))
+    assert.ok(!allowWrite.includes('/private/var/folders'))
+    assert.ok(!allowWrite.includes('/private/var/folders/**'))
+  })
+
   it('resolves that tmp dir through the leaf every other party uses', () => {
     // Three parties must name one directory or the scratch contract splits: the
     // overlay above, the spawn that sets $TMPDIR, and the agent eval that scores
@@ -756,7 +789,8 @@ describe('readAllowedSandboxOverlay', () => {
       // traversable — but only as a literal path, never as a `/**` subtree.
       assert.ok(allowRead.includes(dir))
       assert.ok(!allowRead.includes(`${file}/**`))
-      assert.ok(!allowRead.includes(`${dirname(dir)}/**`))
+      const parentGlob = `${dirname(dir)}/**`
+      assert.ok(!allowRead.includes(parentGlob))
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
