@@ -257,6 +257,53 @@ describe('approval dialog coalescing', () => {
     )
   })
 
+  it('coalesces distinct reasons and every command into one shared decision', () => {
+    emit({
+      id: 'script',
+      title: 'Run outside sandbox?',
+      body: 'node .tmp/dep-candidates.mjs',
+      bodyAdvice:
+        'The project sandbox would block this command:\n• Runs a project script whose effects are unknown',
+      bodyFooter: 'Allow running it once outside the sandbox?',
+    })
+    emit({
+      id: 'link-with-parent',
+      title: 'Run outside sandbox?',
+      body: 'mkdir -p node_modules && ln -s ../.tmp/validation/esbuild node_modules/esbuild',
+      bodyAdvice:
+        'The project sandbox would block this command:\n• Reaches outside the project with a ../ path',
+      bodyFooter: 'Allow running it once outside the sandbox?',
+    })
+    emit({
+      id: 'link',
+      title: 'Run outside sandbox?',
+      body: 'ln -s ../.tmp/validation/esbuild node_modules/esbuild',
+      bodyAdvice:
+        'The project sandbox would block this command:\n• Reaches outside the project with a ../ path',
+      bodyFooter: 'Allow running it once outside the sandbox?',
+    })
+    fireWindow()
+
+    assert.equal(heading(), 'Run outside sandbox?')
+    assert.deepEqual(bodies(), [
+      'node .tmp/dep-candidates.mjs',
+      'mkdir -p node_modules && ln -s ../.tmp/validation/esbuild node_modules/esbuild',
+      'ln -s ../.tmp/validation/esbuild node_modules/esbuild',
+    ])
+    assert.equal(dialog.querySelectorAll('.approval-item').length, 1)
+    assert.equal(dialog.querySelectorAll('.approval-body-list').length, 1)
+    assert.deepEqual(
+      [...dialog.querySelectorAll('.approval-advice')].map((node) => node.textContent),
+      [
+        'The project sandbox would block this command:\n' +
+          '• Runs a project script whose effects are unknown\n' +
+          '• Reaches outside the project with a ../ path',
+      ],
+    )
+    assert.equal(dialog.querySelectorAll('.approval-footer').length, 1)
+    assert.equal(approve().textContent, 'Approve all (3)')
+  })
+
   it('settles a reduced batch before a cancelled sibling can broaden approval', () => {
     emit({
       id: 'read-access',
