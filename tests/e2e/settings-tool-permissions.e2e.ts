@@ -7,7 +7,7 @@ import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 const SERVER_NAME = 'copse-canvas'
 const TOOL_NAME = 'Render Html Artefact'
 
-async function openMcpPermissions(): Promise<void> {
+async function openMcpSettings() {
   await $('[aria-label="Settings"]').click()
   const dialog = $('#settings-dialog')
   await expect(dialog).toBeDisplayed()
@@ -15,9 +15,15 @@ async function openMcpPermissions(): Promise<void> {
 
   const mcp = $('.settings-section[data-section="mcp"]')
   await expect(mcp).toBeDisplayed()
-  const manage = mcp.$(`[aria-label="Manage permissions for ${SERVER_NAME}"]`)
-  await manage.waitForDisplayed({ timeout: 30_000 })
-  await manage.click()
+  await mcp
+    .$(`[aria-label="Manage permissions for ${SERVER_NAME}"]`)
+    .waitForDisplayed({ timeout: 30_000 })
+  return mcp
+}
+
+async function openMcpPermissions(): Promise<void> {
+  const mcp = await openMcpSettings()
+  await mcp.$(`[aria-label="Manage permissions for ${SERVER_NAME}"]`).click()
 
   await expect($('.settings-section[data-section="permissions"]')).toBeDisplayed()
   await $('.tool-permissions-panel').waitForDisplayed({ timeout: 15_000 })
@@ -38,6 +44,44 @@ describe('settings tool permissions', () => {
 
   after(() => {
     resetUserData()
+  })
+
+  it('centres the MCP switch track with the rest of its server header', async () => {
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
+    const mcp = await openMcpSettings()
+
+    const geometry = await browser.execute((serverName) => {
+      const manage = document.querySelector<HTMLElement>(
+        `[aria-label="Manage permissions for ${serverName}"]`,
+      )
+      const row = manage?.closest<HTMLElement>('.mcp-server-row')
+      const track = row?.querySelector<HTMLElement>('.toggle-switch-track')
+      const summary = row?.querySelector<HTMLElement>('.mcp-server-summary')
+      const origin = row?.querySelector<HTMLElement>('.mcp-origin-chip')
+      if (!row || !track || !summary || !origin || !manage) return null
+
+      const trackRect = track.getBoundingClientRect()
+      const trackCenter = trackRect.top + trackRect.height / 2
+      return {
+        trackHeight: trackRect.height,
+        centerOffsets: [summary, origin, manage].map((element) => {
+          const rect = element.getBoundingClientRect()
+          return rect.top + rect.height / 2 - trackCenter
+        }),
+      }
+    }, SERVER_NAME)
+
+    assert.ok(geometry, 'the connected MCP row and switch track must render')
+    assert.equal(geometry.trackHeight, 20)
+    assert.ok(
+      geometry.centerOffsets.every((offset) => Math.abs(offset) <= 1),
+      `MCP header controls must be vertically centred on the switch track, offsets ${geometry.centerOffsets.join(', ')}`,
+    )
+
+    await mcp.$('.mcp-server-row').scrollIntoView({ block: 'center' })
+    await saveElementScreenshot('#settings-dialog', 'settings-mcp-server-row.png')
+    await $('#settings-close').click()
+    await $('#settings-dialog').waitForDisplayed({ reverse: true })
   })
 
   it('persists a per-tool policy reached through the MCP settings row', async () => {
