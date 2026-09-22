@@ -144,8 +144,21 @@ function shortThreadId(threadId: string): string {
   return (compact.slice(-6) || 'thread').slice(0, 6)
 }
 
-/** Stable branch candidate; `collision` is incremented only when Git reports a conflict. */
-export function threadWorktreeBranchName(prompt: string, threadId: string, collision = 0): string {
-  const base = `copse/${slugPrompt(prompt)}-${shortThreadId(threadId)}`
+/** Stable branch candidate derived from a settled thread title. */
+export function threadWorktreeBranchName(title: string, threadId: string, collision = 0): string {
+  const base = `copse/${slugPrompt(title)}-${shortThreadId(threadId)}`
   return collision > 0 ? `${base}-${String(collision + 1)}` : base
+}
+
+/** Anonymous first branch; the random thread id supplies the collision-resistant suffix. */
+export function initialThreadWorktreeBranchName(threadId: string, collision = 0): string {
+  return threadWorktreeBranchName('thread', threadId, collision)
+}
+
+/** True only for one of the allocator's anonymous initial candidates. */
+export function isInitialThreadWorktreeBranchName(branch: string, threadId: string): boolean {
+  for (let collision = 0; collision < 100; collision += 1) {
+    if (branch === initialThreadWorktreeBranchName(threadId, collision)) return true
+  }
+  return false
 }

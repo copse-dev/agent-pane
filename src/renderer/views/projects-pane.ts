@@ -52,6 +52,7 @@ import { forkThread } from '../controller/fork-thread.ts'
 import { sidebarPrRefs, type SidebarThread } from '../controller/sidebar-thread.ts'
 import { isThreadAwaitingAttention } from '../controller/attention.ts'
 import { isSshWorkspaceEnabled } from '../controller/ssh-workspace-ui.ts'
+import { maybeRenameThreadBranch } from '../controller/thread-naming.ts'
 import {
   buildProjectTree,
   projectGroupId,
@@ -359,8 +360,12 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     const { threadId, draft } = renaming
     renaming = null
     const next = draft.trim()
-    if (save && next) setThreadTitle(store, threadId, next)
-    else render()
+    if (save && next) {
+      setThreadTitle(store, threadId, next)
+      maybeRenameThreadBranch(store, api, threadId)
+    } else {
+      render()
+    }
   }
 
   /**

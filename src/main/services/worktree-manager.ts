@@ -3,7 +3,11 @@ import { realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { ThreadWorktree } from '@shared/types/worktree.ts'
-import { threadWorktreeBranchName } from '@shared/git/worktree-policy.ts'
+import {
+  initialThreadWorktreeBranchName,
+  isInitialThreadWorktreeBranchName,
+  threadWorktreeBranchName,
+} from '@shared/git/worktree-policy.ts'
 import { describeBranchCheckoutFailure } from '@shared/git/branch-held.ts'
 import { runCommand } from './exec/command-runner.ts'
 import { runSerialized } from './storage/write-queue.ts'
@@ -83,6 +87,10 @@ export interface ValidateWorktreeInput {
   threadId: string
   projectRoot: string
   worktree: ThreadWorktree
+}
+
+export interface RenameWorktreeBranchInput extends ValidateWorktreeInput {
+  title: string
 }
 
 export interface ValidatedThreadWorktree extends ThreadWorktree {
@@ -393,13 +401,13 @@ export async function runWorktreeGit(
 ): Promise<{ stdout: string; stderr: string; code: number }> {
   // These host-owned bookkeeping operations update branch metadata. Config
   // inspection/updates do not execute repository helpers; hooks remain off for
-  // branch deletion. No general Git invocation receives writable configuration.
+  // branch deletion and rename. No general Git invocation receives writable configuration.
   const writeConfig =
     (args[0] === 'config' &&
       args[1] === '--local' &&
       /^branch\..+\.copse-worktree-recovery$/.test(args[2] ?? '') &&
       args.length === 4) ||
-    (args[0] === 'branch' && args[1] === '-d' && args.length === 3)
+    (args[0] === 'branch' && (args[1] === '-d' || args[1] === '-m') && args.length === 3)
   const readOnly =
     ['check-ignore', 'check-ref-format', 'merge-base', 'rev-parse', 'show-ref', 'status'].includes(
       args[0] ?? '',
@@ -572,16 +580,26 @@ async function fetchDefaultBranch(projectRoot: string, branch: string): Promise<
   await git(projectRoot, ['fetch', '--quiet', 'origin', branch])
 }
 
-async function chooseBranch(
-  projectRoot: string,
-  prompt: string,
-  threadId: string,
-): Promise<string> {
-  for (let collision = 0; collision < 100; collision++) {
-    const candidate = threadWorktreeBranchName(prompt, threadId, collision)
+async function chooseInitialBranch(projectRoot: string, threadId: string): Promise<string> {
+  for (let collision = 0; collision < 100; collision += 1) {
+    const candidate = initialThreadWorktreeBranchName(threadId, collision)
     if (!(await branchExists(projectRoot, candidate))) return candidate
   }
-  throw new Error('Could not find an available worktree branch name')
+  throw new Error('Could not find an available initial worktree branch name')
+}
+
+async function chooseTitledBranch(
+  projectRoot: string,
+  title: string,
+  threadId: string,
+  currentBranch: string,
+): Promise<string | null> {
+  for (let collision = 0; collision < 100; collision += 1) {
+    const candidate = threadWorktreeBranchName(title, threadId, collision)
+    if (candidate === currentBranch) return null
+    if (!(await branchExists(projectRoot, candidate))) return candidate
+  }
+  throw new Error('Could not find an available titled worktree branch name')
 }
 
 async function deleteRef(projectRoot: string, ref: string): Promise<void> {
@@ -634,6 +652,92 @@ async function repositoryIsDirty(projectRoot: string): Promise<boolean> {
   return result.stdout.length > 0
 }
 
+async function branchIsPublished(projectRoot: string, branch: string): Promise<boolean> {
+  const upstream = await git(projectRoot, [
+    'for-each-ref',
+    '--format=%(upstream)',
+    branchRef(branch),
+  ])
+  if (upstream.code !== 0) throw commandFailure('Cannot inspect thread branch upstream', upstream)
+  if (upstream.stdout.trim()) return true
+
+  const remoteRefs = await git(projectRoot, ['for-each-ref', '--format=%(refname)', 'refs/remotes'])
+  if (remoteRefs.code !== 0) {
+    throw commandFailure('Cannot inspect remote thread branches', remoteRefs)
+  }
+  return remoteRefs.stdout.split('\n').some((ref) => ref.endsWith(`/${branch}`))
+}
+
+async function renameAttachedWorktreeBranch(
+  projectRoot: string,
+  target: string,
+  worktree: ThreadWorktree,
+  branch: string,
+): Promise<ThreadWorktree> {
+  await assertBranchName(projectRoot, branch, 'Renamed thread branch')
+  if (await branchExists(projectRoot, branch)) {
+    throw new Error(`Renamed thread branch "${branch}" already exists`)
+  }
+  const canonicalPath = await realpath(target)
+  const registered = (await listRecords(projectRoot)).some((record) =>
+    sameWorktreePath(record.path, canonicalPath),
+  )
+  if (!registered) throw new Error('Thread worktree is not registered with Git')
+  const liveBranch = await symbolicHeadBranch(canonicalPath)
+  if (!liveBranch) throw new ThreadWorktreeDetachedError(worktree.branch)
+  if (liveBranch !== worktree.branch) {
+    throw new Error('Thread worktree branch changed before it could be renamed')
+  }
+  const result = await git(canonicalPath, ['branch', '-m', branch])
+  if (result.code !== 0) throw commandFailure('Cannot rename thread worktree branch', result)
+  return { ...worktree, path: canonicalPath, branch }
+}
+
+/**
+ * Replace an allocator-owned anonymous branch with the first settled thread title.
+ * A branch already renamed by the user, pushed upstream, or linked to a PR is left alone.
+ */
+export async function renameThreadWorktreeBranch(
+  input: RenameWorktreeBranchInput,
+): Promise<ThreadWorktree | null> {
+  assertOwnerId('project id', input.projectId)
+  assertOwnerId('thread id', input.threadId)
+  assertWorktreeMetadata(input.worktree)
+  if (input.worktree.retiredAt !== undefined || input.worktree.pullRequestUrl) return null
+  if (!isInitialThreadWorktreeBranchName(input.worktree.branch, input.threadId)) return null
+  const location = await repositoryLocation(input.projectRoot)
+  const projectRoot = location.repositoryRoot
+  const target = expectedThreadWorktreePath(input.projectId, input.threadId)
+  if (!sameWorktreePath(input.worktree.path, target)) {
+    throw new Error('Persisted worktree path does not match the configured thread path')
+  }
+
+  return runSerialized(`worktree-manager:${projectRoot}`, async () => {
+    const liveBranch = await symbolicHeadBranch(target)
+    if (liveBranch !== input.worktree.branch) return null
+    if (await branchIsPublished(projectRoot, liveBranch)) return null
+    const branch = await chooseTitledBranch(projectRoot, input.title, input.threadId, liveBranch)
+    if (!branch) return null
+    return renameAttachedWorktreeBranch(projectRoot, target, input.worktree, branch)
+  })
+}
+
+/** Restore the prior branch name when metadata persistence fails after a rename. */
+export async function restoreThreadWorktreeBranch(
+  input: ValidateWorktreeInput,
+  branch: string,
+): Promise<ThreadWorktree> {
+  assertOwnerId('project id', input.projectId)
+  assertOwnerId('thread id', input.threadId)
+  assertWorktreeMetadata(input.worktree)
+  const location = await repositoryLocation(input.projectRoot)
+  const projectRoot = location.repositoryRoot
+  const target = expectedThreadWorktreePath(input.projectId, input.threadId)
+  return runSerialized(`worktree-manager:${projectRoot}`, () =>
+    renameAttachedWorktreeBranch(projectRoot, target, input.worktree, branch),
+  )
+}
+
 /** Allocate one linked checkout, preserving dirty project content without touching it. */
 export async function allocateThreadWorktree(
   input: AllocateWorktreeInput,
@@ -658,7 +762,7 @@ export async function allocateThreadWorktree(
       getDefaultBranch(projectRoot),
       repositoryIsDirty(projectRoot),
       git(projectRoot, ['rev-parse', 'HEAD']),
-      chooseBranch(projectRoot, input.prompt, input.threadId),
+      chooseInitialBranch(projectRoot, input.threadId),
     ])
     const isDefaultBranch = defaultBranch !== null && defaultBranch === input.baseBranch
     if (isDefaultBranch) await fetchDefaultBranch(projectRoot, input.baseBranch)

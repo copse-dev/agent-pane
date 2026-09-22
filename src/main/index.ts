@@ -196,6 +196,7 @@ import { runWithActiveRunIdentity } from './services/thread-models.ts'
 import {
   prepareThreadCheckout,
   previewThreadCheckout,
+  renameThreadWorktreeBranchAfterTitle,
 } from './services/thread-checkout-transaction.ts'
 import { getAutomationService } from './services/automations/automation-service.ts'
 import { getTaskSupervisor } from './services/supervisor/task-supervisor.ts'
@@ -714,6 +715,20 @@ app
           ...(modelArg !== undefined ? { model: modelArg } : {}),
           ...(baseBranch !== undefined ? { baseBranch } : {}),
         })
+      },
+    )
+
+    ipcMain.handle(
+      'agent:rename-checkout-branch',
+      async (event, projectIdArg: unknown, threadIdArg: unknown, titleArg: unknown) => {
+        assertMainFrameSender(event, win)
+        assertPrimaryMainWindow(event.sender)
+        const projectId = parseIpcArgs(zProjectId, [projectIdArg])
+        const threadId = parseIpcArgs(zThreadId, [threadIdArg])
+        if (typeof titleArg !== 'string' || !titleArg.trim() || titleArg.length > 200) {
+          throw new Error('Invalid thread title for branch rename')
+        }
+        return renameThreadWorktreeBranchAfterTitle(projectId, threadId, titleArg.trim())
       },
     )
 

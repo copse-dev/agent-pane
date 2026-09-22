@@ -2,6 +2,8 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   decideThreadWorktreePolicy,
+  initialThreadWorktreeBranchName,
+  isInitialThreadWorktreeBranchName,
   settledCheckoutMode,
   threadWorktreeBranchName,
   type WorktreePolicyInput,
@@ -112,6 +114,14 @@ describe('threadWorktreeBranchName', () => {
 
   it('falls back safely when prompt and id have no slug characters', () => {
     assert.equal(threadWorktreeBranchName('✨', '---'), 'copse/thread-thread')
+  })
+
+  it('recognizes only anonymous initial branch candidates', () => {
+    assert.equal(initialThreadWorktreeBranchName('thread-a1b2'), 'copse/thread-ada1b2')
+    assert.equal(initialThreadWorktreeBranchName('thread-a1b2', 1), 'copse/thread-ada1b2-2')
+    assert.equal(isInitialThreadWorktreeBranchName('copse/thread-ada1b2', 'thread-a1b2'), true)
+    assert.equal(isInitialThreadWorktreeBranchName('copse/thread-ada1b2-2', 'thread-a1b2'), true)
+    assert.equal(isInitialThreadWorktreeBranchName('copse/fix-login-ada1b2', 'thread-a1b2'), false)
   })
 })
 

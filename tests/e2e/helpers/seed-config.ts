@@ -322,7 +322,7 @@ export function readSeededSettings(): Record<string, unknown> {
   return JSON.parse(readFileSync(SETTINGS_PATH, 'utf8')) as Record<string, unknown>
 }
 
-function writeSettings(settings: Record<string, unknown>): void {
+export function writeSettings(settings: Record<string, unknown>): void {
   mkdirSync(USER_DATA, { recursive: true })
   // Pin appearance so reference screenshots are deterministic. Most fixtures
   // keep tint off so existing shots do not inherit first-run appearance changes;

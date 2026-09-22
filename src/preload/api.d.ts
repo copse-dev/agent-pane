@@ -87,6 +87,7 @@ import type { ExternalEditorList } from '@shared/types/editors.ts'
 import type {
   PreparedThreadCheckout,
   ThreadCheckoutPreview,
+  ThreadWorktree,
   ThreadWorktreeChoice,
   WorktreeInventoryEntry,
   WorktreePackageCleanupResult,
@@ -249,6 +250,11 @@ export interface ApiClient {
       /** Branch the blank-thread footer picker selected to start from. */
       baseBranch?: string,
     ) => Promise<PreparedThreadCheckout>
+    renameCheckoutBranch: (
+      projectId: string,
+      threadId: string,
+      title: string,
+    ) => Promise<ThreadWorktree | null>
     previewCheckout: (
       projectId: string,
       choice: ThreadWorktreeChoice,

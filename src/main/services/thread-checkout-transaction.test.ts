@@ -12,6 +12,7 @@ import { allocateThreadWorktree, readThreadWorktreeRecoveryMetadata } from './wo
 import {
   createThreadCheckoutPreview,
   createThreadCheckoutTransaction,
+  createThreadWorktreeBranchRename,
   recoverUnpersistedWorktree,
   type ThreadCheckoutTransactionDependencies,
 } from './thread-checkout-transaction.ts'
@@ -823,5 +824,59 @@ describe('reclaiming a linked checkout with no recovery marker', () => {
       }),
       null,
     )
+  })
+})
+
+describe('thread worktree branch title rename', () => {
+  const initial: ThreadWorktree = {
+    path: '/worktrees/thread-1',
+    branch: 'copse/thread-read42',
+    baseBranch: 'main',
+    baseCommit: 'a'.repeat(40),
+    createdAt: 1,
+    seededFromDirtyProject: false,
+  }
+
+  it('persists the renamed worktree and git branch together', async () => {
+    let thread = blankThread({ worktree: initial, gitBranch: initial.branch })
+    const patches: Array<Partial<Omit<Thread, 'messages'>>> = []
+    const rename = createThreadWorktreeBranchRename({
+      getProject: () => ({ id: 'project-1', name: 'Project', path: '/repo' }),
+      getThread: async () => thread,
+      updateMeta: async (_projectId, _threadId, patch) => {
+        patches.push(patch)
+        thread = { ...thread, ...patch }
+      },
+      rename: async ({ worktree }) => ({ ...worktree, branch: 'copse/read-better-read42' }),
+      restore: async () => {
+        throw new Error('unexpected restore')
+      },
+    })
+
+    const renamed = await rename('project-1', 'thread-1', 'Read Better')
+
+    assert.equal(renamed?.branch, 'copse/read-better-read42')
+    assert.equal(thread.worktree?.branch, 'copse/read-better-read42')
+    assert.equal(thread.gitBranch, 'copse/read-better-read42')
+    assert.equal(patches.length, 1)
+  })
+
+  it('restores the initial branch when metadata persistence fails', async () => {
+    const restored: string[] = []
+    const rename = createThreadWorktreeBranchRename({
+      getProject: () => ({ id: 'project-1', name: 'Project', path: '/repo' }),
+      getThread: async () => blankThread({ worktree: initial, gitBranch: initial.branch }),
+      updateMeta: async () => {
+        throw new Error('disk full')
+      },
+      rename: async ({ worktree }) => ({ ...worktree, branch: 'copse/read-better-read42' }),
+      restore: async ({ worktree }, branch) => {
+        restored.push(branch)
+        return { ...worktree, branch }
+      },
+    })
+
+    await assert.rejects(rename('project-1', 'thread-1', 'Read Better'), /disk full/)
+    assert.deepEqual(restored, [initial.branch])
   })
 })

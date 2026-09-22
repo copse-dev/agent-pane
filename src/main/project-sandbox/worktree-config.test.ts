@@ -96,6 +96,7 @@ describe('worktree manager sandbox', () => {
     assert.ok(!filesystem.allowWrite.includes(join(repo, '.git', 'config')))
     assert.ok(!filesystem.allowWrite.includes(join(repo, '.git', 'config.lock')))
     assert.ok(!filesystem.denyWrite.includes(join(repo, '.git', 'config')))
+    assert.ok(filesystem.denyWrite.includes(join(repo, '.git', 'config.worktree')))
     assert.ok(filesystem.denyWrite.includes(join(repo, '.git', 'hooks')))
   })
 
@@ -134,7 +135,7 @@ describe('worktree manager sandbox', () => {
     )
   })
 
-  it('creates and retires worktrees in the real sandbox while denying writes outside its scope', async (t) => {
+  it('creates, renames, and retires worktrees while denying writes outside the sandbox scope', async (t) => {
     if (process.platform === 'win32') {
       t.skip('project sandbox integration is not enabled on Windows')
       return
@@ -145,7 +146,7 @@ describe('worktree manager sandbox', () => {
       t.skip('ASRT sandbox unavailable')
       return
     }
-    const worktree = await allocateThreadWorktree({
+    let worktree = await allocateThreadWorktree({
       projectId: 'project',
       threadId: 'thread',
       projectRoot: repo,
@@ -157,6 +158,18 @@ describe('worktree manager sandbox', () => {
     const head = await runWorktreeGit(worktree.path, ['symbolic-ref', '--quiet', '--short', 'HEAD'])
     assert.equal(head.code, 0, head.stderr)
     assert.equal(head.stdout.trim(), worktree.branch)
+    const renamedBranch = 'copse/renamed-thread'
+    const renamed = await runWorktreeGit(worktree.path, ['branch', '-m', renamedBranch])
+    assert.equal(renamed.code, 0, renamed.stderr)
+    worktree = { ...worktree, branch: renamedBranch }
+    const renamedHead = await runWorktreeGit(worktree.path, [
+      'symbolic-ref',
+      '--quiet',
+      '--short',
+      'HEAD',
+    ])
+    assert.equal(renamedHead.code, 0, renamedHead.stderr)
+    assert.equal(renamedHead.stdout.trim(), renamedBranch)
     const ignored = await runWorktreeGit(worktree.path, [
       'check-ignore',
       '--quiet',
