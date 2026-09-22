@@ -142,6 +142,8 @@ describe('runStage2', () => {
     assert.match(prompt, /unchanged line can become newly wrong or reachable/)
     assert.match(prompt, /producer → transforms → consumers/)
     assert.match(prompt, /provenance, permissions, persistence, rendering, and tests/)
+    assert.match(prompt, /fields its closest analogue supplies that it omits/)
+    assert.match(prompt, /consumer fallback/)
   })
 
   it('fails closed when the model ends without the completion attestation', async () => {

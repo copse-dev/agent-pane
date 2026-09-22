@@ -1,0 +1,55 @@
+{
+  "roles": {
+    "review:correctness": [
+      { "type": "tool_call", "name": "read_file", "args": { "path": "src/tools.cjs" } },
+      {
+        "type": "tool_call",
+        "name": "report_finding",
+        "args": {
+          "path": "src/tools.cjs",
+          "startLine": 12,
+          "endLine": 15,
+          "class": "security",
+          "severity": "high",
+          "confidence": "high",
+          "claim": "browser_screenshot omits external provenance, so untrusted page output is treated as internal and bypasses the wrapper.",
+          "reason": "defineTool defaults provenance to internal and wrapToolResult encloses only external results, unlike the existing fetch_image analogue."
+        }
+      },
+      {
+        "type": "tool_call",
+        "name": "finish_review",
+        "args": {
+          "checked": "The new screenshot tool, the existing external image analogue, and the result wrapper.",
+          "couldNotVerify": "Nothing"
+        }
+      },
+      { "type": "text", "text": "Done." }
+    ],
+    "review:contracts": [
+      {
+        "type": "tool_call",
+        "name": "finish_review",
+        "args": {
+          "checked": "The tool definition defaults and result boundary.",
+          "couldNotVerify": "Nothing"
+        }
+      },
+      { "type": "text", "text": "Done." }
+    ],
+    "reproduce": [
+      { "type": "text", "text": "This security classification is settled by tracing the unchanged wrapper rather than a comparative test." }
+    ],
+    "challenge": [
+      {
+        "type": "tool_call",
+        "name": "verdict",
+        "args": {
+          "status": "stands",
+          "reason": "browser_screenshot inherits internal provenance and wrapToolResult encloses external results only"
+        }
+      },
+      { "type": "text", "text": "Stands." }
+    ]
+  }
+}
