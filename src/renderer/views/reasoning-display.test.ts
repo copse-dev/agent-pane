@@ -1,10 +1,12 @@
 import '../../../tests/setup-dom.ts'
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { renderMarkdown } from '@copse/streaming-markdown'
 import { createStore } from '@shared/store/store.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import {
   addMessage,
+  appendAcpContentBlock,
   appendReasoning,
   appendToken,
   createThread,
@@ -66,10 +68,8 @@ describe('reasoning display (component)', () => {
     assert.ok(details.classList.contains('message-reasoning-live'))
     assert.ok(details.querySelector('[data-icon="reasoning-activity"]'))
     assert.equal(
-      details.querySelector('.message-reasoning-text')?.innerHTML,
-      // @copse/streaming-markdown ≥0.2 wraps a single prose line in <p> (styled
-      // flush by .message-reasoning-text p); older versions emitted it bare.
-      '<p>Let me check the file.</p>',
+      details.querySelector('.message-reasoning-text')?.textContent,
+      'Let me check the file.',
     )
     // Sits before the answer text in the body.
     const body = document.querySelector('.msg-assistant .message-body')
@@ -81,6 +81,89 @@ describe('reasoning display (component)', () => {
       children.indexOf(details) < children.indexOf(answer),
       'reasoning should render above the answer',
     )
+  })
+
+  it('retains committed paragraphs while the live tail grows and finishes once', () => {
+    const { store, threadId, messageId } = mountWithReasoning()
+    setThreadStatus(store, threadId, 'running')
+    let source = 'Stable **paragraph**.\n\nGrowing'
+    appendReasoning(store, messageId, source)
+    const text = qsRequired(document, '.message-reasoning-text')
+    const stable = qsRequired(text, 'p strong')
+    const details = qsRequired<HTMLDetailsElement>(document, '.message-reasoning')
+    qsRequired(details, 'summary').click()
+    details.open = false
+    for (const chunk of [' tail', '.\n\nAnother **paragraph**.\n\nPending']) {
+      source += chunk
+      appendReasoning(store, messageId, chunk)
+      assert.ok(text.querySelector('p strong') === stable, 'committed content must not be rebuilt')
+      assert.equal(details.open, false, 'stream updates must preserve the user disclosure choice')
+    }
+    store.emit('message_done', messageId)
+    assert.equal(text.innerHTML, renderMarkdown(source))
+    const finished = text.firstChild
+    store.emit('message_done', messageId)
+    assert.ok(text.firstChild === finished, 'a settled disclosure must not be parsed again')
+  })
+
+  it('updates ACP attachments without changing markdown and retains them across text updates', () => {
+    const { store, threadId, messageId } = mountWithReasoning()
+    setThreadStatus(store, threadId, 'running')
+    appendReasoning(store, messageId, 'Stable **paragraph**.\n\nGrowing')
+    const text = qsRequired(document, '.message-reasoning-text')
+    const stable = qsRequired(text, 'p strong')
+    appendAcpContentBlock(store, messageId, 'thought', {
+      type: 'resource',
+      uri: 'file:///fixture.txt',
+      text: 'Attachment content',
+    })
+    assert.ok(text.querySelector('p strong') === stable)
+    const resource = qsRequired(text, '.acp-embedded-resource')
+    appendReasoning(store, messageId, ' tail')
+    assert.ok(text.querySelector('.acp-embedded-resource') === resource)
+    appendAcpContentBlock(store, messageId, 'thought', {
+      type: 'resource',
+      uri: 'file:///second.txt',
+      text: 'Second attachment',
+    })
+    assert.equal(text.querySelectorAll('.acp-embedded-resource').length, 2)
+    store.emit('message_done', messageId)
+    assert.equal(text.querySelectorAll('.acp-embedded-resource').length, 2)
+    assert.ok(text.textContent.includes('Second attachment'))
+  })
+
+  it('finishes incomplete markdown when the thread stops without an answer', () => {
+    const { store, threadId, messageId } = mountWithReasoning()
+    setThreadStatus(store, threadId, 'running')
+    appendReasoning(store, messageId, '**unfinished')
+    setThreadStatus(store, threadId, 'idle')
+    assert.equal(
+      qsRequired(document, '.message-reasoning-text').innerHTML,
+      renderMarkdown('**unfinished'),
+    )
+    assert.equal(qsRequired(document, '.message-reasoning-title').textContent, 'Reasoned')
+    assert.equal(document.querySelector('.message-reasoning-live'), null)
+  })
+
+  it('replaces corrected reasoning rather than keeping a stale committed prefix', () => {
+    const { store, threadId, messageId } = mountWithReasoning()
+    setThreadStatus(store, threadId, 'running')
+    appendReasoning(store, messageId, 'Previous **conclusion**.\n\nTail')
+    const replacement = 'Corrected **conclusion**.\n\nNew tail'
+    store.setState({
+      threads: store.getState().threads.map((thread) => ({
+        ...thread,
+        messages: thread.messages.map((message) =>
+          message.id === messageId ? { ...message, reasoning: replacement } : message,
+        ),
+      })),
+    })
+    store.emit('message_reasoning', messageId, replacement)
+    const text = qsRequired(document, '.message-reasoning-text')
+    assert.equal(text.textContent.includes('Previous'), false)
+    assert.ok(text.textContent.includes('Corrected conclusion.'))
+    store.emit('message_done', messageId)
+    assert.equal(text.innerHTML, renderMarkdown(replacement))
   })
 
   it('renders markdown formatting in reasoning text', () => {

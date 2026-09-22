@@ -1784,8 +1784,14 @@ function reasoningDisclosureTitle(live: boolean): string {
 
 function setReasoningDisclosureTitle(details: HTMLDetailsElement, live: boolean): void {
   const title = details.querySelector('.message-reasoning-title')
-  if (title) title.textContent = reasoningDisclosureTitle(live)
+  const label = reasoningDisclosureTitle(live)
+  if (title && title.textContent !== label) title.textContent = label
   details.classList.toggle('message-reasoning-live', live)
+  if (!live) {
+    const textEl = details.querySelector<HTMLElement>('.message-reasoning-text')
+    const state = textEl && reasoningRenders.get(textEl)
+    if (textEl && state?.live) renderReasoningText(textEl, state.text, false, state.blocks)
+  }
 }
 
 /** Live = running thread, this is the latest bubble, and no answer text yet. */
@@ -1897,7 +1903,7 @@ function buildReasoningEl(
   reasoning: string,
   open: boolean,
   live: boolean,
-  blocks: readonly AcpContentBlock[] = [],
+  blocks: readonly AcpContentBlock[] = emptyReasoningBlocks,
 ): HTMLDetailsElement {
   const details = el('details', {
     class: `message-reasoning${live ? ' message-reasoning-live' : ''}`,
@@ -1914,7 +1920,7 @@ function buildReasoningEl(
     el('span', { class: 'message-reasoning-title' }, reasoningDisclosureTitle(live)),
   )
   const text = el('div', { class: 'message-reasoning-text' })
-  renderReasoningText(text, reasoning, blocks)
+  renderReasoningText(text, reasoning, live, blocks)
   summary.addEventListener('click', () => {
     details.dataset['userToggled'] = '1'
   })
@@ -1922,19 +1928,52 @@ function buildReasoningEl(
   return details
 }
 
-/**
- * Render reasoning text as markdown into a <div>. Uses the same pipeline as
- * the answer body but without post-processing (file links, mermaid, remote
- * images) — reasoning is self-contained and doesn't reference external resources.
- */
+// A disclosure keeps its render state while moving between the bubble and run steps.
+const emptyReasoningBlocks: readonly AcpContentBlock[] = []
+const reasoningRenders = new WeakMap<
+  HTMLElement,
+  {
+    text: string
+    blocks: readonly AcpContentBlock[]
+    live: boolean
+    renderer: StreamingMarkdownRenderer | null
+    richContent: HTMLElement | null
+  }
+>()
+
+/** Incremental markdown while live, one final render when settled; no answer post-processing. */
 function renderReasoningText(
   el: HTMLElement,
   text: string,
-  blocks: readonly AcpContentBlock[] = [],
+  live: boolean,
+  blocks: readonly AcpContentBlock[] = emptyReasoningBlocks,
 ): void {
-  el.innerHTML = renderMarkdown(text)
-  const richContent = createAcpContentBlocks(blocks, 'reasoning')
-  if (richContent) el.append(richContent)
+  const previous = reasoningRenders.get(el)
+  const markdownChanged = previous?.text !== text || previous.live !== live
+  // Store updates replace ACP block arrays; text-only chunks retain their identity.
+  const blocksChanged = previous?.blocks !== blocks
+  if (!markdownChanged && !blocksChanged) return
+
+  let renderer = previous?.renderer ?? null
+  if (markdownChanged) {
+    if (live) {
+      renderer ??= new StreamingMarkdownRenderer(el)
+      renderer.update(text)
+    } else {
+      // Converge once when the segment settles, including stop/error without prose.
+      renderer = null
+      el.innerHTML = renderMarkdown(text)
+    }
+  }
+  let richContent = previous?.richContent ?? null
+  if (blocksChanged) {
+    richContent?.remove()
+    richContent = createAcpContentBlocks(blocks, 'reasoning')
+  }
+  // The incremental scaffold (or final render) can replace the host's children.
+  // Keep rich blocks after the markdown and restore the same nodes when needed.
+  if (richContent && richContent.parentElement !== el) el.append(richContent)
+  reasoningRenders.set(el, { text, blocks, live, renderer, richContent })
 }
 
 /**
@@ -1965,7 +2004,7 @@ function syncReasoningEl(
   } else {
     if (details.parentElement !== host) host.prepend(details)
     const textEl = details.querySelector<HTMLElement>('.message-reasoning-text')
-    if (textEl) renderReasoningText(textEl, msg.reasoning ?? '', msg.reasoningBlocks)
+    if (textEl) renderReasoningText(textEl, msg.reasoning ?? '', live, msg.reasoningBlocks)
     setReasoningDisclosureTitle(details, live)
   }
   // Keep the trail open while it is still live, unless the user collapsed it.
@@ -1997,7 +2036,7 @@ function syncNestedRollupReasoning(
     details = buildReasoningEl(reasoning ?? '', true, live, reasoningBlocks)
   } else {
     const textEl = details.querySelector<HTMLElement>('.message-reasoning-text')
-    if (textEl) renderReasoningText(textEl, reasoning ?? '', reasoningBlocks)
+    if (textEl) renderReasoningText(textEl, reasoning ?? '', live, reasoningBlocks)
     setReasoningDisclosureTitle(details, live)
   }
   if (details.parentElement !== rollupBody) rollupBody.prepend(details)
@@ -2035,7 +2074,7 @@ function syncRunStepReasoning(card: HTMLElement, run: ToolRun, liveStepId: strin
       continue
     }
     const textEl = details.querySelector<HTMLElement>('.message-reasoning-text')
-    if (textEl) renderReasoningText(textEl, step.reasoning ?? '', step.reasoningBlocks)
+    if (textEl) renderReasoningText(textEl, step.reasoning ?? '', live, step.reasoningBlocks)
     setReasoningDisclosureTitle(details, live)
   }
 }
@@ -3812,6 +3851,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         })
       } else {
         setActivity(null)
+        list.querySelectorAll<HTMLDetailsElement>('.message-reasoning-live').forEach((details) => {
+          setReasoningDisclosureTitle(details, false)
+        })
         const last = getThreadById(store, tid)?.messages.at(-1)
         if (last?.role === 'assistant') renderMessageTurnRecovery(tid, last.id)
       }
