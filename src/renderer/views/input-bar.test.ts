@@ -59,6 +59,7 @@ function createApi(options: {
   currentBranch: string
   getCurrentBranch?: () => string
   branchStatusCurrentBranch?: string
+  onBranchStatus?: () => void
   branches?: Awaited<ReturnType<ApiClient['git']['listBranches']>>
   onAbort?: () => Promise<void>
   onRun?: () => Promise<void>
@@ -137,13 +138,16 @@ function createApi(options: {
       git: {
         ...base['git'],
         currentBranch: async () => options.getCurrentBranch?.() ?? options.currentBranch,
-        branchStatus: async () => ({
-          currentBranch:
-            options.branchStatusCurrentBranch ??
-            options.getCurrentBranch?.() ??
-            options.currentBranch,
-          pr: null,
-        }),
+        branchStatus: async (): ReturnType<ApiClient['git']['branchStatus']> => {
+          options.onBranchStatus?.()
+          return {
+            currentBranch:
+              options.branchStatusCurrentBranch ??
+              options.getCurrentBranch?.() ??
+              options.currentBranch,
+            pr: null,
+          }
+        },
         promptState:
           options.readPromptState ??
           (async (): ReturnType<ApiClient['git']['promptState']> =>
@@ -343,6 +347,7 @@ describe('input bar first-message checkout', () => {
 
   it('does not refresh the checkout preview after the picker is hidden', async () => {
     let previews = 0
+    let branchReads = 0
     const store = createStore({
       workspaceRoot: '/repo',
       projects: [{ id: 'project-1', name: 'Project', path: '/repo', worktreeMode: 'always' }],
@@ -361,10 +366,14 @@ describe('input bar first-message checkout', () => {
           previews += 1
           return { checkoutMode: 'worktree' }
         },
+        onBranchStatus: () => {
+          branchReads += 1
+        },
       }),
     )
     await settle()
     assert.equal(previews, 1)
+    const initialBranchReads = branchReads
 
     store.setState({
       threads: store.getState().threads.map((value) => ({
@@ -377,6 +386,14 @@ describe('input bar first-message checkout', () => {
     await settle()
 
     assert.equal(previews, 1)
+    assert.equal(
+      branchReads,
+      initialBranchReads,
+      'the input bar does not force a duplicate refresh',
+    )
+    await new Promise<void>((resolve) => setTimeout(resolve, 550))
+    await settle()
+    assert.equal(branchReads, initialBranchReads + 1)
   })
 
   it('keeps the prompt and sends nothing when checkout preparation fails', async () => {

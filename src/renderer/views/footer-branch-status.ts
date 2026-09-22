@@ -304,6 +304,7 @@ export function mountFooterBranchStatus(
   }
 
   async function refresh(): Promise<void> {
+    refreshedThreadId = store.getState().activeThreadId
     const token = ++refreshToken
     pruneBaseBranches()
     if (!store.getState().workspaceRoot) {
@@ -352,9 +353,30 @@ export function mountFooterBranchStatus(
     if (open) renderMenu()
   }
 
+  let refreshedThreadId = store.getState().activeThreadId
+
+  function refreshNow(): void {
+    if (refreshTimer) {
+      clearTimeout(refreshTimer)
+      refreshTimer = null
+    }
+    void refresh()
+  }
+
   function scheduleRefresh(): void {
     if (refreshTimer) clearTimeout(refreshTimer)
-    refreshTimer = setTimeout(() => void refresh(), 500)
+    refreshTimer = setTimeout(() => {
+      refreshTimer = null
+      void refresh()
+    }, 500)
+  }
+
+  /** Render store-owned state now; defer only the supplementary Git reads. */
+  function scheduleStoreRefresh(): void {
+    pruneBaseBranches()
+    renderTrigger()
+    if (open) renderMenu()
+    scheduleRefresh()
   }
 
   function copyBranchName(): void {
@@ -396,13 +418,26 @@ export function mountFooterBranchStatus(
   })
 
   const unsubs = [
-    store.on('workspace_changed', () => void refresh()),
-    store.on('threads_changed', () => void refresh()),
+    store.on('workspace_changed', refreshNow),
+    store.on('threads_changed', () => {
+      // A real thread switch should repaint immediately. Same-thread metadata
+      // updates are the noisy path during first-message checkout and can share
+      // the existing working-tree debounce.
+      if (store.getState().activeThreadId !== refreshedThreadId) {
+        refreshNow()
+        return
+      }
+      scheduleStoreRefresh()
+    }),
     store.on('thread_status_changed', () => {
       scheduleRefresh()
     }),
-    store.on('message_added', () => void refresh()),
-    store.on('git_branch_changed', () => void refresh()),
+    store.on('message_added', () => {
+      scheduleStoreRefresh()
+    }),
+    store.on('git_branch_changed', () => {
+      scheduleRefresh()
+    }),
     api.fs.onChanged(() => {
       scheduleRefresh()
     }),
@@ -421,7 +456,7 @@ export function mountFooterBranchStatus(
   void refresh()
 
   return {
-    refresh: () => void refresh(),
+    refresh: refreshNow,
     pendingBaseBranch: (threadId: string): string | undefined => baseBranchByThread.get(threadId),
     destroy: (): void => {
       refreshToken += 1
