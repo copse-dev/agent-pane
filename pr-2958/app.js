@@ -58651,6 +58651,69 @@ function liveWorktreeLimit(value) {
   if (value === "3") return 3;
   return 1;
 }
+function parseCronNumber(value, min, max) {
+  if (!/^\d+$/.test(value)) return null;
+  const parsed2 = Number(value);
+  return parsed2 >= min && parsed2 <= max ? parsed2 : null;
+}
+function parseSimpleSchedule(cron) {
+  const [minuteRaw, hourRaw, dayOfMonth, month, dayOfWeek, ...extra] = cron.trim().split(/\s+/);
+  if (minuteRaw === void 0 || hourRaw === void 0 || dayOfMonth === void 0 || month === void 0 || dayOfWeek === void 0 || extra.length > 0 || month !== "*") {
+    return null;
+  }
+  const minute = parseCronNumber(minuteRaw, 0, 59);
+  const hour = parseCronNumber(hourRaw, 0, 23);
+  if (minute === null || hour === null) return null;
+  if (dayOfMonth === "*" && dayOfWeek === "*") return { repeat: "daily", hour, minute };
+  if (dayOfMonth === "*" && dayOfWeek === "1-5") {
+    return { repeat: "weekdays", hour, minute };
+  }
+  if (dayOfMonth === "*") {
+    const weekday = parseCronNumber(dayOfWeek, 0, 7);
+    if (weekday !== null) return { repeat: "weekly", hour, minute, on: weekday % 7 };
+  }
+  if (dayOfWeek === "*") {
+    const monthDay = parseCronNumber(dayOfMonth, 1, 31);
+    if (monthDay !== null) return { repeat: "monthly", hour, minute, on: monthDay };
+  }
+  return null;
+}
+function twoDigits(value) {
+  return String(value).padStart(2, "0");
+}
+function scheduleTime(schedule) {
+  return `${twoDigits(schedule.hour)}:${twoDigits(schedule.minute)}`;
+}
+function ordinal(value) {
+  const finalTwo = value % 100;
+  if (finalTwo >= 11 && finalTwo <= 13) return `${String(value)}th`;
+  if (value % 10 === 1) return `${String(value)}st`;
+  if (value % 10 === 2) return `${String(value)}nd`;
+  if (value % 10 === 3) return `${String(value)}rd`;
+  return `${String(value)}th`;
+}
+function weekdayName(value) {
+  if (value === 0) return "Sunday";
+  if (value === 1) return "Monday";
+  if (value === 2) return "Tuesday";
+  if (value === 3) return "Wednesday";
+  if (value === 4) return "Thursday";
+  if (value === 5) return "Friday";
+  return "Saturday";
+}
+function simpleScheduleDescription(schedule) {
+  const time3 = scheduleTime(schedule);
+  if (schedule.repeat === "daily") return `Every day at ${time3}`;
+  if (schedule.repeat === "weekdays") return `Every weekday at ${time3}`;
+  if (schedule.repeat === "weekly") {
+    return `Every ${weekdayName(schedule.on)} at ${time3}`;
+  }
+  return `On the ${ordinal(schedule.on)} of every month at ${time3}`;
+}
+function scheduleDescription(cron) {
+  const schedule = parseSimpleSchedule(cron);
+  return schedule ? simpleScheduleDescription(schedule) : "Custom schedule";
+}
 function createAutomationPluginSettings(store2, api2, pluginEnabled, revealScheduleId, createNew = false, projectId = store2.getState().activeProjectId) {
   const root = el("section", {
     class: "automation-plugin-settings",
@@ -58690,14 +58753,64 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     maxlength: "160",
     required: true
   });
-  const cronInput = el("input", {
-    type: "text",
-    class: "automation-input automation-cron-input",
-    placeholder: "0 9 * * 1-5",
-    maxlength: "160",
-    required: true,
-    spellcheck: false
+  const repeatSelect = el(
+    "select",
+    { class: "automation-input automation-repeat-select", required: true },
+    el("option", { value: "daily" }, "Every day"),
+    el("option", { value: "weekdays" }, "Weekdays"),
+    el("option", { value: "weekly" }, "Every week"),
+    el("option", { value: "monthly" }, "Every month")
+  );
+  const timeInput = el("input", {
+    type: "time",
+    class: "automation-input automation-time-input",
+    value: "09:00",
+    required: true
   });
+  const weeklyDaySelect = el("select", {
+    class: "automation-input automation-weekly-day-select"
+  });
+  WEEKDAYS.forEach((day, index) => {
+    weeklyDaySelect.append(el("option", { value: String(index) }, day));
+  });
+  const monthlyDaySelect = el("select", {
+    class: "automation-input automation-monthly-day-select"
+  });
+  for (let day = 1; day <= 31; day += 1) {
+    monthlyDaySelect.append(el("option", { value: String(day) }, ordinal(day)));
+  }
+  const repeatLabel = el("label", { class: "automation-label" }, "Repeat", repeatSelect);
+  const timeLabel = el("label", { class: "automation-label" }, "At", timeInput);
+  const weeklyDayLabel = el(
+    "label",
+    { class: "automation-label automation-weekly-day-label" },
+    "On",
+    weeklyDaySelect
+  );
+  const monthlyDayLabel = el(
+    "label",
+    { class: "automation-label automation-monthly-day-label" },
+    "On day",
+    monthlyDaySelect
+  );
+  const scheduleSummary = el("span", {
+    class: "automation-hint automation-schedule-summary",
+    "aria-live": "polite"
+  });
+  const scheduleFields = el(
+    "fieldset",
+    { class: "automation-schedule-fields" },
+    el("legend", {}, "Schedule"),
+    el(
+      "div",
+      { class: "automation-schedule-controls" },
+      repeatLabel,
+      weeklyDayLabel,
+      monthlyDayLabel,
+      timeLabel
+    ),
+    scheduleSummary
+  );
   const modelSelect = el("select", {
     class: "automation-input automation-model-select",
     required: true
@@ -58721,14 +58834,8 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
   form.append(
     formTitle,
     el("label", { class: "automation-label" }, "Name", nameInput),
-    el(
-      "label",
-      { class: "automation-label" },
-      "Cron",
-      cronInput,
-      el("span", { class: "automation-hint" }, "minute hour day month weekday")
-    ),
     el("label", { class: "automation-label" }, "Model", modelSelect),
+    scheduleFields,
     el("label", { class: "automation-label" }, "Prompt", promptInput),
     el(
       "label",
@@ -58752,6 +58859,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
   });
   let schedules = [];
   let editingId = null;
+  let customCron = null;
   let pendingReveal = revealScheduleId;
   let pendingCreate = createNew;
   function showStatus(message2, error62 = false) {
@@ -58770,6 +58878,68 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     list.hidden = false;
     heading.hidden = false;
   }
+  function selectedSimpleSchedule() {
+    const [hourRaw, minuteRaw] = timeInput.value.split(":");
+    if (hourRaw === void 0 || minuteRaw === void 0) return null;
+    const hour = parseCronNumber(hourRaw, 0, 23);
+    const minute = parseCronNumber(minuteRaw, 0, 59);
+    if (hour === null || minute === null) return null;
+    if (repeatSelect.value === "daily") return { repeat: "daily", hour, minute };
+    if (repeatSelect.value === "weekdays") return { repeat: "weekdays", hour, minute };
+    if (repeatSelect.value === "weekly") {
+      const on3 = parseCronNumber(weeklyDaySelect.value, 0, 6);
+      return on3 === null ? null : { repeat: "weekly", hour, minute, on: on3 };
+    }
+    if (repeatSelect.value === "monthly") {
+      const on3 = parseCronNumber(monthlyDaySelect.value, 1, 31);
+      return on3 === null ? null : { repeat: "monthly", hour, minute, on: on3 };
+    }
+    return null;
+  }
+  function cronFromScheduleControls() {
+    const schedule = selectedSimpleSchedule();
+    if (!schedule) {
+      if (repeatSelect.value === "custom" && customCron) return customCron;
+      return null;
+    }
+    const prefix = `${String(schedule.minute)} ${String(schedule.hour)}`;
+    if (schedule.repeat === "daily") return `${prefix} * * *`;
+    if (schedule.repeat === "weekdays") return `${prefix} * * 1-5`;
+    if (schedule.repeat === "weekly") return `${prefix} * * ${String(schedule.on)}`;
+    return `${prefix} ${String(schedule.on)} * *`;
+  }
+  function updateScheduleControls() {
+    const custom2 = repeatSelect.value === "custom";
+    const weekly = repeatSelect.value === "weekly";
+    const monthly = repeatSelect.value === "monthly";
+    timeLabel.hidden = custom2;
+    timeInput.disabled = custom2;
+    timeInput.required = !custom2;
+    weeklyDayLabel.hidden = !weekly;
+    weeklyDaySelect.disabled = !weekly;
+    weeklyDaySelect.required = weekly;
+    monthlyDayLabel.hidden = !monthly;
+    monthlyDaySelect.disabled = !monthly;
+    monthlyDaySelect.required = monthly;
+    const schedule = selectedSimpleSchedule();
+    scheduleSummary.textContent = custom2 ? "This automation has an older custom schedule. Choose a repeat pattern to replace it." : schedule ? `${simpleScheduleDescription(schedule)} \xB7 local time` : "Choose when this automation should run.";
+  }
+  function setScheduleControls(cron) {
+    repeatSelect.querySelector('option[value="custom"]')?.remove();
+    const schedule = parseSimpleSchedule(cron);
+    customCron = schedule ? null : cron;
+    if (!schedule) {
+      repeatSelect.append(el("option", { value: "custom" }, "Keep existing custom schedule"));
+      repeatSelect.value = "custom";
+      updateScheduleControls();
+      return;
+    }
+    repeatSelect.value = schedule.repeat;
+    timeInput.value = scheduleTime(schedule);
+    if (schedule.repeat === "weekly") weeklyDaySelect.value = String(schedule.on);
+    if (schedule.repeat === "monthly") monthlyDaySelect.value = String(schedule.on);
+    updateScheduleControls();
+  }
   async function openForm(schedule) {
     hideStatus();
     editingId = schedule?.id ?? null;
@@ -58777,7 +58947,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     list.hidden = true;
     heading.hidden = true;
     nameInput.value = schedule?.name ?? "";
-    cronInput.value = schedule?.cron ?? "0 9 * * 1-5";
+    setScheduleControls(schedule?.cron ?? "0 9 * * 1-5");
     promptInput.value = schedule?.prompt ?? "";
     enabledInput.checked = schedule?.enabled ?? true;
     worktreeLimitSelect.value = String(schedule?.maxLiveWorktrees ?? 1);
@@ -58807,7 +58977,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
         el(
           "div",
           { class: "automation-row-meta" },
-          el("code", {}, schedule.cron),
+          el("span", { class: "automation-row-schedule" }, scheduleDescription(schedule.cron)),
           el("span", {}, modelDisplayLabel(schedule.model)),
           el("span", {}, schedule.enabled ? "Armed" : "Paused"),
           el(
@@ -58900,15 +59070,32 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
   }
   addButton.addEventListener("click", () => void openForm());
   cancelButton.addEventListener("click", closeForm);
+  repeatSelect.addEventListener("change", () => {
+    if (repeatSelect.value !== "custom") {
+      repeatSelect.querySelector('option[value="custom"]')?.remove();
+      customCron = null;
+    }
+    updateScheduleControls();
+  });
+  timeInput.addEventListener("input", updateScheduleControls);
+  weeklyDaySelect.addEventListener("change", updateScheduleControls);
+  monthlyDaySelect.addEventListener("change", updateScheduleControls);
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     if (!projectId) return;
     hideStatus();
+    const cron = cronFromScheduleControls();
+    if (cron === null) {
+      showStatus("Choose a valid schedule before saving.", true);
+      if (repeatSelect.value === "custom") repeatSelect.focus();
+      else timeInput.focus();
+      return;
+    }
     saveButton.setAttribute("disabled", "");
     const input2 = {
       ...editingId ? { id: editingId } : {},
       name: nameInput.value,
-      cron: cronInput.value,
+      cron,
       prompt: promptInput.value,
       model: modelSelect.value,
       enabled: enabledInput.checked,
@@ -58935,6 +59122,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     }
   });
 }
+var WEEKDAYS;
 var init_automation_plugin_settings = __esm({
   "src/renderer/views/automation-plugin-settings.ts"() {
     init_automations_plugin();
@@ -58943,6 +59131,15 @@ var init_automation_plugin_settings = __esm({
     init_model_options();
     init_model_picker();
     init_confirm_dialog();
+    WEEKDAYS = [
+      "Sunday",
+      "Monday",
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday",
+      "Saturday"
+    ];
   }
 });
 
