@@ -51,6 +51,29 @@ function assertToolPairingValid(messages: LLMMessage[]): void {
 }
 
 describe('runAgentLoop', () => {
+  it('rejects an initial tool choice that is not advertised', async () => {
+    let streamCalled = false
+    const provider: LLMProvider = {
+      async *stream(): AsyncGenerator<ProviderStreamChunk> {
+        streamCalled = true
+        yield { type: 'done' }
+      },
+    }
+
+    await assert.rejects(
+      runAgentLoop({
+        provider,
+        messages: [{ role: 'user', content: 'close the review' }],
+        tools: [],
+        initialToolChoice: { name: 'finish_review' },
+        onChunk: () => {},
+        executeTool: async (_name, _args, _signal, _toolCallId) => '',
+      }),
+      /Initial tool choice is not advertised: finish_review/,
+    )
+    assert.equal(streamCalled, false)
+  })
+
   it('emits done after text-only response', async () => {
     const chunks: AgentStreamChunk[] = []
     await runAgentLoop({

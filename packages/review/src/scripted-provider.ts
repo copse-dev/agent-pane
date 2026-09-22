@@ -8,6 +8,7 @@ import { z } from 'zod'
 import type {
   LLMMessage,
   LLMProvider,
+  LLMStreamOptions,
   LLMTool,
   ProviderStreamChunk,
 } from '@copse/llm/wire-types.ts'
@@ -54,6 +55,8 @@ export class ScriptedProvider implements LLMProvider {
   private cursor = 0
   /** Every message list the provider was asked to continue, for assertions. */
   readonly calls: LLMMessage[][] = []
+  /** Per-call transport options, kept alongside `calls` for protocol assertions. */
+  readonly streamOptions: Array<LLMStreamOptions | undefined> = []
   lastUsage = { inputTokens: 0, outputTokens: 0 }
 
   constructor(steps: readonly ScriptedStep[]) {
@@ -65,8 +68,10 @@ export class ScriptedProvider implements LLMProvider {
     messages: LLMMessage[],
     _tools: LLMTool[],
     _signal?: AbortSignal,
+    options?: LLMStreamOptions,
   ): AsyncIterable<ProviderStreamChunk> {
     this.calls.push([...messages])
+    this.streamOptions.push(options)
     const step = this.steps[this.cursor++]
     this.lastUsage = { inputTokens: 100 + this.cursor, outputTokens: 20 }
     if (step === undefined) {
