@@ -83,6 +83,13 @@ describe('buildSkillsCatalogBlock', () => {
     assert.match(buildSkillsToolsPromptLine(), /read_skill/)
   })
 
+  it('advertises the portable imagegen skill only when image_gen is in the turn toolset', () => {
+    setSkillsForTest([{ ...demoSkill, name: 'imagegen', source: 'user' }])
+
+    assert.equal(buildSkillsCatalogBlock([]), '')
+    assert.match(buildSkillsCatalogBlock(['image_gen']), /Demo skill for tests/)
+  })
+
   it('marks project/plugin skills as untrusted and user/bundled skills as trusted', () => {
     setSkillsForTest([
       { ...demoSkill, name: 'project-skill', source: 'project' },

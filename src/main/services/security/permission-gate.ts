@@ -1796,6 +1796,13 @@ export async function ensureToolPermitted(
     permitted = await checkWebSearchPermission(signal, explicitPolicy)
   } else if (toolName === 'parallel_search') {
     permitted = await checkParallelSearchPermission(signal, explicitPolicy)
+  } else if (toolName === 'image_gen') {
+    // The configured OpenAI credential is the network authority, as it is for
+    // ordinary model requests. Keep the tool in the explicit network branch so
+    // a user-level "ask" override still prompts and future policy cannot let it
+    // fall through the default-allow tail by accident.
+    permitted =
+      explicitPolicy === 'ask' ? await promptExplicitToolAsk(toolName, args, signal) : true
   } else if (GITHUB_NONMUTATING_CI_TOOLS.has(toolName)) {
     permitted =
       explicitPolicy === 'ask' ? await promptExplicitToolAsk(toolName, args, signal) : true

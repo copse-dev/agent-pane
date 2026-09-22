@@ -8,6 +8,7 @@ import {
   registerSkillTools,
   syncAppleDevelopmentTools,
   syncGhTools,
+  syncImageGenerationTools,
   syncOkfMemoryTools,
   syncParallelSearchTools,
   syncReadTerminalTools,
@@ -29,6 +30,7 @@ import { OKF_MEMORIES_PLUGIN_ID } from '@copse/agent/plugins/okf-memories-plugin
 import { PARALLEL_SEARCH_PLUGIN_ID } from '@copse/agent/plugins/parallel-search-plugin.ts'
 import { APPLE_DEVELOPMENT_PLUGIN_ID } from '@copse/agent/plugins/apple-development-plugin.ts'
 import { OPEN_SIMULATOR_DESKTOP_TOOL_NAME } from '../tools/simulator-desktop-tool.ts'
+import { IMAGE_GEN_TOOL_NAME } from '../tools/image-gen-tool.ts'
 
 describe('registerSkillTools', () => {
   let tempRoot = ''
@@ -270,6 +272,28 @@ describe('syncRoadmapPlanTools', () => {
     pluginRegistry.disable(ROADMAP_PLANS_PLUGIN_ID)
     syncRoadmapPlanTools(registry)
     assert.equal(registry.has('roadmap_plan'), false)
+  })
+})
+
+describe('syncImageGenerationTools', () => {
+  afterEach(() => {
+    deleteApiKey('openai')
+  })
+
+  it('adds image_gen only while an OpenAI key is configured', () => {
+    const registry = new ToolRegistry()
+
+    deleteApiKey('openai')
+    syncImageGenerationTools(registry)
+    assert.equal(registry.has(IMAGE_GEN_TOOL_NAME), false)
+
+    setApiKey('openai', 'test-key')
+    syncImageGenerationTools(registry)
+    assert.equal(registry.has(IMAGE_GEN_TOOL_NAME), true)
+
+    deleteApiKey('openai')
+    syncImageGenerationTools(registry)
+    assert.equal(registry.has(IMAGE_GEN_TOOL_NAME), false)
   })
 })
 

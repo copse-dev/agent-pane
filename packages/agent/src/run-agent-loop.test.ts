@@ -179,6 +179,31 @@ describe('runAgentLoop', () => {
     assert.equal(evidence.evidence[0]?.id, 'evidence-1')
   })
 
+  it('streams tool-result images to the transcript as well as provider history', async () => {
+    const chunks: AgentStreamChunk[] = []
+    const dataUrl = 'data:image/png;base64,cGl4ZWxz'
+    await runAgentLoop({
+      provider: mockProvider([
+        [
+          { type: 'tool_call', toolCall: { id: 'image-1', name: 'image_gen', args: {} } },
+          { type: 'done' },
+        ],
+        [{ type: 'text', text: 'done' }, { type: 'done' }],
+      ]),
+      messages: [{ role: 'user', content: 'draw a cat' }],
+      tools: [],
+      onChunk: (chunk) => chunks.push(chunk),
+      executeTool: async () => ({
+        result: 'Generated image.',
+        images: [{ dataUrl, name: 'cat.png' }],
+      }),
+    })
+
+    const result = chunks.find((chunk) => chunk.type === 'tool_result')
+    assert.ok(result?.type === 'tool_result')
+    assert.deepEqual(result.images, [{ dataUrl, name: 'cat.png' }])
+  })
+
   it('does not execute tools with unparseable args; returns an error result (#114)', async () => {
     let executed = false
     const chunks: AgentStreamChunk[] = []

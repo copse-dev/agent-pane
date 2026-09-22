@@ -151,9 +151,8 @@ export type ToolExecuteResult =
        */
       resultFormat?: 'markdown'
       /**
-       * Images to put in front of the model alongside `result` — currently the
-       * stills `video_frames` pulls out of a screen recording or a browser
-       * screenshot. Provider support
+       * Images to put in front of the model alongside `result` — screenshots,
+       * generated images, or stills from `video_frames`. Provider support
        * differs (see `@copse/llm/tool-result-images.ts`) and a trimmed history
        * drops them first, so `result` must stand on its own as text.
        */
@@ -325,6 +324,7 @@ export type AgentStreamChunk =
       result: string
       isError: boolean
       editStats?: { additions: number; deletions: number }
+      images?: ToolResultImage[]
     }
   | { type: 'subagent_done'; parentToolCallId: string; summary: string; usage?: ModelUsage }
   | { type: 'subagent_error'; parentToolCallId: string; error: string }

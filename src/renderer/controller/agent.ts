@@ -371,6 +371,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
             result: chunk.result,
             ...(chunk.editStats ? { editStats: chunk.editStats } : {}),
             ...(chunk.resultFormat ? { resultFormat: chunk.resultFormat } : {}),
+            ...(chunk.images ? { images: chunk.images } : {}),
           })
           if (chunk.toolCallId && !chunk.isError) {
             const toolCall = findToolCall(store, ownerId, chunk.toolCallId)
@@ -509,6 +510,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
             status: chunk.isError ? 'error' : 'done',
             result: chunk.result,
             ...(chunk.editStats ? { editStats: chunk.editStats } : {}),
+            ...(chunk.images ? { images: chunk.images } : {}),
           })
         }
         activity(threadId)
