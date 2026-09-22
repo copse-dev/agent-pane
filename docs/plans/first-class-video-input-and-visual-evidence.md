@@ -2,8 +2,9 @@
 
 **Status: Active.** Tracked by
 [#2694](https://github.com/copse-dev/agent-pane/issues/2694). U1, the bounded
-SSH binary-media foundation, is implemented by the same change that adds this
-plan. U2–U12 remain proposed.
+SSH binary-media foundation, is implemented. The browser portion of U5 now
+returns model-visible pixels plus a short-lived capture handle; other sources
+and U2–U4/U6–U12 remain proposed.
 
 This is the umbrella plan for making visual debugging a complete loop:
 
@@ -48,7 +49,7 @@ source and agent route:
 | Pasted or dropped image               | Attachment is visible                                            | Provider image block                                              | Depends on the ACP/client route                                   | Supported where the adapter accepts image input          | User attachment persists                              |
 | Local video attachment                | Film chip and up-to-50 MiB preview                               | `video_frames` returns selected stills                            | Native-tool bridge returns MCP image content                      | No callable local `video_frames`; a path is not portable | Video persists; inspected frames do not               |
 | SSH-workspace video                   | U1 adds metadata and preview through the active workspace FS     | U1 adds bounded materialisation for `video_frames`                | Local bridge can reuse the native tool; remote ACP is still gated | No media broker or portable derived survey               | Same limitation as local video                        |
-| Browser screenshot tool               | A path can be shown                                              | Saved path, not an inline model-visible image                     | Same underlying result limitation                                 | Not available                                            | No durable evidence object                            |
+| Browser screenshot tool               | Tool activity names the capture handle                           | PNG pixels plus a short-lived, thread-scoped handle               | Native-tool bridge returns the same PNG                           | Not available                                            | No durable evidence object                            |
 | VNC / Simulator / Android desktop     | Live human panes; a human can manually attach a current capture  | No desktop enumeration or screenshot tool                         | No desktop inspection route                                       | No desktop inspection route                              | No capture provenance                                 |
 | Agent-inspected `video_frames` output | Not rendered as part of the assistant answer                     | Images are available to the model for that call                   | Images are returned as MCP image content                          | Not available                                            | Images are omitted from persisted/streamed transcript |
 | Automated bug/fix demonstration       | Focused e2e screenshots and browser traces exist as test outputs | No tool for publishing a selected screenshot, clip, or comparison | No shared evidence contract                                       | No shared evidence contract                              | No assistant-owned evidence card                      |
@@ -94,6 +95,29 @@ metadata, not one unbounded file. The detailed schema and capture adapters are
 defined in [`screen-capture-and-remote-video.md`](screen-capture-and-remote-video.md).
 The manifest is itself a `MediaAsset` locator.
 
+## Implemented browser screenshot flow
+
+The first U5 slice removes the browser screenshot's raw-path handoff. One
+capture now fans out into model input for the current turn and a scoped,
+temporary reference for a future explicit evidence action:
+
+```mermaid
+flowchart LR
+  browser[Agent browser tab] -->|capturePage| manager[Browser session manager]
+  manager -->|PNG bytes and source metadata| tool[browser_screenshot]
+  tool -->|Inline image content| model[Built-in or local ACP model]
+  tool -->|Copy pixels| registry[Bounded in-memory capture registry]
+  registry -->|Opaque ID, owner check, 30-minute TTL| handle[Thread-scoped capture handle]
+  handle -->|Text only| event[Persisted tool event]
+  registry -.->|Never writes automatically| noDisk[No screenshot file or evidence asset]
+```
+
+The image bytes are available to the model only in the live tool-result turn.
+The persisted event keeps the handle and source description, not base64 pixels.
+The registry is capped at 12 MiB per capture, 64 MiB and 64 entries overall;
+expiry, eviction, or process exit removes its authority. U6 will be the explicit
+operation that resolves a live handle and publishes a durable evidence object.
+
 ## Dependency map
 
 ```mermaid
@@ -118,7 +142,9 @@ flowchart LR
 
 U0 is an ongoing truth requirement rather than a reason to serialize all work.
 U2 is the important architectural gate: capture and evidence should not invent
-another generation of durable raw-path fields.
+another generation of durable raw-path fields. The browser-only part of U5 can
+land before U2 because its backing pixels are transient process memory; U2 still
+gates durable evidence and handles backed by VNC, device, or recording assets.
 
 ## Work units
 
@@ -236,14 +262,14 @@ it does not claim the change is on `main` before merge.
 
 ### U5 — Model-visible screenshot handles
 
-**Status:** Proposed.
+**Status:** Partially implemented; `browser_screenshot` is complete, while VNC
+and device sources remain proposed.
 
 **Deliverables**
 
-- Extend screenshot-producing tools to return image content plus a thread-scoped
-  `CaptureHandle`, not only a saved path.
-- Start with `browser_screenshot`; reuse the same contract for VNC and device
-  sources.
+- `browser_screenshot` returns image content plus a bounded, session-only,
+  thread-scoped `CaptureHandle` instead of exposing a saved path.
+- Reuse the same contract for VNC and device sources.
 - Preserve the handle in tool events without automatically publishing every
   screenshot into the conversation.
 

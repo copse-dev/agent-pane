@@ -53,11 +53,11 @@ export function toolResultContentBlocks(
 /**
  * Drop tool-result images from a history snapshot before it is written to disk.
  *
- * A frame set is megabytes of base64 per call, and the on-disk history is
- * rewritten after every turn — persisting them would grow a thread's sidecar
- * without bound to keep pictures the model can regenerate. The text result names
- * every frame's path, so after a reload the model re-reads the ones it needs
- * (or re-runs the tool) instead of replaying stale base64.
+ * A visual result can be megabytes of base64 per call, and the on-disk history
+ * is rewritten after every turn — persisting it would grow a thread's sidecar
+ * without bound to keep pictures the model can regenerate. After a reload the
+ * model re-runs the tool or follows an explicit durable reference in the text
+ * instead of replaying stale base64.
  *
  * Returns the same array when nothing carries images, so the common case does
  * no copying.

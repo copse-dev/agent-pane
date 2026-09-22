@@ -4102,7 +4102,11 @@ export function seedBrowserToolsFixture(workspaceRoot: string): void {
                 name: 'browser_screenshot',
                 args: {},
                 status: 'done',
-                result: 'Saved screenshot of tab-1 to /tmp/browser-screenshots/tab-1.png',
+                result:
+                  'Captured a 1280×800 PNG of tab-1 — "Computer Use Demo".\n' +
+                  'Source: http://localhost:3000/\n' +
+                  'Capture handle (thread-scoped and short-lived): capture_11111111-1111-4111-8111-111111111111\n' +
+                  'The screenshot is attached to this tool result.',
               },
             ],
             createdAt: Date.now(),
