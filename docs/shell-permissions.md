@@ -139,6 +139,24 @@ to need network or outside-workspace access. This only advances the same unsandb
 
 Approval copy must describe this as an expectation, not a confirmed sandbox failure.
 
+Some sandboxed failures come from a broker or helper that does not increment the OS sandbox's
+violation counter. After a non-zero attempt, `run_shell` may recognise the bounded denial signatures
+for a Git network read, GitHub CLI config access, or Socket Firewall binary preparation and offer the
+same one-time unsandboxed retry. Command output is untrusted evidence: a signature can open that
+approval prompt, but cannot approve the retry: neither Guarded YOLO nor the deterministic shell
+auto-approval classifier may answer it. An unattended container may retry either kind inside the
+same disposable guest because that does not escape to the host. Reactive elevation is only available
+when the failed attempt actually ran inside the project sandbox; an attempt already routed or
+approved outside is never repeated under a misleading second “outside the sandbox” retry.
+
+A recognised denial is remembered in memory for that exact operation and thread only after its
+escalation was approved; declining leaves no cache entry. A later matching operation can move the
+same approval question before the sandboxed probe; it does not authorize the command, persist across
+app restarts, or generalise from (for example) `git fetch` to `git push`. Because the cache originated
+in forgeable command output, Guarded YOLO and deterministic shell auto-approval must still show that
+question; only an unattended container may advance it without a person while staying inside the same
+guest.
+
 ## Read access outside the project
 
 A command that only reads fully-accounted-for paths outside the project receives the narrower

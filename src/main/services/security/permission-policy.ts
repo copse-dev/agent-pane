@@ -560,7 +560,13 @@ export function shellExpectedBlockEscalation(
 export function shellSandboxFailureShouldOfferUnsandboxedRetry(
   command: string,
   workspaceRoot: string | null,
+  ranOutsideSandbox: boolean,
 ): boolean {
+  // A reactive elevation is meaningful only after a contained attempt. Trusted
+  // routing, an up-front approval, and other outside-sandbox paths already made
+  // the requested escape; repeating the identical command cannot fix a sandbox
+  // denial and would produce a misleading second approval.
+  if (ranOutsideSandbox) return false
   const analysis = analyzeShellCommand(command, workspaceRoot)
   // sandbox/ambiguous commands ran *inside* seatbelt, so a sandbox-caused failure is
   // a genuine block worth retrying outside (e.g. `gh` denied network, Playwright FS).
