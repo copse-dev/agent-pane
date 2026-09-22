@@ -21,6 +21,40 @@ describe('ci.yml workflow invariants', () => {
     )
   })
 
+  it('does not let a cosmetic pull request edit cancel an in-flight run', () => {
+    // Subscribing to `edited` for retargets also subscribes to title and body
+    // edits, which arrive in the PR's own concurrency group mid-run. Cancelling
+    // there is not a wasted run but a red one: since #2722 `ci-passed` turns a
+    // cancelled run into an explicit failure rather than a skip, so a
+    // description edit left a red `CI Passed` on a SHA that had been green.
+    //
+    // Truth table the expression has to hold, under GitHub's documented casting
+    // (Null -> 0, Object -> NaN, and NaN equals nothing):
+    //
+    //   schedule                      -> false, the nightly never cancels
+    //   push / synchronize / opened   -> true,  `action` is null or not 'edited'
+    //   edited WITH    changes.base   -> true,  a retarget invalidates the run
+    //   edited WITHOUT changes.base   -> false, cosmetic, leave the run alone
+    const concurrency = workflow.slice(
+      workflow.indexOf('\nconcurrency:'),
+      workflow.indexOf('\njobs:'),
+    )
+    assert.ok(concurrency, 'expected a top-level `concurrency:` block in ci.yml')
+    const clause = concurrency.match(/cancel-in-progress: (>-\n(?: {4}.+\n)+|.+\n)/)?.[1]
+    assert.ok(clause, 'expected `cancel-in-progress` on the concurrency block')
+    const expression = clause.replace(/^>-\n/, '').replace(/\s+/g, ' ').trim()
+    assert.match(
+      expression,
+      /github\.event_name != 'schedule'/,
+      'a late nightly must still not cancel an in-flight tip push or PR',
+    )
+    assert.match(
+      expression,
+      /github\.event\.action != 'edited' \|\| github\.event\.changes\.base != null/,
+      'a title or body edit must not cancel a run; only a base retarget may',
+    )
+  })
+
   /**
    * A whole job block, header through to the next top-level job. The
    * `(?: {4}.*\n)+` shape used by the older pins above stops at the first line
