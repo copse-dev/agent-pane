@@ -52,8 +52,10 @@ that prompt.
 
 A contained command in a validated linked thread worktree may update that worktree's own Git
 administration plus the shared object, ref, reflog, and atomic `packed-refs.lock` /
-`packed-refs.new` paths. Shared Git configuration, hooks, and sibling worktree administration remain
-outside its writable surface.
+`packed-refs.new` paths. Linux must mount the common Git directory as the atomic rename boundary
+because bubblewrap ignores missing file grants; it re-binds configuration, hooks, primary checkout
+metadata, and discovered sibling worktree administration read-only. Those protected paths remain
+outside the writable surface on every platform.
 
 Agent execution still rejects a detached thread checkout. Terminal creation has one recovery-only
 fallback: main must validate the persisted checkout path, Git registration, repository identity, and

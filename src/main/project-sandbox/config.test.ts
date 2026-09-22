@@ -380,7 +380,11 @@ describe('workspaceSandboxOverlay', () => {
       assert.ok(allowRead.includes(join(registration.commonGitDir, 'HEAD')))
       assert.ok(allowWrite.includes(join(registration.commonGitDir, 'objects/**')))
       assert.ok(allowWrite.includes(join(registration.commonGitDir, 'refs/**')))
-      assert.ok(!allowWrite.includes(registration.commonGitDir))
+      assert.equal(
+        allowWrite.includes(registration.commonGitDir),
+        !LISTING_ENTRIES,
+        'Linux needs the common directory for packed-refs atomic rename',
+      )
       assert.ok(
         !allowWrite.some((path) => path === siblingGitDir || path.startsWith(siblingGitDir)),
       )
@@ -389,7 +393,15 @@ describe('workspaceSandboxOverlay', () => {
       assert.ok(denyRead.includes(sibling))
       assert.ok(denyRead.includes(`${sibling}/**`))
       assert.ok(denyWrite.includes(join(registration.commonGitDir, 'config')))
+      assert.ok(denyWrite.includes(join(registration.commonGitDir, 'config.worktree')))
       assert.ok(denyWrite.includes(join(registration.commonGitDir, 'hooks/**')))
+      if (!LISTING_ENTRIES) {
+        assert.ok(denyWrite.includes(join(registration.commonGitDir, 'HEAD')))
+        assert.ok(denyWrite.includes(join(registration.commonGitDir, 'index')))
+        assert.ok(denyWrite.includes(join(registration.commonGitDir, 'info/**')))
+        assert.ok(denyWrite.includes(siblingGitDir))
+        assert.ok(denyWrite.includes(`${siblingGitDir}/**`))
+      }
       // Linked worktrees load hooks from commonGitDir/hooks, never from their
       // per-worktree admin directory. Denying the nonexistent latter path makes
       // Linux bubblewrap abort while trying to create a read-only mount point.

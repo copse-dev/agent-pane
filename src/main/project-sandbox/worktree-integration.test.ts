@@ -142,6 +142,28 @@ describe('linked-worktree sandbox integration', () => {
     assert.notEqual(writeHook.code, 0)
     assert.equal(existsSync(hookPath), false)
 
+    const primaryHeadPath = join(registration.commonGitDir, 'HEAD')
+    const primaryHeadBefore = await readFile(primaryHeadPath)
+    const writePrimaryHead = await runSandboxed(
+      process.execPath,
+      ['-e', 'require("node:fs").writeFileSync(process.argv[1], "blocked")', primaryHeadPath],
+      nested,
+    )
+    assert.notEqual(writePrimaryHead.code, 0)
+    assert.deepEqual(await readFile(primaryHeadPath), primaryHeadBefore)
+
+    const siblingGitDir = registration.siblingGitDirs[0]
+    assert.ok(siblingGitDir)
+    const siblingHead = join(siblingGitDir, 'HEAD')
+    const siblingHeadBefore = await readFile(siblingHead)
+    const writeSiblingHead = await runSandboxed(
+      process.execPath,
+      ['-e', 'require("node:fs").writeFileSync(process.argv[1], "blocked")', siblingHead],
+      nested,
+    )
+    assert.notEqual(writeSiblingHead.code, 0)
+    assert.deepEqual(await readFile(siblingHead), siblingHeadBefore)
+
     const readSibling = await runSandboxed(
       process.execPath,
       [
