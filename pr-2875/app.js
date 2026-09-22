@@ -71783,8 +71783,14 @@ function reasoningDisclosureTitle(live) {
 }
 function setReasoningDisclosureTitle(details, live) {
   const title = details.querySelector(".message-reasoning-title");
-  if (title) title.textContent = reasoningDisclosureTitle(live);
+  const label = reasoningDisclosureTitle(live);
+  if (title && title.textContent !== label) title.textContent = label;
   details.classList.toggle("message-reasoning-live", live);
+  if (!live) {
+    const textEl = details.querySelector(".message-reasoning-text");
+    const state = textEl && reasoningRenders.get(textEl);
+    if (textEl && state?.live) renderReasoningText(textEl, state.text, false, state.blocks);
+  }
 }
 function isReasoningDisclosureLive(thread, msg) {
   if (!thread || thread.status !== "running") return false;
@@ -71842,7 +71848,7 @@ function renderUserTranscript(host, content, attachments, api2) {
 function countChipPlaceholders(text2) {
   return text2.split(CHIP_CHAR).length - 1;
 }
-function buildReasoningEl(reasoning, open2, live, blocks = []) {
+function buildReasoningEl(reasoning, open2, live, blocks = emptyReasoningBlocks) {
   const details = el("details", {
     class: `message-reasoning${live ? " message-reasoning-live" : ""}`,
     open: open2
@@ -71858,17 +71864,35 @@ function buildReasoningEl(reasoning, open2, live, blocks = []) {
     el("span", { class: "message-reasoning-title" }, reasoningDisclosureTitle(live))
   );
   const text2 = el("div", { class: "message-reasoning-text" });
-  renderReasoningText(text2, reasoning, blocks);
+  renderReasoningText(text2, reasoning, live, blocks);
   summary.addEventListener("click", () => {
     details.dataset["userToggled"] = "1";
   });
   details.append(summary, text2);
   return details;
 }
-function renderReasoningText(el3, text2, blocks = []) {
-  el3.innerHTML = renderMarkdown(text2);
-  const richContent = createAcpContentBlocks(blocks, "reasoning");
-  if (richContent) el3.append(richContent);
+function renderReasoningText(el3, text2, live, blocks = emptyReasoningBlocks) {
+  const previous = reasoningRenders.get(el3);
+  const markdownChanged = previous?.text !== text2 || previous.live !== live;
+  const blocksChanged = previous?.blocks !== blocks;
+  if (!markdownChanged && !blocksChanged) return;
+  let renderer = previous?.renderer ?? null;
+  if (markdownChanged) {
+    if (live) {
+      renderer ??= new StreamingMarkdownRenderer(el3);
+      renderer.update(text2);
+    } else {
+      renderer = null;
+      el3.innerHTML = renderMarkdown(text2);
+    }
+  }
+  let richContent = previous?.richContent ?? null;
+  if (blocksChanged) {
+    richContent?.remove();
+    richContent = createAcpContentBlocks(blocks, "reasoning");
+  }
+  if (richContent && richContent.parentElement !== el3) el3.append(richContent);
+  reasoningRenders.set(el3, { text: text2, blocks, live, renderer, richContent });
 }
 function syncReasoningEl(msgEl, msg, live) {
   const body = msgEl.querySelector(".message-body");
@@ -71888,7 +71912,7 @@ function syncReasoningEl(msgEl, msg, live) {
   } else {
     if (details.parentElement !== host) host.prepend(details);
     const textEl = details.querySelector(".message-reasoning-text");
-    if (textEl) renderReasoningText(textEl, msg.reasoning ?? "", msg.reasoningBlocks);
+    if (textEl) renderReasoningText(textEl, msg.reasoning ?? "", live, msg.reasoningBlocks);
     setReasoningDisclosureTitle(details, live);
   }
   if (!details.dataset["userToggled"] && !msg.content.trim()) details.open = true;
@@ -71906,7 +71930,7 @@ function syncNestedRollupReasoning(card, msgEl, reasoning, reasoningBlocks, live
     details = buildReasoningEl(reasoning ?? "", true, live, reasoningBlocks);
   } else {
     const textEl = details.querySelector(".message-reasoning-text");
-    if (textEl) renderReasoningText(textEl, reasoning ?? "", reasoningBlocks);
+    if (textEl) renderReasoningText(textEl, reasoning ?? "", live, reasoningBlocks);
     setReasoningDisclosureTitle(details, live);
   }
   if (details.parentElement !== rollupBody) rollupBody.prepend(details);
@@ -71932,7 +71956,7 @@ function syncRunStepReasoning(card, run2, liveStepId) {
       continue;
     }
     const textEl = details.querySelector(".message-reasoning-text");
-    if (textEl) renderReasoningText(textEl, step.reasoning ?? "", step.reasoningBlocks);
+    if (textEl) renderReasoningText(textEl, step.reasoning ?? "", live, step.reasoningBlocks);
     setReasoningDisclosureTitle(details, live);
   }
 }
@@ -73185,6 +73209,9 @@ function mountConversation(root, store2, api2) {
         });
       } else {
         setActivity(null);
+        list.querySelectorAll(".message-reasoning-live").forEach((details) => {
+          setReasoningDisclosureTitle(details, false);
+        });
         const last = getThreadById(store2, tid)?.messages.at(-1);
         if (last?.role === "assistant") renderMessageTurnRecovery(tid, last.id);
       }
@@ -73231,7 +73258,7 @@ function attachCopyButton(body, msgId, store2) {
   });
   body.append(copyBtn);
 }
-var lazyToolCardBodies, toolResultContentSignatures, streamingRenderers, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolCardKeys, toolCardSignatures, toolGroupItemSignatures, SCROLL_PIN_THRESHOLD_PX, USER_SCROLL_UP_DEBOUNCE_MS, TOOL_AUTO_REVEAL_DELAY_MS, TOOL_AUTO_REVEAL_MIN_DWELL_MS, TOOL_AUTO_COMPACT_DELAY_MS, INITIAL_RENDER_WINDOW, BACKFILL_CHUNK_SIZE;
+var lazyToolCardBodies, toolResultContentSignatures, streamingRenderers, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolCardKeys, toolCardSignatures, toolGroupItemSignatures, emptyReasoningBlocks, reasoningRenders, SCROLL_PIN_THRESHOLD_PX, USER_SCROLL_UP_DEBOUNCE_MS, TOOL_AUTO_REVEAL_DELAY_MS, TOOL_AUTO_REVEAL_MIN_DWELL_MS, TOOL_AUTO_COMPACT_DELAY_MS, INITIAL_RENDER_WINDOW, BACKFILL_CHUNK_SIZE;
 var init_conversation = __esm({
   "src/renderer/views/conversation.ts"() {
     init_helpers();
@@ -73298,6 +73325,8 @@ var init_conversation = __esm({
     toolCardKeys = /* @__PURE__ */ new WeakMap();
     toolCardSignatures = /* @__PURE__ */ new WeakMap();
     toolGroupItemSignatures = /* @__PURE__ */ new WeakMap();
+    emptyReasoningBlocks = [];
+    reasoningRenders = /* @__PURE__ */ new WeakMap();
     SCROLL_PIN_THRESHOLD_PX = 48;
     USER_SCROLL_UP_DEBOUNCE_MS = 150;
     TOOL_AUTO_REVEAL_DELAY_MS = 300;
