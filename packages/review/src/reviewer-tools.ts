@@ -88,17 +88,28 @@ function candidateFindingParameters(): Record<string, unknown> {
   return {
     type: 'object',
     properties: {
-      path: { type: 'string' },
-      startLine: { type: 'integer' },
-      endLine: { type: 'integer' },
+      path: { type: 'string', minLength: 1 },
+      startLine: { type: 'integer', minimum: 1 },
+      endLine: { type: 'integer', minimum: 1 },
       class: { type: 'string', enum: [...FINDING_CLASSES] },
       severity: { type: 'string', enum: [...FINDING_SEVERITIES] },
       confidence: { type: 'string', enum: [...FINDING_CONFIDENCES] },
-      claim: { type: 'string', description: 'One sentence, falsifiable' },
-      reason: { type: 'string', description: 'Why these lines are wrong' },
+      claim: {
+        type: 'string',
+        minLength: 8,
+        maxLength: 400,
+        description: 'One sentence, falsifiable',
+      },
+      reason: {
+        type: 'string',
+        minLength: 8,
+        maxLength: 1_200,
+        description: 'Why these lines are wrong',
+      },
       commandCallIds: {
         type: 'array',
         items: { type: 'string' },
+        maxItems: 4,
         description: 'Ids of run_command calls whose output demonstrates the defect',
       },
     },
@@ -116,10 +127,14 @@ function finishReviewTool(requireFindings: boolean): LLMTool {
       properties: {
         checked: {
           type: 'string',
+          minLength: 8,
+          maxLength: 800,
           description: 'Concise account of the files, callers, tests, or boundaries inspected',
         },
         couldNotVerify: {
           type: 'string',
+          minLength: 2,
+          maxLength: 800,
           description: 'Material uncertainty or unverified work; use "Nothing" when there was none',
         },
         findings: {
@@ -252,9 +267,14 @@ const runCommandArgs = decodeWithSchema(
   }),
 )
 const decodeCandidate = decodeWithSchema(candidateFindingSchema)
-const decodeClosure = decodeWithSchema(reviewClosureSchema)
-
 class ToolInputError extends Error {}
+
+function describeClosureValidation(error: z.ZodError): string {
+  return error.issues
+    .slice(0, 6)
+    .map((issue) => `${issue.path.join('.') || 'arguments'}: ${issue.message}`)
+    .join('; ')
+}
 
 function cap(text: string): string {
   if (text.length <= MAX_TOOL_OUTPUT_CHARS) return text
@@ -296,6 +316,8 @@ export interface ReviewerToolExecutor {
   reported(): readonly ReportedCandidate[]
   /** The model's explicit clean-or-findings completion attestation. */
   completion(): ReviewCompletion | null
+  /** Why the last finish_review call was rejected. */
+  completionError(): string | null
   /** Every `run_command` result, by tool-call id, for evidence. */
   commandRuns(): ReadonlyMap<string, CellCommandResult>
 }
@@ -304,6 +326,7 @@ export function createReviewerToolExecutor(host: ReviewerToolHost): ReviewerTool
   const reported: ReportedCandidate[] = []
   const commandRuns = new Map<string, CellCommandResult>()
   let completion: ReviewCompletion | null = null
+  let completionError: string | null = null
   const root = jailPath(host.headCheckout, '.')
 
   function readSource(path: string): Promise<string> {
@@ -453,20 +476,30 @@ export function createReviewerToolExecutor(host: ReviewerToolHost): ReviewerTool
         return `Recorded finding ${String(reported.length)} at ${candidate.path}:${String(candidate.startLine)}.`
       }
       case 'finish_review': {
-        const input = decodeClosure(args)
-        if (input === null) {
+        const parsed = reviewClosureSchema.safeParse(args)
+        if (!parsed.success) {
+          const validationError = describeClosureValidation(parsed.error)
+          completionError = validationError
           throw new ToolInputError(
-            'finish_review needs { checked, couldNotVerify, findings? }; use "Nothing" and [] when everything was verified',
+            `finish_review needs { checked, couldNotVerify, findings? }; validation failed: ${validationError}`,
           )
         }
+        const input = parsed.data
         // Validate the whole closure before recording any of it. A malformed
         // later candidate must not leave a half-applied review that duplicates
         // findings when the model retries the tool call.
-        const closureFindings = await Promise.all(
-          input.findings.map((candidate) => prepareCandidate(candidate, toolCallId)),
-        )
+        let closureFindings: ReportedCandidate[]
+        try {
+          closureFindings = await Promise.all(
+            input.findings.map((candidate) => prepareCandidate(candidate, toolCallId)),
+          )
+        } catch (err) {
+          completionError = errorMessage(err)
+          throw err
+        }
         reported.push(...closureFindings)
         completion = { checked: input.checked, couldNotVerify: input.couldNotVerify }
+        completionError = null
         return 'Review completion recorded. Stop now.'
       }
       default:
@@ -486,6 +519,7 @@ export function createReviewerToolExecutor(host: ReviewerToolHost): ReviewerTool
     },
     reported: () => reported,
     completion: () => completion,
+    completionError: () => completionError,
     commandRuns: () => commandRuns,
   }
 }

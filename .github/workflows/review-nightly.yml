@@ -268,7 +268,8 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --pr "$PR_NUMBER" \
             --json findings.json \
-            --sarif findings.sarif
+            --sarif findings.sarif \
+            --events findings.events.jsonl
 
       - uses: actions/upload-artifact@v7
         if: always()
@@ -277,5 +278,6 @@ jobs:
           path: |
             findings.json
             findings.sarif
+            findings.events.jsonl
           retention-days: 30
           if-no-files-found: ignore
