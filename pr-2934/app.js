@@ -22099,15 +22099,26 @@ function addMessage(store2, threadId, role, content = "", images, attachments, o
     toolCalls: [],
     createdAt: Date.now()
   };
+  const isHumanPrompt = isHumanUserPrompt(message2);
   patchThreadAnywhere(store2, threadId, (t2) => ({
     ...t2,
     messages: [...t2.messages, message2],
     // The sidebar sorts on this and never reads transcripts, so it has to be
     // recorded as the prompt lands rather than derived at display time.
-    ...isHumanUserPrompt(message2) ? { lastPromptAt: message2.createdAt } : {},
+    ...isHumanPrompt ? { lastPromptAt: message2.createdAt } : {},
     updatedAt: Date.now()
   }));
+  let reorderedActiveThreads = false;
+  if (isHumanPrompt) {
+    const { threads } = store2.getState();
+    if (threads.some((thread2) => thread2.id === threadId)) {
+      const sortedThreads = sortThreadsNewestFirst(threads);
+      reorderedActiveThreads = sortedThreads.some((thread2, index) => thread2 !== threads[index]);
+      if (reorderedActiveThreads) store2.setState({ threads: sortedThreads });
+    }
+  }
   store2.emit("message_added", threadId, id);
+  if (reorderedActiveThreads) store2.emit("threads_changed");
   const thread = store2.getState().threads.find((t2) => t2.id === threadId);
   if (thread && thread.messages.length === 1) {
     pruneBlankThreads(store2, /* @__PURE__ */ new Set([threadId]));
@@ -22195,6 +22206,22 @@ function addMessageCanvasArtefact(store2, messageId, artefact) {
     message2.canvasArtefacts = [...message2.canvasArtefacts ?? [], artefact];
   });
   store2.emit("message_canvas_artefacts_changed", messageId);
+}
+function addMessageVisualEvidence(store2, messageId, toolCallId, evidence) {
+  const loc = locateMessage(store2, messageId);
+  if (!loc) return;
+  const existing = new Set((loc.message.visualEvidence ?? []).map((item) => item.id));
+  const additions = evidence.filter((item) => !existing.has(item.id)).map((item) => ({
+    ...item,
+    toolCallId,
+    assets: item.assets.map((asset) => ({
+      ...asset,
+      source: { ...asset.source }
+    }))
+  }));
+  if (additions.length === 0) return;
+  loc.message.visualEvidence = [...loc.message.visualEvidence ?? [], ...additions];
+  store2.emit("message_visual_evidence_changed", messageId);
 }
 function setMessageCommandSummary(store2, messageId, commandSummary) {
   updateMessage(store2, messageId, (m2) => {
@@ -23199,6 +23226,10 @@ var init_tool_display = __esm({
       browser_click: { running: "Clicking element", done: "Clicked element" },
       browser_type: { running: "Typing text", done: "Typed text" },
       browser_tabs: { running: "Listing browser tabs", done: "Listed browser tabs" },
+      present_visual_evidence: {
+        running: "Presenting visual evidence",
+        done: "Presented visual evidence"
+      },
       git_status: { running: "Checking git status", done: "Checked git status" },
       git_diff: { running: "Viewing git diff", done: "Viewed git diff" },
       git_log: { running: "Viewing git log", done: "Viewed git log" },
@@ -23254,7 +23285,8 @@ var init_tool_display = __esm({
           "browser_screenshot",
           "browser_click",
           "browser_type",
-          "browser_tabs"
+          "browser_tabs",
+          "present_visual_evidence"
         ],
         label: { running: "Using browser", done: "Used browser" }
       },
@@ -26594,7 +26626,7 @@ form.addEventListener('submit', (event) => {
           chunk: {
             type: "tool_result",
             toolCallId: "exec-d06a3ecf-21ee-4e84-98cd-59d0f0405a64",
-            result: "Saved screenshot of tab-1 to ~/debugging/agent-pane/.wdio-eval-userdata-a3a2d66b-7G38gL/browser-screenshots/tab-1-1786277869636.png",
+            result: 'Captured a 1280\xD7720 PNG of tab-1 \u2014 "Crumb & Bloom \u2014 Coming Soon".\nSource: http://localhost:61025/index.html\nCapture handle (thread-scoped and short-lived): capture_22222222-2222-4222-8222-222222222222\nThe screenshot is attached to this tool result.',
             isError: false,
             resultFormat: "markdown"
           },
@@ -27675,6 +27707,45 @@ var init_demo_scenarios = __esm({
         vncDiscoveredPorts: [5900, 5901, 5902]
       },
       {
+        id: "inline-thread-reference",
+        label: "Inline thread reference chip geometry",
+        project: project("demo-inline-thread-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off"
+        },
+        threads: [
+          {
+            id: "demo-inline-thread-active",
+            title: "Compare thread context",
+            status: "idle",
+            messages: [
+              {
+                id: "demo-inline-thread-user",
+                role: "user",
+                content: "Earlier: \uFFFC confirmed the current outline.",
+                attachments: [{ kind: "thread", label: "Existing thread reference" }],
+                toolCalls: [],
+                createdAt: FIXED_TIME
+              }
+            ],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          },
+          {
+            id: "demo-inline-thread-reference",
+            title: "TypeSafe inference",
+            status: "idle",
+            messages: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 6e4,
+            updatedAt: FIXED_TIME - 6e4
+          }
+        ]
+      },
+      {
         id: "settings-footer",
         label: "Settings scroll + sticky footer geometry",
         project: project("demo-settings-footer-project"),
@@ -28214,9 +28285,7 @@ function createDemoApi(scenario, options = {}) {
         }
         emitChunk(threadId, {
           type: "text",
-          text: `Demo response to: ${prompt}
-
-This response is streamed through the real renderer event path.`
+          text: "The renderer receives each response chunk, appends it to the conversation, and marks the turn complete when streaming ends."
         });
         emitChunk(threadId, {
           type: "usage",
@@ -28436,7 +28505,18 @@ This response is streamed through the real renderer event path.`
       // The demo has no provider history sidecar to inherit; the forked thread's
       // transcript copy (which the renderer owns) is the whole demo story.
       fork: () => resolved({ source: "empty", messageCount: 0 }),
-      catalog: emptyArray,
+      catalog: () => resolved(
+        threads.map((thread) => ({
+          id: thread.id,
+          title: thread.title,
+          createdAt: thread.createdAt,
+          updatedAt: thread.updatedAt,
+          digest: thread.messages.at(-1)?.content ?? "",
+          path: thread.id,
+          spinePath: `/demo/${scenario.project.id}/${thread.id}/events.jsonl`,
+          prRefs: []
+        }))
+      ),
       listOrphans: emptyArray
     },
     openRouter: { models: emptyArray },
@@ -28509,6 +28589,12 @@ This response is streamed through the real renderer event path.`
       onUiScaleZoomIn: subscribe,
       onUiScaleZoomOut: subscribe,
       onUiScaleReset: subscribe
+    },
+    classifiers: {
+      list: emptyArray,
+      save: unsupported,
+      remove: unsupported,
+      test: unsupported
     },
     settings: {
       get: (key) => resolved(settings.get(key)),
@@ -29625,6 +29711,7 @@ function createStore(initial) {
     message_reasoning: /* @__PURE__ */ new Set(),
     message_acp_content: /* @__PURE__ */ new Set(),
     message_canvas_artefacts_changed: /* @__PURE__ */ new Set(),
+    message_visual_evidence_changed: /* @__PURE__ */ new Set(),
     message_done: /* @__PURE__ */ new Set(),
     tool_call_started: /* @__PURE__ */ new Set(),
     tool_call_updated: /* @__PURE__ */ new Set(),
@@ -32705,10 +32792,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 29.6,
+          value: 29.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'minimax-m3', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'minimax-m3', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "QwQ-32B-Preview": [
@@ -32747,10 +32834,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 27.8,
+          value: 26.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'agnes-2-5-pro-alpha', fetched 2026-09-15",
-          asOf: "2026-09-15"
+          source: "Artificial Analysis API (index v4.3), model 'agnes-2-5-pro-alpha', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "agnes-2-5-pro-beta": [
@@ -33063,10 +33150,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 17.6,
+          value: 16.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-4-5-haiku-reasoning', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'claude-4-5-haiku-reasoning', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "claude-4-5-sonnet": [
@@ -33091,10 +33178,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 21.2,
+          value: 20.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-4-5-sonnet-thinking', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'claude-4-5-sonnet-thinking', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "claude-4-opus": [
@@ -33161,10 +33248,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 49.7,
+          value: 49.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-fable-5', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'claude-fable-5', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "claude-fable-5-1": [
@@ -33185,18 +33272,18 @@ var init_model_intellect_generated = __esm({
       ],
       "claude-fable-5-1-low": [
         {
-          value: 47,
+          value: 46.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-fable-5-1-low', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'claude-fable-5-1-low', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "claude-fable-5-1-medium": [
         {
-          value: 49.1,
+          value: 48.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-fable-5-1-medium', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'claude-fable-5-1-medium', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "claude-fable-5-1-xhigh": [
@@ -33327,10 +33414,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 42,
+          value: 41.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-opus-4-8', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'claude-opus-4-8', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "claude-opus-5": [
@@ -33341,10 +33428,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 50.7,
+          value: 50.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-opus-5', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'claude-opus-5', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "claude-opus-5-high": [
@@ -33355,10 +33442,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 48.2,
+          value: 48.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-opus-5-high', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'claude-opus-5-high', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "claude-opus-5-low": [
@@ -33369,10 +33456,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 39.8,
+          value: 39.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-opus-5-low', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'claude-opus-5-low', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "claude-opus-5-medium": [
@@ -33383,10 +33470,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 45.1,
+          value: 44.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-opus-5-medium', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'claude-opus-5-medium', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "claude-opus-5-xhigh": [
@@ -33425,10 +33512,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 30.5,
+          value: 30.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-sonnet-4-6-adaptive', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'claude-sonnet-4-6-adaptive', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "claude-sonnet-4-6-non-reasoning-low-effort": [
@@ -33453,34 +33540,34 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 38.4,
+          value: 38.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-sonnet-5', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'claude-sonnet-5', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "claude-sonnet-5-high": [
         {
-          value: 32,
+          value: 31.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-sonnet-5-high', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'claude-sonnet-5-high', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "claude-sonnet-5-low": [
         {
-          value: 24.7,
+          value: 24.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-sonnet-5-low', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'claude-sonnet-5-low', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "claude-sonnet-5-medium": [
         {
-          value: 28.4,
+          value: 28.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-sonnet-5-medium', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'claude-sonnet-5-medium', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "claude-sonnet-5-non-reasoning": [
@@ -33491,18 +33578,18 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 28.9,
+          value: 23.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-sonnet-5-non-reasoning', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'claude-sonnet-5-non-reasoning', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "claude-sonnet-5-xhigh": [
         {
-          value: 34.7,
+          value: 34.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'claude-sonnet-5-xhigh', fetched 2026-09-15",
-          asOf: "2026-09-15"
+          source: "Artificial Analysis API (index v4.3), model 'claude-sonnet-5-xhigh', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "command-a": [
@@ -33527,10 +33614,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 13.9,
+          value: 13.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'command-a-plus', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'command-a-plus', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "command-r-03-2024": [
@@ -33863,10 +33950,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-25"
         },
         {
-          value: 15.4,
+          value: 14.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'deepseek-v3-1-terminus-reasoning', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v3-1-terminus-reasoning', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "deepseek-v3-2": [
@@ -33955,10 +34042,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 34.5,
+          value: 34.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-flash', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-flash', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "deepseek-v4-flash-0420": [
@@ -33969,10 +34056,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 24.6,
+          value: 24.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-flash-0420', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-flash-0420', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "deepseek-v4-flash-0420-high": [
@@ -33983,10 +34070,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 24.8,
+          value: 26,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-flash-0420-high', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-flash-0420-high', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "deepseek-v4-flash-0420-non-reasoning": [
@@ -34019,10 +34106,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-01"
         },
         {
-          value: 35,
+          value: 34.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-flash-vision', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-flash-vision', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "deepseek-v4-pro": [
@@ -34033,10 +34120,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 36.3,
+          value: 36,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-pro', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-pro', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "deepseek-v4-pro-0424": [
@@ -34047,10 +34134,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 30.9,
+          value: 30.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-pro-0424', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-pro-0424', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "deepseek-v4-pro-0424-high": [
@@ -34103,10 +34190,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 9.4,
+          value: 8.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'devstral-2', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'devstral-2', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "devstral-medium": [
@@ -34145,10 +34232,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 8.4,
+          value: 7.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'devstral-small-2', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'devstral-small-2', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "devstral-small-2505": [
@@ -34677,10 +34764,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 16.7,
+          value: 16.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemini-2-5-pro', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'gemini-2-5-pro', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "gemini-2-5-pro-03-25": [
@@ -34719,10 +34806,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 16,
+          value: 15.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemini-3-1-flash-lite-preview', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'gemini-3-1-flash-lite-preview', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "gemini-3-1-pro-preview": [
@@ -34733,10 +34820,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 30.4,
+          value: 29.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemini-3-1-pro-preview', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'gemini-3-1-pro-preview', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "gemini-3-5-flash": [
@@ -34747,10 +34834,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 33,
+          value: 32.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemini-3-5-flash', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'gemini-3-5-flash', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "gemini-3-5-flash-lite": [
@@ -34761,10 +34848,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 22.7,
+          value: 22.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemini-3-5-flash-lite', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'gemini-3-5-flash-lite', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "gemini-3-5-flash-medium": [
@@ -34803,10 +34890,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 34.3,
+          value: 34,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemini-3-6-flash', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'gemini-3-6-flash', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "gemini-3-7-flash": [
@@ -34817,10 +34904,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 39.4,
+          value: 39.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemini-3-7-flash', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'gemini-3-7-flash', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "gemini-3-7-flash-low": [
@@ -34853,26 +34940,26 @@ var init_model_intellect_generated = __esm({
       ],
       "gemini-3-8-flash": [
         {
-          value: 41.2,
+          value: 40.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemini-3-8-flash', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'gemini-3-8-flash', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "gemini-3-8-flash-low": [
         {
-          value: 33.8,
+          value: 33.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemini-3-8-flash-low', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'gemini-3-8-flash-low', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "gemini-3-8-flash-medium": [
         {
-          value: 40,
+          value: 39.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemini-3-8-flash-medium', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'gemini-3-8-flash-medium', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "gemini-3-flash": [
@@ -35093,10 +35180,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 15.4,
+          value: 19,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gemma-4-31b', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'gemma-4-31b', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "gemma-4-31b-non-reasoning": [
@@ -35345,10 +35432,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 26.4,
+          value: 26.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'glm-5-1', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'glm-5-1', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "glm-5-1-non-reasoning": [
@@ -35387,10 +35474,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-25"
         },
         {
-          value: 44.9,
+          value: 44.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'glm-5-3', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'glm-5-3', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "glm-5-3-flash": [
@@ -35401,10 +35488,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-01"
         },
         {
-          value: 41.9,
+          value: 41.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'glm-5-3-flash', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'glm-5-3-flash', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "glm-5-non-reasoning": [
@@ -35835,10 +35922,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 24.6,
+          value: 24.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-4-mini', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-4-mini', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "gpt-5-4-mini-medium": [
@@ -35877,10 +35964,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 21.2,
+          value: 20.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-4-nano', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-4-nano', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "gpt-5-4-nano-medium": [
@@ -35933,10 +36020,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 38.6,
+          value: 38.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-5', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-5', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "gpt-5-5-high": [
@@ -35947,10 +36034,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 37.3,
+          value: 37,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-5-high', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-5-high', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "gpt-5-5-instant-05-26": [
@@ -35975,10 +36062,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 26.8,
+          value: 26,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-5-instant-06-26', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-5-instant-06-26', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "gpt-5-5-low": [
@@ -36003,10 +36090,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 34.2,
+          value: 33.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-5-medium', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-5-medium', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "gpt-5-5-non-reasoning": [
@@ -36031,10 +36118,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 32.4,
+          value: 32.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-luna-high', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-luna-high', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "gpt-5-6-luna-low": [
@@ -36045,10 +36132,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 21.5,
+          value: 21,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-luna-low', fetched 2026-09-15",
-          asOf: "2026-09-15"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-luna-low', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "gpt-5-6-luna-medium": [
@@ -36059,10 +36146,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 25.5,
+          value: 25,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-luna-medium', fetched 2026-09-15",
-          asOf: "2026-09-15"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-luna-medium', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "gpt-5-6-luna-non-reasoning": [
@@ -36073,10 +36160,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 16.8,
+          value: 15.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-luna-non-reasoning', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-luna-non-reasoning', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "gpt-5-6-luna-xhigh": [
@@ -36087,10 +36174,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 34.8,
+          value: 34.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-luna-xhigh', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-luna-xhigh', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "gpt-5-6-sol": [
@@ -36101,10 +36188,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 47.1,
+          value: 47,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-sol', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-sol', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "gpt-5-6-sol-high": [
@@ -36115,10 +36202,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 42.5,
+          value: 42.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-sol-high', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-sol-high', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "gpt-5-6-sol-low": [
@@ -36129,10 +36216,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 33.8,
+          value: 33.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-sol-low', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-sol-low', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "gpt-5-6-sol-medium": [
@@ -36143,10 +36230,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 39.5,
+          value: 39.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-sol-medium', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-sol-medium', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "gpt-5-6-sol-non-reasoning": [
@@ -36171,10 +36258,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 44.1,
+          value: 44,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-sol-xhigh', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-sol-xhigh', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "gpt-5-6-terra": [
@@ -36185,10 +36272,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 42.3,
+          value: 42.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-terra', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-terra', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "gpt-5-6-terra-high": [
@@ -36199,10 +36286,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 34.5,
+          value: 34.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-terra-high', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-terra-high', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "gpt-5-6-terra-low": [
@@ -36213,10 +36300,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 27.9,
+          value: 27.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-terra-low', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-terra-low', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "gpt-5-6-terra-medium": [
@@ -36227,10 +36314,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 30.4,
+          value: 30.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-terra-medium', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-terra-medium', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "gpt-5-6-terra-non-reasoning": [
@@ -36241,10 +36328,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 22.3,
+          value: 20.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-terra-non-reasoning', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-terra-non-reasoning', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "gpt-5-6-terra-xhigh": [
@@ -36255,10 +36342,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 38.2,
+          value: 38,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-terra-xhigh', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-terra-xhigh', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "gpt-5-chatgpt": [
@@ -36325,10 +36412,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 17.4,
+          value: 16.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-mini', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-mini', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "gpt-5-mini-medium": [
@@ -36437,10 +36524,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 37.5,
+          value: 37.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-luna', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-luna', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "gpt-5.6-sol": [
@@ -36461,34 +36548,34 @@ var init_model_intellect_generated = __esm({
       ],
       "gpt-6-astra": [
         {
-          value: 52.8,
+          value: 52.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-6-astra', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-6-astra', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "gpt-6-astra-high": [
         {
-          value: 51,
+          value: 50.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-6-astra-high', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-6-astra-high', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "gpt-6-astra-low": [
         {
-          value: 46,
+          value: 45.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-6-astra-low', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-6-astra-low', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "gpt-6-astra-medium": [
         {
-          value: 49.7,
+          value: 49.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-6-astra-medium', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-6-astra-medium', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "gpt-6-astra-non-reasoning": [
@@ -36501,10 +36588,10 @@ var init_model_intellect_generated = __esm({
       ],
       "gpt-6-astra-xhigh": [
         {
-          value: 52.5,
+          value: 52.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-6-astra-xhigh', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-6-astra-xhigh', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "gpt-oss-120b": [
@@ -36515,10 +36602,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 12.3,
+          value: 11.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'gpt-oss-120b', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'gpt-oss-120b', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "gpt-oss-120b-low": [
@@ -36739,10 +36826,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-01"
         },
         {
-          value: 11.8,
+          value: 11.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'granite-4-2-8b', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'granite-4-2-8b', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "grok-1": [
@@ -36921,10 +37008,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 25.4,
+          value: 24.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'grok-4-3', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'grok-4-3', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "grok-4-3-low": [
@@ -36963,10 +37050,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 14.5,
+          value: 14,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'grok-4-3-non-reasoning', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'grok-4-3-non-reasoning', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "grok-4-6": [
@@ -36977,10 +37064,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 44.4,
+          value: 44.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'grok-4-6', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'grok-4-6', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "grok-4-6-low": [
@@ -36991,10 +37078,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-25"
         },
         {
-          value: 35.4,
+          value: 35.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'grok-4-6-low', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'grok-4-6-low', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "grok-4-6-medium": [
@@ -37005,10 +37092,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-25"
         },
         {
-          value: 43,
+          value: 42.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'grok-4-6-medium', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'grok-4-6-medium', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "grok-4-6-xhigh": [
@@ -37019,10 +37106,26 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-25"
         },
         {
-          value: 44.3,
+          value: 44.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'grok-4-6-xhigh', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'grok-4-6-xhigh', fetched 2026-09-22",
+          asOf: "2026-09-22"
+        }
+      ],
+      "grok-4-7": [
+        {
+          value: 46.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'grok-4-7', fetched 2026-09-22",
+          asOf: "2026-09-22"
+        }
+      ],
+      "grok-4-7-high": [
+        {
+          value: 46.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'grok-4-7-high', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "grok-4-fast": [
@@ -37061,10 +37164,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 39.1,
+          value: 38.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'grok-4-5', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'grok-4-5', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "grok-beta": [
@@ -37187,10 +37290,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 25.8,
+          value: 25.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'hy3', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'hy3', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "hy3-non-reasoning": [
@@ -37257,10 +37360,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 25.5,
+          value: 25,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'inkling', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'inkling', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "inkling-small": [
@@ -37271,10 +37374,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 26.1,
+          value: 27.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'inkling-small', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'inkling-small', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "intellect-3": [
@@ -37497,12 +37600,44 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-15"
         }
       ],
+      "k2-horizon-0-9b": [
+        {
+          value: 3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'k2-horizon-0-9b', fetched 2026-09-22",
+          asOf: "2026-09-22"
+        }
+      ],
+      "k2-horizon-3-7b": [
+        {
+          value: 15.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'k2-horizon-3-7b', fetched 2026-09-22",
+          asOf: "2026-09-22"
+        }
+      ],
       "k2-horizon-375b-a23b": [
         {
-          value: 30.8,
+          value: 30.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'k2-horizon-375b-a23b', fetched 2026-09-15",
-          asOf: "2026-09-15"
+          source: "Artificial Analysis API (index v4.3), model 'k2-horizon-375b-a23b', fetched 2026-09-22",
+          asOf: "2026-09-22"
+        }
+      ],
+      "k2-horizon-7b": [
+        {
+          value: 20.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'k2-horizon-7b', fetched 2026-09-22",
+          asOf: "2026-09-22"
+        }
+      ],
+      "k2-horizon-mova-36b-a4b": [
+        {
+          value: 25.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'k2-horizon-mova-36b-a4b', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "k2-mova-36b-mid5": [
@@ -37675,10 +37810,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 26.3,
+          value: 25.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'kimi-k2-7-code', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'kimi-k2-7-code', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "kimi-k2-thinking": [
@@ -37703,10 +37838,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 30.5,
+          value: 34.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'kimi-k3-low', fetched 2026-09-15",
-          asOf: "2026-09-15"
+          source: "Artificial Analysis API (index v4.3), model 'kimi-k3-low', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "kimi-linear-48b-a3b-instruct": [
@@ -37913,18 +38048,26 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 20.6,
+          value: 24.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'ling-3-0-flash', fetched 2026-09-15",
-          asOf: "2026-09-15"
+          source: "Artificial Analysis API (index v4.3), model 'ling-3-0-flash', fetched 2026-09-22",
+          asOf: "2026-09-22"
+        }
+      ],
+      "ling-3-0-flash-fin": [
+        {
+          value: 22.6,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'ling-3-0-flash-fin', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "ling-3-0-flash-vl": [
         {
-          value: 25,
+          value: 24.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'ling-3-0-flash-vl', fetched 2026-09-15",
-          asOf: "2026-09-15"
+          source: "Artificial Analysis API (index v4.3), model 'ling-3-0-flash-vl', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "ling-3-0-tiny": [
@@ -37935,10 +38078,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 11.9,
+          value: 15.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'ling-3-0-tiny', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'ling-3-0-tiny', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "ling-flash-2-0": [
@@ -38229,10 +38372,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 9.3,
+          value: 10,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'llama-4-maverick', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'llama-4-maverick', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "llama-4-scout": [
@@ -38243,10 +38386,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 6.5,
+          value: 8.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'llama-4-scout', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'llama-4-scout', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "llama-65b": [
@@ -38299,10 +38442,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-18"
         },
         {
-          value: 19.7,
+          value: 19.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'longcat-2-0', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'longcat-2-0', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "longcat-flash-lite": [
@@ -38383,10 +38526,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 11.5,
+          value: 13.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mercury-2', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'mercury-2', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "mi-dm-k-2-5-pro-dec28": [
@@ -38439,10 +38582,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 22.3,
+          value: 25.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mimo-v2-5-0424', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'mimo-v2-5-0424', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "mimo-v2-5-pro": [
@@ -38453,10 +38596,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 26.4,
+          value: 26,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mimo-v2-5-pro', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'mimo-v2-5-pro', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "mimo-v2-5-pro-non-reasoning": [
@@ -38471,6 +38614,14 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'mimo-v2-5-pro-non-reasoning', fetched 2026-09-11",
           asOf: "2026-09-11"
+        }
+      ],
+      "mimo-v2-6-pro": [
+        {
+          value: 46.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'mimo-v2-6-pro', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "mimo-v2-flash": [
@@ -38587,10 +38738,10 @@ var init_model_intellect_generated = __esm({
       ],
       "minicpm5-2b": [
         {
-          value: 13.1,
+          value: 12.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'minicpm5-2b', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'minicpm5-2b', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "minimax-m1-40k": [
@@ -38671,10 +38822,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 23.2,
+          value: 22.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'minimax-m2-7', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'minimax-m2-7', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "ministral-3-14b": [
@@ -38797,10 +38948,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 9.7,
+          value: 9.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mistral-large-3', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'mistral-large-3', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "mistral-medium": [
@@ -38839,10 +38990,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 9.9,
+          value: 9.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mistral-medium-3-1', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'mistral-medium-3-1', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "mistral-medium-3-5": [
@@ -38853,10 +39004,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 14.9,
+          value: 14.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mistral-medium-3-5', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'mistral-medium-3-5', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "mistral-saba": [
@@ -38909,10 +39060,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 7,
+          value: 8.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mistral-small-3-2', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'mistral-small-3-2', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "mistral-small-4": [
@@ -38923,10 +39074,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 11.5,
+          value: 11.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mistral-small-4', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'mistral-small-4', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "mistral-small-4-non-reasoning": [
@@ -38953,8 +39104,8 @@ var init_model_intellect_generated = __esm({
         {
           value: 6.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mistral-small-3', fetched 2026-09-15",
-          asOf: "2026-09-15"
+          source: "Artificial Analysis API (index v4.3), model 'mistral-small-3', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "mixtral-8x7b-instruct": [
@@ -39013,10 +39164,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 27.5,
+          value: 27,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'kimi-k2-6', fetched 2026-09-15",
-          asOf: "2026-09-15"
+          source: "Artificial Analysis API (index v4.3), model 'kimi-k2-6', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "moonshotai/kimi-k3": [
@@ -39027,10 +39178,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 43.8,
+          value: 43.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'kimi-k3', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'kimi-k3', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "motif-0714": [
@@ -39083,10 +39234,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 18.1,
+          value: 17.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'muse-glimmer', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'muse-glimmer', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "muse-spark": [
@@ -39111,10 +39262,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 34.3,
+          value: 33.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'muse-spark-1-1', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'muse-spark-1-1', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "muse-spark-1-2": [
@@ -39125,26 +39276,26 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 39.8,
+          value: 39.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'muse-spark-1-2', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'muse-spark-1-2', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "muse-spark-1-3": [
         {
-          value: 48.2,
+          value: 48.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'muse-spark-1-3', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'muse-spark-1-3', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "muse-spark-1-3-xhigh": [
         {
-          value: 45.2,
+          value: 45.1,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'muse-spark-1-3-xhigh', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'muse-spark-1-3-xhigh', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "nanbeige4-1-3b": [
@@ -39169,10 +39320,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 13.6,
+          value: 12.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'nemotron-3-5-lightning', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'nemotron-3-5-lightning', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "nemotron-3-nano-omni-30b-a3b": [
@@ -39225,10 +39376,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 12.8,
+          value: 9.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'north-mini-code', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'north-mini-code', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "nova-2-0-lite": [
@@ -39477,10 +39628,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 13.6,
+          value: 12.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'nvidia-nemotron-3-super-120b-a12b', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'nvidia-nemotron-3-super-120b-a12b', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "nvidia-nemotron-3-ultra-550b-a55b": [
@@ -39491,10 +39642,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 23.4,
+          value: 22.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'nvidia-nemotron-3-ultra-550b-a55b', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'nvidia-nemotron-3-ultra-550b-a55b', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "nvidia-nemotron-nano-12b-v2-vl": [
@@ -39863,10 +40014,10 @@ var init_model_intellect_generated = __esm({
       ],
       "quasar-438b": [
         {
-          value: 27.1,
+          value: 26.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'quasar-438b', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'quasar-438b', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "qwen-2-5-max": [
@@ -39947,10 +40098,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 18.8,
+          value: 18.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-6-35b-a3b', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-6-35b-a3b', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "qwen1.5-110b-chat": [
@@ -40101,10 +40252,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 6.4,
+          value: 8.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-14b-instruct-reasoning', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-14b-instruct-reasoning', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "qwen3-235b-a22b-instruct": [
@@ -40241,10 +40392,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 7.2,
+          value: 8.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-32b-instruct-reasoning', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-32b-instruct-reasoning', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "qwen3-4b-2507-instruct": [
@@ -40339,10 +40490,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 16.2,
+          value: 15.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-122b-a10b', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-122b-a10b', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "qwen3-5-122b-a10b-non-reasoning": [
@@ -40451,10 +40602,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 19.1,
+          value: 18.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-397b-a17b', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-5-397b-a17b', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "qwen3-5-397b-a17b-non-reasoning": [
@@ -40563,10 +40714,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 21.9,
+          value: 21.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-6-27b', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-6-27b', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "qwen3-6-27b-non-reasoning": [
@@ -40633,10 +40784,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 29.9,
+          value: 29.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-7-max', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-7-max', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "qwen3-7-plus": [
@@ -40647,10 +40798,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 25.8,
+          value: 25.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-7-plus', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-7-plus', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "qwen3-8-2-4t-a95b": [
@@ -40661,10 +40812,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-18"
         },
         {
-          value: 40,
+          value: 39.9,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-8-2-4t-a95b', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-8-2-4t-a95b', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "qwen3-8-27b": [
@@ -40675,10 +40826,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-25"
         },
         {
-          value: 33.9,
+          value: 33.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-8-27b', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-8-27b', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "qwen3-8-27b-low": [
@@ -40689,10 +40840,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-25"
         },
         {
-          value: 26.5,
+          value: 26.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-8-27b-low', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-8-27b-low', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "qwen3-8-27b-medium": [
@@ -40703,10 +40854,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-25"
         },
         {
-          value: 27.8,
+          value: 27.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-8-27b-medium', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-8-27b-medium', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "qwen3-8-27b-non-reasoning": [
@@ -40717,10 +40868,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-01"
         },
         {
-          value: 22.4,
+          value: 20.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-8-27b-non-reasoning', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-8-27b-non-reasoning', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "qwen3-8-flash-next": [
@@ -40731,10 +40882,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-01"
         },
         {
-          value: 39.9,
+          value: 39.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-8-flash-next', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-8-flash-next', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "qwen3-8-max": [
@@ -40745,10 +40896,18 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 40.3,
+          value: 45.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-8-max', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-8-max', fetched 2026-09-22",
+          asOf: "2026-09-22"
+        }
+      ],
+      "qwen3-8-max-0803": [
+        {
+          value: 40.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-8-max-0803', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "qwen3-8b-instruct": [
@@ -40773,10 +40932,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 5.2,
+          value: 7.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-8b-instruct-reasoning', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-8b-instruct-reasoning', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "qwen3-coder-30b-a3b-instruct": [
@@ -40815,10 +40974,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 10.1,
+          value: 9.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-coder-next', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-coder-next', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "qwen3-max": [
@@ -41151,10 +41310,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-18"
         },
         {
-          value: 17.3,
+          value: 16.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'ring-2-6-1t', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'ring-2-6-1t', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "ring-flash-2-0": [
@@ -41465,6 +41624,14 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-11"
         }
       ],
+      "step-5": [
+        {
+          value: 43.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'step-5', fetched 2026-09-22",
+          asOf: "2026-09-22"
+        }
+      ],
       "tiny-aya-global": [
         {
           value: 1,
@@ -41515,10 +41682,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-18"
         },
         {
-          value: 10.9,
+          value: 10.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'trinity-large-thinking', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'trinity-large-thinking', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ],
       "tulu3-405b": [
@@ -41543,10 +41710,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 34,
+          value: 33.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'glm-5-2', fetched 2026-09-15",
-          asOf: "2026-09-15"
+          source: "Artificial Analysis API (index v4.3), model 'glm-5-2', fetched 2026-09-22",
+          asOf: "2026-09-22"
         }
       ]
     };
@@ -46563,6 +46730,520 @@ var init_providers_section = __esm({
       { kind: "local", label: "A model server on this machine" },
       { kind: "agent", label: "An agent installed on this machine" }
     ];
+  }
+});
+
+// packages/llm/src/classifiers/presets.ts
+function classifierCredentialId(id) {
+  if (!/^[a-z0-9-]{1,53}$/.test(id)) throw new Error("Invalid classifier profile ID");
+  return `classifier-${id}`;
+}
+var CLASSIFIER_PRESETS;
+var init_presets = __esm({
+  "packages/llm/src/classifiers/presets.ts"() {
+    CLASSIFIER_PRESETS = [
+      {
+        id: "typesafe",
+        label: "TypeSafe / Jev",
+        model: "jev-latest",
+        timeoutMs: 6e4,
+        connection: {
+          type: "http",
+          protocol: "systemone",
+          baseUrl: "https://api.typesafe.ai/v1",
+          auth: "bearer",
+          apiKeyEnv: "TYPESAFE_API_KEY"
+        }
+      },
+      {
+        id: "kev",
+        label: "Kev (local)",
+        model: "kev-latest",
+        timeoutMs: 12e4,
+        connection: {
+          type: "http",
+          protocol: "systemone",
+          baseUrl: "http://127.0.0.1:8009/v1",
+          auth: "none"
+        }
+      },
+      {
+        id: "semif",
+        label: "SemIf (local)",
+        model: "Qwen/Qwen3.5-4B",
+        timeoutMs: 3e5,
+        connection: {
+          type: "semif",
+          executable: "semif-score",
+          backend: "torch",
+          revision: "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a",
+          mode: "direct",
+          device: "auto"
+        }
+      },
+      {
+        id: "featherless",
+        label: "Featherless / Simple Jev",
+        model: "featherless-ai/gemma-4-26B-A4B-classifier",
+        timeoutMs: 6e4,
+        connection: {
+          type: "http",
+          protocol: "featherless",
+          baseUrl: "https://api.featherless.ai/v1",
+          auth: "bearer",
+          apiKeyEnv: "FEATHERLESS_API_KEY"
+        }
+      }
+    ];
+  }
+});
+
+// src/renderer/views/setup/classifiers-section.ts
+function classifierErrorMessage(error62) {
+  const message2 = errorMessage(error62).replace(
+    /^(?:Error invoking remote method '[^']+':\s*|(?:ClassifierError|Error):\s*)+/,
+    ""
+  );
+  if (message2.startsWith("IpcValidationError:")) {
+    return "The supplied settings are invalid. Check the field values and try again.";
+  }
+  return message2 || "Classifier request failed.";
+}
+function describeResult(result) {
+  const answers = Object.entries(result.answers).map(([id, answer]) => {
+    switch (answer.type) {
+      case "choice":
+        return `${id}: ${answer.choice}`;
+      case "boolean":
+        return `${id}: ${(answer.probability * 100).toFixed(1)}% probability`;
+      case "score":
+        return `${id}: ${String(answer.score)}`;
+    }
+  });
+  return `${answers.join(" \xB7 ")} \xB7 ${String(Math.round(result.elapsedMs))} ms \xB7 ${result.model}`;
+}
+function createClassifiersSection(api2) {
+  const chips = el("div", { class: "provider-chips", "aria-label": "Classifier profiles" });
+  const formHost = el("div", { class: "provider-form-host" });
+  const status = el("p", { class: "classifier-status", role: "status", "aria-live": "polite" });
+  const root = el(
+    "fieldset",
+    { class: "classifiers-section" },
+    el("legend", {}, "Classifier connections"),
+    el(
+      "p",
+      { class: "settings-fieldset-desc" },
+      "Connect local or hosted classifiers for evals and explicit calls. Save a connection, then use Test classifier to send a small sample. Hosted tests may incur a charge."
+    ),
+    chips,
+    formHost,
+    status
+  );
+  let profiles = [];
+  let selectedId = null;
+  const drafts = /* @__PURE__ */ new Map();
+  let captureDraft;
+  const pending = /* @__PURE__ */ new Map();
+  let busy = false;
+  function renderChips() {
+    clear(chips);
+    const items = [...profiles.map((item) => item.profile), ...drafts.values()].filter(
+      (profile, index, all) => all.findIndex((item) => item.id === profile.id) === index
+    );
+    for (const profile of items) {
+      const chip2 = el(
+        "button",
+        {
+          type: "button",
+          class: "provider-chip",
+          "aria-pressed": String(profile.id === selectedId),
+          "data-classifier-id": profile.id
+        },
+        profile.label
+      );
+      chip2.classList.toggle("active", profile.id === selectedId);
+      chip2.addEventListener("click", () => {
+        if (busy) return;
+        captureDraft?.();
+        selectedId = profile.id;
+        render();
+      });
+      chips.append(chip2);
+    }
+    const add2 = el(
+      "button",
+      { type: "button", class: "provider-chip classifier-add" },
+      "+ Add classifier"
+    );
+    add2.classList.toggle("active", selectedId === null);
+    add2.addEventListener("click", () => {
+      if (busy) return;
+      captureDraft?.();
+      selectedId = null;
+      render();
+    });
+    chips.append(add2);
+  }
+  function render() {
+    renderChips();
+    clear(formHost);
+    clear(status);
+    captureDraft = void 0;
+    const saved = profiles.find((item) => item.profile.id === selectedId);
+    const profile = saved?.profile ?? drafts.get(selectedId ?? "");
+    if (!profile) {
+      const presets = el("select", { name: "classifierPreset" });
+      for (const preset of CLASSIFIER_PRESETS) {
+        presets.append(el("option", { value: preset.id }, preset.label));
+      }
+      presets.append(el("option", { value: "custom" }, "Custom compatible endpoint"));
+      const add2 = el(
+        "button",
+        { type: "button", class: "classifier-create" },
+        "Configure classifier"
+      );
+      add2.addEventListener("click", () => {
+        const preset = CLASSIFIER_PRESETS.find((item) => item.id === presets.value);
+        const id = `${preset?.id ?? "custom"}-${crypto.randomUUID().slice(0, 8)}`;
+        const draft = preset ? { ...preset, id, connection: { ...preset.connection } } : {
+          id,
+          label: "Custom classifier",
+          model: "",
+          timeoutMs: 3e4,
+          connection: { type: "http", protocol: "systemone", baseUrl: "", auth: "bearer" }
+        };
+        drafts.set(id, draft);
+        selectedId = id;
+        render();
+      });
+      formHost.append(
+        el(
+          "div",
+          { class: "provider-form" },
+          el("label", {}, "Provider", presets),
+          el("div", { class: "provider-actions" }, add2)
+        )
+      );
+      return;
+    }
+    const values = pending.get(profile.id) ?? /* @__PURE__ */ new Map();
+    const controls = /* @__PURE__ */ new Map();
+    function input2(name, value, type = "text") {
+      const control = el("input", { type, name: `classifier${name}`, autocomplete: "off" });
+      control.value = values.get(name) ?? value;
+      controls.set(name, control);
+      return control;
+    }
+    function select(name, value, options) {
+      const control = el("select", { name: `classifier${name}` });
+      for (const option of options) control.append(el("option", { value: option }, option));
+      control.value = values.get(name) ?? value;
+      controls.set(name, control);
+      return control;
+    }
+    captureDraft = () => {
+      for (const [name, control] of controls) values.set(name, control.value);
+      pending.set(profile.id, values);
+    };
+    const label = input2("Label", profile.label);
+    const model = input2("Model", profile.model);
+    const timeout = input2("Timeout", String(profile.timeoutMs / 1e3), "number");
+    timeout.min = "0.1";
+    timeout.step = "0.001";
+    timeout.max = "600";
+    const form = el(
+      "div",
+      { class: "provider-form classifier-form" },
+      el("label", {}, "Connection name", label),
+      el("label", {}, "Model ID", model),
+      el("span", { class: "field-hint" }, "Profile ID for evals: ", el("code", {}, profile.id))
+    );
+    const read = (name) => controls.get(name)?.value.trim() ?? "";
+    const advanced = el(
+      "details",
+      { class: "provider-advanced" },
+      el("summary", {}, "Connection options")
+    );
+    let key;
+    let removeKey;
+    if (profile.connection.type === "http") {
+      let normalizedUrl = function(value) {
+        try {
+          return new URL(value).href.replace(/\/+$/, "");
+        } catch {
+          return value.trim().replace(/\/+$/, "");
+        }
+      };
+      const connection = profile.connection;
+      const protocol = select("Protocol", connection.protocol, ["systemone", "featherless"]);
+      const url2 = input2("Url", connection.baseUrl, "url");
+      const auth = select("Auth", connection.auth, ["none", "bearer"]);
+      const env = input2("KeyEnv", connection.apiKeyEnv ?? "");
+      key = input2("Key", "", "password");
+      const destinationNote = el("span", {
+        class: "field-hint classifier-destination-note",
+        hidden: true
+      });
+      const updateDestinationNote = () => {
+        destinationNote.hidden = !saved || normalizedUrl(url2.value) === normalizedUrl(connection.baseUrl) && protocol.value === connection.protocol && auth.value === connection.auth;
+        if (key) {
+          key.placeholder = !destinationNote.hidden ? "Enter a key for the new connection" : saved?.hasKey ? saved.encrypted === null ? "Leave blank to use the environment key" : "Leave blank to keep the saved key" : "API key";
+        }
+        destinationNote.textContent = auth.value === "bearer" ? "Saving this connection change removes any saved key. Enter a replacement key or name an environment variable before testing." : "Saving this connection change removes any saved key.";
+      };
+      url2.addEventListener("input", updateDestinationNote);
+      url2.addEventListener("change", updateDestinationNote);
+      protocol.addEventListener("change", updateDestinationNote);
+      auth.addEventListener("change", updateDestinationNote);
+      updateDestinationNote();
+      const keyStatus = el(
+        "span",
+        { class: "field-hint classifier-key-status" },
+        saved?.hasKey ? saved.encrypted === true ? "Key saved \xB7 encrypted by OS keychain" : saved.encrypted === false ? "Key saved \xB7 stored unencrypted" : "Key available from environment" : "No key saved"
+      );
+      removeKey = el("input", { type: "checkbox", name: "classifierRemoveKey" });
+      removeKey.checked = values.get("RemoveKey") === "true";
+      const remove2 = el("label", { class: "checkbox-label" }, removeKey, " Remove saved key");
+      remove2.hidden = !saved?.hasKey || saved.encrypted === null;
+      removeKey.addEventListener(
+        "change",
+        () => values.set("RemoveKey", String(removeKey?.checked))
+      );
+      const credentials = el(
+        "div",
+        { class: "provider-field-group classifier-credentials" },
+        el("label", {}, "API key", key),
+        keyStatus,
+        remove2
+      );
+      const envField = el(
+        "label",
+        {},
+        "Environment variable (optional)",
+        env,
+        el(
+          "span",
+          { class: "field-hint" },
+          "Custom connections use COPSE_CLASSIFIER_* variables. TYPESAFE_API_KEY and FEATHERLESS_API_KEY work only with their matching official endpoints. Leave blank to use a saved key."
+        )
+      );
+      const updateAuth = () => {
+        envField.hidden = auth.value !== "bearer";
+        credentials.hidden = auth.value !== "bearer";
+      };
+      auth.addEventListener("change", updateAuth);
+      updateAuth();
+      form.append(el("label", {}, "Base URL", url2), destinationNote, credentials);
+      advanced.append(
+        el("label", {}, "API protocol", protocol),
+        el("label", {}, "Authentication", auth),
+        envField
+      );
+    } else {
+      const connection = profile.connection;
+      const backend = select("Backend", connection.backend, ["torch", "mlx", "llamacpp"]);
+      const gguf = el("label", {}, "GGUF model path", input2("Gguf", connection.gguf ?? ""));
+      const updateBackend = () => {
+        gguf.hidden = backend.value !== "llamacpp";
+      };
+      backend.addEventListener("change", updateBackend);
+      updateBackend();
+      form.append(el("label", {}, "Scorer executable", input2("Executable", connection.executable)));
+      advanced.append(
+        el("label", {}, "Backend", backend),
+        el("label", {}, "Model revision", input2("Revision", connection.revision)),
+        el(
+          "label",
+          {},
+          "Scoring mode",
+          select("Mode", connection.mode, ["direct", "serial", "shared"])
+        ),
+        gguf,
+        el(
+          "span",
+          { class: "field-hint" },
+          "Uses your installed SemIf scorer and cached or local weights. Test does not install a runtime or download models."
+        )
+      );
+    }
+    advanced.append(el("label", {}, "Timeout (seconds)", timeout));
+    form.append(advanced);
+    const save = el("button", { type: "button", class: "classifier-save" }, "Save classifier");
+    const test = el(
+      "button",
+      { type: "button", class: "classifier-test", disabled: !saved },
+      "Test classifier"
+    );
+    const remove = el(
+      "button",
+      { type: "button", class: "classifier-remove" },
+      saved ? "Remove classifier" : "Discard draft"
+    );
+    const actions = el("div", { class: "provider-actions" }, save, test, remove);
+    form.append(actions);
+    formHost.append(form);
+    function edited() {
+      return [...controls].some(([name, control]) => control.value !== values.get(`saved:${name}`)) || removeKey?.checked === true;
+    }
+    for (const [name, control] of controls) {
+      const initial = name === "Key" ? "" : control.value;
+      if (!values.has(`saved:${name}`)) values.set(`saved:${name}`, initial);
+      control.addEventListener("input", () => {
+        clear(status);
+        captureDraft?.();
+        test.disabled = !saved || edited();
+      });
+      control.addEventListener("change", () => {
+        clear(status);
+        captureDraft?.();
+        test.disabled = !saved || edited();
+      });
+    }
+    removeKey?.addEventListener("change", () => {
+      test.disabled = !saved || edited();
+    });
+    test.disabled = !saved || edited();
+    test.title = "Tests the saved connection. Save edits first.";
+    async function run2(action) {
+      if (busy) return;
+      busy = true;
+      root.disabled = true;
+      save.disabled = test.disabled = remove.disabled = true;
+      try {
+        await action();
+      } catch (error62) {
+        setInlineStatus(status, "error", classifierErrorMessage(error62));
+      } finally {
+        busy = false;
+        root.disabled = false;
+        save.disabled = remove.disabled = false;
+        test.disabled = !saved || edited();
+      }
+    }
+    save.addEventListener("click", () => {
+      void run2(async () => {
+        captureDraft?.();
+        const connection = profile.connection.type === "http" ? {
+          type: "http",
+          protocol: read("Protocol") === "featherless" ? "featherless" : "systemone",
+          baseUrl: read("Url"),
+          auth: read("Auth") === "none" ? "none" : "bearer",
+          ...read("KeyEnv") ? { apiKeyEnv: read("KeyEnv") } : {}
+        } : {
+          type: "semif",
+          executable: read("Executable"),
+          ...profile.connection.device ? { device: profile.connection.device } : {},
+          ...profile.connection.maxTokens ? { maxTokens: profile.connection.maxTokens } : {},
+          backend: read("Backend") === "mlx" ? "mlx" : read("Backend") === "llamacpp" ? "llamacpp" : "torch",
+          revision: read("Revision"),
+          mode: read("Mode") === "serial" ? "serial" : read("Mode") === "shared" ? "shared" : "direct",
+          ...read("Backend") === "llamacpp" && read("Gguf") ? { gguf: read("Gguf") } : {}
+        };
+        const next = {
+          id: profile.id,
+          label: read("Label"),
+          model: read("Model"),
+          timeoutMs: Math.round(Number(read("Timeout")) * 1e3),
+          connection
+        };
+        profiles = await api2.classifiers.save(next);
+        selectedId = profile.id;
+        drafts.delete(profile.id);
+        let keyError = null;
+        const enteredKey = key?.value.trim() ?? "";
+        const removingKey = removeKey?.checked === true;
+        if (enteredKey || removingKey) {
+          const secret = removingKey ? "" : enteredKey;
+          try {
+            let result = await api2.settings.setKey(classifierCredentialId(profile.id), secret);
+            if (!result.ok && result.reason === "plaintext-consent-required") {
+              const approved = await showConfirmDialog({
+                message: `No OS keyring is available to encrypt the key for ${next.label}.`,
+                detail: "Store it unencrypted on this machine anyway?",
+                confirmLabel: "Store anyway"
+              });
+              if (approved)
+                result = await api2.settings.setKey(classifierCredentialId(profile.id), secret, {
+                  allowPlaintext: true
+                });
+            }
+            if (!result.ok) {
+              keyError = result.reason === "plaintext-storage-disabled" ? "Connection saved; key not saved because secure storage is unavailable and plaintext storage is disabled." : "Connection saved; key not saved because unencrypted storage was declined.";
+            }
+          } catch (error62) {
+            keyError = `Connection saved; key save failed: ${classifierErrorMessage(error62)}`;
+          }
+        }
+        pending.delete(profile.id);
+        if (keyError) {
+          pending.set(
+            profile.id,
+            /* @__PURE__ */ new Map([
+              ["Key", enteredKey],
+              ["RemoveKey", String(removingKey)]
+            ])
+          );
+        }
+        let refreshError = null;
+        try {
+          profiles = await api2.classifiers.list();
+        } catch (error62) {
+          refreshError = `Connection saved; could not refresh key status: ${classifierErrorMessage(error62)}`;
+        }
+        render();
+        const failure2 = keyError ?? refreshError;
+        setInlineStatus(
+          status,
+          failure2 ? "error" : "ok",
+          failure2 ?? "Classifier saved. No test call has been made."
+        );
+      });
+    });
+    test.addEventListener("click", () => {
+      void run2(async () => {
+        setInlineStatus(status, "pending", "Testing saved classifier\u2026");
+        const result = await api2.classifiers.test(profile.id);
+        setInlineStatus(status, "ok", `Test succeeded \xB7 ${describeResult(result)}`);
+      });
+    });
+    remove.addEventListener("click", () => {
+      void run2(async () => {
+        if (saved) profiles = await api2.classifiers.remove(profile.id);
+        pending.delete(profile.id);
+        selectedId = profiles[0]?.profile.id ?? null;
+        drafts.delete(profile.id);
+        render();
+        setInlineStatus(
+          status,
+          "ok",
+          saved ? "Classifier and its saved key removed." : "Draft discarded."
+        );
+      });
+    });
+  }
+  async function refresh() {
+    if (busy) return;
+    captureDraft?.();
+    try {
+      profiles = await api2.classifiers.list();
+      selectedId ??= profiles[0]?.profile.id ?? null;
+      if (selectedId !== null && !drafts.has(selectedId) && !profiles.some((item) => item.profile.id === selectedId))
+        selectedId = null;
+      render();
+    } catch (error62) {
+      setInlineStatus(status, "error", classifierErrorMessage(error62));
+    }
+  }
+  render();
+  return { root, refresh };
+}
+var init_classifiers_section = __esm({
+  "src/renderer/views/setup/classifiers-section.ts"() {
+    init_presets();
+    init_helpers();
+    init_inline_status();
+    init_confirm_dialog();
+    init_errors4();
   }
 });
 
@@ -60521,6 +61202,7 @@ function mountSettingsDialog(store2, api2) {
             />
           </div>
           <button type="button" class="settings-nav-btn active" data-section="general">General</button>
+          <button type="button" class="settings-nav-btn" data-section="classifiers">Classifiers</button>
           <button type="button" class="settings-nav-btn" data-section="usage">Usage</button>
           <button type="button" class="settings-nav-btn" data-section="agent">Agent</button>
           <button type="button" class="settings-nav-btn" data-section="permissions">Permissions</button>
@@ -60621,6 +61303,15 @@ function mountSettingsDialog(store2, api2) {
                 </label>
               </div>
             </div>
+          </section>
+
+          <section class="settings-section" data-section="classifiers">
+            <h3>Classifiers</h3>
+            <p class="settings-section-desc">
+              Connections for classification evals and explicit calls. Copse's built-in classifiers
+              and chat model choices are configured separately.
+            </p>
+            <div id="settings-classifiers-host" class="settings-mount"></div>
           </section>
 
           <section class="settings-section" data-section="usage">
@@ -61449,6 +62140,8 @@ function mountSettingsDialog(store2, api2) {
   `;
   overlayEl = overlay;
   qsRequired(overlay, "#settings-close").append(closeIcon("ui-icon"));
+  const classifiersSection = createClassifiersSection(api2);
+  qsRequired(overlay, "#settings-classifiers-host").append(classifiersSection.root);
   const sshWorkspaceSection = createSshWorkspaceSection(api2, {
     // Live-persist toggles must wake listeners (e.g. the projects add menu)
     // without requiring the dialog Save button.
@@ -61716,6 +62409,7 @@ function mountSettingsDialog(store2, api2) {
     if (!searchContentLoaded) {
       searchContentLoaded = true;
       void providersPanel.refresh();
+      void classifiersSection.refresh();
       void sshWorkspaceSection.refresh();
       void refreshSources();
     }
@@ -61756,6 +62450,7 @@ function mountSettingsDialog(store2, api2) {
           applySearch("");
         }
         showSection(id);
+        if (id === "classifiers") void classifiersSection.refresh();
         if (id === "usage") void usageSection.refresh();
         if (id === "permissions") void toolPermissionsPanel.refresh();
         if (id === "ssh") void sshWorkspaceSection.refresh();
@@ -62554,7 +63249,7 @@ function mountSettingsDialog(store2, api2) {
         note.textContent = "Nested AGENTS.md discovery stopped at its directory limit, so this list may be incomplete. Deeper files are not loaded.";
         qsRequired(overlay, "#sources-instructions-list").append(note);
       }
-      const kindLabel = {
+      const kindLabel2 = {
         always: "always",
         auto: "auto",
         agent: "agent",
@@ -62567,7 +63262,7 @@ function mountSettingsDialog(store2, api2) {
           if (r2.globs?.length) bits.push(`globs: ${r2.globs.join(", ")}`);
           if (r2.description) bits.push(r2.description);
           bits.push(r2.path);
-          return makeSourceRow(r2.name, kindLabel[r2.kind] ?? r2.kind, bits.join(" \xB7 "), {
+          return makeSourceRow(r2.name, kindLabel2[r2.kind] ?? r2.kind, bits.join(" \xB7 "), {
             badgeClass: r2.kind === "always" ? "sources-badge-project" : r2.kind === "auto" ? "sources-badge-auto" : void 0
           });
         }),
@@ -63501,6 +64196,7 @@ function mountSettingsDialog(store2, api2) {
     pendingSection = null;
     pluginDetail = pendingPluginDetail;
     pendingPluginDetail = null;
+    if (openedSection === "classifiers") void classifiersSection.refresh();
     if (openedSection === "ssh") void sshWorkspaceSection.refresh();
     if (openedSection === "usage") void usageSection.refresh();
     if (openedSection === "permissions") void toolPermissionsPanel.refresh();
@@ -63814,6 +64510,7 @@ var init_settings_dialog = __esm({
     init_model_picker();
     init_api_keys_section();
     init_providers_section();
+    init_classifiers_section();
     init_env_key_detect_section();
     init_lm_studio_section();
     init_gh_cli_section();
@@ -63838,7 +64535,7 @@ var init_settings_dialog = __esm({
     init_projects();
     init_appearance();
     init_nullish2();
-    isSettingsSection = (value) => value === "general" || value === "usage" || value === "agent" || value === "permissions" || value === "mcp" || value === "customise" || value === "storage" || value === "appearance" || value === "ssh" || value === "experimental";
+    isSettingsSection = (value) => value === "general" || value === "classifiers" || value === "usage" || value === "agent" || value === "permissions" || value === "mcp" || value === "customise" || value === "storage" || value === "appearance" || value === "ssh" || value === "experimental";
     PLUGIN_NAME_ACRONYMS = /* @__PURE__ */ new Set(["acp", "api", "ci", "llm", "mcp", "okf", "pii", "ui"]);
     COPSE_SITE_TINT_COLOR = "#002E2B";
     TINT_STRENGTH_AMOUNTS = {
@@ -64092,6 +64789,7 @@ function copyMessage(message2) {
     toolCalls,
     images,
     canvasArtefacts,
+    visualEvidence,
     attachments,
     ...rest
   } = message2;
@@ -64102,6 +64800,15 @@ function copyMessage(message2) {
     toolCalls: (toolCalls ?? []).map((toolCall) => ({ ...toolCall })),
     ...images !== void 0 ? { images: [...images] } : {},
     ...canvasArtefacts !== void 0 ? { canvasArtefacts: canvasArtefacts.map((artefact) => ({ ...artefact })) } : {},
+    ...visualEvidence !== void 0 ? {
+      visualEvidence: visualEvidence.map((evidence) => ({
+        ...evidence,
+        assets: evidence.assets.map((asset) => ({
+          ...asset,
+          source: { ...asset.source }
+        }))
+      }))
+    } : {},
     ...attachments !== void 0 ? { attachments: attachments.map((attachment) => ({ ...attachment })) } : {}
   };
 }
@@ -68558,6 +69265,14 @@ function createInlineWebview(stage, artefact, projectId, threadId, onReady, onFa
     else onFailure();
   };
   webview.addEventListener("dom-ready", () => {
+    if (!webview.isConnected || !stage.isConnected) {
+      if (timer) clearTimeout(timer);
+      timer = null;
+      observer?.disconnect();
+      observer = null;
+      settled = true;
+      return;
+    }
     syncSize();
     if (!loadingArtefact) {
       loadingArtefact = true;
@@ -68575,6 +69290,9 @@ function createInlineWebview(stage, artefact, projectId, threadId, onReady, onFa
   observer = new ResizeObserver(syncSize);
   observer.observe(stage);
   webview.addEventListener("destroyed", () => {
+    if (timer) clearTimeout(timer);
+    timer = null;
+    settled = true;
     observer?.disconnect();
     observer = null;
   });
@@ -68638,6 +69356,9 @@ function createInlineArtefact(api2, projectId, threadId, title) {
   );
   let annotation = null;
   let inlineWebview = null;
+  let disposed = false;
+  let firstMountFrame = null;
+  let stableMountFrame = null;
   const captureBase = async () => {
     const getId = inlineWebview ? Reflect.get(inlineWebview, "getWebContentsId") : void 0;
     if (typeof getId === "function" && card.dataset["canvasState"] === "interactive") {
@@ -68681,6 +69402,9 @@ function createInlineArtefact(api2, projectId, threadId, title) {
     )
   );
   inlineArtefactDisposers.set(card, () => {
+    disposed = true;
+    if (firstMountFrame !== null) cancelAnimationFrame(firstMountFrame);
+    if (stableMountFrame !== null) cancelAnimationFrame(stableMountFrame);
     annotation?.dispose();
     annotation = null;
   });
@@ -68692,7 +69416,7 @@ function createInlineArtefact(api2, projectId, threadId, title) {
     if (placeholder) placeholder.textContent = "Preview unavailable";
   };
   const mount = (artefact) => {
-    if (!artefact || !card.isConnected) {
+    if (disposed || !artefact || !card.isConnected) {
       if (card.isConnected) showFallback();
       return;
     }
@@ -68702,10 +69426,13 @@ function createInlineArtefact(api2, projectId, threadId, title) {
       projectId,
       threadId,
       () => {
+        if (disposed) return;
         card.dataset["canvasState"] = "interactive";
         status.textContent = "Interactive";
       },
-      showFallback
+      () => {
+        if (!disposed) showFallback();
+      }
     );
     if (!webview) {
       showFallback();
@@ -68714,13 +69441,21 @@ function createInlineArtefact(api2, projectId, threadId, title) {
     inlineWebview = webview;
     stage.append(webview);
   };
+  const scheduleMount = (artefact) => {
+    firstMountFrame = requestAnimationFrame(() => {
+      firstMountFrame = null;
+      if (disposed || !card.isConnected) return;
+      stableMountFrame = requestAnimationFrame(() => {
+        stableMountFrame = null;
+        mount(artefact);
+      });
+    });
+  };
   const cached2 = getArtefactContent(projectId, threadId, title);
   if (cached2) {
-    queueMicrotask(() => {
-      mount(cached2);
-    });
+    scheduleMount(cached2);
   } else {
-    void loadArtefactContent(api2, projectId, threadId, title).then(mount);
+    void loadArtefactContent(api2, projectId, threadId, title).then(scheduleMount);
   }
   return card;
 }
@@ -70322,7 +71057,8 @@ function visibleText(node2) {
   if (node2.nodeType === Node.ELEMENT_NODE) {
     if (!(node2 instanceof HTMLElement)) return "";
     const elNode = node2;
-    if (elNode.classList.contains("inline-paste-chip")) return CHIP_CHAR;
+    if (elNode.classList.contains("inline-paste-chip") || elNode.classList.contains("inline-thread-chip"))
+      return CHIP_CHAR;
     if (elNode.tagName === "BR") return "\n";
   }
   let out = "";
@@ -70337,21 +71073,36 @@ function mountComposerEditor() {
   root.setAttribute("aria-multiline", "true");
   root.setAttribute("aria-label", "Message");
   const blocks = /* @__PURE__ */ new Map();
+  const threadChips = /* @__PURE__ */ new Map();
   function emitInput() {
     root.dispatchEvent(new Event("input", { bubbles: true }));
   }
   function chipElements() {
     return Array.from(root.querySelectorAll(CHIP_SELECTOR));
   }
-  function pruneBlocks() {
-    const present = new Set(chipElements().map((c3) => c3.dataset["blockId"]));
-    for (const id of blocks.keys()) if (!present.has(id)) blocks.delete(id);
+  function inlineChipsInOrder() {
+    return chipElements().flatMap((chip2) => {
+      const id = chip2.dataset["chipId"] ?? "";
+      const block = blocks.get(id);
+      if (block) return [{ kind: "paste", block }];
+      const thread = threadChips.get(id)?.thread;
+      return thread ? [{ kind: "thread", thread }] : [];
+    });
   }
-  function makeChip(block) {
+  function pruneChips() {
+    const present = new Set(chipElements().map((chip2) => chip2.dataset["chipId"]));
+    for (const id of blocks.keys()) if (!present.has(id)) blocks.delete(id);
+    for (const [id, state] of threadChips) {
+      if (present.has(id)) continue;
+      threadChips.delete(id);
+      state.onRemove();
+    }
+  }
+  function makePasteChip(block) {
     const chip2 = document.createElement("span");
     chip2.className = "inline-paste-chip";
     chip2.setAttribute("contenteditable", "false");
-    chip2.dataset["blockId"] = block.id;
+    chip2.dataset["chipId"] = block.id;
     chip2.title = block.label;
     const label = document.createElement("span");
     label.className = "inline-paste-chip-label";
@@ -70362,8 +71113,8 @@ function mountComposerEditor() {
     remove.className = "inline-paste-chip-remove";
     remove.append(closeIcon("ui-icon ui-icon-sm"));
     remove.setAttribute("aria-label", `Remove pasted text: ${block.label}`);
-    remove.addEventListener("click", (e3) => {
-      e3.preventDefault();
+    remove.addEventListener("click", (event) => {
+      event.preventDefault();
       chip2.remove();
       blocks.delete(block.id);
       root.focus();
@@ -70371,6 +71122,47 @@ function mountComposerEditor() {
     });
     chip2.append(label, remove);
     return chip2;
+  }
+  function makeThreadChip(id, state) {
+    const chip2 = document.createElement("span");
+    chip2.className = "inline-thread-chip";
+    chip2.setAttribute("contenteditable", "false");
+    chip2.dataset["chipId"] = id;
+    chip2.dataset["threadId"] = state.thread.threadId;
+    chip2.title = state.thread.label;
+    const label = document.createElement("span");
+    label.className = "inline-thread-chip-label";
+    label.textContent = state.thread.label;
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "inline-thread-chip-remove";
+    remove.append(closeIcon("ui-icon ui-icon-sm"));
+    remove.setAttribute("aria-label", `Remove thread: ${state.thread.label}`);
+    remove.addEventListener("click", (event) => {
+      event.preventDefault();
+      chip2.remove();
+      threadChips.delete(id);
+      state.onRemove();
+      root.focus();
+      emitInput();
+    });
+    chip2.append(attachmentIcon("thread", "thread-chip-icon"), label, remove);
+    return chip2;
+  }
+  function insertChip(chip2) {
+    const selection2 = editor.isFocused() ? selectionInRoot() : null;
+    if (selection2) {
+      const range = selection2.getRangeAt(0);
+      range.deleteContents();
+      range.insertNode(chip2);
+      range.setStartAfter(chip2);
+      range.collapse(true);
+      selection2.removeAllRanges();
+      selection2.addRange(range);
+    } else {
+      root.append(chip2);
+    }
+    emitInput();
   }
   function offsetOfPoint(node2, offset) {
     const range = document.createRange();
@@ -70399,7 +71191,7 @@ function mountComposerEditor() {
       }
       return null;
     };
-    const isAtomic = (elNode) => elNode.classList.contains("inline-paste-chip") || elNode.tagName === "BR";
+    const isAtomic = (elNode) => elNode.classList.contains("inline-paste-chip") || elNode.classList.contains("inline-thread-chip") || elNode.tagName === "BR";
     return walk2(root) ?? { node: root, offset: root.childNodes.length };
   }
   function selectionInRoot() {
@@ -70422,8 +71214,33 @@ function mountComposerEditor() {
     if (root.childNodes.length === 1 && root.firstChild?.nodeName === "BR") {
       root.replaceChildren();
     }
-    pruneBlocks();
+    pruneChips();
   });
+  function serializedValue(preserveThreadPlaceholders) {
+    const ordered = inlineChipsInOrder();
+    let chipIdx = 0;
+    const parts = visibleText(root).split(CHIP_CHAR);
+    let out = parts[0] ?? "";
+    for (let i2 = 1; i2 < parts.length; i2++) {
+      const chip2 = ordered[chipIdx++];
+      if (chip2?.kind === "thread") {
+        out += preserveThreadPlaceholders ? CHIP_CHAR : `@${chip2.thread.label}`;
+        out += parts[i2] ?? "";
+        continue;
+      }
+      const block = chip2?.kind === "paste" ? chip2.block : void 0;
+      const fence = block ? renderTextBlock(block.label, block.content) : "";
+      if (fence) {
+        if (out !== "" && !out.endsWith("\n")) out += "\n\n";
+        else if (out.endsWith("\n") && !out.endsWith("\n\n")) out += "\n";
+        out += fence;
+        const rest = parts[i2] ?? "";
+        if (rest !== "" && !rest.startsWith("\n")) out += "\n\n";
+      }
+      out += parts[i2] ?? "";
+    }
+    return out;
+  }
   const editor = {
     el: root,
     get value() {
@@ -70441,7 +71258,7 @@ function mountComposerEditor() {
         }
       });
       root.replaceChildren(frag);
-      pruneBlocks();
+      pruneChips();
       if (editor.isFocused()) caretToEnd2();
     },
     get selectionStart() {
@@ -70472,7 +71289,10 @@ function mountComposerEditor() {
       root.setAttribute("data-placeholder", text2);
     },
     getBlocks() {
-      return chipElements().map((c3) => blocks.get(c3.dataset["blockId"] ?? "")).filter(isDefined);
+      return editor.getInlineChips().map((chip2) => chip2.kind === "paste" ? chip2.block : void 0).filter(isDefined);
+    },
+    getInlineChips() {
+      return inlineChipsInOrder();
     },
     insertPasteChip(content, label) {
       const block = {
@@ -70481,43 +71301,24 @@ function mountComposerEditor() {
         content
       };
       blocks.set(block.id, block);
-      const chip2 = makeChip(block);
-      const sel = editor.isFocused() ? selectionInRoot() : null;
-      if (sel) {
-        const range = sel.getRangeAt(0);
-        range.deleteContents();
-        range.insertNode(chip2);
-        range.setStartAfter(chip2);
-        range.collapse(true);
-        sel.removeAllRanges();
-        sel.addRange(range);
-      } else {
-        root.append(chip2);
-      }
-      emitInput();
+      insertChip(makePasteChip(block));
+    },
+    insertThreadChip(thread, onRemove) {
+      const id = crypto.randomUUID();
+      const state = { thread, onRemove };
+      threadChips.set(id, state);
+      insertChip(makeThreadChip(id, state));
     },
     expandedValue() {
-      const ordered = editor.getBlocks();
-      let chipIdx = 0;
-      const parts = visibleText(root).split(CHIP_CHAR);
-      let out = parts[0] ?? "";
-      for (let i2 = 1; i2 < parts.length; i2++) {
-        const block = ordered[chipIdx++];
-        const fence = block ? renderTextBlock(block.label, block.content) : "";
-        if (fence) {
-          if (out !== "" && !out.endsWith("\n")) out += "\n\n";
-          else if (out.endsWith("\n") && !out.endsWith("\n\n")) out += "\n";
-          out += fence;
-          const rest = parts[i2] ?? "";
-          if (rest !== "" && !rest.startsWith("\n")) out += "\n\n";
-        }
-        out += parts[i2] ?? "";
-      }
-      return out;
+      return serializedValue(false);
+    },
+    draftValue() {
+      return serializedValue(true);
     },
     clear() {
       root.replaceChildren();
       blocks.clear();
+      threadChips.clear();
     }
   };
   return editor;
@@ -70527,10 +71328,11 @@ var init_composer_editor = __esm({
   "src/renderer/views/composer-editor.ts"() {
     init_build_text_with_attachments();
     init_text_expand();
+    init_attachment_icons();
     init_icons();
     init_nullish2();
     CHIP_CHAR = "\uFFFC";
-    CHIP_SELECTOR = ".inline-paste-chip";
+    CHIP_SELECTOR = ".inline-paste-chip, .inline-thread-chip";
   }
 });
 
@@ -71124,6 +71926,137 @@ var init_comparison_panel = __esm({
     init_dist();
     init_file_links();
     init_unknown_value3();
+  }
+});
+
+// src/renderer/views/visual-evidence-card.ts
+function captureTime(timestamp) {
+  if (!Number.isFinite(timestamp)) return "Unknown capture time";
+  try {
+    return `${new Date(timestamp).toISOString().slice(0, 16).replace("T", " ")} UTC`;
+  } catch {
+    return "Unknown capture time";
+  }
+}
+function kindLabel(evidence) {
+  return evidence.kind === "comparison" ? "Before / After" : "Screenshot";
+}
+function sourceTitle(asset) {
+  return asset.source.title.trim() || asset.source.url;
+}
+function thumbnail(asset, caption) {
+  if (!asset.dataUrl) {
+    return el(
+      "div",
+      { class: "visual-evidence-thumbnail visual-evidence-thumbnail-unavailable" },
+      el("span", {}, asset.label),
+      el("span", {}, "Unavailable")
+    );
+  }
+  const image = el("img", {
+    class: "visual-evidence-thumbnail",
+    src: asset.dataUrl,
+    alt: `${asset.label}: ${caption}`,
+    loading: "lazy"
+  });
+  return image;
+}
+function evidenceFigure(asset, caption) {
+  const media = asset.dataUrl ? (() => {
+    const image = el("img", {
+      class: "visual-evidence-image",
+      src: asset.dataUrl,
+      alt: `${asset.label}: ${caption}`,
+      loading: "lazy"
+    });
+    attachImageExpand(image, `${asset.label}: ${caption}`);
+    return image;
+  })() : el(
+    "div",
+    { class: "visual-evidence-unavailable", role: "status" },
+    imageIcon("ui-icon visual-evidence-unavailable-icon"),
+    el("span", {}, asset.unavailableReason ?? "Evidence image is unavailable.")
+  );
+  return el(
+    "figure",
+    {
+      class: "visual-evidence-figure",
+      "data-evidence-asset-id": asset.id,
+      "data-available": asset.dataUrl ? "true" : "false"
+    },
+    el("div", { class: "visual-evidence-label" }, asset.label),
+    media,
+    el(
+      "figcaption",
+      { class: "visual-evidence-asset-meta" },
+      el("span", { class: "visual-evidence-source-title" }, sourceTitle(asset)),
+      el("code", { class: "visual-evidence-source-url" }, asset.source.url),
+      el(
+        "span",
+        { class: "visual-evidence-capture-meta" },
+        `${String(asset.width)}\xD7${String(asset.height)} \xB7 ${captureTime(asset.capturedAt)}`
+      )
+    )
+  );
+}
+function createVisualEvidenceSection(evidence) {
+  if (evidence.length === 0) return null;
+  const section = el("div", {
+    class: "message-visual-evidence",
+    "aria-label": "Visual evidence"
+  });
+  for (const item of evidence) {
+    const summary = el(
+      "summary",
+      { class: "visual-evidence-summary" },
+      imageIcon("ui-icon visual-evidence-icon"),
+      el(
+        "span",
+        { class: "visual-evidence-heading" },
+        el("span", { class: "visual-evidence-eyebrow" }, "Visual evidence"),
+        el("span", { class: "visual-evidence-caption" }, item.caption),
+        el(
+          "span",
+          { class: "visual-evidence-summary-meta" },
+          `${String(item.assets.length)} ${item.assets.length === 1 ? "capture" : "captures"} \xB7 Browser`
+        )
+      ),
+      el("span", { class: "visual-evidence-kind" }, kindLabel(item)),
+      el(
+        "span",
+        { class: "visual-evidence-thumbnails", "aria-hidden": "true" },
+        ...item.assets.map((asset) => thumbnail(asset, item.caption))
+      )
+    );
+    const body = el(
+      "div",
+      {
+        class: "visual-evidence-body",
+        "data-evidence-asset-count": String(item.assets.length)
+      },
+      ...item.assets.map((asset) => evidenceFigure(asset, item.caption))
+    );
+    section.append(
+      el(
+        "details",
+        {
+          class: "visual-evidence-card",
+          "data-evidence-id": item.id,
+          "data-evidence-kind": item.kind,
+          "data-tool-call-id": item.toolCallId
+        },
+        summary,
+        body
+      )
+    );
+  }
+  return section;
+}
+var init_visual_evidence_card = __esm({
+  "src/renderer/views/visual-evidence-card.ts"() {
+    init_image_expand();
+    init_helpers();
+    init_icons();
   }
 });
 
@@ -72467,6 +73400,14 @@ function syncMessageCanvasPreviews(msgEl, msg, projectId, threadId, api2) {
   }
   syncToolRunMemberVisibility(msgEl);
 }
+function syncMessageVisualEvidence(msgEl, msg) {
+  const body = msgEl.querySelector(":scope > .message-body");
+  if (!body) return;
+  body.querySelector(":scope > .message-visual-evidence")?.remove();
+  const section = createVisualEvidenceSection(msg.visualEvidence ?? []);
+  if (section) body.append(section);
+  syncToolRunMemberVisibility(msgEl);
+}
 function createIndividualToolCard(tc2, label, api2, threadId, store2) {
   if (tc2.subagent) return createSubagentToolCard(tc2, label, api2);
   if (store2 && isThreadProposalCall(tc2)) {
@@ -73401,8 +74342,14 @@ function reasoningDisclosureTitle(live) {
 }
 function setReasoningDisclosureTitle(details, live) {
   const title = details.querySelector(".message-reasoning-title");
-  if (title) title.textContent = reasoningDisclosureTitle(live);
+  const label = reasoningDisclosureTitle(live);
+  if (title && title.textContent !== label) title.textContent = label;
   details.classList.toggle("message-reasoning-live", live);
+  if (!live) {
+    const textEl = details.querySelector(".message-reasoning-text");
+    const state = textEl && reasoningRenders.get(textEl);
+    if (textEl && state?.live) renderReasoningText(textEl, state.text, false, state.blocks);
+  }
 }
 function isReasoningDisclosureLive(thread, msg) {
   if (!thread || thread.status !== "running") return false;
@@ -73424,15 +74371,21 @@ function transcriptChip(attachment, api2) {
   return chip2;
 }
 function renderUserTranscript(host, content, attachments, api2) {
-  const pastes = attachments.filter((a3) => a3.kind === "paste");
-  const trailing = attachments.filter((a3) => a3.kind !== "paste");
+  const inlineCount = countChipPlaceholders(content);
+  const firstNonPositional = attachments.findIndex(
+    (attachment) => attachment.kind !== "paste" && attachment.kind !== "thread"
+  );
+  const positionalPrefixLength = firstNonPositional === -1 ? attachments.length : firstNonPositional;
+  const boundInlineCount = Math.min(inlineCount, positionalPrefixLength);
+  const inline = attachments.slice(0, boundInlineCount);
+  const trailing = attachments.slice(boundInlineCount);
   const paintRegion = (sink, text2, firstChip) => {
     const parts = text2.split(CHIP_CHAR);
     parts.forEach((part, i2) => {
       if (part) sink.append(document.createTextNode(part));
       if (i2 < parts.length - 1) {
         sink.append(
-          transcriptChip(pastes[firstChip + i2] ?? { kind: "paste", label: "Pasted text" }, api2)
+          transcriptChip(inline[firstChip + i2] ?? { kind: "paste", label: "Pasted text" }, api2)
         );
       }
     });
@@ -73460,7 +74413,7 @@ function renderUserTranscript(host, content, attachments, api2) {
 function countChipPlaceholders(text2) {
   return text2.split(CHIP_CHAR).length - 1;
 }
-function buildReasoningEl(reasoning, open2, live, blocks = []) {
+function buildReasoningEl(reasoning, open2, live, blocks = emptyReasoningBlocks) {
   const details = el("details", {
     class: `message-reasoning${live ? " message-reasoning-live" : ""}`,
     open: open2
@@ -73476,17 +74429,35 @@ function buildReasoningEl(reasoning, open2, live, blocks = []) {
     el("span", { class: "message-reasoning-title" }, reasoningDisclosureTitle(live))
   );
   const text2 = el("div", { class: "message-reasoning-text" });
-  renderReasoningText(text2, reasoning, blocks);
+  renderReasoningText(text2, reasoning, live, blocks);
   summary.addEventListener("click", () => {
     details.dataset["userToggled"] = "1";
   });
   details.append(summary, text2);
   return details;
 }
-function renderReasoningText(el3, text2, blocks = []) {
-  el3.innerHTML = renderMarkdown(text2);
-  const richContent = createAcpContentBlocks(blocks, "reasoning");
-  if (richContent) el3.append(richContent);
+function renderReasoningText(el3, text2, live, blocks = emptyReasoningBlocks) {
+  const previous = reasoningRenders.get(el3);
+  const markdownChanged = previous?.text !== text2 || previous.live !== live;
+  const blocksChanged = previous?.blocks !== blocks;
+  if (!markdownChanged && !blocksChanged) return;
+  let renderer = previous?.renderer ?? null;
+  if (markdownChanged) {
+    if (live) {
+      renderer ??= new StreamingMarkdownRenderer(el3);
+      renderer.update(text2);
+    } else {
+      renderer = null;
+      el3.innerHTML = renderMarkdown(text2);
+    }
+  }
+  let richContent = previous?.richContent ?? null;
+  if (blocksChanged) {
+    richContent?.remove();
+    richContent = createAcpContentBlocks(blocks, "reasoning");
+  }
+  if (richContent && richContent.parentElement !== el3) el3.append(richContent);
+  reasoningRenders.set(el3, { text: text2, blocks, live, renderer, richContent });
 }
 function syncReasoningEl(msgEl, msg, live) {
   const body = msgEl.querySelector(".message-body");
@@ -73506,7 +74477,7 @@ function syncReasoningEl(msgEl, msg, live) {
   } else {
     if (details.parentElement !== host) host.prepend(details);
     const textEl = details.querySelector(".message-reasoning-text");
-    if (textEl) renderReasoningText(textEl, msg.reasoning ?? "", msg.reasoningBlocks);
+    if (textEl) renderReasoningText(textEl, msg.reasoning ?? "", live, msg.reasoningBlocks);
     setReasoningDisclosureTitle(details, live);
   }
   if (!details.dataset["userToggled"] && !msg.content.trim()) details.open = true;
@@ -73524,7 +74495,7 @@ function syncNestedRollupReasoning(card, msgEl, reasoning, reasoningBlocks, live
     details = buildReasoningEl(reasoning ?? "", true, live, reasoningBlocks);
   } else {
     const textEl = details.querySelector(".message-reasoning-text");
-    if (textEl) renderReasoningText(textEl, reasoning ?? "", reasoningBlocks);
+    if (textEl) renderReasoningText(textEl, reasoning ?? "", live, reasoningBlocks);
     setReasoningDisclosureTitle(details, live);
   }
   if (details.parentElement !== rollupBody) rollupBody.prepend(details);
@@ -73550,7 +74521,7 @@ function syncRunStepReasoning(card, run2, liveStepId) {
       continue;
     }
     const textEl = details.querySelector(".message-reasoning-text");
-    if (textEl) renderReasoningText(textEl, step.reasoning ?? "", step.reasoningBlocks);
+    if (textEl) renderReasoningText(textEl, step.reasoning ?? "", live, step.reasoningBlocks);
     setReasoningDisclosureTitle(details, live);
   }
 }
@@ -74064,10 +75035,13 @@ function mountConversation(root, store2, api2) {
     if (card.classList.contains("thread-proposal")) return;
     const key = `${threadId}:${messageId}:${toolCardKey(item)}`;
     card.dataset["disclosureKey"] = key;
+    const itemStatus2 = item.type === "individual" ? item.toolCall.status : aggregateToolStatus(item.toolCalls);
+    card.dataset["status"] = itemStatus2;
     disclosureElements.set(key, card);
     wireDisclosurePreference(card, key);
     const preference = disclosurePreferences.get(key);
-    const running = item.type === "individual" ? item.toolCall.status === "running" || item.toolCall.subagent?.status === "running" : aggregateToolStatus(item.toolCalls) === "running";
+    const running = item.type === "individual" ? item.toolCall.status === "running" || item.toolCall.subagent?.status === "running" : itemStatus2 === "running";
+    const failed = itemStatus2 === "error";
     if (running) runningDisclosures.add(key);
     else {
       runningDisclosures.delete(key);
@@ -74075,6 +75049,10 @@ function mountConversation(root, store2, api2) {
     }
     if (preference !== void 0) {
       card.open = preference;
+    } else if (failed) {
+      card.open = true;
+      autoOpenedDisclosures.add(key);
+      if (!autoOpenedAt.has(key)) autoOpenedAt.set(key, Date.now());
     } else if (autoOpenedDisclosures.has(key)) {
       card.open = true;
     } else {
@@ -74102,7 +75080,17 @@ function mountConversation(root, store2, api2) {
         entry.dataset["disclosureKey"] = itemKey;
         disclosureElements.set(itemKey, entry);
         wireDisclosurePreference(entry, itemKey);
-        entry.open = disclosurePreferences.get(itemKey) ?? false;
+        const preference2 = disclosurePreferences.get(itemKey);
+        const entryFailed = entry.dataset["status"] === "error";
+        if (preference2 !== void 0) {
+          entry.open = preference2;
+        } else if (entryFailed) {
+          entry.open = true;
+          autoOpenedDisclosures.add(itemKey);
+          if (!autoOpenedAt.has(itemKey)) autoOpenedAt.set(itemKey, Date.now());
+        } else {
+          entry.open = false;
+        }
         if (entry.open) ensureToolCardBodyRendered(entry);
       });
     }
@@ -74290,6 +75278,7 @@ function mountConversation(root, store2, api2) {
       ...run2 ? { run: run2, liveStepId: liveStepMessageId(thread) } : {}
     });
     syncMessageCanvasPreviews(msgEl, msg, store2.getState().activeProjectId, threadId, api2);
+    syncMessageVisualEvidence(msgEl, msg);
     if (run2) syncRunLayout(thread, run2, msgId);
     if (msg.review) renderMessageReview(threadId, msgId);
     renderMessageHookCards(threadId, msgId);
@@ -74679,6 +75668,15 @@ function mountConversation(root, store2, api2) {
         scrollToBottom();
       }
     }),
+    store2.on("message_visual_evidence_changed", (mid) => {
+      const thread = getActiveThread(store2);
+      const msg = thread?.messages.find((message2) => message2.id === mid);
+      const msgEl = list.querySelector(`[data-message-id="${mid}"]`);
+      if (msg?.role === "assistant" && msgEl) {
+        syncMessageVisualEvidence(msgEl, msg);
+        scrollToBottom();
+      }
+    }),
     store2.on("message_acp_content", (mid) => {
       const thread = getActiveThread(store2);
       const msg = thread?.messages.find((message2) => message2.id === mid);
@@ -74787,6 +75785,9 @@ function mountConversation(root, store2, api2) {
         });
       } else {
         setActivity(null);
+        list.querySelectorAll(".message-reasoning-live").forEach((details) => {
+          setReasoningDisclosureTitle(details, false);
+        });
         const last = getThreadById(store2, tid)?.messages.at(-1);
         if (last?.role === "assistant") renderMessageTurnRecovery(tid, last.id);
       }
@@ -74834,7 +75835,7 @@ function attachCopyButton(body, msgId, store2) {
   });
   body.append(copyBtn);
 }
-var lazyToolCardBodies, toolResultContentSignatures, streamingRenderers, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolCardKeys, toolCardSignatures, toolGroupItemSignatures, SCROLL_PIN_THRESHOLD_PX, USER_SCROLL_UP_DEBOUNCE_MS, TOOL_AUTO_REVEAL_DELAY_MS, TOOL_AUTO_REVEAL_MIN_DWELL_MS, TOOL_AUTO_COMPACT_DELAY_MS, INITIAL_RENDER_WINDOW, BACKFILL_CHUNK_SIZE;
+var lazyToolCardBodies, toolResultContentSignatures, streamingRenderers, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolCardKeys, toolCardSignatures, toolGroupItemSignatures, emptyReasoningBlocks, reasoningRenders, SCROLL_PIN_THRESHOLD_PX, USER_SCROLL_UP_DEBOUNCE_MS, TOOL_AUTO_REVEAL_DELAY_MS, TOOL_AUTO_REVEAL_MIN_DWELL_MS, TOOL_AUTO_COMPACT_DELAY_MS, INITIAL_RENDER_WINDOW, BACKFILL_CHUNK_SIZE;
 var init_conversation = __esm({
   "src/renderer/views/conversation.ts"() {
     init_helpers();
@@ -74879,6 +75880,7 @@ var init_conversation = __esm({
     init_apple_development_panel();
     init_review_panel();
     init_comparison_panel();
+    init_visual_evidence_card();
     init_review_findings_card();
     init_review_actions();
     init_tool_args_format();
@@ -74901,6 +75903,8 @@ var init_conversation = __esm({
     toolCardKeys = /* @__PURE__ */ new WeakMap();
     toolCardSignatures = /* @__PURE__ */ new WeakMap();
     toolGroupItemSignatures = /* @__PURE__ */ new WeakMap();
+    emptyReasoningBlocks = [];
+    reasoningRenders = /* @__PURE__ */ new WeakMap();
     SCROLL_PIN_THRESHOLD_PX = 48;
     USER_SCROLL_UP_DEBOUNCE_MS = 150;
     TOOL_AUTO_REVEAL_DELAY_MS = 300;
@@ -85973,13 +86977,15 @@ function initMentionPicker(opts) {
       return;
     }
     if (item.kind === "thread") {
+      const insertionPoint = mentionStart;
+      removeMentionText();
+      input2.setSelectionRange(insertionPoint, insertionPoint);
       onAttachThread({
         threadId: item.hit.id,
         title: item.hit.title,
         updatedAt: item.hit.updatedAt,
         spinePath: item.hit.spinePath
       });
-      removeMentionText();
       hidePicker();
       return;
     }
@@ -86081,14 +87087,19 @@ function initSkillPicker(opts) {
   let selectedIdx = 0;
   let currentSkills = [];
   let allSkills = null;
+  let skillsRevision = 0;
+  let pickerRequest = 0;
   async function ensureSkills() {
-    allSkills ??= await listInvocables();
-    return allSkills;
+    if (allSkills) return allSkills;
+    const revision = skillsRevision;
+    const skills = await listInvocables();
+    if (revision !== skillsRevision) return ensureSkills();
+    allSkills = skills;
+    return skills;
   }
-  function filterSkills(query) {
-    const skills = allSkills ?? [];
+  function filterSkills(query, skills) {
     const q2 = query.toLowerCase();
-    if (!q2) return skills;
+    if (!q2) return [...skills];
     const matched = skills.filter(
       (skill) => skill.name.toLowerCase().includes(q2) || skill.description.toLowerCase().includes(q2)
     );
@@ -86134,8 +87145,10 @@ function initSkillPicker(opts) {
     picker.hidden = currentSkills.length === 0;
   }
   async function updatePicker(query) {
-    await ensureSkills();
-    currentSkills = filterSkills(query);
+    const request = ++pickerRequest;
+    const skills = await ensureSkills();
+    if (request !== pickerRequest) return;
+    currentSkills = filterSkills(query, skills);
     renderPicker();
   }
   function selectItem(idx) {
@@ -86154,8 +87167,20 @@ function initSkillPicker(opts) {
     input2.focus();
   }
   function hidePicker() {
+    pickerRequest++;
     picker.hidden = true;
     slashStart = -1;
+  }
+  function refreshOpenPicker() {
+    const val = input2.value;
+    const cursor = input2.selectionStart;
+    const slashIdx = findSkillTriggerIndex(val, cursor);
+    if (slashIdx === -1) {
+      hidePicker();
+      return;
+    }
+    slashStart = slashIdx;
+    void updatePicker(val.slice(slashIdx + 1, cursor));
   }
   function updateSelection() {
     const items = picker.querySelectorAll(".mention-item");
@@ -86204,12 +87229,19 @@ function initSkillPicker(opts) {
   document.addEventListener("mousedown", (e3) => {
     if (!picker.contains(e3.target instanceof Node ? e3.target : null)) hidePicker();
   });
-  window.addEventListener("copse:skills-changed", () => {
+  function handleSkillsChanged() {
+    skillsRevision++;
     allSkills = null;
-  });
-  return () => {
-    hidePicker();
-    allSkills = null;
+    if (slashStart !== -1) refreshOpenPicker();
+  }
+  window.addEventListener("copse:skills-changed", handleSkillsChanged);
+  return {
+    refresh: handleSkillsChanged,
+    destroy() {
+      window.removeEventListener("copse:skills-changed", handleSkillsChanged);
+      hidePicker();
+      allSkills = null;
+    }
   };
 }
 var init_skill_picker = __esm({
@@ -87355,6 +88387,7 @@ function threadToJsonl(thread) {
         ...msg.reasoning !== void 0 ? { reasoning: msg.reasoning } : {},
         images: msg.images,
         ...msg.canvasArtefacts !== void 0 ? { canvasArtefacts: msg.canvasArtefacts } : {},
+        ...msg.visualEvidence !== void 0 ? { visualEvidence: msg.visualEvidence } : {},
         commandSummary: msg.commandSummary,
         ...msg.toolSummary !== void 0 ? { toolSummary: msg.toolSummary } : {},
         ...msg.runSummary !== void 0 ? { runSummary: msg.runSummary } : {},
@@ -87374,7 +88407,7 @@ function threadToJsonl(thread) {
 var THREAD_JSONL_EXPORT_VERSION;
 var init_export_jsonl = __esm({
   "packages/thread-store/src/export-jsonl.ts"() {
-    THREAD_JSONL_EXPORT_VERSION = 7;
+    THREAD_JSONL_EXPORT_VERSION = 8;
   }
 });
 
@@ -87721,7 +88754,7 @@ function buildChangesSuggestion(stats) {
   };
 }
 var DETERMINISTIC_FOLLOW_UP_IDS;
-var init_presets = __esm({
+var init_presets2 = __esm({
   "src/shared/follow-ups/presets.ts"() {
     DETERMINISTIC_FOLLOW_UP_IDS = {
       changes: "changes",
@@ -87767,7 +88800,7 @@ function reconcileChangesSuggestion(suggestions, stats, maxSuggestions = DEFAULT
 var DEFAULT_MAX_SUGGESTIONS;
 var init_changes_stat = __esm({
   "src/shared/follow-ups/changes-stat.ts"() {
-    init_presets();
+    init_presets2();
     DEFAULT_MAX_SUGGESTIONS = 3;
   }
 });
@@ -90098,16 +91131,26 @@ ${description}
   }
   const draftAttachmentsByThread = /* @__PURE__ */ new Map();
   function emptyDraftAttachments() {
-    return { files: [], images: [], videos: [], archives: [], threads: [], shells: [] };
+    return {
+      files: [],
+      images: [],
+      videos: [],
+      archives: [],
+      threads: [],
+      shells: [],
+      threadDraftValue: null
+    };
   }
   function snapshotDraftAttachments() {
+    const threads = attachedThreads.map((thread) => ({ ...thread }));
     return {
       files: attachedFiles.map((file2) => ({ ...file2 })),
       images: attachedImages.map((image) => ({ ...image })),
       videos: attachedVideos.map((video) => ({ ...video })),
       archives: attachedArchives.map((archive) => ({ ...archive })),
-      threads: attachedThreads.map((thread) => ({ ...thread })),
-      shells: attachedShells.map((shell3) => ({ ...shell3 }))
+      threads,
+      shells: attachedShells.map((shell3) => ({ ...shell3 })),
+      threadDraftValue: threads.length > 0 ? composer.draftValue() : null
     };
   }
   function stashDraftAttachments(threadId) {
@@ -90130,6 +91173,7 @@ ${description}
     for (const archive of snapshot.archives) renderArchiveChip(archive);
     for (const thread of snapshot.threads) addThreadChip(thread);
     for (const shell3 of snapshot.shells) addShellChip(shell3);
+    if (snapshot.threadDraftValue !== null) composer.value = snapshot.threadDraftValue;
   }
   function placeStoredVideo(threadId, ref) {
     if (activeComposerThreadId === threadId) {
@@ -90658,16 +91702,27 @@ ${description}
       priorTodos,
       ...workingBrief !== void 0 ? { workingBrief } : {}
     };
+    const inlineChips = composer.getInlineChips();
+    const inlineThreadIds = new Set(
+      inlineChips.flatMap((chip2) => chip2.kind === "thread" ? [chip2.thread.threadId] : [])
+    );
     const attachments = [
-      ...composer.getBlocks().map((b4) => ({ kind: "paste", label: b4.label, content: b4.content })),
-      ...attachedFiles.map((f3) => ({
+      ...inlineChips.flatMap((chip2) => {
+        if (chip2.kind === "paste") {
+          return [{ kind: "paste", label: chip2.block.label, content: chip2.block.content }];
+        }
+        return [{ kind: "thread", label: chip2.thread.label }];
+      }),
+      ...attachedFiles.map((file2) => ({
         kind: "file",
-        label: f3.path.split("/").pop() ?? f3.path,
-        content: f3.content
+        label: file2.path.split("/").pop() ?? file2.path,
+        content: file2.content
       })),
-      ...attachedThreads.map((t2) => ({
+      // Defensive fallback: a thread reference should always have an inline chip,
+      // but retaining an unmatched attachment preserves its agent context.
+      ...attachedThreads.filter((thread2) => !inlineThreadIds.has(thread2.threadId)).map((thread2) => ({
         kind: "thread",
-        label: t2.title || "Untitled thread"
+        label: thread2.title || "Untitled thread"
       })),
       ...attachedShells.map((s16) => ({
         kind: "shell",
@@ -90741,23 +91796,18 @@ ${description}
     scheduleContextEstimate();
   }
   function addThreadChip(ref) {
-    if (attachedThreads.some((t2) => t2.threadId === ref.threadId)) return;
+    if (attachedThreads.some((thread) => thread.threadId === ref.threadId)) return;
     attachedThreads.push(ref);
-    const chip2 = document.createElement("span");
-    chip2.className = "attachment-chip thread-chip";
-    const title = document.createElement("span");
-    title.className = "attachment-chip-label";
-    title.textContent = ref.title || "Untitled thread";
-    chip2.append(threadIcon("thread-chip-icon"), title);
-    const remove = document.createElement("button");
-    remove.append(closeIcon("ui-icon ui-icon-sm"));
-    remove.addEventListener("click", () => {
-      attachedThreads = attachedThreads.filter((t2) => t2.threadId !== ref.threadId);
-      chip2.remove();
-      scheduleContextEstimate();
-    });
-    chip2.append(remove);
-    chips.append(chip2);
+    composer.insertThreadChip(
+      {
+        threadId: ref.threadId,
+        label: ref.title || "Untitled thread"
+      },
+      () => {
+        attachedThreads = attachedThreads.filter((thread) => thread.threadId !== ref.threadId);
+        scheduleContextEstimate();
+      }
+    );
     scheduleContextEstimate();
   }
   function addShellChip(ref) {
@@ -91048,8 +92098,10 @@ ${description}
   const unsubs = [
     // Main fires this after `initSkillsRegistry` (including the background
     // rescan on `workspace:set`). Refresh the cache so `/checkup` and friends
-    // are visible to context estimates before the next picker open/submit.
+    // are visible to context estimates and to a slash picker that is already
+    // open while discovery finishes (#2948).
     api2.agent.onRefreshContextEstimate(() => {
+      skillPicker.refresh();
       refreshSkillsCache();
       scheduleContextEstimate(0);
     }),
@@ -91174,7 +92226,7 @@ ${description}
       portraitPanelControls.destroy();
       branchControl.destroy();
       indexStatusChip.destroy();
-      skillPicker();
+      skillPicker.destroy();
     }
   };
 }
@@ -127857,6 +128909,13 @@ function startAgentController(store2, api2) {
         }
         st2.writing = false;
         activity(threadId);
+        break;
+      }
+      case "visual_evidence": {
+        const ownerId = findToolCallOwner(store2, threadId, chunk.toolCallId);
+        if (ownerId) {
+          addMessageVisualEvidence(store2, ownerId, chunk.toolCallId, chunk.evidence);
+        }
         break;
       }
       case "tool_result": {
