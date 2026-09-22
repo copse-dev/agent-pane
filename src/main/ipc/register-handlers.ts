@@ -692,10 +692,6 @@ export function registerAllHandlers(
     return await captureBrowserScreenshot(interactiveBrowserContents(event, rawId))
   })
 
-  ipcMain.handle('browser:capture-page-text', async (event, rawId: unknown) => {
-    return await captureBrowserPageText(interactiveBrowserContents(event, rawId))
-  })
-
   ipcMain.handle('browser:export-pdf', async (event, rawId: unknown) => {
     const contents = interactiveBrowserContents(event, rawId)
     return await exportBrowserPagePdf(

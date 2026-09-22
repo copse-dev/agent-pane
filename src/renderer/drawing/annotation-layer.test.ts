@@ -1,8 +1,7 @@
 import '../../../tests/setup-dom.ts'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { describeMarks, mountAnnotationLayer, type AnnotationExport } from './annotation-layer.ts'
-import { annotationTextBlock } from './attach-annotation.ts'
+import { mountAnnotationLayer, type AnnotationExport } from './annotation-layer.ts'
 
 function pointer(type: string, x: number, y: number): PointerEvent {
   return new PointerEvent(type, {
@@ -200,44 +199,11 @@ describe('annotation layer', () => {
       assert.equal(payload.marks.length, 1)
       // happy-dom has no canvas, so the raster is null here; the SVG is the payload.
       assert.equal(payload.png, null)
+      assert.equal(payload.captured, true)
     } finally {
       layer.dispose()
       el.remove()
     }
-  })
-
-  it('describes marks by tool, colour and box, and the text block carries page context', () => {
-    const marks = [
-      {
-        tool: 'rect' as const,
-        colour: '#3b82f6',
-        box: { x: 10.4, y: 20.6, width: 100, height: 50 },
-      },
-      { tool: 'arrow' as const, colour: '#e5484d', box: null },
-    ]
-    assert.deepEqual(describeMarks(marks), [
-      '1. rectangle (#3b82f6) at x=10 y=21 w=100 h=50',
-      '2. arrow (#e5484d)',
-    ])
-    const text = annotationTextBlock(
-      { svg: '<svg/>', png: null, width: 400, height: 300, marks },
-      { subject: 'Pricing', url: 'https://example.test/pricing', pageText: '  Plans\nPro $10  ' },
-    )
-    assert.equal(
-      text,
-      [
-        'Annotation over Pricing',
-        'URL: https://example.test/pricing',
-        'Screenshot size: 400×300 CSS px; mark positions below use that space, origin top-left.',
-        '',
-        'Marks:',
-        '1. rectangle (#3b82f6) at x=10 y=21 w=100 h=50',
-        '2. arrow (#e5484d)',
-        '',
-        'Page text:',
-        'Plans\nPro $10',
-      ].join('\n'),
-    )
   })
 
   it('dispose removes the overlay and its window listeners', () => {

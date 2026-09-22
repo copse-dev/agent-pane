@@ -1138,19 +1138,12 @@ export function mountBrowserPane(
           if (contentsId === null || !capture) return null
           return (await capture(contentsId)).dataUrl
         },
-        onSend: async (payload): Promise<void> => {
-          const subject =
+        onSend: (payload): void => {
+          attachAnnotation(
+            payload,
             firstNonEmptyString(tab.artefactTitle, webviewTitle(tab), webviewUrl(tab)) ??
-            'browser page'
-          const contentsId = shareableWebContentsId(tab)
-          const readText = api?.browser.capturePageText
-          const pageText =
-            contentsId !== null && readText
-              ? await readText(contentsId)
-                  .then((share) => share.content)
-                  .catch((): null => null)
-              : null
-          attachAnnotation(payload, { subject, url: currentHttpUrl(tab), pageText })
+              'browser page',
+          )
         },
         onDeactivate: (): void => {
           annotateBtn.setAttribute('aria-pressed', 'false')

@@ -37,35 +37,17 @@ export interface AnnotationMark {
 export interface AnnotationExport {
   /** Self-contained SVG of the marks alone, sized to the host in CSS pixels. */
   svg: string
-  /** PNG data URL of the marks flattened onto the captured base, or null without a capture. */
+  /** PNG data URL: the captured surface with the marks flattened on, or the marks alone. */
   png: string | null
+  /** Whether a capture of the surface sits beneath the marks in `png`. */
+  captured: boolean
   width: number
   height: number
   /** One entry per committed mark, in drawing order. */
   marks: AnnotationMark[]
 }
 
-const TOOL_LABEL: Record<AnnotationTool, string> = {
-  pen: 'pen stroke',
-  line: 'line',
-  arrow: 'arrow',
-  rect: 'rectangle',
-  ellipse: 'ellipse',
-  eraser: 'eraser',
-}
-
-/**
- * Plain-text account of the marks for a model: what was drawn, where, in the
- * pixel space of the attached screenshot. Cheaper and clearer than raw paths.
- */
-export function describeMarks(marks: readonly AnnotationMark[]): string[] {
-  return marks.map((mark, i) => {
-    const where = mark.box
-      ? ` at x=${String(Math.round(mark.box.x))} y=${String(Math.round(mark.box.y))} w=${String(Math.round(mark.box.width))} h=${String(Math.round(mark.box.height))}`
-      : ''
-    return `${String(i + 1)}. ${TOOL_LABEL[mark.tool]} (${mark.colour})${where}`
-  })
-}
+const TOOLS: readonly AnnotationTool[] = ['pen', 'line', 'arrow', 'rect', 'ellipse', 'eraser']
 
 function measureBox(node: Element): AnnotationMark['box'] {
   const getBBox: unknown = Reflect.get(node, 'getBBox')
@@ -92,7 +74,7 @@ function measureBox(node: Element): AnnotationMark['box'] {
 }
 
 function isTool(value: string | null): value is AnnotationTool {
-  return value !== null && Object.hasOwn(TOOL_LABEL, value)
+  return TOOLS.some((t) => t === value)
 }
 
 export interface AnnotationLayerOptions {
@@ -130,7 +112,8 @@ export const ANNOTATION_COLOURS: readonly { name: string; value: string }[] = [
 const SHAPE_SIZE = 3
 const PEN_SIZE = 6
 
-function svgToPng(
+/** Flatten `svg` (sized `width`×`height` CSS px) onto `base`, a PNG data URL or null, at device scale. */
+export function composeAnnotationPng(
   svg: string,
   width: number,
   height: number,
@@ -442,8 +425,17 @@ export function mountAnnotationLayer(
       // result is well-formed XML as well as HTML; no XMLSerializer needed.
       const serialised = clone.outerHTML
       const base = await options.captureBase?.().catch((): null => null)
-      const png = await svgToPng(serialised, width, height, base ?? null).catch((): null => null)
-      return { svg: serialised, png, width, height, marks }
+      const png = await composeAnnotationPng(serialised, width, height, base ?? null).catch(
+        (): null => null,
+      )
+      return {
+        svg: serialised,
+        png,
+        captured: base !== null && base !== undefined,
+        width,
+        height,
+        marks,
+      }
     },
     dispose(): void {
       layer.deactivate()
