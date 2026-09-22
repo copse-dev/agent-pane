@@ -356,7 +356,7 @@ describe('fillFollowUpSuggestions', () => {
     registry.register(
       definePlugin(
         { name: 'copse.test-follow-up-budget', trust: 'first-party', stability: 'experimental' },
-        { followUps: [{ id: 'compare', label: 'Compare models', action: 'model-compare' }] },
+        { followUps: [{ id: 'compare', label: 'Review changes', action: 'review' }] },
       ),
     )
     const plugins = runWithDefaultPluginRegistry(registry, () => buildPluginFollowUps(workspace))
