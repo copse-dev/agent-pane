@@ -6,6 +6,7 @@ import type { ThreadWorktree } from '@shared/types/worktree.ts'
 import { threadWorktreeBranchName } from '@shared/git/worktree-policy.ts'
 import { describeBranchCheckoutFailure } from '@shared/git/branch-held.ts'
 import { runCommand } from './exec/command-runner.ts'
+import { parseWorkingTreeSnapshotHead } from './git-snapshot.ts'
 import { runSerialized } from './storage/write-queue.ts'
 import { copseWorktreesDir } from './storage/copse-paths.ts'
 import {
@@ -675,7 +676,7 @@ export async function allocateThreadWorktree(
       assertBranchName(projectRoot, input.baseBranch, 'Base branch'),
       getDefaultBranch(projectRoot),
       repositoryIsDirty(projectRoot),
-      git(projectRoot, ['rev-parse', 'HEAD']),
+      git(projectRoot, ['show', '-s', '--format=%H%x00%T', 'HEAD']),
       chooseBranch(projectRoot, input.prompt, input.threadId),
       hasOriginRemote(projectRoot),
     ])
@@ -698,7 +699,9 @@ export async function allocateThreadWorktree(
     // checkout parked on another branch — would have those edits pasted onto an
     // unrelated tree, silently mixing two states. Start clean instead; the
     // user's own checkout still holds the work, untouched.
-    const headCommit = headResult.stdout.trim()
+    const snapshotHead =
+      headResult.code === 0 ? parseWorkingTreeSnapshotHead(headResult.stdout) : null
+    const headCommit = snapshotHead?.sha ?? ''
     const seedable = (input.seedFromDirtyProject ?? true) && headCommit === baseCommit
     if (dirtyProject && !seedable) {
       console.info(
@@ -715,6 +718,10 @@ export async function allocateThreadWorktree(
           // so repeating the live worktree-membership process here adds no
           // evidence. The snapshot's own Git commands still fail closed.
           workTreeAlreadyVerified: true,
+          // The same probe wave already pinned HEAD's commit and tree. Reusing
+          // them keeps the snapshot internally consistent without another
+          // serial Git process; malformed/failed probes stay unseedable above.
+          ...(snapshotHead ? { snapshotHead } : {}),
         })
       : null
     if (dirty && !snapshotRef) {
