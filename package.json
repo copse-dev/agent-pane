@@ -78,7 +78,7 @@
     "test:e2e": "node scripts/run-e2e.mts wdio.conf.ts",
     "test:demo": "wdio run wdio.demo.conf.ts",
     "test:e2e:ci": "node scripts/run-e2e.mts wdio.ci.conf.ts",
-    "test:e2e:agent-eval": "wdio run wdio.eval.conf.ts",
+    "test:e2e:agent-eval": "node scripts/run-e2e.mts wdio.eval.conf.ts",
     "eval:autonomy": "node scripts/run-autonomy-container.mts",
     "eval:autonomy:host": "node scripts/run-autonomy-regression.mts",
     "eval:autonomy:ui": "node scripts/run-autonomy-regression.mts --ui",

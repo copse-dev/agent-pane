@@ -1167,6 +1167,10 @@ jobs:
         shard: ${{ fromJSON(needs.precheck.outputs.e2e_shards) }}
     env:
       SHARD_TOTAL: ${{ needs.precheck.outputs.e2e_shard_total }}
+      # Keep reference rendering on Chromium's headed path in CI. The e2e
+      # launcher still provides Xvfb on Linux, while local runs remain headless
+      # by default unless developers opt out with the same variable.
+      COPSE_E2E_HEADLESS: '0'
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/setup
