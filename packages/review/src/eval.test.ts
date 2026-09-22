@@ -177,6 +177,18 @@ describe('review eval scoring', () => {
     )
   })
 
+  it('preserves subtraction operators as semantic claim words', () => {
+    const signals = [['paginate'], ['fewer', 'short', 'minus', 'drop'], ['item', 'size', 'page']]
+    assert.equal(
+      claimMatchesSignals(
+        'paginate now returns only size-1 items per page, breaking the page-size contract',
+        signals,
+      ),
+      true,
+    )
+    assert.equal(claimMatchesSignals('paginate now returns size - 1 items per page', signals), true)
+  })
+
   it('scores surfaced findings only and cannot inflate hits with duplicates', () => {
     const hitA = finding({ id: '1', verdict: { status: 'confirmed', reason: 'r' } })
     const hitB = finding({

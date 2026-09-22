@@ -20,7 +20,7 @@ import type { ReviewReport } from './stage5.ts'
 export const REGRESSION_KINDS = ['build', 'typecheck', 'test'] as const
 export type RegressionKind = (typeof REGRESSION_KINDS)[number]
 /** Increment when the meaning of a scored hit changes. Baseline identity includes it. */
-export const REVIEW_EVAL_VERSION = 4
+export const REVIEW_EVAL_VERSION = 5
 
 /** The finding class Stage 0 mints for each regression kind. */
 const REGRESSION_CLASS: Record<RegressionKind, FindingClass> = {
@@ -85,7 +85,10 @@ export function anchorsOverlap(
 }
 
 function splitIdentifierWords(value: string): string {
-  return value
+  // Preserve subtraction as a semantic word before claimTokens discards
+  // punctuation. Model claims commonly spell "one fewer" as `size-1`.
+  const withOperators = value.replace(/([A-Za-z0-9_])\s*-\s*(?=\d)/g, '$1 minus ')
+  return withOperators
     .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
     .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
     .replace(/_/g, ' ')
