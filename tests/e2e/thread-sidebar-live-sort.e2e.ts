@@ -2,7 +2,7 @@ import { $, browser, expect } from '@wdio/globals'
 import type { Thread } from '@shared/types'
 import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
 import { waitForAgentIdle } from './helpers.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { expectAssistantReply, prepareMockTurn } from './helpers/mock-scenario.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 
 const PROJECT_ID = 'e2e-thread-sidebar-live-sort'
@@ -76,13 +76,15 @@ describe('live sidebar thread ordering', () => {
     await $(`.chat-row*=${OLDER_TITLE}`).click()
     await expect($('.chat-row.selected .chat-title')).toHaveText(OLDER_TITLE)
 
-    await setComposerValue('Continue this older thread')
+    const reply = 'I am ready to continue where we left off in this thread.'
+    await prepareMockTurn('Continue this older thread', [{ text: reply }])
     await $('.submit-btn').click()
     await browser.waitUntil(async () => (await sidebarTitles())[0] === OLDER_TITLE, {
       timeout: 10_000,
       timeoutMsg: 'prompted thread did not move to the front of the sidebar',
     })
     expect(await sidebarTitles()).toEqual([OLDER_TITLE, RECENT_TITLE])
+    await expectAssistantReply(reply)
     await waitForAgentIdle(20_000)
     await expect($('.chat-row.selected .chat-title')).toHaveText(OLDER_TITLE)
 
