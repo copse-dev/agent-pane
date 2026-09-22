@@ -120,7 +120,13 @@ export function createImageGenTool(
       const revised = generated.revisedPrompt ? `\nRevised prompt: ${generated.revisedPrompt}` : ''
       return {
         result: `Generated a PNG with ${IMAGE_GEN_MODEL} and saved it to ${path}.${revised}`,
-        images: [{ dataUrl: `data:image/png;base64,${generated.base64}`, name }],
+        images: [
+          {
+            dataUrl: `data:image/png;base64,${generated.base64}`,
+            name,
+            kind: 'screenshot',
+          },
+        ],
       }
     },
   })

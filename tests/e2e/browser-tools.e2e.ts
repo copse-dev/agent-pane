@@ -22,7 +22,9 @@ describe('browser tool display', () => {
     await expect(rollup.$('summary.tool-card-header .tool-name')).toHaveText('Used browser')
     await expect(rollup.$('summary.tool-card-header .tool-count')).toHaveText('×3')
 
-    const screenshot = $('[data-message-id="msg-assistant-browser"] > .tool-result-images img')
+    const screenshot = $(
+      '[data-message-id="msg-assistant-browser"] > .tool-result-images .tool-result-preview-image',
+    )
     await screenshot.waitForDisplayed({ timeout: 15_000 })
     await expect(screenshot).toHaveAttribute('alt', 'browser-tab-1.png')
     assert.match(await screenshot.getAttribute('src'), /^data:image\/png;base64,/)
@@ -39,12 +41,12 @@ describe('browser tool display', () => {
     await group.$(':scope > summary').click()
     await expect(group).toHaveAttribute('open')
 
-    const screenshot = await group.$('[data-tool-id="tc-browser-screenshot"]')
-    await expect(screenshot).toBeDisplayed()
-    await screenshot.$(':scope > summary').click()
-    await expect(screenshot).toHaveAttribute('open')
+    const screenshotTool = await group.$('[data-tool-id="tc-browser-screenshot"]')
+    await expect(screenshotTool).toBeDisplayed()
+    await screenshotTool.$(':scope > summary').click()
+    await expect(screenshotTool).toHaveAttribute('open')
 
-    const result = await screenshot.$('.tool-result')
+    const result = await screenshotTool.$('.tool-result')
     await expect(result).toHaveText(
       expect.stringContaining('Capture handle (thread-scoped and short-lived):'),
     )

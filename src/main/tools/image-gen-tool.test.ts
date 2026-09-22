@@ -51,6 +51,7 @@ describe('imageGenTool', () => {
       {
         dataUrl: `data:image/png;base64,${PNG_BASE64}`,
         name: saved.name,
+        kind: 'screenshot',
       },
     ])
   })
