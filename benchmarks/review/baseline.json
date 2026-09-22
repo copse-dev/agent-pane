@@ -184,5 +184,43 @@
     "truePositives": 6,
     "duplicates": 0,
     "outputTokensPerConfirmed": 387
+  },
+  "mock:b1aaa2fe55ab": {
+    "configuration": {
+      "evaluationVersion": 5,
+      "reviewers": [
+        {
+          "model": "mock",
+          "provider": "mock",
+          "endpoint": null
+        }
+      ],
+      "challenger": {
+        "model": "mock",
+        "provider": "mock",
+        "endpoint": null
+      },
+      "lenses": ["correctness", "contracts"],
+      "reviewerMaxSteps": null,
+      "maxVerifiedFindings": 10,
+      "verify": true,
+      "corpus": {
+        "cases": [
+          "clean-rename",
+          "external-image-provenance",
+          "false-alarm",
+          "null-check-dropped",
+          "paginate-off-by-one",
+          "semantic-image-kind",
+          "timer-leak"
+        ],
+        "fingerprint": "35d858dd9ef7110686bf231834113f4c638cddf4d4c2355353fd7c5187de528b"
+      }
+    },
+    "cases": 7,
+    "precision": 0.857,
+    "truePositives": 6,
+    "duplicates": 0,
+    "outputTokensPerConfirmed": 387
   }
 }
