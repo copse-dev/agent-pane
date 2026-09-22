@@ -19,7 +19,6 @@ const STDIO_SERVER = join(process.cwd(), 'tests/e2e/fixtures/mock-mcp-server.mts
 const HTTP_SERVER = join(process.cwd(), 'tests/e2e/fixtures/http-mcp-server.mts')
 const HTTP_TOKEN = 'mcp-e2e-token'
 const INITIAL_HTTP_TOKEN = process.env['MCP_HTTP_TOKEN']
-const INITIAL_MCP_FIXTURE_MODE = process.env['COPSE_E2E_MCP_FIXTURE']
 const temporaryWorkspaces: string[] = []
 
 function isolatedMcpConfigPath(): string {
@@ -104,19 +103,8 @@ async function openMcpSettings(): Promise<WebdriverIO.Element> {
 }
 
 describe('MCP validation', () => {
-  before(() => {
-    writeE2eEnv({ COPSE_E2E_MCP_FIXTURE: '1' })
-  })
-
   afterEach(() => {
     resetUserData()
-  })
-
-  after(() => {
-    writeE2eEnv({
-      COPSE_E2E_MCP_FIXTURE: INITIAL_MCP_FIXTURE_MODE,
-      MCP_HTTP_TOKEN: INITIAL_HTTP_TOKEN,
-    })
   })
 
   it('shows a connected stdio server and its tools in Settings', async function () {
@@ -262,7 +250,6 @@ describe('MCP HTTP transport with auth', () => {
 
   before(async function () {
     this.timeout(30_000)
-    writeE2eEnv({ COPSE_E2E_MCP_FIXTURE: '1' })
     server = spawn('node', ['--experimental-strip-types', HTTP_SERVER], {
       env: { ...process.env, MCP_HTTP_TOKEN: HTTP_TOKEN, MCP_HTTP_PORT: '0' },
       stdio: ['ignore', 'pipe', 'inherit'],
@@ -309,10 +296,7 @@ describe('MCP HTTP transport with auth', () => {
 
   after(async () => {
     server?.kill()
-    writeE2eEnv({
-      COPSE_E2E_MCP_FIXTURE: INITIAL_MCP_FIXTURE_MODE,
-      MCP_HTTP_TOKEN: INITIAL_HTTP_TOKEN,
-    })
+    writeE2eEnv({ MCP_HTTP_TOKEN: INITIAL_HTTP_TOKEN })
     resetUserData()
   })
 

@@ -234,9 +234,15 @@ async function collectConfigs(): Promise<{
 async function collectE2eMcpFixtureConfig(): Promise<{
   active: McpServerConfig[]
   untrusted: McpServerConfig[]
-}> {
+} | null> {
+  const configPath = join(getElectronUserDataPath(), 'mcp.json')
+  try {
+    await fs.access(configPath)
+  } catch {
+    return null
+  }
   return {
-    active: await readConfigFile(join(getElectronUserDataPath(), 'mcp.json')),
+    active: await readConfigFile(configPath),
     untrusted: [],
   }
 }
@@ -627,10 +633,14 @@ async function teardown(registry: ToolRegistry): Promise<void> {
 
 export async function loadMcpServers(registry: ToolRegistry): Promise<void> {
   const generation = ++loadGeneration
-  const e2eMcpFixture =
-    __COPSE_TEST_SCENARIOS__ &&
-    process.env['COPSE_E2E'] === '1' &&
-    process.env['COPSE_E2E_MCP_FIXTURE'] === '1'
+  // E2e profiles are isolated from real user state. When a spec writes the
+  // supported user-data mcp.json surface, load only that file; otherwise retain
+  // the ordinary in-process bundled-server coverage and skip configured servers.
+  const e2eMcpFixtureConfig =
+    __COPSE_TEST_SCENARIOS__ && process.env['COPSE_E2E'] === '1'
+      ? await collectE2eMcpFixtureConfig()
+      : null
+  const e2eMcpFixture = e2eMcpFixtureConfig !== null
   // Bundled in-process servers (e.g. the canvas) are always considered, even with
   // no user config, so the feature "just works" once the experimental flag is on.
   // They connect ahead of the eval/e2e bail below: that bail exists to keep those
@@ -656,9 +666,7 @@ export async function loadMcpServers(registry: ToolRegistry): Promise<void> {
     }
     return
   }
-  const { active, untrusted } = e2eMcpFixture
-    ? await collectE2eMcpFixtureConfig()
-    : await collectConfigs()
+  const { active, untrusted } = e2eMcpFixtureConfig ?? (await collectConfigs())
   if (generation !== loadGeneration) return // superseded while reading config
   const userDisabled = getUserDisabledServerNames()
   if (active.length === 0 && untrusted.length === 0 && bundledStatuses.length === 0) {
