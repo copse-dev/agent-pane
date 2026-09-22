@@ -186,6 +186,8 @@ export interface ApiClient {
      * attaching it; the annotation layer composes its marks on top first.
      */
     captureScreenshot: (webContentsId: number) => Promise<BrowserImageShare>
+    /** The tab's readable text, returned to the caller rather than attached. */
+    capturePageText: (webContentsId: number) => Promise<BrowserTextShare>
     /** Print the tab to a PDF the user picks; resolves null when cancelled. */
     exportPdf: (webContentsId: number) => Promise<string | null>
     onShareText: (handler: (share: BrowserTextShare) => void) => () => void

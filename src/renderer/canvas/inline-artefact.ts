@@ -198,7 +198,8 @@ export function createInlineArtefact(
       label: title,
       captureBase,
       onSend: (payload): void => {
-        attachAnnotation(payload, title)
+        // The artefact's own HTML is already in the thread; the title is the context.
+        attachAnnotation(payload, { subject: `artefact "${title}"` })
       },
       onDeactivate: (): void => {
         annotate.setAttribute('aria-pressed', 'false')

@@ -27,6 +27,13 @@ import { SVG_NS } from './drauu/utils.ts'
 
 export type AnnotationTool = 'pen' | 'line' | 'arrow' | 'rect' | 'ellipse' | 'eraser'
 
+export interface AnnotationMark {
+  tool: AnnotationTool
+  colour: string
+  /** Bounding box in CSS pixels of the host, origin top-left; null when the DOM cannot measure. */
+  box: { x: number; y: number; width: number; height: number } | null
+}
+
 export interface AnnotationExport {
   /** Self-contained SVG of the marks alone, sized to the host in CSS pixels. */
   svg: string
@@ -34,7 +41,58 @@ export interface AnnotationExport {
   png: string | null
   width: number
   height: number
-  marks: number
+  /** One entry per committed mark, in drawing order. */
+  marks: AnnotationMark[]
+}
+
+const TOOL_LABEL: Record<AnnotationTool, string> = {
+  pen: 'pen stroke',
+  line: 'line',
+  arrow: 'arrow',
+  rect: 'rectangle',
+  ellipse: 'ellipse',
+  eraser: 'eraser',
+}
+
+/**
+ * Plain-text account of the marks for a model: what was drawn, where, in the
+ * pixel space of the attached screenshot. Cheaper and clearer than raw paths.
+ */
+export function describeMarks(marks: readonly AnnotationMark[]): string[] {
+  return marks.map((mark, i) => {
+    const where = mark.box
+      ? ` at x=${String(Math.round(mark.box.x))} y=${String(Math.round(mark.box.y))} w=${String(Math.round(mark.box.width))} h=${String(Math.round(mark.box.height))}`
+      : ''
+    return `${String(i + 1)}. ${TOOL_LABEL[mark.tool]} (${mark.colour})${where}`
+  })
+}
+
+function measureBox(node: Element): AnnotationMark['box'] {
+  const getBBox: unknown = Reflect.get(node, 'getBBox')
+  if (typeof getBBox !== 'function') return null
+  try {
+    const box: unknown = Reflect.apply(getBBox, node, [])
+    if (
+      box &&
+      typeof box === 'object' &&
+      'x' in box &&
+      'y' in box &&
+      'width' in box &&
+      'height' in box
+    ) {
+      const { x, y, width, height } = box
+      if ([x, y, width, height].every((v) => typeof v === 'number' && Number.isFinite(v))) {
+        return { x: Number(x), y: Number(y), width: Number(width), height: Number(height) }
+      }
+    }
+  } catch {
+    // Detached or unrenderable geometry; leave the box unknown.
+  }
+  return null
+}
+
+function isTool(value: string | null): value is AnnotationTool {
+  return value !== null && Object.hasOwn(TOOL_LABEL, value)
 }
 
 export interface AnnotationLayerOptions {
@@ -296,6 +354,12 @@ export function mountAnnotationLayer(
       brush: { mode: 'stylus', color: colour, size: PEN_SIZE },
     })
     drauu.on('changed', syncButtons)
+    // Remember which tool and colour made each mark so the export can describe it.
+    drauu.on('committed', (node) => {
+      if (!node) return
+      node.setAttribute('data-tool', tool)
+      node.setAttribute('data-colour', colour)
+    })
     applyBrush()
     syncButtons()
   }
@@ -358,7 +422,14 @@ export function mountAnnotationLayer(
       const rect = host.getBoundingClientRect()
       const width = Math.max(1, Math.round(rect.width))
       const height = Math.max(1, Math.round(rect.height))
-      const marks = svg?.childElementCount ?? 0
+      const marks: AnnotationMark[] = Array.from(svg?.children ?? []).map((node) => {
+        const t = node.getAttribute('data-tool')
+        return {
+          tool: isTool(t) ? t : 'pen',
+          colour: node.getAttribute('data-colour') ?? colour,
+          box: measureBox(node),
+        }
+      })
       const clone = svg ? svg.cloneNode(true) : document.createElementNS(SVG_NS, 'svg')
       if (!(clone instanceof Element)) throw new Error('annotation clone is not an element')
       clone.removeAttribute('class')
