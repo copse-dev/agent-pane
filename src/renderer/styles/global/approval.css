@@ -87,8 +87,8 @@
 .approval-body-code {
   font-family: var(--font-mono);
 }
-/* A homogeneous batch shares one explanation and presents only its changing
- * subjects as a compact list. The list owns the outer card and scrollbar so
+/* A matching decision merges its distinct explanations and presents all
+ * subjects as one compact list. The list owns the outer card and scrollbar so
  * parallel commands read as one approval decision, not repeated prompts. */
 .approval-body-list {
   overflow-y: auto;
