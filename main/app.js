@@ -64362,7 +64362,7 @@ function attentionBell(label) {
   return svg2;
 }
 function runningStatus(label) {
-  const svg2 = runningStatusIcon("ui-icon ui-icon-sm chat-running-status");
+  const svg2 = runningStatusIcon("ui-icon chat-running-status");
   svg2.setAttribute("role", "img");
   svg2.setAttribute("aria-label", label);
   svg2.setAttribute("data-tooltip", label);
