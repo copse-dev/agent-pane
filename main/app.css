@@ -3907,7 +3907,7 @@ label {
 .msg-actions {
   position: absolute;
   right: 0;
-  bottom: 0;
+  bottom: calc(-1 * var(--spacing-xs));
   display: flex;
   gap: var(--spacing-xs);
   opacity: 0;
@@ -9727,7 +9727,7 @@ dialog.settings-overlay::backdrop {
   align-items: center;
   gap: var(--spacing-sm);
 }
-.mcp-server-toggle {
+.mcp-server-header .mcp-server-toggle {
   margin: 0;
 }
 .mcp-server-header .mcp-server-summary {
@@ -9821,7 +9821,7 @@ dialog.settings-overlay::backdrop {
   padding: var(--spacing-sm);
 }
 .mcp-curated-row .mcp-server-toggle {
-  margin-top: 2px;
+  margin: 2px 0 0;
 }
 .mcp-curated-body {
   flex: 1;
