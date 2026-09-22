@@ -205,6 +205,22 @@ describe('cross-message tool runs (component)', () => {
     )
   })
 
+  it('retains settled reasoning paragraphs when later run steps receive chunks', () => {
+    const { store, ids } = seedRun()
+    const settledId = ids[1] ?? ''
+    const liveId = ids.at(-1) ?? ''
+    appendReasoning(store, settledId, 'Completed **investigation**.\n\nEverything checked.')
+    const host = mount(store)
+    const settled = qsRequired(
+      host,
+      `.tool-card-step[data-step-message-id="${settledId}"] .message-reasoning-text p`,
+    )
+    for (let index = 0; index < 8; index++) {
+      appendReasoning(store, liveId, `More reasoning ${String(index)}. `)
+      assert.ok(settled.isConnected, 'later chunks must not replace completed-step markdown')
+    }
+  })
+
   it('hands a member its tools back when it gains prose', () => {
     const { store, ids } = seedRun()
     const host = mount(store)
