@@ -792,8 +792,8 @@ async function runDocker(args: string[]): Promise<string> {
   return stdout.trim()
 }
 
-export async function dockerAvailable(): Promise<boolean> {
-  return dockerDaemonReachable()
+export function dockerAvailable(): Promise<boolean> {
+  return Promise.resolve(dockerDaemonReachable())
 }
 
 /**

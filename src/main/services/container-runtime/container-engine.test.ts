@@ -3,12 +3,13 @@ import assert from 'node:assert/strict'
 import {
   dockerDaemonReachable,
   requireDockerForThreadContainer,
+  type CommandProbeResult,
   type ContainerEngineProbe,
 } from './container-engine.ts'
 
 function probeMap(map: Record<string, boolean | string>): ContainerEngineProbe {
   return {
-    probe(command, args) {
+    probe(command, args): CommandProbeResult {
       const key = `${command} ${args.join(' ')}`
       const entry = map[key]
       if (entry === true) return { ok: true, detail: 'ok' }
