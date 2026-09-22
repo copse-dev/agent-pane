@@ -213,6 +213,7 @@ describe('reviewer tools', () => {
   it('requires a structured completion and refuses tool calls after it', async () => {
     const executor = createReviewerToolExecutor(host)
     assert.equal(executor.completion(), null)
+    assert.equal(executor.completionError(), null)
     assert.match(
       await executor.execute(
         'finish_review',
@@ -226,19 +227,32 @@ describe('reviewer tools', () => {
       checked: 'The changed source and its direct callers.',
       couldNotVerify: 'Nothing',
     })
+    assert.equal(executor.completionError(), null)
     assert.match(
       await executor.execute('read_file', { path: 'src/a.ts' }, signal, 'late-1'),
       /already finished/,
     )
+    const invalid = createReviewerToolExecutor(host)
     assert.match(
-      await createReviewerToolExecutor(host).execute(
+      await invalid.execute(
         'finish_review',
         { checked: 'short', couldNotVerify: 'Nothing' },
         signal,
         'bad-1',
       ),
-      /^Error: finish_review needs/,
+      /^Error: finish_review needs.*checked:.*8/,
     )
+    assert.match(invalid.completionError() ?? '', /^checked:.*8/)
+    assert.match(
+      await invalid.execute(
+        'finish_review',
+        { checked: 'The changed source and its direct callers.', couldNotVerify: 'Nothing' },
+        signal,
+        'done-after-bad',
+      ),
+      /completion recorded/i,
+    )
+    assert.equal(invalid.completionError(), null)
   })
 
   it('anchors findings bundled into the final completion atomically', async () => {
@@ -296,6 +310,10 @@ describe('reviewer tools', () => {
     assert.ok(tool)
     assert.equal(tool.name, 'finish_review')
     assert.deepEqual(tool.parameters['required'], ['checked', 'couldNotVerify', 'findings'])
+    const schema = JSON.stringify(tool.parameters)
+    assert.match(schema, /"checked":\{"type":"string","minLength":8,"maxLength":800/)
+    assert.match(schema, /"findings":\{"type":"array".*"maxItems":20/)
+    assert.match(schema, /"claim":\{"type":"string","minLength":8,"maxLength":400/)
   })
 
   it('names an unknown tool without throwing', async () => {

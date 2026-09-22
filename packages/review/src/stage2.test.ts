@@ -214,6 +214,54 @@ describe('runStage2', () => {
     assert.equal(provider.streamOptions[2], undefined)
   })
 
+  it('feeds a rejected closure reason back so the repair can correct its arguments', async () => {
+    const provider = new ScriptedProvider([
+      { type: 'text', text: 'I checked the changed implementation and found no defect.' },
+      {
+        type: 'tool_call',
+        name: 'finish_review',
+        args: { checked: 'short', couldNotVerify: 'Nothing', findings: [] },
+      },
+      {
+        type: 'tool_call',
+        name: 'finish_review',
+        args: {
+          checked: 'src/math.ts and the changed implementation.',
+          couldNotVerify: 'Nothing',
+          findings: [],
+        },
+      },
+      { type: 'text', text: 'Done.' },
+    ])
+    const result = await runStage2({
+      provider,
+      model: 'scripted',
+      lens: CORRECTNESS_LENS,
+      context,
+      headCheckout: checkouts.head,
+      cell: null,
+      shellDecision: 'deny',
+      scrub: (text) => text,
+      threadId: 'thread-repair-invalid',
+      turnId: 'turn-repair-invalid',
+    })
+    assert.equal(result.outcome, 'completed')
+    assert.equal(result.error, undefined)
+    assert.equal(result.toolCalls, 2)
+    assert.equal(result.candidates.length, 0)
+    assert.equal(
+      result.summary,
+      'Checked: src/math.ts and the changed implementation.\nCould not verify: Nothing',
+    )
+    assert.deepEqual(provider.streamOptions[1], { toolChoice: { name: 'finish_review' } })
+    assert.equal(provider.streamOptions[2], undefined)
+    const rejectedResult = result.events.find(
+      (event) => event.type === 'tool_result' && event.toolCallId === 'call-2',
+    )
+    assert.ok(rejectedResult?.type === 'tool_result')
+    assert.match(rejectedResult.result, /checked:.*8/)
+  })
+
   it('reports a provider failure as a failed turn, never as findings', async () => {
     const broken: LLMProvider = {
       stream: () => ({

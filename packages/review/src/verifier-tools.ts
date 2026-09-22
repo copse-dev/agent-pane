@@ -67,25 +67,34 @@ export interface VerifierToolHost extends ReviewerToolHost {
   prepareBase(signal: AbortSignal): Promise<void>
 }
 
+function verdictTool(): LLMTool {
+  return {
+    name: 'verdict',
+    description:
+      'Close the challenge. refuted: you can show, from the code or a command, that the claim is wrong; stands: you actively confirmed the defect; undetermined: neither.',
+    parameters: {
+      type: 'object',
+      properties: {
+        status: { type: 'string', enum: [...VERDICT_OUTCOMES] },
+        reason: { type: 'string', description: 'The lines or output that decide it' },
+      },
+      required: ['status', 'reason'],
+    },
+  }
+}
+
 export function challengerTools(): LLMTool[] {
   return [
     ...reviewerTools().filter(
       (tool) => tool.name !== 'report_finding' && tool.name !== 'finish_review',
     ),
-    {
-      name: 'verdict',
-      description:
-        'Close the challenge. refuted: you can show, from the code or a command, that the claim is wrong; stands: you actively confirmed the defect; undetermined: neither.',
-      parameters: {
-        type: 'object',
-        properties: {
-          status: { type: 'string', enum: [...VERDICT_OUTCOMES] },
-          reason: { type: 'string', description: 'The lines or output that decide it' },
-        },
-        required: ['status', 'reason'],
-      },
-    },
+    verdictTool(),
   ]
+}
+
+/** A one-tool protocol-repair surface for a challenger that ended in prose. */
+export function challengerClosureTools(): LLMTool[] {
+  return [verdictTool()]
 }
 
 export function reproducerTools(): LLMTool[] {

@@ -225,6 +225,65 @@ describe('verifyFindings', () => {
     assert.equal(result.counts.refuted, 1)
   })
 
+  it('repairs a prose-only challenge with an exact verdict tool choice', async () => {
+    const finding = candidate('7777777777777777', 'security', 1)
+    const provider = new ScriptedProvider([
+      {
+        type: 'text',
+        text: 'The changed return value is used by the only caller, so the defect stands.',
+      },
+      {
+        type: 'tool_call',
+        name: 'verdict',
+        args: {
+          status: 'stands',
+          reason: 'lib.cjs line 1 returns 2 and the only caller still requires 1.',
+        },
+      },
+      { type: 'text', text: 'Done.' },
+    ])
+    const result = await verifyFindings({
+      ...options([finding], {}),
+      challenger: { model: 'challenger-model', provider },
+    })
+
+    const record = result.records.at(0)
+    assert.ok(record)
+    assert.equal(record.result, 'survived')
+    assert.equal(record.outcome, 'completed')
+    assert.equal(result.counts.survived, 1)
+    assert.deepEqual(provider.streamOptions, [
+      undefined,
+      { toolChoice: { name: 'verdict' } },
+      undefined,
+    ])
+    const repair = provider.calls.at(1)?.at(-1)
+    assert.ok(repair)
+    assert.equal(repair.role, 'user')
+    const { content } = repair
+    if (typeof content !== 'string') assert.fail('repair prompt must be text')
+    assert.match(content, /Call verdict exactly once now/)
+  })
+
+  it('fails closed when the challenger ignores the required verdict repair', async () => {
+    const finding = candidate('8888888888888888', 'security', 1)
+    const result = await verifyFindings(
+      options([finding], {
+        challenge: [
+          { type: 'text', text: 'I think this is probably fine.' },
+          { type: 'text', text: 'Still not calling the tool.' },
+        ],
+      }),
+    )
+
+    const record = result.records.at(0)
+    assert.ok(record)
+    assert.equal(record.result, 'undetermined')
+    assert.equal(record.outcome, 'failed')
+    assert.match(record.reason, /stopped without calling the required verdict tool/)
+    assert.deepEqual(result.findings.at(0)?.provenance.challengedBy, [])
+  })
+
   it('verifies the most promising findings first and counts the rest as skipped', async () => {
     const low = {
       ...candidate('4444444444444444', 'security', 1),

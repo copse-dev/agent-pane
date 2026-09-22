@@ -73,10 +73,14 @@ export async function runStage2(options: Stage2Options): Promise<Stage2Result> {
     threadId: options.threadId,
     turnId: options.turnId,
     maxSteps: options.maxSteps ?? options.lens.maxSteps,
-    completionError: () =>
-      executor.completion() === null
-        ? 'reviewer stopped without calling the required finish_review tool'
-        : undefined,
+    completionError: () => {
+      if (executor.completion() !== null) return undefined
+      const rejection = executor.completionError()
+      return [
+        'reviewer stopped without calling the required finish_review tool',
+        ...(rejection === null ? [] : [`last finish_review rejection: ${rejection}`]),
+      ].join('; ')
+    },
     completionRepair: {
       tools: reviewerClosureTools(),
       toolChoice: { name: 'finish_review' },
