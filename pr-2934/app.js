@@ -67483,9 +67483,6 @@ var init_models = __esm({
 });
 
 // src/renderer/drawing/drauu/drauu.ts
-function isPointerInputType(value) {
-  return value === "mouse" || value === "touch" || value === "pen";
-}
 function createDrauu(options) {
   return new Drauu(options);
 }
@@ -67662,9 +67659,7 @@ var init_drauu = __esm({
       }
       acceptsInput(event) {
         const accepted = this.options.acceptsInputTypes;
-        if (accepted && !(isPointerInputType(event.pointerType) && accepted.includes(event.pointerType))) {
-          return false;
-        }
+        if (accepted && !accepted.some((type) => type === event.pointerType)) return false;
         return this.originalPointerId === null || this.originalPointerId === event.pointerId;
       }
       eventKeyboard(event) {
@@ -67760,8 +67755,9 @@ function measureBox(node2) {
   }
   return null;
 }
-function isTool(value) {
-  return TOOLS.some((t2) => t2 === value);
+function toolOf(node2) {
+  const tagged = node2.getAttribute("data-tool");
+  return TOOLS.find((t2) => t2 === tagged) ?? "pen";
 }
 function composeAnnotationPng(svg2, width, height, base) {
   return new Promise((resolve, reject) => {
@@ -68020,9 +68016,8 @@ function mountAnnotationLayer(host, options) {
       const width = Math.max(1, Math.round(rect.width));
       const height = Math.max(1, Math.round(rect.height));
       const marks = Array.from(svg2?.children ?? []).map((node2) => {
-        const t2 = node2.getAttribute("data-tool");
         return {
-          tool: isTool(t2) ? t2 : "pen",
+          tool: toolOf(node2),
           colour: node2.getAttribute("data-colour") ?? colour,
           box: measureBox(node2)
         };
