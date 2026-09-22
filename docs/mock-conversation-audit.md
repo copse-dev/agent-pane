@@ -297,7 +297,7 @@ an empty or malformed provider response. Auxiliary title generation cannot
 consume a conversation scenario. Release builds remove the scenario runner and
 test bridges.
 
-The rebased migration covers 63 Electron spec files, browser demo fixtures, ACP
+The rebased migration covers 64 Electron spec files, browser demo fixtures, ACP
 integration tests, and benchmark, doctrine, and steering smoke tasks. Current
 provider, profile, IPC, MCP, and build behavior is preserved. The old Playwright
 MCP spec is now an executable WDIO spec with stdio, approval, and authenticated
@@ -320,8 +320,8 @@ without a producing spec are removed instead of retaining obsolete mock text.
 **Validation on the rebased implementation**
 
 - `pnpm run check` passed on Node 24.20.0: typecheck, lint, formatting, dead-code
-  and oracle guards, and all **9,936 unit tests**.
-- All **63 changed Electron spec files passed** across focused local runs. The
+  and oracle guards, and the complete unit test suite.
+- All **64 changed Electron spec files passed** across focused local runs. The
   MCP spec passed all five stdio, approval, and HTTP-auth cases together. This
   includes the changed cases normally excluded from the CI suite.
 - All **25 browser demo specs passed**. Benchmark smoke passed 1/1, doctrine
@@ -334,6 +334,11 @@ without a producing spec are removed instead of retaining obsolete mock text.
   no recognition errors and no matches for the old directives, generic mock/demo
   replies, mock-health reply text, or missing-scenario diagnostics. OCR supports
   the source and DOM guards; it is not proof of every pixel.
+
+The full Electron CI tier also found two fixtures whose settings and terminal
+crops hid an unconfigured fallback reply in the transcript. Those fixtures now
+read real router and README files through registered scenarios and assert the
+resulting replies before capture. Both focused specs pass.
 
 The broad provider and fixture changes require the full Electron CI tier before
 merge. The focused runs above supplement that gate rather than replacing it.

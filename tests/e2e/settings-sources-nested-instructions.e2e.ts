@@ -3,8 +3,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
-import { setComposerValue } from './helpers/composer.ts'
-import { installMockScenario } from './helpers/mock-scenario.ts'
+import { expectAssistantReply, prepareMockTurn } from './helpers/mock-scenario.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject, writeSeedConfig } from './helpers/seed-config.ts'
 import { waitForAgentIdle } from './helpers.ts'
@@ -44,6 +43,11 @@ describe('settings sources nested AGENTS.md (#1354)', function () {
       'Web package conventions.\n',
       'utf8',
     )
+    writeFileSync(
+      join(workspaceRoot, 'packages', 'api', 'src', 'router.ts'),
+      "export const routes = [{ method: 'GET', path: '/health' }]\n",
+      'utf8',
+    )
 
     seedEmptyProject(workspaceRoot, PROJECT_ID, {
       subagentsEnabled: false,
@@ -65,18 +69,14 @@ describe('settings sources nested AGENTS.md (#1354)', function () {
 
   it('shows active and inactive directory scopes after a path activates one branch', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    await installMockScenario({
-      title: 'Review the API router',
-      turns: [
-        {
-          user: { includes: 'packages/api/src/router.ts' },
-          responses: [{ text: 'The API router coordinates request handling.' }],
-        },
-      ],
-    })
-    await setComposerValue('Review packages/api/src/router.ts and explain its role.')
+    const reply =
+      'The API router declares a GET /health route and follows the API package conventions.'
+    await prepareMockTurn('Review packages/api/src/router.ts and explain its role.', [
+      { toolCalls: [{ name: 'read_file', args: { path: 'packages/api/src/router.ts' } }] },
+      { text: reply, expectToolResults: [{ name: 'read_file', includes: '/health' }] },
+    ])
     await $('.submit-btn').click()
-    await $('.messages-list .msg-assistant').waitForExist({ timeout: 30_000 })
+    await expectAssistantReply(reply)
     await waitForAgentIdle(30_000)
 
     await $('[aria-label="Settings"]').click()
