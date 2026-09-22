@@ -88150,8 +88150,16 @@ ${description}
         return;
       }
     }
-    const currentBranch = await api2.git.currentBranch(projectId, id);
     const thread = getThreadById(store2, id);
+    const requiresCheckoutPreparation = thread !== void 0 && thread.messages.length === 0 && !thread.worktreeChoice;
+    const prefetchedGitState = requiresCheckoutPreparation ? null : await Promise.allSettled([
+      api2.git.currentBranch(projectId, id),
+      api2.git.promptState(projectId, id)
+    ]);
+    const branchResult = prefetchedGitState?.[0];
+    if (branchResult?.status === "rejected") throw branchResult.reason;
+    const currentBranch = branchResult?.status === "fulfilled" ? branchResult.value : await api2.git.currentBranch(projectId, id);
+    const prefetchedPromptState = prefetchedGitState?.[1];
     const threadBranch = thread?.gitBranch;
     const isolatedWorktree = thread !== void 0 && thread.worktree !== void 0;
     if (threadBranch && threadGitBranchMismatch(threadBranch, currentBranch, { isolatedWorktree })) {
@@ -88244,7 +88252,8 @@ ${description}
         updateCheckoutControl();
       }
     }
-    const promptState = await api2.git.promptState(projectId, id);
+    if (prefetchedPromptState?.status === "rejected") throw prefetchedPromptState.reason;
+    const promptState = prefetchedPromptState?.status === "fulfilled" ? prefetchedPromptState.value : await api2.git.promptState(projectId, id);
     const priorTodos = thread?.todos ?? [];
     const workingBrief = nextWorkingBrief(thread?.workingBrief, fullContent);
     if (workingBrief && workingBrief !== thread?.workingBrief) {
