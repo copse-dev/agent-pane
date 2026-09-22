@@ -22,11 +22,14 @@ on:
     # is gated on `draft == false` below: without it, promoting a draft would
     # never dispatch those jobs and `CI Passed` would sit on the draft's
     # heavy-jobs-skipped result forever.
-    types: [opened, synchronize, reopened, labeled, ready_for_review]
+    # `edited` is required for base-branch retargets. The tier and oracle diff
+    # both depend on the current base; without a new run, a head checked against
+    # one base can retain stale CI after it is moved to another (#2520).
+    types: [opened, synchronize, reopened, edited, labeled, ready_for_review]
     # No `branches:` filter — PRs into `main` and the promotion PRs into
     # `release` both run this workflow. Which TIER they get is decided per job by
     # `github.base_ref`, not here, so a PR retargeted from `main` to `release`
-    # picks up the full tier on its next sync without touching this file.
+    # immediately starts a fresh run and picks up the full tier.
   # Nightly full e2e on GitHub-hosted runners — the comprehensive safety net.
   # Merge-eligible PRs run either the oracle-selected subset or, when the oracle
   # cannot safely thin, the full suite. Main pushes remain cheap because their

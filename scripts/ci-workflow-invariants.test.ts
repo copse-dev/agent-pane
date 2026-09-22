@@ -11,6 +11,16 @@ import { resolve } from 'node:path'
 describe('ci.yml workflow invariants', () => {
   const workflow = readFileSync(resolve('.github/workflows/ci.yml'), 'utf8')
 
+  it('starts a fresh CI run when a pull request is retargeted', () => {
+    const trigger = workflow.match(/^ {2}pull_request:\n(?: {4}.*\n)+/m)?.[0]
+    assert.ok(trigger, 'expected a `pull_request:` trigger in ci.yml')
+    assert.match(
+      trigger,
+      /types: \[[^\]]*\bedited\b[^\]]*\]/,
+      'base-branch edits must re-evaluate the tier and diff against the current base',
+    )
+  })
+
   /**
    * A whole job block, header through to the next top-level job. The
    * `(?: {4}.*\n)+` shape used by the older pins above stops at the first line
@@ -176,10 +186,9 @@ describe('ci.yml workflow invariants', () => {
 
   it('only demands PR e2e in the cases the e2e job actually dispatches', () => {
     // The gate demanding a job that skipped itself is a deadlock, not a
-    // fail-closed: `CI Passed` can never go green, and because `pull_request`
-    // has no `edited` trigger, retargeting away from `main` does not re-run CI,
-    // so the false red outlives the move. Both escape hatches the `e2e` job
-    // applies must therefore be mirrored on the demand side.
+    // fail-closed: `CI Passed` can never go green until another event starts a
+    // corrected run. Both escape hatches the `e2e` job applies must therefore
+    // be mirrored on the demand side.
     const aggregate = workflow.match(/^ {2}ci-passed:\n[\s\S]*$/m)?.[0]
     assert.ok(aggregate, 'expected the `ci-passed` job in ci.yml')
     assert.match(
