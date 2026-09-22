@@ -376,7 +376,9 @@ scope.
   branch, resolves PR metadata and dispatches grounding; it checks out and executes nothing.
   **Job A** is a separate `workflow_dispatch` run on a fresh runner with `permissions: {}` and
   no secrets; it fetches the exact resolved head, runs Stage 0 and the reproducers, and uploads
-  results as an artefact. **Job B** runs on the base ref
+  results as an artefact. A fresh handoff job, which checks out and consumes nothing, gets
+  only Actions-dispatch permission after Job A succeeds and explicitly dispatches **Job B**.
+  Job B runs on the base ref
   with the model key and a write token, downloads the artefact, runs the model stages, and
   posts findings. Self-hosted Forgejo runners must be ephemeral (a fresh container per job):
   a persistent runner is precisely what a malicious PR would persist on.
@@ -785,10 +787,15 @@ CI shell needs (`stage0-report.ts`, `forge-review.ts`) and the workflows
   and removed checkout credentials. That runner installs
   only the reviewer's workspace subtree with scripts off, runs Stage 0 on the head, and
   uploads the report. Reapplying the label is the explicit retrigger after a new head.
-  `review-findings.yml` runs on that workflow's completion in the base repository's context
-  with the model key and a token that can write a review. It parses the PR number the trusted
-  ground workflow stamped into its run name, resolves the current contributor commit and
-  base from GitHub's Pull Request API, and never trusts the artefact or a dynamic run
+  A separate handoff job runs after grounding on a fresh runner, checks out and downloads
+  nothing, and gets only `actions: write`; it explicitly dispatches `review-findings.yml`
+  with the trusted inputs and ground run id. This explicit `workflow_dispatch` is required
+  because GitHub suppresses the implicit `workflow_run` event after a run that another
+  workflow started with `GITHUB_TOKEN`; `workflow_dispatch` is the documented exception that
+  always creates a run. The findings workflow runs in the base repository's context with the
+  model key and a token that can write a review. It verifies that the named run is the
+  successful default-branch `Copse review ground` run, resolves the current contributor commit
+  and base from GitHub's Pull Request API, and never trusts the artefact or a dynamic run
   association. It fetches the head
   to read it, imports the Stage 0 report through `--stage0-json` — which makes the run
   read-only whatever else is asked, and refuses a report for another commit — runs the

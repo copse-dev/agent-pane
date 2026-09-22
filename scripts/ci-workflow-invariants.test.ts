@@ -764,6 +764,14 @@ describe('Copse Reviewer workflow invariants', () => {
       assert.match(job, /--backend ephemeral-runner/)
     }
 
+    const handoff = workflowJobBlock(groundWorkflow, 'handoff')
+    assert.match(handoff, /needs: ground/)
+    assert.match(handoff, /actions: write/)
+    assert.doesNotMatch(handoff, /actions\/checkout/)
+    assert.doesNotMatch(handoff, /actions\/download-artifact/)
+    assert.match(handoff, /gh workflow run review-findings\.yml/)
+    assert.match(handoff, /ground_run_id=\$\{GROUND_RUN_ID\}/)
+
     for (const job of [
       workflowJobBlock(findingsWorkflow, 'findings'),
       workflowJobBlock(nightlyWorkflow, 'findings'),
@@ -773,19 +781,19 @@ describe('Copse Reviewer workflow invariants', () => {
     }
   })
 
-  it('resolves the reviewed commit from trusted workflow-run metadata', () => {
+  it('binds the findings dispatch to trusted successful ground-run metadata', () => {
     assert.ok(groundWorkflow.includes('run-name: copse-review-ground pr=${{ inputs.pr }}'))
-    assert.match(
-      findingsWorkflow,
-      /GROUND_RUN_NAME: \$\{\{ github\.event\.workflow_run\.display_title \}\}/,
-    )
-    assert.match(findingsWorkflow, /BASH_REMATCH\[1\]/)
+    assert.match(findingsWorkflow, /^ {2}workflow_dispatch:$/m)
+    assert.doesNotMatch(findingsWorkflow, /^ {2}workflow_run:$/m)
+    assert.match(findingsWorkflow, /GROUND_RUN_ID: \$\{\{ inputs\.ground_run_id \}\}/)
+    assert.match(findingsWorkflow, /actions\/runs\/\$\{GROUND_RUN_ID\}/)
+    assert.match(findingsWorkflow, /test "\$conclusion" = "success"/)
+    assert.match(findingsWorkflow, /test "\$path" = "\.github\/workflows\/review-ground\.yml"/)
+    assert.match(findingsWorkflow, /test "\$head" = "\$EXPECTED_HEAD"/)
+    assert.match(findingsWorkflow, /test "\$base" = "\$EXPECTED_BASE"/)
     assert.match(findingsWorkflow, /pulls\/\$\{number\}/)
     assert.match(findingsWorkflow, /HEAD_SHA: \$\{\{ steps\.pr\.outputs\.head \}\}/)
-    assert.doesNotMatch(
-      findingsWorkflow,
-      /HEAD_SHA: \$\{\{ github\.event\.workflow_run\.head_sha \}\}/,
-    )
+    assert.match(findingsWorkflow, /run-id: \$\{\{ inputs\.ground_run_id \}\}/)
   })
 
   it('pins the bounded Scaleway dogfood profile in both GitHub findings paths', () => {

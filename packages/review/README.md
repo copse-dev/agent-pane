@@ -162,9 +162,13 @@ workflow. Job A has `permissions: {}` and no secrets, runs Stage 0 on the head w
 the cell (`--backend ephemeral-runner`), and uploads the report. It uses the reviewed CLI from the
 default branch, so an older PR need not contain `@copse/review`; pull-request code is fetched only
 after checkout credentials have been removed.
-The secret-bearing findings job parses the trusted PR number from the ground run name and resolves
-the current contributor commit and base from GitHub's Pull Request API, rather than trusting the
-artefact or a dynamic run association. Remove and re-add the label to review a newer head.
+A fresh successor job checks out and downloads nothing, receives only `actions: write`, and
+explicitly dispatches the findings workflow after grounding succeeds. This uses the documented
+`workflow_dispatch` exception because GitHub suppresses an implicit `workflow_run` event after a
+run started with `GITHUB_TOKEN`. The secret-bearing findings job verifies the successful ground
+run and resolves the current contributor commit and base from GitHub's Pull Request API, rather
+than trusting the artefact or a dynamic run association. Remove and re-add the label to review a
+newer head.
 Job B, on the base ref with the model key, imports that report (`--stage0-json`, which makes
 the run read-only and refuses a report for another commit), reviews the head without
 executing it, and posts one advisory review (`--post-review github --repo owner/name --pr n`).

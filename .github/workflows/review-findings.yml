@@ -1,25 +1,44 @@
 name: Copse review findings
 
 # Shell C, job B (docs/plans/copse-reviewer.md, §Execution isolation, "Backend
-# per shell — CI"). Runs when "Copse review ground" completes, on the base
-# repository's default branch with the model key and a token that can write a
-# review. It fetches the pull request's head to READ it — the reviewers'
+# per shell — CI"). Runs after "Copse review ground" succeeds and its fresh
+# handoff job dispatches this default-branch workflow with the model key and a
+# token that can write a review. It fetches the pull request's head to READ it — the reviewers'
 # context, their file tools, the challenger — and never executes it: the
 # Stage 0 report the ground job uploaded is the only execution this job
 # consumes, and it is validated as untrusted input before a field of it
 # reaches a model. Then one review is posted on the pull request: each
 # anchored finding an inline comment on the head commit, the rest in the body.
 #
-# `workflow_run` is what makes this safe for a fork: the event carries the
-# base repository's secrets, so the job must not run anything the fork wrote,
-# and it does not — the CLI here is this branch's, the head is a checkout it
-# only reads, and `--stage0-json` makes the run read-only whatever else is
-# asked of it.
+# The fresh handoff job at the end of "Copse review ground" explicitly
+# dispatches this workflow. `workflow_dispatch` is GitHub's documented
+# exception that always starts a workflow when called with `GITHUB_TOKEN`;
+# an implicit `workflow_run` event is suppressed for a token-dispatched run.
+# This job must not run anything the fork wrote, and it does not — the CLI here
+# is this branch's, the head is a checkout it only reads, and `--stage0-json`
+# makes the run read-only whatever else is asked of it.
 
 on:
-  workflow_run:
-    workflows: ['Copse review ground']
-    types: [completed]
+  workflow_dispatch:
+    inputs:
+      ground_run_id:
+        description: Successful Copse review ground run containing the artifact
+        required: true
+        type: string
+      pr:
+        description: Pull request number resolved by the trusted trigger
+        required: true
+        type: string
+      head:
+        description: Exact pull request head grounded by the secret-free job
+        required: true
+        type: string
+      base:
+        description: Base branch resolved by the trusted trigger
+        required: true
+        type: string
+
+run-name: copse-review-findings pr=${{ inputs.pr }} ground=${{ inputs.ground_run_id }}
 
 permissions:
   contents: read
@@ -27,13 +46,12 @@ permissions:
   actions: read
 
 concurrency:
-  group: copse-review-findings-${{ github.event.workflow_run.id }}
+  group: copse-review-findings-${{ inputs.ground_run_id }}
   cancel-in-progress: true
 
 jobs:
   findings:
     name: Review the pull request read-only and post the findings
-    if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -66,40 +84,65 @@ jobs:
         shell: bash
         run: pnpm install --frozen-lockfile --ignore-scripts --filter "@copse/review..."
 
-      - uses: actions/download-artifact@v6
-        with:
-          name: copse-review-ground
-          path: ground
-          run-id: ${{ github.event.workflow_run.id }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      # The artefact names a pull request, but a pull request could have
-      # written that file. The trusted ground workflow therefore stamps the PR
-      # number into its Actions run name before contributor code executes. Use
-      # that number to resolve the exact current head and base from GitHub.
-      - name: Resolve the pull request from the ground run
+      # The handoff inputs come from trusted workflow code on a fresh runner,
+      # not from the ground artefact. Verify the named run and resolve the
+      # current PR again before a byte of untrusted output reaches the model.
+      - name: Verify the ground run and resolve the pull request
         id: pr
         shell: bash
         env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          EXPECTED_BASE: ${{ inputs.base }}
+          EXPECTED_HEAD: ${{ inputs.head }}
+          EXPECTED_PR: ${{ inputs.pr }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GROUND_RUN_NAME: ${{ github.event.workflow_run.display_title }}
+          GROUND_RUN_ID: ${{ inputs.ground_run_id }}
         run: |
           set -euo pipefail
-          if [[ "$GROUND_RUN_NAME" =~ ^copse-review-ground\ pr=([0-9]+)$ ]]; then
-            number="${BASH_REMATCH[1]}"
-          else
-            echo "Unexpected ground run name: ${GROUND_RUN_NAME}" >&2
-            exit 1
-          fi
+          [[ "$GROUND_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$EXPECTED_PR" =~ ^[1-9][0-9]*$ ]]
+          [[ "$EXPECTED_HEAD" =~ ^[0-9a-f]{40}$ ]]
+          git check-ref-format --branch "$EXPECTED_BASE"
+
+          # This workflow can start just before its dispatching handoff job
+          # exits. Wait briefly for the ground run itself to become successful.
+          for attempt in {1..12}; do
+            IFS=$'\t' read -r run_name title event status conclusion branch path < <(
+              gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GROUND_RUN_ID}" \
+                --jq '[.name, .display_title, .event, .status, (.conclusion // ""), .head_branch, .path] | @tsv'
+            )
+            if test "$status" = "completed"; then
+              break
+            fi
+            sleep 5
+          done
+          test "$run_name" = "copse-review-ground pr=${EXPECTED_PR}"
+          test "$title" = "copse-review-ground pr=${EXPECTED_PR}"
+          test "$event" = "workflow_dispatch"
+          test "$status" = "completed"
+          test "$conclusion" = "success"
+          test "$branch" = "$DEFAULT_BRANCH"
+          test "$path" = ".github/workflows/review-ground.yml"
+
+          number="$EXPECTED_PR"
           IFS=$'\t' read -r head base state < <(
             gh api "repos/${GITHUB_REPOSITORY}/pulls/${number}" \
               --jq '[.head.sha, .base.ref, .state] | @tsv'
           )
           test -n "$number" && test -n "$head" && test -n "$base"
           test "$state" = "open"
+          test "$head" = "$EXPECTED_HEAD"
+          test "$base" = "$EXPECTED_BASE"
           echo "number=${number}" >> "$GITHUB_OUTPUT"
           echo "head=${head}" >> "$GITHUB_OUTPUT"
           echo "base=${base}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/download-artifact@v6
+        with:
+          name: copse-review-ground
+          path: ground
+          run-id: ${{ inputs.ground_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Review read-only over the uploaded ground and post the findings
         shell: bash
