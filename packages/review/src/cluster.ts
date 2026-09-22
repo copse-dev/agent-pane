@@ -78,7 +78,12 @@ export function claimTokens(claim: string): Set<string> {
   for (const raw of normalizeClaim(claim).split(/[^a-z0-9_]+/)) {
     if (raw.length < 2 || STOPWORDS.has(raw)) continue
     // Crude stemming so "returns" and "return", "callers" and "caller" meet.
-    const token = raw.replace(/(ing|ed|es|s)$/, '')
+    const suffix = raw.match(/(ing|ed)$/)?.[0]
+    let token = raw.replace(/(ing|ed|es|s)$/, '')
+    // English doubles a final consonant before -ing/-ed (drop -> dropping,
+    // omit -> omitted). Keep l/s/z doubles because they belong to roots such
+    // as fill, miss and buzz rather than to the suffix spelling rule.
+    if (suffix !== undefined && /([^aeioulsz])\1$/.test(token)) token = token.slice(0, -1)
     if (token.length >= 2) tokens.add(token)
   }
   return tokens

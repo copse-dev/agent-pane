@@ -167,6 +167,16 @@ describe('review eval scoring', () => {
     )
   })
 
+  it('matches inflected claim words whose roots end in doubled consonants', () => {
+    assert.equal(
+      claimMatchesSignals('paginate is silently dropping the last item from every page', [
+        ['paginate'],
+        ['fewer', 'short', 'minus', 'drop'],
+      ]),
+      true,
+    )
+  })
+
   it('scores surfaced findings only and cannot inflate hits with duplicates', () => {
     const hitA = finding({ id: '1', verdict: { status: 'confirmed', reason: 'r' } })
     const hitB = finding({

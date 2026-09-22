@@ -11,12 +11,25 @@ import {
   type HeadlessOutcome,
   type HeadlessStopReason,
 } from '@copse/agent/headless-contract.ts'
+import { PRODUCT_REASONING_CHECKPOINT_POLICY } from '@copse/agent/reasoning-checkpoint-policy.ts'
+import type { ReasoningCheckpointPolicy } from '@copse/agent/reasoning-circle-detector.ts'
 import { runAgentLoop } from '@copse/agent/run-agent-loop.ts'
 import { CHARS_PER_TOKEN } from '@copse/agent/token-estimate.ts'
 import type { AgentStreamChunk } from '@copse/agent/wire-types.ts'
 import { hasLastUsage } from '@copse/llm/provider-usage.ts'
 import type { LLMMessage, LLMProvider, LLMStreamOptions, LLMTool } from '@copse/llm/wire-types.ts'
 import { errorMessage } from '@copse/std/errors.ts'
+
+/**
+ * Review turns should spend their budget on evidence and tools, not narrated
+ * plans. The shared loop's repeat detector cuts a verbatim prose circle at its
+ * first 2K-token checkpoint while still allowing a clean response up to 8K.
+ */
+export const REVIEW_TURN_REASONING_POLICY: Readonly<ReasoningCheckpointPolicy> = {
+  ...PRODUCT_REASONING_CHECKPOINT_POLICY,
+  maxNonReasoningTokens: 8_192,
+  maxInitialTokens: 8_192,
+}
 
 export interface TurnUsage {
   readonly inputTokens: number
@@ -116,6 +129,7 @@ export async function runTurn(options: TurnOptions): Promise<TurnResult> {
       maxSteps,
       ...(initialToolChoice ? { initialToolChoice } : {}),
       adaptiveExtensions: false,
+      reasoningCheckpointPolicy: REVIEW_TURN_REASONING_POLICY,
       usageModel: options.model,
       getLastUsage: () => (hasLastUsage(options.provider) ? options.provider.lastUsage : null),
       onChunk: (chunk: AgentStreamChunk) => {

@@ -49,6 +49,13 @@ describe('claim similarity', () => {
     assert.equal(claimSimilarity('', a), 0)
   })
 
+  it('normalises doubled consonants introduced before inflectional suffixes', () => {
+    assert.deepEqual(
+      [...claimTokens('dropping dropped running omitted filled missed buzzed')],
+      ['drop', 'run', 'omit', 'fill', 'miss', 'buzz'],
+    )
+  })
+
   it('recognises a concise claim contained in a longer explanation', () => {
     const concise =
       'paginate now returns one item fewer than the requested page size, so every page loses its last item and the existing tests fail.'
