@@ -837,11 +837,23 @@ describe('Copse Reviewer workflow invariants', () => {
       assert.ok(workflow.includes("COPSE_REVIEW_MODEL || 'qwen3.8-27b'"))
       assert.ok(workflow.includes("'https://api.scaleway.ai/v1'"))
       assert.ok(workflow.includes('secrets.COPSE_REVIEW_API_KEY || secrets.SCW_GENERATIVE_API_KEY'))
+      assert.ok(workflow.includes('SCW_DEFAULT_PROJECT_ID: ${{ secrets.SCW_DEFAULT_PROJECT_ID }}'))
       assert.ok(workflow.includes("COPSE_REVIEW_LENSES || 'correctness'"))
       assert.ok(workflow.includes("COPSE_REVIEW_MAX_STEPS || '12'"))
       assert.ok(workflow.includes("COPSE_REVIEW_MAX_VERIFY || '3'"))
+      assert.match(workflow, /review_base_url="\$\{REVIEW_BASE_URL%\/\}"/)
+      assert.ok(
+        workflow.includes(
+          'SCW_DEFAULT_PROJECT_ID is required for explicit Scaleway billing attribution',
+        ),
+      )
+      assert.match(
+        workflow,
+        /review_base_url="https:\/\/api\.scaleway\.ai\/\$\{SCW_DEFAULT_PROJECT_ID\}\/v1"/,
+      )
+      assert.ok(workflow.includes('using an explicit Scaleway project endpoint'))
       assert.match(workflow, /--provider "\$REVIEW_PROVIDER"/)
-      assert.match(workflow, /--base-url "\$REVIEW_BASE_URL"/)
+      assert.match(workflow, /--base-url "\$review_base_url"/)
       assert.match(workflow, /--max-steps "\$REVIEW_MAX_STEPS"/)
       assert.match(workflow, /--max-verify "\$REVIEW_MAX_VERIFY"/)
     }
