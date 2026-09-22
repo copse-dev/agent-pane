@@ -95,6 +95,63 @@ describe('collectE2eExclusions', () => {
     )
   })
 
+  it('rejects mutations and escaped references to exclusion arrays', () => {
+    for (const mutation of [
+      `ciExclude.push('./${spec}')`,
+      `ciExclude?.push('./${spec}')`,
+      `ciExclude.unshift('./${spec}')`,
+      `ciExclude.splice(0, 0, './${spec}')`,
+      `ciExclude[0] = './${spec}'`,
+      `ciExclude = ['./${spec}']`,
+      `const alias = ciExclude; alias.push('./${spec}')`,
+      `addExclusion(ciExclude)`,
+      `config.exclude?.push('./${spec}')`,
+      `config['exclude'] = ['./${spec}']`,
+      `const { exclude } = config; exclude.push('./${spec}')`,
+    ]) {
+      assert.throws(
+        () =>
+          collectE2eExclusions(
+            new Map([
+              [
+                'wdio.ci.conf.ts',
+                `let ciExclude = []; ${mutation}; export const config = { exclude: ciExclude }`,
+              ],
+            ]),
+          ),
+        /exclude lists must be declared statically/,
+        mutation,
+      )
+    }
+  })
+
+  it('rejects mutation through a binding used by a spread and an inherited config', () => {
+    for (const mutation of [
+      `first.push('./${spec}')`,
+      `extra.push('./${spec}')`,
+      `baseConfig.exclude?.push('./${spec}')`,
+      `const alias = baseConfig.exclude; alias?.push('./${spec}')`,
+    ]) {
+      assert.throws(
+        () =>
+          collectE2eExclusions(
+            new Map([
+              ['wdio.conf.ts', 'export const config = { exclude: [] }'],
+              [
+                'wdio.ci.conf.ts',
+                `import { config as baseConfig } from './wdio.conf.ts'
+                 const first = []; const extra = [...first]
+                 export const config = { exclude: [...(baseConfig.exclude ?? []), ...extra] }
+                 ${mutation}`,
+              ],
+            ]),
+          ),
+        /exclude lists must be declared statically/,
+        mutation,
+      )
+    }
+  })
+
   it('finds helper aliases, direct skips, platform aliases and runtime skips; ignores prose', () => {
     const sources = new Map([
       [

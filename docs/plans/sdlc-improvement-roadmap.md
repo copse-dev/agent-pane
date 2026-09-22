@@ -1,6 +1,6 @@
 # SDLC improvement roadmap
 
-Status: **Tracked in [#1373]; first implementation slices of R01–R03 in progress.** Repository permission and merge-rule changes remain proposals.
+Status: **Tracked in [#1373]; first implementation slices of R01–R03 under review. R11 cancellation protection and R12 runtime reinstatement have merged.** Repository permission and merge-rule changes remain proposals.
 
 Based on the [20 September 2026 SDLC assessment](../sdlc-review-2026-09-20.md), which reviewed `main` at `0a7a0967002da98b6055dc9f87544e91c8ad501b` and live GitHub evidence. The implementation branch starts at that reviewed revision. Recheck the relevant source and issue before starting each item.
 
@@ -51,6 +51,12 @@ The objective is to make an agent's claim of completion traceable to a user outc
 - R11 / [#2520]: inspection confirms the cancellation condition also has an intentional regression assertion in `scripts/ci-workflow-invariants.test.ts` guarding the old canceled-run queue stall. A condition-only patch is insufficient; the real-GitHub reproduction and authorization-state design remain separate work.
 
 Use [#1373] as the delivery index, with existing domain issues retained as the source of their acceptance criteria. None of the larger roadmap packages closes merely because this first batch lands.
+
+### Review update — 22 September 2026
+
+- R11: [#2722](https://github.com/copse-dev/agent-pane/pull/2722) merged the tested cancellation gate. Retarget-only validation, current-base enforcement, and independent acceptance remain separate work under [#2520] and R06.
+- R12: [#2731](https://github.com/copse-dev/agent-pane/pull/2731) restored all three approval suites and strengthened the shell-output assertion. The subsequent [scheduled full run](https://github.com/copse-dev/agent-pane/actions/runs/35601257564) at `16f1e9e67` passed all eight Electron shards. This establishes reinstatement on the current CI environment, not the cause of the historical runner failures.
+- R03: review of [#2720](https://github.com/copse-dev/agent-pane/pull/2720) reproduced silent undercounting when a declared exclusion array was later mutated. The scanner now rejects mutations and escaped references, with regression coverage; the current inventory contains 19 specs and 24 markers. Personal ownership and expiry enforcement remain under [#2719].
 
 ### R01 — Task briefs, evidence, and active ownership
 

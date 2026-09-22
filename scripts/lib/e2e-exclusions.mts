@@ -41,11 +41,14 @@ export function collectE2eExclusions(sources: ReadonlyMap<string, string>): Excl
 function configExclusions(file: ts.SourceFile, sources: ReadonlyMap<string, string>): Exclusion[] {
   const variables = new Map<string, ts.Expression>()
   const inherited = new Set<string>()
+  const exclusionBindings = new Set<string>()
+  const staticReferences = new Set<ts.Node>()
   for (const statement of file.statements) {
     if (ts.isVariableStatement(statement)) {
       for (const declaration of statement.declarationList.declarations) {
         if (ts.isIdentifier(declaration.name) && declaration.initializer) {
           variables.set(declaration.name.text, declaration.initializer)
+          staticReferences.add(declaration.name)
         }
       }
     }
@@ -88,8 +91,11 @@ function configExclusions(file: ts.SourceFile, sources: ReadonlyMap<string, stri
     }
     if (ts.isIdentifier(expression)) {
       const value = variables.get(expression.text)
-      if (value && !seen.has(expression.text))
+      if (value && !seen.has(expression.text)) {
+        exclusionBindings.add(expression.text)
+        staticReferences.add(expression)
         return resolve(value, new Set([...seen, expression.text]))
+      }
     }
     // Inherited exclusions are inventoried in the imported config itself.
     // Only the explicit, existing `baseConfig.exclude ?? []` form is allowed.
@@ -102,8 +108,10 @@ function configExclusions(file: ts.SourceFile, sources: ReadonlyMap<string, stri
       inherited.has(expression.left.expression.text) &&
       ts.isArrayLiteralExpression(expression.right) &&
       expression.right.elements.length === 0
-    )
+    ) {
+      staticReferences.add(expression.left)
       return []
+    }
     throw new Error(`${file.fileName}: unsupported exclude expression: ${expression.getText(file)}`)
   }
 
@@ -127,6 +135,34 @@ function configExclusions(file: ts.SourceFile, sources: ReadonlyMap<string, stri
     ts.forEachChild(node, visit)
   }
   visit(file)
+
+  // Resolve the complete declaration graph first, then reject other uses of
+  // those bindings. Following mutator names alone misses aliases and calls
+  // that receive the array. Config property access is likewise only supported
+  // in the inherited form resolved above; mutations must fail closed.
+  function checkStaticReferences(node: ts.Node): void {
+    const identifierUse =
+      ts.isIdentifier(node) &&
+      exclusionBindings.has(node.text) &&
+      !(ts.isPropertyAccessExpression(node.parent) && node.parent.name === node) &&
+      !(ts.isPropertyAssignment(node.parent) && node.parent.name === node)
+    const propertyUse =
+      (ts.isPropertyAccessExpression(node) && node.name.text === 'exclude') ||
+      (ts.isElementAccessExpression(node) &&
+        ts.isStringLiteralLike(node.argumentExpression) &&
+        node.argumentExpression.text === 'exclude')
+    const bindingName = ts.isBindingElement(node) ? (node.propertyName ?? node.name) : undefined
+    const destructuredUse =
+      bindingName &&
+      (ts.isIdentifier(bindingName) || ts.isStringLiteralLike(bindingName)) &&
+      bindingName.text === 'exclude'
+    if ((identifierUse || propertyUse || destructuredUse) && !staticReferences.has(node))
+      throw new Error(
+        `${file.fileName}: exclude lists must be declared statically; unsupported use: ${node.getText(file)}`,
+      )
+    ts.forEachChild(node, checkStaticReferences)
+  }
+  checkStaticReferences(file)
   return found
 }
 
