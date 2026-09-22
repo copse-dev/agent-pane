@@ -1068,6 +1068,12 @@ worktree fieldset needs `min-inline-size: 0`: its native min-content width other
 truncation and pushes actions outside Settings. Explicitly use a row direction for the Select all
 label; the default form label stacks its control above its text.
 
+Bulk cleanup confirms the selected checkout scope immediately; do not make the user wait for every
+checkout to be scanned and sized before the confirmation appears. Once confirmed, keep queued rows
+visible as `Pending…`, identify the active row as `Cleaning…`, and show batch progress on the bulk
+button. Cleanup takes disk-I/O priority over the decorative footprint queue: finish an in-flight
+size call, stop launching stale measurements, and remeasure changed rows after the batch completes.
+
 ## Browser prototypes
 
 Keep HTML artefacts self-contained and serve Copse static prototype assets from the

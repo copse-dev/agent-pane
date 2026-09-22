@@ -161,6 +161,14 @@ describe('settings → Storage → worktree actions', function () {
     await $('[aria-label="Settings"]').click()
     await $('#settings-dialog').$('button[data-section="storage"]').click()
     await expect($$('.sources-row[data-worktree-path]')).toBeElementsArrayOfSize(2)
+    // Keep the confirmed action in flight long enough to inspect its real
+    // pending state. The production path walks files serially to avoid an I/O
+    // spike, so a few thousand tiny entries are a deterministic visual fixture.
+    const pendingFixture = join(secondWorktreeRoot, 'node_modules', 'pending-evidence')
+    mkdirSync(pendingFixture, { recursive: true })
+    for (let index = 0; index < 40_000; index += 1) {
+      writeFileSync(join(pendingFixture, `file-${String(index)}.js`), '')
+    }
     await expect($('#sources-worktrees-bulk-actions')).not.toBeDisplayed()
     await $('#sources-worktrees-select-all').click()
     await expect($('#sources-worktrees-selected-count')).toHaveText('2 selected')
@@ -195,12 +203,23 @@ describe('settings → Storage → worktree actions', function () {
     const confirm = $('#confirm-dialog')
     await confirm.waitForDisplayed({ timeout: 30_000 })
     await expect(confirm.$('.confirm-dialog-message')).toHaveText(
-      'Remove 2 package directories from 2 worktrees?',
+      'Clean up package directories in 2 worktrees?',
+    )
+    await expect(confirm.$('.confirm-dialog-detail')).toHaveText(
+      expect.stringContaining('Cleanup starts immediately'),
     )
     await confirm.$('.confirm-dialog-confirm').click()
+    await browser.waitUntil(
+      async () => /^Cleaning \d+ of 2…$/.test(await confirm.$('.confirm-dialog-confirm').getText()),
+      { timeout: 10_000, timeoutMsg: 'expected the confirmation to show cleanup progress' },
+    )
+    await expect(confirm.$('.confirm-dialog-confirm')).toBeDisabled()
+    await expect($('.sources-row[data-cleanup-state="cleaning"]')).toExist()
+    await saveAppScreenshot('settings-worktree-cleanup-pending.png')
     await expect($('#sources-worktrees-status')).toHaveText(
       expect.stringContaining('Cleaned up 2 directories'),
     )
+    await expect(confirm).not.toBeDisplayed()
     await expect($$('[data-retained-for-cleanup="true"]')).toBeElementsArrayOfSize(2)
     assert.equal(existsSync(join(worktreeRoot, 'node_modules')), false)
     assert.equal(existsSync(join(secondWorktreeRoot, 'node_modules')), false)
