@@ -141,17 +141,6 @@
       "markers": ["this.skip"]
     },
     {
-      "spec": "tests/e2e/skills.e2e.ts",
-      "category": "quarantine",
-      "reason": "Excluded by CI config; exact current reason and any replacement coverage need review.",
-      "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
-      "ownerRole": "Skills UI and CI maintainer (person assignment pending in #2719)",
-      "recordedOn": "2026-09-20",
-      "reviewBy": "2026-09-27",
-      "coverage": "No equivalent complete composer/skills runtime evidence is established by this inventory.",
-      "markers": ["wdio.ci.conf.ts: exclude"]
-    },
-    {
       "spec": "tests/e2e/staged-diff-ui.e2e.ts",
       "category": "quarantine",
       "reason": "CI config describes heavy multi-turn mock/Monaco diff-approval IPC after session reload as slow or unstable on constrained runners.",
