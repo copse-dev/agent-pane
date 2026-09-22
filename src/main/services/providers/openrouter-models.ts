@@ -174,6 +174,7 @@ const modelsCache = new AsyncTtlCache<string, OpenRouterModelsResult>({
   ttlMs: MODELS_TTL_MS,
   maxEntries: 2,
 })
+const persistedPricingResults = new WeakSet<OpenRouterModelsResult>()
 const zdrIdentifiersCache = new AsyncTtlCache<string, Set<string>>({
   ttlMs: MODELS_TTL_MS,
   maxEntries: 2,
@@ -191,16 +192,23 @@ export async function fetchOpenRouterModelsCached(): Promise<{
   error?: string
 }> {
   const key = openRouterApiBase()
-  return modelsCache.get(key, async () => {
-    const result = await fetchOpenRouterModels(key)
-    // Snapshot catalog rates for the usage ledger. A base change makes the old
-    // response irrelevant; invalidation already prevents it from repopulating
-    // the shared model cache.
-    if (result.ok && openRouterApiBase() === key) {
-      void rememberOpenRouterPricing(result.models).catch(() => {})
-    }
-    return result
-  })
+  const result = await modelsCache.get(key, () => fetchOpenRouterModels(key))
+  const current = modelsCache.peek(key)
+  // Persist only the result that still owns this cache key. Invalidation can
+  // orphan a request without changing the API base; that stale response must
+  // not overwrite prices saved by the newer refresh. Coalesced callers all see
+  // the same result object, so the WeakSet also keeps the settings write single.
+  if (
+    result.ok &&
+    openRouterApiBase() === key &&
+    current.hit &&
+    current.value === result &&
+    !persistedPricingResults.has(result)
+  ) {
+    persistedPricingResults.add(result)
+    void rememberOpenRouterPricing(result.models).catch(() => {})
+  }
+  return result
 }
 
 // ---- ZDR endpoint list ----------------------------------------------------
