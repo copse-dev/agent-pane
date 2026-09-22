@@ -23223,6 +23223,7 @@ var init_tool_display = __esm({
       browser_navigate: { running: "Opening browser", done: "Opened browser" },
       browser_snapshot: { running: "Taking page snapshot", done: "Took page snapshot" },
       browser_screenshot: { running: "Taking screenshot", done: "Took screenshot" },
+      image_gen: { running: "Generating image", done: "Generated image" },
       browser_click: { running: "Clicking element", done: "Clicked element" },
       browser_type: { running: "Typing text", done: "Typed text" },
       browser_tabs: { running: "Listing browser tabs", done: "Listed browser tabs" },
@@ -127366,7 +127367,8 @@ function startAgentController(store2, api2) {
             status: chunk.isError ? "error" : "done",
             result: chunk.result,
             ...chunk.editStats ? { editStats: chunk.editStats } : {},
-            ...chunk.resultFormat ? { resultFormat: chunk.resultFormat } : {}
+            ...chunk.resultFormat ? { resultFormat: chunk.resultFormat } : {},
+            ...chunk.images ? { images: chunk.images } : {}
           });
           if (chunk.toolCallId && !chunk.isError) {
             const toolCall = findToolCall(store2, ownerId, chunk.toolCallId);
@@ -127479,7 +127481,8 @@ function startAgentController(store2, api2) {
           updateSubagentToolCall(store2, st2.msgId, chunk.parentToolCallId, chunk.toolCallId, {
             status: chunk.isError ? "error" : "done",
             result: chunk.result,
-            ...chunk.editStats ? { editStats: chunk.editStats } : {}
+            ...chunk.editStats ? { editStats: chunk.editStats } : {},
+            ...chunk.images ? { images: chunk.images } : {}
           });
         }
         activity(threadId);
