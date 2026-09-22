@@ -2391,11 +2391,9 @@ export function mountInputBar(
       scheduleContextEstimate(0)
     }),
     store.on('workspace_changed', () => {
-      branchControl.refresh()
       void refreshAutomaticCheckoutPreview()
     }),
     store.on('git_branch_changed', () => {
-      branchControl.refresh()
       void refreshAutomaticCheckoutPreview()
     }),
   ]
