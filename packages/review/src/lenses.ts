@@ -47,6 +47,23 @@ export const CONTRACTS_LENS: Lens = {
   maxSteps: 24,
 }
 
+export const BOUNDARIES_LENS: Lens = {
+  id: 'boundaries',
+  title: 'Semantic boundaries and defaults',
+  brief: [
+    'Look only at new or changed producers, adapters, tools, serializers and result builders.',
+    'For each one, name its closest existing analogue, inventory semantic fields the analogue',
+    'supplies that the change omits, and trace every omission through transforms and consumers.',
+    'A passing producer-level test does not settle downstream behaviour. Neither the existence',
+    'of a fallback nor the fact that it predates the change proves that taking it is intended.',
+    'When an omission selects different rendering, trust, permission, persistence or default',
+    'behaviour, require concrete repository evidence that the difference is intentional; without',
+    `that evidence, report the causal defect at the changed producer. ${NOT_STYLE}`,
+  ].join(' '),
+  classes: ['contract', 'security', 'api-compat'],
+  maxSteps: 20,
+}
+
 export const TESTS_LENS: Lens = {
   id: 'tests',
   title: 'Tests that no longer prove what they claim',
@@ -92,6 +109,7 @@ export const CONCURRENCY_LENS: Lens = {
 export const LENSES: readonly Lens[] = [
   CORRECTNESS_LENS,
   CONTRACTS_LENS,
+  BOUNDARIES_LENS,
   TESTS_LENS,
   SECURITY_LENS,
   CONCURRENCY_LENS,

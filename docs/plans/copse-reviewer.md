@@ -205,7 +205,8 @@ _Reuse: `git-service.ts`, `pr-context-service.ts`, `search/`, `trim-history.ts` 
 
 **Stage 2 — Fan out.**
 N models × M **lenses**. A lens is a scoped brief with its own tool budget — correctness,
-contracts/API compatibility, tests, security, concurrency/resources, docs-vs-behaviour.
+contracts/API compatibility, semantic boundaries/defaults, tests, security,
+concurrency/resources, docs-vs-behaviour.
 Lenses matter more than model count: two models on one generic "review this" prompt
 mostly produce the same middle-of-the-distribution observations, whereas one model given
 "only look for broken contracts" produces something the correctness lens didn't. Each
@@ -639,9 +640,11 @@ the app gesture (Phase 3), the container backend and CI action (Phase 4), and th
 Fan-out, clustering and verification, in the same package and CLI. Decisions made while
 building it:
 
-- **Five lenses, all inside B4.** `correctness` (the default), `contracts`, `tests`,
-  `security` and `concurrency`; `--lenses all` runs every one, `--model` repeats to fan out
-  across models, `--concurrency` bounds how many reviewers run at once. The `docs` lens
+- **Six lenses, all inside B4.** `correctness` (the default), `contracts`, `boundaries`,
+  `tests`, `security` and `concurrency`; `boundaries` independently audits semantic fields,
+  defaults and downstream fallbacks on new producers. `--lenses all` runs every one,
+  `--model` repeats to fan out across models, and `--concurrency` bounds how many reviewers
+  run at once. The `docs` lens
   waits with the `docs` class.
 - **One serialised cell, not per-reviewer worktrees.** Reviewers fan out over one head
   checkout and one cell whose commands run one at a time, so two test runs never trample
@@ -890,7 +893,9 @@ On `main`: the scorer (`packages/review/src/eval.ts`), the harness
   `--challenger`, keys from the environment). `--no-verify`, `--lenses` and the model list
   are the ablation knobs; `--compare` prints the delta between two summaries, which is how
   Q6 (cross-model ensembling against one model) and "how much does verification buy" are
-  read.
+  read. The manual trusted-default-branch workflow can target one case and a lens set for a
+  controlled real-model rerun; every case retains its headless event JSONL beside the report
+  so a miss can be diagnosed rather than inferred from its final summary.
 - **The ratchet.** `benchmarks/review/baseline.json` is coverage-baseline style. Each entry
   is keyed by evaluator version, provider, reviewer and challenger models, credential-free
   endpoint identity, lenses, verification mode, reviewer and verification budgets, selected

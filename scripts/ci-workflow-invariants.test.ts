@@ -842,7 +842,6 @@ describe('Copse Reviewer workflow invariants', () => {
       assert.ok(workflow.includes("'https://api.scaleway.ai/v1'"))
       assert.ok(workflow.includes('secrets.COPSE_REVIEW_API_KEY || secrets.SCW_GENERATIVE_API_KEY'))
       assert.ok(workflow.includes('SCW_DEFAULT_PROJECT_ID: ${{ secrets.SCW_DEFAULT_PROJECT_ID }}'))
-      assert.ok(workflow.includes("COPSE_REVIEW_LENSES || 'correctness'"))
       assert.ok(workflow.includes("COPSE_REVIEW_MAX_STEPS || '12'"))
       assert.ok(workflow.includes("COPSE_REVIEW_MAX_VERIFY || '3'"))
       assert.match(workflow, /review_base_url="\$\{REVIEW_BASE_URL%\/\}"/)
@@ -861,6 +860,10 @@ describe('Copse Reviewer workflow invariants', () => {
       assert.match(workflow, /--max-steps "\$REVIEW_MAX_STEPS"/)
       assert.match(workflow, /--max-verify "\$REVIEW_MAX_VERIFY"/)
     }
+    for (const workflow of [findingsWorkflow, nightlyWorkflow]) {
+      assert.ok(workflow.includes("COPSE_REVIEW_LENSES || 'correctness'"))
+    }
+    assert.ok(modelBenchWorkflow.includes("inputs.lenses || 'correctness,boundaries'"))
   })
 
   it('runs the real-model corpus manually over trusted default-branch fixtures', () => {
@@ -871,6 +874,8 @@ describe('Copse Reviewer workflow invariants', () => {
     assert.doesNotMatch(modelBenchWorkflow, /git fetch|refs\/pull|--stage0-json|GITHUB_TOKEN/)
     assert.match(modelBenchWorkflow, /scripts\/bench-review\.mts/)
     assert.match(modelBenchWorkflow, /--challenger "\$REVIEW_MODEL"/)
+    assert.match(modelBenchWorkflow, /bench_args\+=\(--case "\$REVIEW_CASE"\)/)
+    assert.match(modelBenchWorkflow, /pnpm exec node "\$\{bench_args\[@\]\}"/)
     assert.match(modelBenchWorkflow, /--out bench-results\/review-scaleway/)
     assert.match(modelBenchWorkflow, /retention-days: 30/)
   })

@@ -68,8 +68,9 @@ shell's hand-offs (Phase 4).
   repository's `AGENTS.md` / `CLAUDE.md` / `CONTRIBUTING.md`; and a test map for the
   touched files.
 - **`lenses.ts`** — a lens is a scoped brief with a step budget: `correctness` (the default),
-  `contracts`, `tests`, `security`, `concurrency`; `--lenses all` runs every one. All stay
-  inside B4. The system prompt restates the quality bar as rules.
+  `contracts`, `boundaries` (semantic fields, defaults and downstream fallbacks), `tests`,
+  `security`, `concurrency`; `--lenses all` runs every one. All stay inside B4. The system
+  prompt restates the quality bar as rules.
 - **`reviewer-tools.ts`** — the reviewer's tools, jailed to the head checkout:
   `read_file`, `list_dir`, `search_code` (without following checkout symlinks), and
   `git_diff` (complete per-file diffs paged by character offset); `run_command`, brokered into the

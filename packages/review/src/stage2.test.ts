@@ -8,6 +8,7 @@ import type { LLMMessage, LLMProvider } from '@copse/llm/wire-types.ts'
 import { materialiseCheckouts, type MaterialisedCheckouts } from './checkouts.ts'
 import { buildReviewContext, type ReviewContext } from './context.ts'
 import {
+  BOUNDARIES_LENS,
   CONTRACTS_LENS,
   CORRECTNESS_LENS,
   LENSES,
@@ -144,6 +145,14 @@ describe('runStage2', () => {
     assert.match(prompt, /provenance, permissions, persistence, rendering, and tests/)
     assert.match(prompt, /fields its closest analogue supplies that it omits/)
     assert.match(prompt, /consumer fallback/)
+  })
+
+  it('gives semantic-boundary reviews an evidence rule for omitted defaults', () => {
+    const prompt = lensSystemPrompt(BOUNDARIES_LENS, { canRun: false })
+    assert.match(prompt, /closest existing analogue/)
+    assert.match(prompt, /passing producer-level test does not settle downstream behaviour/i)
+    assert.match(prompt, /existence of a fallback.*predates the change.*proves.*intended/i)
+    assert.match(prompt, /require concrete repository evidence/)
   })
 
   it('fails closed when the model ends without the completion attestation', async () => {
@@ -382,6 +391,10 @@ describe('runStage2', () => {
     assert.deepEqual(
       resolveLenses(' tests, security ,tests').map((lens) => lens.id),
       ['tests', 'security'],
+    )
+    assert.deepEqual(
+      resolveLenses('boundaries').map((lens) => lens.id),
+      ['boundaries'],
     )
     assert.throws(() => resolveLenses('vibes'), /unknown lens vibes/)
   })

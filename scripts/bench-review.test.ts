@@ -6,7 +6,7 @@
 // the PR that makes it, not a quarter later (P6).
 import { after, before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -126,6 +126,13 @@ describe('bench:review over the committed corpus', () => {
     assert.ok(summary.metrics.outputTokens > 0)
     assert.equal(summary.configuration.reviewerMaxSteps, null)
     assert.equal(summary.configuration.maxVerifiedFindings, 10)
+  })
+
+  it('retains the model event stream for diagnosing misses', async () => {
+    const events = await readFile(join(outDir, 'semantic-image-kind.events.jsonl'), 'utf8')
+    assert.match(events, /"type":"turn_start"/)
+    assert.match(events, /"type":"tool_call"/)
+    assert.match(events, /"type":"turn_end"/)
   })
 
   it('holds to the committed baseline, and says what moved when it does not', () => {
