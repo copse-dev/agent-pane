@@ -68282,7 +68282,7 @@ function createInlineArtefact(api2, projectId, threadId, title) {
         el("span", { class: "canvas-preview-title" }, title),
         status
       ),
-      el("span", { class: "canvas-preview-actions" }, annotate, open2)
+      el("span", { class: "canvas-preview-actions" }, open2, annotate)
     )
   );
   const showFallback = () => {
