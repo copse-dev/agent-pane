@@ -6,6 +6,13 @@ import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import { z } from 'zod'
+import { classifierProfileSchema } from '@copse/llm/classifiers/schemas.ts'
+import {
+  listClassifierProfiles,
+  saveClassifierProfile,
+  removeClassifierProfile,
+  testClassifierProfile,
+} from '../services/classifiers/classifier-service.ts'
 import { SPINE_SCHEMA_VERSION } from '@shared/threads/spine-schema.ts'
 import { runCommand } from '../services/exec/command-runner.ts'
 import { parseMessageValue, parseThreadValue } from '@shared/threads/thread-boundary.ts'
@@ -1334,6 +1341,23 @@ export function registerAllHandlers(
       bundled: result.bundled,
       files: result.files,
     }
+  })
+
+  ipcMain.handle('classifiers:list', (event) => {
+    assertMainFrameSender(event, win)
+    return listClassifierProfiles()
+  })
+  ipcMain.handle('classifiers:save', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return saveClassifierProfile(parseIpcArgs(classifierProfileSchema, [raw]))
+  })
+  ipcMain.handle('classifiers:remove', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return removeClassifierProfile(parseIpcArgs(keyProviderSchema.max(53), [raw]))
+  })
+  ipcMain.handle('classifiers:test', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return testClassifierProfile(parseIpcArgs(keyProviderSchema.max(53), [raw]))
   })
 
   ipcMain.handle('settings:get', (event, key: unknown) => {

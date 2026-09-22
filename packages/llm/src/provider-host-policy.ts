@@ -15,6 +15,8 @@ import { OPENROUTER_BASE_URL } from './openrouter.ts'
 
 /** Hardcoded first-party provider hosts (not part of BUILTIN_EXTRA_PROVIDERS). */
 const FIRST_PARTY_PROVIDER_HOSTS = [
+  'api.typesafe.ai',
+  'api.featherless.ai',
   'api.anthropic.com',
   'api.openai.com',
   'api.cursor.com',

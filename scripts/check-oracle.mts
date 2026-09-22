@@ -116,6 +116,23 @@ const SHOT_PNGS = [
 // alongside the move (exactly the drift we want surfaced).
 const INVARIANTS: Invariant[] = [
   {
+    name: 'classifier settings and invocation changes select the real IPC visual spec',
+    check: (): string | null => {
+      const files = [
+        'src/renderer/views/setup/classifiers-section.ts',
+        'src/main/services/classifiers/classifier-service.ts',
+        'packages/llm/src/classifiers/schemas.ts',
+        'packages/llm/src/classifiers/http.ts',
+      ]
+      const reasons =
+        computeSelection(files).e2eReasons.get('tests/e2e/settings-classifiers.e2e.ts') ?? []
+      const missing = files.filter((file) => !reasons.some((reason) => reason.includes(file)))
+      return missing.length
+        ? `classifier visual spec is not mapped to: ${missing.join(', ')}`
+        : null
+    },
+  },
+  {
     name: 'renderer panel change selects a panel spec',
     check: () =>
       expectSelects(['src/renderer/controller/panels.ts'], 'tests/e2e/panel-toggle.e2e.ts'),

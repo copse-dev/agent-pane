@@ -1,0 +1,15 @@
+{
+  "id": "semif-local",
+  "label": "SemIf local eval",
+  "model": "/absolute/path/to/cached/model",
+  "timeoutMs": 120000,
+  "connection": {
+    "type": "semif",
+    "executable": "semif-score",
+    "backend": "torch",
+    "revision": "replace-with-local-manifest-or-pinned-commit",
+    "mode": "direct",
+    "device": "auto",
+    "maxTokens": 4096
+  }
+}

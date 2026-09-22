@@ -6,7 +6,7 @@ import {
   saveExtraProvider,
   deleteExtraProvider,
 } from './extra-providers-store.ts'
-import { getSetting, setSetting, setApiKey, hasApiKey } from '../storage/settings.ts'
+import { getSetting, setSetting, setApiKey, hasApiKey, deleteApiKey } from '../storage/settings.ts'
 import { setApprovalHandler } from '../approval.ts'
 import { BUILTIN_EXTRA_PROVIDER_SLUGS } from '@copse/llm/extra-providers.ts'
 
@@ -24,6 +24,7 @@ describe('extra-providers-store', () => {
 
   afterEach(() => {
     setApprovalHandler(null)
+    deleteApiKey('classifier-foo')
   })
 
   it('resolves the shipped presets when nothing is stored', () => {
@@ -45,6 +46,40 @@ describe('extra-providers-store', () => {
     await saveExtraProvider({ baseUrl: 'https://api.acme.example/v1' })
     await saveExtraProvider({ baseUrl: 'https://api.acme.example/v1' })
     assert.deepEqual(slugs(), [...PRESETS, 'acme', 'acme-2'])
+  })
+
+  it('reserves classifier credential IDs before host approval or persistence', async () => {
+    let approved = false
+    setApprovalHandler(async () => {
+      approved = true
+      return { approved: true, remember: true }
+    })
+    setApiKey('classifier-foo', 'classifier-secret')
+    await assert.rejects(
+      saveExtraProvider({ slug: 'classifier-foo', baseUrl: 'https://api.acme.example/v1' }),
+      /reserved for classifier/,
+    )
+    assert.equal(approved, false)
+    assert.equal(getResolvedExtraProvider('classifier-foo'), null)
+    await assert.rejects(deleteExtraProvider('classifier-foo'), /classifier profile/)
+    assert.equal(hasApiKey('classifier-foo'), true)
+  })
+
+  it('keeps generated chat provider slugs outside the classifier namespace', async () => {
+    await saveExtraProvider({ baseUrl: 'https://api.classifier-foo.example/v1' })
+    await saveExtraProvider({ baseUrl: 'https://api.classifier-foo.example/v1' })
+    assert.deepEqual(slugs(), [...PRESETS, 'provider-classifier-foo', 'provider-classifier-foo-2'])
+  })
+
+  it('still removes a legacy chat provider with a now-reserved slug', async () => {
+    await setSetting('extraProviders', [
+      { slug: 'classifier-foo', baseUrl: 'https://api.acme.example/v1' },
+    ])
+    setApiKey('classifier-foo', 'legacy-chat-secret')
+    assert.ok(getResolvedExtraProvider('classifier-foo'))
+    await deleteExtraProvider('classifier-foo')
+    assert.equal(getResolvedExtraProvider('classifier-foo'), null)
+    assert.equal(hasApiKey('classifier-foo'), false)
   })
 
   it('preserves providers saved concurrently', async () => {

@@ -895,6 +895,12 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       onUiScaleZoomOut: subscribe,
       onUiScaleReset: subscribe,
     },
+    classifiers: {
+      list: emptyArray,
+      save: unsupported,
+      remove: unsupported,
+      test: unsupported,
+    },
     settings: {
       get: (key: string) => resolved(settings.get(key)),
       set: (key: string, value: unknown) => {

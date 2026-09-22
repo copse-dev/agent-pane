@@ -409,6 +409,34 @@
           3
         ]
       },
+      "classifiers:list": {
+        "api": "classifiers.list",
+        "args": [
+          0,
+          0
+        ]
+      },
+      "classifiers:remove": {
+        "api": "classifiers.remove",
+        "args": [
+          1,
+          1
+        ]
+      },
+      "classifiers:save": {
+        "api": "classifiers.save",
+        "args": [
+          1,
+          1
+        ]
+      },
+      "classifiers:test": {
+        "api": "classifiers.test",
+        "args": [
+          1,
+          1
+        ]
+      },
       "close-confirm:respond": {
         "api": "closeConfirm.respond",
         "args": [

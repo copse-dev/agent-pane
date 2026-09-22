@@ -47,6 +47,7 @@ import {
 import { mountModelSelectPicker } from './model-picker.ts'
 import { createApiKeysSection } from './setup/api-keys-section.ts'
 import { createProvidersPanel } from './setup/providers-section.ts'
+import { createClassifiersSection } from './setup/classifiers-section.ts'
 import { createEnvKeyDetectSection } from './setup/env-key-detect-section.ts'
 import { createLmStudioSection } from './setup/lm-studio-section.ts'
 import { createGhCliSection } from './setup/gh-cli-section.ts'
@@ -99,6 +100,7 @@ import { isNonEmptyString } from '@shared/nullish.ts'
 
 export type SettingsSection =
   | 'general'
+  | 'classifiers'
   | 'usage'
   | 'agent'
   | 'permissions'
@@ -111,6 +113,7 @@ export type SettingsSection =
 
 const isSettingsSection: (value: unknown) => value is SettingsSection = (value) =>
   value === 'general' ||
+  value === 'classifiers' ||
   value === 'usage' ||
   value === 'agent' ||
   value === 'permissions' ||
@@ -538,6 +541,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             />
           </div>
           <button type="button" class="settings-nav-btn active" data-section="general">General</button>
+          <button type="button" class="settings-nav-btn" data-section="classifiers">Classifiers</button>
           <button type="button" class="settings-nav-btn" data-section="usage">Usage</button>
           <button type="button" class="settings-nav-btn" data-section="agent">Agent</button>
           <button type="button" class="settings-nav-btn" data-section="permissions">Permissions</button>
@@ -638,6 +642,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 </label>
               </div>
             </div>
+          </section>
+
+          <section class="settings-section" data-section="classifiers">
+            <h3>Classifiers</h3>
+            <p class="settings-section-desc">
+              Connections for classification evals and explicit calls. Copse's built-in classifiers
+              and chat model choices are configured separately.
+            </p>
+            <div id="settings-classifiers-host" class="settings-mount"></div>
           </section>
 
           <section class="settings-section" data-section="usage">
@@ -1471,6 +1484,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   // Every `qsRequired(overlay, …)` below targets an element baked into the static
   // template above; a miss throws a loud error (template/code drift) rather than a
   // silent non-null assertion.
+  const classifiersSection = createClassifiersSection(api)
+  qsRequired(overlay, '#settings-classifiers-host').append(classifiersSection.root)
+
   const sshWorkspaceSection = createSshWorkspaceSection(api, {
     // Live-persist toggles must wake listeners (e.g. the projects add menu)
     // without requiring the dialog Save button.
@@ -1832,6 +1848,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     if (!searchContentLoaded) {
       searchContentLoaded = true
       void providersPanel.refresh()
+      void classifiersSection.refresh()
       void sshWorkspaceSection.refresh()
       void refreshSources()
     }
@@ -1879,6 +1896,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           applySearch('')
         }
         showSection(id)
+        if (id === 'classifiers') void classifiersSection.refresh()
         if (id === 'usage') void usageSection.refresh()
         if (id === 'permissions') void toolPermissionsPanel.refresh()
         // Defer disk scans until each tab is opened, so users who never visit them
@@ -4265,6 +4283,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     pendingPluginDetail = null
     // Deep-links (e.g. status banner → SSH, an automation heading → Plugins) skip
     // the nav click path, so refresh lazy section content here too.
+    if (openedSection === 'classifiers') void classifiersSection.refresh()
     if (openedSection === 'ssh') void sshWorkspaceSection.refresh()
     if (openedSection === 'usage') void usageSection.refresh()
     if (openedSection === 'permissions') void toolPermissionsPanel.refresh()
