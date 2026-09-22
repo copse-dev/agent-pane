@@ -6,6 +6,10 @@ Releases are forward-fix only; downgrade is not a supported rollback.
 
 ## Before tagging
 
+Start with [current product release evidence](product-release-evidence.md), requery the live
+blockers, and record the actual candidate revision. Dated audit snapshots are supporting evidence,
+not an automatically current release decision.
+
 Tagging is automatic: bumping `package.json` and promoting it to `release` is
 what cuts the release. Everything below has to be true _before_ the version bump
 reaches `release`, not after.

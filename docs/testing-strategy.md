@@ -174,6 +174,31 @@ list rather than adding e2e specs for DOM-only behavior.
 
 ## CI cost is a design input
 
+### Exclusion inventory
+
+`pnpm run check:e2e-exclusions` inventories WDIO `exclude` lists and conventional Mocha skip
+markers in `tests/e2e/**/*.e2e.ts`, without loading Electron or changing test selection. It compares
+them with [`tests/e2e/exclusions.json`](../tests/e2e/exclusions.json). Unrecorded, changed, duplicate,
+or stale entries fail the check. Add/remove the relevant record in the same PR as an exclusion.
+
+Each entry records its category, reason, tracking issue, accountable role, review deadline, and
+compensating evidence or an explicit gap. Existing records are **an inventory, not release waivers**;
+their initial dates schedule triage and do not assert a maintainer accepted the missing coverage.
+Due reviews are warnings until the owner/expiry enforcement slice in
+[#2719](https://github.com/copse-dev/agent-pane/issues/2719) is decided. Critical runtime repairs
+remain owned by [#1680](https://github.com/copse-dev/agent-pane/issues/1680).
+
+The static check recognizes literal/local-array config exclusions (including the existing inherited
+base config), CI skip helpers and their import aliases, Mocha `.skip`/`['skip']`, `this.skip()`,
+`xdescribe`, and `xit`. Exclusion arrays must be declared statically: mutations, escaped array
+references, and destructuring or mutation of `config.exclude` fail the check, as do dynamic/glob
+config exclusions. It is not
+a JavaScript interpreter: new conditional wrappers or runner-side selection mechanisms require
+extending the scanner and tests. Review semantic changes to existing conditions even when their
+marker count stays the same. Platform-only and live-service cases remain distinct from quarantine.
+
+### Cost and tier selection
+
 The e2e tier is the expensive, flake-prone one (runner OOM / disk / Electron
 startup, not assertion failures), so the recent refactoring trades it down — and
 new tests should keep that trend:

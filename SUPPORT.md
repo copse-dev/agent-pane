@@ -8,8 +8,14 @@ Support is limited to the latest published Copse release on:
 - Apple Silicon (`arm64`) and Intel (`x64`) Macs.
 
 Linux and Windows may be useful for source development, but they are not
-supported general-availability targets. Older Copse releases, prereleases,
-development builds, and arbitrary commits from `main` are not supported.
+supported general-availability targets. Older releases, development builds,
+and arbitrary commits from `main` are not supported.
+
+Public prereleases are for beta testing. Reports against the latest public beta
+are welcome through GitHub Issues, with the exact beta version and a minimal
+reproduction. This is best-effort beta triage, not a stable-release support or
+response-time guarantee. Check the [current release evidence](docs/product-release-evidence.md)
+for the published channel and outstanding readiness gaps.
 
 ## Getting support and finding known issues
 

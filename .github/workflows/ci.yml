@@ -209,6 +209,7 @@ jobs:
           done
       - run: npm run format:check
       - run: npm run check:dead-code
+      - run: npm run check:e2e-exclusions
       # Enforce the API protocol's compatibility rule (docs/api-protocol.md).
       # The unit test only pins that the committed manifest matches the sources,
       # which a breaking change satisfies by regenerating; this is the step that
