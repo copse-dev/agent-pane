@@ -8,7 +8,7 @@ name: Base freshness
 # `CI Passed` for a merge result that no longer exists — the base-advancement
 # half of #2520 that #2722 (cancellation) and the retarget trigger left open.
 # scripts/base-freshness.mts explains the decision; docs/plans/ci-base-freshness.md
-# records the acceptance and the owner-sequenced adoption.
+# records the acceptance and why this cannot be the enforcement.
 #
 # Deliberately its OWN workflow rather than a job in ci.yml, for the reason a
 # job cannot do this at all: the staleness appears AFTER a run finishes, so no
@@ -67,8 +67,8 @@ jobs:
   evaluate:
     name: Evaluate base freshness
     # Fixed GitHub-hosted capacity, never SELF_HOSTED_CHECKS — the same rule
-    # ci-passed follows. A control that reports whether a merge is authorized
-    # must not queue behind the fleet it is reporting on (#1669).
+    # ci-passed follows. A report on whether a candidate is current must not
+    # queue behind the fleet it is reporting on (#1669).
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

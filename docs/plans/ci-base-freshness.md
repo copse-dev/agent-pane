@@ -2,7 +2,9 @@
 
 Task baseline: `main` at `883ff2e`, 22 September 2026. Owner:
 [#2520](https://github.com/copse-dev/agent-pane/issues/2520). This is the
-**base-advancement** slice of Shipping quality roadmap R11. The cancellation
+**base-advancement reporting** slice of Shipping quality roadmap R11. It
+reports the condition; it is not the enforcement, and the enforcement choice
+remains open (see _Why this cannot be the enforcement_). The cancellation
 slice landed in [#2722](https://github.com/copse-dev/agent-pane/pull/2722); the
 retarget-only trigger is [#2970](https://github.com/copse-dev/agent-pane/pull/2970).
 Independent acceptance (R06) remains separate work.
@@ -38,10 +40,10 @@ Acceptance cases:
 - A push to `main` or `release` re-evaluates every mergeable open pull request
   targeting it.
 - A pull request that contains every commit on its base reports current.
-- A pull request behind its base reports the exact deficit and blocks.
+- A pull request behind its base reports the exact deficit.
 - A base retarget without a push re-evaluates, because the merge result changed.
 - A comparison that cannot be established reports failure, never a quiet pass
-  and never a conclusion GitHub treats as satisfying a required check.
+  and never `neutral` or `skipped`.
 - `CI Passed`, its fork/trunk siblings, and every production branch rule keep
   their current meaning.
 
@@ -58,11 +60,11 @@ A new check context, `Base Current`, published by
 - **Re-evaluate, never re-run.** One comparison and one check run per candidate.
   No checkout of candidate code, no build, no test, no fleet.
 - **Fixed hosted capacity**, never `SELF_HOSTED_CHECKS`, and inside a timeout —
-  the same rule `ci-passed` follows. A control reporting whether a merge is
-  authorized must not queue behind the fleet it reports on (#1669).
+  the same rule `ci-passed` follows. A report on whether a candidate is current
+  must not queue behind the fleet it reports on (#1669).
 - **Dependency-free.** The script imports node builtins only — no `src/` import,
-  no workspace package, no `node_modules`. A decision about merge authorization
-  must not be able to fail because a dependency restore did.
+  no workspace package, no `node_modules`. A report a reviewer reads before
+  merging must not be able to fail because a dependency restore did.
 - **`behind_by`, not a local guess.** The verdict is GitHub's own count of
   commits on the base the head does not contain: the same measure
   "Require branches to be up to date before merging" uses.
@@ -137,7 +139,7 @@ on the pull request what the rule is blocking on.
 ## Validation evidence
 
 `scripts/base-freshness.test.ts` covers the policy, the decoders, the fan-out,
-and the workflow's structural invariants — 19 tests. The policy tests assert the
+and the workflow's structural invariants — 24 tests. The policy tests assert the
 two-conclusion property directly, because a `neutral` here would be a silent
 regression to the behavior this control exists to remove.
 
