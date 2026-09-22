@@ -73,8 +73,10 @@ function measureBox(node: Element): AnnotationMark['box'] {
   return null
 }
 
-function isTool(value: string | null): value is AnnotationTool {
-  return TOOLS.some((t) => t === value)
+/** The tool a committed mark was tagged with; unknown tags read as the pen. */
+function toolOf(node: Element): AnnotationTool {
+  const tagged = node.getAttribute('data-tool')
+  return TOOLS.find((t) => t === tagged) ?? 'pen'
 }
 
 export interface AnnotationLayerOptions {
@@ -406,9 +408,8 @@ export function mountAnnotationLayer(
       const width = Math.max(1, Math.round(rect.width))
       const height = Math.max(1, Math.round(rect.height))
       const marks: AnnotationMark[] = Array.from(svg?.children ?? []).map((node) => {
-        const t = node.getAttribute('data-tool')
         return {
-          tool: isTool(t) ? t : 'pen',
+          tool: toolOf(node),
           colour: node.getAttribute('data-colour') ?? colour,
           box: measureBox(node),
         }

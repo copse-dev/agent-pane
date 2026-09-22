@@ -1,20 +1,9 @@
 import { Emitter } from './emitter.ts'
 import { createModels, type Models } from './models/index.ts'
 import type { BaseModel } from './models/base.ts'
-import type {
-  Brush,
-  DrawingMode,
-  EventsMap,
-  Operation,
-  Options,
-  PointerInputType,
-} from './types.ts'
+import type { Brush, DrawingMode, EventsMap, Operation, Options } from './types.ts'
 
 const DEFAULT_BRUSH: Brush = { color: 'black', size: 3, mode: 'stylus' }
-
-function isPointerInputType(value: string): value is PointerInputType {
-  return value === 'mouse' || value === 'touch' || value === 'pen'
-}
 
 /**
  * SVG drawing surface. The SVG's children are the model: every committed
@@ -218,12 +207,7 @@ export class Drauu {
 
   private acceptsInput(event: PointerEvent): boolean {
     const accepted = this.options.acceptsInputTypes
-    if (
-      accepted &&
-      !(isPointerInputType(event.pointerType) && accepted.includes(event.pointerType))
-    ) {
-      return false
-    }
+    if (accepted && !accepted.some((type) => type === event.pointerType)) return false
     return this.originalPointerId === null || this.originalPointerId === event.pointerId
   }
 
