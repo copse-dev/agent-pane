@@ -13787,6 +13787,118 @@ h3 {
   background: var(--accent-fill-hover);
 }
 
+/* src/renderer/styles/global/annotation.css */
+.annotation-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+}
+.annotation-layer[hidden] {
+  display: none;
+}
+.annotation-layer[data-active=false] {
+  pointer-events: none;
+}
+.annotation-layer[data-active=false] .annotation-toolstrip {
+  display: none;
+}
+.annotation-layer-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+  cursor: crosshair;
+  overflow: visible;
+}
+.annotation-toolstrip {
+  position: absolute;
+  top: var(--spacing-sm);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 2px;
+  max-width: calc(100% - 2 * var(--spacing-sm));
+  padding: var(--spacing-xs);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-md);
+  -webkit-app-region: no-drag;
+}
+.annotation-tool {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.annotation-tool:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.annotation-tool:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.annotation-tool[aria-pressed=true] {
+  background: var(--bg-selected);
+  color: var(--accent);
+}
+.annotation-swatch {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  margin: 0 3px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  background: var(--annotation-swatch);
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.25);
+  cursor: pointer;
+}
+.annotation-swatch[aria-pressed=true] {
+  border-color: var(--text-primary);
+}
+.annotation-sep {
+  width: 1px;
+  height: 18px;
+  margin: 0 var(--spacing-xs);
+  background: var(--border);
+}
+.annotation-send {
+  min-height: 28px;
+  padding: 0 var(--spacing-sm);
+  font-size: var(--font-size-xs);
+}
+.browser-nav-btn[aria-pressed=true],
+.canvas-preview-annotate[aria-pressed=true] {
+  background: var(--bg-selected);
+  color: var(--accent);
+}
+.canvas-preview-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  flex: none;
+}
+.canvas-preview-annotate {
+  flex: none;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  color: var(--text-secondary);
+}
+
 /* src/renderer/styles/global.css */
 
 /* src/renderer/styles/themes.css */
