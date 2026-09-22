@@ -6,6 +6,7 @@ import {
   appendReasoning,
   appendAcpContentBlock,
   addMessageCanvasArtefact,
+  addMessageVisualEvidence,
   addToolCall,
   updateToolCall,
   findToolCall,
@@ -347,6 +348,17 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         }
         st.writing = false
         activity(threadId)
+        break
+      }
+      case 'visual_evidence': {
+        // Evidence is durable assistant-owned output: never guess its owner.
+        // The loop emits this only after the publishing tool_call, so a missing
+        // call means the event is stale or malformed and must not migrate onto
+        // whichever message happens to be live.
+        const ownerId = findToolCallOwner(store, threadId, chunk.toolCallId)
+        if (ownerId) {
+          addMessageVisualEvidence(store, ownerId, chunk.toolCallId, chunk.evidence)
+        }
         break
       }
       case 'tool_result': {

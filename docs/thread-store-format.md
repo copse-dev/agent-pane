@@ -48,6 +48,7 @@ installs the profile and tracing environment first.
     blobs/<toolCallId>.args.json     # oversized tool args (when spilled from spine)
     blobs/decision-<id>.detail.json  # optional decision extras (e.g. YOLO commands)
     blobs/<messageId>-img-<n>.dataurl  # decoded image data URL
+    blobs/evidence/<sha256>.dataurl    # published visual-evidence PNG data URL (deduped)
     blobs/<hookRunId>.stdout.txt     # raw hook stdout (command hooks)
     blobs/<hookRunId>.stderr.txt     # raw hook stderr (command hooks)
     blobs/<hookRunId>.payload.json   # what the hook was handed (stdin / dispatch payload)
@@ -150,6 +151,19 @@ append is the commit point). See [`spine-schema.ts`](../packages/thread-store/sr
   "content": { "ref": "messages/<id>.md", "sha256": "<hex of body bytes>" },
   "reasoning": { "ref": "messages/<id>.reasoning.md", "sha256": "…" }, // optional
   "images": [{ "ref": "blobs/<imageId>.png", "mimeType": "image/png" }], // optional
+  "visualEvidence": [{                 // optional; assistant-owned published proof
+    "id": "<evidenceId>",
+    "toolCallId": "<publishingToolCallId>",
+    "kind": "screenshot" | "comparison",
+    "caption": "Project order updates after the drag",
+    "createdAt": 1712345678901,
+    "assets": [{
+      "id": "<assetId>", "label": "Before", "mimeType": "image/png",
+      "width": 480, "height": 1520, "capturedAt": 1712345678000,
+      "source": { "kind": "browser", "viewId": "…", "title": "…", "url": "https://…" },
+      "dataUrl": { "ref": "blobs/evidence/<sha256>.dataurl", "sha256": "…" }
+    }]
+  }],
   "commandSummary": "…", // optional
   "startingCommit": "a1b2c3…", // optional: HEAD SHA the prompt started from (user messages)
   "dirty": true, // optional: working tree had uncommitted changes at send time
@@ -179,8 +193,11 @@ working tree already had uncommitted changes. Best-effort: absent outside a
 git repository, and not captured on paths that don't round-trip through main
 before the message is finalized (e.g. resend).
 Reconstruction (`foldThread`) folds `meta.json` + spine, resolves each ref, and
-**verifies its sha256** — a hash mismatch surfaces as a load error on that
-thread (skipped), never silent corruption. `parseSpine` tolerates unknown `v`
+**verifies its sha256**. Most hash mismatches surface as a load error on that
+thread (skipped), never silent corruption. Published evidence is deliberately
+recoverable: a missing, corrupt, or non-PNG evidence blob folds into an explicit
+unavailable asset so one damaged screenshot cannot hide the conversation around
+it. `parseSpine` tolerates unknown `v`
 and unknown fields, and **skips any non-`message` line**, for forward
 compatibility. The round-trip is 1:1:
 `foldThread(explodeThread(messages)) === messages`.
@@ -339,9 +356,10 @@ Two exports sit side by side in the footer overflow menu
 download `<title-slug>-<YYYY-MM-DD>`.
 
 - **`Export conversation (JSONL)`** writes a single self-contained `.jsonl`
-  (`exportVersion: 5`): a `thread` header line then one `message` line per
+  (`exportVersion: 8`): a `thread` header line then one `message` line per
   message, using the **same field names** as the spine but **inlining** the
-  values the spine stores as refs (prose, tool results, full nested subagents)
+  values the spine stores as refs (prose, tool results, full nested subagents,
+  and published visual-evidence data URLs)
   so the export is one portable file. Built in the renderer from state it
   already holds.
 - **`Export thread folder (ZIP)`** writes the thread's whole store directory,

@@ -18,6 +18,16 @@ import type {
 export type { ToolResultImage } from '@copse/llm/wire-types.ts'
 import type { ReasoningLevel } from '@copse/llm/model-parameters.ts'
 import type { PanelData } from './plugins/plugin-panel.ts'
+import type { VisualEvidenceDraft } from './visual-evidence.ts'
+export type {
+  BrowserVisualEvidenceSource,
+  VisualEvidenceAsset,
+  VisualEvidenceAssetMetadata,
+  VisualEvidenceDraft,
+  VisualEvidenceKind,
+  VisualEvidenceRef,
+  VisualEvidenceSource,
+} from './visual-evidence.ts'
 
 export type TodoStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled'
 
@@ -148,6 +158,13 @@ export type ToolExecuteResult =
        * drops them first, so `result` must stand on its own as text.
        */
       images?: ToolResultImage[]
+      /**
+       * Visuals the assistant explicitly chose to publish into its response.
+       * Unlike `images`, these are presentation output rather than model input:
+       * the loop streams them to the owning assistant message and the thread
+       * store replaces each data URL with an immutable blob reference.
+       */
+      visualEvidence?: VisualEvidenceDraft[]
     }
 
 export function normalizeToolExecuteResult(value: ToolExecuteResult): {
@@ -155,6 +172,7 @@ export function normalizeToolExecuteResult(value: ToolExecuteResult): {
   editStats?: ToolEditStats
   resultFormat?: 'markdown'
   images?: ToolResultImage[]
+  visualEvidence?: VisualEvidenceDraft[]
 } {
   if (typeof value === 'string') return { result: value }
   return value
@@ -272,6 +290,12 @@ export interface ContextBreakdown {
  */
 export type AgentStreamChunk =
   | ProviderStreamChunk
+  /** Explicit assistant-owned visual proof produced by a tool call. */
+  | {
+      type: 'visual_evidence'
+      toolCallId: string
+      evidence: VisualEvidenceDraft[]
+    }
   /** Replace accumulated assistant text (e.g. after stripping embedded pseudo tool XML). */
   | { type: 'text_replace'; text: string }
   | {

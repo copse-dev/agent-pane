@@ -9,6 +9,7 @@
 
 // Wire types: the loop contract and the values that cross it.
 export * from './wire-types.ts'
+export * from './visual-evidence.ts'
 
 // The loop itself, its host seam, and the subagent runner.
 export * from './run-agent-loop.ts'

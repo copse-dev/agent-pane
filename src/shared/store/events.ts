@@ -9,6 +9,7 @@ export interface StoreEvents {
   message_reasoning: [messageId: string, text: string]
   message_acp_content: [messageId: string]
   message_canvas_artefacts_changed: [messageId: string]
+  message_visual_evidence_changed: [messageId: string]
   message_done: [messageId: string]
   tool_call_started: [messageId: string, toolCall: ToolCall]
   tool_call_updated: [messageId: string, toolCallId: string]

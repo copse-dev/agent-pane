@@ -980,7 +980,8 @@ async function executeToolBatch(ctx: ToolBatchContext): Promise<void> {
             )
           }
         }
-        const { result, editStats, resultFormat, images } = normalizeToolExecuteResult(raw)
+        const { result, editStats, resultFormat, images, visualEvidence } =
+          normalizeToolExecuteResult(raw)
         recentToolProgress.push(duplicate ? null : fp)
         if (recentToolProgress.length > RECENT_FINGERPRINT_WINDOW) {
           recentToolProgress.shift()
@@ -995,6 +996,13 @@ async function executeToolBatch(ctx: ToolBatchContext): Promise<void> {
           result,
           ...(images && images.length > 0 ? { images } : {}),
         })
+        if (visualEvidence && visualEvidence.length > 0) {
+          onChunk({
+            type: 'visual_evidence',
+            toolCallId: tc.id,
+            evidence: visualEvidence,
+          })
+        }
         onChunk({
           type: 'tool_result',
           toolCallId: tc.id,

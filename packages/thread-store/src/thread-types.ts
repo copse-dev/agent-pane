@@ -23,6 +23,7 @@ import type {
   AgentRunPayload,
   TodoItem,
   ToolCall,
+  VisualEvidenceRef,
 } from '@copse/agent/wire-types.ts'
 export type {
   AcpContentBlock,
@@ -34,6 +35,9 @@ export type {
   ContextSegmentKey,
   ContextBreakdownSegment,
   ContextBreakdown,
+  VisualEvidenceAsset,
+  VisualEvidenceDraft,
+  VisualEvidenceRef,
 } from '@copse/agent/wire-types.ts'
 
 export type ThreadStatus = 'idle' | 'running' | 'error'
@@ -535,6 +539,8 @@ export interface Message {
   toolCalls: ToolCall[]
   /** Canvas previews presented with this answer without fabricating tool calls. */
   canvasArtefacts?: CanvasArtefactReference[]
+  /** Explicit, durable visual proof selected by the assistant for this response. */
+  visualEvidence?: VisualEvidenceRef[]
   /** Small-model rollup label for this message's batch of shell commands. */
   commandSummary?: string
   /**
