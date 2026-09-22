@@ -1,15 +1,14 @@
 name: Copse review ground
-run-name: copse-review-ground pr=${{ github.event.issue.number }}
+run-name: copse-review-ground pr=${{ inputs.pr }}
 
 # Shell C, job A (docs/plans/copse-reviewer.md, §Execution isolation, "Backend
-# per shell — CI"). Opt-in by label: add `copse-review` to a pull request and
-# this workflow starts from the default branch on the `issues:labeled` event,
-# which fires for pull requests too. A small resolver job reads the PR metadata
-# but checks out and executes nothing. A separate `permissions: {}` job receives
-# only the resolved number, head and base, checks out the trusted default-branch
-# reviewer, then fetches the PR head as data. With no secrets, credentials removed
-# after checkout and a fresh hosted runner, contributor code has nothing privileged
-# to reach. It runs Stage 0 (build,
+# per shell — CI"). `review-trigger.yml` dispatches this workflow from its
+# default-branch `pull_request_target:labeled` resolver; the target-context
+# workflow never executes pull-request code. This separate workflow has no token
+# permissions or secrets. It checks out the trusted default-branch reviewer, then
+# fetches the exact resolved PR head as data. With credentials removed after
+# checkout and a fresh hosted runner, contributor code has nothing privileged to
+# reach. It runs Stage 0 (build,
 # typecheck, lint, test on head, and on base for whatever failed on head) with
 # the runner itself as the execution cell and uploads the report. Nothing here
 # can reach a model or a token: the runner is ephemeral and holds neither,
@@ -21,48 +20,30 @@ run-name: copse-review-ground pr=${{ github.event.issue.number }}
 # that crosses between them, and it is validated there before use.
 
 on:
-  issues:
-    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number resolved by the trusted trigger
+        required: true
+        type: string
+      head:
+        description: Exact pull request head SHA resolved by the trusted trigger
+        required: true
+        type: string
+      base:
+        description: Base branch resolved by the trusted trigger
+        required: true
+        type: string
 
 permissions: {}
 
 concurrency:
-  group: copse-review-ground-${{ github.event.issue.number }}
+  group: copse-review-ground-${{ inputs.pr }}
   cancel-in-progress: true
 
 jobs:
-  resolve:
-    name: Resolve the labelled pull request without executing it
-    if: github.event.issue.pull_request != null && github.event.label.name == 'copse-review'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      pull-requests: read
-    outputs:
-      number: ${{ steps.pr.outputs.number }}
-      head: ${{ steps.pr.outputs.head }}
-      base: ${{ steps.pr.outputs.base }}
-    steps:
-      - name: Resolve the current pull request head and base
-        id: pr
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ github.event.issue.number }}
-        run: |
-          set -euo pipefail
-          IFS=$'\t' read -r head base state < <(
-            gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" \
-              --jq '[.head.sha, .base.ref, .state] | @tsv'
-          )
-          test -n "$head" && test -n "$base" && test "$state" = "open"
-          echo "number=${PR_NUMBER}" >> "$GITHUB_OUTPUT"
-          echo "head=${head}" >> "$GITHUB_OUTPUT"
-          echo "base=${base}" >> "$GITHUB_OUTPUT"
-
   ground:
     name: Stage 0 on the pull request head
-    needs: resolve
     runs-on: ubuntu-latest
     timeout-minutes: 45
     # Repeat the workflow-level denial at the execution boundary so a future
@@ -98,11 +79,14 @@ jobs:
       - name: Run Stage 0 with the runner as the cell
         shell: bash
         env:
-          HEAD_SHA: ${{ needs.resolve.outputs.head }}
-          BASE_REF: ${{ needs.resolve.outputs.base }}
-          PR_NUMBER: ${{ needs.resolve.outputs.number }}
+          HEAD_SHA: ${{ inputs.head }}
+          BASE_REF: ${{ inputs.base }}
+          PR_NUMBER: ${{ inputs.pr }}
         run: |
           set -euo pipefail
+          [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]]
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git check-ref-format --branch "$BASE_REF"
           git fetch --no-tags --quiet origin \
             "+refs/pull/${PR_NUMBER}/head:refs/remotes/pr/${PR_NUMBER}" \
             "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}"

@@ -720,6 +720,7 @@ describe('gitleaks workflow invariants', () => {
 })
 
 describe('Copse Reviewer workflow invariants', () => {
+  const triggerWorkflow = readFileSync(resolve('.github/workflows/review-trigger.yml'), 'utf8')
   const groundWorkflow = readFileSync(resolve('.github/workflows/review-ground.yml'), 'utf8')
   const findingsWorkflow = readFileSync(resolve('.github/workflows/review-findings.yml'), 'utf8')
   const nightlyWorkflow = readFileSync(resolve('.github/workflows/review-nightly.yml'), 'utf8')
@@ -735,13 +736,21 @@ describe('Copse Reviewer workflow invariants', () => {
   }
 
   it('executes pull-request code only in secret-free ephemeral-runner jobs', () => {
-    assert.match(groundWorkflow, /^ {2}issues:$/m)
+    assert.match(triggerWorkflow, /^ {2}pull_request_target:\n {4}types: \[labeled\]$/m)
+    assert.doesNotMatch(triggerWorkflow, /actions\/checkout/)
+    assert.doesNotMatch(triggerWorkflow, /git fetch/)
+    assert.doesNotMatch(triggerWorkflow, /--backend ephemeral-runner/)
+    const dispatcher = workflowJobBlock(triggerWorkflow, 'dispatch')
+    assert.match(dispatcher, /if: github\.event\.label\.name == 'copse-review'/)
+    assert.match(dispatcher, /actions: write/)
+    assert.match(dispatcher, /pull-requests: read/)
+    assert.match(dispatcher, /gh workflow run review-ground\.yml/)
+
+    assert.match(groundWorkflow, /^ {2}workflow_dispatch:$/m)
+    assert.doesNotMatch(groundWorkflow, /^ {2}issues:$/m)
     assert.doesNotMatch(groundWorkflow, /^ {2}pull_request:$/m)
     assert.doesNotMatch(groundWorkflow, /^ {2}pull_request_target:$/m)
-    const resolver = workflowJobBlock(groundWorkflow, 'resolve')
-    assert.match(resolver, /pull-requests: read/)
-    assert.doesNotMatch(resolver, /actions\/checkout/)
-    assert.doesNotMatch(resolver, /--backend ephemeral-runner/)
+    assert.doesNotMatch(groundWorkflow, /\$\{\{\s*secrets\./)
     const groundJobs = [
       workflowJobBlock(groundWorkflow, 'ground'),
       workflowJobBlock(nightlyWorkflow, 'ground'),
@@ -765,9 +774,7 @@ describe('Copse Reviewer workflow invariants', () => {
   })
 
   it('resolves the reviewed commit from trusted workflow-run metadata', () => {
-    assert.ok(
-      groundWorkflow.includes('run-name: copse-review-ground pr=${{ github.event.issue.number }}'),
-    )
+    assert.ok(groundWorkflow.includes('run-name: copse-review-ground pr=${{ inputs.pr }}'))
     assert.match(
       findingsWorkflow,
       /GROUND_RUN_NAME: \$\{\{ github\.event\.workflow_run\.display_title \}\}/,

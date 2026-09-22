@@ -372,10 +372,11 @@ scope.
   `--foreign` diff executes in; without it the CLI reviews a foreign diff read-only and
   says so. There is no flag that executes a foreign diff unisolated.
 - **CI:** a GitHub-hosted runner is ephemeral but not secret-free, so the workflow has two
-  privilege domains. The default-branch `issues:labeled` workflow first resolves PR metadata
-  in a tiny read-only job that checks out and executes nothing. **Job A** is a separate fresh
-  runner with `permissions: {}` and no secrets; it fetches the exact resolved head, runs Stage
-  0 and the reproducers, and uploads results as an artefact. **Job B** runs on the base ref
+  privilege domains. A `pull_request_target:labeled` dispatcher, loaded from the trusted default
+  branch, resolves PR metadata and dispatches grounding; it checks out and executes nothing.
+  **Job A** is a separate `workflow_dispatch` run on a fresh runner with `permissions: {}` and
+  no secrets; it fetches the exact resolved head, runs Stage 0 and the reproducers, and uploads
+  results as an artefact. **Job B** runs on the base ref
   with the model key and a write token, downloads the artefact, runs the model stages, and
   posts findings. Self-hosted Forgejo runners must be ephemeral (a fresh container per job):
   a persistent runner is precisely what a malicious PR would persist on.
@@ -773,11 +774,15 @@ CI shell needs (`stage0-report.ts`, `forge-review.ts`) and the workflows
   run, holding no secrets, discarded after. It is an assertion the caller makes about
   where it runs, never a detection, and the conformance test holds it to what it
   guarantees inside the process (a scrubbed environment, `HOME` and `TMPDIR` in the cell).
-- **The CI shell, in two privilege domains.** `review-ground.yml` runs from the default
-  branch on `issues:labeled` (pull requests are issues), only for the `copse-review` label.
-  Its small resolver job has PR-read permission but checks out and executes nothing; it
-  passes the PR number, exact head and base as outputs to a separate fresh hosted runner
-  with `permissions: {}`, no secrets and removed checkout credentials. That runner installs
+- **The CI shell, in two privilege domains.** `review-ground.yml` uses
+  a separate `workflow_dispatch` from `review-trigger.yml`. The trigger uses
+  `pull_request_target:labeled`, only for the `copse-review` label, so its definition comes from
+  the trusted default branch even when the pull request predates it. (`issues:labeled` does not
+  fire for pull requests, while `pull_request:labeled` selects the pull request revision.) The
+  target context is deliberately confined to resolving current PR metadata and dispatching the
+  ground workflow: it checks out and executes no repository content. Grounding gets the PR
+  number, exact head and base in a separate fresh hosted run with `permissions: {}`, no secrets
+  and removed checkout credentials. That runner installs
   only the reviewer's workspace subtree with scripts off, runs Stage 0 on the head, and
   uploads the report. Reapplying the label is the explicit retrigger after a new head.
   `review-findings.yml` runs on that workflow's completion in the base repository's context
