@@ -20,7 +20,7 @@ import type { ReviewReport } from './stage5.ts'
 export const REGRESSION_KINDS = ['build', 'typecheck', 'test'] as const
 export type RegressionKind = (typeof REGRESSION_KINDS)[number]
 /** Increment when the meaning of a scored hit changes. Baseline identity includes it. */
-export const REVIEW_EVAL_VERSION = 3
+export const REVIEW_EVAL_VERSION = 4
 
 /** The finding class Stage 0 mints for each regression kind. */
 const REGRESSION_CLASS: Record<RegressionKind, FindingClass> = {

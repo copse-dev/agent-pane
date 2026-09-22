@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { headlessEventSchema } from '@copse/agent/headless-contract.ts'
-import type { LLMMessage, LLMProvider } from '@copse/llm/wire-types.ts'
+import type { LLMMessage, LLMProvider, ProviderStreamChunk } from '@copse/llm/wire-types.ts'
 import { materialiseCheckouts, type MaterialisedCheckouts } from './checkouts.ts'
 import { buildReviewContext, type ReviewContext } from './context.ts'
 import {
@@ -153,6 +153,8 @@ describe('runStage2', () => {
     assert.match(prompt, /passing producer-level test does not settle downstream behaviour/i)
     assert.match(prompt, /existence of a fallback.*predates the change.*proves.*intended/i)
     assert.match(prompt, /require concrete repository evidence/)
+    assert.match(prompt, /evidence for the producer finding, not a second defect/)
+    assert.match(prompt, /do not file a separate missing-coverage finding/)
   })
 
   it('fails closed when the model ends without the completion attestation', async () => {
@@ -177,6 +179,58 @@ describe('runStage2', () => {
     const end = result.events.at(-1)
     assert.equal(end?.type, 'turn_end')
     assert.equal(end.outcome, 'failed')
+  })
+
+  it('cuts repeated planning prose before it consumes a review turn', async () => {
+    const repeated = `${'I should inspect the changed producer and then trace every consumer carefully. '.repeat(3)}\n\n`
+    let emittedBlocks = 0
+    let streamCalls = 0
+    const provider: LLMProvider = {
+      async *stream(): AsyncGenerator<ProviderStreamChunk> {
+        streamCalls++
+        if (streamCalls === 1) {
+          for (let index = 0; index < 100; index++) {
+            emittedBlocks++
+            yield { type: 'text', text: repeated }
+          }
+          yield { type: 'done', stopReason: 'end_turn' }
+          return
+        }
+        if (streamCalls === 2) {
+          yield {
+            type: 'tool_call',
+            toolCall: {
+              id: 'finish-after-circle',
+              name: 'finish_review',
+              args: {
+                checked: 'The changed implementation and its direct consumers.',
+                couldNotVerify: 'Nothing',
+              },
+            },
+          }
+          yield { type: 'done', stopReason: 'tool_use' }
+          return
+        }
+        yield { type: 'text', text: 'Done.' }
+        yield { type: 'done', stopReason: 'end_turn' }
+      },
+    }
+    const result = await runStage2({
+      provider,
+      model: 'looping',
+      lens: CORRECTNESS_LENS,
+      context,
+      headCheckout: checkouts.head,
+      cell: null,
+      shellDecision: 'deny',
+      scrub: (text) => text,
+      threadId: 'thread-circle',
+      turnId: 'turn-circle',
+    })
+    assert.equal(result.outcome, 'completed')
+    assert.equal(result.toolCalls, 1)
+    assert.ok(emittedBlocks < 100, `repeat guard consumed all ${String(emittedBlocks)} blocks`)
+    assert.ok(streamCalls >= 2)
   })
 
   it('repairs a prose draft into one structured closure without losing its finding', async () => {
