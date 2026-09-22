@@ -21431,6 +21431,7 @@ var init_parse_agent_run_payload = __esm({
       id: external_exports.string(),
       content: external_exports.string(),
       status: external_exports.enum(["pending", "in_progress", "completed", "cancelled"]),
+      priority: external_exports.enum(["high", "medium", "low"]).optional(),
       check: external_exports.discriminatedUnion("kind", [
         external_exports.object({
           kind: external_exports.literal("shell"),
@@ -22173,6 +22174,16 @@ function appendReasoning(store2, messageId, text2) {
   });
   store2.emit("message_reasoning", messageId, text2);
 }
+function appendAcpContentBlock(store2, messageId, channel, block) {
+  updateMessage(store2, messageId, (message2) => {
+    if (channel === "thought") {
+      message2.reasoningBlocks = [...message2.reasoningBlocks ?? [], block];
+    } else {
+      message2.contentBlocks = [...message2.contentBlocks ?? [], block];
+    }
+  });
+  store2.emit("message_acp_content", messageId);
+}
 function setMessageContent(store2, messageId, content) {
   updateMessage(store2, messageId, (m) => {
     m.content = content;
@@ -22331,6 +22342,31 @@ function setThreadComparison(store2, threadId, comparison) {
   });
   store2.emit("comparison_changed", threadId);
 }
+function setThreadReviewReport(store2, threadId, report) {
+  patchThreadAnywhere(store2, threadId, (t) => {
+    const next = { ...t, updatedAt: Date.now() };
+    if (report) next.reviewReport = report;
+    else delete next.reviewReport;
+    return next;
+  });
+  store2.emit("review_report_changed", threadId);
+}
+function setReviewFindingDismissed(store2, threadId, findingId, dismissed) {
+  patchThreadAnywhere(store2, threadId, (t) => {
+    if (!t.reviewReport) return t;
+    return {
+      ...t,
+      updatedAt: Date.now(),
+      reviewReport: {
+        ...t.reviewReport,
+        findings: t.reviewReport.findings.map(
+          (finding) => finding.id === findingId ? { ...finding, dismissed } : finding
+        )
+      }
+    };
+  });
+  store2.emit("review_report_changed", threadId);
+}
 function setQueuePaused(store2, threadId, paused) {
   const { threads } = store2.getState();
   const thread = threads.find((t) => t.id === threadId);
@@ -22370,6 +22406,17 @@ function setThreadGitBranch(store2, threadId, branch) {
   );
   store2.setState({ threads: updated });
   store2.emit("threads_changed");
+}
+function applyRenamedThreadWorktree(store2, threadId, worktree) {
+  const applied = patchThreadAnywhere(store2, threadId, (thread) => ({
+    ...thread,
+    worktree,
+    gitBranch: worktree.branch,
+    updatedAt: Date.now()
+  }));
+  if (!applied) return;
+  store2.emit("threads_changed");
+  store2.emit("git_branch_changed");
 }
 function recordThreadVideos(store2, threadId, videos) {
   if (videos.length === 0) return;
@@ -22759,6 +22806,11 @@ function attachAutosave(store2, api2) {
     store2.on("comparison_changed", () => {
       schedule();
     }),
+    // Same for the review report: a dismissed finding or a cleared card is a
+    // metadata-only change on an idle thread.
+    store2.on("review_report_changed", () => {
+      schedule();
+    }),
     store2.on("projects_changed", () => {
       projectsDirty = true;
       schedule();
@@ -22944,7 +22996,9 @@ function getToolCallLabel(tc2) {
   if (tc2.name === "run_shell" || tc2.kind === "execute") {
     const command = shellCommandArg(tc2.args);
     if (command) return shellCommandLabel(command);
+    if (tc2.title) return tc2.title;
   }
+  if (tc2.title && !/^MCP\s*:\s*tool$/i.test(tc2.title)) return tc2.title;
   return getToolDisplayName(tc2.name, tense);
 }
 function getToolGroupKey(name, kind) {
@@ -27522,24 +27576,24 @@ var init_demo_scenarios = __esm({
           {
             id: "demo-approval-grouped-shell-commands-oracle",
             title: "Run outside sandbox?",
-            body: 'COREPACK_HOME="$TMPDIR/copse-corepack" corepack pnpm run check:oracle',
-            bodyAdvice: "The project sandbox would block this command:\n\u2022 Downloads package-manager binaries (corepack)",
+            body: "node .tmp/dep-candidates.mjs",
+            bodyAdvice: "The project sandbox would block this command:\n\u2022 Runs a script file from the project, so Copse can't tell what it does",
             bodyFooter: "Allow running it once outside the sandbox?",
             type: "shell"
           },
           {
             id: "demo-approval-grouped-shell-commands-syntax",
             title: "Run outside sandbox?",
-            body: 'COREPACK_HOME="$TMPDIR/copse-corepack" corepack pnpm run check:e2e-syntax',
-            bodyAdvice: "The project sandbox would block this command:\n\u2022 Downloads package-manager binaries (corepack)",
+            body: "mkdir -p node_modules && ln -s ../.tmp/validation/node_modules.partial/.pnpm/esbuild@0.28.2/node_modules/esbuild node_modules/esbuild",
+            bodyAdvice: "The project sandbox would block this command:\n\u2022 Reaches outside the project with a ../ path",
             bodyFooter: "Allow running it once outside the sandbox?",
             type: "shell"
           },
           {
             id: "demo-approval-grouped-shell-commands-test",
             title: "Run outside sandbox?",
-            body: 'COREPACK_HOME="$TMPDIR/copse-corepack" corepack pnpm test',
-            bodyAdvice: "The project sandbox would block this command:\n\u2022 Downloads package-manager binaries (corepack)",
+            body: "ln -s ../.tmp/validation/node_modules.partial/.pnpm/esbuild@0.28.2/node_modules/esbuild node_modules/esbuild",
+            bodyAdvice: "The project sandbox would block this command:\n\u2022 Reaches outside the project with a ../ path",
             bodyFooter: "Allow running it once outside the sandbox?",
             type: "shell"
           }
@@ -28127,6 +28181,7 @@ This response is streamed through the real renderer event path.`
       // a retry error where the demo's answer should be. Nothing is checked out
       // in a browser; the demo always stays on the shared branch.
       prepareCheckout: (_projectId, _threadId, _prompt, choice) => resolved({ checkoutMode: "shared", choice, branch: currentBranch }),
+      renameCheckoutBranch: () => resolved(null),
       previewCheckout: () => resolved({ checkoutMode: "shared" }),
       resetDefaultBranchCache: () => resolvedVoid(),
       estimateContext: (_projectId, _threadId, payload) => resolved({
@@ -28149,8 +28204,6 @@ This response is streamed through the real renderer event path.`
       // crash leftover the moment the project loads (#1406's reconciliation).
       runningThreadIds: () => resolved(threads.filter((t) => t.status === "running").map((t) => t.id)),
       retryReview: resolvedVoid,
-      retryComparison: resolvedVoid,
-      comparisonModels: () => resolved({ a: "", b: "", judge: "" }),
       clearHistory: resolvedVoid,
       refreshModelContext: resolvedVoid,
       suggestTitle: () => resolved(null),
@@ -28207,6 +28260,7 @@ This response is streamed through the real renderer event path.`
       onConflict: subscribe
     },
     approval: { respond: resolvedVoid },
+    review: { run: resolvedVoid, dismissFinding: resolvedVoid, restoreFinding: resolvedVoid },
     ask: { respond: resolvedVoid },
     alerts: { threadFinished: resolvedVoid },
     sshPrompt: {
@@ -29516,6 +29570,7 @@ function createStore(initial) {
     message_queued: /* @__PURE__ */ new Set(),
     message_token: /* @__PURE__ */ new Set(),
     message_reasoning: /* @__PURE__ */ new Set(),
+    message_acp_content: /* @__PURE__ */ new Set(),
     message_canvas_artefacts_changed: /* @__PURE__ */ new Set(),
     message_done: /* @__PURE__ */ new Set(),
     tool_call_started: /* @__PURE__ */ new Set(),
@@ -29548,6 +29603,7 @@ function createStore(initial) {
     review_changed: /* @__PURE__ */ new Set(),
     hook_card_added: /* @__PURE__ */ new Set(),
     comparison_changed: /* @__PURE__ */ new Set(),
+    review_report_changed: /* @__PURE__ */ new Set(),
     git_branch_changed: /* @__PURE__ */ new Set(),
     thread_checkout_changed: /* @__PURE__ */ new Set(),
     composer_draft_flush: /* @__PURE__ */ new Set(),
@@ -31264,7 +31320,9 @@ function mountTitlebar(root, store2, api2) {
     }
   }
   let branchToken = 0;
+  let syncedThreadId = store2.getState().activeThreadId;
   function syncBranch() {
+    syncedThreadId = store2.getState().activeThreadId;
     const token = ++branchToken;
     const rootPath = store2.getState().workspaceRoot;
     const owner = getActiveThreadOwner(store2);
@@ -31289,26 +31347,42 @@ function mountTitlebar(root, store2, api2) {
     );
   }
   let branchTimer = null;
+  function syncBranchNow() {
+    if (branchTimer) {
+      clearTimeout(branchTimer);
+      branchTimer = null;
+    }
+    syncBranch();
+  }
   function scheduleBranchSync() {
     if (branchTimer) clearTimeout(branchTimer);
-    branchTimer = setTimeout(syncBranch, 500);
+    branchTimer = setTimeout(() => {
+      branchTimer = null;
+      syncBranch();
+    }, 500);
   }
   syncName();
   syncBranch();
   const unsubs = [
     store2.on("workspace_changed", () => {
       syncName();
-      syncBranch();
+      syncBranchNow();
       syncRunApp();
     }),
     store2.on("projects_changed", syncName),
-    store2.on("threads_changed", syncBranch),
+    store2.on("threads_changed", () => {
+      if (store2.getState().activeThreadId !== syncedThreadId) {
+        syncBranchNow();
+        return;
+      }
+      scheduleBranchSync();
+    }),
     store2.on("threads_changed", () => {
       if (store2.getState().activeThreadId !== detectedThread) syncRunApp();
     }),
     store2.on("thread_checkout_changed", syncRunApp),
     store2.on("message_done", syncRunApp),
-    store2.on("git_branch_changed", syncBranch),
+    store2.on("git_branch_changed", scheduleBranchSync),
     api2.fs.onChanged(scheduleBranchSync),
     api2.git.onWorkingTreeChanged(scheduleBranchSync)
   ];
@@ -45763,7 +45837,7 @@ function createAcpAgentsSection(api2, opts = {}) {
       { type: "button", class: "provider-secondary" },
       "Detect models"
     );
-    const modelRow2 = el("div", { class: "acp-model-row" }, modelSelect, detectModels);
+    const modelRow = el("div", { class: "acp-model-row" }, modelSelect, detectModels);
     const modelStatus = el("span", { class: "field-hint" });
     const DEFAULT_MODE_LABEL = "Agent default";
     const modeSelect = el("select", {});
@@ -45901,7 +45975,7 @@ function createAcpAgentsSection(api2, opts = {}) {
       el("label", {}, "Command", commandInput),
       el("label", {}, "Arguments", argsArea),
       el("label", {}, "Environment", envArea),
-      el("label", {}, "Model", modelRow2, modelStatus),
+      el("label", {}, "Model", modelRow, modelStatus),
       el(
         "label",
         { class: "acp-permission-mode-field" },
@@ -58577,6 +58651,69 @@ function liveWorktreeLimit(value) {
   if (value === "3") return 3;
   return 1;
 }
+function parseCronNumber(value, min, max) {
+  if (!/^\d+$/.test(value)) return null;
+  const parsed2 = Number(value);
+  return parsed2 >= min && parsed2 <= max ? parsed2 : null;
+}
+function parseSimpleSchedule(cron) {
+  const [minuteRaw, hourRaw, dayOfMonth, month, dayOfWeek, ...extra] = cron.trim().split(/\s+/);
+  if (minuteRaw === void 0 || hourRaw === void 0 || dayOfMonth === void 0 || month === void 0 || dayOfWeek === void 0 || extra.length > 0 || month !== "*") {
+    return null;
+  }
+  const minute = parseCronNumber(minuteRaw, 0, 59);
+  const hour = parseCronNumber(hourRaw, 0, 23);
+  if (minute === null || hour === null) return null;
+  if (dayOfMonth === "*" && dayOfWeek === "*") return { repeat: "daily", hour, minute };
+  if (dayOfMonth === "*" && dayOfWeek === "1-5") {
+    return { repeat: "weekdays", hour, minute };
+  }
+  if (dayOfMonth === "*") {
+    const weekday = parseCronNumber(dayOfWeek, 0, 7);
+    if (weekday !== null) return { repeat: "weekly", hour, minute, on: weekday % 7 };
+  }
+  if (dayOfWeek === "*") {
+    const monthDay = parseCronNumber(dayOfMonth, 1, 31);
+    if (monthDay !== null) return { repeat: "monthly", hour, minute, on: monthDay };
+  }
+  return null;
+}
+function twoDigits(value) {
+  return String(value).padStart(2, "0");
+}
+function scheduleTime(schedule) {
+  return `${twoDigits(schedule.hour)}:${twoDigits(schedule.minute)}`;
+}
+function ordinal(value) {
+  const finalTwo = value % 100;
+  if (finalTwo >= 11 && finalTwo <= 13) return `${String(value)}th`;
+  if (value % 10 === 1) return `${String(value)}st`;
+  if (value % 10 === 2) return `${String(value)}nd`;
+  if (value % 10 === 3) return `${String(value)}rd`;
+  return `${String(value)}th`;
+}
+function weekdayName(value) {
+  if (value === 0) return "Sunday";
+  if (value === 1) return "Monday";
+  if (value === 2) return "Tuesday";
+  if (value === 3) return "Wednesday";
+  if (value === 4) return "Thursday";
+  if (value === 5) return "Friday";
+  return "Saturday";
+}
+function simpleScheduleDescription(schedule) {
+  const time3 = scheduleTime(schedule);
+  if (schedule.repeat === "daily") return `Every day at ${time3}`;
+  if (schedule.repeat === "weekdays") return `Every weekday at ${time3}`;
+  if (schedule.repeat === "weekly") {
+    return `Every ${weekdayName(schedule.on)} at ${time3}`;
+  }
+  return `On the ${ordinal(schedule.on)} of every month at ${time3}`;
+}
+function scheduleDescription(cron) {
+  const schedule = parseSimpleSchedule(cron);
+  return schedule ? simpleScheduleDescription(schedule) : "Custom schedule";
+}
 function createAutomationPluginSettings(store2, api2, pluginEnabled, revealScheduleId, createNew = false, projectId = store2.getState().activeProjectId) {
   const root = el("section", {
     class: "automation-plugin-settings",
@@ -58616,14 +58753,64 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     maxlength: "160",
     required: true
   });
-  const cronInput = el("input", {
-    type: "text",
-    class: "automation-input automation-cron-input",
-    placeholder: "0 9 * * 1-5",
-    maxlength: "160",
-    required: true,
-    spellcheck: false
+  const repeatSelect = el(
+    "select",
+    { class: "automation-input automation-repeat-select", required: true },
+    el("option", { value: "daily" }, "Every day"),
+    el("option", { value: "weekdays" }, "Weekdays"),
+    el("option", { value: "weekly" }, "Every week"),
+    el("option", { value: "monthly" }, "Every month")
+  );
+  const timeInput = el("input", {
+    type: "time",
+    class: "automation-input automation-time-input",
+    value: "09:00",
+    required: true
   });
+  const weeklyDaySelect = el("select", {
+    class: "automation-input automation-weekly-day-select"
+  });
+  WEEKDAYS.forEach((day, index) => {
+    weeklyDaySelect.append(el("option", { value: String(index) }, day));
+  });
+  const monthlyDaySelect = el("select", {
+    class: "automation-input automation-monthly-day-select"
+  });
+  for (let day = 1; day <= 31; day += 1) {
+    monthlyDaySelect.append(el("option", { value: String(day) }, ordinal(day)));
+  }
+  const repeatLabel = el("label", { class: "automation-label" }, "Repeat", repeatSelect);
+  const timeLabel = el("label", { class: "automation-label" }, "At", timeInput);
+  const weeklyDayLabel = el(
+    "label",
+    { class: "automation-label automation-weekly-day-label" },
+    "On",
+    weeklyDaySelect
+  );
+  const monthlyDayLabel = el(
+    "label",
+    { class: "automation-label automation-monthly-day-label" },
+    "On day",
+    monthlyDaySelect
+  );
+  const scheduleSummary = el("span", {
+    class: "automation-hint automation-schedule-summary",
+    "aria-live": "polite"
+  });
+  const scheduleFields = el(
+    "fieldset",
+    { class: "automation-schedule-fields" },
+    el("legend", {}, "Schedule"),
+    el(
+      "div",
+      { class: "automation-schedule-controls" },
+      repeatLabel,
+      weeklyDayLabel,
+      monthlyDayLabel,
+      timeLabel
+    ),
+    scheduleSummary
+  );
   const modelSelect = el("select", {
     class: "automation-input automation-model-select",
     required: true
@@ -58647,14 +58834,8 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
   form.append(
     formTitle,
     el("label", { class: "automation-label" }, "Name", nameInput),
-    el(
-      "label",
-      { class: "automation-label" },
-      "Cron",
-      cronInput,
-      el("span", { class: "automation-hint" }, "minute hour day month weekday")
-    ),
     el("label", { class: "automation-label" }, "Model", modelSelect),
+    scheduleFields,
     el("label", { class: "automation-label" }, "Prompt", promptInput),
     el(
       "label",
@@ -58678,6 +58859,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
   });
   let schedules = [];
   let editingId = null;
+  let customCron = null;
   let pendingReveal = revealScheduleId;
   let pendingCreate = createNew;
   function showStatus(message2, error62 = false) {
@@ -58696,6 +58878,68 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     list.hidden = false;
     heading.hidden = false;
   }
+  function selectedSimpleSchedule() {
+    const [hourRaw, minuteRaw] = timeInput.value.split(":");
+    if (hourRaw === void 0 || minuteRaw === void 0) return null;
+    const hour = parseCronNumber(hourRaw, 0, 23);
+    const minute = parseCronNumber(minuteRaw, 0, 59);
+    if (hour === null || minute === null) return null;
+    if (repeatSelect.value === "daily") return { repeat: "daily", hour, minute };
+    if (repeatSelect.value === "weekdays") return { repeat: "weekdays", hour, minute };
+    if (repeatSelect.value === "weekly") {
+      const on3 = parseCronNumber(weeklyDaySelect.value, 0, 6);
+      return on3 === null ? null : { repeat: "weekly", hour, minute, on: on3 };
+    }
+    if (repeatSelect.value === "monthly") {
+      const on3 = parseCronNumber(monthlyDaySelect.value, 1, 31);
+      return on3 === null ? null : { repeat: "monthly", hour, minute, on: on3 };
+    }
+    return null;
+  }
+  function cronFromScheduleControls() {
+    const schedule = selectedSimpleSchedule();
+    if (!schedule) {
+      if (repeatSelect.value === "custom" && customCron) return customCron;
+      return null;
+    }
+    const prefix = `${String(schedule.minute)} ${String(schedule.hour)}`;
+    if (schedule.repeat === "daily") return `${prefix} * * *`;
+    if (schedule.repeat === "weekdays") return `${prefix} * * 1-5`;
+    if (schedule.repeat === "weekly") return `${prefix} * * ${String(schedule.on)}`;
+    return `${prefix} ${String(schedule.on)} * *`;
+  }
+  function updateScheduleControls() {
+    const custom2 = repeatSelect.value === "custom";
+    const weekly = repeatSelect.value === "weekly";
+    const monthly = repeatSelect.value === "monthly";
+    timeLabel.hidden = custom2;
+    timeInput.disabled = custom2;
+    timeInput.required = !custom2;
+    weeklyDayLabel.hidden = !weekly;
+    weeklyDaySelect.disabled = !weekly;
+    weeklyDaySelect.required = weekly;
+    monthlyDayLabel.hidden = !monthly;
+    monthlyDaySelect.disabled = !monthly;
+    monthlyDaySelect.required = monthly;
+    const schedule = selectedSimpleSchedule();
+    scheduleSummary.textContent = custom2 ? "This automation has an older custom schedule. Choose a repeat pattern to replace it." : schedule ? `${simpleScheduleDescription(schedule)} \xB7 local time` : "Choose when this automation should run.";
+  }
+  function setScheduleControls(cron) {
+    repeatSelect.querySelector('option[value="custom"]')?.remove();
+    const schedule = parseSimpleSchedule(cron);
+    customCron = schedule ? null : cron;
+    if (!schedule) {
+      repeatSelect.append(el("option", { value: "custom" }, "Keep existing custom schedule"));
+      repeatSelect.value = "custom";
+      updateScheduleControls();
+      return;
+    }
+    repeatSelect.value = schedule.repeat;
+    timeInput.value = scheduleTime(schedule);
+    if (schedule.repeat === "weekly") weeklyDaySelect.value = String(schedule.on);
+    if (schedule.repeat === "monthly") monthlyDaySelect.value = String(schedule.on);
+    updateScheduleControls();
+  }
   async function openForm(schedule) {
     hideStatus();
     editingId = schedule?.id ?? null;
@@ -58703,7 +58947,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     list.hidden = true;
     heading.hidden = true;
     nameInput.value = schedule?.name ?? "";
-    cronInput.value = schedule?.cron ?? "0 9 * * 1-5";
+    setScheduleControls(schedule?.cron ?? "0 9 * * 1-5");
     promptInput.value = schedule?.prompt ?? "";
     enabledInput.checked = schedule?.enabled ?? true;
     worktreeLimitSelect.value = String(schedule?.maxLiveWorktrees ?? 1);
@@ -58733,7 +58977,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
         el(
           "div",
           { class: "automation-row-meta" },
-          el("code", {}, schedule.cron),
+          el("span", { class: "automation-row-schedule" }, scheduleDescription(schedule.cron)),
           el("span", {}, modelDisplayLabel(schedule.model)),
           el("span", {}, schedule.enabled ? "Armed" : "Paused"),
           el(
@@ -58826,15 +59070,32 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
   }
   addButton.addEventListener("click", () => void openForm());
   cancelButton.addEventListener("click", closeForm);
+  repeatSelect.addEventListener("change", () => {
+    if (repeatSelect.value !== "custom") {
+      repeatSelect.querySelector('option[value="custom"]')?.remove();
+      customCron = null;
+    }
+    updateScheduleControls();
+  });
+  timeInput.addEventListener("input", updateScheduleControls);
+  weeklyDaySelect.addEventListener("change", updateScheduleControls);
+  monthlyDaySelect.addEventListener("change", updateScheduleControls);
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     if (!projectId) return;
     hideStatus();
+    const cron = cronFromScheduleControls();
+    if (cron === null) {
+      showStatus("Choose a valid schedule before saving.", true);
+      if (repeatSelect.value === "custom") repeatSelect.focus();
+      else timeInput.focus();
+      return;
+    }
     saveButton.setAttribute("disabled", "");
     const input2 = {
       ...editingId ? { id: editingId } : {},
       name: nameInput.value,
-      cron: cronInput.value,
+      cron,
       prompt: promptInput.value,
       model: modelSelect.value,
       enabled: enabledInput.checked,
@@ -58861,6 +59122,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     }
   });
 }
+var WEEKDAYS;
 var init_automation_plugin_settings = __esm({
   "src/renderer/views/automation-plugin-settings.ts"() {
     init_automations_plugin();
@@ -58869,6 +59131,15 @@ var init_automation_plugin_settings = __esm({
     init_model_options();
     init_model_picker();
     init_confirm_dialog();
+    WEEKDAYS = [
+      "Sunday",
+      "Monday",
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday",
+      "Saturday"
+    ];
   }
 });
 
@@ -61095,25 +61366,6 @@ function mountSettingsDialog(store2, api2) {
                 How to choose the model that carries out the delegated steps \u2014 resolved against
                 your configured providers each time a step is handed off. Prefer a rule that lands
                 cheaper and faster than your chat model.
-              </p>
-            </fieldset>
-
-            <fieldset>
-              <legend>Model comparison</legend>
-              <p class="field-hint">
-                Reviews your current changes through two models independently, then has a third
-                compare their verdicts. Turn it on under <strong>Plugins</strong>, where you also
-                choose how the three models are picked \u2014 they always resolve to different models,
-                so there is something to compare. A run makes up to three model calls, so it asks
-                before spending on a paid model.
-              </p>
-              <label class="checkbox-label">
-                <input type="checkbox" name="modelComparisonAutoOnReview" />
-                Run the comparison automatically after editing turns
-              </label>
-              <p class="field-hint">
-                When on, the comparison runs as part of the post-turn review, still asking before
-                it spends. When off, ask for it when you want it.
               </p>
             </fieldset>
 
@@ -63595,9 +63847,6 @@ var init_settings_dialog = __esm({
       { name: "nextStepSuggestionEnabled", kind: "checkbox", default: false, save: true },
       { name: "containerRunsEnabled", kind: "checkbox", default: false, save: true },
       { name: "orchestrationStrategyEnabled", kind: "checkbox", default: false, save: true },
-      // P5: the master model-comparison toggle moved to Settings > Plugins
-      // (`copse.model-comparison`); the auto-on-review sub-toggle stays here.
-      { name: "modelComparisonAutoOnReview", kind: "checkbox", default: false, save: true },
       { name: DEVELOPER_MODE_SETTING, kind: "checkbox", default: false, save: true },
       // Background tasks moved to Settings > Plugins (`copse.background-tasks`), which
       // also declares the `loopback-bind` sandbox relaxation (issue #1190).
@@ -63885,6 +64134,118 @@ var init_attention = __esm({
   "src/renderer/controller/attention.ts"() {
     bySource = /* @__PURE__ */ new Map();
     union2 = /* @__PURE__ */ new Set();
+  }
+});
+
+// src/shared/git/worktree-policy.ts
+function slugPrompt(prompt) {
+  const slug2 = prompt.normalize("NFKD").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 42).replace(/-+$/g, "");
+  return slug2 || "thread";
+}
+function shortThreadId(threadId) {
+  const compact = threadId.toLowerCase().replace(/[^a-z0-9]/g, "");
+  return (compact.slice(-6) || "thread").slice(0, 6);
+}
+function threadWorktreeBranchName(title, threadId, collision = 0) {
+  const base = `copse/${slugPrompt(title)}-${shortThreadId(threadId)}`;
+  return collision > 0 ? `${base}-${String(collision + 1)}` : base;
+}
+function initialThreadWorktreeBranchName(threadId, collision = 0) {
+  return threadWorktreeBranchName("thread", threadId, collision);
+}
+function isInitialThreadWorktreeBranchName(branch, threadId) {
+  for (let collision = 0; collision < 100; collision += 1) {
+    if (branch === initialThreadWorktreeBranchName(threadId, collision)) return true;
+  }
+  return false;
+}
+var init_worktree_policy = __esm({
+  "src/shared/git/worktree-policy.ts"() {
+  }
+});
+
+// src/renderer/controller/thread-naming.ts
+function namingMessages(thread) {
+  const queued = queuedMessageIds(thread);
+  return thread.messages.filter(
+    (m) => m.role === "user" && !m.origin && !queued.has(m.id) && m.content.trim()
+  );
+}
+function firstWords(text2, n = 6) {
+  return text2.split(/\s+/).slice(0, n).join(" ").slice(0, 60) || "New Thread";
+}
+function namingInput(userMessages) {
+  const first = userMessages[0];
+  if (!first) return "";
+  const recent = userMessages.slice(1).slice(-3);
+  return [first, ...recent].map((m) => m.content.trim().slice(0, 300)).join("\n\n");
+}
+function owningProjectId(store2, threadId) {
+  const background = backgroundProjectOf(store2, threadId);
+  if (background) return background;
+  const state = store2.getState();
+  if (!state.threads.some((thread) => thread.id === threadId)) return null;
+  return state.activeProjectId;
+}
+function maybeRenameThreadBranch(store2, api2, threadId) {
+  if (branchRenameInFlight.has(threadId)) return;
+  const thread = getThreadById(store2, threadId);
+  if (!thread?.worktree || thread.status !== "idle" || thread.title === "New Thread" || !isInitialThreadWorktreeBranchName(thread.worktree.branch, threadId)) {
+    return;
+  }
+  const projectId = owningProjectId(store2, threadId);
+  if (!projectId) return;
+  branchRenameInFlight.add(threadId);
+  void api2.agent.renameCheckoutBranch(projectId, threadId, thread.title).then((worktree) => {
+    if (worktree) applyRenamedThreadWorktree(store2, threadId, worktree);
+  }).catch((error62) => {
+    console.warn("[thread-naming] Could not rename thread branch:", error62);
+  }).finally(() => branchRenameInFlight.delete(threadId));
+}
+function maybeNameThread(store2, api2, threadId) {
+  if (inFlight2.has(threadId)) return;
+  const thread = getThreadById(store2, threadId);
+  if (!thread) return;
+  const passes = thread.autoTitleCount ?? 0;
+  if (passes === 0 && thread.title !== "New Thread") return;
+  const threshold = PASS_THRESHOLDS[passes];
+  if (threshold === void 0) return;
+  const userMessages = namingMessages(thread);
+  const first = userMessages[0];
+  if (!first || userMessages.length < threshold) return;
+  const titleBefore = thread.title;
+  const input2 = namingInput(userMessages);
+  inFlight2.add(threadId);
+  void (async () => {
+    let title;
+    try {
+      title = await api2.agent.suggestTitle(input2);
+    } catch {
+      title = null;
+    } finally {
+      inFlight2.delete(threadId);
+    }
+    const current = getThreadById(store2, threadId);
+    if (!current) return;
+    if (current.title !== titleBefore || (current.autoTitleCount ?? 0) !== passes) return;
+    const fallback = passes === 0 ? firstWords(first.content) : current.title;
+    setThreadTitle(store2, threadId, nonEmptyStringOr(title?.trim(), fallback), {
+      autoTitleCount: passes + 1
+    });
+    maybeRenameThreadBranch(store2, api2, threadId);
+  })();
+}
+var inFlight2, PASS_THRESHOLDS, branchRenameInFlight;
+var init_thread_naming = __esm({
+  "src/renderer/controller/thread-naming.ts"() {
+    init_thread_helpers();
+    init_unknown_value3();
+    init_worktree_policy();
+    init_message_queue();
+    init_background_threads();
+    inFlight2 = /* @__PURE__ */ new Set();
+    PASS_THRESHOLDS = [1, 3, 8];
+    branchRenameInFlight = /* @__PURE__ */ new Set();
   }
 });
 
@@ -64216,7 +64577,7 @@ function attentionBell(label) {
   return svg2;
 }
 function runningStatus(label) {
-  const svg2 = runningStatusIcon("ui-icon ui-icon-sm chat-running-status");
+  const svg2 = runningStatusIcon("ui-icon chat-running-status");
   svg2.setAttribute("role", "img");
   svg2.setAttribute("aria-label", label);
   svg2.setAttribute("data-tooltip", label);
@@ -64411,8 +64772,12 @@ function mountProjectsPane(root, store2, api2) {
     const { threadId, draft } = renaming;
     renaming = null;
     const next = draft.trim();
-    if (save && next) setThreadTitle(store2, threadId, next);
-    else render();
+    if (save && next) {
+      setThreadTitle(store2, threadId, next);
+      maybeRenameThreadBranch(store2, api2, threadId);
+    } else {
+      render();
+    }
   }
   function forkProjectThread(projectId, threadId) {
     if (projectId !== store2.getState().activeProjectId) return;
@@ -65310,6 +65675,7 @@ var init_projects_pane = __esm({
     init_sidebar_thread();
     init_attention();
     init_ssh_workspace_ui();
+    init_thread_naming();
     init_project_tree();
     init_project_groups();
     init_projects_drag();
@@ -68573,15 +68939,17 @@ function isAnchorable(msg) {
 function isAbsorbable(msg) {
   if (!msg || msg.role !== "assistant") return false;
   if (hasText(msg.content)) return false;
-  return regularToolCalls(msg).length > 0 || hasText(msg.reasoning);
+  return regularToolCalls(msg).length > 0 || hasText(msg.reasoning) || Boolean(msg.reasoningBlocks?.length);
 }
 function stepOf(msg) {
   const reasoning = msg.reasoning;
+  const reasoningBlocks = msg.reasoningBlocks;
   const summary = trimmed(msg.toolSummary);
   return {
     messageId: msg.id,
     toolCalls: regularToolCalls(msg),
     ...reasoning !== void 0 && hasText(reasoning) ? { reasoning } : {},
+    ...reasoningBlocks?.length ? { reasoningBlocks } : {},
     ...summary !== null ? { summary } : {}
   };
 }
@@ -69147,6 +69515,315 @@ var init_comparison_panel = __esm({
   }
 });
 
+// src/renderer/views/review-findings-card.ts
+function statusLabel3(report) {
+  switch (report.status) {
+    case "running":
+      return "Reviewing\u2026";
+    case "error":
+      return "Review failed";
+    default:
+      return "Review";
+  }
+}
+function findingLocation(finding) {
+  if (finding.startLine === void 0) return finding.path;
+  const end = finding.endLine !== void 0 && finding.endLine !== finding.startLine;
+  return `${finding.path}:${String(finding.startLine)}${end ? `\u2013${String(finding.endLine)}` : ""}`;
+}
+function verdictLabel(finding) {
+  switch (finding.verdict.status) {
+    case "confirmed":
+      return finding.evidence.some((evidence) => evidence.kind === "reproducer") ? "confirmed by reproducer" : "confirmed";
+    case "refuted":
+      return "refuted";
+    default:
+      return finding.challengedBy.length > 0 ? "survived challenge" : "unverified";
+  }
+}
+function evidenceEl(evidence) {
+  const item = el("li", { class: "review-finding-evidence", "data-kind": evidence.kind });
+  switch (evidence.kind) {
+    case "command": {
+      const exit = evidence.exitCode === null ? "killed" : `exit ${String(evidence.exitCode)}`;
+      item.append(
+        el("code", { class: "review-finding-command" }, evidence.command),
+        el("span", { class: "review-finding-evidence-meta" }, ` on ${evidence.target}, ${exit}`)
+      );
+      if (evidence.excerpt.trim() !== "") {
+        item.append(el("pre", { class: "review-finding-excerpt" }, evidence.excerpt.trimEnd()));
+      }
+      return item;
+    }
+    case "reproducer": {
+      const outcome = `${evidence.failsOnHead ? "fails" : "passes"} on head, ${evidence.passesOnBase ? "passes" : "fails"} on base`;
+      item.append(
+        el("code", { class: "review-finding-command" }, evidence.testPath),
+        el("span", { class: "review-finding-evidence-meta" }, ` \u2014 reproducer ${outcome}`)
+      );
+      return item;
+    }
+    default: {
+      const lines = evidence.startLine === evidence.endLine ? String(evidence.startLine) : `${String(evidence.startLine)}\u2013${String(evidence.endLine)}`;
+      item.append(
+        el("span", { class: "review-finding-evidence-meta" }, "cites "),
+        el("code", { class: "review-finding-command" }, `${evidence.path}:${lines}`)
+      );
+      return item;
+    }
+  }
+}
+function provenanceEl(finding) {
+  const parts = [`Raised by ${finding.raisedBy.join(", ")}`];
+  if (finding.corroboratedBy.length > 0) {
+    parts.push(`corroborated by ${finding.corroboratedBy.join(", ")}`);
+  }
+  if (finding.challengedBy.length > 0) {
+    parts.push(`challenged by ${finding.challengedBy.join(", ")}`);
+  }
+  return el("div", { class: "review-finding-provenance" }, `${parts.join("; ")}.`);
+}
+function findingEl(finding, actions) {
+  const item = el("li", {
+    class: "review-finding",
+    "data-finding-id": finding.id,
+    "data-severity": finding.severity,
+    "data-verdict": finding.verdict.status,
+    ...finding.dismissed ? { "data-dismissed": "" } : {}
+  });
+  const details = el("details", { class: "review-finding-details" });
+  const summary = el("summary", { class: "review-finding-summary" });
+  summary.append(
+    el("span", { class: "review-finding-severity" }, finding.severity),
+    el("span", { class: "review-finding-class" }, finding.class),
+    el("code", { class: "review-finding-location" }, findingLocation(finding)),
+    el("span", { class: "review-finding-claim" }, finding.claim),
+    el(
+      "span",
+      { class: "review-finding-verdict", "data-verdict": finding.verdict.status },
+      verdictLabel(finding)
+    )
+  );
+  details.append(summary);
+  const body = el("div", { class: "review-finding-body" });
+  body.append(el("p", { class: "review-finding-reason" }, finding.verdict.reason));
+  if (finding.anchoredText !== void 0 && finding.anchoredText.trim() !== "") {
+    body.append(el("pre", { class: "review-finding-anchor" }, finding.anchoredText));
+  }
+  if (finding.evidence.length > 0) {
+    const list = el("ul", { class: "review-finding-evidence-list" });
+    for (const evidence of finding.evidence) list.append(evidenceEl(evidence));
+    body.append(list);
+  }
+  body.append(provenanceEl(finding));
+  const footer = el("div", { class: "review-finding-actions" });
+  footer.append(
+    el(
+      "span",
+      { class: "review-finding-confidence" },
+      `${finding.confidence} confidence \xB7 ${finding.id}`
+    )
+  );
+  if (finding.dismissed) {
+    if (actions.onRestoreFinding) {
+      const restore = el("button", { type: "button", class: "review-finding-restore" }, "Restore");
+      on(restore, "click", () => {
+        restore.disabled = true;
+        actions.onRestoreFinding?.(finding);
+      });
+      footer.append(restore);
+    }
+  } else if (actions.onDismissFinding) {
+    const dismiss = el(
+      "button",
+      {
+        type: "button",
+        class: "review-finding-dismiss",
+        "data-tooltip": "Hide this finding, here and in later reviews of the same lines"
+      },
+      "Dismiss"
+    );
+    on(dismiss, "click", () => {
+      dismiss.disabled = true;
+      actions.onDismissFinding?.(finding);
+    });
+    footer.append(dismiss);
+  }
+  body.append(footer);
+  details.append(body);
+  item.append(details);
+  return item;
+}
+function metaLine(report) {
+  const parts = [];
+  if (report.models.reviewer !== "") {
+    parts.push(
+      report.models.challenger !== null && report.models.challenger !== report.models.reviewer ? `${report.models.reviewer}, challenged by ${report.models.challenger}` : report.models.reviewer
+    );
+  }
+  if (report.baseRef !== "") {
+    parts.push(
+      report.dirtyWorkingTree ? `working tree against ${report.baseRef}` : `HEAD against ${report.baseRef}`
+    );
+  }
+  return parts.join(" \xB7 ");
+}
+function groundEl(report) {
+  if (report.status !== "done") return null;
+  const ground = el("div", { class: "review-report-ground" });
+  if (!report.execution.executed) {
+    ground.append(
+      el(
+        "span",
+        { class: "review-report-ground-note", "data-executed": "false" },
+        `Read-only review \u2014 nothing was executed: ${report.execution.reason}`
+      )
+    );
+    return ground;
+  }
+  for (const check2 of report.checks) {
+    const mark2 = check2.verdict === "clean" || check2.verdict === "fixed" ? "\u2713" : "\u2717";
+    ground.append(
+      el(
+        "span",
+        { class: "review-report-check", "data-verdict": check2.verdict },
+        `${check2.kind} ${mark2} ${check2.verdict}`
+      )
+    );
+  }
+  for (const note of report.notChecked) {
+    ground.append(el("span", { class: "review-report-ground-note" }, `not checked: ${note}`));
+  }
+  return ground.childElementCount === 0 ? null : ground;
+}
+function footerEl(report, dismissedCount, onToggleDismissed) {
+  const parts = [];
+  if (report.appendix > 0) {
+    parts.push(`${String(report.appendix)} more below the cut`);
+  }
+  if (report.refuted > 0) {
+    parts.push(`${String(report.refuted)} refuted by the challenger`);
+  }
+  if (report.verification !== null && report.verification.skipped > 0) {
+    parts.push(`${String(report.verification.skipped)} left unverified`);
+  }
+  if (dismissedCount > 0 && onToggleDismissed) {
+    const toggle = el(
+      "button",
+      { type: "button", class: "review-report-dismissed-toggle", "aria-pressed": "false" },
+      `${String(dismissedCount)} dismissed`
+    );
+    on(toggle, "click", () => {
+      const shown = toggle.getAttribute("aria-pressed") === "true";
+      toggle.setAttribute("aria-pressed", shown ? "false" : "true");
+      onToggleDismissed();
+    });
+    parts.push(toggle);
+  }
+  if (parts.length === 0) return null;
+  const footer = el("div", { class: "review-report-footer" });
+  parts.forEach((part, index) => {
+    if (index > 0) footer.append(el("span", { class: "review-report-footer-sep" }, " \xB7 "));
+    footer.append(part);
+  });
+  return footer;
+}
+function createDismissCardButton(onDismiss) {
+  const button = el(
+    "button",
+    {
+      type: "button",
+      class: "card-dismiss-button",
+      "data-tooltip": "Dismiss",
+      "aria-label": "Dismiss"
+    },
+    closeIcon("ui-icon ui-icon-sm")
+  );
+  on(button, "click", () => {
+    button.disabled = true;
+    onDismiss();
+  });
+  return button;
+}
+function createReviewFindingsCardEl(report, actions = {}) {
+  const panel = el("div", {
+    class: `review-report review-report-${report.status}`,
+    "data-status": report.status
+  });
+  const header = el("div", { class: "review-report-header" });
+  header.append(
+    el(
+      "span",
+      { class: "review-report-icon", "aria-hidden": "true" },
+      searchIcon("ui-icon ui-icon-sm")
+    ),
+    el("span", { class: "review-report-title" }, statusLabel3(report))
+  );
+  const meta3 = metaLine(report);
+  if (meta3 !== "") header.append(el("span", { class: "review-report-meta" }, meta3));
+  if (report.cost !== void 0) {
+    header.append(el("span", { class: "review-report-cost" }, report.cost));
+  }
+  if (report.status === "error" && actions.onRetry)
+    header.append(createRetryButton(actions.onRetry));
+  if (report.status === "error" && actions.onDismissCard) {
+    header.append(createDismissCardButton(actions.onDismissCard));
+  }
+  panel.append(header);
+  if (report.status === "running") return panel;
+  if (report.status === "error") {
+    panel.append(
+      el(
+        "div",
+        { class: "review-report-error message-text" },
+        nonEmptyStringOr(report.error, "Review failed.")
+      )
+    );
+    return panel;
+  }
+  const ground = groundEl(report);
+  if (ground) panel.append(ground);
+  const visible = report.findings.filter((finding) => !finding.dismissed);
+  const dismissed = report.findings.filter((finding) => finding.dismissed);
+  if (report.findings.length === 0) {
+    panel.append(el("div", { class: "review-report-clean" }, report.note ?? "Clean."));
+  } else {
+    if (report.note !== void 0) {
+      panel.append(el("div", { class: "review-report-note" }, report.note));
+    }
+    const list = el("ol", { class: "review-report-findings" });
+    for (const finding of visible) list.append(findingEl(finding, actions));
+    if (visible.length === 0) {
+      panel.append(
+        el("div", { class: "review-report-clean" }, "Nothing left: every finding is dismissed.")
+      );
+    }
+    panel.append(list);
+    if (dismissed.length > 0) {
+      const dismissedList = el("ol", { class: "review-report-findings review-report-dismissed" });
+      dismissedList.hidden = true;
+      for (const finding of dismissed) dismissedList.append(findingEl(finding, actions));
+      panel.append(dismissedList);
+      const footer2 = footerEl(report, dismissed.length, () => {
+        dismissedList.hidden = !dismissedList.hidden;
+      });
+      if (footer2) panel.append(footer2);
+      return panel;
+    }
+  }
+  const footer = footerEl(report, 0, null);
+  if (footer) panel.append(footer);
+  return panel;
+}
+var init_review_findings_card = __esm({
+  "src/renderer/views/review-findings-card.ts"() {
+    init_helpers();
+    init_icons();
+    init_retry_button();
+    init_unknown_value3();
+  }
+});
+
 // src/renderer/controller/quiet-runs.ts
 function markQuietRun(threadId) {
   quietThreads.add(threadId);
@@ -69161,17 +69838,13 @@ var init_quiet_runs = __esm({
   }
 });
 
-// src/renderer/controller/retry-review-comparison.ts
-function retryPayload(store2, threadId, comparisonModels) {
+// src/renderer/controller/review-actions.ts
+function reviewPayload(store2, threadId) {
   const thread = store2.getState().threads.find((t) => t.id === threadId);
   return JSON.stringify({
     ...thread?.workingBrief !== void 0 ? { workingBrief: thread.workingBrief } : {},
-    ...thread?.model !== void 0 ? { model: thread.model } : {},
-    ...comparisonModels ? { comparisonModels } : {}
+    ...thread?.model !== void 0 ? { model: thread.model } : {}
   });
-}
-function comparisonModelsPayload(store2, threadId) {
-  return retryPayload(store2, threadId);
 }
 function retryReview(store2, api2, threadId, messageId) {
   const projectId = store2.getState().activeProjectId;
@@ -69179,43 +69852,82 @@ function retryReview(store2, api2, threadId, messageId) {
   setMessageReview(store2, threadId, messageId, { status: "running", summary: "" });
   setThreadStatus(store2, threadId, "running");
   syncAgentActivity(store2, threadId, false);
-  void api2.agent.retryReview(projectId, threadId, retryPayload(store2, threadId));
+  void api2.agent.retryReview(projectId, threadId, reviewPayload(store2, threadId));
 }
 function dismissComparison(store2, threadId) {
   setThreadComparison(store2, threadId, null);
 }
-function retryComparison(store2, api2, threadId) {
+function startReview(store2, api2, threadId) {
   const projectId = store2.getState().activeProjectId;
   if (!projectId) return;
   const thread = store2.getState().threads.find((t) => t.id === threadId);
-  const comparison = thread?.comparison;
-  if (comparison) {
-    setThreadComparison(store2, threadId, { ...comparison, status: "running" });
-  }
-  setThreadStatus(store2, threadId, "running");
-  syncAgentActivity(store2, threadId, false);
-  void api2.agent.retryComparison(projectId, threadId, retryPayload(store2, threadId));
-}
-function startComparison(store2, api2, threadId, models) {
-  const projectId = store2.getState().activeProjectId;
-  if (!projectId) return;
-  setThreadComparison(store2, threadId, {
+  if (thread?.status === "running") return;
+  setThreadReviewReport(store2, threadId, {
     status: "running",
-    models,
-    reviewA: "",
-    reviewB: "",
-    synthesis: ""
+    startedAt: Date.now(),
+    models: { reviewer: thread?.model ?? "", challenger: null },
+    lenses: [],
+    baseRef: "",
+    headCommit: null,
+    dirtyWorkingTree: false,
+    execution: { backend: "", strength: "none", executed: false, reason: "" },
+    checks: [],
+    notChecked: [],
+    findings: [],
+    appendix: 0,
+    refuted: 0,
+    reviewers: [],
+    verification: null,
+    durationMs: 0
   });
   setThreadStatus(store2, threadId, "running");
   syncAgentActivity(store2, threadId, false);
   markQuietRun(threadId);
-  void api2.agent.retryComparison(projectId, threadId, retryPayload(store2, threadId, models));
+  void api2.review.run(projectId, threadId, reviewPayload(store2, threadId)).catch((err2) => {
+    const report = store2.getState().threads.find((t) => t.id === threadId)?.reviewReport;
+    if (report?.status === "running") {
+      setThreadReviewReport(store2, threadId, {
+        ...report,
+        status: "error",
+        error: errorMessage(err2),
+        durationMs: Date.now() - report.startedAt
+      });
+      setThreadStatus(store2, threadId, "idle");
+      syncAgentActivity(store2, threadId, false);
+      takeQuietRun(threadId);
+    }
+    showErrorToast("Review could not start", err2);
+  });
 }
-var init_retry_review_comparison = __esm({
-  "src/renderer/controller/retry-review-comparison.ts"() {
+function dismissReviewReport(store2, threadId) {
+  setThreadReviewReport(store2, threadId, null);
+}
+function dismissReviewFinding(store2, api2, threadId, finding) {
+  setReviewFindingDismissed(store2, threadId, finding.id, true);
+  void api2.review.dismissFinding({
+    findingId: finding.id,
+    path: finding.path,
+    claim: finding.claim,
+    class: finding.class
+  }).catch((err2) => {
+    setReviewFindingDismissed(store2, threadId, finding.id, false);
+    showErrorToast("Could not save the dismissal", err2);
+  });
+}
+function restoreReviewFinding(store2, api2, threadId, findingId) {
+  setReviewFindingDismissed(store2, threadId, findingId, false);
+  void api2.review.restoreFinding(findingId).catch((err2) => {
+    setReviewFindingDismissed(store2, threadId, findingId, true);
+    showErrorToast("Could not restore the finding", err2);
+  });
+}
+var init_review_actions = __esm({
+  "src/renderer/controller/review-actions.ts"() {
     init_thread_helpers();
     init_agent_activity();
     init_quiet_runs();
+    init_toast();
+    init_errors3();
   }
 });
 
@@ -69941,6 +70653,19 @@ function createToolResultSection(result, format, showEmptyState = false) {
   }
   return el("div", { class: "tool-result" }, el("pre", {}, renderToolArgs(result)));
 }
+function createToolLocationsSection(locations) {
+  if (!locations?.length) return null;
+  return el(
+    "div",
+    { class: "tool-locations" },
+    el("span", { class: "acp-content-label" }, locations.length === 1 ? "Location" : "Locations"),
+    ...locations.map((location) => {
+      const label = `${location.path}${location.line !== void 0 ? `:${String(location.line)}` : ""}`;
+      const href = `${location.path}${location.line !== void 0 ? `#L${String(location.line)}` : ""}`;
+      return el("a", { href, "data-workspace-link": "true" }, label);
+    })
+  );
+}
 function createToolHeader(label, status, summaryClass, count, editStats, editPath) {
   const activityIcon = el("span", {
     class: "tool-activity-icon-slot",
@@ -70014,7 +70739,8 @@ function appendStandardToolSections(card, tc2, label, summaryClass, count) {
         tc2.result,
         tc2.resultFormat,
         argsSection === null && tc2.status !== "running"
-      )
+      ),
+      ...appendIfPresent(createToolLocationsSection(tc2.locations))
     );
   };
   if (card.open) {
@@ -70057,18 +70783,38 @@ function createCanvasPreviewSection(tc2, threadId) {
   const uri = artefactUriFromToolResult(tc2.result);
   return uri ? createCanvasPreviewCard(threadId, artefactTitleFromUri(uri)) : null;
 }
-function syncToolResultImages(msgEl, toolCalls) {
-  const images = toolCalls.flatMap((toolCall) => toolCall.images ?? []);
-  const current = msgEl.querySelector(":scope > .tool-result-images");
-  if (images.length === 0) {
+function syncToolResultContent(msgEl, toolCalls) {
+  const previewImageDataUrls = new Set(
+    toolCalls.flatMap(
+      (toolCall) => (toolCall.images ?? []).filter((image) => image.kind === "screenshot").map((image) => image.dataUrl)
+    )
+  );
+  const content = toolCalls.flatMap((toolCall) => {
+    if (toolCall.content !== void 0) return toolCall.content;
+    return (toolCall.images ?? []).map((image) => ({
+      type: "content",
+      content: {
+        type: "image",
+        dataUrl: image.dataUrl,
+        mimeType: image.dataUrl.match(/^data:([^;,]+)/)?.[1] ?? "image/png",
+        ...image.name ? { uri: image.name } : {}
+      }
+    }));
+  });
+  const visible = content.filter((item) => item.type !== "content" || item.content.type !== "text");
+  const current = msgEl.querySelector(":scope > .tool-result-content");
+  if (visible.length === 0) {
     current?.remove();
     return;
   }
-  const signature = renderSignature(images);
+  const signature = renderSignature({
+    content: visible,
+    previewImageDataUrls: [...previewImageDataUrls]
+  });
   let rendered = current;
-  if (!rendered || toolResultImageSignatures.get(rendered) !== signature) {
-    rendered = createToolResultImages(images);
-    toolResultImageSignatures.set(rendered, signature);
+  if (!rendered || toolResultContentSignatures.get(rendered) !== signature) {
+    rendered = createToolResultContent(visible, previewImageDataUrls);
+    toolResultContentSignatures.set(rendered, signature);
     if (current) current.replaceWith(rendered);
     else msgEl.append(rendered);
   }
@@ -70634,21 +71380,127 @@ function createMessageImages(images) {
   }
   return wrap;
 }
-function createToolResultImages(images) {
-  const wrap = el("div", {
-    class: "message-images tool-result-images",
-    "data-tool-result-image-count": String(images.length)
-  });
-  for (const image of images) {
-    const label = image.name ?? "Tool result image";
+function acpResourceLabel(uri, title) {
+  if (title) return title;
+  const tail = uri.split("/").filter(Boolean).at(-1);
+  if (!tail) return uri;
+  try {
+    return decodeURIComponent(tail);
+  } catch {
+    return tail;
+  }
+}
+function createAcpContentBlock(block, context, previewImageDataUrls) {
+  if (block.type === "text") return null;
+  if (block.type === "image") {
+    const label2 = block.uri ? acpResourceLabel(block.uri) : "Agent image";
+    if (context === "tool" && previewImageDataUrls?.has(block.dataUrl)) {
+      const img2 = el("img", {
+        class: "tool-result-preview-image",
+        src: block.dataUrl,
+        alt: label2,
+        loading: "lazy"
+      });
+      attachImageExpand(img2, label2);
+      return el(
+        "figure",
+        { class: "tool-result-preview" },
+        img2,
+        ...block.uri ? [el("figcaption", { class: "tool-result-preview-caption" }, label2)] : []
+      );
+    }
     const img = el("img", {
-      class: "message-image tool-result-image",
-      src: image.dataUrl,
-      alt: label,
+      class: `message-image acp-content-image${context === "tool" ? " tool-result-image" : ""}`,
+      src: block.dataUrl,
+      alt: label2,
       loading: "lazy"
     });
-    attachImageExpand(img, label);
-    wrap.append(img);
+    attachImageExpand(img, label2);
+    return img;
+  }
+  if (block.type === "audio") {
+    return el(
+      "div",
+      { class: "acp-audio-content" },
+      el("span", { class: "acp-content-label" }, "Audio"),
+      el("audio", { controls: true, preload: "metadata", src: block.dataUrl })
+    );
+  }
+  if (block.type === "resource_link") {
+    const label2 = block.title ?? block.name;
+    const description = block.description ? el("span", { class: "acp-resource-description" }, block.description) : null;
+    const metadata = [block.mimeType, block.size !== void 0 ? `${String(block.size)} B` : null].filter(Boolean).join(" \xB7 ");
+    const labelNode = /^https?:\/\//i.test(block.uri) ? el("a", { class: "acp-resource-title", href: block.uri }, label2) : el("span", { class: "acp-resource-title" }, label2);
+    return el(
+      "div",
+      { class: "acp-resource-content acp-resource-link" },
+      labelNode,
+      ...description ? [description] : [],
+      ...metadata ? [el("span", { class: "acp-resource-meta" }, metadata)] : [],
+      el("code", { class: "acp-resource-uri" }, block.uri)
+    );
+  }
+  const label = acpResourceLabel(block.uri);
+  if ("text" in block) {
+    return el(
+      "details",
+      { class: "acp-resource-content acp-embedded-resource" },
+      el("summary", {}, label),
+      ...block.mimeType ? [el("span", { class: "acp-resource-meta" }, block.mimeType)] : [],
+      el("pre", { class: "acp-resource-text" }, block.text)
+    );
+  }
+  return el(
+    "div",
+    { class: "acp-resource-content acp-embedded-resource-binary" },
+    el("span", { class: "acp-resource-title" }, label),
+    ...block.mimeType ? [el("span", { class: "acp-resource-meta" }, block.mimeType)] : [],
+    el("a", { class: "ui-btn ui-btn-secondary", href: block.dataUrl, download: label }, "Save")
+  );
+}
+function createAcpContentBlocks(blocks, context) {
+  const nodes = blocks.flatMap((block) => {
+    const node2 = createAcpContentBlock(block, context);
+    return node2 ? [node2] : [];
+  });
+  if (nodes.length === 0) return null;
+  return el("div", { class: `acp-content-blocks acp-${context}-content` }, ...nodes);
+}
+function createToolResultContent(content, previewImageDataUrls) {
+  const imageCount = content.filter(
+    (item) => item.type === "content" && item.content.type === "image"
+  ).length;
+  const wrap = el("div", {
+    class: "tool-result-content tool-result-images",
+    "data-tool-result-image-count": String(imageCount)
+  });
+  for (const item of content) {
+    if (item.type === "content") {
+      const node2 = createAcpContentBlock(item.content, "tool", previewImageDataUrls);
+      if (node2) wrap.append(node2);
+    } else if (item.type === "diff") {
+      const diff = el(
+        "details",
+        { class: "acp-tool-diff" },
+        el("summary", {}, `Diff \xB7 ${item.path}`),
+        ...item.oldText !== void 0 ? [
+          el("div", { class: "acp-content-label" }, "Before"),
+          el("pre", { class: "acp-tool-diff-text" }, item.oldText)
+        ] : [],
+        el("div", { class: "acp-content-label" }, "After"),
+        el("pre", { class: "acp-tool-diff-text" }, item.newText)
+      );
+      wrap.append(diff);
+    } else {
+      wrap.append(
+        el(
+          "div",
+          { class: "acp-terminal-reference" },
+          el("span", { class: "acp-content-label" }, "Terminal"),
+          el("code", {}, item.terminalId)
+        )
+      );
+    }
   }
   return wrap;
 }
@@ -70873,8 +71725,10 @@ function appendMessageContent(body, msg, api2, opts) {
   if (msg.role === "user" && msg.images?.length) {
     body.append(createMessageImages(msg.images));
   }
-  if (msg.role === "assistant" && msg.reasoning && opts?.nestReasoningInTools !== true) {
-    body.append(buildReasoningEl(msg.reasoning, !msg.content.trim(), false));
+  if (msg.role === "assistant" && (msg.reasoning || msg.reasoningBlocks?.length) && opts?.nestReasoningInTools !== true) {
+    body.append(
+      buildReasoningEl(msg.reasoning ?? "", !msg.content.trim(), false, msg.reasoningBlocks)
+    );
   }
   const textEl = el("div", { class: "message-text streaming-markdown" });
   body.append(textEl);
@@ -70887,6 +71741,22 @@ function appendMessageContent(body, msg, api2, opts) {
   } else {
     textEl.textContent = msg.content;
   }
+  if (msg.role === "assistant" && msg.contentBlocks?.length) {
+    const richContent = createAcpContentBlocks(msg.contentBlocks, "message");
+    if (richContent) body.append(richContent);
+  }
+}
+function syncAcpMessageContent(msgEl, blocks) {
+  const body = msgEl.querySelector(":scope > .message-body");
+  if (!body) return;
+  const current = body.querySelector(":scope > .acp-message-content");
+  const replacement = createAcpContentBlocks(blocks, "message");
+  if (!replacement) {
+    current?.remove();
+    return;
+  }
+  if (current) current.replaceWith(replacement);
+  else body.append(replacement);
 }
 function shouldNestReasoningInTools(toolCalls) {
   return toolCalls.some((tc2) => !tc2.subagent);
@@ -70900,7 +71770,8 @@ function messageToolCardOpts(msg) {
   return {
     ...msg.commandSummary !== void 0 ? { commandSummary: msg.commandSummary } : {},
     ...msg.toolSummary !== void 0 ? { toolSummary: msg.toolSummary } : {},
-    ...msg.reasoning !== void 0 ? { reasoning: msg.reasoning } : {}
+    ...msg.reasoning !== void 0 ? { reasoning: msg.reasoning } : {},
+    ...msg.reasoningBlocks !== void 0 ? { reasoningBlocks: msg.reasoningBlocks } : {}
   };
 }
 function liveStepMessageId(thread) {
@@ -70973,7 +71844,7 @@ function renderUserTranscript(host, content, attachments, api2) {
 function countChipPlaceholders(text2) {
   return text2.split(CHIP_CHAR).length - 1;
 }
-function buildReasoningEl(reasoning, open2, live) {
+function buildReasoningEl(reasoning, open2, live, blocks = []) {
   const details = el("details", {
     class: `message-reasoning${live ? " message-reasoning-live" : ""}`,
     open: open2
@@ -70989,15 +71860,17 @@ function buildReasoningEl(reasoning, open2, live) {
     el("span", { class: "message-reasoning-title" }, reasoningDisclosureTitle(live))
   );
   const text2 = el("div", { class: "message-reasoning-text" });
-  renderReasoningText(text2, reasoning);
+  renderReasoningText(text2, reasoning, blocks);
   summary.addEventListener("click", () => {
     details.dataset["userToggled"] = "1";
   });
   details.append(summary, text2);
   return details;
 }
-function renderReasoningText(el3, text2) {
+function renderReasoningText(el3, text2, blocks = []) {
   el3.innerHTML = renderMarkdown(text2);
+  const richContent = createAcpContentBlocks(blocks, "reasoning");
+  if (richContent) el3.append(richContent);
 }
 function syncReasoningEl(msgEl, msg, live) {
   const body = msgEl.querySelector(".message-body");
@@ -71007,35 +71880,35 @@ function syncReasoningEl(msgEl, msg, live) {
   );
   const host = rollupBody ?? body;
   let details = msgEl.querySelector(".message-reasoning");
-  if (!msg.reasoning) {
+  if (!msg.reasoning && !msg.reasoningBlocks?.length) {
     details?.remove();
     return;
   }
   if (!details) {
-    details = buildReasoningEl(msg.reasoning, true, live);
+    details = buildReasoningEl(msg.reasoning ?? "", true, live, msg.reasoningBlocks);
     host.prepend(details);
   } else {
     if (details.parentElement !== host) host.prepend(details);
     const textEl = details.querySelector(".message-reasoning-text");
-    if (textEl) renderReasoningText(textEl, msg.reasoning);
+    if (textEl) renderReasoningText(textEl, msg.reasoning ?? "", msg.reasoningBlocks);
     setReasoningDisclosureTitle(details, live);
   }
   if (!details.dataset["userToggled"] && !msg.content.trim()) details.open = true;
 }
-function syncNestedRollupReasoning(card, msgEl, reasoning, live) {
+function syncNestedRollupReasoning(card, msgEl, reasoning, reasoningBlocks, live) {
   const rollupBody = card.querySelector(":scope > .tool-rollup-body");
   if (!rollupBody) return;
   const body = msgEl.querySelector(".message-body");
   let details = rollupBody.querySelector(":scope > .message-reasoning") ?? msgEl.querySelector(".message-reasoning");
-  if (!reasoning?.trim()) {
+  if (!reasoning?.trim() && !reasoningBlocks?.length) {
     details?.remove();
     return;
   }
   if (!details) {
-    details = buildReasoningEl(reasoning, true, live);
+    details = buildReasoningEl(reasoning ?? "", true, live, reasoningBlocks);
   } else {
     const textEl = details.querySelector(".message-reasoning-text");
-    if (textEl) renderReasoningText(textEl, reasoning);
+    if (textEl) renderReasoningText(textEl, reasoning ?? "", reasoningBlocks);
     setReasoningDisclosureTitle(details, live);
   }
   if (details.parentElement !== rollupBody) rollupBody.prepend(details);
@@ -71050,18 +71923,18 @@ function syncRunStepReasoning(card, run2, liveStepId) {
     );
     if (!body) continue;
     let details = body.querySelector(":scope > .message-reasoning");
-    if (!step.reasoning?.trim()) {
+    if (!step.reasoning?.trim() && !step.reasoningBlocks?.length) {
       details?.remove();
       continue;
     }
     const live = step.messageId === liveStepId;
     if (!details) {
-      details = buildReasoningEl(step.reasoning, live, live);
+      details = buildReasoningEl(step.reasoning ?? "", live, live, step.reasoningBlocks);
       body.prepend(details);
       continue;
     }
     const textEl = details.querySelector(".message-reasoning-text");
-    if (textEl) renderReasoningText(textEl, step.reasoning);
+    if (textEl) renderReasoningText(textEl, step.reasoning ?? "", step.reasoningBlocks);
     setReasoningDisclosureTitle(details, live);
   }
 }
@@ -71646,7 +72519,7 @@ function mountConversation(root, store2, api2) {
     const run2 = opts.run && (opts.run.anchorId === msgId || list.querySelector(`[data-message-id="${opts.run.anchorId}"]`) !== null) ? opts.run : void 0;
     const isRunMember = run2 !== void 0 && run2.anchorId !== msgId;
     msgEl.classList.toggle("msg-tool-run-member", isRunMember);
-    const nestReasoning = run2 === void 0 && Boolean(opts.reasoning?.trim()) && shouldNestReasoningInTools(toolCalls);
+    const nestReasoning = run2 === void 0 && (Boolean(opts.reasoning?.trim()) || Boolean(opts.reasoningBlocks?.length)) && shouldNestReasoningInTools(toolCalls);
     const items = run2 ? isRunMember ? buildSubagentDisplayItems(toolCalls) : [...buildToolRunDisplayItems(run2), ...buildSubagentDisplayItems(toolCalls)] : buildToolCallDisplayItems(toolCalls, {
       ...nestReasoning || messageKey !== null && liveRollupMessages.has(messageKey) ? { forceRollup: true } : {}
     });
@@ -71676,7 +72549,13 @@ function mountConversation(root, store2, api2) {
       }
       applyToolCardOpenState(card, item, threadId, msgId, true);
       if (item.type === "rollup" && nestReasoning) {
-        syncNestedRollupReasoning(card, msgEl, opts.reasoning, opts.reasoningLive === true);
+        syncNestedRollupReasoning(
+          card,
+          msgEl,
+          opts.reasoning,
+          opts.reasoningBlocks,
+          opts.reasoningLive === true
+        );
       }
       if (item.type === "rollup" && run2 && item.key === RUN_ROLLUP_KEY) {
         syncRunStepReasoning(card, run2, opts.liveStepId ?? null);
@@ -71706,7 +72585,7 @@ function mountConversation(root, store2, api2) {
         msgEl.insertBefore(node2, msgEl.children[base + i] ?? null);
       }
     }
-    syncToolResultImages(msgEl, run2 ? isRunMember ? [] : run2.toolCalls : toolCalls);
+    syncToolResultContent(msgEl, run2 ? isRunMember ? [] : run2.toolCalls : toolCalls);
     registerReasoningDisclosures(msgEl);
     syncToolRunMemberVisibility(msgEl);
   }
@@ -71828,7 +72707,7 @@ function mountConversation(root, store2, api2) {
     }
     const msgEl = buildMessageEl(threadId, msgId);
     if (!msgEl) return;
-    const trailingCard = list.querySelector("[data-comparison-card]");
+    const trailingCard = firstTrailingCard();
     if (trailingCard) {
       list.insertBefore(msgEl, activityBar.isConnected ? activityBar : trailingCard);
     } else list.insertBefore(msgEl, activityBar.isConnected ? activityBar : null);
@@ -72004,28 +72883,49 @@ function mountConversation(root, store2, api2) {
     card.setAttribute("data-turn-recovery-for", messageId);
     msgEl.after(card);
   }
+  function firstTrailingCard() {
+    return list.querySelector("[data-review-report-card], [data-comparison-card]");
+  }
   function syncComparisonPanel() {
     list.querySelector("[data-comparison-card]")?.remove();
     const thread = getActiveThread(store2);
     if (thread?.comparison) {
       const threadId = thread.id;
-      const card = createComparisonCardEl(
-        thread.comparison,
-        api2,
-        () => {
-          retryComparison(store2, api2, threadId);
-        },
-        () => {
-          dismissComparison(store2, threadId);
-        }
-      );
+      const card = createComparisonCardEl(thread.comparison, api2, void 0, () => {
+        dismissComparison(store2, threadId);
+      });
       card.setAttribute("data-comparison-card", "");
       list.append(card);
     }
   }
+  function syncReviewReportCard() {
+    list.querySelector("[data-review-report-card]")?.remove();
+    const thread = getActiveThread(store2);
+    if (!thread?.reviewReport) return;
+    const threadId = thread.id;
+    const card = createReviewFindingsCardEl(thread.reviewReport, {
+      onRetry: () => {
+        startReview(store2, api2, threadId);
+      },
+      onDismissCard: () => {
+        dismissReviewReport(store2, threadId);
+      },
+      onDismissFinding: (finding) => {
+        dismissReviewFinding(store2, api2, threadId, finding);
+      },
+      onRestoreFinding: (finding) => {
+        restoreReviewFinding(store2, api2, threadId, finding.id);
+      }
+    });
+    card.setAttribute("data-review-report-card", "");
+    const comparison = list.querySelector("[data-comparison-card]");
+    if (comparison) list.insertBefore(card, comparison);
+    else list.append(card);
+  }
   function finishThreadChrome(thread) {
     syncTodoPanel();
     appleDevelopmentHost.dispatchEvent(new Event("apple-development-refresh"));
+    syncReviewReportCard();
     syncComparisonPanel();
     if (thread) {
       renderQueuedPanel(thread.id);
@@ -72033,7 +72933,7 @@ function mountConversation(root, store2, api2) {
       queuedHost.replaceChildren();
       queuedHost.hidden = true;
     }
-    list.insertBefore(activityBar, list.querySelector("[data-comparison-card]"));
+    list.insertBefore(activityBar, firstTrailingCard());
     updateScrollButton();
   }
   function backfillOlderMessages(thread, cursor, generation) {
@@ -72110,7 +73010,7 @@ function mountConversation(root, store2, api2) {
   function captureReadingAnchor() {
     const listRect = list.getBoundingClientRect();
     const candidates = list.querySelectorAll(
-      ":scope > .msg, :scope > [data-review-card], :scope > [data-comparison-card]"
+      ":scope > .msg, :scope > [data-review-card], :scope > [data-review-report-card], :scope > [data-comparison-card]"
     );
     for (const element of candidates) {
       const rect = element.getBoundingClientRect();
@@ -72176,6 +73076,20 @@ function mountConversation(root, store2, api2) {
       const msgEl = list.querySelector(`[data-message-id="${mid}"]`);
       if (thread && msg?.role === "assistant" && msgEl) {
         syncMessageCanvasPreviews(msgEl, msg, store2.getState().activeProjectId, thread.id, api2);
+        scrollToBottom();
+      }
+    }),
+    store2.on("message_acp_content", (mid) => {
+      const thread = getActiveThread(store2);
+      const msg = thread?.messages.find((message2) => message2.id === mid);
+      const msgEl = list.querySelector(`[data-message-id="${mid}"]`);
+      if (msg?.role === "assistant" && msgEl) {
+        syncAcpMessageContent(msgEl, msg.contentBlocks ?? []);
+        const run2 = multiStepRunFor(thread, mid);
+        if (run2) syncRunStepTrail(thread, run2);
+        else syncReasoningEl(msgEl, msg, isReasoningDisclosureLive(thread, msg));
+        registerReasoningDisclosures(msgEl);
+        syncToolRunMemberVisibility(msgEl);
         scrollToBottom();
       }
     }),
@@ -72247,6 +73161,10 @@ function mountConversation(root, store2, api2) {
       syncComparisonPanel();
       scrollToBottom();
     }),
+    store2.on("review_report_changed", () => {
+      syncReviewReportCard();
+      scrollToBottom();
+    }),
     store2.on("settings_changed", () => {
       const thread = getActiveThread(store2);
       if (!thread) return;
@@ -72315,7 +73233,7 @@ function attachCopyButton(body, msgId, store2) {
   });
   body.append(copyBtn);
 }
-var lazyToolCardBodies, toolResultImageSignatures, streamingRenderers, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolCardKeys, toolCardSignatures, toolGroupItemSignatures, SCROLL_PIN_THRESHOLD_PX, USER_SCROLL_UP_DEBOUNCE_MS, TOOL_AUTO_REVEAL_DELAY_MS, TOOL_AUTO_REVEAL_MIN_DWELL_MS, TOOL_AUTO_COMPACT_DELAY_MS, INITIAL_RENDER_WINDOW, BACKFILL_CHUNK_SIZE;
+var lazyToolCardBodies, toolResultContentSignatures, streamingRenderers, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolCardKeys, toolCardSignatures, toolGroupItemSignatures, SCROLL_PIN_THRESHOLD_PX, USER_SCROLL_UP_DEBOUNCE_MS, TOOL_AUTO_REVEAL_DELAY_MS, TOOL_AUTO_REVEAL_MIN_DWELL_MS, TOOL_AUTO_COMPACT_DELAY_MS, INITIAL_RENDER_WINDOW, BACKFILL_CHUNK_SIZE;
 var init_conversation = __esm({
   "src/renderer/views/conversation.ts"() {
     init_helpers();
@@ -72360,7 +73278,8 @@ var init_conversation = __esm({
     init_apple_development_panel();
     init_review_panel();
     init_comparison_panel();
-    init_retry_review_comparison();
+    init_review_findings_card();
+    init_review_actions();
     init_tool_args_format();
     init_thread_proposal_tool_card();
     init_render_signature();
@@ -72372,7 +73291,7 @@ var init_conversation = __esm({
     init_image_input_support();
     init_toast();
     lazyToolCardBodies = /* @__PURE__ */ new WeakMap();
-    toolResultImageSignatures = /* @__PURE__ */ new WeakMap();
+    toolResultContentSignatures = /* @__PURE__ */ new WeakMap();
     streamingRenderers = /* @__PURE__ */ new WeakMap();
     showAcpTransportNoiseDisclosure = () => false;
     subagentMessageCommitted = /* @__PURE__ */ new WeakMap();
@@ -82992,15 +83911,26 @@ async function attachWorkspacePath(path, handlers3, api2, workspaceRoot, owner) 
   }
   if (!owner) return;
   try {
+    const imageMime = isRasterImagePath(name) ? imageMimeType(name) : null;
+    if (imageMime) {
+      const dataUrl = await api2.fs.readImage(owner.projectId, owner.threadId, path);
+      handlers3.attachImage(dataUrl, imageMime);
+      return;
+    }
     const content = await api2.fs.readFile(owner.projectId, owner.threadId, path);
     handlers3.attachFile({ path: relativeWorkspacePath(path, workspaceRoot) || path, content });
   } catch {
   }
 }
 async function attachDroppedFile(file2, handlers3, api2, workspaceRoot, owner = null) {
-  if (file2.type.startsWith("image/")) {
+  const imageMime = file2.type.startsWith("image/") ? file2.type : imageMimeType(file2.name);
+  if (imageMime) {
     const dataUrl = await readAsDataUrl(file2);
-    handlers3.attachImage(dataUrl, file2.type);
+    const separator = dataUrl.indexOf(",");
+    handlers3.attachImage(
+      separator === -1 ? dataUrl : `data:${imageMime};base64,${dataUrl.slice(separator + 1)}`,
+      imageMime
+    );
     return;
   }
   if (isVideoFile(file2)) {
@@ -83077,6 +84007,7 @@ var init_handle_file_drop = __esm({
     init_video_media();
     init_archive_media();
     init_unknown_value3();
+    init_image_path();
     WORKSPACE_PATH_MIME = "application/x-copse-panel-path";
   }
 });
@@ -83390,7 +84321,7 @@ function matchesQuery(label, query) {
   return label.toLowerCase().includes(query.toLowerCase());
 }
 function initMentionPicker(opts) {
-  const { input: input2, inputBar, store: store2, api: api2, onAttach, onAttachThread, onAttachShell } = opts;
+  const { input: input2, inputBar, store: store2, api: api2, onAttach, onAttachImage, onAttachThread, onAttachShell } = opts;
   const picker = document.createElement("div");
   picker.className = "mention-picker";
   picker.setAttribute("role", "listbox");
@@ -83482,11 +84413,13 @@ function initMentionPicker(opts) {
     try {
       const { activeProjectId, activeThreadId } = store2.getState();
       if (!activeProjectId || !activeThreadId) return;
-      const content = await api2.fs.readFile(activeProjectId, activeThreadId, item.path);
+      const imageMime = isRasterImagePath(item.path) ? imageMimeType(item.path) : null;
+      const content = imageMime ? await api2.fs.readImage(activeProjectId, activeThreadId, item.path) : await api2.fs.readFile(activeProjectId, activeThreadId, item.path);
       const current = store2.getState();
       if (current.activeProjectId !== activeProjectId || current.activeThreadId !== activeThreadId)
         return;
-      onAttach({ path: item.path, content });
+      if (imageMime) onAttachImage(content, imageMime);
+      else onAttach({ path: item.path, content });
     } catch {
     }
     removeMentionText();
@@ -83542,6 +84475,7 @@ var init_mention_picker = __esm({
     init_attachment_icons();
     init_shell_catalog();
     init_read_terminal();
+    init_image_path();
     MAX_THREADS = 5;
   }
 });
@@ -84282,6 +85216,7 @@ function mountFooterBranchStatus(host, store2, api2) {
     }
   }
   async function refresh() {
+    refreshedThreadId = store2.getState().activeThreadId;
     const token = ++refreshToken;
     pruneBaseBranches();
     if (!store2.getState().workspaceRoot) {
@@ -84325,9 +85260,26 @@ function mountFooterBranchStatus(host, store2, api2) {
     renderTrigger();
     if (open2) renderMenu();
   }
+  let refreshedThreadId = store2.getState().activeThreadId;
+  function refreshNow() {
+    if (refreshTimer) {
+      clearTimeout(refreshTimer);
+      refreshTimer = null;
+    }
+    void refresh();
+  }
   function scheduleRefresh() {
     if (refreshTimer) clearTimeout(refreshTimer);
-    refreshTimer = setTimeout(() => void refresh(), 500);
+    refreshTimer = setTimeout(() => {
+      refreshTimer = null;
+      void refresh();
+    }, 500);
+  }
+  function scheduleStoreRefresh() {
+    pruneBaseBranches();
+    renderTrigger();
+    if (open2) renderMenu();
+    scheduleRefresh();
   }
   function copyBranchName() {
     const branch = branchToCopy;
@@ -84362,13 +85314,23 @@ function mountFooterBranchStatus(host, store2, api2) {
     }
   });
   const unsubs = [
-    store2.on("workspace_changed", () => void refresh()),
-    store2.on("threads_changed", () => void refresh()),
+    store2.on("workspace_changed", refreshNow),
+    store2.on("threads_changed", () => {
+      if (store2.getState().activeThreadId !== refreshedThreadId) {
+        refreshNow();
+        return;
+      }
+      scheduleStoreRefresh();
+    }),
     store2.on("thread_status_changed", () => {
       scheduleRefresh();
     }),
-    store2.on("message_added", () => void refresh()),
-    store2.on("git_branch_changed", () => void refresh()),
+    store2.on("message_added", () => {
+      scheduleStoreRefresh();
+    }),
+    store2.on("git_branch_changed", () => {
+      scheduleRefresh();
+    }),
     api2.fs.onChanged(() => {
       scheduleRefresh();
     }),
@@ -84385,7 +85347,7 @@ function mountFooterBranchStatus(host, store2, api2) {
   ];
   void refresh();
   return {
-    refresh: () => void refresh(),
+    refresh: refreshNow,
     pendingBaseBranch: (threadId) => baseBranchByThread.get(threadId),
     destroy: () => {
       refreshToken += 1;
@@ -85430,186 +86392,11 @@ var init_last_exchange = __esm({
   }
 });
 
-// src/renderer/views/approval-comparison-pickers.ts
-async function reviewerOptions(api2, current) {
-  const options = await fetchModelOptions(api2, current, REVIEWER_OPTIONS);
-  return options.map(
-    (option) => option.value === current && UNRUNNABLE_CURRENT_SUFFIX.test(option.label) ? { ...option, disabled: true } : option
-  );
-}
-async function refreshReviewer(picker, select, current) {
-  await picker.refresh(current);
-  const selected = select.selectedOptions[0];
-  if (selected?.disabled !== true) return;
-  const replacement = [...select.options].find(
-    (option) => !option.disabled && option.value.length > 0
-  );
-  if (!replacement) return;
-  select.value = replacement.value;
-  select.dispatchEvent(new Event("change", { bubbles: true }));
-}
-function modelRow(label, select) {
-  return el(
-    "label",
-    { class: "approval-comparison-row" },
-    el("span", { class: "approval-comparison-label" }, label),
-    select
-  );
-}
-function createComparisonModelPickers(api2, models, intro) {
-  const selectA = el("select", { class: "approval-model-select" });
-  const selectB = el("select", { class: "approval-model-select" });
-  const selectJudge = el("select", { class: "approval-model-select" });
-  for (const select of [selectA, selectB, selectJudge]) {
-    select.append(el("option", { value: "" }, "(loading\u2026)"));
-  }
-  const root = el(
-    "div",
-    { class: "approval-comparison-models" },
-    el("p", { class: "approval-comparison-intro" }, intro),
-    modelRow("Reviewer A", selectA),
-    modelRow("Reviewer B", selectB),
-    modelRow("Judge", selectJudge)
-  );
-  const pickerA = mountModelSelectPicker(selectA, {
-    loadOptions: (current) => reviewerOptions(api2, current),
-    className: "approval-model-picker",
-    ariaLabel: "Reviewer A model",
-    loadOnMount: false
-  });
-  const pickerB = mountModelSelectPicker(selectB, {
-    loadOptions: (current) => reviewerOptions(api2, current),
-    className: "approval-model-picker",
-    ariaLabel: "Reviewer B model",
-    loadOnMount: false
-  });
-  const pickerJudge = mountModelSelectPicker(selectJudge, {
-    loadOptions: (current) => reviewerOptions(api2, current),
-    className: "approval-model-picker",
-    ariaLabel: "Judge model",
-    loadOnMount: false
-  });
-  void Promise.all([
-    refreshReviewer(pickerA, selectA, models.a),
-    refreshReviewer(pickerB, selectB, models.b),
-    refreshReviewer(pickerJudge, selectJudge, models.judge)
-  ]);
-  return {
-    root,
-    read: () => ({
-      a: selectA.value,
-      b: selectB.value,
-      judge: selectJudge.value
-    })
-  };
-}
-var REVIEWER_OPTIONS, UNRUNNABLE_CURRENT_SUFFIX;
-var init_approval_comparison_pickers = __esm({
-  "src/renderer/views/approval-comparison-pickers.ts"() {
-    init_helpers();
-    init_model_options();
-    init_model_picker();
-    REVIEWER_OPTIONS = { includeAgentModels: false };
-    UNRUNNABLE_CURRENT_SUFFIX = / \((?:no key|not available|offline)\)$/i;
-  }
-});
-
-// src/renderer/views/comparison-model-dialog.ts
-function ensureDialog5() {
-  if (dialogEl4) return dialogEl4;
-  dialogEl4 = el("dialog", {
-    id: "comparison-model-dialog",
-    class: "comparison-model-dialog"
-  });
-  document.body.append(dialogEl4);
-  return dialogEl4;
-}
-function openComparisonModelDialog(api2, models) {
-  const dialog2 = ensureDialog5();
-  clear(dialog2);
-  const pickers = createComparisonModelPickers(
-    api2,
-    models,
-    "Each reviewer independently reads the working diff; a judge compares their verdicts."
-  );
-  const runBtn = el(
-    "button",
-    { type: "button", class: "ui-btn ui-btn-primary comparison-model-dialog-run" },
-    "Run comparison"
-  );
-  const cancelBtn = el(
-    "button",
-    { type: "button", class: "ui-btn comparison-model-dialog-cancel" },
-    "Cancel"
-  );
-  dialog2.append(
-    el("h3", {}, "Compare models on this diff"),
-    pickers.root,
-    // Three inferences, and the picker is the only place their cost is named
-    // before they run — there is no follow-up prompt to disclose it later.
-    el(
-      "p",
-      { class: "field-hint comparison-model-dialog-cost" },
-      "Runs three model calls: two reviews and one judgement. Any model that is not local is billed."
-    ),
-    el("div", { class: "comparison-model-dialog-actions" }, cancelBtn, runBtn)
-  );
-  return new Promise((resolve) => {
-    let settled = false;
-    const perOpen = new AbortController();
-    const finish = (value) => {
-      if (settled) return;
-      settled = true;
-      perOpen.abort();
-      dialog2.close();
-      resolve(value);
-    };
-    dialog2.addEventListener(
-      "cancel",
-      () => {
-        finish(null);
-      },
-      { signal: perOpen.signal }
-    );
-    cancelBtn.addEventListener("click", () => {
-      finish(null);
-    });
-    runBtn.addEventListener("click", () => {
-      const picked = pickers.read();
-      if (!picked.a || !picked.b || !picked.judge) return;
-      finish(picked);
-    });
-    dialog2.showModal();
-    runBtn.focus();
-  });
-}
-var dialogEl4;
-var init_comparison_model_dialog = __esm({
-  "src/renderer/views/comparison-model-dialog.ts"() {
-    init_helpers();
-    init_approval_comparison_pickers();
-    dialogEl4 = null;
-  }
-});
-
 // src/renderer/views/follow-up-suggestions.ts
 function openChangesReviewer(store2) {
   store2.setState({ rightPanelMode: "changes", filesPaneOpen: true });
   store2.emit("right_panel_mode_changed");
   store2.emit("files_pane_changed");
-}
-async function runComparisonFromBubble(store2, api2, threadId, onStarted) {
-  let defaults;
-  try {
-    defaults = await api2.agent.comparisonModels(comparisonModelsPayload(store2, threadId));
-  } catch (err2) {
-    showErrorToast("Could not load comparison models", err2);
-    return;
-  }
-  const picked = await openComparisonModelDialog(api2, defaults);
-  if (!picked) return;
-  onStarted();
-  startComparison(store2, api2, threadId, picked);
 }
 async function createPrFromBubble(store2, api2, threadId, onConfirmed) {
   const { activeProjectId } = store2.getState();
@@ -85729,8 +86516,9 @@ function mountFollowUpSuggestions(store2, api2, onSelect) {
         if (store2.getState().activeThreadId !== sourceThreadId) {
           switchThread(store2, sourceThreadId);
         }
-        if (suggestion.action === "model-compare") {
-          void runComparisonFromBubble(store2, api2, sourceThreadId, clearSuggestions);
+        if (suggestion.action === "review") {
+          clearSuggestions();
+          startReview(store2, api2, sourceThreadId);
           return;
         }
         if (suggestion.action === "create-pr") {
@@ -85880,8 +86668,7 @@ var init_follow_up_suggestions = __esm({
     init_create_pr_dialog();
     init_thread_helpers();
     init_last_exchange();
-    init_comparison_model_dialog();
-    init_retry_review_comparison();
+    init_review_actions();
     init_toast();
   }
 });
@@ -86291,7 +87078,7 @@ function mountContainerRunControl(api2, context, onStateChanged) {
     text2.textContent = `Container run: ${PHASE_LABEL[run2.phase].toLowerCase()}. ${summary}`;
     onStateChanged();
   }
-  function ensureDialog6() {
+  function ensureDialog5() {
     if (!overlay) {
       overlay = createOverlayDialog({
         id: "container-run-dialog",
@@ -86934,7 +87721,7 @@ function mountContainerRunControl(api2, context, onStateChanged) {
   }
   function open2() {
     if (!context.getActiveThreadId()) return;
-    const dialog2 = ensureDialog6();
+    const dialog2 = ensureDialog5();
     dialog2.open();
     renderDialog();
   }
@@ -87617,6 +88404,8 @@ ${description}
   async function refreshAutomaticCheckoutPreview() {
     const seq = ++automaticCheckoutPreviewSeq;
     const { activeProjectId } = store2.getState();
+    const thread = getActiveThread(store2);
+    if (!thread || thread.messages.length > 0 || thread.worktreeChoice) return;
     const model = footerChatModel();
     let next = "shared";
     if (activeProjectId) {
@@ -88175,8 +88964,9 @@ ${description}
     ]);
     const branchResult = prefetchedGitState?.[0];
     if (branchResult?.status === "rejected") throw branchResult.reason;
-    const currentBranch = branchResult?.status === "fulfilled" ? branchResult.value : await api2.git.currentBranch(projectId, id);
+    const currentBranch = requiresCheckoutPreparation && !thread.gitBranch ? null : branchResult?.status === "fulfilled" ? branchResult.value : await api2.git.currentBranch(projectId, id);
     const prefetchedPromptState = prefetchedGitState?.[1];
+    let preparedPromptState;
     const threadBranch = thread?.gitBranch;
     const isolatedWorktree = thread !== void 0 && thread.worktree !== void 0;
     if (threadBranch && threadGitBranchMismatch(threadBranch, currentBranch, { isolatedWorktree })) {
@@ -88240,7 +89030,7 @@ ${description}
         archiveRefs: currentArchiveRefs()
       });
     }
-    if (thread && thread.messages.length === 0 && !thread.worktreeChoice) {
+    if (requiresCheckoutPreparation) {
       const projectId2 = store2.getState().activeProjectId;
       if (!projectId2) return;
       hideCheckoutError();
@@ -88257,6 +89047,7 @@ ${description}
           // becomes the worktree's base, or the shared checkout's branch.
           branchControl.pendingBaseBranch(id)
         );
+        preparedPromptState = prepared.promptState;
         applyPreparedThreadCheckout(store2, id, prepared);
         if (getActiveThreadId() !== id) return;
       } catch (error62) {
@@ -88270,7 +89061,7 @@ ${description}
       }
     }
     if (prefetchedPromptState?.status === "rejected") throw prefetchedPromptState.reason;
-    const promptState = prefetchedPromptState?.status === "fulfilled" ? prefetchedPromptState.value : await api2.git.promptState(projectId, id);
+    const promptState = preparedPromptState ?? (prefetchedPromptState?.status === "fulfilled" ? prefetchedPromptState.value : await api2.git.promptState(projectId, id));
     const priorTodos = thread?.todos ?? [];
     const workingBrief = nextWorkingBrief(thread?.workingBrief, fullContent);
     if (workingBrief && workingBrief !== thread?.workingBrief) {
@@ -88613,6 +89404,7 @@ ${description}
     store: store2,
     api: api2,
     onAttach: addChip,
+    onAttachImage: addImageChip,
     onAttachThread: addThreadChip,
     onAttachShell: addShellChip
   });
@@ -88732,11 +89524,9 @@ ${description}
       scheduleContextEstimate(0);
     }),
     store2.on("workspace_changed", () => {
-      branchControl.refresh();
       void refreshAutomaticCheckoutPreview();
     }),
     store2.on("git_branch_changed", () => {
-      branchControl.refresh();
       void refreshAutomaticCheckoutPreview();
     })
   ];
@@ -99730,11 +100520,11 @@ function mountAgentTasks(listRoot, viewerHost, store2, api2) {
   function updateTask(id, patch) {
     const task = tasks.get(id);
     if (!task) return;
-    const command = shellCommandFromArgs(patch.args) ?? patch.name;
+    const command = shellCommandFromArgs(patch.args) ?? patch.title ?? patch.name;
     if (command) setCommand(task, command);
     if (patch.args !== void 0) setArgs(task, patch.args);
     if (patch.result !== void 0) {
-      task.output = stripAnsi(patch.result);
+      task.output = stripAnsi(patch.result ?? "");
       task.outputNode.data = task.output;
     }
     if (patch.status !== void 0) setStatus(task, patch.status);
@@ -99769,7 +100559,7 @@ function mountAgentTasks(listRoot, viewerHost, store2, api2) {
     if (chunk.type === "tool_call") {
       const isAcpShell = chunk.toolCall.kind === "execute";
       if (chunk.toolCall.name === "run_shell" || isAcpShell) {
-        const command = shellCommandFromArgs(chunk.toolCall.args) ?? (isAcpShell ? chunk.toolCall.name : null);
+        const command = shellCommandFromArgs(chunk.toolCall.args) ?? (isAcpShell ? chunk.toolCall.title ?? chunk.toolCall.name : null);
         if (command) addTask(chunk.toolCall.id, command, chunk.toolCall.args, threadId);
       }
     } else if (chunk.type === "tool_result" && tasks.has(chunk.toolCallId)) {
@@ -99978,6 +100768,82 @@ var init_pane_loading = __esm({
   }
 });
 
+// packages/agent/src/plugins/review-plugin.ts
+var REVIEW_PLUGIN_ID, REVIEW_TOOL_NAME, REVIEW_FOLLOW_UP_ID, REVIEWER_MODEL_SETTING_ID, CHALLENGER_MODEL_SETTING_ID, REVIEW_LENSES_SETTING_ID, REVIEW_VERIFY_SETTING_ID, DEFAULT_CHALLENGER_MODEL_ID, REVIEW_LENS_CHOICES, DEFAULT_REVIEW_LENS_CHOICE, reviewPlugin;
+var init_review_plugin = __esm({
+  "packages/agent/src/plugins/review-plugin.ts"() {
+    init_dynamic_model();
+    init_plugin_manifest();
+    REVIEW_PLUGIN_ID = "copse.review";
+    REVIEW_TOOL_NAME = "review_changes";
+    REVIEW_FOLLOW_UP_ID = "review-changes";
+    REVIEWER_MODEL_SETTING_ID = "reviewerModel";
+    CHALLENGER_MODEL_SETTING_ID = "challengerModel";
+    REVIEW_LENSES_SETTING_ID = "lenses";
+    REVIEW_VERIFY_SETTING_ID = "verify";
+    DEFAULT_CHALLENGER_MODEL_ID = BEST_INTELLECT_MODEL_SELECTOR;
+    REVIEW_LENS_CHOICES = ["correctness", "all"];
+    DEFAULT_REVIEW_LENS_CHOICE = "correctness";
+    reviewPlugin = definePlugin(
+      {
+        name: REVIEW_PLUGIN_ID,
+        description: 'Copse Reviewer \u2014 builds and tests your changes against their base, has a model review them under a lens, and tries to refute every finding before it reaches you. On demand from the Changes view, the "Review changes" bubble, or the `review_changes` tool.',
+        trust: "first-party",
+        stability: "experimental",
+        tools: { native: [REVIEW_TOOL_NAME] },
+        // Offered only when the working tree has uncommitted changes: with a clean
+        // tree on its base branch there is nothing to review.
+        followUps: [
+          {
+            id: REVIEW_FOLLOW_UP_ID,
+            label: "Review changes",
+            action: "review",
+            when: "workspace-changes"
+          }
+        ],
+        settings: {
+          [REVIEWER_MODEL_SETTING_ID]: {
+            kind: "model",
+            title: "Reviewer",
+            description: "How to choose the model that reads the change and reports findings. Leave unset to review with the model this chat is already on."
+          },
+          [CHALLENGER_MODEL_SETTING_ID]: {
+            kind: "model",
+            title: "Challenger",
+            description: "How to choose the model that tries to refute each finding and writes the reproducing test. A different family from the reviewer catches more.",
+            default: DEFAULT_CHALLENGER_MODEL_ID
+          },
+          [REVIEW_LENSES_SETTING_ID]: {
+            kind: "enum",
+            title: "Lenses",
+            description: "Which briefs the reviewer runs under: bugs and regressions only, or every lens (contracts, tests, security, concurrency too). More lenses cost more calls.",
+            options: [...REVIEW_LENS_CHOICES],
+            default: DEFAULT_REVIEW_LENS_CHOICE
+          },
+          [REVIEW_VERIFY_SETTING_ID]: {
+            kind: "boolean",
+            title: "Verify findings",
+            description: "Run the challenger over every finding and, where a test can show it, a reproducer on head and base. Off reports the unverified candidates as such.",
+            default: true
+          }
+        },
+        storage: { namespace: REVIEW_PLUGIN_ID }
+      },
+      {
+        toolNames: [REVIEW_TOOL_NAME],
+        followUps: [
+          {
+            id: REVIEW_FOLLOW_UP_ID,
+            label: "Review changes",
+            action: "review",
+            when: "workspace-changes"
+          }
+        ]
+      }
+    );
+  }
+});
+
 // src/shared/diff/staged-diff-ui.ts
 function pruneStagedDiffCache(cache, entries2) {
   const paths = new Set(entries2.map((e2) => e2.path));
@@ -100123,13 +100989,43 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     },
     refreshIcon("ui-icon ui-icon-sm")
   );
+  const reviewBtn = el(
+    "button",
+    {
+      type: "button",
+      class: "git-changes-review-btn",
+      "data-tooltip": "Review these changes with Copse Reviewer"
+    },
+    "Review"
+  );
+  reviewBtn.hidden = true;
   listHeader.append(
     headerTitle,
     bulkActions,
+    reviewBtn,
     panePopoutButton(store2, api2, "changes", "changes"),
     paneMaximizeButton(store2, "changes"),
     refreshBtn
   );
+  function syncReviewButton() {
+    const thread = store2.getState().threads.find((t) => t.id === store2.getState().activeThreadId);
+    reviewBtn.disabled = thread === void 0 || thread.status === "running";
+  }
+  function syncReviewGate() {
+    void api2.plugins.list().then((res) => {
+      reviewBtn.hidden = !res.plugins.some((p) => p.id === REVIEW_PLUGIN_ID && p.enabled);
+    }).catch(() => {
+      reviewBtn.hidden = true;
+    });
+  }
+  reviewBtn.addEventListener("click", () => {
+    const threadId = store2.getState().activeThreadId;
+    if (!threadId) return;
+    startReview(store2, api2, threadId);
+    syncReviewButton();
+  });
+  syncReviewGate();
+  syncReviewButton();
   const restoreBanner = el("div", { class: "git-changes-restore" });
   const restoreLabel = el("span", { class: "git-changes-restore-label" });
   const restoreBtn = el(
@@ -100925,6 +101821,9 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     store2.on("panel_changed", () => {
       if (changesModeActive(store2)) void syncFromStore();
     }),
+    store2.on("settings_changed", syncReviewGate),
+    store2.on("thread_status_changed", syncReviewButton),
+    store2.on("threads_changed", syncReviewButton),
     api2.fs.onChanged(() => {
       scheduleRefresh();
     }),
@@ -100974,6 +101873,8 @@ var init_git_changes_pane = __esm({
     init_array_utils2();
     init_toast();
     init_confirm_dialog();
+    init_review_actions();
+    init_review_plugin();
     init_staged_diff_ui();
     init_git_diff_viewer();
     init_selection_to_chat();
@@ -102240,7 +103141,7 @@ function mountMemoriesPane(listRoot, viewerRoot, store2, api2) {
     placeholder: "Memory content (markdown)\u2026",
     "aria-label": "Memory content"
   });
-  const metaLine = el("div", { class: "memories-meta" });
+  const metaLine2 = el("div", { class: "memories-meta" });
   const errorLine = el("div", { class: "memories-error", hidden: true });
   const saveBtn = el(
     "button",
@@ -102261,7 +103162,7 @@ function mountMemoriesPane(listRoot, viewerRoot, store2, api2) {
     tagsInput,
     el("label", { class: "memories-label" }, "Content"),
     bodyInput,
-    metaLine,
+    metaLine2,
     errorLine,
     actions
   );
@@ -102293,14 +103194,14 @@ function mountMemoriesPane(listRoot, viewerRoot, store2, api2) {
     }
     deleteBtn.hidden = !note;
     if (note?.updatedAt) {
-      metaLine.hidden = false;
-      metaLine.textContent = `Updated ${knowledgeDate(note.updatedAt)}`;
+      metaLine2.hidden = false;
+      metaLine2.textContent = `Updated ${knowledgeDate(note.updatedAt)}`;
       if (note.fields["externalContext"] === "true") {
-        metaLine.textContent += " \xB7 saved with external content in context \u2014 saving clears this";
+        metaLine2.textContent += " \xB7 saved with external content in context \u2014 saving clears this";
       }
     } else {
-      metaLine.hidden = true;
-      metaLine.textContent = "";
+      metaLine2.hidden = true;
+      metaLine2.textContent = "";
     }
   }
   function renderList() {
@@ -103327,8 +104228,8 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
     plusIcon("ui-icon ui-icon-sm"),
     "Attach"
   );
-  const statusLabel3 = el("label", { class: "memories-label" }, "Status");
-  const metaLine = el("div", { class: "memories-meta" });
+  const statusLabel4 = el("label", { class: "memories-label" }, "Status");
+  const metaLine2 = el("div", { class: "memories-meta" });
   const errorLine = el("div", { class: "memories-error", hidden: true });
   const fitResult = el("div", { class: "roadmap-fit-result", hidden: true });
   const reviewResult = el("div", { class: "roadmap-review-result", hidden: true });
@@ -103421,9 +104322,9 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
     attachFileInput,
     el("label", { class: "memories-label" }, "Category"),
     categorySelect,
-    statusLabel3,
+    statusLabel4,
     statusSelect,
-    metaLine,
+    metaLine2,
     errorLine,
     fitResult,
     reviewResult,
@@ -103722,7 +104623,7 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
       }
     }
     renderAttachments();
-    statusLabel3.hidden = !item;
+    statusLabel4.hidden = !item;
     statusSelect.hidden = !item;
     startBtn.hidden = !item;
     reopenBtn.hidden = !item || !getThreadById(store2, itemThreadId(item));
@@ -103782,15 +104683,15 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
       reviewResultBody.hidden = true;
     }
     if (item?.updatedAt) {
-      metaLine.hidden = false;
+      metaLine2.hidden = false;
       const updatedTime = new Date(item.updatedAt).toLocaleTimeString([], {
         hour: "2-digit",
         minute: "2-digit"
       });
-      metaLine.textContent = `Updated ${knowledgeDate(item.updatedAt)} at ${updatedTime}`;
+      metaLine2.textContent = `Updated ${knowledgeDate(item.updatedAt)} at ${updatedTime}`;
     } else {
-      metaLine.hidden = true;
-      metaLine.textContent = "";
+      metaLine2.hidden = true;
+      metaLine2.textContent = "";
     }
   }
   function matchesSearch(item) {
@@ -104616,7 +105517,7 @@ Notes: ${notes}` : prompt;
     reviewMarkResolvedBtn.disabled = false;
     reviewArchiveResolvedBtn.disabled = false;
   }
-  async function startReview() {
+  async function startReview2() {
     cancelResolutionCheckUi();
     const runToken = ++reviewRunToken;
     reviewing = true;
@@ -104689,7 +105590,7 @@ Notes: ${notes}` : prompt;
     renderEditor();
   }
   importBtn.addEventListener("click", startImport);
-  reviewBtn.addEventListener("click", () => void startReview());
+  reviewBtn.addEventListener("click", () => void startReview2());
   reviewBackBtn.addEventListener("click", () => {
     returnToReview();
   });
@@ -123185,6 +124086,30 @@ function adviceElement(advice) {
   });
   return el("div", { class: "approval-advice" }, ...children);
 }
+function mergeApprovalAdvice(values) {
+  const unique = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const value of values) {
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    unique.push(value);
+  }
+  if (unique.length <= 1) return unique[0];
+  const lines = unique.map((value) => value.split("\n"));
+  const sharedLead = lines[0]?.[0];
+  if (sharedLead === void 0 || !lines.every((parts) => parts[0] === sharedLead)) {
+    return unique.join("\n\n");
+  }
+  const merged = [sharedLead];
+  const seenDetails = /* @__PURE__ */ new Set();
+  for (const parts of lines) {
+    const details = parts.slice(1).join("\n");
+    if (!details || seenDetails.has(details)) continue;
+    seenDetails.add(details);
+    merged.push(details);
+  }
+  return merged.join("\n");
+}
 function mountApprovalDialog(api2, store2, options = {}) {
   const coalesceMs = options.coalesceMs ?? APPROVAL_COALESCE_MS;
   const settleMs = options.settleMs ?? APPROVAL_SETTLE_MS;
@@ -123249,7 +124174,6 @@ function mountApprovalDialog(api2, store2, options = {}) {
   let coalesceScheduled = false;
   let cancelCoalesce = null;
   let cancelSettle = null;
-  let readComparisonModels = null;
   let detailsExpanded = false;
   function closeDialog() {
     dialog2.close();
@@ -123269,16 +124193,11 @@ function mountApprovalDialog(api2, store2, options = {}) {
     const waiting = queue.map((req) => req.threadId).filter((id) => !!id && (hidden || id !== activeThreadId));
     setAttentionThreads(store2, "approval", waiting);
   }
-  function requiresSoloPrompt(req) {
-    return req.type === "model-compare";
-  }
   function drainShowableIntoBatch() {
     let moved = 0;
     for (let i = 0; i < queue.length; ) {
       const req = queue[i];
       if (req && isShowable(req)) {
-        const first = batch[0];
-        if (first && (requiresSoloPrompt(first) || requiresSoloPrompt(req))) break;
         queue.splice(i, 1);
         batch.push(req);
         moved++;
@@ -123318,17 +124237,21 @@ function mountApprovalDialog(api2, store2, options = {}) {
     return toggle;
   }
   function renderBatch() {
-    readComparisonModels = null;
     const count = batch.length;
     const collapseDetails = soloRequest()?.collapseDetails === true;
-    const singleModelCompare = count === 1 && batch[0]?.type === "model-compare" && batch[0].comparisonModels !== void 0;
     const uniqueTitles = new Set(batch.map((req) => req.title));
     const sharedTitle = uniqueTitles.size === 1 ? batch[0]?.title ?? "" : null;
     const showRowTitles = count > 1 && sharedTitle === null;
-    const firstRequest = batch[0];
-    const hasSharedContext = count > 1 && firstRequest !== void 0 && batch.every(
-      (req) => req.type === firstRequest.type && req.title === firstRequest.title && req.bodyAdvice === firstRequest.bodyAdvice && req.bodyFooter === firstRequest.bodyFooter
-    );
+    const presentationGroups = [];
+    for (const req of batch) {
+      const previousGroup = presentationGroups.at(-1);
+      const previous = previousGroup?.[0];
+      if (previousGroup && previous && req.type === previous.type && req.title === previous.title && req.bodyFooter === previous.bodyFooter) {
+        previousGroup.push(req);
+      } else {
+        presentationGroups.push([req]);
+      }
+    }
     heading.textContent = count <= 1 ? batch[0]?.title ?? "" : sharedTitle ?? `${String(count)} requests`;
     const requestBody = (req) => {
       const bodyClass = req.type === "shell" ? "approval-body approval-body-code" : "approval-body";
@@ -123336,51 +124259,41 @@ function mountApprovalDialog(api2, store2, options = {}) {
       if (collapseDetails && !detailsExpanded) body.hidden = true;
       return body;
     };
-    if (hasSharedContext) {
-      const sharedChildren = [];
-      if (firstRequest.bodyAdvice) {
-        sharedChildren.push(adviceElement(firstRequest.bodyAdvice));
-      }
-      const bodyLabel = firstRequest.type === "shell" ? "Commands requiring approval" : "Requests";
-      sharedChildren.push(
-        el(
-          "div",
-          { class: "approval-body-list", role: "list", "aria-label": bodyLabel },
-          ...batch.map((req) => {
-            const body = requestBody(req);
-            body.setAttribute("role", "listitem");
-            return body;
-          })
-        )
-      );
-      if (firstRequest.bodyFooter) {
-        sharedChildren.push(el("div", { class: "approval-footer" }, firstRequest.bodyFooter));
-      }
-      items.replaceChildren(el("div", { class: "approval-item" }, ...sharedChildren));
-    } else {
-      items.replaceChildren(
-        ...batch.map((req) => {
-          const rowChildren = [];
-          if (showRowTitles)
-            rowChildren.push(el("div", { class: "approval-item-title" }, req.title));
-          if (singleModelCompare && req.comparisonModels && req === batch[0]) {
-            const pickers = createComparisonModelPickers(api2, req.comparisonModels, req.body);
-            readComparisonModels = pickers.read;
-            rowChildren.push(pickers.root);
-          } else {
-            if (req.bodyAdvice) {
-              rowChildren.push(adviceElement(req.bodyAdvice));
-            }
-            if (collapseDetails) rowChildren.push(detailsToggle());
-            rowChildren.push(requestBody(req));
-            if (req.bodyFooter) {
-              rowChildren.push(el("div", { class: "approval-footer" }, req.bodyFooter));
-            }
-          }
-          return el("div", { class: "approval-item" }, ...rowChildren);
-        })
-      );
-    }
+    items.replaceChildren(
+      ...presentationGroups.map((group) => {
+        const firstRequest = group[0];
+        if (!firstRequest) throw new Error("approval presentation group must not be empty");
+        const rowChildren = [];
+        if (showRowTitles) {
+          rowChildren.push(el("div", { class: "approval-item-title" }, firstRequest.title));
+        }
+        const advice = mergeApprovalAdvice(group.map((request) => request.bodyAdvice));
+        if (advice) {
+          rowChildren.push(adviceElement(advice));
+        }
+        if (collapseDetails) rowChildren.push(detailsToggle());
+        if (group.length > 1) {
+          const bodyLabel = firstRequest.type === "shell" ? "Commands requiring approval" : "Requests";
+          rowChildren.push(
+            el(
+              "div",
+              { class: "approval-body-list", role: "list", "aria-label": bodyLabel },
+              ...group.map((req) => {
+                const body = requestBody(req);
+                body.setAttribute("role", "listitem");
+                return body;
+              })
+            )
+          );
+        } else {
+          rowChildren.push(requestBody(firstRequest));
+        }
+        if (firstRequest.bodyFooter) {
+          rowChildren.push(el("div", { class: "approval-footer" }, firstRequest.bodyFooter));
+        }
+        return el("div", { class: "approval-item" }, ...rowChildren);
+      })
+    );
     approveButton.textContent = count > 1 ? `Approve all (${String(count)})` : "Approve";
     rejectButton.textContent = count > 1 ? `Reject all (${String(count)})` : "Reject";
     const onceLabel = approveOnceGrant();
@@ -123468,7 +124381,6 @@ function mountApprovalDialog(api2, store2, options = {}) {
     if (batch.length === 0) {
       closeDialog();
       active2 = false;
-      readComparisonModels = null;
       clearSettle();
       return;
     }
@@ -123493,7 +124405,6 @@ function mountApprovalDialog(api2, store2, options = {}) {
       if (batch.length === 0) {
         closeDialog();
         active2 = false;
-        readComparisonModels = null;
         clearSettle();
         show2();
       } else {
@@ -123506,22 +124417,14 @@ function mountApprovalDialog(api2, store2, options = {}) {
   function resolve(approved, remember) {
     if (!active2 || batch.length === 0) return;
     const answered = batch;
-    const comparisonModels = approved && readComparisonModels ? readComparisonModels() : void 0;
     const grantScope = approved && !turnTreeLeaseLabel.hidden && turnTreeLeaseInput.checked ? "turn-tree" : "once";
     closeDialog();
     batch = [];
     active2 = false;
-    readComparisonModels = null;
     turnTreeLeaseInput.checked = false;
     clearSettle();
     for (const req of answered) {
-      void api2.approval.respond(
-        req.id,
-        approved,
-        remember,
-        req.type === "model-compare" ? comparisonModels : void 0,
-        grantScope
-      );
+      void api2.approval.respond(req.id, approved, remember, grantScope);
     }
     show2();
   }
@@ -123539,7 +124442,6 @@ function mountApprovalDialog(api2, store2, options = {}) {
       collapseDetails,
       approveOnceLabel,
       showWhileSettingsOpen,
-      comparisonModels,
       allowTurnTreeLease,
       turnTreeLeaseLabel: turnTreeLeaseLabel2,
       turnTreeLeaseDefault,
@@ -123563,14 +124465,12 @@ function mountApprovalDialog(api2, store2, options = {}) {
         turnTreeLeaseDefault,
         turnTreeLeaseSubject
       };
-      if (comparisonModels) pending.comparisonModels = comparisonModels;
       queue.push(pending);
       if (active2 && isSettingsDialogOpen() && pending.showWhileSettingsOpen) {
         queue.unshift(...batch);
         batch = [];
         closeDialog();
         active2 = false;
-        readComparisonModels = null;
         clearSettle();
         show2();
       } else if (active2) appendToOpen();
@@ -123613,7 +124513,6 @@ var init_approval_dialog = __esm({
     init_helpers();
     init_settings_dialog();
     init_attention();
-    init_approval_comparison_pickers();
     init_actions();
     APPROVAL_COALESCE_MS = 120;
     APPROVAL_SETTLE_MS = 500;
@@ -124007,10 +124906,10 @@ function openFileSearchDialog() {
   openImpl?.();
 }
 function closeFileSearchDialog() {
-  if (dialogEl5?.open) dialogEl5.close();
+  if (dialogEl4?.open) dialogEl4.close();
 }
 function isFileSearchDialogOpen() {
-  return !!dialogEl5?.open;
+  return !!dialogEl4?.open;
 }
 function mountFileSearchDialog(store2, api2) {
   const dialog2 = document.createElement("dialog");
@@ -124030,7 +124929,7 @@ function mountFileSearchDialog(store2, api2) {
   const shell3 = el("div", { class: "file-search-shell" }, input2, list, empty);
   dialog2.append(shell3);
   document.body.append(dialog2);
-  dialogEl5 = dialog2;
+  dialogEl4 = dialog2;
   let results = [];
   let selectedIdx = 0;
   let roadmapItems = [];
@@ -124180,7 +125079,7 @@ function mountFileSearchDialog(store2, api2) {
     void runQuery("");
   };
 }
-var ROADMAP_RESULT_LIMIT, ROADMAP_ICON_PATHS, dialogEl5, openImpl;
+var ROADMAP_RESULT_LIMIT, ROADMAP_ICON_PATHS, dialogEl4, openImpl;
 var init_file_search_dialog = __esm({
   "src/renderer/views/file-search-dialog.ts"() {
     init_helpers();
@@ -124191,7 +125090,7 @@ var init_file_search_dialog = __esm({
     init_roadmap_plans_plugin();
     ROADMAP_RESULT_LIMIT = 8;
     ROADMAP_ICON_PATHS = ["M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4Z", "M8 2v16", "M16 6v16"];
-    dialogEl5 = null;
+    dialogEl4 = null;
     openImpl = null;
   }
 });
@@ -124214,14 +125113,14 @@ function keyLabel(token, isMac2) {
   }
 }
 function openKeyboardShortcutsDialog() {
-  if (!dialogEl6 || dialogEl6.open) return;
-  dialogEl6.showModal();
+  if (!dialogEl5 || dialogEl5.open) return;
+  dialogEl5.showModal();
 }
 function closeKeyboardShortcutsDialog() {
-  if (dialogEl6?.open) dialogEl6.close();
+  if (dialogEl5?.open) dialogEl5.close();
 }
 function isKeyboardShortcutsDialogOpen() {
-  return !!dialogEl6?.open;
+  return !!dialogEl5?.open;
 }
 function mountKeyboardShortcutsDialog() {
   const dialog2 = document.createElement("dialog");
@@ -124257,12 +125156,12 @@ function mountKeyboardShortcutsDialog() {
   clear(dialog2);
   dialog2.append(shell3);
   document.body.append(dialog2);
-  dialogEl6 = dialog2;
+  dialogEl5 = dialog2;
   dialog2.addEventListener("mousedown", (e2) => {
     if (e2.target === dialog2) closeKeyboardShortcutsDialog();
   });
 }
-var SECTIONS, dialogEl6;
+var SECTIONS, dialogEl5;
 var init_keyboard_shortcuts_dialog = __esm({
   "src/renderer/views/keyboard-shortcuts-dialog.ts"() {
     init_helpers();
@@ -124304,7 +125203,7 @@ var init_keyboard_shortcuts_dialog = __esm({
         ]
       }
     ];
-    dialogEl6 = null;
+    dialogEl5 = null;
   }
 });
 
@@ -124568,10 +125467,10 @@ function openCommandPalette() {
   openImpl3?.();
 }
 function closeCommandPalette() {
-  if (dialogEl7?.open) dialogEl7.close();
+  if (dialogEl6?.open) dialogEl6.close();
 }
 function isCommandPaletteOpen() {
-  return !!dialogEl7?.open;
+  return !!dialogEl6?.open;
 }
 function mountCommandPalette(store2, api2) {
   const dialog2 = document.createElement("dialog");
@@ -124591,7 +125490,7 @@ function mountCommandPalette(store2, api2) {
   const shell3 = el("div", { class: "command-palette-shell" }, input2, list, empty);
   dialog2.append(shell3);
   document.body.append(dialog2);
-  dialogEl7 = dialog2;
+  dialogEl6 = dialog2;
   let entries2 = [];
   let selectedIdx = 0;
   let threadHits = [];
@@ -124803,7 +125702,7 @@ function mountCommandPalette(store2, api2) {
     void loadThreads2();
   };
 }
-var PANEL_ITEMS, THREAD_LIMIT, PROJECT_LIMIT, dialogEl7, openImpl3;
+var PANEL_ITEMS, THREAD_LIMIT, PROJECT_LIMIT, dialogEl6, openImpl3;
 var init_command_palette = __esm({
   "src/renderer/views/command-palette.ts"() {
     init_helpers();
@@ -124826,7 +125725,7 @@ var init_command_palette = __esm({
     ];
     THREAD_LIMIT = 25;
     PROJECT_LIMIT = 25;
-    dialogEl7 = null;
+    dialogEl6 = null;
     openImpl3 = null;
   }
 });
@@ -125105,65 +126004,6 @@ var init_diff_state = __esm({
   }
 });
 
-// src/renderer/controller/thread-naming.ts
-function namingMessages(thread) {
-  const queued = queuedMessageIds(thread);
-  return thread.messages.filter(
-    (m) => m.role === "user" && !m.origin && !queued.has(m.id) && m.content.trim()
-  );
-}
-function firstWords(text2, n = 6) {
-  return text2.split(/\s+/).slice(0, n).join(" ").slice(0, 60) || "New Thread";
-}
-function namingInput(userMessages) {
-  const first = userMessages[0];
-  if (!first) return "";
-  const recent = userMessages.slice(1).slice(-3);
-  return [first, ...recent].map((m) => m.content.trim().slice(0, 300)).join("\n\n");
-}
-function maybeNameThread(store2, api2, threadId) {
-  if (inFlight2.has(threadId)) return;
-  const thread = getThreadById(store2, threadId);
-  if (!thread) return;
-  const passes = thread.autoTitleCount ?? 0;
-  if (passes === 0 && thread.title !== "New Thread") return;
-  const threshold = PASS_THRESHOLDS[passes];
-  if (threshold === void 0) return;
-  const userMessages = namingMessages(thread);
-  const first = userMessages[0];
-  if (!first || userMessages.length < threshold) return;
-  const titleBefore = thread.title;
-  const input2 = namingInput(userMessages);
-  inFlight2.add(threadId);
-  void (async () => {
-    let title;
-    try {
-      title = await api2.agent.suggestTitle(input2);
-    } catch {
-      title = null;
-    } finally {
-      inFlight2.delete(threadId);
-    }
-    const current = getThreadById(store2, threadId);
-    if (!current) return;
-    if (current.title !== titleBefore || (current.autoTitleCount ?? 0) !== passes) return;
-    const fallback = passes === 0 ? firstWords(first.content) : current.title;
-    setThreadTitle(store2, threadId, nonEmptyStringOr(title?.trim(), fallback), {
-      autoTitleCount: passes + 1
-    });
-  })();
-}
-var inFlight2, PASS_THRESHOLDS;
-var init_thread_naming = __esm({
-  "src/renderer/controller/thread-naming.ts"() {
-    init_thread_helpers();
-    init_unknown_value3();
-    init_message_queue();
-    inFlight2 = /* @__PURE__ */ new Set();
-    PASS_THRESHOLDS = [1, 3, 8];
-  }
-});
-
 // src/shared/remote-agent-stream.ts
 function userContentToText(content) {
   if (typeof content === "string") return content;
@@ -125203,7 +126043,9 @@ function startAgentController(store2, api2) {
         runSummaryAnchorId: null,
         runSummaryCount: 0,
         lastActivityLabel: null,
-        firstActivityTraced: false
+        firstActivityTraced: false,
+        acpMessageId: null,
+        acpThoughtMessageId: null
       };
       state.set(tid, st2);
     }
@@ -125220,7 +126062,7 @@ function startAgentController(store2, api2) {
   const detachDiffState = attachDiffState(store2, api2, { revealOnShowDiff: true });
   const unsub = api2.agent.onChunk((threadId, chunk) => {
     const st2 = get(threadId);
-    const firstVisibleActivity = chunk.type === "tool_call" || chunk.type === "text" && chunk.text.trim() !== "" || chunk.type === "reasoning" && chunk.text.trim() !== "";
+    const firstVisibleActivity = chunk.type === "tool_call" || chunk.type === "acp_content" || chunk.type === "text" && chunk.text.trim() !== "" || chunk.type === "reasoning" && chunk.text.trim() !== "";
     if (firstVisibleActivity && !st2.firstActivityTraced) {
       st2.firstActivityTraced = true;
       mark("ttft:renderer-first-activity", { kind: chunk.type });
@@ -125275,6 +126117,60 @@ function startAgentController(store2, api2) {
         activity(threadId);
         break;
       }
+      case "acp_content": {
+        const previousId = chunk.channel === "message" ? st2.acpMessageId : st2.acpThoughtMessageId;
+        const boundaryChanged = chunk.messageId !== void 0 && previousId !== null && chunk.messageId !== previousId;
+        if (boundaryChanged && st2.msgId) {
+          store2.emit("message_done", st2.msgId);
+          st2.msgId = null;
+          st2.toolSinceText = false;
+          st2.currentText = "";
+        }
+        if (chunk.messageId !== void 0) {
+          if (chunk.channel === "message") st2.acpMessageId = chunk.messageId;
+          else st2.acpThoughtMessageId = chunk.messageId;
+        }
+        if (chunk.content.type === "text") {
+          if (chunk.channel === "thought") {
+            if (!st2.msgId || st2.toolSinceText) {
+              if (st2.toolSinceText && st2.msgId) store2.emit("message_done", st2.msgId);
+              st2.msgId = addAssistantMessage(store2, threadId);
+              st2.toolSinceText = false;
+              st2.currentText = "";
+            }
+            appendReasoning(store2, st2.msgId, chunk.content.text);
+            st2.writing = false;
+          } else {
+            const { plan, state: nextState } = planAgentTextChunk(
+              { msgId: st2.msgId, toolSinceText: st2.toolSinceText, currentText: st2.currentText },
+              chunk.content.text
+            );
+            if (plan.action === "ignore") break;
+            if (plan.startNewMessage) {
+              if (plan.finalizeMsgId) store2.emit("message_done", plan.finalizeMsgId);
+              st2.msgId = addAssistantMessage(store2, threadId);
+            }
+            st2.toolSinceText = nextState.toolSinceText;
+            st2.currentText = nextState.currentText ?? "";
+            if (st2.msgId === null) throw new Error("assistant message id missing for ACP text");
+            appendToken(store2, st2.msgId, plan.text);
+            st2.writing = plan.text.trim().length > 0;
+            if (st2.writing) maybeNameThread(store2, api2, threadId);
+          }
+        } else {
+          if (!st2.msgId || st2.toolSinceText) {
+            if (st2.toolSinceText && st2.msgId) store2.emit("message_done", st2.msgId);
+            st2.msgId = addAssistantMessage(store2, threadId);
+            st2.toolSinceText = false;
+            st2.currentText = "";
+          }
+          appendAcpContentBlock(store2, st2.msgId, chunk.channel, chunk.content);
+          st2.writing = false;
+          maybeNameThread(store2, api2, threadId);
+        }
+        activity(threadId);
+        break;
+      }
       case "text_replace": {
         st2.msgId ??= addAssistantMessage(store2, threadId);
         setMessageContent(store2, st2.msgId, chunk.text);
@@ -125297,6 +126193,8 @@ function startAgentController(store2, api2) {
         addToolCall(store2, st2.msgId, {
           id: chunk.toolCall.id,
           name: chunk.toolCall.name,
+          ...chunk.toolCall.title !== void 0 ? { title: chunk.toolCall.title } : {},
+          ...chunk.toolCall.programmaticName !== void 0 ? { programmaticName: chunk.toolCall.programmaticName } : {},
           args: chunk.toolCall.args,
           status: "running",
           result: null,
@@ -125313,11 +126211,16 @@ function startAgentController(store2, api2) {
         if (ownerId) {
           updateToolCall(store2, ownerId, chunk.toolCallId, {
             ...chunk.name !== void 0 ? { name: chunk.name } : {},
+            ...chunk.title !== void 0 ? { title: chunk.title } : {},
+            ...chunk.programmaticName !== void 0 ? { programmaticName: chunk.programmaticName } : {},
             ...chunk.args !== void 0 ? { args: chunk.args } : {},
+            ...chunk.kind !== void 0 ? { kind: chunk.kind } : {},
             ...chunk.status !== void 0 ? { status: chunk.status } : {},
             ...chunk.result !== void 0 ? { result: chunk.result } : {},
             ...chunk.resultFormat !== void 0 ? { resultFormat: chunk.resultFormat } : {},
-            ...chunk.images !== void 0 ? { images: chunk.images } : {}
+            ...chunk.images !== void 0 ? { images: chunk.images } : {},
+            ...chunk.content !== void 0 ? { content: chunk.content } : {},
+            ...chunk.locations !== void 0 ? { locations: chunk.locations } : {}
           });
         }
         st2.writing = false;
@@ -125396,7 +126299,8 @@ function startAgentController(store2, api2) {
           conversationBudget: chunk.conversationBudget,
           conversationTokens: chunk.conversationTokens,
           fillRatio: chunk.fillRatio,
-          ...chunk.source !== void 0 ? { source: chunk.source } : {}
+          ...chunk.source !== void 0 ? { source: chunk.source } : {},
+          ...chunk.cost !== void 0 ? { cost: chunk.cost } : {}
         });
         break;
       }
@@ -125495,10 +126399,10 @@ function startAgentController(store2, api2) {
         if (chunk.status === "running") emitActivity(threadId, "Reviewing changes\u2026");
         break;
       }
-      case "model_comparison": {
-        setThreadComparison(store2, threadId, chunk.comparison);
-        if (chunk.comparison.status === "running") {
-          emitActivity(threadId, "Comparing models\u2026");
+      case "review_report": {
+        setThreadReviewReport(store2, threadId, chunk.report);
+        if (chunk.report.status === "running") {
+          emitActivity(threadId, "Reviewing changes\u2026");
         }
         break;
       }
@@ -125522,6 +126426,7 @@ function startAgentController(store2, api2) {
         state.delete(threadId);
         pendingTurn.delete(threadId);
         setThreadStatus(store2, threadId, "idle");
+        maybeRenameThreadBranch(store2, api2, threadId);
         store2.emit("agent_activity", threadId, null);
         if (threadId === store2.getState().activeThreadId) {
           void syncThreadGitBranchAfterShell(store2, api2, threadId);
