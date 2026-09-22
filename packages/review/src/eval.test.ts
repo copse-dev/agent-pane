@@ -140,6 +140,33 @@ describe('review eval scoring', () => {
     assert.equal(claimMatchesSignals('displayName returns null', defect.claimSignals), false)
   })
 
+  it('matches semantic signal words inside code identifiers', () => {
+    const signals = [
+      ['generatedImage', 'generated image'],
+      ['kind'],
+      ['screenshot'],
+      ['thumbnail', 'reading-size', 'reading size', 'layout'],
+    ]
+    assert.equal(
+      claimMatchesSignals(
+        'generatedImage omits the kind field that screenshotImage supplies, so it takes the thumbnail branch',
+        signals,
+      ),
+      true,
+    )
+    assert.equal(
+      claimMatchesSignals(
+        'generated_image omits kind supplied by screenshot_image and takes the thumbnail branch',
+        signals,
+      ),
+      true,
+    )
+    assert.equal(
+      claimMatchesSignals('generatedImage omits kind and takes the thumbnail branch', signals),
+      false,
+    )
+  })
+
   it('scores surfaced findings only and cannot inflate hits with duplicates', () => {
     const hitA = finding({ id: '1', verdict: { status: 'confirmed', reason: 'r' } })
     const hitB = finding({
