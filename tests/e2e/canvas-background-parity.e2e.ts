@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { $, $$, browser } from '@wdio/globals'
 import { PNG } from 'pngjs'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
-import { waitForPromptReady } from './helpers.ts'
+import { waitForAgentIdle, waitForPromptReady } from './helpers.ts'
 import {
   E2E_SCREENSHOT_DIR,
   prepareE2eScreenshot,
@@ -122,7 +122,7 @@ async function pinPreviewRollupOpen(expectedTitle: string): Promise<void> {
 
 async function renderCanvas(prompt: string, expectedToolCount: number): Promise<void> {
   const explicit = prompt.includes('explicit')
-  await prepareMockToolTurn(
+  const scenario = await prepareMockToolTurn(
     prompt,
     {
       name: CANVAS_TOOL,
@@ -141,14 +141,14 @@ async function renderCanvas(prompt: string, expectedToolCount: number): Promise<
           document.querySelectorAll('.msg-assistant > .message-body > .message-text'),
         ).filter((message) => message.textContent?.includes('The canvas preview is ready.')).length
         return (
-          !document.querySelector('.submit-btn')?.classList.contains('with-stop') &&
           document.querySelectorAll('.tool-card[data-tool-id][data-status="done"]').length ===
-            count &&
-          completedReplies >= count
+            count && completedReplies >= count
         )
       }, expectedToolCount),
     { timeout: 30_000, timeoutMsg: 'expected the canvas render turn to finish' },
   )
+  await waitForAgentIdle(30_000)
+  await scenario.assertComplete()
   // The final reply replaces the running transcript and restores the rollup's
   // collapsed state. Wait for that repaint above, then open the completed tool;
   // otherwise the preview can disappear between its pixel check and capture.

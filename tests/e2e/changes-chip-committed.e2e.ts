@@ -58,6 +58,13 @@ describe('Changes chip includes committed branch work', () => {
     writeFileSync(join(root, 'example.txt'), 'one\ntwo\nthree\n')
     await expect($('.follow-up-bubble-changes .follow-up-stat-add')).toHaveText('+3')
     git('commit', '-qam', 'Commit remaining edit')
+    // Linux sandbox workers briefly materialize protected paths as mount
+    // points. Keep the clean-checkout assertion, but allow their cleanup to
+    // finish before inspecting the app's committed-change view.
+    await browser.waitUntil(() => git('status', '--porcelain') === '', {
+      timeout: 15_000,
+      timeoutMsg: 'expected the checkout to be clean after commit and sandbox worker cleanup',
+    })
     assert.equal(git('status', '--porcelain'), '')
 
     // The commit's watcher notification replaces this live follow-up row. A

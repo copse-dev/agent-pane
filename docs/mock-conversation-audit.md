@@ -345,5 +345,11 @@ keeps streaming store updates from replacing the sidebar row between WebDriver
 locating and clicking it. The test releases the response after verifying that
 the real scheduled prompt opened, then checks the completed conversation.
 
+Canvas and browser fixtures wait for the actual reply, current idle state, and
+scenario completion. The obsolete submit-button class could report idle before
+a turn started, allowing a later tool request to replace a running scenario.
+The committed-change fixture also waits for Linux sandbox mount-point cleanup
+before requiring the real checkout to be clean.
+
 The broad provider and fixture changes require the full Electron CI tier before
 merge. The focused runs above supplement that gate rather than replacing it.
