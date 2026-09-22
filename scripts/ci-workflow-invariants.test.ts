@@ -838,7 +838,7 @@ describe('Copse Reviewer workflow invariants', () => {
     }
   })
 
-  it('samples at most one recent same-repository PR and has an explicit opt-out', () => {
+  it('samples at most one recent same-repository PR, including drafts, and has an explicit opt-out', () => {
     assert.match(nightlyWorkflow, /^ {2}schedule:$/m)
     assert.match(nightlyWorkflow, /^ {2}workflow_dispatch:$/m)
     assert.match(nightlyWorkflow, /pull\.head\.repo\?\.full_name === `\$\{owner\}\/\$\{repo\}`/)
@@ -846,6 +846,8 @@ describe('Copse Reviewer workflow invariants', () => {
     assert.match(nightlyWorkflow, /!labels\.includes\('copse-review'\)/)
     assert.match(nightlyWorkflow, /!labels\.includes\('copse-review-skip'\)/)
     assert.match(nightlyWorkflow, /selected = candidates\[utcDay % candidates\.length\]/)
+    assert.doesNotMatch(nightlyWorkflow, /!pull\.draft/)
+    assert.doesNotMatch(nightlyWorkflow, /selected\.draft/)
     assert.doesNotMatch(nightlyWorkflow, /^ {2}pull_request:/m)
   })
 

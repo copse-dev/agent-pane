@@ -188,12 +188,13 @@ one correctness lens, at most 12 tool-using steps and at most three challenged f
 Review context is secret-redacted before it leaves the runner, but it does leave GitHub for
 the configured model endpoint.
 
-`.github/workflows/review-nightly.yml` samples at most one recent, non-draft branch from
-this repository each night (already-labelled PRs, generated screenshot-review PRs and
-`copse-review-skip` are excluded), using the same secret-free Stage 0 / read-only findings
-split. It can also be dispatched for a specific same-repository PR. Both paths remain
-advisory and retain the full findings JSON and SARIF for 30 days so latency, token use and
-human adjudication can be collected before any proposal to make the reviewer required.
+`.github/workflows/review-nightly.yml` samples at most one recent branch from this repository
+each night, including drafts because that is where most active Copse work lives
+(already-labelled PRs, generated screenshot-review PRs and `copse-review-skip` are excluded),
+using the same secret-free Stage 0 / read-only findings split. It can also be dispatched for a
+specific same-repository PR, draft or otherwise. Both paths remain advisory and retain the full
+findings JSON and SARIF for 30 days so latency, token use and human adjudication can be collected
+before any proposal to make the reviewer required.
 
 The CLI discovers the standard host pnpm store (or the absolute
 `npm_config_store_dir` / `PNPM_HOME` environment setting) without running pnpm
