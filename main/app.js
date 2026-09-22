@@ -83550,15 +83550,26 @@ async function attachWorkspacePath(path, handlers3, api2, workspaceRoot, owner) 
   }
   if (!owner) return;
   try {
+    const imageMime = isRasterImagePath(name) ? imageMimeType(name) : null;
+    if (imageMime) {
+      const dataUrl = await api2.fs.readImage(owner.projectId, owner.threadId, path);
+      handlers3.attachImage(dataUrl, imageMime);
+      return;
+    }
     const content = await api2.fs.readFile(owner.projectId, owner.threadId, path);
     handlers3.attachFile({ path: relativeWorkspacePath(path, workspaceRoot) || path, content });
   } catch {
   }
 }
 async function attachDroppedFile(file2, handlers3, api2, workspaceRoot, owner = null) {
-  if (file2.type.startsWith("image/")) {
+  const imageMime = file2.type.startsWith("image/") ? file2.type : imageMimeType(file2.name);
+  if (imageMime) {
     const dataUrl = await readAsDataUrl(file2);
-    handlers3.attachImage(dataUrl, file2.type);
+    const separator = dataUrl.indexOf(",");
+    handlers3.attachImage(
+      separator === -1 ? dataUrl : `data:${imageMime};base64,${dataUrl.slice(separator + 1)}`,
+      imageMime
+    );
     return;
   }
   if (isVideoFile(file2)) {
@@ -83635,6 +83646,7 @@ var init_handle_file_drop = __esm({
     init_video_media();
     init_archive_media();
     init_unknown_value3();
+    init_image_path();
     WORKSPACE_PATH_MIME = "application/x-copse-panel-path";
   }
 });
@@ -83948,7 +83960,7 @@ function matchesQuery(label, query) {
   return label.toLowerCase().includes(query.toLowerCase());
 }
 function initMentionPicker(opts) {
-  const { input: input2, inputBar, store: store2, api: api2, onAttach, onAttachThread, onAttachShell } = opts;
+  const { input: input2, inputBar, store: store2, api: api2, onAttach, onAttachImage, onAttachThread, onAttachShell } = opts;
   const picker = document.createElement("div");
   picker.className = "mention-picker";
   picker.setAttribute("role", "listbox");
@@ -84040,11 +84052,13 @@ function initMentionPicker(opts) {
     try {
       const { activeProjectId, activeThreadId } = store2.getState();
       if (!activeProjectId || !activeThreadId) return;
-      const content = await api2.fs.readFile(activeProjectId, activeThreadId, item.path);
+      const imageMime = isRasterImagePath(item.path) ? imageMimeType(item.path) : null;
+      const content = imageMime ? await api2.fs.readImage(activeProjectId, activeThreadId, item.path) : await api2.fs.readFile(activeProjectId, activeThreadId, item.path);
       const current = store2.getState();
       if (current.activeProjectId !== activeProjectId || current.activeThreadId !== activeThreadId)
         return;
-      onAttach({ path: item.path, content });
+      if (imageMime) onAttachImage(content, imageMime);
+      else onAttach({ path: item.path, content });
     } catch {
     }
     removeMentionText();
@@ -84100,6 +84114,7 @@ var init_mention_picker = __esm({
     init_attachment_icons();
     init_shell_catalog();
     init_read_terminal();
+    init_image_path();
     MAX_THREADS = 5;
   }
 });
@@ -88996,6 +89011,7 @@ ${description}
     store: store2,
     api: api2,
     onAttach: addChip,
+    onAttachImage: addImageChip,
     onAttachThread: addThreadChip,
     onAttachShell: addShellChip
   });
