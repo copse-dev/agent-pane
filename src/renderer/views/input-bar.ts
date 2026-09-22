@@ -2373,8 +2373,10 @@ export function mountInputBar(
   const unsubs = [
     // Main fires this after `initSkillsRegistry` (including the background
     // rescan on `workspace:set`). Refresh the cache so `/checkup` and friends
-    // are visible to context estimates before the next picker open/submit.
+    // are visible to context estimates and to a slash picker that is already
+    // open while discovery finishes (#2948).
     api.agent.onRefreshContextEstimate(() => {
+      skillPicker.refresh()
       refreshSkillsCache()
       scheduleContextEstimate(0)
     }),
@@ -2519,7 +2521,7 @@ export function mountInputBar(
       portraitPanelControls.destroy()
       branchControl.destroy()
       indexStatusChip.destroy()
-      skillPicker()
+      skillPicker.destroy()
     },
   }
 }

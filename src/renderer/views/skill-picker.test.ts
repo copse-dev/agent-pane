@@ -143,6 +143,42 @@ describe('skill picker', () => {
     assert.equal(picker.hidden, true)
   })
 
+  it('refreshes an open slash query when skill discovery finishes', async () => {
+    const inputBar = document.createElement('div')
+    const input = mountComposerEditor()
+    inputBar.append(input.el)
+    document.body.append(inputBar)
+    let invocables: Array<{ name: string; description: string; kind: 'skill' }> = []
+    initSkillPicker({
+      input,
+      inputBar,
+      listInvocables: async () => invocables,
+    })
+
+    input.value = '/demo'
+    input.setSelectionRange(input.value.length, input.value.length)
+    input.el.dispatchEvent(new Event('input', { bubbles: true }))
+    await settle()
+
+    const picker = inputBar.querySelector<HTMLElement>('.skill-picker')
+    assert.ok(picker)
+    assert.equal(picker.hidden, true, 'the initial empty registry has no matching row')
+
+    invocables = [
+      {
+        name: 'demo-skill',
+        description: 'Discovered after the composer mounted',
+        kind: 'skill',
+      },
+    ]
+    window.dispatchEvent(new Event('copse:skills-changed'))
+    await settle()
+
+    assert.equal(input.value, '/demo', 'refreshing does not rewrite the active query')
+    assert.equal(picker.hidden, false)
+    assert.equal(picker.querySelector('.skill-item-name')?.textContent, '/demo-skill')
+  })
+
   it('offers agents alongside skills and marks which is which', async () => {
     const inputBar = document.createElement('div')
     const input = mountComposerEditor()
