@@ -1,21 +1,24 @@
-import { mkdirSync } from 'node:fs'
-import { join } from 'node:path'
+import { execFileSync } from 'node:child_process'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedComposerBranchWarningFixture } from './helpers/seed-config.ts'
-import { E2E_SCREENSHOT_DIR, prepareE2eScreenshot } from './helpers/screenshot.ts'
+import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { setComposerValue } from './helpers/composer.ts'
+import { seedBranchWorkspace } from './helpers/branch-workspace.ts'
+import { writeE2eEnv } from './helpers/e2e-env.ts'
 
 describe('composer branch warning', () => {
   let seed: ReturnType<typeof seedComposerBranchWarningFixture>
 
   before(async () => {
-    mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    seed = seedComposerBranchWarningFixture(process.cwd())
+    const root = seedBranchWorkspace()
+    seed = seedComposerBranchWarningFixture(root)
+    execFileSync('git', ['branch', seed.mismatchBranch], { cwd: root })
     await browser.reloadSession()
   })
 
   after(() => {
+    writeE2eEnv({})
     resetUserData()
   })
 
@@ -32,7 +35,6 @@ describe('composer branch warning', () => {
     )
     await expect(warning.$('.composer-branch-checkout-btn')).toHaveText('Check out')
 
-    await prepareE2eScreenshot()
-    await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'composer-branch-warning-checkout.png'))
+    await saveAppScreenshot('composer-branch-warning-checkout.png')
   })
 })
