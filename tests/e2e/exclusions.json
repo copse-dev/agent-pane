@@ -46,17 +46,6 @@
       "markers": ["wdio.ci.conf.ts: exclude"]
     },
     {
-      "spec": "tests/e2e/composer-branch-warning.e2e.ts",
-      "category": "quarantine",
-      "reason": "Excluded by the CI config among branch/environment-dependent specs; individual cause and current reproducibility need review.",
-      "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
-      "ownerRole": "Renderer and Git maintainer (person assignment pending in #2719)",
-      "recordedOn": "2026-09-20",
-      "reviewBy": "2026-09-27",
-      "coverage": "No equivalent full runtime evidence is established by this inventory.",
-      "markers": ["wdio.ci.conf.ts: exclude"]
-    },
-    {
       "spec": "tests/e2e/context-wheel.e2e.ts",
       "category": "quarantine",
       "reason": "Both suites skip in CI; source comments report historical runner memory/session failure with the heavy seeded fixture.",
@@ -91,28 +80,6 @@
       "reviewBy": "2026-09-27",
       "coverage": "No equivalent full runtime evidence is established by this inventory.",
       "markers": ["wdio.ci.conf.ts: exclude"]
-    },
-    {
-      "spec": "tests/e2e/footer-branch-picker.e2e.ts",
-      "category": "quarantine",
-      "reason": "Excluded by CI config among branch/environment-dependent specs; individual cause needs current review.",
-      "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
-      "ownerRole": "Renderer and Git maintainer (person assignment pending in #2719)",
-      "recordedOn": "2026-09-20",
-      "reviewBy": "2026-09-27",
-      "coverage": "No equivalent full runtime evidence is established by this inventory.",
-      "markers": ["wdio.ci.conf.ts: exclude"]
-    },
-    {
-      "spec": "tests/e2e/footer-branch-status.e2e.ts",
-      "category": "quarantine",
-      "reason": "Whole spec is excluded by CI config; the mismatch suite also has an in-spec CI skip.",
-      "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
-      "ownerRole": "Renderer and Git maintainer (person assignment pending in #2719)",
-      "recordedOn": "2026-09-20",
-      "reviewBy": "2026-09-27",
-      "coverage": "src/renderer/views/footer-branch-status.test.ts covers component behavior, not the complete Electron/Git fixture.",
-      "markers": ["describeSkipInCi: footer branch status mismatch", "wdio.ci.conf.ts: exclude"]
     },
     {
       "spec": "tests/e2e/git-signing-helper-approval.e2e.ts",
