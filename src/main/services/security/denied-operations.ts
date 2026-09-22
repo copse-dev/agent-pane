@@ -53,6 +53,22 @@ class DeniedOperationRegistry {
 export const deniedOperations = new DeniedOperationRegistry()
 
 /**
+ * Remember output-derived denial evidence only after its escalation was
+ * approved. Keeping the approval and mutation in one helper prevents a declined
+ * prompt from changing how the next invocation is routed.
+ */
+export function recordApprovedDeniedOperation(
+  approved: boolean,
+  threadId: string | null,
+  operation: string,
+  command: string,
+  advice: string,
+): void {
+  if (!approved) return
+  deniedOperations.record(threadId, operation, command, advice)
+}
+
+/**
  * Advice for `operation` if — and only if — this exact operation was already
  * confirmed denied earlier in this thread. Returns null for any other
  * operation, including a different action on the same command/tool (e.g. a

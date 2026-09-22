@@ -8,6 +8,7 @@ import {
   SANDBOX_DENIAL_CACHE_SKIP_NOTE,
   SANDBOX_DENIAL_RETRY_NOTE,
   sandboxDenialRetryClassification,
+  sandboxForwardEscalationMaySkipApproval,
   sandboxRetryMaySkipApproval,
 } from './sandbox-denial-signatures.ts'
 
@@ -54,21 +55,14 @@ describe('classifySandboxDenial (issue #1436)', () => {
 describe('sandboxDenialRetryClassification (issue #1436 point 1)', () => {
   const fetchOutput = "fatal: unable to access '...': CONNECT tunnel failed, response 403"
 
-  it('classifies a matching denial when the command was not already run with expects_sandbox_block', () => {
-    const match = sandboxDenialRetryClassification(fetchOutput, 'git fetch origin main', false)
+  it('classifies a matching denial from a sandbox-contained attempt', () => {
+    const match = sandboxDenialRetryClassification(fetchOutput, 'git fetch origin main')
     assert.ok(match)
     assert.equal(match.operation, 'git fetch')
   })
 
-  it('does not retry a command already run with expects_sandbox_block', () => {
-    // The escalation already happened once for this exact command; there is
-    // nothing left to retry into, so classification must not fire again.
-    assert.equal(sandboxDenialRetryClassification(fetchOutput, 'git fetch origin main', true), null)
-  })
-
-  it('returns null for an unrecognised failure regardless of expects_sandbox_block', () => {
-    assert.equal(sandboxDenialRetryClassification('boom', 'run-tests.sh', false), null)
-    assert.equal(sandboxDenialRetryClassification('boom', 'run-tests.sh', true), null)
+  it('returns null for an unrecognised failure', () => {
+    assert.equal(sandboxDenialRetryClassification('boom', 'run-tests.sh'), null)
   })
 })
 
@@ -89,6 +83,24 @@ describe('sandbox retry approval boundary', () => {
   it('requires ordinary runs to ask for approval for either evidence kind', () => {
     assert.equal(sandboxRetryMaySkipApproval('runner', false, false), false)
     assert.equal(sandboxRetryMaySkipApproval('signature', false, false), false)
+  })
+
+  it('does not let Guarded YOLO turn a cached forgeable denial into an automatic escape', () => {
+    assert.equal(sandboxForwardEscalationMaySkipApproval('denial-cache', true, false), false)
+  })
+
+  it('preserves Guarded YOLO auto-escalation for an explicit model hint', () => {
+    assert.equal(sandboxForwardEscalationMaySkipApproval('model-hint', true, false), true)
+  })
+
+  it('can advance either source inside the same unattended container', () => {
+    assert.equal(sandboxForwardEscalationMaySkipApproval('model-hint', false, true), true)
+    assert.equal(sandboxForwardEscalationMaySkipApproval('denial-cache', false, true), true)
+  })
+
+  it('requires ordinary runs to ask for approval for either forward source', () => {
+    assert.equal(sandboxForwardEscalationMaySkipApproval('model-hint', false, false), false)
+    assert.equal(sandboxForwardEscalationMaySkipApproval('denial-cache', false, false), false)
   })
 })
 

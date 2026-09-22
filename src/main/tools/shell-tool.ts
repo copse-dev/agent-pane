@@ -25,9 +25,13 @@ import {
   prefixWithSandboxRetryNote,
   SANDBOX_DENIAL_RETRY_NOTE,
   sandboxDenialRetryClassification,
+  sandboxForwardEscalationMaySkipApproval,
   sandboxRetryMaySkipApproval,
 } from '../services/security/sandbox-denial-signatures.ts'
-import { cachedDenialAdvice, deniedOperations } from '../services/security/denied-operations.ts'
+import {
+  cachedDenialAdvice,
+  recordApprovedDeniedOperation,
+} from '../services/security/denied-operations.ts'
 import {
   promptExpectedSandboxBlock,
   promptInstallSocketFirewall,
@@ -233,6 +237,16 @@ interface UnsandboxedRetryResult {
   retryNote: string | null
 }
 
+interface UnsandboxedRetryOptions {
+  readonly guardedYolo: boolean
+  readonly unattendedContainer: boolean
+  readonly readGrantApplied: boolean
+  readonly outsideRootPath: string | null
+  /** Whether the failed attempt itself was already run outside the project sandbox. */
+  readonly ranOutsideSandbox: boolean
+  readonly threadId: string | null
+}
+
 async function maybeRetryUnsandboxed(
   command: string,
   cwd: string,
@@ -240,16 +254,13 @@ async function maybeRetryUnsandboxed(
   signal: AbortSignal,
   result: ShellRunResult,
   env: NodeJS.ProcessEnv,
-  guardedYolo: boolean,
-  unattendedContainer: boolean,
-  readGrantApplied: boolean,
-  outsideRootPath: string | null,
-  expectsSandboxBlock: boolean,
-  threadId: string | null,
+  options: UnsandboxedRetryOptions,
 ): Promise<UnsandboxedRetryResult | 'declined' | null> {
   if (!isProjectSandboxEnabled()) return null
-  if (!shellSandboxFailureShouldOfferUnsandboxedRetry(command, cwd)) {
-    if (outsideRootPath !== null) recordRetryWithheld(RETRY_WITHHELD_REASONS.notEligible)
+  if (!shellSandboxFailureShouldOfferUnsandboxedRetry(command, cwd, options.ranOutsideSandbox)) {
+    if (options.outsideRootPath !== null && !options.ranOutsideSandbox) {
+      recordRetryWithheld(RETRY_WITHHELD_REASONS.notEligible)
+    }
     return null
   }
   // Decide primarily from runner-side signals (recorded sandbox violations / wrapper
@@ -267,23 +278,38 @@ async function maybeRetryUnsandboxed(
   // approval prompt below, never skip it — see sandbox-denial-signatures.ts.
   const signatureMatch = runnerDetection.likely
     ? null
-    : sandboxDenialRetryClassification(result.output, command, expectsSandboxBlock)
+    : sandboxDenialRetryClassification(result.output, command)
   const detection = runnerDetection.likely
     ? runnerDetection
     : signatureMatch
       ? { likely: true, reasons: [signatureMatch.advice] }
       : runnerDetection
   if (!detection.likely) {
-    if (outsideRootPath !== null) recordRetryWithheld(RETRY_WITHHELD_REASONS.noRunnerEvidence)
+    if (options.outsideRootPath !== null) {
+      recordRetryWithheld(RETRY_WITHHELD_REASONS.noRunnerEvidence)
+    }
     return null
-  }
-  if (signatureMatch) {
-    deniedOperations.record(threadId, signatureMatch.operation, command, signatureMatch.advice)
   }
   const evidence = runnerDetection.likely ? 'runner' : 'signature'
   const approved =
-    sandboxRetryMaySkipApproval(evidence, guardedYolo, unattendedContainer) ||
-    (await promptUnsandboxedShell(command, detection.reasons, signal, { readGrantApplied }))
+    sandboxRetryMaySkipApproval(evidence, options.guardedYolo, options.unattendedContainer) ||
+    (await promptUnsandboxedShell(command, detection.reasons, signal, {
+      readGrantApplied: options.readGrantApplied,
+      requireInteractiveApproval: evidence === 'signature',
+    }))
+  if (signatureMatch) {
+    // The output signature is forgeable. It becomes useful cache evidence only
+    // after a person approved the corresponding escalation (or the retry stays
+    // inside an attested unattended container). A decline must leave no state
+    // that changes how the next attempt is routed.
+    recordApprovedDeniedOperation(
+      approved,
+      options.threadId,
+      signatureMatch.operation,
+      command,
+      signatureMatch.advice,
+    )
+  }
   if (!approved) return 'declined'
   const retryResult = await runShellOnce(command, cwd, timeout_ms, signal, true, env)
   return { result: retryResult, retryNote: signatureMatch ? SANDBOX_DENIAL_RETRY_NOTE : null }
@@ -361,7 +387,7 @@ export const runShellTool = defineTool({
     'Output is streamed to the conversation. ' +
     'Commands contained within the sandbox auto-run; network or outside-workspace access (e.g. gh, curl, git push) prompts for approval and runs outside the sandbox when the macOS project sandbox is active. ' +
     'If a sandbox-contained command fails because the sandbox blocks filesystem/process access (e.g. Playwright), the user may approve running it once outside the sandbox. ' +
-    'A failure recognized as one of a known set of sandbox denials (e.g. gh reading its own config, Socket Firewall staging its binary) is retried once automatically with elevation, subject to the same approval as expects_sandbox_block; the result is prefixed with a one-line note when that happens, and the denial is remembered for that specific operation for the rest of this thread — a denied `git fetch` never implies `git push` or anything else is blocked too. ' +
+    'A sandbox-contained failure recognized as one of a known set of sandbox denials (e.g. gh reading its own config, Socket Firewall staging its binary) may be retried once with elevation, subject to the same approval as expects_sandbox_block; the result is prefixed with a one-line note when that happens, and the denial is remembered for that specific operation for the rest of this thread — a denied `git fetch` never implies `git push` or anything else is blocked too. ' +
     'If you already expect a command to need the network or files outside the workspace (e.g. gh, cloud CLIs), set expects_sandbox_block so the user is asked up front instead of after a failed sandboxed attempt. ' +
     'Do not read credential files — .env and its variants, ~/.ssh, ~/.aws, keychains — inside or outside the workspace; ask the user for the value you need instead. ' +
     'Package-manager installs (npm/pnpm/yarn/pip/uv/cargo/npx) are automatically run through Socket Firewall to scan for malicious packages, with install lifecycle scripts disabled. ' +
@@ -491,11 +517,18 @@ export const runShellTool = defineTool({
     if (!outsideSandbox && (expects_sandbox_block === true || cachedAdvice !== null)) {
       const escalation = shellExpectedBlockEscalation(command, cwd, sandboxEnabled)
       if (escalation.eligible) {
-        const reasons = cachedAdvice ? [cachedAdvice, ...escalation.reasons] : escalation.reasons
+        const reasons =
+          cachedAdvice === null ? escalation.reasons : [cachedAdvice, ...escalation.reasons]
+        const escalationSource = cachedAdvice === null ? 'model-hint' : 'denial-cache'
         if (
-          guardedYolo ||
-          unattendedContainer ||
-          (await promptExpectedSandboxBlock(command, reasons, signal))
+          sandboxForwardEscalationMaySkipApproval(
+            escalationSource,
+            guardedYolo,
+            unattendedContainer,
+          ) ||
+          (await promptExpectedSandboxBlock(command, reasons, signal, {
+            requireInteractiveApproval: escalationSource === 'denial-cache',
+          }))
         ) {
           outsideSandbox = true
           skippedProbeViaCache = cachedAdvice !== null
@@ -564,12 +597,14 @@ export const runShellTool = defineTool({
           signal,
           result,
           childEnv,
-          guardedYolo,
-          unattendedContainer,
-          readGrantTargets !== null,
-          cdTarget,
-          expects_sandbox_block === true,
-          threadId,
+          {
+            guardedYolo,
+            unattendedContainer,
+            readGrantApplied: readGrantTargets !== null,
+            outsideRootPath: cdTarget,
+            ranOutsideSandbox: outsideSandbox,
+            threadId,
+          },
         )
         if (retry === 'declined') return 'User declined to run outside the sandbox.'
         if (retry) {

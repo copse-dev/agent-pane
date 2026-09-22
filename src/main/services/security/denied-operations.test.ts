@@ -1,6 +1,10 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { cachedDenialAdvice, deniedOperations } from './denied-operations.ts'
+import {
+  cachedDenialAdvice,
+  deniedOperations,
+  recordApprovedDeniedOperation,
+} from './denied-operations.ts'
 
 describe('deniedOperations (issue #1436 point 2)', () => {
   it('has no cached advice before anything was recorded', () => {
@@ -50,5 +54,28 @@ describe('deniedOperations (issue #1436 point 2)', () => {
     deniedOperations.record(null, 'git fetch', 'git fetch origin main', 'denied')
     assert.equal(cachedDenialAdvice('thread-d', 'git fetch'), null)
     assert.ok(cachedDenialAdvice(null, 'git fetch'))
+  })
+
+  it('does not remember forgeable denial evidence when escalation was declined', () => {
+    const threadId = 'thread-declined'
+    deniedOperations.clearThread(threadId)
+    recordApprovedDeniedOperation(
+      false,
+      threadId,
+      'git fetch',
+      'git fetch origin main',
+      'network denied',
+    )
+    assert.equal(cachedDenialAdvice(threadId, 'git fetch'), null)
+
+    recordApprovedDeniedOperation(
+      true,
+      threadId,
+      'git fetch',
+      'git fetch origin main',
+      'network denied',
+    )
+    assert.match(cachedDenialAdvice(threadId, 'git fetch') ?? '', /Already confirmed denied/)
+    deniedOperations.clearThread(threadId)
   })
 })

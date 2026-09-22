@@ -127,22 +127,20 @@ export function classifySandboxDenial(
 }
 
 /**
- * Whether a failed sandboxed command should be retried once with elevation
- * (issue #1436 point 1): a known signature matched, AND this attempt was not
- * already run with `expects_sandbox_block` — that flag already pulled the
- * escalation forward once, so a command that still fails with the same
- * signature has nothing left to retry into.
+ * Whether a failed sandbox-contained command matched a known denial signature
+ * and should be considered for one elevated retry (issue #1436 point 1). The
+ * caller owns the attempt-provenance guard: an already-unsandboxed failure must
+ * never reach this classifier as a retry candidate.
  */
 export function sandboxDenialRetryClassification(
   output: string,
   command: string,
-  alreadyExpectedSandboxBlock: boolean,
 ): SandboxDenialClassification | null {
-  if (alreadyExpectedSandboxBlock) return null
   return classifySandboxDenial(output, command)
 }
 
 export type SandboxRetryEvidence = 'runner' | 'signature'
+export type SandboxForwardEscalationSource = 'model-hint' | 'denial-cache'
 
 /**
  * Whether a retry may bypass its approval prompt in an explicitly unattended
@@ -158,6 +156,21 @@ export function sandboxRetryMaySkipApproval(
   unattendedContainer: boolean,
 ): boolean {
   return unattendedContainer || (evidence === 'runner' && guardedYolo)
+}
+
+/**
+ * Whether an up-front escalation may bypass approval. Guarded YOLO may trust the
+ * model's explicit hint, but a remembered denial came from the same forgeable
+ * command output as a first reactive signature match. Reusing that cache must
+ * therefore preserve the original approval boundary. An unattended container
+ * may advance either source because the command stays in its disposable guest.
+ */
+export function sandboxForwardEscalationMaySkipApproval(
+  source: SandboxForwardEscalationSource,
+  guardedYolo: boolean,
+  unattendedContainer: boolean,
+): boolean {
+  return unattendedContainer || (source === 'model-hint' && guardedYolo)
 }
 
 /** One-line, greppable note so a signature-triggered retry stays visible in the transcript. */

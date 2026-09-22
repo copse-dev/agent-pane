@@ -459,9 +459,10 @@ export async function promptUnsandboxedShell(
   command: string,
   reasons: string[],
   signal?: AbortSignal,
-  opts: { readGrantApplied?: boolean } = {},
+  opts: { readGrantApplied?: boolean; requireInteractiveApproval?: boolean } = {},
 ): Promise<boolean> {
-  const forceAsk = resolveToolPermission('run_shell')?.policy === 'ask'
+  const forceAsk =
+    opts.requireInteractiveApproval === true || resolveToolPermission('run_shell')?.policy === 'ask'
   if (!forceAsk && autoApproveShell(command, 'external')) return true
   // A command that failed inside the sandbox because it reads a file in the
   // user's home directory is the same read-access question as the up-front gate,
@@ -487,8 +488,10 @@ export async function promptExpectedSandboxBlock(
   command: string,
   reasons: string[],
   signal?: AbortSignal,
+  opts: { requireInteractiveApproval?: boolean } = {},
 ): Promise<boolean> {
-  const forceAsk = resolveToolPermission('run_shell')?.policy === 'ask'
+  const forceAsk =
+    opts.requireInteractiveApproval === true || resolveToolPermission('run_shell')?.policy === 'ask'
   if (!forceAsk && autoApproveShell(command, 'external')) return true
   const { approved } = await requestApproval(
     {
