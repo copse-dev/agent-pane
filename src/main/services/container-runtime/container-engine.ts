@@ -12,7 +12,7 @@
  * readable recovery path instead of a raw `docker build` socket error, and so
  * a ready Apple container is named as present-but-unsupported on this path.
  */
-import { spawnSync } from 'node:child_process'
+import { execFile } from 'node:child_process'
 
 export type ThreadContainerEngine = 'docker'
 
@@ -22,7 +22,7 @@ export interface CommandProbeResult {
 }
 
 export interface ContainerEngineProbe {
-  probe(command: string, args: readonly string[]): CommandProbeResult
+  probe(command: string, args: readonly string[]): Promise<CommandProbeResult>
 }
 
 export interface ResolveThreadContainerEngineOptions {
@@ -32,25 +32,33 @@ export interface ResolveThreadContainerEngineOptions {
   probe?: ContainerEngineProbe
 }
 
-function defaultProbe(command: string, args: readonly string[]): CommandProbeResult {
-  const result = spawnSync(command, args, { encoding: 'utf8' })
-  const detail = [result.stderr, result.stdout, result.error?.message]
-    .map((value) => value?.trim())
-    .find((value) => value !== undefined && value !== '')
-  return {
-    ok: result.status === 0 && result.error === undefined,
-    detail: detail ?? `${command} exited with status ${String(result.status)}`,
-  }
+function defaultProbe(command: string, args: readonly string[]): Promise<CommandProbeResult> {
+  return new Promise((resolve) => {
+    execFile(
+      command,
+      [...args],
+      { encoding: 'utf8', maxBuffer: 64 * 1024, timeout: 10_000 },
+      (error, stdout, stderr) => {
+        const detail = [stderr, stdout, error?.message]
+          .map((value) => value?.trim())
+          .find((value) => value !== undefined && value !== '')
+        resolve({
+          ok: error === null,
+          detail: detail ?? `${command} completed without diagnostic output`,
+        })
+      },
+    )
+  })
 }
 
 const DEFAULT_PROBE: ContainerEngineProbe = { probe: defaultProbe }
 
-function probeDocker(probe: ContainerEngineProbe): CommandProbeResult {
+function probeDocker(probe: ContainerEngineProbe): Promise<CommandProbeResult> {
   return probe.probe('docker', ['info', '--format', '{{.ServerVersion}}'])
 }
 
-function probeAppleContainer(probe: ContainerEngineProbe): CommandProbeResult {
-  const version = probe.probe('container', ['--version'])
+async function probeAppleContainer(probe: ContainerEngineProbe): Promise<CommandProbeResult> {
+  const version = await probe.probe('container', ['--version'])
   if (!version.ok) return version
   return probe.probe('container', ['system', 'status'])
 }
@@ -70,13 +78,13 @@ function compactDetail(detail: string): string {
  * Throws before image build when the daemon is down. Mentions Apple container
  * when it is ready so the failure is not mistaken for "no engines at all".
  */
-export function requireDockerForThreadContainer(
+export async function requireDockerForThreadContainer(
   options: ResolveThreadContainerEngineOptions = {},
-): ThreadContainerEngine {
+): Promise<ThreadContainerEngine> {
   const platform = options.platform ?? process.platform
   const architecture = options.architecture ?? process.arch
   const probe = options.probe ?? DEFAULT_PROBE
-  const docker = probeDocker(probe)
+  const docker = await probeDocker(probe)
   if (docker.ok) return 'docker'
 
   const parts: string[] = [
@@ -86,7 +94,7 @@ export function requireDockerForThreadContainer(
   ]
 
   if (appleHostEligible(platform, architecture)) {
-    const apple = probeAppleContainer(probe)
+    const apple = await probeAppleContainer(probe)
     if (apple.ok) {
       parts.push(
         'Apple container is running on this Mac, but unattended thread runs still require Docker: the guest attestation claims network isolation, pids limits, and default security profiles that Apple container does not expose the same way. Development and eval scripts can use COPSE_CONTAINER_ENGINE=apple; this product path cannot yet.',
@@ -98,9 +106,9 @@ export function requireDockerForThreadContainer(
 }
 
 /** True when `docker info` reaches a daemon (same probe as require). */
-export function dockerDaemonReachable(
+export async function dockerDaemonReachable(
   options: Pick<ResolveThreadContainerEngineOptions, 'probe'> = {},
-): boolean {
+): Promise<boolean> {
   const probe = options.probe ?? DEFAULT_PROBE
-  return probeDocker(probe).ok
+  return (await probeDocker(probe)).ok
 }

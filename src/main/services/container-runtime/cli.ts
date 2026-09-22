@@ -76,7 +76,7 @@ function required(value: string | undefined, what: string): string {
 
 async function main(): Promise<void> {
   const cli = parseCli(process.argv.slice(2))
-  assertThreadContainerEngine()
+  await assertThreadContainerEngine()
   if (cli.has('list')) {
     for (const runtime of await listManagedRuntimes()) {
       console.log(`${runtime.runtimeId}\t${runtime.status}`)

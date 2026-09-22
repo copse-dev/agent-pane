@@ -9,21 +9,21 @@ import {
 
 function probeMap(map: Record<string, boolean | string>): ContainerEngineProbe {
   return {
-    probe(command, args): CommandProbeResult {
+    probe(command, args): Promise<CommandProbeResult> {
       const key = `${command} ${args.join(' ')}`
       const entry = map[key]
-      if (entry === true) return { ok: true, detail: 'ok' }
-      if (entry === false) return { ok: false, detail: `${key} failed` }
-      if (typeof entry === 'string') return { ok: false, detail: entry }
-      return { ok: false, detail: `unexpected probe ${key}` }
+      if (entry === true) return Promise.resolve({ ok: true, detail: 'ok' })
+      if (entry === false) return Promise.resolve({ ok: false, detail: `${key} failed` })
+      if (typeof entry === 'string') return Promise.resolve({ ok: false, detail: entry })
+      return Promise.resolve({ ok: false, detail: `unexpected probe ${key}` })
     },
   }
 }
 
 describe('requireDockerForThreadContainer', () => {
-  it('accepts a reachable Docker daemon', () => {
+  it('accepts a reachable Docker daemon', async () => {
     assert.equal(
-      requireDockerForThreadContainer({
+      await requireDockerForThreadContainer({
         platform: 'darwin',
         architecture: 'arm64',
         probe: probeMap({ 'docker info --format {{.ServerVersion}}': true }),
@@ -32,9 +32,9 @@ describe('requireDockerForThreadContainer', () => {
     )
   })
 
-  it('fails with a recovery path when Docker is down', () => {
-    assert.throws(
-      () =>
+  it('fails with a recovery path when Docker is down', async () => {
+    await assert.rejects(
+      async () =>
         requireDockerForThreadContainer({
           platform: 'linux',
           architecture: 'x64',
@@ -47,9 +47,9 @@ describe('requireDockerForThreadContainer', () => {
     )
   })
 
-  it('names a ready Apple container when Docker is down on Apple silicon', () => {
-    assert.throws(
-      () =>
+  it('names a ready Apple container when Docker is down on Apple silicon', async () => {
+    await assert.rejects(
+      async () =>
         requireDockerForThreadContainer({
           platform: 'darwin',
           architecture: 'arm64',
@@ -63,9 +63,9 @@ describe('requireDockerForThreadContainer', () => {
     )
   })
 
-  it('does not claim Apple support on non-Apple hosts', () => {
-    assert.throws(
-      () =>
+  it('does not claim Apple support on non-Apple hosts', async () => {
+    await assert.rejects(
+      async () =>
         requireDockerForThreadContainer({
           platform: 'darwin',
           architecture: 'x64',
@@ -86,15 +86,15 @@ describe('requireDockerForThreadContainer', () => {
 })
 
 describe('dockerDaemonReachable', () => {
-  it('mirrors the Docker probe', () => {
+  it('mirrors the Docker probe', async () => {
     assert.equal(
-      dockerDaemonReachable({
+      await dockerDaemonReachable({
         probe: probeMap({ 'docker info --format {{.ServerVersion}}': true }),
       }),
       true,
     )
     assert.equal(
-      dockerDaemonReachable({
+      await dockerDaemonReachable({
         probe: probeMap({ 'docker info --format {{.ServerVersion}}': false }),
       }),
       false,

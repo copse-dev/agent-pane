@@ -55,7 +55,7 @@ interface RunDependencies {
    * refuse a start without spawning docker; production uses
    * {@link assertThreadContainerEngine}.
    */
-  assertEngine: () => void
+  assertEngine: () => void | Promise<void>
   /** Force-remove a live run's container; the runner's wait then settles. */
   stop: typeof teardownRuntime
   /**
@@ -348,7 +348,7 @@ export class ContainerRunService {
     ]
     // Decided before Docker is touched: a down daemon (or Apple-only host) must
     // fail here with a recovery path, not mid-build as a raw socket error.
-    this.deps.assertEngine()
+    await this.deps.assertEngine()
 
     const progress: ContainerRunProgress = {
       threadId: request.threadId,
