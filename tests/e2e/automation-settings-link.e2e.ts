@@ -133,7 +133,12 @@ describe('automation setup links', function () {
     const form = row.$('.automation-form')
     await expect(form).toBeDisplayed()
     await expect(row.$('.automation-name-input')).toHaveValue('Docs freshness')
-    await expect(row.$('.automation-cron-input')).toHaveValue('0 9 * * 1-5')
+    await expect(row.$('.automation-cron-input')).not.toExist()
+    await expect(row.$('.automation-repeat-select')).toHaveValue('weekdays')
+    await expect(row.$('.automation-time-input')).toHaveValue('09:00')
+    await expect(row.$('.automation-schedule-summary')).toHaveText(
+      'Every weekday at 09:00 · local time',
+    )
     await form.scrollIntoView({ block: 'center' })
     await saveElementScreenshot('.automation-form', 'automation-setup-link-form.png')
 

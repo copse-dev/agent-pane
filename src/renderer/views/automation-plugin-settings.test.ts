@@ -152,15 +152,27 @@ describe('automation plugin settings detail', () => {
     )
     assert.ok(root.querySelector('.automation-form .model-picker-filter'))
     const name = root.querySelector<HTMLInputElement>('.automation-name-input')
-    const cron = root.querySelector<HTMLInputElement>('.automation-cron-input')
+    const repeat = root.querySelector<HTMLSelectElement>('.automation-repeat-select')
+    const time = root.querySelector<HTMLInputElement>('.automation-time-input')
+    const weeklyDay = root.querySelector<HTMLSelectElement>('.automation-weekly-day-select')
     const prompt = root.querySelector<HTMLTextAreaElement>('.automation-prompt-input')
     const worktreeLimit = root.querySelector<HTMLSelectElement>('.automation-worktree-limit-select')
     const form = root.querySelector<HTMLFormElement>('.automation-form')
-    assert.ok(name && cron && prompt && worktreeLimit && form)
+    assert.ok(name && repeat && time && weeklyDay && prompt && worktreeLimit && form)
+    assert.equal(root.querySelector('.automation-cron-input'), null)
     name.value = 'Nightly review'
-    cron.value = '0 21 * * *'
+    repeat.value = 'weekly'
+    repeat.dispatchEvent(new Event('change'))
+    weeklyDay.value = '4'
+    weeklyDay.dispatchEvent(new Event('change'))
+    time.value = '14:30'
+    time.dispatchEvent(new Event('input'))
     prompt.value = 'Review the diff.'
     worktreeLimit.value = '2'
+    assert.equal(
+      root.querySelector('.automation-schedule-summary')?.textContent,
+      'Every Thursday at 14:30 · local time',
+    )
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     await tick()
 
@@ -169,7 +181,7 @@ describe('automation plugin settings detail', () => {
         projectId: 'project-a',
         input: {
           name: 'Nightly review',
-          cron: '0 21 * * *',
+          cron: '30 14 * * 4',
           prompt: 'Review the diff.',
           model: BEST_VALUE_CHAT_MODEL,
           enabled: true,
@@ -208,8 +220,13 @@ describe('automation plugin settings detail', () => {
       schedule.name,
     )
     assert.equal(
-      root.querySelector<HTMLInputElement>('.automation-cron-input')?.value,
-      schedule.cron,
+      root.querySelector<HTMLSelectElement>('.automation-repeat-select')?.value,
+      'weekdays',
+    )
+    assert.equal(root.querySelector<HTMLInputElement>('.automation-time-input')?.value, '09:00')
+    assert.equal(
+      root.querySelector('.automation-schedule-summary')?.textContent,
+      'Every weekday at 09:00 · local time',
     )
   })
 
@@ -239,7 +256,7 @@ describe('automation plugin settings detail', () => {
       id: 'schedule-a',
       projectId: 'project-a',
       name: 'Morning review',
-      cron: '0 9 * * 1-5',
+      cron: '*/15 9-17 * * 1-5',
       prompt: 'Review the project.',
       model: 'gpt-5.4',
       enabled: true,
@@ -261,10 +278,64 @@ describe('automation plugin settings detail', () => {
       root.querySelector('.automation-form .model-picker-label')?.textContent ?? '',
       /pinned/i,
     )
+    assert.equal(
+      root.querySelector<HTMLSelectElement>('.automation-repeat-select')?.value,
+      'custom',
+    )
+    assert.equal(root.querySelector<HTMLInputElement>('.automation-time-input')?.required, false)
+    assert.equal(root.querySelector<HTMLInputElement>('.automation-time-input')?.disabled, true)
+    assert.match(
+      root.querySelector('.automation-schedule-summary')?.textContent ?? '',
+      /older custom schedule/i,
+    )
+    assert.doesNotMatch(root.textContent, /\*\/15/)
     root
       .querySelector<HTMLFormElement>('.automation-form')
       ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     await tick()
-    assert.equal(upserts[0]?.input.model, 'gpt-5.4')
+    const upsert = upserts[0]
+    assert.ok(upsert)
+    assert.equal(upsert.input.model, 'gpt-5.4')
+    assert.equal(upsert.input.cron, schedule.cron)
+  })
+
+  it('normalizes cron Sunday 7 into the weekly Sunday control', async () => {
+    const schedule: AutomationSchedule = {
+      id: 'schedule-sunday',
+      projectId: 'project-a',
+      name: 'Sunday review',
+      cron: '0 8 * * 7',
+      prompt: 'Review the week.',
+      model: 'gpt-5.4',
+      enabled: true,
+      createdAt: 1,
+      updatedAt: 1,
+    }
+    const { api, upserts } = stubApi([schedule])
+    const store = createStore({
+      activeProjectId: 'project-a',
+      projects: [{ id: 'project-a', path: '/repo/a', name: 'Project A' }],
+    })
+    const root = createAutomationPluginSettings(store, api, true)
+    document.body.append(root)
+    await tick()
+    root.querySelector<HTMLButtonElement>('.automation-row-btn')?.click()
+    await tick()
+
+    assert.equal(
+      root.querySelector<HTMLSelectElement>('.automation-repeat-select')?.value,
+      'weekly',
+    )
+    assert.equal(root.querySelector<HTMLSelectElement>('.automation-weekly-day-select')?.value, '0')
+    assert.equal(
+      root.querySelector('.automation-schedule-summary')?.textContent,
+      'Every Sunday at 08:00 · local time',
+    )
+    root
+      .querySelector<HTMLFormElement>('.automation-form')
+      ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await tick()
+
+    assert.equal(upserts[0]?.input.cron, '0 8 * * 0')
   })
 })
