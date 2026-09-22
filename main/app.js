@@ -43303,10 +43303,12 @@ function mountConfirmDialog() {
   document.body.append(dialog2);
   const queue = [];
   let active2 = null;
+  let confirming = false;
   function finish(confirmed) {
     if (!active2) return;
     const resolve = active2.resolve;
     active2 = null;
+    confirming = false;
     dialog2.close();
     resolve(confirmed);
     if (queue.length > 0) {
@@ -43342,8 +43344,38 @@ function mountConfirmDialog() {
     cancelBtn.addEventListener("click", () => {
       finish(false);
     });
+    async function confirmActive() {
+      if (!active2 || confirming) return;
+      const request = active2;
+      if (!request.onConfirm) {
+        finish(true);
+        return;
+      }
+      confirming = true;
+      cancelBtn.disabled = true;
+      confirmBtn.disabled = true;
+      confirmBtn.setAttribute("aria-busy", "true");
+      confirmBtn.textContent = request.confirmPendingLabel ?? `${confirmLabel}\u2026`;
+      try {
+        await request.onConfirm((label) => {
+          if (active2 === request) confirmBtn.textContent = label;
+        });
+        if (active2 === request) finish(true);
+      } catch (error62) {
+        if (active2 !== request) return;
+        const reject = request.reject;
+        active2 = null;
+        confirming = false;
+        dialog2.close();
+        reject(error62);
+        if (queue.length > 0) {
+          active2 = queue.shift() ?? null;
+          renderActive();
+        }
+      }
+    }
     confirmBtn.addEventListener("click", () => {
-      finish(true);
+      void confirmActive();
     });
     buttonsEl.replaceChildren(cancelBtn, confirmBtn);
     dialog2.showModal();
@@ -43351,10 +43383,11 @@ function mountConfirmDialog() {
   }
   dialog2.addEventListener("cancel", (event) => {
     event.preventDefault();
+    if (confirming) return;
     finish(false);
   });
-  showConfirmDialogImpl = (req) => new Promise((resolve) => {
-    const queued = { ...req, resolve };
+  showConfirmDialogImpl = (req) => new Promise((resolve, reject) => {
+    const queued = { ...req, resolve, reject };
     if (active2) queue.push(queued);
     else {
       active2 = queued;
@@ -61795,7 +61828,7 @@ function mountSettingsDialog(store2, api2) {
               <div id="sources-worktrees-list" class="sources-group">
                 <span class="sources-empty">Loading\u2026</span>
               </div>
-              <span class="lmstudio-test-status" id="sources-worktrees-status"></span>
+              <span class="lmstudio-test-status" id="sources-worktrees-status" role="status" aria-live="polite"></span>
             </fieldset>
           </section>
 
@@ -62748,6 +62781,7 @@ function mountSettingsDialog(store2, api2) {
     const size = document.createElement("span");
     size.className = "sources-worktree-size";
     size.textContent = "sizing\u2026";
+    size.dataset["sizeState"] = "pending";
     row2.querySelector(".sources-row-detail")?.append(" \xB7 ", size);
     const terminalBtn = document.createElement("button");
     terminalBtn.type = "button";
@@ -62801,100 +62835,168 @@ function mountSettingsDialog(store2, api2) {
   }
   async function cleanupWorktreePackages(projectId, entries2) {
     const statusEl = qsRequired(overlay, "#sources-worktrees-status");
-    const previews2 = [];
     const problems = [];
-    statusEl.textContent = "Looking for package directories\u2026";
-    for (const entry of entries2) {
-      try {
-        const preview = await api2.worktrees.cleanupPackages(projectId, entry.path, false);
-        if (preview.status === "blocked-running") {
-          problems.push(`${entry.branch ?? entry.path}: an agent turn is running.`);
-        } else if (preview.directories.length > 0) {
-          previews2.push({ entry, preview });
-        }
-      } catch (error62) {
-        problems.push(`${entry.branch ?? entry.path}: ${errorMessage(error62)}`);
+    const bulkButton = qsRequired(overlay, "#sources-worktrees-cleanup");
+    function setEntryPhase(entry, phase) {
+      const target = worktreeRows.get(entry.path);
+      if (!target) return;
+      const button = qsRequired(target.row, ".sources-worktree-cleanup-btn");
+      if (phase === null) {
+        delete target.row.dataset["cleanupState"];
+        target.row.removeAttribute("aria-busy");
+        button.textContent = "Clean up\u2026";
+        button.removeAttribute("aria-busy");
+        return;
       }
+      target.row.dataset["cleanupState"] = phase;
+      const busy = phase === "checking" || phase === "pending" || phase === "cleaning";
+      if (busy) target.row.setAttribute("aria-busy", "true");
+      else target.row.removeAttribute("aria-busy");
+      button.textContent = phase === "checking" ? "Checking\u2026" : phase === "pending" ? "Pending\u2026" : phase === "cleaning" ? "Cleaning\u2026" : phase === "cleaned" ? "Cleaned" : "Failed";
+      if (busy) button.setAttribute("aria-busy", "true");
+      else button.removeAttribute("aria-busy");
     }
-    if (previews2.length === 0) {
-      statusEl.textContent = problems.join("\n") || "No ignored package-manager directories found.";
-      return;
+    function setBulkLabel(text2, busy) {
+      bulkButton.textContent = text2;
+      if (busy) bulkButton.setAttribute("aria-busy", "true");
+      else bulkButton.removeAttribute("aria-busy");
     }
-    const directories = previews2.flatMap(
-      ({ entry, preview }) => preview.directories.map(
-        (directory) => entries2.length === 1 ? directory.path : `${entry.branch ?? entry.path}: ${directory.path}`
-      )
-    );
-    const bytes = previews2.reduce((total, { preview }) => total + preview.bytes, 0);
-    const size = `${previews2.some(({ preview }) => preview.truncated) ? "at least " : ""}${formatByteSize(bytes)}`;
-    const shown = directories.slice(0, 12);
-    const confirmed = await showConfirmDialog({
-      message: `Remove ${String(directories.length)} package director${directories.length === 1 ? "y" : "ies"}${entries2.length > 1 ? ` from ${String(previews2.length)} worktree${previews2.length === 1 ? "" : "s"}` : ""}?`,
-      detail: [
-        ...shown,
-        ...directories.length > shown.length ? [`\u2026and ${String(directories.length - shown.length)} more`] : [],
-        "",
-        `This will reclaim ${size}. Your package manager can recreate these directories.`,
-        ...problems
-      ].join("\n"),
-      confirmLabel: "Clean up",
-      danger: true
-    });
-    if (!confirmed) {
-      statusEl.textContent = "Kept.";
-      return;
-    }
-    let cleaned = 0;
-    let reclaimed = 0;
-    let truncated = false;
-    for (const { entry } of previews2) {
-      statusEl.textContent = `Cleaning up ${entry.branch ?? entry.path}\u2026`;
-      try {
-        const result = await api2.worktrees.cleanupPackages(projectId, entry.path, true);
-        if (result.status === "blocked-running") {
-          problems.push(`${entry.branch ?? entry.path}: an agent turn is running.`);
-          continue;
-        }
-        cleaned += result.directories.length;
-        reclaimed += result.bytes;
-        truncated ||= result.truncated;
-        selectedWorktrees.delete(entry.path);
-        const target = worktreeRows.get(entry.path);
-        if (target) {
-          if (result.changedCount !== void 0) {
-            entry.changedCount = result.changedCount;
-            target.row.querySelector(".sources-worktree-changes")?.remove();
-            if (result.changedCount !== null && result.changedCount > 0) {
-              const badge = document.createElement("span");
-              badge.className = "sources-badge sources-badge-warning sources-worktree-changes";
-              badge.textContent = `${String(result.changedCount)} uncommitted`;
-              target.row.querySelector(".sources-worktree-terminal-btn")?.before(badge);
+    for (const entry of entries2) setEntryPhase(entry, "checking");
+    setBulkLabel(entries2.length === 1 ? "Checking\u2026" : "Preparing\u2026", true);
+    statusEl.textContent = entries2.length === 1 ? "Looking for package directories\u2026" : `Preparing cleanup for ${String(entries2.length)} worktrees\u2026`;
+    const performCleanup = async (setConfirmProgress) => {
+      for (const entry of entries2) setEntryPhase(entry, "pending");
+      let cleaned = 0;
+      let reclaimed = 0;
+      let truncated = false;
+      for (const [index, entry] of entries2.entries()) {
+        setEntryPhase(entry, "cleaning");
+        const progress = `Cleaning ${String(index + 1)} of ${String(entries2.length)}\u2026`;
+        setBulkLabel(progress, true);
+        setConfirmProgress(progress);
+        statusEl.textContent = `Cleaning ${String(index + 1)} of ${String(entries2.length)}: ${entry.branch ?? entry.path}\u2026`;
+        try {
+          const result = await api2.worktrees.cleanupPackages(projectId, entry.path, true);
+          if (result.status === "blocked-running") {
+            problems.push(`${entry.branch ?? entry.path}: an agent turn is running.`);
+            setEntryPhase(entry, "failed");
+            continue;
+          }
+          cleaned += result.directories.length;
+          reclaimed += result.bytes;
+          truncated ||= result.truncated;
+          if (result.directories.length > 0) selectedWorktrees.delete(entry.path);
+          setEntryPhase(entry, "cleaned");
+          const target = worktreeRows.get(entry.path);
+          if (target) {
+            if (result.changedCount !== void 0) {
+              entry.changedCount = result.changedCount;
+              target.row.querySelector(".sources-worktree-changes")?.remove();
+              if (result.changedCount !== null && result.changedCount > 0) {
+                const badge = document.createElement("span");
+                badge.className = "sources-badge sources-badge-warning sources-worktree-changes";
+                badge.textContent = `${String(result.changedCount)} uncommitted`;
+                target.row.querySelector(".sources-worktree-terminal-btn")?.before(badge);
+              }
+            }
+            if (result.directories.length > 0) {
+              target.size.textContent = "sizing\u2026";
+              target.size.dataset["sizeState"] = "pending";
             }
           }
-          await fillWorktreeSizes(projectId, [target]);
+        } catch (error62) {
+          problems.push(`${entry.branch ?? entry.path}: ${errorMessage(error62)}`);
+          setEntryPhase(entry, "failed");
         }
-      } catch (error62) {
-        problems.push(`${entry.branch ?? entry.path}: ${errorMessage(error62)}`);
       }
+      const summary = cleaned > 0 ? `Cleaned up ${String(cleaned)} directories (${truncated ? "at least " : ""}${formatByteSize(reclaimed)}).` : "No ignored package-manager directories found.";
+      statusEl.textContent = [summary, ...problems].join("\n");
+    };
+    try {
+      if (entries2.length === 1) {
+        const entry = entries2[0];
+        if (!entry) return;
+        let preview;
+        try {
+          preview = await api2.worktrees.cleanupPackages(projectId, entry.path, false);
+        } catch (error62) {
+          statusEl.textContent = errorMessage(error62);
+          setEntryPhase(entry, "failed");
+          return;
+        }
+        if (preview.status === "blocked-running") {
+          statusEl.textContent = "That worktree has an agent turn running in it.";
+          setEntryPhase(entry, "failed");
+          return;
+        }
+        if (preview.directories.length === 0) {
+          statusEl.textContent = "No ignored package-manager directories found.";
+          setEntryPhase(entry, "cleaned");
+          return;
+        }
+        const size = `${preview.truncated ? "at least " : ""}${formatByteSize(preview.bytes)}`;
+        const shown = preview.directories.slice(0, 12);
+        const confirmed = await showConfirmDialog({
+          message: `Remove ${String(preview.directories.length)} package director${preview.directories.length === 1 ? "y" : "ies"}?`,
+          detail: [
+            ...shown.map((directory) => directory.path),
+            ...preview.directories.length > shown.length ? [`\u2026and ${String(preview.directories.length - shown.length)} more`] : [],
+            "",
+            `This will reclaim ${size}. Your package manager can recreate these directories.`
+          ].join("\n"),
+          confirmLabel: "Clean up",
+          confirmPendingLabel: "Cleanup pending\u2026",
+          onConfirm: performCleanup,
+          danger: true
+        });
+        if (!confirmed) {
+          statusEl.textContent = "Kept.";
+          return;
+        }
+      } else {
+        const confirmed = await showConfirmDialog({
+          message: `Clean up package directories in ${String(entries2.length)} worktrees?`,
+          detail: [
+            "Copse will find and remove ignored package-manager directories such as node_modules and .venv.",
+            "Cleanup starts immediately; reclaimed size is measured as each worktree completes.",
+            "Your package manager can recreate these directories."
+          ].join("\n\n"),
+          confirmLabel: "Clean up",
+          confirmPendingLabel: "Cleanup pending\u2026",
+          onConfirm: performCleanup,
+          danger: true
+        });
+        if (!confirmed) {
+          statusEl.textContent = "Kept.";
+          return;
+        }
+      }
+    } finally {
+      for (const entry of entries2) setEntryPhase(entry, null);
+      setBulkLabel("Clean up\u2026", false);
     }
-    statusEl.textContent = [
-      `Cleaned up ${String(cleaned)} directories (${truncated ? "at least " : ""}${formatByteSize(reclaimed)}).`,
-      ...problems
-    ].join("\n");
   }
   const worktreeSizeRequests = /* @__PURE__ */ new WeakMap();
-  async function fillWorktreeSizes(projectId, targets) {
+  let worktreeSizeGeneration = 0;
+  let worktreeSizeFill = Promise.resolve();
+  async function fillWorktreeSizes(projectId, targets, generation = worktreeSizeGeneration) {
     for (const target of targets) {
+      if (generation !== worktreeSizeGeneration) return;
       if (!target.size.isConnected) continue;
       const request = (worktreeSizeRequests.get(target.size) ?? 0) + 1;
       worktreeSizeRequests.set(target.size, request);
+      target.size.dataset["sizeState"] = "measuring";
       try {
         const size = await api2.worktrees.size(projectId, target.entry.path);
-        if (worktreeSizeRequests.get(target.size) !== request) continue;
+        if (generation !== worktreeSizeGeneration || worktreeSizeRequests.get(target.size) !== request)
+          continue;
         target.size.textContent = size.truncated ? `over ${formatByteSize(size.bytes)}` : formatByteSize(size.bytes);
+        target.size.dataset["sizeState"] = "ready";
       } catch {
-        if (worktreeSizeRequests.get(target.size) !== request) continue;
+        if (generation !== worktreeSizeGeneration || worktreeSizeRequests.get(target.size) !== request)
+          continue;
         target.size.textContent = "size unavailable";
+        target.size.dataset["sizeState"] = "unavailable";
       }
     }
   }
@@ -62986,12 +63088,25 @@ function mountSettingsDialog(store2, api2) {
   async function runWorktreeAction(action) {
     if (worktreeActionRunning) return;
     worktreeActionRunning = true;
+    const interruptedSizeFill = worktreeSizeFill;
+    worktreeSizeGeneration += 1;
     syncWorktreeSelection();
     try {
       await action();
     } finally {
       worktreeActionRunning = false;
       syncWorktreeSelection();
+      const projectId = storageProjectId;
+      const resumeSizes = async () => {
+        await interruptedSizeFill;
+        if (!projectId || projectId !== storageProjectId || worktreeActionRunning) return;
+        const pending = [...worktreeRows.values()].filter(
+          ({ size }) => size.dataset["sizeState"] !== "ready" && size.dataset["sizeState"] !== "unavailable"
+        );
+        if (pending.length > 0) await fillWorktreeSizes(projectId, pending);
+      };
+      worktreeSizeFill = resumeSizes();
+      void worktreeSizeFill;
     }
   }
   qsRequired(overlay, "#sources-worktrees-select-all").addEventListener(
@@ -63069,6 +63184,7 @@ function mountSettingsDialog(store2, api2) {
   }
   async function refreshWorktrees(status = "", preferActiveProject = false) {
     if (worktreeActionRunning) return;
+    worktreeSizeGeneration += 1;
     const statusEl = qsRequired(overlay, "#sources-worktrees-status");
     const projectId = syncStorageProjectSelect(preferActiveProject);
     worktreeRows.clear();
@@ -63093,7 +63209,9 @@ function mountSettingsDialog(store2, api2) {
       for (const target of rendered) worktreeRows.set(target.entry.path, target);
       syncWorktreeSelection();
       statusEl.textContent = status;
-      await fillWorktreeSizes(projectId, rendered);
+      const sizeFill = fillWorktreeSizes(projectId, rendered);
+      worktreeSizeFill = sizeFill;
+      await sizeFill;
     } catch (error62) {
       if (generation !== worktreeRefreshGeneration || projectId !== storageProjectId) return;
       fillSourceList("#sources-worktrees-list", [], "Could not list worktrees.");
