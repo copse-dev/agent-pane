@@ -399,6 +399,7 @@ async function promptShell(
 async function promptGuardedYoloHarm(
   command: string,
   reasons: string[],
+  sandboxed: boolean,
   signal?: AbortSignal,
 ): Promise<boolean> {
   const { approved } = await requestApproval(
@@ -406,7 +407,11 @@ async function promptGuardedYoloHarm(
       title: 'Guarded YOLO safety check',
       body: command,
       bodyAdvice: formatGuardedYoloHarmPromptAdvice(reasons),
+      bodyFooter: sandboxed
+        ? 'Runs inside the project sandbox.'
+        : 'Runs outside the project sandbox with access to your user account, filesystem, and network.',
       type: 'shell',
+      scope: sandboxed ? 'sandbox' : 'external',
       cause: 'shell-guarded-yolo-harm',
       allowRemember: false,
     },
@@ -1207,7 +1212,12 @@ export async function ensureShellCommandPermitted(
   }
 
   if (guardedYolo) {
-    const approved = await promptGuardedYoloHarm(command, effectiveReasons, opts.signal)
+    const approved = await promptGuardedYoloHarm(
+      command,
+      effectiveReasons,
+      sandboxEnabled && !outsideSandbox,
+      opts.signal,
+    )
     auditGuardedYolo(approved ? 'approved' : 'declined')
     return approved
   }

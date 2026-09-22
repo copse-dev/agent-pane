@@ -39,6 +39,114 @@ describe('Guarded YOLO shell harm gate', () => {
     }
   })
 
+  it('does not treat filenames, arguments, comments, or quoted text as host power commands', () => {
+    for (const command of [
+      'echo reboot',
+      'printf "%s" shutdown',
+      'git add tests/e2e/thread-checkout-shutdown.e2e.ts',
+      'cat docs/poweroff.md',
+      'echo ready # reboot; shutdown now',
+      'printf "%s" "ready; reboot now"',
+      "printf '%s' 'ready;\nreboot\n'",
+      'echo ready > reboot',
+      `printf '%s' 'execSync("reboot")'`,
+      '# exec("shutdown")\necho ready',
+      'printf "%s" "literal # shutdown"',
+    ]) {
+      assert.equal(action(command), 'allow', command)
+    }
+  })
+
+  it('denies actual host power invocations through wrappers and nested shell code', () => {
+    for (const command of [
+      'shutdown -h now',
+      '/sbin/reboot',
+      'halt',
+      'poweroff',
+      'shutdown.exe /s /t 0',
+      'Stop-Computer -Force',
+      'Restart-Computer',
+      'sudo -u root /sbin/shutdown -h now',
+      'env MODE=test timeout 5 reboot',
+      'echo ready && reboot',
+      'echo ready\nshutdown -h now',
+      'if true; then reboot; fi',
+      'systemctl --no-wall reboot',
+      'systemctl -i reboot',
+      'systemctl --no-ask-password reboot',
+      'loginctl --no-ask-password reboot',
+      'busybox poweroff',
+      "bash -c 'shutdown -h now'",
+      'echo "$(reboot)"',
+      'echo `poweroff`',
+      'eval "halt"',
+      'find . -name marker -exec reboot \\;',
+      "node -e \"require('child_process').execSync('reboot')\"",
+      'python3 -c "import os; os.system(\'shutdown -h now\')"',
+    ]) {
+      const decision = assessShellHarm(command, context)
+      assert.equal(decision.action, 'deny', command)
+      assert.ok(decision.reasons.includes('host shutdown or reboot is never allowed'), command)
+    }
+  })
+
+  it('prompts for power commands forwarded through unmodelled dispatchers', () => {
+    for (const command of [
+      'ssh host reboot',
+      'cmd /c shutdown /s',
+      'su -c "reboot"',
+      'systemctl --host remote reboot',
+      'systemctl --host=remote reboot',
+      'loginctl --machine=toolbox reboot',
+      'env -S "reboot now"',
+      'power=reboot; $power',
+      String.raw`C:\Windows\System32\shutdown.exe /s`,
+    ]) {
+      assert.equal(action(command), 'prompt', command)
+    }
+  })
+
+  it('inspects the launcher before later TypeScript arguments and permits self-signalling', () => {
+    for (const extension of ['mts', 'cts', 'mjs']) {
+      const script = `scripts/run-e2e.${extension}`
+      const reads: string[] = []
+      const readScript = (path: string): string | null => {
+        reads.push(path)
+        return path === `/work/project/${script}`
+          ? 'process.kill(process.pid, result.signal)'
+          : null
+      }
+      assert.equal(
+        action(`node ${script} wdio.conf.ts --spec tests/e2e/thread-checkout-shutdown.e2e.ts`, {
+          readScript,
+        }),
+        'allow',
+      )
+      assert.deepEqual(reads, [`/work/project/${script}`])
+      assert.equal(
+        action(`node ${script}`, {
+          readScript: () => "require('child_process').execSync('reboot')",
+        }),
+        'deny',
+      )
+    }
+  })
+
+  it('offers consent for unconfirmed host power text in interpreter code', () => {
+    const scripts = new Map([
+      ['/work/project/report.mts', 'console.log("shutdown report")'],
+      ['/work/project/power.py', 'controller.shutdown()'],
+      ['/work/project/power.sh', '#!/bin/sh\necho ready\nreboot\n'],
+    ])
+    const readScript = (path: string): string | null => scripts.get(path) ?? null
+    for (const command of ['node report.mts', 'python3 power.py']) {
+      const decision = assessShellHarm(command, { ...context, readScript })
+      assert.equal(decision.action, 'prompt', command)
+      assert.ok(decision.reasons.some((reason) => reason.includes('could not be confirmed')))
+    }
+    assert.equal(action('bash power.sh', { readScript }), 'deny')
+  })
+
   it('prompts for writing GitHub CLI forms', () => {
     for (const command of [
       'gh pr create --fill',
