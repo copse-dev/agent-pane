@@ -629,6 +629,15 @@ export async function getGithubRepoSlug(
   return parseGithubRepoSlug(stdout.trim())
 }
 
+export interface CreateWorktreeBackupOptions {
+  /**
+   * The caller just completed a live Git operation that proves this same root
+   * is a worktree. Snapshot commands still fail closed if it disappears; this
+   * only avoids immediately repeating the membership probe.
+   */
+  workTreeAlreadyVerified?: boolean
+}
+
 /**
  * Snapshot the ENTIRE working tree — tracked modifications, staged changes, and
  * untracked files — into a commit object, protected from garbage collection
@@ -647,8 +656,10 @@ export async function getGithubRepoSlug(
 export async function createWorktreeBackup(
   label: string,
   root: string | null = getAgentExecutionRoot(),
+  options: CreateWorktreeBackupOptions = {},
 ): Promise<string | null> {
-  if (!(await isGitAvailableForTarget()) || !root || !(await isInsideGitWorkTree(root))) return null
+  if (!(await isGitAvailableForTarget()) || !root) return null
+  if (!options.workTreeAlreadyVerified && !(await isInsideGitWorkTree(root))) return null
 
   let tempIndex: TemporaryGitIndex | undefined
   try {

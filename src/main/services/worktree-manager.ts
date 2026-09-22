@@ -710,7 +710,12 @@ export async function allocateThreadWorktree(
     // safe — it just means the new worktree won't include those edits.
     const dirty = dirtyProject && seedable
     const snapshotRef = dirty
-      ? await createWorktreeBackup(`thread ${input.threadId} seed`, projectRoot)
+      ? await createWorktreeBackup(`thread ${input.threadId} seed`, projectRoot, {
+          // repositoryIsDirty completed successfully in the probe wave above,
+          // so repeating the live worktree-membership process here adds no
+          // evidence. The snapshot's own Git commands still fail closed.
+          workTreeAlreadyVerified: true,
+        })
       : null
     if (dirty && !snapshotRef) {
       console.warn(
