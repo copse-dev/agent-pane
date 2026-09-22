@@ -1,3 +1,8 @@
+import {
+  setMockScenario,
+  assertMockScenarioComplete,
+  clearMockScenarios,
+} from '@copse/llm/mock-script.ts'
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
@@ -114,6 +119,7 @@ describe('ACP agent mode: a real Copse turn, driven by Copse as the ACP client',
   let workspace: string | null = null
 
   afterEach(async () => {
+    clearMockScenarios()
     await disposeAllAcpSessions()
     if (workspace) {
       await rm(workspace, { recursive: true, force: true })
@@ -138,7 +144,7 @@ describe('ACP agent mode: a real Copse turn, driven by Copse as the ACP client',
       getActiveProjectId: () => 'acp-loopback-project',
       getProjectRoot: () => root,
       // The whole point: a complete turn with no provider credentials anywhere.
-      runOptions: { provider: new MockLLMProvider(), contextWindow: 100_000 },
+      runOptions: { provider: new MockLLMProvider('acp-probe'), contextWindow: 100_000 },
     })
 
     const { entry } = await acquireAcpSession({
@@ -161,14 +167,26 @@ describe('ACP agent mode: a real Copse turn, driven by Copse as the ACP client',
     }
     entry.open.handlers.current = handlers
 
-    // `[[mcp:<tool> {args}]]` is the mock provider's steering directive (it is
-    // dead-code-eliminated from release builds), so the fake model makes a real,
-    // named tool call instead of whatever it would otherwise improvise.
-    const stop = await runAcpSessionPrompt(
-      entry.open,
-      '[[mcp:gated_probe {"subject":"the workspace"}]]',
-      undefined,
+    setMockScenario(
+      'acp-probe',
+      {
+        title: 'Inspect workspace',
+        turns: [
+          {
+            user: 'Inspect the workspace.',
+            responses: [
+              { toolCalls: [{ name: 'gated_probe', args: { subject: 'the workspace' } }] },
+              {
+                text: 'The workspace inspection completed.',
+                expectToolResults: [{ name: 'gated_probe', includes: 'inspected the workspace' }],
+              },
+            ],
+          },
+        ],
+      },
+      'acp-probe',
     )
+    const stop = await runAcpSessionPrompt(entry.open, 'Inspect the workspace.', undefined)
 
     assert.equal(stop.stopReason, 'end_turn')
 
@@ -181,7 +199,8 @@ describe('ACP agent mode: a real Copse turn, driven by Copse as the ACP client',
     assert.equal(resultOf(chunks, toolCallId), 'inspected the workspace')
 
     // ...and the mock model's own words finished the turn on the client side.
-    assert.match(streamedText(chunks), /Mock response/)
+    assert.equal(streamedText(chunks), 'The workspace inspection completed.')
+    assertMockScenarioComplete('acp-probe')
 
     // The session kept its transcript, which is what lets a follow-up prompt
     // continue the same conversation rather than replaying it.
@@ -200,7 +219,7 @@ describe('ACP agent mode: a real Copse turn, driven by Copse as the ACP client',
       history: [],
       getActiveProjectId: () => 'acp-loopback-project',
       getProjectRoot: () => root,
-      runOptions: { provider: new MockLLMProvider(), contextWindow: 100_000 },
+      runOptions: { provider: new MockLLMProvider('acp-probe'), contextWindow: 100_000 },
     })
 
     const { entry } = await acquireAcpSession({
@@ -218,16 +237,32 @@ describe('ACP agent mode: a real Copse turn, driven by Copse as the ACP client',
     }
     entry.open.handlers.current = handlers
 
-    await runAcpSessionPrompt(
-      entry.open,
-      '[[mcp:gated_probe {"subject":"the workspace"}]]',
-      undefined,
+    setMockScenario(
+      'acp-probe',
+      {
+        title: 'Inspect workspace',
+        turns: [
+          {
+            user: 'Inspect the workspace.',
+            responses: [
+              { toolCalls: [{ name: 'gated_probe', args: { subject: 'the workspace' } }] },
+              {
+                text: 'The workspace inspection was declined.',
+                expectToolResults: [{ name: 'gated_probe', includes: 'declined the workspace' }],
+              },
+            ],
+          },
+        ],
+      },
+      'acp-probe',
     )
+    await runAcpSessionPrompt(entry.open, 'Inspect the workspace.', undefined)
 
     assert.equal(
       resultOf(chunks, soleToolCallId(chunks, 'gated_probe')),
       'declined the workspace',
       'a refused ACP permission must reach the tool as a denial, not a silent allow',
     )
+    assertMockScenarioComplete('acp-probe')
   })
 })

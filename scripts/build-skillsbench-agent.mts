@@ -14,7 +14,7 @@ export async function buildSkillsBenchAgentBundle(
     alias: {
       '@shared': resolve('./src/shared'),
     },
-    define: { __COPSE_TEST_DIRECTIVES__: 'false' },
+    define: { __COPSE_TEST_SCENARIOS__: 'false' },
   })
   return outfile
 }

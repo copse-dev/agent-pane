@@ -1,3 +1,4 @@
+import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -8,7 +9,6 @@ import {
   seedEmptyProject,
   seedGitImageChangesFixture,
 } from './helpers/seed-config.ts'
-import { setComposerValue } from './helpers/composer.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
@@ -57,8 +57,12 @@ async function clickChange(path: string): Promise<void> {
 }
 
 async function proposeImage(path: string, bytes: Buffer): Promise<void> {
-  const args = JSON.stringify({ path, content: bytes.toString('latin1') })
-  await setComposerValue(`[[mcp:write_file ${args}]]`)
+  const args = { path, content: bytes.toString('latin1') }
+  await prepareMockToolTurn(
+    `Propose an update to ${path}.`,
+    { name: 'write_file', args },
+    'The proposed file change is ready for review.',
+  )
   await $('.submit-btn').click()
   await browser.waitUntil(async () => (await $('.submit-btn').getText()) === 'Send', {
     timeout: 60_000,

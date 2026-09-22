@@ -1,3 +1,5 @@
+import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
+import { waitForAgentIdle } from './helpers.ts'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -34,7 +36,20 @@ describe('machine turn attribution', function () {
       'Machine · automatic continuation',
     )
 
-    await setComposerValue('Check the final diff. [[mock:delay_ms 15000]]')
+    const scenario = await installMockScenario({
+      title: 'Review the final diff',
+      turns: [
+        {
+          user: 'Check the final diff.',
+          responses: [{ waitFor: 'inspection', text: 'The diff review is complete.' }],
+        },
+        {
+          user: 'Then prepare the handoff summary.',
+          responses: [{ text: 'The handoff summary is ready for review.' }],
+        },
+      ],
+    })
+    await setComposerValue('Check the final diff.')
     await $('.submit-btn').click()
 
     await expect($('.submit-btn')).toHaveText('Queue')
@@ -50,5 +65,8 @@ describe('machine turn attribution', function () {
     await expect($('.conversation-queued .message-queued-badge')).toHaveText('QUEUED')
 
     await saveAppScreenshot('machine-turn-attribution.png')
+    await scenario.release('inspection')
+    await expectAssistantReply('The handoff summary is ready for review.')
+    await waitForAgentIdle(15_000)
   })
 })

@@ -3,6 +3,7 @@ import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { setComposerValue } from './helpers/composer.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
+import { installMockScenario } from './helpers/mock-scenario.ts'
 
 describe('two-step stop shortcut', function () {
   this.timeout(90_000)
@@ -21,12 +22,25 @@ describe('two-step stop shortcut', function () {
 
     const composer = $('.prompt-input')
     await composer.waitForExist({ timeout: 30_000 })
-    await setComposerValue('Keep running [[mock:delay_ms 6000]]')
-    await $('.submit-btn').click()
-    await browser.waitUntil(async () => (await $('.stop-btn').getProperty('hidden')) !== true, {
-      timeout: 10_000,
-      timeoutMsg: 'expected a running thread',
+    const prompt = 'Continue reviewing the migration plan until I stop you.'
+    const scenario = await installMockScenario({
+      title: 'Review migration plan',
+      turns: [
+        {
+          user: prompt,
+          responses: [
+            {
+              waitFor: 'migration-review',
+              text: 'I am reviewing the migration plan and will pause when you stop the run.',
+            },
+          ],
+          allowAbort: true,
+        },
+      ],
     })
+    await setComposerValue(prompt)
+    await $('.submit-btn').click()
+    await scenario.waitForHold('migration-review')
 
     await composer.click()
     await browser.keys('Escape')
@@ -63,5 +77,6 @@ describe('two-step stop shortcut', function () {
     await browser.keys('Escape')
     await expect(stopButton).not.toHaveElementClass('stop-pending')
     await waitForAgentIdle(15_000)
+    await scenario.assertComplete()
   })
 })

@@ -171,13 +171,13 @@ function resolveBuildDirty(): boolean | null {
 }
 
 // Release builds (`COPSE_RELEASE=1`, used by `npm run build:release` → packaging)
-// strip the MockLLMProvider test directives so the parser is absent from shipped
+// strip the MockLLMProvider test scenarios so the runner is absent from shipped
 // apps. The `define` turns the guard into `if (false)`; `minifySyntax` is what
 // actually dead-code-eliminates that dead branch (esbuild keeps it otherwise).
-// Non-release builds keep the directives for dev/e2e and stay un-minified.
+// Non-release builds keep the scenarios for dev/e2e and stay un-minified.
 const isRelease = process.env['COPSE_RELEASE'] === '1'
 const define = {
-  __COPSE_TEST_DIRECTIVES__: String(!isRelease),
+  __COPSE_TEST_SCENARIOS__: String(!isRelease),
   __COPSE_BUILD_COMMIT__: JSON.stringify(resolveBuildCommit()),
   __COPSE_BUILD_DIRTY__: JSON.stringify(resolveBuildDirty()),
 }
@@ -384,18 +384,15 @@ cpSync(BUNDLED_CURSOR_SKILLS_VENDOR_DIR, 'dist/resources/bundled-cursor-skills',
   recursive: true,
 })
 
-// Fail fast if a release build ever ships the MockLLMProvider test directives:
-// the `__COPSE_TEST_DIRECTIVES__` guard + minifySyntax must have eliminated them.
-// `mock:delay_ms` / `mcp:([` are fragments of the directive regexes and never
-// appear in product code (real MCP tool names use the `mcp__` separator).
+// Verify both sides of the test bridge are removed, along with the scenario runner.
 if (isRelease) {
-  const mainBundle = readFileSync('dist/main/index.js', 'utf8')
-  const leaked = ['mock:delay_ms', 'mcp:(['].filter((marker) => mainBundle.includes(marker))
-  if (leaked.length > 0) {
-    throw new Error(
-      `Release build leaked test-only mock directives (${leaked.join(', ')}). ` +
-        'The __COPSE_TEST_DIRECTIVES__ guard should have stripped them.',
-    )
+  const markers = ['test:setMockScenario', 'test:releaseMockScenario', 'Mock scenario']
+  for (const file of ['dist/main/index.js', 'dist/preload/index.js']) {
+    const bundle = readFileSync(file, 'utf8')
+    const leaked = markers.filter((marker) => bundle.includes(marker))
+    if (leaked.length > 0) {
+      throw new Error(`Release build leaked test-only scenarios in ${file}: ${leaked.join(', ')}`)
+    }
   }
 }
 

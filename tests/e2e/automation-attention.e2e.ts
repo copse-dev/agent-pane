@@ -1,3 +1,4 @@
+import { installMockScenario } from './helpers/mock-scenario.ts'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
@@ -20,8 +21,7 @@ const SCHEDULE_ID = 'schedule-ci-review-attention'
  */
 let fixtureRoot = ''
 
-const ASK_PROMPT =
-  '[[mcp:ask_user {"questions":[{"question":"Which CI failure should I investigate?","options":["Latest failure","All failures"]}]}]]'
+const ASK_PROMPT = 'Investigate the CI failures and ask which failures to focus on.'
 
 describe('automation attention grouping', function () {
   // The attention wait below is 75s on its own — see the comment there. The
@@ -126,6 +126,36 @@ describe('automation attention grouping', function () {
 
   it('reveals only the automation run waiting for attention', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
+    await installMockScenario(
+      {
+        title: 'CI review',
+        turns: [
+          {
+            user: ASK_PROMPT,
+            responses: [
+              {
+                toolCalls: [
+                  {
+                    name: 'ask_user',
+                    args: {
+                      questions: [
+                        {
+                          question: 'Which CI failure should I investigate?',
+                          options: ['Latest failure', 'All failures'],
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+              { text: 'The CI investigation was cancelled.' },
+            ],
+            allowAbort: true,
+          },
+        ],
+      },
+      null,
+    )
     // Keep what `runNow` answered. It reports whether the schedule was found at
     // all, which is the first fork in the diagnosis below — and the old code
     // awaited it only to discard it.

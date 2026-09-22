@@ -1,8 +1,8 @@
+import { prepareMockTurn } from './helpers/mock-scenario.ts'
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
-import { setComposerValue } from './helpers/composer.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 
@@ -27,8 +27,10 @@ describe('LM Studio prompt processing progress', () => {
   it('shows provider prefill percentage until the first output chunk', async function () {
     this.timeout(90_000)
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    await setComposerValue(
-      'Exercise prompt processing. [[mock:prompt_progress 0.47]] [[mock:delay_ms 5000]]',
+    await prepareMockTurn(
+      'Exercise prompt processing.',
+      [{ waitFor: 'inspection', promptProgress: 0.47, text: 'I am reviewing the workspace.' }],
+      true,
     )
     await $('.submit-btn').click()
 

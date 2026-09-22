@@ -1,6 +1,6 @@
+import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
-import { setComposerValue } from './helpers/composer.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 import { approveUnsandboxedTerminalIfPrompted } from './helpers/terminal-approval.ts'
 
@@ -42,7 +42,11 @@ describe('terminal read screening coverage', function () {
         ),
       { timeout: 20_000 },
     )
-    await setComposerValue('[[mcp:read_terminal {"action":"read","max_lines":2000}]]')
+    await prepareMockToolTurn(
+      'Read the recent terminal output.',
+      { name: 'read_terminal', args: { action: 'read', max_lines: 2000 } },
+      'The recent terminal output is available above.',
+    )
     await $('.submit-btn').click()
     const dialog = $('#approval-dialog')
     await dialog.waitForDisplayed({ timeout: 30_000 })

@@ -1,8 +1,8 @@
+import { expectAssistantReply, prepareMockToolTurn } from './helpers/mock-scenario.ts'
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
-import { setComposerValue } from './helpers/composer.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { resetUserData, seedCanvasArtefactThreadFixture } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
@@ -63,17 +63,15 @@ describe('browser session restore', function () {
       '<!doctype html><title>Sales Dashboard</title>' +
       '<style>body{margin:24px;background:#fff;color:#222;font:16px system-ui}</style>' +
       '<h1 id="version">restored</h1><p>Sales Dashboard is ready.</p>'
-    await setComposerValue(
-      `[[mcp:${CANVAS_TOOL} ${JSON.stringify({ title: 'Sales Dashboard', html })}]]`,
+    const scenario = await prepareMockToolTurn(
+      'Render the sales dashboard.',
+      { name: CANVAS_TOOL, args: { title: 'Sales Dashboard', html } },
+      'The sales dashboard is ready in the Browser pane.',
     )
     await $('.submit-btn').click()
-    await browser.waitUntil(
-      () =>
-        browser.execute(
-          () => !document.querySelector('.submit-btn')?.classList.contains('with-stop'),
-        ),
-      { timeout: 25_000, timeoutMsg: 'expected the render turn to finish' },
-    )
+    await expectAssistantReply('The sales dashboard is ready in the Browser pane.')
+    await waitForAgentIdle(25_000)
+    await scenario.assertComplete()
 
     await $('.browser-tab-panel.is-active webview').waitForExist({ timeout: 20_000 })
     await browser.waitUntil(async () => (await activeArtefactHeading()) === 'restored', {

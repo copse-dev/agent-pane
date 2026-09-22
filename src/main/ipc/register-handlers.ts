@@ -347,10 +347,12 @@ import {
 } from '../services/security/tool-permissions.ts'
 import { isWorkspaceTrusted } from '../services/security/workspace-trust.ts'
 import {
-  setMockScript,
-  clearMockScript,
-  mockScriptCursorForTests,
-  type MockScriptStep,
+  setMockScenario,
+  clearMockScenarios,
+  releaseMockScenario,
+  assertMockScenarioComplete,
+  mockScenarioStatus,
+  parseMockScenario,
 } from '@copse/llm/mock-script.ts'
 import { applyAppIcon } from '../app-icon.ts'
 import {
@@ -2976,9 +2978,8 @@ export function registerAllHandlers(
     return statuses
   })
 
-  // E2e-only: register an ordered mock script so specs can drive multi-turn flows
-  // with natural-language prompts (see mock-script.ts). Not exposed in release UX.
-  if (process.env['COPSE_E2E'] === '1') {
+  // Scripted model controls are compiled out of release builds, even if COPSE_E2E is set.
+  if (__COPSE_TEST_SCENARIOS__ && process.env['COPSE_E2E'] === '1') {
     const testAgentChunkSchema = z.discriminatedUnion('type', [
       z.object({
         type: z.literal('tool_call'),
@@ -2999,20 +3000,6 @@ export function registerAllHandlers(
         resultFormat: z.literal('markdown').optional(),
       }),
     ])
-    const mockScriptStepSchema = z
-      .object({
-        when: z.string().min(1).max(500),
-        tool: z
-          .object({
-            name: z.string().min(1).max(128),
-            args: z.record(z.string(), z.unknown()),
-          })
-          .optional(),
-        text: z.string().max(10_000).optional(),
-      })
-      .refine((step) => step.tool !== undefined || step.text !== undefined, {
-        message: 'mock script step needs tool or text',
-      })
     const testApprovalRequestSchema = z.object({
       id: z.string().min(1).max(256),
       title: z.string().min(1).max(2_000),
@@ -3024,20 +3011,36 @@ export function registerAllHandlers(
       approveOnceLabel: z.string().max(500).optional(),
     })
 
-    ipcMain.handle('test:setMockScript', (event, raw: unknown) => {
+    ipcMain.handle('test:setMockScenario', (event, id: unknown, raw: unknown, scope: unknown) => {
       assertMainFrameSender(event, win)
-      const steps = parseIpcArgs(z.array(mockScriptStepSchema).max(32), [raw])
-      const script: MockScriptStep[] = steps.map((step) => ({
-        when: step.when,
-        ...(step.tool ? { tool: step.tool } : {}),
-        ...(step.text === undefined ? {} : { text: step.text }),
-      }))
-      setMockScript(script)
-      return { steps: steps.length, cursor: mockScriptCursorForTests() }
+      const [scenarioId, threadId] = parseIpcArgs(
+        z.tuple([z.string().min(1).max(200), z.string().min(1).max(200).optional()]),
+        [id, scope],
+      )
+      setMockScenario(scenarioId, parseMockScenario(raw), threadId)
+      return mockScenarioStatus(scenarioId)
     })
-    ipcMain.handle('test:clearMockScript', (event) => {
+    ipcMain.handle('test:mockScenarioStatus', (event, id: unknown) => {
       assertMainFrameSender(event, win)
-      clearMockScript()
+      const scenarioId = parseIpcArgs(z.string().min(1).max(200), [id])
+      return mockScenarioStatus(scenarioId)
+    })
+    ipcMain.handle('test:releaseMockScenario', (event, id: unknown, hold: unknown) => {
+      assertMainFrameSender(event, win)
+      const [scenarioId, holdName] = parseIpcArgs(
+        z.tuple([z.string().min(1).max(200), z.string().min(1).max(200)]),
+        [id, hold],
+      )
+      releaseMockScenario(scenarioId, holdName)
+    })
+    ipcMain.handle('test:assertMockScenarioComplete', (event, id: unknown) => {
+      assertMainFrameSender(event, win)
+      const scenarioId = parseIpcArgs(z.string().min(1).max(200), [id])
+      assertMockScenarioComplete(scenarioId)
+    })
+    ipcMain.handle('test:clearMockScenarios', (event) => {
+      assertMainFrameSender(event, win)
+      clearMockScenarios()
     })
     ipcMain.handle('test:emitAgentChunks', (event, rawThreadId: unknown, rawChunks: unknown) => {
       assertMainFrameSender(event, win)

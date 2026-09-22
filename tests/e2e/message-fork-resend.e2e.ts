@@ -1,3 +1,4 @@
+import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
 import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -150,6 +151,19 @@ describe('fork a thread and resend the last message', function () {
 
     const latestPrompt = await $$('.messages-list .msg-user')[1]
     await latestPrompt.moveTo()
+    await installMockScenario({
+      title: 'Review the login redirect',
+      turns: [
+        {
+          user: 'Now make it fall back to the dashboard.',
+          responses: [
+            {
+              text: 'I’ll use the dashboard when no redirect target is available.',
+            },
+          ],
+        },
+      ],
+    })
     await latestPrompt.$('.msg-resend').click()
 
     // The prompt is appended again — history is added to, never rewritten.
@@ -161,6 +175,7 @@ describe('fork a thread and resend the last message', function () {
     await expect(texts[2]).toContain('Now make it fall back to the dashboard.')
 
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
-    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'message-fork-resend-resent.png'))
+    await expectAssistantReply('I’ll use the dashboard when no redirect target is available.')
+    await saveAppScreenshot('message-fork-resend-resent.png')
   })
 })

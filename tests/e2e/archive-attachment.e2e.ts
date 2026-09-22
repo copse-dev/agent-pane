@@ -1,3 +1,4 @@
+import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -68,7 +69,10 @@ describe('Attaching an archive to the chat', () => {
     mkdirSync(join(process.cwd(), 'tests/e2e/screenshots'), { recursive: true })
     resetUserData()
     seedE2eViewport()
-    seedEmptyProject(workspaceRoot, PROJECT_ID)
+    seedEmptyProject(workspaceRoot, PROJECT_ID, {
+      model: 'claude-sonnet-4-6',
+      subagentsEnabled: false,
+    })
     await browser.reloadSession()
     await waitForWorkspace()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
@@ -111,6 +115,19 @@ describe('Attaching an archive to the chat', () => {
   })
 
   it('sends the archive as a path reference and renders a transcript chip', async () => {
+    await installMockScenario({
+      title: 'Inspect the attached archive',
+      turns: [
+        {
+          user: { includes: 'what is in this bundle?' },
+          responses: [
+            {
+              text: 'The archive is attached, but I can’t inspect its contents with the tools available in this session.',
+            },
+          ],
+        },
+      ],
+    })
     await $('.submit-btn').click()
 
     const sentChip = await $(
@@ -128,6 +145,9 @@ describe('Attaching an archive to the chat', () => {
     // The composer clears its chips once the message is sent.
     await expect(await $('.attachment-chips .archive-chip').isExisting()).toBe(false)
 
+    await expectAssistantReply(
+      'The archive is attached, but I can’t inspect its contents with the tools available in this session.',
+    )
     await saveAppScreenshot(TRANSCRIPT_SCREENSHOT)
   })
 })

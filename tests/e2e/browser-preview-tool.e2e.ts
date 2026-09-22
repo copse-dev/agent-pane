@@ -1,10 +1,11 @@
+import { expectAssistantReply, prepareMockToolTurn } from './helpers/mock-scenario.ts'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
-import { setComposerValue } from './helpers/composer.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveThreePaneScreenshot } from './helpers/screenshot.ts'
+import { waitForAgentIdle } from './helpers.ts'
 
 const PROJECT_ID = 'e2e-browser-preview-project'
 let projectRoot = ''
@@ -32,7 +33,11 @@ describe('browser preview tool', () => {
   })
 
   it('serves the project and opens the visible Browser panel without approval', async () => {
-    await setComposerValue('[[mcp:browser_preview {}]]')
+    const scenario = await prepareMockToolTurn(
+      'Open the application preview in the browser.',
+      { name: 'browser_preview', args: {} },
+      'The browser preview result is available above.',
+    )
     await $('.submit-btn').click()
 
     await expect($('.tool-card .tool-name')).toHaveText('Opened preview', { wait: 30_000 })
@@ -71,13 +76,9 @@ describe('browser preview tool', () => {
     )
     await expect($('.approval-dialog')).not.toExist()
     await $('#browser-viewer-host').waitForDisplayed({ timeout: 10_000 })
-    await browser.waitUntil(
-      () =>
-        browser.execute(
-          () => !document.querySelector('.submit-btn')?.classList.contains('with-stop'),
-        ),
-      { timeout: 15_000, timeoutMsg: 'expected the preview turn to finish before capture' },
-    )
+    await expectAssistantReply('The browser preview result is available above.')
+    await waitForAgentIdle(15_000)
+    await scenario.assertComplete()
     // The server correctly chooses a fresh random port; mask only the displayed
     // value after validating it so the visual reference is deterministic.
     await browser.execute(() => {

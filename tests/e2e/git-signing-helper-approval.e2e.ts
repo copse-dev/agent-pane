@@ -1,3 +1,4 @@
+import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
@@ -11,7 +12,6 @@ import {
   writeSeedConfig,
 } from './helpers/seed-config.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
-import { setComposerValue } from './helpers/composer.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
 
@@ -84,26 +84,6 @@ describe('scoped Git signing approval', function () {
     )
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    await browser.execute(async () => {
-      const bridge: unknown = Reflect.get(window, '__copseE2e')
-      if (
-        !bridge ||
-        typeof bridge !== 'object' ||
-        !('setMockScript' in bridge) ||
-        typeof bridge.setMockScript !== 'function'
-      )
-        throw new Error('Mock script bridge unavailable')
-      await bridge.setMockScript([
-        {
-          when: 'Please commit',
-          tool: {
-            name: 'git_commit',
-            args: { message: 'Approve scoped signing', stage_all: true },
-          },
-        },
-        { when: '.*', text: 'The commit was cancelled.' },
-      ])
-    })
   })
 
   after(async () => {
@@ -119,7 +99,11 @@ describe('scoped Git signing approval', function () {
   })
 
   it('identifies the helper, key, socket and remembering scope before any staging or hooks', async () => {
-    await setComposerValue('Please commit the changes with SSH signing.')
+    await prepareMockToolTurn(
+      'Please commit the changes with SSH signing.',
+      { name: 'git_commit', args: { message: 'Approve scoped signing', stage_all: true } },
+      'The commit was cancelled.',
+    )
     await $('.submit-btn').click()
     const dialog = $('#approval-dialog')
     await browser.waitUntil(

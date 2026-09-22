@@ -1,7 +1,7 @@
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { waitForAgentIdle } from './helpers.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { prepareMockTurn } from './helpers/mock-scenario.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 
@@ -26,7 +26,7 @@ describe('next-step tab complete (experimental)', () => {
 
   it('offers the hint as placeholder after a turn and inserts it on Tab', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    await setComposerValue('fix the bug')
+    await prepareMockTurn('fix the bug', [{ text: 'The fix is ready for verification.' }])
     await $('.submit-btn').click()
     await waitForAgentIdle(20_000)
 

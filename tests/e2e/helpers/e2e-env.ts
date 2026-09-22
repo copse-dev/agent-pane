@@ -1,4 +1,4 @@
-import { writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 const E2E_ENV_FILE = join(process.cwd(), 'tests/e2e/electron-shell/.e2e-env.json')
@@ -36,6 +36,18 @@ export function writeE2eEnv(overrides: Record<string, string | undefined>): void
     COPSE_PANEL_MOCK_BRANCH: E2E_GIT_BRANCH,
     ANTHROPIC_API_KEY: '',
     OPENAI_API_KEY: '',
+  }
+  // Retain WDIO's isolated profile/workspace paths and other blank provider
+  // keys when a fixture patches one setting before restarting Electron.
+  if (existsSync(E2E_ENV_FILE)) {
+    const current: unknown = JSON.parse(readFileSync(E2E_ENV_FILE, 'utf8'))
+    if (typeof current !== 'object' || current === null || Array.isArray(current)) {
+      throw new Error('Invalid Electron e2e environment file')
+    }
+    for (const [key, value] of Object.entries(current)) {
+      if (typeof value !== 'string') throw new Error(`Invalid e2e environment value for ${key}`)
+      env[key] = value
+    }
   }
   for (const [key, value] of Object.entries(overrides)) {
     if (value === undefined) {

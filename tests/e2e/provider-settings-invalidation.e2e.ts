@@ -61,7 +61,7 @@ describe('stale custom-provider model selection', () => {
     // A response or usage chunk would mean the turn escaped the main-process
     // provider-selection guard. This error-only transcript is the live boundary
     // before any provider client is asked to stream a model response.
-    assert.doesNotMatch(transcript, /Mock response to:/)
+    assert.ok(transcript.includes(errorText))
 
     await expect($('.stop-btn')).not.toBeDisplayed()
     await saveAppScreenshot('provider-settings-invalidated-route.png')

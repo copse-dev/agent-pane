@@ -3184,7 +3184,7 @@ export function seedGitChangesFixture(options?: { reviewEnabled?: boolean }): st
     [`threads:${projectId}`]: [
       {
         id: threadId,
-        title: 'Git changes test',
+        title: 'Review uncommitted changes',
         status: 'idle',
         messages: [],
         usage: { inputTokens: 0, outputTokens: 0 },
@@ -3263,19 +3263,72 @@ export function seedGitImageChangesFixture(): string {
 export function seedScrollToBottomFixture(workspaceRoot: string): void {
   const projectId = 'e2e-scroll-bottom-project'
   const threadId = 'e2e-scroll-bottom-thread'
-  const messages = Array.from({ length: 24 }, (_, i) => {
-    const isUser = i % 2 === 0
-    const turn = Math.floor(i / 2) + 1
-    return {
-      id: `msg-scroll-${i}`,
-      role: isUser ? 'user' : 'assistant',
-      content: isUser
-        ? `Question ${turn}: Can you explain part ${turn} of this feature in detail?`
-        : `Answer ${turn}: Here is a detailed explanation for turn ${turn}. `.repeat(8),
+  const exchanges = [
+    [
+      'Where do module errors first become visible to callers?',
+      'They become visible at the public entry point, where parsing and dependency failures are translated into the module response shape.',
+    ],
+    [
+      'Which branches currently create duplicate error messages?',
+      'The invalid-input, missing-record, and dependency-failure branches each build similar messages with slightly different fields.',
+    ],
+    [
+      'What is the smallest safe refactor for those branches?',
+      'Extract a small error-normalization helper and keep each branch responsible only for choosing its error code and context.',
+    ],
+    [
+      'Should the helper change the public error format?',
+      'No. It should preserve the current public fields so callers keep receiving the same status, message, and retry guidance.',
+    ],
+    [
+      'How should validation errors differ from dependency failures?',
+      'Validation errors should identify the invalid field, while dependency failures should state whether retrying later may succeed.',
+    ],
+    [
+      'Which tests prove malformed input still has a useful message?',
+      'Add cases for missing required fields, invalid enum values, and malformed JSON, each asserting the normalized message and code.',
+    ],
+    [
+      'What should the happy-path test cover after the refactor?',
+      'Use a valid request with a stubbed dependency result and assert the successful response is unchanged by the new helper.',
+    ],
+    [
+      'Do we need a regression test for retryable failures?',
+      'Yes. Simulate a temporary dependency timeout and assert the response marks it retryable without exposing implementation details.',
+    ],
+    [
+      'Where should the helper live?',
+      'Keep it beside the module entry point until another consumer needs it; moving it early would widen the change without benefit.',
+    ],
+    [
+      'How can the test names explain the contract?',
+      'Name them after observable behavior, such as “returns a retryable error when the lookup times out,” instead of helper internals.',
+    ],
+    [
+      'What documentation needs updating?',
+      'Add a short README note describing the stable error fields and when callers should retry a request.',
+    ],
+    [
+      'What should we review before merging this work?',
+      'Review the diff for public-message changes, run the focused module tests, then run the broader check if the shared helper changed.',
+    ],
+  ] as const
+  const messages = exchanges.flatMap(([user, assistant], turn) => [
+    {
+      id: `msg-scroll-${String(turn * 2)}`,
+      role: 'user' as const,
+      content: user,
       toolCalls: [],
-      createdAt: Date.now() + i,
-    }
-  })
+      createdAt: Date.now() + turn * 2,
+    },
+    {
+      id: `msg-scroll-${String(turn * 2 + 1)}`,
+      role: 'assistant' as const,
+      content: assistant,
+      toolCalls: [],
+      createdAt: Date.now() + turn * 2 + 1,
+    },
+  ])
 
   mkdirSync(USER_DATA, { recursive: true })
   writeSeedConfig({
@@ -3284,7 +3337,7 @@ export function seedScrollToBottomFixture(workspaceRoot: string): void {
     [`threads:${projectId}`]: [
       {
         id: threadId,
-        title: 'Scroll to bottom test',
+        title: 'Review module error handling',
         status: 'idle',
         messages,
         usage: { inputTokens: 0, outputTokens: 0 },
@@ -3299,17 +3352,64 @@ export function seedScrollToBottomFixture(workspaceRoot: string): void {
 export function seedScrollStreamingFixture(workspaceRoot: string): void {
   const projectId = 'e2e-scroll-stream-project'
   const threadId = 'e2e-scroll-stream-thread'
-  const history = Array.from({ length: 20 }, (_, i) => {
-    const isUser = i % 2 === 0
-    const turn = Math.floor(i / 2) + 1
-    return {
-      id: `msg-history-${i}`,
-      role: isUser ? 'user' : 'assistant',
-      content: isUser ? `Earlier question ${turn}` : `Earlier answer ${turn}: `.repeat(10),
+  const exchanges = [
+    [
+      'Can we map the current error paths before touching the module?',
+      'Yes. Start with the request parser, then trace validation, lookup, and dependency errors through the public response builder.',
+    ],
+    [
+      'Which response fields must stay stable for callers?',
+      'Keep the status, machine-readable code, message, and retry guidance stable so existing clients do not need coordinated changes.',
+    ],
+    [
+      'What makes the error branches difficult to test today?',
+      'Each branch assembles its own message, so tests repeat setup and can miss small differences in the final response shape.',
+    ],
+    [
+      'Would one normalization helper hide useful context?',
+      'Not if callers pass the error code and a small context object; the helper can format common fields while branches retain their specifics.',
+    ],
+    [
+      'How should we test a missing record?',
+      'Stub the lookup to return no record and assert the response is non-retryable, identifies the requested resource, and omits internal paths.',
+    ],
+    [
+      'What is the best test for a transient dependency error?',
+      'Simulate a timeout and assert the returned guidance says the request can be retried while preserving the dependency error code.',
+    ],
+    [
+      'Can the parser tests share fixtures after the refactor?',
+      'They can share request builders, but keep each assertion focused on one observable error contract so failures remain easy to diagnose.',
+    ],
+    [
+      'Should the README list every error code?',
+      'Document the stable fields and retry behavior, then link to the API reference for the complete code list.',
+    ],
+    [
+      'What checks should run before we merge?',
+      'Run the focused module tests first, review the normalized error snapshots, then run the repository check before merging.',
+    ],
+    [
+      'What follow-up would improve this area after the refactor?',
+      'Consider structured error telemetry separately once the response contract is stable and the existing tests cover the main failure modes.',
+    ],
+  ] as const
+  const history = exchanges.flatMap(([user, assistant], turn) => [
+    {
+      id: `msg-history-${String(turn * 2)}`,
+      role: 'user' as const,
+      content: user,
       toolCalls: [],
-      createdAt: Date.now() + i,
-    }
-  })
+      createdAt: Date.now() + turn * 2,
+    },
+    {
+      id: `msg-history-${String(turn * 2 + 1)}`,
+      role: 'assistant' as const,
+      content: assistant,
+      toolCalls: [],
+      createdAt: Date.now() + turn * 2 + 1,
+    },
+  ])
   mkdirSync(USER_DATA, { recursive: true })
   writeSeedConfig({
     projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
@@ -3317,7 +3417,7 @@ export function seedScrollStreamingFixture(workspaceRoot: string): void {
     [`threads:${projectId}`]: [
       {
         id: threadId,
-        title: 'Scroll while streaming',
+        title: 'Plan error-handling tests',
         status: 'idle',
         messages: history,
         usage: { inputTokens: 0, outputTokens: 0 },

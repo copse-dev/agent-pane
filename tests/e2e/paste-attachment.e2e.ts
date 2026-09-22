@@ -6,6 +6,8 @@ import { Key } from 'webdriverio'
 import { resetUserData, seedE2eViewport, seedEmptyProject } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { setComposerValue, composerText } from './helpers/composer.ts'
+import { installMockScenario } from './helpers/mock-scenario.ts'
+import { waitForAgentIdle } from './helpers.ts'
 
 const PROJECT_ID = 'e2e-paste-attachment-project'
 const SCREENSHOT = 'paste-attachment-chip.png'
@@ -16,7 +18,8 @@ const TRANSCRIPT_PREVIEW_SCREENSHOT = 'paste-attachment-transcript-preview.png'
 const SHORT_PASTE = 'The editor points:\n\n- tighten the intro\n- fix the typos'
 // Starts with blank lines: the chip label must come from the first non-blank
 // line, not render as an empty preview (the original bug).
-const LONG_PASTE = `\n\nEditor feedback summary for the intro section\n${'lorem ipsum '.repeat(30)}`
+const LONG_PASTE = `\n\nEditor feedback summary for the intro section\nThe opening repeats the product description twice. Keep the first explanation and remove the second. Shorten the final paragraph to one sentence that tells readers what to do next. Correct the spelling mistakes in the heading and button labels, and use the same name for the editor throughout the page.`
+const PASTE_PROMPT = `Summarize this feedback: \n\n\`\`\`\n// Editor feedback summary for the intro section\n${LONG_PASTE}\n\`\`\``
 
 async function waitForWorkspace(): Promise<void> {
   await browser.waitUntil(
@@ -71,7 +74,7 @@ describe('Pasting text into the composer', () => {
   })
 
   it('folds a large paste into a chip inline at the caret, after the typed text', async () => {
-    await setComposerValue('Please apply this feedback: ')
+    await setComposerValue('Summarize this feedback: ')
     await pasteIntoComposer(LONG_PASTE)
 
     // The chip lives inside the composer text flow (composer-editor.ts), not a
@@ -88,11 +91,27 @@ describe('Pasting text into the composer', () => {
       const prefix = chipEl?.previousSibling?.textContent ?? ''
       return { prefix, raw: composer.textContent ?? '' }
     })
-    await expect(layout?.prefix).toBe('Please apply this feedback: ')
+    await expect(layout?.prefix).toBe('Summarize this feedback: ')
     // The paste's full body is chip-internal state, never raw composer text.
-    await expect(layout?.raw).not.toContain('lorem ipsum')
+    await expect(layout?.raw).not.toContain('The opening repeats')
 
     await saveAppScreenshot(SCREENSHOT)
+
+    const scenario = await installMockScenario({
+      title: 'Summarize editor feedback',
+      turns: [
+        {
+          // The agent receives the typed text plus the expanded paste block,
+          // while the transcript keeps the compact paste chip.
+          user: PASTE_PROMPT,
+          responses: [
+            {
+              text: 'The feedback focuses on tightening the introduction and correcting typos; keep the revision concise.',
+            },
+          ],
+        },
+      ],
+    })
 
     // Send it: the paste must render in the transcript as an inline SVG-icon
     // chip (composer block -> Message.attachments -> conversation.ts), not an
@@ -108,6 +127,12 @@ describe('Pasting text into the composer', () => {
     // shows as literal text.
     await expect(await $('.messages-list .msg-user .message-text').getText()).not.toContain('￼')
 
+    await waitForAgentIdle()
+    await expect($('.messages-list .msg-assistant .message-text')).toHaveText(
+      'The feedback focuses on tightening the introduction and correcting typos; keep the revision concise.',
+      { containing: true },
+    )
+    await scenario.assertComplete()
     await saveAppScreenshot(TRANSCRIPT_SCREENSHOT)
   })
 
@@ -132,7 +157,9 @@ describe('Pasting text into the composer', () => {
     await expect(await dialog.getAttribute('data-preview-kind')).toBe('text')
     // The chip's label is the first non-blank line; the modal is where the rest
     // of the body — never raw composer text — becomes readable.
-    await expect($('.attachment-preview-text')).toHaveText(expect.stringContaining('lorem ipsum'))
+    await expect($('.attachment-preview-text')).toHaveText(
+      expect.stringContaining('The opening repeats the product description twice.'),
+    )
     await saveAppScreenshot(COMPOSER_PREVIEW_SCREENSHOT)
     await $('.attachment-preview-close').click()
     await dialog.waitForExist({ timeout: 5_000, reverse: true })
@@ -142,6 +169,19 @@ describe('Pasting text into the composer', () => {
     const sentChips =
       '.messages-list .msg-user .transcript-attachment-chip.transcript-attachment-paste'
     const before = (await $$(sentChips)).length
+    await installMockScenario({
+      title: 'Apply the editor feedback',
+      turns: [
+        {
+          user: PASTE_PROMPT.replace('Summarize this feedback:', 'Please apply this feedback:'),
+          responses: [
+            {
+              text: 'I’ll tighten the introduction, correct the typos, and make the editor name consistent.',
+            },
+          ],
+        },
+      ],
+    })
     await $('.submit-btn').click()
     await browser.waitUntil(async () => (await $$(sentChips)).length > before, {
       timeout: 10_000,
@@ -154,7 +194,10 @@ describe('Pasting text into the composer', () => {
 
     const sentDialog = await $('dialog.attachment-preview-dialog[open]')
     await sentDialog.waitForExist({ timeout: 5_000 })
-    await expect($('.attachment-preview-text')).toHaveText(expect.stringContaining('lorem ipsum'))
+    await expect($('.attachment-preview-text')).toHaveText(
+      expect.stringContaining('The opening repeats the product description twice.'),
+    )
+    await waitForAgentIdle()
     await saveAppScreenshot(TRANSCRIPT_PREVIEW_SCREENSHOT)
     await $('.attachment-preview-close').click()
   })

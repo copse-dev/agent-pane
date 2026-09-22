@@ -13,7 +13,7 @@ import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 // context — was dumped into the meta line and lowercased.
 //
 // An item with no stored verdict is stale, so opening it auto-fires the check.
-// MockLLM answers `Mock response to: …`, which carries no verdict word, and the
+// The unconfigured mock carries no verdict word, and the
 // review service rejects it — the same failure surface a context overflow takes.
 
 describe('roadmap resolution check failure', () => {

@@ -107,7 +107,7 @@ export function createProvider(
   } = {},
 ): LLMProvider {
   if (process.env['COPSE_PANEL_MOCK_LLM'] === '1') {
-    return new MockLLMProvider()
+    return new MockLLMProvider(promptCacheKey)
   }
   const { forceChatCompletions = false } = opts
   const m = model ?? ''

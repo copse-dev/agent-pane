@@ -1,8 +1,8 @@
+import { installMockScenario } from './helpers/mock-scenario.ts'
 import assert from 'node:assert/strict'
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
-import type { MockScriptStep } from '../../src/shared/llm/mock-script.ts'
 import {
   E2E_WORKSPACE_ROOT,
   resetUserData,
@@ -15,27 +15,30 @@ import { waitForAgentIdle } from './helpers.ts'
 const COMPLETION_SIGNAL = join(E2E_WORKSPACE_ROOT, '.e2e-background-task-complete')
 const COMMAND = `node -e "const fs=require('node:fs');const timer=setInterval(()=>{if(fs.existsSync(process.argv[1])){clearInterval(timer);console.log('background-complete')}},50)" ${JSON.stringify(COMPLETION_SIGNAL)}`
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
-const WAKE_SCRIPT = [
-  {
-    when: 'Background task .* exited with code 0',
-    text: 'The bounded background task completed successfully after the renderer reloaded.',
-  },
-] satisfies MockScriptStep[]
 
-async function installWakeScript(): Promise<void> {
-  await browser.execute(async (script) => {
-    const bridge = (
-      window as unknown as {
-        __copseE2e?: { setMockScript: (steps: unknown) => Promise<unknown> }
-      }
-    ).__copseE2e
-    if (!bridge) throw new Error('__copseE2e unavailable')
-    await bridge.setMockScript(script)
-  }, WAKE_SCRIPT)
-}
-
-async function runBackgroundDirective(args: Record<string, unknown>): Promise<void> {
-  await setComposerValue(`[[mcp:run_background ${JSON.stringify(args)}]]`)
+async function startBackgroundTask(args: Record<string, unknown>): Promise<void> {
+  const user = 'Run the workspace check in the background and let me know when it finishes.'
+  await installMockScenario({
+    title: 'Background workspace check',
+    turns: [
+      {
+        user,
+        responses: [
+          { toolCalls: [{ name: 'run_background', args }] },
+          { text: 'The workspace check is running in the background.' },
+        ],
+      },
+      {
+        user: { includes: 'exited with code 0' },
+        responses: [
+          {
+            text: 'The bounded background task completed successfully after the renderer reloaded.',
+          },
+        ],
+      },
+    ],
+  })
+  await setComposerValue(user)
   await $('.submit-btn').click()
   await browser.waitUntil(
     async () => {
@@ -109,17 +112,11 @@ describe('session-scoped background task lifecycle', function () {
     writeFileSync(COMPLETION_SIGNAL, '')
     await new Promise((resolve) => setTimeout(resolve, 100))
     rmSync(COMPLETION_SIGNAL, { force: true })
-    await browser.execute(async () => {
-      await (
-        window as unknown as { __copseE2e?: { clearMockScript: () => Promise<void> } }
-      ).__copseE2e?.clearMockScript?.()
-    })
     resetUserData()
   })
 
   it('survives a renderer reload and wakes the agent exactly once when it exits', async () => {
-    await installWakeScript()
-    await runBackgroundDirective({
+    await startBackgroundTask({
       action: 'start',
       command: COMMAND,
       wake_on_completion: true,

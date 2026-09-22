@@ -1,28 +1,8 @@
+import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
-import type { MockScriptStep } from '../../src/shared/llm/mock-script.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
-import { setComposerValue } from './helpers/composer.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
-
-const SCRIPT = [
-  {
-    when: 'retry.*version',
-    tool: { name: 'run_shell', args: { command: 'node --version' } },
-  },
-] satisfies MockScriptStep[]
-
-async function installMockScript(): Promise<void> {
-  await browser.execute(async (script) => {
-    const bridge = (
-      window as unknown as {
-        __copseE2e?: { setMockScript: (value: unknown) => Promise<unknown> }
-      }
-    ).__copseE2e
-    if (!bridge) throw new Error('__copseE2e unavailable')
-    await bridge.setMockScript(script)
-  }, SCRIPT)
-}
 
 describe('turn-tree shell replay approval', () => {
   before(async function () {
@@ -36,21 +16,19 @@ describe('turn-tree shell replay approval', () => {
     })
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    await installMockScript()
   })
 
   after(async () => {
-    await browser.execute(async () => {
-      await (
-        window as unknown as { __copseE2e?: { clearMockScript: () => Promise<void> } }
-      ).__copseE2e?.clearMockScript?.()
-    })
     resetUserData()
   })
 
   it('includes bounded task retries in a sandboxed approval by default', async function () {
     this.timeout(90_000)
-    await setComposerValue('Retry the local version command exactly once')
+    await prepareMockToolTurn(
+      'Retry the local version command exactly once',
+      { name: 'run_shell', args: { command: 'node --version' } },
+      'The version command was declined.',
+    )
     await $('.submit-btn').click()
 
     const dialog = $('#approval-dialog')

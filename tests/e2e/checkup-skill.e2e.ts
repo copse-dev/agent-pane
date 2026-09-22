@@ -4,6 +4,8 @@ import { assertNoErrorToasts, collectErrorToasts } from './helpers/assert-no-err
 import { composerText, setComposerValue } from './helpers/composer.ts'
 import { resetUserData } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
+import { waitForAgentIdle } from './helpers.ts'
 
 describe('checkup skill', () => {
   before(async () => {
@@ -14,6 +16,7 @@ describe('checkup skill', () => {
     await seedProjectConfig(process.cwd(), {
       projectId: 'checkup-skill-project',
       threadId: 'checkup-skill-thread',
+      title: 'Run Copse checkup',
     })
     await browser.reloadSession()
   })
@@ -66,6 +69,21 @@ describe('checkup skill', () => {
     })
     await expect(await composerText()).toMatch(/^\/checkup\b/)
 
+    const scenario = await installMockScenario({
+      title: 'Run Copse checkup',
+      turns: [
+        {
+          user: 'The user invoked /checkup. Follow the skill instructions.',
+          responses: [
+            { toolCalls: [{ name: 'run_checkup', args: {} }] },
+            {
+              text: 'The checkup is complete. The report above lists the current setup findings and suggested fixes.',
+              expectToolResults: [{ name: 'run_checkup', includes: 'Copse checkup' }],
+            },
+          ],
+        },
+      ],
+    })
     await $('.submit-btn').click()
 
     // The regression: stale skillsCache treated `/checkup` as unknown even
@@ -85,20 +103,18 @@ describe('checkup skill', () => {
       { timeout: 30_000 },
     )
 
-    // Prefer the live checkup tool card when the mock steers `run_checkup`;
-    // fall back to the mock's checkup confirmation text.
     const toolName = await browser.execute(() => {
       const el = document.querySelector('.tool-card .tool-name, .tool-card-group .tool-name')
       return el?.textContent?.trim() ?? ''
     })
-    if (toolName) {
-      await expect(toolName).toMatch(/checkup/i)
-    } else {
-      const assistantText = await $('.msg-assistant .message-text')
-      await expect(assistantText).toHaveText('Ran a checkup', { containing: true, wait: 20_000 })
-    }
+    await expect(toolName).toMatch(/checkup/i)
 
     await assertNoErrorToasts('after /checkup')
+    await waitForAgentIdle()
+    await expectAssistantReply(
+      'The checkup is complete. The report above lists the current setup findings and suggested fixes.',
+    )
+    await scenario.assertComplete()
     await saveAppScreenshot('checkup-skill-picked.png')
   })
 })

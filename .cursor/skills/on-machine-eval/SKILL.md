@@ -35,7 +35,12 @@ typechecks, and manual inspection as supporting evidence, not replacements for t
 2. **Spec** — Add `tests/e2e/<feature>.e2e.ts`:
    - DOM assertions first, then `browser.saveScreenshot(...)` → `tests/e2e/screenshots/`
    - Mock env: `COPSE_PANEL_MOCK_LLM=1`, empty API keys (WDIO sets these; repeat for manual runs).
-3. **Drive tools without a model** — User message `[[mcp:write_file {"path":"…","content":"…"}]]` (mock honors this on the **current user turn only**).
+3. **Drive tools without a model** — Register a conversation with
+   `installMockScenario` from `tests/e2e/helpers/mock-scenario.ts`. Type a natural
+   request into the composer; keep tool arguments and assistant replies in the
+   scenario's ordered responses. Assert the real tool result and final reply.
+   Use a test-controlled hold for in-progress screenshots; release or cancel it
+   before asserting scenario completion.
 4. **Run** — Prefer `e2e:remote` when a remote host exists or can be provisioned
    (keeps the machine free; Linux screenshots match CI). Use local `test:e2e` for
    macOS-only surfaces or when cloud creds/registry are missing:

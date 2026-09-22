@@ -1,3 +1,4 @@
+import { installMockScenario } from './helpers/mock-scenario.ts'
 import { $, browser, expect } from '@wdio/globals'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -163,13 +164,25 @@ describe('starting a proposed thread in an isolated checkout', () => {
 
   it('starts the mock agent only after creating the worktree', async () => {
     await $('.thread-proposal-start').waitForDisplayed({ timeout: 10_000 })
+    await installMockScenario(
+      {
+        title: 'Config loader guard',
+        turns: [
+          {
+            user: { includes: 'config' },
+            responses: [{ text: 'The config loader guard is ready for review.' }],
+          },
+        ],
+      },
+      null,
+    )
     await $('.thread-proposal-start').click()
     await $('.messages-list .msg-user').waitForDisplayed({ timeout: 30_000 })
     await browser.waitUntil(
       async () =>
         browser.execute(() =>
           [...document.querySelectorAll('.msg-assistant .message-text')].some((message) =>
-            message.textContent?.includes('Mock response to:'),
+            message.textContent?.includes('The config loader guard is ready for review.'),
           ),
         ),
       { timeout: 30_000, timeoutMsg: 'the isolated proposal did not reach the mock agent' },

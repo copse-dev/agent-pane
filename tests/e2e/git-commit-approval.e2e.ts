@@ -1,3 +1,4 @@
+import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
@@ -7,7 +8,6 @@ import { $, browser, expect } from '@wdio/globals'
 import { threadToJsonl } from '../../src/renderer/export-thread.ts'
 import { getCopseUserDataDir, waitForAgentIdle } from './helpers.ts'
 import { resetUserData, seedEmptyProject, writeSeedConfig } from './helpers/seed-config.ts'
-import { setComposerValue } from './helpers/composer.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 
 const PROJECT_ID = 'e2e-git-commit-approval'
@@ -75,27 +75,6 @@ describe('git commit approval', () => {
       writeFileSync(join(diagnostics, 'git-commit-startup.html'), await browser.getPageSource())
       throw error
     }
-    await browser.execute(async () => {
-      const bridge: unknown = Reflect.get(window, '__copseE2e')
-      if (
-        !bridge ||
-        typeof bridge !== 'object' ||
-        !('setMockScript' in bridge) ||
-        typeof bridge.setMockScript !== 'function'
-      ) {
-        throw new Error('Mock script bridge unavailable')
-      }
-      await bridge.setMockScript([
-        {
-          when: 'Please commit',
-          tool: {
-            name: 'git_commit',
-            args: { message: 'Keep configured hooks and signing', stage_all: true },
-          },
-        },
-        { when: '.*', text: 'The commit was cancelled.' },
-      ])
-    })
   })
 
   after(() => {
@@ -104,7 +83,14 @@ describe('git commit approval', () => {
   })
 
   it('shows the attributed command and declines before staging or invoking hooks', async () => {
-    await setComposerValue('Please commit the changes with my configured Git hooks and signing.')
+    await prepareMockToolTurn(
+      'Please commit the changes with my configured Git hooks and signing.',
+      {
+        name: 'git_commit',
+        args: { message: 'Keep configured hooks and signing', stage_all: true },
+      },
+      'The commit was cancelled.',
+    )
     await $('.submit-btn').click()
     const dialog = $('#approval-dialog')
     await dialog.waitForDisplayed({ timeout: 30_000 })
