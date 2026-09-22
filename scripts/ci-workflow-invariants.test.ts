@@ -808,6 +808,20 @@ describe('Copse Reviewer workflow invariants', () => {
     }
   })
 
+  it('provisions the scrubbed Stage 0 cell with the full Linux test toolchain', () => {
+    for (const workflow of [groundWorkflow, nightlyWorkflow]) {
+      const job = workflowJobBlock(workflow, 'ground')
+      assert.match(job, /apt-get install -y --no-install-recommends bubblewrap cargo ripgrep socat/)
+      assert.match(job, /apparmor_restrict_unprivileged_userns=0/)
+      assert.match(job, /bwrap --unshare-all --dev-bind \/ \/ --die-with-parent true/)
+      assert.match(job, /export PATH="\$\{setup_node_bin\}:\/usr\/bin:\$\{PATH\}"/)
+      assert.match(job, /test "\$\(command -v cargo\)" = \/usr\/bin\/cargo/)
+      assert.match(job, /test "\$\(command -v node\)" = "\$\{setup_node_bin\}\/node"/)
+      assert.ok(job.indexOf('apt-get install') < job.indexOf('refs/pull/'))
+      assert.ok(job.indexOf('export PATH=') < job.indexOf('--backend ephemeral-runner'))
+    }
+  })
+
   it('pins the bounded Scaleway dogfood profile in both GitHub findings paths', () => {
     for (const workflow of [findingsWorkflow, nightlyWorkflow]) {
       assert.ok(workflow.includes("COPSE_REVIEW_PROVIDER || 'openai-compatible'"))
