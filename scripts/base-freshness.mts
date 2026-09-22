@@ -116,26 +116,33 @@ export function decideBaseFreshness(candidate: Candidate, behindBy: number | nul
   }
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function expectRecord(value: unknown, label: string): Record<string, unknown> {
-  if (!isRecord(value)) throw new Error(`${label} was not a JSON object`)
-  return value
+/**
+ * One field of a decoded JSON value, as `unknown`; `undefined` when the value
+ * is not an object or does not own the key.
+ *
+ * Deliberately NOT a `value is Record<string, unknown>` predicate. An asserted
+ * predicate is an `as` cast in nicer syntax — TypeScript never checks that the
+ * body proves the claim — and `scripts/type-predicate-inventory.test.ts` holds
+ * that population shrink-only. Handing back `unknown` leaves every narrowing to
+ * the `typeof` checks at the use site, which the compiler does check.
+ * `Object.hasOwn` rather than `in`, which also matches inherited members.
+ */
+function field(value: unknown, key: string): unknown {
+  if (typeof value !== 'object' || value === null) return undefined
+  if (!Object.hasOwn(value, key)) return undefined
+  const descriptor: PropertyDescriptor | undefined = Object.getOwnPropertyDescriptor(value, key)
+  const own: unknown = descriptor?.value
+  return own
 }
 
 function decodeCandidate(value: unknown): Candidate {
-  const pull = expectRecord(value, 'pull request')
-  const head = expectRecord(pull['head'], 'pull request head')
-  const base = expectRecord(pull['base'], 'pull request base')
-  const number = pull['number']
-  const headSha = head['sha']
-  const baseRef = base['ref']
+  const number = field(value, 'number')
+  const headSha = field(field(value, 'head'), 'sha')
+  const baseRef = field(field(value, 'base'), 'ref')
   if (typeof number !== 'number') throw new Error('pull request has no number')
   if (typeof headSha !== 'string') throw new Error('pull request has no head sha')
   if (typeof baseRef !== 'string') throw new Error('pull request has no base ref')
-  return { number, headSha, baseRef, draft: pull['draft'] === true }
+  return { number, headSha, baseRef, draft: field(value, 'draft') === true }
 }
 
 export function decodeCandidates(text: string): Candidate[] {
@@ -155,8 +162,7 @@ export function decodeCandidateResponse(text: string): Candidate {
  */
 export function decodeBehindBy(text: string): number | null {
   const value: unknown = JSON.parse(text)
-  if (!isRecord(value)) return null
-  const behindBy = value['behind_by']
+  const behindBy = field(value, 'behind_by')
   if (typeof behindBy !== 'number' || !Number.isInteger(behindBy) || behindBy < 0) return null
   return behindBy
 }

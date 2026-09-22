@@ -111,7 +111,15 @@ describe('base freshness decoding', () => {
 
   it('rejects a listing that is not an array of pull requests', () => {
     assert.throws(() => decodeCandidates('{"message":"Not Found"}'), /not a JSON array/)
-    assert.throws(() => decodeCandidates('[{"number":1}]'), /not a JSON object/)
+  })
+
+  it('rejects an entry missing any field the verdict is addressed to', () => {
+    // A check run posted against a missing head sha would attach the verdict to
+    // nothing, so each field is required rather than defaulted.
+    assert.throws(() => decodeCandidates('[{"number":1}]'), /has no head sha/)
+    assert.throws(() => decodeCandidates('[{"head":{"sha":"a"}}]'), /has no number/)
+    assert.throws(() => decodeCandidates('[7]'), /has no number/)
+    assert.throws(() => decodeCandidates('[{"number":1,"head":{"sha":"a"}}]'), /has no base ref/)
   })
 })
 
