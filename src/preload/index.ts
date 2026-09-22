@@ -256,9 +256,6 @@ const api: ApiClient = {
     runningThreadIds: () => ipcRenderer.invoke('agent:running-thread-ids'),
     retryReview: (projectId: string, threadId: string, payload: string) =>
       ipcRenderer.invoke('agent:retry-review', projectId, threadId, payload),
-    retryComparison: (projectId: string, threadId: string, payload: string) =>
-      ipcRenderer.invoke('agent:retry-comparison', projectId, threadId, payload),
-    comparisonModels: (payload: string) => ipcRenderer.invoke('agent:comparison-models', payload),
     clearHistory: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('agent:clear-history', projectId, threadId),
     refreshModelContext: () => ipcRenderer.invoke('agent:refresh-model-context'),
@@ -302,7 +299,6 @@ const api: ApiClient = {
         collapseDetails?: boolean
         approveOnceLabel?: string
         showWhileSettingsOpen?: boolean
-        comparisonModels?: { a: string; b: string; judge: string }
         allowTurnTreeLease?: boolean
         turnTreeLeaseLabel?: string
         turnTreeLeaseSubject?: string
@@ -322,7 +318,6 @@ const api: ApiClient = {
           rememberLabel?: string
           collapseDetails?: boolean
           approveOnceLabel?: string
-          comparisonModels?: { a: string; b: string; judge: string }
           allowTurnTreeLease?: boolean
           turnTreeLeaseLabel?: string
           turnTreeLeaseDefault?: boolean
@@ -492,10 +487,15 @@ const api: ApiClient = {
       id: string,
       approved: boolean,
       remember?: boolean,
-      comparisonModels?: { a: string; b: string; judge: string },
       grantScope?: 'once' | 'turn-tree',
-    ) =>
-      ipcRenderer.invoke('approval:respond', id, approved, remember, comparisonModels, grantScope),
+    ) => ipcRenderer.invoke('approval:respond', id, approved, remember, grantScope),
+  },
+  review: {
+    run: (projectId: string, threadId: string, payload: string) =>
+      ipcRenderer.invoke('review:run', projectId, threadId, payload),
+    dismissFinding: (finding: { findingId: string; path: string; claim: string; class: string }) =>
+      ipcRenderer.invoke('review:dismiss-finding', finding),
+    restoreFinding: (findingId: string) => ipcRenderer.invoke('review:restore-finding', findingId),
   },
   ask: {
     respond: (id: string, answers: string[]) => ipcRenderer.invoke('ask:respond', id, answers),

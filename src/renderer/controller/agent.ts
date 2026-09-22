@@ -20,7 +20,7 @@ import {
   setThreadTodos,
   setMessageReview,
   setMessageTurnOutcome,
-  setThreadComparison,
+  setThreadReviewReport,
   addHookCard,
   getThreadById,
   markThreadUnread,
@@ -483,10 +483,10 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         if (chunk.status === 'running') emitActivity(threadId, 'Reviewing changes…')
         break
       }
-      case 'model_comparison': {
-        setThreadComparison(store, threadId, chunk.comparison)
-        if (chunk.comparison.status === 'running') {
-          emitActivity(threadId, 'Comparing models…')
+      case 'review_report': {
+        setThreadReviewReport(store, threadId, chunk.report)
+        if (chunk.report.status === 'running') {
+          emitActivity(threadId, 'Reviewing changes…')
         }
         break
       }

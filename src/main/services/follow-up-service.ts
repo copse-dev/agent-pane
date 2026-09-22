@@ -23,7 +23,7 @@ import {
 import { getSetting } from './storage/settings.ts'
 import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { CI_INVESTIGATOR_PLUGIN_ID } from '@copse/agent/plugins/ci-investigator-plugin.ts'
-import { MODEL_COMPARISON_FOLLOW_UP_ID } from '@copse/agent/plugins/model-comparison-plugin.ts'
+import { REVIEW_FOLLOW_UP_ID } from '@copse/agent/plugins/review-plugin.ts'
 import { getPrWorkspaceContext } from './github/pr-context-service.ts'
 import { getWorkspaceRoot } from './workspace.ts'
 import { safeJsonParse } from '@shared/safe-json.ts'
@@ -109,7 +109,7 @@ export function pluginFollowUpConditionMet(
 
 /** The host action a plugin's declared action maps to on the rendered bubble. */
 function pluginFollowUpAction(action: PluginFollowUpAction): FollowUpAction {
-  return action === 'model-compare' ? 'model-compare' : 'prompt'
+  return action === 'review' ? 'review' : 'prompt'
 }
 
 /**
@@ -197,7 +197,7 @@ export function buildDeterministicFollowUps(
 
 /**
  * Fixed suggestions for e2e / headless screenshot validation (no LM Studio or gh
- * required). Includes the model-comparison bubble unconditionally — the fixture
+ * required). Includes the review bubble unconditionally — the fixture
  * exists so a spec can drive each bubble kind without standing up the plugin
  * registry and a dirty worktree, which is exactly what the real gates need.
  */
@@ -218,7 +218,7 @@ export function mockFollowUpSuggestions(): FollowUpSuggestion[] {
     },
     { id: createPr.id, label: createPr.label, action: 'create-pr' },
     { id: ci.id, label: ci.label, prompt: ci.prompt },
-    { id: MODEL_COMPARISON_FOLLOW_UP_ID, label: 'Compare models', action: 'model-compare' },
+    { id: REVIEW_FOLLOW_UP_ID, label: 'Review changes', action: 'review' },
     // Present so the continue-plan bubble kind is drivable headlessly; the real
     // gate needs a thread whose persisted plan has open items.
     { id: plan.id, label: plan.label, prompt: plan.prompt },

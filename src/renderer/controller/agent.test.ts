@@ -700,8 +700,8 @@ test('done does not alert between queued turns', () => {
 test('done does not alert for a run the user launched and is watching', () => {
   const { send, store, finishedAlerts } = setup()
 
-  // The comparison the "Compare models" bubble starts is marked quiet: the
-  // click was a second ago and its card renders in front of the user, so the
+  // The review the "Review changes" bubble starts is marked quiet: the click
+  // was a second ago and its card renders in front of the user, so the
   // completion chime would be noise, not a summons.
   markQuietRun('t1')
   send({ type: 'done' })

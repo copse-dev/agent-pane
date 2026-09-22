@@ -1,0 +1,85 @@
+name: Copse review ground
+
+# Shell C, job A (docs/plans/copse-reviewer.md, §Execution isolation, "Backend
+# per shell — CI"). Opt-in by label: add `copse-review` to a pull request and
+# this job checks out the PR head on the `pull_request` event — never
+# `pull_request_target` — with `permissions: {}` and no secrets, runs Stage 0
+# (build, typecheck, lint, test on head, and on base for whatever failed on
+# head) with the runner itself as the execution cell, and uploads the report as
+# an artefact. Nothing here can reach a model or a token: the runner is
+# ephemeral and holds neither, which is what lets a contributor's code run.
+#
+# The model stages run in "Copse review findings", triggered by this
+# workflow's completion on the base ref, with the key and a write token; that
+# job never executes the pull request's code. The artefact is the only thing
+# that crosses between them, and it is validated there before use.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+
+permissions: {}
+
+concurrency:
+  group: copse-review-ground-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  ground:
+    name: Stage 0 on the pull request head
+    if: contains(github.event.pull_request.labels.*.name, 'copse-review')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          # The PR head as committed, with the history the merge-base needs.
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: '.nvmrc'
+
+      - name: Activate the pinned pnpm
+        shell: bash
+        run: |
+          corepack enable
+          corepack prepare --activate
+          pnpm --version
+
+      # Only the reviewer and its workspace dependencies, with no lifecycle
+      # scripts: the pull request's own install runs inside Stage 0, under the
+      # reviewer's own rules, not here.
+      - name: Install the reviewer
+        shell: bash
+        run: pnpm install --frozen-lockfile --ignore-scripts --filter "@copse/review..."
+
+      - name: Run Stage 0 with the runner as the cell
+        shell: bash
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --quiet origin "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}"
+          mkdir -p ground
+          printf '{"pr":%s,"headSha":"%s","baseRef":"%s"}\n' "$PR_NUMBER" "$HEAD_SHA" "$BASE_REF" > ground/meta.json
+          # Findings never affect the exit code; a refused execution (3) or an
+          # undetectable project (2) does, and then there is no ground to upload.
+          node packages/review/bin/copse-review.mjs \
+            --foreign \
+            --head "$HEAD_SHA" \
+            --base "origin/${BASE_REF}" \
+            --backend ephemeral-runner \
+            --no-model \
+            --json ground/report.json
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: copse-review-ground
+          path: ground/
+          retention-days: 7
+          if-no-files-found: error

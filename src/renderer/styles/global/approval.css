@@ -147,22 +147,3 @@
 .approval-turn-tree {
   margin-bottom: var(--spacing-md);
 }
-.approval-comparison-models {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-sm);
-}
-.approval-comparison-intro {
-  margin: 0;
-  font-size: var(--font-size-sm);
-  color: var(--text-secondary);
-}
-.approval-comparison-row {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-xs);
-  font-size: var(--font-size-sm);
-}
-.approval-comparison-label {
-  color: var(--text-muted);
-}

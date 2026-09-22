@@ -327,6 +327,15 @@ loops driven by an actual local model rather than the mock:
   per-rule, and token deltas under `bench-results/doctrine/`. CI runs its mock
   smoke arm in the normal bench job; the real model matrix runs nightly or with
   the `bench-doctrine` label when `LM_EVAL_RUNNER` is configured.
+- `pnpm run bench:review --mock --gate` runs Copse Reviewer's corpus
+  (`benchmarks/review/cases/`) through the whole review pipeline with scripted
+  reviewers and scores precision on surfaced findings against each case's known
+  defects, ratcheted against `benchmarks/review/baseline.json`; CI runs it in the
+  `bench` job and the unit tier pins each case's counts (`scripts/bench-review.test.ts`).
+  A model profile (`--provider`, `--model`) measures the reviewer itself. Regression
+  baselines are keyed by the complete configuration and corpus fingerprint; the separate
+  absolute target gate also requires confidence, recall and zero duplicates. See
+  `benchmarks/review/README.md`.
 - The `eval-tool-preference` job scores whether a real model answers a read-only
   "what landed on main / is CI green?" question through the first-class
   git/gh/CI tools or drives `gh` and network `git` through `run_shell`, charging

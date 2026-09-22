@@ -25,7 +25,7 @@ export const CUSTOM_AGENT_FORBIDDEN_TOOLS: readonly string[] = [
   'investigate_ci',
   'delegate_step',
   'advisor',
-  'compare_models',
+  'review_changes',
   'ask_user',
   'git_commit',
 ]

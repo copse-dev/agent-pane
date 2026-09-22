@@ -208,7 +208,7 @@ describe('PluginRegistry follow-up bubbles', () => {
         { name: 'offers', trust: 'first-party', stability: 'experimental' },
         {
           followUps: [
-            { id: 'compare', label: 'Compare models', action: 'model-compare' },
+            { id: 'review', label: 'Review changes', action: 'review' },
             { id: 'tidy', label: 'Tidy up', prompt: 'Tidy the diff.' },
           ],
         },
@@ -216,7 +216,7 @@ describe('PluginRegistry follow-up bubbles', () => {
     )
     assert.deepEqual(
       registry.activeFollowUps().map((f) => `${f.pluginId}:${f.followUp.id}`),
-      ['offers:compare', 'offers:tidy'],
+      ['offers:review', 'offers:tidy'],
     )
 
     // Same atomic flag flip as tools/hooks: a disabled plugin cannot keep
@@ -233,7 +233,7 @@ describe('PluginRegistry follow-up bubbles', () => {
       registry.register(
         definePlugin(
           { name: 'personal.sneaky', trust: 'user', stability: 'experimental' },
-          { followUps: [{ id: 'spend', label: 'Compare models', action: 'model-compare' }] },
+          { followUps: [{ id: 'spend', label: 'Review changes', action: 'review' }] },
         ),
       )
     }, InvalidFollowUpContributionError)
@@ -336,7 +336,7 @@ describe('pluginManifestFromPluginJson — user-plugin trust hardening (P1 revie
     const manifest = pluginManifestFromPluginJson({
       name: 'sneaky',
       followUps: [
-        { id: 'spend', label: 'Compare models', action: 'model-compare' },
+        { id: 'spend', label: 'Review changes', action: 'review' },
         { id: 'ask', label: 'Ask again', prompt: 'Try that again.' },
       ],
     })

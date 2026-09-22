@@ -53,9 +53,9 @@ const DEFAULT_DISABLED_PLUGIN_IDS = [
   'copse.dark-factory',
   'copse.long-horizon-tasks',
   'copse.mcp-ui-canvas',
-  'copse.model-comparison',
   'copse.okf-memories',
   'copse.pii-redaction',
+  'copse.review',
   'copse.roadmap-plans',
 ] as const
 
@@ -593,11 +593,12 @@ export function seedEmptyProject(
      */
     pluginDisabled?: readonly string[]
     /**
-     * Opt into the `copse.model-comparison` pack (and its `compare_models`
-     * tool). Ships off, like the other experimental packs — a test exercising
-     * the comparison approval flow must lift it out of `pluginDisabled`.
+     * Opt into the `copse.review` pack (Copse Reviewer: the `review_changes`
+     * tool, the "Review changes" bubble and the Changes view's "Review"). Ships
+     * off, like the other experimental packs — a test that needs the button or
+     * the bubble must lift it out of `pluginDisabled`.
      */
-    modelComparisonEnabled?: boolean
+    reviewEnabled?: boolean
     /**
      * Per-project checkout isolation. Left unset, `writeSeedConfig` pins the
      * project to the shared checkout; `default` preserves the product default.
@@ -625,7 +626,7 @@ export function seedEmptyProject(
   // `pluginDisabled` wins, otherwise the host defaults with the opted-in
   // plugins lifted out.
   const enabledPlugins: string[] = []
-  if (options?.modelComparisonEnabled) enabledPlugins.push('copse.model-comparison')
+  if (options?.reviewEnabled) enabledPlugins.push('copse.review')
   if (options?.roadmapPlansEnabled) enabledPlugins.push('copse.roadmap-plans')
   if (options?.okfMemoriesEnabled) enabledPlugins.push('copse.okf-memories')
   if (options?.mcpUiCanvasEnabled) enabledPlugins.push('copse.mcp-ui-canvas')
@@ -2836,6 +2837,166 @@ export function seedComparisonErrorFixture(workspaceRoot: string): void {
   })
 }
 
+/**
+ * Thread with a completed Copse Reviewer report for the findings-card e2e: a
+ * confirmed finding with reproducer and command evidence, a finding that
+ * survived the challenger, and one the user dismissed earlier. The card must
+ * render INSIDE the scrolling `.messages-list` as its last child.
+ */
+export function seedReviewReportFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-review-report-project'
+  const threadId = 'e2e-review-report-thread'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Review report test',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-user-review-report',
+            role: 'user',
+            content: 'Make add and the retry timer handle the edge cases.',
+            toolCalls: [],
+            createdAt: now,
+          },
+          {
+            id: 'msg-assistant-review-report',
+            role: 'assistant',
+            content: 'Updated `src/math.ts` and `src/timer.ts`.',
+            toolCalls: [],
+            createdAt: now + 1,
+          },
+        ],
+        reviewReport: {
+          status: 'done',
+          startedAt: now + 2,
+          models: { reviewer: 'gpt-5', challenger: 'claude-opus-4-8' },
+          lenses: ['correctness'],
+          baseRef: 'HEAD',
+          headCommit: 'abc1234def',
+          dirtyWorkingTree: true,
+          execution: {
+            backend: 'os-sandbox',
+            strength: 'os-sandbox',
+            executed: true,
+            reason: 'own diff behind the OS sandbox',
+          },
+          checks: [
+            { kind: 'build', verdict: 'clean' },
+            { kind: 'typecheck', verdict: 'clean' },
+            { kind: 'lint', verdict: 'clean' },
+            { kind: 'test', verdict: 'regressed' },
+          ],
+          notChecked: [],
+          findings: [
+            {
+              id: '0123456789abcdef',
+              path: 'src/math.ts',
+              startLine: 3,
+              endLine: 3,
+              claim: 'add subtracts its second argument instead of adding it.',
+              class: 'contract',
+              severity: 'high',
+              confidence: 'high',
+              verdict: {
+                status: 'confirmed',
+                reason: 'The reproducer fails on head and passes on base.',
+              },
+              raisedBy: ['gpt-5 (correctness)'],
+              corroboratedBy: ['stage0'],
+              challengedBy: [],
+              evidence: [
+                {
+                  kind: 'reproducer',
+                  testPath: '.copse-review/add.test.cjs',
+                  failsOnHead: true,
+                  passesOnBase: true,
+                },
+                {
+                  kind: 'command',
+                  command: 'node .copse-review/add.test.cjs',
+                  target: 'head',
+                  exitCode: 1,
+                  excerpt: 'AssertionError [ERR_ASSERTION]: 3 !== -1',
+                },
+              ],
+              anchoredText: 'export const add = (a: number, b: number): number => a - b',
+            },
+            {
+              id: 'fedcba9876543210',
+              path: 'src/timer.ts',
+              startLine: 10,
+              endLine: 14,
+              claim: 'The retry timeout is never cleared when the promise rejects.',
+              class: 'resource',
+              severity: 'medium',
+              confidence: 'medium',
+              verdict: {
+                status: 'unverified',
+                reason: 'Survived challenge: the rejection path returns before clearTimeout.',
+              },
+              raisedBy: ['gpt-5 (correctness)'],
+              corroboratedBy: [],
+              challengedBy: ['claude-opus-4-8'],
+              evidence: [{ kind: 'citation', path: 'src/timer.ts', startLine: 10, endLine: 14 }],
+              anchoredText:
+                'const timer = setTimeout(reject, ms)\nreturn promise.then((value) => {\n  clearTimeout(timer)\n  return value\n})',
+            },
+            {
+              id: '1111222233334444',
+              path: 'src/format.ts',
+              startLine: 2,
+              claim: 'formatTotal drops the currency symbol for negative amounts.',
+              class: 'contract',
+              severity: 'low',
+              confidence: 'low',
+              verdict: {
+                status: 'unverified',
+                reason: 'One reviewer raised it; nothing verified it.',
+              },
+              raisedBy: ['gpt-5 (correctness)'],
+              corroboratedBy: [],
+              challengedBy: [],
+              evidence: [{ kind: 'citation', path: 'src/format.ts', startLine: 2, endLine: 4 }],
+              dismissed: true,
+            },
+          ],
+          appendix: 1,
+          refuted: 1,
+          reviewers: [
+            {
+              model: 'gpt-5',
+              lens: 'correctness',
+              outcome: 'completed',
+              candidates: 4,
+              summary: 'Checked src/math.ts, src/timer.ts and src/format.ts; ran the tests.',
+            },
+          ],
+          verification: {
+            attempted: 3,
+            confirmed: 1,
+            refuted: 1,
+            survived: 1,
+            undetermined: 0,
+            skipped: 0,
+          },
+          durationMs: 84_000,
+          cost: '~$0.06',
+        },
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now,
+        updatedAt: now + 2,
+      },
+    ],
+  })
+}
+
 /** Thread with a completed CI investigator subagent tool card for visual validation. */
 export function seedCiInvestigatorFixture(workspaceRoot: string): void {
   const projectId = 'e2e-ci-investigator-project'
@@ -3003,7 +3164,7 @@ export function resetGitChangesFixtureState(): void {
 /**
  * Seeds the stable git-changes fixture as the active project. Returns the repo path.
  */
-export function seedGitChangesFixture(): string {
+export function seedGitChangesFixture(options?: { reviewEnabled?: boolean }): string {
   if (!existsSync(join(GIT_CHANGES_FIXTURE_ROOT, '.git'))) {
     initGitChangesFixtureRepo()
   }
@@ -3015,7 +3176,11 @@ export function seedGitChangesFixture(): string {
   writeSeedConfig({
     projects: [{ id: projectId, path: repoRoot, name: 'git-workspace' }],
     activeProjectId: projectId,
+    activeThreadId: threadId,
     workspaceRoot: repoRoot,
+    // The Changes header's "Review" is the `copse.review` plugin's level-3
+    // contribution; it ships off, so a spec that wants the button lifts it.
+    pluginDisabled: pluginDisabledSeed(options?.reviewEnabled ? ['copse.review'] : []),
     [`threads:${projectId}`]: [
       {
         id: threadId,

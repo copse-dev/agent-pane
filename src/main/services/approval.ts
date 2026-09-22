@@ -88,13 +88,6 @@ export function approvalPendingMessage(title: string): string {
 /** How long an abandoned call's verdict is kept for an identical retry. */
 export const ABANDONED_VERDICT_TTL_MS = 10 * 60_000
 
-/** Model ids for a two-reviewer + judge comparison run. */
-export interface ComparisonModelSelection {
-  a: string
-  b: string
-  judge: string
-}
-
 export interface ApprovalRequest {
   title: string
   body: string
@@ -102,7 +95,7 @@ export interface ApprovalRequest {
   bodyAdvice?: string
   /** Call-to-action or trailing context rendered below the command block when set. */
   bodyFooter?: string
-  type: 'shell' | 'mcp' | 'web' | 'pii' | 'model-compare' | 'review-spend'
+  type: 'shell' | 'mcp' | 'web' | 'pii' | 'review-spend'
   allowRemember?: boolean
   rememberLabel?: string
   /**
@@ -122,8 +115,6 @@ export interface ApprovalRequest {
   approveOnceLabel?: string
   /** Intentional Settings-owned flow that must prompt above the open Settings dialog. */
   showWhileSettingsOpen?: boolean
-  /** Initial reviewer/judge ids when `type === 'model-compare'` (renderer shows pickers). */
-  comparisonModels?: ComparisonModelSelection
   /** Offer a bounded main-process lease for exact retries in this turn tree. */
   allowTurnTreeLease?: boolean
   /** User-facing lease scope; required whenever `allowTurnTreeLease` is true. */
@@ -183,8 +174,6 @@ export interface ApprovalResponse {
    * recorded logs / handlers that still emit it.
    */
   resolution?: 'user' | 'timeout' | 'window-closed' | 'unavailable'
-  /** User-selected models from the comparison approval pickers. */
-  comparisonModels?: ComparisonModelSelection
 }
 
 const DENIED: ApprovalResponse = { approved: false, remember: false }
@@ -209,7 +198,6 @@ export function approvalDedupeKey(req: ApprovalRequest): string {
     // things can never share one answer — and one recorded line.
     reasons: req.reasons ?? [],
     showWhileSettingsOpen: req.showWhileSettingsOpen ?? false,
-    comparisonModels: req.comparisonModels ?? null,
     allowTurnTreeLease: req.allowTurnTreeLease ?? false,
     turnTreeLeaseLabel: req.turnTreeLeaseLabel ?? '',
     turnTreeLeaseDefault: req.turnTreeLeaseDefault ?? false,
@@ -772,15 +760,11 @@ export function initApproval(
       // assertMainFrameSender rejects any frame other than the window's main
       // frame, so a compromised/embedded frame can't answer an approval.
       assertMainFrameSender(event, win)
-      const [id, approved, remember, comparisonModels, grantScope] = parseIpcArgs(
-        approvalRespondSchema,
-        rawArgs,
-      )
+      const [id, approved, remember, grantScope] = parseIpcArgs(approvalRespondSchema, rawArgs)
       settle(id, {
         approved,
         remember: remember === true,
         resolution: 'user',
-        ...(comparisonModels ? { comparisonModels } : {}),
         ...(grantScope ? { grantScope } : {}),
       })
     } catch (err) {

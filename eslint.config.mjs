@@ -47,6 +47,9 @@ export default ts.config(
       // Bench-task fixture repos: code for the agent under eval to fix, not project code.
       'benchmarks/fixtures/**',
       'benchmarks/steer/fixtures/**',
+      // Review-bench cases: the head trees carry the defects the reviewer is
+      // measured on (an unused timer is one of them), so a linter must not "fix" them.
+      'benchmarks/review/cases/**',
     ],
   },
   js.configs.recommended,
@@ -353,7 +356,10 @@ export default ts.config(
     // tests/fixtures/mock-acp-agent.mjs). They run as plain ESM under `node`,
     // not through the test bundler, so they carry no TS annotations and are not
     // part of the TS project graph.
-    files: ['tests/fixtures/*.mjs'],
+    // `packages/*/bin/*.mjs` are the one-line executable shims a workspace
+    // package's `bin` points at (`copse-review`): the same shape, for the same
+    // reason.
+    files: ['tests/fixtures/*.mjs', 'packages/*/bin/*.mjs'],
     extends: [ts.configs.disableTypeChecked],
     languageOptions: {
       sourceType: 'module',
@@ -362,6 +368,7 @@ export default ts.config(
         console: 'readonly',
         Buffer: 'readonly',
         ReadableStream: 'readonly',
+        AbortController: 'readonly',
       },
     },
     rules: {

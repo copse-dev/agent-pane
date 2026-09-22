@@ -1,8 +1,25 @@
 # Copse Reviewer
 
-Status: **Proposed** — design only. Nothing in this document is on `main`. It supersedes
-the surfacing and validation gaps in the existing `copse.model-comparison` plugin, which
-stays as-is until Phase 2 retires its judge and Phase 3 replaces it with `copse.review`.
+Status: **Active — Phases 0 to 5 landed; B8's Martian-offline target is unmeasured.**
+`@copse/review` is a workspace package on
+`main` with the finding schema, Stage 0 (the base-versus-head build and test delta), the
+`IsolationBackend` contract with the host-process, OS-sandbox and container backends, the
+hostile-fixture conformance test, and the `copse-review` CLI: Stage 1 context, models ×
+lenses with brokered tools, Stage 3 clustering, Stage 4 verification by reproducer and
+adversarial challenge, the ranked report, SARIF export and the headless event envelope.
+`pnpm run review -- --allow-unisolated` runs it over this repository's own working tree;
+`--head <ref> --foreign` reviews a contributor's branch, executing only in a container.
+In the app, the `copse.review` plugin has replaced `copse.model-comparison`: "Review" in
+the Changes view, the "Review changes" bubble and the `review_changes` tool run the same
+pipeline over the thread's checkout and render a findings card, with dismissals persisted
+to the knowledge store (see §What Phase 3 delivered). In CI, the `copse-review` label on a
+pull request runs Stage 0 on a secret-free runner and posts the findings as one review
+from a second, read-only job (see §What Phase 4 delivered). `pnpm run bench:review` scores
+the pipeline for precision on surfaced findings over a corpus of cases with known defects,
+with a mock self-test CI gates per PR, exact-configuration regression baselines, and a
+separate model-only target gate; the five-case local corpus cannot establish B8 (see §What
+Phase 5 delivered). See also §What Phase 0 delivered, §What Phase 1 delivered and §What
+Phase 2 delivered.
 Binding decisions B1 (execution isolation, 2026-09-03), B2–B6 (packaging, backend
 sequencing, scope, ecosystem, customer; 2026-09-04) and B7–B9 (name, precision aim, SARIF
 export; 2026-09-04) are recorded. Problems are numbered P1–P9 in §What needs to be solved,
@@ -18,9 +35,9 @@ egress proxy returns 403 for `code.ffmpeg.org`), so everything below cites her
 **documented behaviour**, not her implementation. Anything about her internals is
 explicitly marked as inference.
 
-Related: the in-tree `copse.model-comparison` plugin (`src/main/services/model-comparison.ts`,
-`model-comparison-runner.ts`, `packages/agent/src/plugins/model-comparison-plugin.ts`) — no plan
-doc of its own;
+Related: the retired in-tree `copse.model-comparison` plugin (its judge, runner and
+`compare_models` tool were deleted in Phase 3; `packages/agent/src/plugins/review-plugin.ts`
+took its place) — it had no plan doc of its own;
 [`hooks-and-feature-packs.md`](hooks-and-feature-packs.md), whose decisions log
 [`../../AGENTS.md`](../../AGENTS.md) makes binding for feature-pack work — its P5 extracted
 the pack Phase 3 replaces, its decision 15 governs the typed chunk the findings card
@@ -350,9 +367,10 @@ scope.
   is the backend; the reviewer is a consumer of that runtime, not a second implementation.
 - **CLI:** an `IsolationBackend` abstraction from day one — the OS sandbox first (B3), then
   Docker/Podman or a microVM — detected at start. With none present the CLI runs the
-  read-only pipeline and prints why. Until the container backend lands, the CLI reviews
-  only the user's own working tree. There is no flag that executes a foreign diff
-  unisolated.
+  read-only pipeline and prints why. Since Phase 4 the container backend
+  (`container-backend.ts`, Docker or Podman over a pinned image, never pulled) is what a
+  `--foreign` diff executes in; without it the CLI reviews a foreign diff read-only and
+  says so. There is no flag that executes a foreign diff unisolated.
 - **CI:** a GitHub-hosted runner is ephemeral but not secret-free, so the workflow is two
   jobs. **Job A** checks out the PR head on the `pull_request` event — never
   `pull_request_target` — with `permissions: {}` and no secrets, runs Stage 0 and the
@@ -415,11 +433,17 @@ Changing one of these requires updating this document in the same change — the
    B2 moves. Renaming is cheap until something ships, so the name is not revisited before
    Phase 1. Recorded 2026-09-04; settles D1.
 8. **B8 — The precision aim is 85%, provisional until measured.** 85% precision on surfaced
-   findings, on Martian's offline track, is the bar for any public claim; the best published
-   number is about 76%. Nobody has measured this pipeline yet, so the first `bench:review`
-   run (P6) sets the baseline and the number is revisited then, not before. Until that run
-   exists the bar is the qualitative one in §The quality bar: no finding reaches a human
-   without evidence. Recorded 2026-09-04; answers Q5.
+   findings, on Martian's offline track, is the bar for any public claim. That track uses 50
+   real pull requests and 173 golden comments with semantic judging; Greptile's published
+   76.2% is from Martian's **online** track and is not an offline comparator. Nobody has
+   measured this pipeline on the offline track. Until that run exists the bar is the
+   qualitative one in §The quality bar: no finding reaches a human without evidence.
+   Recorded 2026-09-04; answers Q5. _Amended 2026-09-22 (Phase 5 audit):_ a regression
+   baseline never proves an absolute claim. `--target-gate` accepts real-model runs only
+   and requires point precision ≥85%, the Wilson lower edge of a two-sided 95% interval
+   ≥85%, recall ≥50%, and zero duplicates. The five-case synthetic corpus is a smoke/trend
+   suite: its mock profile scores 80% by construction, and even 5/5 would fail the confidence
+   condition. B8 remains unmeasured until the Martian offline set is mapped and run.
 9. **B9 — SARIF is the interchange export.** The findings JSON (P2) stays the canonical
    contract; the CLI and the CI shell also emit SARIF 2.1.0, carrying the finding identity in
    `partialFingerprints` and the evidence, provenance and verdict in each result's
@@ -479,33 +503,406 @@ Ordered by how likely each is to sink the thing.
    it needs a design pass against [`../ui-taste.md`](../ui-taste.md) and, per
    [`../../AGENTS.md`](../../AGENTS.md), visual evidence.
 
+## What Phase 0 delivered
+
+On `main` under `packages/review/` (README there), with the app-side adapter under
+`src/main/services/review/` and the dogfood entry `scripts/run-review-stage0.mts`:
+
+- **The finding schema** (`finding.ts`), as zod, with the content-derived identity of P2's
+  starting proposal: SHA-256 of class, path, the normalised anchored source and the
+  normalised claim — never a line number.
+- **Stage 0** (`stage0.ts`, `checkouts.ts`, `project-commands.ts`, `tsc-diagnostics.ts`).
+  Decisions made while building it, recorded so the next phase does not re-derive them:
+  - **Head runs first; base runs only for the checks that failed on head.** A passing
+    head check can produce no finding, so the clean case costs one pass, not two. The
+    "fixed" verdict is therefore only ever observed incidentally. Stage 4 separately
+    prepares dependencies and build output on base before its first reproducer, reusing
+    successful Stage 0 work. Preparation failure leaves the finding unverified.
+  - **A lint regression is a failed check, never a finding.** The Stage 0 text above
+    lists `lint` beside `build` and `type`, and B4's class list does not include it; B4
+    is binding, and §The quality bar already says a lint failure "is a lint failure, not
+    a finding". The report shows it as `lint ✗ regressed`.
+  - **The default `prepare` is `pnpm install --frozen-lockfile --offline --ignore-scripts`**,
+    with pnpm's content-addressed store passed in read-only. `--ignore-scripts` because a
+    repo-controlled `postinstall` is the CodeRabbit incident; a repository whose native
+    modules need their build step says so in `review.config.json`. The host's pnpm store
+    and corepack cache are mounted read-only and corepack is pinned offline
+    (`COREPACK_ENABLE_NETWORK=0`), since a cell with its own `HOME` would otherwise try to
+    download the pinned package manager. This is P1's "read-only dependency cache" in its
+    simplest form; a registry allowlist stays open.
+    The CLI discovers the store using filesystem paths and environment settings only;
+    it never runs `pnpm store path`, which can execute a repository's `.pnpmfile.cjs`
+    before consent. A store configured only in `.npmrc` needs `--store`.
+  - **`review.config.json`** is the §Configuration file, Phase 0 subset: an argv per
+    command, `null` to disable one, and per-command timeouts. It is repo-controlled, so
+    its argv only ever runs inside the cell; the orchestrator reads it as data.
+  - **A `tsc` regression is one finding per new diagnostic**, keyed on path, code and
+    message (not line), anchored at the file and line. Build and test regressions are one
+    finding per check, anchored at the script line in `package.json`, until Phase 2's
+    reproducers give them a finer anchor.
+  - **A timeout claims nothing.** A check that timed out on head is `undetermined` and
+    listed under "not checked", never a finding.
+  - **The repository's git common directory is readable in the cell**, read-only, so a
+    build that stamps the commit or a test that shells out to git works. Both checkouts
+    are detached worktrees of it.
+- **The `IsolationBackend` contract** (`isolation.ts`) with `decideExecution`, the
+  trust × isolation table as a function, tested exhaustively. Two backends: the
+  **host process** with a scrubbed environment (strength `none`, so own diffs with
+  consent only), and the app's **OS sandbox** (`os-sandbox-backend.ts`, strength
+  `os-sandbox`), which spawns ASRT's wrapped argv itself rather than through
+  `spawnInProjectSandbox` because that path layers the app's own environment underneath
+  the caller's, and a review cell's environment must be exactly the allowlist.
+  The OS overlay denies host reads by default, then allows declared cell paths, read-only
+  mounts and installed system/toolchain resources. Scratch paths are canonical so macOS
+  temporary-directory aliases do not need broader access. A live seatbelt test checks
+  permitted reads and execution against an outside canary.
+  Cancellation reaches Stage 0 and every command, kills the process group and waits for
+  command closure before removing scratch. On POSIX, a leader's normal exit also kills
+  remaining descendants in its process group; background commands cannot outlive it.
+- **The conformance test** (`hostile-fixture.test.ts`): a hostile repository — a prepare
+  step that dumps its environment, a build that reads `$HOME/.copse` and the
+  orchestrator's secrets file, a test that writes outside the cell, a README aimed at an
+  agent — reviewed with canary secrets in the orchestrator's environment. Each declared
+  capability is checked against what the fixture managed. The README criterion is
+  vacuous until Stage 2 puts a model in the loop and is re-armed then.
+- **Secret scrubbing** of every retained output through `@copse/llm`'s `redactSecrets`,
+  with every environment value the allowlist dropped passed as a literal secret — a
+  second line behind the backend's wall, not a substitute for it.
+
+Not in Phase 0, by design: any model call, the CLI shell and SARIF (Phase 1), the app
+gesture (Phase 3), and the container backend that a foreign diff needs (Phase 4). Outside
+the app there is no OS sandbox, so `pnpm run review:stage0` needs `--allow-unisolated`.
+
+## What Phase 1 delivered
+
+The CLI shell (Shell A), on `main` in the same package, as `copse-review` (the package's
+`bin`; `pnpm run review` in this repository). Decisions made while building it:
+
+- **Candidates arrive through a tool, not prose.** The reviewer reports each defect with
+  `report_finding`, whose arguments are validated against the finding vocabulary and
+  anchored to real lines at report time (the tool reads the anchored source and rejects an
+  out-of-range anchor), so Problem 3 never re-enters through the model's output. Stage 5
+  mints the content-derived id from that anchored source.
+- **The reviewer's tools are brokered, not the loop.** Reads are served over the head
+  checkout as data, jailed to it. Host-side reads and reproducer writes reject symlinks
+  below the canonical checkout root, and final file opens use `O_NOFOLLOW`; recursive
+  searches skip symlinks. `run_command` is the only executing tool: it runs argv
+  (never a shell string) in the cell, is gated by the run's permission profile, and its
+  output comes back secret-scrubbed and wrapped as external content (P7).
+- **Headless conformance.** The model turn is projected onto the headless contract's event
+  envelope live (`--events`), validated against the schema; permissions come from a
+  declared profile derived from `CI_DENY_BY_DEFAULT_PROFILE` with shell allowed only when
+  the execution decision allowed it, resolved non-interactively so `ask` fails closed; exit
+  codes are the contract's, with a refused execution reported as `APPROVAL_REQUIRED`.
+  The CLI does not consume `headlessRunRequestSchema` on stdin: its request is the
+  repository and the base ref, not a prompt. That reading is recorded here rather than
+  forced.
+- **Per-file diff budgeting** replaces the flat 12k truncation: lockfiles, generated files,
+  build output and binaries are dropped (and listed). Remaining files receive a minimum
+  useful share only while the total budget permits it, then divide the remaining budget
+  proportionally. Truncation notices count toward the cap. `git_diff` pages the complete
+  per-file diff by character offset, including deleted files and changes omitted from
+  the initial context. Git text conversions and external diff helpers are disabled.
+- **Ranking** is severity × confidence, plus a bonus for executable evidence and a confirmed
+  verdict, minus a penalty for a finding one reviewer raised, nobody corroborated and
+  nothing verified; refuted findings never reach the list; seven are surfaced and the rest
+  go to the appendix. Merging is by identical id or same class on overlapping lines — a
+  stand-in for Phase 2's clustering, not the answer to P2.
+- **Provider-agnostic by construction.** `--provider` selects among Anthropic, OpenAI,
+  OpenRouter, LM Studio and any OpenAI-compatible endpoint through `@copse/llm`'s
+  factories; keys come from the environment only; remote providers are wrapped in secret
+  redaction. `--provider mock` plays a scripted reviewer, which is how the pipeline is
+  tested end to end without a model.
+- **The bin is a one-line shim** over the TypeScript source, which Node strips on load.
+  Flags work directly and with the optional separator forwarded by `pnpm run review --`.
+  Publishing to npm needs a bundle step; nothing in this repository publishes yet, so that
+  is left with D4.
+
+Not in Phase 1: any second model or lens, clustering, the challenger, reproducers (Phase 2),
+the app gesture (Phase 3), the container backend and CI action (Phase 4), and the
+`bench:review` precision measurement (Phase 5) — so B8's 85% is still unmeasured.
+
+## What Phase 2 delivered
+
+Fan-out, clustering and verification, in the same package and CLI. Decisions made while
+building it:
+
+- **Five lenses, all inside B4.** `correctness` (the default), `contracts`, `tests`,
+  `security` and `concurrency`; `--lenses all` runs every one, `--model` repeats to fan out
+  across models, `--concurrency` bounds how many reviewers run at once. The `docs` lens
+  waits with the `docs` class.
+- **One serialised cell, not per-reviewer worktrees.** Reviewers fan out over one head
+  checkout and one cell whose commands run one at a time, so two test runs never trample
+  one working directory. The plan's per-reviewer worktrees for writers stay the design;
+  the only writer today is the reproducer, which writes one file under `.copse-review/`
+  and is run alone.
+- **Clustering (Stage 3, P2's starting proposal).** Two candidates are one finding when
+  their anchors overlap within three lines of slack, the class matches, and either the
+  Jaccard similarity of their content words (stopwords out, crude suffix stemming) is at
+  least 0.34 or at least four words overlap and cover 45% of the shorter claim. The
+  containment fallback was added after a real-model smoke run emitted concise and expanded
+  versions of the same pagination defect whose Jaccard score was only 0.28. The first member
+  keeps its identity and claim, its anchor widens to cover the cluster, later raisers become
+  corroborators, and their command evidence is carried along. The thresholds are exported
+  constants and the scorer also refuses to count repeated hits on one truth defect twice.
+- **Verification (Stage 4) by class.** `test`, `contract` and `concurrency` go to a
+  reproducer model first: it writes one test under `.copse-review/` and names the argv;
+  the orchestrator runs it on head, copies it to base, runs it there, removes it from base,
+  and confirms only when it fails on head and passes on base. The artefact stays in the
+  head checkout and in the report. Everything still open — including a reproducer that
+  could not separate the two — goes to the challenger, whose brief is to refute the
+  finding with the burden of proof on the claim: `refuted` drops it (kept in the report's
+  `refuted` list with the reason), `stands` records a survived challenge in
+  `challengedBy` and in the verdict reason, `undetermined` leaves it as it was. A
+  challenge never upgrades a finding to `confirmed`: only execution does that.
+- **Budget (P3's staged escalation, first rung).** Verification is spent only on
+  unverified survivors of Stage 3, most promising first by rank score, up to
+  `--max-verify` (default 10); the rest are reported as skipped. `--no-verify` skips the
+  stage. The challenger and reproducer default to the first `--model` and can be a
+  different model via `--challenger` (P5's cross-family diversity is a flag, not yet a
+  measured claim).
+- **Ranking** gains a bonus for a survived challenge, and the lone-unverified penalty no
+  longer applies to a finding that survived one.
+- **The comparison judge is not retired here.** The plan schedules it for Phase 2, but the
+  judge is the only thing the app's comparison card summarises with, and removing it
+  before Phase 3's findings card would leave the card with two prose reviews and nothing
+  between them. It goes when Phase 3 replaces the pack; the per-finding verdicts that
+  replace it now exist.
+
+Not in Phase 2: any model in the app, the app gesture (Phase 3), the container backend and
+CI action (Phase 4), and the precision measurement (Phase 5) — B8's 85% is still
+unmeasured, and the clustering thresholds above are the first thing that measurement
+should move.
+
+## What Phase 3 delivered
+
+On `main`: the `copse.review` first-party plugin (`packages/agent/src/plugins/review-plugin.ts`),
+the app-side review service (`src/main/services/review/review-service.ts`, with
+`review-dismissals.ts` beside the OS-sandbox backend), the findings card
+(`src/renderer/views/review-findings-card.ts`) and the Changes-view gesture
+(`git-changes-pane.ts`). The `copse.model-comparison` plugin, its judge, its runner, the
+`compare_models` tool, the picker dialog and the `model-compare` approval type are deleted.
+
+- **One pipeline, three gestures.** "Review" in the Changes header, the "Review changes"
+  follow-up bubble (action `review`, offered on `workspace-changes`) and the agent's
+  `review_changes` tool all run `runThreadReview` over the thread's execution-context
+  root: the base resolves to `HEAD` for a dirty tree (the change is what is not committed
+  yet) and to the base branch for a clean one, so committed branch work still gets a
+  review; a clean tree on the base reports "nothing to review" rather than an error. The
+  human gestures are their own spend decision and never prompt; the tool prompts for a
+  billable model, remembered per thread, exactly as the post-turn review does.
+- **Execution in the app follows the trust table with no consent path.** Behind the OS
+  sandbox (`createOsSandboxBackend`) Stage 0 runs and the reviewer has `run_command`;
+  without it the ground opens **read-only** — a new `readOnlyCheckouts` option on
+  `openReviewGround` materialises base and head with no cell — so the model stages still
+  run over the checkouts, and the card says "Read-only review — nothing was executed" and
+  why. `--allow-unisolated` stays a CLI flag; the app never runs the user's tree unisolated.
+- **The typed chunk (decision 15).** `review_report` carries `ThreadReviewReport` — the
+  package report projected for a card: findings flattened with their anchored source, the
+  Stage 0 checks and coverage notes, the execution decision, reviewer turns, verification
+  counts, cost — as a running placeholder, then the report or an error. It is persisted on
+  the thread as `reviewReport` (metadata, like the retired `comparison`) and rendered from
+  that data alone, so a report keeps rendering after the plugin is disabled (decision 17).
+  No review starts a machine turn, so decision 5's budget is untouched.
+- **The findings card.** Ranked rows — severity, class, `path:line`, the claim, the
+  verdict ("confirmed by reproducer", "survived challenge", "unverified") — each a
+  disclosure onto the verdict's reason, the anchored lines, the evidence (a command with
+  its target, exit and excerpt; a reproducer with its head/base outcome; a citation) and
+  who raised, corroborated or challenged it. Stage 0's checks are chips above the list;
+  the appendix and refuted counts sit below it. "Clean." is a complete answer.
+- **Dismissal persisted (P8).** Dismiss writes one `review-dismissal` knowledge note per
+  finding, keyed by the finding's content-derived id, so it stays dismissed across pushes
+  for as long as the anchored source and the claim hold — and lapses by itself when the
+  code or the claim at that spot changes, which is the P8 balance. The next review marks
+  those ids dismissed; the card folds them behind an "n dismissed" toggle with Restore.
+- **The judge is retired.** Per-finding verdicts (Stage 4) are the only synthesis. A thread
+  that still carries a `comparison` renders its old card, dismissible and never
+  re-runnable; the `model_comparison` chunk, the retry and the auto-on-review trigger are
+  gone with the runner.
+- **Plugin settings and migration.** `reviewerModel` (blank = the chat model),
+  `challengerModel` (default: the most-capable rule), `lenses` (`correctness` or `all`)
+  and `verify`. A one-shot host migration carries an existing profile's comparison
+  enablement across (on stays on, off stays off, the retired id leaves the list) and seeds
+  the reviewer and challenger from reviewer A and the judge when the new bag is empty.
+- **Visual evidence.** `tests/e2e/review-findings-card.e2e.ts` (the card, expansion,
+  dismissal through main's knowledge store, persistence across a restart) and
+  `tests/e2e/git-changes-review-button.e2e.ts` (the button present only while the plugin is
+  enabled), plus component tests for the card, the inline placement and the actions.
+
+Not in Phase 3: a container backend and foreign diffs (Phase 4), the CI action (Phase 4),
+`bench:review` (Phase 5), and the per-finding inline anchor in the Changes view's diff
+(the card links by `path:line`; jumping the diff editor to it is a follow-up).
+
+## What Phase 4 delivered
+
+On `main`: the container backend (`packages/review/src/container-backend.ts`), its app
+adapter over the thread-in-container runtime (`src/main/services/review/container-backend.ts`),
+foreign-diff review in the CLI (`--head`, `--foreign`, `--backend`), the two hand-offs the
+CI shell needs (`stage0-report.ts`, `forge-review.ts`) and the workflows
+(`.github/workflows/review-ground.yml`, `review-findings.yml`, `.forgejo/workflows/review.yml`).
+
+- **One container per command.** The backend runs every cell command in its own
+  throwaway container from a pinned image with the hardening the thread-in-container
+  runtime settled on (read-only root, every capability dropped, no new privileges, pid /
+  memory / cpu limits, an exec-able private `/tmp`) and **no network interface at all**.
+  The two checkouts and the scratch directory are bind-mounted read-write at their host
+  paths, the declared read-only paths (dependency store, corepack cache, the repository's
+  git directory) read-only at theirs, so an argv, a cwd, `npm_config_store_dir` and a
+  reproducer's relative path mean the same on both sides and the orchestrator's reads of
+  head see what the cell wrote. The host `PATH` is dropped for the image's; `HOME` and
+  `TMPDIR` live in scratch. A timed-out or cancelled command is ended by `<engine> kill`,
+  which takes everything it forked. Every wall the capabilities declare is a flag pinned
+  by a unit test; the plumbing is exercised over a fake engine that runs the argv on the
+  host, and the real engine by the hostile-fixture conformance test behind
+  `COPSE_REVIEW_CONTAINER_E2E=1` (a daemon and the image required). Not a second runtime:
+  the image is never pulled or built here, and the app adapter reuses the runtime's image,
+  fingerprint check (a stale image is never run), daemon probe, container name and labels,
+  so its orphan sweep covers review cells too.
+- **The app's backend order.** OS sandbox for the author's own tree (enough per B3, and
+  lighter); the container where no OS sandbox is active but Docker is; read-only review
+  where neither is. There is still no consent path in the app.
+- **Foreign diffs.** `materialiseCheckouts` takes a `headRef`; another ref is reviewed as
+  committed and the working tree is never overlaid on it. `--foreign` declares the diff a
+  contributor's: `decideExecution` lets it run only at container strength, `auto` looks
+  for the container (`--image`, default the app's worker image) and, finding none, the
+  pipeline degrades to read-only lenses plus the challenger pass and says so — the trust
+  table's bottom-right cell. `--allow-unisolated` is not consent for a foreign diff (B3).
+- **The runner as the cell.** `--backend ephemeral-runner` is the host-process backend
+  declared at container strength for the one place that is true: a CI job created for one
+  run, holding no secrets, discarded after. It is an assertion the caller makes about
+  where it runs, never a detection, and the conformance test holds it to what it
+  guarantees inside the process (a scrubbed environment, `HOME` and `TMPDIR` in the cell).
+- **The CI shell, in two jobs.** `review-ground.yml` runs on `pull_request` (never
+  `pull_request_target`), only for a pull request carrying the `copse-review` label, with
+  `permissions: {}` and no secrets: it installs only the reviewer's workspace subtree with
+  scripts off, runs Stage 0 on the head with the runner as the cell, and uploads the
+  report. `review-findings.yml` runs on that workflow's completion in the base
+  repository's context with the model key and a token that can write a review; it resolves
+  the pull request from the event's head commit (never from the artefact), fetches the head
+  to read it, imports the Stage 0 report through `--stage0-json` — which makes the run
+  read-only whatever else is asked, and refuses a report for another commit — runs the
+  reviewers and the challenger over the checkouts, and posts one review. The Forgejo
+  workflow is the same split as two jobs of one workflow (Forgejo Actions has no
+  `workflow_run`), with the secret-holding job gated to same-repository pull requests and
+  a note that its runners must be ephemeral.
+- **The Stage 0 report is a decoder.** Between the jobs it is an artefact a runner wrote
+  after executing the pull request's own code, so `stage0-report.ts` validates every
+  shape of it — findings included — before a field reaches a model or a comment.
+- **One review on the pull request.** `forge-review.ts` projects a report onto a review
+  (`COMMENT`, never a request for changes): each surfaced finding with a line is an inline
+  comment on the head commit — its class, severity, confidence, claim, verdict, evidence and
+  provenance — and the rest (the ground, what was not checked, findings without a line,
+  the appendix and refuted counts) is the body. GitHub anchors by `line`/`side`, Forgejo
+  by `new_position`; both refuse a line outside the diff, so a 422 is retried once with
+  every inline comment folded into the body rather than lost. `--post-review github|forgejo`
+  with `--repo` and `--pr`; the token from `COPSE_REVIEW_FORGE_TOKEN`, else `GITHUB_TOKEN`
+  (Forgejo: `FORGEJO_TOKEN` too); a review that could not be posted is exit 1.
+- **Known limit: reproducers in CI.** The findings job has no cell, so Stage 4 there is
+  the challenger only; a reproducer needs execution, which belongs to the secret-free job,
+  and a job-crossing loop for it is a follow-up. The reports say "unverified" or "survived
+  challenge" accordingly, never "confirmed" without execution.
+- **Known limit: the dependency store across platforms.** The cell resolves the offline
+  install from the host's pnpm store, which holds the host platform's packages. On a Linux
+  host (CI, a Linux desktop) that is the guest's platform too; on macOS the Linux guest
+  finds no Linux binaries for native packages and the prepare step fails, which Stage 0
+  reports as "not checked" rather than pretending. Pointing the cell at the runtime's
+  shared store volume, populated by an installing container run, is the follow-up.
+
+Not in Phase 4: reproducers in CI (above), `bench:review` (Phase 5), and a foreign-diff
+gesture in the app (the app reviews the thread's own tree; a "review this pull request"
+gesture is a product question for later).
+
+## What Phase 5 delivered
+
+On `main`: the scorer (`packages/review/src/eval.ts`), the harness
+(`scripts/bench-review-lib.mts`, `pnpm run bench:review`), the corpus and its baseline
+(`benchmarks/review/`, with a README), and the per-PR gate in CI's `bench` job.
+
+- **Precision is the metric, as P6 asks.** A case declares the defects its head carries as
+  anchors (path and lines in the head), semantic `claimSignals`, and, where a defect makes
+  a Stage 0 check regress, which one; the harness runs the whole pipeline over the case and
+  scores only the **surfaced** findings — the appendix and the refuted never reach a human,
+  so they never count. An anchored hit needs both an overlapping source range and all of
+  the truth's AND-of-OR semantic signal groups. A Stage 0 finding instead hits by the
+  declared regression because it anchors at the script that failed, not the defect.
+  Equivalent comments form one precision observation and the extras are reported as
+  duplicates, so repeated true comments cannot inflate precision, confirmation or
+  reproducer counts. Reported beside precision: its Wilson 95% lower bound, recall
+  (secondary), duplicate count, reproducer rate, and output tokens per unique confirmed
+  finding.
+- **The corpus is small and deliberate.** Five cases, each a two-tree project with a
+  `review.config.json` that runs its own test with `node` so Stage 0 needs no install: a
+  defect the project's test catches (Stage 0 mints it, a reviewer anchors it, a reproducer
+  confirms it); a resource leak no test covers (the challenger is the verdict); a clean
+  rename where the mock reviewer's wrong candidate is refuted and dropped; a dropped null
+  guard reported by two lenses in different words (one finding after Stage 3, confirmed by
+  a reproducer); and a harmless change where a wrong claim the challenger cannot settle
+  reaches the human. That last one is the point: the corpus scores 80%, not 100%, so the
+  metric visibly bites, and a change that lets one more wrong claim through moves it.
+- **Two profiles, one harness.** `--mock` plays each case's `mock.json` through the same
+  `ScriptedProvider` the CLI's `--provider mock` uses — deterministic, no model, a few
+  seconds — and is the self-test CI runs per PR with `--gate`. A model profile goes through
+  the CLI's provider door (`--provider`, `--model` repeatable for an ensemble,
+  `--challenger`, keys from the environment). `--no-verify`, `--lenses` and the model list
+  are the ablation knobs; `--compare` prints the delta between two summaries, which is how
+  Q6 (cross-model ensembling against one model) and "how much does verification buy" are
+  read.
+- **The ratchet.** `benchmarks/review/baseline.json` is coverage-baseline style. Each entry
+  is keyed by evaluator version, provider, reviewer and challenger models, credential-free
+  endpoint identity, lenses, verification mode, selected cases and corpus fingerprint.
+  `--gate` fails closed when that exact baseline is absent, when precision drops (the mock
+  gets no tolerance, a model profile five points), when true positives fall, when
+  duplicates rise, or when tokens per confirmed finding grow past 1.25×;
+  `--update-baseline` moves it on purpose. The unit tier runs the corpus too
+  (`scripts/bench-review.test.ts`), pinning each case's expected counts, so a pipeline change
+  that moves the measurement fails on the PR that makes it.
+- **The target is not the ratchet.** `--target-gate` rejects mock profiles and requires
+  point precision ≥85%, a two-sided 95% Wilson lower bound ≥85%, recall ≥50%, and no
+  duplicates. This is the gate for evidence behind B8; a historical baseline only detects
+  regressions and can never substantiate the claim by itself.
+- **What is and is not measured.** The mock's 80% is a property of the corpus and of the
+  pipeline's non-model parts; it says nothing about any reviewer. The corpus is also small
+  enough that any model number over it is a smoke figure, not a claim: its five surfaced
+  observations give the 80% mock score a 37.6% Wilson lower bound, and even a perfect 5/5
+  would not pass. Mapping Martian's offline set — or a comparably sized, independently
+  labelled real-PR corpus — is the work that makes B8 measurable and is not faked here.
+
+Not in Phase 5: a mapped Martian-offline or equivalent real-PR corpus, and the online track
+(Q8). Model-profile baselines remain optional trend records, not claim evidence.
+
 ## Phases
 
-- **Phase 0 — Findings schema + Stage 0 + OS-sandbox backend.** `@copse/review` as a
+- **Phase 0 — Findings schema + Stage 0 + OS-sandbox backend.** ✅ Landed; see above. `@copse/review` as a
   workspace package (B2) with the finding type, the build/test baseline diff for
   TypeScript/pnpm repositories (B5), the `IsolationBackend` abstraction with the existing OS
   sandbox as its first backend (B3), and the hostile-fixture conformance test. No models at
   all; the user's own working tree only. Ships value immediately ("this doesn't compile /
   this test regressed"). Stage 0 _is_ execution, so this is where B1 is proven, before any
   model spend.
-- **Phase 1 — CLI shell.** `copse review` over a single model, one lens, Stage 0 + 1 + 2 + 5,
+- **Phase 1 — CLI shell.** ✅ Landed; see above. `copse review` over a single model, one lens, Stage 0 + 1 + 2 + 5,
   bugs and regressions only (B4), findings JSON and SARIF out (B9). Dogfood on this
   repository's own PRs (B6), reviewing the author's own tree.
-- **Phase 2 — Multi-model + verification.** Lenses, fan-out, clustering, the challenger
+- **Phase 2 — Multi-model + verification.** ✅ Landed, except the judge's retirement, which
+  moves to Phase 3; see above. Lenses, fan-out, clustering, the challenger
   role, reproducer generation. Retire the comparison judge in favour of per-finding
   verdicts.
-- **Phase 3 — App shell.** `copse.model-comparison` → `copse.review`; findings card;
-  the Changes-view gesture; dismissal persisted. This replaces the first-party pack that
+- **Phase 3 — App shell.** ✅ Landed; see above. `copse.model-comparison` → `copse.review`;
+  findings card; the Changes-view gesture; dismissal persisted; the comparison judge
+  retired. This replaced the first-party pack that
   [`hooks-and-feature-packs.md`](hooks-and-feature-packs.md) P5 extracted, so its decisions
-  log binds here: decision 15 for the typed chunk the findings card consumes, decision 5 for
-  any machine turn a review starts.
-- **Phase 4 — Container backend + foreign diffs + CI shell.** The container/VM
-  `IsolationBackend`, consuming the local-docker runtime proposed in
-  [`copse-cloud-workspaces.md`](copse-cloud-workspaces.md) C1, which unlocks foreign-diff
-  review (B3); then the GitHub Action with inline comments, opt-in by label, and the Forgejo
-  equivalent.
-- **Phase 5 — Eval.** `bench:review` and a precision gate. Arguably belongs at Phase 2;
-  listed last only because it needs a corpus that Phases 1–2 generate.
+  log bound here: decision 15 for the typed chunk the findings card consumes, decision 5 for
+  any machine turn a review starts (none does: every review is a human gesture or an agent
+  tool call inside an existing turn).
+- **Phase 4 — Container backend + foreign diffs + CI shell.** ✅ Landed, except
+  reproducers in CI; see above. The container `IsolationBackend`, consuming the
+  thread-in-container runtime's image and naming in the app (the local-docker provider
+  [`copse-cloud-workspaces.md`](copse-cloud-workspaces.md) C1 proposed), which unlocks
+  foreign-diff review (B3); then the GitHub workflows with inline comments, opt-in by label,
+  and the Forgejo equivalent.
+- **Phase 5 — Eval.** ✅ Local harness and gates landed; the external claim corpus remains;
+  see above. `bench:review`, an exact-configuration regression ratchet, and a separate
+  absolute target gate. Arguably belongs at Phase 2; listed last only because it needs a
+  corpus that Phases 1–2 generate.
 
 ## Non-goals
 
@@ -520,15 +917,14 @@ Ordered by how likely each is to sink the thing.
 
 ## Competitive position
 
-Compiled 2026-09-03 from search summaries and vendor posts citing Martian's benchmark; most
-primary pages were unreachable from the authoring environment. Treat every figure as
-indicative, as [`competitive-landscape.md`](competitive-landscape.md) advises for
-secondary sources.
+Compiled 2026-09-03 and re-checked 2026-09-22 against Martian's benchmark description and
+the linked vendor posts. Treat vendor figures as indicative, and keep Martian's online and
+offline tracks separate, as [`competitive-landscape.md`](competitive-landscape.md) advises.
 
 Built as designed, the reviewer sits in a gap nobody occupies: general-purpose review where
 a finding reaches a human only after execution confirmed it or a refutation pass failed to
-kill it. The best published precision in the field is about 76% on Martian's independent
-Code Review Bench. That is the number the design is aimed at.
+kill it. Greptile publishes 76.2% on Martian's online track. B8 deliberately targets the
+separate offline track, so that figure gives context but is not the baseline to beat.
 
 **Three groups.**
 
@@ -566,20 +962,25 @@ The same feature is a differentiator in one category and table stakes in the oth
 | Latency                   | Bugbot about 90 s                             | Minutes, bounded by the test suite                              |
 | Benchmark presence        | Martian ranks 13–17 tools                     | None                                                            |
 
-Published numbers, to fix the bar (each vendor claims first on a different date or metric,
-so read them as a range):
+Published numbers for context (different tracks, dates and metrics; they are not one
+comparable leaderboard):
 
-| Tool                 | Precision       | Recall | F1              | Source                 |
-| -------------------- | --------------- | ------ | --------------- | ---------------------- |
-| Greptile, July 2026  | 76.2            | 50.6   | 60.8            | vendor, citing Martian |
-| Qodo                 | 62.3            | 66.4   | 64.3            | vendor, citing Martian |
-| CodeRabbit, Feb 2026 | 49.2            | 53.5   | #1 F1 at launch | vendor, citing Martian |
-| Cursor Bugbot        | 70%+ resolution | —      | —               | vendor                 |
-| GitHub Copilot       | 71% actionable  | —      | —               | vendor                 |
+| Tool                 | Precision       | Recall | F1              | Context                         |
+| -------------------- | --------------- | ------ | --------------- | ------------------------------- |
+| Greptile, July 2026  | 76.2            | 50.6   | 60.8            | Martian **online**; vendor post |
+| Qodo                 | 62.3            | 66.4   | 64.3            | Martian; vendor post            |
+| CodeRabbit, Feb 2026 | 49.2            | 53.5   | #1 F1 at launch | Martian; vendor post            |
+| Cursor Bugbot        | 70%+ resolution | —      | —               | vendor-specific metric          |
+| GitHub Copilot       | 71% actionable  | —      | —               | vendor-specific metric          |
 
-The range says even the leader is wrong or ignored one comment in four. Price floor for
-context: Gemini free, GitLab Duo about $0.25 per MR, Bugbot about $1.20 per review, Anthropic
-managed review in the tens of dollars.
+Martian's offline track instead fixes 50 real pull requests and 173 golden comments and
+uses a semantic judge. Results from the live online track cannot establish the offline B8
+claim, and neither can this repository's five synthetic cases.
+
+Greptile's online point estimate implies roughly one wrong or ignored comment in four in
+that setting; it does not transfer to the offline track. Price floor for context: Gemini
+free, GitLab Duo about $0.25 per MR, Bugbot about $1.20 per review, Anthropic managed review
+in the tens of dollars.
 
 **Where this design is weaker.** Table stakes it lacks: PR summaries, inline suggested
 changes, one-click fix, learnings, four-forge support, two-click install. Cost, because
@@ -610,7 +1011,8 @@ Numbered Q1–Q16 to match the working list; answered ones say so.
 
 5. **Q5 — What precision makes us credible?** Recommendation: above 85% on Martian's offline
    track before any public claim. The pipeline is open source, so we can run it ourselves.
-   **Decided (B8):** 85% is the aim, revisited after the first `bench:review` measurement.
+   **Decided (B8):** 85% is the aim, with the confidence, recall and duplicate conditions
+   recorded in B8; the local smoke corpus is not that measurement.
 6. **Q6 — Does cross-vendor ensembling beat single-vendor multi-pass?** Unknown and testable;
    the first ablation for `bench:review`.
 7. **Q7 — What fraction of findings can execution settle?** If under half, the challenger pass

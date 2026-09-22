@@ -1,0 +1,125 @@
+name: Copse review findings
+
+# Shell C, job B (docs/plans/copse-reviewer.md, §Execution isolation, "Backend
+# per shell — CI"). Runs when "Copse review ground" completes, on the base
+# repository's default branch with the model key and a token that can write a
+# review. It fetches the pull request's head to READ it — the reviewers'
+# context, their file tools, the challenger — and never executes it: the
+# Stage 0 report the ground job uploaded is the only execution this job
+# consumes, and it is validated as untrusted input before a field of it
+# reaches a model. Then one review is posted on the pull request: each
+# anchored finding an inline comment on the head commit, the rest in the body.
+#
+# `workflow_run` is what makes this safe for a fork: the event carries the
+# base repository's secrets, so the job must not run anything the fork wrote,
+# and it does not — the CLI here is this branch's, the head is a checkout it
+# only reads, and `--stage0-json` makes the run read-only whatever else is
+# asked of it.
+
+on:
+  workflow_run:
+    workflows: ['Copse review ground']
+    types: [completed]
+
+permissions:
+  contents: read
+  pull-requests: write
+  actions: read
+
+concurrency:
+  group: copse-review-findings-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: true
+
+jobs:
+  findings:
+    name: Review the pull request read-only and post the findings
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      # The reviewer and the challenger. Set repository variables to change
+      # them; the key lives in the repository secret COPSE_REVIEW_API_KEY.
+      REVIEW_MODEL: ${{ vars.COPSE_REVIEW_MODEL || 'claude-sonnet-5' }}
+      REVIEW_LENSES: ${{ vars.COPSE_REVIEW_LENSES || 'correctness' }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: '.nvmrc'
+
+      - name: Activate the pinned pnpm
+        shell: bash
+        run: |
+          corepack enable
+          corepack prepare --activate
+          pnpm --version
+
+      - name: Install the reviewer
+        shell: bash
+        run: pnpm install --frozen-lockfile --ignore-scripts --filter "@copse/review..."
+
+      - uses: actions/download-artifact@v6
+        with:
+          name: copse-review-ground
+          path: ground
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # The artefact names a pull request, but a pull request could have
+      # written that file: the number is resolved from the head commit the
+      # event itself carries, never read from the artefact.
+      - name: Resolve the pull request from the event's head commit
+        id: pr
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          number="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${HEAD_SHA}/pulls" --jq '.[0].number')"
+          base="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${number}" --jq '.base.ref')"
+          test -n "$number" && test -n "$base"
+          echo "number=${number}" >> "$GITHUB_OUTPUT"
+          echo "base=${base}" >> "$GITHUB_OUTPUT"
+
+      - name: Review read-only over the uploaded ground and post the findings
+        shell: bash
+        env:
+          COPSE_REVIEW_API_KEY: ${{ secrets.COPSE_REVIEW_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          BASE_REF: ${{ steps.pr.outputs.base }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --quiet origin \
+            "+refs/pull/${PR_NUMBER}/head:refs/remotes/pr/${PR_NUMBER}" \
+            "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}"
+          # The report is for exactly this commit, or the CLI refuses it.
+          test "$(git rev-parse "refs/remotes/pr/${PR_NUMBER}")" = "$HEAD_SHA"
+          node packages/review/bin/copse-review.mjs \
+            --foreign \
+            --head "refs/remotes/pr/${PR_NUMBER}" \
+            --base "origin/${BASE_REF}" \
+            --stage0-json ground/report.json \
+            --model "$REVIEW_MODEL" \
+            --lenses "$REVIEW_LENSES" \
+            --post-review github \
+            --repo "$GITHUB_REPOSITORY" \
+            --pr "$PR_NUMBER" \
+            --json findings.json \
+            --sarif findings.sarif
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: copse-review-findings
+          path: |
+            findings.json
+            findings.sarif
+          retention-days: 30
+          if-no-files-found: ignore

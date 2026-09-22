@@ -3,10 +3,6 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import { isSettingsDialogOpen, onSettingsDialogClose } from './settings-dialog.ts'
 import { setAttentionThreads } from '../controller/attention.ts'
-import {
-  createComparisonModelPickers,
-  type ComparisonModelSelection,
-} from './approval-comparison-pickers.ts'
 import { uiActions } from '../ui/actions.ts'
 
 /**
@@ -158,7 +154,6 @@ export function mountApprovalDialog(
     collapseDetails: boolean | undefined
     approveOnceLabel: string | undefined
     showWhileSettingsOpen: boolean | undefined
-    comparisonModels?: ComparisonModelSelection
     allowTurnTreeLease: boolean | undefined
     turnTreeLeaseLabel: string | undefined
     turnTreeLeaseDefault: boolean | undefined
@@ -178,8 +173,6 @@ export function mountApprovalDialog(
   let cancelCoalesce: (() => void) | null = null
   // Cancels the pending Approve re-enable while the appended batch settles.
   let cancelSettle: (() => void) | null = null
-  /** Live reader for model-compare pickers on the open prompt (single-item batch). */
-  let readComparisonModels: (() => ComparisonModelSelection) | null = null
   /** Whether the user expanded a collapsed body on the open prompt. */
   let detailsExpanded = false
   function closeDialog(): void {
@@ -219,16 +212,6 @@ export function mountApprovalDialog(
     setAttentionThreads(store, 'approval', waiting)
   }
 
-  /**
-   * Model comparison owns three interactive pickers and returns one selection
-   * with its answer. Folding any sibling into that prompt removes the pickers
-   * (the batched layout has no coherent way to submit one selection per row),
-   * so it must take a dialog turn by itself.
-   */
-  function requiresSoloPrompt(req: PendingApproval): boolean {
-    return req.type === 'model-compare'
-  }
-
   /** Move every currently-showable queued request onto the on-screen batch,
    * preserving arrival order (older requests stay at the top of the list). */
   function drainShowableIntoBatch(): number {
@@ -236,8 +219,6 @@ export function mountApprovalDialog(
     for (let i = 0; i < queue.length;) {
       const req = queue[i]
       if (req && isShowable(req)) {
-        const first = batch[0]
-        if (first && (requiresSoloPrompt(first) || requiresSoloPrompt(req))) break
         queue.splice(i, 1)
         batch.push(req)
         moved++
@@ -297,11 +278,8 @@ export function mountApprovalDialog(
   }
 
   function renderBatch(): void {
-    readComparisonModels = null
     const count = batch.length
     const collapseDetails = soloRequest()?.collapseDetails === true
-    const singleModelCompare =
-      count === 1 && batch[0]?.type === 'model-compare' && batch[0].comparisonModels !== undefined
     // Collapse the per-request title into one heading when the whole batch asks
     // the same question (parallel fetches/reads/shell — the common case). A mixed
     // batch gets a count heading and keeps a light per-row label so the rows stay
@@ -364,19 +342,13 @@ export function mountApprovalDialog(
           const rowChildren: (Node | string)[] = []
           if (showRowTitles)
             rowChildren.push(el('div', { class: 'approval-item-title' }, req.title))
-          if (singleModelCompare && req.comparisonModels && req === batch[0]) {
-            const pickers = createComparisonModelPickers(api, req.comparisonModels, req.body)
-            readComparisonModels = pickers.read
-            rowChildren.push(pickers.root)
-          } else {
-            if (req.bodyAdvice) {
-              rowChildren.push(adviceElement(req.bodyAdvice))
-            }
-            if (collapseDetails) rowChildren.push(detailsToggle())
-            rowChildren.push(requestBody(req))
-            if (req.bodyFooter) {
-              rowChildren.push(el('div', { class: 'approval-footer' }, req.bodyFooter))
-            }
+          if (req.bodyAdvice) {
+            rowChildren.push(adviceElement(req.bodyAdvice))
+          }
+          if (collapseDetails) rowChildren.push(detailsToggle())
+          rowChildren.push(requestBody(req))
+          if (req.bodyFooter) {
+            rowChildren.push(el('div', { class: 'approval-footer' }, req.bodyFooter))
           }
           return el('div', { class: 'approval-item' }, ...rowChildren)
         }),
@@ -536,7 +508,6 @@ export function mountApprovalDialog(
     if (batch.length === 0) {
       closeDialog()
       active = false
-      readComparisonModels = null
       clearSettle()
       return
     }
@@ -574,7 +545,6 @@ export function mountApprovalDialog(
       if (batch.length === 0) {
         closeDialog()
         active = false
-        readComparisonModels = null
         clearSettle()
         show()
       } else {
@@ -593,23 +563,15 @@ export function mountApprovalDialog(
   function resolve(approved: boolean, remember: boolean): void {
     if (!active || batch.length === 0) return
     const answered = batch
-    const comparisonModels = approved && readComparisonModels ? readComparisonModels() : undefined
     const grantScope =
       approved && !turnTreeLeaseLabel.hidden && turnTreeLeaseInput.checked ? 'turn-tree' : 'once'
     closeDialog()
     batch = []
     active = false
-    readComparisonModels = null
     turnTreeLeaseInput.checked = false
     clearSettle()
     for (const req of answered) {
-      void api.approval.respond(
-        req.id,
-        approved,
-        remember,
-        req.type === 'model-compare' ? comparisonModels : undefined,
-        grantScope,
-      )
+      void api.approval.respond(req.id, approved, remember, grantScope)
     }
     // Surface anything that was waiting behind this batch immediately — it has
     // already sat through its own coalesce window, so no extra delay.
@@ -630,7 +592,6 @@ export function mountApprovalDialog(
       collapseDetails,
       approveOnceLabel,
       showWhileSettingsOpen,
-      comparisonModels,
       allowTurnTreeLease,
       turnTreeLeaseLabel,
       turnTreeLeaseDefault,
@@ -654,7 +615,6 @@ export function mountApprovalDialog(
         turnTreeLeaseDefault,
         turnTreeLeaseSubject,
       }
-      if (comparisonModels) pending.comparisonModels = comparisonModels
       queue.push(pending)
       if (active && isSettingsDialogOpen() && pending.showWhileSettingsOpen) {
         // Settings may have been opened after an ordinary inline approval was
@@ -666,7 +626,6 @@ export function mountApprovalDialog(
         batch = []
         closeDialog()
         active = false
-        readComparisonModels = null
         clearSettle()
         show()
       } else if (active) appendToOpen()

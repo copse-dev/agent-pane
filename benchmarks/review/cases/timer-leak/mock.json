@@ -1,0 +1,31 @@
+{
+  "roles": {
+    "review:correctness": [
+      { "type": "tool_call", "name": "git_diff", "args": { "path": "src/timer.cjs" } },
+      {
+        "type": "tool_call",
+        "name": "report_finding",
+        "args": {
+          "path": "src/timer.cjs",
+          "startLine": 6,
+          "class": "resource",
+          "severity": "medium",
+          "confidence": "medium",
+          "claim": "The timer is never cleared when the signal aborts, so it keeps the process alive until it fires.",
+          "reason": "The abort handler now only rejects; the clearTimeout the base had is gone."
+        }
+      },
+      { "type": "text", "text": "Checked the abort path." }
+    ],
+    "review:contracts": [{ "type": "text", "text": "The resolved value contract is unchanged." }],
+    "reproduce": [{ "type": "text", "text": "A leaked timer is not observable from a test that exits." }],
+    "challenge": [
+      {
+        "type": "tool_call",
+        "name": "verdict",
+        "args": { "status": "stands", "reason": "lines 5-7 reject on abort and never call clearTimeout" }
+      },
+      { "type": "text", "text": "Stands." }
+    ]
+  }
+}

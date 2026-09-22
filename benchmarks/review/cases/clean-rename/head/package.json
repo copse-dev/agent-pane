@@ -1,0 +1,7 @@
+{
+  "name": "greet",
+  "private": true,
+  "scripts": {
+    "test": "node test.cjs"
+  }
+}

@@ -112,23 +112,24 @@ export const estimateContextPayloadSchema = z.object({
   model: z.string().optional(),
 })
 
-export const comparisonModelSelectionSchema = z.object({
-  a: z.string().min(1).max(500),
-  b: z.string().min(1).max(500),
-  judge: z.string().min(1).max(500),
-})
-
 export const retryReviewPayloadSchema = z.object({
   workingBrief: z.string().max(8192).optional(),
   model: z.string().max(256).optional(),
-  /**
-   * Reviewer/judge models chosen in the "Compare models" bubble's picker. Read
-   * only by the comparison path, where their presence also means the picker
-   * already served as the spend decision — so the shape is pinned here rather
-   * than trusted, keeping the models a renderer can name to well-formed ids.
-   */
-  comparisonModels: comparisonModelSelectionSchema.optional(),
 })
+
+/**
+ * A finding the renderer asks to dismiss: the reviewer's content-derived id
+ * plus the path, claim and class the knowledge note is titled and tagged with.
+ * Bounded so a compromised renderer cannot stuff the note store.
+ */
+export const reviewDismissalSchema = z.object({
+  findingId: z.string().regex(/^[0-9a-f]{16}$/),
+  path: z.string().min(1).max(1024),
+  claim: z.string().min(1).max(2000),
+  class: z.string().min(1).max(64),
+})
+
+export const reviewFindingIdSchema = z.string().regex(/^[0-9a-f]{16}$/)
 
 export const followUpContextSchema = z.object({
   userMessage: z.string(),
@@ -230,7 +231,6 @@ export const approvalRespondSchema = z.tuple([
   z.uuid(),
   z.boolean(),
   z.boolean().optional(),
-  comparisonModelSelectionSchema.optional(),
   z.enum(['once', 'turn-tree']).optional(),
 ])
 

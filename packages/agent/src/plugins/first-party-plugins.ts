@@ -14,11 +14,10 @@
 //  - `postTurnReviewPlugin` — the P5 first-party plugin for post-turn review.
 //    Declarative-only (no typed contributions); the plugin toggle is the atomic
 //    master switch consulted by the trigger site in `agent-service.ts`.
-//  - `modelComparisonPlugin` — the P5 first-party plugin for the experimental
-//    two-model + judge diff comparison. Declares the `compare_models` tool;
-//    the plugin toggle atomically drops the tool from the model tool list
-//    (`registry-bootstrap.ts` reads the plugin registry) and skips the
-//    auto-on-review trigger in `agent-service.ts`.
+//  - `reviewPlugin` — Copse Reviewer's app shell (replaced the P5-era
+//    `copse.model-comparison` plugin). Declares the `review_changes` tool and
+//    the "Review changes" bubble; the plugin toggle atomically drops both, and
+//    the Changes-view "Review" button, in one flag flip.
 //  - `longHorizonTasksPlugin` — the first-party plugin for the experimental
 //    long-horizon tasks feature (issue #558). Declares the `track_long_task`
 //    tool; the plugin toggle atomically drops the tool from the model tool list
@@ -93,7 +92,7 @@ import type { RegisteredPlugin } from './plugin-manifest.ts'
 import { PluginRegistry } from './plugin-registry.ts'
 import { todosPlugin } from './todos-plugin.ts'
 import { postTurnReviewPlugin } from './post-turn-review-plugin.ts'
-import { modelComparisonPlugin } from './model-comparison-plugin.ts'
+import { reviewPlugin } from './review-plugin.ts'
 import { longHorizonTasksPlugin } from './long-horizon-tasks-plugin.ts'
 import { roadmapPlansPlugin } from './roadmap-plans-plugin.ts'
 import { advisorStrategyPlugin } from './advisor-strategy-plugin.ts'
@@ -117,7 +116,7 @@ import { cursorRulesPlugin } from './cursor-rules-plugin.ts'
 /**
  * Every plugin Copse ships. Order is preserved as the Settings plugin-list
  * enumeration order (P3): the pilot todos plugin, then P5's two extracted
- * feature plugins (post-turn review + model comparison), then long-horizon
+ * feature plugins (post-turn review + Copse Reviewer), then long-horizon
  * tasks, then roadmap plans, then advisor strategy, then OKF memories, then
  * the CI investigator, then PII redaction, then forced planning, then the two
  * capability-only plugins (MCP-UI canvas + DevTools shortcut), then the
@@ -132,7 +131,7 @@ export const FIRST_PARTY_PLUGINS: readonly RegisteredPlugin[] = [
   todosPlugin,
   appleDevelopmentPlugin,
   postTurnReviewPlugin,
-  modelComparisonPlugin,
+  reviewPlugin,
   longHorizonTasksPlugin,
   roadmapPlansPlugin,
   advisorStrategyPlugin,

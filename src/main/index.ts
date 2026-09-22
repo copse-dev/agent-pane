@@ -101,7 +101,7 @@ import {
   abortAgent,
   listRunningThreadIds,
   retryPostTurnReview,
-  retryModelComparison,
+  runReviewForThread,
   suggestThreadTitle,
   suggestTerminalTitle,
   suggestCommandSummary,
@@ -112,7 +112,7 @@ import {
   invalidateLmStudioModelsCache,
 } from './services/agent-service.ts'
 import type { RetryOptions } from './services/agent-service.ts'
-import { resolveComparisonModelChoices } from './services/agent-service.ts'
+import { dismissReviewFinding, restoreReviewFinding } from './services/review/review-dismissals.ts'
 import {
   listFreeOpenRouterModels,
   invalidateOpenRouterModelsCache,
@@ -150,6 +150,8 @@ import {
   estimateContextPayloadSchema,
   followUpContextSchema,
   retryReviewPayloadSchema,
+  reviewDismissalSchema,
+  reviewFindingIdSchema,
   lmStudioDetectSchema,
   lmStudioDownloadSchema,
   lmStudioDownloadStatusSchema,
@@ -501,7 +503,7 @@ app
     initAutoUpdate(win)
     // P5: boot the plugin service before `createRegistry()` so persisted
     // `pluginDisabled` state is applied to the shared registry before
-    // `syncModelComparisonTools` reads it — otherwise the fallback fresh
+    // `syncReviewTools` reads it — otherwise the fallback fresh
     // first-party registry (all plugins enabled) would register the tool for a
     // plugin the user turned off in a previous session.
     const pluginService = getPluginService()
@@ -809,10 +811,10 @@ app
       return listRunningThreadIds()
     })
 
-    // Re-run just the post-turn review / model comparison for a thread — the
-    // retry action on a failed card. Both read the current working diff, so a
-    // fixable failure (a mis-loaded local model, a transient provider error)
-    // recovers without re-running the whole editing turn.
+    // Re-run just the post-turn review for a thread — the retry action on a
+    // failed card — or run Copse Reviewer on demand. Both read the current
+    // checkout, so a fixable failure (a mis-loaded local model, a transient
+    // provider error) recovers without re-running the whole editing turn.
     const parseRetryPayload = (payloadJson: unknown): RetryOptions => {
       if (typeof payloadJson !== 'string') return {}
       let raw: unknown
@@ -830,9 +832,6 @@ app
           ? { workingBrief: parsed.data.workingBrief }
           : {}),
         ...(parsed.data.model !== undefined ? { model: parsed.data.model } : {}),
-        ...(parsed.data.comparisonModels !== undefined
-          ? { comparisonModels: parsed.data.comparisonModels }
-          : {}),
       }
     }
     const hydrateHistory = (projectId: string, threadId: string): Promise<LLMMessage[]> =>
@@ -856,8 +855,11 @@ app
       },
     )
 
+    // Copse Reviewer over the thread's changes: the Changes view's "Review"
+    // and the "Review changes" bubble. Runs under the thread's execution
+    // context like a turn, so the reviewer sees the thread's own checkout.
     ipcMain.handle(
-      'agent:retry-comparison',
+      'review:run',
       async (event, projectIdArg: unknown, threadIdArg: unknown, payload: unknown) => {
         assertMainFrameSender(event, win)
         assertPrimaryMainWindow(event.sender)
@@ -865,21 +867,26 @@ app
         const threadId = parseIpcArgs(zThreadId, [threadIdArg])
         const executionContext = await prepareThreadExecutionContext(projectId, threadId, agentHost)
         if (!executionContext) return
-        const prior = await hydrateHistory(projectId, threadId)
         await runWithThreadExecutionContext(executionContext, () =>
           runWithActiveRunIdentity(threadId, () =>
-            retryModelComparison(threadId, prior, agentHost, registry, parseRetryPayload(payload)),
+            runReviewForThread(threadId, agentHost, parseRetryPayload(payload)),
           ),
         )
       },
     )
 
-    // Defaults for the "Compare models" bubble's picker. Read-only: it resolves
-    // the plugin's own settings and starts nothing, so unlike the run below it
-    // needs no execution context.
-    ipcMain.handle('agent:comparison-models', async (event, payload: unknown) => {
+    // A dismissed finding stays dismissed: the knowledge store keeps one note
+    // per dismissal, keyed by the finding's content-derived id, and the next
+    // review marks that id dismissed again (P8). Restore deletes the note.
+    ipcMain.handle('review:dismiss-finding', (event, findingArg: unknown) => {
       assertMainFrameSender(event, win)
-      return resolveComparisonModelChoices(parseRetryPayload(payload))
+      const finding = parseIpcArgs(reviewDismissalSchema, [findingArg])
+      dismissReviewFinding(finding)
+    })
+    ipcMain.handle('review:restore-finding', (event, findingIdArg: unknown) => {
+      assertMainFrameSender(event, win)
+      const findingId = parseIpcArgs(reviewFindingIdSchema, [findingIdArg])
+      restoreReviewFinding(findingId)
     })
 
     ipcMain.handle('agent:suggest-title', (event, text: string) => {

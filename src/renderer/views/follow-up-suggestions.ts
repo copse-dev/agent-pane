@@ -12,8 +12,7 @@ import {
   updateToolCall,
 } from '@shared/store/thread-helpers.ts'
 import { lastExchange } from './last-exchange.ts'
-import { openComparisonModelDialog } from './comparison-model-dialog.ts'
-import { comparisonModelsPayload, startComparison } from '../controller/retry-review-comparison.ts'
+import { startReview } from '../controller/review-actions.ts'
 import { showErrorToast, showToast } from './toast.ts'
 
 /** Open the changeset reviewer pane (mirrors the diff-conflict banner path). */
@@ -21,36 +20,6 @@ function openChangesReviewer(store: AppStore): void {
   store.setState({ rightPanelMode: 'changes', filesPaneOpen: true })
   store.emit('right_panel_mode_changed')
   store.emit('files_pane_changed')
-}
-
-/**
- * The "Compare models" bubble: pick the three models, then run the comparison
- * against the working diff. The picker opens on the plugin's configured selections
- * resolved to concrete ids — a comparison priced in three inferences should name
- * what it is about to spend, and "most capable" names nothing.
- *
- * No approval prompt follows: the dialog the user just answered *is* the spend
- * decision, and the run is marked quiet so its completion does not chime either.
- */
-async function runComparisonFromBubble(
-  store: AppStore,
-  api: ApiClient,
-  threadId: string,
-  onStarted: () => void,
-): Promise<void> {
-  let defaults
-  try {
-    defaults = await api.agent.comparisonModels(comparisonModelsPayload(store, threadId))
-  } catch (err) {
-    showErrorToast('Could not load comparison models', err)
-    return
-  }
-  const picked = await openComparisonModelDialog(api, defaults)
-  // Backing out of the picker leaves the bubbles up: nothing happened, so the
-  // offer should still be there.
-  if (!picked) return
-  onStarted()
-  startComparison(store, api, threadId, picked)
 }
 
 /**
@@ -267,8 +236,12 @@ export function mountFollowUpSuggestions(
         // An action bubble does the thing itself; only a prompt bubble routes
         // through the composer. Either way the bubbles clear when the action
         // commits, not merely when it is offered.
-        if (suggestion.action === 'model-compare') {
-          void runComparisonFromBubble(store, api, sourceThreadId, clearSuggestions)
+        if (suggestion.action === 'review') {
+          // The click is the decision: Copse Reviewer runs on the thread's
+          // changes with the plugin's configured models, no picker and no
+          // spend prompt (the bubble was offered, not forced).
+          clearSuggestions()
+          startReview(store, api, sourceThreadId)
           return
         }
         if (suggestion.action === 'create-pr') {

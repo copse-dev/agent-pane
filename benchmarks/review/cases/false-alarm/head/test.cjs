@@ -1,0 +1,5 @@
+const assert = require('node:assert/strict')
+const { total } = require('./src/total.cjs')
+assert.equal(total([1, 2, 3]), 6)
+assert.equal(total([]), 0)
+console.log('ok')

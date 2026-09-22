@@ -85,6 +85,9 @@ importers:
       '@copse/procwatch':
         specifier: workspace:*
         version: link:packages/procwatch
+      '@copse/review':
+        specifier: workspace:*
+        version: link:packages/review
       '@copse/shell-guard':
         specifier: workspace:*
         version: link:packages/shell-guard
@@ -362,6 +365,21 @@ importers:
       '@copse/std':
         specifier: workspace:*
         version: link:../std
+
+  packages/review:
+    dependencies:
+      '@copse/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@copse/llm':
+        specifier: workspace:*
+        version: link:../llm
+      '@copse/std':
+        specifier: workspace:*
+        version: link:../std
+      zod:
+        specifier: ^4.5.4
+        version: 4.6.5
 
   packages/shell-guard:
     dependencies:

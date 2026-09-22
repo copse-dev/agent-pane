@@ -6,13 +6,13 @@ export type FollowUpVariant = 'default' | 'changes'
  * the wrong answer when the app can just *do* the thing:
  *  - `prompt` (default) — send `prompt` as the next message.
  *  - `open-changes` — open the changeset reviewer pane.
- *  - `model-compare` — open the comparison model picker, then run a comparison
- *    of the working diff with the models chosen there.
+ *  - `review` — run Copse Reviewer over the thread's changes and show the
+ *    findings card, the same thing the Changes view's "Review" does.
  *  - `create-pr` — open the pull-request dialog (title, description, draft),
  *    then open the PR through the same `createPrForThread` path the
  *    `gh_pr_create` tool uses. No prompt is sent and no model runs.
  */
-export type FollowUpAction = 'prompt' | 'open-changes' | 'model-compare' | 'create-pr'
+export type FollowUpAction = 'prompt' | 'open-changes' | 'review' | 'create-pr'
 
 /** A clickable follow-up bubble shown above the input bar. */
 export interface FollowUpSuggestion {

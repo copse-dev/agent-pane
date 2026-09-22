@@ -214,7 +214,7 @@ import {
   syncAdvisorStrategyTools,
   syncCiInvestigatorTools,
   syncLongHorizonTasksTools,
-  syncModelComparisonTools,
+  syncReviewTools,
   syncBackgroundTasksTools,
   syncOkfMemoryTools,
   syncParallelSearchTools,
@@ -222,7 +222,7 @@ import {
   syncReadTerminalTools,
   syncRoadmapPlanTools,
 } from '../services/registry-bootstrap.ts'
-import { MODEL_COMPARISON_PLUGIN_ID } from '@copse/agent/plugins/model-comparison-plugin.ts'
+import { REVIEW_PLUGIN_ID } from '@copse/agent/plugins/review-plugin.ts'
 import { LONG_HORIZON_TASKS_PLUGIN_ID } from '@copse/agent/plugins/long-horizon-tasks-plugin.ts'
 import { ROADMAP_PLANS_PLUGIN_ID } from '@copse/agent/plugins/roadmap-plans-plugin.ts'
 import { ADVISOR_STRATEGY_PLUGIN_ID } from '@copse/agent/plugins/advisor-strategy-plugin.ts'
@@ -2198,12 +2198,12 @@ export function registerAllHandlers(
       const statuses = await reloadMcpServers(registry)
       win.webContents.send('mcp:status-changed', statuses)
     }
-    // P5: toggling the model-comparison plugin adds/removes its `compare_models`
-    // tool on the live registry so the atomic plugin-disable also drops the tool
-    // from the model tool list without an app restart (mirrors the setting
-    // toggles above for the other syncable tools).
-    if (id === MODEL_COMPARISON_PLUGIN_ID) {
-      syncModelComparisonTools(registry)
+    // Toggling the review plugin adds/removes its `review_changes` tool on the
+    // live registry so the atomic plugin-disable also drops the tool from the
+    // model tool list without an app restart (mirrors the setting toggles
+    // above for the other syncable tools).
+    if (id === REVIEW_PLUGIN_ID) {
+      syncReviewTools(registry)
     }
     // Same for the `copse.long-horizon-tasks` plugin's `track_long_task` tool.
     if (id === LONG_HORIZON_TASKS_PLUGIN_ID) {
