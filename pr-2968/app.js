@@ -26553,7 +26553,7 @@ form.addEventListener('submit', (event) => {
           chunk: {
             type: "tool_result",
             toolCallId: "exec-d06a3ecf-21ee-4e84-98cd-59d0f0405a64",
-            result: "Saved screenshot of tab-1 to ~/debugging/agent-pane/.wdio-eval-userdata-a3a2d66b-7G38gL/browser-screenshots/tab-1-1786277869636.png",
+            result: 'Captured a 1280\xD7720 PNG of tab-1 \u2014 "Crumb & Bloom \u2014 Coming Soon".\nSource: http://localhost:61025/index.html\nCapture handle (thread-scoped and short-lived): capture_22222222-2222-4222-8222-222222222222\nThe screenshot is attached to this tool result.',
             isError: false,
             resultFormat: "markdown"
           },
@@ -27634,6 +27634,45 @@ var init_demo_scenarios = __esm({
         vncDiscoveredPorts: [5900, 5901, 5902]
       },
       {
+        id: "inline-thread-reference",
+        label: "Inline thread reference chip geometry",
+        project: project("demo-inline-thread-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off"
+        },
+        threads: [
+          {
+            id: "demo-inline-thread-active",
+            title: "Compare thread context",
+            status: "idle",
+            messages: [
+              {
+                id: "demo-inline-thread-user",
+                role: "user",
+                content: "Earlier: \uFFFC confirmed the current outline.",
+                attachments: [{ kind: "thread", label: "Existing thread reference" }],
+                toolCalls: [],
+                createdAt: FIXED_TIME
+              }
+            ],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          },
+          {
+            id: "demo-inline-thread-reference",
+            title: "TypeSafe inference",
+            status: "idle",
+            messages: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 6e4,
+            updatedAt: FIXED_TIME - 6e4
+          }
+        ]
+      },
+      {
         id: "settings-footer",
         label: "Settings scroll + sticky footer geometry",
         project: project("demo-settings-footer-project"),
@@ -28392,7 +28431,18 @@ function createDemoApi(scenario, options = {}) {
       // The demo has no provider history sidecar to inherit; the forked thread's
       // transcript copy (which the renderer owns) is the whole demo story.
       fork: () => resolved({ source: "empty", messageCount: 0 }),
-      catalog: emptyArray,
+      catalog: () => resolved(
+        threads.map((thread) => ({
+          id: thread.id,
+          title: thread.title,
+          createdAt: thread.createdAt,
+          updatedAt: thread.updatedAt,
+          digest: thread.messages.at(-1)?.content ?? "",
+          path: thread.id,
+          spinePath: `/demo/${scenario.project.id}/${thread.id}/events.jsonl`,
+          prRefs: []
+        }))
+      ),
       listOrphans: emptyArray
     },
     openRouter: { models: emptyArray },
@@ -68799,7 +68849,8 @@ function visibleText(node2) {
   if (node2.nodeType === Node.ELEMENT_NODE) {
     if (!(node2 instanceof HTMLElement)) return "";
     const elNode = node2;
-    if (elNode.classList.contains("inline-paste-chip")) return CHIP_CHAR;
+    if (elNode.classList.contains("inline-paste-chip") || elNode.classList.contains("inline-thread-chip"))
+      return CHIP_CHAR;
     if (elNode.tagName === "BR") return "\n";
   }
   let out = "";
@@ -68814,21 +68865,36 @@ function mountComposerEditor() {
   root.setAttribute("aria-multiline", "true");
   root.setAttribute("aria-label", "Message");
   const blocks = /* @__PURE__ */ new Map();
+  const threadChips = /* @__PURE__ */ new Map();
   function emitInput() {
     root.dispatchEvent(new Event("input", { bubbles: true }));
   }
   function chipElements() {
     return Array.from(root.querySelectorAll(CHIP_SELECTOR));
   }
-  function pruneBlocks() {
-    const present = new Set(chipElements().map((c2) => c2.dataset["blockId"]));
-    for (const id of blocks.keys()) if (!present.has(id)) blocks.delete(id);
+  function inlineChipsInOrder() {
+    return chipElements().flatMap((chip2) => {
+      const id = chip2.dataset["chipId"] ?? "";
+      const block = blocks.get(id);
+      if (block) return [{ kind: "paste", block }];
+      const thread = threadChips.get(id)?.thread;
+      return thread ? [{ kind: "thread", thread }] : [];
+    });
   }
-  function makeChip(block) {
+  function pruneChips() {
+    const present = new Set(chipElements().map((chip2) => chip2.dataset["chipId"]));
+    for (const id of blocks.keys()) if (!present.has(id)) blocks.delete(id);
+    for (const [id, state] of threadChips) {
+      if (present.has(id)) continue;
+      threadChips.delete(id);
+      state.onRemove();
+    }
+  }
+  function makePasteChip(block) {
     const chip2 = document.createElement("span");
     chip2.className = "inline-paste-chip";
     chip2.setAttribute("contenteditable", "false");
-    chip2.dataset["blockId"] = block.id;
+    chip2.dataset["chipId"] = block.id;
     chip2.title = block.label;
     const label = document.createElement("span");
     label.className = "inline-paste-chip-label";
@@ -68839,8 +68905,8 @@ function mountComposerEditor() {
     remove.className = "inline-paste-chip-remove";
     remove.append(closeIcon("ui-icon ui-icon-sm"));
     remove.setAttribute("aria-label", `Remove pasted text: ${block.label}`);
-    remove.addEventListener("click", (e2) => {
-      e2.preventDefault();
+    remove.addEventListener("click", (event) => {
+      event.preventDefault();
       chip2.remove();
       blocks.delete(block.id);
       root.focus();
@@ -68848,6 +68914,47 @@ function mountComposerEditor() {
     });
     chip2.append(label, remove);
     return chip2;
+  }
+  function makeThreadChip(id, state) {
+    const chip2 = document.createElement("span");
+    chip2.className = "inline-thread-chip";
+    chip2.setAttribute("contenteditable", "false");
+    chip2.dataset["chipId"] = id;
+    chip2.dataset["threadId"] = state.thread.threadId;
+    chip2.title = state.thread.label;
+    const label = document.createElement("span");
+    label.className = "inline-thread-chip-label";
+    label.textContent = state.thread.label;
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "inline-thread-chip-remove";
+    remove.append(closeIcon("ui-icon ui-icon-sm"));
+    remove.setAttribute("aria-label", `Remove thread: ${state.thread.label}`);
+    remove.addEventListener("click", (event) => {
+      event.preventDefault();
+      chip2.remove();
+      threadChips.delete(id);
+      state.onRemove();
+      root.focus();
+      emitInput();
+    });
+    chip2.append(attachmentIcon("thread", "thread-chip-icon"), label, remove);
+    return chip2;
+  }
+  function insertChip(chip2) {
+    const selection2 = editor.isFocused() ? selectionInRoot() : null;
+    if (selection2) {
+      const range = selection2.getRangeAt(0);
+      range.deleteContents();
+      range.insertNode(chip2);
+      range.setStartAfter(chip2);
+      range.collapse(true);
+      selection2.removeAllRanges();
+      selection2.addRange(range);
+    } else {
+      root.append(chip2);
+    }
+    emitInput();
   }
   function offsetOfPoint(node2, offset) {
     const range = document.createRange();
@@ -68876,7 +68983,7 @@ function mountComposerEditor() {
       }
       return null;
     };
-    const isAtomic = (elNode) => elNode.classList.contains("inline-paste-chip") || elNode.tagName === "BR";
+    const isAtomic = (elNode) => elNode.classList.contains("inline-paste-chip") || elNode.classList.contains("inline-thread-chip") || elNode.tagName === "BR";
     return walk2(root) ?? { node: root, offset: root.childNodes.length };
   }
   function selectionInRoot() {
@@ -68899,8 +69006,33 @@ function mountComposerEditor() {
     if (root.childNodes.length === 1 && root.firstChild?.nodeName === "BR") {
       root.replaceChildren();
     }
-    pruneBlocks();
+    pruneChips();
   });
+  function serializedValue(preserveThreadPlaceholders) {
+    const ordered = inlineChipsInOrder();
+    let chipIdx = 0;
+    const parts = visibleText(root).split(CHIP_CHAR);
+    let out = parts[0] ?? "";
+    for (let i = 1; i < parts.length; i++) {
+      const chip2 = ordered[chipIdx++];
+      if (chip2?.kind === "thread") {
+        out += preserveThreadPlaceholders ? CHIP_CHAR : `@${chip2.thread.label}`;
+        out += parts[i] ?? "";
+        continue;
+      }
+      const block = chip2?.kind === "paste" ? chip2.block : void 0;
+      const fence = block ? renderTextBlock(block.label, block.content) : "";
+      if (fence) {
+        if (out !== "" && !out.endsWith("\n")) out += "\n\n";
+        else if (out.endsWith("\n") && !out.endsWith("\n\n")) out += "\n";
+        out += fence;
+        const rest = parts[i] ?? "";
+        if (rest !== "" && !rest.startsWith("\n")) out += "\n\n";
+      }
+      out += parts[i] ?? "";
+    }
+    return out;
+  }
   const editor = {
     el: root,
     get value() {
@@ -68918,7 +69050,7 @@ function mountComposerEditor() {
         }
       });
       root.replaceChildren(frag);
-      pruneBlocks();
+      pruneChips();
       if (editor.isFocused()) caretToEnd2();
     },
     get selectionStart() {
@@ -68949,7 +69081,10 @@ function mountComposerEditor() {
       root.setAttribute("data-placeholder", text2);
     },
     getBlocks() {
-      return chipElements().map((c2) => blocks.get(c2.dataset["blockId"] ?? "")).filter(isDefined);
+      return editor.getInlineChips().map((chip2) => chip2.kind === "paste" ? chip2.block : void 0).filter(isDefined);
+    },
+    getInlineChips() {
+      return inlineChipsInOrder();
     },
     insertPasteChip(content, label) {
       const block = {
@@ -68958,43 +69093,24 @@ function mountComposerEditor() {
         content
       };
       blocks.set(block.id, block);
-      const chip2 = makeChip(block);
-      const sel = editor.isFocused() ? selectionInRoot() : null;
-      if (sel) {
-        const range = sel.getRangeAt(0);
-        range.deleteContents();
-        range.insertNode(chip2);
-        range.setStartAfter(chip2);
-        range.collapse(true);
-        sel.removeAllRanges();
-        sel.addRange(range);
-      } else {
-        root.append(chip2);
-      }
-      emitInput();
+      insertChip(makePasteChip(block));
+    },
+    insertThreadChip(thread, onRemove) {
+      const id = crypto.randomUUID();
+      const state = { thread, onRemove };
+      threadChips.set(id, state);
+      insertChip(makeThreadChip(id, state));
     },
     expandedValue() {
-      const ordered = editor.getBlocks();
-      let chipIdx = 0;
-      const parts = visibleText(root).split(CHIP_CHAR);
-      let out = parts[0] ?? "";
-      for (let i = 1; i < parts.length; i++) {
-        const block = ordered[chipIdx++];
-        const fence = block ? renderTextBlock(block.label, block.content) : "";
-        if (fence) {
-          if (out !== "" && !out.endsWith("\n")) out += "\n\n";
-          else if (out.endsWith("\n") && !out.endsWith("\n\n")) out += "\n";
-          out += fence;
-          const rest = parts[i] ?? "";
-          if (rest !== "" && !rest.startsWith("\n")) out += "\n\n";
-        }
-        out += parts[i] ?? "";
-      }
-      return out;
+      return serializedValue(false);
+    },
+    draftValue() {
+      return serializedValue(true);
     },
     clear() {
       root.replaceChildren();
       blocks.clear();
+      threadChips.clear();
     }
   };
   return editor;
@@ -69004,10 +69120,11 @@ var init_composer_editor = __esm({
   "src/renderer/views/composer-editor.ts"() {
     init_build_text_with_attachments();
     init_text_expand();
+    init_attachment_icons();
     init_icons();
     init_nullish2();
     CHIP_CHAR = "\uFFFC";
-    CHIP_SELECTOR = ".inline-paste-chip";
+    CHIP_SELECTOR = ".inline-paste-chip, .inline-thread-chip";
   }
 });
 
@@ -71903,15 +72020,21 @@ function transcriptChip(attachment, api2) {
   return chip2;
 }
 function renderUserTranscript(host, content, attachments, api2) {
-  const pastes = attachments.filter((a2) => a2.kind === "paste");
-  const trailing = attachments.filter((a2) => a2.kind !== "paste");
+  const inlineCount = countChipPlaceholders(content);
+  const firstNonPositional = attachments.findIndex(
+    (attachment) => attachment.kind !== "paste" && attachment.kind !== "thread"
+  );
+  const positionalPrefixLength = firstNonPositional === -1 ? attachments.length : firstNonPositional;
+  const boundInlineCount = Math.min(inlineCount, positionalPrefixLength);
+  const inline = attachments.slice(0, boundInlineCount);
+  const trailing = attachments.slice(boundInlineCount);
   const paintRegion = (sink, text2, firstChip) => {
     const parts = text2.split(CHIP_CHAR);
     parts.forEach((part, i) => {
       if (part) sink.append(document.createTextNode(part));
       if (i < parts.length - 1) {
         sink.append(
-          transcriptChip(pastes[firstChip + i] ?? { kind: "paste", label: "Pasted text" }, api2)
+          transcriptChip(inline[firstChip + i] ?? { kind: "paste", label: "Pasted text" }, api2)
         );
       }
     });
@@ -84507,13 +84630,15 @@ function initMentionPicker(opts) {
       return;
     }
     if (item.kind === "thread") {
+      const insertionPoint = mentionStart;
+      removeMentionText();
+      input2.setSelectionRange(insertionPoint, insertionPoint);
       onAttachThread({
         threadId: item.hit.id,
         title: item.hit.title,
         updatedAt: item.hit.updatedAt,
         spinePath: item.hit.spinePath
       });
-      removeMentionText();
       hidePicker();
       return;
     }
@@ -88658,16 +88783,26 @@ ${description}
   }
   const draftAttachmentsByThread = /* @__PURE__ */ new Map();
   function emptyDraftAttachments() {
-    return { files: [], images: [], videos: [], archives: [], threads: [], shells: [] };
+    return {
+      files: [],
+      images: [],
+      videos: [],
+      archives: [],
+      threads: [],
+      shells: [],
+      threadDraftValue: null
+    };
   }
   function snapshotDraftAttachments() {
+    const threads = attachedThreads.map((thread) => ({ ...thread }));
     return {
       files: attachedFiles.map((file2) => ({ ...file2 })),
       images: attachedImages.map((image) => ({ ...image })),
       videos: attachedVideos.map((video) => ({ ...video })),
       archives: attachedArchives.map((archive) => ({ ...archive })),
-      threads: attachedThreads.map((thread) => ({ ...thread })),
-      shells: attachedShells.map((shell3) => ({ ...shell3 }))
+      threads,
+      shells: attachedShells.map((shell3) => ({ ...shell3 })),
+      threadDraftValue: threads.length > 0 ? composer.draftValue() : null
     };
   }
   function stashDraftAttachments(threadId) {
@@ -88690,6 +88825,7 @@ ${description}
     for (const archive of snapshot.archives) renderArchiveChip(archive);
     for (const thread of snapshot.threads) addThreadChip(thread);
     for (const shell3 of snapshot.shells) addShellChip(shell3);
+    if (snapshot.threadDraftValue !== null) composer.value = snapshot.threadDraftValue;
   }
   function placeStoredVideo(threadId, ref) {
     if (activeComposerThreadId === threadId) {
@@ -89218,16 +89354,27 @@ ${description}
       priorTodos,
       ...workingBrief !== void 0 ? { workingBrief } : {}
     };
+    const inlineChips = composer.getInlineChips();
+    const inlineThreadIds = new Set(
+      inlineChips.flatMap((chip2) => chip2.kind === "thread" ? [chip2.thread.threadId] : [])
+    );
     const attachments = [
-      ...composer.getBlocks().map((b3) => ({ kind: "paste", label: b3.label, content: b3.content })),
-      ...attachedFiles.map((f2) => ({
+      ...inlineChips.flatMap((chip2) => {
+        if (chip2.kind === "paste") {
+          return [{ kind: "paste", label: chip2.block.label, content: chip2.block.content }];
+        }
+        return [{ kind: "thread", label: chip2.thread.label }];
+      }),
+      ...attachedFiles.map((file2) => ({
         kind: "file",
-        label: f2.path.split("/").pop() ?? f2.path,
-        content: f2.content
+        label: file2.path.split("/").pop() ?? file2.path,
+        content: file2.content
       })),
-      ...attachedThreads.map((t) => ({
+      // Defensive fallback: a thread reference should always have an inline chip,
+      // but retaining an unmatched attachment preserves its agent context.
+      ...attachedThreads.filter((thread2) => !inlineThreadIds.has(thread2.threadId)).map((thread2) => ({
         kind: "thread",
-        label: t.title || "Untitled thread"
+        label: thread2.title || "Untitled thread"
       })),
       ...attachedShells.map((s15) => ({
         kind: "shell",
@@ -89301,23 +89448,18 @@ ${description}
     scheduleContextEstimate();
   }
   function addThreadChip(ref) {
-    if (attachedThreads.some((t) => t.threadId === ref.threadId)) return;
+    if (attachedThreads.some((thread) => thread.threadId === ref.threadId)) return;
     attachedThreads.push(ref);
-    const chip2 = document.createElement("span");
-    chip2.className = "attachment-chip thread-chip";
-    const title = document.createElement("span");
-    title.className = "attachment-chip-label";
-    title.textContent = ref.title || "Untitled thread";
-    chip2.append(threadIcon("thread-chip-icon"), title);
-    const remove = document.createElement("button");
-    remove.append(closeIcon("ui-icon ui-icon-sm"));
-    remove.addEventListener("click", () => {
-      attachedThreads = attachedThreads.filter((t) => t.threadId !== ref.threadId);
-      chip2.remove();
-      scheduleContextEstimate();
-    });
-    chip2.append(remove);
-    chips.append(chip2);
+    composer.insertThreadChip(
+      {
+        threadId: ref.threadId,
+        label: ref.title || "Untitled thread"
+      },
+      () => {
+        attachedThreads = attachedThreads.filter((thread) => thread.threadId !== ref.threadId);
+        scheduleContextEstimate();
+      }
+    );
     scheduleContextEstimate();
   }
   function addShellChip(ref) {
