@@ -2182,7 +2182,7 @@ export function seedCodeBlockCopyFixture(workspaceRoot: string): void {
     'Then run:',
     '',
     '```bash',
-    'npm run check',
+    'node -e "console.log(424242)"',
     '```',
   ].join('\n')
   mkdirSync(USER_DATA, { recursive: true })

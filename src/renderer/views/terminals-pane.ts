@@ -9,6 +9,7 @@ import { paneMaximizeButton } from './pane-maximize-button.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
 import { registerTerminalSelectionToChatShortcut } from '../terminal/selection-to-chat.ts'
 import type { AppStore } from '@shared/store/store.ts'
+import type { CodeBlockRunRequest } from '@shared/store/events.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { installTerminalFileLinks, type TerminalFileLinks } from './terminal-file-links.ts'
 import { planScope, tabsForScope } from './scoped-tabs.ts'
@@ -72,6 +73,7 @@ interface TerminalTab {
   sessionId: string | null
   creating: boolean
   pendingInput: string[]
+  codeBlockRun: CodeBlockRunRequest | null
   termOpened: boolean
   /** True once the user has submitted a command, gating auto-naming. */
   commandRan: boolean
@@ -154,8 +156,10 @@ export function mountTerminalsPane(
   const unsubExit = api.terminal.onExit((id, code) => {
     const tab = [...tabs.values()].find((t) => t.sessionId === id)
     if (!tab) return
-    tab.term.writeln(`\r\n\x1b[90m[Process exited with code ${String(code)}]\x1b[0m`)
     tab.sessionId = null
+    tab.term.writeln(`\r\n\x1b[90m[Process exited with code ${String(code)}]\x1b[0m`, () => {
+      finishCodeBlockRun(tab, code)
+    })
   })
 
   function createXterm(): { term: Terminal; fitAddon: FitAddon } {
@@ -181,6 +185,29 @@ export function mountTerminalsPane(
   // for handing to the small-tasks model when auto-naming and for `@shell`.
   function readTerminalText(tab: TerminalTab, maxLines = READ_TERMINAL_DEFAULT_LINES): string {
     return readXtermScrollback(tab.term, maxLines)
+  }
+
+  function finishCodeBlockRun(tab: TerminalTab, exitCode: number | null): void {
+    const request = tab.codeBlockRun
+    if (!request) return
+    tab.codeBlockRun = null
+    const output = readTerminalText(tab)
+    const exitLabel = exitCode === null ? 'unavailable' : String(exitCode)
+    const content = [
+      `Command:\n${request.command}`,
+      `Exit code: ${exitLabel}`,
+      output ? `Terminal output:\n${output}` : 'Terminal output: (none)',
+    ].join('\n\n')
+    store.emit('code_block_run_finished', {
+      id: request.id,
+      threadId: request.threadId,
+      exitCode,
+      shell: {
+        tabId: tab.id,
+        label: `${tab.label} · exit ${exitLabel}`,
+        content,
+      },
+    })
   }
 
   function publishMeta(tab: TerminalTab): void {
@@ -289,13 +316,17 @@ export function mountTerminalsPane(
   async function ensureSession(tab: TerminalTab): Promise<void> {
     if (tab.sessionId || tab.creating) return
     if (!store.getState().workspaceRoot || !tab.scopeProjectId) {
-      tab.term.writeln('\x1b[90mOpen a folder to use the terminal.\x1b[0m')
+      tab.term.writeln('\x1b[90mOpen a folder to use the terminal.\x1b[0m', () => {
+        finishCodeBlockRun(tab, null)
+      })
       return
     }
     tab.creating = true
     try {
-      openTerminalSurface(tab)
-      fitTab(tab)
+      if (!tab.codeBlockRun) {
+        openTerminalSurface(tab)
+        fitTab(tab)
+      }
       const created = await createTerminalAfterPersist(
         api.terminal.create.bind(api.terminal),
         tab.term.cols,
@@ -321,6 +352,9 @@ export function mountTerminalsPane(
       console.error('[terminals] could not start a shell:', err)
       tab.term.writeln(
         `\x1b[31mFailed to start terminal: ${terminalStartFailureMessage(err)}\x1b[0m`,
+        () => {
+          finishCodeBlockRun(tab, null)
+        },
       )
     } finally {
       tab.creating = false
@@ -414,12 +448,14 @@ export function mountTerminalsPane(
   function addTab(options?: {
     activate?: boolean
     initialInput?: string
+    label?: string
+    codeBlockRun?: CodeBlockRunRequest
     scopeProjectId?: string
     scopeId?: string
   }): string {
     tabCounter += 1
     const id = crypto.randomUUID()
-    const label = `Terminal ${String(tabCounter)}`
+    const label = options?.label ?? `Terminal ${String(tabCounter)}`
     const closeBtn = el(
       'span',
       {
@@ -481,6 +517,7 @@ export function mountTerminalsPane(
       // Seed the command so it runs as soon as the PTY spawns; `ensureSession`
       // flushes pending input right after create.
       pendingInput: options?.initialInput ? [options.initialInput] : [],
+      codeBlockRun: options?.codeBlockRun ?? null,
       termOpened: false,
       commandRan: false,
       autoNamed: false,
@@ -652,6 +689,24 @@ export function mountTerminalsPane(
     }
   }
 
+  function runCodeBlockInBackground(request: CodeBlockRunRequest): void {
+    const command = request.command.trim()
+    if (!command) return
+    const oneLine = command.split(/\s+/).join(' ')
+    const summary = oneLine.length > 48 ? `${oneLine.slice(0, 47)}…` : oneLine
+    const initialInput = `${command.replace(/\r\n?|\n/g, '\r')}\rexit\r`
+    const tabId = addTab({
+      activate: false,
+      initialInput,
+      label: `Run · ${summary}`,
+      codeBlockRun: request,
+      scopeProjectId: request.projectId,
+      scopeId: request.threadId,
+    })
+    const tab = tabs.get(tabId)
+    if (tab) void ensureSession(tab)
+  }
+
   onTerminalModeChange()
 
   // While an agent task panel owns the viewer, the shells list drops its active
@@ -716,6 +771,7 @@ export function mountTerminalsPane(
     store.on('thread_checkout_changed', onThreadCheckoutChanged),
     store.on('workspace_changed', onThreadMaybeChanged),
     store.on('request_terminal_command', runCommandInNewShell),
+    store.on('code_block_run_requested', runCodeBlockInBackground),
   ]
 
   const unregisterCatalog = registerShellCatalog(

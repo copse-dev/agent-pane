@@ -40,7 +40,11 @@ import { artefactTitleFromUri } from '@shared/canvas/artefact.ts'
 import { getThreadById, getActiveThread, setQueuePaused } from '@shared/store/thread-helpers.ts'
 import { CONTAINER_RUN_ADOPT_EVENT } from '@shared/store/container-run-card.ts'
 import { isRecord } from '@shared/unknown-value.ts'
-import { attachCodeBlockCopyButtons } from '../markdown/code-block-copy.ts'
+import {
+  attachCodeBlockCopyButtons,
+  bindCodeBlockRunRequests,
+  setCodeBlockRunOutcome,
+} from '../markdown/code-block-copy.ts'
 import { attachTableCopyButtons } from '../markdown/table-copy.ts'
 import { renderMarkdown } from '@copse/streaming-markdown'
 import { renderMermaidIn } from '../markdown/mermaid.ts'
@@ -588,7 +592,7 @@ function setAssistantMarkdown(
       streamingRenderers.set(el, renderer)
     }
     renderer.update(display)
-    attachCodeBlockCopyButtons(el)
+    attachCodeBlockCopyButtons(el, { runCommands: true })
     // Demote as soon as the trailing line is complete; keep collapsed while live.
     syncAcpTransportNoiseDisclosure(el, transportNoise)
     return
@@ -597,7 +601,7 @@ function setAssistantMarkdown(
   el.classList.remove('is-streaming')
   streamingRenderers.delete(el)
   el.innerHTML = renderMarkdown(display)
-  attachCodeBlockCopyButtons(el)
+  attachCodeBlockCopyButtons(el, { runCommands: true })
   // Tables only on the committed final render — during streaming they are
   // patched with pending rows, so wrapping them then would fight the DOM sync.
   attachTableCopyButtons(el)
@@ -2198,6 +2202,15 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   const queuedHost = el('div', { class: 'conversation-queued', hidden: true })
   root.append(scrollArea, queuedHost)
 
+  const unbindCodeBlockRuns = bindCodeBlockRunRequests(list, ({ id, command }) => {
+    const { activeProjectId: projectId, activeThreadId: threadId } = store.getState()
+    if (!projectId || !threadId) {
+      setCodeBlockRunOutcome(list, id, null)
+      return
+    }
+    store.emit('code_block_run_requested', { id, command, projectId, threadId })
+  })
+
   // Clicking a file edit's +/- counts reveals that file in the Changes panel.
   // Delegated here so the handler can reach the store; preventDefault stops the
   // surrounding <summary> from toggling its <details>.
@@ -3716,6 +3729,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   }
 
   const unsubs = [
+    store.on('code_block_run_finished', (result) => {
+      setCodeBlockRunOutcome(list, result.id, result.exitCode)
+    }),
     store.on('message_added', (tid, mid) => {
       appendMessageEl(tid, mid)
     }),
@@ -3926,6 +3942,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     unbindFileLinks()
     unbindWorkspaceLinks()
     unbindBrowserLinks()
+    unbindCodeBlockRuns()
     unsubs.forEach((u) => {
       u()
     })

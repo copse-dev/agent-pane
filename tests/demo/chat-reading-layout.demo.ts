@@ -44,6 +44,22 @@ describe('assistant Reading layout in the real renderer', () => {
     await scrollToStart()
   })
 
+  it('reveals the run action on a shell code block', async () => {
+    const shellSelector = `${PROSE} .code-block-shell`
+    const shell = await $(shellSelector)
+    await shell.scrollIntoView({ block: 'center', inline: 'nearest' })
+    await shell.moveTo()
+
+    const run = await shell.$('.code-block-run')
+    await expect(run).toHaveAttribute('aria-label', 'Run command')
+    await expect(run.$('svg[data-icon="play"]')).toExist()
+    const opacity = await run.getCSSProperty('opacity')
+    expect(opacity.value).toBe('1')
+
+    await saveElementScreenshot(shellSelector, 'code-block-run-hover-browser.png')
+    await scrollToStart()
+  })
+
   it('uses a readable measure and paragraph rhythm without breaking rich markdown', async () => {
     const metrics = await readProseMetrics(PROSE)
     expect(metrics.width).toBeLessThanOrEqual(720)

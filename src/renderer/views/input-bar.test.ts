@@ -1999,6 +1999,51 @@ describe('input bar attachments across a thread switch', () => {
     assert.equal(host.querySelectorAll('.attachment-chips .video-chip').length, 1)
   })
 
+  it('returns a completed background command attachment to its originating thread', async () => {
+    const first = thread()
+    const second: Thread = { ...thread(), id: 'thread-2', title: 'Second' }
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: first.id,
+      threads: [first, second],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(host, store, createApi({ currentBranch: 'main' }))
+    await settle()
+
+    store.setState({ activeThreadId: second.id })
+    store.emit('threads_changed')
+    await settle()
+    store.emit('code_block_run_finished', {
+      id: 'run-1',
+      threadId: first.id,
+      exitCode: 0,
+      shell: {
+        tabId: 'terminal-1',
+        label: 'Run · pnpm test · exit 0',
+        content: 'Command:\npnpm test\n\nExit code: 0\n\nTerminal output:\nPASS',
+      },
+    })
+    await settle()
+
+    assert.equal(
+      host.querySelectorAll('.attachment-chips .shell-chip').length,
+      0,
+      'the result does not leak into the newly active thread',
+    )
+
+    store.setState({ activeThreadId: first.id })
+    store.emit('threads_changed')
+    await settle()
+
+    const label = host.querySelector<HTMLElement>('.shell-chip .attachment-chip-label')
+    assert.ok(label, 'the command result returns with its originating composer')
+    assert.equal(label.textContent, 'Run · pnpm test · exit 0')
+  })
+
   it('binds a stored archive to the thread that was active when it was attached', async () => {
     // The other half of the same bug: the path the composer holds names the
     // attaching thread's directory, which is why carrying it across a switch
