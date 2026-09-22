@@ -72448,10 +72448,13 @@ function mountConversation(root, store2, api2) {
     if (card.classList.contains("thread-proposal")) return;
     const key = `${threadId}:${messageId}:${toolCardKey(item)}`;
     card.dataset["disclosureKey"] = key;
+    const itemStatus2 = item.type === "individual" ? item.toolCall.status : aggregateToolStatus(item.toolCalls);
+    card.dataset["status"] = itemStatus2;
     disclosureElements.set(key, card);
     wireDisclosurePreference(card, key);
     const preference = disclosurePreferences.get(key);
-    const running = item.type === "individual" ? item.toolCall.status === "running" || item.toolCall.subagent?.status === "running" : aggregateToolStatus(item.toolCalls) === "running";
+    const running = item.type === "individual" ? item.toolCall.status === "running" || item.toolCall.subagent?.status === "running" : itemStatus2 === "running";
+    const failed = itemStatus2 === "error";
     if (running) runningDisclosures.add(key);
     else {
       runningDisclosures.delete(key);
@@ -72459,6 +72462,10 @@ function mountConversation(root, store2, api2) {
     }
     if (preference !== void 0) {
       card.open = preference;
+    } else if (failed) {
+      card.open = true;
+      autoOpenedDisclosures.add(key);
+      if (!autoOpenedAt.has(key)) autoOpenedAt.set(key, Date.now());
     } else if (autoOpenedDisclosures.has(key)) {
       card.open = true;
     } else {
@@ -72486,7 +72493,17 @@ function mountConversation(root, store2, api2) {
         entry.dataset["disclosureKey"] = itemKey;
         disclosureElements.set(itemKey, entry);
         wireDisclosurePreference(entry, itemKey);
-        entry.open = disclosurePreferences.get(itemKey) ?? false;
+        const preference2 = disclosurePreferences.get(itemKey);
+        const entryFailed = entry.dataset["status"] === "error";
+        if (preference2 !== void 0) {
+          entry.open = preference2;
+        } else if (entryFailed) {
+          entry.open = true;
+          autoOpenedDisclosures.add(itemKey);
+          if (!autoOpenedAt.has(itemKey)) autoOpenedAt.set(itemKey, Date.now());
+        } else {
+          entry.open = false;
+        }
         if (entry.open) ensureToolCardBodyRendered(entry);
       });
     }
