@@ -536,6 +536,22 @@ export function appendReasoning(store: AppStore, messageId: string, text: string
   store.emit('message_reasoning', messageId, text)
 }
 
+export function appendAcpContentBlock(
+  store: AppStore,
+  messageId: string,
+  channel: 'message' | 'thought',
+  block: import('../types/tools.ts').AcpContentBlock,
+): void {
+  updateMessage(store, messageId, (message) => {
+    if (channel === 'thought') {
+      message.reasoningBlocks = [...(message.reasoningBlocks ?? []), block]
+    } else {
+      message.contentBlocks = [...(message.contentBlocks ?? []), block]
+    }
+  })
+  store.emit('message_acp_content', messageId)
+}
+
 export function setMessageContent(store: AppStore, messageId: string, content: string): void {
   updateMessage(store, messageId, (m) => {
     m.content = content

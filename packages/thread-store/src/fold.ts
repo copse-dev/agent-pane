@@ -1,4 +1,7 @@
 import type { ModelParameters } from '@copse/llm/model-parameters.ts'
+import type { AcpContentBlock, AcpToolCallContent } from '@copse/agent/wire-types.ts'
+import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
+import { z } from 'zod'
 import type { CanvasArtefactReference } from './canvas-types.ts'
 import type {
   Message,
@@ -51,6 +54,8 @@ interface MessageLike {
   toolCalls: ToolCall[]
   createdAt?: number
   reasoning?: string
+  contentBlocks?: AcpContentBlock[]
+  reasoningBlocks?: AcpContentBlock[]
   images?: string[]
   canvasArtefacts?: CanvasArtefactReference[]
   commandSummary?: string
@@ -104,6 +109,61 @@ function parseToolArgsJson(raw: string): unknown {
   return JSON.parse(raw) as unknown
 }
 
+const acpContentBlockSchema: z.ZodType<AcpContentBlock> = z.union([
+  z.object({ type: z.literal('text'), text: z.string() }),
+  z.object({
+    type: z.literal('image'),
+    dataUrl: z.string(),
+    mimeType: z.string(),
+    uri: z.string().optional(),
+  }),
+  z.object({ type: z.literal('audio'), dataUrl: z.string(), mimeType: z.string() }),
+  z.object({
+    type: z.literal('resource_link'),
+    uri: z.string(),
+    name: z.string(),
+    title: z.string().optional(),
+    description: z.string().optional(),
+    mimeType: z.string().optional(),
+    size: z.number().optional(),
+  }),
+  z.object({
+    type: z.literal('resource'),
+    uri: z.string(),
+    mimeType: z.string().optional(),
+    text: z.string(),
+  }),
+  z.object({
+    type: z.literal('resource'),
+    uri: z.string(),
+    mimeType: z.string().optional(),
+    dataUrl: z.string(),
+  }),
+])
+
+const acpToolCallContentSchema: z.ZodType<AcpToolCallContent> = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('content'), content: acpContentBlockSchema }),
+  z.object({
+    type: z.literal('diff'),
+    path: z.string(),
+    oldText: z.string().optional(),
+    newText: z.string(),
+  }),
+  z.object({ type: z.literal('terminal'), terminalId: z.string() }),
+])
+
+function parseAcpContentBlocks(raw: string): AcpContentBlock[] {
+  const parsed = safeJsonParse(raw, decodeWithSchema(z.array(acpContentBlockSchema)))
+  if (parsed === null) throw new Error('Invalid persisted ACP content blocks')
+  return parsed
+}
+
+function parseAcpToolCallContent(raw: string): AcpToolCallContent[] {
+  const parsed = safeJsonParse(raw, decodeWithSchema(z.array(acpToolCallContentSchema)))
+  if (parsed === null) throw new Error('Invalid persisted ACP tool-call content')
+  return parsed
+}
+
 function explodeToolCall(
   tc: ToolCall,
   hash: HashFn,
@@ -130,6 +190,14 @@ function explodeToolCall(
     })
   }
 
+  let content: ContentRef | undefined
+  if (tc.content !== undefined) {
+    const serialized = JSON.stringify(tc.content)
+    const ref = `blobs/${tc.id}.acp-content.json`
+    files.push({ ref, contents: serialized })
+    content = contentRef(ref, serialized, hash)
+  }
+
   const argsJson = serializeToolArgsJson(tc.args)
   let args: unknown = tc.args
   if (utf8ByteLength(argsJson) > TOOL_ARGS_INLINE_MAX_BYTES) {
@@ -141,6 +209,8 @@ function explodeToolCall(
   const spine: SpineToolCall = {
     id: tc.id,
     name: tc.name,
+    ...(tc.title !== undefined ? { title: tc.title } : {}),
+    ...(tc.programmaticName !== undefined ? { programmaticName: tc.programmaticName } : {}),
     args,
     status: tc.status === 'error' ? 'error' : 'done',
     result,
@@ -149,6 +219,8 @@ function explodeToolCall(
     // as built-in tools; `resultFormat` keeps agent-authored Markdown rendering
     // through the Markdown pipeline after a reload instead of a raw <pre>.
     ...(tc.kind !== undefined ? { kind: tc.kind } : {}),
+    ...(content !== undefined ? { content } : {}),
+    ...(tc.locations !== undefined ? { locations: tc.locations } : {}),
     ...(tc.resultFormat !== undefined ? { resultFormat: tc.resultFormat } : {}),
     ...(images !== undefined ? { images } : {}),
   }
@@ -214,6 +286,20 @@ function explodeOne(msg: MessageLike, hash: HashFn): ExplodedMessage {
       ref,
     })
     line.reasoning = contentRef(ref, msg.reasoning, hash)
+  }
+
+  if (msg.contentBlocks !== undefined) {
+    const serialized = JSON.stringify(msg.contentBlocks)
+    const ref = `blobs/${msg.id}.acp-content.json`
+    files.push({ ref, contents: serialized })
+    line.contentBlocks = contentRef(ref, serialized, hash)
+  }
+
+  if (msg.reasoningBlocks !== undefined) {
+    const serialized = JSON.stringify(msg.reasoningBlocks)
+    const ref = `blobs/${msg.id}.acp-reasoning.json`
+    files.push({ ref, contents: serialized })
+    line.reasoningBlocks = contentRef(ref, serialized, hash)
   }
 
   if (msg.images !== undefined && msg.images.length > 0) {
@@ -302,6 +388,8 @@ export function refsOfLine(line: SpineMessageLine): {
   const files: string[] = [line.content.ref]
   const subagentDirs: string[] = []
   if (line.reasoning) files.push(line.reasoning.ref)
+  if (line.contentBlocks) files.push(line.contentBlocks.ref)
+  if (line.reasoningBlocks) files.push(line.reasoningBlocks.ref)
   if (line.images) for (const img of line.images) files.push(img.ref)
   if (line.attachments) {
     for (const attachment of line.attachments) {
@@ -310,6 +398,7 @@ export function refsOfLine(line: SpineMessageLine): {
   }
   for (const tc of line.toolCalls) {
     if (tc.result !== null) files.push(tc.result.ref)
+    if (tc.content) files.push(tc.content.ref)
     if (tc.images) for (const image of tc.images) files.push(image.dataUrl.ref)
     if (isToolArgsBlobRef(tc.id, tc.args)) files.push(tc.args.ref)
     if (tc.subagent) subagentDirs.push(tc.subagent.ref)
@@ -358,14 +447,25 @@ function foldToolCall(
     }
   })
 
+  let content: AcpToolCallContent[] | undefined
+  if (spine.content !== undefined) {
+    const serialized = resolve(spine.content.ref)
+    verify(spine.content, serialized, hash)
+    content = parseAcpToolCallContent(serialized)
+  }
+
   const tc: ToolCall = {
     id: spine.id,
     name: spine.name,
+    ...(spine.title !== undefined ? { title: spine.title } : {}),
+    ...(spine.programmaticName !== undefined ? { programmaticName: spine.programmaticName } : {}),
     args,
     status: spine.status,
     result,
     ...(spine.editStats !== undefined ? { editStats: spine.editStats } : {}),
     ...(spine.kind !== undefined ? { kind: spine.kind } : {}),
+    ...(content !== undefined ? { content } : {}),
+    ...(spine.locations !== undefined ? { locations: spine.locations } : {}),
     ...(spine.resultFormat !== undefined ? { resultFormat: spine.resultFormat } : {}),
     ...(images !== undefined ? { images } : {}),
   }
@@ -433,6 +533,18 @@ function foldOne(
     msg.reasoning = reasoning
   }
 
+  if (line.contentBlocks) {
+    const serialized = resolve(line.contentBlocks.ref)
+    verify(line.contentBlocks, serialized, hash)
+    msg.contentBlocks = parseAcpContentBlocks(serialized)
+  }
+
+  if (line.reasoningBlocks) {
+    const serialized = resolve(line.reasoningBlocks.ref)
+    verify(line.reasoningBlocks, serialized, hash)
+    msg.reasoningBlocks = parseAcpContentBlocks(serialized)
+  }
+
   if (line.images) {
     msg.images = line.images.map((img) => {
       const dataUrl = resolve(img.ref)
@@ -482,6 +594,8 @@ export function foldMessage(
     toolCalls: m.toolCalls,
     createdAt: m.createdAt ?? 0,
     ...(m.reasoning !== undefined ? { reasoning: m.reasoning } : {}),
+    ...(m.contentBlocks !== undefined ? { contentBlocks: m.contentBlocks } : {}),
+    ...(m.reasoningBlocks !== undefined ? { reasoningBlocks: m.reasoningBlocks } : {}),
     ...(m.images !== undefined ? { images: m.images } : {}),
     ...(m.canvasArtefacts !== undefined ? { canvasArtefacts: m.canvasArtefacts } : {}),
     ...(m.commandSummary !== undefined ? { commandSummary: m.commandSummary } : {}),

@@ -74,6 +74,15 @@ export function nextAcpTurnProgress(
       return chunk.text.trim() ? { ...previous, lastEvent: 'text', sawText: true } : previous
     case 'reasoning':
       return chunk.text.trim() ? { ...previous, lastEvent: 'reasoning' } : previous
+    case 'acp_content':
+      if (chunk.channel === 'thought') {
+        return chunk.content.type === 'text' && !chunk.content.text.trim()
+          ? previous
+          : { ...previous, lastEvent: 'reasoning' }
+      }
+      return chunk.content.type === 'text' && !chunk.content.text.trim()
+        ? previous
+        : { ...previous, lastEvent: 'text', sawText: true }
     case 'tool_call':
       return { ...previous, lastEvent: 'tool', sawTool: true }
     // `tool_result` / `tool_call_update` are completion bookkeeping for a call

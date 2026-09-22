@@ -18,8 +18,16 @@ export type { ModelUsage, ThreadUsage } from '@copse/llm/wire-types.ts'
 // owned by the agent module (the loop constructs sessions and reports the
 // breakdown); imported for the thread types below and re-exported so
 // `@shared/types` consumers are unchanged.
-import type { AgentRunPayload, TodoItem, ToolCall } from '@copse/agent/wire-types.ts'
+import type {
+  AcpContentBlock,
+  AgentRunPayload,
+  TodoItem,
+  ToolCall,
+} from '@copse/agent/wire-types.ts'
 export type {
+  AcpContentBlock,
+  AcpToolCallContent,
+  AcpToolCallLocation,
   ToolCall,
   SubagentMessage,
   SubagentSession,
@@ -105,6 +113,8 @@ export interface ContextSnapshot {
   fillRatio: number
   /** Present when the context owner reported this snapshot directly. */
   source?: 'agent-reported'
+  /** Cumulative cost reported by the ACP session, in the agent's ISO currency. */
+  cost?: { amount: number; currency: string }
   updatedAt: number
 }
 
@@ -516,6 +526,10 @@ export interface Message {
    * a collapsible disclosure. Never sent back upstream as conversation history.
    */
   reasoning?: string
+  /** Non-text ACP assistant content, kept out of the Markdown body. */
+  contentBlocks?: AcpContentBlock[]
+  /** Non-text ACP thought content, rendered inside the reasoning disclosure. */
+  reasoningBlocks?: AcpContentBlock[]
   /** Pasted image attachments as data URLs (user messages only). */
   images?: string[]
   toolCalls: ToolCall[]

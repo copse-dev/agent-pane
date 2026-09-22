@@ -196,7 +196,10 @@ describe('sessionUpdateToStreamChunks (client role)', () => {
           status,
         }),
         [
-          { type: 'tool_call', toolCall: { id: 'finished', name: 'read_file', args: {} } },
+          {
+            type: 'tool_call',
+            toolCall: { id: 'finished', name: 'read_file', title: 'read_file', args: {} },
+          },
           {
             type: 'tool_call_update',
             toolCallId: 'finished',
@@ -217,12 +220,17 @@ describe('sessionUpdateToStreamChunks (client role)', () => {
         content: [{ type: 'content', content: { type: 'text', text: 'Compiling…' } }],
       }),
       [
-        { type: 'tool_call', toolCall: { id: 'running', name: 'Build', args: {} } },
+        {
+          type: 'tool_call',
+          toolCall: { id: 'running', name: 'Build', title: 'Build', args: {} },
+        },
         {
           type: 'tool_call_update',
           toolCallId: 'running',
           result: 'Compiling…',
           resultFormat: 'markdown',
+          images: [],
+          content: [{ type: 'content', content: { type: 'text', text: 'Compiling…' } }],
         },
       ],
     )
@@ -237,13 +245,18 @@ describe('sessionUpdateToStreamChunks (client role)', () => {
     } satisfies Omit<Extract<SessionUpdate, { sessionUpdate: 'tool_call' }>, 'sessionUpdate'>
     const chunks = sessionUpdateToStreamChunks({ ...update, sessionUpdate: 'tool_call' })
     assert.deepEqual(chunks, [
-      { type: 'tool_call', toolCall: { id: 'completed', name: 'Read', args: {} } },
+      {
+        type: 'tool_call',
+        toolCall: { id: 'completed', name: 'Read', title: 'Read', args: {} },
+      },
       {
         type: 'tool_call_update',
         toolCallId: 'completed',
         status: 'done',
         result: 'file contents',
         resultFormat: 'markdown',
+        images: [],
+        content: [{ type: 'content', content: { type: 'text', text: 'file contents' } }],
       },
     ])
   })
@@ -266,7 +279,12 @@ describe('sessionUpdateToStreamChunks (client role)', () => {
       [
         {
           type: 'tool_call',
-          toolCall: { id: 'generated-image', name: 'Generate image', args: {} },
+          toolCall: {
+            id: 'generated-image',
+            name: 'Generate image',
+            title: 'Generate image',
+            args: {},
+          },
         },
         {
           type: 'tool_call_update',
@@ -275,17 +293,36 @@ describe('sessionUpdateToStreamChunks (client role)', () => {
           result: 'Created the image.',
           resultFormat: 'markdown',
           images: [{ dataUrl: 'data:image/webp;base64,base64-payload', kind: 'screenshot' }],
+          content: [
+            { type: 'content', content: { type: 'text', text: 'Created the image.' } },
+            {
+              type: 'content',
+              content: {
+                type: 'image',
+                dataUrl: 'data:image/webp;base64,base64-payload',
+                mimeType: 'image/webp',
+              },
+            },
+          ],
         },
       ],
     )
   })
 
-  it('maps an agent_message_chunk to text', () => {
+  it('maps an agent_message_chunk with its message boundary', () => {
     const update: SessionUpdate = {
       sessionUpdate: 'agent_message_chunk',
+      messageId: 'message-1',
       content: { type: 'text', text: 'hello' },
     }
-    assert.deepEqual(sessionUpdateToStreamChunks(update), [{ type: 'text', text: 'hello' }])
+    assert.deepEqual(sessionUpdateToStreamChunks(update), [
+      {
+        type: 'acp_content',
+        channel: 'message',
+        messageId: 'message-1',
+        content: { type: 'text', text: 'hello' },
+      },
+    ])
   })
 
   it('maps a tool_call to a tool_call chunk', () => {
@@ -298,12 +335,12 @@ describe('sessionUpdateToStreamChunks (client role)', () => {
     assert.deepEqual(sessionUpdateToStreamChunks(update), [
       {
         type: 'tool_call',
-        toolCall: { id: 't9', name: 'search', args: { q: 'x' } },
+        toolCall: { id: 't9', name: 'search', title: 'search', args: { q: 'x' } },
       },
     ])
   })
 
-  it('prefers a meaningful ACP title over the programmatic tool name', () => {
+  it('keeps a meaningful ACP title distinct from the programmatic tool name', () => {
     const update: SessionUpdate = {
       sessionUpdate: 'tool_call',
       toolCallId: 't-title',
@@ -316,7 +353,9 @@ describe('sessionUpdateToStreamChunks (client role)', () => {
         type: 'tool_call',
         toolCall: {
           id: 't-title',
-          name: 'Read the project manifest',
+          name: 'copse.read_file',
+          title: 'Read the project manifest',
+          programmaticName: 'copse.read_file',
           args: { path: 'package.json' },
         },
       },
@@ -337,6 +376,8 @@ describe('sessionUpdateToStreamChunks (client role)', () => {
         toolCall: {
           id: 't-mcp',
           name: 'mcp__copse__read_archive',
+          title: 'MCP: tool',
+          programmaticName: 'mcp__copse__read_archive',
           args: { path: 'thread.zip' },
         },
       },
@@ -353,7 +394,7 @@ describe('sessionUpdateToStreamChunks (client role)', () => {
     assert.deepEqual(sessionUpdateToStreamChunks(update), [
       {
         type: 'tool_call',
-        toolCall: { id: 't-generic', name: 'MCP: tool', args: {} },
+        toolCall: { id: 't-generic', name: 'MCP: tool', title: 'MCP: tool', args: {} },
       },
     ])
   })
@@ -369,8 +410,26 @@ describe('sessionUpdateToStreamChunks (client role)', () => {
         type: 'tool_call_update',
         toolCallId: 't-late-name',
         name: 'copse.search_code',
+        programmaticName: 'copse.search_code',
       },
     ])
+  })
+
+  it('preserves a title-only tool update', () => {
+    assert.deepEqual(
+      sessionUpdateToStreamChunks({
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'renamed',
+        title: 'Read the generated report',
+      }),
+      [
+        {
+          type: 'tool_call_update',
+          toolCallId: 'renamed',
+          title: 'Read the generated report',
+        },
+      ],
+    )
   })
 
   it('carries the ACP kind so the UI can spot the agent’s shell commands', () => {
@@ -384,7 +443,13 @@ describe('sessionUpdateToStreamChunks (client role)', () => {
     assert.deepEqual(sessionUpdateToStreamChunks(update), [
       {
         type: 'tool_call',
-        toolCall: { id: 'e1', name: 'git status', args: {}, kind: 'execute' },
+        toolCall: {
+          id: 'e1',
+          name: 'git status',
+          title: 'git status',
+          args: {},
+          kind: 'execute',
+        },
       },
     ])
   })
@@ -400,7 +465,12 @@ describe('sessionUpdateToStreamChunks (client role)', () => {
     assert.deepEqual(sessionUpdateToStreamChunks(update), [
       {
         type: 'tool_call',
-        toolCall: { id: 't1', name: 'read_file', args: { path: 'a.ts' } },
+        toolCall: {
+          id: 't1',
+          name: 'read_file',
+          title: 'read_file',
+          args: { path: 'a.ts' },
+        },
       },
     ])
   })
@@ -421,13 +491,171 @@ describe('sessionUpdateToStreamChunks (client role)', () => {
       {
         type: 'tool_call_update',
         toolCallId: 't9',
-        name: 'npm test',
+        title: 'npm test',
         args: { command: 'npm test', timeout_ms: 30_000 },
         status: 'running',
         result: 'part1 part2',
         resultFormat: 'markdown',
+        images: [],
+        content: [
+          { type: 'content', content: { type: 'text', text: 'part1 ' } },
+          { type: 'content', content: { type: 'text', text: 'part2' } },
+        ],
       },
     ])
+  })
+
+  it('emits complete replacement patches for mixed, text-only, image-only, and empty content', () => {
+    const replace = (
+      content: Exclude<
+        Extract<SessionUpdate, { sessionUpdate: 'tool_call_update' }>['content'],
+        undefined
+      >,
+    ): StreamChunk | undefined =>
+      sessionUpdateToStreamChunks({
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'replace-me',
+        content,
+      })[0]
+
+    const mixed = replace([
+      { type: 'content', content: { type: 'text', text: 'caption' } },
+      {
+        type: 'content',
+        content: { type: 'image', data: 'mixed-image', mimeType: 'image/png' },
+      },
+    ])
+    assert.deepEqual(mixed, {
+      type: 'tool_call_update',
+      toolCallId: 'replace-me',
+      result: 'caption',
+      resultFormat: 'markdown',
+      images: [{ dataUrl: 'data:image/png;base64,mixed-image', kind: 'screenshot' }],
+      content: [
+        { type: 'content', content: { type: 'text', text: 'caption' } },
+        {
+          type: 'content',
+          content: {
+            type: 'image',
+            dataUrl: 'data:image/png;base64,mixed-image',
+            mimeType: 'image/png',
+          },
+        },
+      ],
+    })
+    assert.deepEqual(replace([{ type: 'content', content: { type: 'text', text: 'new text' } }]), {
+      type: 'tool_call_update',
+      toolCallId: 'replace-me',
+      result: 'new text',
+      resultFormat: 'markdown',
+      images: [],
+      content: [{ type: 'content', content: { type: 'text', text: 'new text' } }],
+    })
+    assert.deepEqual(
+      replace([
+        {
+          type: 'content',
+          content: { type: 'image', data: 'new-image', mimeType: 'image/webp' },
+        },
+      ]),
+      {
+        type: 'tool_call_update',
+        toolCallId: 'replace-me',
+        result: null,
+        images: [{ dataUrl: 'data:image/webp;base64,new-image', kind: 'screenshot' }],
+        content: [
+          {
+            type: 'content',
+            content: {
+              type: 'image',
+              dataUrl: 'data:image/webp;base64,new-image',
+              mimeType: 'image/webp',
+            },
+          },
+        ],
+      },
+    )
+    assert.deepEqual(replace([]), {
+      type: 'tool_call_update',
+      toolCallId: 'replace-me',
+      result: null,
+      images: [],
+      content: [],
+    })
+  })
+
+  it('normalizes every ACP tool content variant and replacement metadata', () => {
+    const [chunk] = sessionUpdateToStreamChunks({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'rich',
+      title: 'Inspect outputs',
+      name: 'inspect_outputs',
+      kind: 'search',
+      locations: [{ path: 'src/a.ts', line: 12 }],
+      content: [
+        {
+          type: 'content',
+          content: { type: 'audio', data: 'audio-bytes', mimeType: 'audio/ogg' },
+        },
+        {
+          type: 'content',
+          content: {
+            type: 'resource_link',
+            uri: 'https://example.test/report',
+            name: 'report',
+            title: 'Report',
+            description: 'Generated report',
+            mimeType: 'text/html',
+            size: 42,
+          },
+        },
+        {
+          type: 'content',
+          content: {
+            type: 'resource',
+            resource: { uri: 'file:///notes.txt', mimeType: 'text/plain', text: 'notes' },
+          },
+        },
+        {
+          type: 'content',
+          content: {
+            type: 'resource',
+            resource: {
+              uri: 'file:///archive.bin',
+              mimeType: 'application/octet-stream',
+              blob: 'binary-bytes',
+            },
+          },
+        },
+        { type: 'diff', path: 'src/a.ts', oldText: 'old', newText: 'new' },
+        { type: 'terminal', terminalId: 'terminal-1' },
+      ],
+    })
+    assert.ok(chunk?.type === 'tool_call_update')
+    assert.equal(chunk.title, 'Inspect outputs')
+    assert.equal(chunk.name, 'inspect_outputs')
+    assert.equal(chunk.programmaticName, 'inspect_outputs')
+    assert.equal(chunk.kind, 'search')
+    assert.deepEqual(chunk.locations, [{ path: 'src/a.ts', line: 12 }])
+    assert.equal(chunk.result, null)
+    assert.deepEqual(chunk.images, [])
+    assert.ok(chunk.content)
+    assert.equal(chunk.content.length, 6)
+    assert.deepEqual(chunk.content[0], {
+      type: 'content',
+      content: {
+        type: 'audio',
+        dataUrl: 'data:audio/ogg;base64,audio-bytes',
+        mimeType: 'audio/ogg',
+      },
+    })
+    assert.deepEqual(chunk.content.at(-2), {
+      type: 'diff',
+      path: 'src/a.ts',
+      oldText: 'old',
+      newText: 'new',
+    })
+    assert.deepEqual(chunk.content.at(-1), { type: 'terminal', terminalId: 'terminal-1' })
   })
 
   it('preserves structured raw output from a completed tool_call_update', () => {
@@ -472,6 +700,11 @@ describe('sessionUpdateToStreamChunks (client role)', () => {
         status: 'done',
         result: 'first block\nsecond block',
         resultFormat: 'markdown',
+        images: [],
+        content: [
+          { type: 'content', content: { type: 'text', text: 'first block' } },
+          { type: 'content', content: { type: 'text', text: 'second block' } },
+        ],
       },
     ])
   })
@@ -504,6 +737,8 @@ describe('sessionUpdateToStreamChunks (client role)', () => {
         status: 'done',
         result: 'readable result',
         resultFormat: 'markdown',
+        images: [],
+        content: [{ type: 'content', content: { type: 'text', text: 'readable result' } }],
       },
     ])
   })
@@ -570,6 +805,17 @@ describe('sessionUpdateToStreamChunks (client role)', () => {
         result: 'caption',
         resultFormat: 'markdown',
         images: [{ dataUrl: 'data:image/png;base64,encoded-image', kind: 'screenshot' }],
+        content: [
+          { type: 'content', content: { type: 'text', text: 'caption' } },
+          {
+            type: 'content',
+            content: {
+              type: 'image',
+              dataUrl: 'data:image/png;base64,encoded-image',
+              mimeType: 'image/png',
+            },
+          },
+        ],
       },
     ])
   })
@@ -599,7 +845,18 @@ describe('sessionUpdateToStreamChunks (client role)', () => {
         type: 'tool_call_update',
         toolCallId: 'generated-image',
         status: 'done',
+        result: null,
         images: [{ dataUrl: 'data:image/png;base64,encoded-image', kind: 'screenshot' }],
+        content: [
+          {
+            type: 'content',
+            content: {
+              type: 'image',
+              dataUrl: 'data:image/png;base64,encoded-image',
+              mimeType: 'image/png',
+            },
+          },
+        ],
       },
     ])
   })
@@ -612,15 +869,18 @@ describe('sessionUpdateToStreamChunks (client role)', () => {
     assert.deepEqual(sessionUpdateToStreamChunks(update), [])
   })
 
-  it('maps an agent_thought_chunk to reasoning, not text', () => {
+  it('maps an agent_thought_chunk with its thought boundary', () => {
     const update: SessionUpdate = {
       sessionUpdate: 'agent_thought_chunk',
+      messageId: 'thought-1',
       content: { type: 'text', text: 'pondering' },
     }
     assert.deepEqual(sessionUpdateToStreamChunks(update), [
       {
-        type: 'reasoning',
-        text: 'pondering',
+        type: 'acp_content',
+        channel: 'thought',
+        messageId: 'thought-1',
+        content: { type: 'text', text: 'pondering' },
       },
     ])
   })
@@ -637,8 +897,18 @@ describe('sessionUpdateToStreamChunks (client role)', () => {
       {
         type: 'todo_update',
         todos: [
-          { id: 'acp-plan-1', content: 'read the code', status: 'completed' },
-          { id: 'acp-plan-2', content: 'fix the bug', status: 'in_progress' },
+          {
+            id: 'acp-plan-1',
+            content: 'read the code',
+            status: 'completed',
+            priority: 'high',
+          },
+          {
+            id: 'acp-plan-2',
+            content: 'fix the bug',
+            status: 'in_progress',
+            priority: 'medium',
+          },
         ],
       },
     ])
@@ -660,6 +930,17 @@ describe('sessionUpdateToStreamChunks (client role)', () => {
         source: 'agent-reported',
       },
     ])
+  })
+
+  it('preserves ACP usage cost amount and currency', () => {
+    const [chunk] = sessionUpdateToStreamChunks({
+      sessionUpdate: 'usage_update',
+      used: 10,
+      size: 100,
+      cost: { amount: 0.25, currency: 'USD' },
+    })
+    assert.ok(chunk?.type === 'context_pressure')
+    assert.deepEqual(chunk.cost, { amount: 0.25, currency: 'USD' })
   })
 
   it('handles a zero-sized usage_update without producing an invalid ratio', () => {

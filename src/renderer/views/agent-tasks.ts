@@ -270,18 +270,19 @@ export function mountAgentTasks(
     id: string,
     patch: {
       name?: string
+      title?: string
       args?: unknown
       status?: TaskStatus
-      result?: string
+      result?: string | null
     },
   ): void {
     const task = tasks.get(id)
     if (!task) return
-    const command = shellCommandFromArgs(patch.args) ?? patch.name
+    const command = shellCommandFromArgs(patch.args) ?? patch.title ?? patch.name
     if (command) setCommand(task, command)
     if (patch.args !== undefined) setArgs(task, patch.args)
     if (patch.result !== undefined) {
-      task.output = stripAnsi(patch.result)
+      task.output = stripAnsi(patch.result ?? '')
       task.outputNode.data = task.output
     }
     if (patch.status !== undefined) setStatus(task, patch.status)
@@ -331,7 +332,8 @@ export function mountAgentTasks(
       const isAcpShell = chunk.toolCall.kind === 'execute'
       if (chunk.toolCall.name === 'run_shell' || isAcpShell) {
         const command =
-          shellCommandFromArgs(chunk.toolCall.args) ?? (isAcpShell ? chunk.toolCall.name : null)
+          shellCommandFromArgs(chunk.toolCall.args) ??
+          (isAcpShell ? (chunk.toolCall.title ?? chunk.toolCall.name) : null)
         if (command) addTask(chunk.toolCall.id, command, chunk.toolCall.args, threadId)
       }
     } else if (chunk.type === 'tool_result' && tasks.has(chunk.toolCallId)) {

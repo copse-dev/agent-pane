@@ -780,6 +780,7 @@ export async function runAgent(
   const sendChunk = (chunk: StreamChunk): void => {
     const firstVisibleActivity =
       chunk.type === 'tool_call' ||
+      chunk.type === 'acp_content' ||
       (chunk.type === 'text' && chunk.text.trim() !== '') ||
       (chunk.type === 'reasoning' && chunk.text.trim() !== '')
     if (firstVisibleActivity && !firstActivitySent) {
@@ -788,7 +789,9 @@ export async function runAgent(
     }
     if (chunk.type === 'text' && chunk.text.trim()) lastTurnEvent = 'text'
     else if (chunk.type === 'reasoning' && chunk.text.trim()) lastTurnEvent = 'reasoning'
-    else if (
+    else if (chunk.type === 'acp_content') {
+      lastTurnEvent = chunk.channel === 'thought' ? 'reasoning' : 'text'
+    } else if (
       chunk.type === 'tool_call' ||
       chunk.type === 'tool_result' ||
       chunk.type === 'tool_call_update'

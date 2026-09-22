@@ -4,6 +4,7 @@ import {
   addMessage,
   appendToken,
   appendReasoning,
+  appendAcpContentBlock,
   addMessageCanvasArtefact,
   addToolCall,
   updateToolCall,
@@ -114,6 +115,8 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
     // stale behind an intervening label and suppress the emit that restores it.
     lastActivityLabel: string | null
     firstActivityTraced: boolean
+    acpMessageId: string | null
+    acpThoughtMessageId: string | null
   }
   const state = new Map<string, ThreadStreamState>()
   const get = (tid: string): ThreadStreamState => {
@@ -132,6 +135,8 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         runSummaryCount: 0,
         lastActivityLabel: null,
         firstActivityTraced: false,
+        acpMessageId: null,
+        acpThoughtMessageId: null,
       }
       state.set(tid, st)
     }
@@ -154,6 +159,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
     const st = get(threadId)
     const firstVisibleActivity =
       chunk.type === 'tool_call' ||
+      chunk.type === 'acp_content' ||
       (chunk.type === 'text' && chunk.text.trim() !== '') ||
       (chunk.type === 'reasoning' && chunk.text.trim() !== '')
     if (firstVisibleActivity && !st.firstActivityTraced) {
@@ -217,6 +223,62 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         activity(threadId)
         break
       }
+      case 'acp_content': {
+        const previousId = chunk.channel === 'message' ? st.acpMessageId : st.acpThoughtMessageId
+        const boundaryChanged =
+          chunk.messageId !== undefined && previousId !== null && chunk.messageId !== previousId
+        if (boundaryChanged && st.msgId) {
+          store.emit('message_done', st.msgId)
+          st.msgId = null
+          st.toolSinceText = false
+          st.currentText = ''
+        }
+        if (chunk.messageId !== undefined) {
+          if (chunk.channel === 'message') st.acpMessageId = chunk.messageId
+          else st.acpThoughtMessageId = chunk.messageId
+        }
+
+        if (chunk.content.type === 'text') {
+          if (chunk.channel === 'thought') {
+            if (!st.msgId || st.toolSinceText) {
+              if (st.toolSinceText && st.msgId) store.emit('message_done', st.msgId)
+              st.msgId = addAssistantMessage(store, threadId)
+              st.toolSinceText = false
+              st.currentText = ''
+            }
+            appendReasoning(store, st.msgId, chunk.content.text)
+            st.writing = false
+          } else {
+            const { plan, state: nextState } = planAgentTextChunk(
+              { msgId: st.msgId, toolSinceText: st.toolSinceText, currentText: st.currentText },
+              chunk.content.text,
+            )
+            if (plan.action === 'ignore') break
+            if (plan.startNewMessage) {
+              if (plan.finalizeMsgId) store.emit('message_done', plan.finalizeMsgId)
+              st.msgId = addAssistantMessage(store, threadId)
+            }
+            st.toolSinceText = nextState.toolSinceText
+            st.currentText = nextState.currentText ?? ''
+            if (st.msgId === null) throw new Error('assistant message id missing for ACP text')
+            appendToken(store, st.msgId, plan.text)
+            st.writing = plan.text.trim().length > 0
+            if (st.writing) maybeNameThread(store, api, threadId)
+          }
+        } else {
+          if (!st.msgId || st.toolSinceText) {
+            if (st.toolSinceText && st.msgId) store.emit('message_done', st.msgId)
+            st.msgId = addAssistantMessage(store, threadId)
+            st.toolSinceText = false
+            st.currentText = ''
+          }
+          appendAcpContentBlock(store, st.msgId, chunk.channel, chunk.content)
+          st.writing = false
+          maybeNameThread(store, api, threadId)
+        }
+        activity(threadId)
+        break
+      }
       case 'text_replace': {
         st.msgId ??= addAssistantMessage(store, threadId)
         setMessageContent(store, st.msgId, chunk.text)
@@ -245,6 +307,10 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         addToolCall(store, st.msgId, {
           id: chunk.toolCall.id,
           name: chunk.toolCall.name,
+          ...(chunk.toolCall.title !== undefined ? { title: chunk.toolCall.title } : {}),
+          ...(chunk.toolCall.programmaticName !== undefined
+            ? { programmaticName: chunk.toolCall.programmaticName }
+            : {}),
           args: chunk.toolCall.args,
           status: 'running',
           result: null,
@@ -265,11 +331,18 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         if (ownerId) {
           updateToolCall(store, ownerId, chunk.toolCallId, {
             ...(chunk.name !== undefined ? { name: chunk.name } : {}),
+            ...(chunk.title !== undefined ? { title: chunk.title } : {}),
+            ...(chunk.programmaticName !== undefined
+              ? { programmaticName: chunk.programmaticName }
+              : {}),
             ...(chunk.args !== undefined ? { args: chunk.args } : {}),
+            ...(chunk.kind !== undefined ? { kind: chunk.kind } : {}),
             ...(chunk.status !== undefined ? { status: chunk.status } : {}),
             ...(chunk.result !== undefined ? { result: chunk.result } : {}),
             ...(chunk.resultFormat !== undefined ? { resultFormat: chunk.resultFormat } : {}),
             ...(chunk.images !== undefined ? { images: chunk.images } : {}),
+            ...(chunk.content !== undefined ? { content: chunk.content } : {}),
+            ...(chunk.locations !== undefined ? { locations: chunk.locations } : {}),
           })
         }
         st.writing = false
@@ -376,6 +449,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
           conversationTokens: chunk.conversationTokens,
           fillRatio: chunk.fillRatio,
           ...(chunk.source !== undefined ? { source: chunk.source } : {}),
+          ...(chunk.cost !== undefined ? { cost: chunk.cost } : {}),
         })
         break
       }

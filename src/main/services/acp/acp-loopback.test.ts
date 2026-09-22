@@ -77,7 +77,13 @@ describe('ACP agent <-> client loopback', () => {
     // carries it through so the UI can group/label like the built-in tools.
     assert.deepEqual(toolCall, {
       type: 'tool_call',
-      toolCall: { id: 't1', name: 'read_file', args: { path: 'a.ts' }, kind: 'read' },
+      toolCall: {
+        id: 't1',
+        name: 'read_file',
+        title: 'read_file',
+        args: { path: 'a.ts' },
+        kind: 'read',
+      },
     })
 
     const toolUpdate = chunks.find((c) => c.type === 'tool_call_update')
@@ -89,6 +95,8 @@ describe('ACP agent <-> client loopback', () => {
       // ACP tool output is agent-authored Markdown, so the client-side adapter
       // tags it for the Markdown render path.
       resultFormat: 'markdown',
+      images: [],
+      content: [{ type: 'content', content: { type: 'text', text: 'file contents' } }],
     })
   })
 })
