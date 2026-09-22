@@ -63,6 +63,27 @@ jobs:
         with:
           node-version-file: '.nvmrc'
 
+      # The review cell inherits only a scrubbed PATH and a disposable HOME.
+      # Provision the same native tools the full unit gate expects before the
+      # contributor ref is fetched, while this job still contains only trusted
+      # default-branch code. Apt's /usr/bin Cargo is intentional: rustup's shim
+      # depends on the runner HOME that the cell must not inherit.
+      - name: Provision the Stage 0 test toolchain
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends bubblewrap cargo ripgrep socat
+          if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          command -v bwrap
+          command -v cargo
+          command -v rg
+          command -v rustc
+          command -v socat
+          bwrap --unshare-all --dev-bind / / --die-with-parent true
+
       - name: Activate the pinned pnpm
         shell: bash
         run: |
@@ -85,6 +106,10 @@ jobs:
           PR_NUMBER: ${{ inputs.pr }}
         run: |
           set -euo pipefail
+          setup_node_bin="$(dirname "$(command -v node)")"
+          export PATH="${setup_node_bin}:/usr/bin:${PATH}"
+          test "$(command -v cargo)" = /usr/bin/cargo
+          test "$(command -v node)" = "${setup_node_bin}/node"
           [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]]
           [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
           git check-ref-format --branch "$BASE_REF"

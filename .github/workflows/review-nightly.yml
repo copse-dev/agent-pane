@@ -117,6 +117,26 @@ jobs:
         with:
           node-version-file: '.nvmrc'
 
+      # The cell gets a disposable HOME, so install a system Cargo rather than
+      # relying on the hosted image's HOME-bound rustup shim. The other tools
+      # match the full unit gate's Linux sandbox and search prerequisites. This
+      # still runs before any contributor ref is fetched or executed.
+      - name: Provision the Stage 0 test toolchain
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends bubblewrap cargo ripgrep socat
+          if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          command -v bwrap
+          command -v cargo
+          command -v rg
+          command -v rustc
+          command -v socat
+          bwrap --unshare-all --dev-bind / / --die-with-parent true
+
       - name: Activate the pinned pnpm
         shell: bash
         run: |
@@ -136,6 +156,10 @@ jobs:
           PR_NUMBER: ${{ needs.select.outputs.number }}
         run: |
           set -euo pipefail
+          setup_node_bin="$(dirname "$(command -v node)")"
+          export PATH="${setup_node_bin}:/usr/bin:${PATH}"
+          test "$(command -v cargo)" = /usr/bin/cargo
+          test "$(command -v node)" = "${setup_node_bin}/node"
           git fetch --no-tags --quiet origin \
             "+refs/pull/${PR_NUMBER}/head:refs/remotes/pr/${PR_NUMBER}" \
             "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}"
