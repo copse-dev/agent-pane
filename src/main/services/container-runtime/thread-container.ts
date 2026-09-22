@@ -804,11 +804,6 @@ export async function assertThreadContainerEngine(): Promise<void> {
   await requireDockerForThreadContainer()
 }
 
-/** Whether the worker image is present locally (no pull is ever attempted). */
-export async function workerImageExists(image: string): Promise<boolean> {
-  return (await imageDigest(image)) !== undefined
-}
-
 async function imageDigest(image: string): Promise<string | undefined> {
   try {
     const out = await runDocker(['image', 'inspect', '--format', '{{.Id}}', image])

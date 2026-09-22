@@ -294,19 +294,11 @@ export {
   isStructurallyReadOnlyShellCommand,
 } from './shell-argv.ts'
 
-export function formatShellPromptBody(command: string, reasons: string[]): string {
-  return flattenShellPromptParts(formatShellPromptParts(command, reasons))
-}
-
 /** Structured shell prompt: advice and footer stay outside the monospaced command block. */
 export interface ShellPromptParts {
   command: string
   bodyAdvice?: string
   bodyFooter?: string
-}
-
-export function flattenShellPromptParts(parts: ShellPromptParts): string {
-  return [parts.bodyAdvice, parts.command, parts.bodyFooter].filter(Boolean).join('\n\n')
 }
 
 export function shellPromptToApprovalFields(parts: ShellPromptParts): {
@@ -356,10 +348,6 @@ export function backgroundAllowsPortBinding(args: unknown): boolean {
   return (args as { allow_port_binding?: unknown }).allow_port_binding === true
 }
 
-export function formatPortBindingPromptBody(workspaceRoot: string, command: string): string {
-  return flattenShellPromptParts(formatPortBindingPromptParts(workspaceRoot, command))
-}
-
 export function formatPortBindingPromptParts(
   workspaceRoot: string,
   command: string,
@@ -383,10 +371,6 @@ export function formatPortBindingPromptParts(
  */
 const NEEDS_OUTSIDE_ACCESS: readonly string[] = ['Needs network or outside-project access']
 
-export function formatExternalSandboxPromptBody(command: string, reasons: string[]): string {
-  return flattenShellPromptParts(formatExternalSandboxPromptParts(command, reasons))
-}
-
 export function formatExternalSandboxPromptParts(
   command: string,
   reasons: string[],
@@ -401,10 +385,6 @@ export function formatExternalSandboxPromptParts(
     )}`,
     bodyFooter: 'Allow running it once outside the sandbox?',
   }
-}
-
-export function formatExpectedSandboxBlockPromptBody(command: string, reasons: string[]): string {
-  return flattenShellPromptParts(formatExpectedSandboxBlockPromptParts(command, reasons))
 }
 
 /**
@@ -464,13 +444,6 @@ export function formatGuardedYoloHarmPromptAdvice(reasons: string[]): string {
  * just adds noise — this states plainly that it's an install, where it runs, and
  * whether Socket Firewall will scan it.
  */
-export function formatInstallPromptBody(
-  command: string,
-  opts: { outsideSandbox: boolean; safeInstall: boolean; jsManager: boolean },
-): string {
-  return flattenShellPromptParts(formatInstallPromptParts(command, opts))
-}
-
 export function formatInstallPromptParts(
   command: string,
   opts: { outsideSandbox: boolean; safeInstall: boolean; jsManager: boolean },
@@ -495,13 +468,6 @@ export function formatInstallPromptParts(
  * execute code without adding dependencies to the project — different from a
  * persistent install, but still network + supply-chain sensitive.
  */
-export function formatEphemeralRunnerPromptBody(
-  command: string,
-  opts: { outsideSandbox: boolean; safeInstall: boolean },
-): string {
-  return flattenShellPromptParts(formatEphemeralRunnerPromptParts(command, opts))
-}
-
 export function formatEphemeralRunnerPromptParts(
   command: string,
   opts: { outsideSandbox: boolean; safeInstall: boolean },

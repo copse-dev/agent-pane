@@ -38,7 +38,6 @@ export interface UnattendedRunSpec {
 
 export class UnattendedRunRegistry {
   private readonly entries = new Map<string, UnattendedRunEntry>()
-  private readonly listeners = new Set<(threadId: string) => void>()
 
   arm(threadId: string, spec: UnattendedRunSpec): void {
     if (getGuardedYoloState(threadId).phase !== 'off') {
@@ -51,7 +50,6 @@ export class UnattendedRunRegistry {
     }
     this.entries.set(threadId, { phase: 'armed', runtimeId: spec.runtimeId, budgets: spec.budgets })
     beginDeferralMode(threadId)
-    this.emit(threadId)
   }
 
   /** Consume an armed grant at run start. The active grant persists for the thread. */
@@ -59,14 +57,12 @@ export class UnattendedRunRegistry {
     const entry = this.entries.get(threadId)
     if (entry?.phase !== 'armed') return entry?.phase === 'active'
     this.entries.set(threadId, { ...entry, phase: 'active' })
-    this.emit(threadId)
     return true
   }
 
   disarm(threadId: string): void {
     if (!this.entries.delete(threadId)) return
     endDeferralMode(threadId)
-    this.emit(threadId)
   }
 
   isArmedOrActive(threadId: string): boolean {
@@ -88,24 +84,12 @@ export class UnattendedRunRegistry {
     }
   }
 
-  onChanged(listener: (threadId: string) => void): () => void {
-    this.listeners.add(listener)
-    return () => {
-      this.listeners.delete(listener)
-    }
-  }
-
   clear(): void {
     const armed = [...this.entries.keys()]
     this.entries.clear()
     for (const threadId of armed) {
       endDeferralMode(threadId)
-      this.emit(threadId)
     }
-  }
-
-  private emit(threadId: string): void {
-    for (const listener of this.listeners) listener(threadId)
   }
 }
 
@@ -131,16 +115,8 @@ export function disarmUnattendedRun(threadId: string): void {
   unattendedRunRegistry.disarm(threadId)
 }
 
-export function isUnattendedRunActive(threadId: string): boolean {
-  return unattendedRunRegistry.isActive(threadId)
-}
-
 export function getUnattendedRunState(threadId: string): UnattendedRunState {
   return unattendedRunRegistry.state(threadId, runtimeContainmentTier())
-}
-
-export function onUnattendedRunChanged(listener: (threadId: string) => void): () => void {
-  return unattendedRunRegistry.onChanged(listener)
 }
 
 /**

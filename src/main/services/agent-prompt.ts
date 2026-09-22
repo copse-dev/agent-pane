@@ -2,7 +2,6 @@ import {
   assemblePromptFromSections,
   buildPromptSections,
   type PromptSectionId,
-  type PromptSections,
   type PromptSectionVars,
 } from './agent-prompt-sections.ts'
 import { AGENT_EXECUTION_GUIDANCE } from './agent-execution-guidance.ts'
@@ -94,11 +93,6 @@ function toSectionVars(v: BasePromptVars): PromptSectionVars {
 
 function buildBasePrompt(v: BasePromptVars): string {
   return assemblePromptFromSections(buildPromptSections(toSectionVars(v)))
-}
-
-/** Section map for a prompt mode — used by ablation evals (#744). */
-export function buildBasePromptSections(v: BasePromptVars): PromptSections {
-  return buildPromptSections(toSectionVars(v))
 }
 
 /**

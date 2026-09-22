@@ -97,7 +97,7 @@ describe('skill picker', () => {
 
   it('only triggers on a slash that starts a word', () => {
     // Start of input, and after whitespace or a newline — the boundaries
-    // `resolveSkillInvocation` accepts.
+    // `resolveInvocation` accepts.
     assert.equal(findSkillTriggerIndex('/demo', 5), 0)
     assert.equal(findSkillTriggerIndex('run /demo', 9), 4)
     assert.equal(findSkillTriggerIndex('run\n/demo', 9), 4)

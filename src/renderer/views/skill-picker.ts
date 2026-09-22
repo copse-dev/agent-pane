@@ -6,7 +6,7 @@ import { clear } from '../dom/helpers.ts'
  * Index of the `/` that opens the slash-command query for `cursor`, or -1.
  *
  * The slash must start the whitespace-delimited token the cursor sits in — the
- * same `(?:^|\s)/name` boundary `resolveSkillInvocation` accepts. A bare
+ * same `(?:^|\s)/name` boundary `resolveInvocation` accepts. A bare
  * "nearest slash behind the cursor" scan fires mid-word, so `grep ~/.blah`
  * popped the picker on the path separator, and `/x/y/z` restarted the query at
  * every segment. Anchoring on the token start leaves `/x/y/z` querying
