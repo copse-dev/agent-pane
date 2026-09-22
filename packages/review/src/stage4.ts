@@ -17,6 +17,7 @@ import type { ReviewerToolHost } from './reviewer-tools.ts'
 import { findingScore } from './stage5.ts'
 import { runTurn, sumUsage, type TurnResult, type TurnUsage } from './turn.ts'
 import {
+  challengerClosureTools,
   challengerTools,
   createVerifierToolExecutor,
   reproducerTools,
@@ -126,6 +127,16 @@ const CHALLENGER_SYSTEM = [
   'Finish with one plain-text line after the verdict.',
   EXTERNAL_CONTENT_BLOCK,
 ].join('\n')
+
+function challengeCompletionRepairPrompt(error: string): string {
+  return [
+    `Protocol correction: ${error}.`,
+    'Your immediately preceding assistant response is draft analysis, not an accepted challenge result.',
+    'Call verdict exactly once now and emit no plain text.',
+    'Encode the conclusion already reached in the draft: refuted only if it showed the finding wrong, stands only if it actively confirmed the defect, otherwise undetermined.',
+    'Do not investigate, add, weaken, or omit conclusions during this protocol repair.',
+  ].join('\n')
+}
 
 function withVerdict(finding: Finding, update: Partial<Finding>): Finding {
   return { ...finding, ...update }
@@ -244,6 +255,18 @@ export async function verifyFindings(options: Stage4Options): Promise<Stage4Resu
         threadId: options.threadId,
         turnId,
         maxSteps: CHALLENGE_MAX_STEPS,
+        completionError: () =>
+          executor.verdict() === null
+            ? 'challenger stopped without calling the required verdict tool'
+            : undefined,
+        completionRepair: {
+          tools: challengerClosureTools(),
+          toolChoice: { name: 'verdict' },
+          // One invalid call may be corrected; a third step lets the provider emit
+          // its normal post-tool terminal response without reopening investigation.
+          maxSteps: 3,
+          prompt: (_summary, error) => challengeCompletionRepairPrompt(error),
+        },
         signal: options.signal,
         onEvent: emit,
       })
