@@ -1,0 +1,12 @@
+{
+  "id": "kev-local",
+  "label": "Kev local eval",
+  "model": "kev-latest",
+  "timeoutMs": 30000,
+  "connection": {
+    "type": "http",
+    "protocol": "systemone",
+    "baseUrl": "http://127.0.0.1:8009/v1",
+    "auth": "none"
+  }
+}

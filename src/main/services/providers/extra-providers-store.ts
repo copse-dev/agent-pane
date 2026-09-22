@@ -52,6 +52,9 @@ export async function saveExtraProvider(
   record: Omit<StoredExtraProvider, 'slug'> & { slug?: string },
 ): Promise<ExtraProvider[]> {
   const givenSlug = (record.slug ?? '').trim()
+  if (givenSlug.startsWith('classifier-')) {
+    throw new Error('The classifier- provider prefix is reserved for classifier credentials.')
+  }
 
   // Custom (non-builtin) providers: approve the host before it is ever persisted
   // so a disallowed baseUrl cannot land in settings (issue #438). Built-in
@@ -67,10 +70,11 @@ export async function saveExtraProvider(
 
   const list = await updateSetting<StoredExtraProvider[]>('extraProviders', [], (raw) => {
     const current = Array.isArray(raw) ? raw : []
+    const suggested = providerSlugFromBaseUrl(record.baseUrl ?? '')
     const slug = givenSlug
       ? givenSlug
       : uniqueProviderSlug(
-          providerSlugFromBaseUrl(record.baseUrl ?? ''),
+          suggested.startsWith('classifier-') ? `provider-${suggested}` : suggested,
           current.map((provider) => provider.slug),
         )
     const next: StoredExtraProvider = { ...record, slug }
@@ -105,6 +109,14 @@ export async function refreshHuggingFaceModels(
 }
 
 export async function deleteExtraProvider(slug: string): Promise<ExtraProvider[]> {
+  // A generic chat-provider deletion must not clear a classifier's credential.
+  // Existing records from before namespace reservation remain removable.
+  if (
+    slug.startsWith('classifier-') &&
+    !storedProviders().some((provider) => provider.slug === slug)
+  ) {
+    throw new Error('Classifier credentials must be removed through their classifier profile.')
+  }
   const list = await updateSetting<StoredExtraProvider[]>('extraProviders', [], (raw) =>
     (Array.isArray(raw) ? raw : []).filter((provider) => provider.slug !== slug),
   )

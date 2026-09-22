@@ -2,6 +2,7 @@ import type { SimulatorDesktopPresentation } from '@shared/types/simulator-deskt
 import { contextBridge, ipcRenderer } from 'electron'
 import type { AutoApprovalLevel } from '@shared/auto-approval.ts'
 import type { ApiClient } from './api.d.ts'
+import type { ClassifierProfile } from '@copse/llm/classifiers/types.ts'
 import type { PrComposerCreateRequest } from '@shared/types/git.ts'
 import { exposePerfBridge, installPreloadPerfTracing } from './perf-bridge.ts'
 
@@ -936,6 +937,12 @@ const api: ApiClient = {
     detectAgents: () => ipcRenderer.invoke('acp:detect-agents'),
     probeAgent: (agentId: string) => ipcRenderer.invoke('acp:probe-agent', agentId),
     autoSetup: () => ipcRenderer.invoke('acp:auto-setup'),
+  },
+  classifiers: {
+    list: () => ipcRenderer.invoke('classifiers:list'),
+    save: (profile: ClassifierProfile) => ipcRenderer.invoke('classifiers:save', profile),
+    remove: (id: string) => ipcRenderer.invoke('classifiers:remove', id),
+    test: (id: string) => ipcRenderer.invoke('classifiers:test', id),
   },
   settings: {
     get: (key: string) => ipcRenderer.invoke('settings:get', key),
