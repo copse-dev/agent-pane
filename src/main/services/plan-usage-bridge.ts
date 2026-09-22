@@ -16,6 +16,7 @@ import {
 } from '@copse/plan-usage'
 import { FETCH_TIMEOUTS } from './fetch-timeouts.ts'
 import { resolveApiKey } from './storage/settings.ts'
+import { AsyncTtlCache } from './async-ttl-cache.ts'
 import { firstNonEmptyString, isRecord, nonEmptyStringOr } from '@shared/unknown-value.ts'
 
 /** Env override for e2e / demos — skips network and credential discovery. */
@@ -24,18 +25,14 @@ const MOCK_ENV = 'COPSE_PLAN_USAGE_MOCK'
 /** Re-fetch subscription plan windows at most this often (avoids provider rate limits). */
 export const PLAN_USAGE_CACHE_TTL_MS = 5 * 60 * 1000
 
-let planUsageCache: { snapshot: PlanUsageSnapshot; fetchedAt: number } | null = null
-let planUsageGeneration = 0
-let planUsageInflight: {
-  generation: number
-  promise: Promise<PlanUsageSnapshot>
-} | null = null
+const planUsageCache = new AsyncTtlCache<string, PlanUsageSnapshot>({
+  ttlMs: PLAN_USAGE_CACHE_TTL_MS,
+  maxEntries: 1,
+})
 
 /** Drop cached plan usage (tests, or after credentials change). */
 export function invalidatePlanUsageCache(): void {
-  planUsageGeneration += 1
-  planUsageCache = null
-  planUsageInflight = null
+  planUsageCache.clear()
 }
 
 const CLAUDE_KEYCHAIN_SERVICE = 'Claude Code-credentials'
@@ -575,12 +572,6 @@ export function setPlanUsageSnapshotFetcherForTest(
   invalidatePlanUsageCache()
 }
 
-function clearPlanUsageInflight(generation: number): void {
-  if (planUsageInflight?.generation === generation) {
-    planUsageInflight = null
-  }
-}
-
 /**
  * Host bridge around `@copse/plan-usage`. Always resolves — never rejects —
  * so Settings → Usage keeps showing the local ledger when plan fetch fails.
@@ -588,26 +579,7 @@ function clearPlanUsageInflight(generation: number): void {
 export async function loadPlanUsageSnapshot(options?: {
   force?: boolean
 }): Promise<PlanUsageSnapshot> {
-  const force = options?.force === true
-  const now = Date.now()
-  if (!force && planUsageCache && now - planUsageCache.fetchedAt < PLAN_USAGE_CACHE_TTL_MS) {
-    return planUsageCache.snapshot
-  }
-  if (!force && planUsageInflight) {
-    return planUsageInflight.promise
-  }
-
-  const generation = planUsageGeneration + 1
-  planUsageGeneration = generation
-  const promise = fetchPlanUsageSnapshot()
-  planUsageInflight = { generation, promise }
-  try {
-    const snapshot = await promise
-    if (generation === planUsageGeneration) {
-      planUsageCache = { snapshot, fetchedAt: Date.now() }
-    }
-    return snapshot
-  } finally {
-    clearPlanUsageInflight(generation)
-  }
+  return planUsageCache.get('plan-usage', () => fetchPlanUsageSnapshot(), {
+    force: options?.force === true,
+  })
 }
