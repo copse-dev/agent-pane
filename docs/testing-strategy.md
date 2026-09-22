@@ -475,11 +475,13 @@ Two consequences of running e2e on those PRs, both intended:
 - `screenshot-artifacts` preserves reference shots touched by the specs that ran
   as immutable review evidence. It only includes shots the shards actually
   produced, and never edits the branch. A separate trusted `workflow_run`
-  publishes same-repository candidates on a bot-owned branch, opens a child PR
-  into the source branch, and links that review PR from the parent. Merging the
-  child applies the reviewed PNGs without granting write credentials to the job
-  that executed PR code. Forks and promotion PRs sourced from an integration
-  branch keep the downloadable-artifact/manual path.
+  links the filtered artifact from the same-repository parent PR. Ordinary runs
+  create no child PR. Only an explicit `update-screenshots` request publishes
+  candidates on a bot-owned branch and opens a PNG review PR into the source
+  branch. Merging that child applies reviewed references without granting write
+  credentials to the job that executed PR code. Artifacts expire after 14 days;
+  they are evidence to review, not automatic acceptance. Forks and promotion PRs
+  sourced from an integration branch keep the downloadable-artifact/manual path.
 
 Two escape hatches on a `main`-targeted PR, both labels:
 

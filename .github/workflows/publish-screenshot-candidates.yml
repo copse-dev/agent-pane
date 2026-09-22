@@ -1,8 +1,9 @@
 name: Publish screenshot candidates
 
 # CI itself stays read-only. Once a successful PR run has produced the immutable
-# candidate artifact, this trusted-default-branch workflow turns those PNGs into
-# a reviewable child PR. `workflow_run` is deliberately used instead of adding a
+# candidate artifact, this trusted-default-branch workflow links it from the
+# parent PR. Only an explicit `update-screenshots` request creates a child PR.
+# `workflow_run` is deliberately used instead of adding a
 # write token to the job that executes pull-request code.
 on:
   workflow_run:
@@ -49,6 +50,7 @@ jobs:
 
             core.setOutput('eligible', 'false');
             core.setOutput('has-artifact', 'false');
+            core.setOutput('create-review', 'false');
             if (candidates.length !== 1) {
               core.notice(`Expected one parent PR for run ${runId}; found ${candidates.length}.`);
               return;
@@ -95,6 +97,10 @@ jobs:
             if (matches.length === 1) {
               core.setOutput('has-artifact', 'true');
               core.setOutput('artifact-id', String(matches[0].id));
+              core.setOutput(
+                'create-review',
+                String(parent.labels.some((label) => label.name === 'update-screenshots')),
+              );
             } else {
               core.notice(`Run ${runId} published no changed screenshot candidates.`);
             }
@@ -103,7 +109,7 @@ jobs:
       # GITHUB_TOKEN, its PR creation triggers the child PR's normal CI run.
       - uses: actions/create-github-app-token@v3
         id: app-token
-        if: steps.discover.outputs.eligible == 'true'
+        if: steps.discover.outputs.create-review == 'true'
         with:
           app-id: ${{ secrets.RELEASE_APP_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
@@ -113,14 +119,14 @@ jobs:
       # Checkout by the immutable SHA discovered above, never by an
       # attacker-controlled ref. Nothing from this checkout is executed.
       - uses: actions/checkout@v7.0.1
-        if: steps.discover.outputs.has-artifact == 'true'
+        if: steps.discover.outputs.create-review == 'true'
         with:
           ref: ${{ steps.discover.outputs.head-sha }}
           fetch-depth: 0
           persist-credentials: false
 
       - name: Download the immutable candidate artifact
-        if: steps.discover.outputs.has-artifact == 'true'
+        if: steps.discover.outputs.create-review == 'true'
         uses: actions/download-artifact@v8
         with:
           artifact-ids: ${{ steps.discover.outputs.artifact-id }}
@@ -131,7 +137,7 @@ jobs:
           path: ${{ runner.temp }}/screenshot-candidates
 
       - name: Validate and apply candidate PNGs
-        if: steps.discover.outputs.has-artifact == 'true'
+        if: steps.discover.outputs.create-review == 'true'
         id: candidates
         env:
           CANDIDATE_ROOT: ${{ runner.temp }}/screenshot-candidates
@@ -191,7 +197,7 @@ jobs:
       # screenshot-only CI path.
       - name: Open or update the screenshot review PR
         id: review-pr
-        if: steps.discover.outputs.has-artifact == 'true'
+        if: steps.discover.outputs.create-review == 'true'
         uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ steps.app-token.outputs.token }}
@@ -209,27 +215,37 @@ jobs:
             `${{ steps.discover.outputs.head-sha }}` by
             [CI run ${{ github.event.workflow_run.id }}](${{ github.event.workflow_run.html_url }}).
 
-            Review GitHub's image diffs, then merge this PR (or enable auto-merge) to apply the
+            Requested with the parent PR's `update-screenshots` label.
+            Review GitHub's image diffs, then merge this PR to apply the
             accepted references to `${{ steps.discover.outputs.head-ref }}`. This branch contains
             only PNG candidates from the immutable
             `${{ steps.discover.outputs.artifact-name }}` artifact and never targets `main`.
 
             If the parent branch has advanced beyond the source SHA above, do not merge this PR;
-            the successful CI run for the new head will replace it.
+            a successful CI run for the new head will close it and publish fresh evidence.
+            Remove `update-screenshots` after this review PR is created to avoid another full refresh.
 
       - name: Close superseded screenshot review PRs
+        id: reviews
         if: steps.discover.outputs.eligible == 'true'
         uses: actions/github-script@v9
         env:
           BASE_REF: ${{ steps.discover.outputs.head-ref }}
           PARENT_NUMBER: ${{ steps.discover.outputs.parent-number }}
           KEEP_NUMBER: ${{ steps.review-pr.outputs.pull-request-number }}
+          REVIEW_BRANCH: ${{ steps.discover.outputs.review-branch }}
+          EXPECTED_HEAD_SHA: ${{ steps.discover.outputs.head-sha }}
         with:
-          github-token: ${{ steps.app-token.outputs.token }}
           script: |
             const { owner, repo } = context.repo;
             const prefix = `screenshots/pr-${process.env.PARENT_NUMBER}/`;
             const keep = Number(process.env.KEEP_NUMBER || 0);
+            const { data: parent } = await github.rest.pulls.get({
+              owner,
+              repo,
+              pull_number: Number(process.env.PARENT_NUMBER),
+            });
+            if (parent.state !== 'open' || parent.head.sha !== process.env.EXPECTED_HEAD_SHA) return;
             const pulls = await github.paginate(github.rest.pulls.list, {
               owner,
               repo,
@@ -238,6 +254,16 @@ jobs:
               per_page: 100,
             });
             for (const pull of pulls) {
+              // Removing the label after creation must not destroy an accepted
+              // review request if this publisher or same-head CI is rerun.
+              if (
+                pull.head.repo?.full_name === `${owner}/${repo}` &&
+                pull.head.ref === process.env.REVIEW_BRANCH
+              ) {
+                core.setOutput('existing-number', String(pull.number));
+                core.setOutput('existing-url', pull.html_url);
+                continue;
+              }
               if (
                 pull.number !== keep &&
                 pull.head.repo?.full_name === `${owner}/${repo}` &&
@@ -253,7 +279,7 @@ jobs:
               }
             }
 
-      - name: Link the review PR from the parent
+      - name: Link screenshot evidence from the parent
         if: steps.discover.outputs.eligible == 'true'
         uses: actions/github-script@v9
         env:
@@ -262,16 +288,18 @@ jobs:
           HEAD_REF: ${{ steps.discover.outputs.head-ref }}
           REVIEW_NUMBER: ${{ steps.review-pr.outputs.pull-request-number }}
           REVIEW_URL: ${{ steps.review-pr.outputs.pull-request-url }}
-          ARTIFACT_NAME: ${{ steps.discover.outputs.artifact-name }}
+          EXISTING_REVIEW_NUMBER: ${{ steps.reviews.outputs.existing-number }}
+          EXISTING_REVIEW_URL: ${{ steps.reviews.outputs.existing-url }}
+          ARTIFACT_ID: ${{ steps.discover.outputs.artifact-id }}
           RUN_ID: ${{ github.event.workflow_run.id }}
           RUN_URL: ${{ github.event.workflow_run.html_url }}
         with:
-          github-token: ${{ steps.app-token.outputs.token }}
           script: |
             const { owner, repo } = context.repo;
             const marker = '<!-- copse-e2e-screenshot-review -->';
             const parentNumber = Number(process.env.PARENT_NUMBER);
-            const reviewNumber = Number(process.env.REVIEW_NUMBER || 0);
+            const reviewNumber = Number(process.env.REVIEW_NUMBER || process.env.EXISTING_REVIEW_NUMBER || 0);
+            const reviewUrl = process.env.REVIEW_URL || process.env.EXISTING_REVIEW_URL;
             const { data: parent } = await github.rest.pulls.get({
               owner,
               repo,
@@ -299,21 +327,38 @@ jobs:
               issue_number: parentNumber,
               per_page: 100,
             });
-            const previous = comments.find((comment) => comment.body?.includes(marker));
+            const previous = comments.find(
+              (comment) => comment.user?.type === 'Bot' && comment.body?.includes(marker),
+            );
             let body;
-            if (process.env.REVIEW_URL) {
+            if (reviewUrl) {
               body = [
                 marker,
                 '### Reference screenshots ready for review',
                 '',
-                `Review GitHub’s image diffs in [screenshot PR #${reviewNumber}](${process.env.REVIEW_URL}).`,
-                `Merge it (or enable auto-merge) to apply the accepted PNGs to \`${process.env.HEAD_REF}\`.`,
+                `Review GitHub’s image diffs in [screenshot PR #${reviewNumber}](${reviewUrl}).`,
+                `After review, merge it to apply the accepted PNGs to \`${process.env.HEAD_REF}\`.`,
+                'Remove `update-screenshots` now to avoid repeating the full refresh.',
                 '',
-                `Rendered for \`${process.env.EXPECTED_HEAD_SHA.slice(0, 12)}\` by ` +
-                  `[CI run ${process.env.RUN_ID}](${process.env.RUN_URL}); the immutable ` +
-                  `artifact is \`${process.env.ARTIFACT_NAME}\`.`,
+                `The review PR records its source run and candidates for \`${process.env.EXPECTED_HEAD_SHA.slice(0, 12)}\`.`,
+                `Latest successful evidence: [CI run ${process.env.RUN_ID}](${process.env.RUN_URL}).`,
                 '',
                 'If this source branch moves, a later successful render closes the stale review PR and replaces this link.',
+              ].join('\n');
+            } else if (process.env.ARTIFACT_ID) {
+              const artifactUrl = `${process.env.RUN_URL}/artifacts/${process.env.ARTIFACT_ID}`;
+              body = [
+                marker,
+                '### Screenshot evidence',
+                '',
+                `Changed reference candidates for \`${process.env.EXPECTED_HEAD_SHA.slice(0, 12)}\` are in ` +
+                  `[the screenshot artifact](${artifactUrl}) from [CI run ${process.env.RUN_ID}](${process.env.RUN_URL}).`,
+                'The artifact is retained for 14 days; its presence does not mean the visual changes have been accepted.',
+                '',
+                'Review this evidence with the parent PR. No baseline-update PR was opened.',
+                'If the references should change, add `update-screenshots` to run a full refresh and open a PNG review PR, ' +
+                  'or commit the reviewed PNGs manually. Remove the label once the review PR is created.',
+                'Do not refresh references merely to absorb unrelated rendering drift.',
               ].join('\n');
             } else {
               if (!previous) return;
@@ -321,7 +366,7 @@ jobs:
                 marker,
                 '### Reference screenshots',
                 '',
-                `CI run [${process.env.RUN_ID}](${process.env.RUN_URL}) published no changed screenshot candidates ` +
+                `CI run [${process.env.RUN_ID}](${process.env.RUN_URL}) published no filtered screenshot candidates ` +
                   `for \`${process.env.EXPECTED_HEAD_SHA.slice(0, 12)}\`.`,
                 'Any review PR for an older source SHA has been closed.',
               ].join('\n');

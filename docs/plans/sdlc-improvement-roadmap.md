@@ -1,8 +1,8 @@
-# SDLC improvement roadmap
+# Shipping quality roadmap
 
-Status: **Tracked in [#1373]; first implementation slices of R01–R03 under review. R11 cancellation protection and R12 runtime reinstatement have merged.** Repository permission and merge-rule changes remain proposals.
+Status: **Tracked in [#1373]; first implementation slices of R01–R03, R11 cancellation protection, and R12 runtime reinstatement have merged.** Adoption, exclusion cleanup, and the remaining merge controls are still open. Repository permission and merge-rule changes remain proposals.
 
-Based on the [20 September 2026 SDLC assessment](../sdlc-review-2026-09-20.md), which reviewed `main` at `0a7a0967002da98b6055dc9f87544e91c8ad501b` and live GitHub evidence. The implementation branch starts at that reviewed revision. Recheck the relevant source and issue before starting each item.
+Based on the [20 September 2026 shipping quality assessment](../sdlc-review-2026-09-20.md), which reviewed `main` at `0a7a0967002da98b6055dc9f87544e91c8ad501b` and live GitHub evidence. The document paths retain their original names so existing links keep working. Recheck the relevant source and issue before starting each item.
 
 The objective is to make an agent's claim of completion traceable to a user outcome, trustworthy validation, independent review where warranted, and current release evidence. Preserve the existing test tiers, architecture guards, and packaging pipeline.
 
@@ -54,9 +54,10 @@ Use [#1373] as the delivery index, with existing domain issues retained as the s
 
 ### Review update — 22 September 2026
 
+- R01–R03: [#2720](https://github.com/copse-dev/agent-pane/pull/2720) merged the task/PR conventions, release evidence reconciliation, and exclusion inventory/checker. Its [full PR run](https://github.com/copse-dev/agent-pane/actions/runs/35671783008) passed all eight Electron shards; adoption and remaining exclusion dispositions stay open.
 - R11: [#2722](https://github.com/copse-dev/agent-pane/pull/2722) merged the tested cancellation gate. Retarget-only validation, current-base enforcement, and independent acceptance remain separate work under [#2520] and R06.
 - R12: [#2731](https://github.com/copse-dev/agent-pane/pull/2731) restored all three approval suites and strengthened the shell-output assertion. The subsequent [scheduled full run](https://github.com/copse-dev/agent-pane/actions/runs/35601257564) at `16f1e9e67` passed all eight Electron shards. This establishes reinstatement on the current CI environment, not the cause of the historical runner failures.
-- R03: review of [#2720](https://github.com/copse-dev/agent-pane/pull/2720) reproduced silent undercounting when a declared exclusion array was later mutated. The scanner now rejects mutations and escaped references, with regression coverage; the current inventory contains 19 specs and 24 markers. Personal ownership and expiry enforcement remain under [#2719].
+- R03: review of [#2720](https://github.com/copse-dev/agent-pane/pull/2720) reproduced silent undercounting when a declared exclusion array was later mutated. The scanner now rejects mutations and escaped references, with regression coverage; the merged inventory recorded 19 specs and 24 markers. Personal ownership and expiry enforcement remain under [#2719].
 
 ### R01 — Task briefs, evidence, and active ownership
 

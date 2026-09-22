@@ -14,7 +14,7 @@ shipped features, experiments, and plans. [Plan status](plans/README.md) retains
 delivery history and deferred decisions.
 
 [Current release evidence](product-release-evidence.md) records readiness and missing acceptance.
-The [SDLC improvement roadmap](plans/sdlc-improvement-roadmap.md) ranks the follow-through by
+The [Shipping quality roadmap](plans/sdlc-improvement-roadmap.md) ranks the follow-through by
 complexity and links the active GitHub trackers.
 
 Public-readiness decisions that still need an owner stamp live in
