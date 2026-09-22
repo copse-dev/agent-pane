@@ -2,12 +2,13 @@ name: Copse review ground
 
 # Shell C, job A (docs/plans/copse-reviewer.md, §Execution isolation, "Backend
 # per shell — CI"). Opt-in by label: add `copse-review` to a pull request and
-# this job checks out the PR head on the `pull_request` event — never
-# `pull_request_target` — with `permissions: {}` and no secrets, runs Stage 0
-# (build, typecheck, lint, test on head, and on base for whatever failed on
-# head) with the runner itself as the execution cell, and uploads the report as
-# an artefact. Nothing here can reach a model or a token: the runner is
-# ephemeral and holds neither, which is what lets a contributor's code run.
+# this job starts from the default branch's trusted reviewer on the
+# `pull_request` event — never `pull_request_target` — then fetches the PR head
+# as data. With `permissions: {}` and no secrets, it runs Stage 0 (build,
+# typecheck, lint, test on head, and on base for whatever failed on head) with
+# the runner itself as the execution cell and uploads the report. Nothing here
+# can reach a model or a token: the runner is ephemeral and holds neither,
+# which is what lets a contributor's code run.
 #
 # The model stages run in "Copse review findings", triggered by this
 # workflow's completion on the base ref, with the key and a write token; that
@@ -30,11 +31,15 @@ jobs:
     if: contains(github.event.pull_request.labels.*.name, 'copse-review')
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    # Repeat the workflow-level denial at the execution boundary so a future
+    # sibling job cannot make this job inherit broader permissions.
+    permissions: {}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
-          # The PR head as committed, with the history the merge-base needs.
-          ref: ${{ github.event.pull_request.head.sha }}
+          # Use the reviewed CLI from the default branch. The PR head is fetched
+          # below and executed only by Stage 0's secret-free execution cell.
+          ref: ${{ github.event.repository.default_branch }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -64,14 +69,17 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
-          git fetch --no-tags --quiet origin "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}"
+          git fetch --no-tags --quiet origin \
+            "+refs/pull/${PR_NUMBER}/head:refs/remotes/pr/${PR_NUMBER}" \
+            "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}"
+          test "$(git rev-parse "refs/remotes/pr/${PR_NUMBER}")" = "$HEAD_SHA"
           mkdir -p ground
           printf '{"pr":%s,"headSha":"%s","baseRef":"%s"}\n' "$PR_NUMBER" "$HEAD_SHA" "$BASE_REF" > ground/meta.json
           # Findings never affect the exit code; a refused execution (3) or an
           # undetectable project (2) does, and then there is no ground to upload.
           node packages/review/bin/copse-review.mjs \
             --foreign \
-            --head "$HEAD_SHA" \
+            --head "refs/remotes/pr/${PR_NUMBER}" \
             --base "origin/${BASE_REF}" \
             --backend ephemeral-runner \
             --no-model \

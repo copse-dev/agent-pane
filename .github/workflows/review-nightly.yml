@@ -1,0 +1,241 @@
+name: Copse review nightly sample
+
+# One bounded dogfood sample per night. The trust split is the same as the
+# label-triggered pair, but all three jobs live in this scheduled workflow so
+# the trusted selector's PR identity crosses jobs as outputs rather than as an
+# artefact the pull request can rewrite. `ground` is the only job that executes
+# pull-request code; it has no permissions or secrets and runs on an ephemeral
+# hosted runner. `findings` checks out trusted default-branch code, only reads
+# the selected head, and posts an advisory COMMENT review.
+
+on:
+  schedule:
+    - cron: '37 2 * * *'
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: 'Same-repository pull request number (empty selects the nightly sample)'
+        required: false
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: copse-review-nightly
+  cancel-in-progress: false
+
+jobs:
+  select:
+    name: Select one recent pull request
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      number: ${{ steps.pr.outputs.number }}
+      head_sha: ${{ steps.pr.outputs.head_sha }}
+      base_ref: ${{ steps.pr.outputs.base_ref }}
+    steps:
+      - uses: actions/github-script@v9
+        id: pr
+        env:
+          REQUESTED_PR: ${{ inputs.pr || '' }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const requested = process.env.REQUESTED_PR.trim();
+            let selected;
+
+            if (requested) {
+              if (!/^[1-9][0-9]*$/.test(requested)) {
+                core.setFailed('pr must be a positive pull request number');
+                return;
+              }
+              selected = (await github.rest.pulls.get({
+                owner,
+                repo,
+                pull_number: Number(requested),
+              })).data;
+            } else {
+              const pulls = await github.paginate(github.rest.pulls.list, {
+                owner,
+                repo,
+                state: 'open',
+                sort: 'updated',
+                direction: 'desc',
+                per_page: 100,
+              });
+              const cutoff = Date.now() - 14 * 24 * 60 * 60 * 1000;
+              const candidates = pulls.filter((pull) => {
+                const labels = pull.labels.map((label) => label.name);
+                return !pull.draft &&
+                  pull.head.repo?.full_name === `${owner}/${repo}` &&
+                  Date.parse(pull.updated_at) >= cutoff &&
+                  !labels.includes('copse-review') &&
+                  !labels.includes('copse-review-skip') &&
+                  !pull.title.startsWith('chore(e2e): review screenshots for #');
+              });
+              if (candidates.length === 0) {
+                core.notice('No eligible same-repository pull request was updated in the last 14 days.');
+                return;
+              }
+              const utcDay = Math.floor(Date.now() / (24 * 60 * 60 * 1000));
+              selected = candidates[utcDay % candidates.length];
+            }
+
+            if (selected.state !== 'open' || selected.draft || selected.head.repo?.full_name !== `${owner}/${repo}`) {
+              core.setFailed('dogfood samples must be open, non-draft pull requests from this repository');
+              return;
+            }
+            core.setOutput('number', String(selected.number));
+            core.setOutput('head_sha', selected.head.sha);
+            core.setOutput('base_ref', selected.base.ref);
+            await core.summary
+              .addHeading('Copse Reviewer nightly sample')
+              .addLink(`#${selected.number}: ${selected.title}`, selected.html_url)
+              .addRaw(`<p>Head <code>${selected.head.sha}</code></p>`)
+              .write();
+
+  ground:
+    name: Stage 0 on the selected pull request head
+    needs: select
+    if: needs.select.outputs.number != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions: {}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          # Use the reviewed CLI from the default branch. The selected head is
+          # fetched below and executed only inside the secret-free Stage 0 cell.
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: '.nvmrc'
+
+      - name: Activate the pinned pnpm
+        shell: bash
+        run: |
+          corepack enable
+          corepack prepare --activate
+          pnpm --version
+
+      - name: Install the reviewer
+        shell: bash
+        run: pnpm install --frozen-lockfile --ignore-scripts --filter "@copse/review..."
+
+      - name: Run Stage 0 with the runner as the cell
+        shell: bash
+        env:
+          HEAD_SHA: ${{ needs.select.outputs.head_sha }}
+          BASE_REF: ${{ needs.select.outputs.base_ref }}
+          PR_NUMBER: ${{ needs.select.outputs.number }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --quiet origin \
+            "+refs/pull/${PR_NUMBER}/head:refs/remotes/pr/${PR_NUMBER}" \
+            "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}"
+          test "$(git rev-parse "refs/remotes/pr/${PR_NUMBER}")" = "$HEAD_SHA"
+          mkdir -p ground
+          printf '{"pr":%s,"headSha":"%s","baseRef":"%s"}\n' "$PR_NUMBER" "$HEAD_SHA" "$BASE_REF" > ground/meta.json
+          node packages/review/bin/copse-review.mjs \
+            --foreign \
+            --head "refs/remotes/pr/${PR_NUMBER}" \
+            --base "origin/${BASE_REF}" \
+            --backend ephemeral-runner \
+            --no-model \
+            --json ground/report.json
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: copse-review-nightly-ground-${{ needs.select.outputs.number }}
+          path: ground/
+          retention-days: 7
+          if-no-files-found: error
+
+  findings:
+    name: Review the selected pull request read-only
+    needs: [select, ground]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      REVIEW_PROVIDER: ${{ vars.COPSE_REVIEW_PROVIDER || 'openai-compatible' }}
+      REVIEW_MODEL: ${{ vars.COPSE_REVIEW_MODEL || 'qwen3.6-35b-a3b' }}
+      REVIEW_BASE_URL: ${{ vars.COPSE_REVIEW_BASE_URL || vars.SCW_GENERATIVE_API_URL || 'https://api.scaleway.ai/v1' }}
+      REVIEW_LENSES: ${{ vars.COPSE_REVIEW_LENSES || 'correctness' }}
+      REVIEW_MAX_VERIFY: ${{ vars.COPSE_REVIEW_MAX_VERIFY || '3' }}
+    steps:
+      # Scheduled workflows only run from the default branch. Pinning the ref
+      # here makes the same guarantee explicit for manual dispatches.
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: '.nvmrc'
+
+      - name: Activate the pinned pnpm
+        shell: bash
+        run: |
+          corepack enable
+          corepack prepare --activate
+          pnpm --version
+
+      - name: Install the reviewer
+        shell: bash
+        run: pnpm install --frozen-lockfile --ignore-scripts --filter "@copse/review..."
+
+      - uses: actions/download-artifact@v6
+        with:
+          name: copse-review-nightly-ground-${{ needs.select.outputs.number }}
+          path: ground
+
+      - name: Review read-only over the uploaded ground and post the findings
+        shell: bash
+        env:
+          COPSE_REVIEW_API_KEY: ${{ secrets.COPSE_REVIEW_API_KEY || secrets.SCW_GENERATIVE_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_SHA: ${{ needs.select.outputs.head_sha }}
+          PR_NUMBER: ${{ needs.select.outputs.number }}
+          BASE_REF: ${{ needs.select.outputs.base_ref }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --quiet origin \
+            "+refs/pull/${PR_NUMBER}/head:refs/remotes/pr/${PR_NUMBER}" \
+            "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}"
+          test "$(git rev-parse "refs/remotes/pr/${PR_NUMBER}")" = "$HEAD_SHA"
+          node packages/review/bin/copse-review.mjs \
+            --foreign \
+            --head "refs/remotes/pr/${PR_NUMBER}" \
+            --base "origin/${BASE_REF}" \
+            --stage0-json ground/report.json \
+            --provider "$REVIEW_PROVIDER" \
+            --model "$REVIEW_MODEL" \
+            --base-url "$REVIEW_BASE_URL" \
+            --lenses "$REVIEW_LENSES" \
+            --max-verify "$REVIEW_MAX_VERIFY" \
+            --post-review github \
+            --repo "$GITHUB_REPOSITORY" \
+            --pr "$PR_NUMBER" \
+            --json findings.json \
+            --sarif findings.sarif
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: copse-review-nightly-findings-${{ needs.select.outputs.number }}
+          path: |
+            findings.json
+            findings.sarif
+          retention-days: 30
+          if-no-files-found: ignore

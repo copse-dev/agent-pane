@@ -155,13 +155,29 @@ and the challenger over the checkouts, no `run_command`) and says so with exit `
 Two workflows, the plan's job A and job B (`.github/workflows/review-ground.yml` and
 `review-findings.yml`; `.forgejo/workflows/review.yml` for Forgejo), opt-in by the
 `copse-review` label on a pull request. Job A runs Stage 0 on the head with the runner as
-the cell (`--backend ephemeral-runner`) and no secrets, and uploads the report; job B, on
-the base ref with the model key, imports it (`--stage0-json`, which makes the run
-read-only and refuses a report for another commit), reviews the head without executing it,
-and posts one review (`--post-review github --repo owner/name --pr n`). The token is
-`COPSE_REVIEW_FORGE_TOKEN`, else `GITHUB_TOKEN`; the model key `COPSE_REVIEW_API_KEY`.
-Provider-specific keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`)
-take precedence over that shared model key when set.
+the cell (`--backend ephemeral-runner`) and no secrets, and uploads the report; it uses the
+reviewed CLI from the default branch, so an older PR need not contain `@copse/review`.
+Job B, on the base ref with the model key, imports that report (`--stage0-json`, which makes
+the run read-only and refuses a report for another commit), reviews the head without
+executing it, and posts one advisory review (`--post-review github --repo owner/name --pr n`).
+The token is `COPSE_REVIEW_FORGE_TOKEN`, else `GITHUB_TOKEN`; the model key
+`COPSE_REVIEW_API_KEY`. Provider-specific keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
+`OPENROUTER_API_KEY`) take precedence over that shared model key when set.
+
+This repository dogfoods the GitHub path with `qwen3.6-35b-a3b` through Scaleway's
+OpenAI-compatible endpoint. `SCW_GENERATIVE_API_KEY` is the fallback for a dedicated
+`COPSE_REVIEW_API_KEY`; `COPSE_REVIEW_PROVIDER`, `COPSE_REVIEW_MODEL`,
+`COPSE_REVIEW_BASE_URL`, `COPSE_REVIEW_LENSES` and `COPSE_REVIEW_MAX_VERIFY` repository
+variables override the pinned profile. The default is one correctness lens and at most
+three challenged findings. Review context is secret-redacted before it leaves the runner,
+but it does leave GitHub for the configured model endpoint.
+
+`.github/workflows/review-nightly.yml` samples at most one recent, non-draft branch from
+this repository each night (already-labelled PRs, generated screenshot-review PRs and
+`copse-review-skip` are excluded), using the same secret-free Stage 0 / read-only findings
+split. It can also be dispatched for a specific same-repository PR. Both paths remain
+advisory and retain the full findings JSON and SARIF for 30 days so latency, token use and
+human adjudication can be collected before any proposal to make the reviewer required.
 
 The CLI discovers the standard host pnpm store (or the absolute
 `npm_config_store_dir` / `PNPM_HOME` environment setting) without running pnpm
