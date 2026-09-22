@@ -22,17 +22,12 @@ describe('assistant visual evidence', () => {
 
     const state = await browser.execute(() => {
       const evidence = document.querySelector<HTMLDetailsElement>('.visual-evidence-card')
-      const body = evidence?.querySelector<HTMLElement>('.visual-evidence-body')
       return {
         open: evidence?.open ?? false,
         kind: evidence?.dataset['evidenceKind'] ?? '',
         caption: evidence?.querySelector('.visual-evidence-caption')?.textContent ?? '',
         summaryMeta: evidence?.querySelector('.visual-evidence-summary-meta')?.textContent ?? '',
         thumbnails: evidence?.querySelectorAll('.visual-evidence-thumbnail').length ?? 0,
-        // A closed <details> keeps the authored display value (`grid`) in
-        // computed style while suppressing layout for non-summary children.
-        // Geometry therefore describes what the user can actually see.
-        bodyDisplayed: body ? body.getClientRects().length > 0 : true,
         text: evidence?.textContent ?? '',
       }
     })
@@ -42,7 +37,11 @@ describe('assistant visual evidence', () => {
     expect(state.caption).toContain('Project order updates immediately')
     expect(state.summaryMeta).toContain('2 captures')
     expect(state.thumbnails).toBe(2)
-    expect(state.bodyDisplayed).toBe(false)
+    // Chromium retains computed style and layout rectangles for descendants of
+    // a closed <details>, but skips painting them through content-visibility.
+    // WebdriverIO's displayedness check uses Element.checkVisibility with the
+    // content-visibility flag, matching what a user can actually see.
+    await expect($('.visual-evidence-body')).not.toBeDisplayed()
     expect(state.text).not.toContain('expired-before')
 
     await saveElementScreenshot('.visual-evidence-card', 'visual-evidence-collapsed.png')
