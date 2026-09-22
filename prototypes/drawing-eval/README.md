@@ -14,7 +14,7 @@ Then open <http://127.0.0.1:8765/>.
 | Page | Library | Licence | Size | Notes |
 | --- | --- | --- | --- | --- |
 | `drauu.html` | drauu 1.0.0 | MIT | ~1,300 lines | SVG DOM is the model; stylus mode is perfect-freehand; no selection, pan or zoom |
-| `js-draw.html` | js-draw 1.33.0 | MIT | ~31k lines, 496 KB bundle | Infinite canvas, pen with pressure and stabilisation, partial eraser, select, text, SVG load/save |
+| `js-draw.html` | js-draw 1.33.0 + perfect-freehand | MIT | ~31k lines, 496 KB bundle | js-draw's pen tool replaced by a ~90-line perfect-freehand stroke builder with the same sliders as `freehand.html`; keeps infinite canvas, partial eraser, select, text, SVG load/save. Toggle to hide js-draw's own toolbar. |
 | `freehand.html` | perfect-freehand 1.2.3 | MIT | ~300 lines | tldraw's ink algorithm alone; the page adds ~120 lines of pointer and undo glue |
 | `freehand-rough.html` | perfect-freehand + rough.js 4.6.6 | MIT | +170 KB | Same ink, re-rendered through rough.js for the Excalidraw look, plus rough shapes |
 

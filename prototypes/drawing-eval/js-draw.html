@@ -3,42 +3,169 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>js-draw</title>
+<title>js-draw + perfect-freehand pen</title>
 <link rel="stylesheet" href="shared.css" />
 <style>
-  /* js-draw brings its own toolbar and CSS; we only add the export row. */
   #editor { flex: 1; min-height: 0; position: relative; }
   #editor .imageEditorContainer { position: absolute; inset: 0; }
+  /* Theme js-draw's chrome with the same tokens as the other pages. */
+  #editor .imageEditorContainer {
+    --background-color-1: var(--panel);
+    --foreground-color-1: var(--fg);
+    --background-color-2: var(--bg);
+    --foreground-color-2: var(--fg);
+    --background-color-3: var(--panel);
+    --foreground-color-3: var(--muted);
+    --icon-color: var(--fg);
+    --selection-background-color: var(--accent);
+    --selection-foreground-color: var(--accent-fg);
+    --primary-action-foreground-color: var(--accent);
+    --shadow-color: rgba(0, 0, 0, 0.25);
+    --toolbar-button-height: 34px;
+    --toolbar-button-size: 34px;
+  }
+  body.hide-jsdraw-toolbar #editor .toolbar-root { display: none; }
 </style>
 </head>
 <body>
   <div class="toolbar">
-    <span>js-draw's own toolbar is at the top of the editor. Pinch/scroll to zoom, drag with the hand tool to pan.</span>
+    <label>Colour <input type="color" id="color" value="#1d4ed8" /></label>
+    <label>Size <input type="range" id="size" min="2" max="40" value="10" /></label>
+    <label>Thinning <input type="range" id="thinning" min="-1" max="1" step="0.05" value="0.6" /></label>
+    <label>Smoothing <input type="range" id="smoothing" min="0" max="1" step="0.05" value="0.5" /></label>
+    <label>Streamline <input type="range" id="streamline" min="0" max="1" step="0.05" value="0.5" /></label>
+    <label><input type="checkbox" id="simulate" checked /> Simulate pressure (mouse)</label>
+    <label><input type="checkbox" id="taper" /> Taper ends</label>
+    <label><input type="checkbox" id="hide-toolbar" /> Hide js-draw toolbar</label>
     <span class="grow"></span>
+    <button id="undo">Undo</button>
+    <button id="redo">Redo</button>
+    <button id="clear">Clear</button>
     <button id="send" class="primary">Send to agent</button>
   </div>
   <div id="editor"></div>
-  <div class="status" id="status">js-draw 1.33.0 · MIT · ~31k lines + 5k math · 496 KB bundle · infinite canvas, pen/eraser/select/text · SVG load/save</div>
+  <div class="status" id="status">js-draw 1.33.0 · MIT · pen tool swapped for a perfect-freehand stroke builder (~90 lines) · same sliders as the perfect-freehand page · keeps select, eraser, text, pan/zoom, SVG load/save</div>
 
   <script src="bridge.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/js-draw@1.33.0/dist/bundledStyles.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/js-draw@1.33.0/dist/bundle.js"></script>
-  <script>
-    const editor = new jsdraw.Editor(document.getElementById('editor'))
-    const toolbar = editor.addToolbar()
-    // Default pen colour so strokes are visible on the white paper.
-    editor.dispatch(editor.setBackgroundStyle({ color: jsdraw.Color4.white, autoresize: true }))
+  <script type="module">
+    import { getStroke } from 'https://cdn.jsdelivr.net/npm/perfect-freehand@1.2.3/+esm'
+    import { getExplicitQuadPathFromStroke } from './freehand-core.js'
 
-    document.getElementById('send').addEventListener('click', () => {
-      // js-draw's own exporters: a self-contained SVG and a PNG rendered from
-      // the image's own import/export viewport (not the on-screen viewport).
+    const { Editor, PenTool: Pen, Stroke, Path, Rect2, Color4, pathToRenderable } = jsdraw
+    const $ = (id) => document.getElementById(id)
+
+    // The same option set as freehand.html, read live so slider changes apply
+    // to the next stroke (and to the wet-ink preview of the current one).
+    function pfOptions() {
+      const taper = $('taper').checked
+      return {
+        thinning: Number($('thinning').value),
+        smoothing: Number($('smoothing').value),
+        streamline: Number($('streamline').value),
+        simulate: $('simulate').checked,
+        start: { taper: taper ? 20 : 0, cap: true },
+        end: { taper: taper ? 20 : 0, cap: true },
+      }
+    }
+
+    /**
+     * A js-draw ComponentBuilder that hands the raw pen samples to
+     * perfect-freehand and commits the resulting outline as a filled Stroke.
+     *
+     * js-draw gives each sample `width = pressure * thickness / zoom`, so the
+     * pen size in canvas units is `thickness / zoom` and pressure is
+     * `width / size`.
+     */
+    class PerfectFreehandBuilder {
+      constructor(startPoint, viewport, thickness) {
+        this.size = thickness / viewport.getScaleFactor()
+        this.color = startPoint.color
+        this.viewport = viewport
+        this.points = []
+        this.bbox = new Rect2(startPoint.pos.x, startPoint.pos.y, 0, 0)
+        this.addPoint(startPoint)
+      }
+      addPoint(p) {
+        this.points.push([p.pos.x, p.pos.y, Math.min(1, p.width / this.size)])
+        this.bbox = this.bbox.grownToPoint(p.pos)
+      }
+      getBBox() { return this.bbox.grownBy(this.size) }
+      inkTrailStyle() { return { color: this.color, width: this.size * 0.6 } }
+      spec(last) {
+        const o = pfOptions()
+        // A mouse reports a constant 0.5 pressure; a stylus varies. Only
+        // simulate from velocity when the input carries no real pressure.
+        const pressures = this.points.map((p) => p[2])
+        const constant = Math.max(...pressures) - Math.min(...pressures) < 1e-3
+        const d = getExplicitQuadPathFromStroke(getStroke(this.points, {
+          size: this.size,
+          thinning: o.thinning,
+          smoothing: o.smoothing,
+          streamline: o.streamline,
+          simulatePressure: o.simulate && constant,
+          start: o.start,
+          end: o.end,
+          last,
+        }))
+        if (!d) return null
+        return pathToRenderable(Path.fromString(d), { fill: this.color })
+      }
+      preview(renderer) {
+        const spec = this.spec(false)
+        if (!spec) return
+        renderer.startObject(this.getBBox())
+        renderer.drawPath(spec)
+        renderer.endObject()
+      }
+      build() {
+        const spec = this.spec(true)
+        return new Stroke(spec ? [spec] : [])
+      }
+    }
+
+    // The pen-type menu calls the factory to draw its icons while the toolbar
+    // is still being built, before we have a Pen reference: fall back to the
+    // slider value then.
+    let pen = null
+    const factory = (startPoint, viewport) =>
+      new PerfectFreehandBuilder(startPoint, viewport, pen ? pen.getThickness() : Number($('size').value))
+
+    const editor = new Editor($('editor'), {
+      pens: {
+        additionalPenTypes: [{ name: 'perfect-freehand', id: 'perfect-freehand', factory }],
+      },
+    })
+    editor.addToolbar()
+    window.editor = editor // exposed for poking at from the console
+    editor.dispatch(editor.setBackgroundStyle({ color: Color4.white, autoresize: true }))
+
+    pen = editor.toolController.getMatchingTools(Pen)[0]
+    pen.setStrokeFactory(factory)
+    pen.setColor(Color4.fromHex($('color').value))
+    pen.setThickness(Number($('size').value))
+    pen.setPressureSensitivityEnabled(true)
+
+    $('color').addEventListener('input', () => pen.setColor(Color4.fromHex($('color').value)))
+    $('size').addEventListener('input', () => pen.setThickness(Number($('size').value)))
+    $('hide-toolbar').addEventListener('change', () =>
+      document.body.classList.toggle('hide-jsdraw-toolbar', $('hide-toolbar').checked))
+    $('undo').addEventListener('click', () => editor.history.undo())
+    $('redo').addEventListener('click', () => editor.history.redo())
+    $('clear').addEventListener('click', () => {
+      const all = editor.image.getAllComponents().filter((c) => c instanceof Stroke)
+      editor.dispatch(new jsdraw.Erase(all))
+    })
+
+    $('send').addEventListener('click', () => {
       const svg = editor.toSVG().outerHTML
       const png = editor.toDataURL('image/png')
       agentBridge.send({
-        source: 'js-draw',
+        source: 'js-draw + perfect-freehand',
         svg,
         png,
-        meta: { elements: editor.image.getAllComponents().length },
+        meta: { strokes: editor.image.getAllComponents().filter((c) => c instanceof Stroke).length },
       })
     })
   </script>

@@ -25,6 +25,27 @@ export function outlinePath(inputPoints, options) {
   return getSvgPathFromStroke(getStroke(inputPoints, options))
 }
 
+/**
+ * Same curve as getSvgPathFromStroke but with every quadratic spelled out
+ * (no `T` shorthand), for parsers that lack it such as js-draw's Path.
+ */
+export function getExplicitQuadPathFromStroke(points) {
+  const len = points.length
+  if (len < 4) return ''
+  const f = (n) => n.toFixed(2)
+  let d = `M${f(points[0][0])},${f(points[0][1])}`
+  for (let i = 1; i < len; i++) {
+    const c = points[i]
+    const n = points[(i + 1) % len]
+    d += ` Q${f(c[0])},${f(c[1])} ${f(avg(c[0], n[0]))},${f(avg(c[1], n[1]))}`
+  }
+  return d + ' Z'
+}
+
+export function outlinePathExplicit(inputPoints, options) {
+  return getExplicitQuadPathFromStroke(getStroke(inputPoints, options))
+}
+
 export function svgEl(name, attrs = {}) {
   const el = document.createElementNS(SVG_NS, name)
   for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, String(v))
