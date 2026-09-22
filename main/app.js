@@ -21431,6 +21431,7 @@ var init_parse_agent_run_payload = __esm({
       id: external_exports.string(),
       content: external_exports.string(),
       status: external_exports.enum(["pending", "in_progress", "completed", "cancelled"]),
+      priority: external_exports.enum(["high", "medium", "low"]).optional(),
       check: external_exports.discriminatedUnion("kind", [
         external_exports.object({
           kind: external_exports.literal("shell"),
@@ -22172,6 +22173,16 @@ function appendReasoning(store2, messageId, text2) {
     m.reasoning = (m.reasoning ?? "") + text2;
   });
   store2.emit("message_reasoning", messageId, text2);
+}
+function appendAcpContentBlock(store2, messageId, channel, block) {
+  updateMessage(store2, messageId, (message2) => {
+    if (channel === "thought") {
+      message2.reasoningBlocks = [...message2.reasoningBlocks ?? [], block];
+    } else {
+      message2.contentBlocks = [...message2.contentBlocks ?? [], block];
+    }
+  });
+  store2.emit("message_acp_content", messageId);
 }
 function setMessageContent(store2, messageId, content) {
   updateMessage(store2, messageId, (m) => {
@@ -22974,7 +22985,9 @@ function getToolCallLabel(tc2) {
   if (tc2.name === "run_shell" || tc2.kind === "execute") {
     const command = shellCommandArg(tc2.args);
     if (command) return shellCommandLabel(command);
+    if (tc2.title) return tc2.title;
   }
+  if (tc2.title && !/^MCP\s*:\s*tool$/i.test(tc2.title)) return tc2.title;
   return getToolDisplayName(tc2.name, tense);
 }
 function getToolGroupKey(name, kind) {
@@ -29545,6 +29558,7 @@ function createStore(initial) {
     message_queued: /* @__PURE__ */ new Set(),
     message_token: /* @__PURE__ */ new Set(),
     message_reasoning: /* @__PURE__ */ new Set(),
+    message_acp_content: /* @__PURE__ */ new Set(),
     message_canvas_artefacts_changed: /* @__PURE__ */ new Set(),
     message_done: /* @__PURE__ */ new Set(),
     tool_call_started: /* @__PURE__ */ new Set(),
@@ -68581,15 +68595,17 @@ function isAnchorable(msg) {
 function isAbsorbable(msg) {
   if (!msg || msg.role !== "assistant") return false;
   if (hasText(msg.content)) return false;
-  return regularToolCalls(msg).length > 0 || hasText(msg.reasoning);
+  return regularToolCalls(msg).length > 0 || hasText(msg.reasoning) || Boolean(msg.reasoningBlocks?.length);
 }
 function stepOf(msg) {
   const reasoning = msg.reasoning;
+  const reasoningBlocks = msg.reasoningBlocks;
   const summary = trimmed(msg.toolSummary);
   return {
     messageId: msg.id,
     toolCalls: regularToolCalls(msg),
     ...reasoning !== void 0 && hasText(reasoning) ? { reasoning } : {},
+    ...reasoningBlocks?.length ? { reasoningBlocks } : {},
     ...summary !== null ? { summary } : {}
   };
 }
@@ -70293,6 +70309,19 @@ function createToolResultSection(result, format, showEmptyState = false) {
   }
   return el("div", { class: "tool-result" }, el("pre", {}, renderToolArgs(result)));
 }
+function createToolLocationsSection(locations) {
+  if (!locations?.length) return null;
+  return el(
+    "div",
+    { class: "tool-locations" },
+    el("span", { class: "acp-content-label" }, locations.length === 1 ? "Location" : "Locations"),
+    ...locations.map((location) => {
+      const label = `${location.path}${location.line !== void 0 ? `:${String(location.line)}` : ""}`;
+      const href = `${location.path}${location.line !== void 0 ? `#L${String(location.line)}` : ""}`;
+      return el("a", { href, "data-workspace-link": "true" }, label);
+    })
+  );
+}
 function createToolHeader(label, status, summaryClass, count, editStats, editPath) {
   const activityIcon = el("span", {
     class: "tool-activity-icon-slot",
@@ -70366,7 +70395,8 @@ function appendStandardToolSections(card, tc2, label, summaryClass, count) {
         tc2.result,
         tc2.resultFormat,
         argsSection === null && tc2.status !== "running"
-      )
+      ),
+      ...appendIfPresent(createToolLocationsSection(tc2.locations))
     );
   };
   if (card.open) {
@@ -70409,18 +70439,38 @@ function createCanvasPreviewSection(tc2, threadId) {
   const uri = artefactUriFromToolResult(tc2.result);
   return uri ? createCanvasPreviewCard(threadId, artefactTitleFromUri(uri)) : null;
 }
-function syncToolResultImages(msgEl, toolCalls) {
-  const images = toolCalls.flatMap((toolCall) => toolCall.images ?? []);
-  const current = msgEl.querySelector(":scope > .tool-result-images");
-  if (images.length === 0) {
+function syncToolResultContent(msgEl, toolCalls) {
+  const previewImageDataUrls = new Set(
+    toolCalls.flatMap(
+      (toolCall) => (toolCall.images ?? []).filter((image) => image.kind === "screenshot").map((image) => image.dataUrl)
+    )
+  );
+  const content = toolCalls.flatMap((toolCall) => {
+    if (toolCall.content !== void 0) return toolCall.content;
+    return (toolCall.images ?? []).map((image) => ({
+      type: "content",
+      content: {
+        type: "image",
+        dataUrl: image.dataUrl,
+        mimeType: image.dataUrl.match(/^data:([^;,]+)/)?.[1] ?? "image/png",
+        ...image.name ? { uri: image.name } : {}
+      }
+    }));
+  });
+  const visible = content.filter((item) => item.type !== "content" || item.content.type !== "text");
+  const current = msgEl.querySelector(":scope > .tool-result-content");
+  if (visible.length === 0) {
     current?.remove();
     return;
   }
-  const signature = renderSignature(images);
+  const signature = renderSignature({
+    content: visible,
+    previewImageDataUrls: [...previewImageDataUrls]
+  });
   let rendered = current;
-  if (!rendered || toolResultImageSignatures.get(rendered) !== signature) {
-    rendered = createToolResultImages(images);
-    toolResultImageSignatures.set(rendered, signature);
+  if (!rendered || toolResultContentSignatures.get(rendered) !== signature) {
+    rendered = createToolResultContent(visible, previewImageDataUrls);
+    toolResultContentSignatures.set(rendered, signature);
     if (current) current.replaceWith(rendered);
     else msgEl.append(rendered);
   }
@@ -70986,39 +71036,127 @@ function createMessageImages(images) {
   }
   return wrap;
 }
-function createToolResultImages(images) {
-  const wrap = el("div", {
-    class: "message-images tool-result-images",
-    "data-tool-result-image-count": String(images.length)
-  });
-  const previews2 = images.filter((image) => image.kind === "screenshot");
-  const thumbnails = previews2.length > 0 ? images.filter((image) => image.kind !== "screenshot") : images;
-  for (const image of previews2) {
-    const label = image.name ?? "Tool result image";
-    const figure = el("figure", { class: "tool-result-preview" });
-    const img = el("img", {
-      class: "tool-result-preview-image",
-      src: image.dataUrl,
-      alt: label,
-      loading: "lazy"
-    });
-    attachImageExpand(img, label);
-    figure.append(img);
-    if (image.name !== void 0) {
-      figure.append(el("figcaption", { class: "tool-result-preview-caption" }, image.name));
-    }
-    wrap.append(figure);
+function acpResourceLabel(uri, title) {
+  if (title) return title;
+  const tail = uri.split("/").filter(Boolean).at(-1);
+  if (!tail) return uri;
+  try {
+    return decodeURIComponent(tail);
+  } catch {
+    return tail;
   }
-  for (const image of thumbnails) {
-    const label = image.name ?? "Tool result image";
+}
+function createAcpContentBlock(block, context, previewImageDataUrls) {
+  if (block.type === "text") return null;
+  if (block.type === "image") {
+    const label2 = block.uri ? acpResourceLabel(block.uri) : "Agent image";
+    if (context === "tool" && previewImageDataUrls?.has(block.dataUrl)) {
+      const img2 = el("img", {
+        class: "tool-result-preview-image",
+        src: block.dataUrl,
+        alt: label2,
+        loading: "lazy"
+      });
+      attachImageExpand(img2, label2);
+      return el(
+        "figure",
+        { class: "tool-result-preview" },
+        img2,
+        ...block.uri ? [el("figcaption", { class: "tool-result-preview-caption" }, label2)] : []
+      );
+    }
     const img = el("img", {
-      class: "message-image tool-result-image",
-      src: image.dataUrl,
-      alt: label,
+      class: `message-image acp-content-image${context === "tool" ? " tool-result-image" : ""}`,
+      src: block.dataUrl,
+      alt: label2,
       loading: "lazy"
     });
-    attachImageExpand(img, label);
-    wrap.append(img);
+    attachImageExpand(img, label2);
+    return img;
+  }
+  if (block.type === "audio") {
+    return el(
+      "div",
+      { class: "acp-audio-content" },
+      el("span", { class: "acp-content-label" }, "Audio"),
+      el("audio", { controls: true, preload: "metadata", src: block.dataUrl })
+    );
+  }
+  if (block.type === "resource_link") {
+    const label2 = block.title ?? block.name;
+    const description = block.description ? el("span", { class: "acp-resource-description" }, block.description) : null;
+    const metadata = [block.mimeType, block.size !== void 0 ? `${String(block.size)} B` : null].filter(Boolean).join(" \xB7 ");
+    const labelNode = /^https?:\/\//i.test(block.uri) ? el("a", { class: "acp-resource-title", href: block.uri }, label2) : el("span", { class: "acp-resource-title" }, label2);
+    return el(
+      "div",
+      { class: "acp-resource-content acp-resource-link" },
+      labelNode,
+      ...description ? [description] : [],
+      ...metadata ? [el("span", { class: "acp-resource-meta" }, metadata)] : [],
+      el("code", { class: "acp-resource-uri" }, block.uri)
+    );
+  }
+  const label = acpResourceLabel(block.uri);
+  if ("text" in block) {
+    return el(
+      "details",
+      { class: "acp-resource-content acp-embedded-resource" },
+      el("summary", {}, label),
+      ...block.mimeType ? [el("span", { class: "acp-resource-meta" }, block.mimeType)] : [],
+      el("pre", { class: "acp-resource-text" }, block.text)
+    );
+  }
+  return el(
+    "div",
+    { class: "acp-resource-content acp-embedded-resource-binary" },
+    el("span", { class: "acp-resource-title" }, label),
+    ...block.mimeType ? [el("span", { class: "acp-resource-meta" }, block.mimeType)] : [],
+    el("a", { class: "ui-btn ui-btn-secondary", href: block.dataUrl, download: label }, "Save")
+  );
+}
+function createAcpContentBlocks(blocks, context) {
+  const nodes = blocks.flatMap((block) => {
+    const node2 = createAcpContentBlock(block, context);
+    return node2 ? [node2] : [];
+  });
+  if (nodes.length === 0) return null;
+  return el("div", { class: `acp-content-blocks acp-${context}-content` }, ...nodes);
+}
+function createToolResultContent(content, previewImageDataUrls) {
+  const imageCount = content.filter(
+    (item) => item.type === "content" && item.content.type === "image"
+  ).length;
+  const wrap = el("div", {
+    class: "tool-result-content tool-result-images",
+    "data-tool-result-image-count": String(imageCount)
+  });
+  for (const item of content) {
+    if (item.type === "content") {
+      const node2 = createAcpContentBlock(item.content, "tool", previewImageDataUrls);
+      if (node2) wrap.append(node2);
+    } else if (item.type === "diff") {
+      const diff = el(
+        "details",
+        { class: "acp-tool-diff" },
+        el("summary", {}, `Diff \xB7 ${item.path}`),
+        ...item.oldText !== void 0 ? [
+          el("div", { class: "acp-content-label" }, "Before"),
+          el("pre", { class: "acp-tool-diff-text" }, item.oldText)
+        ] : [],
+        el("div", { class: "acp-content-label" }, "After"),
+        el("pre", { class: "acp-tool-diff-text" }, item.newText)
+      );
+      wrap.append(diff);
+    } else {
+      wrap.append(
+        el(
+          "div",
+          { class: "acp-terminal-reference" },
+          el("span", { class: "acp-content-label" }, "Terminal"),
+          el("code", {}, item.terminalId)
+        )
+      );
+    }
   }
   return wrap;
 }
@@ -71243,8 +71381,10 @@ function appendMessageContent(body, msg, api2, opts) {
   if (msg.role === "user" && msg.images?.length) {
     body.append(createMessageImages(msg.images));
   }
-  if (msg.role === "assistant" && msg.reasoning && opts?.nestReasoningInTools !== true) {
-    body.append(buildReasoningEl(msg.reasoning, !msg.content.trim(), false));
+  if (msg.role === "assistant" && (msg.reasoning || msg.reasoningBlocks?.length) && opts?.nestReasoningInTools !== true) {
+    body.append(
+      buildReasoningEl(msg.reasoning ?? "", !msg.content.trim(), false, msg.reasoningBlocks)
+    );
   }
   const textEl = el("div", { class: "message-text streaming-markdown" });
   body.append(textEl);
@@ -71257,6 +71397,22 @@ function appendMessageContent(body, msg, api2, opts) {
   } else {
     textEl.textContent = msg.content;
   }
+  if (msg.role === "assistant" && msg.contentBlocks?.length) {
+    const richContent = createAcpContentBlocks(msg.contentBlocks, "message");
+    if (richContent) body.append(richContent);
+  }
+}
+function syncAcpMessageContent(msgEl, blocks) {
+  const body = msgEl.querySelector(":scope > .message-body");
+  if (!body) return;
+  const current = body.querySelector(":scope > .acp-message-content");
+  const replacement = createAcpContentBlocks(blocks, "message");
+  if (!replacement) {
+    current?.remove();
+    return;
+  }
+  if (current) current.replaceWith(replacement);
+  else body.append(replacement);
 }
 function shouldNestReasoningInTools(toolCalls) {
   return toolCalls.some((tc2) => !tc2.subagent);
@@ -71270,7 +71426,8 @@ function messageToolCardOpts(msg) {
   return {
     ...msg.commandSummary !== void 0 ? { commandSummary: msg.commandSummary } : {},
     ...msg.toolSummary !== void 0 ? { toolSummary: msg.toolSummary } : {},
-    ...msg.reasoning !== void 0 ? { reasoning: msg.reasoning } : {}
+    ...msg.reasoning !== void 0 ? { reasoning: msg.reasoning } : {},
+    ...msg.reasoningBlocks !== void 0 ? { reasoningBlocks: msg.reasoningBlocks } : {}
   };
 }
 function liveStepMessageId(thread) {
@@ -71343,7 +71500,7 @@ function renderUserTranscript(host, content, attachments, api2) {
 function countChipPlaceholders(text2) {
   return text2.split(CHIP_CHAR).length - 1;
 }
-function buildReasoningEl(reasoning, open2, live) {
+function buildReasoningEl(reasoning, open2, live, blocks = []) {
   const details = el("details", {
     class: `message-reasoning${live ? " message-reasoning-live" : ""}`,
     open: open2
@@ -71359,15 +71516,17 @@ function buildReasoningEl(reasoning, open2, live) {
     el("span", { class: "message-reasoning-title" }, reasoningDisclosureTitle(live))
   );
   const text2 = el("div", { class: "message-reasoning-text" });
-  renderReasoningText(text2, reasoning);
+  renderReasoningText(text2, reasoning, blocks);
   summary.addEventListener("click", () => {
     details.dataset["userToggled"] = "1";
   });
   details.append(summary, text2);
   return details;
 }
-function renderReasoningText(el3, text2) {
+function renderReasoningText(el3, text2, blocks = []) {
   el3.innerHTML = renderMarkdown(text2);
+  const richContent = createAcpContentBlocks(blocks, "reasoning");
+  if (richContent) el3.append(richContent);
 }
 function syncReasoningEl(msgEl, msg, live) {
   const body = msgEl.querySelector(".message-body");
@@ -71377,35 +71536,35 @@ function syncReasoningEl(msgEl, msg, live) {
   );
   const host = rollupBody ?? body;
   let details = msgEl.querySelector(".message-reasoning");
-  if (!msg.reasoning) {
+  if (!msg.reasoning && !msg.reasoningBlocks?.length) {
     details?.remove();
     return;
   }
   if (!details) {
-    details = buildReasoningEl(msg.reasoning, true, live);
+    details = buildReasoningEl(msg.reasoning ?? "", true, live, msg.reasoningBlocks);
     host.prepend(details);
   } else {
     if (details.parentElement !== host) host.prepend(details);
     const textEl = details.querySelector(".message-reasoning-text");
-    if (textEl) renderReasoningText(textEl, msg.reasoning);
+    if (textEl) renderReasoningText(textEl, msg.reasoning ?? "", msg.reasoningBlocks);
     setReasoningDisclosureTitle(details, live);
   }
   if (!details.dataset["userToggled"] && !msg.content.trim()) details.open = true;
 }
-function syncNestedRollupReasoning(card, msgEl, reasoning, live) {
+function syncNestedRollupReasoning(card, msgEl, reasoning, reasoningBlocks, live) {
   const rollupBody = card.querySelector(":scope > .tool-rollup-body");
   if (!rollupBody) return;
   const body = msgEl.querySelector(".message-body");
   let details = rollupBody.querySelector(":scope > .message-reasoning") ?? msgEl.querySelector(".message-reasoning");
-  if (!reasoning?.trim()) {
+  if (!reasoning?.trim() && !reasoningBlocks?.length) {
     details?.remove();
     return;
   }
   if (!details) {
-    details = buildReasoningEl(reasoning, true, live);
+    details = buildReasoningEl(reasoning ?? "", true, live, reasoningBlocks);
   } else {
     const textEl = details.querySelector(".message-reasoning-text");
-    if (textEl) renderReasoningText(textEl, reasoning);
+    if (textEl) renderReasoningText(textEl, reasoning ?? "", reasoningBlocks);
     setReasoningDisclosureTitle(details, live);
   }
   if (details.parentElement !== rollupBody) rollupBody.prepend(details);
@@ -71420,18 +71579,18 @@ function syncRunStepReasoning(card, run2, liveStepId) {
     );
     if (!body) continue;
     let details = body.querySelector(":scope > .message-reasoning");
-    if (!step.reasoning?.trim()) {
+    if (!step.reasoning?.trim() && !step.reasoningBlocks?.length) {
       details?.remove();
       continue;
     }
     const live = step.messageId === liveStepId;
     if (!details) {
-      details = buildReasoningEl(step.reasoning, live, live);
+      details = buildReasoningEl(step.reasoning ?? "", live, live, step.reasoningBlocks);
       body.prepend(details);
       continue;
     }
     const textEl = details.querySelector(".message-reasoning-text");
-    if (textEl) renderReasoningText(textEl, step.reasoning);
+    if (textEl) renderReasoningText(textEl, step.reasoning ?? "", step.reasoningBlocks);
     setReasoningDisclosureTitle(details, live);
   }
 }
@@ -71999,7 +72158,7 @@ function mountConversation(root, store2, api2) {
     const run2 = opts.run && (opts.run.anchorId === msgId || list.querySelector(`[data-message-id="${opts.run.anchorId}"]`) !== null) ? opts.run : void 0;
     const isRunMember = run2 !== void 0 && run2.anchorId !== msgId;
     msgEl.classList.toggle("msg-tool-run-member", isRunMember);
-    const nestReasoning = run2 === void 0 && Boolean(opts.reasoning?.trim()) && shouldNestReasoningInTools(toolCalls);
+    const nestReasoning = run2 === void 0 && (Boolean(opts.reasoning?.trim()) || Boolean(opts.reasoningBlocks?.length)) && shouldNestReasoningInTools(toolCalls);
     const items = run2 ? isRunMember ? buildSubagentDisplayItems(toolCalls) : [...buildToolRunDisplayItems(run2), ...buildSubagentDisplayItems(toolCalls)] : buildToolCallDisplayItems(toolCalls, {
       ...nestReasoning || messageKey !== null && liveRollupMessages.has(messageKey) ? { forceRollup: true } : {}
     });
@@ -72029,7 +72188,13 @@ function mountConversation(root, store2, api2) {
       }
       applyToolCardOpenState(card, item, threadId, msgId, true);
       if (item.type === "rollup" && nestReasoning) {
-        syncNestedRollupReasoning(card, msgEl, opts.reasoning, opts.reasoningLive === true);
+        syncNestedRollupReasoning(
+          card,
+          msgEl,
+          opts.reasoning,
+          opts.reasoningBlocks,
+          opts.reasoningLive === true
+        );
       }
       if (item.type === "rollup" && run2 && item.key === RUN_ROLLUP_KEY) {
         syncRunStepReasoning(card, run2, opts.liveStepId ?? null);
@@ -72059,7 +72224,7 @@ function mountConversation(root, store2, api2) {
         msgEl.insertBefore(node2, msgEl.children[base + i] ?? null);
       }
     }
-    syncToolResultImages(msgEl, run2 ? isRunMember ? [] : run2.toolCalls : toolCalls);
+    syncToolResultContent(msgEl, run2 ? isRunMember ? [] : run2.toolCalls : toolCalls);
     registerReasoningDisclosures(msgEl);
     syncToolRunMemberVisibility(msgEl);
   }
@@ -72553,6 +72718,20 @@ function mountConversation(root, store2, api2) {
         scrollToBottom();
       }
     }),
+    store2.on("message_acp_content", (mid) => {
+      const thread = getActiveThread(store2);
+      const msg = thread?.messages.find((message2) => message2.id === mid);
+      const msgEl = list.querySelector(`[data-message-id="${mid}"]`);
+      if (msg?.role === "assistant" && msgEl) {
+        syncAcpMessageContent(msgEl, msg.contentBlocks ?? []);
+        const run2 = multiStepRunFor(thread, mid);
+        if (run2) syncRunStepTrail(thread, run2);
+        else syncReasoningEl(msgEl, msg, isReasoningDisclosureLive(thread, msg));
+        registerReasoningDisclosures(msgEl);
+        syncToolRunMemberVisibility(msgEl);
+        scrollToBottom();
+      }
+    }),
     store2.on("message_reasoning", (mid) => {
       const thread = getActiveThread(store2);
       const msg = thread?.messages.find((m) => m.id === mid);
@@ -72693,7 +72872,7 @@ function attachCopyButton(body, msgId, store2) {
   });
   body.append(copyBtn);
 }
-var lazyToolCardBodies, toolResultImageSignatures, streamingRenderers, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolCardKeys, toolCardSignatures, toolGroupItemSignatures, SCROLL_PIN_THRESHOLD_PX, USER_SCROLL_UP_DEBOUNCE_MS, TOOL_AUTO_REVEAL_DELAY_MS, TOOL_AUTO_REVEAL_MIN_DWELL_MS, TOOL_AUTO_COMPACT_DELAY_MS, INITIAL_RENDER_WINDOW, BACKFILL_CHUNK_SIZE;
+var lazyToolCardBodies, toolResultContentSignatures, streamingRenderers, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolCardKeys, toolCardSignatures, toolGroupItemSignatures, SCROLL_PIN_THRESHOLD_PX, USER_SCROLL_UP_DEBOUNCE_MS, TOOL_AUTO_REVEAL_DELAY_MS, TOOL_AUTO_REVEAL_MIN_DWELL_MS, TOOL_AUTO_COMPACT_DELAY_MS, INITIAL_RENDER_WINDOW, BACKFILL_CHUNK_SIZE;
 var init_conversation = __esm({
   "src/renderer/views/conversation.ts"() {
     init_helpers();
@@ -72751,7 +72930,7 @@ var init_conversation = __esm({
     init_image_input_support();
     init_toast();
     lazyToolCardBodies = /* @__PURE__ */ new WeakMap();
-    toolResultImageSignatures = /* @__PURE__ */ new WeakMap();
+    toolResultContentSignatures = /* @__PURE__ */ new WeakMap();
     streamingRenderers = /* @__PURE__ */ new WeakMap();
     showAcpTransportNoiseDisclosure = () => false;
     subagentMessageCommitted = /* @__PURE__ */ new WeakMap();
@@ -99934,11 +100113,11 @@ function mountAgentTasks(listRoot, viewerHost, store2, api2) {
   function updateTask(id, patch) {
     const task = tasks.get(id);
     if (!task) return;
-    const command = shellCommandFromArgs(patch.args) ?? patch.name;
+    const command = shellCommandFromArgs(patch.args) ?? patch.title ?? patch.name;
     if (command) setCommand(task, command);
     if (patch.args !== void 0) setArgs(task, patch.args);
     if (patch.result !== void 0) {
-      task.output = stripAnsi(patch.result);
+      task.output = stripAnsi(patch.result ?? "");
       task.outputNode.data = task.output;
     }
     if (patch.status !== void 0) setStatus(task, patch.status);
@@ -99973,7 +100152,7 @@ function mountAgentTasks(listRoot, viewerHost, store2, api2) {
     if (chunk.type === "tool_call") {
       const isAcpShell = chunk.toolCall.kind === "execute";
       if (chunk.toolCall.name === "run_shell" || isAcpShell) {
-        const command = shellCommandFromArgs(chunk.toolCall.args) ?? (isAcpShell ? chunk.toolCall.name : null);
+        const command = shellCommandFromArgs(chunk.toolCall.args) ?? (isAcpShell ? chunk.toolCall.title ?? chunk.toolCall.name : null);
         if (command) addTask(chunk.toolCall.id, command, chunk.toolCall.args, threadId);
       }
     } else if (chunk.type === "tool_result" && tasks.has(chunk.toolCallId)) {
@@ -125516,7 +125695,9 @@ function startAgentController(store2, api2) {
         runSummaryAnchorId: null,
         runSummaryCount: 0,
         lastActivityLabel: null,
-        firstActivityTraced: false
+        firstActivityTraced: false,
+        acpMessageId: null,
+        acpThoughtMessageId: null
       };
       state.set(tid, st2);
     }
@@ -125533,7 +125714,7 @@ function startAgentController(store2, api2) {
   const detachDiffState = attachDiffState(store2, api2, { revealOnShowDiff: true });
   const unsub = api2.agent.onChunk((threadId, chunk) => {
     const st2 = get(threadId);
-    const firstVisibleActivity = chunk.type === "tool_call" || chunk.type === "text" && chunk.text.trim() !== "" || chunk.type === "reasoning" && chunk.text.trim() !== "";
+    const firstVisibleActivity = chunk.type === "tool_call" || chunk.type === "acp_content" || chunk.type === "text" && chunk.text.trim() !== "" || chunk.type === "reasoning" && chunk.text.trim() !== "";
     if (firstVisibleActivity && !st2.firstActivityTraced) {
       st2.firstActivityTraced = true;
       mark("ttft:renderer-first-activity", { kind: chunk.type });
@@ -125588,6 +125769,60 @@ function startAgentController(store2, api2) {
         activity(threadId);
         break;
       }
+      case "acp_content": {
+        const previousId = chunk.channel === "message" ? st2.acpMessageId : st2.acpThoughtMessageId;
+        const boundaryChanged = chunk.messageId !== void 0 && previousId !== null && chunk.messageId !== previousId;
+        if (boundaryChanged && st2.msgId) {
+          store2.emit("message_done", st2.msgId);
+          st2.msgId = null;
+          st2.toolSinceText = false;
+          st2.currentText = "";
+        }
+        if (chunk.messageId !== void 0) {
+          if (chunk.channel === "message") st2.acpMessageId = chunk.messageId;
+          else st2.acpThoughtMessageId = chunk.messageId;
+        }
+        if (chunk.content.type === "text") {
+          if (chunk.channel === "thought") {
+            if (!st2.msgId || st2.toolSinceText) {
+              if (st2.toolSinceText && st2.msgId) store2.emit("message_done", st2.msgId);
+              st2.msgId = addAssistantMessage(store2, threadId);
+              st2.toolSinceText = false;
+              st2.currentText = "";
+            }
+            appendReasoning(store2, st2.msgId, chunk.content.text);
+            st2.writing = false;
+          } else {
+            const { plan, state: nextState } = planAgentTextChunk(
+              { msgId: st2.msgId, toolSinceText: st2.toolSinceText, currentText: st2.currentText },
+              chunk.content.text
+            );
+            if (plan.action === "ignore") break;
+            if (plan.startNewMessage) {
+              if (plan.finalizeMsgId) store2.emit("message_done", plan.finalizeMsgId);
+              st2.msgId = addAssistantMessage(store2, threadId);
+            }
+            st2.toolSinceText = nextState.toolSinceText;
+            st2.currentText = nextState.currentText ?? "";
+            if (st2.msgId === null) throw new Error("assistant message id missing for ACP text");
+            appendToken(store2, st2.msgId, plan.text);
+            st2.writing = plan.text.trim().length > 0;
+            if (st2.writing) maybeNameThread(store2, api2, threadId);
+          }
+        } else {
+          if (!st2.msgId || st2.toolSinceText) {
+            if (st2.toolSinceText && st2.msgId) store2.emit("message_done", st2.msgId);
+            st2.msgId = addAssistantMessage(store2, threadId);
+            st2.toolSinceText = false;
+            st2.currentText = "";
+          }
+          appendAcpContentBlock(store2, st2.msgId, chunk.channel, chunk.content);
+          st2.writing = false;
+          maybeNameThread(store2, api2, threadId);
+        }
+        activity(threadId);
+        break;
+      }
       case "text_replace": {
         st2.msgId ??= addAssistantMessage(store2, threadId);
         setMessageContent(store2, st2.msgId, chunk.text);
@@ -125610,6 +125845,8 @@ function startAgentController(store2, api2) {
         addToolCall(store2, st2.msgId, {
           id: chunk.toolCall.id,
           name: chunk.toolCall.name,
+          ...chunk.toolCall.title !== void 0 ? { title: chunk.toolCall.title } : {},
+          ...chunk.toolCall.programmaticName !== void 0 ? { programmaticName: chunk.toolCall.programmaticName } : {},
           args: chunk.toolCall.args,
           status: "running",
           result: null,
@@ -125626,11 +125863,16 @@ function startAgentController(store2, api2) {
         if (ownerId) {
           updateToolCall(store2, ownerId, chunk.toolCallId, {
             ...chunk.name !== void 0 ? { name: chunk.name } : {},
+            ...chunk.title !== void 0 ? { title: chunk.title } : {},
+            ...chunk.programmaticName !== void 0 ? { programmaticName: chunk.programmaticName } : {},
             ...chunk.args !== void 0 ? { args: chunk.args } : {},
+            ...chunk.kind !== void 0 ? { kind: chunk.kind } : {},
             ...chunk.status !== void 0 ? { status: chunk.status } : {},
             ...chunk.result !== void 0 ? { result: chunk.result } : {},
             ...chunk.resultFormat !== void 0 ? { resultFormat: chunk.resultFormat } : {},
-            ...chunk.images !== void 0 ? { images: chunk.images } : {}
+            ...chunk.images !== void 0 ? { images: chunk.images } : {},
+            ...chunk.content !== void 0 ? { content: chunk.content } : {},
+            ...chunk.locations !== void 0 ? { locations: chunk.locations } : {}
           });
         }
         st2.writing = false;
@@ -125709,7 +125951,8 @@ function startAgentController(store2, api2) {
           conversationBudget: chunk.conversationBudget,
           conversationTokens: chunk.conversationTokens,
           fillRatio: chunk.fillRatio,
-          ...chunk.source !== void 0 ? { source: chunk.source } : {}
+          ...chunk.source !== void 0 ? { source: chunk.source } : {},
+          ...chunk.cost !== void 0 ? { cost: chunk.cost } : {}
         });
         break;
       }

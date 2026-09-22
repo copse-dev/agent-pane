@@ -581,6 +581,8 @@ select,
 .message-text,
 .message-reasoning-text,
 .tool-result,
+.acp-content-blocks,
+.tool-result-content,
 .tool-args pre,
 .attachment-preview-text,
 .hook-test-stream pre,
@@ -4117,6 +4119,77 @@ label {
   font-size: var(--font-size-sm);
   color: var(--text-muted);
 }
+.acp-content-blocks,
+.tool-result-content {
+  display: grid;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-sm);
+}
+.tool-result-content {
+  margin-bottom: var(--spacing-sm);
+}
+.acp-content-image {
+  justify-self: start;
+}
+.acp-audio-content,
+.acp-resource-content,
+.acp-terminal-reference,
+.acp-tool-diff {
+  min-width: 0;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-muted);
+  color: var(--text-secondary);
+}
+.acp-audio-content,
+.acp-resource-content,
+.acp-terminal-reference {
+  display: grid;
+  gap: var(--spacing-xs);
+}
+.acp-audio-content audio {
+  width: min(100%, 420px);
+  height: 36px;
+}
+.acp-content-label,
+.acp-resource-meta,
+.acp-resource-description {
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+}
+.acp-resource-title {
+  width: fit-content;
+  color: var(--link);
+  font-weight: 600;
+}
+span.acp-resource-title {
+  color: var(--text-primary);
+}
+.acp-resource-uri {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.acp-embedded-resource summary,
+.acp-tool-diff summary {
+  cursor: pointer;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.acp-resource-text,
+.acp-tool-diff-text {
+  margin: var(--spacing-xs) 0 0;
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+}
+.acp-tool-diff > .acp-content-label {
+  display: block;
+  margin-top: var(--spacing-sm);
+}
 .message-text .remote-artifact-image {
   display: block;
   max-width: 100%;
@@ -4876,6 +4949,17 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
 }
 .tool-result-markdown > :last-child {
   margin-bottom: 0;
+}
+.tool-locations {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs) var(--spacing-sm);
+  align-items: baseline;
+  font-size: var(--font-size-sm);
+}
+.tool-locations a {
+  color: var(--link);
+  overflow-wrap: anywhere;
 }
 .tool-args details summary {
   cursor: pointer;
