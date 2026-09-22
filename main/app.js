@@ -22207,6 +22207,22 @@ function addMessageCanvasArtefact(store2, messageId, artefact) {
   });
   store2.emit("message_canvas_artefacts_changed", messageId);
 }
+function addMessageVisualEvidence(store2, messageId, toolCallId, evidence) {
+  const loc = locateMessage(store2, messageId);
+  if (!loc) return;
+  const existing = new Set((loc.message.visualEvidence ?? []).map((item) => item.id));
+  const additions = evidence.filter((item) => !existing.has(item.id)).map((item) => ({
+    ...item,
+    toolCallId,
+    assets: item.assets.map((asset) => ({
+      ...asset,
+      source: { ...asset.source }
+    }))
+  }));
+  if (additions.length === 0) return;
+  loc.message.visualEvidence = [...loc.message.visualEvidence ?? [], ...additions];
+  store2.emit("message_visual_evidence_changed", messageId);
+}
 function setMessageCommandSummary(store2, messageId, commandSummary) {
   updateMessage(store2, messageId, (m) => {
     m.commandSummary = commandSummary;
@@ -23210,6 +23226,10 @@ var init_tool_display = __esm({
       browser_click: { running: "Clicking element", done: "Clicked element" },
       browser_type: { running: "Typing text", done: "Typed text" },
       browser_tabs: { running: "Listing browser tabs", done: "Listed browser tabs" },
+      present_visual_evidence: {
+        running: "Presenting visual evidence",
+        done: "Presented visual evidence"
+      },
       git_status: { running: "Checking git status", done: "Checked git status" },
       git_diff: { running: "Viewing git diff", done: "Viewed git diff" },
       git_log: { running: "Viewing git log", done: "Viewed git log" },
@@ -23265,7 +23285,8 @@ var init_tool_display = __esm({
           "browser_screenshot",
           "browser_click",
           "browser_type",
-          "browser_tabs"
+          "browser_tabs",
+          "present_visual_evidence"
         ],
         label: { running: "Using browser", done: "Used browser" }
       },
@@ -29631,6 +29652,7 @@ function createStore(initial) {
     message_reasoning: /* @__PURE__ */ new Set(),
     message_acp_content: /* @__PURE__ */ new Set(),
     message_canvas_artefacts_changed: /* @__PURE__ */ new Set(),
+    message_visual_evidence_changed: /* @__PURE__ */ new Set(),
     message_done: /* @__PURE__ */ new Set(),
     tool_call_started: /* @__PURE__ */ new Set(),
     tool_call_updated: /* @__PURE__ */ new Set(),
@@ -62640,7 +62662,7 @@ function mountSettingsDialog(store2, api2) {
         note.textContent = "Nested AGENTS.md discovery stopped at its directory limit, so this list may be incomplete. Deeper files are not loaded.";
         qsRequired(overlay, "#sources-instructions-list").append(note);
       }
-      const kindLabel = {
+      const kindLabel2 = {
         always: "always",
         auto: "auto",
         agent: "agent",
@@ -62653,7 +62675,7 @@ function mountSettingsDialog(store2, api2) {
           if (r.globs?.length) bits.push(`globs: ${r.globs.join(", ")}`);
           if (r.description) bits.push(r.description);
           bits.push(r.path);
-          return makeSourceRow(r.name, kindLabel[r.kind] ?? r.kind, bits.join(" \xB7 "), {
+          return makeSourceRow(r.name, kindLabel2[r.kind] ?? r.kind, bits.join(" \xB7 "), {
             badgeClass: r.kind === "always" ? "sources-badge-project" : r.kind === "auto" ? "sources-badge-auto" : void 0
           });
         }),
@@ -64178,6 +64200,7 @@ function copyMessage(message2) {
     toolCalls,
     images,
     canvasArtefacts,
+    visualEvidence,
     attachments,
     ...rest
   } = message2;
@@ -64188,6 +64211,15 @@ function copyMessage(message2) {
     toolCalls: (toolCalls ?? []).map((toolCall) => ({ ...toolCall })),
     ...images !== void 0 ? { images: [...images] } : {},
     ...canvasArtefacts !== void 0 ? { canvasArtefacts: canvasArtefacts.map((artefact) => ({ ...artefact })) } : {},
+    ...visualEvidence !== void 0 ? {
+      visualEvidence: visualEvidence.map((evidence) => ({
+        ...evidence,
+        assets: evidence.assets.map((asset) => ({
+          ...asset,
+          source: { ...asset.source }
+        }))
+      }))
+    } : {},
     ...attachments !== void 0 ? { attachments: attachments.map((attachment) => ({ ...attachment })) } : {}
   };
 }
@@ -69721,6 +69753,137 @@ var init_comparison_panel = __esm({
   }
 });
 
+// src/renderer/views/visual-evidence-card.ts
+function captureTime(timestamp) {
+  if (!Number.isFinite(timestamp)) return "Unknown capture time";
+  try {
+    return `${new Date(timestamp).toISOString().slice(0, 16).replace("T", " ")} UTC`;
+  } catch {
+    return "Unknown capture time";
+  }
+}
+function kindLabel(evidence) {
+  return evidence.kind === "comparison" ? "Before / After" : "Screenshot";
+}
+function sourceTitle(asset) {
+  return asset.source.title.trim() || asset.source.url;
+}
+function thumbnail(asset, caption) {
+  if (!asset.dataUrl) {
+    return el(
+      "div",
+      { class: "visual-evidence-thumbnail visual-evidence-thumbnail-unavailable" },
+      el("span", {}, asset.label),
+      el("span", {}, "Unavailable")
+    );
+  }
+  const image = el("img", {
+    class: "visual-evidence-thumbnail",
+    src: asset.dataUrl,
+    alt: `${asset.label}: ${caption}`,
+    loading: "lazy"
+  });
+  return image;
+}
+function evidenceFigure(asset, caption) {
+  const media = asset.dataUrl ? (() => {
+    const image = el("img", {
+      class: "visual-evidence-image",
+      src: asset.dataUrl,
+      alt: `${asset.label}: ${caption}`,
+      loading: "lazy"
+    });
+    attachImageExpand(image, `${asset.label}: ${caption}`);
+    return image;
+  })() : el(
+    "div",
+    { class: "visual-evidence-unavailable", role: "status" },
+    imageIcon("ui-icon visual-evidence-unavailable-icon"),
+    el("span", {}, asset.unavailableReason ?? "Evidence image is unavailable.")
+  );
+  return el(
+    "figure",
+    {
+      class: "visual-evidence-figure",
+      "data-evidence-asset-id": asset.id,
+      "data-available": asset.dataUrl ? "true" : "false"
+    },
+    el("div", { class: "visual-evidence-label" }, asset.label),
+    media,
+    el(
+      "figcaption",
+      { class: "visual-evidence-asset-meta" },
+      el("span", { class: "visual-evidence-source-title" }, sourceTitle(asset)),
+      el("code", { class: "visual-evidence-source-url" }, asset.source.url),
+      el(
+        "span",
+        { class: "visual-evidence-capture-meta" },
+        `${String(asset.width)}\xD7${String(asset.height)} \xB7 ${captureTime(asset.capturedAt)}`
+      )
+    )
+  );
+}
+function createVisualEvidenceSection(evidence) {
+  if (evidence.length === 0) return null;
+  const section = el("div", {
+    class: "message-visual-evidence",
+    "aria-label": "Visual evidence"
+  });
+  for (const item of evidence) {
+    const summary = el(
+      "summary",
+      { class: "visual-evidence-summary" },
+      imageIcon("ui-icon visual-evidence-icon"),
+      el(
+        "span",
+        { class: "visual-evidence-heading" },
+        el("span", { class: "visual-evidence-eyebrow" }, "Visual evidence"),
+        el("span", { class: "visual-evidence-caption" }, item.caption),
+        el(
+          "span",
+          { class: "visual-evidence-summary-meta" },
+          `${String(item.assets.length)} ${item.assets.length === 1 ? "capture" : "captures"} \xB7 Browser`
+        )
+      ),
+      el("span", { class: "visual-evidence-kind" }, kindLabel(item)),
+      el(
+        "span",
+        { class: "visual-evidence-thumbnails", "aria-hidden": "true" },
+        ...item.assets.map((asset) => thumbnail(asset, item.caption))
+      )
+    );
+    const body = el(
+      "div",
+      {
+        class: "visual-evidence-body",
+        "data-evidence-asset-count": String(item.assets.length)
+      },
+      ...item.assets.map((asset) => evidenceFigure(asset, item.caption))
+    );
+    section.append(
+      el(
+        "details",
+        {
+          class: "visual-evidence-card",
+          "data-evidence-id": item.id,
+          "data-evidence-kind": item.kind,
+          "data-tool-call-id": item.toolCallId
+        },
+        summary,
+        body
+      )
+    );
+  }
+  return section;
+}
+var init_visual_evidence_card = __esm({
+  "src/renderer/views/visual-evidence-card.ts"() {
+    init_image_expand();
+    init_helpers();
+    init_icons();
+  }
+});
+
 // src/renderer/views/review-findings-card.ts
 function statusLabel3(report) {
   switch (report.status) {
@@ -71055,6 +71218,14 @@ function syncMessageCanvasPreviews(msgEl, msg, projectId, threadId, api2) {
   if (cards.length > 0) {
     body.append(el("div", { class: "message-canvas-previews" }, ...cards));
   }
+  syncToolRunMemberVisibility(msgEl);
+}
+function syncMessageVisualEvidence(msgEl, msg) {
+  const body = msgEl.querySelector(":scope > .message-body");
+  if (!body) return;
+  body.querySelector(":scope > .message-visual-evidence")?.remove();
+  const section = createVisualEvidenceSection(msg.visualEvidence ?? []);
+  if (section) body.append(section);
   syncToolRunMemberVisibility(msgEl);
 }
 function createIndividualToolCard(tc2, label, api2, threadId, store2) {
@@ -72927,6 +73098,7 @@ function mountConversation(root, store2, api2) {
       ...run2 ? { run: run2, liveStepId: liveStepMessageId(thread) } : {}
     });
     syncMessageCanvasPreviews(msgEl, msg, store2.getState().activeProjectId, threadId, api2);
+    syncMessageVisualEvidence(msgEl, msg);
     if (run2) syncRunLayout(thread, run2, msgId);
     if (msg.review) renderMessageReview(threadId, msgId);
     renderMessageHookCards(threadId, msgId);
@@ -73315,6 +73487,15 @@ function mountConversation(root, store2, api2) {
         scrollToBottom();
       }
     }),
+    store2.on("message_visual_evidence_changed", (mid) => {
+      const thread = getActiveThread(store2);
+      const msg = thread?.messages.find((message2) => message2.id === mid);
+      const msgEl = list.querySelector(`[data-message-id="${mid}"]`);
+      if (msg?.role === "assistant" && msgEl) {
+        syncMessageVisualEvidence(msgEl, msg);
+        scrollToBottom();
+      }
+    }),
     store2.on("message_acp_content", (mid) => {
       const thread = getActiveThread(store2);
       const msg = thread?.messages.find((message2) => message2.id === mid);
@@ -73517,6 +73698,7 @@ var init_conversation = __esm({
     init_apple_development_panel();
     init_review_panel();
     init_comparison_panel();
+    init_visual_evidence_card();
     init_review_findings_card();
     init_review_actions();
     init_tool_args_format();
@@ -86014,6 +86196,7 @@ function threadToJsonl(thread) {
         ...msg.reasoning !== void 0 ? { reasoning: msg.reasoning } : {},
         images: msg.images,
         ...msg.canvasArtefacts !== void 0 ? { canvasArtefacts: msg.canvasArtefacts } : {},
+        ...msg.visualEvidence !== void 0 ? { visualEvidence: msg.visualEvidence } : {},
         commandSummary: msg.commandSummary,
         ...msg.toolSummary !== void 0 ? { toolSummary: msg.toolSummary } : {},
         ...msg.runSummary !== void 0 ? { runSummary: msg.runSummary } : {},
@@ -86033,7 +86216,7 @@ function threadToJsonl(thread) {
 var THREAD_JSONL_EXPORT_VERSION;
 var init_export_jsonl = __esm({
   "packages/thread-store/src/export-jsonl.ts"() {
-    THREAD_JSONL_EXPORT_VERSION = 7;
+    THREAD_JSONL_EXPORT_VERSION = 8;
   }
 });
 
@@ -126485,6 +126668,13 @@ function startAgentController(store2, api2) {
         }
         st2.writing = false;
         activity(threadId);
+        break;
+      }
+      case "visual_evidence": {
+        const ownerId = findToolCallOwner(store2, threadId, chunk.toolCallId);
+        if (ownerId) {
+          addMessageVisualEvidence(store2, ownerId, chunk.toolCallId, chunk.evidence);
+        }
         break;
       }
       case "tool_result": {
