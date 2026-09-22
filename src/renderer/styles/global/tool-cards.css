@@ -17,6 +17,17 @@
   color: var(--text-secondary);
   font-weight: 500;
 }
+/* Failed tools keep full weight and an error-tinted label so a collapsed or
+   still-streaming failure is obvious next to quiet done rows. */
+.tool-card[data-status='error'] > .tool-card-header .tool-name,
+.tool-group-item[data-status='error'] > .tool-group-item-header .tool-name {
+  color: var(--error);
+  font-weight: 600;
+}
+.tool-card[data-status='error']:not([open]),
+.tool-group-item[data-status='error']:not([open]) {
+  padding-block: 2px;
+}
 .msg .tool-card:first-of-type {
   margin-top: var(--spacing-xs);
 }

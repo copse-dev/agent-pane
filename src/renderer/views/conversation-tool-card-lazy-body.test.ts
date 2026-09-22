@@ -313,6 +313,65 @@ describe('collapsed tool card bodies render lazily', () => {
     assert.ok(card.querySelector('.tool-args'), 'expected the args body to already be built')
   })
 
+  it('auto-expands a failed tool card so the error body is visible', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    const messageId = addMessage(store, threadId, 'assistant', 'Working…')
+    addToolCall(store, messageId, {
+      id: 'tc-error-1',
+      name: 'Image generation',
+      args: {},
+      status: 'error',
+      result:
+        'Error: Cannot write to file /var/folders/…/T/CFE46EA9\nError 13: an unknown error occurred',
+      resultFormat: 'markdown',
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+
+    const card = host.querySelector<HTMLDetailsElement>('[data-tool-id="tc-error-1"]')
+    assert.ok(card, 'expected a tool card')
+    assert.equal(card.getAttribute('data-status'), 'error')
+    assert.equal(card.open, true, 'a failed tool card starts expanded')
+    const resultEl = card.querySelector('.tool-result')
+    assert.ok(resultEl, 'error body must be built without a click')
+    assert.match(resultEl.textContent ?? '', /Error 13/)
+    const name = card.querySelector('.tool-name')
+    assert.ok(name)
+    assert.match(name.textContent ?? '', /Image generation/)
+  })
+
+  it('keeps a failed card expanded after a reconcile tick', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    const messageId = addMessage(store, threadId, 'assistant', 'Working…')
+    addToolCall(store, messageId, {
+      id: 'tc-error-2',
+      name: 'exec_command',
+      args: { command: 'sips -s format png in.svg --out out.png' },
+      status: 'error',
+      result: 'Error 13: an unknown error occurred',
+      resultFormat: 'markdown',
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+
+    const card = host.querySelector<HTMLDetailsElement>('[data-tool-id="tc-error-2"]')
+    assert.ok(card)
+    assert.equal(card.open, true)
+
+    updateToolCall(store, messageId, 'tc-error-2', {
+      result: 'Error 13: an unknown error occurred\nTry sips --help',
+    })
+    const reconciled = host.querySelector<HTMLDetailsElement>('[data-tool-id="tc-error-2"]')
+    assert.ok(reconciled)
+    assert.equal(reconciled.open, true, 'failed cards stay open across reconcile')
+    assert.equal(reconciled.getAttribute('data-status'), 'error')
+    assert.match(reconciled.querySelector('.tool-result')?.textContent ?? '', /Try sips/)
+  })
+
   it('does not claim a no-argument tool has no details while it is still running', async () => {
     const store = createStore()
     const threadId = createThread(store)

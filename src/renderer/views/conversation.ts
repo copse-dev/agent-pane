@@ -2709,13 +2709,21 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     if (card.classList.contains('thread-proposal')) return
     const key = `${threadId}:${messageId}:${toolCardKey(item)}`
     card.dataset['disclosureKey'] = key
+    // Keep dataset.status aligned with the live tool status so compaction can
+    // leave failed cards open (it only inspects this attribute).
+    const itemStatus =
+      item.type === 'individual'
+        ? item.toolCall.status
+        : aggregateToolStatus(item.toolCalls)
+    card.dataset['status'] = itemStatus
     disclosureElements.set(key, card)
     wireDisclosurePreference(card, key)
     const preference = disclosurePreferences.get(key)
     const running =
       item.type === 'individual'
         ? item.toolCall.status === 'running' || item.toolCall.subagent?.status === 'running'
-        : aggregateToolStatus(item.toolCalls) === 'running'
+        : itemStatus === 'running'
+    const failed = itemStatus === 'error'
 
     if (running) runningDisclosures.add(key)
     else {
@@ -2725,6 +2733,13 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
 
     if (preference !== undefined) {
       card.open = preference
+    } else if (failed) {
+      // Failed tools stay expanded so the error body is visible without a click.
+      // Compaction already skips data-status=error; auto-open here covers the
+      // case where the tool never ran long enough for revealAfterDelay.
+      card.open = true
+      autoOpenedDisclosures.add(key)
+      if (!autoOpenedAt.has(key)) autoOpenedAt.set(key, Date.now())
     } else if (autoOpenedDisclosures.has(key)) {
       card.open = true
     } else {
@@ -2755,7 +2770,17 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
           entry.dataset['disclosureKey'] = itemKey
           disclosureElements.set(itemKey, entry)
           wireDisclosurePreference(entry, itemKey)
-          entry.open = disclosurePreferences.get(itemKey) ?? false
+          const preference = disclosurePreferences.get(itemKey)
+          const entryFailed = entry.dataset['status'] === 'error'
+          if (preference !== undefined) {
+            entry.open = preference
+          } else if (entryFailed) {
+            entry.open = true
+            autoOpenedDisclosures.add(itemKey)
+            if (!autoOpenedAt.has(itemKey)) autoOpenedAt.set(itemKey, Date.now())
+          } else {
+            entry.open = false
+          }
           if (entry.open) ensureToolCardBodyRendered(entry)
         })
     }
