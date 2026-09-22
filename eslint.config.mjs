@@ -435,6 +435,8 @@ export default ts.config(
     },
     rules: {
       '@typescript-eslint/explicit-function-return-type': 'off',
+      // Plain JS cannot annotate its exports; the rule would flag every ES-module prototype.
+      '@typescript-eslint/explicit-module-boundary-types': 'off',
     },
   },
   {

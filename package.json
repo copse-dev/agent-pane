@@ -247,6 +247,7 @@
     "monaco-editor": "^0.56.0",
     "openai": "^7.15.0",
     "oxfmt": "^0.68.0",
+    "perfect-freehand": "1.2.3",
     "pixelmatch": "^7.2.0",
     "pngjs": "^7.0.0",
     "protobufjs": "^8.8.0",

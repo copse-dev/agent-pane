@@ -51,6 +51,8 @@ const api: ApiClient = {
       ipcRenderer.invoke('browser:share-page-text', webContentsId),
     shareScreenshot: (webContentsId: number) =>
       ipcRenderer.invoke('browser:share-screenshot', webContentsId),
+    captureScreenshot: (webContentsId: number) =>
+      ipcRenderer.invoke('browser:capture-screenshot', webContentsId),
     exportPdf: (webContentsId: number) => ipcRenderer.invoke('browser:export-pdf', webContentsId),
     onOpenTab: (handler: (url: string, partition?: string) => void) => {
       const listener = (_e: Electron.IpcRendererEvent, url: string, partition?: string): void => {

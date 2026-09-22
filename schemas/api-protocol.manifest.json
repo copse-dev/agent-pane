@@ -360,6 +360,13 @@
           2
         ]
       },
+      "browser:capture-screenshot": {
+        "api": "browser.captureScreenshot",
+        "args": [
+          1,
+          1
+        ]
+      },
       "browser:export-pdf": {
         "api": "browser.exportPdf",
         "args": [

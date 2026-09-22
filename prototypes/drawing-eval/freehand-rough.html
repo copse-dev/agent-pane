@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>perfect-freehand + rough.js</title>
+    <link rel="stylesheet" href="shared.css" />
+    <style>
+      #svg {
+        cursor: crosshair;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="toolbar" id="toolbar">
+      <button data-tool="pen" aria-pressed="true">Pen</button>
+      <button data-tool="line">Line</button>
+      <button data-tool="arrow">Arrow</button>
+      <button data-tool="rect">Rect</button>
+      <button data-tool="ellipse">Ellipse</button>
+      <label>Colour <input type="color" id="color" value="#1d4ed8" /></label>
+      <label>Size <input type="range" id="size" min="2" max="40" value="8" /></label>
+      <label
+        >Roughness <input type="range" id="roughness" min="0" max="3" step="0.1" value="1"
+      /></label>
+      <label
+        >Fill
+        <select id="fillStyle">
+          <option value="solid">solid</option>
+          <option value="hachure">hachure</option>
+          <option value="zigzag">zigzag</option>
+          <option value="cross-hatch">cross-hatch</option>
+          <option value="none">none</option>
+        </select>
+      </label>
+      <span class="grow"></span>
+      <button id="undo">Undo</button>
+      <button id="redo">Redo</button>
+      <button id="clear">Clear</button>
+      <button id="send" class="primary">Send to agent</button>
+    </div>
+    <div class="stage">
+      <svg id="svg"></svg>
+    </div>
+    <div class="status" id="status">
+      perfect-freehand 1.2.3 + rough.js 4.6.6 · both MIT · pen outlines re-rendered through rough
+      for the Excalidraw look; shapes are rough primitives
+    </div>
+
+    <script src="bridge.js"></script>
+    <script type="module">
+      import rough from 'https://cdn.jsdelivr.net/npm/roughjs@4.6.6/+esm'
+      import { attachPointer, outlinePath, svgEl, createHistory } from './freehand-core.js'
+
+      const svg = document.getElementById('svg')
+      const rc = rough.svg(svg)
+      const $ = (id) => document.getElementById(id)
+      const history = createHistory(svg)
+      let tool = 'pen'
+      let seed = 1
+
+      const toolButtons = [...document.querySelectorAll('#toolbar [data-tool]')]
+      for (const btn of toolButtons) {
+        btn.addEventListener('click', () => {
+          tool = btn.dataset.tool
+          for (const b of toolButtons) b.setAttribute('aria-pressed', String(b === btn))
+        })
+      }
+
+      const roughOpts = (extra = {}) => ({
+        stroke: $('color').value,
+        strokeWidth: Math.max(1, Number($('size').value) / 4),
+        roughness: Number($('roughness').value),
+        // A fixed seed per shape keeps the sketch stable while the user drags
+        // instead of re-randomising every frame.
+        seed,
+        ...extra,
+      })
+
+      function penNode(points, pointerType, final) {
+        const d = outlinePath(points, {
+          size: Number($('size').value),
+          thinning: 0.6,
+          smoothing: 0.5,
+          streamline: 0.5,
+          simulatePressure: pointerType !== 'pen',
+          last: final,
+        })
+        if (!d) return svgEl('g')
+        const fillStyle = $('fillStyle').value
+        // The perfect-freehand outline is a closed polygon: hand it to rough as
+        // a filled path with no stroke so the wobble applies to the ink itself.
+        return rc.path(
+          d,
+          roughOpts({
+            fill: fillStyle === 'none' ? undefined : $('color').value,
+            fillStyle: fillStyle === 'none' ? 'solid' : fillStyle,
+            stroke: fillStyle === 'none' ? $('color').value : 'none',
+            fillWeight: Math.max(0.5, Number($('size').value) / 6),
+            hachureGap: Math.max(2, Number($('size').value) / 2),
+          }),
+        )
+      }
+
+      function shapeNode(points) {
+        const [x0, y0] = points[0]
+        const [x1, y1] = points[points.length - 1]
+        const x = Math.min(x0, x1),
+          y = Math.min(y0, y1)
+        const w = Math.abs(x1 - x0),
+          h = Math.abs(y1 - y0)
+        const fillStyle = $('fillStyle').value
+        const fillOpts =
+          fillStyle === 'none' || fillStyle === 'solid'
+            ? {}
+            : { fill: $('color').value, fillStyle, fillWeight: 1, hachureGap: 8 }
+        switch (tool) {
+          case 'line':
+            return rc.line(x0, y0, x1, y1, roughOpts())
+          case 'arrow': {
+            const g = svgEl('g')
+            g.appendChild(rc.line(x0, y0, x1, y1, roughOpts()))
+            const angle = Math.atan2(y1 - y0, x1 - x0)
+            const len = 14 + Number($('size').value)
+            for (const s of [-1, 1]) {
+              const a = angle + s * (Math.PI / 6)
+              g.appendChild(
+                rc.line(x1, y1, x1 - len * Math.cos(a), y1 - len * Math.sin(a), roughOpts()),
+              )
+            }
+            return g
+          }
+          case 'rect':
+            return rc.rectangle(x, y, w, h, roughOpts(fillOpts))
+          case 'ellipse':
+            return rc.ellipse(x + w / 2, y + h / 2, w, h, roughOpts(fillOpts))
+        }
+      }
+
+      let live = null
+      const render = (points, pointerType, final) =>
+        tool === 'pen' ? penNode(points, pointerType, final) : shapeNode(points)
+
+      attachPointer(svg, {
+        start({ points, pointerType }) {
+          seed = Math.floor(Math.random() * 2 ** 31)
+          live = render(points, pointerType, false)
+          svg.appendChild(live)
+        },
+        move({ points, pointerType }) {
+          if (!live) return
+          const next = render(points, pointerType, false)
+          live.replaceWith(next)
+          live = next
+        },
+        end({ points, pointerType }) {
+          if (!live) return
+          live.remove()
+          const node = render(points, pointerType, true)
+          node.setAttribute('data-tool', tool)
+          history.commit(node)
+          live = null
+          agentBridge.setStatus(
+            `${history.size} elements · last: ${tool}, ${points.length} input points, ${pointerType}`,
+          )
+        },
+      })
+
+      $('undo').addEventListener('click', () => history.undo())
+      $('redo').addEventListener('click', () => history.redo())
+      $('clear').addEventListener('click', () => history.clear())
+      $('send').addEventListener('click', () => {
+        agentBridge.sendSvgElement('perfect-freehand + rough.js', svg, { elements: history.size })
+      })
+      window.addEventListener('keydown', (e) => {
+        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
+          e.preventDefault()
+          e.shiftKey ? history.redo() : history.undo()
+        }
+      })
+    </script>
+  </body>
+</html>

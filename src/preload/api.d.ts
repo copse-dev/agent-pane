@@ -181,6 +181,11 @@ export interface ApiClient {
     onPreviewStale?: (handler: (origin: string) => void) => () => void
     sharePageText: (webContentsId: number) => Promise<void>
     shareScreenshot: (webContentsId: number) => Promise<void>
+    /**
+     * Screenshot the tab and hand the PNG back to the caller instead of
+     * attaching it; the annotation layer composes its marks on top first.
+     */
+    captureScreenshot: (webContentsId: number) => Promise<BrowserImageShare>
     /** Print the tab to a PDF the user picks; resolves null when cancelled. */
     exportPdf: (webContentsId: number) => Promise<string | null>
     onShareText: (handler: (share: BrowserTextShare) => void) => () => void

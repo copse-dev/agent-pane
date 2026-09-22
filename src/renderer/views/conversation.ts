@@ -35,7 +35,7 @@ import {
   getArtefactPreview,
   requestArtefactShow,
 } from '../canvas/artefact-previews.ts'
-import { createInlineArtefact } from '../canvas/inline-artefact.ts'
+import { createInlineArtefact, disposeInlineArtefacts } from '../canvas/inline-artefact.ts'
 import { artefactTitleFromUri } from '@shared/canvas/artefact.ts'
 import { getThreadById, getActiveThread, setQueuePaused } from '@shared/store/thread-helpers.ts'
 import { CONTAINER_RUN_ADOPT_EVENT } from '@shared/store/container-run-card.ts'
@@ -435,7 +435,11 @@ function syncMessageCanvasPreviews(
 ): void {
   const body = msgEl.querySelector<HTMLElement>(':scope > .message-body')
   if (!body) return
-  body.querySelector(':scope > .message-canvas-previews')?.remove()
+  const current = body.querySelector<HTMLElement>(':scope > .message-canvas-previews')
+  if (current) {
+    disposeInlineArtefacts(current)
+    current.remove()
+  }
 
   const cards = (msg.canvasArtefacts ?? []).flatMap((artefact) => {
     const card = projectId
@@ -3602,6 +3606,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       lastScrollTop = 0
     }
     disclosureElements.clear()
+    disposeInlineArtefacts(list)
     clear(list)
     backfillGeneration++
     renderedThreadId = thread?.id ?? null
@@ -3917,6 +3922,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     })
     revealTimers.clear()
     compactTimers.clear()
+    disposeInlineArtefacts(list)
     unbindFileLinks()
     unbindWorkspaceLinks()
     unbindBrowserLinks()
