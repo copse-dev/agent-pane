@@ -48,6 +48,20 @@ Where a sandbox is active, the sandbox—not a fuzzy match—decides whether the
 sandbox there is no containment boundary, so ambiguity must prompt, and auto-approval cannot skip
 that prompt.
 
+### Linked worktree recovery
+
+A contained command in a validated linked thread worktree may update that worktree's own Git
+administration plus the shared object, ref, reflog, and atomic `packed-refs.lock` /
+`packed-refs.new` paths. Linux must mount the common Git directory as the atomic rename boundary
+because bubblewrap ignores missing file grants; it re-binds configuration, hooks, primary checkout
+metadata, and discovered sibling worktree administration read-only. Those protected paths remain
+outside the writable surface on every platform.
+
+Agent execution still rejects a detached thread checkout. Terminal creation has one recovery-only
+fallback: main must validate the persisted checkout path, Git registration, repository identity, and
+base commit, and the per-worktree Git directory must contain an active rebase or cherry-pick marker.
+An unrelated detached checkout remains blocked.
+
 ## Apple development operations
 
 Apple Development uses actor-specific consent. Clicking Load targets, Build, Test, Run, or Cancel

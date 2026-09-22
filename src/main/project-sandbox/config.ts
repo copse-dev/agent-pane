@@ -867,9 +867,10 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
   }
   // Linked worktrees keep their index/HEAD in a per-worktree admin directory
   // and share objects/refs with the parent repository. These paths come only
-  // from a main-process-validated internal-root registration. Do not allow the
-  // common directory wholesale: sibling worktree admin state, hooks, and config
-  // remain outside the writable surface.
+  // from a main-process-validated internal-root registration. Linux bubblewrap
+  // cannot bind a not-yet-created `packed-refs.lock` file, so that platform
+  // receives the common directory as the atomic rename boundary and carves the
+  // protected entries back out below. Other platforms keep the narrower paths.
   const gitAdminRead = internalRoot
     ? [
         join(internalRoot.checkoutRoot, '.git'),
@@ -881,6 +882,8 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
         join(internalRoot.commonGitDir, 'info/**'),
         join(internalRoot.commonGitDir, 'config'),
         join(internalRoot.commonGitDir, 'packed-refs'),
+        join(internalRoot.commonGitDir, 'packed-refs.lock'),
+        join(internalRoot.commonGitDir, 'packed-refs.new'),
         join(internalRoot.commonGitDir, 'shallow'),
         // The primary checkout's own state, read-only: its HEAD (without it
         // `git worktree list` reported the primary at 0000000), its index (so
@@ -899,6 +902,7 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
         ...(listingOnlyDirEntriesSupported() ? [join(internalRoot.commonGitDir, 'worktrees')] : []),
       ]
     : []
+  const linuxAtomicGitAdminWrite = internalRoot !== null && process.platform === 'linux'
   const gitAdminWrite = internalRoot
     ? [
         internalRoot.gitDir,
@@ -906,7 +910,13 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
         join(internalRoot.commonGitDir, 'objects/**'),
         join(internalRoot.commonGitDir, 'refs/**'),
         join(internalRoot.commonGitDir, 'logs/**'),
-        join(internalRoot.commonGitDir, 'packed-refs'),
+        ...(linuxAtomicGitAdminWrite
+          ? [internalRoot.commonGitDir]
+          : [
+              join(internalRoot.commonGitDir, 'packed-refs'),
+              join(internalRoot.commonGitDir, 'packed-refs.lock'),
+              join(internalRoot.commonGitDir, 'packed-refs.new'),
+            ]),
       ]
     : []
   const siblingDeny = internalRoot ? uncoveredSiblingDenyPaths(internalRoot.siblingRoots) : []
@@ -928,8 +938,22 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
   const gitAdminDenyWrite = internalRoot
     ? [
         join(internalRoot.commonGitDir, 'config'),
+        join(internalRoot.commonGitDir, 'config.worktree'),
         join(internalRoot.commonGitDir, 'hooks'),
         join(internalRoot.commonGitDir, 'hooks/**'),
+        ...(linuxAtomicGitAdminWrite
+          ? [
+              join(internalRoot.commonGitDir, 'HEAD'),
+              join(internalRoot.commonGitDir, 'ORIG_HEAD'),
+              join(internalRoot.commonGitDir, 'FETCH_HEAD'),
+              join(internalRoot.commonGitDir, 'index'),
+              join(internalRoot.commonGitDir, 'description'),
+              join(internalRoot.commonGitDir, 'shallow'),
+              join(internalRoot.commonGitDir, 'info'),
+              join(internalRoot.commonGitDir, 'info/**'),
+              ...internalRoot.siblingGitDirs.flatMap((dir) => [dir, `${dir}/**`]),
+            ]
+          : []),
       ]
     : []
   return {
