@@ -201,16 +201,18 @@ describe('worktree manager', () => {
     )
   })
 
-  it('does not interpret a local origin path as a remote when none is configured', async () => {
+  it('does not interpret a local origin path or stale ref as a configured remote', async () => {
     const { repo } = await setup()
+    const staleRemoteCommit = git(repo, ['rev-parse', 'HEAD']).trim()
     await writeFile(join(repo, '.gitignore'), 'origin/\n')
     git(repo, ['add', '.gitignore'])
     git(repo, ['commit', '-q', '-m', 'ignore local origin path'])
+    git(repo, ['update-ref', 'refs/remotes/origin/main', staleRemoteCommit])
     const localOriginPath = join(repo, 'origin')
     git(repo, ['init', '-q', '--bare', '-b', 'main', localOriginPath])
     git(repo, ['push', '-q', localOriginPath, 'main'])
 
-    await allocateThreadWorktree({
+    const worktree = await allocateThreadWorktree({
       projectId: 'project-1',
       threadId: 'thread-no-origin',
       projectRoot: repo,
@@ -219,6 +221,7 @@ describe('worktree manager', () => {
     })
 
     await assert.rejects(readFile(join(repo, '.git', 'FETCH_HEAD'), 'utf-8'), /ENOENT/)
+    assert.equal(worktree.baseCommit, git(repo, ['rev-parse', 'main']).trim())
   })
 
   it('validates a managed checkout when the project is itself a linked checkout', async () => {
