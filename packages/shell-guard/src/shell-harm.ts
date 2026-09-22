@@ -1098,7 +1098,21 @@ function isHostPowerInvocation(segment: string[]): boolean {
   const head = commandName(argv[0]?.replace(/\\/g, '/')).replace(/\.exe$/, '')
   if (HOST_POWER_COMMANDS.has(head)) return true
   // These tools dispatch the power operation as a subcommand.
-  if (head === 'systemctl' || head === 'loginctl' || head === 'busybox') {
+  if (head === 'systemctl' || head === 'loginctl') {
+    // A remote systemd transport does not target this host. Keep it on the
+    // uncertain/prompt path even when the option uses its attached form.
+    if (argv.slice(1).some((arg) => /^(?:--host=|--machine=|-H.+|-M.+)/.test(arg))) {
+      return false
+    }
+    // systemctl/loginctl accept global no-value options before the verb. The
+    // previous four-option allow-list missed valid forms such as `-i reboot`
+    // and `--no-ask-password reboot`, allowing an actual local reboot to be
+    // approved. Separate option values (for example `--host remote`) remain
+    // the first operand and conservatively fall back to a prompt.
+    const subcommand = argv.slice(1).find((arg) => !arg.startsWith('-'))
+    return HOST_POWER_COMMANDS.has(subcommand ?? '')
+  }
+  if (head === 'busybox') {
     const subcommand = argv.slice(1).find((arg) => !/^--(?:force|no-wall|no-block)$|^-f$/.test(arg))
     return HOST_POWER_COMMANDS.has(subcommand ?? '')
   }
