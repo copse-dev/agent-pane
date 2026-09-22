@@ -1,4 +1,4 @@
-import { describe, it } from 'node:test'
+import { describe, it, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   branchStatusLookupKey,
@@ -12,6 +12,7 @@ import {
 import {
   buildPluginFollowUps,
   buildDeterministicFollowUps,
+  fillFollowUpSuggestions,
   pluginFollowUpConditionMet,
   parseModelFollowUpIds,
 } from './follow-up-service.ts'
@@ -316,6 +317,114 @@ describe('create-pr deterministic bubble', () => {
       suggestions.some((s) => s.id === 'create-pr'),
       false,
     )
+  })
+})
+
+describe('fillFollowUpSuggestions', () => {
+  const workspace = {
+    branch: 'feature/x',
+    hasOpenPr: false,
+    hasMergeConflicts: false,
+    hasCiFailures: false,
+    changeStats: { additions: 3, deletions: 1 },
+    canOpenPr: true,
+  }
+  const turn = {
+    userMessage: 'Implement the change',
+    assistantMessage: 'Implementation is ready; validation remains.',
+    toolNames: ['write_file'],
+  }
+
+  it('skips inference when plan, changes, and PR suggestions fill the visible slots', async () => {
+    const prioritized = buildDeterministicFollowUps(workspace, {
+      ...turn,
+      openTodos: ['Validate the change'],
+    })
+    const pickModel = mock.fn(() => Promise.resolve([{ id: 'run-tests', label: 'Run tests' }]))
+    const result = await fillFollowUpSuggestions(prioritized, pickModel)
+    assert.deepEqual(
+      result.map((suggestion) => suggestion.id),
+      ['continue-plan', 'changes', 'create-pr'],
+    )
+    assert.deepEqual(result, prioritized)
+    assert.equal(pickModel.mock.callCount(), 0)
+  })
+
+  it('skips inference when a plugin fills the remaining slot', async () => {
+    const deterministic = buildDeterministicFollowUps(workspace, turn)
+    const registry = new PluginRegistry()
+    registry.register(
+      definePlugin(
+        { name: 'copse.test-follow-up-budget', trust: 'first-party', stability: 'experimental' },
+        { followUps: [{ id: 'compare', label: 'Review changes', action: 'review' }] },
+      ),
+    )
+    const plugins = runWithDefaultPluginRegistry(registry, () => buildPluginFollowUps(workspace))
+    const pickModel = mock.fn(() => Promise.resolve([{ id: 'explain', label: 'Explain' }]))
+    const result = await fillFollowUpSuggestions([...deterministic, ...plugins], pickModel)
+    assert.deepEqual(result, [...deterministic, ...plugins])
+    assert.equal(result.length, 3)
+    assert.equal(pickModel.mock.callCount(), 0)
+  })
+
+  it('calls the model once when a slot opens after the plan completes', async () => {
+    const pickModel = mock.fn(() =>
+      Promise.resolve([
+        { id: 'run-tests', label: 'Run tests' },
+        { id: 'continue', label: 'Keep going' },
+      ]),
+    )
+    const before = buildDeterministicFollowUps(workspace, {
+      ...turn,
+      openTodos: ['Validate the change'],
+    })
+    await fillFollowUpSuggestions(before, pickModel)
+    assert.equal(pickModel.mock.callCount(), 0)
+    const after = buildDeterministicFollowUps(workspace, turn)
+    const result = await fillFollowUpSuggestions(after, pickModel)
+    assert.deepEqual(result, [...after, { id: 'run-tests', label: 'Run tests' }])
+    assert.equal(pickModel.mock.callCount(), 1)
+  })
+
+  it('deduplicates prioritized ids before deciding whether the model is needed', async () => {
+    const prioritized = buildDeterministicFollowUps(workspace, turn)
+    const pickModel = mock.fn(() =>
+      Promise.resolve([
+        { id: 'changes', label: 'Duplicate changes' },
+        { id: 'run-tests', label: 'Run tests' },
+      ]),
+    )
+    const result = await fillFollowUpSuggestions([...prioritized, ...prioritized], pickModel)
+    assert.deepEqual(result, [...prioritized, { id: 'run-tests', label: 'Run tests' }])
+    assert.equal(pickModel.mock.callCount(), 1)
+  })
+
+  it('preserves priority and the cap when branch facts alone exceed three slots', async () => {
+    const prioritized = buildDeterministicFollowUps(
+      {
+        ...workspace,
+        hasOpenPr: true,
+        canOpenPr: false,
+        hasCiFailures: true,
+        hasMergeConflicts: true,
+      },
+      { ...turn, openTodos: ['Finish validation'] },
+    )
+    const pickModel = mock.fn(() => Promise.resolve([]))
+    const result = await fillFollowUpSuggestions(prioritized, pickModel)
+    assert.equal(prioritized.length, 4)
+    assert.deepEqual(result, prioritized.slice(0, 3))
+    assert.equal(pickModel.mock.callCount(), 0)
+  })
+
+  it('still returns model suggestions when there are no higher-priority suggestions', async () => {
+    const suggestions = [
+      { id: 'explain', label: 'Explain' },
+      { id: 'run-tests', label: 'Run tests' },
+    ]
+    const pickModel = mock.fn(() => Promise.resolve(suggestions))
+    assert.deepEqual(await fillFollowUpSuggestions([], pickModel), suggestions)
+    assert.equal(pickModel.mock.callCount(), 1)
   })
 })
 
