@@ -4,20 +4,21 @@ run-name: copse-review-ground pr=${{ inputs.pr }}
 # Shell C, job A (docs/plans/copse-reviewer.md, §Execution isolation, "Backend
 # per shell — CI"). `review-trigger.yml` dispatches this workflow from its
 # default-branch `pull_request_target:labeled` resolver; the target-context
-# workflow never executes pull-request code. This separate workflow has no token
-# permissions or secrets. It checks out the trusted default-branch reviewer, then
-# fetches the exact resolved PR head as data. With credentials removed after
-# checkout and a fresh hosted runner, contributor code has nothing privileged to
-# reach. It runs Stage 0 (build,
+# workflow never executes pull-request code. Its ground job has no token
+# permissions or secrets. It checks out the trusted default-branch reviewer,
+# then fetches the exact resolved PR head as data. With credentials removed
+# after checkout and a fresh hosted runner, contributor code has nothing
+# privileged to reach. It runs Stage 0 (build,
 # typecheck, lint, test on head, and on base for whatever failed on head) with
-# the runner itself as the execution cell and uploads the report. Nothing here
-# can reach a model or a token: the runner is ephemeral and holds neither,
-# which is what lets a contributor's code run.
+# the runner itself as the execution cell and uploads the report. Nothing in
+# that job can reach a model or a privileged token: the runner is ephemeral
+# and holds neither, which is what lets a contributor's code run.
 #
-# The model stages run in "Copse review findings", triggered by this
-# workflow's completion on the base ref, with the key and a write token; that
-# job never executes the pull request's code. The artefact is the only thing
-# that crosses between them, and it is validated there before use.
+# A separate, fresh handoff job gets only Actions-dispatch permission after
+# grounding succeeds. It explicitly dispatches "Copse review findings" on the
+# base ref with this run id; that job gets the model key and review token but
+# never executes the pull request's code. The artefact is the only untrusted
+# thing that crosses between them, and it is validated there before use.
 
 on:
   workflow_dispatch:
@@ -109,3 +110,32 @@ jobs:
           path: ground/
           retention-days: 7
           if-no-files-found: error
+
+  handoff:
+    name: Dispatch findings after secret-free grounding
+    needs: ground
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # This is a fresh runner. It checks out, downloads and executes nothing;
+    # the untrusted ground job above never receives this token.
+    permissions:
+      actions: write
+    steps:
+      - name: Dispatch the read-only findings workflow
+        shell: bash
+        env:
+          BASE_REF: ${{ inputs.base }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          GH_TOKEN: ${{ github.token }}
+          GROUND_RUN_ID: ${{ github.run_id }}
+          HEAD_SHA: ${{ inputs.head }}
+          PR_NUMBER: ${{ inputs.pr }}
+        run: |
+          set -euo pipefail
+          gh workflow run review-findings.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref "$DEFAULT_BRANCH" \
+            -f "ground_run_id=${GROUND_RUN_ID}" \
+            -f "pr=${PR_NUMBER}" \
+            -f "head=${HEAD_SHA}" \
+            -f "base=${BASE_REF}"
