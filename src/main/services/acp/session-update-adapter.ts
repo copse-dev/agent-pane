@@ -1,5 +1,16 @@
-import type { PlanEntry, SessionUpdate, ToolCallContent, ToolKind } from '@agentclientprotocol/sdk'
-import type { StreamChunk, ToolResultImage } from '@shared/types'
+import type {
+  ContentBlock,
+  PlanEntry,
+  SessionUpdate,
+  ToolCallContent,
+  ToolKind,
+} from '@agentclientprotocol/sdk'
+import type {
+  AcpContentBlock,
+  AcpToolCallContent,
+  StreamChunk,
+  ToolResultImage,
+} from '@shared/types'
 import type { TodoItem } from '@shared/types/todo.ts'
 import { TODOS_PLUGIN_ID, TODOS_PANEL_CONTRIBUTION_ID } from '@copse/agent/plugins/todos-plugin.ts'
 import type { PanelEntry } from '@copse/agent/plugins/plugin-panel.ts'
@@ -101,7 +112,7 @@ export function streamChunkToSessionUpdate(chunk: StreamChunk): SessionUpdate | 
           )
           .map((todo): PlanEntry => ({
             content: todo.content,
-            priority: 'medium',
+            priority: todo.priority ?? 'medium',
             status: todo.status,
           })),
       }
@@ -156,22 +167,6 @@ export function streamChunkToSessionUpdate(chunk: StreamChunk): SessionUpdate | 
 }
 
 /**
- * ACP's title is the user-facing description and stays authoritative whenever
- * it is meaningful. The optional `name` is unstable programmatic identity, but
- * it can rescue adapters such as Cursor that collapse MCP titles to the known
- * `MCP: tool` placeholder.
- */
-function preferredAcpToolLabel(
-  title: string | null | undefined,
-  name: string | null | undefined,
-): string | undefined {
-  const displayTitle = typeof title === 'string' ? unwrapInlineCode(title) : undefined
-  const programmaticName = typeof name === 'string' ? unwrapInlineCode(name) : undefined
-  if (displayTitle !== undefined && !/^MCP\s*:\s*tool$/i.test(displayTitle)) return displayTitle
-  return programmaticName ?? displayTitle
-}
-
-/**
  * A tool announcement may already contain output and a terminal status (Codex
  * reports MCP startup failures this way). Create its card first, then apply
  * that state through the ordinary patch path; no later notification is owed.
@@ -190,6 +185,7 @@ export function sessionUpdateToStreamChunks(update: SessionUpdate): StreamChunk[
       ? { status: update.status }
       : {}),
     ...(update.content !== undefined ? { content: update.content } : {}),
+    ...(update.locations !== undefined ? { locations: update.locations } : {}),
     ...(update.rawOutput !== undefined ? { rawOutput: update.rawOutput } : {}),
   })
   return initialState ? [chunk, initialState] : [chunk]
@@ -198,14 +194,28 @@ export function sessionUpdateToStreamChunks(update: SessionUpdate): StreamChunk[
 function sessionUpdateToStreamChunk(update: SessionUpdate): StreamChunk | null {
   switch (update.sessionUpdate) {
     case 'agent_message_chunk':
-      return update.content.type === 'text' ? { type: 'text', text: update.content.text } : null
+      if (update.content.type === 'text' && !update.messageId) {
+        return { type: 'text', text: update.content.text }
+      }
+      return {
+        type: 'acp_content',
+        channel: 'message',
+        content: normalizeContentBlock(update.content),
+        ...(update.messageId ? { messageId: update.messageId } : {}),
+      }
     // Reasoning renders in the Reasoning disclosure and — unlike `text` — never
     // joins the assistant's answer, thread history, or the next turn's replayed
     // transcript (buildAcpPrompt).
     case 'agent_thought_chunk':
-      return update.content.type === 'text'
-        ? { type: 'reasoning', text: update.content.text }
-        : null
+      if (update.content.type === 'text' && !update.messageId) {
+        return { type: 'reasoning', text: update.content.text }
+      }
+      return {
+        type: 'acp_content',
+        channel: 'thought',
+        content: normalizeContentBlock(update.content),
+        ...(update.messageId ? { messageId: update.messageId } : {}),
+      }
     // ACP plan entries carry no ids and each update replaces the whole plan, so
     // index-based ids keep items stable across updates for the todo UI.
     case 'plan':
@@ -215,6 +225,7 @@ function sessionUpdateToStreamChunk(update: SessionUpdate): StreamChunk | null {
           id: `acp-plan-${String(index + 1)}`,
           content: entry.content,
           status: entry.status,
+          priority: entry.priority,
         })),
       }
     case 'usage_update':
@@ -230,13 +241,21 @@ function sessionUpdateToStreamChunk(update: SessionUpdate): StreamChunk | null {
         conversationTokens: update.used,
         fillRatio: update.size > 0 ? update.used / update.size : 0,
         source: 'agent-reported',
+        ...(update.cost
+          ? { cost: { amount: update.cost.amount, currency: update.cost.currency } }
+          : {}),
       }
-    case 'tool_call':
+    case 'tool_call': {
+      const title = unwrapInlineCode(update.title)
+      const programmaticName =
+        typeof update.name === 'string' ? unwrapInlineCode(update.name) : undefined
       return {
         type: 'tool_call',
         toolCall: {
           id: update.toolCallId,
-          name: preferredAcpToolLabel(update.title, update.name) ?? unwrapInlineCode(update.title),
+          name: programmaticName ?? title,
+          title,
+          ...(programmaticName !== undefined ? { programmaticName } : {}),
           args: update.rawInput ?? {},
           // Carry a *meaningful* ACP kind so the card groups/labels like the
           // built-in tools (`getToolGroupKey`) and the terminal's "Agent tasks"
@@ -247,33 +266,41 @@ function sessionUpdateToStreamChunk(update: SessionUpdate): StreamChunk | null {
           ...(update.kind && update.kind !== 'other' ? { kind: update.kind } : {}),
         },
       }
+    }
     case 'tool_call_update': {
       // ACP updates are patches, and agents do not have to repeat raw input or
       // content on the terminal status update. Preserve every supplied field so
       // arguments and in-progress output are not discarded before completion.
       const status = toolCallStatus(update.status)
-      const contentResult =
-        update.content !== undefined && update.content !== null
-          ? toolCallContent(update.content)
-          : undefined
+      const replacedContent =
+        update.content !== undefined ? normalizeToolCallContent(update.content ?? []) : undefined
       const rawResult = update.rawOutput !== undefined ? mcpToolResult(update.rawOutput) : undefined
+      // Some agents mirror the entire MCP envelope into ACP text content while
+      // also providing `rawOutput`. The decoded MCP blocks are the lossless
+      // representation in that case; otherwise ACP `content` is authoritative.
+      const displayContent = rawResult?.content ?? replacedContent
+      const contentResult =
+        displayContent !== undefined ? toolCallContentResult(displayContent) : undefined
       const result =
-        rawResult !== undefined
-          ? rawResult.text
-          : (contentResult?.text ??
-            (update.rawOutput !== undefined ? formatRawToolValue(update.rawOutput) : undefined))
-      const images =
-        rawResult && rawResult.images.length > 0
-          ? rawResult.images
-          : contentResult && contentResult.images.length > 0
-            ? contentResult.images
+        displayContent !== undefined
+          ? (rawResult?.text ?? contentResult?.text ?? null)
+          : update.rawOutput !== undefined
+            ? formatRawToolValue(update.rawOutput)
             : undefined
-      const name = preferredAcpToolLabel(update.title, update.name)
+      const images = displayContent !== undefined ? (contentResult?.images ?? []) : undefined
+      const title = typeof update.title === 'string' ? unwrapInlineCode(update.title) : undefined
+      const programmaticName =
+        typeof update.name === 'string' ? unwrapInlineCode(update.name) : undefined
+      const locations =
+        update.locations !== undefined ? normalizeLocations(update.locations ?? []) : undefined
       if (
         status === undefined &&
         result === undefined &&
         images === undefined &&
-        name === undefined &&
+        displayContent === undefined &&
+        locations === undefined &&
+        programmaticName === undefined &&
+        update.kind === undefined &&
         update.rawInput === undefined
       ) {
         return null
@@ -281,11 +308,18 @@ function sessionUpdateToStreamChunk(update: SessionUpdate): StreamChunk | null {
       return {
         type: 'tool_call_update',
         toolCallId: update.toolCallId,
-        ...(name !== undefined ? { name } : {}),
+        ...(programmaticName !== undefined ? { name: programmaticName } : {}),
+        ...(title !== undefined ? { title } : {}),
+        ...(programmaticName !== undefined ? { programmaticName } : {}),
         ...(update.rawInput !== undefined ? { args: update.rawInput } : {}),
+        ...(update.kind ? { kind: update.kind } : {}),
         ...(status !== undefined ? { status } : {}),
-        ...(result !== undefined ? { result, resultFormat: 'markdown' } : {}),
+        ...(result !== undefined
+          ? { result, ...(result !== null ? { resultFormat: 'markdown' as const } : {}) }
+          : {}),
         ...(images !== undefined ? { images } : {}),
+        ...(displayContent !== undefined ? { content: displayContent } : {}),
+        ...(locations !== undefined ? { locations } : {}),
       }
     }
     // The agent's permission (session) mode changed — either from our own
@@ -295,7 +329,22 @@ function sessionUpdateToStreamChunk(update: SessionUpdate): StreamChunk | null {
     // rather than through the fall-through so the intent is on the record.
     case 'current_mode_update':
       return null
-    default:
+    // Copse owns the submitted user message, slash-command registry, and thread
+    // title/activity metadata. Re-emitting these agent mirrors would duplicate
+    // or override the host-owned state. Config options are refreshed directly
+    // on the live ACP session by `acp-client.ts`, not through the renderer.
+    case 'user_message_chunk':
+    case 'available_commands_update':
+    case 'config_option_update':
+    case 'session_info_update':
+      return null
+    // These v1 exports are explicitly unstable. Copse advertises neither plan
+    // entities nor compaction capability, so receiving them is non-conforming;
+    // they remain deferred until their lifecycle has a host-owned model.
+    case 'plan_update':
+    case 'plan_removed':
+    case 'compaction_update':
+    case 'compaction_summary_chunk':
       return null
   }
 }
@@ -322,26 +371,96 @@ interface ToolCallContentResult {
   images: ToolResultImage[]
 }
 
-/** Decode one MCP/ACP image block into the shared tool-result representation. */
-function toolResultImage(value: unknown): ToolResultImage | null {
-  if (!isRecord(value) || value['type'] !== 'image') return null
-  const data = value['data']
-  const mimeType = value['mimeType']
-  if (
-    typeof data !== 'string' ||
-    data.length === 0 ||
-    typeof mimeType !== 'string' ||
-    !/^image\/[\w.+-]+$/.test(mimeType)
-  ) {
-    return null
-  }
-  return { dataUrl: `data:${mimeType};base64,${data}`, kind: 'screenshot' }
+function safeMimeType(value: string | null | undefined): string {
+  return value && /^[\w.+-]+\/[\w.+-]+$/.test(value) ? value : 'application/octet-stream'
 }
 
-/** Collect visible text and images from a tool call's ACP content blocks. */
-function toolCallContent(content: ToolCallContent[] | null | undefined): ToolCallContentResult {
+function dataUrl(mimeType: string | null | undefined, data: string): string {
+  return `data:${safeMimeType(mimeType)};base64,${data}`
+}
+
+/** Preserve every ACP v1 `ContentBlock` variant in a renderer-safe shape. */
+function normalizeContentBlock(content: ContentBlock): AcpContentBlock {
+  switch (content.type) {
+    case 'text':
+      return { type: 'text', text: content.text }
+    case 'image': {
+      const mimeType = safeMimeType(content.mimeType)
+      return {
+        type: 'image',
+        dataUrl: dataUrl(mimeType, content.data),
+        mimeType,
+        ...(content.uri ? { uri: content.uri } : {}),
+      }
+    }
+    case 'audio': {
+      const mimeType = safeMimeType(content.mimeType)
+      return { type: 'audio', dataUrl: dataUrl(mimeType, content.data), mimeType }
+    }
+    case 'resource_link':
+      return {
+        type: 'resource_link',
+        uri: content.uri,
+        name: content.name,
+        ...(content.title ? { title: content.title } : {}),
+        ...(content.description ? { description: content.description } : {}),
+        ...(content.mimeType ? { mimeType: content.mimeType } : {}),
+        ...(content.size !== undefined && content.size !== null ? { size: content.size } : {}),
+      }
+    case 'resource': {
+      const resource = content.resource
+      const record: unknown = resource
+      if (isRecord(record) && typeof record['text'] === 'string') {
+        return {
+          type: 'resource',
+          uri: resource.uri,
+          ...(resource.mimeType ? { mimeType: resource.mimeType } : {}),
+          text: record['text'],
+        }
+      }
+      const blob = isRecord(record) && typeof record['blob'] === 'string' ? record['blob'] : ''
+      const mimeType = safeMimeType(resource.mimeType)
+      return {
+        type: 'resource',
+        uri: resource.uri,
+        ...(resource.mimeType ? { mimeType } : {}),
+        dataUrl: dataUrl(mimeType, blob),
+      }
+    }
+  }
+}
+
+/** Preserve replacement order across standard, diff, and terminal tool content. */
+function normalizeToolCallContent(content: ToolCallContent[]): AcpToolCallContent[] {
+  return content.map((item): AcpToolCallContent => {
+    switch (item.type) {
+      case 'content':
+        return { type: 'content', content: normalizeContentBlock(item.content) }
+      case 'diff':
+        return {
+          type: 'diff',
+          path: item.path,
+          ...(item.oldText !== undefined && item.oldText !== null ? { oldText: item.oldText } : {}),
+          newText: item.newText,
+        }
+      case 'terminal':
+        return { type: 'terminal', terminalId: item.terminalId }
+    }
+  })
+}
+
+function normalizeLocations(
+  locations: ReadonlyArray<{ path: string; line?: number | null }>,
+): Array<{ path: string; line?: number }> {
+  return locations.map((location) => ({
+    path: location.path,
+    ...(location.line !== undefined && location.line !== null ? { line: location.line } : {}),
+  }))
+}
+
+/** Collect the legacy tool-card text/images derived from structured content. */
+function toolCallContentResult(content: AcpToolCallContent[]): ToolCallContentResult {
   const result: ToolCallContentResult = { images: [] }
-  if (!content) return result
   const text: string[] = []
   for (const item of content) {
     if (item.type !== 'content') continue
@@ -349,8 +468,9 @@ function toolCallContent(content: ToolCallContent[] | null | undefined): ToolCal
       text.push(item.content.text)
       continue
     }
-    const image = toolResultImage(item.content)
-    if (image) result.images.push(image)
+    if (item.content.type === 'image') {
+      result.images.push({ dataUrl: item.content.dataUrl, kind: 'screenshot' })
+    }
   }
   if (text.length > 0) result.text = text.join('')
   return result
@@ -371,7 +491,70 @@ function toolCallStatus(
  * results, and unknown media stay serialized so the UI never hides data it
  * cannot present directly.
  */
-function mcpToolResult(value: unknown): ToolCallContentResult | undefined {
+function unknownContentBlock(value: unknown): AcpContentBlock | null {
+  if (!isRecord(value) || typeof value['type'] !== 'string') return null
+  switch (value['type']) {
+    case 'text':
+      return typeof value['text'] === 'string' ? { type: 'text', text: value['text'] } : null
+    case 'image': {
+      if (typeof value['data'] !== 'string' || typeof value['mimeType'] !== 'string') return null
+      const mimeType = safeMimeType(value['mimeType'])
+      return {
+        type: 'image',
+        dataUrl: dataUrl(mimeType, value['data']),
+        mimeType,
+        ...(typeof value['uri'] === 'string' ? { uri: value['uri'] } : {}),
+      }
+    }
+    case 'audio': {
+      if (typeof value['data'] !== 'string' || typeof value['mimeType'] !== 'string') return null
+      const mimeType = safeMimeType(value['mimeType'])
+      return { type: 'audio', dataUrl: dataUrl(mimeType, value['data']), mimeType }
+    }
+    case 'resource_link':
+      if (typeof value['uri'] !== 'string' || typeof value['name'] !== 'string') return null
+      return {
+        type: 'resource_link',
+        uri: value['uri'],
+        name: value['name'],
+        ...(typeof value['title'] === 'string' ? { title: value['title'] } : {}),
+        ...(typeof value['description'] === 'string' ? { description: value['description'] } : {}),
+        ...(typeof value['mimeType'] === 'string' ? { mimeType: value['mimeType'] } : {}),
+        ...(typeof value['size'] === 'number' ? { size: value['size'] } : {}),
+      }
+    case 'resource': {
+      const resource = value['resource']
+      if (!isRecord(resource) || typeof resource['uri'] !== 'string') return null
+      if (typeof resource['text'] === 'string') {
+        return {
+          type: 'resource',
+          uri: resource['uri'],
+          ...(typeof resource['mimeType'] === 'string' ? { mimeType: resource['mimeType'] } : {}),
+          text: resource['text'],
+        }
+      }
+      if (typeof resource['blob'] !== 'string') return null
+      const mimeType =
+        typeof resource['mimeType'] === 'string'
+          ? safeMimeType(resource['mimeType'])
+          : 'application/octet-stream'
+      return {
+        type: 'resource',
+        uri: resource['uri'],
+        ...(typeof resource['mimeType'] === 'string' ? { mimeType } : {}),
+        dataUrl: dataUrl(mimeType, resource['blob']),
+      }
+    }
+    default:
+      return null
+  }
+}
+
+interface McpToolResult extends ToolCallContentResult {
+  content: AcpToolCallContent[]
+}
+
+function mcpToolResult(value: unknown): McpToolResult | undefined {
   if (!isRecord(value)) return undefined
   const error = value['error']
   if (error !== undefined && error !== null) return undefined
@@ -383,18 +566,17 @@ function mcpToolResult(value: unknown): ToolCallContentResult | undefined {
 
   const content = result['content']
   if (!Array.isArray(content) || content.length === 0) return undefined
-  const text: string[] = []
-  const images: ToolResultImage[] = []
+  const normalized: AcpToolCallContent[] = []
   for (const item of content) {
-    if (isRecord(item) && item['type'] === 'text' && typeof item['text'] === 'string') {
-      text.push(item['text'])
-      continue
-    }
-    const image = toolResultImage(item)
-    if (!image) return undefined
-    images.push(image)
+    const block = unknownContentBlock(item)
+    if (!block) return undefined
+    normalized.push({ type: 'content', content: block })
   }
-  return { ...(text.length > 0 ? { text: text.join('\n') } : {}), images }
+  const visible = toolCallContentResult(normalized)
+  const text = normalized.flatMap((item) =>
+    item.type === 'content' && item.content.type === 'text' ? [item.content.text] : [],
+  )
+  return { ...visible, ...(text.length > 0 ? { text: text.join('\n') } : {}), content: normalized }
 }
 
 function formatRawToolValue(value: unknown): string {

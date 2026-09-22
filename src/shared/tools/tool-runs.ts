@@ -1,4 +1,4 @@
-import type { Message, ToolCall } from '@shared/types'
+import type { AcpContentBlock, Message, ToolCall } from '@shared/types'
 
 /**
  * Presentation runs: the grouping that lets one tool rollup span several
@@ -21,6 +21,7 @@ export interface ToolRunMessage {
   content: string
   toolCalls?: ToolCall[]
   reasoning?: string
+  reasoningBlocks?: AcpContentBlock[]
   /** Message-local small-model polish — the heading for this message's step. */
   toolSummary?: string
   /** Run-level small-model polish, carried on the run's anchor message. */
@@ -33,6 +34,7 @@ export interface ToolRunStep {
   /** Regular (non-subagent) calls this message contributed, in order. */
   toolCalls: ToolCall[]
   reasoning?: string
+  reasoningBlocks?: AcpContentBlock[]
   summary?: string
 }
 
@@ -74,16 +76,22 @@ function isAnchorable(msg: ToolRunMessage | undefined): boolean {
 function isAbsorbable(msg: ToolRunMessage | undefined): boolean {
   if (!msg || msg.role !== 'assistant') return false
   if (hasText(msg.content)) return false
-  return regularToolCalls(msg).length > 0 || hasText(msg.reasoning)
+  return (
+    regularToolCalls(msg).length > 0 ||
+    hasText(msg.reasoning) ||
+    Boolean(msg.reasoningBlocks?.length)
+  )
 }
 
 function stepOf(msg: ToolRunMessage): ToolRunStep {
   const reasoning = msg.reasoning
+  const reasoningBlocks = msg.reasoningBlocks
   const summary = trimmed(msg.toolSummary)
   return {
     messageId: msg.id,
     toolCalls: regularToolCalls(msg),
     ...(reasoning !== undefined && hasText(reasoning) ? { reasoning } : {}),
+    ...(reasoningBlocks?.length ? { reasoningBlocks } : {}),
     ...(summary !== null ? { summary } : {}),
   }
 }

@@ -124,6 +124,10 @@ export interface ThreadUsage {
 export interface ToolCallChunk {
   id: string
   name: string
+  /** ACP's human-readable title, when this call originated from ACP. */
+  title?: string
+  /** ACP's unstable programmatic name, kept separate from the title. */
+  programmaticName?: string
   args: unknown
   /**
    * Set when the provider could not parse the tool-call arguments JSON (e.g. a

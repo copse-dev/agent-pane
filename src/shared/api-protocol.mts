@@ -40,4 +40,5 @@
 // v13 retires the model-comparison channels (`agent:comparison-models`,
 // `agent:retry-comparison`), drops the comparison models from `approval:respond`,
 // and replaces the `model_comparison` chunk with `review_report` (copse.review).
-export const API_PROTOCOL_VERSION = 13 as const
+// v14 versions ACP rich-content blocks on streamed agent chunks.
+export const API_PROTOCOL_VERSION = 14 as const

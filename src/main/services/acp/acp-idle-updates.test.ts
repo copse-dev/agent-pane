@@ -117,7 +117,12 @@ describe('acp between-turn updates (issue #588)', () => {
     const idle = chunks.slice(idleChunkCount)
     assert.deepEqual(
       idle.find((c) => c.type === 'tool_call')?.toolCall,
-      { id: 'bg1', name: 'background_review', args: { scope: 'diff' } },
+      {
+        id: 'bg1',
+        name: 'background_review',
+        title: 'background_review',
+        args: { scope: 'diff' },
+      },
       'the background tool call must surface while idle',
     )
     const result = idle.find((c) => c.type === 'tool_call_update')

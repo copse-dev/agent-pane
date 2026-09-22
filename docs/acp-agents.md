@@ -1,5 +1,8 @@
 # Using other agents on the same device (ACP client)
 
+For the exhaustive shipping protocol matrix, including rich content and update
+replacement semantics, see [ACP v1 content support](acp-v1-content-support.md).
+
 Copse can drive an external [ACP](https://agentclientprotocol.com/) agent that
 runs **locally on the same machine** — or, with opt-in, on the remote host of an
 SSH workspace — Gemini CLI, Claude (via an ACP adapter), or anything else that

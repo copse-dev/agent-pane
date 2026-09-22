@@ -8,7 +8,7 @@ import type { ModelParameters } from '@copse/llm/model-parameters.ts'
 // chunks (provider contract + text rewrites, context pressure, subagents) are
 // owned by the agent module. The app's StreamChunk is that loop contract plus
 // the app-level orchestration events below.
-import type { AgentStreamChunk } from '@copse/agent/wire-types.ts'
+import type { AcpContentBlock, AgentStreamChunk } from '@copse/agent/wire-types.ts'
 import type { TurnOutcome } from './turn-outcome.ts'
 import type { UserContent } from '@copse/llm/wire-types.ts'
 
@@ -29,6 +29,13 @@ export type { ProviderStreamChunk, ToolCallChunk } from '@copse/llm/wire-types.t
  */
 export type StreamChunk =
   | AgentStreamChunk
+  /** One v1 ACP assistant/reasoning content item, retaining message boundaries. */
+  | {
+      type: 'acp_content'
+      channel: 'message' | 'thought'
+      content: AcpContentBlock
+      messageId?: string
+    }
   /** A provider presentation reference resolved through Copse's canvas. */
   | {
       type: 'canvas_artefact'

@@ -18,6 +18,7 @@ const todoSchema = z.object({
   id: z.string(),
   content: z.string(),
   status: z.enum(['pending', 'in_progress', 'completed', 'cancelled']),
+  priority: z.enum(['high', 'medium', 'low']).optional(),
   check: z
     .discriminatedUnion('kind', [
       z.object({
