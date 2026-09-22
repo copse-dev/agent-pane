@@ -13,7 +13,7 @@ import {
   REVIEW_VERIFY_SETTING_ID,
 } from '@copse/agent/plugins/review-plugin.ts'
 import { ScriptedProvider, type ScriptedStep } from '@copse/review/scripted-provider.ts'
-import { createTestRepo, type TestRepo } from '@copse/review/test-repo.ts'
+import { createTestRepo, worktreeCount, type TestRepo } from '@copse/review/test-repo.ts'
 import { setKnowledgeRootForTest } from '../storage/knowledge-store.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import { dismissReviewFinding } from './review-dismissals.ts'
@@ -186,7 +186,7 @@ describe('review service', () => {
     const usage = chunks.filter((chunk) => chunk.type === 'usage').map((chunk) => chunk.model)
     assert.deepEqual([...new Set(usage)].sort(), ['challenger-model', 'reviewer-model'])
     // The ground is closed: no worktree is left behind.
-    assert.doesNotMatch(repo.git('worktree', 'list'), /copse-review/)
+    assert.equal(worktreeCount(repo), 1)
   })
 
   it('reports a provider failure instead of a clean review', async () => {

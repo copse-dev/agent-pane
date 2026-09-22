@@ -14,6 +14,13 @@ export interface TestRepo {
   remove(): Promise<void>
 }
 
+export function worktreeCount(repo: TestRepo): number {
+  return repo
+    .git('worktree', 'list', '--porcelain')
+    .split('\n')
+    .filter((line) => line.startsWith('worktree ')).length
+}
+
 const IDENTITY_ENV = {
   GIT_AUTHOR_NAME: 'Review Test',
   GIT_AUTHOR_EMAIL: 'review@example.invalid',

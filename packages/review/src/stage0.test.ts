@@ -6,7 +6,7 @@ import type { IsolationBackend } from './isolation.ts'
 import { REVIEW_CONFIG_FILENAME } from './project-commands.ts'
 import { renderStage0Report } from './report-text.ts'
 import { openReviewGround, runStage0, runStage0Checks, type Stage0Report } from './stage0.ts'
-import { createTestRepo, type TestRepo } from './test-repo.ts'
+import { createTestRepo, worktreeCount, type TestRepo } from './test-repo.ts'
 
 /**
  * A project whose checks are plain `node` scripts, declared through
@@ -202,7 +202,7 @@ describe('runStage0', () => {
     assert.deepEqual(report.checks, [])
     assert.deepEqual(report.findings, [])
     assert.equal(report.coverage.notChecked[0]?.kind, 'all')
-    assert.doesNotMatch(repo.git('worktree', 'list'), /copse-review/)
+    assert.equal(worktreeCount(repo), 1)
     assert.match(renderStage0Report(report), /^Not executed: .*B1/m)
   })
 
@@ -236,7 +236,7 @@ describe('runStage0', () => {
       assert.ok(ground.checkouts, 'checkouts should be materialised')
       assert.equal(ground.cell, null)
       assert.equal(ground.project.head?.ecosystem, 'configured')
-      assert.match(repo.git('worktree', 'list'), /copse-review/)
+      assert.equal(worktreeCount(repo), 3)
       const report = await runStage0Checks(ground)
       assert.deepEqual(report.checks, [])
       assert.deepEqual(report.findings, [])
@@ -245,7 +245,7 @@ describe('runStage0', () => {
     } finally {
       await ground.close()
     }
-    assert.doesNotMatch(repo.git('worktree', 'list'), /copse-review/)
+    assert.equal(worktreeCount(repo), 1)
   })
 
   it('scrubs a host secret out of check output before it reaches the report', async () => {
@@ -272,6 +272,6 @@ describe('runStage0', () => {
     const repo = await scenario({}, { test: { exit: 1 } })
     const report = await run(repo)
     assert.equal(report.findings.length, 1)
-    assert.doesNotMatch(repo.git('worktree', 'list'), /copse-review/)
+    assert.equal(worktreeCount(repo), 1)
   })
 })
