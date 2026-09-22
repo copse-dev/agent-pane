@@ -88379,7 +88379,7 @@ ${description}
     ]);
     const branchResult = prefetchedGitState?.[0];
     if (branchResult?.status === "rejected") throw branchResult.reason;
-    const currentBranch = branchResult?.status === "fulfilled" ? branchResult.value : await api2.git.currentBranch(projectId, id);
+    const currentBranch = requiresCheckoutPreparation && !thread.gitBranch ? null : branchResult?.status === "fulfilled" ? branchResult.value : await api2.git.currentBranch(projectId, id);
     const prefetchedPromptState = prefetchedGitState?.[1];
     const threadBranch = thread?.gitBranch;
     const isolatedWorktree = thread !== void 0 && thread.worktree !== void 0;
@@ -88444,7 +88444,7 @@ ${description}
         archiveRefs: currentArchiveRefs()
       });
     }
-    if (thread && thread.messages.length === 0 && !thread.worktreeChoice) {
+    if (requiresCheckoutPreparation) {
       const projectId2 = store2.getState().activeProjectId;
       if (!projectId2) return;
       hideCheckoutError();
