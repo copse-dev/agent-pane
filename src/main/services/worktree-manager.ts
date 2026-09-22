@@ -687,7 +687,8 @@ export async function allocateThreadWorktree(
     // Do that once per candidate instead of spawning `show-ref` and then
     // immediately spawning `rev-parse` for the same ref. The freshly fetched
     // remote default still wins, with the local branch as the exact fallback.
-    const remoteCommit = isDefaultBranch ? await resolveCommit(projectRoot, remoteRef) : null
+    const remoteCommit =
+      isDefaultBranch && hasOrigin ? await resolveCommit(projectRoot, remoteRef) : null
     const baseCommit =
       remoteCommit ?? (await resolveCommit(projectRoot, branchRef(input.baseBranch)))
     if (!baseCommit) {
