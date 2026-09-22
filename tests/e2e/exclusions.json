@@ -24,28 +24,6 @@
       "markers": ["describe.skip"]
     },
     {
-      "spec": "tests/e2e/browser-display.e2e.ts",
-      "category": "external-service",
-      "reason": "CI config excludes the webview spec, which navigates to https://example.com.",
-      "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
-      "ownerRole": "Browser maintainer (person assignment pending in #2719)",
-      "recordedOn": "2026-09-20",
-      "reviewBy": "2026-09-27",
-      "coverage": "Component tests cannot prove live Electron webview navigation. A controlled runtime fixture or explicit live-service run is still needed.",
-      "markers": ["wdio.ci.conf.ts: exclude"]
-    },
-    {
-      "spec": "tests/e2e/browser-link-chat.e2e.ts",
-      "category": "external-service",
-      "reason": "CI config excludes the chat-link webview spec, which navigates to https://example.com.",
-      "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
-      "ownerRole": "Browser maintainer (person assignment pending in #2719)",
-      "recordedOn": "2026-09-20",
-      "reviewBy": "2026-09-27",
-      "coverage": "The live chat-link-to-webview journey lacks CI acceptance while this spec is excluded.",
-      "markers": ["wdio.ci.conf.ts: exclude"]
-    },
-    {
       "spec": "tests/e2e/context-wheel.e2e.ts",
       "category": "quarantine",
       "reason": "Both suites skip in CI; source comments report historical runner memory/session failure with the heavy seeded fixture.",

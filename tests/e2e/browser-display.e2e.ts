@@ -1,10 +1,18 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import type { WebviewTag } from 'electron'
+import { $, $$, browser, expect } from '@wdio/globals'
+import {
+  resetUserData,
+  seedE2eViewport,
+  seedEmptyProject,
+  seedStableWorkspace,
+} from './helpers/seed-config.ts'
+import { startBrowserPageFixture } from './helpers/browser-page-fixture.ts'
 import {
   E2E_SCREENSHOT_DIR,
   prepareE2eScreenshot,
+  saveAppScreenshot,
   saveElementScreenshot,
 } from './helpers/screenshot.ts'
 
@@ -30,16 +38,17 @@ async function openBrowserMode(): Promise<void> {
 
 async function navigateActiveTab(url: string): Promise<void> {
   await browser.execute((targetUrl) => {
-    const input = document.querySelector(
+    const input = document.querySelector<HTMLInputElement>(
       '.browser-tab-panel.is-active .browser-url-input',
-    ) as HTMLInputElement | null
-    if (!input) return
+    )
+    if (!input) throw new Error('active browser address input missing')
     input.value = targetUrl
     input.dispatchEvent(new Event('input', { bubbles: true }))
-    const goBtn = document.querySelector(
+    const goBtn = document.querySelector<HTMLButtonElement>(
       '.browser-tab-panel.is-active .browser-go-btn',
-    ) as HTMLButtonElement | null
-    goBtn?.click()
+    )
+    if (!goBtn) throw new Error('active browser go button missing')
+    goBtn.click()
   }, url)
 }
 
@@ -47,10 +56,8 @@ async function waitForWebviewTitle(expected: string, timeoutMs = 25_000): Promis
   await browser.waitUntil(
     async () => {
       const title = await browser.execute(() => {
-        const webview = document.querySelector('.browser-tab-panel.is-active webview') as {
-          getTitle?: () => string
-        } | null
-        return webview?.getTitle?.() ?? ''
+        const webview = document.querySelector<WebviewTag>('.browser-tab-panel.is-active webview')
+        return webview && !webview.isLoading() ? webview.getTitle() : ''
       })
       return title.toLowerCase().includes(expected.toLowerCase())
     },
@@ -62,16 +69,21 @@ async function waitForWebviewTitle(expected: string, timeoutMs = 25_000): Promis
 }
 
 describe('browser panel display', () => {
+  let page: Awaited<ReturnType<typeof startBrowserPageFixture>>
+
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    seedEmptyProject(process.cwd(), PROJECT_ID, { webAllowedOrigins: ['https://example.com'] })
+    seedE2eViewport()
+    page = await startBrowserPageFixture(43120)
+    seedEmptyProject(seedStableWorkspace(), PROJECT_ID, { webAllowedOrigins: [page.origin] })
     await browser.reloadSession()
     await waitForComposer()
   })
 
-  after(() => {
+  after(async () => {
     resetUserData()
+    await page?.close()
   })
 
   it('opens browser mode with tabs, toolbar, and loaded page', async () => {
@@ -144,10 +156,18 @@ describe('browser panel display', () => {
     await seam.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'browser-chrome-tabs-toolbar-seam.png'))
     await browser.execute(() => document.getElementById('e2e-browser-chrome-seam')?.remove())
 
-    await navigateActiveTab('https://example.com')
-    await waitForWebviewTitle('Example Domain')
-    await browser.pause(500)
-    await saveElementScreenshot('#pane-files', 'browser-mode-example-com.png')
+    await navigateActiveTab(page.url)
+    await waitForWebviewTitle('Copse browser fixture')
+    await expect($('.browser-tab-panel.is-active .browser-url-input')).toHaveValue(page.url)
+    expect(page.requests).toContain('/page')
+    const heading = await browser.execute(async () => {
+      const webview = document.querySelector<WebviewTag>('.browser-tab-panel.is-active webview')
+      if (!webview) throw new Error('active browser webview missing')
+      return webview.executeJavaScript("document.querySelector('h1')?.textContent")
+    })
+    expect(heading).toBe('Local browser page')
+    // Capture the full app: WebDriver's element crop can misalign a native guest surface.
+    await saveAppScreenshot('browser-mode-local-page.png')
 
     const newTabBtn = await $('.browser-tabs-new-btn')
     await newTabBtn.click()

@@ -1254,8 +1254,8 @@ export function seedMarkdownConformanceFixture(workspaceRoot: string): void {
   })
 }
 
-export function seedBrowserLinkChatFixture(workspaceRoot: string): void {
-  writeSettings({ webAllowedOrigins: ['https://example.com'] })
+export function seedBrowserLinkChatFixture(workspaceRoot: string, url: string): void {
+  writeSettings({ webAllowedOrigins: [new URL(url).origin] })
   const projectId = 'e2e-browser-link-chat-project'
   const threadId = 'e2e-browser-link-chat-thread'
   mkdirSync(USER_DATA, { recursive: true })
@@ -1271,7 +1271,7 @@ export function seedBrowserLinkChatFixture(workspaceRoot: string): void {
           {
             id: 'msg-assistant-link',
             role: 'assistant',
-            content: 'See [Example Domain](https://example.com) for details.',
+            content: `See [Local browser page](${url}) for details.`,
             createdAt: Date.now(),
           },
         ],
