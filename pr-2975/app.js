@@ -46586,10 +46586,14 @@ var init_presets = __esm({
 
 // src/renderer/views/setup/classifiers-section.ts
 function classifierErrorMessage(error62) {
-  return errorMessage(error62).replace(
+  const message2 = errorMessage(error62).replace(
     /^(?:Error invoking remote method '[^']+':\s*|(?:ClassifierError|Error):\s*)+/,
     ""
-  ) || "Classifier request failed.";
+  );
+  if (message2.startsWith("IpcValidationError:")) {
+    return "The supplied settings are invalid. Check the field values and try again.";
+  }
+  return message2 || "Classifier request failed.";
 }
 function describeResult(result) {
   const answers = Object.entries(result.answers).map(([id, answer]) => {
@@ -46730,7 +46734,8 @@ function createClassifiersSection(api2) {
     const label = input2("Label", profile.label);
     const model = input2("Model", profile.model);
     const timeout = input2("Timeout", String(profile.timeoutMs / 1e3), "number");
-    timeout.min = "1";
+    timeout.min = "0.1";
+    timeout.step = "0.001";
     timeout.max = "600";
     const form = el(
       "div",
@@ -46797,7 +46802,17 @@ function createClassifiersSection(api2) {
         keyStatus,
         remove2
       );
-      const envField = el("label", {}, "Environment variable (optional)", env);
+      const envField = el(
+        "label",
+        {},
+        "Environment variable (optional)",
+        env,
+        el(
+          "span",
+          { class: "field-hint" },
+          "Custom connections use COPSE_CLASSIFIER_* variables. TYPESAFE_API_KEY and FEATHERLESS_API_KEY work only with their matching official endpoints. Leave blank to use a saved key."
+        )
+      );
       const updateAuth = () => {
         envField.hidden = auth.value !== "bearer";
         credentials.hidden = auth.value !== "bearer";
@@ -46914,39 +46929,60 @@ function createClassifiersSection(api2) {
           id: profile.id,
           label: read("Label"),
           model: read("Model"),
-          timeoutMs: Number(read("Timeout")) * 1e3,
+          timeoutMs: Math.round(Number(read("Timeout")) * 1e3),
           connection
         };
         profiles = await api2.classifiers.save(next);
-        if (key?.value.trim() || removeKey?.checked) {
-          const secret = removeKey?.checked ? "" : key?.value.trim() ?? "";
-          let result = await api2.settings.setKey(classifierCredentialId(profile.id), secret);
-          if (!result.ok && result.reason === "plaintext-consent-required") {
-            const approved = await showConfirmDialog({
-              message: `No OS keyring is available to encrypt the key for ${next.label}.`,
-              detail: "Store it unencrypted on this machine anyway?",
-              confirmLabel: "Store anyway"
-            });
-            if (approved)
-              result = await api2.settings.setKey(classifierCredentialId(profile.id), secret, {
-                allowPlaintext: true
+        selectedId = profile.id;
+        drafts.delete(profile.id);
+        let keyError = null;
+        const enteredKey = key?.value.trim() ?? "";
+        const removingKey = removeKey?.checked === true;
+        if (enteredKey || removingKey) {
+          const secret = removingKey ? "" : enteredKey;
+          try {
+            let result = await api2.settings.setKey(classifierCredentialId(profile.id), secret);
+            if (!result.ok && result.reason === "plaintext-consent-required") {
+              const approved = await showConfirmDialog({
+                message: `No OS keyring is available to encrypt the key for ${next.label}.`,
+                detail: "Store it unencrypted on this machine anyway?",
+                confirmLabel: "Store anyway"
               });
-          }
-          if (!result.ok) {
-            setInlineStatus(
-              status,
-              "error",
-              result.reason === "plaintext-storage-disabled" ? "Connection saved; key not saved because secure storage is unavailable and plaintext storage is disabled." : "Connection saved; key not saved because unencrypted storage was declined."
-            );
-            return;
+              if (approved)
+                result = await api2.settings.setKey(classifierCredentialId(profile.id), secret, {
+                  allowPlaintext: true
+                });
+            }
+            if (!result.ok) {
+              keyError = result.reason === "plaintext-storage-disabled" ? "Connection saved; key not saved because secure storage is unavailable and plaintext storage is disabled." : "Connection saved; key not saved because unencrypted storage was declined.";
+            }
+          } catch (error62) {
+            keyError = `Connection saved; key save failed: ${classifierErrorMessage(error62)}`;
           }
         }
         pending.delete(profile.id);
-        profiles = await api2.classifiers.list();
-        selectedId = profile.id;
-        drafts.delete(profile.id);
+        if (keyError) {
+          pending.set(
+            profile.id,
+            /* @__PURE__ */ new Map([
+              ["Key", enteredKey],
+              ["RemoveKey", String(removingKey)]
+            ])
+          );
+        }
+        let refreshError = null;
+        try {
+          profiles = await api2.classifiers.list();
+        } catch (error62) {
+          refreshError = `Connection saved; could not refresh key status: ${classifierErrorMessage(error62)}`;
+        }
         render();
-        setInlineStatus(status, "ok", "Classifier saved. No test call has been made.");
+        const failure2 = keyError ?? refreshError;
+        setInlineStatus(
+          status,
+          failure2 ? "error" : "ok",
+          failure2 ?? "Classifier saved. No test call has been made."
+        );
       });
     });
     test.addEventListener("click", () => {
@@ -72948,10 +72984,13 @@ function mountConversation(root, store2, api2) {
     if (card.classList.contains("thread-proposal")) return;
     const key = `${threadId}:${messageId}:${toolCardKey(item)}`;
     card.dataset["disclosureKey"] = key;
+    const itemStatus2 = item.type === "individual" ? item.toolCall.status : aggregateToolStatus(item.toolCalls);
+    card.dataset["status"] = itemStatus2;
     disclosureElements.set(key, card);
     wireDisclosurePreference(card, key);
     const preference = disclosurePreferences.get(key);
-    const running = item.type === "individual" ? item.toolCall.status === "running" || item.toolCall.subagent?.status === "running" : aggregateToolStatus(item.toolCalls) === "running";
+    const running = item.type === "individual" ? item.toolCall.status === "running" || item.toolCall.subagent?.status === "running" : itemStatus2 === "running";
+    const failed = itemStatus2 === "error";
     if (running) runningDisclosures.add(key);
     else {
       runningDisclosures.delete(key);
@@ -72959,6 +72998,10 @@ function mountConversation(root, store2, api2) {
     }
     if (preference !== void 0) {
       card.open = preference;
+    } else if (failed) {
+      card.open = true;
+      autoOpenedDisclosures.add(key);
+      if (!autoOpenedAt.has(key)) autoOpenedAt.set(key, Date.now());
     } else if (autoOpenedDisclosures.has(key)) {
       card.open = true;
     } else {
@@ -72986,7 +73029,17 @@ function mountConversation(root, store2, api2) {
         entry.dataset["disclosureKey"] = itemKey;
         disclosureElements.set(itemKey, entry);
         wireDisclosurePreference(entry, itemKey);
-        entry.open = disclosurePreferences.get(itemKey) ?? false;
+        const preference2 = disclosurePreferences.get(itemKey);
+        const entryFailed = entry.dataset["status"] === "error";
+        if (preference2 !== void 0) {
+          entry.open = preference2;
+        } else if (entryFailed) {
+          entry.open = true;
+          autoOpenedDisclosures.add(itemKey);
+          if (!autoOpenedAt.has(itemKey)) autoOpenedAt.set(itemKey, Date.now());
+        } else {
+          entry.open = false;
+        }
         if (entry.open) ensureToolCardBodyRendered(entry);
       });
     }
