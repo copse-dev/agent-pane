@@ -137,6 +137,13 @@ describe('runStage2', () => {
     assert.match(lensSystemPrompt(CORRECTNESS_LENS, { canRun: false }), /finish_review/)
   })
 
+  it('requires causal and semantic boundary tracing beyond edited lines', () => {
+    const prompt = lensSystemPrompt(CORRECTNESS_LENS, { canRun: false })
+    assert.match(prompt, /unchanged line can become newly wrong or reachable/)
+    assert.match(prompt, /producer → transforms → consumers/)
+    assert.match(prompt, /provenance, permissions, persistence, rendering, and tests/)
+  })
+
   it('fails closed when the model ends without the completion attestation', async () => {
     const result = await runStage2({
       provider: new ScriptedProvider([

@@ -150,6 +150,8 @@ export function lensSystemPrompt(lens: Lens, options: LensPromptOptions): string
     'Rules:',
     `- Allowed classes: ${FINDING_CLASSES.join(', ')}. Nothing else is a finding.`,
     '- No evidence, no finding. If you cannot point at the lines and say why they are wrong, do not report it.',
+    '- Review causal impact, not just edited lines. An unchanged line can become newly wrong or reachable because of this change; do not dismiss a defect merely because its best anchor is unchanged.',
+    '- When a value, result shape, or capability crosses a boundary, find the closest existing analogue and trace producer → transforms → consumers. Compare semantic tags, defaults, provenance, permissions, persistence, rendering, and tests where they matter; matching TypeScript shapes alone is not enough.',
     '- Do not invent concerns, do not pad. A short list a human reads in full beats a long one they skim.',
     '- A clean change is a complete answer: report nothing, but still attest what you checked.',
     '- Your final tool call must be finish_review, exactly once and after every report_finding call. State what you checked and what you could not verify; use "Nothing" only when there is no material uncertainty. Put any defect you did not already send through report_finding in finish_review.findings, or [] when there are none. Then stop.',
