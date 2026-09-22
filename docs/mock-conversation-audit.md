@@ -297,7 +297,7 @@ an empty or malformed provider response. Auxiliary title generation cannot
 consume a conversation scenario. Release builds remove the scenario runner and
 test bridges.
 
-The rebased migration covers 62 Electron spec files, browser demo fixtures, ACP
+The rebased migration covers 63 Electron spec files, browser demo fixtures, ACP
 integration tests, and benchmark, doctrine, and steering smoke tasks. Current
 provider, profile, IPC, MCP, and build behavior is preserved. The old Playwright
 MCP spec is now an executable WDIO spec with stdio, approval, and authenticated
@@ -321,7 +321,7 @@ without a producing spec are removed instead of retaining obsolete mock text.
 
 - `pnpm run check` passed on Node 24.20.0: typecheck, lint, formatting, dead-code
   and oracle guards, and all **9,936 unit tests**.
-- All **62 changed Electron spec files passed** across focused local runs. The
+- All **63 changed Electron spec files passed** across focused local runs. The
   MCP spec passed all five stdio, approval, and HTTP-auth cases together. This
   includes the changed cases normally excluded from the CI suite.
 - All **25 browser demo specs passed**. Benchmark smoke passed 1/1, doctrine

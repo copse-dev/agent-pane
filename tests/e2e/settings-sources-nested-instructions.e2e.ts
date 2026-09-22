@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { setComposerValue } from './helpers/composer.ts'
+import { installMockScenario } from './helpers/mock-scenario.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject, writeSeedConfig } from './helpers/seed-config.ts'
 import { waitForAgentIdle } from './helpers.ts'
@@ -64,6 +65,15 @@ describe('settings sources nested AGENTS.md (#1354)', function () {
 
   it('shows active and inactive directory scopes after a path activates one branch', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
+    await installMockScenario({
+      title: 'Review the API router',
+      turns: [
+        {
+          user: { includes: 'packages/api/src/router.ts' },
+          responses: [{ text: 'The API router coordinates request handling.' }],
+        },
+      ],
+    })
     await setComposerValue('Review packages/api/src/router.ts and explain its role.')
     await $('.submit-btn').click()
     await $('.messages-list .msg-assistant').waitForExist({ timeout: 30_000 })
