@@ -3,7 +3,7 @@
 // Each page calls `agentBridge.send({ source, svg, png?, meta? })`. When the
 // page is framed by index.html the payload is posted to the parent, which
 // renders it in the "Agent payload" panel. Standalone, the payload is shown in
-// the page's own status line and logged to the console.
+// the page's own status line, with the raw SVG made available for download.
 ;(function () {
   const STATUS_ID = 'status'
 
@@ -84,10 +84,16 @@
         `Sent to agent panel: ${message.svg.length.toLocaleString()} bytes of SVG${message.png ? ' + PNG' : ''}`,
       )
     } else {
-      window.console.log('[drawing-eval] export', message)
+      // Standalone: no panel to receive it, so offer the SVG itself.
+      const url = URL.createObjectURL(new Blob([message.svg], { type: 'image/svg+xml' }))
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `${message.source.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.svg`
+      link.textContent = 'download SVG'
       setStatus(
-        `Export ready (see console): ${message.svg.length.toLocaleString()} bytes of SVG${message.png ? ' + PNG' : ''}`,
+        `Export ready (open in the index for the agent panel): ${message.svg.length.toLocaleString()} bytes of SVG${message.png ? ' + PNG' : ''} · `,
       )
+      document.getElementById(STATUS_ID)?.append(link)
     }
     return message
   }
@@ -95,12 +101,9 @@
   /** Convenience for SVG-model pages: serialise, rasterise, send. */
   async function sendSvgElement(source, svgEl, meta, background = '#ffffff') {
     const { svg, width, height } = serialiseSvg(svgEl, background)
-    let png = null
-    try {
-      png = await svgToPng(svg, width, height, background)
-    } catch (e) {
-      window.console.warn('[drawing-eval] PNG rasterisation failed', e)
-    }
+    // A failed rasterisation still sends the SVG; the status line says so.
+    const png = await svgToPng(svg, width, height, background).catch(() => null)
+    if (png === null) setStatus('PNG rasterisation failed; sending SVG only')
     return send({ source, svg, png, meta })
   }
 
