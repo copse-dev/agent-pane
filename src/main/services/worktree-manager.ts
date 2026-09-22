@@ -399,6 +399,7 @@ export async function runWorktreeGit(
     ['check-ignore', 'check-ref-format', 'merge-base', 'rev-parse', 'show-ref', 'status'].includes(
       args[0] ?? '',
     ) ||
+    (args[0] === 'remote' && args[1] === 'get-url' && args[2] === 'origin' && args.length === 3) ||
     (args[0] === 'config' && args[1] === '--local' && args[2] === '--get' && args.length === 4) ||
     (args[0] === 'symbolic-ref' &&
       args[1] === '--quiet' &&
@@ -573,6 +574,10 @@ async function fetchDefaultBranch(projectRoot: string, branch: string): Promise<
   await git(projectRoot, ['fetch', '--quiet', 'origin', branch])
 }
 
+async function hasOriginRemote(projectRoot: string): Promise<boolean> {
+  return (await git(projectRoot, ['remote', 'get-url', 'origin'])).code === 0
+}
+
 async function chooseBranch(
   projectRoot: string,
   prompt: string,
@@ -654,15 +659,16 @@ export async function allocateThreadWorktree(
     // None of these probes mutates repository state or depends on another.
     // Each Git invocation pays the sandbox/process startup cost, so keep them
     // concurrent on the first-submit path instead of serializing that overhead.
-    const [, defaultBranch, dirtyProject, headResult, branch] = await Promise.all([
+    const [, defaultBranch, dirtyProject, headResult, branch, hasOrigin] = await Promise.all([
       assertBranchName(projectRoot, input.baseBranch, 'Base branch'),
       getDefaultBranch(projectRoot),
       repositoryIsDirty(projectRoot),
       git(projectRoot, ['rev-parse', 'HEAD']),
       chooseBranch(projectRoot, input.prompt, input.threadId),
+      hasOriginRemote(projectRoot),
     ])
     const isDefaultBranch = defaultBranch !== null && defaultBranch === input.baseBranch
-    if (isDefaultBranch) await fetchDefaultBranch(projectRoot, input.baseBranch)
+    if (isDefaultBranch && hasOrigin) await fetchDefaultBranch(projectRoot, input.baseBranch)
     const remoteRef = `refs/remotes/origin/${input.baseBranch}`
     // Resolving a ref proves both that it exists and that it names a commit.
     // Do that once per candidate instead of spawning `show-ref` and then

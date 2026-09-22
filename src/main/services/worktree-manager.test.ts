@@ -201,6 +201,26 @@ describe('worktree manager', () => {
     )
   })
 
+  it('does not interpret a local origin path as a remote when none is configured', async () => {
+    const { repo } = await setup()
+    await writeFile(join(repo, '.gitignore'), 'origin/\n')
+    git(repo, ['add', '.gitignore'])
+    git(repo, ['commit', '-q', '-m', 'ignore local origin path'])
+    const localOriginPath = join(repo, 'origin')
+    git(repo, ['init', '-q', '--bare', '-b', 'main', localOriginPath])
+    git(repo, ['push', '-q', localOriginPath, 'main'])
+
+    await allocateThreadWorktree({
+      projectId: 'project-1',
+      threadId: 'thread-no-origin',
+      projectRoot: repo,
+      prompt: 'Do not fetch a path named origin',
+      baseBranch: 'main',
+    })
+
+    await assert.rejects(readFile(join(repo, '.git', 'FETCH_HEAD'), 'utf-8'), /ENOENT/)
+  })
+
   it('validates a managed checkout when the project is itself a linked checkout', async () => {
     const { temp, repo } = await setup()
     const linkedProject = join(temp, 'linked-project')
