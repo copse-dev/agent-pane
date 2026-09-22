@@ -6,19 +6,21 @@
 // secondary: the plan trades it away on purpose.
 //
 // A case says what is wrong with its head, as anchors; the pipeline says what
-// it found, as findings. The two meet the way Stage 3 clusters candidates:
-// same path, line ranges overlapping within the same slack. A Stage 0
-// regression is the one finding that cannot anchor at the defect (it anchors
-// at the script that failed), so a defect may also declare which regression
-// it causes, and a Stage 0 finding of that kind is a hit.
+// it found, as findings. An anchored hit requires both an overlapping source
+// range and the case author's semantic claim signals. A Stage 0 regression is
+// the one finding that cannot anchor at the defect (it anchors at the script
+// that failed), so a defect may also declare which regression it causes, and
+// a Stage 0 finding of that kind is a hit.
 import { z } from 'zod'
 import { decodeWithSchema } from '@copse/std/safe-json.ts'
-import { ANCHOR_SLACK_LINES } from './cluster.ts'
+import { ANCHOR_SLACK_LINES, claimTokens, sameFinding } from './cluster.ts'
 import { FINDING_CLASSES, type Finding, type FindingClass } from './finding.ts'
 import type { ReviewReport } from './stage5.ts'
 
 export const REGRESSION_KINDS = ['build', 'typecheck', 'test'] as const
 export type RegressionKind = (typeof REGRESSION_KINDS)[number]
+/** Increment when the meaning of a scored hit changes. Baseline identity includes it. */
+export const REVIEW_EVAL_VERSION = 2
 
 /** The finding class Stage 0 mints for each regression kind. */
 const REGRESSION_CLASS: Record<RegressionKind, FindingClass> = {
@@ -42,6 +44,11 @@ export const truthDefectSchema = z.object({
   anchors: z.array(truthAnchorSchema).min(1),
   /** The Stage 0 checks this defect makes regress, when it does. */
   regressions: z.array(z.enum(REGRESSION_KINDS)).optional(),
+  /**
+   * AND-of-OR semantic signals for an anchored hit. Every outer group must
+   * match one alternative; a multi-word alternative requires all its words.
+   */
+  claimSignals: z.array(z.array(z.string().min(1)).min(1)).min(1),
   note: z.string().optional(),
 })
 export type TruthDefect = z.infer<typeof truthDefectSchema>
@@ -77,6 +84,20 @@ export function anchorsOverlap(
   return a.startLine <= bEnd + slack && b.startLine <= aEnd + slack
 }
 
+/** Whether a claim satisfies a defect's hand-authored semantic signals. */
+export function claimMatchesSignals(
+  claim: string,
+  signalGroups: readonly (readonly string[])[],
+): boolean {
+  const tokens = claimTokens(claim)
+  return signalGroups.every((alternatives) =>
+    alternatives.some((alternative) => {
+      const required = claimTokens(alternative)
+      return required.size > 0 && [...required].every((token) => tokens.has(token))
+    }),
+  )
+}
+
 /** The defect a surfaced finding hits, or `null` for a false positive. */
 export function matchDefect(
   finding: Finding,
@@ -96,7 +117,8 @@ export function matchDefect(
       defect.anchors.some(
         (anchor) =>
           normalisePath(anchor.path) === path && anchorsOverlap(anchor, finding.anchor, slack),
-      )
+      ) &&
+      claimMatchesSignals(finding.claim, defect.claimSignals)
     ) {
       return { defect, how: 'anchor' }
     }
@@ -113,6 +135,8 @@ export interface ScoredFinding {
   readonly how: DefectMatch['how'] | null
   /** The finding's class equals the defect's; informational. */
   readonly classAgrees: boolean
+  /** The first equivalent surfaced finding, when this one is a duplicate. */
+  readonly duplicateOf: string | null
 }
 
 export interface CaseScore {
@@ -120,12 +144,14 @@ export interface CaseScore {
   readonly surfaced: number
   readonly truePositives: number
   readonly falsePositives: number
+  /** Repeated surfaced findings excluded from both precision counts. */
+  readonly duplicates: number
   readonly defects: number
   /** Distinct defects at least one surfaced finding hit. */
   readonly found: number
-  /** Surfaced findings with a confirmed verdict (Stage 0 or a reproducer). */
+  /** Unique surfaced findings with a confirmed verdict (Stage 0 or a reproducer). */
   readonly confirmed: number
-  /** Surfaced findings carrying reproducer evidence. */
+  /** Unique surfaced findings carrying reproducer evidence. */
   readonly confirmedByReproducer: number
   readonly findings: readonly ScoredFinding[]
 }
@@ -136,9 +162,47 @@ export function scoreCase(
   report: ReviewReport,
   truth: readonly TruthDefect[],
 ): CaseScore {
-  const findings = report.findings.map((finding): ScoredFinding => {
+  interface FindingGroup {
+    readonly firstFindingId: string
+    readonly representative: Finding
+    readonly match: DefectMatch | null
+    confirmed: boolean
+    reproduced: boolean
+  }
+  const groups: FindingGroup[] = []
+  const matchedGroups = new Map<string, FindingGroup>()
+  const findings: ScoredFinding[] = []
+  for (const finding of report.findings) {
     const match = matchDefect(finding, truth)
-    return {
+    const matchKey =
+      match === null
+        ? null
+        : JSON.stringify(
+            match.how === 'anchor'
+              ? ['anchor', match.defect.id]
+              : ['regression', match.defect.id, finding.class],
+          )
+    const existing =
+      matchKey === null
+        ? groups.find((group) => group.match === null && sameFinding(group.representative, finding))
+        : matchedGroups.get(matchKey)
+    const reproduced = finding.evidence.some((evidence) => evidence.kind === 'reproducer')
+    const confirmed = finding.verdict.status === 'confirmed'
+    if (existing === undefined) {
+      const group: FindingGroup = {
+        firstFindingId: finding.id,
+        representative: finding,
+        match,
+        confirmed,
+        reproduced,
+      }
+      groups.push(group)
+      if (matchKey !== null) matchedGroups.set(matchKey, group)
+    } else {
+      existing.confirmed ||= confirmed
+      existing.reproduced ||= reproduced
+    }
+    findings.push({
       findingId: finding.id,
       path: finding.anchor.path,
       claim: finding.claim,
@@ -146,22 +210,22 @@ export function scoreCase(
       defectId: match?.defect.id ?? null,
       how: match?.how ?? null,
       classAgrees: match !== null && match.defect.class === finding.class,
-    }
-  })
-  const truePositives = findings.filter((finding) => finding.defectId !== null).length
+      duplicateOf: existing?.firstFindingId ?? null,
+    })
+  }
+  const truePositives = groups.filter((group) => group.match !== null).length
+  const falsePositives = groups.length - truePositives
   return {
     caseId,
     surfaced: findings.length,
     truePositives,
-    falsePositives: findings.length - truePositives,
+    falsePositives,
+    duplicates: findings.length - groups.length,
     defects: truth.length,
-    found: new Set(
-      findings.flatMap((finding) => (finding.defectId === null ? [] : [finding.defectId])),
-    ).size,
-    confirmed: report.findings.filter((finding) => finding.verdict.status === 'confirmed').length,
-    confirmedByReproducer: report.findings.filter((finding) =>
-      finding.evidence.some((evidence) => evidence.kind === 'reproducer'),
-    ).length,
+    found: new Set(groups.flatMap((group) => (group.match === null ? [] : [group.match.defect.id])))
+      .size,
+    confirmed: groups.filter((group) => group.confirmed).length,
+    confirmedByReproducer: groups.filter((group) => group.reproduced).length,
     findings,
   }
 }
@@ -191,15 +255,18 @@ export interface BenchMetrics {
   readonly surfaced: number
   readonly truePositives: number
   readonly falsePositives: number
+  readonly duplicates: number
   /** The metric. `null` when nothing was surfaced. */
   readonly precision: number | null
+  /** Wilson score lower bound for precision, using a two-sided 95% interval. */
+  readonly precisionLowerBound95: number | null
   readonly defects: number
   readonly found: number
   /** Secondary, by design. `null` when the corpus declares no defect. */
   readonly recall: number | null
   readonly confirmed: number
   readonly confirmedByReproducer: number
-  /** Surfaced findings a reproducer confirmed, over surfaced findings. */
+  /** Unique surfaced findings a reproducer confirmed, over unique findings. */
   readonly reproducerRate: number | null
   readonly inputTokens: number
   readonly outputTokens: number
@@ -211,6 +278,20 @@ function ratio(numerator: number, denominator: number): number | null {
   return denominator === 0 ? null : Math.round((numerator / denominator) * 1000) / 1000
 }
 
+/** Wilson score lower bound using z=1.96 (the lower edge of a two-sided 95% interval). */
+export function wilsonLowerBound95(successes: number, total: number): number | null {
+  if (total === 0) return null
+  const z = 1.959963984540054
+  const zSquared = z * z
+  const proportion = successes / total
+  return (
+    (proportion +
+      zSquared / (2 * total) -
+      z * Math.sqrt((proportion * (1 - proportion) + zSquared / (4 * total)) / total)) /
+    (1 + zSquared / total)
+  )
+}
+
 export function aggregateScores(
   scores: readonly CaseScore[],
   usages: readonly BenchUsage[],
@@ -219,6 +300,9 @@ export function aggregateScores(
     scores.reduce((total, score) => total + pick(score), 0)
   const surfaced = sum((score) => score.surfaced)
   const truePositives = sum((score) => score.truePositives)
+  const falsePositives = sum((score) => score.falsePositives)
+  const duplicates = sum((score) => score.duplicates)
+  const evaluated = truePositives + falsePositives
   const defects = sum((score) => score.defects)
   const found = sum((score) => score.found)
   const confirmed = sum((score) => score.confirmed)
@@ -229,14 +313,16 @@ export function aggregateScores(
     cases: scores.length,
     surfaced,
     truePositives,
-    falsePositives: surfaced - truePositives,
-    precision: ratio(truePositives, surfaced),
+    falsePositives,
+    duplicates,
+    precision: ratio(truePositives, evaluated),
+    precisionLowerBound95: wilsonLowerBound95(truePositives, evaluated),
     defects,
     found,
     recall: ratio(found, defects),
     confirmed,
     confirmedByReproducer,
-    reproducerRate: ratio(confirmedByReproducer, surfaced),
+    reproducerRate: ratio(confirmedByReproducer, evaluated),
     inputTokens,
     outputTokens,
     outputTokensPerConfirmed: confirmed === 0 ? null : Math.round(outputTokens / confirmed),

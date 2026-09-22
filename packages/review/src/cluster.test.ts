@@ -1,7 +1,9 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  CLAIM_CONTAINMENT_THRESHOLD,
   CLAIM_SIMILARITY_THRESHOLD,
+  claimContainment,
   claimSimilarity,
   claimTokens,
   clusterFindings,
@@ -46,6 +48,18 @@ describe('claim similarity', () => {
     assert.ok(claimSimilarity(a, c) < CLAIM_SIMILARITY_THRESHOLD)
     assert.equal(claimSimilarity('', a), 0)
   })
+
+  it('recognises a concise claim contained in a longer explanation', () => {
+    const concise =
+      'paginate now returns one item fewer than the requested page size, so every page loses its last item and the existing tests fail.'
+    const detailed =
+      'Changing the slice end to start + size - 1 makes paginate return pages with one fewer item than its contract and its consumer expects, so the test suite fails.'
+    assert.ok(claimSimilarity(concise, detailed) < CLAIM_SIMILARITY_THRESHOLD)
+    assert.ok(
+      claimContainment(concise, detailed) >= CLAIM_CONTAINMENT_THRESHOLD,
+      String(claimContainment(concise, detailed)),
+    )
+  })
 })
 
 describe('sameFinding', () => {
@@ -88,6 +102,22 @@ describe('sameFinding', () => {
       sameFinding(base, { ...base, claim: 'something else entirely', anchor: { path: 'x' } }),
       true,
     )
+  })
+
+  it('merges the concise and detailed forms of the same anchored defect', () => {
+    const concise = finding(
+      '5555555555555555',
+      'paginate now returns one item fewer than the requested page size, so every page loses its last item and the existing tests fail.',
+      { path: 'src/paginate.cjs', startLine: 4 },
+      { class: 'test' },
+    )
+    const detailed = finding(
+      '6666666666666666',
+      'Changing the slice end to start + size - 1 makes paginate return pages with one fewer item than its contract and its consumer expects, so the test suite fails.',
+      { path: 'src/paginate.cjs', startLine: 4 },
+      { class: 'test' },
+    )
+    assert.equal(sameFinding(concise, detailed), true)
   })
 })
 

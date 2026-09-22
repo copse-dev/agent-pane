@@ -6,6 +6,7 @@
       "id": "timer-not-cleared",
       "class": "resource",
       "anchors": [{ "path": "src/timer.cjs", "startLine": 5, "endLine": 7 }],
+      "claimSignals": [["abort", "signal"], ["timer", "timeout", "setTimeout", "clearTimeout"], ["leak", "clear", "alive", "pending", "fire"]],
       "note": "the abort handler rejects without clearTimeout(timer)"
     }
   ]

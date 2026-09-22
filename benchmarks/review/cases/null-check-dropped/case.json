@@ -6,6 +6,7 @@
       "id": "null-user-throws",
       "class": "contract",
       "anchors": [{ "path": "src/display.cjs", "startLine": 3, "endLine": 3 }],
+      "claimSignals": [["displayName"], ["null"], ["throws", "TypeError", "dereference"], ["return"]],
       "note": "displayName(null) throws a TypeError instead of returning null"
     }
   ]

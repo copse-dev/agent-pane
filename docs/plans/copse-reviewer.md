@@ -1,6 +1,6 @@
 # Copse Reviewer
 
-Status: **Active — Phases 0 to 5 landed; the model-profile baseline is unrecorded.**
+Status: **Active — Phases 0 to 5 landed; B8's Martian-offline target is unmeasured.**
 `@copse/review` is a workspace package on
 `main` with the finding schema, Stage 0 (the base-versus-head build and test delta), the
 `IsolationBackend` contract with the host-process, OS-sandbox and container backends, the
@@ -16,9 +16,10 @@ to the knowledge store (see §What Phase 3 delivered). In CI, the `copse-review`
 pull request runs Stage 0 on a secret-free runner and posts the findings as one review
 from a second, read-only job (see §What Phase 4 delivered). `pnpm run bench:review` scores
 the pipeline for precision on surfaced findings over a corpus of cases with known defects,
-with a mock self-test CI gates per PR and a model profile whose baseline — the number B8
-rests on — still needs a model run (see §What Phase 5 delivered). See also §What Phase 0
-delivered, §What Phase 1 delivered and §What Phase 2 delivered.
+with a mock self-test CI gates per PR, exact-configuration regression baselines, and a
+separate model-only target gate; the five-case local corpus cannot establish B8 (see §What
+Phase 5 delivered). See also §What Phase 0 delivered, §What Phase 1 delivered and §What
+Phase 2 delivered.
 Binding decisions B1 (execution isolation, 2026-09-03), B2–B6 (packaging, backend
 sequencing, scope, ecosystem, customer; 2026-09-04) and B7–B9 (name, precision aim, SARIF
 export; 2026-09-04) are recorded. Problems are numbered P1–P9 in §What needs to be solved,
@@ -432,15 +433,17 @@ Changing one of these requires updating this document in the same change — the
    B2 moves. Renaming is cheap until something ships, so the name is not revisited before
    Phase 1. Recorded 2026-09-04; settles D1.
 8. **B8 — The precision aim is 85%, provisional until measured.** 85% precision on surfaced
-   findings, on Martian's offline track, is the bar for any public claim; the best published
-   number is about 76%. Nobody has measured this pipeline yet, so the first `bench:review`
-   run (P6) sets the baseline and the number is revisited then, not before. Until that run
-   exists the bar is the qualitative one in §The quality bar: no finding reaches a human
-   without evidence. Recorded 2026-09-04; answers Q5. _Amended 2026-09-21 (Phase 5):_ the
-   harness exists and its mock profile scores 80% by construction — that number measures
-   the corpus and the pipeline's non-model parts, never the reviewer — so "the first run"
-   here means the first **model-profile** run, which sets the baseline B8 is revisited
-   against. It has not been recorded.
+   findings, on Martian's offline track, is the bar for any public claim. That track uses 50
+   real pull requests and 173 golden comments with semantic judging; Greptile's published
+   76.2% is from Martian's **online** track and is not an offline comparator. Nobody has
+   measured this pipeline on the offline track. Until that run exists the bar is the
+   qualitative one in §The quality bar: no finding reaches a human without evidence.
+   Recorded 2026-09-04; answers Q5. _Amended 2026-09-22 (Phase 5 audit):_ a regression
+   baseline never proves an absolute claim. `--target-gate` accepts real-model runs only
+   and requires point precision ≥85%, the Wilson lower edge of a two-sided 95% interval
+   ≥85%, recall ≥50%, and zero duplicates. The five-case synthetic corpus is a smoke/trend
+   suite: its mock profile scores 80% by construction, and even 5/5 would fail the confidence
+   condition. B8 remains unmeasured until the Martian offline set is mapped and run.
 9. **B9 — SARIF is the interchange export.** The findings JSON (P2) stays the canonical
    contract; the CLI and the CI shell also emit SARIF 2.1.0, carrying the finding identity in
    `partialFingerprints` and the evidence, provenance and verdict in each result's
@@ -634,13 +637,14 @@ building it:
   the only writer today is the reproducer, which writes one file under `.copse-review/`
   and is run alone.
 - **Clustering (Stage 3, P2's starting proposal).** Two candidates are one finding when
-  their anchors overlap within three lines of slack and the Jaccard similarity of their
-  claims' content words (stopwords out, crude suffix stemming) is at least 0.34, and the
-  class matches. The first member keeps its identity and claim, its anchor widens to
-  cover the cluster, later raisers become corroborators, and their command evidence is
-  carried along. The thresholds are exported constants so `bench:review` (Phase 5) can move
-  them with evidence; they were set by hand on the unit tests, which is exactly the
-  corpus-free tuning P2 warns about.
+  their anchors overlap within three lines of slack, the class matches, and either the
+  Jaccard similarity of their content words (stopwords out, crude suffix stemming) is at
+  least 0.34 or at least four words overlap and cover 45% of the shorter claim. The
+  containment fallback was added after a real-model smoke run emitted concise and expanded
+  versions of the same pagination defect whose Jaccard score was only 0.28. The first member
+  keeps its identity and claim, its anchor widens to cover the cluster, later raisers become
+  corroborators, and their command evidence is carried along. The thresholds are exported
+  constants and the scorer also refuses to count repeated hits on one truth defect twice.
 - **Verification (Stage 4) by class.** `test`, `contract` and `concurrency` go to a
   reproducer model first: it writes one test under `.copse-review/` and names the argv;
   the orchestrator runs it on head, copies it to base, runs it there, removes it from base,
@@ -815,15 +819,17 @@ On `main`: the scorer (`packages/review/src/eval.ts`), the harness
 (`benchmarks/review/`, with a README), and the per-PR gate in CI's `bench` job.
 
 - **Precision is the metric, as P6 asks.** A case declares the defects its head carries as
-  anchors (path and lines in the head) and, where a defect makes a Stage 0 check regress,
-  which one; the harness runs the whole pipeline over the case and scores only the
-  **surfaced** findings — the appendix and the refuted never reach a human, so they never
-  count. A finding hits a defect the way Stage 3 clusters candidates (same path, ranges
-  overlapping within `ANCHOR_SLACK_LINES`), or, for a Stage 0 finding, by the regression
-  the defect declares (Stage 0 anchors at the script that failed, not at the defect).
-  Everything else is a false positive. Reported beside precision: recall (secondary, by
-  design), the reproducer rate, and output tokens per confirmed finding as the cost figure
-  every provider can report.
+  anchors (path and lines in the head), semantic `claimSignals`, and, where a defect makes
+  a Stage 0 check regress, which one; the harness runs the whole pipeline over the case and
+  scores only the **surfaced** findings — the appendix and the refuted never reach a human,
+  so they never count. An anchored hit needs both an overlapping source range and all of
+  the truth's AND-of-OR semantic signal groups. A Stage 0 finding instead hits by the
+  declared regression because it anchors at the script that failed, not the defect.
+  Equivalent comments form one precision observation and the extras are reported as
+  duplicates, so repeated true comments cannot inflate precision, confirmation or
+  reproducer counts. Reported beside precision: its Wilson 95% lower bound, recall
+  (secondary), duplicate count, reproducer rate, and output tokens per unique confirmed
+  finding.
 - **The corpus is small and deliberate.** Five cases, each a two-tree project with a
   `review.config.json` that runs its own test with `node` so Stage 0 needs no install: a
   defect the project's test catches (Stage 0 mints it, a reviewer anchors it, a reproducer
@@ -837,27 +843,32 @@ On `main`: the scorer (`packages/review/src/eval.ts`), the harness
   `ScriptedProvider` the CLI's `--provider mock` uses — deterministic, no model, a few
   seconds — and is the self-test CI runs per PR with `--gate`. A model profile goes through
   the CLI's provider door (`--provider`, `--model` repeatable for an ensemble,
-  `--challenger`, keys from the environment) and is keyed in the baseline by its models.
-  `--no-verify`, `--lenses` and the model list are the ablation knobs; `--compare` prints
-  the delta between two summaries, which is how Q6 (cross-model ensembling against one
-  model) and "how much does verification buy" are read.
-- **The ratchet.** `benchmarks/review/baseline.json`, coverage-baseline style: `--gate`
-  fails when precision drops (the mock gets no tolerance, a model profile five points),
-  when true positives fall, when tokens per confirmed finding grow past 1.25×, or when the
-  case count is not the baseline's; `--update-baseline` moves it on purpose. The unit tier
-  runs the corpus too (`scripts/bench-review.test.ts`), pinning each case's expected
-  surfaced/true/false counts, so a change to Stage 0's delta, clustering, verification or
-  ranking that moves the measurement fails on the PR that makes it.
+  `--challenger`, keys from the environment). `--no-verify`, `--lenses` and the model list
+  are the ablation knobs; `--compare` prints the delta between two summaries, which is how
+  Q6 (cross-model ensembling against one model) and "how much does verification buy" are
+  read.
+- **The ratchet.** `benchmarks/review/baseline.json` is coverage-baseline style. Each entry
+  is keyed by evaluator version, provider, reviewer and challenger models, credential-free
+  endpoint identity, lenses, verification mode, selected cases and corpus fingerprint.
+  `--gate` fails closed when that exact baseline is absent, when precision drops (the mock
+  gets no tolerance, a model profile five points), when true positives fall, when
+  duplicates rise, or when tokens per confirmed finding grow past 1.25×;
+  `--update-baseline` moves it on purpose. The unit tier runs the corpus too
+  (`scripts/bench-review.test.ts`), pinning each case's expected counts, so a pipeline change
+  that moves the measurement fails on the PR that makes it.
+- **The target is not the ratchet.** `--target-gate` rejects mock profiles and requires
+  point precision ≥85%, a two-sided 95% Wilson lower bound ≥85%, recall ≥50%, and no
+  duplicates. This is the gate for evidence behind B8; a historical baseline only detects
+  regressions and can never substantiate the claim by itself.
 - **What is and is not measured.** The mock's 80% is a property of the corpus and of the
-  pipeline's non-model parts; it says nothing about any reviewer. B8's number rests on a
-  model profile's baseline, which needs a model run and is not recorded (this environment
-  has no key or local model). B8 is amended to say so. The corpus is also small enough that
-  a model number over it is a smoke figure, not a claim; growing it — real pull requests
-  with known outcomes, the plan's original ask — is the work that makes the number mean
-  something, and is deliberately not faked here.
+  pipeline's non-model parts; it says nothing about any reviewer. The corpus is also small
+  enough that any model number over it is a smoke figure, not a claim: its five surfaced
+  observations give the 80% mock score a 37.6% Wilson lower bound, and even a perfect 5/5
+  would not pass. Mapping Martian's offline set — or a comparably sized, independently
+  labelled real-PR corpus — is the work that makes B8 measurable and is not faked here.
 
-Not in Phase 5: a model-profile baseline, a corpus of real pull requests, and the online
-track (Q8).
+Not in Phase 5: a mapped Martian-offline or equivalent real-PR corpus, and the online track
+(Q8). Model-profile baselines remain optional trend records, not claim evidence.
 
 ## Phases
 
@@ -888,9 +899,10 @@ track (Q8).
   [`copse-cloud-workspaces.md`](copse-cloud-workspaces.md) C1 proposed), which unlocks
   foreign-diff review (B3); then the GitHub workflows with inline comments, opt-in by label,
   and the Forgejo equivalent.
-- **Phase 5 — Eval.** ✅ Landed, except the model-profile baseline; see above.
-  `bench:review` and a precision gate. Arguably belongs at Phase 2; listed last only
-  because it needs a corpus that Phases 1–2 generate.
+- **Phase 5 — Eval.** ✅ Local harness and gates landed; the external claim corpus remains;
+  see above. `bench:review`, an exact-configuration regression ratchet, and a separate
+  absolute target gate. Arguably belongs at Phase 2; listed last only because it needs a
+  corpus that Phases 1–2 generate.
 
 ## Non-goals
 
@@ -905,15 +917,14 @@ track (Q8).
 
 ## Competitive position
 
-Compiled 2026-09-03 from search summaries and vendor posts citing Martian's benchmark; most
-primary pages were unreachable from the authoring environment. Treat every figure as
-indicative, as [`competitive-landscape.md`](competitive-landscape.md) advises for
-secondary sources.
+Compiled 2026-09-03 and re-checked 2026-09-22 against Martian's benchmark description and
+the linked vendor posts. Treat vendor figures as indicative, and keep Martian's online and
+offline tracks separate, as [`competitive-landscape.md`](competitive-landscape.md) advises.
 
 Built as designed, the reviewer sits in a gap nobody occupies: general-purpose review where
 a finding reaches a human only after execution confirmed it or a refutation pass failed to
-kill it. The best published precision in the field is about 76% on Martian's independent
-Code Review Bench. That is the number the design is aimed at.
+kill it. Greptile publishes 76.2% on Martian's online track. B8 deliberately targets the
+separate offline track, so that figure gives context but is not the baseline to beat.
 
 **Three groups.**
 
@@ -951,20 +962,25 @@ The same feature is a differentiator in one category and table stakes in the oth
 | Latency                   | Bugbot about 90 s                             | Minutes, bounded by the test suite                              |
 | Benchmark presence        | Martian ranks 13–17 tools                     | None                                                            |
 
-Published numbers, to fix the bar (each vendor claims first on a different date or metric,
-so read them as a range):
+Published numbers for context (different tracks, dates and metrics; they are not one
+comparable leaderboard):
 
-| Tool                 | Precision       | Recall | F1              | Source                 |
-| -------------------- | --------------- | ------ | --------------- | ---------------------- |
-| Greptile, July 2026  | 76.2            | 50.6   | 60.8            | vendor, citing Martian |
-| Qodo                 | 62.3            | 66.4   | 64.3            | vendor, citing Martian |
-| CodeRabbit, Feb 2026 | 49.2            | 53.5   | #1 F1 at launch | vendor, citing Martian |
-| Cursor Bugbot        | 70%+ resolution | —      | —               | vendor                 |
-| GitHub Copilot       | 71% actionable  | —      | —               | vendor                 |
+| Tool                 | Precision       | Recall | F1              | Context                         |
+| -------------------- | --------------- | ------ | --------------- | ------------------------------- |
+| Greptile, July 2026  | 76.2            | 50.6   | 60.8            | Martian **online**; vendor post |
+| Qodo                 | 62.3            | 66.4   | 64.3            | Martian; vendor post            |
+| CodeRabbit, Feb 2026 | 49.2            | 53.5   | #1 F1 at launch | Martian; vendor post            |
+| Cursor Bugbot        | 70%+ resolution | —      | —               | vendor-specific metric          |
+| GitHub Copilot       | 71% actionable  | —      | —               | vendor-specific metric          |
 
-The range says even the leader is wrong or ignored one comment in four. Price floor for
-context: Gemini free, GitLab Duo about $0.25 per MR, Bugbot about $1.20 per review, Anthropic
-managed review in the tens of dollars.
+Martian's offline track instead fixes 50 real pull requests and 173 golden comments and
+uses a semantic judge. Results from the live online track cannot establish the offline B8
+claim, and neither can this repository's five synthetic cases.
+
+Greptile's online point estimate implies roughly one wrong or ignored comment in four in
+that setting; it does not transfer to the offline track. Price floor for context: Gemini
+free, GitLab Duo about $0.25 per MR, Bugbot about $1.20 per review, Anthropic managed review
+in the tens of dollars.
 
 **Where this design is weaker.** Table stakes it lacks: PR summaries, inline suggested
 changes, one-click fix, learnings, four-forge support, two-click install. Cost, because
@@ -995,7 +1011,8 @@ Numbered Q1–Q16 to match the working list; answered ones say so.
 
 5. **Q5 — What precision makes us credible?** Recommendation: above 85% on Martian's offline
    track before any public claim. The pipeline is open source, so we can run it ourselves.
-   **Decided (B8):** 85% is the aim, revisited after the first `bench:review` measurement.
+   **Decided (B8):** 85% is the aim, with the confidence, recall and duplicate conditions
+   recorded in B8; the local smoke corpus is not that measurement.
 6. **Q6 — Does cross-vendor ensembling beat single-vendor multi-pass?** Unknown and testable;
    the first ablation for `bench:review`.
 7. **Q7 — What fraction of findings can execution settle?** If under half, the challenger pass

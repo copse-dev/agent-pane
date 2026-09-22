@@ -15,6 +15,10 @@ import { normalizeClaim, type Finding, type ReviewerRef } from './finding.ts'
 export const ANCHOR_SLACK_LINES = 3
 /** Jaccard similarity of content words above which two claims are one claim. */
 export const CLAIM_SIMILARITY_THRESHOLD = 0.34
+/** Minimum shared content words for the containment fallback. */
+export const CLAIM_CONTAINMENT_MIN_SHARED = 4
+/** Share of the shorter claim that must occur in the longer claim. */
+export const CLAIM_CONTAINMENT_THRESHOLD = 0.45
 
 const STOPWORDS = new Set([
   'a',
@@ -89,6 +93,22 @@ export function claimSimilarity(a: string, b: string): number {
   return shared / (ta.size + tb.size - shared)
 }
 
+/**
+ * A concise claim is often wholly contained in a more explanatory one even
+ * when their Jaccard score is low. Require both enough shared words and a
+ * substantial share of the shorter claim so generic review phrasing cannot
+ * merge otherwise distinct defects.
+ */
+export function claimContainment(a: string, b: string): number {
+  const ta = claimTokens(a)
+  const tb = claimTokens(b)
+  if (ta.size === 0 || tb.size === 0) return 0
+  let shared = 0
+  for (const token of ta) if (tb.has(token)) shared++
+  if (shared < CLAIM_CONTAINMENT_MIN_SHARED) return 0
+  return shared / Math.min(ta.size, tb.size)
+}
+
 function anchorsOverlap(a: Finding, b: Finding): boolean {
   if (a.anchor.path !== b.anchor.path) return false
   const aStart = (a.anchor.startLine ?? 0) - ANCHOR_SLACK_LINES
@@ -102,7 +122,10 @@ function anchorsOverlap(a: Finding, b: Finding): boolean {
 export function sameFinding(a: Finding, b: Finding): boolean {
   if (a.id === b.id) return true
   if (a.class !== b.class || !anchorsOverlap(a, b)) return false
-  return claimSimilarity(a.claim, b.claim) >= CLAIM_SIMILARITY_THRESHOLD
+  return (
+    claimSimilarity(a.claim, b.claim) >= CLAIM_SIMILARITY_THRESHOLD ||
+    claimContainment(a.claim, b.claim) >= CLAIM_CONTAINMENT_THRESHOLD
+  )
 }
 
 function refKey(ref: ReviewerRef): string {

@@ -14,15 +14,17 @@
 // everything in the pipeline that is not a model (CI's per-PR run), and the
 // `--gate` ratchet against benchmarks/review/baseline.json holds it there.
 // A real provider (`--provider`, `--model`) measures the pipeline with a
-// model; that baseline, per model, is what B8's precision claim rests on.
+// model. Its exact-configuration baseline is a trend ratchet; `--target-gate`
+// is the separate absolute check for evidence behind B8's precision claim.
 //
 // This harness imports only the workspace packages — no Electron, no
 // src/main — so it doubles as an external-consumer proof of `@copse/review`.
 import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join, relative, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { z } from 'zod'
 import type { LLMProvider } from '@copse/llm/wire-types.ts'
@@ -33,6 +35,7 @@ import { discoverPnpmStore, reviewPermissionProfile } from '@copse/review/cli.ts
 import {
   aggregateScores,
   decodeReviewCase,
+  REVIEW_EVAL_VERSION,
   reportUsage,
   scoreCase,
   type BenchMetrics,
@@ -45,6 +48,7 @@ import { createHostProcessBackend } from '@copse/review/host-process-backend.ts'
 import { serializeCell } from '@copse/review/isolation.ts'
 import { resolveLenses } from '@copse/review/lenses.ts'
 import {
+  DEFAULT_LOCAL_BASE_URL,
   isProviderKind,
   PROVIDER_KINDS,
   selectProvider,
@@ -75,6 +79,10 @@ export const TOKENS_PER_CONFIRMED_HEADROOM = 1.25
 /** Precision a model run may drop below its baseline by; the mock is deterministic and gets none. */
 export const MODEL_PRECISION_TOLERANCE = 0.05
 export const MOCK_PROFILE = 'mock'
+/** Absolute claim gate: point precision and its 95% Wilson lower bound. */
+export const TARGET_PRECISION = 0.85
+/** A high-precision reviewer must still find at least half the declared defects. */
+export const TARGET_RECALL_FLOOR = 0.5
 
 export const USAGE = `usage: node scripts/bench-review.mts [options]
 
@@ -88,8 +96,10 @@ export const USAGE = `usage: node scripts/bench-review.mts [options]
   --cases <dir>          corpus directory (default ${DEFAULT_CASES_DIR})
   --case <id>            run one case
   --out <dir>            where reports and the summary go (default ${DEFAULT_OUT_DIR})
-  --gate                 fail when precision, true positives or tokens per confirmed
-                         finding regress against ${BASELINE_PATH} for this profile
+  --gate                 fail without an exact baseline, or when precision, true
+                         positives, duplicates or cost regress against ${BASELINE_PATH}
+  --target-gate          require >=85% precision, a >=85% Wilson 95% lower bound,
+                         >=50% recall and no duplicates (real-model profiles only)
   --update-baseline      record this run as the profile's baseline
   --compare <a> <b>      print the delta between two summary files, then exit
   --help`
@@ -101,12 +111,21 @@ export interface ReviewCase {
 }
 
 export interface BenchProfile {
-  /** The key in the baseline file: `mock`, or the models joined by `+`. */
+  /** Human-readable display name; the complete configuration forms the baseline key. */
   readonly id: string
   readonly reviewerModels: readonly string[]
   readonly challengerModel: string
+  readonly reviewerIdentities: readonly BenchModelIdentity[]
+  readonly challengerIdentity: BenchModelIdentity
   /** A provider for one role of one case; `review:<lens>`, `reproduce`, `challenge`. */
   providerFor(role: string, reviewCase: ReviewCase, reviewerModel?: string): LLMProvider
+}
+
+export interface BenchModelIdentity {
+  readonly model: string
+  readonly provider: ProviderKind
+  /** Credential-free custom endpoint identity; fixed hosted endpoints are `null`. */
+  readonly endpoint: string | null
 }
 
 export interface RunOptions {
@@ -131,21 +150,45 @@ export interface BenchSummary {
   readonly profile: string
   readonly lenses: readonly string[]
   readonly verify: boolean
+  readonly configuration: BenchConfiguration
   readonly metrics: BenchMetrics
   readonly cases: readonly CaseResult[]
 }
 
+const benchModelIdentitySchema = z.object({
+  model: z.string(),
+  provider: z.enum(PROVIDER_KINDS),
+  endpoint: z.string().nullable(),
+})
+
+const benchConfigurationSchema = z.object({
+  evaluationVersion: z.number().int().positive(),
+  reviewers: z.array(benchModelIdentitySchema),
+  challenger: benchModelIdentitySchema,
+  lenses: z.array(z.string()),
+  verify: z.boolean(),
+  corpus: z.object({
+    cases: z.array(z.string()),
+    fingerprint: z.string().regex(/^[0-9a-f]{64}$/),
+  }),
+})
+export type BenchConfiguration = z.infer<typeof benchConfigurationSchema>
+
 interface BaselineEntry {
+  readonly configuration: BenchConfiguration
   readonly cases: number
   readonly precision: number | null
   readonly truePositives: number
+  readonly duplicates: number
   readonly outputTokensPerConfirmed: number | null
 }
 
 const baselineEntrySchema: z.ZodType<BaselineEntry> = z.object({
+  configuration: benchConfigurationSchema,
   cases: z.number(),
   precision: z.number().nullable(),
   truePositives: z.number(),
+  duplicates: z.number(),
   outputTokensPerConfirmed: z.number().nullable(),
 })
 const baselinesSchema = z.record(z.string(), baselineEntrySchema)
@@ -177,6 +220,32 @@ export function loadCases(dir: string, only?: string): ReviewCase[] {
     cases.push({ spec, dir: caseDir, mock })
   }
   return cases
+}
+
+function filesUnder(root: string, dir = root): string[] {
+  const files: string[] = []
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const path = join(dir, entry.name)
+    if (entry.isDirectory()) files.push(...filesUnder(root, path))
+    else if (entry.isFile() || entry.isSymbolicLink()) {
+      files.push(relative(root, path).replace(/\\/g, '/'))
+    }
+  }
+  return files.sort((a, b) => a.localeCompare(b))
+}
+
+/** Content identity for exactly the selected cases, independent of their absolute location. */
+export function corpusFingerprint(cases: readonly ReviewCase[]): string {
+  const hash = createHash('sha256')
+  for (const reviewCase of [...cases].sort((a, b) => a.spec.id.localeCompare(b.spec.id))) {
+    for (const path of filesUnder(reviewCase.dir)) {
+      const contents = readFileSync(join(reviewCase.dir, path))
+      hash.update(`${reviewCase.spec.id}\0${path}\0${String(contents.byteLength)}\0`)
+      hash.update(contents)
+      hash.update('\0')
+    }
+  }
+  return hash.digest('hex')
 }
 
 const GIT_IDENTITY = {
@@ -223,12 +292,25 @@ export async function materialiseCase(
   return { root, remove: () => rm(root, { recursive: true, force: true }) }
 }
 
+/** Remove credentials and request parameters while retaining endpoint identity. */
+export function sanitiseEndpoint(endpoint: string): string {
+  const url = new URL(endpoint)
+  url.username = ''
+  url.password = ''
+  url.search = ''
+  url.hash = ''
+  return url.toString()
+}
+
 /** The deterministic profile: each role of each case plays its script from `mock.json`. */
 export function mockProfile(): BenchProfile {
+  const identity: BenchModelIdentity = { model: MOCK_PROFILE, provider: 'mock', endpoint: null }
   return {
     id: MOCK_PROFILE,
     reviewerModels: [MOCK_PROFILE],
     challengerModel: MOCK_PROFILE,
+    reviewerIdentities: [identity],
+    challengerIdentity: identity,
     providerFor: (role, reviewCase): LLMProvider =>
       new ScriptedProvider(reviewCase.mock === null ? [] : stepsForRole(reviewCase.mock, role)),
   }
@@ -257,10 +339,23 @@ export function modelProfile(options: ModelProfileOptions): BenchProfile {
           options.env,
         )
   const byModel = new Map(selections.map((selection) => [selection.model, selection]))
+  const identityFor = (selection: (typeof selections)[number]): BenchModelIdentity => {
+    let endpoint: string | null = null
+    if (selection.kind === 'lmstudio') {
+      endpoint = sanitiseEndpoint(
+        options.baseUrl ?? options.env['LM_STUDIO_URL']?.trim() ?? DEFAULT_LOCAL_BASE_URL,
+      )
+    } else if (selection.kind === 'openai-compatible') {
+      endpoint = sanitiseEndpoint(options.baseUrl ?? DEFAULT_LOCAL_BASE_URL)
+    }
+    return { model: selection.model, provider: selection.kind, endpoint }
+  }
   return {
     id: selections.map((selection) => selection.model).join('+'),
     reviewerModels: selections.map((selection) => selection.model),
     challengerModel: challenger.model,
+    reviewerIdentities: selections.map(identityFor),
+    challengerIdentity: identityFor(challenger),
     providerFor: (role, _reviewCase, reviewerModel): LLMProvider => {
       if (reviewerModel !== undefined) {
         const selection = byModel.get(reviewerModel)
@@ -397,7 +492,7 @@ export async function runCase(reviewCase: ReviewCase, options: RunOptions): Prom
   const score = scoreCase(reviewCase.spec.id, scored, reviewCase.spec.truth)
   const usage = reportUsage(scored)
   log(
-    `  ${reviewCase.spec.id}: surfaced ${String(score.surfaced)}, true ${String(score.truePositives)}, false ${String(score.falsePositives)}, defects ${String(score.found)}/${String(score.defects)}, confirmed ${String(score.confirmed)} (${String(score.confirmedByReproducer)} by reproducer), outTok ${String(usage.outputTokens)}, ${String(Date.now() - started)} ms`,
+    `  ${reviewCase.spec.id}: surfaced ${String(score.surfaced)}, true ${String(score.truePositives)}, false ${String(score.falsePositives)}, duplicate ${String(score.duplicates)}, defects ${String(score.found)}/${String(score.defects)}, confirmed ${String(score.confirmed)} (${String(score.confirmedByReproducer)} by reproducer), outTok ${String(usage.outputTokens)}, ${String(Date.now() - started)} ms`,
   )
   return {
     id: reviewCase.spec.id,
@@ -413,6 +508,8 @@ export async function runBench(
   cases: readonly ReviewCase[],
   options: RunOptions,
 ): Promise<BenchSummary> {
+  const lenses = resolveLenses(options.lenses ?? DEFAULT_LENSES).map((lens) => lens.id)
+  const verify = options.verify ?? true
   const results: CaseResult[] = []
   for (const reviewCase of cases) results.push(await runCase(reviewCase, options))
   const metrics = aggregateScores(
@@ -421,8 +518,19 @@ export async function runBench(
   )
   const summary: BenchSummary = {
     profile: options.profile.id,
-    lenses: resolveLenses(options.lenses ?? DEFAULT_LENSES).map((lens) => lens.id),
-    verify: options.verify ?? true,
+    lenses,
+    verify,
+    configuration: {
+      evaluationVersion: REVIEW_EVAL_VERSION,
+      reviewers: options.profile.reviewerIdentities.map((identity) => ({ ...identity })),
+      challenger: { ...options.profile.challengerIdentity },
+      lenses,
+      verify,
+      corpus: {
+        cases: cases.map((reviewCase) => reviewCase.spec.id),
+        fingerprint: corpusFingerprint(cases),
+      },
+    },
     metrics,
     cases: results,
   }
@@ -443,7 +551,7 @@ export function renderSummary(summary: BenchSummary): string {
   const { metrics } = summary
   return [
     `bench:review profile=${summary.profile} lenses=${summary.lenses.join(',')} verify=${String(summary.verify)} cases=${String(metrics.cases)}`,
-    `  precision ${percent(metrics.precision)} (${String(metrics.truePositives)} true of ${String(metrics.surfaced)} surfaced; ${String(metrics.falsePositives)} false)`,
+    `  precision ${percent(metrics.precision)} (95% lower bound ${percent(metrics.precisionLowerBound95)}; ${String(metrics.truePositives)} true, ${String(metrics.falsePositives)} false, ${String(metrics.duplicates)} duplicate; ${String(metrics.surfaced)} comments surfaced)`,
     `  recall ${percent(metrics.recall)} (${String(metrics.found)} of ${String(metrics.defects)} defects; secondary)`,
     `  reproducer rate ${percent(metrics.reproducerRate)} (${String(metrics.confirmedByReproducer)} confirmed by reproducer; ${String(metrics.confirmed)} confirmed in all)`,
     `  tokens ${String(metrics.inputTokens)} in / ${String(metrics.outputTokens)} out; ${metrics.outputTokensPerConfirmed === null ? 'no confirmed finding' : `${String(metrics.outputTokensPerConfirmed)} out per confirmed finding`}`,
@@ -459,12 +567,45 @@ export function readBaselines(path = BASELINE_PATH): Record<string, BaselineEntr
   }
 }
 
+function serialiseConfiguration(configuration: BenchConfiguration): string {
+  return JSON.stringify({
+    evaluationVersion: configuration.evaluationVersion,
+    reviewers: configuration.reviewers.map((identity) => ({
+      model: identity.model,
+      provider: identity.provider,
+      endpoint: identity.endpoint,
+    })),
+    challenger: {
+      model: configuration.challenger.model,
+      provider: configuration.challenger.provider,
+      endpoint: configuration.challenger.endpoint,
+    },
+    lenses: [...configuration.lenses],
+    verify: configuration.verify,
+    corpus: {
+      cases: [...configuration.corpus.cases],
+      fingerprint: configuration.corpus.fingerprint,
+    },
+  })
+}
+
+/** Human-readable profile plus a complete, stable run-configuration identity. */
+export function baselineKey(summary: BenchSummary): string {
+  const digest = createHash('sha256')
+    .update(serialiseConfiguration(summary.configuration))
+    .digest('hex')
+    .slice(0, 12)
+  return `${summary.profile}:${digest}`
+}
+
 export function updateBaseline(summary: BenchSummary, path = BASELINE_PATH): void {
   const baselines = readBaselines(path)
-  baselines[summary.profile] = {
+  baselines[baselineKey(summary)] = {
+    configuration: summary.configuration,
     cases: summary.metrics.cases,
     precision: summary.metrics.precision,
     truePositives: summary.metrics.truePositives,
+    duplicates: summary.metrics.duplicates,
     outputTokensPerConfirmed: summary.metrics.outputTokensPerConfirmed,
   }
   writeFileSync(path, `${JSON.stringify(baselines, null, 2)}\n`, 'utf8')
@@ -474,14 +615,18 @@ export function updateBaseline(summary: BenchSummary, path = BASELINE_PATH): voi
  * The ratchet: precision may not drop (a model run gets a small tolerance,
  * the mock none), true positives may not fall, tokens per confirmed finding
  * may not grow past the headroom, and the case count must be the one the
- * baseline was taken over. `null` when there is no baseline to hold to.
+ * baseline was taken over. A missing exact-configuration baseline is a gate
+ * failure, never an implicit pass.
  */
 export function gateFailures(
   summary: BenchSummary,
   baselines: Record<string, BaselineEntry>,
-): string[] | null {
-  const baseline = baselines[summary.profile]
-  if (baseline === undefined) return null
+): string[] {
+  const key = baselineKey(summary)
+  const baseline = baselines[key]
+  if (baseline === undefined) {
+    return [`no baseline for configuration '${key}' in ${BASELINE_PATH}`]
+  }
   const { metrics } = summary
   const failures: string[] = []
   if (metrics.cases !== baseline.cases) {
@@ -489,7 +634,10 @@ export function gateFailures(
       `case count changed (${String(metrics.cases)} vs baseline ${String(baseline.cases)}) — rebaseline after adding or removing cases`,
     )
   }
-  const tolerance = summary.profile === MOCK_PROFILE ? 0 : MODEL_PRECISION_TOLERANCE
+  const deterministic = summary.configuration.reviewers.every(
+    (identity) => identity.provider === 'mock',
+  )
+  const tolerance = deterministic ? 0 : MODEL_PRECISION_TOLERANCE
   if (
     baseline.precision !== null &&
     (metrics.precision === null || metrics.precision < baseline.precision - tolerance)
@@ -501,6 +649,11 @@ export function gateFailures(
   if (metrics.truePositives < baseline.truePositives) {
     failures.push(
       `true positives ${String(metrics.truePositives)} < baseline ${String(baseline.truePositives)}`,
+    )
+  }
+  if (metrics.duplicates > baseline.duplicates) {
+    failures.push(
+      `duplicates ${String(metrics.duplicates)} > baseline ${String(baseline.duplicates)}`,
     )
   }
   if (
@@ -516,16 +669,49 @@ export function gateFailures(
   return failures
 }
 
+/** Absolute quality gate for evidence behind the 85% model claim. */
+export function targetGateFailures(summary: BenchSummary): string[] {
+  const { metrics } = summary
+  const failures: string[] = []
+  if (
+    summary.configuration.reviewers.some((identity) => identity.provider === 'mock') ||
+    summary.configuration.challenger.provider === 'mock'
+  ) {
+    failures.push('the target gate requires a real-model profile; mock results are not evidence')
+  }
+  const evaluated = metrics.truePositives + metrics.falsePositives
+  const exactPrecision = evaluated === 0 ? null : metrics.truePositives / evaluated
+  if (exactPrecision === null || exactPrecision < TARGET_PRECISION) {
+    failures.push(`precision ${percent(exactPrecision)} < target ${percent(TARGET_PRECISION)}`)
+  }
+  if (metrics.precisionLowerBound95 === null || metrics.precisionLowerBound95 < TARGET_PRECISION) {
+    failures.push(
+      `precision 95% lower bound ${percent(metrics.precisionLowerBound95)} < target ${percent(TARGET_PRECISION)}`,
+    )
+  }
+  const exactRecall = metrics.defects === 0 ? null : metrics.found / metrics.defects
+  if (exactRecall === null || exactRecall < TARGET_RECALL_FLOOR) {
+    failures.push(`recall ${percent(exactRecall)} < floor ${percent(TARGET_RECALL_FLOOR)}`)
+  }
+  if (metrics.duplicates > 0) {
+    failures.push(`duplicates ${String(metrics.duplicates)} > target 0`)
+  }
+  return failures
+}
+
 const summarySchema = z.object({
   profile: z.string(),
   lenses: z.array(z.string()),
   verify: z.boolean(),
+  configuration: benchConfigurationSchema,
   metrics: z.object({
     cases: z.number(),
     surfaced: z.number(),
     truePositives: z.number(),
     falsePositives: z.number(),
+    duplicates: z.number(),
     precision: z.number().nullable(),
+    precisionLowerBound95: z.number().nullable(),
     defects: z.number(),
     found: z.number(),
     recall: z.number().nullable(),
@@ -549,8 +735,14 @@ export function compareSummaries(aPath: string, bPath: string): string {
     ['lenses', a.lenses.join(','), b.lenses.join(',')],
     ['verify', String(a.verify), String(b.verify)],
     ['precision', percent(a.metrics.precision), percent(b.metrics.precision)],
+    [
+      'precision lower 95%',
+      percent(a.metrics.precisionLowerBound95),
+      percent(b.metrics.precisionLowerBound95),
+    ],
     ['true positives', String(a.metrics.truePositives), String(b.metrics.truePositives)],
     ['false positives', String(a.metrics.falsePositives), String(b.metrics.falsePositives)],
+    ['duplicates', String(a.metrics.duplicates), String(b.metrics.duplicates)],
     ['recall (secondary)', percent(a.metrics.recall), percent(b.metrics.recall)],
     ['reproducer rate', percent(a.metrics.reproducerRate), percent(b.metrics.reproducerRate)],
     [
@@ -590,6 +782,7 @@ export async function main(
         case: { type: 'string' },
         out: { type: 'string' },
         gate: { type: 'boolean', default: false },
+        'target-gate': { type: 'boolean', default: false },
         'update-baseline': { type: 'boolean', default: false },
         compare: { type: 'string', multiple: true },
         help: { type: 'boolean', default: false },
@@ -635,6 +828,14 @@ export async function main(
     io.stderr(`bench:review: ${errorMessage(err)}\n`)
     return 2
   }
+  if (
+    values['target-gate'] &&
+    (profile.reviewerIdentities.some((identity) => identity.provider === 'mock') ||
+      profile.challengerIdentity.provider === 'mock')
+  ) {
+    io.stderr('bench:review: --target-gate requires a real-model profile; mock is not evidence\n')
+    return 2
+  }
   const casesDir = resolve(values.cases ?? DEFAULT_CASES_DIR)
   const cases = loadCases(casesDir, values.case)
   if (cases.length === 0) {
@@ -662,24 +863,25 @@ export async function main(
     )
     return 1
   }
+  if (values['target-gate']) {
+    const failures = targetGateFailures(summary)
+    if (failures.length > 0) {
+      io.stderr(`bench:review target gate FAIL: ${failures.join('; ')}\n`)
+      return 1
+    }
+    io.stdout('bench:review target gate OK.\n')
+  }
   if (values['update-baseline']) {
     updateBaseline(summary)
-    io.stdout(`bench:review baseline for '${summary.profile}' updated in ${BASELINE_PATH}.\n`)
-    return 0
+    io.stdout(`bench:review baseline '${baselineKey(summary)}' updated in ${BASELINE_PATH}.\n`)
   }
   if (values.gate) {
     const failures = gateFailures(summary, readBaselines())
-    if (failures === null) {
-      io.stdout(
-        `bench:review gate: no baseline for profile '${summary.profile}' in ${BASELINE_PATH} — run --update-baseline to start one. Not gating.\n`,
-      )
-      return 0
-    }
     if (failures.length > 0) {
-      io.stderr(`bench:review gate FAIL (profile '${summary.profile}'): ${failures.join('; ')}\n`)
+      io.stderr(`bench:review gate FAIL: ${failures.join('; ')}\n`)
       return 1
     }
-    io.stdout(`bench:review gate OK (profile '${summary.profile}').\n`)
+    io.stdout(`bench:review gate OK ('${baselineKey(summary)}').\n`)
   }
   return 0
 }

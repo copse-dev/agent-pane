@@ -3,10 +3,12 @@ import assert from 'node:assert/strict'
 import {
   aggregateScores,
   anchorsOverlap,
+  claimMatchesSignals,
   decodeReviewCase,
   matchDefect,
   reportUsage,
   scoreCase,
+  wilsonLowerBound95,
   type TruthDefect,
 } from './eval.ts'
 import type { Finding } from './finding.ts'
@@ -16,7 +18,7 @@ import type { ReviewReport } from './stage5.ts'
 function finding(overrides: Partial<Finding> & { id: string }): Finding {
   return {
     anchor: { path: 'src/a.cjs', startLine: 10, endLine: 12 },
-    claim: 'a claim',
+    claim: 'displayName throws a TypeError for a null user',
     class: 'contract',
     severity: 'high',
     confidence: 'high',
@@ -79,6 +81,7 @@ const defect: TruthDefect = {
   class: 'contract',
   anchors: [{ path: 'src/a.cjs', startLine: 11, endLine: 11 }],
   regressions: ['test'],
+  claimSignals: [['displayName'], ['null'], ['throw', 'TypeError']],
 }
 
 describe('review eval scoring', () => {
@@ -100,6 +103,11 @@ describe('review eval scoring', () => {
     assert.equal(
       matchDefect(finding({ id: 'c', anchor: { path: 'src/b.cjs', startLine: 11 } }), [defect]),
       null,
+    )
+    assert.equal(
+      matchDefect(finding({ id: 'wrong', claim: 'This line makes the logo blue.' }), [defect]),
+      null,
+      'an unrelated claim on the right line is not a hit',
     )
     const stage0Test = finding({
       id: 'd',
@@ -124,7 +132,15 @@ describe('review eval scoring', () => {
     )
   })
 
-  it('scores surfaced findings only, counting distinct defects found', () => {
+  it('requires every semantic signal group while allowing alternatives', () => {
+    assert.equal(
+      claimMatchesSignals('displayName returns a TypeError for null', defect.claimSignals),
+      true,
+    )
+    assert.equal(claimMatchesSignals('displayName returns null', defect.claimSignals), false)
+  })
+
+  it('scores surfaced findings only and cannot inflate hits with duplicates', () => {
     const hitA = finding({ id: '1', verdict: { status: 'confirmed', reason: 'r' } })
     const hitB = finding({
       id: '2',
@@ -143,19 +159,49 @@ describe('review eval scoring', () => {
       [defect],
     )
     assert.equal(score.surfaced, 3)
-    assert.equal(score.truePositives, 2)
+    assert.equal(score.truePositives, 1)
     assert.equal(score.falsePositives, 1)
+    assert.equal(score.duplicates, 1)
     assert.equal(score.found, 1, 'two hits on one defect count it once')
-    assert.equal(score.confirmed, 2)
+    assert.equal(score.confirmed, 1)
     assert.equal(score.confirmedByReproducer, 1)
     assert.deepEqual(
-      score.findings.map((entry) => [entry.defectId, entry.classAgrees]),
+      score.findings.map((entry) => [entry.defectId, entry.classAgrees, entry.duplicateOf]),
       [
-        ['d1', true],
-        ['d1', false],
-        [null, false],
+        ['d1', true, null],
+        ['d1', false, '1'],
+        [null, false, null],
       ],
     )
+  })
+
+  it('keeps a Stage 0 regression and its anchored root cause as separate hits', () => {
+    const regression = finding({
+      id: 'stage0',
+      anchor: { path: 'package.json', startLine: 3 },
+      class: 'test',
+      provenance: {
+        raisedBy: [{ kind: 'stage0', id: 'stage0' }],
+        corroboratedBy: [],
+        challengedBy: [],
+      },
+      verdict: { status: 'confirmed', reason: 'test failed' },
+    })
+    const score = scoreCase('case', report([regression, finding({ id: 'root' })]), [defect])
+    assert.equal(score.truePositives, 2)
+    assert.equal(score.duplicates, 0)
+    assert.equal(score.found, 1)
+  })
+
+  it('does not count repeated false comments twice either', () => {
+    const first = finding({ id: 'first', anchor: { path: 'src/clean.cjs', startLine: 4 } })
+    const repeated = finding({ id: 'repeated', anchor: first.anchor })
+    const score = scoreCase('clean', report([first, repeated]), [])
+    assert.equal(score.surfaced, 2)
+    assert.equal(score.truePositives, 0)
+    assert.equal(score.falsePositives, 1)
+    assert.equal(score.duplicates, 1)
+    assert.equal(score.findings[1]?.duplicateOf, 'first')
   })
 
   it('aggregates precision, secondary recall, reproducer rate and tokens per confirmed', () => {
@@ -188,7 +234,9 @@ describe('review eval scoring', () => {
     assert.equal(metrics.cases, 3)
     assert.equal(metrics.surfaced, 2)
     assert.equal(metrics.truePositives, 1)
+    assert.equal(metrics.duplicates, 0)
     assert.equal(metrics.precision, 0.5)
+    assert.ok((metrics.precisionLowerBound95 ?? 1) < metrics.precision)
     assert.equal(metrics.recall, 1)
     assert.equal(metrics.confirmed, 1)
     assert.equal(metrics.reproducerRate, 0)
@@ -196,18 +244,37 @@ describe('review eval scoring', () => {
     assert.equal(metrics.outputTokensPerConfirmed, 150)
     const nothing = aggregateScores([empty], [])
     assert.equal(nothing.precision, null)
+    assert.equal(nothing.precisionLowerBound95, null)
     assert.equal(nothing.recall, null)
     assert.equal(nothing.outputTokensPerConfirmed, null)
+  })
+
+  it('reports a confidence bound that rejects tiny perfect samples', () => {
+    assert.ok((wilsonLowerBound95(5, 5) ?? 1) < 0.85)
+    assert.ok((wilsonLowerBound95(22, 22) ?? 0) >= 0.85)
   })
 
   it('decodes a case file and rejects a malformed one', () => {
     assert.deepEqual(decodeReviewCase({ id: 'c', truth: [] }), { id: 'c', truth: [] })
     assert.equal(
-      decodeReviewCase({ id: 'c', truth: [{ id: 'd', class: 'vibes', anchors: [] }] }),
+      decodeReviewCase({
+        id: 'c',
+        truth: [{ id: 'd', class: 'vibes', anchors: [], claimSignals: [['bug']] }],
+      }),
       null,
     )
     assert.equal(
-      decodeReviewCase({ id: 'c', truth: [{ id: 'd', class: 'test', anchors: [] }] }),
+      decodeReviewCase({
+        id: 'c',
+        truth: [{ id: 'd', class: 'test', anchors: [], claimSignals: [['bug']] }],
+      }),
+      null,
+    )
+    assert.equal(
+      decodeReviewCase({
+        id: 'c',
+        truth: [{ id: 'd', class: 'test', anchors: [{ path: 'a' }] }],
+      }),
       null,
     )
   })

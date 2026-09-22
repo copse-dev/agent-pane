@@ -1,8 +1,36 @@
 {
-  "mock": {
+  "mock:1173ba6c9560": {
+    "configuration": {
+      "evaluationVersion": 2,
+      "reviewers": [
+        {
+          "model": "mock",
+          "provider": "mock",
+          "endpoint": null
+        }
+      ],
+      "challenger": {
+        "model": "mock",
+        "provider": "mock",
+        "endpoint": null
+      },
+      "lenses": ["correctness", "contracts"],
+      "verify": true,
+      "corpus": {
+        "cases": [
+          "clean-rename",
+          "false-alarm",
+          "null-check-dropped",
+          "paginate-off-by-one",
+          "timer-leak"
+        ],
+        "fingerprint": "3844cae4f8d0dcd13e6b30c113a0c3ebf6783a6b4bfc15e4dd3e17432f8cff4f"
+      }
+    },
     "cases": 5,
     "precision": 0.8,
     "truePositives": 4,
+    "duplicates": 0,
     "outputTokensPerConfirmed": 207
   }
 }

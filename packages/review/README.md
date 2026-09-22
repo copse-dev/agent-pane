@@ -180,17 +180,18 @@ app uses to review without executing.
 ## Measuring it
 
 ```bash
-pnpm run bench:review -- --mock --gate                      # the deterministic self-test CI runs
-pnpm run bench:review -- --provider lmstudio --model qwen3-coder
-pnpm run bench:review -- --model a --model b --compare bench-results/review/summary.json other/summary.json
+pnpm run bench:review --mock --gate                      # the deterministic self-test CI runs
+pnpm run bench:review --provider lmstudio --model qwen3-coder
+pnpm run bench:review --model a --model b --compare bench-results/review/summary.json other/summary.json
 ```
 
 See [`benchmarks/review/README.md`](../../benchmarks/review/README.md). The mock number
-measures the corpus and the pipeline's non-model parts; a precision claim rests on a model
-profile's baseline, which needs a model run.
+measures the corpus and the pipeline's non-model parts. Model baselines are regression
+ratchets; the separate `--target-gate` requires 85% precision with a 95% confidence lower
+bound, a recall floor and no duplicates on a sufficiently large labelled corpus.
 
 ## Not yet here
 
 Reproducers in CI (job B has no cell, so Stage 4 there is the challenger only), a
-model-profile precision baseline, and a corpus of real pull requests. See the plan's
-§Phases, §What Phase 4 delivered and §What Phase 5 delivered.
+model-profile regression baseline, and a mapped corpus of real pull requests large enough
+to test B8. See the plan's §Phases, §What Phase 4 delivered and §What Phase 5 delivered.

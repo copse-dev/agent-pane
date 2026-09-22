@@ -11,7 +11,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   BASELINE_PATH,
+  baselineKey,
   compareSummaries,
+  corpusFingerprint,
   DEFAULT_CASES_DIR,
   gateFailures,
   loadCases,
@@ -20,8 +22,11 @@ import {
   modelProfile,
   readBaselines,
   runBench,
+  sanitiseEndpoint,
+  targetGateFailures,
   type BenchSummary,
 } from './bench-review-lib.mts'
+import { wilsonLowerBound95 } from '@copse/review/eval.ts'
 
 describe('bench:review over the committed corpus', () => {
   let outDir = ''
@@ -38,6 +43,14 @@ describe('bench:review over the committed corpus', () => {
       env: { OPENROUTER_API_KEY: 'offline-test-key' },
     })
     const reviewer = profile.providerFor('review:correctness', reviewCase, model)
+    assert.deepEqual(profile.reviewerIdentities, [
+      { model, provider: 'openrouter', endpoint: null },
+    ])
+    assert.deepEqual(profile.challengerIdentity, {
+      model: 'anthropic/claude-sonnet-5',
+      provider: 'openrouter',
+      endpoint: null,
+    })
     assert.equal(profile.providerFor('review:security', reviewCase, model), reviewer)
     assert.notEqual(profile.providerFor('challenge', reviewCase), reviewer)
     assert.throws(
@@ -91,7 +104,9 @@ describe('bench:review over the committed corpus', () => {
     assert.equal(summary.metrics.cases, 5)
     assert.equal(summary.metrics.surfaced, 5)
     assert.equal(summary.metrics.truePositives, 4)
+    assert.equal(summary.metrics.duplicates, 0)
     assert.equal(summary.metrics.precision, 0.8)
+    assert.ok((summary.metrics.precisionLowerBound95 ?? 1) < 0.85)
     assert.equal(summary.metrics.recall, 1)
     assert.equal(summary.metrics.confirmed, 3)
     assert.equal(summary.metrics.confirmedByReproducer, 2)
@@ -101,7 +116,7 @@ describe('bench:review over the committed corpus', () => {
 
   it('holds to the committed baseline, and says what moved when it does not', () => {
     const baselines = readBaselines(BASELINE_PATH)
-    assert.ok(baselines['mock'], `no mock baseline in ${BASELINE_PATH}`)
+    assert.ok(baselines[baselineKey(summary)], `no mock baseline in ${BASELINE_PATH}`)
     assert.deepEqual(gateFailures(summary, baselines), [])
     const worse: BenchSummary = {
       ...summary,
@@ -112,10 +127,121 @@ describe('bench:review over the committed corpus', () => {
         outputTokensPerConfirmed: (summary.metrics.outputTokensPerConfirmed ?? 0) * 2,
       },
     }
-    const failures = gateFailures(worse, baselines) ?? []
+    const failures = gateFailures(worse, baselines)
     assert.equal(failures.length, 3, failures.join('; '))
     assert.match(failures[0] ?? '', /precision 60% < baseline 80%/)
-    assert.equal(gateFailures(summary, {}), null, 'no baseline means no gate')
+    assert.match(gateFailures(summary, {})[0] ?? '', /no baseline for configuration/)
+  })
+
+  it('keys baselines by the complete run configuration and corpus', () => {
+    const original = baselineKey(summary)
+    const variants: BenchSummary[] = [
+      {
+        ...summary,
+        configuration: {
+          ...summary.configuration,
+          reviewers: [{ model: 'mock', provider: 'openai', endpoint: null }],
+        },
+      },
+      {
+        ...summary,
+        configuration: {
+          ...summary.configuration,
+          challenger: { model: 'other', provider: 'mock', endpoint: null },
+        },
+      },
+      {
+        ...summary,
+        configuration: { ...summary.configuration, lenses: ['correctness'] },
+      },
+      {
+        ...summary,
+        configuration: { ...summary.configuration, verify: false },
+      },
+      {
+        ...summary,
+        configuration: {
+          ...summary.configuration,
+          reviewers: [
+            { model: 'mock', provider: 'openai-compatible', endpoint: 'http://localhost:9000/' },
+          ],
+        },
+      },
+      {
+        ...summary,
+        configuration: {
+          ...summary.configuration,
+          corpus: { ...summary.configuration.corpus, fingerprint: '0'.repeat(64) },
+        },
+      },
+    ]
+    const keys = [original, ...variants.map(baselineKey)]
+    assert.equal(new Set(keys).size, keys.length)
+    assert.match(corpusFingerprint(loadCases(DEFAULT_CASES_DIR)), /^[0-9a-f]{64}$/)
+    assert.notEqual(
+      corpusFingerprint(loadCases(DEFAULT_CASES_DIR)),
+      corpusFingerprint(loadCases(DEFAULT_CASES_DIR, 'timer-leak')),
+    )
+  })
+
+  it('strips endpoint credentials and request parameters from recorded identity', () => {
+    assert.equal(
+      sanitiseEndpoint('https://user:secret@example.com/v1?api_key=secret#fragment'),
+      'https://example.com/v1',
+    )
+    const profile = modelProfile({
+      provider: 'openai-compatible',
+      models: ['local-model'],
+      baseUrl: 'https://user:secret@example.com/v1?api_key=secret#fragment',
+      env: {},
+    })
+    assert.deepEqual(profile.reviewerIdentities, [
+      { model: 'local-model', provider: 'openai-compatible', endpoint: 'https://example.com/v1' },
+    ])
+  })
+
+  it('separates the absolute 85% target from the regression ratchet', () => {
+    const realConfiguration: BenchSummary['configuration'] = {
+      ...summary.configuration,
+      reviewers: [{ model: 'gpt-5', provider: 'openai', endpoint: null }],
+      challenger: { model: 'gpt-5', provider: 'openai', endpoint: null },
+    }
+    const withMetrics = (
+      truePositives: number,
+      falsePositives: number,
+      found: number,
+      defects: number,
+      duplicates = 0,
+    ): BenchSummary => {
+      const evaluated = truePositives + falsePositives
+      return {
+        ...summary,
+        profile: 'gpt-5',
+        configuration: realConfiguration,
+        metrics: {
+          ...summary.metrics,
+          surfaced: evaluated + duplicates,
+          truePositives,
+          falsePositives,
+          duplicates,
+          precision: evaluated === 0 ? null : truePositives / evaluated,
+          precisionLowerBound95: wilsonLowerBound95(truePositives, evaluated),
+          found,
+          defects,
+          recall: defects === 0 ? null : found / defects,
+        },
+      }
+    }
+    assert.deepEqual(targetGateFailures(withMetrics(22, 0, 3, 3)), [])
+    assert.match(
+      targetGateFailures(withMetrics(5, 0, 3, 3)).join('; '),
+      /95% lower bound/,
+      'five perfect findings are too small a sample',
+    )
+    assert.match(targetGateFailures(withMetrics(84, 16, 3, 3)).join('; '), /precision 84%/)
+    assert.match(targetGateFailures(withMetrics(22, 0, 1, 3)).join('; '), /recall 33\.3%/)
+    assert.match(targetGateFailures(withMetrics(22, 0, 3, 3, 1)).join('; '), /duplicates 1/)
+    assert.match(targetGateFailures(summary).join('; '), /real-model profile/)
   })
 
   it('compares two summaries for an ablation', async () => {
@@ -153,5 +279,13 @@ describe('bench:review over the committed corpus', () => {
     })
     assert.equal(none, 2)
     assert.match(err, /no cases in .* matching no-such-case/)
+    const mockTarget = await main(['--mock', '--target-gate'], {
+      stdout: () => undefined,
+      stderr: (text) => {
+        err += text
+      },
+    })
+    assert.equal(mockTarget, 2)
+    assert.match(err, /target-gate requires a real-model profile/)
   })
 })

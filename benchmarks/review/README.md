@@ -16,9 +16,13 @@ case as a git repository (`main` is the base, `head` the change), runs the whole
 over it — Stage 0 in a host-process cell, the reviewers under `correctness` and
 `contracts`, clustering, verification, ranking — and scores the surfaced findings against
 the truth with [`packages/review/src/eval.ts`](../../packages/review/src/eval.ts): same
-path and overlapping lines within Stage 3's slack is a hit; a Stage 0 regression is a hit
-when the defect declares that regression. Every finding that hits nothing is a false
-positive.
+path and overlapping lines within Stage 3's slack plus the defect's hand-authored
+`claimSignals` are required for an anchored hit; a Stage 0 regression is a hit when the
+defect declares that regression. `claimSignals` are AND-of-OR groups, so every group must
+match one alternative. Every unique finding that hits nothing is a false positive.
+Equivalent surfaced comments are reported as duplicates and excluded from both precision
+counts, so repeating a true claim cannot inflate the score; the absolute target requires
+zero duplicates.
 
 | case                  | head                                           | truth                                   | what it exercises                                                                |
 | --------------------- | ---------------------------------------------- | --------------------------------------- | -------------------------------------------------------------------------------- |
@@ -29,18 +33,20 @@ positive.
 | `false-alarm`         | a harmless early return                        | none                                    | a wrong claim the challenger cannot settle reaches the human: the false positive |
 
 Add a case by adding a directory with those four things and running
-`pnpm run bench:review -- --mock --update-baseline`; the gate refuses to compare runs over
-different case counts.
+`pnpm run bench:review --mock --update-baseline`; any corpus-content change creates a new
+baseline identity, so the next gate fails until that exact configuration is reviewed and
+rebaselined.
 
 ## Running it
 
 ```bash
-pnpm run bench:review -- --mock --gate                 # the self-test CI runs per PR
-pnpm run bench:review -- --provider lmstudio --model qwen3-coder
-pnpm run bench:review -- --model claude-sonnet-5 --model gpt-5 --out bench-results/review-ensemble
-pnpm run bench:review -- --model claude-sonnet-5 --no-verify --out bench-results/review-noverify
-pnpm run bench:review -- --compare bench-results/review/summary.json bench-results/review-noverify/summary.json
-pnpm run bench:review -- --model claude-sonnet-5 --update-baseline
+pnpm run bench:review --mock --gate                 # the self-test CI runs per PR
+pnpm run bench:review --provider lmstudio --model qwen3-coder
+pnpm run bench:review --model claude-sonnet-5 --model gpt-5 --out bench-results/review-ensemble
+pnpm run bench:review --model claude-sonnet-5 --no-verify --out bench-results/review-noverify
+pnpm run bench:review --compare bench-results/review/summary.json bench-results/review-noverify/summary.json
+pnpm run bench:review --model claude-sonnet-5 --update-baseline
+pnpm run bench:review --model claude-sonnet-5 --cases /path/to/large-corpus --target-gate
 ```
 
 Keys come from the environment the way the CLI takes them (`ANTHROPIC_API_KEY`,
@@ -52,16 +58,24 @@ off; lenses).
 
 ## The baseline and the gate
 
-`baseline.json` holds one entry per profile — `mock`, or the reviewer models joined by
-`+`. `--gate` fails when precision drops (a model profile gets five points of tolerance,
-the mock none: it is deterministic), when true positives fall, when output tokens per
-confirmed finding grow past 1.25× the baseline, or when the case count is not the
-baseline's. `--update-baseline` moves it deliberately.
+`baseline.json` is a regression ratchet, not evidence for an absolute quality claim. Each
+entry is keyed by a digest of the complete run identity: evaluator version, provider,
+reviewer and challenger models, credential-free custom endpoint, lenses, verification
+mode, selected case IDs and corpus-content fingerprint. `--gate` fails on a missing exact
+baseline, when precision drops (a model profile gets five points of tolerance, the mock
+none), when true positives fall, when duplicates rise, or when output tokens per confirmed
+finding exceed 1.25× the baseline. `--update-baseline` moves it deliberately.
+
+`--target-gate` is separate and accepts real-model profiles only. It requires at least 85%
+point precision, an 85% or better Wilson lower bound from a two-sided 95% interval, at
+least 50% recall, and zero duplicate comments. The confidence requirement means a tiny
+perfect sample is not enough (5/5 fails; 22/22 is the first all-correct sample that passes).
 
 **What the mock number is, and is not.** The mock profile plays each case's script, so the
 80% it scores is a property of the corpus and the pipeline's non-model parts — Stage 0's
 delta, clustering across lenses, the verdicts, the ranking — and of nothing else. It is the
 harness's self-test and the per-PR regression gate for those parts. It is not a precision
-claim for Copse Reviewer. That claim, B8's 85%, rests on a model profile's baseline, which
-needs a model run and has not been recorded yet: the first such run sets it, and the
-number is revisited then, as B8 says.
+claim for Copse Reviewer. Nor can this five-case synthetic corpus establish B8's 85% claim:
+it is a smoke/trend suite and is too small to pass the confidence gate. A public B8 claim
+requires an appropriately mapped run over Martian's offline track (or a comparably sized,
+independently labelled corpus); numbers from Martian's online track are not interchangeable.
