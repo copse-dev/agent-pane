@@ -5,7 +5,7 @@ import { errorMessage } from '@shared/errors.ts'
 import { resolvePathWithinRoot, toRelativePathWithinRoot } from '../workspace.ts'
 import { getActiveWorkspaceFs } from '../workspace-fs/get-workspace-fs.ts'
 import { runCommand, type CommandResult, type RunCommandOptions } from '../exec/command-runner.ts'
-import { snapshotWorkingTree } from '../git-snapshot.ts'
+import { snapshotWorkingTree, type WorkingTreeSnapshotHead } from '../git-snapshot.ts'
 import { envForRendererChildProcess } from '../exec/child-process-env.ts'
 import { afterSandboxedCommand, spawnInProjectSandbox } from '../../project-sandbox/spawn.ts'
 import { isSpawnableWorkingDirectory } from '../../project-sandbox/spawn-cwd.ts'
@@ -636,6 +636,8 @@ export interface CreateWorktreeBackupOptions {
    * only avoids immediately repeating the membership probe.
    */
   workTreeAlreadyVerified?: boolean
+  /** HEAD commit/tree pair just read from this checkout. */
+  snapshotHead?: WorkingTreeSnapshotHead
 }
 
 /**
@@ -684,6 +686,7 @@ export async function createWorktreeBackup(
       message: `copse backup: ${label}`,
       identity: { name: 'Copse', email: 'copse@localhost' },
       indexPath: tempIndex.path,
+      ...(options.snapshotHead ? { head: options.snapshotHead } : {}),
     })
     const ref = `refs/copse/backups/${String(Date.now())}`
     let updateRef: Awaited<ReturnType<typeof runGit>>
