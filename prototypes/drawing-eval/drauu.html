@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>drauu</title>
+<link rel="stylesheet" href="shared.css" />
+<style>
+  /* drauu is headless: the model is the SVG DOM itself. */
+  #svg { cursor: crosshair; }
+</style>
+</head>
+<body>
+  <div class="toolbar" id="toolbar">
+    <button data-mode="stylus" aria-pressed="true">Stylus</button>
+    <button data-mode="draw">Draw</button>
+    <button data-mode="line">Line</button>
+    <button data-mode="rectangle">Rect</button>
+    <button data-mode="ellipse">Ellipse</button>
+    <button data-mode="eraseLine">Erase</button>
+    <label>Colour <input type="color" id="color" value="#1d4ed8" /></label>
+    <label>Size <input type="range" id="size" min="1" max="24" value="4" /></label>
+    <label><input type="checkbox" id="arrow" /> Arrow end</label>
+    <span class="grow"></span>
+    <button id="undo">Undo</button>
+    <button id="redo">Redo</button>
+    <button id="clear">Clear</button>
+    <button id="send" class="primary">Send to agent</button>
+  </div>
+  <div class="stage">
+    <svg id="svg"></svg>
+  </div>
+  <div class="status" id="status">drauu 1.0.0 · MIT · ~1,300 lines · SVG DOM is the model · stylus mode uses perfect-freehand</div>
+
+  <script src="bridge.js"></script>
+  <script type="module">
+    import { createDrauu } from 'https://cdn.jsdelivr.net/npm/drauu@1.0.0/+esm'
+
+    const color = document.getElementById('color')
+    const size = document.getElementById('size')
+    const arrow = document.getElementById('arrow')
+
+    const drauu = createDrauu({
+      el: '#svg',
+      brush: { mode: 'stylus', color: color.value, size: Number(size.value) },
+    })
+
+    const modeButtons = [...document.querySelectorAll('#toolbar [data-mode]')]
+    for (const btn of modeButtons) {
+      btn.addEventListener('click', () => {
+        drauu.mode = btn.dataset.mode
+        for (const b of modeButtons) b.setAttribute('aria-pressed', String(b === btn))
+      })
+    }
+    color.addEventListener('input', () => { drauu.brush.color = color.value })
+    size.addEventListener('input', () => { drauu.brush.size = Number(size.value) })
+    arrow.addEventListener('change', () => { drauu.brush.arrowEnd = arrow.checked })
+
+    document.getElementById('undo').addEventListener('click', () => drauu.undo())
+    document.getElementById('redo').addEventListener('click', () => drauu.redo())
+    document.getElementById('clear').addEventListener('click', () => drauu.clear())
+    document.getElementById('send').addEventListener('click', () => {
+      agentBridge.sendSvgElement('drauu', document.getElementById('svg'), {
+        mode: drauu.mode,
+        nodes: document.getElementById('svg').childElementCount,
+        // drauu.dump() is the library's own serialisation: raw innerHTML.
+        dumpBytes: drauu.dump().length,
+      })
+    })
+
+    // Keyboard: drauu already binds ctrl/cmd+z, shift+z, escape on window.
+  </script>
+</body>
+</html>

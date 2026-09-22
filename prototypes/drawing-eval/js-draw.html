@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>js-draw</title>
+<link rel="stylesheet" href="shared.css" />
+<style>
+  /* js-draw brings its own toolbar and CSS; we only add the export row. */
+  #editor { flex: 1; min-height: 0; position: relative; }
+  #editor .imageEditorContainer { position: absolute; inset: 0; }
+</style>
+</head>
+<body>
+  <div class="toolbar">
+    <span>js-draw's own toolbar is at the top of the editor. Pinch/scroll to zoom, drag with the hand tool to pan.</span>
+    <span class="grow"></span>
+    <button id="send" class="primary">Send to agent</button>
+  </div>
+  <div id="editor"></div>
+  <div class="status" id="status">js-draw 1.33.0 · MIT · ~31k lines + 5k math · 496 KB bundle · infinite canvas, pen/eraser/select/text · SVG load/save</div>
+
+  <script src="bridge.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/js-draw@1.33.0/dist/bundledStyles.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/js-draw@1.33.0/dist/bundle.js"></script>
+  <script>
+    const editor = new jsdraw.Editor(document.getElementById('editor'))
+    const toolbar = editor.addToolbar()
+    // Default pen colour so strokes are visible on the white paper.
+    editor.dispatch(editor.setBackgroundStyle({ color: jsdraw.Color4.white, autoresize: true }))
+
+    document.getElementById('send').addEventListener('click', () => {
+      // js-draw's own exporters: a self-contained SVG and a PNG rendered from
+      // the image's own import/export viewport (not the on-screen viewport).
+      const svg = editor.toSVG().outerHTML
+      const png = editor.toDataURL('image/png')
+      agentBridge.send({
+        source: 'js-draw',
+        svg,
+        png,
+        meta: { elements: editor.image.getAllComponents().length },
+      })
+    })
+  </script>
+</body>
+</html>
