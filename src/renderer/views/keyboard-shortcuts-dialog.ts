@@ -77,6 +77,10 @@ const SECTIONS: ShortcutSection[] = [
       { label: 'Changes', keys: ['Mod', 'Shift', 'G'] },
       { label: 'Browser', keys: ['Mod', 'Shift', 'B'] },
       { label: 'Focus browser address bar', keys: ['Mod', 'L'] },
+      // Same physical key as above: while the browser page itself has focus,
+      // Mod+L shares its selection (or a screenshot) instead of focusing the
+      // address bar — see attachBrowserGuestShareShortcut.
+      { label: 'Share browser selection or screenshot', keys: ['Mod', 'L'] },
     ],
   },
 ]
