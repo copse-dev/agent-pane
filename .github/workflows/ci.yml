@@ -159,6 +159,8 @@ jobs:
       # safe rather than silently thinning the suite.
       unit_mode: ${{ steps.plan.outputs.unit_mode }}
       unit_specs: ${{ steps.plan.outputs.unit_specs }}
+      # Whether the real Docker reviewer cell needs its focused conformance job.
+      review_cell_required: ${{ steps.review-cell-plan.outputs.required }}
     steps:
       # fetch-depth: 0 so the e2e oracle (plan step) can diff against the PR base
       # / previous main tip.
@@ -168,6 +170,33 @@ jobs:
           # Do not leave even the read-only GITHUB_TOKEN in a fork checkout.
           # Same-repo runs keep credentials for the oracle's base ref fetches.
           persist-credentials: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+      - name: Plan reviewer-cell conformance
+        id: review-cell-plan
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = "schedule" ] ||
+             [ -z "${BASE_SHA:-}" ] ||
+             [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            echo "required=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            git fetch --no-tags --quiet origin "$BASE_SHA"
+          fi
+          if git diff --quiet "${BASE_SHA}"...HEAD -- \
+            .nvmrc \
+            packages/review \
+            scripts/prepare-review-stage0.mts \
+            .github/workflows/review-findings.yml \
+            .github/workflows/review-ground.yml \
+            .github/workflows/review-nightly.yml; then
+            echo "required=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "required=true" >> "$GITHUB_OUTPUT"
+          fi
       # Same-repository PRs already execute inside this job's check-fleet trust
       # boundary. Scan them here so secret detection blocks the required
       # `CI Passed` gate without dispatching a second GitHub-hosted job. Forks
@@ -698,6 +727,41 @@ jobs:
       # @copse/streaming-markdown repo's CI (copse-dev/streaming-markdown).
       # The build is validated once in the dedicated `build` job below (whose
       # dist artifact the e2e shards reuse), so it no longer runs here.
+
+  # Boot the actual no-network reviewer cell whenever its implementation or CI
+  # wiring changes. Unit tests cover the broker with a fake engine; this is the
+  # small hosted proof that the built image enforces the declared boundary and
+  # can read the exact caller-trusted preparation-file mount used in Job B.
+  review-cell:
+    needs: precheck
+    if: >-
+      needs.precheck.outputs.review_cell_required == 'true' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: Build the focused-validation image
+        shell: bash
+        run: |
+          set -euo pipefail
+          node_version="$(tr -d '[:space:]' < .nvmrc)"
+          docker build --pull \
+            --build-arg "NODE_VERSION=${node_version}" \
+            --tag copse-review-cell:ci \
+            --file packages/review/Dockerfile.cell \
+            packages/review
+      - name: Prove the real container boundary
+        env:
+          COPSE_REVIEW_CONTAINER_E2E: '1'
+          COPSE_REVIEW_IMAGE: copse-review-cell:ci
+        run: npm test -- packages/review/src/hostile-fixture.test.ts
 
   # Retrieval-quality gate for the semantic-search backend. This job indexes the
   # repo and runs the fixture query set, asserting recall@k and search latency
@@ -1860,7 +1924,7 @@ jobs:
     # Evaluate even after cancellation, including cancellation while upstream
     # jobs are queued. The first step turns that state into an explicit failure.
     if: ${{ always() }}
-    needs: [precheck, check, bench, build, e2e, screenshot-artifacts]
+    needs: [precheck, check, review-cell, bench, build, e2e, screenshot-artifacts]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}

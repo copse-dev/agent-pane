@@ -214,7 +214,7 @@ export function reviewerTools(): LLMTool[] {
     {
       name: 'run_command',
       description:
-        'Run a program in an isolated copy of the change (no shell: pass argv). Use it to run a test or a script that settles a question. Output is capped.',
+        'Run a program in an isolated copy of the change (no shell: pass argv). Prefer a focused test selector or small probe that settles one question; Stage 0 already ran the aggregate project checks. Output is capped.',
       parameters: {
         type: 'object',
         properties: {

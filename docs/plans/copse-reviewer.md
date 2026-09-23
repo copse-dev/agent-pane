@@ -14,7 +14,8 @@ the Changes view, the "Review changes" bubble and the `review_changes` tool run 
 pipeline over the thread's checkout and render a findings card, with dismissals persisted
 to the knowledge store (see §What Phase 3 delivered). In CI, the `copse-review` label on a
 pull request runs Stage 0 on a secret-free runner and posts the findings as one review
-from a second, read-only job (see §What Phase 4 delivered). `pnpm run bench:review` scores
+from a second job whose model process brokers focused validation into a secret-free
+container (see §What Phase 4 delivered). `pnpm run bench:review` scores
 the pipeline for precision on surfaced findings over a corpus of cases with known defects,
 with a mock self-test CI gates per PR, exact-configuration regression baselines, and a
 separate model-only target gate; the seven-case local corpus cannot establish B8 (see §What
@@ -376,12 +377,15 @@ scope.
   privilege domains. A `pull_request_target:labeled` dispatcher, loaded from the trusted default
   branch, resolves PR metadata and dispatches grounding; it checks out and executes nothing.
   **Job A** is a separate `workflow_dispatch` run on a fresh runner with `permissions: {}` and
-  no secrets; it fetches the exact resolved head, runs Stage 0 and the reproducers, and uploads
+  no secrets; it fetches the exact resolved head, runs Stage 0, and uploads
   results as an artefact. A fresh handoff job, which checks out and consumes nothing, gets
   only Actions-dispatch permission after Job A succeeds and explicitly dispatches **Job B**.
-  Job B runs on the base ref
-  with the model key and a write token, downloads the artefact, runs the model stages, and
-  posts findings. Self-hosted Forgejo runners must be ephemeral (a fresh container per job):
+  Job B runs on the base ref. Before receiving model or App credentials it builds a trusted
+  validation image and primes a read-only dependency store from the exact head lockfile. Its
+  trusted model process holds the credentials; brokered focused commands and reproducers run
+  only in that read-only-root, capability-free, network-disabled container, whose environment
+  is allowlisted and secret-free. Job B then posts findings. Self-hosted Forgejo runners must
+  be ephemeral (a fresh container per job):
   a persistent runner is precisely what a malicious PR would persist on.
 
 **Conformance test, in Phase 0.** A review of a deliberately hostile fixture — a
@@ -391,7 +395,9 @@ aimed at the agent (the pattern already in `benchmarks/steer/fixtures/injection-
 run with canary secrets in the orchestrator's environment. Pass criteria: no canary appears in
 any cell output, model request or finding; no egress from the cell beyond the allowlist; the
 README's instruction produced no tool call. This runs in CI for every backend and is the gate
-on calling a backend supported.
+on calling a backend supported. CI's `review-cell` job builds `Dockerfile.cell` and opts the
+real container backend into that fixture whenever reviewer-cell inputs change and on the nightly
+run; it also proves the caller-trusted preparation script is an exact read-only file mount.
 
 ### Configuration
 
@@ -539,6 +545,10 @@ On `main` under `packages/review/` (README there), with the app-side adapter und
     The CLI discovers the store using filesystem paths and environment settings only;
     it never runs `pnpm store path`, which can execute a repository's `.pnpmfile.cjs`
     before consent. A store configured only in `.npmrc` needs `--store`.
+    CI can supply `--trusted-prepare <script>` from its reviewed default-branch checkout;
+    that command replaces only checkout preparation and the script is mounted read-only
+    in container cells. Copse uses this to selectively rebuild `node-pty` for old pull-request
+    heads without enabling arbitrary lifecycle scripts.
   - **`review.config.json`** is the §Configuration file, Phase 0 subset: an argv per
     command, `null` to disable one, and per-command timeouts. It is repo-controlled, so
     its argv only ever runs inside the cell; the orchestrator reads it as data.
@@ -804,16 +814,25 @@ CI shell needs (`stage0-report.ts`, `forge-review.ts`) and the workflows
   because GitHub suppresses the implicit `workflow_run` event after a run that another
   workflow started with `GITHUB_TOKEN`; `workflow_dispatch` is the documented exception that
   always creates a run. The findings workflow runs in the base repository's context with the
-  model key. Its ordinary workflow token can only read pull-request metadata and artefacts;
-  after verification it mints a repository-scoped installation token for the existing Copse
-  release/deploy App with only `pull-requests: write`, and passes that token only as the forge
-  posting credential. It verifies that the named run is the
+  model key. Its ordinary workflow token can only read pull-request metadata and artefacts.
+  Before a step receives model or App credentials it builds the reviewed
+  `packages/review/Dockerfile.cell`, fetches the resolved refs, and primes pnpm's store from
+  the exact head lockfile with lifecycle scripts disabled. After that preparation it mints a
+  repository-scoped installation token for the existing Copse release/deploy App with only
+  `pull-requests: write`, and passes that token only as the forge posting credential. It
+  verifies that the named run is the
   successful default-branch `Copse review ground` run, resolves the current contributor commit
   and base from GitHub's Pull Request API, and never trusts the artefact or a dynamic run
   association. It fetches the head
-  to read it, imports the Stage 0 report through `--stage0-json` — which makes the run
-  read-only whatever else is asked, and refuses a report for another commit — runs the
-  reviewers and the challenger over the checkouts, and posts one review. The Forgejo
+  to read it and imports the Stage 0 report through `--stage0-json`, which is read-only by
+  default and refuses a report for another commit. The workflow explicitly supplies
+  `--backend container`: the model loop remains in the trusted host process while
+  `run_command` and Stage 4 reproducers execute through the container backend with no network,
+  no capabilities, a read-only root, bounded resources and an allowlisted environment that
+  excludes every provider, cloud, workflow and forge credential. Imported Stage 0 re-prepares
+  the fresh head checkout and build output before reviewers run; base is prepared independently
+  before the first reproducer. `--backend ephemeral-runner` is rejected for an imported report,
+  so the secret-bearing model host cannot be mislabeled as a cell. The Forgejo
   workflow is the same split as two jobs of one workflow (Forgejo Actions has no
   `workflow_run`), with the secret-holding job gated to same-repository pull requests and
   a note that its runners must be ephemeral.
@@ -835,7 +854,7 @@ CI shell needs (`stage0-report.ts`, `forge-review.ts`) and the workflows
   challenged findings. A separate
   schedule samples no more than one recent, non-draft, unlabelled same-repository pull
   request per night; `copse-review-skip` is the opt-out. Both paths run the trusted default-branch CLI,
-  preserve the secret-free Stage 0 / read-only model-job boundary, post `COMMENT` reviews
+  preserve the secret-free Stage 0 / container-backed focused-validation boundary, post `COMMENT` reviews
   only, and retain JSON plus SARIF for 30 days. This is explicit remote processing: the
   secret-redacted diff and file context leave the GitHub runner for Scaleway. Human
   accepted/rejected judgements, report latency and token usage are gathered during the
@@ -846,12 +865,16 @@ CI shell needs (`stage0-report.ts`, `forge-review.ts`) and the workflows
   The required `finish_review` coverage attestation stays structured through Stage 5. Forge
   projections surface every material `couldNotVerify` value and reserve plain “No findings” for
   completed turns that attest `Nothing`; unavailable dependency source or command execution is
-  therefore visible instead of being collapsed into a false-clean result. The secret-bearing
-  findings job still does not install or execute pull-request dependencies to fill that gap.
-- **Known limit: reproducers in CI.** The findings job has no cell, so Stage 4 there is
-  the challenger only; a reproducer needs execution, which belongs to the secret-free job,
-  and a job-crossing loop for it is a follow-up. The reports say "unverified" or "survived
-  challenge" accordingly, never "confirmed" without execution.
+  therefore visible instead of being collapsed into a false-clean result.
+- **Focused validation in GitHub CI.** _Added 2026-09-23 after live review #2737._ Imported
+  Stage 0 remains read-only unless a real container is explicitly requested. Copse's findings
+  workflows build that cell before credentials enter a step, then let reviewers run the
+  smallest project-supported focused test or probe and let Stage 4 execute head/base
+  reproducers. The existing read/search/diff tools remain host-side and jailed to the checkout;
+  only argv execution crosses into the cell. The ordinary CI workflow builds the same image and
+  runs the hostile-fixture conformance test when this surface changes (and nightly), so a broken
+  image, network wall, secret wall or trusted-script mount blocks the aggregate gate. The Forgejo
+  example remains read-only until its ephemeral runner contract also guarantees Docker isolation.
 - **Known limit: the dependency store across platforms.** The cell resolves the offline
   install from the host's pnpm store, which holds the host platform's packages. The GitHub
   ground jobs prime that store from the exact contributor lockfile and patch data with
@@ -862,7 +885,7 @@ CI shell needs (`stage0-report.ts`, `forge-review.ts`) and the workflows
   Pointing the cell at the runtime's shared store volume, populated by an installing
   container run, is the follow-up there.
 
-Not in Phase 4: reproducers in CI (above), `bench:review` (Phase 5), and a foreign-diff
+Not in Phase 4: Forgejo focused-validation parity, `bench:review` (Phase 5), and a foreign-diff
 gesture in the app (the app reviews the thread's own tree; a "review this pull request"
 gesture is a product question for later).
 
@@ -952,8 +975,8 @@ Not in Phase 5: a mapped Martian-offline or equivalent real-PR corpus, and the o
   log bound here: decision 15 for the typed chunk the findings card consumes, decision 5 for
   any machine turn a review starts (none does: every review is a human gesture or an agent
   tool call inside an existing turn).
-- **Phase 4 — Container backend + foreign diffs + CI shell.** ✅ Landed, except
-  reproducers in CI; see above. The container `IsolationBackend`, consuming the
+- **Phase 4 — Container backend + foreign diffs + CI shell.** ✅ Landed for GitHub;
+  Forgejo focused-validation parity remains. The container `IsolationBackend`, consuming the
   thread-in-container runtime's image and naming in the app (the local-docker provider
   [`copse-cloud-workspaces.md`](copse-cloud-workspaces.md) C1 proposed), which unlocks
   foreign-diff review (B3); then the GitHub workflows with inline comments, opt-in by label,

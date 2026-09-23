@@ -137,7 +137,10 @@ describe('runStage2', () => {
   })
 
   it('says in the system prompt whether commands can run', () => {
-    assert.match(lensSystemPrompt(CORRECTNESS_LENS, { canRun: true }), /You may run commands/)
+    const runnable = lensSystemPrompt(CORRECTNESS_LENS, { canRun: true })
+    assert.match(runnable, /You may run commands/)
+    assert.match(runnable, /smallest relevant existing test or focused probe/)
+    assert.match(runnable, /Do not substitute the aggregate suite/)
     assert.match(lensSystemPrompt(CORRECTNESS_LENS, { canRun: false }), /not available in this run/)
     assert.match(lensSystemPrompt(CORRECTNESS_LENS, { canRun: false }), /finish_review/)
   })

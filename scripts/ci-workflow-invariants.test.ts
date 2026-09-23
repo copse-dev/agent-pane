@@ -316,9 +316,30 @@ describe('ci.yml workflow invariants', () => {
     const aggregate = jobBlock('ci-passed')
     assert.match(
       aggregate,
-      /needs: \[precheck, check, bench, build, e2e, screenshot-artifacts\]/,
+      /needs: \[precheck, check, review-cell, bench, build, e2e, screenshot-artifacts\]/,
       'the aggregate must wait until immutable screenshot evidence is published',
     )
+  })
+
+  it('boots the real reviewer cell when its trust boundary changes', () => {
+    const precheck = jobBlock('precheck')
+    assert.match(
+      precheck,
+      /review_cell_required: \$\{\{ steps\.review-cell-plan\.outputs\.required \}\}/,
+    )
+    assert.match(precheck, /git diff --quiet "\$\{BASE_SHA\}"\.\.\.HEAD --/)
+    assert.match(precheck, /packages\/review/)
+    assert.match(precheck, /scripts\/prepare-review-stage0\.mts/)
+
+    const cell = jobBlock('review-cell')
+    assert.match(cell, /runs-on: ubuntu-latest/)
+    assert.match(cell, /persist-credentials: false/)
+    assert.match(cell, /docker build --pull/)
+    assert.match(cell, /COPSE_REVIEW_CONTAINER_E2E: '1'/)
+    assert.match(cell, /npm test -- packages\/review\/src\/hostile-fixture\.test\.ts/)
+
+    const aggregate = jobBlock('ci-passed')
+    assert.match(aggregate, /needs: \[[^\]]*review-cell[^\]]*\]/)
   })
 
   it('decides autofix has work to do before paying for the dependency install', () => {
@@ -771,6 +792,7 @@ describe('Copse Reviewer workflow invariants', () => {
     resolve('.github/workflows/review-model-bench.yml'),
     'utf8',
   )
+  const reviewCellDockerfile = readFileSync(resolve('packages/review/Dockerfile.cell'), 'utf8')
   const forgeReview = readFileSync(resolve('packages/review/src/forge-review.ts'), 'utf8')
 
   function workflowJobBlock(workflow: string, name: string): string {
@@ -782,7 +804,7 @@ describe('Copse Reviewer workflow invariants', () => {
     return next >= 0 ? workflow.slice(start, start + header.length + next) : workflow.slice(start)
   }
 
-  it('executes pull-request code only in secret-free ephemeral-runner jobs', () => {
+  it('executes pull-request code only in credential-free execution cells', () => {
     assert.match(triggerWorkflow, /^ {2}pull_request_target:\n {4}types: \[labeled\]$/m)
     assert.doesNotMatch(triggerWorkflow, /actions\/checkout/)
     assert.doesNotMatch(triggerWorkflow, /git fetch/)
@@ -825,6 +847,19 @@ describe('Copse Reviewer workflow invariants', () => {
     ]) {
       assert.match(job, /--stage0-json ground\/report\.json/)
       assert.doesNotMatch(job, /--backend ephemeral-runner/)
+      assert.match(job, /--backend container/)
+      assert.match(job, /--image "\$REVIEW_CELL_IMAGE"/)
+      assert.match(
+        job,
+        /--trusted-prepare "\$GITHUB_WORKSPACE\/scripts\/prepare-review-stage0\.mts"/,
+      )
+
+      const prepare = job.indexOf('- name: Prepare the focused-validation cell')
+      const mint = job.indexOf('- name: Mint the Copse GitHub App review token')
+      const model = job.indexOf('COPSE_REVIEW_API_KEY:')
+      assert.ok(prepare >= 0 && prepare < mint && mint < model)
+      const prepareStep = job.slice(prepare, mint)
+      assert.doesNotMatch(prepareStep, /\$\{\{\s*secrets\./)
     }
   })
 
@@ -865,7 +900,7 @@ describe('Copse Reviewer workflow invariants', () => {
       assert.match(job, /permission-pull-requests: write/)
 
       const postingStep = job.match(
-        / {6}- name: Review read-only over the uploaded ground and post the findings\n[\s\S]*?(?=\n {6}- uses: actions\/upload-artifact)/,
+        / {6}- name: Review with focused validation and post the findings\n[\s\S]*?(?=\n {6}- uses: actions\/upload-artifact)/,
       )?.[0]
       assert.ok(postingStep, 'expected the review generation and posting step')
       assert.match(
@@ -889,7 +924,30 @@ describe('Copse Reviewer workflow invariants', () => {
       assert.doesNotMatch(job, /pnpm fetch[^\n]*--dir [^"$]/)
       assert.ok(job.indexOf('test "$(git rev-parse') < job.indexOf('pnpm fetch'))
       assert.ok(job.indexOf('pnpm fetch') < job.indexOf('--backend ephemeral-runner'))
+      assert.match(
+        job,
+        /--trusted-prepare "\$GITHUB_WORKSPACE\/scripts\/prepare-review-stage0\.mts"/,
+      )
     }
+
+    for (const workflow of [findingsWorkflow, nightlyWorkflow]) {
+      const job = workflowJobBlock(workflow, 'findings')
+      assert.match(job, /git show "\$\{HEAD_SHA\}:pnpm-lock\.yaml"/)
+      assert.match(job, /git archive --format=tar "\$HEAD_SHA" patches/)
+      assert.match(job, /pnpm fetch --frozen-lockfile --dir "\$dependency_seed"/)
+      assert.ok(job.indexOf('docker build --pull') < job.indexOf('refs/pull/'))
+      assert.ok(job.indexOf('pnpm fetch') < job.indexOf('COPSE_REVIEW_API_KEY:'))
+    }
+  })
+
+  it('builds the focused-validation image with only a test toolchain', () => {
+    assert.match(reviewCellDockerfile, /^ARG NODE_VERSION=/m)
+    assert.match(reviewCellDockerfile, /^FROM node:\$\{NODE_VERSION\}-trixie-slim$/m)
+    assert.match(reviewCellDockerfile, /"pnpm@\$\{PNPM_VERSION\}"/)
+    for (const tool of ['cargo', 'g++', 'git', 'make', 'python3', 'ripgrep', 'socat']) {
+      assert.match(reviewCellDockerfile, new RegExp(`^ {6}${tool.replace('+', '\\+')} \\\\$`, 'm'))
+    }
+    assert.doesNotMatch(reviewCellDockerfile, /COPY|ADD|ENTRYPOINT/)
   })
 
   it('provisions the scrubbed Stage 0 cell with the full Linux test toolchain', () => {

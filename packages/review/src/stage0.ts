@@ -80,10 +80,23 @@ export interface Stage0Options {
    * host's `COREPACK_HOME`, else `~/.cache/node/corepack` when it exists.
    */
   readonly corepackHome?: string | undefined
+  /**
+   * A preparation command supplied by the trusted caller rather than by the
+   * checkout. CI uses this to keep one reviewed preparation policy across old
+   * pull-request heads. Any paths the command needs inside a container must be
+   * listed in `readOnlyPaths`; they are never made writable in the cell.
+   */
+  readonly trustedPreparation?: TrustedPreparation | undefined
   /** Parent of the per-run scratch directory. Default: the OS temp dir. */
   readonly scratchParent?: string
   readonly git?: GitRunner
   readonly now?: () => number
+}
+
+export interface TrustedPreparation {
+  readonly argv: readonly [string, ...string[]]
+  readonly timeoutMs: number
+  readonly readOnlyPaths: readonly string[]
 }
 
 export type CheckStatus = 'passed' | 'failed' | 'timed-out'
@@ -354,6 +367,19 @@ function checkKinds(project: ProjectCommands | UnsupportedProject): CheckKind[] 
   return project.commands.map((command) => command.kind).filter((kind) => kind !== 'prepare')
 }
 
+function commandsFor(
+  project: ProjectCommands,
+  trustedPreparation: TrustedPreparation | undefined,
+): readonly CheckCommand[] {
+  if (trustedPreparation === undefined) return project.commands
+  const prepare: CheckCommand = {
+    kind: 'prepare',
+    argv: trustedPreparation.argv,
+    timeoutMs: trustedPreparation.timeoutMs,
+  }
+  return [prepare, ...project.commands.filter((command) => command.kind !== 'prepare')]
+}
+
 /**
  * Everything the stages after Stage 0 share: the two checkouts, the cell (when
  * execution was allowed), the detected commands, and the scrubber. Opened once
@@ -445,6 +471,7 @@ export async function openReviewGround(options: Stage0Options): Promise<ReviewGr
       readOnlyPaths: [
         ...(options.dependencyStore === undefined ? [] : [options.dependencyStore]),
         ...(corepackHome === undefined ? [] : [corepackHome]),
+        ...(options.trustedPreparation?.readOnlyPaths ?? []),
         checkouts.gitCommonDir,
       ],
       env: cellEnvironment(hostEnv, { dependencyStore: options.dependencyStore, corepackHome }),
@@ -509,7 +536,14 @@ export async function runStage0Checks(
   const scrub = (text: string): string => ground.scrub(text)
 
   const headKinds = new Set(checkKinds(headProject))
-  const headRuns = await runTarget(cell, 'head', headProject.commands, headKinds, scrub, signal)
+  const headRuns = await runTarget(
+    cell,
+    'head',
+    commandsFor(headProject, options.trustedPreparation),
+    headKinds,
+    scrub,
+    signal,
+  )
 
   const failedOnHead = new Set<CheckKind>()
   for (const [kind, run] of headRuns.runs) {
@@ -518,7 +552,14 @@ export async function runStage0Checks(
   const baseKinds = new Set(checkKinds(baseProject).filter((kind) => failedOnHead.has(kind)))
   const baseRuns =
     baseKinds.size > 0 && baseProject.ecosystem !== 'unsupported'
-      ? await runTarget(cell, 'base', baseProject.commands, baseKinds, scrub, signal)
+      ? await runTarget(
+          cell,
+          'base',
+          commandsFor(baseProject, options.trustedPreparation),
+          baseKinds,
+          scrub,
+          signal,
+        )
       : { runs: new Map<CheckKind, CheckRun>(), prepareFailure: null }
 
   const checks: CheckOutcome[] = []
@@ -601,22 +642,63 @@ export async function runStage0(options: Stage0Options): Promise<Stage0Report> {
   }
 }
 
+function throwForFailedPreparation(target: CheckoutTarget, runs: TargetRuns): void {
+  for (const run of runs.runs.values()) {
+    if (run.status !== 'passed') {
+      throw new Error(
+        `${target === 'head' ? 'Head' : 'Base'} ${run.kind} ${run.status}; focused validation is unavailable: ${run.output}`,
+      )
+    }
+  }
+}
+
+/** Prepare a fresh head cell imported Stage 0 did not populate, including build output. */
+export async function prepareReviewHead(ground: ReviewGround, signal?: AbortSignal): Promise<void> {
+  signal?.throwIfAborted()
+  const project = ground.project.head
+  if (ground.cell === null || project === null || project.ecosystem === 'unsupported') {
+    throw new Error('The head checkout cannot be prepared for focused validation')
+  }
+  const commands = commandsFor(project, ground.options.trustedPreparation).filter(
+    (command) => command.kind === 'prepare' || command.kind === 'build',
+  )
+  const result = await runTarget(
+    ground.cell,
+    'head',
+    commands,
+    new Set(['build']),
+    (text) => ground.scrub(text),
+    signal,
+  )
+  throwForFailedPreparation('head', result)
+}
+
+export interface PrepareVerificationBaseOptions {
+  /** False when Stage 0 ran in another cell and none of its files exist here. */
+  readonly reuseStage0Artifacts?: boolean
+}
+
 /** Prepare base lazily for verification, including build artifacts when needed. */
 export async function prepareVerificationBase(
   ground: ReviewGround,
   stage0: Stage0Report,
   signal: AbortSignal,
+  options: PrepareVerificationBaseOptions = {},
 ): Promise<void> {
   signal.throwIfAborted()
   const project = ground.project.base
   if (ground.cell === null || project === null || project.ecosystem === 'unsupported') {
     throw new Error('The base checkout cannot be prepared for verification')
   }
-  const commands = project.commands.filter((command) =>
+  const reuseStage0Artifacts = options.reuseStage0Artifacts ?? true
+  const commands = commandsFor(project, ground.options.trustedPreparation).filter((command) =>
     command.kind === 'prepare'
-      ? stage0.preparation.base?.status !== 'passed'
+      ? !reuseStage0Artifacts || stage0.preparation.base?.status !== 'passed'
       : command.kind === 'build' &&
-        !stage0.checks.some((check) => check.kind === 'build' && check.base?.status === 'passed'),
+        (!reuseStage0Artifacts ||
+          !stage0.checks.some(
+            (check) => check.kind === 'build' && check.base?.status === 'passed',
+          )),
   )
   const result = await runTarget(
     ground.cell,
@@ -626,11 +708,5 @@ export async function prepareVerificationBase(
     (text) => ground.scrub(text),
     signal,
   )
-  for (const run of result.runs.values()) {
-    if (run.status !== 'passed') {
-      throw new Error(
-        `Base ${run.kind} ${run.status}; reproducer comparison is unavailable: ${run.output}`,
-      )
-    }
-  }
+  throwForFailedPreparation('base', result)
 }
