@@ -187,6 +187,26 @@ message. The transcript surfaces it only when more than one distinct primary
 model appears in the thread; explore/CI subagent models stay on the nested
 `subagent.model` field (already shown on their cards).
 
+`createdAt` is stamped once, when the `Message` object is first created in the
+renderer (`addMessage` in [`thread-helpers.ts`](../src/shared/store/thread-helpers.ts))
+— for a locally-streamed turn that is the moment the renderer received the
+chunk that started it. It is carried verbatim through every later write:
+`persistence.ts`'s debounced/fire-and-forget `serializedWrite` calls, a
+re-finalize triggered by a late ACP tool update (`tool_call_updated`), and a
+whole-thread rewrite all serialize the `Message`'s own `createdAt`, never the
+time the write itself runs (see #1411, where this was investigated and
+confirmed: nothing on the write path re-stamps the field). `fold`/`explodeMessage`
+(`packages/thread-store/src/fold.ts`) copy the value across unchanged in both
+directions, so a reload never perturbs it either.
+The one case where `createdAt` is _not_ a trustworthy occurrence time is a
+provider stream that can redeliver already-occurred events after a reconnect —
+for example a remote/cloud agent run resumed after a dropped SSE connection or
+an app restart mid-turn. Those events carry no per-event provider timestamp
+today, so each one is stamped with the time the renderer received the replayed
+delivery, which can cluster many real, previously-occurred steps into a short
+window. This is a receipt-time limitation of that transport, not a defect in
+the spine's write path.
+
 `startingCommit`/`dirty` are captured once, at send time, for a human-typed
 prompt (via `git:prompt-state`) — the HEAD SHA the turn began on and whether the
 working tree already had uncommitted changes. Best-effort: absent outside a

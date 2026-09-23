@@ -501,6 +501,56 @@ test('a settled ACP tool update re-finalizes its message with the latest args an
   autosave.detach()
 })
 
+test('a re-persisted message keeps its original createdAt, not the write time (#1411)', async () => {
+  __resetPersistenceForTest()
+  // The message "occurred" several minutes before this test runs. A live
+  // assistant bubble is stamped once, at creation, in `addMessage`
+  // (`src/shared/store/thread-helpers.ts`) — persistence must ship that same
+  // value on every write, including a later re-persist, rather than a fresh
+  // `Date.now()` taken when the write actually goes out.
+  const occurredAt = Date.now() - 5 * 60_000
+  const running: Message = {
+    id: 'a1',
+    role: 'assistant',
+    content: 'looking into it',
+    createdAt: occurredAt,
+    toolCalls: [
+      { id: 'tc1', name: 'read_file', args: { path: 'x' }, status: 'running', result: null },
+    ],
+  }
+  const { api, calls } = fakeApi()
+  const store = createStore({
+    activeProjectId: 'p1',
+    activeThreadId: 't1',
+    threads: [thread('t1', { messages: [running] })],
+    projects: [],
+  })
+  const autosave = attachAutosave(store, api)
+  const runningTool = running.toolCalls[0]
+  assert.ok(runningTool)
+
+  // First finalize: the turn's `message_done`.
+  store.emit('message_done', 'a1')
+  await tick()
+
+  // A later re-persist — mirroring a delayed ACP tool update arriving well
+  // after the original write — must not stamp the write-time instead.
+  const settled: Message = {
+    ...running,
+    toolCalls: [{ ...runningTool, status: 'done', result: 'contents' }],
+  }
+  store.setState({ threads: [thread('t1', { messages: [settled] })] })
+  store.emit('tool_call_updated', 'a1', 'tc1')
+  await tick()
+
+  assert.equal(calls.appends.length, 2)
+  for (const append of calls.appends) {
+    assert.equal(append.message.createdAt, occurredAt)
+    assert.notEqual(append.message.createdAt, Date.now())
+  }
+  autosave.detach()
+})
+
 test('a new user message sends thread creation before an agent run can be dispatched', async () => {
   __resetPersistenceForTest()
   const message = userMsg('m1')
