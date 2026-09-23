@@ -205,7 +205,10 @@ export function mountAnnotationLayer(
   /** Shift the drawing surface so page-anchored marks track the guest's scroll. */
   const applyViewBox = (): void => {
     if (!svg) return
-    svg.setAttribute('viewBox', `${fmt(scrollX)} ${fmt(scrollY)} 100% 100%`)
+    const rect = host.getBoundingClientRect()
+    const width = Math.max(1, rect.width)
+    const height = Math.max(1, rect.height)
+    svg.setAttribute('viewBox', `${fmt(scrollX)} ${fmt(scrollY)} ${fmt(width)} ${fmt(height)}`)
   }
 
   const applyBrush = (): void => {

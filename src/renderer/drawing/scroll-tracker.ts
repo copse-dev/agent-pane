@@ -14,6 +14,8 @@ export interface ScrollTimer {
 
 /** Minimum gap between guest scroll polls; scroll events arrive in bursts. */
 export const SCROLL_TRACK_INTERVAL_MS = 80
+/** Covers keyboard, scrollbar, and guest-process scrolling invisible to the embedder. */
+export const SCROLL_SAFETY_INTERVAL_MS = 1_000
 /** Wheel noise dies down within a turn; an active stroke keeps polling alive. */
 const IDLE_STOP_MS = 1_000
 
@@ -70,8 +72,8 @@ export function trackGuestScroll(options: {
     }, IDLE_STOP_MS)
   }
 
-  const poll = (): void => {
-    if (disposed || inFlight || (!polling && strokeDepth === 0)) return
+  const poll = (force = false): void => {
+    if (disposed || inFlight || (!force && !polling && strokeDepth === 0)) return
     inFlight = true
     void options
       .fetchPosition()
@@ -85,6 +87,9 @@ export function trackGuestScroll(options: {
   }
 
   const interval = timer.setInterval(poll, SCROLL_TRACK_INTERVAL_MS)
+  const safetyInterval = timer.setInterval(() => {
+    poll(true)
+  }, SCROLL_SAFETY_INTERVAL_MS)
 
   const wake = (): void => {
     polling = true
@@ -114,6 +119,7 @@ export function trackGuestScroll(options: {
     dispose(): void {
       disposed = true
       timer.clearInterval(interval)
+      timer.clearInterval(safetyInterval)
       if (idleTimer !== null) timer.clearTimeout(idleTimer)
       options.wheelTarget.removeEventListener('wheel', onWheel)
       window.removeEventListener('pointerdown', onPointerDown, CAPTURE)

@@ -1,11 +1,16 @@
 import '../../../tests/setup-dom.ts'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { trackGuestScroll, SCROLL_TRACK_INTERVAL_MS, type ScrollTimer } from './scroll-tracker.ts'
+import {
+  trackGuestScroll,
+  SCROLL_SAFETY_INTERVAL_MS,
+  SCROLL_TRACK_INTERVAL_MS,
+  type ScrollTimer,
+} from './scroll-tracker.ts'
 import type { GuestScrollPosition } from '@shared/browser-guest-scroll.ts'
 
 interface FakeTimer extends ScrollTimer {
-  fireInterval: () => void
+  fireInterval: (ms?: number) => void
   runTimeouts: () => void
 }
 
@@ -15,7 +20,7 @@ interface FakeTimer extends ScrollTimer {
  */
 function fakeTimer(): FakeTimer {
   const timeouts: (() => void)[] = []
-  const intervals: (() => void)[] = []
+  const intervals = new Map<number, { handler: () => void; ms: number }>()
   let nextHandle = 1
   return {
     setTimeout: (handler: () => void): number => {
@@ -25,15 +30,18 @@ function fakeTimer(): FakeTimer {
     clearTimeout: (): void => {
       timeouts.length = 0
     },
-    setInterval: (handler: () => void): number => {
-      intervals.push(handler)
-      return nextHandle++
+    setInterval: (handler: () => void, ms: number): number => {
+      const handle = nextHandle++
+      intervals.set(handle, { handler, ms })
+      return handle
     },
-    clearInterval: (): void => {
-      intervals.length = 0
+    clearInterval: (handle: number): void => {
+      intervals.delete(handle)
     },
-    fireInterval: (): void => {
-      for (const fn of [...intervals]) fn()
+    fireInterval: (ms = SCROLL_TRACK_INTERVAL_MS): void => {
+      for (const interval of intervals.values()) {
+        if (interval.ms === ms) interval.handler()
+      }
     },
     runTimeouts: (): void => {
       for (const fn of timeouts.splice(0)) fn()
@@ -102,10 +110,17 @@ describe('trackGuestScroll', () => {
       await flush()
       assert.equal(positions.length, 3, 'idle tracker does not poll')
 
-      // Fresh wheel activity wakes it again.
-      wheel()
+      // Keyboard and scrollbar movement happens inside the guest and cannot
+      // wake the embedder, so the slower safety interval still observes it.
+      timers.fireInterval(SCROLL_SAFETY_INTERVAL_MS)
       await flush()
       assert.deepEqual(positions.at(-1), { x: 0, y: 100 })
+
+      // Fresh wheel activity wakes it again.
+      current = { x: 0, y: 80 }
+      wheel()
+      await flush()
+      assert.deepEqual(positions.at(-1), { x: 0, y: 80 })
     } finally {
       tracker.dispose()
       target.remove()

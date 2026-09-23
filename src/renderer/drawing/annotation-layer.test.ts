@@ -260,7 +260,7 @@ describe('annotation layer', () => {
       // Drawing happens through the same viewBox, so the recorded stroke lands
       // in page space even after the offset moves.
       layer.setScrollOffset(0, 240)
-      assert.equal(svg.getAttribute('viewBox'), '0 240 100% 100%')
+      assert.equal(svg.getAttribute('viewBox'), '0 240 400 300')
       drag(svg, 20, 260, 120, 320)
 
       const payload = await layer.export()
@@ -268,7 +268,7 @@ describe('annotation layer', () => {
       assert.match(payload.svg, /fill="#e5484d"/)
 
       layer.setScrollOffset(100, 0)
-      assert.equal(svg.getAttribute('viewBox'), '100 0 100% 100%')
+      assert.equal(svg.getAttribute('viewBox'), '100 0 400 300')
       const again = await layer.export()
       assert.match(again.svg, /viewBox="100 0 400 300"/)
     } finally {
@@ -284,7 +284,7 @@ describe('annotation layer', () => {
       layer.activate()
       const svg = surfaceOf(el)
       layer.setScrollOffset(-5, Number.NaN)
-      assert.equal(svg.getAttribute('viewBox'), '0 0 100% 100%')
+      assert.equal(svg.getAttribute('viewBox'), '0 0 400 300')
     } finally {
       layer.dispose()
       el.remove()

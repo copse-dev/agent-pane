@@ -375,6 +375,11 @@ describe('ACP inline visualization reference', () => {
             ?.getAttribute('viewBox') ?? null,
       )
     const beforeScroll = await readViewBox()
+    const beforeParts = beforeScroll?.split(/\s+/).map(Number) ?? []
+    expect(beforeParts).toHaveLength(4)
+    expect(beforeParts.every(Number.isFinite)).toBe(true)
+    expect(beforeParts[2]).toBeGreaterThan(0)
+    expect(beforeParts[3]).toBeGreaterThan(0)
     await browser.execute(async () => {
       const webview = document.querySelector('.browser-tab-panel.is-active webview') as {
         executeJavaScript?: (source: string) => Promise<unknown>
@@ -391,7 +396,11 @@ describe('ACP inline visualization reference', () => {
       { timeout: 5_000, timeoutMsg: 'expected the annotation viewBox to follow the guest scroll' },
     )
     const afterScroll = await readViewBox()
-    expect(afterScroll).not.toEqual(beforeScroll)
+    const afterParts = afterScroll?.split(/\s+/).map(Number) ?? []
+    expect(afterParts).toHaveLength(4)
+    expect(afterParts.every(Number.isFinite)).toBe(true)
+    expect(afterParts[1]).toBeGreaterThanOrEqual(240)
+    expect(afterParts.slice(2)).toEqual(beforeParts.slice(2))
     await saveAppScreenshot('browser-canvas-annotation-scrolled.png')
     await assertNoErrorToasts('canvas annotation')
   })

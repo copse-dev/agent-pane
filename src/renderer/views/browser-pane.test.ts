@@ -1367,6 +1367,7 @@ describe('browser pane annotation scroll tracking', () => {
     try {
       const panel = qsRequired(viewer, '.browser-tab-panel.is-active')
       const host = qsRequired(panel, '.browser-webview-host')
+      host.getBoundingClientRect = (): DOMRect => new DOMRect(0, 0, 640, 480)
       const webview = qsRequired<FakeWebview>(host, '.browser-webview')
       stubWebviewMethods(webview)
       webview.getURL = (): string => 'https://example.com/page'
@@ -1375,7 +1376,7 @@ describe('browser pane annotation scroll tracking', () => {
       const annotateBtn = qsRequired<HTMLButtonElement>(panel, '.browser-annotate-btn')
       annotateBtn.click()
       const svg = qsRequired<SVGSVGElement>(host, 'svg.annotation-layer-svg')
-      assert.equal(svg.getAttribute('viewBox'), '0 0 100% 100%')
+      assert.equal(svg.getAttribute('viewBox'), '0 0 640 480')
 
       // Creating the layer baselines the guest's current offsets immediately.
       await new Promise((r) => setTimeout(r, 0))
@@ -1386,7 +1387,7 @@ describe('browser pane annotation scroll tracking', () => {
       host.dispatchEvent(new window.Event('wheel', { bubbles: true }))
       scroll = { x: 0, y: 480 }
       await new Promise((r) => setTimeout(r, SCROLL_TRACK_INTERVAL_MS + 120))
-      assert.equal(svg.getAttribute('viewBox'), '0 480 100% 100%')
+      assert.equal(svg.getAttribute('viewBox'), '0 480 640 480')
 
       // Marks drawn now land in page space: the stroke points include scrollY.
       svg.dispatchEvent(pointer('pointerdown', 30, 40))
@@ -1394,7 +1395,7 @@ describe('browser pane annotation scroll tracking', () => {
       window.dispatchEvent(pointer('pointerup', 60, 90))
       // happy-dom's drauu path uses bounding-rect coordinates, so only the
       // surface bookkeeping (not stroke geometry) is asserted here.
-      assert.equal(svg.getAttribute('viewBox'), '0 480 100% 100%')
+      assert.equal(svg.getAttribute('viewBox'), '0 480 640 480')
 
       // Sending deactivates but keeps the marks; scrolling still tracks.
       const sendBtn = qsRequired<HTMLButtonElement>(host, '.annotation-send')
@@ -1403,7 +1404,7 @@ describe('browser pane annotation scroll tracking', () => {
       await new Promise((r) => setTimeout(r, 0))
       scroll = { x: 0, y: 720 }
       await new Promise((r) => setTimeout(r, SCROLL_TRACK_INTERVAL_MS + 120))
-      assert.equal(svg.getAttribute('viewBox'), '0 720 100% 100%')
+      assert.equal(svg.getAttribute('viewBox'), '0 720 640 480')
       assert.equal(host.querySelector('.annotation-layer')?.getAttribute('hidden'), null)
     } finally {
       if (hadResizeObserver) globalThis.ResizeObserver = ResizeObserverCtor
