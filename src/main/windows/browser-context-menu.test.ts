@@ -83,8 +83,9 @@ function recordingActions(): BrowserContextMenuActions & {
     shareSelection: (text: string, pageUrl: string): void => {
       calls.push(`shareSelection:${pageUrl}:${text}`)
     },
-    shareScreenshot: (): void => {
+    shareScreenshot: (): Promise<void> => {
       calls.push('shareScreenshot')
+      return Promise.resolve()
     },
     saveImageAs: (srcURL: string): void => {
       calls.push(`saveImageAs:${srcURL}`)
@@ -119,6 +120,25 @@ describe('buildBrowserContextMenuTemplate', () => {
 
     invokeItemClick(template, 'Share Screenshot with Thread')
     assert.deepEqual(actions.calls, ['shareScreenshot'])
+  })
+
+  it('handles a rejected screenshot share without leaking an unhandled promise', async (t) => {
+    const warnings: unknown[][] = []
+    t.mock.method(console, 'warn', (...args: unknown[]) => {
+      warnings.push(args)
+    })
+    const actions = recordingActions()
+    actions.shareScreenshot = (): Promise<void> => Promise.reject(new Error('capture failed'))
+    const template = buildBrowserContextMenuTemplate(baseParams(), actions)
+
+    invokeItemClick(template, 'Share Screenshot with Thread')
+    await new Promise((resolve) => setImmediate(resolve))
+
+    assert.equal(warnings.length, 1)
+    const [warning] = warnings
+    assert.ok(warning)
+    assert.equal(warning[0], '[browser] failed to share content with thread')
+    assert.match(String(warning[1]), /capture failed/)
   })
 
   it('offers open/copy for http(s) links', () => {
@@ -322,6 +342,13 @@ describe('isBrowserShareShortcutInput', () => {
     assert.equal(isBrowserShareShortcutInput(keyInput({ control: true, type: 'keyUp' })), false)
   })
 
+  it('ignores an auto-repeated keydown', () => {
+    assert.equal(
+      isBrowserShareShortcutInput(keyInput({ control: true, isAutoRepeat: true })),
+      false,
+    )
+  })
+
   it('ignores L without a modifier', () => {
     assert.equal(isBrowserShareShortcutInput(keyInput()), false)
   })
@@ -427,6 +454,29 @@ describe('attachBrowserGuestShareShortcut', () => {
 
     const { prevented } = fire(keyInput())
     assert.equal(prevented, false)
+  })
+
+  it('handles a screenshot capture rejection without leaking an unhandled promise', async (t) => {
+    const warnings: unknown[][] = []
+    t.mock.method(console, 'warn', (...args: unknown[]) => {
+      warnings.push(args)
+    })
+    const { contents, fire } = fakeShortcutContents('')
+    contents.capturePage = (): Promise<{ toDataURL(): string }> =>
+      Promise.reject(new Error('guest was destroyed'))
+    attachBrowserGuestShareShortcut(contents, () => {
+      assert.fail('must not resolve a window after capture fails')
+    })
+
+    const { prevented } = fire(keyInput({ control: true }))
+    assert.equal(prevented, true)
+    await new Promise((resolve) => setImmediate(resolve))
+
+    assert.equal(warnings.length, 1)
+    const [warning] = warnings
+    assert.ok(warning)
+    assert.equal(warning[0], '[browser] failed to share content with thread')
+    assert.match(String(warning[1]), /guest was destroyed/)
   })
 })
 

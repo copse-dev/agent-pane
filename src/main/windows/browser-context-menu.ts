@@ -43,7 +43,7 @@ export type BrowserContextMenuActions = {
   writeClipboardText: (text: string) => void
   openTab: (url: string) => void
   shareSelection: (text: string, pageUrl: string) => void
-  shareScreenshot: () => void | Promise<void>
+  shareScreenshot: () => Promise<void>
   saveImageAs: (srcURL: string) => void | Promise<void>
   inspectElement: (x: number, y: number) => void
 }
@@ -231,7 +231,7 @@ export function buildBrowserContextMenuTemplate(
     {
       label: 'Share Screenshot with Thread',
       click: (): void => {
-        void actions.shareScreenshot()
+        void actions.shareScreenshot().catch(reportBrowserShareFailure)
       },
     },
   ])
@@ -369,9 +369,12 @@ export function attachBrowserGuestContextMenu(contents: WebContents): void {
  * layout still matches the physical L key.
  */
 export function isBrowserShareShortcutInput(
-  input: Pick<Electron.Input, 'alt' | 'code' | 'control' | 'meta' | 'shift' | 'type'>,
+  input: Pick<
+    Electron.Input,
+    'alt' | 'code' | 'control' | 'isAutoRepeat' | 'meta' | 'shift' | 'type'
+  >,
 ): boolean {
-  if (input.type !== 'keyDown') return false
+  if (input.type !== 'keyDown' || input.isAutoRepeat) return false
   const modifier = input.control || input.meta
   if (!modifier || input.alt || input.shift) return false
   return input.code === 'KeyL'
@@ -403,6 +406,10 @@ export interface BrowserGuestShortcutWindow {
   webContents: { send(channel: string, payload: unknown): void }
 }
 
+function reportBrowserShareFailure(error: unknown): void {
+  console.warn('[browser] failed to share content with thread', error)
+}
+
 /**
  * Attach the browser guest's own Cmd/Ctrl+L: share its current text selection
  * with the thread, or a screenshot when nothing is selected. Scoped to this
@@ -425,10 +432,12 @@ export function attachBrowserGuestShareShortcut(
   contents.on('before-input-event', (event, input) => {
     if (!isBrowserShareShortcutInput(input)) return
     event.preventDefault()
-    void shareBrowserGuestContent(contents).then((result) => {
-      const win = getWindow()
-      if (!win || win.isDestroyed() || contents.isDestroyed()) return
-      win.webContents.send(result.channel, result.share)
-    })
+    void shareBrowserGuestContent(contents)
+      .then((result) => {
+        const win = getWindow()
+        if (!win || win.isDestroyed() || contents.isDestroyed()) return
+        win.webContents.send(result.channel, result.share)
+      })
+      .catch(reportBrowserShareFailure)
   })
 }
