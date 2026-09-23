@@ -166,4 +166,3 @@ describe('pr pane titles for unenriched chat-linked rows', () => {
     }
   })
 })
-
