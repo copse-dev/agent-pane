@@ -118,7 +118,11 @@ describe('selected plugin browser behavior', function () {
     await setComposerValue('Inspect my personal reference page.')
     await $('.submit-btn').click()
     const dirtySend = $('.composer-dirty-send-btn')
-    if (await dirtySend.isDisplayed()) await dirtySend.click()
+    const dirtyPromptShown = await dirtySend
+      .waitForDisplayed({ timeout: 10_000 })
+      .then(() => true)
+      .catch(() => false)
+    if (dirtyPromptShown) await dirtySend.click()
 
     const assistant = $('.msg-assistant .message-text')
     await assistant.waitForDisplayed({ timeout: 60_000 })
