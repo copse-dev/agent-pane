@@ -388,7 +388,7 @@ export function mountPrPane(
         .prDetails(pr.owner, pr.repo, pr.number)
         .then((details) => {
           if (disposed || gen !== titleGen) return
-          const title = details?.title?.trim()
+          const title = details?.title.trim()
           if (!title || title === placeholderPrTitle(pr.number)) return
           titlesCache.set(key, title)
           pr.title = title
