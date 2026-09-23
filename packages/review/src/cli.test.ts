@@ -322,6 +322,40 @@ describe('copse-review CLI', () => {
     assert.doesNotMatch(result.out, /\nNo findings\.\n/)
   })
 
+  it('does not call a completed but materially limited review clean', async () => {
+    const repo = await fixture({})
+    const dir = await mkdtemp(join(tmpdir(), 'review-cli-'))
+    scratch.push(dir)
+    const script = join(dir, 'script.json')
+    await writeFile(
+      script,
+      JSON.stringify([
+        finishReviewStep(
+          'The changed implementation and its direct callers.',
+          'Dependency source was unavailable in the read-only workspace.',
+        ),
+        { type: 'text', text: 'Done.' },
+      ]),
+    )
+    const result = await run(repo, [
+      '--base',
+      'main',
+      '--allow-unisolated',
+      '--provider',
+      'mock',
+      '--mock-script',
+      script,
+      '--no-verify',
+    ])
+    assert.equal(result.code, HEADLESS_EXIT.SUCCESS, result.err)
+    assert.match(
+      result.out,
+      /Could not verify \(mock \/ correctness\): Dependency source was unavailable/,
+    )
+    assert.match(result.out, /No findings were reported; review limits remain\./)
+    assert.doesNotMatch(result.out, /\nNo findings\.\n/)
+  })
+
   it('derives the permission profile from the execution decision, failing closed', () => {
     assert.equal(reviewPermissionProfile(true).shell, 'allow')
     assert.equal(reviewPermissionProfile(false).shell, 'deny')

@@ -11,6 +11,7 @@ import {
   reviewerClosureTools,
   reviewerTools,
   type ReportedCandidate,
+  type ReviewCompletion,
   type ReviewerToolHost,
 } from './reviewer-tools.ts'
 import type { CellCommandResult } from './isolation.ts'
@@ -42,6 +43,8 @@ export interface Stage2Result {
   readonly stopReason: TurnResult['stopReason']
   /** The reviewer's closing plain-text message: what it checked and what it could not. */
   readonly summary: string
+  /** Structured coverage attestation from the required finish_review call. */
+  readonly completion: ReviewCompletion | null
   readonly usage: TurnUsage
   readonly toolCalls: number
   readonly error?: string
@@ -107,6 +110,7 @@ export async function runStage2(options: Stage2Options): Promise<Stage2Result> {
       completion === null
         ? turn.summary
         : `Checked: ${completion.checked}\nCould not verify: ${completion.couldNotVerify}`,
+    completion,
     usage: turn.usage,
     toolCalls: turn.toolCalls,
     ...(turn.error !== undefined ? { error: turn.error } : {}),

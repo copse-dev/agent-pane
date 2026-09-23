@@ -16,7 +16,7 @@ import {
   type FindingSeverity,
 } from './finding.ts'
 import type { CellCommandResult } from './isolation.ts'
-import type { ReportedCandidate } from './reviewer-tools.ts'
+import type { ReportedCandidate, ReviewCompletion } from './reviewer-tools.ts'
 import type { Stage0Report } from './stage0.ts'
 import type { Stage2Result } from './stage2.ts'
 import type { Stage4Result, VerificationRecord } from './stage4.ts'
@@ -37,7 +37,43 @@ export interface ReviewerSummary {
   readonly toolCalls: number
   readonly usage: TurnUsage
   readonly summary: string
+  readonly completion: ReviewCompletion | null
   readonly error?: string
+}
+
+export interface ReviewerLimitation {
+  readonly model: string
+  readonly lens: string
+  readonly detail: string
+}
+
+function attestsNoLimit(couldNotVerify: string): boolean {
+  const normalized = couldNotVerify
+    .trim()
+    .replace(/[.!]+$/, '')
+    .trim()
+    .toLowerCase()
+  return normalized === 'nothing'
+}
+
+/** Material uncertainty from completed reviewer turns, for every human-facing projection. */
+export function reviewerLimitations(reviews: readonly ReviewerSummary[]): ReviewerLimitation[] {
+  return reviews.flatMap((review) => {
+    if (
+      review.outcome !== 'completed' ||
+      review.completion === null ||
+      attestsNoLimit(review.completion.couldNotVerify)
+    ) {
+      return []
+    }
+    return [
+      {
+        model: review.model,
+        lens: review.lens,
+        detail: review.completion.couldNotVerify.replace(/\s+/g, ' '),
+      },
+    ]
+  })
 }
 
 export interface VerificationSummary {
@@ -212,6 +248,7 @@ export function summarizeReview(review: Stage2Result): ReviewerSummary {
     toolCalls: review.toolCalls,
     usage: review.usage,
     summary: review.summary,
+    completion: review.completion,
     ...(review.error !== undefined ? { error: review.error } : {}),
   }
 }

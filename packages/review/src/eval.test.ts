@@ -65,6 +65,7 @@ function report(findings: Finding[], overrides: Partial<ReviewReport> = {}): Rev
         toolCalls: 1,
         usage: { inputTokens: 100, outputTokens: 20, estimated: false },
         summary: '',
+        completion: { checked: 'The changed implementation.', couldNotVerify: 'Nothing' },
       },
     ],
     verification: null,

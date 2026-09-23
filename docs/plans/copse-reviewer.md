@@ -842,6 +842,12 @@ CI shell needs (`stage0-report.ts`, `forge-review.ts`) and the workflows
   rollout; making the reviewer required needs a separate decision backed by that record.
   Dogfood acceptance is operational evidence, not the Martian offline measurement B8
   requires for the public 85% precision claim.
+- **A bounded clean review names its limits.** _Added 2026-09-23 after live review #2737._
+  The required `finish_review` coverage attestation stays structured through Stage 5. Forge
+  projections surface every material `couldNotVerify` value and reserve plain “No findings” for
+  completed turns that attest `Nothing`; unavailable dependency source or command execution is
+  therefore visible instead of being collapsed into a false-clean result. The secret-bearing
+  findings job still does not install or execute pull-request dependencies to fill that gap.
 - **Known limit: reproducers in CI.** The findings job has no cell, so Stage 4 there is
   the challenger only; a reproducer needs execution, which belongs to the secret-free job,
   and a job-crossing loop for it is a follow-up. The reports say "unverified" or "survived
