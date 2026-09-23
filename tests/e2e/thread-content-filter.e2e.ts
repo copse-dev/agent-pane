@@ -21,6 +21,15 @@ function thread(id: string, title: string, date: number, messages: Message[]): T
   }
 }
 
+async function setFilterValue(value: string): Promise<void> {
+  await browser.execute((nextValue) => {
+    const input = document.querySelector<HTMLInputElement>('.projects-search-input')
+    if (!input) throw new Error('Thread filter input is missing')
+    input.value = nextValue
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  }, value)
+}
+
 describe('sidebar user-request search', () => {
   before(async () => {
     process.env.COPSE_PANEL_MOCK_LLM = '1'
@@ -74,8 +83,7 @@ describe('sidebar user-request search', () => {
   it('finds persisted user requests beyond the first page in date order and opens a match', async () => {
     await expect($('.chat-row[data-thread-id="old-request"]')).not.toExist()
     await $('.projects-search-btn').click()
-    const input = await $('.projects-search-input')
-    await input.setValue('needle')
+    await setFilterValue('needle')
     await browser.waitUntil(
       async () =>
         (await $$('.chat-title').map((row) => row.getText())).join('|') ===
@@ -95,19 +103,19 @@ describe('sidebar user-request search', () => {
     await expect($('.chat-row.selected .chat-title')).toHaveText('Older follow-up request')
     await expect($('.messages-list')).toHaveText(expect.stringContaining('A later needle request'))
 
-    await input.setValue('no-such-request')
+    await setFilterValue('no-such-request')
     await expect($('.chats-list .sidebar-empty')).toHaveText('No matching threads')
-    await input.setValue('')
+    await setFilterValue('')
     await expect($('.chat-row[data-thread-id="welcome"]')).toExist()
   })
 
   it('clears the old search when switching workspaces and searches only the newly opened workspace', async () => {
-    await $('.projects-search-input').setValue('needle')
+    await setFilterValue('needle')
     await $('.project-entry[data-project-id="other-workspace"] .project-row').click()
     await expect($('.projects-search-row')).not.toBeDisplayed()
     await expect($('.chat-row .chat-title')).toHaveText('Other workspace request')
     await $('.projects-search-btn').click()
-    await $('.projects-search-input').setValue('needle')
+    await setFilterValue('needle')
     await expect($('.chat-row .chat-title')).toHaveText('Other workspace request')
     await browser.waitUntil(async () => !(await $('.thread-filter-status').isExisting()), {
       timeout: 15000,
