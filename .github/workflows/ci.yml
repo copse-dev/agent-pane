@@ -617,11 +617,11 @@ jobs:
           #
           # The peak is c8's post-run remap in a single process, after every
           # test worker has already exited -- not the workers themselves, so
-          # TEST_FILE_CONCURRENCY does not bound it. 3072 aborted there with
-          # "Ineffective mark-compacts near heap limit" once the whole suite had
-          # passed; 6144 completes the remap and the ratchet. ubuntu-latest has
-          # 16 GB, and only this one process is live at that point.
-          NODE_OPTIONS: --max-old-space-size=6144
+          # TEST_FILE_CONCURRENCY does not bound it. 3072 and 6144 have both
+          # aborted there with "Ineffective mark-compacts near heap limit" once
+          # the whole suite had passed. ubuntu-latest has 16 GB, and only this
+          # one process is live at that point.
+          NODE_OPTIONS: --max-old-space-size=8192
           UNIT_MODE: ${{ needs.precheck.outputs.unit_mode }}
           UNIT_SPECS: ${{ needs.precheck.outputs.unit_specs }}
           # True only for a PR stacked on another PR's branch. `push`, tags and
