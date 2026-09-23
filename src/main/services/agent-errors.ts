@@ -250,10 +250,7 @@ function isNestedSandboxApplyFailure(rpc: JsonRpcError | null, detail: string): 
  * `'nested_sandbox'` interruption marker off the same signal the user-facing
  * diagnosis reads — two readings of one verdict, not two that can disagree.
  */
-export function isAcpNestedSandboxFailure(
-  err: unknown,
-  ctx?: ClassifyAgentErrorContext,
-): boolean {
+export function isAcpNestedSandboxFailure(err: unknown, ctx?: ClassifyAgentErrorContext): boolean {
   if (!ctx?.acpAgentId) return false
   const rpc = findJsonRpcError(err)
   const { message } = parseProviderError(err)

@@ -145,16 +145,12 @@ describe('classifyAgentError', () => {
   // while the seatbelt stands, so the marker must say re-running won't help.
   it('reads a nested-sandbox denial out of the agent turn text and points at the boundary', () => {
     const err = new AcpTurnFailure(
-      new RequestError(
-        -32603,
-        'Internal error: ACP agent turn failed',
-        {
-          details:
-            'node_repl kernel exited unexpectedly\nnode_repl diagnostics: ' +
-            '{"kernel_pid":91184,"kernel_status":"exited(code=71)","kernel_stderr_tail":' +
-            '"sandbox-exec: sandbox_apply: Operation not permitted","reason":"stdout_eof"}',
-        },
-      ),
+      new RequestError(-32603, 'Internal error: ACP agent turn failed', {
+        details:
+          'node_repl kernel exited unexpectedly\nnode_repl diagnostics: ' +
+          '{"kernel_pid":91184,"kernel_status":"exited(code=71)","kernel_stderr_tail":' +
+          '"sandbox-exec: sandbox_apply: Operation not permitted","reason":"stdout_eof"}',
+      }),
       { assistantText: '', usage: { inputTokens: 0, outputTokens: 0 } },
     )
     const out = classifyAgentError(err, { acpAgentId: 'codex-acp' })
