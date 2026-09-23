@@ -534,6 +534,47 @@ async function fetchRunUsage(input: {
   }
 }
 
+/**
+ * Fetch usage for a run and, when non-zero, emit it as a `usage` chunk so it
+ * reaches the local ledger (`recordAgentUsageChunk`) the same way a local
+ * model's usage does. Shared by the normal completion path and the Stop /
+ * Send-now cancel path (issue #2448): a cancelled run has typically already
+ * billed real tokens on Cursor's side, and skipping this call there silently
+ * dropped that spend from the usage panel forever.
+ */
+async function reportRunUsage(input: {
+  fetchImpl: typeof fetch
+  baseUrl: string
+  apiKey: string
+  agentId: string
+  runId: string
+  provider: RemoteAgentProvider
+  model: string | undefined
+  onChunk: (chunk: StreamChunk) => void
+}): Promise<{ inputTokens: number; outputTokens: number }> {
+  let usage = { inputTokens: 0, outputTokens: 0 }
+  try {
+    usage = await fetchRunUsage({
+      fetchImpl: input.fetchImpl,
+      baseUrl: input.baseUrl,
+      apiKey: input.apiKey,
+      agentId: input.agentId,
+      runId: input.runId,
+    })
+    if (usage.inputTokens || usage.outputTokens) {
+      input.onChunk({
+        type: 'usage',
+        model: remoteAgentModelValue(input.provider, input.model),
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
+      })
+    }
+  } catch (err) {
+    console.warn('[remote-agent] usage fetch failed:', err)
+  }
+  return usage
+}
+
 export async function listRemoteArtifacts(input: {
   fetchImpl?: typeof fetch
   baseUrl: string
@@ -1107,26 +1148,16 @@ export async function runRemoteAgentFromSettings(
       signal: options.signal,
       onChunk: options.onChunk,
     })
-    let usage = { inputTokens: 0, outputTokens: 0 }
-    try {
-      usage = await fetchRunUsage({
-        fetchImpl,
-        baseUrl,
-        apiKey,
-        agentId: run.agentId,
-        runId: run.runId,
-      })
-      if (usage.inputTokens || usage.outputTokens) {
-        options.onChunk({
-          type: 'usage',
-          model: remoteAgentModelValue(options.provider, selectedModel),
-          inputTokens: usage.inputTokens,
-          outputTokens: usage.outputTokens,
-        })
-      }
-    } catch (err) {
-      console.warn('[remote-agent] usage fetch failed:', err)
-    }
+    const usage = await reportRunUsage({
+      fetchImpl,
+      baseUrl,
+      apiKey,
+      agentId: run.agentId,
+      runId: run.runId,
+      provider: options.provider,
+      model: selectedModel,
+      onChunk: options.onChunk,
+    })
     try {
       const artifacts = await listRemoteArtifacts({
         fetchImpl,
@@ -1157,11 +1188,25 @@ export async function runRemoteAgentFromSettings(
     // the abort as a provider error ("An error occurred: …").
     if (options.signal.aborted) {
       if (cancelPromise) await cancelPromise
+      // A cancelled run has typically already billed real tokens on Cursor's
+      // side up to the point of cancellation — attribute them before the
+      // turn's outcome is reported as CANCELLED, or they vanish from the
+      // ledger with no way to recover them later.
+      const usage = await reportRunUsage({
+        fetchImpl,
+        baseUrl,
+        apiKey,
+        agentId: run.agentId,
+        runId: run.runId,
+        provider: options.provider,
+        model: selectedModel,
+        onChunk: options.onChunk,
+      })
       options.onChunk({ type: 'done', stopReason: 'CANCELLED' })
       return {
         assistantText: '',
-        inputTokens: 0,
-        outputTokens: 0,
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
         messages: [],
       }
     }

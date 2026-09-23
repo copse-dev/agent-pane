@@ -1099,6 +1099,14 @@ describe('runRemoteAgentFromSettings follow-up after cancel', () => {
         cancelCalls += 1
         return new Response(null, { status: 200 })
       }
+      if (url.includes('/usage')) {
+        // Cancelling still fetches usage for the partial run (issue #2448); no
+        // tokens were billed here, so an empty response is enough.
+        return new Response(JSON.stringify({ runs: [] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
       throw new Error(`unexpected fetch: ${url}`)
     }
 
