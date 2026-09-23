@@ -172,7 +172,7 @@ describe('annotation layer', () => {
     }
   })
 
-  it('Send hands the export to onSend, then consumes an accepted annotation', async () => {
+  it('Send hands the export to onSend, then keeps the marks in place', async () => {
     const el = host()
     const sent: AnnotationExport[] = []
     let captured = 0
@@ -201,9 +201,16 @@ describe('annotation layer', () => {
       // happy-dom has no canvas, so neither composition attempt can produce a raster.
       assert.equal(payload.png, null)
       assert.equal(payload.captured, false)
-      assert.equal(layer.isEmpty(), true)
+      // The annotation survives being sent: the mode leaves, the marks stay.
+      assert.equal(layer.isEmpty(), false)
       assert.equal(layer.active, false)
-      assert.equal(el.querySelector<HTMLElement>('.annotation-layer')?.hidden, true)
+      assert.equal(el.querySelector<HTMLElement>('.annotation-layer')?.hidden, false)
+      // …and can be sent again (or edited) without redrawing.
+      layer.activate()
+      el.querySelector<HTMLButtonElement>('.annotation-send')?.click()
+      await new Promise((r) => setTimeout(r, 0))
+      await new Promise((r) => setTimeout(r, 0))
+      assert.equal(sent.length, 2)
     } finally {
       layer.dispose()
       el.remove()
@@ -242,5 +249,45 @@ describe('annotation layer', () => {
     drag(svg, 0, 0, 30, 30)
     assert.equal(svg.childElementCount, 0)
     el.remove()
+  })
+
+  it('setScrollOffset shifts the live viewBox and the exported crop', async () => {
+    const el = host()
+    const layer = mountAnnotationLayer(el, { label: 'page', onSend: () => true })
+    try {
+      layer.activate()
+      const svg = surfaceOf(el)
+      // Drawing happens through the same viewBox, so the recorded stroke lands
+      // in page space even after the offset moves.
+      layer.setScrollOffset(0, 240)
+      assert.equal(svg.getAttribute('viewBox'), '0 240 100% 100%')
+      drag(svg, 20, 260, 120, 320)
+
+      const payload = await layer.export()
+      assert.match(payload.svg, /viewBox="0 240 400 300"/)
+      assert.match(payload.svg, /fill="#e5484d"/)
+
+      layer.setScrollOffset(100, 0)
+      assert.equal(svg.getAttribute('viewBox'), '100 0 100% 100%')
+      const again = await layer.export()
+      assert.match(again.svg, /viewBox="100 0 400 300"/)
+    } finally {
+      layer.dispose()
+      el.remove()
+    }
+  })
+
+  it('ignores garbage scroll offsets', () => {
+    const el = host()
+    const layer = mountAnnotationLayer(el, { label: 'page', onSend: () => true })
+    try {
+      layer.activate()
+      const svg = surfaceOf(el)
+      layer.setScrollOffset(-5, Number.NaN)
+      assert.equal(svg.getAttribute('viewBox'), '0 0 100% 100%')
+    } finally {
+      layer.dispose()
+      el.remove()
+    }
   })
 })

@@ -1,5 +1,10 @@
 import { z } from 'zod'
 import type { BrowserImageShare, BrowserTextShare } from '@shared/types/browser-share.ts'
+import {
+  GUEST_SCROLL_SCRIPT,
+  parseGuestScrollPosition,
+  type GuestScrollPosition,
+} from '@shared/browser-guest-scroll.ts'
 
 interface BrowserPageTextContents {
   executeJavaScript(code: string, userGesture?: boolean): Promise<unknown>
@@ -97,6 +102,21 @@ export async function captureBrowserScreenshot(
 ): Promise<BrowserImageShare> {
   const image = await contents.capturePage()
   return { dataUrl: image.toDataURL(), mimeType: 'image/png' }
+}
+
+/**
+ * Where the guest's viewport sits on its page. The annotation overlay is
+ * page-anchored, so the renderer re-reads this while the user scrolls. A guest
+ * that cannot answer (unusual failure inside the page) reports no scroll, and
+ * the overlay falls back to viewport anchoring rather than failing.
+ */
+export async function captureBrowserScrollPosition(
+  contents: BrowserPageTextContents,
+): Promise<GuestScrollPosition> {
+  const raw: unknown = await contents
+    .executeJavaScript(GUEST_SCROLL_SCRIPT, true)
+    .catch(() => undefined)
+  return parseGuestScrollPosition(raw)
 }
 
 /** Filename hint for Export PDF — the page title, else its hostname. */

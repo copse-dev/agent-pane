@@ -5,10 +5,20 @@
  * sits underneath and hands the caller both the SVG (exact geometry, small
  * enough to give a text model) and a PNG (what a vision model sees).
  *
+ * Marks are anchored to the *page*, not the viewport: the host relays the
+ * guest's scroll position through `setScrollOffset()` and the SVG shifts its
+ * `viewBox` to match, so a mark drawn on a heading moves with that heading as
+ * the user scrolls. Drawing coordinates stay page-relative either way — the
+ * viewBox maps the pointer's client position onto page space for drauu, and
+ * exports bake the same offset in so the flattened image lines up with the
+ * captured viewport.
+ *
  * Nothing is mounted until the first `activate()`, so hosts that never
  * annotate pay nothing. Once marks exist the layer stays visible after
  * "Done" but stops taking pointer events, so the page underneath is usable
- * again while the marks remain until cleared or sent away.
+ * again while the marks remain until cleared. Sending keeps them too: a mark
+ * the user went to the trouble of drawing usually describes the next message
+ * as well, and clearing is one click away.
  */
 import { el } from '../dom/helpers.ts'
 import {
@@ -102,6 +112,13 @@ export interface AnnotationLayer {
   isEmpty(): boolean
   clear(): void
   setTool(tool: AnnotationTool): void
+  /**
+   * Anchor the marks to the page: `x`/`y` are the guest's scroll offsets in
+   * CSS pixels. Hosts call this on guest scroll, navigation, and resize; the
+   * layer shifts its viewBox so marks move with the content they were drawn
+   * on. Hosts that never call it get viewport-anchored marks (offset 0,0).
+   */
+  setScrollOffset(x: number, y: number): void
   export(): Promise<AnnotationExport>
   dispose(): void
 }
@@ -180,6 +197,16 @@ export function mountAnnotationLayer(
   let undoBtn: HTMLButtonElement | null = null
   let clearBtn: HTMLButtonElement | null = null
   let sending = false
+  let scrollX = 0
+  let scrollY = 0
+
+  const fmt = (v: number): string => String(Math.round(v * 100) / 100)
+
+  /** Shift the drawing surface so page-anchored marks track the guest's scroll. */
+  const applyViewBox = (): void => {
+    if (!svg) return
+    svg.setAttribute('viewBox', `${fmt(scrollX)} ${fmt(scrollY)} 100% 100%`)
+  }
 
   const applyBrush = (): void => {
     if (!drauu) return
@@ -246,6 +273,7 @@ export function mountAnnotationLayer(
     svg.setAttribute('class', 'annotation-layer-svg')
     svg.setAttribute('role', 'img')
     svg.setAttribute('aria-label', `Annotations over ${options.label}`)
+    applyViewBox()
 
     const separator = (): HTMLElement =>
       el('span', { class: 'annotation-sep', 'aria-hidden': 'true' })
@@ -298,7 +326,9 @@ export function mountAnnotationLayer(
         .then(async (payload) => {
           const accepted = await options.onSend(payload)
           if (!accepted) return
-          layer.clear()
+          // Sent, not spent: the marks stay where they were drawn so the next
+          // message can build on the same annotation. Leave the mode so the
+          // page is interactive again; Done/Clear remove marks explicitly.
           layer.deactivate()
         })
         // Callers surface expected attachment failures by returning false. Keep
@@ -419,6 +449,11 @@ export function mountAnnotationLayer(
       tool = next
       applyBrush()
     },
+    setScrollOffset(x: number, y: number): void {
+      scrollX = Number.isFinite(x) ? Math.max(0, x) : 0
+      scrollY = Number.isFinite(y) ? Math.max(0, y) : 0
+      applyViewBox()
+    },
     async export(): Promise<AnnotationExport> {
       ensureMounted()
       const rect = host.getBoundingClientRect()
@@ -438,7 +473,12 @@ export function mountAnnotationLayer(
       clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
       clone.setAttribute('width', String(width))
       clone.setAttribute('height', String(height))
-      clone.setAttribute('viewBox', `0 0 ${String(width)} ${String(height)}`)
+      // Marks live in page space; the capture underneath is viewport space.
+      // The exported viewBox crops the page to exactly the captured viewport.
+      clone.setAttribute(
+        'viewBox',
+        `${fmt(scrollX)} ${fmt(scrollY)} ${String(width)} ${String(height)}`,
+      )
       // outerHTML serialises foreign (SVG) content with explicit end tags, so the
       // result is well-formed XML as well as HTML; no XMLSerializer needed.
       const serialised = clone.outerHTML

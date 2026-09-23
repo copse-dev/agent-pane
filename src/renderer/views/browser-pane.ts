@@ -39,6 +39,7 @@ import type { BrowserPaneSession, BrowserPaneSessionTab } from '@shared/types/ma
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 import { mountAnnotationLayer, type AnnotationLayer } from '../drawing/annotation-layer.ts'
 import { attachAnnotation } from '../drawing/attach-annotation.ts'
+import { trackGuestScroll } from '../drawing/scroll-tracker.ts'
 import { showErrorToast, showToast } from './toast.ts'
 import type { BrowserImageShare, BrowserTextShare } from '@shared/types/browser-share.ts'
 
@@ -87,6 +88,8 @@ interface BrowserTab {
   closeMenu: () => void
   /** Drawing overlay, mounted on first use; null until the user annotates. */
   annotation: AnnotationLayer | null
+  /** Guest scroll polling that keeps the overlay page-anchored; with the overlay. */
+  annotationScroll: { kick: () => void; dispose: () => void } | null
 }
 
 /** The current page URL when it is a real http(s) address (not about:blank or a
@@ -525,6 +528,8 @@ export function mountBrowserPane(
     // explicit px so a pane drag or maximize actually resizes the page.
     webview.style.width = `${String(Math.round(width))}px`
     webview.style.height = `${String(Math.round(height))}px`
+    // A new viewport can shift the guest's scroll offsets; re-read them.
+    tab.annotationScroll?.kick()
   }
 
   function syncActiveWebviewSize(): void {
@@ -602,7 +607,8 @@ export function mountBrowserPane(
     }
 
     webview.addEventListener('did-navigate', onNavigate)
-    // Marks are anchored to the viewport of the page they were drawn on.
+    // Marks are anchored to the page they were drawn on; a new document has no
+    // use for them.
     webview.addEventListener('did-navigate', () => {
       tab.annotation?.deactivate()
       tab.annotation?.clear()
@@ -617,6 +623,8 @@ export function mountBrowserPane(
       tab.webviewReady = true
       syncAddressBar(tab)
       syncWebviewSize(tab)
+      // The new document's scroll position differs from the old one's.
+      tab.annotationScroll?.kick()
       if (tab.pendingUrl) {
         const url = tab.pendingUrl
         tab.pendingUrl = null
@@ -1122,33 +1130,53 @@ export function mountBrowserPane(
       artefactProjectId: null,
       artefactContentReady: false,
       annotation: null,
+      annotationScroll: null,
       closeMenu: () => {
         setMenuOpen(false)
       },
     }
 
     // The overlay is built on the first click so tabs that never annotate
-    // carry no SVG surface or window listeners.
+    // carry no SVG surface, window listeners, or guest scroll polling.
     const annotationLayer = (): AnnotationLayer => {
-      tab.annotation ??= mountAnnotationLayer(webviewHost, {
-        label: webviewTitle(tab) ?? 'browser page',
-        captureBase: async (): Promise<string | null> => {
-          const contentsId = shareableWebContentsId(tab)
-          const capture = api?.browser.captureScreenshot
-          if (contentsId === null || !capture) return null
-          return (await capture(contentsId)).dataUrl
-        },
-        onSend: (payload): boolean => {
-          return attachAnnotation(
-            payload,
-            firstNonEmptyString(tab.artefactTitle, webviewTitle(tab), webviewUrl(tab)) ??
-              'browser page',
-          )
-        },
-        onDeactivate: (): void => {
-          annotateBtn.setAttribute('aria-pressed', 'false')
-        },
-      })
+      if (!tab.annotation) {
+        tab.annotation = mountAnnotationLayer(webviewHost, {
+          label: webviewTitle(tab) ?? 'browser page',
+          captureBase: async (): Promise<string | null> => {
+            const contentsId = shareableWebContentsId(tab)
+            const capture = api?.browser.captureScreenshot
+            if (contentsId === null || !capture) return null
+            return (await capture(contentsId)).dataUrl
+          },
+          onSend: (payload): boolean => {
+            return attachAnnotation(
+              payload,
+              firstNonEmptyString(tab.artefactTitle, webviewTitle(tab), webviewUrl(tab)) ??
+                'browser page',
+            )
+          },
+          onDeactivate: (): void => {
+            annotateBtn.setAttribute('aria-pressed', 'false')
+          },
+        })
+        // Marks are anchored to the page: poll the guest's scroll offsets
+        // while the user interacts so they track the content they point at.
+        const layer = tab.annotation
+        tab.annotationScroll = trackGuestScroll({
+          wheelTarget: webviewHost,
+          fetchPosition: async () => {
+            const contentsId = shareableWebContentsId(tab)
+            const read = api?.browser.scrollPosition
+            if (contentsId === null || !read) return null
+            return await read(contentsId)
+          },
+          onScroll: (position) => {
+            layer.setScrollOffset(position.x, position.y)
+          },
+        })
+        // Baseline the guest's current offsets without waiting for input.
+        tab.annotationScroll.kick()
+      }
       return tab.annotation
     }
     annotateBtn.addEventListener('click', () => {
@@ -1259,6 +1287,7 @@ export function mountBrowserPane(
     if (!tab) return
     tab.webview?.remove()
     tab.tabBtn.remove()
+    tab.annotationScroll?.dispose()
     tab.annotation?.dispose()
     tab.panel.remove()
     tabs.delete(tabId)
@@ -1333,6 +1362,7 @@ export function mountBrowserPane(
     for (const tab of tabs.values()) {
       tab.webview?.remove()
       tab.tabBtn.remove()
+      tab.annotationScroll?.dispose()
       tab.annotation?.dispose()
       tab.panel.remove()
     }
@@ -1641,6 +1671,7 @@ export function mountBrowserPane(
     for (const tab of tabs.values()) {
       tab.webview?.remove()
       tab.tabBtn.remove()
+      tab.annotationScroll?.dispose()
       tab.annotation?.dispose()
       tab.panel.remove()
     }

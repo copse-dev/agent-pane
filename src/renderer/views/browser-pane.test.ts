@@ -9,6 +9,7 @@ import { createPendingApi } from '../fake-api.test-support.ts'
 import { el, qsRequired } from '../dom/helpers.ts'
 import { registerPromptAttachments } from '../attachments/prompt-attachments.ts'
 import type { BrowserImageShare, BrowserTextShare } from '@shared/types/browser-share.ts'
+import { SCROLL_TRACK_INTERVAL_MS } from '../drawing/scroll-tracker.ts'
 
 interface FakeWebview extends HTMLElement {
   src: string
@@ -1314,6 +1315,102 @@ describe('browser pane webview size sync', () => {
       globalThis.requestAnimationFrame = raf
       recorder.restore()
       unmount()
+    }
+  })
+})
+
+describe('browser pane annotation scroll tracking', () => {
+  function pointer(type: string, x: number, y: number): PointerEvent {
+    return new PointerEvent(type, {
+      bubbles: true,
+      cancelable: true,
+      clientX: x,
+      clientY: y,
+      pointerId: 1,
+      pointerType: 'mouse',
+      pressure: 0.5,
+    })
+  }
+
+  it('relays guest scroll offsets onto the annotation viewBox', async () => {
+    const hadResizeObserver = Object.prototype.hasOwnProperty.call(globalThis, 'ResizeObserver')
+    const ResizeObserverCtor = globalThis.ResizeObserver
+    class NoopResizeObserver {
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+    globalThis.ResizeObserver = NoopResizeObserver
+
+    const { list, viewer } = mountBrowserHosts()
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      filesPaneOpen: true,
+      rightPanelMode: 'browser',
+    })
+    let scroll: { x: number; y: number } = { x: 0, y: 0 }
+    let scrollReads = 0
+    const api = createPendingApi({
+      'browser.captureScreenshot': async (): Promise<BrowserImageShare> => ({
+        dataUrl: 'data:image/png;base64,AAAA',
+        mimeType: 'image/png',
+      }),
+      'browser.scrollPosition': async (): Promise<{ x: number; y: number }> => {
+        scrollReads += 1
+        return scroll
+      },
+      'panes.popout': async (): Promise<void> => {},
+    })
+    const unmount = mountBrowserPane(list, viewer, store, api)
+
+    try {
+      const panel = qsRequired(viewer, '.browser-tab-panel.is-active')
+      const host = qsRequired(panel, '.browser-webview-host')
+      const webview = qsRequired<FakeWebview>(host, '.browser-webview')
+      stubWebviewMethods(webview)
+      webview.getURL = (): string => 'https://example.com/page'
+      webview.dispatchEvent(new Event('dom-ready'))
+
+      const annotateBtn = qsRequired<HTMLButtonElement>(panel, '.browser-annotate-btn')
+      annotateBtn.click()
+      const svg = qsRequired<SVGSVGElement>(host, 'svg.annotation-layer-svg')
+      assert.equal(svg.getAttribute('viewBox'), '0 0 100% 100%')
+
+      // Creating the layer baselines the guest's current offsets immediately.
+      await new Promise((r) => setTimeout(r, 0))
+      assert.ok(scrollReads >= 1, 'the tracker polled the guest')
+
+      // A wheel over the guest host wakes the tracker; the next poll applies
+      // the guest's new offsets to the drawing surface.
+      host.dispatchEvent(new window.Event('wheel', { bubbles: true }))
+      scroll = { x: 0, y: 480 }
+      await new Promise((r) => setTimeout(r, SCROLL_TRACK_INTERVAL_MS + 120))
+      assert.equal(svg.getAttribute('viewBox'), '0 480 100% 100%')
+
+      // Marks drawn now land in page space: the stroke points include scrollY.
+      svg.dispatchEvent(pointer('pointerdown', 30, 40))
+      window.dispatchEvent(pointer('pointermove', 60, 90))
+      window.dispatchEvent(pointer('pointerup', 60, 90))
+      // happy-dom's drauu path uses bounding-rect coordinates, so only the
+      // surface bookkeeping (not stroke geometry) is asserted here.
+      assert.equal(svg.getAttribute('viewBox'), '0 480 100% 100%')
+
+      // Sending deactivates but keeps the marks; scrolling still tracks.
+      const sendBtn = qsRequired<HTMLButtonElement>(host, '.annotation-send')
+      sendBtn.click()
+      await new Promise((r) => setTimeout(r, 0))
+      await new Promise((r) => setTimeout(r, 0))
+      scroll = { x: 0, y: 720 }
+      await new Promise((r) => setTimeout(r, SCROLL_TRACK_INTERVAL_MS + 120))
+      assert.equal(svg.getAttribute('viewBox'), '0 720 100% 100%')
+      assert.equal(host.querySelector('.annotation-layer')?.getAttribute('hidden'), null)
+    } finally {
+      if (hadResizeObserver) globalThis.ResizeObserver = ResizeObserverCtor
+      else Reflect.deleteProperty(globalThis, 'ResizeObserver')
+      unmount()
+      list.remove()
+      viewer.remove()
     }
   })
 })

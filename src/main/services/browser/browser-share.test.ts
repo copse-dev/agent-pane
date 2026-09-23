@@ -4,6 +4,7 @@ import {
   browserSelectionShare,
   captureBrowserPageText,
   captureBrowserScreenshot,
+  captureBrowserScrollPosition,
   exportBrowserPagePdf,
   shareBrowserGuestContent,
   suggestedPdfFilename,
@@ -60,6 +61,28 @@ describe('browser thread sharing', () => {
       dataUrl: 'data:image/png;base64,QUJD',
       mimeType: 'image/png',
     })
+  })
+
+  it('reads the guest scroll position, tolerating failure and garbage', async () => {
+    let script = ''
+    const position = await captureBrowserScrollPosition({
+      executeJavaScript: (code) => {
+        script = code
+        return Promise.resolve({ x: 12, y: 340 })
+      },
+    })
+    assert.match(script, /window\.scrollX/)
+    assert.deepEqual(position, { x: 12, y: 340 })
+
+    const fallback = await captureBrowserScrollPosition({
+      executeJavaScript: () => Promise.reject(new Error('guest crashed')),
+    })
+    assert.deepEqual(fallback, { x: 0, y: 0 })
+
+    const garbage = await captureBrowserScrollPosition({
+      executeJavaScript: () => Promise.resolve('scrolled?'),
+    })
+    assert.deepEqual(garbage, { x: 0, y: 0 })
   })
 
   it('turns the exact context-menu selection into sourced text', () => {
