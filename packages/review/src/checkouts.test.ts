@@ -48,6 +48,7 @@ describe('materialiseCheckouts', () => {
       assert.equal(checkouts.mergeBase, baseCommit)
       assert.equal(checkouts.headCommit, headCommit)
       assert.equal(checkouts.dirty, true)
+      assert.deepEqual(checkouts.untrackedPaths, ['new/untracked.txt'])
       assert.equal(checkouts.gitCommonDir, await realpath(join(repo.root, '.git')))
       assert.equal(await readFile(join(checkouts.base, 'a.txt'), 'utf8'), 'one\n')
       assert.equal(await readFile(join(checkouts.head, 'a.txt'), 'utf8'), 'three\n')
@@ -72,6 +73,7 @@ describe('materialiseCheckouts', () => {
     })
     try {
       assert.equal(checkouts.dirty, false)
+      assert.deepEqual(checkouts.untrackedPaths, [])
       assert.equal(await readFile(join(checkouts.head, 'a.txt'), 'utf8'), 'two\n')
       assert.equal(await exists(join(checkouts.head, 'new')), false)
     } finally {
@@ -94,6 +96,7 @@ describe('materialiseCheckouts', () => {
       assert.equal(checkouts.headCommit, headCommit)
       assert.equal(checkouts.mergeBase, baseCommit)
       assert.equal(checkouts.dirty, false)
+      assert.deepEqual(checkouts.untrackedPaths, [])
       assert.equal(await readFile(join(checkouts.head, 'a.txt'), 'utf8'), 'two\n')
       assert.equal(await exists(join(checkouts.head, 'new')), false)
     } finally {

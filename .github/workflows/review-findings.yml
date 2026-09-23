@@ -224,6 +224,7 @@ jobs:
             --stage0-json ground/report.json \
             --backend container \
             --image "$REVIEW_CELL_IMAGE" \
+            --scratch-parent "$RUNNER_TEMP" \
             --trusted-prepare "$GITHUB_WORKSPACE/scripts/prepare-review-stage0.mts" \
             --provider "$REVIEW_PROVIDER" \
             --model "$REVIEW_MODEL" \

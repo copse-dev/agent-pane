@@ -140,6 +140,7 @@ jobs:
             --head "refs/remotes/pr/${PR_NUMBER}" \
             --base "origin/${BASE_REF}" \
             --backend ephemeral-runner \
+            --scratch-parent "$RUNNER_TEMP" \
             --trusted-prepare "$GITHUB_WORKSPACE/scripts/prepare-review-stage0.mts" \
             --no-model \
             --json ground/report.json

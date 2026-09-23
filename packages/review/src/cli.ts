@@ -115,6 +115,8 @@ never the exit code.
   --budget-chars <n>      diff budget handed to the model (default 60000)
   --max-steps <n>         tool-using steps the reviewer may take
   --store <dir>           pnpm store to mount read-only (default: host standard store)
+  --scratch-parent <dir>  parent for disposable checkouts and cell HOME/TMPDIR
+                          (default: the operating-system temp directory)
   --quiet                 no text report on stdout
   --help
 
@@ -278,6 +280,7 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
         'budget-chars': { type: 'string' },
         'max-steps': { type: 'string' },
         store: { type: 'string' },
+        'scratch-parent': { type: 'string' },
         quiet: { type: 'boolean', default: false },
         help: { type: 'boolean', default: false },
       },
@@ -313,6 +316,7 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
   let maxSteps: number | undefined
   let maxVerify: number | undefined
   let concurrency: number | undefined
+  let scratchParent: string | undefined
   let lenses
   let forgeTarget: Omit<ForgeTarget, 'headCommit'> | null
   let importedStage0: Stage0Report | null = null
@@ -322,6 +326,12 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
     maxSteps = integer(values['max-steps'], '--max-steps')
     maxVerify = integer(values['max-verify'], '--max-verify')
     concurrency = integer(values.concurrency, '--concurrency')
+    if (values['scratch-parent'] !== undefined) {
+      scratchParent = await realpath(values['scratch-parent'])
+      if (!(await stat(scratchParent)).isDirectory()) {
+        throw new Error('--scratch-parent must name a directory')
+      }
+    }
     lenses = resolveLenses(values.lenses)
     forgeTarget = resolveForgeTarget(values, io.env)
     if (values['stage0-json'] !== undefined)
@@ -403,6 +413,7 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
     readOnlyCheckouts: importedStage0 !== null || diffOrigin === 'foreign',
     hostEnv: io.env,
     dependencyStore: values.store ?? (await discoverPnpmStore(io.env)),
+    ...(scratchParent === undefined ? {} : { scratchParent }),
     ...(trustedPreparation === undefined ? {} : { trustedPreparation }),
   })
   try {
