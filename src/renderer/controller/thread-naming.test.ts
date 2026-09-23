@@ -139,7 +139,7 @@ test('maybeRenameThreadBranch applies an idle settled title to its worktree bran
   assert.equal(requireThread(store, 't-branch').worktree?.branch, 'copse/repair-sessions-branch')
 })
 
-test('maybeNameThread falls back to first words when suggestTitle fails', async () => {
+test('maybeNameThread falls back to a deterministic title when suggestTitle fails', async () => {
   const store = createStore({
     threads: [newThread('t-fallback', [userMessage('Fix the flicker please now')])],
     activeThreadId: 't-fallback',

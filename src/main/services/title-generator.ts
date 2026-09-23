@@ -1,17 +1,16 @@
 import { mockScenarioTitle } from '@copse/llm/mock-script.ts'
 import {
-  resolveSmallTasksProvider,
+  resolveSmallTasksFallbackRoute,
   resolveSmallTasksModelId,
+  resolveSmallTasksProvider,
+  resolveSmallTasksRoute,
+  type SmallTasksRoute,
 } from './providers/small-tasks-provider.ts'
 import { completeTextWithUsage } from './providers/llm-complete-text.ts'
 import { recordUsageEvent } from './storage/usage-ledger.ts'
+import { cleanThreadTitle, threadTitlePrompt } from '@shared/thread-title.ts'
 
-// Trim model output down to a single clean title line.
-function cleanTitle(out: string): string | null {
-  const firstLine = out.trim().split('\n')[0] ?? ''
-  const title = firstLine.replace(/^["'#\s-]+|["'.\s]+$/g, '').slice(0, 60)
-  return title || null
-}
+export { threadTitlePrompt } from '@shared/thread-title.ts'
 
 function recordSmallTasksUsage(
   model: string,
@@ -26,45 +25,55 @@ function recordSmallTasksUsage(
   })
 }
 
-/**
- * Input cap for the title prompt. A re-title sends the opening message plus the
- * most recent few (each already trimmed by the caller), so the cap has to fit a
- * handful of messages rather than one.
- */
-const THREAD_TITLE_INPUT_CAP = 1500
+async function* threadTitleRoutes(): AsyncIterable<SmallTasksRoute> {
+  const primary = await resolveSmallTasksRoute()
+  if (!primary) return
+  yield primary
 
-/** The prompt {@link suggestThreadTitle} sends; `text` is the user's side of the thread. */
-export function threadTitlePrompt(text: string): string {
-  return (
-    'Reply with ONLY a concise 3-5 word title in Title Case for the following request. ' +
-    'If several messages are shown, they are one conversation: title it by its ' +
-    'overall goal, not just the latest message. ' +
-    'No quotes, no trailing punctuation.\n\nRequest:\n' +
-    text.slice(0, THREAD_TITLE_INPUT_CAP)
-  )
+  // An async generator stays paused after the primary yield, so the chat route
+  // is resolved only after the local/configured model actually fails.
+  const fallback = await resolveSmallTasksFallbackRoute(primary.model)
+  if (fallback) yield fallback
+}
+
+export interface ThreadTitleCompletion {
+  title: string
+  model: string
+  usage: { inputTokens: number; outputTokens: number }
+}
+
+/** Try title routes in order, including malformed-output failover. */
+export async function completeThreadTitleWithRoutes(
+  text: string,
+  routes: AsyncIterable<SmallTasksRoute>,
+): Promise<ThreadTitleCompletion | null> {
+  const prompt = threadTitlePrompt(text)
+  for await (const route of routes) {
+    try {
+      const { text: output, usage } = await completeTextWithUsage(route.provider, prompt, 20_000)
+      const title = cleanThreadTitle(output)
+      if (title) return { title, model: route.model, usage }
+    } catch {
+      // The selected local model may build successfully while its server is
+      // stopped or that model is unloaded. Advance to the chat route.
+    }
+  }
+  return null
 }
 
 // Generate a short thread title from the user's side of the thread — the first
 // message alone on a new thread, or the opening plus recent messages when the
 // caller is re-titling a thread that has moved on. Uses the configured
-// small-tasks model; returns null on failure so the caller can fall back to a
-// heuristic.
+// small-tasks model, then the chat model if inference fails; returns null when
+// neither route can produce a valid title.
 export async function suggestThreadTitle(text: string): Promise<string | null> {
   if (__COPSE_TEST_SCENARIOS__ && process.env['COPSE_PANEL_MOCK_LLM'] === '1') {
     return mockScenarioTitle(text)
   }
-  const provider = await resolveSmallTasksProvider()
-  if (!provider) return null
-  const model = resolveSmallTasksModelId()
-
-  const prompt = threadTitlePrompt(text)
-  try {
-    const { text: out, usage } = await completeTextWithUsage(provider, prompt, 20_000)
-    recordSmallTasksUsage(model, usage)
-    return cleanTitle(out)
-  } catch {
-    return null
-  }
+  const completion = await completeThreadTitleWithRoutes(text, threadTitleRoutes())
+  if (!completion) return null
+  recordSmallTasksUsage(completion.model, completion.usage)
+  return completion.title
 }
 
 // Trim model output to a single clean phrase (sentence case left as-is).
@@ -152,7 +161,7 @@ export async function suggestTerminalTitle(text: string): Promise<string | null>
   try {
     const { text: out, usage } = await completeTextWithUsage(provider, prompt, 20_000)
     recordSmallTasksUsage(model, usage)
-    return cleanTitle(out)
+    return cleanPhrase(out, 60)
   } catch {
     return null
   }
