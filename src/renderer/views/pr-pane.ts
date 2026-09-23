@@ -443,9 +443,7 @@ export function mountPrPane(
             el(
               'div',
               { class: 'git-changes-empty' },
-              query && otherPrsAll.length > 0
-                ? 'No pull requests match'
-                : 'No other open pull requests',
+              query ? 'No pull requests match' : 'No other open pull requests',
             ),
           )
         }

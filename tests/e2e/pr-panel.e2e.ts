@@ -114,6 +114,20 @@ describe('PR panel (mock gh)', () => {
     await expect(await $('.pr-list-title*=Polish footer branch status')).toBeDisplayed()
     await expect(await $('.pr-list-ci-pending')).toBeDisplayed()
 
+    // The expanded group uses the same single, readable filter-aware empty
+    // state even when every loaded cross-repo PR is filtered out. The component
+    // test covers the zero-loaded-PR edge case from the Copse review.
+    await filterInput.setValue('zzz-nonexistent-pr-999')
+    await browser.waitUntil(
+      async () => /no pull requests match/i.test(await (await $('.pr-list-body')).getText()),
+      { timeout: 10_000, timeoutMsg: 'expected the expanded no-matches empty state' },
+    )
+    await expect(await $$('.pr-list-row')).toBeElementsArrayOfSize(0)
+    await expect(await $$('.git-changes-empty*=No pull requests match')).toBeElementsArrayOfSize(1)
+    await saveElementScreenshot('#pane-files', 'pr-panel-filter-empty-expanded.png')
+    await browser.keys('Escape')
+    await expect(await $('.pr-list-title*=Polish footer branch status')).toBeDisplayed()
+
     await browser.waitUntil(
       async () => {
         const title = await $('.pr-viewer-title')

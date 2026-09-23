@@ -73,7 +73,10 @@ const OTHER_PR: GhPrSummary = {
   authorLogin: 'carol',
 }
 
-function mount(): { listRoot: HTMLElement; viewerRoot: HTMLElement } {
+function mount(otherPrs: readonly GhPrSummary[] = [OTHER_PR]): {
+  listRoot: HTMLElement
+  viewerRoot: HTMLElement
+} {
   const store = createStore({
     activeProjectId: 'project-1',
     activeThreadId: 'thread-1',
@@ -90,7 +93,7 @@ function mount(): { listRoot: HTMLElement; viewerRoot: HTMLElement } {
       agentPrLinks: async () => [],
       onListsTick: noopUnsub,
       listWorkspaceOpenPrs: async () => [LINKED_PR, WORKSPACE_PR],
-      listMyOpenPrs: async () => [OTHER_PR],
+      listMyOpenPrs: async () => [...otherPrs],
       prChecks: async () => 'no_checks',
       prDetails: async () => null,
     },
@@ -195,6 +198,30 @@ describe('pr pane filter (issue #2482)', () => {
     await settle()
     assert.equal(rowTitles(listRoot).length, 0)
     assert.match(listRoot.textContent, /no pull requests match/i)
+  })
+
+  it('keeps the expanded empty other group filter-aware when nothing matches', async () => {
+    const { listRoot } = mount([])
+    await settle()
+    const otherToggle = listRoot.querySelector<HTMLButtonElement>('.pr-other-toggle')
+    if (!otherToggle) throw new Error('missing other-PRs toggle')
+    otherToggle.click()
+    await settle()
+
+    const filter = listRoot.querySelector<HTMLInputElement>('.pr-pane-filter')
+    if (!filter) throw new Error('missing filter input')
+    filter.value = 'nothing-matches-anything'
+    filter.dispatchEvent(new Event('input'))
+    await settle()
+
+    assert.equal(rowTitles(listRoot).length, 0)
+    assert.equal(
+      [...listRoot.querySelectorAll('.git-changes-empty')].filter((element) =>
+        /no pull requests match/i.test(element.textContent),
+      ).length,
+      1,
+    )
+    assert.doesNotMatch(listRoot.textContent, /no other open pull requests/i)
   })
 
   it('shows an empty state when the query matches nothing, and Escape clears it while keeping focus', async () => {
