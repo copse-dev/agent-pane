@@ -421,6 +421,19 @@ cpSync(BUNDLED_CURSOR_SKILLS_VENDOR_DIR, 'dist/resources/bundled-cursor-skills',
   recursive: true,
 })
 
+try {
+  accessSync(resolve('vendor/remote-watcher'))
+  // Static per-target binaries uploaded to SSH workspace hosts (see
+  // native/remote-watcher). Dereference for the same worktree-symlink reason
+  // as gortex above.
+  cpSync('vendor/remote-watcher', 'dist/resources/remote-watcher', {
+    recursive: true,
+    dereference: true,
+  })
+} catch {
+  // Optional — without it SSH workspaces fall back to remote file polling.
+}
+
 // Last of the shipped inputs: the licence report reads every bundle's metafile
 // and fails the build if any shipped component lacks its licence text.
 const licenses = writeThirdPartyLicenses(process.cwd(), metafiles)

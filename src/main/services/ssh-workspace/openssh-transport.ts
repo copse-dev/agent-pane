@@ -1,4 +1,4 @@
-import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
+import { spawn, type ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { createWriteStream } from 'node:fs'
 import { mkdir, rename, rm } from 'node:fs/promises'
@@ -195,49 +195,6 @@ async function runLocalSsh(
   })
 }
 
-interface SshControlResult {
-  status: number | null
-  stdout: string
-  stderr: string
-}
-
-/**
- * Run a short-lived ssh control command without blocking the event loop.
- * Authentication can prompt through the askpass bridge, whose socket server
- * runs on this same loop — `spawnSync` would deadlock it.
- */
-function runSshControl(args: string[], env: NodeJS.ProcessEnv): Promise<SshControlResult> {
-  return new Promise((resolve) => {
-    const stdout: Buffer[] = []
-    const stderr: Buffer[] = []
-    let settled = false
-    const settle = (result: SshControlResult): void => {
-      if (settled) return
-      settled = true
-      resolve(result)
-    }
-    let proc: ChildProcess
-    try {
-      proc = spawn('ssh', args, { env, stdio: ['ignore', 'pipe', 'pipe'] })
-    } catch (error) {
-      settle({ status: null, stdout: '', stderr: sshTransferError(error).message })
-      return
-    }
-    proc.stdout?.on('data', (chunk: Buffer) => stdout.push(chunk))
-    proc.stderr?.on('data', (chunk: Buffer) => stderr.push(chunk))
-    proc.on('error', (error) => {
-      settle({ status: null, stdout: '', stderr: error.message })
-    })
-    proc.on('close', (code) => {
-      settle({
-        status: code,
-        stdout: Buffer.concat(stdout).toString('utf8'),
-        stderr: Buffer.concat(stderr).toString('utf8'),
-      })
-    })
-  })
-}
-
 function sshAbortError(message: string): Error {
   const error = new Error(message)
   error.name = 'AbortError'
@@ -385,51 +342,51 @@ export class OpenSshTransport implements SshTransport {
 
   async connect(): Promise<void> {
     const target = resolveTarget(this.host)
-    const askpass = leaseSshAskpassEnv(process.env, this.host.id)
-    try {
-      if (supportsControlMaster()) {
-        const check = await runSshControl(
-          ['-O', 'check', '-S', this.controlPath, target],
-          askpass.env,
-        )
-        if (check.status === 0) {
-          this.connected = true
-          return
-        }
-
-        // `-S` alone sets ControlPath; see baseSshArgs for why `-o ControlPath=` is unsafe.
-        const masterArgs = [
-          '-fNM',
-          '-S',
-          this.controlPath,
-          '-o',
-          `ControlPersist=${String(CONTROL_PERSIST_SECONDS)}`,
-          '-o',
-          `StrictHostKeyChecking=${strictHostKeyOption()}`,
-          ...keepaliveArgs(),
-        ]
-        if (this.host.port) masterArgs.push('-p', String(this.host.port))
-        if (this.host.identityFile) masterArgs.push('-i', this.host.identityFile)
-        if (this.host.forwardAgent) masterArgs.push('-o', 'ForwardAgent=yes')
-        masterArgs.push(target)
-
-        const master = await runSshControl(masterArgs, askpass.env)
-        if (master.status !== 0) {
-          throw new Error(
-            master.stderr.trim() || master.stdout.trim() || 'SSH control connection failed',
-          )
-        }
+    if (supportsControlMaster()) {
+      // These control commands must stay asynchronous. Authentication prompts
+      // are answered by the askpass socket in this Electron main process; a
+      // spawnSync here blocks that socket and deadlocks password/passphrase
+      // connections before the first remote command can run.
+      const check = await runLocalSsh(
+        this.host.id,
+        ['-O', 'check', '-S', this.controlPath, target],
+        { timeoutMs: 15_000 },
+      )
+      if (check.code === 0) {
         this.connected = true
-      } else {
-        // Windows OpenSSH lacks ControlMaster — verify reachability with a no-op exec.
-        const probe = await this.execArgv(['true'], { timeoutMs: 15_000 })
-        if (probe.code !== 0) {
-          throw new Error(probe.stderr.trim() || probe.stdout.trim() || 'SSH connection failed')
-        }
-        this.connected = true
+        return
       }
-    } finally {
-      askpass.release()
+
+      // `-S` alone sets ControlPath; see baseSshArgs for why `-o ControlPath=` is unsafe.
+      const masterArgs = [
+        '-fNM',
+        '-S',
+        this.controlPath,
+        '-o',
+        `ControlPersist=${String(CONTROL_PERSIST_SECONDS)}`,
+        '-o',
+        `StrictHostKeyChecking=${strictHostKeyOption()}`,
+        ...keepaliveArgs(),
+      ]
+      if (this.host.port) masterArgs.push('-p', String(this.host.port))
+      if (this.host.identityFile) masterArgs.push('-i', this.host.identityFile)
+      if (this.host.forwardAgent) masterArgs.push('-o', 'ForwardAgent=yes')
+      masterArgs.push(target)
+
+      const master = await runLocalSsh(this.host.id, masterArgs, { timeoutMs: 30_000 })
+      if (master.code !== 0) {
+        throw new Error(
+          master.stderr.trim() || master.stdout.trim() || 'SSH control connection failed',
+        )
+      }
+      this.connected = true
+    } else {
+      // Windows OpenSSH lacks ControlMaster — verify reachability with a no-op exec.
+      const probe = await this.execArgv(['true'], { timeoutMs: 15_000 })
+      if (probe.code !== 0) {
+        throw new Error(probe.stderr.trim() || probe.stdout.trim() || 'SSH connection failed')
+      }
+      this.connected = true
     }
   }
 
@@ -439,18 +396,19 @@ export class OpenSshTransport implements SshTransport {
       return
     }
     const target = resolveTarget(this.host)
-    const askpass = leaseSshAskpassEnv(process.env, this.host.id)
     try {
       for (const spec of [...this.forwards.values()]) {
-        this.runForwardControl('cancel', spec, askpass.env)
+        // Teardown is best-effort: one stale forward must not prevent the
+        // master itself from exiting (or leave the remaining forwards behind).
+        await this.runForwardControl('cancel', spec).catch(() => undefined)
       }
       this.forwards.clear()
-      spawnSync('ssh', ['-O', 'exit', '-S', this.controlPath, target], { env: askpass.env })
+      await runLocalSsh(this.host.id, ['-O', 'exit', '-S', this.controlPath, target], {
+        timeoutMs: 15_000,
+      }).catch(() => undefined)
     } finally {
-      askpass.release()
       this.connected = false
     }
-    await Promise.resolve()
   }
 
   async openForward(remotePort: number): Promise<{ localPort: number }> {
@@ -460,27 +418,19 @@ export class OpenSshTransport implements SshTransport {
     if (!this.connected) throw new Error('SSH transport is not connected')
     const localPort = await allocateLoopbackPort()
     const spec = { localPort, remotePort }
-    const askpass = leaseSshAskpassEnv(process.env, this.host.id)
-    try {
-      this.runForwardControl('forward', spec, askpass.env)
-      this.forwards.set(localPort, spec)
-      return { localPort }
-    } finally {
-      askpass.release()
-    }
+    await this.runForwardControl('forward', spec)
+    this.forwards.set(localPort, spec)
+    return { localPort }
   }
 
   async closeForward(localPort: number): Promise<void> {
     const spec = this.forwards.get(localPort)
     if (!spec) return
-    const askpass = leaseSshAskpassEnv(process.env, this.host.id)
     try {
-      this.runForwardControl('cancel', spec, askpass.env)
+      await this.runForwardControl('cancel', spec)
     } finally {
-      askpass.release()
       this.forwards.delete(localPort)
     }
-    await Promise.resolve()
   }
 
   async fetchFile(
@@ -511,14 +461,13 @@ export class OpenSshTransport implements SshTransport {
     return size
   }
 
-  private runForwardControl(
+  private async runForwardControl(
     action: 'forward' | 'cancel',
     spec: SshForwardSpec,
-    env: NodeJS.ProcessEnv,
-  ): void {
+  ): Promise<void> {
     const args = sshForwardControlArgs(this.controlPath, resolveTarget(this.host), action, spec)
-    const result = spawnSync('ssh', args, { env, encoding: 'utf8' })
-    if (result.status !== 0 && action === 'forward') {
+    const result = await runLocalSsh(this.host.id, args, { timeoutMs: 15_000 })
+    if (result.code !== 0 && action === 'forward') {
       throw new Error(result.stderr.trim() || result.stdout.trim() || 'SSH port forwarding failed')
     }
   }
