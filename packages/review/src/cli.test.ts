@@ -1,6 +1,6 @@
 import { after, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { access, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { execFileSync } from 'node:child_process'
@@ -8,6 +8,8 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { HEADLESS_EXIT, headlessEventSchema } from '@copse/agent/headless-contract.ts'
 import { main, reviewPermissionProfile } from './cli.ts'
 import { decodeFindings } from './finding.ts'
+import { createEphemeralRunnerBackend } from './host-process-backend.ts'
+import type { IsolationBackend } from './isolation.ts'
 import { REVIEW_CONFIG_FILENAME } from './project-commands.ts'
 import { createTestRepo, worktreeCount, type TestRepo } from './test-repo.ts'
 
@@ -479,10 +481,15 @@ describe('copse-review CLI', () => {
     await writeFile(
       script,
       JSON.stringify([
-        finishReviewStep('The imported Stage 0 report and changed source.'),
+        { type: 'tool_call', name: 'run_command', args: { argv: ['node', '-e', '1'] } },
+        finishReviewStep(
+          'The imported Stage 0 report and changed source.',
+          'Focused commands were unavailable in the default read-only import.',
+        ),
         { type: 'text', text: 'Done.' },
       ]),
     )
+    const importedEvents = join(dir, 'imported.events.jsonl')
     const posts: { url: string; body: string }[] = []
     let out = ''
     let err = ''
@@ -499,6 +506,8 @@ describe('copse-review CLI', () => {
         'mock',
         '--mock-script',
         script,
+        '--events',
+        importedEvents,
         '--no-verify',
         '--post-review',
         'github',
@@ -532,6 +541,110 @@ describe('copse-review CLI', () => {
     assert.equal(post.url, 'https://api.github.com/repos/copse-dev/fixture/pulls/7/reviews')
     assert.match(post.body, /Executed in the `ephemeral-runner` backend/)
     assert.match(post.body, /pnpm run test|check\.cjs/)
+    assert.match(await readFile(importedEvents, 'utf8'), /run_command is denied/)
+
+    const unsafe = await run(repo, [
+      '--base',
+      'main',
+      '--head',
+      'refs/pull/7/head',
+      '--foreign',
+      '--stage0-json',
+      ground,
+      '--backend',
+      'ephemeral-runner',
+      '--no-model',
+    ])
+    assert.equal(unsafe.code, HEADLESS_EXIT.USAGE)
+    assert.match(unsafe.err, /model job holds secrets.*needs --backend container/)
+
+    // A programmatic container-strength backend stands in for Job B's real
+    // Docker cell. Its fresh checkout is prepared from a caller-trusted script
+    // before the reviewer runs one focused command and cites that evidence.
+    const trustedPrepare = join(dir, 'trusted-prepare.mts')
+    await writeFile(
+      trustedPrepare,
+      "import { writeFileSync } from 'node:fs'; writeFileSync('.focused-ready', 'ready')\n",
+    )
+    const focusedScript = join(dir, 'focused-script.json')
+    await writeFile(
+      focusedScript,
+      JSON.stringify([
+        {
+          type: 'tool_call',
+          name: 'run_command',
+          args: {
+            argv: [
+              'node',
+              '-e',
+              "const fs=require('node:fs');if(fs.readFileSync('.focused-ready','utf8')!=='ready')process.exit(2);console.log('focused test passed')",
+            ],
+          },
+        },
+        {
+          type: 'tool_call',
+          name: 'report_finding',
+          args: {
+            path: 'src/math.ts',
+            startLine: 1,
+            class: 'contract',
+            severity: 'high',
+            confidence: 'high',
+            claim: 'add subtracts its second argument.',
+            reason: 'The focused runtime probe exercised the changed implementation.',
+            commandCallIds: ['call-1'],
+          },
+        },
+        finishReviewStep('The changed implementation and a focused runtime probe.'),
+        { type: 'text', text: 'Done.' },
+      ]),
+    )
+    let focusedOut = ''
+    let focusedErr = ''
+    let focusedReadOnlyPaths: readonly string[] = []
+    const delegate = createEphemeralRunnerBackend()
+    const focusedBackend: IsolationBackend = {
+      ...delegate,
+      createCell: (spec) => {
+        focusedReadOnlyPaths = spec.readOnlyPaths
+        return delegate.createCell(spec)
+      },
+    }
+    const focusedCode = await main(
+      [
+        '--base',
+        'main',
+        '--head',
+        'refs/pull/7/head',
+        '--foreign',
+        '--stage0-json',
+        ground,
+        '--trusted-prepare',
+        trustedPrepare,
+        '--provider',
+        'mock',
+        '--mock-script',
+        focusedScript,
+        '--no-verify',
+      ],
+      {
+        stdout: (text) => {
+          focusedOut += text
+        },
+        stderr: (text) => {
+          focusedErr += text
+        },
+        env: { PATH: process.env['PATH'] },
+        cwd: repo.root,
+        backend: focusedBackend,
+      },
+    )
+    assert.equal(focusedCode, HEADLESS_EXIT.SUCCESS, focusedErr)
+    assert.match(focusedOut, /reviewer mock under correctness — completed/)
+    assert.match(focusedOut, /1 command\(s\) as evidence/)
+    assert.doesNotMatch(focusedOut, /run_command is denied/)
+    assert.ok(focusedReadOnlyPaths.includes(await realpath(trustedPrepare)))
+    assert.equal(focusedReadOnlyPaths.includes(await realpath(dir)), false)
 
     // A report for another commit is refused before any model is called.
     const mismatch = await run(repo, [

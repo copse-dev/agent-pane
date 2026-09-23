@@ -1,0 +1,27 @@
+ARG NODE_VERSION=24.20.0
+FROM node:${NODE_VERSION}-trixie-slim
+
+ARG PNPM_VERSION=10.34.5
+ENV DEBIAN_FRONTEND=noninteractive \
+    npm_config_update_notifier=false
+
+# This image runs only brokered validation commands. Dependencies arrive from
+# the host's read-only, exact-lockfile pnpm store; the runtime itself has no
+# network interface. Keep the toolchain broad enough for Copse's focused unit
+# tests without carrying an agent, provider credential, or forge client.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+      ca-certificates \
+      cargo \
+      g++ \
+      git \
+      make \
+      pkg-config \
+      python3 \
+      ripgrep \
+      socat \
+    && rm -rf /var/lib/apt/lists/* \
+    && npm install -g --no-audit --no-fund "pnpm@${PNPM_VERSION}" \
+    && npm cache clean --force
+
+WORKDIR /workspace

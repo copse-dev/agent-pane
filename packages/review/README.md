@@ -55,13 +55,19 @@ shell's hand-offs (Phase 4).
   TypeScript + pnpm repository (B5), overridable per repo by a `review.config.json`
   (argv per command, `null` to disable, timeouts). The default `prepare` is
   `pnpm install --frozen-lockfile --offline --ignore-scripts`, resolved from the host's
-  pnpm store and corepack cache, both mounted read-only; corepack is pinned offline.
+  pnpm store and corepack cache, both mounted read-only; corepack is pinned offline. A
+  trusted caller can override only preparation with `--trusted-prepare`, so default-branch
+  CI policy can repair native dependencies even when the pull-request head predates that
+  repository profile; only that trusted script file is added to the cell's read-only mounts.
 - **`stage0.ts`** — runs the checks on head, then on base for whatever failed on head,
   and turns the delta into findings: a `tsc` regression becomes one finding per new
   diagnostic anchored at its line; a build or test regression becomes one finding
   anchored at the script in `package.json`. A lint regression is a failed check, never a
   finding (B4). Every output is size-capped and secret-scrubbed before it is kept, and
-  the report always says what was not checked and why.
+  the report always says what was not checked and why. An imported Stage 0 attached to a
+  fresh execution cell re-prepares head (and its build output) before model tools, and
+  independently prepares base before a reproducer; artifacts from another job are never
+  assumed to exist locally.
 - **`context.ts`** — Stage 1: the diff against the merge-base (committed plus the overlaid
   working tree), budgeted per file so a large change drops lockfiles and generated files
   first and then cuts retained files at a line boundary within a strict total cap; the
@@ -75,7 +81,9 @@ shell's hand-offs (Phase 4).
   `read_file`, `list_dir`, `search_code` (without following checkout symlinks), and
   `git_diff` (complete per-file diffs paged by character offset); `run_command`, brokered into the
   cell and gated by the run's permission profile, with its output wrapped as external
-  content and secret-scrubbed; and `report_finding`, through which every candidate
+  content and secret-scrubbed. Its prompt directs reviewers to the smallest
+  project-supported focused selector rather than repeating Stage 0's aggregate suite;
+  and `report_finding`, through which every candidate
   arrives as a structured, anchored object rather than prose. Every reviewer must close
   with `finish_review`, a structured attestation of what it checked and could not verify;
   that closure can also carry findings the model held until its final response. If a
@@ -124,7 +132,9 @@ shell's hand-offs (Phase 4).
   output or finding, and each capability a backend declares is checked against what the
   fixture managed to do. The container backend joins it with
   `COPSE_REVIEW_CONTAINER_E2E=1` (a daemon and the image, `COPSE_REVIEW_IMAGE` to name
-  another, required); the unit tier covers its plumbing over a fake engine.
+  another, required); CI's gated `review-cell` job builds `Dockerfile.cell` and runs that
+  real-engine arm, including the exact read-only trusted-preparation-file mount. The unit tier
+  covers its plumbing over a fake engine.
 
 ## Running it on this repository
 
@@ -180,9 +190,17 @@ run started with `GITHUB_TOKEN`. The secret-bearing findings job verifies the su
 run and resolves the current contributor commit and base from GitHub's Pull Request API, rather
 than trusting the artefact or a dynamic run association. Remove and re-add the label to review a
 newer head.
-Job B, on the base ref with the model key, imports that report (`--stage0-json`, which makes
-the run read-only and refuses a report for another commit), reviews the head without
-executing it, and posts one advisory review (`--post-review github --repo owner/name --pr n`).
+Job B, on the base ref with the model key, imports that report (`--stage0-json` is read-only
+by default and refuses a report for another commit). Before any model or App credential is
+put in a step, the workflow builds `Dockerfile.cell`, fetches the exact head's dependency
+store from lockfile data with scripts disabled, and fetches the reviewed refs. The model
+process then attaches that image explicitly with `--backend container`: read/search/diff
+tools remain host-side and `run_command` plus Stage 4 reproducers are brokered into the
+read-only-root, capability-free, network-disabled cell. The cell receives only the
+allowlisted environment, never provider, Scaleway, workflow, or GitHub App credentials.
+`--backend ephemeral-runner` is rejected with imported Stage 0, so the secret-bearing host
+cannot be mislabeled as the cell. The run posts one advisory review
+(`--post-review github --repo owner/name --pr n`).
 The posted review carries material `finish_review.couldNotVerify` limits from every completed
 reviewer. It says plain “No findings” only when those structured attestations declare nothing
 material unverified; a bounded read-only review is never presented as broader assurance than it was.
@@ -205,7 +223,7 @@ the configured model endpoint.
 `.github/workflows/review-nightly.yml` samples at most one recent branch from this repository
 each night, including drafts because that is where most active Copse work lives
 (already-labelled PRs, generated screenshot-review PRs and `copse-review-skip` are excluded),
-using the same secret-free Stage 0 / read-only findings split. It can also be dispatched for a
+using the same secret-free Stage 0 / container-backed focused-validation split. It can also be dispatched for a
 specific same-repository PR, draft or otherwise. Both paths remain advisory and retain the full
 findings JSON and SARIF for 30 days so latency, token use and human adjudication can be collected
 before any proposal to make the reviewer required.
@@ -239,6 +257,6 @@ bound, a recall floor and no duplicates on a sufficiently large labelled corpus.
 
 ## Not yet here
 
-Reproducers in CI (job B has no cell, so Stage 4 there is the challenger only), a
-model-profile regression baseline, and a mapped corpus of real pull requests large enough
-to test B8. See the plan's §Phases, §What Phase 4 delivered and §What Phase 5 delivered.
+Forgejo focused-validation-cell parity, a model-profile regression baseline, and a mapped
+corpus of real pull requests large enough to test B8. See the plan's §Phases, §What Phase 4
+delivered and §What Phase 5 delivered.

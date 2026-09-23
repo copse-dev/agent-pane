@@ -1,11 +1,20 @@
 import { after, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { decodeFindings } from './finding.ts'
 import { createHostProcessBackend } from './host-process-backend.ts'
 import type { IsolationBackend } from './isolation.ts'
 import { REVIEW_CONFIG_FILENAME } from './project-commands.ts'
 import { renderStage0Report } from './report-text.ts'
-import { openReviewGround, runStage0, runStage0Checks, type Stage0Report } from './stage0.ts'
+import {
+  openReviewGround,
+  prepareVerificationBase,
+  runStage0,
+  runStage0Checks,
+  type Stage0Report,
+  type TrustedPreparation,
+} from './stage0.ts'
 import { createTestRepo, worktreeCount, type TestRepo } from './test-repo.ts'
 
 /**
@@ -87,6 +96,70 @@ describe('runStage0', () => {
     assert.ok(report.checks.every((check) => check.verdict === 'clean' && check.base === null))
     assert.equal(report.dirtyWorkingTree, false)
     assert.match(renderStage0Report(report), /\nClean\.$/)
+  })
+
+  it('uses a caller-trusted preparation command even when the old checkout disables prepare', async () => {
+    const repo = await scenario({}, {})
+    const report = await runStage0({
+      repoRoot: repo.root,
+      baseRef: 'main',
+      backend: createHostProcessBackend(),
+      diffOrigin: 'own',
+      unisolatedConsent: true,
+      trustedPreparation: {
+        argv: [process.execPath, '-e', 'console.log("trusted preparation ran")'],
+        timeoutMs: 30_000,
+        readOnlyPaths: [],
+      },
+    })
+    assert.equal(report.preparation.head?.status, 'passed')
+    assert.deepEqual(report.preparation.head.argv, [
+      process.execPath,
+      '-e',
+      'console.log("trusted preparation ran")',
+    ])
+    assert.match(report.preparation.head.output, /trusted preparation ran/)
+    assert.deepEqual(report.coverage.notChecked, [])
+  })
+
+  it('re-prepares base when imported Stage 0 artifacts came from another cell', async () => {
+    const repo = await scenario({}, { test: { exit: 1 } })
+    const trustedPreparation: TrustedPreparation = {
+      argv: [
+        process.execPath,
+        '-e',
+        'require("node:fs").writeFileSync("fresh-cell-ready", "ready")',
+      ],
+      timeoutMs: 30_000,
+      readOnlyPaths: [],
+    }
+    const report = await runStage0({
+      repoRoot: repo.root,
+      baseRef: 'main',
+      backend: createHostProcessBackend(),
+      diffOrigin: 'own',
+      unisolatedConsent: true,
+      trustedPreparation,
+    })
+    assert.equal(report.preparation.base?.status, 'passed')
+
+    const ground = await openReviewGround({
+      repoRoot: repo.root,
+      baseRef: 'main',
+      backend: createHostProcessBackend(),
+      diffOrigin: 'own',
+      unisolatedConsent: true,
+      trustedPreparation,
+    })
+    try {
+      await prepareVerificationBase(ground, report, new AbortController().signal, {
+        reuseStage0Artifacts: false,
+      })
+      assert.ok(ground.checkouts)
+      assert.equal(await readFile(join(ground.checkouts.base, 'fresh-cell-ready'), 'utf8'), 'ready')
+    } finally {
+      await ground.close()
+    }
   })
 
   it('mints a confirmed finding for a test that passes on base and fails on head', async () => {
