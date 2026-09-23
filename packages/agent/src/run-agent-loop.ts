@@ -1370,9 +1370,10 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         trimEvents++
         onHistoryTrimmed?.()
       }
-    } else if (hasArtifactCheckpointHook && !artifactCheckpointSent) {
-      // The checkpoint is wall-clock based and does not require a context-window
-      // estimate, so hosts without one still receive the opt-in behavior.
+    } else if (!loopNudgeSent || (hasArtifactCheckpointHook && !artifactCheckpointSent)) {
+      // Neither the explore-without-read signal nor the delayed checkpoint
+      // requires a context-window estimate, so hosts without one still fire
+      // the step-boundary hooks that can act on those inputs.
       const preNudges = await selectStepBoundaryNudges({
         phase: 'preStream',
         loopNudgeSent,
@@ -1384,6 +1385,16 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         streamCappedAsRunaway: false,
         consecutiveExploreWithoutRead: consecutiveExploreWithoutRead.value,
       })
+      if (preNudges.loop !== undefined) {
+        messages.push({ role: 'user', content: preNudges.loop })
+        recordAppliedNudge(appliedNudgeSink, {
+          step: budget.llmCalls,
+          hookId: LOOP_NUDGE_HOOK_ID,
+          mechanism: 'tool-enabled-message',
+          text: preNudges.loop,
+        })
+        loopNudgeSent = true
+      }
       artifactCheckpointSent =
         applyArtifactCheckpointNudge(preNudges.artifactCheckpoint) || artifactCheckpointSent
     }
