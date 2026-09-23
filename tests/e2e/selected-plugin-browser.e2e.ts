@@ -117,10 +117,16 @@ describe('selected plugin browser behavior', function () {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await setComposerValue('Inspect my personal reference page.')
     await $('.submit-btn').click()
-    await waitForAgentIdle(60_000)
+    const dirtySend = $('.composer-dirty-send-btn')
+    const dirtyPromptShown = await dirtySend
+      .waitForDisplayed({ timeout: 10_000 })
+      .then(() => true)
+      .catch(() => false)
+    if (dirtyPromptShown) await dirtySend.click()
 
     const assistant = $('.msg-assistant .message-text')
-    await assistant.waitForDisplayed({ timeout: 30_000 })
+    await assistant.waitForDisplayed({ timeout: 60_000 })
+    await waitForAgentIdle(60_000)
     const response = await assistant.getText()
     assert.match(response, /Visible browser handoff completed/)
     assert.match(response, /Personal reference desk/)
