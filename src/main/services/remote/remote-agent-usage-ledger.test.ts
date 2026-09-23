@@ -288,6 +288,7 @@ describe('cloud agent runs reach the usage ledger', () => {
     process.env['ANTHROPIC_API_KEY'] = 'test-key'
     const controller = new AbortController()
     let interruptCalls = 0
+    let interruptSettled = false
 
     const fetchImpl: typeof fetch = async (input, init) => {
       const href = typeof input === 'string' || input instanceof URL ? String(input) : input.url
@@ -298,7 +299,23 @@ describe('cloud agent runs reach the usage ledger', () => {
         const bodyText = typeof init?.body === 'string' ? init.body : ''
         const parsed: unknown = bodyText ? JSON.parse(bodyText) : null
         const events = isRecord(parsed) ? recordArrayOrEmpty(parsed['events']) : []
-        if (events.some((e) => e['type'] === 'user.interrupt')) interruptCalls += 1
+        if (events.some((e) => e['type'] === 'user.interrupt')) {
+          interruptCalls += 1
+          // Billing can finalize only after the upstream interrupt returns.
+          // A usage read before this response settles reproduces the race that
+          // dropped Stop / Send now tokens from the ledger.
+          return new Promise((resolve) => {
+            setTimeout(() => {
+              interruptSettled = true
+              resolve(
+                new Response(JSON.stringify({}), {
+                  status: 200,
+                  headers: { 'content-type': 'application/json' },
+                }),
+              )
+            }, 0)
+          })
+        }
         return new Response(JSON.stringify({}), {
           status: 200,
           headers: { 'content-type': 'application/json' },
@@ -317,6 +334,11 @@ describe('cloud agent runs reach the usage ledger', () => {
         })
       }
       if (method === 'GET' && url.pathname === '/v1/sessions/session-cancel-1') {
+        assert.equal(
+          interruptSettled,
+          true,
+          'usage must be read after the interrupt request has settled',
+        )
         return new Response(JSON.stringify({ usage: { input_tokens: 1500, output_tokens: 300 } }), {
           status: 200,
           headers: { 'content-type': 'application/json' },

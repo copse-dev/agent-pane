@@ -578,14 +578,19 @@ export async function runManagedAgentFromSettings(
   // repo-backed.
   options.onChunk({ type: 'text', text: buildLaunchNotice(canReuse, session.hasRepo ?? true) })
 
+  let interruptPromise: Promise<void> | undefined
   const onAbort = (): void => {
-    void interruptSession({ fetchImpl, baseUrl, apiKey, sessionId: session.sessionId }).catch(
-      (err: unknown) => {
-        console.warn('[managed-agent] interrupt failed:', err)
-      },
-    )
+    interruptPromise ??= interruptSession({
+      fetchImpl,
+      baseUrl,
+      apiKey,
+      sessionId: session.sessionId,
+    }).catch((err: unknown) => {
+      console.warn('[managed-agent] interrupt failed:', err)
+    })
   }
   options.signal.addEventListener('abort', onAbort, { once: true })
+  if (options.signal.aborted) onAbort()
 
   try {
     const { assistantText, terminalStatus } = await streamSession({
@@ -632,6 +637,11 @@ export async function runManagedAgentFromSettings(
     // attribute them to the ledger before letting the abort propagate to the
     // caller, which paints the turn as CANCELLED.
     if (options.signal.aborted) {
+      // The usage endpoint is cumulative and may not reflect the interrupted
+      // turn until the interrupt request has settled. Match the Cursor path's
+      // ordering: wait for the best-effort interrupt before taking the final
+      // usage snapshot, or Stop can still record a stale zero-token total.
+      if (interruptPromise) await interruptPromise
       await reportManagedAgentUsage({
         fetchImpl,
         baseUrl,
