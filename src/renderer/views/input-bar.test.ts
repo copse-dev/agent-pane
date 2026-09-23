@@ -766,7 +766,7 @@ describe('input bar prompt git-state capture', () => {
     assert.equal(message.startingCommit, afterSwitch)
   })
 
-  it('uses a fresh worktree snapshot returned by checkout without rereading Git', async () => {
+  it('uses a fresh worktree snapshot returned by checkout without a second Git read', async () => {
     const startingCommit = 'c'.repeat(40)
     let promptStateReads = 0
     const store = createStore({
@@ -815,7 +815,7 @@ describe('input bar prompt git-state capture', () => {
 
     const message = store.getState().threads[0]?.messages[0]
     assert.ok(message)
-    assert.equal(promptStateReads, 0)
+    assert.equal(promptStateReads, 1, 'only the dirty-checkout preflight reads Git')
     assert.equal(message.startingCommit, startingCommit)
     assert.equal(message.dirty, true)
   })
@@ -1516,6 +1516,57 @@ describe('input bar dirty checkout warning', () => {
     assert.ok(warning)
     assert.equal(warning.hidden, false)
     assert.match(warning.textContent, /uncommitted changes/)
+  })
+
+  it('discards a dirty result when the active composer switches threads', async () => {
+    const promptState = deferred<{ startingCommit: string | null; dirty: boolean }>()
+    let runs = 0
+    const first = thread()
+    const second: Thread = { ...thread(), id: 'thread-2', title: 'Second' }
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [first, second],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        readPromptState: () => promptState.promise,
+        onRun: async () => {
+          runs += 1
+        },
+      }),
+    )
+    await settle()
+
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    const submit = host.querySelector<HTMLButtonElement>('.submit-btn')
+    assert.ok(composer)
+    assert.ok(submit)
+    composer.textContent = 'Prompt for the first thread'
+    submit.click()
+    await flush()
+
+    store.setState({ activeThreadId: 'thread-2' })
+    await flush()
+    composer.textContent = 'Draft for the second thread'
+    composer.dispatchEvent(new Event('input', { bubbles: true }))
+    promptState.resolve({ startingCommit: 'a'.repeat(40), dirty: true })
+    await flush()
+
+    const warning = host.querySelector<HTMLElement>('.composer-dirty-warning')
+    assert.ok(warning)
+    assert.equal(warning.hidden, true)
+    assert.equal(composer.textContent, 'Draft for the second thread')
+    assert.equal(runs, 0)
+    assert.equal(store.getState().threads[0]?.messages.length, 0)
+    assert.equal(store.getState().threads[1]?.messages.length, 0)
   })
 
   it('lets "Use an isolated worktree" switch the checkout mode and send', async () => {

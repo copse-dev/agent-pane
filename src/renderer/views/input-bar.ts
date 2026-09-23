@@ -1843,6 +1843,16 @@ export function mountInputBar(
         choice === 'worktree' ? 'worktree' : choice === 'shared' ? 'shared' : automaticCheckoutMode
       if (effectiveCheckoutMode === 'shared') {
         const state = await api.git.promptState(projectId, id)
+        // The prompt-state read can outlive a thread switch. Keep its result
+        // with the composer that started the submit; otherwise a dirty result
+        // from the old thread can raise this warning over the new thread and
+        // make either action resume the stale prompt against the wrong UI.
+        if (
+          getActiveThreadId() !== id ||
+          activeComposerThreadId !== id ||
+          store.getState().activeProjectId !== projectId
+        )
+          return
         if (state.dirty) {
           showDirtyWarning(id)
           return
