@@ -135,7 +135,20 @@ describe('Screenshot click-to-expand', () => {
     )
     await saveAppScreenshot(TEXT_SHOT)
 
-    // Right-click with no selection offers "Copy" and copies the whole file (#2463).
+    // A selection elsewhere in the app must not be mistaken for preview text.
+    // Right-click still offers "Copy" and copies the whole file (#2463).
+    const outsideSelection = await browser.execute(() => {
+      const outside = document.querySelector('.attachment-preview-title')
+      if (!outside) throw new Error('text preview title missing')
+      const range = document.createRange()
+      range.selectNodeContents(outside)
+      const selection = window.getSelection()
+      if (!selection) throw new Error('selection API unavailable')
+      selection.removeAllRanges()
+      selection.addRange(range)
+      return selection.toString()
+    })
+    assert.ok(outsideSelection.length > 0, 'expected a real selection outside the preview')
     await $('.attachment-preview-text').click({ button: 'right' })
     const copyMenu = $('.context-menu')
     await copyMenu.waitForDisplayed({ timeout: 5_000 })

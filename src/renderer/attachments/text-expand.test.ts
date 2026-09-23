@@ -107,6 +107,31 @@ describe('text attachment preview', () => {
     assert.deepEqual(writes, ['line one\nline two'])
   })
 
+  it('ignores an active selection outside the preview and copies the whole file', async () => {
+    const writes = installClipboard()
+    const outside = document.createElement('p')
+    outside.textContent = 'unrelated selected text'
+    document.body.append(outside)
+    openTextExpand('line one\nline two', 'notes.txt')
+    const preview = qsRequired(document, '.attachment-preview-text')
+
+    const range = document.createRange()
+    range.selectNodeContents(outside)
+    const selection = window.getSelection()
+    selection?.removeAllRanges()
+    selection?.addRange(range)
+
+    rightClick(preview)
+    const item = qsRequired<HTMLButtonElement>(document, '.context-menu-item')
+    assert.equal(item.textContent, 'Copy')
+
+    item.click()
+    await tick()
+
+    assert.deepEqual(writes, ['line one\nline two'])
+    outside.remove()
+  })
+
   it('does not open a menu when right-clicking outside the preview', () => {
     installClipboard()
     openTextExpand('content', 'notes.txt')

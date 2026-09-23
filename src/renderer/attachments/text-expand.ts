@@ -12,6 +12,17 @@ function copyText(text: string): void {
     })
 }
 
+function selectedTextWithin(root: Node): string | null {
+  const selection = window.getSelection()
+  if (!selection || selection.isCollapsed || selection.rangeCount === 0) return null
+  for (let index = 0; index < selection.rangeCount; index += 1) {
+    const range = selection.getRangeAt(index)
+    if (!root.contains(range.startContainer) || !root.contains(range.endContainer)) return null
+  }
+  const selected = selection.toString()
+  return selected.length > 0 ? selected : null
+}
+
 /** Open a plain-text snapshot without interpreting its contents as markup. */
 export function openTextExpand(content: string, name: string): void {
   const text = el('pre', { class: 'attachment-preview-text' })
@@ -19,18 +30,15 @@ export function openTextExpand(content: string, name: string): void {
   text.addEventListener('contextmenu', (event) => {
     event.preventDefault()
     event.stopPropagation()
-    // The preview is the only selectable text in the dialog, so a non-empty
-    // selection was made inside it; copy just that, otherwise the whole file.
-    const selected = window.getSelection()?.toString()
-    const hasSelection = Boolean(selected)
+    const selected = selectedTextWithin(text)
     showContextMenu(
       event.clientX,
       event.clientY,
       [
         {
-          label: hasSelection ? 'Copy selection' : 'Copy',
+          label: selected ? 'Copy selection' : 'Copy',
           onSelect: (): void => {
-            copyText(hasSelection && selected ? selected : content)
+            copyText(selected ?? content)
           },
         },
       ],
