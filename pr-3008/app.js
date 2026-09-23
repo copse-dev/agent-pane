@@ -31552,7 +31552,7 @@ var init_titlebar = __esm({
 });
 
 // src/renderer/dom/context-menu.ts
-function showContextMenu(clientX, clientY, items) {
+function showContextMenu(clientX, clientY, items, withinDialog) {
   dismissOpenContextMenu?.();
   if (items.every(isHeading)) return;
   const buttons = items.map((entry) => {
@@ -31609,7 +31609,8 @@ function showContextMenu(clientX, clientY, items) {
   const onKeyDown = (e3) => {
     if (e3.key === "Escape") dismiss();
   };
-  document.body.append(menu);
+  const dialog2 = withinDialog?.closest("dialog");
+  (dialog2 ?? document.body).append(menu);
   dismissOpenContextMenu = dismiss;
   document.addEventListener("pointerdown", onPointerDown, true);
   document.addEventListener("keydown", onKeyDown, true);
@@ -71052,10 +71053,43 @@ var init_attachment_icons = __esm({
 });
 
 // src/renderer/attachments/image-expand.ts
+function dataUrlToBlob(dataUrl) {
+  const comma = dataUrl.indexOf(",");
+  if (comma < 0) throw new Error("Not a data URL");
+  const header = dataUrl.slice(5, comma);
+  const mime = header.split(";")[0] ?? "";
+  const mimeType = mime === "" ? "application/octet-stream" : mime;
+  const binary = atob(dataUrl.slice(comma + 1));
+  const bytes = Uint8Array.from(binary, (c3) => c3.charCodeAt(0));
+  return new Blob([bytes], { type: mimeType });
+}
+async function copyImageToClipboard(src) {
+  const blob = dataUrlToBlob(src);
+  await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+}
 function openImageExpand(src, alt = "Expanded attachment") {
   if (!src) return;
   const imageEl = el("img", { class: "image-expand-image", alt });
   imageEl.src = src;
+  imageEl.addEventListener("contextmenu", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    showContextMenu(
+      event.clientX,
+      event.clientY,
+      [
+        {
+          label: "Copy image",
+          onSelect: () => {
+            void copyImageToClipboard(src).then(() => showToast("Copied image", { durationMs: 1500 })).catch((error62) => {
+              showErrorToast("Failed to copy image", error62);
+            });
+          }
+        }
+      ],
+      imageEl
+    );
+  });
   openAttachmentPreview({
     kind: "image",
     title: alt,
@@ -71092,15 +71126,50 @@ function attachImageExpand(img, alt) {
 }
 var init_image_expand = __esm({
   "src/renderer/attachments/image-expand.ts"() {
+    init_context_menu();
     init_helpers();
+    init_toast();
     init_attachment_preview();
   }
 });
 
 // src/renderer/attachments/text-expand.ts
+function copyText(text2) {
+  void navigator.clipboard.writeText(text2).then(() => showToast("Copied", { durationMs: 1500 })).catch((error62) => {
+    showErrorToast("Failed to copy", error62);
+  });
+}
+function selectedTextWithin(root) {
+  const selection2 = window.getSelection();
+  if (!selection2 || selection2.isCollapsed || selection2.rangeCount === 0) return null;
+  for (let index = 0; index < selection2.rangeCount; index += 1) {
+    const range = selection2.getRangeAt(index);
+    if (!root.contains(range.startContainer) || !root.contains(range.endContainer)) return null;
+  }
+  const selected = selection2.toString();
+  return selected.length > 0 ? selected : null;
+}
 function openTextExpand(content, name) {
   const text2 = el("pre", { class: "attachment-preview-text" });
   text2.textContent = content;
+  text2.addEventListener("contextmenu", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const selected = selectedTextWithin(text2);
+    showContextMenu(
+      event.clientX,
+      event.clientY,
+      [
+        {
+          label: selected ? "Copy selection" : "Copy",
+          onSelect: () => {
+            copyText(selected ?? content);
+          }
+        }
+      ],
+      text2
+    );
+  });
   openAttachmentPreview({
     kind: "text",
     title: name,
@@ -71128,7 +71197,9 @@ function attachTextExpand(chip2, content, name) {
 }
 var init_text_expand = __esm({
   "src/renderer/attachments/text-expand.ts"() {
+    init_context_menu();
     init_helpers();
+    init_toast();
     init_attachment_preview();
   }
 });
@@ -90720,6 +90791,29 @@ function mountInputBar(root, store2, api2, opts = {}) {
     checkoutBranchBtn,
     continueBranchBtn
   );
+  const dirtyWarningText = el(
+    "span",
+    { class: "composer-dirty-warning-text" },
+    "This checkout has uncommitted changes. Work will run on top of them."
+  );
+  const useWorktreeBtn = el(
+    "button",
+    { type: "button", class: "composer-dirty-worktree-btn" },
+    "Use an isolated worktree"
+  );
+  const sendDirtyAnywayBtn = el(
+    "button",
+    { type: "button", class: "composer-dirty-send-btn" },
+    "Send anyway"
+  );
+  const dirtyWarning = el(
+    "div",
+    { class: "composer-dirty-warning", role: "status", "aria-live": "polite", hidden: "" },
+    el("span", { class: "composer-dirty-warning-icon", "aria-hidden": "true" }, "!"),
+    dirtyWarningText,
+    useWorktreeBtn,
+    sendDirtyAnywayBtn
+  );
   const imageCompatibilityText = el("span", { class: "composer-image-warning-text" });
   const useImageModelBtn = el(
     "button",
@@ -91035,6 +91129,7 @@ function mountInputBar(root, store2, api2, opts = {}) {
     guardedYolo.element,
     containerRun.element,
     branchWarning,
+    dirtyWarning,
     checkoutError,
     imageCompatibilityWarning,
     contextFitWarning,
@@ -91081,6 +91176,7 @@ function mountInputBar(root, store2, api2, opts = {}) {
   let descriptionModels = [];
   let descriptionPicker = null;
   const checkoutChoices = /* @__PURE__ */ new Map();
+  const dirtyWarningAcknowledged = /* @__PURE__ */ new Set();
   let checkoutPreparationInProgress = false;
   let automaticCheckoutMode = "shared";
   let automaticCheckoutPreviewSeq = 0;
@@ -91348,6 +91444,7 @@ ${description}
   }));
   let mismatchBranch = null;
   let checkoutInProgress = false;
+  let dirtyWarningThreadId = null;
   let lastBreakdown = null;
   let breakdownModel = null;
   let modelPricing = {};
@@ -91466,6 +91563,7 @@ ${description}
     activeComposerThreadId = id;
     if (id) restoreDraftAttachments(id);
     hideCheckoutError();
+    hideDirtyWarning();
     lastBreakdown = null;
     breakdownModel = null;
     scheduleContextEstimate(0);
@@ -91550,6 +91648,14 @@ ${description}
     checkoutBranchBtn.disabled = false;
     checkoutBranchBtn.textContent = "Check out";
     continueBranchBtn.disabled = false;
+  }
+  function showDirtyWarning(threadId) {
+    dirtyWarningThreadId = threadId;
+    dirtyWarning.hidden = false;
+  }
+  function hideDirtyWarning() {
+    dirtyWarningThreadId = null;
+    dirtyWarning.hidden = true;
   }
   function updateQueueIndicator() {
     const thread = store2.getState().threads.find((t2) => t2.id === getActiveThreadId());
@@ -91769,6 +91875,21 @@ ${description}
       showErrorToast("Failed to read the current branch", error62);
     });
   });
+  useWorktreeBtn.addEventListener("click", () => {
+    const id = dirtyWarningThreadId;
+    if (!id) return;
+    dirtyWarningAcknowledged.add(id);
+    hideDirtyWarning();
+    selectCheckout("worktree");
+    void submit();
+  });
+  sendDirtyAnywayBtn.addEventListener("click", () => {
+    const id = dirtyWarningThreadId;
+    if (!id) return;
+    dirtyWarningAcknowledged.add(id);
+    hideDirtyWarning();
+    void submit();
+  });
   function isAutocompletePickerOpen() {
     return root.querySelector(".mention-picker:not([hidden])") !== null;
   }
@@ -91857,6 +91978,21 @@ ${description}
       return;
     }
     hideBranchMismatch();
+    const isBlankSharedCandidate = thread !== void 0 && thread.messages.length === 0 && !thread.worktreeChoice;
+    if (isBlankSharedCandidate && !dirtyWarningAcknowledged.has(id)) {
+      const choice = checkoutChoice(id);
+      const effectiveCheckoutMode = choice === "worktree" ? "worktree" : choice === "shared" ? "shared" : automaticCheckoutMode;
+      if (effectiveCheckoutMode === "shared") {
+        const state = await api2.git.promptState(projectId, id);
+        if (getActiveThreadId() !== id || activeComposerThreadId !== id || store2.getState().activeProjectId !== projectId)
+          return;
+        if (state.dirty) {
+          showDirtyWarning(id);
+          return;
+        }
+      }
+    }
+    hideDirtyWarning();
     const [skills, agentsResult] = await Promise.all([api2.skills.list(), api2.agents.list()]);
     skillsCache = skills;
     agentsCache = agentsResult.agents;
@@ -92396,6 +92532,7 @@ ${description}
       guardedYolo.refresh();
       containerRun.refresh();
       hideBranchMismatch();
+      hideDirtyWarning();
       updateState();
       updateFooter();
       updateQueueIndicator();
@@ -92428,6 +92565,7 @@ ${description}
   const advisoryStrips = [
     guardedYolo.element,
     branchWarning,
+    dirtyWarning,
     checkoutError,
     imageCompatibilityWarning,
     contextFitWarning
@@ -105262,7 +105400,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       const gen = titleGen;
       void api2.gh.prDetails(pr2.owner, pr2.repo, pr2.number).then((details) => {
         if (disposed || gen !== titleGen) return;
-        const title = details?.title?.trim();
+        const title = details?.title.trim();
         if (!title || title === placeholderPrTitle(pr2.number)) return;
         titlesCache.set(key, title);
         pr2.title = title;
@@ -128260,7 +128398,11 @@ var init_keyboard_shortcuts_dialog = __esm({
           { label: "Terminal", keys: ["Mod", "`"] },
           { label: "Changes", keys: ["Mod", "Shift", "G"] },
           { label: "Browser", keys: ["Mod", "Shift", "B"] },
-          { label: "Focus browser address bar", keys: ["Mod", "L"] }
+          { label: "Focus browser address bar", keys: ["Mod", "L"] },
+          // Same physical key as above: while the browser page itself has focus,
+          // Mod+L shares its selection (or a screenshot) instead of focusing the
+          // address bar — see attachBrowserGuestShareShortcut.
+          { label: "Share browser selection or screenshot", keys: ["Mod", "L"] }
         ]
       }
     ];
