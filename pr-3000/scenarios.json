@@ -52,6 +52,10 @@
     "label": "Remote desktop discovered-port list with one selected"
   },
   {
+    "id": "inline-thread-reference",
+    "label": "Inline thread reference chip geometry"
+  },
+  {
     "id": "settings-footer",
     "label": "Settings scroll + sticky footer geometry"
   },
