@@ -91,8 +91,10 @@ shell's hand-offs (Phase 4).
   arrives as a structured, anchored object rather than prose. Every reviewer must close
   with `finish_review`, a structured attestation of what it checked and could not verify;
   that closure can also carry findings the model held until its final response. If a
-  provider ends in prose, one bounded continuation keeps the same transcript but exposes
-  only the closure tool, converting that draft into anchored data. A still-missing
+  provider ends in prose or consumes its investigation budget, the runner reserves the
+  shared loop's generic-finalizer headroom for one bounded continuation over the same
+  transcript with only the closure tool. The continuation has a short reasoning ceiling
+  and converts the already-reached conclusion into anchored data. A still-missing
   attestation fails the run instead of being reported as clean, and preserves the draft
   for diagnosis.
 - **`turn.ts`** / **`stage2.ts`** — one model turn over `@copse/agent`'s loop, projected live

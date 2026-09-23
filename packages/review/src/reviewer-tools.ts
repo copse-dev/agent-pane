@@ -9,7 +9,7 @@ import { z } from 'zod'
 import { wrapExternalContent } from '@copse/agent/external-content.ts'
 import type { LLMTool } from '@copse/llm/wire-types.ts'
 import type { HeadlessPermissionDecision } from '@copse/agent/headless-contract.ts'
-import { decodeWithSchema } from '@copse/std/safe-json.ts'
+import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
 import { errorMessage } from '@copse/std/errors.ts'
 import { readFileDiff, type ReviewContext } from './context.ts'
 import { jailPath, readCheckoutFile } from './checkout-fs.ts'
@@ -173,11 +173,15 @@ export function reviewerTools(): LLMTool[] {
     {
       name: 'read_dependency_file',
       description:
-        'Read an installed package source file below node_modules through the isolated execution cell. Use this instead of read_file when pnpm package symlinks are refused. This reads data only and never executes package code.',
+        'Read an installed package source file through the isolated execution cell. Use this instead of read_file when pnpm package symlinks are refused. Pass a package-relative path such as jsdom/lib/api.js; a leading node_modules/ is also accepted. This reads data only and never executes package code.',
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: 'Path below node_modules/' },
+          path: {
+            type: 'string',
+            description:
+              'Package-relative path, e.g. jsdom/lib/api.js (optional node_modules/ prefix)',
+          },
           startLine: { type: 'integer', description: 'First line to return (1-based)' },
           endLine: { type: 'integer', description: 'Last line to return (inclusive)' },
         },
@@ -230,7 +234,7 @@ export function reviewerTools(): LLMTool[] {
     {
       name: 'run_command',
       description:
-        'Run a program in an isolated copy of the change (no shell: pass argv). Prefer a focused test selector or small probe that settles one question; Stage 0 already ran the aggregate project checks. Output is capped.',
+        'Run a program in an isolated copy of the change (no shell: pass argv as an actual array, not a quoted JSON string). Prefer a focused test selector or small probe that settles one question; Stage 0 already ran the aggregate project checks. Output is capped.',
       parameters: {
         type: 'object',
         properties: {
@@ -276,12 +280,30 @@ const searchArgs = decodeWithSchema(
 const gitDiffArgs = decodeWithSchema(
   z.object({ path: z.string().min(1), offset: z.number().int().nonnegative().optional() }),
 )
-const runCommandArgs = decodeWithSchema(
+const commandArgvSchema = z.array(z.string().min(1)).min(1)
+const runCommandArgsSchema = z.object({
+  argv: commandArgvSchema,
+  timeoutMs: z.number().int().positive().max(RUN_COMMAND_MAX_TIMEOUT_MS).optional(),
+})
+const decodeRunCommandArgs = decodeWithSchema(runCommandArgsSchema)
+const decodeEncodedRunCommandArgs = decodeWithSchema(
   z.object({
-    argv: z.array(z.string().min(1)).min(1),
+    argv: z.string().min(1),
     timeoutMs: z.number().int().positive().max(RUN_COMMAND_MAX_TIMEOUT_MS).optional(),
   }),
 )
+const decodeCommandArgv = decodeWithSchema(commandArgvSchema)
+
+/** Tolerate the JSON-encoded argv some OpenAI-compatible models emit. */
+function runCommandArgs(args: unknown): z.infer<typeof runCommandArgsSchema> | null {
+  const direct = decodeRunCommandArgs(args)
+  if (direct !== null) return direct
+  const encoded = decodeEncodedRunCommandArgs(args)
+  if (encoded === null) return null
+  const argv = safeJsonParse(encoded.argv, decodeCommandArgv)
+  if (argv === null) return null
+  return encoded.timeoutMs === undefined ? { argv } : { argv, timeoutMs: encoded.timeoutMs }
+}
 const decodeCandidate = decodeWithSchema(candidateFindingSchema)
 class ToolInputError extends Error {}
 

@@ -84,13 +84,18 @@ export interface DependencyFileRequest {
 /** Normalise a model path and keep this tool scoped to installed packages. */
 export function dependencyFilePath(path: string): string {
   const portable = path.replaceAll('\\', '/')
-  const normal = posix.normalize(portable)
+  const candidate = portable.startsWith('node_modules/')
+    ? portable
+    : posix.join('node_modules', portable)
+  const normal = posix.normalize(candidate)
   if (
     posix.isAbsolute(portable) ||
     normal === 'node_modules' ||
     !normal.startsWith('node_modules/')
   ) {
-    throw new Error('dependency paths must name a file below node_modules/')
+    throw new Error(
+      'dependency paths must name a package file, for example jsdom/lib/api.js or node_modules/jsdom/lib/api.js',
+    )
   }
   return normal
 }

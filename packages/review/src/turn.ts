@@ -31,6 +31,20 @@ export const REVIEW_TURN_REASONING_POLICY: Readonly<ReasoningCheckpointPolicy> =
   maxInitialTokens: 8_192,
 }
 
+/**
+ * A protocol repair only has to encode conclusions the reviewer already
+ * reached. Give it one checkpoint of reasoning, rather than letting a model
+ * spend another full review budget re-deriving the same answer before it calls
+ * the required closure tool.
+ */
+const REVIEW_CLOSURE_REASONING_POLICY: Readonly<ReasoningCheckpointPolicy> = {
+  ...PRODUCT_REASONING_CHECKPOINT_POLICY,
+  maxNonReasoningTokens: PRODUCT_REASONING_CHECKPOINT_POLICY.intervalTokens,
+  maxInitialTokens: PRODUCT_REASONING_CHECKPOINT_POLICY.intervalTokens,
+  maxRecoveryTokens: PRODUCT_REASONING_CHECKPOINT_POLICY.intervalTokens,
+  maxTrailingReasoningTokens: PRODUCT_REASONING_CHECKPOINT_POLICY.intervalTokens,
+}
+
 export interface TurnUsage {
   readonly inputTokens: number
   readonly outputTokens: number
@@ -117,7 +131,11 @@ export async function runTurn(options: TurnOptions): Promise<TurnResult> {
   const runLoop = async (
     tools: readonly LLMTool[],
     maxSteps: number,
-    initialToolChoice?: LLMStreamOptions['toolChoice'],
+    settings: {
+      readonly initialToolChoice?: LLMStreamOptions['toolChoice']
+      readonly maxLlmCalls?: number
+      readonly reasoningCheckpointPolicy?: Readonly<ReasoningCheckpointPolicy>
+    } = {},
   ): Promise<void> => {
     await runAgentLoop({
       provider: options.provider,
@@ -127,9 +145,10 @@ export async function runTurn(options: TurnOptions): Promise<TurnResult> {
         options.execute(name, args, signal, toolCallId),
       ...(options.signal ? { signal: options.signal } : {}),
       maxSteps,
-      ...(initialToolChoice ? { initialToolChoice } : {}),
+      ...(settings.maxLlmCalls !== undefined ? { maxLlmCalls: settings.maxLlmCalls } : {}),
+      ...(settings.initialToolChoice ? { initialToolChoice: settings.initialToolChoice } : {}),
       adaptiveExtensions: false,
-      reasoningCheckpointPolicy: REVIEW_TURN_REASONING_POLICY,
+      reasoningCheckpointPolicy: settings.reasoningCheckpointPolicy ?? REVIEW_TURN_REASONING_POLICY,
       usageModel: options.model,
       getLastUsage: () => (hasLastUsage(options.provider) ? options.provider.lastUsage : null),
       onChunk: (chunk: AgentStreamChunk) => {
@@ -175,7 +194,14 @@ export async function runTurn(options: TurnOptions): Promise<TurnResult> {
     protocolVersion: HEADLESS_PROTOCOL_VERSION,
   })
   try {
-    await runLoop(options.tools, options.maxSteps)
+    await runLoop(
+      options.tools,
+      options.maxSteps,
+      // The shared loop normally reserves three calls for a generic prose
+      // finalizer. A role with a structured completion invariant must spend
+      // those calls on its forced closure continuation instead.
+      options.completionRepair === undefined ? {} : { maxLlmCalls: options.maxSteps },
+    )
   } catch (err) {
     error = errorMessage(err)
   }
@@ -192,11 +218,11 @@ export async function runTurn(options: TurnOptions): Promise<TurnResult> {
       summary = ''
       doneStopReason = undefined
       try {
-        await runLoop(
-          options.completionRepair.tools,
-          options.completionRepair.maxSteps,
-          options.completionRepair.toolChoice,
-        )
+        await runLoop(options.completionRepair.tools, options.completionRepair.maxSteps, {
+          initialToolChoice: options.completionRepair.toolChoice,
+          maxLlmCalls: options.completionRepair.maxSteps,
+          reasoningCheckpointPolicy: REVIEW_CLOSURE_REASONING_POLICY,
+        })
       } catch (err) {
         error = errorMessage(err)
       }
