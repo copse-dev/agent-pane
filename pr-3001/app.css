@@ -5790,6 +5790,52 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   opacity: 0.65;
   cursor: progress;
 }
+.composer-dirty-warning {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  border-bottom: 1px solid var(--border);
+  padding: 8px var(--spacing-md);
+  background: color-mix(in srgb, var(--warning) 12%, var(--bg-base));
+  color: var(--text-primary);
+  font-size: 12px;
+}
+.composer-dirty-warning[hidden] {
+  display: none;
+}
+.composer-dirty-warning-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--warning);
+  color: var(--bg-base);
+  font-weight: 700;
+  flex: 0 0 auto;
+}
+.composer-dirty-warning-text {
+  min-width: 0;
+  flex: 1;
+  line-height: var(--line-height-base);
+}
+.composer-dirty-worktree-btn,
+.composer-dirty-send-btn {
+  flex: 0 0 auto;
+  border: 1px solid color-mix(in srgb, var(--warning) 60%, var(--border));
+  border-radius: var(--radius);
+  padding: 4px 10px;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.composer-dirty-worktree-btn:hover,
+.composer-dirty-send-btn:hover {
+  border-color: var(--warning);
+}
 .prompt-input {
   padding-right: 84px;
   padding-left: 44px;
