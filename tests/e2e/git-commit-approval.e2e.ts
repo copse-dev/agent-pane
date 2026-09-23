@@ -92,6 +92,7 @@ describe('git commit approval', () => {
       'The commit was cancelled.',
     )
     await $('.submit-btn').click()
+    await $('.composer-dirty-send-btn').click()
     const dialog = $('#approval-dialog')
     await dialog.waitForDisplayed({ timeout: 30_000 })
     const body = await dialog.$('.approval-body').getText()

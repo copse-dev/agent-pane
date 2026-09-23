@@ -143,7 +143,7 @@ SKIP_ELECTRON_REBUILD=1 node scripts/postinstall-native.mts
 
 Use `SKIP_GORTEX_FETCH=1` if you intentionally do not want the bundled semantic-search binary.
 
-`make run` provisions pnpm and every bundled dependency, but it does not install Node or a C++ toolchain. On macOS it first verifies that the selected Apple compiler can link against the selected SDK, so an incomplete or mismatched Xcode update reports the active developer directory and SDK plus recovery commands before `node-gyp` starts:
+`make run` provisions pnpm and every bundled dependency, but it does not install Node or a C++ toolchain. On macOS it first verifies that the selected Apple compiler can link against the selected SDK, so an incomplete or mismatched Xcode update reports the active developer directory and SDK plus recovery commands before `node-gyp` starts. `SKIP_ELECTRON_REBUILD=1` skips this check along with the rebuild:
 
 - If the macOS native-toolchain check fails after an Xcode or macOS update, update Xcode, run `sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer` and `sudo xcodebuild -runFirstLaunch`, then retry. If you use only the standalone Command Line Tools, update them through System Settings → General → Software Update or run `xcode-select --install` when they are missing.
 - A later `node-gyp` or `clang` error during install is a native build failure that passed this basic toolchain check; keep its full output when reporting the problem.

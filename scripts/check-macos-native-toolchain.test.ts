@@ -60,6 +60,19 @@ describe('macOS native toolchain preflight', () => {
     assert.equal(called, false)
   })
 
+  it('preserves the documented native-rebuild escape hatch on macOS', () => {
+    let called = false
+    checkMacosNativeToolchain({
+      platform: 'darwin',
+      env: { SKIP_ELECTRON_REBUILD: '1' },
+      runCommand: () => {
+        called = true
+        return commandResult()
+      },
+    })
+    assert.equal(called, false)
+  })
+
   it('accepts a toolchain that can link against its selected SDK', () => {
     const { runCommand, calls } = toolchainRunner()
 

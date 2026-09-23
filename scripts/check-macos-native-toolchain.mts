@@ -135,6 +135,8 @@ export function checkMacosNativeToolchain(options: NativeToolchainCheckOptions =
   if ((options.platform ?? process.platform) !== 'darwin') return
 
   const env = options.env ?? process.env
+  if (env['SKIP_ELECTRON_REBUILD'] === '1') return
+
   const runCommand = options.runCommand ?? defaultRunCommand
   const developerOverride = env['DEVELOPER_DIR']?.trim() ?? ''
   const developerDirectory = developerOverride
