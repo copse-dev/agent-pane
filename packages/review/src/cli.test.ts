@@ -595,12 +595,17 @@ describe('copse-review CLI', () => {
     const trustedPrepare = join(dir, 'trusted-prepare.mts')
     await writeFile(
       trustedPrepare,
-      "import { writeFileSync } from 'node:fs'; writeFileSync('.focused-ready', 'ready')\n",
+      "import { mkdirSync, symlinkSync, writeFileSync } from 'node:fs'; mkdirSync('node_modules/.pnpm/fixture@1.0.0/node_modules/fixture', { recursive: true }); writeFileSync('node_modules/.pnpm/fixture@1.0.0/node_modules/fixture/index.js', 'dependency source ready\\n'); symlinkSync('.pnpm/fixture@1.0.0/node_modules/fixture', 'node_modules/fixture', process.platform === 'win32' ? 'junction' : 'dir'); writeFileSync('.focused-ready', 'ready')\n",
     )
     const focusedScript = join(dir, 'focused-script.json')
     await writeFile(
       focusedScript,
       JSON.stringify([
+        {
+          type: 'tool_call',
+          name: 'read_dependency_file',
+          args: { path: 'node_modules/fixture/index.js' },
+        },
         {
           type: 'tool_call',
           name: 'run_command',
@@ -623,7 +628,7 @@ describe('copse-review CLI', () => {
             confidence: 'high',
             claim: 'add subtracts its second argument.',
             reason: 'The focused runtime probe exercised the changed implementation.',
-            commandCallIds: ['call-1'],
+            commandCallIds: ['call-2'],
           },
         },
         finishReviewStep('The changed implementation and a focused runtime probe.'),
@@ -632,6 +637,7 @@ describe('copse-review CLI', () => {
     )
     let focusedOut = ''
     let focusedErr = ''
+    const focusedEvents = join(dir, 'focused.events.jsonl')
     let focusedReadOnlyPaths: readonly string[] = []
     const delegate = createEphemeralRunnerBackend()
     const focusedBackend: IsolationBackend = {
@@ -656,6 +662,8 @@ describe('copse-review CLI', () => {
         'mock',
         '--mock-script',
         focusedScript,
+        '--events',
+        focusedEvents,
         '--no-verify',
       ],
       {
@@ -674,6 +682,9 @@ describe('copse-review CLI', () => {
     assert.match(focusedOut, /reviewer mock under correctness — completed/)
     assert.match(focusedOut, /1 command\(s\) as evidence/)
     assert.doesNotMatch(focusedOut, /run_command is denied/)
+    const focusedEventText = await readFile(focusedEvents, 'utf8')
+    assert.match(focusedEventText, /read_dependency_file/)
+    assert.match(focusedEventText, /dependency source ready/)
     assert.ok(focusedReadOnlyPaths.includes(await realpath(trustedPrepare)))
     assert.equal(focusedReadOnlyPaths.includes(await realpath(dir)), false)
 

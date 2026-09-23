@@ -11,6 +11,7 @@ import {
   createReviewerToolExecutor,
   jailPath,
   reviewerClosureTools,
+  reviewerTools,
   type ReviewerToolHost,
 } from './reviewer-tools.ts'
 
@@ -120,6 +121,131 @@ describe('reviewer tools', () => {
       await executor.execute('list_dir', {}, signal, 't4'),
       'f .gitignore\nf pnpm-lock.yaml\nf probe.cjs\nd src',
     )
+  })
+
+  it('reads pnpm-linked dependency source inside the cell without relaxing host reads', async () => {
+    const packageRoot = join(
+      root,
+      'node_modules',
+      '.pnpm',
+      'linked-dep@1.0.0',
+      'node_modules',
+      'linked-dep',
+    )
+    const packageLink = join(root, 'node_modules', 'linked-dep')
+    const outside = await mkdtemp(join(tmpdir(), 'review-dependency-outside-'))
+    const outsideLink = join(root, 'node_modules', 'escaped-dep')
+    await mkdir(packageRoot, { recursive: true })
+    await writeFile(join(packageRoot, 'index.js'), 'first line\nconst linked = true\nlast line\n')
+    await writeFile(join(outside, 'canary.js'), 'OUTSIDE_CANARY\n')
+    await symlink(
+      '.pnpm/linked-dep@1.0.0/node_modules/linked-dep',
+      packageLink,
+      process.platform === 'win32' ? 'junction' : 'dir',
+    )
+    await symlink(outside, outsideLink, process.platform === 'win32' ? 'junction' : 'dir')
+    try {
+      const executor = createReviewerToolExecutor(host)
+      assert.match(
+        await executor.execute(
+          'read_file',
+          { path: 'node_modules/linked-dep/index.js' },
+          signal,
+          'dependency-host-read',
+        ),
+        /use read_dependency_file/,
+      )
+      assert.equal(
+        await executor.execute(
+          'read_dependency_file',
+          { path: 'node_modules/linked-dep/index.js', startLine: 2, endLine: 3 },
+          signal,
+          'dependency-cell-read',
+        ),
+        '2: const linked = true\n3: last line',
+      )
+      assert.match(
+        await executor.execute(
+          'read_dependency_file',
+          { path: 'node_modules/escaped-dep/canary.js' },
+          signal,
+          'dependency-escape',
+        ),
+        /resolves outside the disposable node_modules tree/,
+      )
+      assert.match(
+        await executor.execute(
+          'read_dependency_file',
+          { path: 'node_modules/../src/a.ts' },
+          signal,
+          'dependency-traversal',
+        ),
+        /below node_modules/,
+      )
+      const unavailable = createReviewerToolExecutor({ ...host, cell: null })
+      assert.match(
+        await unavailable.execute(
+          'read_dependency_file',
+          { path: 'node_modules/linked-dep/index.js' },
+          signal,
+          'dependency-no-cell',
+        ),
+        /unavailable without an execution cell/,
+      )
+    } finally {
+      await rm(packageLink, { force: true })
+      await rm(outsideLink, { force: true })
+      await rm(outside, { recursive: true, force: true })
+    }
+  })
+
+  it('describes dependency reads as data-only cell access', () => {
+    const tool = reviewerTools().find((candidate) => candidate.name === 'read_dependency_file')
+    assert.ok(tool)
+    assert.match(tool.description, /never executes package code/)
+    assert.deepEqual(tool.parameters['required'], ['path'])
+  })
+
+  it('rejects a node_modules root redirected outside the disposable checkout', async () => {
+    const checkout = await mkdtemp(join(tmpdir(), 'review-dependency-checkout-'))
+    const outside = await mkdtemp(join(tmpdir(), 'review-dependency-root-outside-'))
+    const scratch = await mkdtemp(join(tmpdir(), 'review-dependency-root-cell-'))
+    await writeFile(join(outside, 'canary.js'), 'OUTSIDE_CANARY\n')
+    await symlink(
+      outside,
+      join(checkout, 'node_modules'),
+      process.platform === 'win32' ? 'junction' : 'dir',
+    )
+    const redirectedCell = await createHostProcessBackend().createCell({
+      checkouts: { base: checkout, head: checkout },
+      scratchDir: scratch,
+      readOnlyPaths: [],
+      env: cellEnvironment(process.env),
+    })
+    try {
+      const executor = createReviewerToolExecutor({
+        headCheckout: checkout,
+        context: contextFor([]),
+        cell: redirectedCell,
+        shellDecision: 'allow',
+        scrub: (text: string): string => text,
+      })
+      assert.match(
+        await executor.execute(
+          'read_dependency_file',
+          { path: 'node_modules/canary.js' },
+          signal,
+          'dependency-root-escape',
+        ),
+        /node_modules resolves outside the disposable checkout/,
+      )
+    } finally {
+      await redirectedCell.destroy()
+      await rm(join(checkout, 'node_modules'), { force: true })
+      await rm(checkout, { recursive: true, force: true })
+      await rm(outside, { recursive: true, force: true })
+      await rm(scratch, { recursive: true, force: true })
+    }
   })
 
   it('searches with a regex, skipping node_modules, and treats a bad pattern literally', async () => {

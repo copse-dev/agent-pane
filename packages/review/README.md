@@ -80,7 +80,9 @@ shell's hand-offs (Phase 4).
   `security`, `concurrency`; `--lenses all` runs every one. All stay inside B4. The system
   prompt restates the quality bar as rules.
 - **`reviewer-tools.ts`** — the reviewer's tools, jailed to the head checkout:
-  `read_file`, `list_dir`, `search_code` (without following checkout symlinks), and
+  `read_file`, `list_dir`, `search_code` (without following checkout symlinks),
+  `read_dependency_file` (a fixed data-only helper in the serialised secret-free cell that follows
+  pnpm package links only when their canonical file remains inside the disposable `node_modules`), and
   `git_diff` (complete per-file diffs paged by character offset); `run_command`, brokered into the
   cell and gated by the run's permission profile, with its output wrapped as external
   content and secret-scrubbed. Its prompt directs reviewers to the smallest
@@ -198,7 +200,7 @@ by default and refuses a report for another commit). Before any model or App cre
 put in a step, the workflow builds `Dockerfile.cell`, fetches the exact head's dependency
 store from lockfile data with scripts disabled, and fetches the reviewed refs. The model
 process then attaches that image explicitly with `--backend container`: read/search/diff
-tools remain host-side and `run_command` plus Stage 4 reproducers are brokered into the
+ordinary source tools remain host-side while `read_dependency_file`, `run_command` and Stage 4 reproducers are brokered into the
 read-only-root, capability-free, network-disabled cell. The cell receives only the
 allowlisted environment, never provider, Scaleway, workflow, or GitHub App credentials.
 `--backend ephemeral-runner` is rejected with imported Stage 0, so the secret-bearing host
