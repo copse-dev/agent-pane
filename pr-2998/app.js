@@ -31552,7 +31552,7 @@ var init_titlebar = __esm({
 });
 
 // src/renderer/dom/context-menu.ts
-function showContextMenu(clientX, clientY, items) {
+function showContextMenu(clientX, clientY, items, withinDialog) {
   dismissOpenContextMenu?.();
   if (items.every(isHeading)) return;
   const buttons = items.map((entry) => {
@@ -31609,7 +31609,8 @@ function showContextMenu(clientX, clientY, items) {
   const onKeyDown = (e3) => {
     if (e3.key === "Escape") dismiss();
   };
-  document.body.append(menu);
+  const dialog2 = withinDialog?.closest("dialog");
+  (dialog2 ?? document.body).append(menu);
   dismissOpenContextMenu = dismiss;
   document.addEventListener("pointerdown", onPointerDown, true);
   document.addEventListener("keydown", onKeyDown, true);
@@ -71054,10 +71055,43 @@ var init_attachment_icons = __esm({
 });
 
 // src/renderer/attachments/image-expand.ts
+function dataUrlToBlob(dataUrl) {
+  const comma = dataUrl.indexOf(",");
+  if (comma < 0) throw new Error("Not a data URL");
+  const header = dataUrl.slice(5, comma);
+  const mime = header.split(";")[0] ?? "";
+  const mimeType = mime === "" ? "application/octet-stream" : mime;
+  const binary = atob(dataUrl.slice(comma + 1));
+  const bytes = Uint8Array.from(binary, (c3) => c3.charCodeAt(0));
+  return new Blob([bytes], { type: mimeType });
+}
+async function copyImageToClipboard(src) {
+  const blob = dataUrlToBlob(src);
+  await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+}
 function openImageExpand(src, alt = "Expanded attachment") {
   if (!src) return;
   const imageEl = el("img", { class: "image-expand-image", alt });
   imageEl.src = src;
+  imageEl.addEventListener("contextmenu", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    showContextMenu(
+      event.clientX,
+      event.clientY,
+      [
+        {
+          label: "Copy image",
+          onSelect: () => {
+            void copyImageToClipboard(src).then(() => showToast("Copied image", { durationMs: 1500 })).catch((error62) => {
+              showErrorToast("Failed to copy image", error62);
+            });
+          }
+        }
+      ],
+      imageEl
+    );
+  });
   openAttachmentPreview({
     kind: "image",
     title: alt,
@@ -71094,15 +71128,50 @@ function attachImageExpand(img, alt) {
 }
 var init_image_expand = __esm({
   "src/renderer/attachments/image-expand.ts"() {
+    init_context_menu();
     init_helpers();
+    init_toast();
     init_attachment_preview();
   }
 });
 
 // src/renderer/attachments/text-expand.ts
+function copyText(text2) {
+  void navigator.clipboard.writeText(text2).then(() => showToast("Copied", { durationMs: 1500 })).catch((error62) => {
+    showErrorToast("Failed to copy", error62);
+  });
+}
+function selectedTextWithin(root) {
+  const selection2 = window.getSelection();
+  if (!selection2 || selection2.isCollapsed || selection2.rangeCount === 0) return null;
+  for (let index = 0; index < selection2.rangeCount; index += 1) {
+    const range = selection2.getRangeAt(index);
+    if (!root.contains(range.startContainer) || !root.contains(range.endContainer)) return null;
+  }
+  const selected = selection2.toString();
+  return selected.length > 0 ? selected : null;
+}
 function openTextExpand(content, name) {
   const text2 = el("pre", { class: "attachment-preview-text" });
   text2.textContent = content;
+  text2.addEventListener("contextmenu", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const selected = selectedTextWithin(text2);
+    showContextMenu(
+      event.clientX,
+      event.clientY,
+      [
+        {
+          label: selected ? "Copy selection" : "Copy",
+          onSelect: () => {
+            copyText(selected ?? content);
+          }
+        }
+      ],
+      text2
+    );
+  });
   openAttachmentPreview({
     kind: "text",
     title: name,
@@ -71130,7 +71199,9 @@ function attachTextExpand(chip2, content, name) {
 }
 var init_text_expand = __esm({
   "src/renderer/attachments/text-expand.ts"() {
+    init_context_menu();
     init_helpers();
+    init_toast();
     init_attachment_preview();
   }
 });
@@ -90722,6 +90793,29 @@ function mountInputBar(root, store2, api2, opts = {}) {
     checkoutBranchBtn,
     continueBranchBtn
   );
+  const dirtyWarningText = el(
+    "span",
+    { class: "composer-dirty-warning-text" },
+    "This checkout has uncommitted changes. Work will run on top of them."
+  );
+  const useWorktreeBtn = el(
+    "button",
+    { type: "button", class: "composer-dirty-worktree-btn" },
+    "Use an isolated worktree"
+  );
+  const sendDirtyAnywayBtn = el(
+    "button",
+    { type: "button", class: "composer-dirty-send-btn" },
+    "Send anyway"
+  );
+  const dirtyWarning = el(
+    "div",
+    { class: "composer-dirty-warning", role: "status", "aria-live": "polite", hidden: "" },
+    el("span", { class: "composer-dirty-warning-icon", "aria-hidden": "true" }, "!"),
+    dirtyWarningText,
+    useWorktreeBtn,
+    sendDirtyAnywayBtn
+  );
   const imageCompatibilityText = el("span", { class: "composer-image-warning-text" });
   const useImageModelBtn = el(
     "button",
@@ -91037,6 +91131,7 @@ function mountInputBar(root, store2, api2, opts = {}) {
     guardedYolo.element,
     containerRun.element,
     branchWarning,
+    dirtyWarning,
     checkoutError,
     imageCompatibilityWarning,
     contextFitWarning,
@@ -91083,6 +91178,7 @@ function mountInputBar(root, store2, api2, opts = {}) {
   let descriptionModels = [];
   let descriptionPicker = null;
   const checkoutChoices = /* @__PURE__ */ new Map();
+  const dirtyWarningAcknowledged = /* @__PURE__ */ new Set();
   let checkoutPreparationInProgress = false;
   let automaticCheckoutMode = "shared";
   let automaticCheckoutPreviewSeq = 0;
@@ -91350,6 +91446,7 @@ ${description}
   }));
   let mismatchBranch = null;
   let checkoutInProgress = false;
+  let dirtyWarningThreadId = null;
   let lastBreakdown = null;
   let breakdownModel = null;
   let modelPricing = {};
@@ -91468,6 +91565,7 @@ ${description}
     activeComposerThreadId = id;
     if (id) restoreDraftAttachments(id);
     hideCheckoutError();
+    hideDirtyWarning();
     lastBreakdown = null;
     breakdownModel = null;
     scheduleContextEstimate(0);
@@ -91552,6 +91650,14 @@ ${description}
     checkoutBranchBtn.disabled = false;
     checkoutBranchBtn.textContent = "Check out";
     continueBranchBtn.disabled = false;
+  }
+  function showDirtyWarning(threadId) {
+    dirtyWarningThreadId = threadId;
+    dirtyWarning.hidden = false;
+  }
+  function hideDirtyWarning() {
+    dirtyWarningThreadId = null;
+    dirtyWarning.hidden = true;
   }
   function updateQueueIndicator() {
     const thread = store2.getState().threads.find((t2) => t2.id === getActiveThreadId());
@@ -91771,6 +91877,21 @@ ${description}
       showErrorToast("Failed to read the current branch", error62);
     });
   });
+  useWorktreeBtn.addEventListener("click", () => {
+    const id = dirtyWarningThreadId;
+    if (!id) return;
+    dirtyWarningAcknowledged.add(id);
+    hideDirtyWarning();
+    selectCheckout("worktree");
+    void submit();
+  });
+  sendDirtyAnywayBtn.addEventListener("click", () => {
+    const id = dirtyWarningThreadId;
+    if (!id) return;
+    dirtyWarningAcknowledged.add(id);
+    hideDirtyWarning();
+    void submit();
+  });
   function isAutocompletePickerOpen() {
     return root.querySelector(".mention-picker:not([hidden])") !== null;
   }
@@ -91859,6 +91980,21 @@ ${description}
       return;
     }
     hideBranchMismatch();
+    const isBlankSharedCandidate = thread !== void 0 && thread.messages.length === 0 && !thread.worktreeChoice;
+    if (isBlankSharedCandidate && !dirtyWarningAcknowledged.has(id)) {
+      const choice = checkoutChoice(id);
+      const effectiveCheckoutMode = choice === "worktree" ? "worktree" : choice === "shared" ? "shared" : automaticCheckoutMode;
+      if (effectiveCheckoutMode === "shared") {
+        const state = await api2.git.promptState(projectId, id);
+        if (getActiveThreadId() !== id || activeComposerThreadId !== id || store2.getState().activeProjectId !== projectId)
+          return;
+        if (state.dirty) {
+          showDirtyWarning(id);
+          return;
+        }
+      }
+    }
+    hideDirtyWarning();
     const [skills, agentsResult] = await Promise.all([api2.skills.list(), api2.agents.list()]);
     skillsCache = skills;
     agentsCache = agentsResult.agents;
@@ -92398,6 +92534,7 @@ ${description}
       guardedYolo.refresh();
       containerRun.refresh();
       hideBranchMismatch();
+      hideDirtyWarning();
       updateState();
       updateFooter();
       updateQueueIndicator();
@@ -92430,6 +92567,7 @@ ${description}
   const advisoryStrips = [
     guardedYolo.element,
     branchWarning,
+    dirtyWarning,
     checkoutError,
     imageCompatibilityWarning,
     contextFitWarning
@@ -104840,6 +104978,14 @@ function isPlaceholderPr(pr2) {
 function prListDisplayTitle(pr2) {
   return isPlaceholderPr(pr2) ? `${pr2.owner}/${pr2.repo}` : pr2.title;
 }
+function prMatchesFilter(pr2, query) {
+  const trimmed2 = query.trim();
+  if (!trimmed2) return true;
+  const needle = (trimmed2.startsWith("#") ? trimmed2.slice(1) : trimmed2).toLocaleLowerCase();
+  if (!needle) return true;
+  const haystacks = [String(pr2.number), pr2.title, pr2.headRefName, pr2.authorLogin];
+  return haystacks.some((value) => value?.toLocaleLowerCase().includes(needle) ?? false);
+}
 function mergePrLists(linked, pools) {
   const seen = /* @__PURE__ */ new Set();
   const merged = [];
@@ -105055,8 +105201,16 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     )
   );
   const refreshBtn = qsRequired(listHeader, ".pr-pane-refresh-btn");
+  const filterInput = el("input", {
+    type: "search",
+    class: "pr-pane-filter",
+    placeholder: "Filter pull requests",
+    "aria-label": "Filter pull requests",
+    autocomplete: "off"
+  });
   const listBody = el("div", { class: "git-changes-list pr-list-body" });
-  listRoot.append(listHeader, listBody);
+  listRoot.append(listHeader, filterInput, listBody);
+  let filterQuery = "";
   const metaHost = el("div", { class: "pr-viewer-meta" });
   const sectionsHost = el("nav", {
     class: "pr-detail-sections",
@@ -105216,21 +105370,21 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     ciEls = /* @__PURE__ */ new Map();
     const linkedKeys = new Set(linkedRefs.map((ref) => githubPrKey(ref)));
     const workspaceKeys = new Set(workspacePrs.map((pr2) => githubPrKey(pr2)));
-    const linkedPrs = prList.filter((pr2) => linkedKeys.has(githubPrKey(pr2)));
-    const repoPrs = prList.filter(
+    const linkedPrsAll = prList.filter((pr2) => linkedKeys.has(githubPrKey(pr2)));
+    const repoPrsAll = prList.filter(
       (pr2) => !linkedKeys.has(githubPrKey(pr2)) && workspaceKeys.has(githubPrKey(pr2))
     );
-    const otherPrs = prList.filter(
+    const otherPrsAll = prList.filter(
       (pr2) => !linkedKeys.has(githubPrKey(pr2)) && !workspaceKeys.has(githubPrKey(pr2))
     );
     if (!ghStatus) {
-      if (linkedPrs.length === 0) {
+      if (linkedPrsAll.length === 0) {
         renderGhLoading();
         return;
       }
       listBody.append(paneLoadingRow("Loading pull requests\u2026"));
     } else if (!ghStatus.installed || !ghStatus.authenticated) {
-      if (linkedPrs.length === 0) {
+      if (linkedPrsAll.length === 0) {
         renderGhUnavailable();
         return;
       }
@@ -105242,6 +105396,10 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
         )
       );
     }
+    const query = filterQuery.trim();
+    const linkedPrs = query ? linkedPrsAll.filter((pr2) => prMatchesFilter(pr2, query)) : linkedPrsAll;
+    const repoPrs = query ? repoPrsAll.filter((pr2) => prMatchesFilter(pr2, query)) : repoPrsAll;
+    const otherPrs = query ? otherPrsAll.filter((pr2) => prMatchesFilter(pr2, query)) : otherPrsAll;
     if (linkedPrs.length > 0) {
       const section = el("div", { class: "git-changes-section" });
       section.append(
@@ -105293,10 +105451,26 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
         } else if (otherPrs.length > 0) {
           for (const pr2 of otherPrs) section.append(renderPrRow(pr2, "mine"));
         } else {
-          section.append(el("div", { class: "git-changes-empty" }, "No other open pull requests"));
+          section.append(
+            el(
+              "div",
+              { class: "git-changes-empty" },
+              query ? "No pull requests match" : "No other open pull requests"
+            )
+          );
         }
       }
       listBody.append(section);
+    }
+    const otherGroupShown = Boolean(ghStatus?.authenticated) && otherExpanded && !otherLoading;
+    if (query && linkedPrs.length === 0 && repoPrs.length === 0 && !otherGroupShown) {
+      listBody.append(
+        el(
+          "div",
+          { class: "git-changes-empty pr-empty-state pr-filter-empty" },
+          "No pull requests match"
+        )
+      );
     }
   }
   async function toggleOther() {
@@ -105830,6 +106004,20 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     else clearDiff();
   }
   refreshBtn.addEventListener("click", () => void refresh({ reason: "manual" }));
+  filterInput.addEventListener("input", () => {
+    filterQuery = filterInput.value;
+    renderList();
+  });
+  filterInput.addEventListener("keydown", (e3) => {
+    if (e3.key !== "Escape") return;
+    e3.preventDefault();
+    e3.stopPropagation();
+    if (!filterQuery && !filterInput.value) return;
+    filterQuery = "";
+    filterInput.value = "";
+    renderList();
+    filterInput.focus();
+  });
   const unbindWorkspaceLinks = bindWorkspaceLinkClicks(descriptionHost, store2, api2);
   const unbindBrowserLinks = bindBrowserLinkClicks(descriptionHost, store2, api2);
   const unbindActivityWorkspaceLinks = bindWorkspaceLinkClicks(activityHost, store2, api2);
@@ -105858,6 +106046,8 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       agentLinks = /* @__PURE__ */ new Map();
       agentLinksGen++;
       resetOther();
+      filterQuery = "";
+      filterInput.value = "";
       syncWatch();
       if (prsModeActive(store2)) void refresh();
       else renderList();
@@ -128140,7 +128330,11 @@ var init_keyboard_shortcuts_dialog = __esm({
           { label: "Terminal", keys: ["Mod", "`"] },
           { label: "Changes", keys: ["Mod", "Shift", "G"] },
           { label: "Browser", keys: ["Mod", "Shift", "B"] },
-          { label: "Focus browser address bar", keys: ["Mod", "L"] }
+          { label: "Focus browser address bar", keys: ["Mod", "L"] },
+          // Same physical key as above: while the browser page itself has focus,
+          // Mod+L shares its selection (or a screenshot) instead of focusing the
+          // address bar — see attachBrowserGuestShareShortcut.
+          { label: "Share browser selection or screenshot", keys: ["Mod", "L"] }
         ]
       }
     ];
