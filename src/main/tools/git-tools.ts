@@ -110,7 +110,7 @@ export const gitCommitTool = defineTool({
           ['commit', '-m', fullMessage],
         ]
       : [['commit', '-m', fullMessage]]
-    const signing = sandboxEnabled ? await leaseGitSigningBroker(root, signal) : null
+    const signing = sandboxEnabled ? await leaseGitSigningBroker(root, signal, command) : null
     let output = ''
     try {
       for (const args of steps) {
