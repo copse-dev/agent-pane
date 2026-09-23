@@ -107,6 +107,10 @@ describe('runStage2', () => {
       result.summary,
       'Checked: src/math.ts and the changed implementation.\nCould not verify: Tests, because run_command was unavailable.',
     )
+    assert.deepEqual(result.completion, {
+      checked: 'src/math.ts and the changed implementation.',
+      couldNotVerify: 'Tests, because run_command was unavailable.',
+    })
     assert.equal(result.toolCalls, 3)
     assert.equal(result.usage.estimated, false)
     assert.deepEqual(events, [
@@ -176,6 +180,7 @@ describe('runStage2', () => {
     assert.equal(result.stopReason, 'error')
     assert.match(result.error ?? '', /without calling the required finish_review tool/)
     assert.equal(result.summary, 'I inspected the diff and found nothing.')
+    assert.equal(result.completion, null)
     const end = result.events.at(-1)
     assert.equal(end?.type, 'turn_end')
     assert.equal(end.outcome, 'failed')
@@ -271,6 +276,10 @@ describe('runStage2', () => {
       result.summary,
       'Checked: src/math.ts and the changed implementation.\nCould not verify: Tests, because run_command was unavailable.',
     )
+    assert.deepEqual(result.completion, {
+      checked: 'src/math.ts and the changed implementation.',
+      couldNotVerify: 'Tests, because run_command was unavailable.',
+    })
     assert.equal(result.events.filter((event) => event.type === 'turn_start').length, 1)
     assert.equal(result.events.filter((event) => event.type === 'turn_end').length, 1)
     const repairCall = provider.calls[1]

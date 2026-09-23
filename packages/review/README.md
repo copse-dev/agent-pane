@@ -183,6 +183,9 @@ newer head.
 Job B, on the base ref with the model key, imports that report (`--stage0-json`, which makes
 the run read-only and refuses a report for another commit), reviews the head without
 executing it, and posts one advisory review (`--post-review github --repo owner/name --pr n`).
+The posted review carries material `finish_review.couldNotVerify` limits from every completed
+reviewer. It says plain “No findings” only when those structured attestations declare nothing
+material unverified; a bounded read-only review is never presented as broader assurance than it was.
 The GitHub dogfood jobs mint a repository-scoped token for the existing Copse release/deploy
 App with only `pull-requests: write` and pass it as `COPSE_REVIEW_FORGE_TOKEN`; their
 `GITHUB_TOKEN` remains read-only. For other callers the token is

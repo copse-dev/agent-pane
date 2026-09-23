@@ -3,7 +3,7 @@
 // that back it; and what was NOT checked is always said (§The quality bar).
 import type { Finding } from './finding.ts'
 import type { CheckOutcome, Stage0Report } from './stage0.ts'
-import type { ReviewReport } from './stage5.ts'
+import { reviewerLimitations, type ReviewReport } from './stage5.ts'
 
 const MARK: Record<CheckOutcome['verdict'], string> = {
   clean: '✓',
@@ -90,6 +90,7 @@ function findingLines(finding: Finding, index: number): string[] {
 export function renderReviewReport(report: ReviewReport): string {
   const lines: string[] = [renderStage0Report(report.stage0)]
   const incompleteReviews = report.reviews.filter((review) => review.outcome !== 'completed')
+  const limitations = reviewerLimitations(report.reviews)
   for (const review of report.reviews) {
     const usage = `${String(review.usage.inputTokens)} in / ${String(review.usage.outputTokens)} out${review.usage.estimated ? ' (estimated)' : ''}`
     lines.push('')
@@ -122,13 +123,18 @@ export function renderReviewReport(report: ReviewReport): string {
       `Review incomplete: ${String(incompleteReviews.length)} of ${String(report.reviews.length)} reviewer run(s) did not complete; this is not a clean result.`,
     )
   }
+  for (const limitation of limitations) {
+    lines.push(`Could not verify (${limitation.model} / ${limitation.lens}): ${limitation.detail}`)
+  }
   if (report.findings.length === 0) {
     lines.push(
       report.reviews.length === 0
         ? 'No findings from Stage 0.'
         : incompleteReviews.length > 0
           ? 'No findings were produced before the incomplete review stopped.'
-          : 'No findings.',
+          : limitations.length > 0
+            ? 'No findings were reported; review limits remain.'
+            : 'No findings.',
     )
   } else {
     lines.push(`${String(report.findings.length)} finding(s):`)
