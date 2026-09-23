@@ -761,6 +761,7 @@ jobs:
         env:
           COPSE_REVIEW_CONTAINER_E2E: '1'
           COPSE_REVIEW_IMAGE: copse-review-cell:ci
+          COPSE_REVIEW_DEPENDENCY_STORE: ${{ runner.temp }}/pnpm-store
         run: npm test -- packages/review/src/hostile-fixture.test.ts
 
   # Retrieval-quality gate for the semantic-search backend. This job indexes the

@@ -336,6 +336,7 @@ describe('ci.yml workflow invariants', () => {
     assert.match(cell, /persist-credentials: false/)
     assert.match(cell, /docker build --pull/)
     assert.match(cell, /COPSE_REVIEW_CONTAINER_E2E: '1'/)
+    assert.match(cell, /COPSE_REVIEW_DEPENDENCY_STORE: \$\{\{ runner\.temp \}\}\/pnpm-store/)
     assert.match(cell, /npm test -- packages\/review\/src\/hostile-fixture\.test\.ts/)
 
     const aggregate = jobBlock('ci-passed')

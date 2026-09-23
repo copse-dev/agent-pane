@@ -55,7 +55,9 @@ shell's hand-offs (Phase 4).
   TypeScript + pnpm repository (B5), overridable per repo by a `review.config.json`
   (argv per command, `null` to disable, timeouts). The default `prepare` is
   `pnpm install --frozen-lockfile --offline --ignore-scripts`, resolved from the host's
-  pnpm store and corepack cache, both mounted read-only; corepack is pinned offline. A
+  pnpm store and corepack cache, both mounted read-only; corepack is pinned offline. Each
+  disposable checkout gets a local symlink to the store mount so pnpm keeps its mutable
+  project registration out of the immutable shared store, including for later focused tests. A
   trusted caller can override only preparation with `--trusted-prepare`, so default-branch
   CI policy can repair native dependencies even when the pull-request head predates that
   repository profile; only that trusted script file is added to the cell's read-only mounts.
@@ -133,8 +135,9 @@ shell's hand-offs (Phase 4).
   fixture managed to do. The container backend joins it with
   `COPSE_REVIEW_CONTAINER_E2E=1` (a daemon and the image, `COPSE_REVIEW_IMAGE` to name
   another, required); CI's gated `review-cell` job builds `Dockerfile.cell` and runs that
-  real-engine arm, including the exact read-only trusted-preparation-file mount. The unit tier
-  covers its plumbing over a fake engine.
+  real-engine arm, including the exact read-only trusted-preparation-file mount and a real
+  offline preparation against the read-only dependency store. The unit tier covers its plumbing
+  over a fake engine.
 
 ## Running it on this repository
 

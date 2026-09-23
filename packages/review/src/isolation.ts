@@ -158,11 +158,12 @@ export const CELL_ENV_ALLOWLIST = ['PATH', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ', '
 
 export interface CellEnvironmentOptions {
   /**
-   * pnpm's content-addressed store on the host, mounted read-only into the
-   * cell. Passed as `npm_config_store_dir` so an `--offline` install resolves
-   * from it instead of a fresh, empty store under the cell's private `HOME`.
+   * A checkout-local alias for pnpm's content-addressed store. Stage 0 points
+   * this alias at the host store's read-only mount. Keeping the configured
+   * path lexically inside the checkout prevents pnpm from trying to register
+   * the checkout under the otherwise immutable store's `projects/` directory.
    */
-  readonly dependencyStore?: string | undefined
+  readonly pnpmStoreDir?: string | undefined
   /**
    * The host's corepack cache, mounted read-only. With `HOME` inside the cell
    * corepack would otherwise see an empty cache and try to download the
@@ -188,8 +189,8 @@ export function cellEnvironment(
     const value = hostEnv[key]
     if (value !== undefined) env[key] = value
   }
-  if (options.dependencyStore !== undefined) {
-    env['npm_config_store_dir'] = options.dependencyStore
+  if (options.pnpmStoreDir !== undefined) {
+    env['npm_config_store_dir'] = options.pnpmStoreDir
   }
   if (options.corepackHome !== undefined) {
     env['COREPACK_HOME'] = options.corepackHome
