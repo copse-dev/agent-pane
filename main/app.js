@@ -90791,6 +90791,29 @@ function mountInputBar(root, store2, api2, opts = {}) {
     checkoutBranchBtn,
     continueBranchBtn
   );
+  const dirtyWarningText = el(
+    "span",
+    { class: "composer-dirty-warning-text" },
+    "This checkout has uncommitted changes. Work will run on top of them."
+  );
+  const useWorktreeBtn = el(
+    "button",
+    { type: "button", class: "composer-dirty-worktree-btn" },
+    "Use an isolated worktree"
+  );
+  const sendDirtyAnywayBtn = el(
+    "button",
+    { type: "button", class: "composer-dirty-send-btn" },
+    "Send anyway"
+  );
+  const dirtyWarning = el(
+    "div",
+    { class: "composer-dirty-warning", role: "status", "aria-live": "polite", hidden: "" },
+    el("span", { class: "composer-dirty-warning-icon", "aria-hidden": "true" }, "!"),
+    dirtyWarningText,
+    useWorktreeBtn,
+    sendDirtyAnywayBtn
+  );
   const imageCompatibilityText = el("span", { class: "composer-image-warning-text" });
   const useImageModelBtn = el(
     "button",
@@ -91106,6 +91129,7 @@ function mountInputBar(root, store2, api2, opts = {}) {
     guardedYolo.element,
     containerRun.element,
     branchWarning,
+    dirtyWarning,
     checkoutError,
     imageCompatibilityWarning,
     contextFitWarning,
@@ -91152,6 +91176,7 @@ function mountInputBar(root, store2, api2, opts = {}) {
   let descriptionModels = [];
   let descriptionPicker = null;
   const checkoutChoices = /* @__PURE__ */ new Map();
+  const dirtyWarningAcknowledged = /* @__PURE__ */ new Set();
   let checkoutPreparationInProgress = false;
   let automaticCheckoutMode = "shared";
   let automaticCheckoutPreviewSeq = 0;
@@ -91419,6 +91444,7 @@ ${description}
   }));
   let mismatchBranch = null;
   let checkoutInProgress = false;
+  let dirtyWarningThreadId = null;
   let lastBreakdown = null;
   let breakdownModel = null;
   let modelPricing = {};
@@ -91537,6 +91563,7 @@ ${description}
     activeComposerThreadId = id;
     if (id) restoreDraftAttachments(id);
     hideCheckoutError();
+    hideDirtyWarning();
     lastBreakdown = null;
     breakdownModel = null;
     scheduleContextEstimate(0);
@@ -91621,6 +91648,14 @@ ${description}
     checkoutBranchBtn.disabled = false;
     checkoutBranchBtn.textContent = "Check out";
     continueBranchBtn.disabled = false;
+  }
+  function showDirtyWarning(threadId) {
+    dirtyWarningThreadId = threadId;
+    dirtyWarning.hidden = false;
+  }
+  function hideDirtyWarning() {
+    dirtyWarningThreadId = null;
+    dirtyWarning.hidden = true;
   }
   function updateQueueIndicator() {
     const thread = store2.getState().threads.find((t2) => t2.id === getActiveThreadId());
@@ -91840,6 +91875,21 @@ ${description}
       showErrorToast("Failed to read the current branch", error62);
     });
   });
+  useWorktreeBtn.addEventListener("click", () => {
+    const id = dirtyWarningThreadId;
+    if (!id) return;
+    dirtyWarningAcknowledged.add(id);
+    hideDirtyWarning();
+    selectCheckout("worktree");
+    void submit();
+  });
+  sendDirtyAnywayBtn.addEventListener("click", () => {
+    const id = dirtyWarningThreadId;
+    if (!id) return;
+    dirtyWarningAcknowledged.add(id);
+    hideDirtyWarning();
+    void submit();
+  });
   function isAutocompletePickerOpen() {
     return root.querySelector(".mention-picker:not([hidden])") !== null;
   }
@@ -91928,6 +91978,21 @@ ${description}
       return;
     }
     hideBranchMismatch();
+    const isBlankSharedCandidate = thread !== void 0 && thread.messages.length === 0 && !thread.worktreeChoice;
+    if (isBlankSharedCandidate && !dirtyWarningAcknowledged.has(id)) {
+      const choice = checkoutChoice(id);
+      const effectiveCheckoutMode = choice === "worktree" ? "worktree" : choice === "shared" ? "shared" : automaticCheckoutMode;
+      if (effectiveCheckoutMode === "shared") {
+        const state = await api2.git.promptState(projectId, id);
+        if (getActiveThreadId() !== id || activeComposerThreadId !== id || store2.getState().activeProjectId !== projectId)
+          return;
+        if (state.dirty) {
+          showDirtyWarning(id);
+          return;
+        }
+      }
+    }
+    hideDirtyWarning();
     const [skills, agentsResult] = await Promise.all([api2.skills.list(), api2.agents.list()]);
     skillsCache = skills;
     agentsCache = agentsResult.agents;
@@ -92467,6 +92532,7 @@ ${description}
       guardedYolo.refresh();
       containerRun.refresh();
       hideBranchMismatch();
+      hideDirtyWarning();
       updateState();
       updateFooter();
       updateQueueIndicator();
@@ -92499,6 +92565,7 @@ ${description}
   const advisoryStrips = [
     guardedYolo.element,
     branchWarning,
+    dirtyWarning,
     checkoutError,
     imageCompatibilityWarning,
     contextFitWarning
