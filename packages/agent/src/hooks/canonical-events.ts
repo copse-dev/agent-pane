@@ -132,6 +132,13 @@ export interface StepBoundaryPayload {
    * `preStream`.
    */
   streamCappedAsRunaway: boolean
+  /**
+   * Consecutive `explore` tool calls with no intervening `read_file` call
+   * (#1433), read by `loop-nudge` for its explore-without-read condition.
+   * `preStream` only; omitted (treated as 0) wherever the caller does not
+   * track it, e.g. `postStream` and the no-context-window branch.
+   */
+  consecutiveExploreWithoutRead?: number
 }
 
 /**

@@ -15,7 +15,12 @@ import {
 import { createHookRegistry, FIRST_PARTY_HOOKS, type HookEmitResult } from './hook-registry.ts'
 import type { StepBoundaryEscalation, StepBoundaryPayload } from './canonical-events.ts'
 import { measureConversationPressure, type EscalationInput } from '../agent-loop-escalation.ts'
-import { LOOP_NUDGE_USER_MESSAGE, STUCK_FINALIZE_NUDGE } from '../agent-loop-guards.ts'
+import {
+  EXPLORE_WITHOUT_READ_NUDGE,
+  EXPLORE_WITHOUT_READ_NUDGE_THRESHOLD,
+  LOOP_NUDGE_USER_MESSAGE,
+  STUCK_FINALIZE_NUDGE,
+} from '../agent-loop-guards.ts'
 import {
   REASONING_RUNAWAY_FORCE_ANSWER_NUDGE,
   TRUNCATION_CONTINUE_NUDGE,
@@ -155,6 +160,51 @@ describe('loop-nudge', () => {
   it('abstains when loop pressure does not fire and outside preStream', async () => {
     assert.equal(await loopNudgeHook.run(preStream({ escalation: calm }), {}), undefined)
     assert.equal(await loopNudgeHook.run(postStream(), {}), undefined)
+  })
+
+  it('injects EXPLORE_WITHOUT_READ_NUDGE at the threshold, even without escalation pressure (#1433)', async () => {
+    assert.deepEqual(
+      await loopNudgeHook.run(
+        preStream({ consecutiveExploreWithoutRead: EXPLORE_WITHOUT_READ_NUDGE_THRESHOLD }),
+        {},
+      ),
+      { injectContext: EXPLORE_WITHOUT_READ_NUDGE },
+    )
+    // Also fires alongside a calm escalation snapshot that would not itself
+    // trigger the generic loop nudge.
+    assert.deepEqual(
+      await loopNudgeHook.run(
+        preStream({
+          escalation: calm,
+          consecutiveExploreWithoutRead: EXPLORE_WITHOUT_READ_NUDGE_THRESHOLD,
+        }),
+        {},
+      ),
+      { injectContext: EXPLORE_WITHOUT_READ_NUDGE },
+    )
+  })
+
+  it('does not fire the explore-without-read nudge below the threshold', async () => {
+    assert.equal(
+      await loopNudgeHook.run(
+        preStream({ consecutiveExploreWithoutRead: EXPLORE_WITHOUT_READ_NUDGE_THRESHOLD - 1 }),
+        {},
+      ),
+      undefined,
+    )
+  })
+
+  it('the explore-without-read condition still respects the once-per-run gate', async () => {
+    assert.equal(
+      await loopNudgeHook.run(
+        preStream({
+          consecutiveExploreWithoutRead: EXPLORE_WITHOUT_READ_NUDGE_THRESHOLD,
+          loopNudgeSent: true,
+        }),
+        {},
+      ),
+      undefined,
+    )
   })
 })
 

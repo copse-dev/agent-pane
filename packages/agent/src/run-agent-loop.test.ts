@@ -17,7 +17,7 @@ import {
 } from '@copse/llm/provider-stop-reason.ts'
 import type { LLMMessage, LLMProvider, ProviderStreamChunk } from '@copse/llm/wire-types.ts'
 import type { AgentStreamChunk, TodoItem } from './wire-types.ts'
-import { STUCK_FINALIZE_NUDGE } from './agent-loop-guards.ts'
+import { EXPLORE_WITHOUT_READ_NUDGE, STUCK_FINALIZE_NUDGE } from './agent-loop-guards.ts'
 
 /** A visible answer comfortably past the trailing-reasoning text tolerance. */
 const ANSWER_PAST_TOLERANCE =
@@ -2001,6 +2001,52 @@ src/renderer/views/projects-pane.ts
     const resumes = events.filter((e) => e === 'resume').length
     assert.equal(pauses, resumes, 'every pause must be matched by a resume')
     assert.ok(chunks.some((c) => c.type === 'text' && c.text === 'finished'))
+  })
+
+  it('nudges repeated explore calls on hosts without a context estimate', async () => {
+    const messages: LLMMessage[] = [{ role: 'user', content: 'fix the URL input' }]
+    const applied: import('./run-agent-loop.ts').AppliedNudgeRecord[] = []
+    let calls = 0
+    const provider: LLMProvider = {
+      async *stream(currentMessages): AsyncGenerator<ProviderStreamChunk> {
+        calls++
+        if (calls <= 3) {
+          yield {
+            type: 'tool_call',
+            toolCall: {
+              id: `explore-${String(calls)}`,
+              name: 'explore',
+              args: { query: `inspect URL input concern ${String(calls)}` },
+            },
+          }
+          yield { type: 'done' }
+          return
+        }
+        assert.ok(
+          currentMessages.some(
+            (message) => message.role === 'user' && message.content === EXPLORE_WITHOUT_READ_NUDGE,
+          ),
+          'the fourth stream must receive the read_file nudge',
+        )
+        yield { type: 'text', text: 'I will read the exact file before editing.' }
+        yield { type: 'done' }
+      },
+    }
+
+    await runAgentLoop({
+      provider,
+      messages,
+      tools: [{ name: 'explore', description: 'explore', parameters: {} }],
+      recordAppliedNudge: (record) => applied.push(record),
+      onChunk: () => {},
+      executeTool: async () => 'summary',
+    })
+
+    assert.equal(calls, 4)
+    assert.deepEqual(
+      applied.filter((record) => record.hookId === 'loop-nudge').map((record) => record.text),
+      [EXPLORE_WITHOUT_READ_NUDGE],
+    )
   })
 
   it('applies the delayed artifact checkpoint once after the fake clock crosses its threshold', async () => {
