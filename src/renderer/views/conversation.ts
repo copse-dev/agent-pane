@@ -3442,7 +3442,11 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     list.querySelector(`[data-review-card][data-review-for="${messageId}"]`)?.remove()
     const msg = getActiveThread(store)?.messages.find((m) => m.id === messageId)
     const msgEl = list.querySelector(`[data-message-id="${messageId}"]`)
-    if (!msg?.review || !msgEl) return
+    // A skipped review states only that no review ran — the transcript already
+    // carries the cause (the empty or below-threshold diff, the declined spend
+    // prompt, the Stop press), so it stays out of the transcript entirely. The
+    // removal above still clears any card left by an earlier status.
+    if (!msg?.review || !msgEl || msg.review.status === 'skipped') return
     const card = createReviewCardEl(msg.review, api, () => {
       retryReview(store, api, threadId, messageId)
     })

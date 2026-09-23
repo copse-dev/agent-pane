@@ -8,6 +8,11 @@ every published entry.
 
 ## Unreleased
 
+- A skipped post-turn review no longer renders a card in the transcript. Skips
+  carry no verdict — they only record that nothing ran, for reasons the
+  conversation already shows (an empty or below-threshold diff, a declined
+  spend prompt, a Stop press) — so the transcript stays quiet; completed and
+  failed reviews are unchanged.
 - The Browser pane now restores its tabs when Copse is reopened. A window
   remembers the pages it had open and the canvas artefacts it was showing, and
   brings them back on the next launch — a prototype the agent rendered
