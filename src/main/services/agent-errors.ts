@@ -207,10 +207,57 @@ const EXPIRED_AUTH_RE =
 const AUTH_FAILURE_RE =
   /authentication[\s_-]*(?:required|failed|error)|failed to authenticate|not (?:logged in|authenticated)|unauthenticated|invalid api key|\/login\b/i
 
+/**
+ * A sandbox-owning helper died because Copse already confines the process it
+ * was spawned from: macOS forbids applying a second seatbelt profile inside
+ * the agent's own (`sandbox-exec: sandbox_apply: Operation not permitted`,
+ * observed 2026-09-23 with Codex's CUA `node_repl` kernel). ASRT documents the
+ * same nesting as a degraded mode (docs/plans/sandbox-network-scope-isolation.md,
+ * "What ASRT actually allows", point 4), so this is not transient and no retry
+ * inside the current confinement can succeed — the fix is structural (spawn the
+ * helper from the host process), not something the turn can do.
+ */
+const NESTED_SANDBOX_APPLY_RE = /sandbox-exec.*sandbox_apply:\s*(?:Operation not permitted|EPERM)/i
+
 /** Every string an agent might have hidden the auth signal in, joined for matching. */
 function authSignalText(rpc: JsonRpcError | null, detail: string): string {
   const data = rpc ? formatErrorData(rpc.data) : null
   return [rpc?.message ?? '', detail, data ?? ''].join('\n')
+}
+
+/**
+ * Every string an agent turn failure carries, joined for matching against
+ * signatures that are about *how the agent ran* rather than what it said —
+ * a sandbox-exec diagnostic can surface in the JSON-RPC message, the structured
+ * `data`, or the turn's own text, and each spelling must read the same.
+ */
+function turnSignalText(rpc: JsonRpcError | null, detail: string): string {
+  const data = rpc ? formatErrorData(rpc.data) : null
+  return [rpc?.message ?? '', detail, data ?? ''].join('\n')
+}
+
+/**
+ * Whether an ACP turn died on the nested-sandbox boundary (a helper that owns
+ * its own seatbelt profile spawned inside Copse's agent confinement — see
+ * {@link NESTED_SANDBOX_APPLY_RE}).
+ */
+function isNestedSandboxApplyFailure(rpc: JsonRpcError | null, detail: string): boolean {
+  return NESTED_SANDBOX_APPLY_RE.test(turnSignalText(rpc, detail))
+}
+
+/**
+ * Exported because the failure path in `agent-service.ts` must pick the
+ * `'nested_sandbox'` interruption marker off the same signal the user-facing
+ * diagnosis reads — two readings of one verdict, not two that can disagree.
+ */
+export function isAcpNestedSandboxFailure(
+  err: unknown,
+  ctx?: ClassifyAgentErrorContext,
+): boolean {
+  if (!ctx?.acpAgentId) return false
+  const rpc = findJsonRpcError(err)
+  const { message } = parseProviderError(err)
+  return isNestedSandboxApplyFailure(rpc, message ?? errorMessage(err))
 }
 
 /**
@@ -247,12 +294,20 @@ function acpAgentDisplayName(agentId?: string): string {
   return known?.title ?? agentId ?? 'The external agent'
 }
 
+/** The agent's display name from a {@link ClassifyAgentErrorContext}, or a generic noun. */
+function agentDisplayName(ctx: ClassifyAgentErrorContext | undefined): string {
+  return acpAgentDisplayName(ctx?.acpAgentId)
+}
+
 /**
  * How an ACP turn ended when it did not end normally. `error` is the residual
  * case — a provider failure that outlived the retry loop — and the rest are the
  * outcomes that were previously indistinguishable from it once written down.
+ * `nested_sandbox` is the sandbox-owning-helper boundary (see
+ * {@link NESTED_SANDBOX_APPLY_RE}): not transient, not credentials, and not
+ * fixable from inside the turn.
  */
-export type AcpTurnInterruption = AcpAuthFailureKind | 'aborted' | 'error'
+export type AcpTurnInterruption = AcpAuthFailureKind | 'nested_sandbox' | 'aborted' | 'error'
 
 /**
  * The note appended to a failed turn's persisted assistant message.
@@ -272,6 +327,8 @@ export function acpTurnInterruptionMarker(outcome: AcpTurnInterruption, agentId?
       return `[This turn failed: ${agentName}’s sign-in is no longer valid. Re-running it will fail the same way until the user signs in again.]`
     case 'required':
       return `[This turn failed: ${agentName} is not authenticated. Re-running it will fail the same way until the user signs in.]`
+    case 'nested_sandbox':
+      return `[This turn failed: one of ${agentName}’s helpers tried to apply a second OS sandbox inside Copse’s agent seatbelt, which macOS forbids. Re-running the same turn inside the same confinement will fail the same way; the helper needs to be spawned from Copse’s host process (docs/plans/sandbox-network-scope-isolation.md).]`
     case 'error':
       return '[This turn was interrupted by a provider error before it completed.]'
   }
@@ -479,6 +536,28 @@ export function classifyAgentError(err: unknown, ctx?: ClassifyAgentErrorContext
 
   if (detail.includes('No user query found in messages') || detail.includes('jinja template'))
     return 'The local model prompt template failed after history was trimmed. Reload the model in LM Studio with enough context for the chat template, or use a model with a fixed chat template (e.g. under lmstudio-community).'
+
+  // The nested-sandbox boundary outranks the generic ACP fallback: a helper
+  // that cannot nest a second seatbelt dies before any provider call, so no
+  // auth or provider reading applies, and the guidance names the structural fix.
+  if (rpc && ctx?.acpAgentId && isNestedSandboxApplyFailure(rpc, detail)) {
+    return [
+      '> [!WARNING]',
+      `> **${agentDisplayName(ctx)} hit Copse’s sandbox boundary**`,
+      '>',
+      `> This turn couldn’t run because one of ${agentDisplayName(ctx)}’s helpers tried ` +
+        'to apply a second OS sandbox inside the one Copse already runs it under, which macOS forbids.',
+      '',
+      'Retry the turn once — a *shell* helper that legitimately applies its own profile may have ' +
+        'been a one-off — but if it recurs, the helper that owns its own sandbox (e.g. Codex’s CUA ' +
+        'node_repl) must be spawned from Copse’s host process outside the agent’s seatbelt instead ' +
+        '(docs/plans/sandbox-network-scope-isolation.md).',
+      '',
+      acpTechnicalDetails(rpc),
+    ]
+      .filter(isNonEmptyString)
+      .join('\n\n')
+  }
 
   if (rpc && ctx?.acpAgentId) {
     const dataDetail = formatErrorData(rpc.data)

@@ -109,6 +109,29 @@ export const SANDBOX_DENIAL_SIGNATURES: readonly SandboxDenialSignature[] = [
         'this is a one-time setup step for the install scanner, not a blocked network.',
     }),
   },
+  {
+    // Observed (2026-09-23, Codex CUA investigation): a helper that owns its own
+    // sandbox — Codex's CUA `node_repl` kernel — spawned inside Copse's agent
+    // seatbelt and exited before doing anything with
+    //   "sandbox-exec: sandbox_apply: Operation not permitted"
+    // Nesting a second seatbelt profile inside the agent's own is exactly the
+    // degraded mode ASRT documents (docs/plans/sandbox-network-scope-isolation.md,
+    // "What ASRT actually allows", point 4), so no retry confined to the same
+    // seatbelt can succeed. The elevated rerun is for the shell case (a command
+    // that applies its own nested profile); the advice names the boundary so the
+    // failure stops reading as a broken tool.
+    id: 'nested-sandbox-exec-apply',
+    pattern: /sandbox-exec.*sandbox_apply:\s*(?:Operation not permitted|EPERM)/i,
+    classify: (): SandboxDenialClassification => ({
+      operation: 'apply a nested sandbox profile',
+      advice:
+        'This command tried to apply a second OS sandbox inside the one Copse already runs it ' +
+        'under, which macOS forbids (sandbox-exec: sandbox_apply: Operation not permitted). ' +
+        'Helpers that own their own sandbox — e.g. Codex’s CUA node_repl — must be spawned ' +
+        'from Copse’s host process outside the agent’s seatbelt instead ' +
+        '(docs/plans/sandbox-network-scope-isolation.md); retrying inside the sandbox cannot succeed.',
+    }),
+  },
 ]
 
 /**

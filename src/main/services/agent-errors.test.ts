@@ -138,6 +138,38 @@ describe('classifyAgentError', () => {
     assert.doesNotMatch(classifyAgentError(acp), /Internal error/)
   })
 
+  // The Codex CUA nesting failure (2026-09-23): a sandbox-owning helper spawned
+  // inside Copse's agent seatbelt dies with a sandbox-exec diagnostic buried in
+  // the agent's opaque turn text. Without a reading, the failure presented as a
+  // generic internal error and the next turn retried — which can never succeed
+  // while the seatbelt stands, so the marker must say re-running won't help.
+  it('reads a nested-sandbox denial out of the agent turn text and points at the boundary', () => {
+    const err = new AcpTurnFailure(
+      new RequestError(
+        -32603,
+        'Internal error: ACP agent turn failed',
+        {
+          details:
+            'node_repl kernel exited unexpectedly\nnode_repl diagnostics: ' +
+            '{"kernel_pid":91184,"kernel_status":"exited(code=71)","kernel_stderr_tail":' +
+            '"sandbox-exec: sandbox_apply: Operation not permitted","reason":"stdout_eof"}',
+        },
+      ),
+      { assistantText: '', usage: { inputTokens: 0, outputTokens: 0 } },
+    )
+    const out = classifyAgentError(err, { acpAgentId: 'codex-acp' })
+    assert.match(out, /second OS sandbox inside the one Copse already runs/)
+    assert.match(out, /host process outside the agent’s seatbelt/)
+    assert.match(out, /sandbox-network-scope-isolation/)
+    assert.doesNotMatch(out, /^An error occurred:/)
+  })
+
+  it('keeps the interruption marker for a nested-sandbox failure generic but non-retrying', () => {
+    // The failure is not credentials, so no login offer may appear — but the
+    // marker must still tell the next turn not to retry the identical spawn.
+    assert.equal(classifyAcpAuthFailure(new Error('sandbox_apply: Operation not permitted')), null)
+  })
+
   it('turns terminal OpenRouter policy failures into privacy-setting guidance', () => {
     const expected =
       'No provider endpoint satisfies the current OpenRouter privacy routing (zero-data-retention / no-training). Pick another model, or relax the routing toggles in Settings → Providers → OpenRouter.'

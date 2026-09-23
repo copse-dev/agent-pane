@@ -39,6 +39,7 @@ import {
   classifyAcpAuthFailure,
   classifyAgentError,
   classifyProviderAccessFailure,
+  isAcpNestedSandboxFailure,
   turnErrorDetail,
 } from './agent-errors.ts'
 import { normalizeStopReason } from '@copse/agent/headless-contract.ts'
@@ -1269,6 +1270,12 @@ export async function runAgent(
       const authFailure = aborted
         ? null
         : classifyAcpAuthFailure(err, { acpAgentId: acpRunAgentId })
+      // A helper that cannot nest a second seatbelt inside the agent's own dies
+      // the same way on every retry confined to this seatbelt, so the marker
+      // must say that instead of the generic provider-error note (issue from
+      // 2026-09-23: Codex CUA node_repl under the codex-acp seatbelt).
+      const nestedSandbox =
+        !aborted && !authFailure && isAcpNestedSandboxFailure(err, { acpAgentId: acpRunAgentId })
       const msg = classifyAgentError(err, { acpAgentId: acpRunAgentId })
       sendChunk({ type: 'text', text: partial?.assistantText ? `\n\n${msg}` : msg })
       // A credentials failure is the one ACP error the user can't act on from
@@ -1312,7 +1319,10 @@ export async function runAgent(
       const content = [
         cleanedPartial,
         msg,
-        acpTurnInterruptionMarker(aborted ? 'aborted' : (authFailure ?? 'error'), acpRunAgentId),
+        acpTurnInterruptionMarker(
+          aborted ? 'aborted' : (authFailure ?? (nestedSandbox ? 'nested_sandbox' : 'error')),
+          acpRunAgentId,
+        ),
       ]
         .filter(isNonEmptyString)
         .join('\n\n')
