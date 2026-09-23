@@ -158,7 +158,7 @@ describe('reviewer tools', () => {
       assert.equal(
         await executor.execute(
           'read_dependency_file',
-          { path: 'node_modules/linked-dep/index.js', startLine: 2, endLine: 3 },
+          { path: 'linked-dep/index.js', startLine: 2, endLine: 3 },
           signal,
           'dependency-cell-read',
         ),
@@ -180,7 +180,7 @@ describe('reviewer tools', () => {
           signal,
           'dependency-traversal',
         ),
-        /below node_modules/,
+        /must name a package file/,
       )
       const unavailable = createReviewerToolExecutor({ ...host, cell: null })
       assert.match(
@@ -203,6 +203,7 @@ describe('reviewer tools', () => {
     const tool = reviewerTools().find((candidate) => candidate.name === 'read_dependency_file')
     assert.ok(tool)
     assert.match(tool.description, /never executes package code/)
+    assert.match(tool.description, /jsdom\/lib\/api\.js/)
     assert.deepEqual(tool.parameters['required'], ['path'])
   })
 
@@ -294,6 +295,15 @@ describe('reviewer tools', () => {
     )
     assert.equal(executor.commandRuns().get('call-9')?.exitCode, 3)
     assert.equal(executor.commandRuns().get('call-9')?.output.trim(), '[SCRUBBED] hello')
+
+    const encoded = await executor.execute(
+      'run_command',
+      { argv: JSON.stringify([process.execPath, 'probe.cjs', 'encoded']) },
+      signal,
+      'call-encoded',
+    )
+    assert.match(encoded, /\[SCRUBBED\] encoded/)
+    assert.equal(executor.commandRuns().get('call-encoded')?.exitCode, 3)
   })
 
   it('refuses run_command when the profile denies shell or there is no cell', async () => {

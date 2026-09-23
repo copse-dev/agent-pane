@@ -421,6 +421,46 @@ describe('runStage2', () => {
     assert.match(rejectedResult.result, /checked:.*8/)
   })
 
+  it('reserves the budget-edge continuation for the required structured closure', async () => {
+    const provider = new ScriptedProvider([
+      { type: 'tool_call', name: 'read_file', args: { path: 'src/math.ts' } },
+      {
+        type: 'tool_call',
+        name: 'finish_review',
+        args: {
+          checked: 'src/math.ts and the changed implementation.',
+          couldNotVerify: 'Tests, because the one-step test budget was exhausted.',
+          findings: [],
+        },
+      },
+      { type: 'text', text: 'Done.' },
+    ])
+    const result = await runStage2({
+      provider,
+      model: 'scripted',
+      lens: CORRECTNESS_LENS,
+      context,
+      validation,
+      headCheckout: checkouts.head,
+      cell: null,
+      shellDecision: 'deny',
+      scrub: (text) => text,
+      threadId: 'thread-budget-closure',
+      turnId: 'turn-budget-closure',
+      maxSteps: 1,
+    })
+    assert.equal(result.outcome, 'completed')
+    assert.equal(result.error, undefined)
+    assert.equal(result.toolCalls, 2)
+    assert.deepEqual(result.completion, {
+      checked: 'src/math.ts and the changed implementation.',
+      couldNotVerify: 'Tests, because the one-step test budget was exhausted.',
+    })
+    assert.equal(provider.streamOptions[0], undefined)
+    assert.deepEqual(provider.streamOptions[1], { toolChoice: { name: 'finish_review' } })
+    assert.equal(provider.streamOptions[2], undefined)
+  })
+
   it('reports a provider failure as a failed turn, never as findings', async () => {
     const broken: LLMProvider = {
       stream: () => ({

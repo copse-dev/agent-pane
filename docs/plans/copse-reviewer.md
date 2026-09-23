@@ -607,12 +607,15 @@ The CLI shell (Shell A), on `main` in the same package, as `copse-review` (the p
   continuation over the same transcript with only that strict closure tool available. If
   the correction still omits the attestation, the run fails closed and retains the original
   draft for diagnosis, so an exhausted or interrupted model can never be projected as “No
-  findings.”
+  findings.” The investigation loop does not spend the shared runner's generic prose-finalizer
+  headroom: those calls are reserved for the forced structured correction, whose reasoning is
+  capped to one checkpoint because it may encode but must not re-investigate the conclusion.
 - **The reviewer's tools are brokered, not the loop.** Ordinary reads are served over the head
   checkout as data, jailed to it. Host-side reads and reproducer writes reject symlinks
   below the canonical checkout root, and final file opens use `O_NOFOLLOW`; recursive
   searches skip symlinks. Installed dependency files use a separate fixed, data-only reader in
-  the serialised secret-free cell: it accepts only `node_modules/` paths, resolves pnpm links,
+  the serialised secret-free cell: it accepts package-relative paths (with an optional
+  `node_modules/` prefix), resolves pnpm links,
   requires the canonical regular file to remain inside the disposable `node_modules`, and never runs
   package code. `run_command` is the only model-controlled executing tool: it runs argv
   (never a shell string) in the cell, is gated by the run's permission profile, and its
@@ -887,6 +890,14 @@ CI shell needs (`stage0-report.ts`, `forge-review.ts`) and the workflows
   outside `node_modules/` and canonical targets outside the disposable dependency tree, and does not count
   as executable validation. Reviewers are still instructed to run the smallest relevant focused
   test or probe when executable code changed.
+- **Structured closure owns the final call budget.** _Added 2026-09-23 after the first
+  dependency-enabled dogfood run._ That run reached the right clean conclusion and read the
+  installed dependency, but the generic prose finalizer consumed three more calls and its
+  forced repair then terminated before `finish_review`. A review role now spends no LLM calls
+  on that generic finalizer: it proceeds directly to the bounded closure-only continuation,
+  with a one-checkpoint reasoning ceiling. JSON-encoded argv is decoded back to a validated
+  string array, and dependency reads accept the package-relative spelling models naturally use;
+  neither tolerance introduces a shell or expands the canonical dependency boundary.
 - **Hosted scratch is semantically ordinary workspace storage.** _Added 2026-09-23 after the
   first focused-validation proof._ GitHub jobs pass `$RUNNER_TEMP` as `--scratch-parent`, keeping
   the disposable checkout, `HOME` and `TMPDIR` away from the literal `/tmp` namespace. Product
