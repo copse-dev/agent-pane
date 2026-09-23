@@ -54,7 +54,7 @@ describe('assistant Reading layout in the real renderer', () => {
     await expect(run).toHaveAttribute('aria-label', 'Run command')
     await expect(run.$('svg[data-icon="play"]')).toExist()
     const opacity = await run.getCSSProperty('opacity')
-    expect(opacity.value).toBe('1')
+    expect(Number(opacity.value)).toBe(1)
 
     await saveElementScreenshot(shellSelector, 'code-block-run-hover-browser.png')
     await scrollToStart()

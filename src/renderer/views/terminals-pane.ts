@@ -586,6 +586,11 @@ export function mountTerminalsPane(
     if (tab.nameTimer != null) clearTimeout(tab.nameTimer)
     tab.fileLinks.dispose()
     await destroySession(tab)
+    // Destroying a session clears its id before the main-process exit event can
+    // find this tab. Complete an in-flight code-block run here so the source
+    // button does not remain stuck and the originating composer receives the
+    // partial result with an unavailable exit code.
+    finishCodeBlockRun(tab, null)
     tab.term.dispose()
     tab.tabBtn.remove()
     tab.panel.remove()
