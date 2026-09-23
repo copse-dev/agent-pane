@@ -52,7 +52,25 @@ concurrency:
   # hours late, and schedule+push share `ci-refs/heads/main`. They also use
   # different e2e runners (hosted vs self-hosted), so running in parallel is
   # fine. A new push/PR sync still cancels older runs in the group.
-  cancel-in-progress: ${{ github.event_name != 'schedule' }}
+  #
+  # A cosmetic `edited` must not cancel either. #2970 subscribed to `edited` so
+  # a base retarget re-runs (#2520), but GitHub fires the same action for a
+  # title or body edit, and those land in this group mid-run. Cancelling there
+  # is not a wasted run, it is a RED one: since #2722 `ci-passed` turns a
+  # cancelled run into an explicit failure rather than a skip, so editing a
+  # description while CI was running left a red `CI Passed` on a SHA that had
+  # been green. `changes.base` is present only on a retarget, which is the case
+  # that genuinely invalidates the in-flight run and must still cancel it.
+  #
+  # Deliberately not solved with a job-level `if:`. `ci-passed` is `always()`
+  # over `needs: [precheck, …]`, so skipping the upstream jobs either fails it
+  # (a green PR goes red on a title edit) or skips it — and GitHub accepts a
+  # skipped required check, which would let a RED PR be flipped to mergeable by
+  # editing its title. The cost of this shape is a duplicate run on a cosmetic
+  # edit; it never produces a false red or a false pass.
+  cancel-in-progress: >-
+    ${{ github.event_name != 'schedule' &&
+    (github.event.action != 'edited' || github.event.changes.base != null) }}
 
 jobs:
   # Job timeouts: every job below sets `timeout-minutes`, and
