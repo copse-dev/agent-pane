@@ -230,6 +230,34 @@ export function mountInputBar(
     checkoutBranchBtn,
     continueBranchBtn,
   )
+  const dirtyWarningText = el(
+    'span',
+    { class: 'composer-dirty-warning-text' },
+    'This checkout has uncommitted changes. Work will run on top of them.',
+  )
+  const useWorktreeBtn = el(
+    'button',
+    { type: 'button', class: 'composer-dirty-worktree-btn' },
+    'Use an isolated worktree',
+  )
+  const sendDirtyAnywayBtn = el(
+    'button',
+    { type: 'button', class: 'composer-dirty-send-btn' },
+    'Send anyway',
+  )
+  // Shown once, before the first message of a thread that is about to commit
+  // to the shared checkout while it is dirty (#2503). The shared checkout is
+  // the user's own working copy, so a turn starting on top of uncommitted
+  // changes can tangle with or clobber them; an isolated worktree starts
+  // clean from the same commit instead.
+  const dirtyWarning = el(
+    'div',
+    { class: 'composer-dirty-warning', role: 'status', 'aria-live': 'polite', hidden: '' },
+    el('span', { class: 'composer-dirty-warning-icon', 'aria-hidden': 'true' }, '!'),
+    dirtyWarningText,
+    useWorktreeBtn,
+    sendDirtyAnywayBtn,
+  )
   const imageCompatibilityText = el('span', { class: 'composer-image-warning-text' })
   const useImageModelBtn = el(
     'button',
@@ -634,6 +662,7 @@ export function mountInputBar(
     guardedYolo.element,
     containerRun.element,
     branchWarning,
+    dirtyWarning,
     checkoutError,
     imageCompatibilityWarning,
     contextFitWarning,
@@ -699,6 +728,10 @@ export function mountInputBar(
   let descriptionModels: ModelOption[] = []
   let descriptionPicker: ModelPicker | null = null
   const checkoutChoices = new Map<string, ThreadWorktreeChoice>()
+  // Threads whose dirty-checkout advisory (#2503) the user has already acted
+  // on — either action counts as "acted on" so a retried first send (e.g.
+  // after a failed checkout) does not re-ask.
+  const dirtyWarningAcknowledged = new Set<string>()
   let checkoutPreparationInProgress = false
   let automaticCheckoutMode: 'shared' | 'worktree' = 'shared'
   let automaticCheckoutPreviewSeq = 0
@@ -1035,6 +1068,7 @@ export function mountInputBar(
     }))
   let mismatchBranch: string | null = null
   let checkoutInProgress = false
+  let dirtyWarningThreadId: string | null = null
   let lastBreakdown: ContextBreakdown | null = null
   // Model the last estimate was computed for. The context-fit warning quotes a
   // window and a model name together, so it must not pair a fresh selection with
@@ -1221,6 +1255,7 @@ export function mountInputBar(
     activeComposerThreadId = id
     if (id) restoreDraftAttachments(id)
     hideCheckoutError()
+    hideDirtyWarning()
     // New thread → drop the prior thread's estimate and recompute for this one.
     lastBreakdown = null
     breakdownModel = null
@@ -1324,6 +1359,16 @@ export function mountInputBar(
     checkoutBranchBtn.disabled = false
     checkoutBranchBtn.textContent = 'Check out'
     continueBranchBtn.disabled = false
+  }
+
+  function showDirtyWarning(threadId: string): void {
+    dirtyWarningThreadId = threadId
+    dirtyWarning.hidden = false
+  }
+
+  function hideDirtyWarning(): void {
+    dirtyWarningThreadId = null
+    dirtyWarning.hidden = true
   }
 
   function updateQueueIndicator(): void {
@@ -1621,6 +1666,26 @@ export function mountInputBar(
       })
   })
 
+  // Switch this (still-blank) thread to an isolated worktree and send: the
+  // worktree starts clean from the current commit, so the dirty shared
+  // checkout is no longer in the loop.
+  useWorktreeBtn.addEventListener('click', () => {
+    const id = dirtyWarningThreadId
+    if (!id) return
+    dirtyWarningAcknowledged.add(id)
+    hideDirtyWarning()
+    selectCheckout('worktree')
+    void submit()
+  })
+
+  sendDirtyAnywayBtn.addEventListener('click', () => {
+    const id = dirtyWarningThreadId
+    if (!id) return
+    dirtyWarningAcknowledged.add(id)
+    hideDirtyWarning()
+    void submit()
+  })
+
   function isAutocompletePickerOpen(): boolean {
     return root.querySelector('.mention-picker:not([hidden])') !== null
   }
@@ -1759,6 +1824,42 @@ export function mountInputBar(
       return
     }
     hideBranchMismatch()
+
+    // Before the first message commits a blank thread's checkout (#2503): warn
+    // when that commitment would land on the shared checkout while it has
+    // uncommitted changes. The shared checkout is the developer's own working
+    // copy, so a turn starting on top of it can tangle with or clobber
+    // whatever is uncommitted there; an isolated worktree starts clean from
+    // the same commit instead, so it never needs this warning. Any later
+    // message in the thread — and any thread that already committed a
+    // checkout — skips this entirely, and `dirtyWarningAcknowledged` remembers
+    // an action for the rest of this thread's first send so a retry (e.g.
+    // after a failed checkout) does not re-ask.
+    const isBlankSharedCandidate =
+      thread !== undefined && thread.messages.length === 0 && !thread.worktreeChoice
+    if (isBlankSharedCandidate && !dirtyWarningAcknowledged.has(id)) {
+      const choice = checkoutChoice(id)
+      const effectiveCheckoutMode: 'shared' | 'worktree' =
+        choice === 'worktree' ? 'worktree' : choice === 'shared' ? 'shared' : automaticCheckoutMode
+      if (effectiveCheckoutMode === 'shared') {
+        const state = await api.git.promptState(projectId, id)
+        // The prompt-state read can outlive a thread switch. Keep its result
+        // with the composer that started the submit; otherwise a dirty result
+        // from the old thread can raise this warning over the new thread and
+        // make either action resume the stale prompt against the wrong UI.
+        if (
+          getActiveThreadId() !== id ||
+          activeComposerThreadId !== id ||
+          store.getState().activeProjectId !== projectId
+        )
+          return
+        if (state.dirty) {
+          showDirtyWarning(id)
+          return
+        }
+      }
+    }
+    hideDirtyWarning()
 
     // Always re-fetch on submit. The slash picker calls `api.skills.list()` on
     // its own and can show a skill (e.g. built-in `/checkup`) while
@@ -2419,6 +2520,7 @@ export function mountInputBar(
       guardedYolo.refresh()
       containerRun.refresh()
       hideBranchMismatch()
+      hideDirtyWarning()
       updateState()
       updateFooter()
       updateQueueIndicator()
@@ -2459,6 +2561,7 @@ export function mountInputBar(
   const advisoryStrips = [
     guardedYolo.element,
     branchWarning,
+    dirtyWarning,
     checkoutError,
     imageCompatibilityWarning,
     contextFitWarning,
