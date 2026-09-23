@@ -11,9 +11,10 @@
 // that passes on head can produce no finding, so the base run would only be
 // spent on the "fixed" note, and the common case — a clean head — costs one
 // pass instead of two.
-import { access, mkdtemp, realpath } from 'node:fs/promises'
+import { randomBytes } from 'node:crypto'
+import { access, mkdir, mkdtemp, realpath, symlink } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { redactSecrets } from '@copse/llm/redact-secrets.ts'
 import { materialiseCheckouts, type GitRunner, type MaterialisedCheckouts } from './checkouts.ts'
 import { readCheckoutFile } from './checkout-fs.ts'
@@ -381,6 +382,37 @@ function commandsFor(
 }
 
 /**
+ * pnpm maintains a mutable `projects/` registry beside its immutable package
+ * content. Pointing it directly at a read-only store therefore fails before an
+ * offline install can use the content. A symlink whose configured path is
+ * lexically inside each disposable checkout makes pnpm skip that registry,
+ * while the target remains the same read-only mount enforced by the backend.
+ */
+async function preparePnpmStoreAliases(
+  checkouts: Pick<MaterialisedCheckouts, 'base' | 'head'>,
+  dependencyStore: string,
+): Promise<string> {
+  const storeName = basename(dependencyStore)
+  if (storeName === '') throw new Error('The pnpm dependency store cannot be a filesystem root')
+  // A random root cannot collide with a contributor-controlled tracked path;
+  // never delete or replace repository content to make room for infrastructure.
+  const aliasRootName = `.copse-review-pnpm-store-${randomBytes(8).toString('hex')}`
+  const relativeAlias = `${aliasRootName}/${storeName}`
+  await Promise.all(
+    [checkouts.base, checkouts.head].map(async (checkout) => {
+      const aliasRoot = join(checkout, aliasRootName)
+      await mkdir(aliasRoot)
+      await symlink(
+        dependencyStore,
+        join(checkout, relativeAlias),
+        process.platform === 'win32' ? 'junction' : 'dir',
+      )
+    }),
+  )
+  return relativeAlias
+}
+
+/**
  * Everything the stages after Stage 0 share: the two checkouts, the cell (when
  * execution was allowed), the detected commands, and the scrubber. Opened once
  * per review and closed once, so Stage 2's reviewer reads the same head
@@ -465,16 +497,22 @@ export async function openReviewGround(options: Stage0Options): Promise<ReviewGr
     if (project.head.ecosystem === 'unsupported') return ground(project)
 
     const corepackHome = await resolveCorepackHome(options.corepackHome, hostEnv)
+    const dependencyStore =
+      options.dependencyStore === undefined ? undefined : await realpath(options.dependencyStore)
+    const pnpmStoreDir =
+      dependencyStore === undefined
+        ? undefined
+        : await preparePnpmStoreAliases(checkouts, dependencyStore)
     cell = await options.backend.createCell({
       checkouts: { base: checkouts.base, head: checkouts.head },
       scratchDir,
       readOnlyPaths: [
-        ...(options.dependencyStore === undefined ? [] : [options.dependencyStore]),
+        ...(dependencyStore === undefined ? [] : [dependencyStore]),
         ...(corepackHome === undefined ? [] : [corepackHome]),
         ...(options.trustedPreparation?.readOnlyPaths ?? []),
         checkouts.gitCommonDir,
       ],
-      env: cellEnvironment(hostEnv, { dependencyStore: options.dependencyStore, corepackHome }),
+      env: cellEnvironment(hostEnv, { pnpmStoreDir, corepackHome }),
     })
     return ground(project)
   } catch (err) {

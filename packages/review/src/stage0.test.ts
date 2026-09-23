@@ -1,7 +1,8 @@
 import { after, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { access, chmod, mkdir, mkdtemp, readFile, realpath, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { basename, join, resolve } from 'node:path'
 import { decodeFindings } from './finding.ts'
 import { createHostProcessBackend } from './host-process-backend.ts'
 import type { IsolationBackend } from './isolation.ts'
@@ -120,6 +121,80 @@ describe('runStage0', () => {
     ])
     assert.match(report.preparation.head.output, /trusted preparation ran/)
     assert.deepEqual(report.coverage.notChecked, [])
+  })
+
+  it('keeps pnpm bookkeeping in each checkout while the shared store stays external', async () => {
+    const repo = await scenario({}, {})
+    const dependencyStore = await realpath(
+      await mkdtemp(join(tmpdir(), 'review-read-only-pnpm-store-')),
+    )
+    const ground = await openReviewGround({
+      repoRoot: repo.root,
+      baseRef: 'main',
+      backend: createHostProcessBackend(),
+      diffOrigin: 'own',
+      unisolatedConsent: true,
+      dependencyStore,
+    })
+    try {
+      assert.ok(ground.checkouts)
+      assert.ok(ground.cell)
+      const relativeAlias = ground.cell.spec.env['npm_config_store_dir']
+      assert.ok(relativeAlias)
+      assert.match(
+        relativeAlias,
+        new RegExp(`^\\.copse-review-pnpm-store-[0-9a-f]{16}/${basename(dependencyStore)}$`),
+      )
+      for (const checkout of [ground.checkouts.base, ground.checkouts.head]) {
+        assert.equal(await realpath(join(checkout, relativeAlias)), dependencyStore)
+      }
+      await assert.rejects(access(join(dependencyStore, 'projects')), { code: 'ENOENT' })
+    } finally {
+      await ground.close()
+      await rm(dependencyStore, { recursive: true, force: true })
+    }
+  })
+
+  it('runs trusted pnpm preparation against a read-only content store', async () => {
+    const repo = await createTestRepo({
+      'package.json': JSON.stringify({
+        name: 'read-only-store-fixture',
+        private: true,
+      }),
+      'pnpm-lock.yaml': "lockfileVersion: '9.0'\n\nimporters:\n\n  .: {}\n",
+      'check.cjs': CHECK_SCRIPT,
+      [REVIEW_CONFIG_FILENAME]: config(['test']),
+    })
+    repos.push(repo)
+    const dependencyStore = await realpath(
+      await mkdtemp(join(tmpdir(), 'review-read-only-pnpm-content-')),
+    )
+    const versionedStore = join(dependencyStore, 'v10')
+    await mkdir(versionedStore)
+    await chmod(versionedStore, 0o555)
+    await chmod(dependencyStore, 0o555)
+    try {
+      const report = await runStage0({
+        repoRoot: repo.root,
+        baseRef: 'main',
+        backend: createHostProcessBackend(),
+        diffOrigin: 'own',
+        unisolatedConsent: true,
+        dependencyStore,
+        trustedPreparation: {
+          argv: [process.execPath, resolve('scripts/prepare-review-stage0.mts')],
+          timeoutMs: 30_000,
+          readOnlyPaths: [],
+        },
+      })
+      assert.equal(report.preparation.head?.status, 'passed')
+      assert.match(report.preparation.head.output, /Stage 0 offline dependency install/)
+      await assert.rejects(access(join(versionedStore, 'projects')), { code: 'ENOENT' })
+    } finally {
+      await chmod(versionedStore, 0o755)
+      await chmod(dependencyStore, 0o755)
+      await rm(dependencyStore, { recursive: true, force: true })
+    }
   })
 
   it('re-prepares base when imported Stage 0 artifacts came from another cell', async () => {

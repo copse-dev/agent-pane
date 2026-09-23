@@ -83,10 +83,12 @@ describe('cellEnvironment', () => {
     }
   })
 
-  it('points pnpm at the read-only dependency store when given one', () => {
+  it('points pnpm at the checkout-local read-only-store alias when given one', () => {
     assert.equal(
-      cellEnvironment(host, { dependencyStore: '/store' })['npm_config_store_dir'],
-      '/store',
+      cellEnvironment(host, { pnpmStoreDir: '.copse-review-pnpm-store/store' })[
+        'npm_config_store_dir'
+      ],
+      '.copse-review-pnpm-store/store',
     )
     assert.equal(Object.hasOwn(cellEnvironment(host), 'npm_config_store_dir'), false)
     assert.equal(cellEnvironment(host, { corepackHome: '/corepack' })['COREPACK_HOME'], '/corepack')
