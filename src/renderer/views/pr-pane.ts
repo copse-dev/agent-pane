@@ -20,7 +20,13 @@ import { at } from '@shared/array-utils.ts'
 import { showConfirmDialog } from './confirm-dialog.ts'
 import { extractGithubPrUrls, githubPrKey } from '@shared/git/github-pr-url.ts'
 import { remoteAgentPrIndexKey, type RemoteAgentPrIndexEntry } from '@shared/remote-agent-link.ts'
-import { mergePrLists, placeholderPrTitle, prListDisplayTitle, type PrRef } from './pr-pane-list.ts'
+import {
+  mergePrLists,
+  placeholderPrTitle,
+  prListDisplayTitle,
+  prMatchesFilter,
+  type PrRef,
+} from './pr-pane-list.ts'
 import { startPrDiscussThread } from './pr-pane-thread.ts'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 import { renderMarkdown } from '@copse/streaming-markdown'
@@ -112,8 +118,19 @@ export function mountPrPane(
     ),
   )
   const refreshBtn = qsRequired<HTMLButtonElement>(listHeader, '.pr-pane-refresh-btn')
+  // Free-text filter over the (already-loaded) PR list — issue #2482. Lives only
+  // in this closure, not the store, so it survives renderList() re-renders and
+  // polls without becoming shared/persisted state.
+  const filterInput = el('input', {
+    type: 'search',
+    class: 'pr-pane-filter',
+    placeholder: 'Filter pull requests',
+    'aria-label': 'Filter pull requests',
+    autocomplete: 'off',
+  })
   const listBody = el('div', { class: 'git-changes-list pr-list-body' })
-  listRoot.append(listHeader, listBody)
+  listRoot.append(listHeader, filterInput, listBody)
+  let filterQuery = ''
 
   const metaHost = el('div', { class: 'pr-viewer-meta' })
   const sectionsHost = el('nav', {
@@ -325,24 +342,24 @@ export function mountPrPane(
 
     const linkedKeys = new Set(linkedRefs.map((ref) => githubPrKey(ref)))
     const workspaceKeys = new Set(workspacePrs.map((pr) => githubPrKey(pr)))
-    const linkedPrs = prList.filter((pr) => linkedKeys.has(githubPrKey(pr)))
-    const repoPrs = prList.filter(
+    const linkedPrsAll = prList.filter((pr) => linkedKeys.has(githubPrKey(pr)))
+    const repoPrsAll = prList.filter(
       (pr) => !linkedKeys.has(githubPrKey(pr)) && workspaceKeys.has(githubPrKey(pr)),
     )
-    const otherPrs = prList.filter(
+    const otherPrsAll = prList.filter(
       (pr) => !linkedKeys.has(githubPrKey(pr)) && !workspaceKeys.has(githubPrKey(pr)),
     )
 
     if (!ghStatus) {
       // Chat-linked PRs come from the thread, not from gh, so they are already
       // accurate; only the gh-derived sections are unknown this early.
-      if (linkedPrs.length === 0) {
+      if (linkedPrsAll.length === 0) {
         renderGhLoading()
         return
       }
       listBody.append(paneLoadingRow('Loading pull requests…'))
     } else if (!ghStatus.installed || !ghStatus.authenticated) {
-      if (linkedPrs.length === 0) {
+      if (linkedPrsAll.length === 0) {
         renderGhUnavailable()
         return
       }
@@ -357,6 +374,14 @@ export function mountPrPane(
         ),
       )
     }
+
+    // Free-text filter (issue #2482): narrows each group independently. A group
+    // with no matches simply hides its header, same as the "no PRs at all" case
+    // already did — only the count/emptiness check changes.
+    const query = filterQuery.trim()
+    const linkedPrs = query ? linkedPrsAll.filter((pr) => prMatchesFilter(pr, query)) : linkedPrsAll
+    const repoPrs = query ? repoPrsAll.filter((pr) => prMatchesFilter(pr, query)) : repoPrsAll
+    const otherPrs = query ? otherPrsAll.filter((pr) => prMatchesFilter(pr, query)) : otherPrsAll
 
     if (linkedPrs.length > 0) {
       const section = el('div', { class: 'git-changes-section' })
@@ -414,10 +439,31 @@ export function mountPrPane(
         } else if (otherPrs.length > 0) {
           for (const pr of otherPrs) section.append(renderPrRow(pr, 'mine'))
         } else {
-          section.append(el('div', { class: 'git-changes-empty' }, 'No other open pull requests'))
+          section.append(
+            el(
+              'div',
+              { class: 'git-changes-empty' },
+              query ? 'No pull requests match' : 'No other open pull requests',
+            ),
+          )
         }
       }
       listBody.append(section)
+    }
+
+    // Global empty state: nothing in any *visible* group matched the filter. The
+    // "other" section already explains a filtered-to-zero expansion inline above,
+    // so skip this when that is the group currently on screen to avoid saying it
+    // twice.
+    const otherGroupShown = Boolean(ghStatus?.authenticated) && otherExpanded && !otherLoading
+    if (query && linkedPrs.length === 0 && repoPrs.length === 0 && !otherGroupShown) {
+      listBody.append(
+        el(
+          'div',
+          { class: 'git-changes-empty pr-empty-state pr-filter-empty' },
+          'No pull requests match',
+        ),
+      )
     }
   }
 
@@ -1027,6 +1073,20 @@ export function mountPrPane(
   }
 
   refreshBtn.addEventListener('click', () => void refresh({ reason: 'manual' }))
+  filterInput.addEventListener('input', () => {
+    filterQuery = filterInput.value
+    renderList()
+  })
+  filterInput.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return
+    e.preventDefault()
+    e.stopPropagation()
+    if (!filterQuery && !filterInput.value) return
+    filterQuery = ''
+    filterInput.value = ''
+    renderList()
+    filterInput.focus()
+  })
 
   const unbindWorkspaceLinks = bindWorkspaceLinkClicks(descriptionHost, store, api)
   const unbindBrowserLinks = bindBrowserLinkClicks(descriptionHost, store, api)
@@ -1059,6 +1119,10 @@ export function mountPrPane(
       agentLinks = new Map()
       agentLinksGen++
       resetOther()
+      // A different workspace's list is a fresh context; carrying a stale filter
+      // over risks silently hiding every PR in it.
+      filterQuery = ''
+      filterInput.value = ''
       syncWatch()
       if (prsModeActive(store)) void refresh()
       else renderList()
