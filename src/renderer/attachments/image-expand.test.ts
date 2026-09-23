@@ -1,7 +1,8 @@
 import '../../../tests/setup-dom.ts'
-import { describe, it, before } from 'node:test'
+import { describe, it, before, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { attachImageExpand, openImageExpand } from './image-expand.ts'
+import { dismissContextMenu } from '../dom/context-menu.ts'
 import { qs, qsRequired } from '../dom/helpers.ts'
 import { patchPreviewDialog } from './preview-dialog.test-support.ts'
 
@@ -12,9 +13,51 @@ function mouseClick(target: EventTarget): void {
   target.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }))
 }
 
+function rightClick(target: EventTarget): void {
+  target.dispatchEvent(
+    new window.MouseEvent('contextmenu', {
+      bubbles: true,
+      cancelable: true,
+      clientX: 12,
+      clientY: 24,
+    }),
+  )
+}
+
+/** Minimal `ClipboardItem` + `navigator.clipboard.write` stand-in; captures every write. */
+function installClipboard(): { writes: Record<string, Blob>[] } {
+  const state = { writes: [] as Record<string, Blob>[] }
+  class FakeClipboardItem {
+    items: Record<string, Blob>
+    constructor(items: Record<string, Blob>) {
+      this.items = items
+    }
+  }
+  Object.assign(globalThis, { ClipboardItem: FakeClipboardItem })
+  Object.defineProperty(globalThis, 'navigator', {
+    configurable: true,
+    value: {
+      clipboard: {
+        write: (items: FakeClipboardItem[]): Promise<void> => {
+          for (const item of items) state.writes.push(item.items)
+          return Promise.resolve()
+        },
+      },
+    },
+  })
+  return state
+}
+
+function tick(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0))
+}
+
 describe('image expand lightbox', () => {
   before(() => {
     patchPreviewDialog()
+  })
+  beforeEach(() => {
+    dismissContextMenu()
   })
 
   it('wires expand affordances onto a thumbnail once', () => {
@@ -81,5 +124,37 @@ describe('image expand lightbox', () => {
     // Backdrop handler closes when the click target is the dialog itself.
     dialog.click()
     assert.equal(dialog.open, false)
+  })
+
+  it('right-click offers "Copy image" and writes the image to the clipboard', async () => {
+    const clipboard = installClipboard()
+    openImageExpand(PNG, 'shot.png')
+    const expanded = qsRequired<HTMLImageElement>(document, '.image-expand-image')
+
+    rightClick(expanded)
+    const item = qsRequired<HTMLButtonElement>(document, '.context-menu-item')
+    assert.equal(item.textContent, 'Copy image')
+
+    item.click()
+    await tick()
+
+    assert.equal(clipboard.writes.length, 1)
+    const write = clipboard.writes[0]
+    assert.ok(write)
+    const blob = write['image/png']
+    assert.ok(blob instanceof Blob)
+    assert.equal(blob.type, 'image/png')
+  })
+
+  it('does not suppress the default menu when right-clicking outside the image', () => {
+    installClipboard()
+    openImageExpand(PNG, 'shot.png')
+    const dialog = qsRequired<HTMLDialogElement>(document, '.attachment-preview-dialog')
+
+    const event = new window.MouseEvent('contextmenu', { bubbles: true, cancelable: true })
+    dialog.dispatchEvent(event)
+
+    assert.equal(event.defaultPrevented, false)
+    assert.equal(qs(document, '.context-menu'), null)
   })
 })

@@ -12,6 +12,11 @@ const THREAD_DISMISSED_SHOT = 'image-expand-thread-dismissed.png'
 const TEXT_SHOT = 'attachment-preview-text.png'
 const ROADMAP_SHOT = 'image-expand-roadmap.png'
 const COMPOSER_SHOT = 'image-expand-composer-new-thread.png'
+const IMAGE_COPY_MENU_SHOT = 'image-expand-copy-menu.png'
+const TEXT_COPY_MENU_SHOT = 'attachment-preview-text-copy-menu.png'
+
+const DIFF_TEXT =
+  'diff --git a/src/tests.ts b/src/tests.ts\n- expect(status).toBe("idle")\n+ expect(status).toBe("running")\n'
 
 /** 64×40 teal checker PNG so the modal has visible content for visual review. */
 const PNG_BASE64 =
@@ -70,6 +75,30 @@ describe('Screenshot click-to-expand', () => {
 
     await saveAppScreenshot(THREAD_SHOT)
 
+    // Right-click offers "Copy image" and writes the pixels to the OS clipboard
+    // (#2463) — the native menu is never shown for this window, so the in-app
+    // context menu is the only affordance to assert against.
+    await $('.image-expand-image').click({ button: 'right' })
+    const copyMenu = $('.context-menu')
+    await copyMenu.waitForDisplayed({ timeout: 5_000 })
+    await expect($('.context-menu-item')).toHaveText('Copy image')
+    await saveAppScreenshot(IMAGE_COPY_MENU_SHOT)
+    await $('.context-menu-item').click()
+    await expect(copyMenu).not.toBeExisting()
+
+    const clipboardImage = await browser.execute(async () => {
+      const items = await navigator.clipboard.read()
+      const first = items[0]
+      if (!first) return null
+      const type = first.types.find((t) => t.startsWith('image/'))
+      if (!type) return null
+      const blob = await first.getType(type)
+      return { type: blob.type, size: blob.size }
+    })
+    assert.ok(clipboardImage, 'expected an image on the clipboard after Copy image')
+    assert.equal(clipboardImage.type, 'image/png')
+    assert.ok(clipboardImage.size > 0, 'expected non-empty image bytes on the clipboard')
+
     await $('.attachment-preview-close').click()
     const closed = $('dialog.attachment-preview-dialog')
     await browser.waitUntil(
@@ -105,6 +134,32 @@ describe('Screenshot click-to-expand', () => {
       expect.stringContaining('+ expect(status).toBe("running")'),
     )
     await saveAppScreenshot(TEXT_SHOT)
+
+    // A selection elsewhere in the app must not be mistaken for preview text.
+    // Right-click still offers "Copy" and copies the whole file (#2463).
+    const outsideSelection = await browser.execute(() => {
+      const outside = document.querySelector('.attachment-preview-title')
+      if (!outside) throw new Error('text preview title missing')
+      const range = document.createRange()
+      range.selectNodeContents(outside)
+      const selection = window.getSelection()
+      if (!selection) throw new Error('selection API unavailable')
+      selection.removeAllRanges()
+      selection.addRange(range)
+      return selection.toString()
+    })
+    assert.ok(outsideSelection.length > 0, 'expected a real selection outside the preview')
+    await $('.attachment-preview-text').click({ button: 'right' })
+    const copyMenu = $('.context-menu')
+    await copyMenu.waitForDisplayed({ timeout: 5_000 })
+    await expect($('.context-menu-item')).toHaveText('Copy')
+    await saveAppScreenshot(TEXT_COPY_MENU_SHOT)
+    await $('.context-menu-item').click()
+    await expect(copyMenu).not.toBeExisting()
+
+    const clipboardText = await browser.execute(async () => navigator.clipboard.readText())
+    assert.equal(clipboardText, DIFF_TEXT)
+
     await $('.attachment-preview-close').click()
   })
 
