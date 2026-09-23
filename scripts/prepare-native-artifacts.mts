@@ -10,6 +10,14 @@ interface PreparationStep {
 const root = process.cwd()
 const steps: PreparationStep[] = [
   { label: 'Node version check', path: 'scripts/check-node-version.cjs' },
+]
+if (process.platform === 'darwin') {
+  steps.push({
+    label: 'macOS native toolchain check',
+    path: 'scripts/check-macos-native-toolchain.mts',
+  })
+}
+steps.push(
   {
     label: 'Electron ChromeDriver download',
     path: 'node_modules/electron-chromedriver/download-chromedriver.js',
@@ -17,7 +25,7 @@ const steps: PreparationStep[] = [
   { label: 'Electron runtime preparation', path: 'scripts/patch-dev-name.mts' },
   { label: 'native module preparation', path: 'scripts/postinstall-native.mts' },
   { label: 'gortex preparation', path: 'scripts/fetch-gortex.mts' },
-]
+)
 
 for (const step of steps) {
   const absolute = join(root, step.path)

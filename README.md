@@ -143,9 +143,10 @@ SKIP_ELECTRON_REBUILD=1 node scripts/postinstall-native.mts
 
 Use `SKIP_GORTEX_FETCH=1` if you intentionally do not want the bundled semantic-search binary.
 
-`make run` provisions pnpm and every bundled dependency, but it does not install Node or a C++ toolchain, so those gaps surface as raw tool errors rather than a friendly message:
+`make run` provisions pnpm and every bundled dependency, but it does not install Node or a C++ toolchain. On macOS it first verifies that the selected Apple compiler can link against the selected SDK, so an incomplete or mismatched Xcode update reports the active developer directory and SDK plus recovery commands before `node-gyp` starts:
 
-- A `node-gyp` or `clang` error during install means the Xcode command-line tools are missing — `xcode-select --install`.
+- If the macOS native-toolchain check fails after an Xcode or macOS update, update Xcode, run `sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer` and `sudo xcodebuild -runFirstLaunch`, then retry. If you use only the standalone Command Line Tools, update them through System Settings → General → Software Update or run `xcode-select --install` when they are missing.
+- A later `node-gyp` or `clang` error during install is a native build failure that passed this basic toolchain check; keep its full output when reporting the problem.
 - `node is not installed`, or a version below 24, means Node itself needs installing or selecting. `nvm use` and `fnm use` both pick up the `.nvmrc` pin, and `make run` sources nvm automatically when it is present.
 - An `EACCES` from `corepack enable` means your `node` lives somewhere unwritable (typically a `/usr/local` package install). Run `corepack enable` once with `sudo`, or switch to an nvm-managed Node.
 
