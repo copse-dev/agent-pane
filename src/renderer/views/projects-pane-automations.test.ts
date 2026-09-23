@@ -424,6 +424,57 @@ describe('workspace-level automations section (#2511)', () => {
     assert.equal(suffixFor('Issue triage'), '· Beta')
   })
 
+  it('keeps equal schedule ids from different projects as separate schedules', () => {
+    const store = createStore({
+      projects: [
+        { id: 'a', path: '/a', name: 'Alpha' },
+        { id: 'b', path: '/b', name: 'Beta' },
+      ],
+      activeProjectId: 'a',
+      expandedProjectId: 'a',
+      workspaceRoot: '/a',
+      threads: [thread('docs', 'Docs freshness', 'shared-schedule-id')],
+      activeThreadId: 'docs',
+    })
+    setThreadCacheForTest('b', [thread('issues', 'Issue triage', 'shared-schedule-id')])
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountProjectsPane(host, store, createFakeApi())
+
+    assert.equal(host.querySelector('.automation-threads-count')?.textContent, '2')
+    const rows = Array.from(host.querySelectorAll('.automation-thread-rows .chat-row'))
+    assert.deepEqual(
+      rows.map((row) => ({
+        title: row.querySelector('.chat-title')?.textContent,
+        owner: row.querySelector('.chat-thread-owner')?.textContent,
+      })),
+      [
+        { title: 'Docs freshness', owner: '· Alpha' },
+        { title: 'Issue triage', owner: '· Beta' },
+      ],
+    )
+  })
+
+  it('offers only safe actions on a background project row', () => {
+    const { host } = mountTwoProjects()
+    host.querySelector<HTMLButtonElement>('.automation-threads-toggle')?.click()
+    const row = Array.from(host.querySelectorAll('.automation-thread-rows .chat-row')).find(
+      (candidate) => candidate.querySelector('.chat-title')?.textContent === 'Issue triage',
+    )
+    assert.ok(row)
+
+    assert.equal(row.querySelector('.chat-delete'), null)
+    row.querySelector('.chat-title')?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    assert.equal(row.querySelector('.chat-title-rename'), null)
+
+    row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }))
+    assert.deepEqual(
+      Array.from(document.querySelectorAll('.context-menu-item')).map((item) => item.textContent),
+      ['Automation setup…'],
+    )
+    dismissContextMenu()
+  })
+
   it('opens the thread in its owning project when a collated row is selected', async () => {
     const store = createStore({
       projects: [

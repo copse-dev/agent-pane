@@ -817,9 +817,11 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     ): HTMLElement {
       const activeId = project.id === activeProjectId ? activeThreadId : null
       const displayTitle = (options.displayTitle ?? thread.title) || 'New Thread'
-      const allowRename = options.allowRename ?? true
+      const canMutate = project.id === activeProjectId
+      const allowRename = (options.allowRename ?? true) && canMutate
       const scheduleId = thread.automation?.scheduleId
-      const renameState = renaming !== null && renaming.threadId === thread.id ? renaming : null
+      const renameState =
+        allowRename && renaming !== null && renaming.threadId === thread.id ? renaming : null
       let title: HTMLElement
       if (renameState) {
         const input = el('input', {
@@ -876,28 +878,32 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         e.preventDefault()
         e.stopPropagation()
         showContextMenu(e.clientX, e.clientY, [
-          ...(allowRename
+          ...(canMutate
             ? [
+                ...(allowRename
+                  ? [
+                      {
+                        label: 'Rename',
+                        onSelect: (): void => {
+                          beginThreadRename(thread.id, displayTitle)
+                        },
+                      },
+                    ]
+                  : []),
                 {
-                  label: 'Rename',
+                  label: 'Fork',
                   onSelect: (): void => {
-                    beginThreadRename(thread.id, displayTitle)
+                    forkProjectThread(project.id, thread.id)
+                  },
+                },
+                {
+                  label: 'Archive',
+                  onSelect: (): void => {
+                    archiveProjectThread(project.id, thread.id)
                   },
                 },
               ]
             : []),
-          {
-            label: 'Fork',
-            onSelect: (): void => {
-              forkProjectThread(project.id, thread.id)
-            },
-          },
-          {
-            label: 'Archive',
-            onSelect: (): void => {
-              archiveProjectThread(project.id, thread.id)
-            },
-          },
           // A schedule with a single run has no heading of its own, and a
           // historical run is several rows below the one that does, so every
           // automation row carries the way out to its setup. Opens directly
@@ -943,20 +949,21 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         chatRow.append(chatPrStatus(prRollup))
       }
 
-      const del = el(
-        'button',
-        { class: 'chat-delete', 'aria-label': 'Delete thread', 'data-tooltip': 'Delete thread' },
-        closeIcon('ui-icon ui-icon-sm'),
-      )
-      del.addEventListener('click', (e) => {
-        e.stopPropagation()
-        if (project.id !== activeProjectId) return
-        if (getSidebarThreads(store, project.id).length > 1) {
-          void api.agent.clearHistory(project.id, thread.id)
-          deleteThread(store, thread.id)
-        }
-      })
-      chatRow.append(del)
+      if (canMutate) {
+        const del = el(
+          'button',
+          { class: 'chat-delete', 'aria-label': 'Delete thread', 'data-tooltip': 'Delete thread' },
+          closeIcon('ui-icon ui-icon-sm'),
+        )
+        del.addEventListener('click', (e) => {
+          e.stopPropagation()
+          if (getSidebarThreads(store, project.id).length > 1) {
+            void api.agent.clearHistory(project.id, thread.id)
+            deleteThread(store, thread.id)
+          }
+        })
+        chatRow.append(del)
+      }
       return chatRow
     }
 
@@ -979,14 +986,18 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
      * already had for a collapsed, unvisited project.
      */
     function renderAutomationsSection(): HTMLElement | null {
-      const scheduleOwners = new Map<string, { project: Project; runs: SidebarThread[] }>()
+      const scheduleOwners = new Map<
+        string,
+        { project: Project; scheduleId: string; runs: SidebarThread[] }
+      >()
       for (const project of projects) {
         for (const thread of getSidebarThreads(store, project.id)) {
           const scheduleId = thread.automation?.scheduleId
           if (!scheduleId) continue
-          const owner = scheduleOwners.get(scheduleId)
+          const scheduleKey = `${project.id}\0${scheduleId}`
+          const owner = scheduleOwners.get(scheduleKey)
           if (owner) owner.runs.push(thread)
-          else scheduleOwners.set(scheduleId, { project, runs: [thread] })
+          else scheduleOwners.set(scheduleKey, { project, scheduleId, runs: [thread] })
         }
       }
       if (scheduleOwners.size === 0) return null
@@ -1044,7 +1055,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
 
       if (sectionExpanded) {
         const rows = el('div', { class: 'automation-thread-rows' })
-        for (const [scheduleId, { project, runs }] of scheduleOwners) {
+        for (const { project, scheduleId, runs } of scheduleOwners.values()) {
           const firstRun = runs[0]
           if (!firstRun) continue
           const projectSuffix = el(
