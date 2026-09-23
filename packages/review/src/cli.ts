@@ -504,6 +504,7 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
         }
         reviews = await runReviewers({
           ...host,
+          validation: stage0,
           reviewers: selections.map((selection) => ({
             model: selection.model,
             providerFor: (lens): LLMProvider => selection.providerFor(`review:${lens.id}`),

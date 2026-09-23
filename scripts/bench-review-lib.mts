@@ -427,6 +427,7 @@ export async function runCase(reviewCase: ReviewCase, options: RunOptions): Prom
       const threadId = `bench-review:${reviewCase.spec.id}`
       const reviews: Stage2Result[] = await runReviewers({
         ...host,
+        validation: stage0,
         reviewers: options.profile.reviewerModels.map((model) => ({
           model,
           providerFor: (lens): LLMProvider =>

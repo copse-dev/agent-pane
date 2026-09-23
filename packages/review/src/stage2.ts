@@ -15,11 +15,18 @@ import {
   type ReviewerToolHost,
 } from './reviewer-tools.ts'
 import type { CellCommandResult } from './isolation.ts'
+import {
+  assertReviewerValidationMatches,
+  renderReviewerValidation,
+  type ReviewerValidation,
+} from './reviewer-validation.ts'
 import { runTurn, type TurnResult, type TurnUsage } from './turn.ts'
 
 export type Stage2Usage = TurnUsage
 
 export interface Stage2Options extends ReviewerToolHost {
+  /** Trusted aggregate-check evidence for the exact context under review. */
+  readonly validation: ReviewerValidation
   readonly provider: LLMProvider
   /** Model id, for provenance and usage attribution. */
   readonly model: string
@@ -63,13 +70,17 @@ function completionRepairPrompt(reported: number, error: string): string {
 
 /** One reviewer: one model under one lens. */
 export async function runStage2(options: Stage2Options): Promise<Stage2Result> {
+  assertReviewerValidationMatches(options.validation, options.context)
   const executor = createReviewerToolExecutor(options)
   const turn = await runTurn({
     provider: options.provider,
     model: options.model,
-    systemPrompt: lensSystemPrompt(options.lens, {
-      canRun: options.shellDecision === 'allow' && options.cell !== null,
-    }),
+    systemPrompt: [
+      lensSystemPrompt(options.lens, {
+        canRun: options.shellDecision === 'allow' && options.cell !== null,
+      }),
+      renderReviewerValidation(options.validation),
+    ].join('\n\n'),
     userPrompt: renderReviewContext(options.context),
     tools: reviewerTools(),
     execute: (name, args, signal, toolCallId) => executor.execute(name, args, signal, toolCallId),
@@ -124,6 +135,8 @@ export interface ReviewerSpec {
 }
 
 export interface FanOutOptions extends ReviewerToolHost {
+  /** Trusted aggregate-check evidence shared by every reviewer. */
+  readonly validation: ReviewerValidation
   readonly reviewers: readonly ReviewerSpec[]
   readonly lenses: readonly Lens[]
   readonly threadId: string
@@ -152,6 +165,7 @@ export async function runReviewers(options: FanOutOptions): Promise<Stage2Result
           cell: options.cell,
           shellDecision: options.shellDecision,
           scrub: (text) => options.scrub(text),
+          validation: options.validation,
           provider: reviewer.providerFor(lens),
           model: reviewer.model,
           lens,
