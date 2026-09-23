@@ -14,11 +14,13 @@ import { errorMessage } from '@copse/std/errors.ts'
 import { readFileDiff, type ReviewContext } from './context.ts'
 import { jailPath, readCheckoutFile } from './checkout-fs.ts'
 export { jailPath } from './checkout-fs.ts'
+import { readDependencyFileInCell } from './dependency-reader.ts'
 import { FINDING_CLASSES, FINDING_CONFIDENCES, FINDING_SEVERITIES } from './finding.ts'
 import type { CellCommandResult, ExecutionCell } from './isolation.ts'
 
 export const REVIEWER_TOOL_NAMES = [
   'read_file',
+  'read_dependency_file',
   'list_dir',
   'search_code',
   'git_diff',
@@ -162,6 +164,20 @@ export function reviewerTools(): LLMTool[] {
         type: 'object',
         properties: {
           path: { type: 'string', description: 'Repo-relative path' },
+          startLine: { type: 'integer', description: 'First line to return (1-based)' },
+          endLine: { type: 'integer', description: 'Last line to return (inclusive)' },
+        },
+        required: ['path'],
+      },
+    },
+    {
+      name: 'read_dependency_file',
+      description:
+        'Read an installed package source file below node_modules through the isolated execution cell. Use this instead of read_file when pnpm package symlinks are refused. This reads data only and never executes package code.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'Path below node_modules/' },
           startLine: { type: 'integer', description: 'First line to return (1-based)' },
           endLine: { type: 'integer', description: 'Last line to return (inclusive)' },
         },
@@ -333,7 +349,12 @@ export function createReviewerToolExecutor(host: ReviewerToolHost): ReviewerTool
     try {
       return Promise.resolve(readCheckoutFile(root, path))
     } catch (err) {
-      return Promise.reject(new ToolInputError(`Cannot read ${path}: ${errorMessage(err)}`))
+      const dependencyHint = path.replaceAll('\\', '/').startsWith('node_modules/')
+        ? '; use read_dependency_file for installed package source'
+        : ''
+      return Promise.reject(
+        new ToolInputError(`Cannot read ${path}: ${errorMessage(err)}${dependencyHint}`),
+      )
     }
   }
 
@@ -385,6 +406,33 @@ export function createReviewerToolExecutor(host: ReviewerToolHost): ReviewerTool
             .map((line, index) => `${String(start + index).padStart(width)}: ${line}`)
             .join('\n'),
         )
+      }
+      case 'read_dependency_file': {
+        const input = readFileArgs(args)
+        if (input === null) {
+          throw new ToolInputError('read_dependency_file needs { path, startLine?, endLine? }')
+        }
+        if (host.cell === null) {
+          throw new ToolInputError('read_dependency_file is unavailable without an execution cell')
+        }
+        let result: CellCommandResult
+        try {
+          result = await readDependencyFileInCell(host.cell, input, MAX_TOOL_OUTPUT_CHARS, signal)
+        } catch (err) {
+          throw new ToolInputError(errorMessage(err))
+        }
+        const output = host.scrub(result.output).trimEnd()
+        if (result.timedOut) {
+          throw new ToolInputError(
+            `dependency read timed out after ${String(result.durationMs)} ms`,
+          )
+        }
+        if (result.exitCode !== 0) {
+          throw new ToolInputError(
+            `Cannot read dependency ${input.path}: ${output || `exit ${String(result.exitCode)}`}`,
+          )
+        }
+        return cap(output)
       }
       case 'list_dir': {
         const input = listDirArgs(args) ?? { path: '.' }

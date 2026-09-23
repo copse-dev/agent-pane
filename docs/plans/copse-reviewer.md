@@ -608,10 +608,13 @@ The CLI shell (Shell A), on `main` in the same package, as `copse-review` (the p
   the correction still omits the attestation, the run fails closed and retains the original
   draft for diagnosis, so an exhausted or interrupted model can never be projected as “No
   findings.”
-- **The reviewer's tools are brokered, not the loop.** Reads are served over the head
+- **The reviewer's tools are brokered, not the loop.** Ordinary reads are served over the head
   checkout as data, jailed to it. Host-side reads and reproducer writes reject symlinks
   below the canonical checkout root, and final file opens use `O_NOFOLLOW`; recursive
-  searches skip symlinks. `run_command` is the only executing tool: it runs argv
+  searches skip symlinks. Installed dependency files use a separate fixed, data-only reader in
+  the serialised secret-free cell: it accepts only `node_modules/` paths, resolves pnpm links,
+  requires the canonical regular file to remain inside the disposable `node_modules`, and never runs
+  package code. `run_command` is the only model-controlled executing tool: it runs argv
   (never a shell string) in the cell, is gated by the run's permission profile, and its
   output comes back secret-scrubbed and wrapped as external content (P7).
 - **Headless conformance.** The model turn is projected onto the headless contract's event
@@ -877,6 +880,13 @@ CI shell needs (`stage0-report.ts`, `forge-review.ts`) and the workflows
   runs the hostile-fixture conformance test when this surface changes (and nightly), so a broken
   image, network wall, secret wall or trusted-script mount blocks the aggregate gate. The Forgejo
   example remains read-only until its ephemeral runner contract also guarantees Docker isolation.
+- **Dependency source inspection stays inside the cell.** _Added 2026-09-23 after the first
+  post-merge validation-evidence run._ pnpm's top-level package entries are checkout symlinks, so
+  host-side `read_file` must continue to reject them. `read_dependency_file` instead runs fixed
+  trusted reader code in the same serialised, secret-free cell as focused commands, rejects paths
+  outside `node_modules/` and canonical targets outside the disposable dependency tree, and does not count
+  as executable validation. Reviewers are still instructed to run the smallest relevant focused
+  test or probe when executable code changed.
 - **Hosted scratch is semantically ordinary workspace storage.** _Added 2026-09-23 after the
   first focused-validation proof._ GitHub jobs pass `$RUNNER_TEMP` as `--scratch-parent`, keeping
   the disposable checkout, `HOME` and `TMPDIR` away from the literal `/tmp` namespace. Product

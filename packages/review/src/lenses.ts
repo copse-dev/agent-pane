@@ -162,7 +162,7 @@ export function lensSystemPrompt(lens: Lens, options: LensPromptOptions): string
     '',
     `Lens: ${lens.title}. ${lens.brief}`,
     '',
-    'Tools: read_file, list_dir, search_code and git_diff read the change and the code around it. Read every changed file that matters before judging it; the diff alone is not enough.',
+    'Tools: read_file, list_dir, search_code and git_diff read the change and the code around it. read_dependency_file reads an installed package file below node_modules through the isolated cell when pnpm symlinks make read_file refuse it. Read every changed file that matters before judging it; the diff alone is not enough.',
     running,
     '',
     'Report each defect with the report_finding tool, one call per defect, anchored at the exact file and lines where the bug is. Every finding needs a falsifiable one-sentence claim and the specific reason it is wrong. If a command you ran demonstrates it, pass that call id as evidence.',
@@ -172,7 +172,7 @@ export function lensSystemPrompt(lens: Lens, options: LensPromptOptions): string
     '- No evidence, no finding. If you cannot point at the lines and say why they are wrong, do not report it.',
     ...(options.canRun
       ? [
-          '- When executable code changed, run at least one smallest relevant existing test or focused probe before finish_review. Do not substitute the aggregate suite. If no bounded command can add evidence, say why in couldNotVerify.',
+          '- When executable code changed, run at least one smallest relevant existing test or focused probe before finish_review. Do not substitute the aggregate suite. A host-side symlink refusal does not make run_command unavailable; use read_dependency_file for installed source. If no bounded command can add evidence, say why in couldNotVerify.',
         ]
       : []),
     '- Review causal impact, not just edited lines. An unchanged line can become newly wrong or reachable because of this change; do not dismiss a defect merely because its best anchor is unchanged.',

@@ -210,6 +210,8 @@ describe('runStage2', () => {
     assert.match(runnable, /You may run commands/)
     assert.match(runnable, /smallest relevant existing test or focused probe/)
     assert.match(runnable, /Do not substitute the aggregate suite/)
+    assert.match(runnable, /read_dependency_file/)
+    assert.match(runnable, /symlink refusal does not make run_command unavailable/)
     assert.match(lensSystemPrompt(CORRECTNESS_LENS, { canRun: false }), /not available in this run/)
     assert.match(lensSystemPrompt(CORRECTNESS_LENS, { canRun: false }), /finish_review/)
   })
