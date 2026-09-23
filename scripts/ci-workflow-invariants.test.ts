@@ -832,6 +832,7 @@ describe('Copse Reviewer workflow invariants', () => {
       assert.match(job, /persist-credentials: false/)
       assert.match(job, /refs\/pull\/\$\{PR_NUMBER\}\/head/)
       assert.match(job, /--backend ephemeral-runner/)
+      assert.match(job, /--scratch-parent "\$RUNNER_TEMP"/)
     }
 
     const handoff = workflowJobBlock(groundWorkflow, 'handoff')
@@ -850,6 +851,7 @@ describe('Copse Reviewer workflow invariants', () => {
       assert.doesNotMatch(job, /--backend ephemeral-runner/)
       assert.match(job, /--backend container/)
       assert.match(job, /--image "\$REVIEW_CELL_IMAGE"/)
+      assert.match(job, /--scratch-parent "\$RUNNER_TEMP"/)
       assert.match(
         job,
         /--trusted-prepare "\$GITHUB_WORKSPACE\/scripts\/prepare-review-stage0\.mts"/,

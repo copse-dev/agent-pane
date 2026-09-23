@@ -2,7 +2,7 @@ import { after, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { access, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { setTimeout as delay } from 'node:timers/promises'
 import { HEADLESS_EXIT, headlessEventSchema } from '@copse/agent/headless-contract.ts'
@@ -134,6 +134,37 @@ describe('copse-review CLI', () => {
     const sarif: unknown = JSON.parse(await readFile(join(dir, 'report.sarif'), 'utf8'))
     assert.ok(typeof sarif === 'object' && sarif !== null)
     assert.equal(Reflect.get(sarif, 'version'), '2.1.0')
+  })
+
+  it('places disposable checkouts under an explicit scratch parent', async () => {
+    const repo = await fixture({})
+    const parent = await realpath(await mkdtemp(join(tmpdir(), 'review-cli-scratch-parent-')))
+    scratch.push(parent)
+    let cellScratch = ''
+    const delegate = createEphemeralRunnerBackend()
+    const backend: IsolationBackend = {
+      ...delegate,
+      createCell: (spec) => {
+        cellScratch = spec.scratchDir
+        return delegate.createCell(spec)
+      },
+    }
+    let out = ''
+    let err = ''
+    const code = await main(['--base', 'main', '--no-model', '--scratch-parent', parent], {
+      stdout: (text) => {
+        out += text
+      },
+      stderr: (text) => {
+        err += text
+      },
+      env: { PATH: process.env['PATH'] },
+      cwd: repo.root,
+      backend,
+    })
+    assert.equal(code, HEADLESS_EXIT.SUCCESS, `${err}\n${out}`)
+    assert.equal(dirname(cellScratch), parent)
+    await assert.rejects(access(cellScratch), { code: 'ENOENT' })
   })
 
   it('runs the scripted reviewer end to end, emitting a conformant event stream', async () => {

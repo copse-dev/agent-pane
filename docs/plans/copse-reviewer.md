@@ -548,7 +548,9 @@ On `main` under `packages/review/` (README there), with the app-side adapter und
     CI can supply `--trusted-prepare <script>` from its reviewed default-branch checkout;
     that command replaces only checkout preparation and the script is mounted read-only
     in container cells. Copse uses this to selectively rebuild `node-pty` for old pull-request
-    heads without enabling arbitrary lifecycle scripts.
+    heads without enabling arbitrary lifecycle scripts. A checkout records the exact untracked
+    files copied from the author's tree; later context generation marks only those intent-to-add,
+    so cell infrastructure created inside the checkout cannot leak into the model's diff.
   - **`review.config.json`** is the §Configuration file, Phase 0 subset: an argv per
     command, `null` to disable one, and per-command timeouts. It is repo-controlled, so
     its argv only ever runs inside the cell; the orchestrator reads it as data.
@@ -875,6 +877,12 @@ CI shell needs (`stage0-report.ts`, `forge-review.ts`) and the workflows
   runs the hostile-fixture conformance test when this surface changes (and nightly), so a broken
   image, network wall, secret wall or trusted-script mount blocks the aggregate gate. The Forgejo
   example remains read-only until its ephemeral runner contract also guarantees Docker isolation.
+- **Hosted scratch is semantically ordinary workspace storage.** _Added 2026-09-23 after the
+  first focused-validation proof._ GitHub jobs pass `$RUNNER_TEMP` as `--scratch-parent`, keeping
+  the disposable checkout, `HOME` and `TMPDIR` away from the literal `/tmp` namespace. Product
+  tests that intentionally classify machine-global `/tmp` paths therefore see the same path
+  semantics in a review cell as they do in normal CI, instead of producing baseline-only false
+  failures.
 - **Known limit: the dependency store across platforms.** The cell resolves the offline
   install from the host's pnpm store, which holds the host platform's packages. The GitHub
   ground jobs prime that store from the exact contributor lockfile and patch data with

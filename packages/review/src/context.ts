@@ -306,7 +306,17 @@ export interface BuildContextOptions {
  * intent-to-add in the throwaway worktree so they appear as additions.
  */
 export async function headDiff(checkouts: MaterialisedCheckouts, git: GitRunner): Promise<string> {
-  await git(checkouts.head, ['add', '--intent-to-add', '--all', '.'])
+  if (checkouts.untrackedPaths.length > 0) {
+    const added = await git(checkouts.head, [
+      'add',
+      '--intent-to-add',
+      '--',
+      ...checkouts.untrackedPaths.map((path) => `:(literal)${path}`),
+    ])
+    if (added.code !== 0) {
+      throw new Error(`Cannot stage untracked context: ${added.stderr.trim()}`)
+    }
+  }
   const result = await git(checkouts.head, [
     'diff',
     '--no-color',
