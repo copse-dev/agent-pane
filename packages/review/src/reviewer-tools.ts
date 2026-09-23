@@ -294,13 +294,54 @@ const decodeEncodedRunCommandArgs = decodeWithSchema(
 )
 const decodeCommandArgv = decodeWithSchema(commandArgvSchema)
 
+/**
+ * Some OpenAI-compatible models double-encode argv but leave literal newlines
+ * inside the nested JSON string. Repair only JSON-forbidden control characters
+ * inside quoted strings; the result still has to decode as `string[]` below.
+ */
+function escapeJsonStringControlCharacters(text: string): string {
+  let result = ''
+  let inString = false
+  let escaped = false
+  for (const character of text) {
+    if (!inString) {
+      result += character
+      if (character === '"') inString = true
+      continue
+    }
+    if (escaped) {
+      result += character
+      escaped = false
+      continue
+    }
+    if (character === '\\') {
+      result += character
+      escaped = true
+      continue
+    }
+    if (character === '"') {
+      result += character
+      inString = false
+      continue
+    }
+    const codePoint = character.codePointAt(0)
+    result +=
+      codePoint !== undefined && codePoint <= 0x1f
+        ? `\\u${codePoint.toString(16).padStart(4, '0')}`
+        : character
+  }
+  return result
+}
+
 /** Tolerate the JSON-encoded argv some OpenAI-compatible models emit. */
 function runCommandArgs(args: unknown): z.infer<typeof runCommandArgsSchema> | null {
   const direct = decodeRunCommandArgs(args)
   if (direct !== null) return direct
   const encoded = decodeEncodedRunCommandArgs(args)
   if (encoded === null) return null
-  const argv = safeJsonParse(encoded.argv, decodeCommandArgv)
+  const argv =
+    safeJsonParse(encoded.argv, decodeCommandArgv) ??
+    safeJsonParse(escapeJsonStringControlCharacters(encoded.argv), decodeCommandArgv)
   if (argv === null) return null
   return encoded.timeoutMs === undefined ? { argv } : { argv, timeoutMs: encoded.timeoutMs }
 }

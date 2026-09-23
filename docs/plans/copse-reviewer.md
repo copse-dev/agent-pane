@@ -896,8 +896,12 @@ CI shell needs (`stage0-report.ts`, `forge-review.ts`) and the workflows
   forced repair then terminated before `finish_review`. A review role now spends no LLM calls
   on that generic finalizer: it proceeds directly to the bounded closure-only continuation,
   with a one-checkpoint reasoning ceiling. JSON-encoded argv is decoded back to a validated
-  string array, and dependency reads accept the package-relative spelling models naturally use;
-  neither tolerance introduces a shell or expands the canonical dependency boundary.
+  string array, including literal control characters that an OpenAI-compatible model can leave
+  inside that nested JSON string, and dependency reads accept the package-relative spelling
+  models naturally use; neither tolerance introduces a shell or expands the canonical dependency
+  boundary. The first post-merge proof on PR #2737 completed through that reserved closure call,
+  read jsdom's installed source, ran the focused 4-test selector plus positive/negative esbuild
+  probes, used the explicit Scaleway project endpoint, and posted as the Copse GitHub App.
 - **Hosted scratch is semantically ordinary workspace storage.** _Added 2026-09-23 after the
   first focused-validation proof._ GitHub jobs pass `$RUNNER_TEMP` as `--scratch-parent`, keeping
   the disposable checkout, `HOME` and `TMPDIR` away from the literal `/tmp` namespace. Product

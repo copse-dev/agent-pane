@@ -304,6 +304,29 @@ describe('reviewer tools', () => {
     )
     assert.match(encoded, /\[SCRUBBED\] encoded/)
     assert.equal(executor.commandRuns().get('call-encoded')?.exitCode, 3)
+
+    const multilineArgv = JSON.stringify([
+      process.execPath,
+      'probe.cjs',
+      'encoded line one\nencoded line two',
+    ]).replace('\\n', '\n')
+    const multiline = await executor.execute(
+      'run_command',
+      { argv: multilineArgv },
+      signal,
+      'call-encoded-multiline',
+    )
+    assert.match(multiline, /\[SCRUBBED\] encoded line one\nencoded line two/)
+    assert.equal(executor.commandRuns().get('call-encoded-multiline')?.exitCode, 3)
+
+    const malformed = await executor.execute(
+      'run_command',
+      { argv: '["node", {"not": "an argument"}]' },
+      signal,
+      'call-encoded-malformed',
+    )
+    assert.match(malformed, /^Error: run_command needs/)
+    assert.equal(executor.commandRuns().has('call-encoded-malformed'), false)
   })
 
   it('refuses run_command when the profile denies shell or there is no cell', async () => {
