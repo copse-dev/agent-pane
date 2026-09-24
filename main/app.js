@@ -75663,6 +75663,20 @@ function mountConversation(root, store2, api2) {
     }
     updateScrollButton();
   }
+  function scrollUserPromptIntoView(msgEl) {
+    const listRect = list.getBoundingClientRect();
+    const msgRect = msgEl.getBoundingClientRect();
+    let delta = 0;
+    if (msgRect.top < listRect.top) {
+      delta = msgRect.top - listRect.top;
+    } else if (msgRect.bottom > listRect.bottom) {
+      delta = msgRect.height > listRect.height ? msgRect.top - listRect.top : msgRect.bottom - listRect.bottom;
+    }
+    if (delta === 0) return;
+    setScrollTopProgrammatically(list.scrollTop + delta);
+    pinnedToBottom = false;
+    updateScrollButton();
+  }
   function applyRollupSummaries(item, opts) {
     const { commandSummary, toolSummary } = opts;
     if (item.type === "rollup") {
@@ -75956,6 +75970,7 @@ function mountConversation(root, store2, api2) {
     syncModelLabels();
     syncUserActions();
     scrollToBottom(msg.role === "user");
+    if (msg.role === "user") scrollUserPromptIntoView(msgEl);
   }
   function prependMessageEl(threadId, msgId, before) {
     const msgEl = buildMessageEl(threadId, msgId);
