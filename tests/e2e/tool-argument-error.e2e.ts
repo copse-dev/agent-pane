@@ -19,6 +19,32 @@ describe('tool argument error guidance', () => {
     resetUserData()
   })
 
+  it('shows a successful clamped search and the adjusted bound', async () => {
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
+    await prepareMockToolTurn(
+      'Find a file with a large result limit.',
+      { name: 'find_files', args: { pattern: '__no_such_file__', max_results: 2000 } },
+      'The search completed with the allowed result limit.',
+    )
+    await submitComposer()
+    await waitForAgentIdle(30_000)
+
+    const card = $('.tool-card[data-tool-id][data-status="done"]')
+    await card.waitForDisplayed({ timeout: 10_000 })
+    if (!(await card.getProperty('open'))) {
+      await card.$('summary.tool-card-header').click()
+    }
+    await expect(card).toHaveText('No files match: __no_such_file__', { containing: true })
+    await expect(card).toHaveText('max_results — clamped to 200', { containing: true })
+    await expect(card).toHaveText('Arguments were clamped to schema bounds', {
+      containing: true,
+    })
+    await saveElementScreenshot(
+      '.tool-card[data-tool-id][data-status="done"]',
+      'tool-argument-clamp-guidance.png',
+    )
+  })
+
   it('shows the invalid todo field and retry guidance without a schema JSON dump', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     // Exercise the real registry and agent-loop error path with the reported

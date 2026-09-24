@@ -17,6 +17,7 @@ import { turnIngestedExternalContent } from './security/turn-taint.ts'
 import { z } from 'zod'
 import { setSetting } from './storage/settings.test-shim.ts'
 import { copseToolPermissionId } from './security/tool-permissions.ts'
+import { recoverTextToolCalls } from '@copse/agent/parse-text-tool-calls.ts'
 
 describe('ToolRegistry', () => {
   it('registers and executes a tool', async () => {
@@ -112,6 +113,207 @@ describe('ToolRegistry', () => {
     const result = await reg.execute('echo', { msg: 'plain' }, new AbortController().signal)
     assert.equal(result, 'plain')
     setPermissionGateForTests(null)
+  })
+
+  describe('numeric-range arg repair', () => {
+    afterEach(() => {
+      setPermissionGateForTests(null)
+    })
+
+    // Regression for the observed failure: find_files was called with
+    // max_results 2000 against a .max(200) schema (screenshot: the tool call
+    // marked failed, the transcript showing "Too big: expected number to be
+    // <=200"). The schema error bounced an intent that survives clamping.
+    it('runs a call whose only failure is an over-the-cap number and notes the clamp', async () => {
+      setPermissionGateForTests(async () => true)
+      let seenArgs: { pattern: string; max_results: number } | undefined
+      const reg = new ToolRegistry()
+      reg.register({
+        name: 'find_files',
+        description: 'find files',
+        parameters: z.object({
+          pattern: z.string(),
+          max_results: z.number().int().min(1).max(200).optional().default(50),
+        }),
+        execute: async (args) => {
+          seenArgs = args
+          return 'found'
+        },
+      })
+      const result = await reg.execute(
+        'find_files',
+        { pattern: '*.ts', max_results: 2000 },
+        new AbortController().signal,
+      )
+      assert.ok(seenArgs)
+      assert.equal(seenArgs.max_results, 200, 'executes with the clamped value')
+      // The note reaches the model in the same system-reminder shape hooks use,
+      // so it reads as out-of-band Copse context rather than tool output.
+      assert.equal(
+        result,
+        'found\n\n<system-reminder>\nArguments were clamped to schema bounds: max_results — clamped to 200.\n</system-reminder>',
+      )
+    })
+
+    it('passes repaired input through a transforming schema only once per parse', async () => {
+      setPermissionGateForTests(async () => true)
+      const reg = new ToolRegistry()
+      reg.register({
+        name: 'bounded_transform',
+        description: 'transform a bounded number',
+        parameters: z.object({
+          max_results: z
+            .number()
+            .max(200)
+            .transform((value) => value + 1),
+        }),
+        execute: async ({ max_results }) => `value=${String(max_results)}`,
+      })
+      const result = await reg.execute(
+        'bounded_transform',
+        { max_results: 2000 },
+        new AbortController().signal,
+      )
+      assert.equal(typeof result, 'string')
+      assert.match(typeof result === 'string' ? result : '', /^value=201/)
+      assert.match(typeof result === 'string' ? result : '', /max_results — clamped to 200/)
+    })
+
+    it('clamps a below-the-floor number without changing the error path', async () => {
+      setPermissionGateForTests(async () => true)
+      const reg = new ToolRegistry()
+      reg.register({
+        name: 'search_code',
+        description: 'search',
+        parameters: z.object({ context_lines: z.number().int().min(0).max(20) }),
+        execute: async ({ context_lines }) => `lines=${String(context_lines)}`,
+      })
+      const result = await reg.execute(
+        'search_code',
+        { context_lines: -1 },
+        new AbortController().signal,
+      )
+      assert.equal(typeof result, 'string')
+      assert.match(typeof result === 'string' ? result : '', /^lines=0/)
+      assert.match(typeof result === 'string' ? result : '', /context_lines — clamped to 0/)
+    })
+
+    it('still rejects a call with a non-range problem, naming the field', async () => {
+      setPermissionGateForTests(async () => true)
+      let executed = false
+      const reg = new ToolRegistry()
+      reg.register({
+        name: 'find_files',
+        description: 'find files',
+        parameters: z.object({
+          pattern: z.string(),
+          max_results: z.number().int().min(1).max(200).optional(),
+        }),
+        execute: async () => {
+          executed = true
+          return 'found'
+        },
+      })
+      await assert.rejects(
+        () => reg.execute('find_files', { max_results: 2000 }, new AbortController().signal),
+        /pattern — expected string, received undefined/,
+      )
+      assert.equal(executed, false)
+    })
+
+    it('reports a clamp for a recovered text call through the same execution path', async () => {
+      setPermissionGateForTests(async () => true)
+      const reg = new ToolRegistry()
+      reg.register({
+        name: 'find_files',
+        description: 'find files',
+        parameters: z.object({
+          pattern: z.string(),
+          max_results: z.number().int().min(1).max(200),
+        }),
+        execute: async ({ max_results }) => `found ${String(max_results)}`,
+      })
+      const text =
+        '<tool_call><function=find_files><parameter=pattern>*.ts</parameter><parameter=max_results>2000</parameter></function></tool_call>'
+      const recovered = recoverTextToolCalls(text, (name, args) => reg.tryCoerceArgs(name, args))
+      assert.equal(recovered.toolCalls.length, 1)
+      const call = recovered.toolCalls[0]
+      assert.ok(call)
+      const result = await reg.execute(call.name, call.args, new AbortController().signal)
+      assert.equal(typeof result, 'string')
+      assert.match(typeof result === 'string' ? result : '', /^found 200/)
+      assert.match(typeof result === 'string' ? result : '', /max_results — clamped to 200/)
+    })
+
+    it('returns a readable schema error for an invalid recovered text call', async () => {
+      setPermissionGateForTests(async () => true)
+      let executed = false
+      const reg = new ToolRegistry()
+      reg.register({
+        name: 'find_files',
+        description: 'find files',
+        parameters: z.object({ pattern: z.string(), max_results: z.number().max(200) }),
+        execute: async () => {
+          executed = true
+          return 'found'
+        },
+      })
+      const text =
+        '<tool_call><function=find_files><parameter=max_results>2000</parameter></function></tool_call>'
+      const recovered = recoverTextToolCalls(text, (name, args) => reg.tryCoerceArgs(name, args))
+      assert.equal(recovered.toolCalls.length, 1)
+      const call = recovered.toolCalls[0]
+      assert.ok(call)
+      await assert.rejects(
+        () => reg.execute(call.name, call.args, new AbortController().signal),
+        /pattern — expected string, received undefined/,
+      )
+      assert.equal(executed, false)
+    })
+
+    it('keeps a clamp note in its own system-reminder block beside hook context', async () => {
+      setPermissionGateForTests(async (check) => {
+        check.injectContext = '<system-reminder>\nhook note\n</system-reminder>'
+        return true
+      })
+      const reg = new ToolRegistry()
+      reg.register({
+        name: 'find_files',
+        description: 'find files',
+        parameters: z.object({ max_results: z.number().max(200) }),
+        execute: async () => 'found',
+      })
+      const result = await reg.execute(
+        'find_files',
+        { max_results: 2000 },
+        new AbortController().signal,
+      )
+      assert.equal(
+        result,
+        'found\n\n<system-reminder>\nArguments were clamped to schema bounds: max_results — clamped to 200.\n</system-reminder>\n\n<system-reminder>\nhook note\n</system-reminder>',
+      )
+    })
+
+    it('does not append a clamp note when the arguments were valid', async () => {
+      setPermissionGateForTests(async () => true)
+      const reg = new ToolRegistry()
+      reg.register({
+        name: 'find_files',
+        description: 'find files',
+        parameters: z.object({
+          pattern: z.string(),
+          max_results: z.number().int().min(1).max(200).optional().default(50),
+        }),
+        execute: async () => 'found',
+      })
+      const result = await reg.execute(
+        'find_files',
+        { pattern: '*.ts', max_results: 200 },
+        new AbortController().signal,
+      )
+      assert.equal(result, 'found', 'a valid call is unmodified')
+      assert.doesNotMatch(result, /system-reminder/)
+    })
   })
 
   describe('tool result caching', () => {
