@@ -194,6 +194,13 @@ export function streamRetryDelayMs(err: unknown, attempt: number): number {
     const asDate = Date.parse(raw)
     if (!Number.isNaN(asDate)) return Math.min(120_000, Math.max(0, asDate - Date.now()))
   }
+  // OpenRouter's HTTP-200 SSE rate limits have no Retry-After header. The
+  // ordinary 1/2/4s delays exhausted all four attempts during live PR reviews
+  // before upstream throttling could clear. Keep the request budget, but give
+  // these recognized rate limits 10/20/40s plus up to 10% jitter to recover.
+  if (streamedErrorStatus(err) === 429) {
+    return Math.min(60_000, 10_000 * 2 ** attempt * (1 + Math.random() * 0.1))
+  }
   return Math.min(60_000, 1000 * 2 ** attempt)
 }
 
@@ -271,12 +278,13 @@ export async function* yieldStreamWithRetry<T>(
         !committed &&
         (canRetryRoutingPolicy || isRetryableStreamError(err)) &&
         attempt < maxAttempts - 1
+      const delayMs = retry ? streamRetryDelayMs(err, attempt) : 0
       const streamedStatus = streamedErrorStatus(err)
       if (streamedStatus !== undefined) {
         // No request, body, headers, or provider message: enough to distinguish
         // exhaustion from a committed stream without logging private content.
         console.warn(
-          `[llm] streamed API error code=${String(streamedStatus)} attempt=${String(attempt + 1)}/${String(maxAttempts)} committed=${String(committed)} retry=${String(retry)}`,
+          `[llm] streamed API error code=${String(streamedStatus)} attempt=${String(attempt + 1)}/${String(maxAttempts)} committed=${String(committed)} retry=${String(retry)} delayMs=${String(Math.round(delayMs))}`,
         )
       }
       if (!retry) throw err
@@ -285,7 +293,7 @@ export async function* yieldStreamWithRetry<T>(
         reportingRoutingPolicyOutcome = true
       }
       try {
-        await sleepMs(streamRetryDelayMs(err, attempt), opts.signal)
+        await sleepMs(delayMs, opts.signal)
       } catch (sleepError) {
         if (routingPolicyFailure) {
           console.warn('[llm] routing-policy retry cancelled')
