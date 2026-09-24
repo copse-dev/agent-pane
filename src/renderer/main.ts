@@ -320,6 +320,7 @@ async function boot(): Promise<void> {
     themePreference,
     fontSize,
     uiScale,
+    animateAgentAvatars: startupSettings.animateAgentAvatars !== false,
     autoPortraitRightPanel:
       typeof savedAutoPortraitRightPanel === 'boolean' ? savedAutoPortraitRightPanel : true,
     rightPanelPosition: isRightPanelPosition(savedRightPanelPosition)

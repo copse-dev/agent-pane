@@ -1,4 +1,6 @@
 import { el, clear } from '../dom/helpers.ts'
+import { createAgentAvatar, createAgentAvatarMotion } from '../dom/agent-avatar.ts'
+import { chatAgentIdentity, customAgentId, namedAgentTitles } from './chat-agent-identity.ts'
 import { reasoningActivityIcon } from '../dom/reasoning-activity-icon.ts'
 import {
   arrowDownIcon,
@@ -2267,6 +2269,11 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   const todoHost = el('div', { class: 'conversation-todos-host' })
   const appleDevelopmentHost = createAppleDevelopmentPanel(store, api, { allowEnrollment: false })
   const list = el('div', { class: 'messages-list', role: 'log', 'aria-live': 'polite' })
+  let agentNames: ReadonlyMap<string, string> = new Map()
+  let agentNamesRequested = false
+  let agentNamesRevision = 0
+  let disposed = false
+  const avatarMotion = createAgentAvatarMotion()
   const scrollToBottomBtn = el(
     'button',
     {
@@ -3531,6 +3538,26 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   function syncModelLabels(): void {
     const thread = getActiveThread(store)
     if (!thread) return
+    if (
+      !agentNamesRequested &&
+      thread.messages.some((msg) => {
+        const model = msg.model ?? msg.requestedModel
+        return msg.role === 'assistant' && model && customAgentId(model)
+      })
+    ) {
+      agentNamesRequested = true
+      const revision = ++agentNamesRevision
+      void api.settings
+        .get('registeredAcpAgents')
+        .then((value) => {
+          if (disposed || revision !== agentNamesRevision) return
+          agentNames = namedAgentTitles(value)
+          syncModelLabels()
+        })
+        .catch((error: unknown) => {
+          console.warn('[conversation] Could not load named agent identities', error)
+        })
+    }
     const show = shouldShowPrimaryChatModelLabels(thread.messages)
     // A segment starts where the model *or* the parameters change, so dialling
     // effort up mid-thread marks the turn it took effect on.
@@ -3546,6 +3573,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       if (id !== null && !rendered.has(id)) rendered.set(id, node)
     })
     let prevLabel: string | undefined
+    let prevAgentKey: string | undefined
     for (const msg of thread.messages) {
       if (msg.role !== 'assistant') continue
       const msgEl = rendered.get(msg.id)
@@ -3553,16 +3581,63 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       const existing = msgEl.querySelector<HTMLElement>('.message-model')
       const model = msg.model
       const text = model ? formatPrimaryChatModelLabel(model, msg.parameters) : undefined
-      if (show && text && text !== prevLabel) {
+      const identity = chatAgentIdentity(thread.id, msg, agentNames)
+      let header = msgEl.querySelector<HTMLElement>('.message-agent')
+      if (identity && identity.key !== prevAgentKey) {
+        if (header?.dataset['agentKey'] !== identity.key) {
+          header?.remove()
+          header = el(
+            'div',
+            { class: 'message-agent', 'data-agent-key': identity.key },
+            createAgentAvatar(identity.key, identity.style),
+            el('span', { class: 'message-agent-name' }, identity.label),
+          )
+          msgEl.prepend(header)
+        } else {
+          const name = header.querySelector('.message-agent-name')
+          if (name) name.textContent = identity.label
+        }
+      } else {
+        header?.remove()
+        header = null
+      }
+      // The identity marker already names bare agent selections. Keep model and
+      // parameter boundaries for native replies and explicit agent model choices.
+      if (show && model && text && text !== prevLabel && (!identity || model.includes('#'))) {
         const label = existing ?? el('div', { class: 'message-model' })
-        label.textContent = text
-        if (!existing) msgEl.prepend(label)
+        label.textContent = identity
+          ? formatPrimaryChatModelLabel(model.slice(model.indexOf('#') + 1), msg.parameters)
+          : text
+        if (header) {
+          if (label.parentElement !== header) header.append(label)
+        } else if (label.parentElement !== msgEl) msgEl.prepend(label)
       } else {
         existing?.remove()
       }
       syncToolRunMemberVisibility(msgEl)
       prevLabel = text
+      prevAgentKey = identity?.key
     }
+    syncAvatarMotion()
+  }
+
+  function syncAvatarMotion(): void {
+    const thread = getActiveThread(store)
+    if (!thread || thread.status !== 'running' || !store.getState().animateAgentAvatars) {
+      avatarMotion.setActive(null)
+      return
+    }
+    // Queued follow-ups belong to a future run, not the current speaker.
+    const pending = queuedMessageIds(thread)
+    const latest = [...thread.messages].reverse().find((msg) => !pending.has(msg.id))
+    const identity =
+      latest?.role === 'assistant' ? chatAgentIdentity(thread.id, latest, agentNames) : null
+    const header = identity
+      ? [...list.querySelectorAll<HTMLElement>('.message-agent')]
+          .reverse()
+          .find((element) => element.dataset['agentKey'] === identity.key)
+      : undefined
+    avatarMotion.setActive(header?.querySelector<HTMLImageElement>('.agent-avatar') ?? null)
   }
 
   function syncTodoPanel(): void {
@@ -3812,6 +3887,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     }
     disclosureElements.clear()
     disposeInlineArtefacts(list)
+    avatarMotion.setActive(null)
     clear(list)
     backfillGeneration++
     renderedThreadId = thread?.id ?? null
@@ -3923,6 +3999,11 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   const unsubs = [
     store.on('code_block_run_finished', (result) => {
       setCodeBlockRunOutcome(list, result.id, result.exitCode)
+    }),
+    store.on('settings_changed', () => {
+      agentNamesRequested = false
+      agentNamesRevision++
+      syncModelLabels()
     }),
     store.on('message_added', (tid, mid) => {
       appendMessageEl(tid, mid)
@@ -4099,6 +4180,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         const last = getThreadById(store, tid)?.messages.at(-1)
         if (last?.role === 'assistant') renderMessageTurnRecovery(tid, last.id)
       }
+      syncAvatarMotion()
     }),
     store.on('agent_activity', (tid, label) => {
       if (tid !== store.getState().activeThreadId) return
@@ -4119,6 +4201,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   rebuildForThread()
   syncFromStore()
   return () => {
+    disposed = true
+    avatarMotion.dispose()
     // Invalidate any backfillOlderMessages step still queued via
     // requestAnimationFrame so it no-ops instead of touching a torn-down list.
     backfillGeneration++
