@@ -11,6 +11,7 @@ import {
 } from '@shared/store/thread-helpers.ts'
 import { syncAgentActivity } from '../agent-activity.ts'
 import { markQuietRun, takeQuietRun } from './quiet-runs.ts'
+import { clearReviewReportTarget, setReviewReportTarget } from './review-report-target.ts'
 import { showErrorToast } from '../views/toast.ts'
 import { errorMessage } from '@copse/std/errors.ts'
 
@@ -76,6 +77,7 @@ export function startReview(
   const anchorId =
     messageId ??
     [...(thread?.messages ?? [])].reverse().find((message) => message.role === 'assistant')?.id
+  setReviewReportTarget(store, threadId, anchorId ?? null)
   const runningReport: ThreadReviewReport = {
     status: 'running',
     startedAt: Date.now(),
@@ -100,6 +102,7 @@ export function startReview(
   syncAgentActivity(store, threadId, false)
   markQuietRun(threadId)
   void api.review.run(projectId, threadId, reviewPayload(store, threadId)).catch((err: unknown) => {
+    clearReviewReportTarget(store, threadId)
     const currentThread = store.getState().threads.find((t) => t.id === threadId)
     const report = anchorId
       ? currentThread?.messages.find((message) => message.id === anchorId)?.reviewReport

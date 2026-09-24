@@ -46,6 +46,7 @@ import { drainMessageQueue, enqueueHookMessage, foldBackContinuationUsed } from 
 import { attachDiffState } from './diff-state.ts'
 import { maybeNameThread, maybeRenameThreadBranch } from './thread-naming.ts'
 import { takeQuietRun } from './quiet-runs.ts'
+import { clearReviewReportTarget, getReviewReportTarget } from './review-report-target.ts'
 import { backgroundProjectOf, dropBackgroundThread } from './background-threads.ts'
 import type { UsageDelta } from '@shared/types'
 import type { ModelParameters } from '@copse/llm/model-parameters.ts'
@@ -575,16 +576,20 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
       }
       case 'review_report': {
         const thread = getThreadById(store, threadId)
+        const requestedAnchor = getReviewReportTarget(store, threadId)
         const anchorId =
-          [...(thread?.messages ?? [])]
-            .reverse()
-            .find((message) => message.reviewReport?.status === 'running')?.id ??
-          st.msgId ??
-          [...(thread?.messages ?? [])].reverse().find((message) => message.role === 'assistant')
-            ?.id ??
-          null
-        if (anchorId) setMessageReviewReport(store, threadId, anchorId, chunk.report)
-        else setThreadReviewReport(store, threadId, chunk.report)
+          requestedAnchor !== undefined
+            ? requestedAnchor
+            : (st.msgId ??
+              [...(thread?.messages ?? [])]
+                .reverse()
+                .find((message) => message.role === 'assistant')?.id ??
+              null)
+        if (anchorId === null) setThreadReviewReport(store, threadId, chunk.report)
+        else setMessageReviewReport(store, threadId, anchorId, chunk.report)
+        if (requestedAnchor !== undefined && chunk.report.status !== 'running') {
+          clearReviewReportTarget(store, threadId)
+        }
         if (chunk.report.status === 'running') {
           emitActivity(threadId, 'Reviewing changes…')
         }
@@ -621,6 +626,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         state.delete(threadId)
         // The turn is over; the next one resolves its own parameters (or none).
         pendingTurn.delete(threadId)
+        clearReviewReportTarget(store, threadId)
         setThreadStatus(store, threadId, 'idle')
         maybeRenameThreadBranch(store, api, threadId)
         // Not emitActivity: the state entry is gone, and recording the label on
