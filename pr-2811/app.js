@@ -23594,7 +23594,7 @@ function isPinned(thread, activeThreadId) {
   return (thread.pendingMessages?.length ?? 0) > 0;
 }
 function attachThreadHydration(store2, api2) {
-  const inFlight3 = /* @__PURE__ */ new Map();
+  const inFlight4 = /* @__PURE__ */ new Map();
   let recency = [];
   const touch = (threadId) => {
     recency = [...recency.filter((id) => id !== threadId), threadId];
@@ -23618,7 +23618,7 @@ function attachThreadHydration(store2, api2) {
   };
   const fetchInto = (projectId, threadId) => {
     const key = `${projectId}:${threadId}`;
-    const existing = inFlight3.get(key);
+    const existing = inFlight4.get(key);
     if (existing) return existing;
     failedThreadIds.delete(threadId);
     const endHydrate = begin("thread:hydrate");
@@ -23652,9 +23652,9 @@ function attachThreadHydration(store2, api2) {
       failedThreadIds.add(threadId);
       store2.emit("threads_changed");
     }).finally(() => {
-      inFlight3.delete(key);
+      inFlight4.delete(key);
     });
-    inFlight3.set(key, request);
+    inFlight4.set(key, request);
     return request;
   };
   activeHydrator = {
@@ -23706,7 +23706,7 @@ function attachThreadHydration(store2, api2) {
     offPrRefs();
     activeHydrator = null;
     recency = [];
-    inFlight3.clear();
+    inFlight4.clear();
     failedThreadIds.clear();
   };
 }
@@ -28793,7 +28793,12 @@ function createDemoApi(scenario, options = {}) {
         failed: []
       })
     },
+    processManager: {
+      snapshot: () => resolved({ sampledAt: Date.now(), processes: [], activeRunThreadIds: [] }),
+      stopBackground: () => resolved(false)
+    },
     menu: {
+      onProcessManager: subscribe,
       onSettings: subscribe,
       onNewThread: subscribe,
       onTogglePanel: subscribe,
@@ -70931,6 +70936,230 @@ var init_file_links = __esm({
   }
 });
 
+// src/renderer/markdown/pr-title-cache.ts
+function cachedPrTitle(ref) {
+  return titles.get(githubPrKey(ref));
+}
+function rememberPrTitle(ref, title, isDraft) {
+  const trimmed2 = title.trim();
+  if (!trimmed2 || trimmed2 === `PR #${String(ref.number)}`) return;
+  const key = githubPrKey(ref);
+  const previous = titles.get(key);
+  titles.delete(key);
+  titles.set(key, {
+    title: trimmed2,
+    ...isDraft !== void 0 ? { isDraft } : previous?.isDraft !== void 0 ? { isDraft: previous.isDraft } : {}
+  });
+  if (titles.size > MAX_TITLES) {
+    const oldest = titles.keys().next().value;
+    if (oldest !== void 0) titles.delete(oldest);
+  }
+}
+function loadPrTitle(ref, gh) {
+  const cached2 = cachedPrTitle(ref);
+  if (cached2) return Promise.resolve(cached2);
+  const key = githubPrKey(ref);
+  const pending = inFlight3.get(key);
+  if (pending) return pending;
+  const request = gh.prDetails(ref.owner, ref.repo, ref.number).then((details) => {
+    if (!details) return null;
+    rememberPrTitle(ref, details.title, details.isDraft);
+    return cachedPrTitle(ref) ?? null;
+  }).finally(() => {
+    inFlight3.delete(key);
+  });
+  inFlight3.set(key, request);
+  return request;
+}
+var MAX_TITLES, titles, inFlight3;
+var init_pr_title_cache = __esm({
+  "src/renderer/markdown/pr-title-cache.ts"() {
+    init_github_pr_url2();
+    MAX_TITLES = 128;
+    titles = /* @__PURE__ */ new Map();
+    inFlight3 = /* @__PURE__ */ new Map();
+  }
+});
+
+// src/renderer/markdown/pr-link-preview.ts
+function linkedPr(root, target) {
+  if (!(target instanceof Element)) return null;
+  const link = target.closest("a[href]");
+  if (!link || !root.contains(link)) return null;
+  if (link.dataset["workspaceLink"] || link.dataset["fileReferencePath"]) return null;
+  const ref = parseGithubPrUrl(link.href);
+  return ref ? { link, ref } : null;
+}
+function bindPrLinkPreviews(root, gh) {
+  if (!gh) return () => {
+  };
+  const github = gh;
+  let activeLink = null;
+  let suppressedLink = null;
+  let preview = null;
+  let hoverTimer = null;
+  let requestGen = 0;
+  let disposed = false;
+  const previewId = `pr-link-preview-${String(++nextPreviewId)}`;
+  function ensurePreview() {
+    if (preview) return preview;
+    const node2 = document.createElement("div");
+    node2.id = previewId;
+    node2.className = "pr-link-preview";
+    node2.setAttribute("role", "tooltip");
+    node2.hidden = true;
+    document.body.append(node2);
+    preview = node2;
+    return node2;
+  }
+  function position2() {
+    if (!activeLink || !preview || preview.hidden) return;
+    const anchor2 = activeLink.getBoundingClientRect();
+    const tip = preview.getBoundingClientRect();
+    const placed = computeTooltipPosition({
+      anchor: { left: anchor2.left, top: anchor2.top, width: anchor2.width, height: anchor2.height },
+      tip: { width: tip.width, height: tip.height },
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+      preferred: "bottom",
+      gap: 9,
+      pad: 12
+    });
+    preview.style.left = `${String(Math.round(placed.left))}px`;
+    preview.style.top = `${String(Math.round(placed.top))}px`;
+  }
+  function describedBy(link, add2) {
+    const values = (link.getAttribute("aria-describedby") ?? "").split(/\s+/).filter(Boolean);
+    const next = values.filter((value) => value !== previewId);
+    if (add2) next.push(previewId);
+    if (next.length) link.setAttribute("aria-describedby", next.join(" "));
+    else link.removeAttribute("aria-describedby");
+  }
+  function hide3() {
+    if (hoverTimer) {
+      clearTimeout(hoverTimer);
+      hoverTimer = null;
+    }
+    requestGen++;
+    if (activeLink) describedBy(activeLink, false);
+    activeLink = null;
+    if (preview) preview.hidden = true;
+  }
+  function show2(ref, data) {
+    if (!activeLink) return;
+    const node2 = ensurePreview();
+    node2.replaceChildren();
+    const meta3 = document.createElement("div");
+    meta3.className = "pr-link-preview-meta";
+    meta3.textContent = `Pull request #${String(ref.number)}`;
+    if (data?.isDraft) {
+      const badge = document.createElement("span");
+      badge.className = "pr-link-preview-draft";
+      badge.textContent = "Draft";
+      meta3.append(badge);
+    }
+    const title = document.createElement("div");
+    title.className = "pr-link-preview-title";
+    title.textContent = data?.title ?? "Loading title\u2026";
+    if (!data) title.classList.add("is-loading");
+    const repo = document.createElement("div");
+    repo.className = "pr-link-preview-repo";
+    repo.textContent = `${ref.owner} / ${ref.repo}`;
+    node2.append(meta3, title, repo);
+    node2.hidden = false;
+    describedBy(activeLink, true);
+    position2();
+  }
+  function activate2(link, ref, immediate) {
+    if (activeLink === link) return;
+    hide3();
+    activeLink = link;
+    const cached2 = cachedPrTitle(ref);
+    if (cached2) {
+      show2(ref, cached2);
+      return;
+    }
+    const gen = requestGen;
+    const load = () => {
+      hoverTimer = null;
+      if (disposed || activeLink !== link || gen !== requestGen) return;
+      show2(ref, null);
+      void loadPrTitle(ref, github).then((title) => {
+        if (disposed || activeLink !== link || gen !== requestGen) return;
+        if (title) show2(ref, title);
+        else hide3();
+      }).catch(() => {
+        if (activeLink === link && gen === requestGen) hide3();
+      });
+    };
+    if (immediate) load();
+    else hoverTimer = setTimeout(load, HOVER_DELAY_MS);
+  }
+  const onPointerOver = (event) => {
+    if (event.pointerType === "touch") return;
+    const found = linkedPr(root, event.target);
+    if (found && found.link !== suppressedLink) activate2(found.link, found.ref, false);
+  };
+  const onPointerOut = (event) => {
+    const target = event.target;
+    const next = event.relatedTarget;
+    if (!(target instanceof Node) || !activeLink || !activeLink.contains(target)) return;
+    if (next instanceof Node && activeLink.contains(next)) return;
+    hide3();
+  };
+  const onPointerMove = (event) => {
+    if (suppressedLink && !(event.target instanceof Node && suppressedLink.contains(event.target))) {
+      suppressedLink = null;
+    }
+  };
+  const onFocusIn = (event) => {
+    const found = linkedPr(root, event.target);
+    if (found && found.link !== suppressedLink) activate2(found.link, found.ref, true);
+  };
+  const onFocusOut = (event) => {
+    if (activeLink === event.target) hide3();
+  };
+  const onPointerDown = (event) => {
+    suppressedLink = linkedPr(root, event.target)?.link ?? null;
+    hide3();
+  };
+  const onKeyDown = (event) => {
+    if (event.key === "Escape") hide3();
+  };
+  root.addEventListener("pointerover", onPointerOver);
+  root.addEventListener("pointerout", onPointerOut);
+  root.addEventListener("focusin", onFocusIn);
+  root.addEventListener("focusout", onFocusOut);
+  document.addEventListener("pointerdown", onPointerDown, true);
+  document.addEventListener("pointermove", onPointerMove, true);
+  document.addEventListener("keydown", onKeyDown, true);
+  document.addEventListener("scroll", hide3, true);
+  window.addEventListener("resize", position2);
+  return () => {
+    disposed = true;
+    hide3();
+    root.removeEventListener("pointerover", onPointerOver);
+    root.removeEventListener("pointerout", onPointerOut);
+    root.removeEventListener("focusin", onFocusIn);
+    root.removeEventListener("focusout", onFocusOut);
+    document.removeEventListener("pointerdown", onPointerDown, true);
+    document.removeEventListener("pointermove", onPointerMove, true);
+    document.removeEventListener("keydown", onKeyDown, true);
+    document.removeEventListener("scroll", hide3, true);
+    window.removeEventListener("resize", position2);
+    preview?.remove();
+  };
+}
+var HOVER_DELAY_MS, nextPreviewId;
+var init_pr_link_preview = __esm({
+  "src/renderer/markdown/pr-link-preview.ts"() {
+    init_github_pr_url2();
+    init_tooltip();
+    init_pr_title_cache();
+    HOVER_DELAY_MS = 220;
+    nextPreviewId = 0;
+  }
+});
+
 // src/renderer/markdown/browser-links.ts
 function linkHttpHref(link) {
   const href = link.href;
@@ -70991,15 +71220,21 @@ function bindBrowserLinkClicks(root, store2, api2) {
     }
     openPlainLink(href);
   };
+  const unbindPreviews = bindPrLinkPreviews(
+    root,
+    api2?.gh?.prDetails ? { prDetails: api2.gh.prDetails } : void 0
+  );
   root.addEventListener("click", onClick);
   return () => {
     root.removeEventListener("click", onClick);
+    unbindPreviews();
   };
 }
 var init_browser_links = __esm({
   "src/renderer/markdown/browser-links.ts"() {
     init_panels();
     init_github_pr_url2();
+    init_pr_link_preview();
   }
 });
 
@@ -90435,8 +90670,8 @@ function startBlocker(state) {
   return null;
 }
 function agentModelsNote() {
-  const titles = containerAcpAgentTitles();
-  const named = titles.length > 1 ? `${titles.slice(0, -1).join(", ")} and ${titles[titles.length - 1] ?? ""}` : titles[0] ?? "";
+  const titles2 = containerAcpAgentTitles();
+  const named = titles2.length > 1 ? `${titles2.slice(0, -1).join(", ")} and ${titles2[titles2.length - 1] ?? ""}` : titles2[0] ?? "";
   return `Agent models run as their own process. ${named} can run unattended with an API key from Settings, scoped to the run. Codex and Gemini CLI can also run on your desktop sign-in if you opt in per run; an agent that only signs in through a browser cannot.`;
 }
 function mountContainerRunControl(api2, context, onStateChanged) {
@@ -103358,10 +103593,13 @@ function mountTerminalsPane(listRoot, viewerRoot, store2, api2) {
     const tab = [...tabs.values()].find((t2) => t2.sessionId === id);
     if (!tab) return;
     tab.sessionId = null;
-    tab.term.writeln(`\r
-\x1B[90m[Process exited with code ${String(code)}]\x1B[0m`, () => {
-      finishCodeBlockRun(tab, code);
-    });
+    tab.term.writeln(
+      code === -1 ? "\r\n\x1B[90m[Terminal stopped]\x1B[0m" : `\r
+\x1B[90m[Process exited with code ${String(code)}]\x1B[0m`,
+      () => {
+        finishCodeBlockRun(tab, code);
+      }
+    );
   });
   function createXterm() {
     const term = new Dl({
@@ -105866,7 +106104,6 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
   let otherLoading = false;
   const checksCache = /* @__PURE__ */ new Map();
   const checksInFlight = /* @__PURE__ */ new Set();
-  const titlesCache = /* @__PURE__ */ new Map();
   const titleInFlight = /* @__PURE__ */ new Set();
   const titleAttempted = /* @__PURE__ */ new Set();
   let ciEls = /* @__PURE__ */ new Map();
@@ -105993,27 +106230,22 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     if (!ghStatus?.authenticated) return;
     for (const pr2 of prs) {
       const key = githubPrKey(pr2);
-      const cached2 = titlesCache.get(key);
+      const cached2 = cachedPrTitle(pr2);
       if (cached2) {
-        if (pr2.title !== cached2) pr2.title = cached2;
+        if (pr2.title !== cached2.title) pr2.title = cached2.title;
         continue;
       }
       if (!isPlaceholderPr(pr2)) {
-        if (pr2.title && pr2.title !== placeholderPrTitle(pr2.number)) {
-          titlesCache.set(key, pr2.title);
-        }
+        rememberPrTitle(pr2, pr2.title);
         continue;
       }
       if (titleAttempted.has(key) || titleInFlight.has(key)) continue;
       titleAttempted.add(key);
       titleInFlight.add(key);
       const gen = titleGen;
-      void api2.gh.prDetails(pr2.owner, pr2.repo, pr2.number).then((details) => {
-        if (disposed || gen !== titleGen) return;
-        const title = details?.title.trim();
-        if (!title || title === placeholderPrTitle(pr2.number)) return;
-        titlesCache.set(key, title);
-        pr2.title = title;
+      void loadPrTitle(pr2, api2.gh).then((title) => {
+        if (disposed || gen !== titleGen || !title) return;
+        pr2.title = title.title;
         scheduleTitleRepaint();
       }).catch(() => {
       }).finally(() => {
@@ -106546,7 +106778,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       prDetails = details;
       if (details?.title && details.title !== placeholderPrTitle(details.number)) {
         const key = githubPrKey(details);
-        titlesCache.set(key, details.title);
+        rememberPrTitle(details, details.title, details.isDraft);
         const row2 = prList.find((pr2) => githubPrKey(pr2) === key);
         if (row2 && row2.title !== details.title) {
           row2.title = details.title;
@@ -106808,6 +107040,7 @@ var init_pr_pane = __esm({
     init_prompt_attachments();
     init_dist();
     init_browser_links();
+    init_pr_title_cache();
     init_workspace_links();
     init_git_diff_viewer();
     init_ui_scale();
@@ -128747,20 +128980,20 @@ function threadLabel(title) {
 function workingThreadTitles(store2) {
   return store2.getState().threads.filter((thread) => thread.status === "running").map((thread) => threadLabel(thread.title));
 }
-function summariseWorkingThreads(titles) {
-  const listed = titles.slice(0, MAX_LISTED_TITLES);
-  const remaining = titles.length - listed.length;
+function summariseWorkingThreads(titles2) {
+  const listed = titles2.slice(0, MAX_LISTED_TITLES);
+  const remaining = titles2.length - listed.length;
   if (remaining > 0) return `${listed.join(", ")} and ${String(remaining)} more`;
   if (listed.length < 2) return listed.join("");
   return `${listed.slice(0, -1).join(", ")} and ${listed[listed.length - 1] ?? ""}`;
 }
 async function confirmClose(store2) {
-  const titles = workingThreadTitles(store2);
-  if (titles.length === 0) return true;
-  const one = titles.length === 1;
+  const titles2 = workingThreadTitles(store2);
+  if (titles2.length === 0) return true;
+  const one = titles2.length === 1;
   return await showConfirmDialog({
-    message: one ? "Close Copse while the agent is still working?" : `Close Copse while ${String(titles.length)} threads are still working?`,
-    detail: `${summariseWorkingThreads(titles)} ${one ? "is" : "are"} mid-turn. Closing stops the run \u2014 anything the agent has not already written to your files is lost.`,
+    message: one ? "Close Copse while the agent is still working?" : `Close Copse while ${String(titles2.length)} threads are still working?`,
+    detail: `${summariseWorkingThreads(titles2)} ${one ? "is" : "are"} mid-turn. Closing stops the run \u2014 anything the agent has not already written to your files is lost.`,
     confirmLabel: "Close anyway",
     cancelLabel: one ? "Keep working" : "Keep them working",
     danger: true
@@ -129619,6 +129852,330 @@ var init_command_palette = __esm({
     PROJECT_LIMIT = 25;
     dialogEl6 = null;
     openImpl3 = null;
+  }
+});
+
+// src/renderer/views/process-manager-dialog.ts
+function sortedRows(rows, column, ascending) {
+  const direction = ascending ? 1 : -1;
+  return [...rows].sort((left, right) => {
+    const a3 = column === "cpu" ? left.cpuPercent : left.memoryMiB;
+    const b4 = column === "cpu" ? right.cpuPercent : right.memoryMiB;
+    if (a3 === null) return b4 === null ? left.pid - right.pid : 1;
+    if (b4 === null) return -1;
+    return (a3 - b4) * direction || left.pid - right.pid;
+  });
+}
+function mountProcessManagerDialog(api2, store2) {
+  const { dialog: dialog2, open: open2, close } = createOverlayDialog({
+    id: "process-manager-dialog",
+    className: "process-manager-overlay"
+  });
+  dialog2.setAttribute("aria-labelledby", "process-manager-title");
+  const closeButton = el(
+    "button",
+    {
+      type: "button",
+      class: "ui-btn ui-btn-ghost process-manager-close",
+      "aria-label": "Close process manager"
+    },
+    closeIcon()
+  );
+  closeButton.addEventListener("click", close);
+  const cpuHeading = el("th", { scope: "col", "aria-sort": "descending" });
+  const memoryHeading = el("th", { scope: "col", "aria-sort": "none" });
+  const cpuButton = el("button", { type: "button", class: "process-manager-sort" }, "CPU %");
+  const memoryButton = el("button", { type: "button", class: "process-manager-sort" }, "Memory");
+  cpuHeading.append(cpuButton);
+  memoryHeading.append(memoryButton);
+  const body = el("tbody", { class: "process-manager-rows" });
+  const table = el(
+    "table",
+    { class: "process-manager-table" },
+    el(
+      "thead",
+      {},
+      el(
+        "tr",
+        {},
+        el("th", { scope: "col" }, "Process"),
+        el("th", { scope: "col" }, "Kind"),
+        el("th", { scope: "col" }, "Thread"),
+        cpuHeading,
+        memoryHeading,
+        el("th", { scope: "col" }, "PID"),
+        el("th", { scope: "col", "aria-label": "Actions" })
+      )
+    ),
+    body
+  );
+  const activityCount = el("span", { class: "process-manager-activity-count" });
+  const activityList = el("div", { class: "process-manager-activity-list" });
+  const activity = el(
+    "section",
+    { class: "process-manager-activity", "aria-label": "Agent activity" },
+    el(
+      "div",
+      { class: "process-manager-activity-heading" },
+      el("strong", {}, "Agent activity"),
+      activityCount
+    ),
+    activityList
+  );
+  activity.hidden = true;
+  const status = el("p", { class: "process-manager-status", role: "status" }, "Loading processes\u2026");
+  const updated = el("span", { class: "process-manager-updated", "aria-hidden": "true" });
+  dialog2.append(
+    el(
+      "div",
+      { class: "process-manager-shell" },
+      el(
+        "header",
+        { class: "process-manager-header" },
+        el(
+          "div",
+          {},
+          el("h2", { id: "process-manager-title" }, "Process Manager"),
+          el("p", { class: "process-manager-subtitle" }, "Live Copse and thread processes")
+        ),
+        closeButton
+      ),
+      activity,
+      el("div", { class: "process-manager-scroll" }, table),
+      el(
+        "footer",
+        { class: "process-manager-footer" },
+        el("span", {}, "CPU is approximate; memory is physical RAM in MiB."),
+        updated
+      ),
+      status
+    )
+  );
+  let current = null;
+  let column = "cpu";
+  let ascending = false;
+  let timer = null;
+  let generation = 0;
+  let refreshing = false;
+  function projectFor(row2) {
+    if (!row2.threadId) return null;
+    const state = store2.getState();
+    return row2.projectId ?? state.backgroundThreads.find((item) => item.thread.id === row2.threadId)?.projectId ?? (state.threads.some((thread) => thread.id === row2.threadId) ? state.activeProjectId : null);
+  }
+  async function stopManaged(row2) {
+    const handle = row2.managed;
+    if (!handle) return;
+    const label = handle.kind === "terminal" ? "terminal" : "background task";
+    const confirmed = await showConfirmDialog({
+      message: `Stop this ${label}?`,
+      detail: handle.kind === "terminal" ? "This closes the terminal session and stops its shell." : "This stops the background task and its managed subprocesses.",
+      confirmLabel: "Stop",
+      danger: true
+    });
+    if (!confirmed) return;
+    try {
+      if (handle.kind === "terminal") {
+        await api2.terminal.destroy(handle.id);
+      } else {
+        const stopped = await api2.processManager.stopBackground(
+          handle.id,
+          handle.projectId,
+          handle.threadId
+        );
+        if (!stopped) {
+          showErrorToast("Could not stop that task", "It is no longer running.");
+          return;
+        }
+      }
+      status.textContent = `Stopped ${label}.`;
+      void refresh();
+    } catch (error62) {
+      showErrorToast(`Could not stop the ${label}`, error62);
+    }
+  }
+  function menuEntries(row2) {
+    const entries2 = [];
+    const projectId = projectFor(row2);
+    if (row2.threadId && projectId && store2.getState().projects.some((p2) => p2.id === projectId)) {
+      const threadId = row2.threadId;
+      entries2.push({
+        label: "Jump to thread",
+        onSelect: () => {
+          close();
+          switchProjectThread(store2, api2, projectId, threadId);
+        }
+      });
+    }
+    if (row2.threadId && getThreadById(store2, row2.threadId)?.status === "running") {
+      const threadId = row2.threadId;
+      entries2.push({
+        label: "Stop agent run",
+        onSelect: () => {
+          void api2.agent.abort(threadId).catch((error62) => {
+            showErrorToast("Could not stop the agent run", error62);
+          });
+        }
+      });
+    }
+    if (row2.managed) {
+      entries2.push({
+        label: row2.managed.kind === "terminal" ? "Stop terminal" : "Stop background task",
+        onSelect: () => {
+          void stopManaged(row2);
+        }
+      });
+    }
+    return entries2;
+  }
+  function render(snapshot) {
+    cpuHeading.setAttribute(
+      "aria-sort",
+      column === "cpu" ? ascending ? "ascending" : "descending" : "none"
+    );
+    memoryHeading.setAttribute(
+      "aria-sort",
+      column === "memory" ? ascending ? "ascending" : "descending" : "none"
+    );
+    clear(body);
+    clear(activityList);
+    activity.hidden = snapshot.activeRunThreadIds.length === 0;
+    activityCount.textContent = `${String(snapshot.activeRunThreadIds.length)} working`;
+    for (const threadId of snapshot.activeRunThreadIds) {
+      const title = getThreadById(store2, threadId)?.title.trim();
+      const label = title && title.length > 0 ? title : `Thread ${threadId.slice(0, 8)}`;
+      activityList.append(
+        el(
+          "span",
+          { class: "process-manager-activity-item", "data-thread-id": threadId },
+          el("span", { class: "process-manager-activity-dot", "aria-hidden": "true" }),
+          el("span", { class: "process-manager-activity-state" }, "Working"),
+          el("span", { class: "process-manager-activity-thread", title: label }, label)
+        )
+      );
+    }
+    const state = store2.getState();
+    for (const row2 of sortedRows(snapshot.processes, column, ascending)) {
+      const thread = getThreadById(store2, row2.threadId);
+      const title = thread?.title.trim();
+      const threadLabel2 = row2.threadId ? title && title.length > 0 ? title : `Thread ${row2.threadId.slice(0, 8)}` : "Shared";
+      const entries2 = menuEntries(row2);
+      const actionsCell = el("td", { class: "process-manager-actions" });
+      if (entries2.length > 0) {
+        const actionsButton = el(
+          "button",
+          {
+            type: "button",
+            class: "ui-btn ui-btn-ghost process-manager-actions-button",
+            "aria-label": `Actions for ${row2.label} (${String(row2.pid)})`
+          },
+          moreHorizontalIcon("ui-icon ui-icon-sm")
+        );
+        actionsButton.addEventListener("click", () => {
+          const rect = actionsButton.getBoundingClientRect();
+          showContextMenu(rect.right, rect.bottom, menuEntries(row2), dialog2);
+        });
+        actionsCell.append(actionsButton);
+      }
+      const tableRow = el(
+        "tr",
+        {
+          "data-pid": String(row2.pid),
+          "data-kind": row2.type,
+          "data-thread-id": row2.threadId ?? "",
+          "data-active-thread": String(
+            row2.threadId !== null && row2.threadId === state.activeThreadId
+          )
+        },
+        el("td", { class: "process-manager-name", title: row2.label }, row2.label),
+        el("td", { class: "process-manager-type" }, row2.type),
+        el("td", { class: "process-manager-thread", title: threadLabel2 }, threadLabel2),
+        el(
+          "td",
+          { class: "process-manager-number" },
+          row2.cpuPercent === null ? "\u2014" : `${row2.cpuPercent.toFixed(1)}%`
+        ),
+        el(
+          "td",
+          { class: "process-manager-number" },
+          row2.memoryMiB === null ? "\u2014" : `${row2.memoryMiB.toFixed(1)} MiB`
+        ),
+        el("td", { class: "process-manager-number process-manager-pid" }, String(row2.pid)),
+        actionsCell
+      );
+      if (entries2.length > 0) {
+        tableRow.addEventListener("contextmenu", (event) => {
+          event.preventDefault();
+          showContextMenu(event.clientX, event.clientY, menuEntries(row2), dialog2);
+        });
+      }
+      body.append(tableRow);
+    }
+    updated.textContent = `Updated ${new Date(snapshot.sampledAt).toLocaleTimeString()}`;
+    dialog2.dataset["sampledAt"] = String(snapshot.sampledAt);
+    status.textContent = snapshot.processes.length === 0 ? "No processes found." : "";
+  }
+  function isRequestCurrent(requestGeneration) {
+    return dialog2.open && requestGeneration === generation;
+  }
+  async function refresh() {
+    if (!dialog2.open || refreshing || document.visibilityState === "hidden") return;
+    refreshing = true;
+    const requestGeneration = generation;
+    try {
+      const snapshot = await api2.processManager.snapshot();
+      if (isRequestCurrent(requestGeneration)) {
+        current = snapshot;
+        render(snapshot);
+      }
+    } catch {
+      if (isRequestCurrent(requestGeneration))
+        status.textContent = "Process metrics are unavailable.";
+    } finally {
+      refreshing = false;
+    }
+  }
+  function setSort(next) {
+    ascending = column === next ? !ascending : false;
+    column = next;
+    if (current) render(current);
+  }
+  cpuButton.addEventListener("click", () => {
+    setSort("cpu");
+  });
+  memoryButton.addEventListener("click", () => {
+    setSort("memory");
+  });
+  function onVisibilityChange() {
+    if (document.visibilityState === "visible") void refresh();
+  }
+  document.addEventListener("visibilitychange", onVisibilityChange);
+  dialog2.addEventListener("close", () => {
+    generation++;
+    if (timer !== null) clearInterval(timer);
+    timer = null;
+    refreshing = false;
+  });
+  return () => {
+    if (dialog2.open) return;
+    current = null;
+    clear(body);
+    status.textContent = "Loading processes\u2026";
+    updated.textContent = "";
+    open2();
+    void refresh();
+    timer = setInterval(() => void refresh(), 1e3);
+  };
+}
+var init_process_manager_dialog = __esm({
+  "src/renderer/views/process-manager-dialog.ts"() {
+    init_helpers();
+    init_icons();
+    init_context_menu();
+    init_projects();
+    init_thread_helpers();
+    init_confirm_dialog();
+    init_toast();
+    init_dialog_shell();
   }
 });
 
@@ -140455,6 +141012,7 @@ async function boot() {
   mountFileSearchDialog(store, api);
   mountCommandPalette(store, api);
   mountKeyboardShortcutsDialog();
+  openProcessManager = mountProcessManagerDialog(api, store);
   mountSshStatusBanner(store, api);
   mark("renderer:dialogs-mounted");
   const startupSettings = await loadStartupSettings(api.settings);
@@ -140523,6 +141081,7 @@ async function boot() {
   attachThreadHydration(store, api);
   if (!popoutMode) attachImportedCursorAgentRefresh(store, api);
   mountTitlebar(requireElement("titlebar"), store, api);
+  api.menu.onProcessManager(() => openProcessManager?.());
   api.menu.onSettings(() => {
     if (!isSettingsDialogOpen()) openSettingsDialog();
   });
@@ -140729,7 +141288,11 @@ function registerKeyboardShortcuts() {
       e3.preventDefault();
       openNewThread(store);
     }
-    if (meta3 && e3.key === "p") {
+    if (meta3 && e3.shiftKey && e3.key.toLowerCase() === "p") {
+      e3.preventDefault();
+      openProcessManager?.();
+    }
+    if (meta3 && !e3.shiftKey && e3.key.toLowerCase() === "p") {
       e3.preventDefault();
       if (store.getState().workspaceRoot) openFileSearchDialog();
     }
@@ -140825,7 +141388,7 @@ function switchToNextThread() {
   const next = nextThreadId(store);
   if (next) switchThread(store, next);
 }
-var sanitizerReady, highlighterReady, store, api, POPOUT_MODES, isPopoutMode, popoutMode, layoutMounted, unmountPopoutTitlebar, handleStopShortcut;
+var sanitizerReady, highlighterReady, store, api, POPOUT_MODES, isPopoutMode, popoutMode, layoutMounted, unmountPopoutTitlebar, handleStopShortcut, openProcessManager;
 var init_main = __esm({
   async "src/renderer/main.ts"() {
     init_tokens();
@@ -140872,6 +141435,7 @@ var init_main = __esm({
     init_command_palette();
     init_conversation_search();
     init_keyboard_shortcuts_dialog();
+    init_process_manager_dialog();
     init_agent();
     init_diff_state();
     init_automations2();
@@ -140937,6 +141501,7 @@ var init_main = __esm({
     layoutMounted = false;
     unmountPopoutTitlebar = null;
     handleStopShortcut = null;
+    openProcessManager = null;
     if (popoutMode) {
       api.panes.onSwitchMode((mode) => {
         if (!isPopoutMode(mode)) return;
