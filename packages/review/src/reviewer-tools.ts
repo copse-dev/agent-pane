@@ -129,7 +129,8 @@ function candidateFindingParameters(): Record<string, unknown> {
         type: 'array',
         items: { type: 'string' },
         maxItems: 4,
-        description: 'Ids of run_command calls whose output demonstrates the defect',
+        description:
+          'Copy commandCallId from each run_command result whose output demonstrates the defect; do not use the tool name',
       },
     },
     required: ['path', 'startLine', 'class', 'severity', 'confidence', 'claim', 'reason'],
@@ -267,7 +268,7 @@ export function reviewerTools(): LLMTool[] {
     {
       name: 'run_command',
       description:
-        'Run a program in an isolated copy of the change (no shell: pass argv as an actual array, not a quoted JSON string). Prefer a focused test selector or small probe that settles one question; Stage 0 already ran the aggregate project checks. Output is capped.',
+        'Run a program in an isolated copy of the change (no shell: pass argv as an actual array, not a quoted JSON string). Prefer a focused test selector or small probe that settles one question; Stage 0 already ran the aggregate project checks. Output is capped. The result includes commandCallId to copy into a finding’s commandCallIds evidence references.',
       parameters: {
         type: 'object',
         properties: {
@@ -624,7 +625,9 @@ export function createReviewerToolExecutor(host: ReviewerToolHost): ReviewerTool
         const scrubbed = { ...result, output: host.scrub(result.output) }
         commandRuns.set(toolCallId, scrubbed)
         const status = scrubbed.timedOut ? 'timed out' : `exit ${String(scrubbed.exitCode)}`
-        return `${status} (${String(scrubbed.durationMs)} ms)\n${wrapExternalContent('run_command', cap(scrubbed.output))}`
+        // API-generated call ids may only exist in transport metadata. Expose
+        // the recorded id explicitly so the model can cite this evidence.
+        return `${status} (${String(scrubbed.durationMs)} ms)\ncommandCallId: ${JSON.stringify(toolCallId)}\n${wrapExternalContent('run_command', cap(scrubbed.output))}`
       }
       case 'record_suspicion': {
         const input = suspicionSchema.parse(args)

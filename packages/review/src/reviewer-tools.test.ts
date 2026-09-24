@@ -291,7 +291,7 @@ describe('reviewer tools', () => {
     )
     assert.match(
       result,
-      /^exit 3 \(\d+ ms\)\n<external_content source="run_command">\n\[SCRUBBED\] hello/,
+      /^exit 3 \(\d+ ms\)\ncommandCallId: "call-9"\n<external_content source="run_command">\n\[SCRUBBED\] hello/,
     )
     assert.equal(executor.commandRuns().get('call-9')?.exitCode, 3)
     assert.equal(executor.commandRuns().get('call-9')?.output.trim(), '[SCRUBBED] hello')
@@ -335,6 +335,44 @@ describe('reviewer tools', () => {
     const noCell = createReviewerToolExecutor({ ...host, cell: null })
     assert.match(await noCell.execute('run_command', { argv: ['true'] }, signal, 't2'), /denied/)
     assert.equal(denied.commandRuns().size, 0)
+  })
+
+  it('lets the reviewer copy a command evidence id from the result into a finding', async () => {
+    const executor = createReviewerToolExecutor(host)
+    const output = await executor.execute(
+      'run_command',
+      { argv: [process.execPath, 'probe.cjs', 'evidence'] },
+      signal,
+      'call_provider_generated_47',
+    )
+    const evidenceId = /^commandCallId: "([^"]+)"$/m.exec(output)?.[1]
+    assert.ok(evidenceId, 'opaque transport ids must be available in the model-visible result')
+    const finding = {
+      path: 'src/a.ts',
+      startLine: 2,
+      class: 'security',
+      severity: 'high',
+      confidence: 'medium',
+      claim: 'A secret is hard-coded in the module.',
+      reason: 'The focused probe demonstrates the changed behavior.',
+      commandCallIds: [evidenceId],
+    }
+    assert.equal(
+      await executor.execute('report_finding', finding, signal, 'finding-1'),
+      'Recorded finding 1 at src/a.ts:2.',
+    )
+    assert.equal(executor.reported()[0]?.candidate.commandCallIds?.[0], evidenceId)
+    assert.equal(executor.commandRuns().get(evidenceId)?.output.trim(), '[SCRUBBED] evidence')
+    assert.match(
+      await executor.execute(
+        'report_finding',
+        { ...finding, commandCallIds: ['run_command'] },
+        signal,
+        'finding-2',
+      ),
+      /^Error: No run_command call with id run_command/,
+    )
+    assert.equal(executor.reported().length, 1)
   })
 
   it('records a well-formed finding with its anchored source and rejects a bad one', async () => {
