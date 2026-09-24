@@ -2753,8 +2753,7 @@ export function seedAcpUnfinishedTurnFixture(workspaceRoot: string): void {
                 attempted: true,
                 recovered: false,
               },
-              // Send-now queues the human bubble before cancellation settles.
-              endedAt: now + 4,
+              endedAt: now + 2,
             },
             toolCalls: [],
             createdAt: now + 2,
@@ -2839,7 +2838,8 @@ export function seedAcpPromptInterruptedFixture(workspaceRoot: string): void {
               executor: 'acp',
               provider: 'codex-acp',
               model: 'acp:codex-acp#gpt-5.6-sol',
-              endedAt: now + 2,
+              // Send-now queues the human bubble before cancellation settles.
+              endedAt: now + 4,
             },
             createdAt: now + 2,
           },
