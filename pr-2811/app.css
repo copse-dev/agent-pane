@@ -4389,10 +4389,17 @@ span.acp-resource-title {
 .message-text .code-block-shell {
   position: relative;
 }
-.code-block-copy {
+.code-block-actions {
   position: absolute;
   top: var(--spacing-xs);
   right: var(--spacing-xs);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  z-index: 1;
+}
+.code-block-copy,
+.code-block-run {
   opacity: 0;
   font-size: 11px;
   color: var(--text-muted);
@@ -4401,15 +4408,29 @@ span.acp-resource-title {
   border-radius: var(--radius);
   padding: 2px 8px;
   transition: opacity 0.1s;
-  z-index: 1;
 }
-.message-text .code-block-shell:hover .code-block-copy,
-.message-text .code-block-shell:focus-within .code-block-copy {
+.code-block-run {
+  display: inline-grid;
+  min-width: 24px;
+  min-height: 22px;
+  place-items: center;
+  padding: 2px 5px;
+}
+.code-block-run.is-running .ui-icon {
+  animation: ui-inline-status-spin 0.9s linear infinite;
+}
+.message-text .code-block-shell:hover .code-block-actions > button,
+.message-text .code-block-shell:focus-within .code-block-actions > button {
   opacity: 1;
 }
-.message-text:has(.code-block-shell:hover) .code-block-shell:not(:hover):not(:focus-within) .code-block-copy,
-.message-text:has(.code-block-shell:focus-within) .code-block-shell:not(:focus-within):not(:hover) .code-block-copy {
+.message-text:has(.code-block-shell:hover) .code-block-shell:not(:hover):not(:focus-within) .code-block-actions > button,
+.message-text:has(.code-block-shell:focus-within) .code-block-shell:not(:focus-within):not(:hover) .code-block-actions > button {
   opacity: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .code-block-run.is-running .ui-icon {
+    animation: none;
+  }
 }
 .message-text .table-copy-shell {
   position: relative;
@@ -7370,7 +7391,14 @@ dialog.settings-overlay::backdrop {
   width: 100%;
   max-width: 480px;
   min-height: var(--action-min-height);
+}
+.settings-content label input[type=text],
+.settings-content label input[type=password],
+.settings-content label input[type=number] {
   padding-inline: var(--spacing-md);
+}
+.settings-content label select {
+  padding-left: var(--spacing-md);
 }
 .settings-content .checkbox-label {
   min-height: calc(28px * var(--ui-scale));
