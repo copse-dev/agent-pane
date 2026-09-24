@@ -132,6 +132,14 @@ export interface ThreadReview {
    * collapses the review card by default.
    */
   issuesFound?: boolean
+  /**
+   * Set when the verdict asked for follow-up work but the turn stopped without
+   * acting on it (cancelled, out of review passes, out of auto-continuation
+   * budget, or a remediation turn that made no edits) — see `#2506`. Rendered
+   * alongside the verdict so a "not done" review never reads as silently
+   * ignored.
+   */
+  followUpNote?: string
 }
 
 /**

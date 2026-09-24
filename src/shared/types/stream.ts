@@ -70,6 +70,14 @@ export type StreamChunk =
       summary: string
       /** Present on terminal done chunks from a structured review verdict. */
       issuesFound?: boolean
+      /**
+       * Set when a verdict asked for follow-up work (`requestFollowUp`) but the
+       * turn stopped without acting on it — cancelled, out of review passes,
+       * out of auto-continuation budget, or a remediation turn that made no
+       * edits (#2506). Rendered alongside the verdict so a "not done" review
+       * never reads as silently ignored.
+       */
+      followUpNote?: string
     }
   /**
    * Copse Reviewer over the thread's changes: a running placeholder, then the
