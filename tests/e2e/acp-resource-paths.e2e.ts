@@ -117,6 +117,7 @@ describe('ACP resource paths', () => {
     await expect(inlinePreview).toHaveAttribute('title', join(process.cwd(), SCRATCH_PATH))
     await expect(inlinePreview.$('.acp-referenced-image-path')).toHaveText(SCRATCH_PATH)
     await expect(inlinePreview.$('img')).toHaveAttribute('role', 'button')
+    await inlinePreview.scrollIntoView()
     await saveAppScreenshot('acp-resource-paths.png')
   })
 })
