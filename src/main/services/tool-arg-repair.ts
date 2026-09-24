@@ -19,20 +19,6 @@ import { isRecord } from '@copse/std/unknown-value.ts'
  * retry.
  */
 
-/**
- * A too-big/too-small number issue, reduced to what the clamp needs. Every
- * field exists on both union members — the bound is `maximum` or `minimum`
- * per `code` — and the clamped value is read out of the arguments at `path`,
- * not from the issue's captured `value`, so the repair can only ever rewrite
- * a number the caller actually passed.
- */
-function isNumericRangeIssue(
-  issue: z.core.$ZodIssue,
-): issue is z.core.$ZodIssueTooBig | z.core.$ZodIssueTooSmall {
-  if (issue.code !== 'too_big' && issue.code !== 'too_small') return false
-  return issue.origin === 'number'
-}
-
 /** Read the member `segment` names on an array or plain object, else `undefined`. */
 function readMember(container: unknown, segment: PropertyKey): unknown {
   if (Array.isArray(container)) {
@@ -88,7 +74,13 @@ export function clampNumericRangeArgs(
   const notes: string[] = []
   let repaired: Record<string, unknown> = args
   for (const issue of err.issues) {
-    if (!isNumericRangeIssue(issue)) return null
+    // Only the numeric too-big/too-small union has the bounds this repair
+    // needs. The clamped value is read from the arguments at `path`, not from
+    // the issue's captured `value`, so only a number the caller passed can be
+    // rewritten.
+    if ((issue.code !== 'too_big' && issue.code !== 'too_small') || issue.origin !== 'number') {
+      return null
+    }
     // `Number` flattens the per-code bound fields into one number; a missing
     // bound becomes NaN and is refused, keeping the repair all-or-nothing.
     const bound = issue.code === 'too_big' ? Number(issue.maximum) : Number(issue.minimum)
