@@ -61277,6 +61277,15 @@ var init_developer_mode = __esm({
   }
 });
 
+// src/shared/terminal/terminal-history.ts
+var SHARE_TERMINAL_HISTORY_ENABLED_SETTING, SHARE_TERMINAL_HISTORY_ENABLED_DEFAULT;
+var init_terminal_history = __esm({
+  "src/shared/terminal/terminal-history.ts"() {
+    SHARE_TERMINAL_HISTORY_ENABLED_SETTING = "shareTerminalHistoryEnabled";
+    SHARE_TERMINAL_HISTORY_ENABLED_DEFAULT = true;
+  }
+});
+
 // src/shared/appearance.ts
 function sameHex(value, expected) {
   return typeof value === "string" && value.toLowerCase() === expected.toLowerCase();
@@ -61895,6 +61904,15 @@ function mountSettingsDialog(store2, api2) {
                 When on (the default), the agent can read a Shells tab open in this chat, and you
                 can add one to a message with <code>@shell</code>. Turn off to keep your terminals
                 private.
+              </p>
+              <label class="checkbox-label">
+                <input type="checkbox" name="shareTerminalHistoryEnabled" />
+                Share command history across the project
+              </label>
+              <p class="field-hint">
+                When on (the default), Bash and Zsh terminals in this project use the same history
+                file, so a command from one thread can be recalled in another. Fish keeps its normal
+                shell-managed history. Turn off to keep each terminal's history separate.
               </p>
               <label class="checkbox-label">
                 <input type="checkbox" name="webAllowUserApproval" />
@@ -64946,6 +64964,7 @@ var init_settings_dialog = __esm({
     init_command_routing();
     init_unknown_value3();
     init_developer_mode();
+    init_terminal_history();
     init_appearance();
     init_projects();
     init_commit_attribution();
@@ -65001,6 +65020,14 @@ var init_settings_dialog = __esm({
       { name: "vncEnabled", kind: "checkbox", default: false, save: true },
       // On by default: agent may read open Shells tabs via read_terminal / @shell.
       { name: "readTerminalEnabled", kind: "checkbox", default: true, save: true },
+      // On by default: every terminal opened for a project shares one HISTFILE, so
+      // up-arrow history from one thread's Shells tab is recallable in another's.
+      {
+        name: SHARE_TERMINAL_HISTORY_ENABLED_SETTING,
+        kind: "checkbox",
+        default: SHARE_TERMINAL_HISTORY_ENABLED_DEFAULT,
+        save: true
+      },
       // On by default: clicked links open in the in-app browser pane. Off routes
       // external links to the system browser and marks them with an external icon.
       { name: "openLinksInBuiltInBrowser", kind: "checkbox", default: true, save: true },
@@ -72422,7 +72449,10 @@ function createReviewCardEl(review, api2, onRetry) {
   appendReviewHeader(panel, review, onRetry);
   if (review.status === "running") return panel;
   const body = el("div", { class: "review-panel-body message-text streaming-markdown" });
-  body.innerHTML = renderMarkdown(review.summary || "(no review output)");
+  const bodyMarkdown = review.followUpNote ? `${review.summary || "(no review output)"}
+
+*${review.followUpNote}*` : review.summary || "(no review output)";
+  body.innerHTML = renderMarkdown(bodyMarkdown);
   void annotateFileReferences(body, api2);
   panel.append(body);
   return panel;
@@ -109614,6 +109644,24 @@ function webviewUrl(tab) {
     return "";
   }
 }
+function clearUrlLoadStatus(tab) {
+  tab.loadError = null;
+  tab.urlInput.classList.remove("has-error", "has-blocked");
+  setTooltip(tab.urlInput, null);
+  tab.statusLine.textContent = "";
+  tab.statusLine.classList.remove("browser-status-danger", "browser-status-warning");
+  tab.statusLine.hidden = true;
+}
+function setUrlLoadStatus(tab, kind, message2) {
+  tab.loadError = message2;
+  tab.urlInput.classList.toggle("has-error", kind === "error");
+  tab.urlInput.classList.toggle("has-blocked", kind === "blocked");
+  setTooltip(tab.urlInput, message2);
+  tab.statusLine.textContent = message2;
+  tab.statusLine.classList.toggle("browser-status-danger", kind === "error");
+  tab.statusLine.classList.toggle("browser-status-warning", kind === "blocked");
+  tab.statusLine.hidden = false;
+}
 function webviewTitle(tab) {
   if (!tab.webview || !tab.webviewReady || typeof tab.webview.getTitle !== "function")
     return void 0;
@@ -109945,8 +109993,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     );
   }
   function navigateWebview(tab, url2) {
-    tab.loadError = null;
-    tab.urlInput.classList.remove("has-error");
+    clearUrlLoadStatus(tab);
     if (!tab.webviewReady && tab.pendingUrl === url2) return;
     whenWebviewReady(tab, (webview) => {
       const current = webview.getURL();
@@ -109965,12 +110012,16 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       if (activeTabId === tab.id) syncAddressBar(tab);
       scheduleSessionSave();
     };
-    webview.addEventListener("did-navigate", onNavigate);
+    const onNavigateSuccess = () => {
+      clearUrlLoadStatus(tab);
+      onNavigate();
+    };
+    webview.addEventListener("did-navigate", onNavigateSuccess);
     webview.addEventListener("did-navigate", () => {
       tab.annotation?.deactivate();
       tab.annotation?.clear();
     });
-    webview.addEventListener("did-navigate-in-page", onNavigate);
+    webview.addEventListener("did-navigate-in-page", onNavigateSuccess);
     webview.addEventListener("page-title-updated", onNavigate);
     webview.addEventListener("focus", closeAllMenus);
     webview.addEventListener("dom-ready", () => {
@@ -109985,11 +110036,31 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     });
     webview.addEventListener("did-fail-load", (event) => {
       const detail = event;
-      tab.loadError = detail.errorDescription ?? "Failed to load page";
-      tab.urlInput.classList.add("has-error");
-      tab.urlInput.title = tab.loadError;
+      if (detail.isMainFrame === false) return;
+      if (detail.errorCode === NET_ERROR_ABORTED) return;
+      if (detail.errorCode === NET_ERROR_BLOCKED_BY_CLIENT) {
+        setUrlLoadStatus(tab, "blocked", "Blocked by the browser network policy");
+        return;
+      }
+      const description = nonEmptyStringOr(detail.errorDescription, "Failed to load page");
+      setUrlLoadStatus(tab, "error", `Couldn't load this page: ${description}`);
     });
     return webview;
+  }
+  function handleNavigationBlocked(webContentsId, url2) {
+    for (const tab of tabs.values()) {
+      if (!tab.webview) continue;
+      let id;
+      try {
+        id = tab.webview.getWebContentsId();
+      } catch {
+        continue;
+      }
+      if (id !== webContentsId) continue;
+      if (tab.urlInput.value !== url2) continue;
+      setUrlLoadStatus(tab, "blocked", "Blocked by the browser network policy");
+      return;
+    }
   }
   function navigateTab(tab, rawUrl) {
     const url2 = normalizeBrowserUrl(rawUrl);
@@ -110322,8 +110393,15 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       annotateBtn,
       menuWrap
     );
+    const statusLine = el("div", { class: "browser-status", role: "status", hidden: "" });
     const webviewHost = el("div", { class: "browser-webview-host" });
-    const panel = el("div", { class: "browser-tab-panel", "data-tab-id": id }, toolbar, webviewHost);
+    const panel = el(
+      "div",
+      { class: "browser-tab-panel", "data-tab-id": id },
+      toolbar,
+      statusLine,
+      webviewHost
+    );
     const tab = {
       id,
       partition: options?.partition ?? browserSessionPartition(
@@ -110341,6 +110419,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       backBtn,
       forwardBtn,
       reloadBtn,
+      statusLine,
       pendingUrl: null,
       loadError: null,
       artefactTitle: null,
@@ -110740,6 +110819,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     api2?.browser.onOpenTab((url2, partition) => addTab({ url: url2, partition, activate: false })),
     api2?.browser.onShowTab?.(showTabForUrl),
     api2?.browser.onPreviewStale?.(refreshStalePreviews),
+    api2?.browser.onNavigationBlocked?.(handleNavigationBlocked),
     api2?.browser.onShareText(attachSharedText),
     api2?.browser.onShareImage(attachSharedImage),
     api2?.browser.onPluginTabRequest(ensurePluginBrowserTab),
@@ -110768,7 +110848,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     tabs.clear();
   };
 }
-var WEBVIEW_PREFS2;
+var NET_ERROR_ABORTED, NET_ERROR_BLOCKED_BY_CLIENT, WEBVIEW_PREFS2;
 var init_browser_pane = __esm({
   "src/renderer/views/browser-pane.ts"() {
     init_helpers();
@@ -110786,6 +110866,9 @@ var init_browser_pane = __esm({
     init_annotation_layer();
     init_attach_annotation();
     init_toast();
+    init_tooltip();
+    NET_ERROR_ABORTED = -3;
+    NET_ERROR_BLOCKED_BY_CLIENT = -20;
     WEBVIEW_PREFS2 = "contextIsolation=true";
   }
 });
@@ -130200,7 +130283,8 @@ function startAgentController(store2, api2) {
           setMessageReview(store2, threadId, anchorId, {
             status: chunk.status,
             summary: chunk.summary,
-            ...chunk.issuesFound !== void 0 ? { issuesFound: chunk.issuesFound } : {}
+            ...chunk.issuesFound !== void 0 ? { issuesFound: chunk.issuesFound } : {},
+            ...chunk.followUpNote !== void 0 ? { followUpNote: chunk.followUpNote } : {}
           });
         }
         if (chunk.status === "running") emitActivity(threadId, "Reviewing changes\u2026");
