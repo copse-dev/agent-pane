@@ -23,6 +23,7 @@ import {
   setMessageReview,
   setMessageTurnOutcome,
   setThreadReviewReport,
+  setMessageReviewReport,
   addHookCard,
   getThreadById,
   markThreadUnread,
@@ -573,7 +574,17 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         break
       }
       case 'review_report': {
-        setThreadReviewReport(store, threadId, chunk.report)
+        const thread = getThreadById(store, threadId)
+        const anchorId =
+          [...(thread?.messages ?? [])]
+            .reverse()
+            .find((message) => message.reviewReport?.status === 'running')?.id ??
+          st.msgId ??
+          [...(thread?.messages ?? [])].reverse().find((message) => message.role === 'assistant')
+            ?.id ??
+          null
+        if (anchorId) setMessageReviewReport(store, threadId, anchorId, chunk.report)
+        else setThreadReviewReport(store, threadId, chunk.report)
         if (chunk.report.status === 'running') {
           emitActivity(threadId, 'Reviewing changes…')
         }
