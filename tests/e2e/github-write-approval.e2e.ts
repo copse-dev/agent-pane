@@ -1,4 +1,5 @@
 import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
+import { submitComposer } from './helpers/composer.ts'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
@@ -28,7 +29,7 @@ describe('GitHub write approval', () => {
       { name: 'gh_pr_mark_ready', args: { number: 1478 } },
       'The readiness request was declined; the pull request remains unchanged.',
     )
-    await $('.submit-btn').click()
+    await submitComposer()
 
     const dialog = await $('#approval-dialog')
     await dialog.waitForDisplayed({ timeout: 30_000 })
@@ -59,7 +60,7 @@ describe('GitHub write approval', () => {
       { name: 'gh_pr_create', args: { title: 'Fix the parser' } },
       'The pull request request was declined; no pull request was created.',
     )
-    await $('.submit-btn').click()
+    await submitComposer()
 
     const dialog = await $('#approval-dialog')
     await dialog.waitForDisplayed({ timeout: 30_000 })
