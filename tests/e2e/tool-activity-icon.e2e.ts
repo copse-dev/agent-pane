@@ -1,3 +1,4 @@
+import { submitComposer } from './helpers/composer.ts'
 import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
@@ -34,7 +35,7 @@ describe('tool activity icon', () => {
       { name: 'run_shell', args: { command: 'sleep 15' } },
       'The command finished.',
     )
-    await $('.submit-btn').click()
+    await submitComposer()
     const card = $('.tool-card')
     await card.waitForExist({ timeout: 15_000 })
     await expect(card).toHaveAttribute('data-status', 'running')

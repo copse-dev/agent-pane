@@ -1,7 +1,7 @@
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { waitForAgentIdle, waitForPromptReady } from './helpers.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 
@@ -43,7 +43,7 @@ describe('mock script multi-turn', () => {
     })
 
     await setComposerValue('Please list the src directory for me.')
-    await $('.submit-btn').click()
+    await submitComposer()
 
     const listCard = await $('.tool-card[data-status="done"]')
     await listCard.waitForDisplayed({ timeout: 30_000 })
@@ -53,7 +53,7 @@ describe('mock script multi-turn', () => {
 
     await waitForPromptReady()
     await setComposerValue('Can you summarize what you found?')
-    await $('.submit-btn').click()
+    await submitComposer()
     await waitForAgentIdle(30_000)
 
     await browser.waitUntil(

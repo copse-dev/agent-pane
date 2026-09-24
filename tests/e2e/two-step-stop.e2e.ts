@@ -1,6 +1,6 @@
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
@@ -39,7 +39,7 @@ describe('two-step stop shortcut', function () {
       ],
     })
     await setComposerValue(prompt)
-    await $('.submit-btn').click()
+    await submitComposer()
     await scenario.waitForHold('migration-review')
 
     await composer.click()

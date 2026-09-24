@@ -2,7 +2,7 @@ import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { waitForAgentIdle } from './helpers.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 
@@ -72,7 +72,7 @@ describe('tool call display live mock', () => {
     })
 
     await setComposerValue(prompt)
-    await $('.submit-btn').click()
+    await submitComposer()
 
     await browser.waitUntil(
       async () => {

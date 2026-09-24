@@ -1,3 +1,4 @@
+import { submitComposer } from './helpers/composer.ts'
 import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
@@ -29,7 +30,7 @@ describe('turn-tree shell replay approval', () => {
       { name: 'run_shell', args: { command: 'node --version' } },
       'The version command was declined.',
     )
-    await $('.submit-btn').click()
+    await submitComposer()
 
     const dialog = $('#approval-dialog')
     await dialog.waitForDisplayed({ timeout: 30_000 })

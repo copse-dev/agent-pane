@@ -1,3 +1,4 @@
+import { submitComposer } from './helpers/composer.ts'
 import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData } from './helpers/seed-config.ts'
@@ -28,7 +29,7 @@ describe('read_skill error guidance', () => {
       { name: 'read_skill', args: { name: 'pstack' } },
       'The requested skill could not be loaded; the tool result lists the available alternatives.',
     )
-    await $('.submit-btn').click()
+    await submitComposer()
     await waitForAgentIdle(30_000)
 
     // Live tools retain their turn wrapper even when only one tool ran.

@@ -1,3 +1,4 @@
+import { submitComposer } from './helpers/composer.ts'
 import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
 import { inflateRawSync } from 'node:zlib'
 import { $, browser, expect } from '@wdio/globals'
@@ -53,7 +54,7 @@ describe('decision spine archive', () => {
       { name: 'run_shell', args: { command } },
       'The verification command result is available above.',
     )
-    await $('.submit-btn').click()
+    await submitComposer()
 
     const dialog = $('#approval-dialog')
     await dialog.waitForDisplayed({ timeout: 30_000 })

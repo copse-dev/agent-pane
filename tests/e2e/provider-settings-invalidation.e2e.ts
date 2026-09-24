@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
 import { waitForAgentIdle } from './helpers.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
@@ -46,7 +46,7 @@ describe('stale custom-provider model selection', () => {
   it('shows actionable guidance without starting a provider turn', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await setComposerValue('Continue with the removed provider route.')
-    await $('.submit-btn').click()
+    await submitComposer()
 
     const errorText = `The provider for ${STALE_ROUTE} is no longer configured.`
     await browser.waitUntil(async () => (await assistantTranscript()).includes(errorText), {

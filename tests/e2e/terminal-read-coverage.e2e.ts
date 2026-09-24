@@ -1,3 +1,4 @@
+import { submitComposer } from './helpers/composer.ts'
 import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
@@ -47,7 +48,7 @@ describe('terminal read screening coverage', function () {
       { name: 'read_terminal', args: { action: 'read', max_lines: 2000 } },
       'The recent terminal output is available above.',
     )
-    await $('.submit-btn').click()
+    await submitComposer()
     const dialog = $('#approval-dialog')
     await dialog.waitForDisplayed({ timeout: 30_000 })
     await expect(dialog.$('.approval-heading')).toHaveText('Share terminal output with the agent?')

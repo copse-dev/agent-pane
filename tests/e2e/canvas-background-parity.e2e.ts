@@ -1,3 +1,4 @@
+import { submitComposer } from './helpers/composer.ts'
 import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
 import assert from 'node:assert/strict'
 import { writeFile } from 'node:fs/promises'
@@ -133,7 +134,7 @@ async function renderCanvas(prompt: string, expectedToolCount: number): Promise<
     },
     'The canvas preview is ready.',
   )
-  await $('.submit-btn').click()
+  await submitComposer()
   await browser.waitUntil(
     async () =>
       browser.execute((count) => {

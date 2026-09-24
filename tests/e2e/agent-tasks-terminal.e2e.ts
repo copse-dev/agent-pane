@@ -1,6 +1,6 @@
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { approveUnsandboxedTerminalIfPrompted } from './helpers/terminal-approval.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
 import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
@@ -55,7 +55,7 @@ describe('agent tasks in terminal tab', () => {
       ],
     })
     await setComposerValue('Run echo agent-task-hello and show me the output.')
-    await $('.submit-btn').click()
+    await submitComposer()
 
     // The seeded setting requires approval even when an OS sandbox is active.
     const dialog = await $('#approval-dialog')
