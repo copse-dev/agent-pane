@@ -6330,14 +6330,34 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   position: absolute;
   bottom: calc(100% + 4px);
   left: 0;
+  display: flex;
+  flex-direction: column;
   min-width: 180px;
-  max-height: 280px;
-  overflow-y: auto;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow-md);
   padding: 4px 0;
+}
+.branch-picker-filter {
+  margin: 0 8px 4px;
+  color: var(--text-primary);
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 8px;
+  outline: 2px solid transparent;
+  outline-offset: 1px;
+}
+.branch-picker-filter:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 1px;
+}
+.branch-picker-list {
+  overflow-y: auto;
+  max-height: 280px;
 }
 .branch-picker-option {
   display: flex;
@@ -6352,7 +6372,8 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   cursor: pointer;
   font-family: inherit;
 }
-.branch-picker-option:hover {
+.branch-picker-option:hover,
+.branch-picker-option.is-active {
   background: var(--bg-hover);
 }
 .branch-picker-option.is-selected {
@@ -6554,6 +6575,10 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
 }
 .footer-branch-host .branch-picker-menu {
   --footer-popup-min-width: 180px;
+}
+.footer-branch-host .branch-picker-filter {
+  min-width: min(180px, 100%);
+  box-sizing: border-box;
 }
 .context-wheel-popover[hidden] {
   display: none;
