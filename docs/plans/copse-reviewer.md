@@ -877,19 +877,34 @@ CI shell needs (`stage0-report.ts`, `forge-review.ts`) and the workflows
   every inline comment folded into the body rather than lost. `--post-review github|forgejo`
   with `--repo` and `--pr`; the token from `COPSE_REVIEW_FORGE_TOKEN`, else `GITHUB_TOKEN`
   (Forgejo: `FORGEJO_TOKEN` too); a review that could not be posted is exit 1.
-- **Copse dogfoods the shell, still as an adviser.** _Added 2026-09-22._ The label-triggered
-  GitHub path uses the existing Scaleway OpenAI-compatible account, pinned by default to
-  `qwen3.8-27b`, the correctness lens, at most 12 tool-using steps and at most three
-  challenged findings. A separate
-  schedule samples no more than one recent, non-draft, unlabelled same-repository pull
-  request per night; `copse-review-skip` is the opt-out. Both paths run the trusted default-branch CLI,
+- **Copse dogfoods the shell, still as an adviser.** _Added 2026-09-22; Luna rollout 2026-09-24._
+  Label-triggered reviews and nightly samples default to `openai/gpt-6-luna` through OpenRouter,
+  the correctness lens, at most 12 tool-using steps and at most three challenged findings.
+  `COPSE_REVIEW_PR_PROFILE=configured` rolls both paths back to the retained
+  `COPSE_REVIEW_PROVIDER`, `COPSE_REVIEW_MODEL`, and `COPSE_REVIEW_BASE_URL` variables
+  (the Scaleway `qwen3.8-27b` route). The benchmark profile remains separately selectable.
+  A separate schedule samples no more than one recent, unlabelled same-repository pull
+  request per night, including drafts; `copse-review-skip` is the opt-out. Both paths run the trusted default-branch CLI,
   preserve the secret-free Stage 0 / container-backed focused-validation boundary, post `COMMENT` reviews
   only, and retain JSON plus SARIF for 30 days. This is explicit remote processing: the
-  secret-redacted diff and file context leave the GitHub runner for Scaleway. Human
+  secret-redacted diff and file context leave the GitHub runner for the selected provider. Human
   accepted/rejected judgements, report latency and token usage are gathered during the
   rollout; making the reviewer required needs a separate decision backed by that record.
   Dogfood acceptance is operational evidence, not the Martian offline measurement B8
   requires for the public 85% precision claim.
+- **The paid PR key excludes external contributors.** _Added 2026-09-24._ Both model jobs
+  use `COPSE_REVIEW_OPENROUTER_API_KEY` only from the `copse-review-models` environment;
+  there is no fallback to an organization-wide OpenRouter secret. Its exact-main branch
+  policy and required reviewer approval remain in place: after grounding, a maintainer
+  approves the pending environment deployment before the model runs. Trusted main workflow
+  refs and the owner/Actions-bot dispatch identities are checked before a credential-free
+  API preflight and again on each model job, including partial reruns. The preflight
+  accepts only owner-authored PRs (user ID `338988`) whose head and base both
+  belong to this repository (ID `1274237362`). External authors and forks do not enter
+  the protected model job, even if a trusted actor dispatches them. The label trigger also
+  requires the owner actor; a later live PR check verifies head/base identity again before
+  model/App credentials enter a step. Luna drops Scaleway credentials, and rollback drops
+  the OpenRouter credential. The key's $25/month cap remains an account-side limit.
 - **A bounded clean review names its limits.** _Added 2026-09-23 after live review #2737._
   The required `finish_review` coverage attestation stays structured through Stage 5. Forge
   projections surface every material `couldNotVerify` value and reserve plain “No findings” for

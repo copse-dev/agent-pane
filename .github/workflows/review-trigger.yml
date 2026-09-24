@@ -19,7 +19,12 @@ concurrency:
 jobs:
   dispatch:
     name: Resolve and dispatch the labelled pull request
-    if: github.event.label.name == 'copse-review'
+    if: >-
+      github.event.label.name == 'copse-review' &&
+      github.repository_id == '1274237362' &&
+      github.actor_id == '338988' &&
+      github.event.pull_request.user.id == 338988 &&
+      github.event.pull_request.head.repo.id == 1274237362
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
