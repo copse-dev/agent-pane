@@ -1673,7 +1673,35 @@ jobs:
             echo "──────────────────────────────────────────────────────────"
           }
 
-          trap cleanup_e2e_processes EXIT
+          # Specs render reference PNGs into this checkout. Once the first PNG
+          # changes, a later blank-thread spec sees a dirty shared checkout and
+          # its first send stops at the product's confirmation prompt. Keep the
+          # reference captures out of Git status while this shard runs, then
+          # restore normal tracking before the collection step diffs the PNGs.
+          mapfile -d '' -t screenshot_refs < <(git ls-files -z -- tests/e2e/screenshots/)
+          if [ "${#screenshot_refs[@]}" -gt 0 ]; then
+            git update-index --assume-unchanged -- "${screenshot_refs[@]}"
+          fi
+          screenshot_exclude="$(git rev-parse --git-path info/exclude)"
+          screenshot_exclude_backup="$(mktemp)"
+          screenshot_exclude_existed=0
+          if [ -f "$screenshot_exclude" ]; then
+            screenshot_exclude_existed=1
+            cp "$screenshot_exclude" "$screenshot_exclude_backup"
+          fi
+          printf '\n/tests/e2e/screenshots/*.png\n' >> "$screenshot_exclude"
+          restore_e2e_screenshot_tracking() {
+            if [ "${#screenshot_refs[@]}" -gt 0 ]; then
+              git update-index --no-assume-unchanged -- "${screenshot_refs[@]}"
+            fi
+            if [ "$screenshot_exclude_existed" -eq 1 ]; then
+              cp "$screenshot_exclude_backup" "$screenshot_exclude"
+            else
+              rm -f "$screenshot_exclude"
+            fi
+            rm -f "$screenshot_exclude_backup"
+          }
+          trap 'cleanup_e2e_processes; restore_e2e_screenshot_tracking' EXIT
           # Two attempts, not three: attempt 2 absorbs the flaky-session-startup
           # case this retry exists for, while a deterministic failure (e.g. a
           # selector that can never match) previously burned three full 480s
