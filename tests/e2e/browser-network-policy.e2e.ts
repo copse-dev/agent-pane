@@ -2,7 +2,7 @@
 import { createServer, type Server } from 'node:http'
 import { browser, $, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
-import { E2E_SCREENSHOT_DIR } from './helpers/screenshot.ts'
+import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { securePreviewHtml } from '../../src/shared/preview-csp.ts'
@@ -256,5 +256,100 @@ describe('browser network policy', () => {
       join(E2E_SCREENSHOT_DIR, 'browser-user-new-tab.png'),
       Buffer.from(screenshot.split(',')[1] ?? '', 'base64'),
     )
+  })
+
+  it('explains a failed load and a network-policy block on the URL bar, then clears on success', async () => {
+    const address = await $('.browser-tab-panel.is-active .browser-url-input')
+
+    // Port 1 is on Chromium's restricted-port list: a fast, deterministic
+    // ERR_UNSAFE_PORT that needs no real network — an ordinary load failure,
+    // not a policy decision.
+    await address.setValue('http://127.0.0.1:1/')
+    await browser.keys('Enter')
+    await browser.waitUntil(
+      () =>
+        browser.execute(() =>
+          document
+            .querySelector('.browser-tab-panel.is-active .browser-url-input')
+            ?.classList.contains('has-error'),
+        ),
+      { timeout: 15_000, timeoutMsg: 'expected a real load failure to mark the URL bar' },
+    )
+    const failureStatus = await browser.execute(
+      () =>
+        document.querySelector('.browser-tab-panel.is-active .browser-status')?.textContent ?? '',
+    )
+    expect(failureStatus).toContain("Couldn't load this page:")
+    const failureTooltip = await browser.execute(() =>
+      document
+        .querySelector('.browser-tab-panel.is-active .browser-url-input')
+        ?.getAttribute('data-tooltip'),
+    )
+    expect(failureTooltip).toBe(failureStatus)
+    await saveElementScreenshot('#pane-files', 'browser-load-error.png')
+
+    // A link-local address is denied by the browser network policy itself
+    // (`isBlockedHost`), never reaching the network — a policy decision, not a
+    // fault, so it must read and look different from the failure above.
+    //
+    // Cancelling this *main-frame* request via `webRequest.onBeforeRequest`
+    // does not reliably reach the guest as `did-fail-load` (verified here
+    // against real Chromium — the navigation was otherwise left in silent
+    // limbo, on the rejected URL forever, with no error and no explanation),
+    // so `browser-web-contents.ts` reports the denial straight to the
+    // renderer over `browser:navigation-blocked` instead.
+    await address.setValue('http://169.254.169.254/latest/meta-data')
+    await browser.keys('Enter')
+    await browser.waitUntil(
+      () =>
+        browser.execute(() =>
+          document
+            .querySelector('.browser-tab-panel.is-active .browser-url-input')
+            ?.classList.contains('has-blocked'),
+        ),
+      { timeout: 15_000, timeoutMsg: 'expected a policy denial to mark the URL bar' },
+    )
+    const blockedState = await browser.execute(() => {
+      const input = document.querySelector('.browser-tab-panel.is-active .browser-url-input')
+      const status = document.querySelector('.browser-tab-panel.is-active .browser-status')
+      return {
+        hasError: input?.classList.contains('has-error') ?? true,
+        tooltip: input?.getAttribute('data-tooltip') ?? null,
+        statusText: status?.textContent ?? '',
+        statusIsWarning: status?.classList.contains('browser-status-warning') ?? false,
+      }
+    })
+    expect(blockedState.hasError).toBe(false)
+    expect(blockedState.tooltip).toBe('Blocked by the browser network policy')
+    expect(blockedState.statusText).toBe('Blocked by the browser network policy')
+    expect(blockedState.statusIsWarning).toBe(true)
+    await saveElementScreenshot('#pane-files', 'browser-network-policy-blocked.png')
+
+    // A later successful load clears the stale explanation entirely.
+    await address.setValue(origin)
+    await browser.keys('Enter')
+    await browser.waitUntil(
+      async () =>
+        browser.execute(() => {
+          const guest = document.querySelector<Guest>('.browser-tab-panel.is-active webview')
+          return guest?.getTitle() === 'User server'
+        }),
+      { timeout: 15_000, timeoutMsg: 'expected the user-entered server to load' },
+    )
+    const clearedState = await browser.execute(() => {
+      const input = document.querySelector('.browser-tab-panel.is-active .browser-url-input')
+      const status = document.querySelector<HTMLElement>(
+        '.browser-tab-panel.is-active .browser-status',
+      )
+      return {
+        classes: input ? Array.from(input.classList) : [],
+        tooltip: input?.getAttribute('data-tooltip') ?? null,
+        statusHidden: status?.hidden ?? false,
+      }
+    })
+    expect(clearedState.classes).not.toContain('has-error')
+    expect(clearedState.classes).not.toContain('has-blocked')
+    expect(clearedState.tooltip).toBeNull()
+    expect(clearedState.statusHidden).toBe(true)
   })
 })

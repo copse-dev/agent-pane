@@ -2100,6 +2100,13 @@
           1
         ]
       },
+      "browser:navigation-blocked": {
+        "api": "browser.onNavigationBlocked",
+        "args": [
+          2,
+          2
+        ]
+      },
       "browser:open-tab": {
         "api": "browser.onOpenTab",
         "args": [
