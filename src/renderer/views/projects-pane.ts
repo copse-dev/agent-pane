@@ -339,8 +339,8 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   let activeDrag: SidebarDragPayload | null = null
 
   // Session cache of GitHub PR lifecycle for sidebar chips. Keys are
-  // `owner/repo#number`. Fetches are coalesced; a successful (or failed) fetch
-  // re-renders once so chips appear without blocking the first paint.
+  // `owner/repo#number`. Fetches are coalesced; stale state stays visible while
+  // revalidation runs, and lifecycle changes re-render without blocking first paint.
   const prLifecycleCache = new Map<string, { state: PrLifecycleState; fetchedAt: number }>()
   const prFetchInFlight = new Set<string>()
   let prStatusGeneration = 0
@@ -392,34 +392,45 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   }
 
   function cachedPrLifecycle(key: string): PrLifecycleState | undefined {
+    return prLifecycleCache.get(key)?.state
+  }
+
+  function hasFreshPrLifecycle(key: string): boolean {
     const entry = prLifecycleCache.get(key)
-    if (!entry) return undefined
-    if (Date.now() - entry.fetchedAt > PR_STATUS_CACHE_TTL_MS) return undefined
-    return entry.state
+    return entry !== undefined && Date.now() - entry.fetchedAt <= PR_STATUS_CACHE_TTL_MS
   }
 
   function ensurePrLifecycles(refs: GithubPrRef[]): void {
-    const missing = refs.filter((ref) => {
+    const stale = refs.filter((ref) => {
       const key = githubPrKey(ref)
-      return cachedPrLifecycle(key) === undefined && !prFetchInFlight.has(key)
+      return !hasFreshPrLifecycle(key) && !prFetchInFlight.has(key)
     })
-    if (missing.length === 0) return
+    if (stale.length === 0) return
     const generation = prStatusGeneration
-    for (const ref of missing) {
+    for (const ref of stale) {
       const key = githubPrKey(ref)
+      let lifecycleChanged = false
       prFetchInFlight.add(key)
       void api.gh
         .prDetails(ref.owner, ref.repo, ref.number)
         .then((details) => {
+          if (generation !== prStatusGeneration) return
           const state = details ? normalizePrLifecycleState(details.state) : 'unknown'
+          lifecycleChanged = prLifecycleCache.get(key)?.state !== state
           prLifecycleCache.set(key, { state, fetchedAt: Date.now() })
         })
         .catch(() => {
-          prLifecycleCache.set(key, { state: 'unknown', fetchedAt: Date.now() })
+          if (generation !== prStatusGeneration) return
+          const cached = prLifecycleCache.get(key)
+          prLifecycleCache.set(key, {
+            state: cached?.state ?? 'unknown',
+            fetchedAt: Date.now(),
+          })
         })
         .finally(() => {
+          if (generation !== prStatusGeneration) return
           prFetchInFlight.delete(key)
-          if (generation === prStatusGeneration) render()
+          if (lifecycleChanged) render()
         })
     }
   }
