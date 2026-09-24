@@ -97,6 +97,21 @@ describe('acp agent registry', () => {
 describe('resolveAcpSandbox (issue #590)', () => {
   const base = { title: 'X', command: 'x', enabled: true }
 
+  it('allows macOS certificate verification for both Codex ids while honoring overrides', () => {
+    for (const id of ['codex', 'codex-acp']) {
+      assert.equal(resolveAcpSandbox({ ...base, id })?.allowMacOsTrustd, true)
+      assert.equal(
+        resolveAcpSandbox({ ...base, id, sandbox: { allowedDomains: [] } })?.allowMacOsTrustd,
+        undefined,
+      )
+      assert.equal(resolveAcpSandbox({ ...base, id, sandbox: false }), undefined)
+    }
+    assert.equal(
+      resolveAcpSandbox({ ...base, id: 'claude-agent-acp' })?.allowMacOsTrustd,
+      undefined,
+    )
+  })
+
   it('falls back to the KNOWN_ACP_AGENTS catalog preset for the id', () => {
     const resolved = resolveAcpSandbox({ ...base, id: 'claude-agent-acp' })
     assert.ok(resolved)

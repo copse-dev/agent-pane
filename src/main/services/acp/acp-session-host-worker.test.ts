@@ -167,6 +167,21 @@ describe('ACP session host worker', () => {
 })
 
 describe('parseSessionHostRequest', () => {
+  it('preserves an explicit trustd grant and rejects truthy non-boolean values', () => {
+    for (const value of [true, false, 'true', 1, null]) {
+      const request = parseSessionHostRequest(
+        JSON.stringify({
+          config: {
+            command: 'codex-acp',
+            cwd: '/workspace',
+            sandbox: { allowedDomains: ['chatgpt.com'], allowMacOsTrustd: value },
+          },
+        }),
+      )
+      assert.equal(request?.config.sandbox?.allowMacOsTrustd, value === true ? true : undefined)
+    }
+  })
+
   it('decodes only the spawn and confinement fields', () => {
     assert.deepEqual(
       parseSessionHostRequest(

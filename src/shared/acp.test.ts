@@ -18,6 +18,24 @@ import {
 import { KNOWN_ACP_AGENTS } from './acp-known-agents.ts'
 import type { AcpAgentConfig } from './types/acp.ts'
 
+describe('ACP sandbox settings', () => {
+  it('preserves boolean trustd overrides when reading saved agent configurations', () => {
+    for (const value of [true, false, 'true', 1, null]) {
+      const [agent] = parseAcpAgentConfigs([
+        {
+          id: 'codex',
+          title: 'Codex',
+          command: 'codex-acp',
+          enabled: true,
+          sandbox: { allowedDomains: ['chatgpt.com'], allowMacOsTrustd: value },
+        },
+      ])
+      assert.ok(agent?.sandbox)
+      assert.equal(agent.sandbox.allowMacOsTrustd, typeof value === 'boolean' ? value : undefined)
+    }
+  })
+})
+
 describe('acp model values', () => {
   it('round-trips an agent id through acpModelValue/parseAcpModel', () => {
     assert.equal(acpModelValue('gemini-cli'), 'acp:gemini-cli')

@@ -56,7 +56,12 @@ export interface KnownAcpAgent {
    * onto the registered `AcpAgentConfig`; agents without a preset spawn
    * unsandboxed. Keep domains minimal — the user can widen them per agent.
    */
-  sandbox?: { allowedDomains: string[]; homeDirs?: string[]; scratchPaths?: string[] }
+  sandbox?: {
+    allowedDomains: string[]
+    homeDirs?: string[]
+    scratchPaths?: string[]
+    allowMacOsTrustd?: boolean
+  }
   /**
    * ACP **session mode** (`SessionModeId`) to default the agent into when it
    * spawns **sandboxed** and the user hasn't chosen one (issue #607). The
@@ -338,6 +343,9 @@ export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
         '*.oaiusercontent.com',
       ],
       homeDirs: ['.codex', '.config/codex'],
+      // Codex's TLS certificate verification needs macOS trustd. Without it,
+      // even allowlisted ChatGPT workspace-routing requests fail before a turn.
+      allowMacOsTrustd: true,
     },
     setup: 'codex login', // ChatGPT sign-in; set NO_BROWSER=1 for headless, or use CODEX_API_KEY
     reauth: 'codex login',

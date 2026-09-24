@@ -94,6 +94,7 @@ export const acpAgentConfigSchema = z.object({
     .union([
       z.object({
         allowedDomains: z.array(z.string().min(1).max(256)).max(64),
+        allowMacOsTrustd: z.boolean().optional(),
         homeDirs: z
           .array(
             z

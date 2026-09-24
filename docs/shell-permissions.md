@@ -87,6 +87,16 @@ so a recovered task cannot launch a second Xcode process whose predecessor may s
 
 ## ACP MCP mediation
 
+The Codex ACP preset allows the macOS `com.apple.trustd.agent` service for TLS
+certificate verification. Without it, allowlisted ChatGPT requests fail during
+workspace-routing discovery. This is a per-process seatbelt permission, carried
+through both model probes and session hosts; ordinary shell commands and other
+agents do not inherit it. Filesystem restrictions and the destination allowlist
+remain in place. The trust service can make its own network requests outside the
+domain proxy, so this is an explicit, narrow exception to network isolation, not
+a general default. Custom ACP sandbox overrides can select `allowMacOsTrustd`;
+the flag has no effect on other operating systems.
+
 Configured MCP servers are never handed directly to an external ACP agent. Direct forwarding lets
 the agent call a server without a host callback, which would bypass Copse's hooks, read-only mode,
 and per-tool permission policy. Copse instead advertises the connected server's registered
