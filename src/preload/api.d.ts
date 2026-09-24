@@ -1219,7 +1219,7 @@ export interface ApiClient {
     agentPrLinks: () => Promise<RemoteAgentPrIndexEntry[]>
     /**
      * Open a pull request for a thread's checkout, through the same path the
-     * `gh_pr_create` agent tool uses: attribution trailer, target resolution
+     * `gh_pr_create` agent tool uses: attribution preference, target resolution
      * and thread linking (the sidebar PR chip) included.
      */
     createPrForThread: (

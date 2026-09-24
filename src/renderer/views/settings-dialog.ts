@@ -88,6 +88,10 @@ import {
   type UiTintStrength,
 } from '@shared/appearance.ts'
 import { switchProjectThread } from '../controller/projects.ts'
+import {
+  DEFAULT_GIT_ATTRIBUTION_ENABLED,
+  GIT_ATTRIBUTION_SETTING,
+} from '@shared/git/commit-attribution.ts'
 
 export {
   DEFAULT_ACCENT_COLOR,
@@ -265,6 +269,12 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'remoteAgentAutoCreatePR', kind: 'checkbox', default: true, save: true },
   { name: 'remoteAgentWorkOnCurrentBranch', kind: 'checkbox', default: false, save: true },
   { name: 'preferAcpOverCloudAgent', kind: 'checkbox', default: true, save: true },
+  {
+    name: GIT_ATTRIBUTION_SETTING,
+    kind: 'checkbox',
+    default: DEFAULT_GIT_ATTRIBUTION_ENABLED,
+    save: true,
+  },
   { name: 'gitCommitSshAgentSocketAccess', kind: 'checkbox', default: false, save: true },
   { name: 'localSubagentsEnabled', kind: 'checkbox', default: true, save: true },
   {
@@ -763,6 +773,18 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 Reminds the agent that a skill's commands stay inside the project folder, or need
                 approval where that cannot be enforced, rather than quietly reaching the network or
                 the rest of your machine.
+              </p>
+            </fieldset>
+
+            <fieldset data-testid="git-attribution-settings">
+              <legend>Git attribution</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="${GIT_ATTRIBUTION_SETTING}" />
+                Credit Copse on commits and pull requests
+              </label>
+              <p class="field-hint">
+                Adds Copse as a co-author and lists the models used when Copse creates a commit or
+                pull request. On by default. Turn off to keep your message and description as written.
               </p>
             </fieldset>
 

@@ -48,6 +48,7 @@ describe('git_commit configured helpers', () => {
     clearWorkspaceTrustForTest()
     await setSetting('trustedShellCommands', [])
     await setSetting('safetyClassifierEnabled', true)
+    await setSetting('gitAttributionEnabled', true)
     for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
   })
 
@@ -119,6 +120,15 @@ describe('git_commit configured helpers', () => {
     const committedMessage = git('log', '-1', '--format=%B')
     assert.ok(committedMessage.startsWith(message))
     assert.match(committedMessage, /Co-Authored-By: Copse/)
+  })
+
+  it('preserves the message when Git attribution is disabled', async () => {
+    const { repo, git } = await fixture()
+    await setSetting('gitAttributionEnabled', false)
+    setApprovalHandler(async () => ({ approved: true, remember: false }))
+
+    await commit(repo, 'User message', true)
+    assert.equal(git('log', '-1', '--format=%B').trim(), 'User message')
   })
 
   it('surfaces signing failure instead of producing an unsigned commit', async () => {
