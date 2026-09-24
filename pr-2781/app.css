@@ -2769,6 +2769,21 @@ copse-ui-field input[type=password],
 .browser-url-input.has-error {
   border-color: var(--danger, #f14c4c);
 }
+.browser-url-input.has-blocked {
+  border-color: var(--warning);
+}
+.browser-status {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.browser-status-danger {
+  color: var(--danger, #f14c4c);
+}
+.browser-status-warning {
+  color: var(--warning);
+}
 .file-viewer {
   flex: 1;
   display: flex;
@@ -4629,6 +4644,12 @@ span.acp-resource-title {
 }
 
 /* src/renderer/styles/global/markdown.css */
+.streaming-markdown {
+  text-wrap: pretty;
+}
+.streaming-markdown :is(pre, code, table) {
+  text-wrap-style: auto;
+}
 .message-text:has(th:nth-child(3)) th:first-child,
 .message-text:has(th:nth-child(3)) td:first-child {
   width: 1%;
@@ -6324,14 +6345,34 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   position: absolute;
   bottom: calc(100% + 4px);
   left: 0;
+  display: flex;
+  flex-direction: column;
   min-width: 180px;
-  max-height: 280px;
-  overflow-y: auto;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow-md);
   padding: 4px 0;
+}
+.branch-picker-filter {
+  margin: 0 8px 4px;
+  color: var(--text-primary);
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 8px;
+  outline: 2px solid transparent;
+  outline-offset: 1px;
+}
+.branch-picker-filter:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 1px;
+}
+.branch-picker-list {
+  overflow-y: auto;
+  max-height: 280px;
 }
 .branch-picker-option {
   display: flex;
@@ -6346,7 +6387,8 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   cursor: pointer;
   font-family: inherit;
 }
-.branch-picker-option:hover {
+.branch-picker-option:hover,
+.branch-picker-option.is-active {
   background: var(--bg-hover);
 }
 .branch-picker-option.is-selected {
@@ -6548,6 +6590,10 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
 }
 .footer-branch-host .branch-picker-menu {
   --footer-popup-min-width: 180px;
+}
+.footer-branch-host .branch-picker-filter {
+  min-width: min(180px, 100%);
+  box-sizing: border-box;
 }
 .context-wheel-popover[hidden] {
   display: none;
