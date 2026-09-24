@@ -786,6 +786,23 @@
   font-size: var(--font-size-sm);
   color: var(--text-muted);
 }
+.acp-resource-link[hidden],
+.acp-resource-image[hidden] {
+  display: none;
+}
+.acp-referenced-image {
+  display: block;
+  margin: var(--spacing-sm) 0;
+}
+.acp-referenced-image .tool-result-preview-caption {
+  display: block;
+}
+.acp-referenced-image-path {
+  display: block;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
 
 /* Assistant-owned proof is intentionally distinct from transient tool output:
    compact while reading, expandable to the full immutable capture on demand. */
@@ -960,6 +977,9 @@
 }
 .tool-result-content {
   margin-bottom: var(--spacing-sm);
+}
+.tool-result-content:not(:has(> :not([hidden]))) {
+  display: none;
 }
 .acp-content-image {
   justify-self: start;
