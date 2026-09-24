@@ -65643,11 +65643,11 @@ function settingsIcon(className = "titlebar-btn-icon") {
   svg2.append(path);
   return svg2;
 }
-function automationSetupBtn(label, open2) {
+function automationSetupBtn(label, open2, icon = settingsIcon) {
   const btn = el(
     "button",
     { type: "button", class: "automation-setup-btn", "aria-label": label, title: label },
-    settingsIcon("ui-icon ui-icon-sm")
+    icon("ui-icon ui-icon-sm")
   );
   btn.addEventListener("click", (e3) => {
     e3.stopPropagation();
@@ -65776,7 +65776,7 @@ function mountProjectsPane(root, store2, api2) {
   syncRemoteOpenAvailability();
   store2.on("settings_changed", syncRemoteOpenAvailability);
   const visibleThreadCounts = /* @__PURE__ */ new Map();
-  const expandedAutomationProjects = /* @__PURE__ */ new Set();
+  let automationsSectionExpanded = false;
   const expandedAutomationSchedules = /* @__PURE__ */ new Set();
   let orphans = [];
   let renaming = null;
@@ -66153,6 +66153,309 @@ function mountProjectsPane(root, store2, api2) {
       list.append(el("div", { class: "sidebar-empty" }, 'No projects yet. Click "+".'));
       return;
     }
+    function renderThreadRow(project2, thread, options = {}) {
+      const activeId = project2.id === activeProjectId ? activeThreadId : null;
+      const displayTitle = (options.displayTitle ?? thread.title) || "New Thread";
+      const canMutate = project2.id === activeProjectId;
+      const allowRename = (options.allowRename ?? true) && canMutate;
+      const scheduleId = thread.automation?.scheduleId;
+      const renameState = allowRename && renaming !== null && renaming.threadId === thread.id ? renaming : null;
+      let title2;
+      if (renameState) {
+        const input2 = el("input", {
+          type: "text",
+          class: "chat-title-rename",
+          "aria-label": "Rename thread"
+        });
+        input2.value = renameState.draft;
+        input2.addEventListener("input", () => {
+          if (renaming?.threadId === thread.id) renaming.draft = input2.value;
+        });
+        input2.addEventListener("keydown", (e3) => {
+          e3.stopPropagation();
+          if (e3.key === "Enter") {
+            e3.preventDefault();
+            finishThreadRename(true);
+          } else if (e3.key === "Escape") {
+            e3.preventDefault();
+            finishThreadRename(false);
+          }
+        });
+        bindRenameBlur(input2, () => {
+          if (renaming?.threadId !== thread.id) return;
+          finishThreadRename(true);
+        });
+        for (const evt of ["click", "dblclick", "mousedown"]) {
+          input2.addEventListener(evt, (e3) => {
+            e3.stopPropagation();
+          });
+        }
+        title2 = input2;
+      } else {
+        title2 = el("span", { class: "chat-title" }, displayTitle);
+        if (allowRename) {
+          title2.addEventListener("dblclick", (e3) => {
+            e3.stopPropagation();
+            beginThreadRename(thread.id, displayTitle);
+          });
+        }
+      }
+      const chatRow = el(
+        "div",
+        {
+          class: `chat-row${thread.automation ? " is-automation" : ""}${thread.id === activeThreadId && project2.id === activeProjectId ? " selected" : ""}`,
+          "data-thread-id": thread.id
+        },
+        title2
+      );
+      chatRow.addEventListener("click", () => {
+        if (renaming?.threadId === thread.id) return;
+        switchProjectThread(store2, api2, project2.id, thread.id);
+      });
+      chatRow.addEventListener("contextmenu", (e3) => {
+        e3.preventDefault();
+        e3.stopPropagation();
+        showContextMenu(e3.clientX, e3.clientY, [
+          ...canMutate ? [
+            ...allowRename ? [
+              {
+                label: "Rename",
+                onSelect: () => {
+                  beginThreadRename(thread.id, displayTitle);
+                }
+              }
+            ] : [],
+            {
+              label: "Fork",
+              onSelect: () => {
+                forkProjectThread(project2.id, thread.id);
+              }
+            },
+            {
+              label: "Archive",
+              onSelect: () => {
+                archiveProjectThread(project2.id, thread.id);
+              }
+            }
+          ] : [],
+          // A schedule with a single run has no heading of its own, and a
+          // historical run is several rows below the one that does, so every
+          // automation row carries the way out to its setup. Opens directly
+          // against this run's own project — same as the project menu's
+          // "Automations" entry — rather than switching the active project
+          // just to reach the editor.
+          ...scheduleId ? [
+            {
+              label: "Automation setup\u2026",
+              onSelect: () => {
+                openAutomationDialog(store2, api2, { projectId: project2.id, scheduleId });
+              }
+            }
+          ] : []
+        ]);
+      });
+      if (thread.status === "running") {
+        chatRow.classList.add("is-running");
+        chatRow.insertBefore(runningStatus("Agent is working"), title2);
+      } else if (thread.unreadAt !== void 0 && thread.id !== activeId) {
+        chatRow.classList.add("is-unread");
+        chatRow.insertBefore(
+          el("span", {
+            class: "chat-unread-dot",
+            role: "img",
+            "aria-label": "Unread agent completion"
+          }),
+          title2
+        );
+      }
+      if (isThreadAwaitingAttention(thread.id)) {
+        chatRow.classList.add("needs-attention");
+        chatRow.append(attentionBell("This thread needs your attention"));
+      }
+      const prRollup = rollupForThread(thread);
+      if (prRollup) {
+        chatRow.classList.add("has-pr-status");
+        chatRow.append(chatPrStatus(prRollup));
+      }
+      if (canMutate) {
+        const del = el(
+          "button",
+          { class: "chat-delete", "aria-label": "Delete thread", "data-tooltip": "Delete thread" },
+          closeIcon("ui-icon ui-icon-sm")
+        );
+        del.addEventListener("click", (e3) => {
+          e3.stopPropagation();
+          if (getSidebarThreads(store2, project2.id).length > 1) {
+            void api2.agent.clearHistory(project2.id, thread.id);
+            deleteThread(store2, thread.id);
+          }
+        });
+        chatRow.append(del);
+      }
+      return chatRow;
+    }
+    function renderAutomationsSection() {
+      const scheduleOwners = /* @__PURE__ */ new Map();
+      for (const project2 of projects) {
+        for (const thread of getSidebarThreads(store2, project2.id)) {
+          const scheduleId = thread.automation?.scheduleId;
+          if (!scheduleId) continue;
+          const scheduleKey = `${project2.id}\0${scheduleId}`;
+          const owner = scheduleOwners.get(scheduleKey);
+          if (owner) owner.runs.push(thread);
+          else scheduleOwners.set(scheduleKey, { project: project2, scheduleId, runs: [thread] });
+        }
+      }
+      if (scheduleOwners.size === 0) return null;
+      const allRuns = Array.from(scheduleOwners.values()).flatMap((owner) => owner.runs);
+      const hasActiveAutomation = allRuns.some((thread) => thread.id === activeThreadId);
+      const attentionRuns = allRuns.filter((thread) => isThreadAwaitingAttention(thread.id));
+      const sectionExpanded = automationsSectionExpanded || hasActiveAutomation || attentionRuns.length > 0;
+      const section = el("div", { class: "automation-threads-group" });
+      const toggle = el(
+        "button",
+        {
+          type: "button",
+          class: "automation-threads-toggle",
+          "aria-expanded": sectionExpanded ? "true" : "false"
+        },
+        el(
+          "span",
+          { class: `automation-threads-twisty${sectionExpanded ? " expanded" : ""}` },
+          chevronRightIcon("ui-icon ui-icon-sm")
+        ),
+        el("span", { class: "automation-threads-title" }, "Automations"),
+        el("span", { class: "automation-threads-count" }, String(scheduleOwners.size))
+      );
+      if (allRuns.some((thread) => thread.status === "running")) {
+        const status = runningStatusIcon("ui-icon ui-icon-sm automation-threads-running");
+        status.setAttribute("role", "img");
+        status.setAttribute("aria-label", "An automation is running");
+        status.removeAttribute("aria-hidden");
+        toggle.append(status);
+      }
+      toggle.addEventListener("click", () => {
+        automationsSectionExpanded = !automationsSectionExpanded;
+        render();
+      });
+      section.append(
+        el(
+          "div",
+          { class: "automation-threads-header" },
+          toggle,
+          // Creates against the active project, same default the plugin editor
+          // itself falls back to when no project is named — there is no single
+          // project this workspace-level heading could otherwise imply.
+          automationSetupBtn(
+            "New automation\u2026",
+            () => {
+              openAutomationDialog(store2, api2, { createNew: true });
+            },
+            plusIcon
+          )
+        )
+      );
+      if (sectionExpanded) {
+        const rows = el("div", { class: "automation-thread-rows" });
+        for (const { project: project2, scheduleId, runs } of scheduleOwners.values()) {
+          const firstRun = runs[0];
+          if (!firstRun) continue;
+          const projectSuffix = el(
+            "span",
+            { class: "chat-thread-owner" },
+            `\xB7 ${projectDisplayName(project2)}`
+          );
+          if (runs.length === 1) {
+            const row2 = renderThreadRow(project2, firstRun);
+            row2.querySelector(".chat-title")?.after(projectSuffix);
+            const scheduleName2 = firstRun.automation?.scheduleName ?? firstRun.title;
+            const setupBtn = automationSetupBtn(`${scheduleName2} setup`, () => {
+              openAutomationDialog(store2, api2, { projectId: project2.id, scheduleId });
+            });
+            const del = row2.querySelector(".chat-delete");
+            if (del) del.before(setupBtn);
+            else row2.append(setupBtn);
+            rows.append(row2);
+            continue;
+          }
+          const scheduleKey = `${project2.id}\0${scheduleId}`;
+          const hasActiveRun = runs.some((thread) => thread.id === activeThreadId);
+          const attentionScheduleRuns = runs.filter(
+            (thread) => isThreadAwaitingAttention(thread.id)
+          );
+          const showingAllRuns = expandedAutomationSchedules.has(scheduleKey) || hasActiveRun;
+          const scheduleRevealed = showingAllRuns || attentionScheduleRuns.length > 0;
+          const scheduleName = firstRun.automation?.scheduleName ?? firstRun.title;
+          const scheduleGroup = el("div", {
+            class: "automation-schedule-group",
+            "data-schedule-id": scheduleId
+          });
+          const scheduleToggle = el(
+            "button",
+            {
+              type: "button",
+              class: "automation-schedule-toggle",
+              "aria-expanded": showingAllRuns ? "true" : "false"
+            },
+            el(
+              "span",
+              { class: `automation-threads-twisty${showingAllRuns ? " expanded" : ""}` },
+              chevronRightIcon("ui-icon ui-icon-sm")
+            ),
+            el("span", { class: "automation-schedule-title" }, scheduleName),
+            projectSuffix,
+            el("span", { class: "automation-schedule-count" }, `${String(runs.length)} runs`)
+          );
+          if (runs.some((thread) => thread.status === "running")) {
+            const status = runningStatusIcon("ui-icon ui-icon-sm automation-threads-running");
+            status.setAttribute("role", "img");
+            status.setAttribute("aria-label", "This automation is running");
+            status.removeAttribute("aria-hidden");
+            scheduleToggle.append(status);
+          }
+          scheduleToggle.addEventListener("click", () => {
+            if (expandedAutomationSchedules.has(scheduleKey)) {
+              expandedAutomationSchedules.delete(scheduleKey);
+            } else {
+              expandedAutomationSchedules.add(scheduleKey);
+            }
+            render();
+          });
+          scheduleGroup.append(
+            el(
+              "div",
+              { class: "automation-schedule-header" },
+              scheduleToggle,
+              automationSetupBtn(`${scheduleName} setup`, () => {
+                openAutomationDialog(store2, api2, { projectId: project2.id, scheduleId });
+              })
+            )
+          );
+          if (scheduleRevealed) {
+            const runRows = el("div", { class: "automation-schedule-runs" });
+            const visibleRuns = showingAllRuns ? runs : attentionScheduleRuns;
+            for (const thread of visibleRuns) {
+              const index = runs.indexOf(thread);
+              const timestamp = thread.automation?.triggeredAt;
+              const when = timestamp ? new Date(timestamp).toLocaleString([], {
+                dateStyle: "medium",
+                timeStyle: "short"
+              }) : "Unknown time";
+              runRows.append(
+                renderThreadRow(project2, thread, {
+                  displayTitle: index === 0 ? `Latest \xB7 ${when}` : when,
+                  allowRename: false
+                })
+              );
+            }
+            scheduleGroup.append(runRows);
+          }
+          rows.append(scheduleGroup);
+        }
+        section.append(rows);
+      }
+      return section;
+    }
     function renderProjectEntry(project2) {
       const entry = el("div", { class: "project-entry", "data-project-id": project2.id });
       const isExpanded = project2.id === expandedId;
@@ -66313,7 +66616,6 @@ function mountProjectsPane(root, store2, api2) {
       const matchingThreads = isFiltering ? sidebarThreads.filter(
         (t2) => (t2.title || "New Thread").toLowerCase().includes(threadFilter)
       ) : sidebarThreads;
-      const automationThreads = matchingThreads.filter((thread) => thread.automation !== void 0);
       const conversationThreads = matchingThreads.filter(
         (thread) => thread.automation === void 0
       );
@@ -66346,148 +66648,8 @@ function mountProjectsPane(root, store2, api2) {
       } else if (isFiltering && matchingThreads.length === 0) {
         chats.append(el("div", { class: "sidebar-empty" }, "No matching threads"));
       }
-      function openAutomationSetup(scheduleId) {
-        if (project2.id !== store2.getState().activeProjectId) {
-          switchProject(store2, api2, project2.id);
-          return;
-        }
-        openAutomationDialog(store2, api2, scheduleId ? { scheduleId } : {});
-      }
-      function renderThreadRow(thread, options = {}) {
-        const displayTitle = (options.displayTitle ?? thread.title) || "New Thread";
-        const allowRename = options.allowRename ?? true;
-        const scheduleId = thread.automation?.scheduleId;
-        const renameState = renaming !== null && renaming.threadId === thread.id ? renaming : null;
-        let title2;
-        if (renameState) {
-          const input2 = el("input", {
-            type: "text",
-            class: "chat-title-rename",
-            "aria-label": "Rename thread"
-          });
-          input2.value = renameState.draft;
-          input2.addEventListener("input", () => {
-            if (renaming?.threadId === thread.id) renaming.draft = input2.value;
-          });
-          input2.addEventListener("keydown", (e3) => {
-            e3.stopPropagation();
-            if (e3.key === "Enter") {
-              e3.preventDefault();
-              finishThreadRename(true);
-            } else if (e3.key === "Escape") {
-              e3.preventDefault();
-              finishThreadRename(false);
-            }
-          });
-          bindRenameBlur(input2, () => {
-            if (renaming?.threadId !== thread.id) return;
-            finishThreadRename(true);
-          });
-          for (const evt of ["click", "dblclick", "mousedown"]) {
-            input2.addEventListener(evt, (e3) => {
-              e3.stopPropagation();
-            });
-          }
-          title2 = input2;
-        } else {
-          title2 = el("span", { class: "chat-title" }, displayTitle);
-          if (allowRename) {
-            title2.addEventListener("dblclick", (e3) => {
-              e3.stopPropagation();
-              beginThreadRename(thread.id, displayTitle);
-            });
-          }
-        }
-        const chatRow = el(
-          "div",
-          {
-            class: `chat-row${thread.automation ? " is-automation" : ""}${thread.id === activeThreadId && project2.id === activeProjectId ? " selected" : ""}`,
-            "data-thread-id": thread.id
-          },
-          title2
-        );
-        chatRow.addEventListener("click", () => {
-          if (renaming?.threadId === thread.id) return;
-          switchProjectThread(store2, api2, project2.id, thread.id);
-        });
-        chatRow.addEventListener("contextmenu", (e3) => {
-          e3.preventDefault();
-          e3.stopPropagation();
-          showContextMenu(e3.clientX, e3.clientY, [
-            ...allowRename ? [
-              {
-                label: "Rename",
-                onSelect: () => {
-                  beginThreadRename(thread.id, displayTitle);
-                }
-              }
-            ] : [],
-            {
-              label: "Fork",
-              onSelect: () => {
-                forkProjectThread(project2.id, thread.id);
-              }
-            },
-            {
-              label: "Archive",
-              onSelect: () => {
-                archiveProjectThread(project2.id, thread.id);
-              }
-            },
-            // A schedule with a single run has no heading of its own, and a
-            // historical run is several rows below the one that does, so every
-            // automation row carries the way out to its setup.
-            ...scheduleId ? [
-              {
-                label: "Automation setup\u2026",
-                onSelect: () => {
-                  openAutomationSetup(scheduleId);
-                }
-              }
-            ] : []
-          ]);
-        });
-        if (thread.status === "running") {
-          chatRow.classList.add("is-running");
-          chatRow.insertBefore(runningStatus("Agent is working"), title2);
-        } else if (thread.unreadAt !== void 0 && thread.id !== activeId) {
-          chatRow.classList.add("is-unread");
-          chatRow.insertBefore(
-            el("span", {
-              class: "chat-unread-dot",
-              role: "img",
-              "aria-label": "Unread agent completion"
-            }),
-            title2
-          );
-        }
-        if (isThreadAwaitingAttention(thread.id)) {
-          chatRow.classList.add("needs-attention");
-          chatRow.append(attentionBell("This thread needs your attention"));
-        }
-        const prRollup = rollupForThread(thread);
-        if (prRollup) {
-          chatRow.classList.add("has-pr-status");
-          chatRow.append(chatPrStatus(prRollup));
-        }
-        const del = el(
-          "button",
-          { class: "chat-delete", "aria-label": "Delete thread", "data-tooltip": "Delete thread" },
-          closeIcon("ui-icon ui-icon-sm")
-        );
-        del.addEventListener("click", (e3) => {
-          e3.stopPropagation();
-          if (project2.id !== activeProjectId) return;
-          if (sidebarThreads.length > 1) {
-            void api2.agent.clearHistory(project2.id, thread.id);
-            deleteThread(store2, thread.id);
-          }
-        });
-        chatRow.append(del);
-        return chatRow;
-      }
       for (const thread of visibleThreads) {
-        chats.append(renderThreadRow(thread));
+        chats.append(renderThreadRow(project2, thread));
       }
       if (hasMore) {
         const showMoreBtn = el("button", { type: "button", class: "chats-show-more" }, "Show more");
@@ -66496,147 +66658,6 @@ function mountProjectsPane(root, store2, api2) {
           render();
         });
         chats.append(showMoreBtn);
-      }
-      if (automationThreads.length > 0) {
-        const scheduleGroups = /* @__PURE__ */ new Map();
-        for (const thread of automationThreads) {
-          const scheduleId = thread.automation?.scheduleId;
-          if (!scheduleId) continue;
-          const runs = scheduleGroups.get(scheduleId);
-          if (runs) runs.push(thread);
-          else scheduleGroups.set(scheduleId, [thread]);
-        }
-        const hasActiveAutomation = automationThreads.some((thread) => thread.id === activeId);
-        const attentionAutomationThreads = automationThreads.filter(
-          (thread) => isThreadAwaitingAttention(thread.id)
-        );
-        const automationExpanded = isFiltering || expandedAutomationProjects.has(project2.id) || hasActiveAutomation || attentionAutomationThreads.length > 0;
-        const group = el("div", { class: "automation-threads-group" });
-        const toggle = el(
-          "button",
-          {
-            type: "button",
-            class: "automation-threads-toggle",
-            "aria-expanded": automationExpanded ? "true" : "false"
-          },
-          el(
-            "span",
-            { class: `automation-threads-twisty${automationExpanded ? " expanded" : ""}` },
-            chevronRightIcon("ui-icon ui-icon-sm")
-          ),
-          el("span", { class: "automation-threads-title" }, "Automations"),
-          el("span", { class: "automation-threads-count" }, String(scheduleGroups.size))
-        );
-        if (automationThreads.some((thread) => thread.status === "running")) {
-          const status = runningStatusIcon("ui-icon ui-icon-sm automation-threads-running");
-          status.setAttribute("role", "img");
-          status.setAttribute("aria-label", "An automation is running");
-          status.removeAttribute("aria-hidden");
-          toggle.append(status);
-        }
-        toggle.addEventListener("click", () => {
-          if (expandedAutomationProjects.has(project2.id)) {
-            expandedAutomationProjects.delete(project2.id);
-          } else {
-            expandedAutomationProjects.add(project2.id);
-          }
-          render();
-        });
-        group.append(
-          el(
-            "div",
-            { class: "automation-threads-header" },
-            toggle,
-            automationSetupBtn("Automation settings", () => {
-              openAutomationSetup();
-            })
-          )
-        );
-        if (automationExpanded) {
-          const automationRows = el("div", { class: "automation-thread-rows" });
-          for (const [scheduleId, runs] of scheduleGroups) {
-            const firstRun = runs[0];
-            if (!firstRun) continue;
-            if (runs.length === 1) {
-              automationRows.append(renderThreadRow(firstRun));
-              continue;
-            }
-            const scheduleKey = `${project2.id}\0${scheduleId}`;
-            const hasActiveRun = runs.some((thread) => thread.id === activeId);
-            const attentionRuns = runs.filter((thread) => isThreadAwaitingAttention(thread.id));
-            const showingAllRuns = isFiltering || expandedAutomationSchedules.has(scheduleKey) || hasActiveRun;
-            const scheduleRevealed = showingAllRuns || attentionRuns.length > 0;
-            const scheduleName = firstRun.automation?.scheduleName ?? firstRun.title;
-            const scheduleGroup = el("div", {
-              class: "automation-schedule-group",
-              "data-schedule-id": scheduleId
-            });
-            const scheduleToggle = el(
-              "button",
-              {
-                type: "button",
-                class: "automation-schedule-toggle",
-                "aria-expanded": showingAllRuns ? "true" : "false"
-              },
-              el(
-                "span",
-                {
-                  class: `automation-threads-twisty${showingAllRuns ? " expanded" : ""}`
-                },
-                chevronRightIcon("ui-icon ui-icon-sm")
-              ),
-              el("span", { class: "automation-schedule-title" }, scheduleName),
-              el("span", { class: "automation-schedule-count" }, `${String(runs.length)} runs`)
-            );
-            if (runs.some((thread) => thread.status === "running")) {
-              const status = runningStatusIcon("ui-icon ui-icon-sm automation-threads-running");
-              status.setAttribute("role", "img");
-              status.setAttribute("aria-label", "This automation is running");
-              status.removeAttribute("aria-hidden");
-              scheduleToggle.append(status);
-            }
-            scheduleToggle.addEventListener("click", () => {
-              if (expandedAutomationSchedules.has(scheduleKey)) {
-                expandedAutomationSchedules.delete(scheduleKey);
-              } else {
-                expandedAutomationSchedules.add(scheduleKey);
-              }
-              render();
-            });
-            scheduleGroup.append(
-              el(
-                "div",
-                { class: "automation-schedule-header" },
-                scheduleToggle,
-                automationSetupBtn(`${scheduleName} setup`, () => {
-                  openAutomationSetup(scheduleId);
-                })
-              )
-            );
-            if (scheduleRevealed) {
-              const runRows = el("div", { class: "automation-schedule-runs" });
-              const visibleRuns = showingAllRuns ? runs : attentionRuns;
-              for (const thread of visibleRuns) {
-                const index = runs.indexOf(thread);
-                const timestamp = thread.automation?.triggeredAt;
-                const when = timestamp ? new Date(timestamp).toLocaleString([], {
-                  dateStyle: "medium",
-                  timeStyle: "short"
-                }) : "Unknown time";
-                runRows.append(
-                  renderThreadRow(thread, {
-                    displayTitle: index === 0 ? `Latest \xB7 ${when}` : when,
-                    allowRename: false
-                  })
-                );
-              }
-              scheduleGroup.append(runRows);
-            }
-            automationRows.append(scheduleGroup);
-          }
-          group.append(automationRows);
-        }
-        chats.append(group);
       }
       entry.append(chats);
       return entry;
@@ -66657,6 +66678,8 @@ function mountProjectsPane(root, store2, api2) {
       block.append(children);
       return block;
     }
+    const automationsSection = renderAutomationsSection();
+    if (automationsSection) list.append(automationsSection);
     for (const node2 of buildProjectTree(projects, projectGroups)) {
       if (node2.kind === "group") list.append(renderGroupEntry(node2.group, node2.projects));
       else list.append(renderProjectEntry(node2.project));

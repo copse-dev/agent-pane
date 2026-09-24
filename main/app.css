@@ -1198,6 +1198,16 @@ copse-ui-field input[type=password],
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+.chat-thread-owner {
+  flex-shrink: 0;
+  margin-left: var(--spacing-xs);
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+}
+.automation-schedule-toggle .chat-thread-owner {
+  margin-left: 0;
+}
 .automation-schedule-runs .chat-row {
   padding-left: calc(42px + var(--spacing-md));
   color: var(--text-muted);
@@ -1254,6 +1264,9 @@ copse-ui-field input[type=password],
   padding: 0;
 }
 .chat-row:hover .chat-delete {
+  opacity: 1;
+}
+.chat-row:hover .automation-setup-btn {
   opacity: 1;
 }
 .chat-running-status {
