@@ -75,17 +75,39 @@ function provenance(finding: Finding): string {
   return parts.join('; ')
 }
 
+/** Keep quoted content from closing the surrounding disclosure. */
+function details(title: string, content: string): string {
+  const safe = content.replace(/<\/?(?:details|summary)\b[^>]*>/gi, (tag) =>
+    tag.replaceAll('<', '&lt;').replaceAll('>', '&gt;'),
+  )
+  return `<details>\n<summary>${title}</summary>\n\n${safe}\n\n</details>`
+}
+
 /** One finding as a comment body, the same whether inline or in the review body. */
 export function renderFindingComment(finding: Finding): string {
-  const lines = [
-    `**[${finding.class} · ${finding.severity} · ${finding.confidence}] ${finding.claim}**`,
+  const status =
+    finding.verdict.status === 'confirmed'
+      ? 'Confirmed by an automated check.'
+      : finding.verdict.status === 'refuted'
+        ? 'Dismissed after further checking.'
+        : 'Possible issue — not confirmed by a test.'
+  return [
+    `**${finding.claim}**`,
     '',
-    `${finding.verdict.status}: ${finding.verdict.reason}`,
-  ]
-  const evidence = evidenceLines(finding)
-  if (evidence.length > 0) lines.push('', ...evidence)
-  lines.push('', `<sub>${provenance(finding)} · id \`${finding.id}\`</sub>`)
-  return lines.join('\n')
+    `${finding.severity.charAt(0).toUpperCase()}${finding.severity.slice(1)} priority. ${status}`,
+    '',
+    details(
+      'Why this was flagged',
+      [
+        finding.verdict.reason,
+        '',
+        ...evidenceLines(finding),
+        '',
+        `Category: ${finding.class}. Model confidence: ${finding.confidence}.`,
+        `${provenance(finding)} · id \`${finding.id}\``,
+      ].join('\n'),
+    ),
+  ].join('\n')
 }
 
 const MARK: Record<ReviewReport['stage0']['checks'][number]['verdict'], string> = {
@@ -97,9 +119,9 @@ const MARK: Record<ReviewReport['stage0']['checks'][number]['verdict'], string> 
   'not-run': '–',
 }
 
-function bodyHeader(report: ReviewReport, options: ForgeReviewOptions): string[] {
+function reviewDetails(report: ReviewReport, options: ForgeReviewOptions): string[] {
   const { stage0 } = report
-  const lines = [`### Copse Reviewer`]
+  const lines: string[] = []
   const executed = stage0.execution.decision.execute
   lines.push(
     executed
@@ -143,6 +165,24 @@ function bodyHeader(report: ReviewReport, options: ForgeReviewOptions): string[]
     }
   }
   if (options.headCommit !== null) lines.push(`Head: \`${options.headCommit.slice(0, 12)}\`.`)
+  const timings = [
+    ...report.reviews.map((review) => ({ label: 'Find issues', timing: review.timing })),
+    ...(report.verification?.records ?? []).map((record) => ({
+      label: record.strategy === 'reproducer' ? 'Try a test' : 'Check the claim',
+      timing: record.timing,
+    })),
+  ].filter((entry) => entry.timing !== undefined)
+  if (timings.length > 0) {
+    const seconds = (ms: number): string => `${(ms / 1_000).toFixed(1)}s`
+    lines.push('', '| Task | Total | Tools | Model and waiting |', '| --- | ---: | ---: | ---: |')
+    for (const { label, timing } of timings) {
+      if (timing)
+        lines.push(
+          `| ${label} | ${seconds(timing.durationMs)} | ${seconds(timing.toolMs)} | ${seconds(timing.modelAndOverheadMs)} |`,
+        )
+    }
+    lines.push('', 'Model and waiting includes API retries and orchestration, not just inference.')
+  }
   return lines
 }
 
@@ -169,23 +209,26 @@ export function buildForgeReview(
       body: renderFindingComment(finding),
     })
   })
-  const lines = bodyHeader(report, options)
+  const lines = ['### Copse Reviewer']
   const limitations = reviewerLimitations(report.reviews)
+  const incomplete = report.reviews.some((review) => review.outcome !== 'completed')
   lines.push('')
+  if (incomplete) lines.push('**Review stopped early. These results may be incomplete.**', '')
+  if (limitations.length > 0 || report.stage0.coverage.notChecked.length > 0)
+    lines.push('Some checks remain unverified. See review details below.', '')
   if (report.findings.length === 0) {
-    const incomplete = report.reviews.some((review) => review.outcome !== 'completed')
     lines.push(
       report.reviews.length === 0
-        ? 'No findings from Stage 0.'
+        ? 'No issues found by the automated checks.'
         : incomplete
-          ? 'No findings were produced before the incomplete review stopped.'
+          ? 'No issues were reported before the review stopped.'
           : limitations.length > 0
-            ? 'No findings were reported; review limits remain.'
-            : 'No findings.',
+            ? 'No issues were reported, but the review has gaps.'
+            : 'No issues found.',
     )
   } else {
     lines.push(
-      `${String(report.findings.length)} finding(s)${comments.length > 0 ? `, ${String(comments.length)} as inline comments` : ''}.`,
+      `${String(report.findings.length)} ${report.findings.length === 1 ? 'issue' : 'issues'} to review.${comments.length > 0 ? ` See ${comments.length === 1 ? 'the inline comment' : 'the inline comments'}.` : ''}`,
     )
     for (const finding of inBody) {
       lines.push('', `#### ${where(finding)}`, '', renderFindingComment(finding))
@@ -194,12 +237,15 @@ export function buildForgeReview(
   if (report.appendix.length > 0) {
     lines.push('', `${String(report.appendix.length)} more below the cap, in the review's JSON.`)
   }
-  if (report.refuted.length > 0) {
-    lines.push(`${String(report.refuted.length)} refuted by verification and dropped.`)
-  }
+  const supporting = reviewDetails(report, options)
+  if (report.refuted.length > 0)
+    supporting.push(
+      `${String(report.refuted.length)} suspected issues were dismissed after checking.`,
+    )
+  lines.push('', details('Review details', supporting.join('\n')))
   lines.push(
     '',
-    `<sub>Advisory, not a gate. copse-review ${options.toolVersion}${options.headCommit === null ? '' : ` · <!-- copse-review:${options.headCommit} -->`}</sub>`,
+    `<sub>Suggestions for the author; this review does not block merging. copse-review ${options.toolVersion}${options.headCommit === null ? '' : ` · <!-- copse-review:${options.headCommit} -->`}</sub>`,
   )
   return { body: lines.join('\n'), comments }
 }

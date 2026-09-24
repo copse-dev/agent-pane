@@ -20,7 +20,7 @@ import type { ReportedCandidate, ReviewCompletion } from './reviewer-tools.ts'
 import type { Stage0Report } from './stage0.ts'
 import type { Stage2Result } from './stage2.ts'
 import type { Stage4Result, VerificationRecord } from './stage4.ts'
-import type { TurnUsage } from './turn.ts'
+import type { TurnTiming, TurnUsage } from './turn.ts'
 
 export const REVIEW_REPORT_VERSION = 2
 /** The hard cap on surfaced findings: a forty-item list is a denial of service. */
@@ -35,6 +35,7 @@ export interface ReviewerSummary {
   readonly stopReason: HeadlessStopReason
   readonly candidates: number
   readonly toolCalls: number
+  readonly timing?: TurnTiming
   readonly usage: TurnUsage
   readonly summary: string
   readonly completion: ReviewCompletion | null
@@ -246,6 +247,7 @@ export function summarizeReview(review: Stage2Result): ReviewerSummary {
     stopReason: review.stopReason,
     candidates: review.candidates.length,
     toolCalls: review.toolCalls,
+    ...(review.timing !== undefined ? { timing: review.timing } : {}),
     usage: review.usage,
     summary: review.summary,
     completion: review.completion,

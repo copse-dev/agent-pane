@@ -147,14 +147,64 @@ function fakeFetch(statuses: number[]): { fetch: FetchLike; calls: Call[] } {
 describe('forge review', () => {
   it('renders a finding with its verdict, evidence and provenance', () => {
     const text = renderFindingComment(anchored)
-    assert.match(text, /^\*\*\[contract · high · high\] add subtracts/)
-    assert.match(text, /confirmed: The reproducer fails on head/)
+    assert.match(text, /^\*\*add subtracts/)
+    assert.match(text, /Confirmed by an automated check\./)
     assert.match(text, /reproducer `\.copse-review\/add\.test\.cjs`: fails on head, passes on base/)
     assert.match(text, /`node \.copse-review\/add\.test\.cjs` on head: exit 1/)
     assert.match(
       text,
       /raised by gpt-5 \(correctness\); corroborated by claude-opus-4-8 · id `0123456789abcdef`/,
     )
+  })
+
+  it('keeps the actionable claim and uncertainty visible while folding technical evidence', () => {
+    const text = renderFindingComment({
+      ...anchored,
+      verdict: {
+        status: 'unverified',
+        reason: 'A caller can trigger this. </details> quoted markup.',
+      },
+    })
+    const visible = text.split('<details>')[0] ?? ''
+    assert.match(visible, /add subtracts/)
+    assert.match(visible, /Possible issue — not confirmed by a test/)
+    assert.doesNotMatch(visible, /contract|gpt-5|0123456789abcdef|node \.copse-review/)
+    assert.match(text, /<summary>Why this was flagged<\/summary>/)
+    assert.match(text, /&lt;\/details&gt; quoted markup/)
+    assert.equal(text.match(/<\/details>/g)?.length, 1)
+  })
+
+  it('keeps incomplete status outside the collapsed details', () => {
+    const source = report()
+    const review = buildForgeReview(
+      { ...source, reviews: source.reviews.map((r) => ({ ...r, outcome: 'failed' })) },
+      { headCommit: target.headCommit, toolVersion: 'test' },
+    )
+    assert.match(review.body.split('<details>')[0] ?? '', /Review stopped early/)
+  })
+
+  it('puts task timings inside review details and keeps material gaps visible', () => {
+    const source = report({ findings: [] })
+    const review = buildForgeReview(
+      {
+        ...source,
+        reviews: source.reviews.map((entry) => ({
+          ...entry,
+          timing: { durationMs: 3_000, toolMs: 1_000, modelAndOverheadMs: 2_000 },
+          completion: {
+            checked: 'The changed implementation.',
+            couldNotVerify: 'The resize path.',
+          },
+        })),
+      },
+      { headCommit: target.headCommit, toolVersion: 'test' },
+    )
+    const visible = review.body.split('<details>')[0] ?? ''
+    assert.match(visible, /Some checks remain unverified/)
+    assert.doesNotMatch(visible, /gpt-5|ephemeral-runner|3\.0s/)
+    assert.match(review.body, /<summary>Review details<\/summary>/)
+    assert.match(review.body, /\| Find issues \| 3\.0s \| 1\.0s \| 2\.0s \|/)
+    assert.match(review.body, /The resize path/)
   })
 
   it('anchors findings with a line inline and puts the rest in the body', () => {
@@ -170,14 +220,14 @@ describe('forge review', () => {
     assert.match(review.body, /Executed in the `ephemeral-runner` backend \(container\)/)
     assert.match(review.body, /Checks: typecheck ✓, test ✗ regressed\./)
     assert.match(review.body, /Not checked: lint — timed out\./)
-    assert.match(review.body, /2 finding\(s\), 1 as inline comments\./)
-    assert.match(review.body, /#### package\.json\n\n\*\*\[test · high · high\]/)
+    assert.match(review.body, /2 issues to review\. See the inline comment\./)
+    assert.match(review.body, /#### package\.json\n\n\*\*`pnpm run test`/)
     assert.doesNotMatch(
       review.body,
       /add subtracts/,
       'the inline finding is not repeated in the body',
     )
-    assert.match(review.body, /Advisory, not a gate\./)
+    assert.match(review.body, /this review does not block merging/)
     assert.match(review.body, /<!-- copse-review:b{40} -->/)
   })
 
@@ -187,7 +237,7 @@ describe('forge review', () => {
       toolVersion: '0.1.0',
     })
     assert.equal(review.comments.length, 0)
-    assert.match(review.body, /No findings from Stage 0\./)
+    assert.match(review.body, /No issues found by the automated checks\./)
     assert.doesNotMatch(review.body, /Head:/)
   })
 
@@ -215,8 +265,8 @@ describe('forge review', () => {
     )
     assert.match(review.body, /Review incomplete: 1 of 1 reviewer run\(s\)/)
     assert.match(review.body, /without calling the required finish_review tool/)
-    assert.match(review.body, /No findings were produced before the incomplete review stopped\./)
-    assert.doesNotMatch(review.body, /\nNo findings\.\n/)
+    assert.match(review.body, /No issues were reported before the review stopped\./)
+    assert.doesNotMatch(review.body, /\nNo issues found\.\n/)
   })
 
   it('surfaces material uncertainty instead of presenting a false-clean review', () => {
@@ -249,8 +299,8 @@ describe('forge review', () => {
       review.body,
       /Could not verify \(qwen3\.8-27b, correctness\): jsdom source was absent/,
     )
-    assert.match(review.body, /No findings were reported; review limits remain\./)
-    assert.doesNotMatch(review.body, /\nNo findings\.\n/)
+    assert.match(review.body, /No issues were reported, but the review has gaps\./)
+    assert.doesNotMatch(review.body, /\nNo issues found\.\n/)
   })
 
   it('posts a GitHub review with inline comments on the head commit', async () => {
@@ -295,7 +345,7 @@ describe('forge review', () => {
     const retry = calls[1]
     assert.ok(retry)
     assert.deepEqual(retry.body['comments'], [])
-    assert.match(String(retry.body['body']), /#### src\/math\.ts:3\n\n\*\*\[contract/)
+    assert.match(String(retry.body['body']), /#### src\/math\.ts:3\n\n\*\*add subtracts/)
   })
 
   it('reports any other failure with the status and the response head', async () => {
