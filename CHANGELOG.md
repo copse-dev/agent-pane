@@ -14,9 +14,11 @@ every published entry.
   system-reminder note naming what was clamped, instead of a schema error and
   a retry round trip. The repair only fires when numeric range is the sole
   problem; type, enum, and missing-field errors still produce the plain
-  schema error. Recovered text-tool-call arguments (models that emit tool
-  calls as text) get the same repair and adjustment note; other invalid known
-  calls now reach the normal schema error instead of disappearing.
+  schema error. This repair is opt-in for safe, idempotent search limits;
+  mutating and third-party tools remain fail-closed. Recovered text-tool-call
+  arguments (models that emit tool calls as text) get the same repair and
+  adjustment note; other invalid known calls now reach the normal schema error
+  instead of disappearing.
 
 - The Browser pane now restores its tabs when Copse is reopened. A window
   remembers the pages it had open and the canvas artefacts it was showing, and

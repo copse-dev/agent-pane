@@ -131,6 +131,7 @@ describe('ToolRegistry', () => {
       reg.register({
         name: 'find_files',
         description: 'find files',
+        clampNumericRangeArgs: true,
         parameters: z.object({
           pattern: z.string(),
           max_results: z.number().int().min(1).max(200).optional().default(50),
@@ -161,6 +162,7 @@ describe('ToolRegistry', () => {
       reg.register({
         name: 'bounded_transform',
         description: 'transform a bounded number',
+        clampNumericRangeArgs: true,
         parameters: z.object({
           max_results: z
             .number()
@@ -185,6 +187,7 @@ describe('ToolRegistry', () => {
       reg.register({
         name: 'search_code',
         description: 'search',
+        clampNumericRangeArgs: true,
         parameters: z.object({ context_lines: z.number().int().min(0).max(20) }),
         execute: async ({ context_lines }) => `lines=${String(context_lines)}`,
       })
@@ -205,6 +208,7 @@ describe('ToolRegistry', () => {
       reg.register({
         name: 'find_files',
         description: 'find files',
+        clampNumericRangeArgs: true,
         parameters: z.object({
           pattern: z.string(),
           max_results: z.number().int().min(1).max(200).optional(),
@@ -227,6 +231,7 @@ describe('ToolRegistry', () => {
       reg.register({
         name: 'find_files',
         description: 'find files',
+        clampNumericRangeArgs: true,
         parameters: z.object({
           pattern: z.string(),
           max_results: z.number().int().min(1).max(200),
@@ -252,6 +257,7 @@ describe('ToolRegistry', () => {
       reg.register({
         name: 'find_files',
         description: 'find files',
+        clampNumericRangeArgs: true,
         parameters: z.object({ pattern: z.string(), max_results: z.number().max(200) }),
         execute: async () => {
           executed = true
@@ -280,6 +286,7 @@ describe('ToolRegistry', () => {
       reg.register({
         name: 'find_files',
         description: 'find files',
+        clampNumericRangeArgs: true,
         parameters: z.object({ max_results: z.number().max(200) }),
         execute: async () => 'found',
       })
@@ -300,6 +307,7 @@ describe('ToolRegistry', () => {
       reg.register({
         name: 'find_files',
         description: 'find files',
+        clampNumericRangeArgs: true,
         parameters: z.object({
           pattern: z.string(),
           max_results: z.number().int().min(1).max(200).optional().default(50),
@@ -313,6 +321,32 @@ describe('ToolRegistry', () => {
       )
       assert.equal(result, 'found', 'a valid call is unmodified')
       assert.doesNotMatch(result, /system-reminder/)
+    })
+
+    it('keeps numeric bounds fail-closed unless a tool explicitly opts in', async () => {
+      setPermissionGateForTests(async () => true)
+      let executed = false
+      const reg = new ToolRegistry()
+      reg.register({
+        name: 'third_party_transfer',
+        description: 'transfer an amount',
+        parameters: z.object({ amount: z.number().max(1_000) }),
+        execute: async () => {
+          executed = true
+          return 'transferred'
+        },
+      })
+
+      await assert.rejects(
+        () =>
+          reg.execute(
+            'third_party_transfer',
+            { amount: 10_000 },
+            new AbortController().signal,
+          ),
+        /amount — .*<=1000/,
+      )
+      assert.equal(executed, false)
     })
   })
 

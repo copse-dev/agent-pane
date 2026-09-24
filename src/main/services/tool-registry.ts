@@ -42,6 +42,7 @@ interface RegisteredTool {
   parse: (rawArgs: unknown) => unknown
   execute: (args: unknown, signal: AbortSignal) => ToolExecuteResult | Promise<ToolExecuteResult>
   provenance: ToolProvenance
+  clampNumericRangeArgs: boolean
 }
 
 export interface ToolCatalogDescriptor {
@@ -94,6 +95,7 @@ export class ToolRegistry {
       parse: (rawArgs) => tool.parameters.parse(rawArgs),
       execute: (args, signal) => tool.execute(tool.parameters.parse(args), signal),
       provenance: tool.provenance ?? 'workspace',
+      clampNumericRangeArgs: tool.clampNumericRangeArgs ?? false,
     })
   }
 
@@ -174,7 +176,7 @@ export class ToolRegistry {
       // 2000) keep their intent under clamping, so repair and run rather than
       // bounce; anything else keeps the plain schema error.
       const argsRecord = isRecord(rawArgs) ? rawArgs : null
-      if (err instanceof z.ZodError && argsRecord) {
+      if (tool.clampNumericRangeArgs && err instanceof z.ZodError && argsRecord) {
         const repaired = clampNumericRangeArgs(err, argsRecord)
         if (repaired) {
           try {
