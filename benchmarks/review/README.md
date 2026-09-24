@@ -137,3 +137,22 @@ These commands use the current provider defaults, not AA's max-effort harness. V
 tool-call compatibility with one case before a full paid run, and record the effective effort and
 route; the benchmark CLI does not yet expose an effort override. No production model change or
 real-model quality claim is part of the corpus change.
+
+The manual **Copse Reviewer model benchmark** workflow accepts `profile: openrouter-luna` or
+`openrouter-sol`, using the `OPENROUTER_API_KEY` Actions secret. An organization secret must grant
+this repository access. OpenRouter profiles fail when that key is missing and never fall back to
+Scaleway credentials. `configured` retains the repository's existing dogfood profile.
+
+Start with the default `timer-leak` smoke case and `lenses: correctness`; clear `case` deliberately
+to run the full corpus. Runs share a single concurrency group and stop after 60 minutes.
+OpenRouter profiles set `--max-steps 12` and `--max-verify 3`. These limits bound
+work, not dollar spend: the OpenRouter key's configured **$25 monthly limit** is the spending cap,
+shared with any other use of that key. No scheduled workflow uses the new key.
+
+```bash
+gh workflow run review-model-bench.yml -f profile=openrouter-luna -f case=timer-leak -f lenses=correctness
+```
+
+The workflow always checks out the default branch, even if dispatched from an experiment branch;
+new corpus cases become available after merging. Results are uploaded as `copse-review-model-bench`
+from `bench-results/review-model/`.

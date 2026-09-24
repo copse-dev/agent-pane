@@ -1008,8 +1008,28 @@ describe('Copse Reviewer workflow invariants', () => {
     assert.match(modelBenchWorkflow, /--challenger "\$REVIEW_MODEL"/)
     assert.match(modelBenchWorkflow, /bench_args\+=\(--case "\$REVIEW_CASE"\)/)
     assert.match(modelBenchWorkflow, /pnpm exec node "\$\{bench_args\[@\]\}"/)
-    assert.match(modelBenchWorkflow, /--out bench-results\/review-scaleway/)
+    assert.match(modelBenchWorkflow, /--out bench-results\/review-model/)
     assert.match(modelBenchWorkflow, /retention-days: 30/)
+  })
+
+  it('keeps OpenRouter experiments manual, bounded, and on their own credential', () => {
+    assert.match(modelBenchWorkflow, /default: timer-leak/)
+    assert.match(modelBenchWorkflow, /^ {2}group: copse-review-model-bench$/m)
+    assert.match(modelBenchWorkflow, /timeout-minutes: 60/)
+    assert.match(modelBenchWorkflow, /OPENROUTER_API_KEY: \$\{\{ secrets\.OPENROUTER_API_KEY \}\}/)
+    assert.match(modelBenchWorkflow, /openrouter-luna\|openrouter-sol\)/)
+    assert.match(modelBenchWorkflow, /unset COPSE_REVIEW_API_KEY SCW_DEFAULT_PROJECT_ID/)
+    assert.match(modelBenchWorkflow, /if test -z "\$OPENROUTER_API_KEY"; then/)
+    assert.match(modelBenchWorkflow, /REVIEW_PROVIDER=openrouter/)
+    assert.match(
+      modelBenchWorkflow,
+      /REVIEW_MODEL="openai\/gpt-6-\$\{REVIEW_PROFILE#openrouter-\}"/,
+    )
+    assert.match(modelBenchWorkflow, /REVIEW_MAX_STEPS=12/)
+    assert.match(modelBenchWorkflow, /REVIEW_MAX_VERIFY=3/)
+    for (const workflow of [findingsWorkflow, nightlyWorkflow]) {
+      assert.doesNotMatch(workflow, /OPENROUTER_API_KEY|openrouter-luna|openrouter-sol/)
+    }
   })
 
   it('samples at most one recent same-repository PR, including drafts, and has an explicit opt-out', () => {
