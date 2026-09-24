@@ -471,12 +471,24 @@ export async function runCase(reviewCase: ReviewCase, options: RunOptions): Prom
         findings,
         startedAt: started,
       })
+      // Provider and protocol failures are returned as turn data, not thrown.
+      // Keep the partial evidence, but never count an incomplete run as a
+      // successful benchmark (or let it become a baseline). A completed but
+      // undetermined verifier and verification skipped by the cap are valid.
+      const incomplete = [
+        ...report.reviews
+          .filter((review) => review.outcome !== 'completed' || review.completion === null)
+          .map((review) => `reviewer ${review.turnId}: ${review.outcome} (${review.stopReason})`),
+        ...(report.verification?.records ?? [])
+          .filter((record) => record.outcome !== 'completed')
+          .map((record) => `${record.strategy} ${record.turnId}: ${record.outcome}`),
+      ]
+      if (incomplete.length > 0) error = `incomplete model turns: ${incomplete.join('; ')}`
     } finally {
       await ground.close()
     }
   } catch (err) {
     error = errorMessage(err)
-    log(`  ${reviewCase.spec.id}: ERROR ${error}`)
   } finally {
     await materialised.remove()
   }
@@ -511,6 +523,7 @@ export async function runCase(reviewCase: ReviewCase, options: RunOptions): Prom
     durationMs: Date.now() - started,
   })
   const scored = report ?? emptyReport()
+  if (error !== null) log(`  ${reviewCase.spec.id}: ERROR ${error}`)
   writeFileSync(reportPath, `${JSON.stringify(scored, null, 2)}\n`, 'utf8')
   writeFileSync(
     eventsPath,
@@ -581,6 +594,7 @@ export function renderSummary(summary: BenchSummary): string {
   const { metrics } = summary
   return [
     `bench:review profile=${summary.profile} lenses=${summary.lenses.join(',')} verify=${String(summary.verify)} cases=${String(metrics.cases)}`,
+    `  completed ${String(summary.cases.filter((result) => result.error === null).length)}/${String(summary.cases.length)} cases`,
     `  precision ${percent(metrics.precision)} (95% lower bound ${percent(metrics.precisionLowerBound95)}; ${String(metrics.truePositives)} true, ${String(metrics.falsePositives)} false, ${String(metrics.duplicates)} duplicate; ${String(metrics.surfaced)} comments surfaced)`,
     `  recall ${percent(metrics.recall)} (${String(metrics.found)} of ${String(metrics.defects)} defects; secondary)`,
     `  reproducer rate ${percent(metrics.reproducerRate)} (${String(metrics.confirmedByReproducer)} confirmed by reproducer; ${String(metrics.confirmed)} confirmed in all)`,
@@ -899,7 +913,7 @@ export async function main(
   const failed = summary.cases.filter((result) => result.error !== null)
   if (failed.length > 0) {
     io.stderr(
-      `bench:review: ${String(failed.length)} case(s) did not run: ${failed.map((r) => r.id).join(', ')}\n`,
+      `bench:review: ${String(failed.length)} case(s) did not complete: ${failed.map((r) => r.id).join(', ')}\n`,
     )
     return 1
   }

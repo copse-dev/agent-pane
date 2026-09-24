@@ -34,6 +34,21 @@ function errorStatus(err: unknown): number | undefined {
   return typeof status === 'number' ? status : undefined
 }
 
+/**
+ * OpenAI's SDK raises an APIError with no HTTP status for an SSE error frame.
+ * OpenRouter puts the status in `error.code`, including numeric codes that the
+ * SDK types as strings. Only interpret HTTP-shaped codes on that SDK error;
+ * an explicit HTTP status and symbolic API codes retain their usual meaning.
+ */
+function streamedErrorStatus(err: unknown): number | undefined {
+  if (!(err instanceof OpenAI.APIError) || err.status !== undefined) return undefined
+  const code: unknown = err.code
+  const status = typeof code === 'string' && /^[45]\d{2}$/.test(code) ? Number(code) : code
+  return typeof status === 'number' && Number.isInteger(status) && status >= 400 && status < 600
+    ? status
+    : undefined
+}
+
 /** Duck-typed `{ error: { type } }` body used by Anthropic-style overloaded responses. */
 function errorBodyType(err: unknown): string | undefined {
   if (!isRecord(err)) return undefined
@@ -153,7 +168,7 @@ export function isRetryableStreamError(err: unknown): boolean {
   // no status code or SDK class to dispatch on (see isLmStudioTransportError).
   if (!(err instanceof ToolCallRequestError) && isLmStudioTransportError(err)) return true
 
-  const status = errorStatus(err)
+  const status = errorStatus(err) ?? streamedErrorStatus(err)
   // OpenAI's SDK retries request timeout/conflict by default. Its internal
   // retry loop is disabled in our adapters so this wrapper owns one bounded
   // budget; retain those SDK semantics here alongside rate limits.
@@ -252,13 +267,19 @@ export async function* yieldStreamWithRetry<T>(
       if (opts.signal?.aborted) throw err
       const routingPolicyFailure = isRoutingPolicyError(err)
       const canRetryRoutingPolicy = routingPolicyFailure && !routingPolicyRetryUsed
-      if (
-        committed ||
-        (!canRetryRoutingPolicy && !isRetryableStreamError(err)) ||
-        attempt >= maxAttempts - 1
-      ) {
-        throw err
+      const retry =
+        !committed &&
+        (canRetryRoutingPolicy || isRetryableStreamError(err)) &&
+        attempt < maxAttempts - 1
+      const streamedStatus = streamedErrorStatus(err)
+      if (streamedStatus !== undefined) {
+        // No request, body, headers, or provider message: enough to distinguish
+        // exhaustion from a committed stream without logging private content.
+        console.warn(
+          `[llm] streamed API error code=${String(streamedStatus)} attempt=${String(attempt + 1)}/${String(maxAttempts)} committed=${String(committed)} retry=${String(retry)}`,
+        )
       }
+      if (!retry) throw err
       if (routingPolicyFailure) {
         routingPolicyRetryUsed = true
         reportingRoutingPolicyOutcome = true
