@@ -947,9 +947,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 Share command history across the project
               </label>
               <p class="field-hint">
-                When on (the default), every terminal you open in this project reads and writes the
-                same history file, so pressing the up arrow in one thread's Shells tab can recall a
-                command run in another. Turn off to keep each terminal's history separate.
+                When on (the default), Bash and Zsh terminals in this project use the same history
+                file, so a command from one thread can be recalled in another. Fish keeps its normal
+                shell-managed history. Turn off to keep each terminal's history separate.
               </p>
               <label class="checkbox-label">
                 <input type="checkbox" name="webAllowUserApproval" />

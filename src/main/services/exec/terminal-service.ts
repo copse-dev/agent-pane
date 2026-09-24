@@ -14,7 +14,6 @@ import {
 } from './subprocess-output-cap.ts'
 import { READ_TERMINAL_DEFAULT_LINES, takeLastLines } from '@shared/terminal/read-terminal.ts'
 import {
-  fishHistorySessionName,
   SHARE_TERMINAL_HISTORY_ENABLED_DEFAULT,
   SHARE_TERMINAL_HISTORY_ENABLED_SETTING,
   TERMINAL_HISTORY_FILENAME,
@@ -126,15 +125,19 @@ function bashHistoryDefaults(baseEnv: NodeJS.ProcessEnv): Record<string, string>
 
 /**
  * bash-only: the `PROMPT_COMMAND` that makes a *running* shell converge with
- * the shared HISTFILE on its own, one prompt at a time — `history -a` appends
- * this shell's new lines to the shared file, then `history -n` reads back
- * whatever other shells appended since. Prepended onto whatever
- * `PROMPT_COMMAND` the base env already carries (bash runs the whole string as
- * one command list, left to right), so a user's own hook still runs; never
- * replaces it.
+ * the shared HISTFILE on its own, one prompt at a time. `shopt -s histappend`
+ * prevents a stale shell from overwriting another shell's newer entries when
+ * it exits; `history -n` reads whatever other shells landed since the last
+ * prompt, then `history -w` writes the merged in-memory list including the
+ * command that just finished. The rewrite is intentional: Bash 3.2 reports
+ * success for `history -a` inside PROMPT_COMMAND but does not include that
+ * just-finished command, so a second shell cannot recall it yet. Prepended
+ * onto whatever `PROMPT_COMMAND` the base env already carries (bash runs the
+ * whole string as one command list, left to right), so a user's own hook still
+ * runs; never replaces it.
  */
 function bashPromptCommand(baseEnv: NodeJS.ProcessEnv): string {
-  const flush = 'history -a; history -n'
+  const flush = 'shopt -s histappend; history -n; history -w'
   const existing = baseEnv['PROMPT_COMMAND']
   return existing ? `${flush}; ${existing}` : flush
 }
@@ -145,14 +148,17 @@ function bashPromptCommand(baseEnv: NodeJS.ProcessEnv): string {
  * history was scoped to a single thread's own PTY).
  *
  * Up-arrow history is the shell's own feature — bash/zsh read and write a
- * `HISTFILE`, fish keys history by a session name instead — so the smallest
- * faithful fix is giving every PTY opened for a project the same history
- * identity. This is done through the PTY's environment only, never a shell rc
- * file, and it unconditionally wins over any `HISTFILE` the main process's own
- * environment happens to carry: an Electron GUI launch essentially never has
- * one, and nothing in this repo forwards a user's interactive shell env into
- * PTYs for history to defer to (`envForRendererChildProcess` forwards ordinary
- * vars but has no such convention).
+ * `HISTFILE`, so the smallest faithful fix is giving every supported PTY
+ * opened for a project the same history identity. Fish is deliberately left
+ * untouched: it accepts only a session name and persists that session under
+ * its global XDG data directory, outside `COPSE_DIR`, violating Copse's
+ * single-root state and profile-isolation contract. This is done through the
+ * PTY's environment only, never a shell rc file, and it unconditionally wins
+ * over any `HISTFILE` the main process's own environment happens to carry: an
+ * Electron GUI launch essentially never has one, and nothing in this repo
+ * forwards a user's interactive shell env into PTYs for history to defer to
+ * (`envForRendererChildProcess` forwards ordinary vars but has no such
+ * convention).
  *
  * A shared `HISTFILE` alone only helps a *new* shell: bash and zsh both load
  * history once, at startup, and otherwise only write it back at exit — so a
@@ -187,9 +193,7 @@ export function terminalHistoryEnv(
     return {}
   }
   const shellName = basename(shell).toLowerCase()
-  if (shellName === 'fish') {
-    return { fish_history: fishHistorySessionName(projectId) }
-  }
+  if (shellName === 'fish') return {}
   let dir: string
   try {
     dir = projectStoreDir(projectId)

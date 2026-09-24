@@ -1,6 +1,6 @@
 import { describe, it, afterEach, before, after } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -21,7 +21,6 @@ import { setWorkspaceRootForTest } from '../workspace.ts'
 import { projectStoreDir } from '../storage/copse-paths.ts'
 import { setSetting } from '../storage/settings.ts'
 import {
-  fishHistorySessionName,
   SHARE_TERMINAL_HISTORY_ENABLED_DEFAULT,
   SHARE_TERMINAL_HISTORY_ENABLED_SETTING,
   TERMINAL_HISTORY_FILENAME,
@@ -75,6 +74,35 @@ async function waitForTerminalOutput(
       .map(([, , data]) => data)
       .join('')
     if (pattern.test(combined) || Date.now() >= deadline) return combined
+    await new Promise((resolve) => setTimeout(resolve, 25))
+  }
+}
+
+async function waitForFileContents(
+  path: string,
+  pattern: RegExp,
+  timeoutMs = 10_000,
+): Promise<string> {
+  const deadline = Date.now() + timeoutMs
+  for (;;) {
+    const contents = existsSync(path) ? readFileSync(path, 'utf8') : ''
+    if (pattern.test(contents)) return contents
+    if (Date.now() >= deadline) return contents
+    await new Promise((resolve) => setTimeout(resolve, 25))
+  }
+}
+
+async function waitForTerminalExit(
+  win: ReturnType<typeof mockWindow>,
+  sessionId: string,
+  timeoutMs = 10_000,
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs
+  for (;;) {
+    if (win.sent.some(([channel, id]) => channel === 'terminal:exit' && id === sessionId)) {
+      return true
+    }
+    if (Date.now() >= deadline) return false
     await new Promise((resolve) => setTimeout(resolve, 25))
   }
 }
@@ -371,25 +399,27 @@ describe('terminal history sharing (#2433)', () => {
     assert.equal(env['HISTSIZE'], undefined)
   })
 
-  it('uses a per-project fish_history session name for fish instead of HISTFILE', () => {
+  it('leaves fish untouched because its named histories live outside COPSE_DIR', () => {
     const env = terminalHistoryEnv('/usr/bin/fish', 'project-fish')
-    assert.equal(env['fish_history'], fishHistorySessionName('project-fish'))
-    assert.equal(env['HISTFILE'], undefined)
+    assert.deepEqual(env, {})
   })
 
   it('sets PROMPT_COMMAND for bash so a running shell flushes to and reloads from the shared HISTFILE', () => {
     const env = terminalHistoryEnv('/bin/bash', 'project-bash-prompt', {})
-    assert.equal(env['PROMPT_COMMAND'], 'history -a; history -n')
+    assert.equal(env['PROMPT_COMMAND'], 'shopt -s histappend; history -n; history -w')
   })
 
   it('prepends onto an existing PROMPT_COMMAND instead of replacing it', () => {
     const env = terminalHistoryEnv('/bin/bash', 'project-bash-prompt-existing', {
       PROMPT_COMMAND: 'my_custom_hook',
     })
-    assert.equal(env['PROMPT_COMMAND'], 'history -a; history -n; my_custom_hook')
+    assert.equal(
+      env['PROMPT_COMMAND'],
+      'shopt -s histappend; history -n; history -w; my_custom_hook',
+    )
   })
 
-  it('does not set PROMPT_COMMAND for zsh or fish — zsh has no environment-settable live-share option, and fish keys history by session name', () => {
+  it('does not set PROMPT_COMMAND for zsh or fish', () => {
     const zshEnv = terminalHistoryEnv('/usr/bin/zsh', 'project-zsh-prompt')
     assert.equal(zshEnv['PROMPT_COMMAND'], undefined)
     const fishEnv = terminalHistoryEnv('/usr/bin/fish', 'project-fish-prompt')
@@ -420,6 +450,12 @@ describe('terminal history sharing (#2433)', () => {
       t.skip('POSIX shell / readline assertion')
       return
     }
+    // Use the repository's no-rc Bash fixture instead of the developer or CI
+    // host's login shell. Otherwise a ~/.zshrc or ~/.bashrc can replace
+    // HISTFILE/PROMPT_COMMAND and the test reads real user history rather than
+    // exercising terminalHistoryEnv at all.
+    const previousShell = process.env['SHELL']
+    process.env['SHELL'] = join(process.cwd(), 'tests/e2e/fixtures/e2e-bash-shell.sh')
     let spawnOk = true
     const probe = mockWindow(OWNER)
     try {
@@ -429,6 +465,8 @@ describe('terminal history sharing (#2433)', () => {
       spawnOk = false
     }
     if (!spawnOk) {
+      if (previousShell === undefined) delete process.env['SHELL']
+      else process.env['SHELL'] = previousShell
       t.skip('PTY spawn unavailable in this environment')
       return
     }
@@ -453,12 +491,18 @@ describe('terminal history sharing (#2433)', () => {
         projectId,
       })
       writeTerminalSession(session1, OWNER, `${command}\n`)
-      await waitForTerminalOutput(win1, new RegExp(marker))
-      // `PROMPT_COMMAND` firing produces no terminal output of its own to
-      // poll for (unlike the echoed marker above), so there is no event to
-      // wait on before it has actually written the shared HISTFILE — a short
-      // fixed pause is the only option here.
-      await new Promise((resolve) => setTimeout(resolve, 500))
+      const firstOutput = await waitForTerminalOutput(win1, new RegExp(marker))
+      // `PROMPT_COMMAND` firing produces no terminal output of its own, so
+      // synchronize on the actual persistence contract instead of a timing
+      // guess: the marker must land in the shared HISTFILE before shell 2 is
+      // allowed to start and load it.
+      const historyPath = join(projectStoreDir(projectId), TERMINAL_HISTORY_FILENAME)
+      const history = await waitForFileContents(historyPath, new RegExp(marker))
+      assert.match(
+        history,
+        new RegExp(marker),
+        `the first shell flushes its command to HISTFILE; shell output:\n${firstOutput}`,
+      )
 
       // Thread 2's terminal: a fresh shell for the same project, opened while
       // thread 1's shell above is still running. It never types a command of
@@ -482,7 +526,33 @@ describe('terminal history sharing (#2433)', () => {
         new RegExp(command.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
         'up-arrow in the second thread recalls the command typed in the still-open first thread',
       )
+
+      // A stale shell must not erase a newer command from another shell when
+      // it exits. Cancel the recalled line, run a distinct command in shell 2,
+      // wait for its prompt-time flush, then exit shell 1 without giving it a
+      // chance to import shell 2's command first. `histappend` is what makes
+      // that exit append shell 1's own entries instead of overwriting the
+      // shared file with its stale in-memory list.
+      const secondMarker = `${marker}_second`
+      writeTerminalSession(session2, OTHER_OWNER, '\x03')
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      writeTerminalSession(session2, OTHER_OWNER, `echo ${secondMarker}\n`)
+      await waitForTerminalOutput(win2, new RegExp(secondMarker))
+      const historyWithSecond = await waitForFileContents(historyPath, new RegExp(secondMarker))
+      assert.match(historyWithSecond, new RegExp(secondMarker))
+
+      writeTerminalSession(session1, OWNER, 'exit\n')
+      assert.equal(await waitForTerminalExit(win1, session1), true, 'first shell exits cleanly')
+      session1 = ''
+      const historyAfterStaleExit = readFileSync(historyPath, 'utf8')
+      assert.match(
+        historyAfterStaleExit,
+        new RegExp(secondMarker),
+        'a stale shell exit must not overwrite a newer command from another shell',
+      )
     } finally {
+      if (previousShell === undefined) delete process.env['SHELL']
+      else process.env['SHELL'] = previousShell
       if (session1) destroyTerminalSession(session1, OWNER)
       if (session2) destroyTerminalSession(session2, OTHER_OWNER)
     }

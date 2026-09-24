@@ -39,8 +39,9 @@ describe('shared terminal history setting (#2433)', () => {
     assert.match(await permissions.getText(), /Share command history across the project/)
     assert.match(
       await permissions.getText(),
-      /pressing the up arrow in one thread's Shells tab can recall a\s+command run in another/,
+      /Bash and Zsh terminals in this project use the same history\s+file/,
     )
+    assert.match(await permissions.getText(), /Fish keeps its normal\s+shell-managed history/)
 
     await browser.execute(() => {
       document
