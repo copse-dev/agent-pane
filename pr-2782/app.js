@@ -26052,9 +26052,20 @@ function ensureDialog3() {
   dialog.addEventListener("click", (event) => {
     if (event.target === dialog) dialog?.close();
   });
+  dialog.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") event.stopPropagation();
+  });
   dialog.addEventListener("close", () => {
+    const resolveFocusTarget = returnFocus;
+    returnFocus = null;
     activeToken += 1;
+    const closedToken = activeToken;
     releaseCurrent();
+    queueMicrotask(() => {
+      if (activeToken !== closedToken || dialog?.open) return;
+      const focusTarget = resolveFocusTarget?.();
+      if (focusTarget?.isConnected) focusTarget.focus({ preventScroll: true });
+    });
   });
   return dialog;
 }
@@ -26078,7 +26089,12 @@ function openAttachmentPreview(options) {
   previewTitle.textContent = options.title;
   if (options.content) previewBody.replaceChildren(options.content);
   else previewBody.replaceChildren(statusNode(options.status ?? `Loading ${options.title}\u2026`));
-  if (!previewDialog.open) previewDialog.showModal();
+  if (!previewDialog.open) {
+    const activeElement = document.activeElement;
+    const defaultReturnFocus = () => activeElement instanceof HTMLElement && activeElement.isConnected ? activeElement : null;
+    returnFocus = options.returnFocus ?? defaultReturnFocus;
+    previewDialog.showModal();
+  }
   const isActive = () => token === activeToken && previewDialog.open;
   return {
     isActive,
@@ -26097,7 +26113,7 @@ function openAttachmentPreview(options) {
     }
   };
 }
-var dialog, titleEl, bodyEl, currentCleanup, activeToken;
+var dialog, titleEl, bodyEl, currentCleanup, returnFocus, activeToken;
 var init_attachment_preview = __esm({
   "src/renderer/attachments/attachment-preview.ts"() {
     init_helpers();
@@ -26105,6 +26121,7 @@ var init_attachment_preview = __esm({
     titleEl = null;
     bodyEl = null;
     currentCleanup = null;
+    returnFocus = null;
     activeToken = 0;
   }
 });
@@ -26245,7 +26262,7 @@ function attachImageCopyMenu(image) {
     );
   });
 }
-function openImageExpand(src, alt = "Expanded attachment") {
+function openImageExpand(src, alt = "Expanded attachment", returnFocus2) {
   if (!src) return;
   const imageEl = el("img", { class: "image-expand-image", alt });
   imageEl.src = src;
@@ -26255,6 +26272,7 @@ function openImageExpand(src, alt = "Expanded attachment") {
     title: alt,
     ariaLabel: `Image preview: ${alt}`,
     content: imageEl,
+    ...returnFocus2 ? { returnFocus: returnFocus2 } : {},
     onClose: () => {
       imageEl.removeAttribute("src");
       imageEl.alt = "Expanded attachment";
@@ -26271,7 +26289,16 @@ function attachImageExpand(img, alt) {
   img.setAttribute("aria-label", alt ? `Expand ${alt}` : "Expand image");
   const open2 = () => {
     const label = alt ?? (img.alt || "Expanded attachment");
-    openImageExpand(img.currentSrc || img.src, label);
+    const src = img.currentSrc || img.src;
+    openImageExpand(src, label, () => {
+      if (img.isConnected) return img;
+      for (const candidate of document.querySelectorAll("img.image-expandable")) {
+        if (candidate.getAttribute("aria-label") === `Expand ${label}` && (candidate.currentSrc || candidate.src) === src) {
+          return candidate;
+        }
+      }
+      return null;
+    });
   };
   img.addEventListener("click", (event) => {
     event.preventDefault();
@@ -61250,6 +61277,15 @@ var init_developer_mode = __esm({
   }
 });
 
+// src/shared/terminal/terminal-history.ts
+var SHARE_TERMINAL_HISTORY_ENABLED_SETTING, SHARE_TERMINAL_HISTORY_ENABLED_DEFAULT;
+var init_terminal_history = __esm({
+  "src/shared/terminal/terminal-history.ts"() {
+    SHARE_TERMINAL_HISTORY_ENABLED_SETTING = "shareTerminalHistoryEnabled";
+    SHARE_TERMINAL_HISTORY_ENABLED_DEFAULT = true;
+  }
+});
+
 // src/shared/appearance.ts
 function sameHex(value, expected) {
   return typeof value === "string" && value.toLowerCase() === expected.toLowerCase();
@@ -61281,6 +61317,15 @@ var init_appearance = __esm({
       uiTintStrength: "subtle"
     };
     isUiTintStrength = (value) => value === "off" || value === "subtle" || value === "medium" || value === "strong";
+  }
+});
+
+// src/shared/git/commit-attribution.ts
+var GIT_ATTRIBUTION_SETTING, DEFAULT_GIT_ATTRIBUTION_ENABLED;
+var init_commit_attribution = __esm({
+  "src/shared/git/commit-attribution.ts"() {
+    GIT_ATTRIBUTION_SETTING = "gitAttributionEnabled";
+    DEFAULT_GIT_ATTRIBUTION_ENABLED = true;
   }
 });
 
@@ -61707,6 +61752,18 @@ function mountSettingsDialog(store2, api2) {
               </p>
             </fieldset>
 
+            <fieldset data-testid="git-attribution-settings">
+              <legend>Git attribution</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="${GIT_ATTRIBUTION_SETTING}" />
+                Credit Copse on commits and pull requests
+              </label>
+              <p class="field-hint">
+                Adds Copse as a co-author and lists the models used when Copse creates a commit or
+                pull request. On by default. Turn off to keep your message and description as written.
+              </p>
+            </fieldset>
+
             <div id="settings-gh-cli-host" class="settings-mount"></div>
           </section>
 
@@ -61847,6 +61904,15 @@ function mountSettingsDialog(store2, api2) {
                 When on (the default), the agent can read a Shells tab open in this chat, and you
                 can add one to a message with <code>@shell</code>. Turn off to keep your terminals
                 private.
+              </p>
+              <label class="checkbox-label">
+                <input type="checkbox" name="shareTerminalHistoryEnabled" />
+                Share command history across the project
+              </label>
+              <p class="field-hint">
+                When on (the default), Bash and Zsh terminals in this project use the same history
+                file, so a command from one thread can be recalled in another. Fish keeps its normal
+                shell-managed history. Turn off to keep each terminal's history separate.
               </p>
               <label class="checkbox-label">
                 <input type="checkbox" name="webAllowUserApproval" />
@@ -64898,8 +64964,10 @@ var init_settings_dialog = __esm({
     init_command_routing();
     init_unknown_value3();
     init_developer_mode();
+    init_terminal_history();
     init_appearance();
     init_projects();
+    init_commit_attribution();
     init_appearance();
     init_nullish2();
     isSettingsSection = (value) => value === "general" || value === "classifiers" || value === "usage" || value === "agent" || value === "permissions" || value === "mcp" || value === "customise" || value === "storage" || value === "appearance" || value === "ssh" || value === "experimental";
@@ -64925,6 +64993,12 @@ var init_settings_dialog = __esm({
       { name: "remoteAgentAutoCreatePR", kind: "checkbox", default: true, save: true },
       { name: "remoteAgentWorkOnCurrentBranch", kind: "checkbox", default: false, save: true },
       { name: "preferAcpOverCloudAgent", kind: "checkbox", default: true, save: true },
+      {
+        name: GIT_ATTRIBUTION_SETTING,
+        kind: "checkbox",
+        default: DEFAULT_GIT_ATTRIBUTION_ENABLED,
+        save: true
+      },
       { name: "gitCommitSshAgentSocketAccess", kind: "checkbox", default: false, save: true },
       { name: "localSubagentsEnabled", kind: "checkbox", default: true, save: true },
       {
@@ -64946,6 +65020,14 @@ var init_settings_dialog = __esm({
       { name: "vncEnabled", kind: "checkbox", default: false, save: true },
       // On by default: agent may read open Shells tabs via read_terminal / @shell.
       { name: "readTerminalEnabled", kind: "checkbox", default: true, save: true },
+      // On by default: every terminal opened for a project shares one HISTFILE, so
+      // up-arrow history from one thread's Shells tab is recallable in another's.
+      {
+        name: SHARE_TERMINAL_HISTORY_ENABLED_SETTING,
+        kind: "checkbox",
+        default: SHARE_TERMINAL_HISTORY_ENABLED_DEFAULT,
+        save: true
+      },
       // On by default: clicked links open in the in-app browser pane. Off routes
       // external links to the system browser and marks them with an external icon.
       { name: "openLinksInBuiltInBrowser", kind: "checkbox", default: true, save: true },
@@ -72367,7 +72449,10 @@ function createReviewCardEl(review, api2, onRetry) {
   appendReviewHeader(panel, review, onRetry);
   if (review.status === "running") return panel;
   const body = el("div", { class: "review-panel-body message-text streaming-markdown" });
-  body.innerHTML = renderMarkdown(review.summary || "(no review output)");
+  const bodyMarkdown = review.followUpNote ? `${review.summary || "(no review output)"}
+
+*${review.followUpNote}*` : review.summary || "(no review output)";
+  body.innerHTML = renderMarkdown(bodyMarkdown);
   void annotateFileReferences(body, api2);
   panel.append(body);
   return panel;
@@ -88220,6 +88305,7 @@ function isTrunkBranch(branch, defaultBranch) {
   return defaultBranch != null && branch != null && branch === defaultBranch;
 }
 function mountFooterBranchStatus(host, store2, api2) {
+  const listId = `branch-picker-list-${String(++nextPickerId)}`;
   const wrap = el("div", { class: "branch-picker", hidden: "" });
   const trigger = el("button", {
     type: "button",
@@ -88233,7 +88319,25 @@ function mountFooterBranchStatus(host, store2, api2) {
     chevronDownIcon("ui-icon ui-icon-sm")
   );
   trigger.append(label, chevron);
-  const menu = el("div", { class: "branch-picker-menu", role: "listbox", hidden: "" });
+  const menu = el("div", { class: "branch-picker-menu", hidden: "" });
+  const filterInput = el("input", {
+    type: "search",
+    class: "branch-picker-filter",
+    placeholder: "Filter branches...",
+    "aria-label": "Filter branches",
+    role: "combobox",
+    "aria-autocomplete": "list",
+    "aria-controls": listId,
+    "aria-expanded": "false",
+    autocomplete: "off"
+  });
+  const list = el("div", {
+    id: listId,
+    class: "branch-picker-list",
+    role: "listbox",
+    "aria-label": "Branches"
+  });
+  menu.append(filterInput, list);
   wrap.append(trigger, menu);
   host.append(wrap);
   let status = null;
@@ -88243,6 +88347,7 @@ function mountFooterBranchStatus(host, store2, api2) {
   let defaultBranch = null;
   let open2 = false;
   let refreshToken = 0;
+  let activeIndex = 0;
   const baseBranchByThread = /* @__PURE__ */ new Map();
   function getActiveThread2() {
     return getThreadById(store2, store2.getState().activeThreadId);
@@ -88272,8 +88377,15 @@ function mountFooterBranchStatus(host, store2, api2) {
   function setOpen(next) {
     open2 = next;
     trigger.setAttribute("aria-expanded", String(next));
-    if (next) menu.removeAttribute("hidden");
-    else menu.setAttribute("hidden", "");
+    filterInput.setAttribute("aria-expanded", String(next));
+    if (next) {
+      menu.removeAttribute("hidden");
+    } else {
+      menu.setAttribute("hidden", "");
+      filterInput.value = "";
+      activeIndex = 0;
+      filterInput.removeAttribute("aria-activedescendant");
+    }
   }
   function renderTrigger() {
     const threadBranch = getActiveThreadBranch();
@@ -88334,33 +88446,102 @@ function mountFooterBranchStatus(host, store2, api2) {
       }
     }
   }
+  function filteredRows() {
+    const pr2 = getVisiblePr();
+    const ordered = orderBranchesWithDefaultFirst(branches, defaultBranch);
+    const query = filterInput.value.trim().toLocaleLowerCase();
+    const matches2 = query ? ordered.filter((branch) => branch.name.toLocaleLowerCase().includes(query)) : ordered;
+    return { pr: pr2, matches: matches2 };
+  }
+  function rowCount() {
+    const { pr: pr2, matches: matches2 } = filteredRows();
+    return (pr2 ? 1 : 0) + matches2.length;
+  }
+  function clampActiveIndex() {
+    const count = rowCount();
+    activeIndex = count === 0 ? 0 : Math.max(0, Math.min(count - 1, activeIndex));
+  }
+  function scrollActiveRowIntoView() {
+    const active2 = list.querySelector(".branch-picker-option.is-active");
+    if (!active2) return;
+    const activeBounds = active2.getBoundingClientRect();
+    const listBounds = list.getBoundingClientRect();
+    if (activeBounds.top < listBounds.top) {
+      list.scrollTop += activeBounds.top - listBounds.top;
+    } else if (activeBounds.bottom > listBounds.bottom) {
+      list.scrollTop += activeBounds.bottom - listBounds.bottom;
+    }
+  }
+  function selectBranch(name) {
+    setOpen(false);
+    trigger.focus();
+    const thread = getActiveThread2();
+    if (!thread) return;
+    baseBranchByThread.set(thread.id, name);
+    renderTrigger();
+    renderMenu();
+  }
+  function activateRow(index) {
+    const { pr: pr2, matches: matches2 } = filteredRows();
+    if (pr2 && index === 0) {
+      setOpen(false);
+      trigger.focus();
+      openBrowserUrl(store2, pr2.url);
+      return;
+    }
+    const branch = matches2[pr2 ? index - 1 : index];
+    if (branch) selectBranch(branch.name);
+  }
+  function moveActive(direction) {
+    const count = rowCount();
+    if (count === 0) return;
+    activeIndex = Math.max(0, Math.min(count - 1, activeIndex + direction));
+    renderMenu();
+  }
   function renderMenu() {
-    clear(menu);
+    clear(list);
+    filterInput.removeAttribute("aria-activedescendant");
     if (!isPickerMode()) return;
     const selected = activeBaseBranch() ?? status?.currentBranch ?? null;
-    const pr2 = getVisiblePr();
+    const { pr: pr2, matches: matches2 } = filteredRows();
+    clampActiveIndex();
+    let rowIndex = 0;
     if (pr2) {
       const prItem = el(
         "button",
-        { type: "button", class: "branch-picker-option branch-picker-action" },
+        {
+          type: "button",
+          class: "branch-picker-option branch-picker-action",
+          id: `${listId}-option-${String(rowIndex)}`,
+          role: "option",
+          tabindex: "-1",
+          "aria-selected": rowIndex === activeIndex ? "true" : "false"
+        },
         `Open PR #${String(pr2.number)}`
       );
+      if (rowIndex === activeIndex) prItem.classList.add("is-active");
       prItem.addEventListener("click", () => {
         setOpen(false);
+        trigger.focus();
         openBrowserUrl(store2, pr2.url);
       });
-      menu.append(prItem);
+      list.append(prItem);
+      rowIndex++;
     }
-    const ordered = orderBranchesWithDefaultFirst(branches, defaultBranch);
-    for (const branch of ordered) {
+    for (const branch of matches2) {
       const nameEl = el("span", { class: "branch-picker-option-label" }, branch.name);
       const item = el(
         "button",
         {
           type: "button",
           class: "branch-picker-option",
+          id: `${listId}-option-${String(rowIndex)}`,
+          tabindex: "-1",
           role: "option",
-          "aria-selected": branch.name === selected ? "true" : "false"
+          // The listbox selection follows the keyboard highlight. Keep the
+          // committed branch separately marked with `is-selected` below so a
+          // pending choice remains visible while the user explores options.
+          "aria-selected": rowIndex === activeIndex ? "true" : "false"
         },
         nameEl
       );
@@ -88368,19 +88549,24 @@ function mountFooterBranchStatus(host, store2, api2) {
         item.append(el("span", { class: "branch-picker-default-badge" }, "default"));
       }
       if (branch.name === selected) item.classList.add("is-selected");
+      if (rowIndex === activeIndex) item.classList.add("is-active");
       item.addEventListener("click", () => {
-        setOpen(false);
-        const thread = getActiveThread2();
-        if (!thread) return;
-        baseBranchByThread.set(thread.id, branch.name);
-        renderTrigger();
-        renderMenu();
+        selectBranch(branch.name);
       });
-      menu.append(item);
+      list.append(item);
+      rowIndex++;
     }
-    if (ordered.length === 0 && !pr2) {
-      menu.append(el("div", { class: "branch-picker-empty" }, "No branches found."));
+    if (matches2.length === 0) {
+      const query = filterInput.value.trim();
+      if (query) {
+        list.append(el("div", { class: "branch-picker-empty" }, `No branches match "${query}".`));
+      } else if (!pr2) {
+        list.append(el("div", { class: "branch-picker-empty" }, "No branches found."));
+      }
     }
+    const active2 = list.querySelector(".branch-picker-option.is-active");
+    if (open2 && active2) filterInput.setAttribute("aria-activedescendant", active2.id);
+    scrollActiveRowIntoView();
   }
   async function loadBranches(token) {
     const owner = getActiveThreadOwner(store2);
@@ -88488,6 +88674,8 @@ function mountFooterBranchStatus(host, store2, api2) {
     const next = !open2;
     setOpen(next);
     if (next) {
+      renderMenu();
+      filterInput.focus();
       void (async () => {
         const token = refreshToken;
         try {
@@ -88498,6 +88686,28 @@ function mountFooterBranchStatus(host, store2, api2) {
         if (token !== refreshToken) return;
         renderMenu();
       })();
+    }
+  });
+  filterInput.addEventListener("input", () => {
+    activeIndex = 0;
+    renderMenu();
+  });
+  menu.addEventListener("keydown", (e3) => {
+    if (e3.isComposing) return;
+    if (e3.key === "ArrowDown") {
+      e3.preventDefault();
+      moveActive(1);
+    } else if (e3.key === "ArrowUp") {
+      e3.preventDefault();
+      moveActive(-1);
+    } else if (e3.key === "Enter" && e3.target === filterInput) {
+      e3.preventDefault();
+      activateRow(activeIndex);
+    } else if (e3.key === "Escape") {
+      e3.preventDefault();
+      e3.stopPropagation();
+      setOpen(false);
+      trigger.focus();
     }
   });
   const unsubs = [
@@ -88546,7 +88756,7 @@ function mountFooterBranchStatus(host, store2, api2) {
     }
   };
 }
-var COPIED_BRANCH_TOAST, COPY_FEEDBACK_MS;
+var COPIED_BRANCH_TOAST, COPY_FEEDBACK_MS, nextPickerId;
 var init_footer_branch_status = __esm({
   "src/renderer/views/footer-branch-status.ts"() {
     init_helpers();
@@ -88558,6 +88768,7 @@ var init_footer_branch_status = __esm({
     init_active_thread_owner();
     COPIED_BRANCH_TOAST = "Copied branch name";
     COPY_FEEDBACK_MS = 1600;
+    nextPickerId = 0;
   }
 });
 
@@ -104278,29 +104489,29 @@ function renderImageDiff(container, diff) {
   clear(container);
   const grid = el("div", { class: "git-image-diff" });
   if (diff.beforeImage) {
+    const alt = `${diff.path} (before)`;
+    const img = el("img", {
+      class: "git-image-diff-img",
+      src: diff.beforeImage,
+      alt,
+      loading: "lazy"
+    });
+    attachImageExpand(img, alt);
     const pane = el("div", { class: "git-image-diff-pane" });
-    pane.append(
-      el("div", { class: "git-image-diff-label" }, "Before"),
-      el("img", {
-        class: "git-image-diff-img",
-        src: diff.beforeImage,
-        alt: `${diff.path} (before)`,
-        loading: "lazy"
-      })
-    );
+    pane.append(el("div", { class: "git-image-diff-label" }, "Before"), img);
     grid.append(pane);
   }
   if (diff.afterImage) {
+    const alt = `${diff.path} (after)`;
+    const img = el("img", {
+      class: "git-image-diff-img",
+      src: diff.afterImage,
+      alt,
+      loading: "lazy"
+    });
+    attachImageExpand(img, alt);
     const pane = el("div", { class: "git-image-diff-pane" });
-    pane.append(
-      el("div", { class: "git-image-diff-label" }, "After"),
-      el("img", {
-        class: "git-image-diff-img",
-        src: diff.afterImage,
-        alt: `${diff.path} (after)`,
-        loading: "lazy"
-      })
-    );
+    pane.append(el("div", { class: "git-image-diff-label" }, "After"), img);
     grid.append(pane);
   }
   if (!diff.beforeImage && !diff.afterImage) {
@@ -104310,6 +104521,7 @@ function renderImageDiff(container, diff) {
 }
 var init_git_image_diff = __esm({
   "src/renderer/views/git-image-diff.ts"() {
+    init_image_expand();
     init_helpers();
   }
 });
@@ -108241,6 +108453,7 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
     return enabledCategories.has(itemCategory(item)) && enabledComplexities.has(itemComplexity(item)) && enabledStatuses.has(status) && matchesSearch(item);
   }
   function renderList() {
+    const previousScrollTop = listBody.scrollTop;
     clear(listBody);
     const visible = items.filter(isListVisible);
     if (visible.length === 0) {
@@ -108459,6 +108672,7 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
       group.append(groupItems);
       listBody.append(group);
     }
+    listBody.scrollTop = previousScrollTop;
     const selectedRow = listBody.querySelector(".is-selected");
     if (selectedRow) {
       const rowRect = selectedRow.getBoundingClientRect();
@@ -109103,11 +109317,12 @@ Notes: ${notes}` : prompt;
       reviewStatus.textContent = `Nothing left to ${label}.`;
       return;
     }
-    if (!confirm(
-      `${status === "done" ? "Mark" : "Archive"} ${String(targets.length)} item(s) judged resolved or likely?`
-    )) {
-      return;
-    }
+    const confirmed = await showConfirmDialog({
+      message: `${status === "done" ? "Mark" : "Archive"} ${String(targets.length)} item(s) judged resolved or likely?`,
+      detail: status === "done" ? "Marks each one done; you can reopen any of them later." : "Archives each one; you can restore any of them later.",
+      confirmLabel: status === "done" ? "Mark done" : "Archive"
+    });
+    if (!confirmed) return;
     reviewMarkResolvedBtn.disabled = true;
     reviewArchiveResolvedBtn.disabled = true;
     let applied = 0;
@@ -109529,6 +109744,24 @@ function webviewUrl(tab) {
     return "";
   }
 }
+function clearUrlLoadStatus(tab) {
+  tab.loadError = null;
+  tab.urlInput.classList.remove("has-error", "has-blocked");
+  setTooltip(tab.urlInput, null);
+  tab.statusLine.textContent = "";
+  tab.statusLine.classList.remove("browser-status-danger", "browser-status-warning");
+  tab.statusLine.hidden = true;
+}
+function setUrlLoadStatus(tab, kind, message2) {
+  tab.loadError = message2;
+  tab.urlInput.classList.toggle("has-error", kind === "error");
+  tab.urlInput.classList.toggle("has-blocked", kind === "blocked");
+  setTooltip(tab.urlInput, message2);
+  tab.statusLine.textContent = message2;
+  tab.statusLine.classList.toggle("browser-status-danger", kind === "error");
+  tab.statusLine.classList.toggle("browser-status-warning", kind === "blocked");
+  tab.statusLine.hidden = false;
+}
 function webviewTitle(tab) {
   if (!tab.webview || !tab.webviewReady || typeof tab.webview.getTitle !== "function")
     return void 0;
@@ -109860,8 +110093,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     );
   }
   function navigateWebview(tab, url2) {
-    tab.loadError = null;
-    tab.urlInput.classList.remove("has-error");
+    clearUrlLoadStatus(tab);
     if (!tab.webviewReady && tab.pendingUrl === url2) return;
     whenWebviewReady(tab, (webview) => {
       const current = webview.getURL();
@@ -109880,12 +110112,16 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       if (activeTabId === tab.id) syncAddressBar(tab);
       scheduleSessionSave();
     };
-    webview.addEventListener("did-navigate", onNavigate);
+    const onNavigateSuccess = () => {
+      clearUrlLoadStatus(tab);
+      onNavigate();
+    };
+    webview.addEventListener("did-navigate", onNavigateSuccess);
     webview.addEventListener("did-navigate", () => {
       tab.annotation?.deactivate();
       tab.annotation?.clear();
     });
-    webview.addEventListener("did-navigate-in-page", onNavigate);
+    webview.addEventListener("did-navigate-in-page", onNavigateSuccess);
     webview.addEventListener("page-title-updated", onNavigate);
     webview.addEventListener("focus", closeAllMenus);
     webview.addEventListener("dom-ready", () => {
@@ -109900,11 +110136,31 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     });
     webview.addEventListener("did-fail-load", (event) => {
       const detail = event;
-      tab.loadError = detail.errorDescription ?? "Failed to load page";
-      tab.urlInput.classList.add("has-error");
-      tab.urlInput.title = tab.loadError;
+      if (detail.isMainFrame === false) return;
+      if (detail.errorCode === NET_ERROR_ABORTED) return;
+      if (detail.errorCode === NET_ERROR_BLOCKED_BY_CLIENT) {
+        setUrlLoadStatus(tab, "blocked", "Blocked by the browser network policy");
+        return;
+      }
+      const description = nonEmptyStringOr(detail.errorDescription, "Failed to load page");
+      setUrlLoadStatus(tab, "error", `Couldn't load this page: ${description}`);
     });
     return webview;
+  }
+  function handleNavigationBlocked(webContentsId, url2) {
+    for (const tab of tabs.values()) {
+      if (!tab.webview) continue;
+      let id;
+      try {
+        id = tab.webview.getWebContentsId();
+      } catch {
+        continue;
+      }
+      if (id !== webContentsId) continue;
+      if (tab.urlInput.value !== url2) continue;
+      setUrlLoadStatus(tab, "blocked", "Blocked by the browser network policy");
+      return;
+    }
   }
   function navigateTab(tab, rawUrl) {
     const url2 = normalizeBrowserUrl(rawUrl);
@@ -110237,8 +110493,15 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       annotateBtn,
       menuWrap
     );
+    const statusLine = el("div", { class: "browser-status", role: "status", hidden: "" });
     const webviewHost = el("div", { class: "browser-webview-host" });
-    const panel = el("div", { class: "browser-tab-panel", "data-tab-id": id }, toolbar, webviewHost);
+    const panel = el(
+      "div",
+      { class: "browser-tab-panel", "data-tab-id": id },
+      toolbar,
+      statusLine,
+      webviewHost
+    );
     const tab = {
       id,
       partition: options?.partition ?? browserSessionPartition(
@@ -110256,6 +110519,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       backBtn,
       forwardBtn,
       reloadBtn,
+      statusLine,
       pendingUrl: null,
       loadError: null,
       artefactTitle: null,
@@ -110655,6 +110919,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     api2?.browser.onOpenTab((url2, partition) => addTab({ url: url2, partition, activate: false })),
     api2?.browser.onShowTab?.(showTabForUrl),
     api2?.browser.onPreviewStale?.(refreshStalePreviews),
+    api2?.browser.onNavigationBlocked?.(handleNavigationBlocked),
     api2?.browser.onShareText(attachSharedText),
     api2?.browser.onShareImage(attachSharedImage),
     api2?.browser.onPluginTabRequest(ensurePluginBrowserTab),
@@ -110683,7 +110948,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     tabs.clear();
   };
 }
-var WEBVIEW_PREFS2;
+var NET_ERROR_ABORTED, NET_ERROR_BLOCKED_BY_CLIENT, WEBVIEW_PREFS2;
 var init_browser_pane = __esm({
   "src/renderer/views/browser-pane.ts"() {
     init_helpers();
@@ -110701,6 +110966,9 @@ var init_browser_pane = __esm({
     init_annotation_layer();
     init_attach_annotation();
     init_toast();
+    init_tooltip();
+    NET_ERROR_ABORTED = -3;
+    NET_ERROR_BLOCKED_BY_CLIENT = -20;
     WEBVIEW_PREFS2 = "contextIsolation=true";
   }
 });
@@ -128286,7 +128554,15 @@ function mountAskUserDialog(api2, store2) {
         "div",
         { class: "ask-user-buttons" },
         cancelBtn,
-        el("button", { type: "submit", class: "ask-user-submit" }, "Send answer")
+        el(
+          "button",
+          {
+            type: "submit",
+            class: "ask-user-submit",
+            title: "Send answer (\u2318Enter or Ctrl+Enter)"
+          },
+          "Send answer"
+        )
       )
     );
     dialog2.showModal();
@@ -128328,6 +128604,21 @@ function mountAskUserDialog(api2, store2) {
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     submit();
+  });
+  dialog2.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.stopPropagation();
+      return;
+    }
+    if (!(event.metaKey || event.ctrlKey) || event.key !== "Enter") return;
+    event.stopPropagation();
+    if (event.isComposing || event.repeat) return;
+    event.preventDefault();
+    submit();
+  });
+  dialog2.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    cancel();
   });
   api2.agent.onAskUserRequest((req) => {
     queue.push({ id: req.id, threadId: req.threadId, questions: req.questions });
@@ -130092,7 +130383,8 @@ function startAgentController(store2, api2) {
           setMessageReview(store2, threadId, anchorId, {
             status: chunk.status,
             summary: chunk.summary,
-            ...chunk.issuesFound !== void 0 ? { issuesFound: chunk.issuesFound } : {}
+            ...chunk.issuesFound !== void 0 ? { issuesFound: chunk.issuesFound } : {},
+            ...chunk.followUpNote !== void 0 ? { followUpNote: chunk.followUpNote } : {}
           });
         }
         if (chunk.status === "running") emitActivity(threadId, "Reviewing changes\u2026");
