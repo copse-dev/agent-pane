@@ -100,6 +100,11 @@ describe('copse-review CLI', () => {
     assert.match(bad.err, /copse-review: /)
     const badProvider = await run(repo, ['--provider', 'carrier-pigeon'])
     assert.equal(badProvider.code, HEADLESS_EXIT.USAGE)
+    for (const value of ['0', '3', '1.5']) {
+      const parallel = await run(repo, ['--verify-concurrency', value])
+      assert.equal(parallel.code, HEADLESS_EXIT.USAGE)
+      assert.match(parallel.err, /verify-concurrency/)
+    }
   })
 
   it('refuses to execute without consent and says so with the approval exit code', async () => {

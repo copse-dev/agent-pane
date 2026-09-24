@@ -119,6 +119,7 @@ jobs:
       REVIEW_LENSES: ${{ vars.COPSE_REVIEW_LENSES || 'correctness' }}
       REVIEW_MAX_STEPS: ${{ vars.COPSE_REVIEW_MAX_STEPS || '12' }}
       REVIEW_MAX_VERIFY: ${{ vars.COPSE_REVIEW_MAX_VERIFY || '3' }}
+      REVIEW_VERIFY_CONCURRENCY: ${{ vars.COPSE_REVIEW_VERIFY_CONCURRENCY || '2' }}
       REVIEW_CELL_IMAGE: copse-review-cell:${{ github.sha }}
     steps:
       - uses: actions/checkout@v7.0.1
@@ -305,6 +306,7 @@ jobs:
             --lenses "$REVIEW_LENSES" \
             --max-steps "$REVIEW_MAX_STEPS" \
             --max-verify "$REVIEW_MAX_VERIFY" \
+            --verify-concurrency "$REVIEW_VERIFY_CONCURRENCY" \
             --post-review github \
             --repo "$GITHUB_REPOSITORY" \
             --pr "$PR_NUMBER" \

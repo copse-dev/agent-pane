@@ -111,6 +111,13 @@ shell's hand-offs (Phase 4).
   the test and both outputs before confirming a finding. Everything still open goes to the challenger, whose brief is to refute the finding
   with the burden of proof on the claim; `refuted` drops it, `stands` records the survived
   challenge. Most promising findings first, up to `--max-verify`.
+  `--verify-concurrency 2` overlaps two findings' model passes; its default is 1
+  for compatibility, and the protected PR workflow defaults to 2 (set repository
+  variable `COPSE_REVIEW_VERIFY_CONCURRENCY=1` to restore sequential verification). Each
+  finding's test precedes its own challenge. Tools still share one execution
+  lane, including reproducer writes and cleanup; tests use distinct root-level
+  filename prefixes so relative imports keep the same depth. Output ordering
+  stays deterministic even when findings finish out of order.
 - **`reproducer-runner.ts`** — `write_reproducer` accepts `argv: ["copse-test"]` for
   JS/TS `node:test` cases in projects that already depend on esbuild. The trusted runner
   executes only inside the existing cell, bundles local imports with each checkout's
@@ -129,6 +136,11 @@ shell's hand-offs (Phase 4).
 - **`provider-selection.ts`** / **`cli.ts`** / **`bin/copse-review.mjs`** — the shell.
   Keys come from the environment only; remote providers get the diff with secrets
   redacted; `--provider mock` plays a scripted reviewer for harness self-tests.
+  OpenRouter's reported hosting provider travels with each response's usage;
+  per-turn JSON summaries and collapsed review details list the observed hosts.
+  Missing metadata stays unknown rather than being inferred from a model ID.
+  Parallel pass durations overlap and must not be summed; tool time includes
+  waiting for the shared execution lane.
 - **`report-text.ts`** — the terminal projection. "Clean." is a complete answer only when
   every configured reviewer completed its attestation.
 - **`stage0-report.ts`** — the Stage 0 report as a decoder, for the file the CI shell's

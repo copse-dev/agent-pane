@@ -165,6 +165,15 @@ function reviewDetails(report: ReviewReport, options: ForgeReviewOptions): strin
     }
   }
   if (options.headCommit !== null) lines.push(`Head: \`${options.headCommit.slice(0, 12)}\`.`)
+  const hosts = new Set([
+    ...report.reviews.flatMap((review) => review.hostingProviders ?? []),
+    ...(report.verification?.records ?? []).flatMap((record) => record.hostingProviders ?? []),
+  ])
+  lines.push(
+    hosts.size
+      ? `Hosting providers reported by responses: ${[...hosts].sort().join(', ')}.`
+      : 'Hosting provider: not reported by the service.',
+  )
   const timings = [
     ...report.reviews.map((review) => ({ label: 'Find issues', timing: review.timing })),
     ...(report.verification?.records ?? []).map((record) => ({
@@ -181,7 +190,10 @@ function reviewDetails(report: ReviewReport, options: ForgeReviewOptions): strin
           `| ${label} | ${seconds(timing.durationMs)} | ${seconds(timing.toolMs)} | ${seconds(timing.modelAndOverheadMs)} |`,
         )
     }
-    lines.push('', 'Model and waiting includes API retries and orchestration, not just inference.')
+    lines.push(
+      '',
+      'Passes may overlap; their totals should not be added. Tools includes waiting for the shared execution lane. Model and waiting includes API retries and orchestration, not just inference.',
+    )
   }
   return lines
 }
