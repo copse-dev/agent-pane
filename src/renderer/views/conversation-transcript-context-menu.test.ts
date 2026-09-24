@@ -138,6 +138,37 @@ describe('transcript context menu — with a text selection', () => {
     assert.equal(document.querySelector('.context-menu'), null)
   })
 
+  it('does not treat a selection crossing out of the transcript as transcript text', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    addMessage(store, threadId, 'assistant', 'selection begins in the transcript')
+    const host = document.createElement('div')
+    const outside = document.createElement('div')
+    outside.textContent = 'and ends outside it'
+    document.body.append(host, outside)
+    mountConversation(host, store, createFakeApi())
+
+    const messageText = host.querySelector('.message-text')?.firstChild
+    const outsideText = outside.firstChild
+    const list = host.querySelector<HTMLElement>('.messages-list')
+    assert.ok(messageText)
+    assert.ok(outsideText)
+    assert.ok(list)
+    const range = document.createRange()
+    range.setStart(messageText, 0)
+    range.setEnd(outsideText, outsideText.textContent?.length ?? 0)
+    const selection = document.getSelection()
+    assert.ok(selection)
+    selection.removeAllRanges()
+    selection.addRange(range)
+
+    const event = new window.MouseEvent('contextmenu', { bubbles: true, cancelable: true })
+    list.dispatchEvent(event)
+
+    assert.equal(event.defaultPrevented, false)
+    assert.equal(document.querySelector('.context-menu'), null)
+  })
+
   it('"Quote in reply" inserts the selection as a blockquote and focuses the composer', () => {
     const store = createStore()
     const threadId = createThread(store)

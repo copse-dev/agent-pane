@@ -2324,10 +2324,13 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const targetEl = e.target instanceof Element ? e.target : null
     const msgEl = targetEl?.closest<HTMLElement>('.msg[data-message-id]') ?? null
     const selection = document.getSelection()
+    const selectionIsInsideTranscript =
+      selection !== null &&
+      !selection.isCollapsed &&
+      list.contains(selection.anchorNode) &&
+      list.contains(selection.focusNode)
     const selectedText =
-      selection && !selection.isCollapsed && list.contains(selection.anchorNode)
-        ? selection.toString().trim()
-        : ''
+      selectionIsInsideTranscript ? selection.toString().trim() : ''
 
     if (!selectedText && !msgEl) return
 
