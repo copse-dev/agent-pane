@@ -112,10 +112,31 @@ describe('ask_user dialog', () => {
   })
 
   it('submits an answer with the Cmd/Ctrl+Enter keyboard shortcut', async () => {
-    await setComposerValue(
-      '[[mcp:ask_user {"questions":[{"question":"What is your favorite color?"}]}]]',
-    )
-    await $('.submit-btn').click()
+    const user = 'Ask me for my favorite color.'
+    const scenario = await installMockScenario({
+      title: 'Favorite color',
+      turns: [
+        {
+          user,
+          responses: [
+            {
+              toolCalls: [
+                {
+                  name: 'ask_user',
+                  args: { questions: [{ question: 'What is your favorite color?' }] },
+                },
+              ],
+            },
+            {
+              text: 'Green is a great choice.',
+              expectToolResults: [{ name: 'ask_user', includes: 'Green' }],
+            },
+          ],
+        },
+      ],
+    })
+    await setComposerValue(user)
+    await submitComposer()
 
     const dialog = await $('#ask-user-dialog')
     await dialog.waitForDisplayed({ timeout: 30_000 })
@@ -132,19 +153,37 @@ describe('ask_user dialog', () => {
     await dialog.waitForDisplayed({ reverse: true, timeout: 10_000 })
     await expect(dialog).not.toBeDisplayed()
 
-    // Tool finished — the mock turn completes and an assistant message appears.
-    await browser.waitUntil(async () => (await $$('.msg.msg-assistant')).length >= 1, {
-      timeout: 30_000,
-      timeoutMsg: 'expected assistant reply after ask_user keyboard answer',
-    })
+    await waitForAgentIdle(30_000)
+    await expectAssistantReply('Green is a great choice.')
+    await scenario.assertComplete()
   })
 
   it('answers the waiting ask_user request when Escape is pressed', async () => {
-    const assistantCount = (await $$('.msg.msg-assistant')).length
-    await setComposerValue(
-      '[[mcp:ask_user {"questions":[{"question":"Should Escape dismiss this question?"}]}]]',
-    )
-    await $('.submit-btn').click()
+    const user = 'Ask whether Escape should dismiss this question.'
+    const scenario = await installMockScenario({
+      title: 'Dismiss a question',
+      turns: [
+        {
+          user,
+          responses: [
+            {
+              toolCalls: [
+                {
+                  name: 'ask_user',
+                  args: { questions: [{ question: 'Should Escape dismiss this question?' }] },
+                },
+              ],
+            },
+            {
+              text: 'The question was dismissed.',
+              expectToolResults: [{ name: 'ask_user' }],
+            },
+          ],
+        },
+      ],
+    })
+    await setComposerValue(user)
+    await submitComposer()
 
     const dialog = await $('#ask-user-dialog')
     await dialog.waitForDisplayed({ timeout: 30_000 })
@@ -159,9 +198,8 @@ describe('ask_user dialog', () => {
         timeoutMsg: 'expected ask_user run to finish after Escape cancellation',
       },
     )
-    await browser.waitUntil(async () => (await $$('.msg.msg-assistant')).length > assistantCount, {
-      timeout: 30_000,
-      timeoutMsg: 'expected assistant reply after Escape answered ask_user',
-    })
+    await waitForAgentIdle(30_000)
+    await expectAssistantReply('The question was dismissed.')
+    await scenario.assertComplete()
   })
 })
