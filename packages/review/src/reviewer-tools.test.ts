@@ -589,6 +589,76 @@ describe('reviewer tools', () => {
     assert.equal(executor.reported().length, 1)
   })
 
+  it('ignores irrelevant finding indices on refuted and unresolved dispositions without accepting false-clean closure', async () => {
+    const executor = createReviewerToolExecutor(host)
+    const finding = {
+      path: 'src/a.ts',
+      startLine: 2,
+      claim: 'The literal reaches an unintended caller.',
+      class: 'contract',
+      severity: 'medium',
+      confidence: 'high',
+      reason: 'The changed value violates the downstream caller contract.',
+    }
+    for (let i = 0; i < 4; i++)
+      await executor.execute('record_suspicion', finding, signal, `s${String(i)}`)
+    await executor.execute('report_finding', finding, signal, 'f1')
+    const closure = {
+      checked: 'The changed source and all downstream callers.',
+      couldNotVerify: 'Nothing',
+      findings: [],
+      dispositions: [
+        {
+          id: 'suspicion-1',
+          status: 'refuted',
+          evidence: 'The caller validates the value before using it.',
+          findingIndex: 1,
+        },
+        {
+          id: 'suspicion-2',
+          status: 'reported',
+          evidence: 'The separate affected caller remains unguarded.',
+          findingIndex: 1,
+        },
+        {
+          id: 'suspicion-3',
+          status: 'duplicate',
+          evidence: 'Same caller and defect as suspicion-2.',
+          findingIndex: 1,
+        },
+        {
+          id: 'suspicion-4',
+          status: 'unresolved',
+          evidence: 'The timing behavior could not be exercised.',
+          findingIndex: 1,
+        },
+      ],
+    }
+    assert.match(
+      await executor.execute('finish_review', closure, signal, 'unclear'),
+      /Include unresolved suspicion-4/,
+    )
+    assert.equal(executor.completion(), null)
+    assert.equal(executor.reported().length, 1)
+    assert.match(
+      await executor.execute(
+        'finish_review',
+        {
+          ...closure,
+          dispositions: closure.dispositions.map((entry) =>
+            entry.status === 'unresolved' ? { ...entry, findingIndex: null } : entry,
+          ),
+          couldNotVerify: 'suspicion-4: the timing behavior was not exercised.',
+        },
+        signal,
+        'done',
+      ),
+      /completion recorded/,
+    )
+    assert.equal(executor.reported().length, 1)
+    assert.match(executor.completion()?.couldNotVerify ?? '', /suspicion-4/)
+  })
+
   it('allows evidence-backed refutation and explicitly unresolved suspicions without publishing findings', async () => {
     for (const status of ['refuted', 'unresolved']) {
       const executor = createReviewerToolExecutor(host)
