@@ -61277,6 +61277,15 @@ var init_developer_mode = __esm({
   }
 });
 
+// src/shared/terminal/terminal-history.ts
+var SHARE_TERMINAL_HISTORY_ENABLED_SETTING, SHARE_TERMINAL_HISTORY_ENABLED_DEFAULT;
+var init_terminal_history = __esm({
+  "src/shared/terminal/terminal-history.ts"() {
+    SHARE_TERMINAL_HISTORY_ENABLED_SETTING = "shareTerminalHistoryEnabled";
+    SHARE_TERMINAL_HISTORY_ENABLED_DEFAULT = true;
+  }
+});
+
 // src/shared/appearance.ts
 function sameHex(value, expected) {
   return typeof value === "string" && value.toLowerCase() === expected.toLowerCase();
@@ -61895,6 +61904,15 @@ function mountSettingsDialog(store2, api2) {
                 When on (the default), the agent can read a Shells tab open in this chat, and you
                 can add one to a message with <code>@shell</code>. Turn off to keep your terminals
                 private.
+              </p>
+              <label class="checkbox-label">
+                <input type="checkbox" name="shareTerminalHistoryEnabled" />
+                Share command history across the project
+              </label>
+              <p class="field-hint">
+                When on (the default), Bash and Zsh terminals in this project use the same history
+                file, so a command from one thread can be recalled in another. Fish keeps its normal
+                shell-managed history. Turn off to keep each terminal's history separate.
               </p>
               <label class="checkbox-label">
                 <input type="checkbox" name="webAllowUserApproval" />
@@ -64946,6 +64964,7 @@ var init_settings_dialog = __esm({
     init_command_routing();
     init_unknown_value3();
     init_developer_mode();
+    init_terminal_history();
     init_appearance();
     init_projects();
     init_commit_attribution();
@@ -65001,6 +65020,14 @@ var init_settings_dialog = __esm({
       { name: "vncEnabled", kind: "checkbox", default: false, save: true },
       // On by default: agent may read open Shells tabs via read_terminal / @shell.
       { name: "readTerminalEnabled", kind: "checkbox", default: true, save: true },
+      // On by default: every terminal opened for a project shares one HISTFILE, so
+      // up-arrow history from one thread's Shells tab is recallable in another's.
+      {
+        name: SHARE_TERMINAL_HISTORY_ENABLED_SETTING,
+        kind: "checkbox",
+        default: SHARE_TERMINAL_HISTORY_ENABLED_DEFAULT,
+        save: true
+      },
       // On by default: clicked links open in the in-app browser pane. Off routes
       // external links to the system browser and marks them with an external icon.
       { name: "openLinksInBuiltInBrowser", kind: "checkbox", default: true, save: true },
@@ -72431,7 +72458,10 @@ function createReviewCardEl(review, api2, onRetry) {
   appendReviewHeader(panel, review, onRetry);
   if (review.status === "running") return panel;
   const body = el("div", { class: "review-panel-body message-text streaming-markdown" });
-  body.innerHTML = renderMarkdown(review.summary || "(no review output)");
+  const bodyMarkdown = review.followUpNote ? `${review.summary || "(no review output)"}
+
+*${review.followUpNote}*` : review.summary || "(no review output)";
+  body.innerHTML = renderMarkdown(bodyMarkdown);
   void annotateFileReferences(body, api2);
   panel.append(body);
   return panel;
@@ -75642,6 +75672,20 @@ function mountConversation(root, store2, api2) {
     }
     updateScrollButton();
   }
+  function scrollUserPromptIntoView(msgEl) {
+    const listRect = list.getBoundingClientRect();
+    const msgRect = msgEl.getBoundingClientRect();
+    let delta = 0;
+    if (msgRect.top < listRect.top) {
+      delta = msgRect.top - listRect.top;
+    } else if (msgRect.bottom > listRect.bottom) {
+      delta = msgRect.height > listRect.height ? msgRect.top - listRect.top : msgRect.bottom - listRect.bottom;
+    }
+    if (delta === 0) return;
+    setScrollTopProgrammatically(list.scrollTop + delta);
+    pinnedToBottom = false;
+    updateScrollButton();
+  }
   function applyRollupSummaries(item, opts) {
     const { commandSummary, toolSummary } = opts;
     if (item.type === "rollup") {
@@ -75935,6 +75979,7 @@ function mountConversation(root, store2, api2) {
     syncModelLabels();
     syncUserActions();
     scrollToBottom(msg.role === "user");
+    if (msg.role === "user") scrollUserPromptIntoView(msgEl);
   }
   function prependMessageEl(threadId, msgId, before) {
     const msgEl = buildMessageEl(threadId, msgId);
@@ -108428,6 +108473,7 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
     return enabledCategories.has(itemCategory(item)) && enabledComplexities.has(itemComplexity(item)) && enabledStatuses.has(status) && matchesSearch(item);
   }
   function renderList() {
+    const previousScrollTop = listBody.scrollTop;
     clear(listBody);
     const visible = items.filter(isListVisible);
     if (visible.length === 0) {
@@ -108646,6 +108692,7 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
       group.append(groupItems);
       listBody.append(group);
     }
+    listBody.scrollTop = previousScrollTop;
     const selectedRow = listBody.querySelector(".is-selected");
     if (selectedRow) {
       const rowRect = selectedRow.getBoundingClientRect();
@@ -130247,7 +130294,8 @@ function startAgentController(store2, api2) {
           setMessageReview(store2, threadId, anchorId, {
             status: chunk.status,
             summary: chunk.summary,
-            ...chunk.issuesFound !== void 0 ? { issuesFound: chunk.issuesFound } : {}
+            ...chunk.issuesFound !== void 0 ? { issuesFound: chunk.issuesFound } : {},
+            ...chunk.followUpNote !== void 0 ? { followUpNote: chunk.followUpNote } : {}
           });
         }
         if (chunk.status === "running") emitActivity(threadId, "Reviewing changes\u2026");
