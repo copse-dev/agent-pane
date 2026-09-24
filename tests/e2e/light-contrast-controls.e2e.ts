@@ -4,7 +4,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
+import { waitForAgentIdle } from './helpers.ts'
 
 // Real-app visual + numeric evidence for issue #2488: the roadmap Save button
 // and the titlebar Changes-count badge painting `--text-on-accent` (a dark
@@ -17,12 +19,6 @@ import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.
 // roadmap Save button reached through the real "New" flow, and the real
 // titlebar badge element — in both themes, rather than a synthetic element or
 // a hand-computed hex.
-//
-// The badge's count is normally driven by the agent's proposed-diff queue
-// (`diff-state.ts`), which needs a running agent turn to populate — orthogonal
-// to this fix. Revealing it here with `hidden = false` only inspects the CSS
-// the real element already carries; it does not exercise (or stub) the queue
-// feature itself.
 //
 // The accent (`#20FD85`, bright green) matches the "dark-green fill" the
 // report described: light derives `--accent` as 30% of the accent mixed with
@@ -79,24 +75,32 @@ describe('light-contrast controls: roadmap Save button + Changes badge (issue #2
   })
 
   it('clears AA on the real Changes badge and roadmap Save button in light and dark', async () => {
+    const scenario = await prepareMockToolTurn(
+      'Prepare a proposed file for contrast testing.',
+      {
+        name: 'write_file',
+        args: { path: 'contrast-proof.ts', content: 'export const contrastProof = true\n' },
+      },
+      'The proposed contrast proof is ready.',
+    )
+    await $('.submit-btn').click()
+    await waitForAgentIdle(60_000)
+    await scenario.assertComplete()
+
+    const changesBadge = $('.titlebar-btn[aria-label="Open changes"] .titlebar-btn-badge')
+    await changesBadge.waitForDisplayed({ timeout: 30_000 })
+    assert.equal(
+      await changesBadge.getText(),
+      '1',
+      'the real proposed-diff count should be visible',
+    )
+
     const roadmapButton = $('.titlebar-btn[aria-label="Open roadmap"]')
     await roadmapButton.waitForDisplayed({ timeout: 10_000 })
     await roadmapButton.click()
     await $('.roadmap-new-btn').waitForDisplayed({ timeout: 10_000 })
     await $('.roadmap-new-btn').click()
     await $('.roadmap-save-btn').waitForDisplayed({ timeout: 10_000 })
-
-    // See the file header: this only unhides the real badge element to
-    // inspect its CSS, it does not fake the diff-queue feature.
-    await browser.execute(() => {
-      const badge = document.querySelector<HTMLElement>(
-        '.titlebar-btn[aria-label="Open changes"] .titlebar-btn-badge',
-      )
-      if (badge) {
-        badge.hidden = false
-        badge.textContent = '3'
-      }
-    })
 
     async function measureAndCapture(theme: 'light' | 'dark') {
       await browser.execute((mode) => {
