@@ -128356,7 +128356,15 @@ function mountAskUserDialog(api2, store2) {
         "div",
         { class: "ask-user-buttons" },
         cancelBtn,
-        el("button", { type: "submit", class: "ask-user-submit" }, "Send answer")
+        el(
+          "button",
+          {
+            type: "submit",
+            class: "ask-user-submit",
+            title: "Send answer (\u2318Enter or Ctrl+Enter)"
+          },
+          "Send answer"
+        )
       )
     );
     dialog2.showModal();
@@ -128398,6 +128406,21 @@ function mountAskUserDialog(api2, store2) {
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     submit();
+  });
+  dialog2.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.stopPropagation();
+      return;
+    }
+    if (!(event.metaKey || event.ctrlKey) || event.key !== "Enter") return;
+    event.stopPropagation();
+    if (event.isComposing || event.repeat) return;
+    event.preventDefault();
+    submit();
+  });
+  dialog2.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    cancel();
   });
   api2.agent.onAskUserRequest((req) => {
     queue.push({ id: req.id, threadId: req.threadId, questions: req.questions });
