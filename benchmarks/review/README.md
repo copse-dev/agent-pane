@@ -139,9 +139,39 @@ route; the benchmark CLI does not yet expose an effort override. No production m
 real-model quality claim is part of the corpus change.
 
 The manual **Copse Reviewer model benchmark** workflow accepts `profile: openrouter-luna` or
-`openrouter-sol`, using the `OPENROUTER_API_KEY` Actions secret. An organization secret must grant
-this repository access. OpenRouter profiles fail when that key is missing and never fall back to
-Scaleway credentials. `configured` retains the repository's existing dogfood profile.
+`openrouter-sol`. OpenRouter profiles use the environment-only secret
+`COPSE_REVIEW_OPENROUTER_API_KEY`, passed to the provider as `OPENROUTER_API_KEY`. They fail when
+that key is missing and never fall back to org-wide OpenRouter or Scaleway credentials.
+`configured` retains the repository's existing dogfood profile.
+
+### Access boundary
+
+The job runs only in `copse-dev/agent-pane` (repository ID `1274237362`) for a manual dispatch from
+`main`, using that same main-branch workflow definition. Both the original actor (user ID `338988`)
+and the rerunning actor must be Jonathan Kingston (`jonathanKingston`). Fork events, PR events,
+other actors, branch/tag dispatches, and outside reruns are denied before any step runs. The
+workflow checks out only default-branch fixtures, never PR code or artifacts, and grants only
+`contents: read`. The key is injected only into the model step, after dependency installation.
+
+The GitHub environment `copse-review-models` must have a **branch** rule for exactly `main` (no
+tags or wildcard rules), with `jonathanKingston` as its required reviewer and administrator
+bypass disabled. That approval is an
+additional boundary around the secret even if another workflow references the environment.
+Administrators can change these controls; they remain trusted. Tests pin the workflow gate and
+scan all workflows to prevent new references to either key outside the authorized step. GitHub
+environment settings must be verified separately because they are not stored in this repository.
+
+To complete the secret migration:
+
+1. Add `COPSE_REVIEW_OPENROUTER_API_KEY` only to the `copse-review-models` environment, using the
+   existing budget-limited OpenRouter key.
+2. Remove this repository's access to the organization `OPENROUTER_API_KEY` (or delete the org
+   secret if it has no other consumers). Do not create a repository/org copy of the new secret.
+3. Merge this workflow change, then dispatch from `main` and approve the protected environment.
+
+An org/repository secret is available to other eligible workflows; an environment declaration
+does not protect a key that is still broadly shared. The migration is incomplete until that
+access is removed. See GitHub's [environment-secret access rules](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments#environment-secrets).
 
 Start with the default `timer-leak` smoke case and `lenses: correctness`; clear `case` deliberately
 to run the full corpus. Runs share a single concurrency group and stop after 60 minutes.
@@ -150,9 +180,9 @@ work, not dollar spend: the OpenRouter key's configured **$25 monthly limit** is
 shared with any other use of that key. No scheduled workflow uses the new key.
 
 ```bash
-gh workflow run review-model-bench.yml -f profile=openrouter-luna -f case=timer-leak -f lenses=correctness
+gh workflow run review-model-bench.yml --ref main -f profile=openrouter-luna -f case=timer-leak -f lenses=correctness
 ```
 
-The workflow always checks out the default branch, even if dispatched from an experiment branch;
-new corpus cases become available after merging. Results are uploaded as `copse-review-model-bench`
+Experiment-branch dispatches are skipped; new corpus cases become available after merging.
+Results are uploaded as `copse-review-model-bench`
 from `bench-results/review-model/`.

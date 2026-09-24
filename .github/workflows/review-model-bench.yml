@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       profile:
-        description: Model profile (OpenRouter experiments require OPENROUTER_API_KEY)
+        description: Model profile (OpenRouter requires the protected environment secret)
         required: true
         type: choice
         default: configured
@@ -37,6 +37,17 @@ concurrency:
 jobs:
   benchmark:
     name: Run the labelled reviewer corpus
+    # Both identities matter: a rerun uses the original actor's permissions.
+    # Pin the workflow ref as well as the checkout; branch workflow edits must
+    # never turn this into a route to a paid model key.
+    if: >-
+      ${{ github.repository_id == '1274237362' &&
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main' &&
+      github.workflow_ref == 'copse-dev/agent-pane/.github/workflows/review-model-bench.yml@refs/heads/main' &&
+      github.actor_id == '338988' &&
+      github.triggering_actor == 'jonathanKingston' }}
+    environment: copse-review-models
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -72,7 +83,8 @@ jobs:
       - name: Run the advisory real-model benchmark
         shell: bash
         env:
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          # Environment-only name: never fall back to the org-wide key.
+          OPENROUTER_API_KEY: ${{ secrets.COPSE_REVIEW_OPENROUTER_API_KEY }}
           COPSE_REVIEW_API_KEY: ${{ secrets.COPSE_REVIEW_API_KEY || secrets.SCW_GENERATIVE_API_KEY }}
           SCW_DEFAULT_PROJECT_ID: ${{ secrets.SCW_DEFAULT_PROJECT_ID }}
         run: |
@@ -83,7 +95,7 @@ jobs:
               # Never send the fallback Scaleway key to an OpenRouter experiment.
               unset COPSE_REVIEW_API_KEY SCW_DEFAULT_PROJECT_ID
               if test -z "$OPENROUTER_API_KEY"; then
-                echo "::error::OPENROUTER_API_KEY must be an Actions secret available to this repository"
+                echo "::error::Set COPSE_REVIEW_OPENROUTER_API_KEY only in the protected copse-review-models environment"
                 exit 1
               fi
               REVIEW_PROVIDER=openrouter
