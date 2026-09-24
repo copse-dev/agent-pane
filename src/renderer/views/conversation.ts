@@ -3244,6 +3244,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     if (run) syncRunLayout(thread, run, msgId)
     // Restore an inline review this message already carries (rebuilt threads).
     if (msg.review) renderMessageReview(threadId, msgId)
+    if (msg.reviewReport) renderMessageReviewReport(threadId, msgId)
     // Render any hook cards folded onto this message's turn (decision 10).
     renderMessageHookCards(threadId, msgId)
     renderMessageTurnRecovery(threadId, msgId)
@@ -3512,6 +3513,32 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     msgEl.after(card)
   }
 
+  function renderMessageReviewReport(threadId: string, messageId: string): void {
+    if (threadId !== store.getState().activeThreadId) return
+    list.querySelector(`[data-review-report-card][data-review-report-for="${messageId}"]`)?.remove()
+    const msg = getActiveThread(store)?.messages.find((message) => message.id === messageId)
+    const msgEl = list.querySelector(`[data-message-id="${messageId}"]`)
+    if (!msg?.reviewReport || !msgEl) return
+    const card = createReviewFindingsCardEl(msg.reviewReport, {
+      onRetry: () => {
+        startReview(store, api, threadId, messageId)
+      },
+      onDismissCard: () => {
+        dismissReviewReport(store, threadId, messageId)
+      },
+      onDismissFinding: (finding) => {
+        dismissReviewFinding(store, api, threadId, finding, messageId)
+      },
+      onRestoreFinding: (finding) => {
+        restoreReviewFinding(store, api, threadId, finding.id, messageId)
+      },
+    })
+    card.setAttribute('data-review-report-card', '')
+    card.setAttribute('data-review-report-for', messageId)
+    const postTurnCard = list.querySelector(`[data-review-card][data-review-for="${messageId}"]`)
+    ;(postTurnCard ?? msgEl).after(card)
+  }
+
   function renderMessageTurnRecovery(threadId: string, messageId: string): void {
     if (threadId !== store.getState().activeThreadId) return
     list.querySelector(`[data-turn-recovery-for="${messageId}"]`)?.remove()
@@ -3541,7 +3568,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
 
   /** The first of the trailing cards, which sit after every message. */
   function firstTrailingCard(): Element | null {
-    return list.querySelector('[data-review-report-card], [data-comparison-card]')
+    return list.querySelector(
+      '[data-review-report-card]:not([data-review-report-for]), [data-comparison-card]',
+    )
   }
 
   function syncComparisonPanel(): void {
@@ -3564,7 +3593,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // The Copse Reviewer findings card renders inline as a trailing child of
     // the message list, after the post-turn review cards, so it joins the
     // transcript flow. Replaced on every sync (status transitions, dismissals).
-    list.querySelector('[data-review-report-card]')?.remove()
+    list.querySelector('[data-review-report-card]:not([data-review-report-for])')?.remove()
     const thread = getActiveThread(store)
     if (!thread?.reviewReport) return
     const threadId = thread.id
@@ -3920,8 +3949,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       syncComparisonPanel()
       scrollToBottom()
     }),
-    store.on('review_report_changed', () => {
-      syncReviewReportCard()
+    store.on('review_report_changed', (tid, mid) => {
+      if (mid) renderMessageReviewReport(tid, mid)
+      else syncReviewReportCard()
       scrollToBottom()
     }),
     store.on('settings_changed', () => {

@@ -769,9 +769,11 @@ the app-side review service (`src/main/services/review/review-service.ts`, with
 - **The typed chunk (decision 15).** `review_report` carries `ThreadReviewReport` — the
   package report projected for a card: findings flattened with their anchored source, the
   Stage 0 checks and coverage notes, the execution decision, reviewer turns, verification
-  counts, cost — as a running placeholder, then the report or an error. It is persisted on
-  the thread as `reviewReport` (metadata, like the retired `comparison`) and rendered from
-  that data alone, so a report keeps rendering after the plugin is disabled (decision 17).
+  counts, cost — as a running placeholder, then the report or an error. New reports are
+  persisted on the assistant message for the reviewed turn, so separate turns retain
+  separate cards in transcript order. Threads with no assistant message keep the report
+  on thread metadata; earlier thread-level reports remain readable there. Both forms
+  render from saved data after the plugin is disabled (decision 17).
   No review starts a machine turn, so decision 5's budget is untouched.
 - **The findings card.** Ranked rows — severity, class, `path:line`, the claim, the
   verdict ("confirmed by reproducer", "survived challenge", "unverified") — each a

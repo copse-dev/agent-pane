@@ -5,8 +5,8 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import { startAgentController } from './agent.ts'
 import { createStore } from '@shared/store/store.ts'
 import type { AppStore } from '@shared/store/store.ts'
-import { getThreadById } from '@shared/store/thread-helpers.ts'
-import type { Message, Thread, StreamChunk } from '@shared/types'
+import { getThreadById, setMessageReviewReport } from '@shared/store/thread-helpers.ts'
+import type { Message, Thread, StreamChunk, ThreadReviewReport } from '@shared/types'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { markQuietRun } from './quiet-runs.ts'
 import { sessionUpdateToStreamChunks } from '../../main/services/acp/session-update-adapter.ts'
@@ -970,4 +970,55 @@ test('prompt progress dedupes on the label but re-emits after another activity',
     'Reviewing changes…',
     'Processing prompt… 47%',
   ])
+})
+
+test('review report chunks stay on the assistant message of each turn', () => {
+  const report: ThreadReviewReport = {
+    status: 'done',
+    startedAt: 1,
+    models: { reviewer: 'gpt-5', challenger: null },
+    lenses: [],
+    baseRef: 'main',
+    headCommit: 'abc',
+    dirtyWorkingTree: false,
+    execution: { backend: '', strength: 'none', executed: false, reason: 'unavailable' },
+    checks: [],
+    notChecked: [],
+    findings: [],
+    appendix: 0,
+    refuted: 0,
+    reviewers: [],
+    verification: null,
+    durationMs: 1,
+  }
+  const { send, store } = setup()
+  send({ type: 'text', text: 'First answer' })
+  send({ type: 'review_report', report })
+  send({ type: 'done' })
+  send({ type: 'text', text: 'Second answer' })
+  send({ type: 'review_report', report: { ...report, startedAt: 2 } })
+
+  const current = requireThread(store, 't1')
+  const assistants = current.messages.filter((message) => message.role === 'assistant')
+  assert.equal(assistants.length, 2)
+  assert.equal(assistants[0]?.reviewReport?.startedAt, 1)
+  assert.equal(assistants[1]?.reviewReport?.startedAt, 2)
+  assert.equal(current.reviewReport, undefined)
+
+  send({ type: 'done' })
+  setMessageReviewReport(store, 't1', assistants[0].id, {
+    ...report,
+    status: 'running',
+    startedAt: 3,
+  })
+  send({ type: 'review_report', report: { ...report, startedAt: 3 } })
+  const retried = requireThread(store, 't1').messages
+  assert.equal(
+    retried.find((message) => message.id === assistants[0]?.id)?.reviewReport?.startedAt,
+    3,
+  )
+  assert.equal(
+    retried.find((message) => message.id === assistants[1]?.id)?.reviewReport?.startedAt,
+    2,
+  )
 })

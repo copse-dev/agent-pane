@@ -1,10 +1,11 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import type { ReviewFindingRecord } from '@shared/types'
+import type { ReviewFindingRecord, ThreadReviewReport } from '@shared/types'
 import {
   setReviewFindingDismissed,
   setThreadComparison,
   setThreadReviewReport,
+  setMessageReviewReport,
   setMessageReview,
   setThreadStatus,
 } from '@shared/store/thread-helpers.ts'
@@ -62,12 +63,20 @@ export function dismissComparison(store: AppStore, threadId: string): void {
  * Marked quiet: the gesture is the user's own action, seconds old, with the
  * card on screen — the completion chime would be noise.
  */
-export function startReview(store: AppStore, api: ApiClient, threadId: string): void {
+export function startReview(
+  store: AppStore,
+  api: ApiClient,
+  threadId: string,
+  messageId?: string,
+): void {
   const projectId = store.getState().activeProjectId
   if (!projectId) return
   const thread = store.getState().threads.find((t) => t.id === threadId)
   if (thread?.status === 'running') return
-  setThreadReviewReport(store, threadId, {
+  const anchorId =
+    messageId ??
+    [...(thread?.messages ?? [])].reverse().find((message) => message.role === 'assistant')?.id
+  const runningReport: ThreadReviewReport = {
     status: 'running',
     startedAt: Date.now(),
     models: { reviewer: thread?.model ?? '', challenger: null },
@@ -84,19 +93,26 @@ export function startReview(store: AppStore, api: ApiClient, threadId: string): 
     reviewers: [],
     verification: null,
     durationMs: 0,
-  })
+  }
+  if (anchorId) setMessageReviewReport(store, threadId, anchorId, runningReport)
+  else setThreadReviewReport(store, threadId, runningReport)
   setThreadStatus(store, threadId, 'running')
   syncAgentActivity(store, threadId, false)
   markQuietRun(threadId)
   void api.review.run(projectId, threadId, reviewPayload(store, threadId)).catch((err: unknown) => {
-    const report = store.getState().threads.find((t) => t.id === threadId)?.reviewReport
+    const currentThread = store.getState().threads.find((t) => t.id === threadId)
+    const report = anchorId
+      ? currentThread?.messages.find((message) => message.id === anchorId)?.reviewReport
+      : currentThread?.reviewReport
     if (report?.status === 'running') {
-      setThreadReviewReport(store, threadId, {
+      const failedReport: ThreadReviewReport = {
         ...report,
         status: 'error',
         error: errorMessage(err),
         durationMs: Date.now() - report.startedAt,
-      })
+      }
+      if (anchorId) setMessageReviewReport(store, threadId, anchorId, failedReport)
+      else setThreadReviewReport(store, threadId, failedReport)
       setThreadStatus(store, threadId, 'idle')
       syncAgentActivity(store, threadId, false)
       takeQuietRun(threadId)
@@ -106,8 +122,9 @@ export function startReview(store: AppStore, api: ApiClient, threadId: string): 
 }
 
 /** Remove a review card that failed; a fresh "Review" starts a new run. */
-export function dismissReviewReport(store: AppStore, threadId: string): void {
-  setThreadReviewReport(store, threadId, null)
+export function dismissReviewReport(store: AppStore, threadId: string, messageId?: string): void {
+  if (messageId) setMessageReviewReport(store, threadId, messageId, null)
+  else setThreadReviewReport(store, threadId, null)
 }
 
 /**
@@ -120,8 +137,9 @@ export function dismissReviewFinding(
   api: ApiClient,
   threadId: string,
   finding: ReviewFindingRecord,
+  messageId?: string,
 ): void {
-  setReviewFindingDismissed(store, threadId, finding.id, true)
+  setReviewFindingDismissed(store, threadId, finding.id, true, messageId)
   void api.review
     .dismissFinding({
       findingId: finding.id,
@@ -130,7 +148,7 @@ export function dismissReviewFinding(
       class: finding.class,
     })
     .catch((err: unknown) => {
-      setReviewFindingDismissed(store, threadId, finding.id, false)
+      setReviewFindingDismissed(store, threadId, finding.id, false, messageId)
       showErrorToast('Could not save the dismissal', err)
     })
 }
@@ -141,10 +159,11 @@ export function restoreReviewFinding(
   api: ApiClient,
   threadId: string,
   findingId: string,
+  messageId?: string,
 ): void {
-  setReviewFindingDismissed(store, threadId, findingId, false)
+  setReviewFindingDismissed(store, threadId, findingId, false, messageId)
   void api.review.restoreFinding(findingId).catch((err: unknown) => {
-    setReviewFindingDismissed(store, threadId, findingId, true)
+    setReviewFindingDismissed(store, threadId, findingId, true, messageId)
     showErrorToast('Could not restore the finding', err)
   })
 }

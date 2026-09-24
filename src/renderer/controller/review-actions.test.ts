@@ -3,6 +3,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   dismissReviewFinding,
+  dismissReviewReport,
   restoreReviewFinding,
   retryReview,
   startReview,
@@ -155,6 +156,33 @@ test('startReview does nothing while the thread is already running', () => {
   startReview(store, api, 't1')
   assert.equal(calls.runs.length, 0)
   assert.equal(threadState(store).reviewReport, undefined)
+})
+
+test('a new review stays on its assistant turn instead of replacing an earlier report', () => {
+  const earlier = report({ startedAt: 1, note: 'Earlier review' })
+  const { store, api } = setup('project-1', {
+    messages: [
+      {
+        id: 'm1',
+        role: 'assistant',
+        content: 'First turn',
+        toolCalls: [],
+        createdAt: 1,
+        reviewReport: earlier,
+      },
+      { id: 'm2', role: 'assistant', content: 'Second turn', toolCalls: [], createdAt: 2 },
+    ],
+  })
+  startReview(store, api, 't1')
+  const current = threadState(store)
+  assert.equal(current.messages[0]?.reviewReport, earlier)
+  assert.equal(current.messages[1]?.reviewReport?.status, 'running')
+  assert.equal(current.reviewReport, undefined)
+
+  dismissReviewReport(store, 't1', 'm1')
+  assert.equal(threadState(store).messages[0]?.reviewReport, undefined)
+  assert.equal(threadState(store).messages[1]?.reviewReport?.status, 'running')
+  takeQuietRun('t1')
 })
 
 test('a rejected startup restores idle state and permits retry', async () => {
