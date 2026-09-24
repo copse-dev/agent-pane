@@ -72,7 +72,7 @@ import {
 } from '@shared/threads/message-model.ts'
 import { displayModelLabel } from '@shared/model-display.ts'
 import { attachmentIcon } from '../dom/attachment-icons.ts'
-import { attachImageExpand } from '../attachments/image-expand.ts'
+import { attachImageCopyMenu, attachImageExpand } from '../attachments/image-expand.ts'
 import { attachTextExpand } from '../attachments/text-expand.ts'
 import { attachVideoExpand } from '../attachments/video-expand.ts'
 import { CHIP_CHAR } from './composer-editor.ts'
@@ -342,10 +342,16 @@ function createCanvasPreviewCard(threadId: string, title: string): HTMLElement |
   open.addEventListener('click', () => {
     requestArtefactShow(threadId, title)
   })
+  const image = el('img', {
+    class: 'canvas-preview-image',
+    src: preview,
+    alt: `Preview of ${title}`,
+  })
+  attachImageCopyMenu(image)
   return el(
     'div',
     { class: 'canvas-preview-card' },
-    el('img', { class: 'canvas-preview-image', src: preview, alt: `Preview of ${title}` }),
+    image,
     el(
       'div',
       { class: 'canvas-preview-footer' },
