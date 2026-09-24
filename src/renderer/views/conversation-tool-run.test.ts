@@ -9,12 +9,14 @@ import {
   createThread,
   setMessageContent,
   setMessageRunSummary,
+  setMessageTurnOutcome,
   updateToolCall,
 } from '@shared/store/thread-helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountConversation } from './conversation.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { qsRequired } from '../dom/helpers.ts'
+import { ACP_CANCELLED_TOOL_CALL_RESULT } from '@shared/tools/tool-interruption.ts'
 
 // Cross-message tool runs in the conversation VIEW. The derivation and the
 // display-item shapes are covered in src/shared/tools/{tool-runs,tool-display}
@@ -299,6 +301,85 @@ describe('cross-message tool runs (component)', () => {
       'Double-checking the oracle output.',
     )
     assert.equal(trail.querySelector('.message-reasoning-title')?.textContent, 'Reasoned')
+  })
+
+  it('folds a prompt-interrupted run and explains the interruption inside its tool details', () => {
+    const { store, threadId, ids } = seedRun()
+    const last = ids.at(-1)
+    assert.ok(last)
+    updateToolCall(store, last, `${last}-0`, {
+      status: 'error',
+      result: ACP_CANCELLED_TOOL_CALL_RESULT,
+    })
+    setMessageTurnOutcome(store, threadId, last, {
+      status: 'cancelled',
+      stopReason: 'cancelled',
+      source: 'user',
+      executor: 'acp',
+      provider: 'codex-acp',
+      model: 'acp:codex-acp#gpt-5.6-sol',
+      endedAt: Date.now(),
+    })
+    addMessage(store, threadId, 'user', 'Change the markdown reference instead.')
+    const host = mount(store)
+
+    const run = qsRequired<HTMLDetailsElement>(host, '.tool-card-rollup')
+    assert.equal(run.open, false)
+    assert.equal(run.dataset['status'], 'interrupted')
+    assert.equal(
+      run.querySelector(':scope > summary .tool-name')?.textContent,
+      'Used 18 tools · 5 steps · Interrupted',
+    )
+    const interrupted = qsRequired<HTMLDetailsElement>(run, `[data-tool-id="${last}-0"]`)
+    assert.equal(interrupted.dataset['status'], 'interrupted')
+    assert.equal(interrupted.open, false)
+    run.open = true
+    assert.equal(
+      run.querySelector(':scope > .tool-rollup-body > .tool-interruption-note')?.textContent,
+      'Interrupted when you sent a new message.',
+    )
+    const step = qsRequired<HTMLDetailsElement>(
+      run,
+      `.tool-card-step[data-step-message-id="${last}"]`,
+    )
+    step.open = true
+    interrupted.querySelector<HTMLElement>('summary')?.click()
+    assert.equal(
+      interrupted.querySelector('.tool-interruption-note')?.textContent,
+      'Interrupted when you sent a new message.',
+    )
+    assert.match(interrupted.textContent, /may have partially run or produced effects/)
+  })
+
+  it('keeps a genuine tool failure visible beside a user interruption', () => {
+    const { store, threadId, ids } = seedRun()
+    const last = ids.at(-1)
+    assert.ok(last)
+    updateToolCall(store, last, `${last}-0`, {
+      status: 'error',
+      result: ACP_CANCELLED_TOOL_CALL_RESULT,
+    })
+    updateToolCall(store, last, `${last}-1`, {
+      status: 'error',
+      result: 'Error: ENOENT',
+    })
+    setMessageTurnOutcome(store, threadId, last, {
+      status: 'cancelled',
+      stopReason: 'cancelled',
+      source: 'user',
+      executor: 'acp',
+      provider: 'codex-acp',
+      model: 'acp:codex-acp#gpt-5.6-sol',
+      endedAt: Date.now(),
+    })
+    const host = mount(store)
+    const run = qsRequired<HTMLDetailsElement>(host, '.tool-card-rollup')
+    assert.equal(run.dataset['status'], 'error')
+    assert.equal(run.open, true)
+    assert.equal(
+      run.querySelector(':scope > summary .tool-name')?.textContent,
+      'Used 18 tools · 5 steps · 1 failed · Interrupted',
+    )
   })
 
   it('leaves an ordinary single-message turn on the per-message rollup', () => {

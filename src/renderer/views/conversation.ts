@@ -79,7 +79,6 @@ import { CHIP_CHAR } from './composer-editor.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { agentActivityLabel } from '../agent-activity.ts'
 import {
-  aggregateToolStatus,
   buildSubagentDisplayItems,
   buildToolCallDisplayItems,
   buildToolRunDisplayItems,
@@ -89,6 +88,7 @@ import {
   type ToolCallDisplayItem,
 } from '@shared/tools/tool-display.ts'
 import { toolRunForMessage, type ToolRun } from '@shared/tools/tool-runs.ts'
+import { isHostInterruptedToolCall } from '@shared/tools/tool-interruption.ts'
 import { navigateToChange } from '../controller/panels.ts'
 import { hydrationFailed, needsHydration } from '../controller/thread-hydration.ts'
 import { createPluginPanelEl } from './plugin-panel.ts'
@@ -132,7 +132,67 @@ import { isImageInputUnsupportedMessage } from '@shared/image-input-support.ts'
 import { showToast } from './toast.ts'
 import type { QueuedUserMessage } from '@shared/types'
 
-function statusIcon(status: ToolCall['status']): SVGSVGElement {
+type ToolCardStatus = ToolCall['status'] | 'interrupted'
+type InterruptionCause = 'message' | 'user'
+
+// The host records cancelled ACP calls as errors so the next model does not
+// assume they completed. Their transcript presentation can still distinguish a
+// user interruption from a tool failure using the turn outcome.
+const userInterruptedCalls = new WeakMap<ToolCall, InterruptionCause>()
+
+function markUserInterruptedCalls(thread: Thread | undefined): void {
+  if (!thread) return
+  let turnCalls: ToolCall[] = []
+  for (const [index, message] of thread.messages.entries()) {
+    if (message.role !== 'assistant') turnCalls = []
+    else turnCalls.push(...message.toolCalls)
+    if (!message.turnOutcome) continue
+    const next = thread.messages[index + 1]
+    const humanPrompt = next?.role === 'user' && next.origin === undefined
+    for (const call of turnCalls) {
+      if (!isHostInterruptedToolCall(call)) continue
+      if (
+        message.turnOutcome.status === 'cancelled' &&
+        message.turnOutcome.source === 'user' &&
+        !(next?.role === 'user' && next.origin !== undefined)
+      ) {
+        userInterruptedCalls.set(call, humanPrompt ? 'message' : 'user')
+      } else {
+        userInterruptedCalls.delete(call)
+      }
+    }
+    turnCalls = []
+  }
+}
+
+function cardStatus(toolCalls: readonly ToolCall[]): ToolCardStatus {
+  if (toolCalls.some((call) => call.status === 'running')) return 'running'
+  if (toolCalls.some((call) => call.status === 'error' && !userInterruptedCalls.has(call))) {
+    return 'error'
+  }
+  if (toolCalls.some((call) => userInterruptedCalls.has(call))) return 'interrupted'
+  return 'done'
+}
+
+function interruptionLabel(call: ToolCall): string {
+  return userInterruptedCalls.get(call) === 'message'
+    ? 'Interrupted when you sent a new message.'
+    : 'Interrupted by you.'
+}
+
+function syncRollupInterruptionNote(body: HTMLElement, calls: readonly ToolCall[]): void {
+  const interrupted = calls.find((call) => userInterruptedCalls.has(call))
+  const current = body.querySelector<HTMLElement>(':scope > .tool-interruption-note')
+  if (!interrupted) {
+    current?.remove()
+    return
+  }
+  const label = interruptionLabel(interrupted)
+  if (current) current.textContent = label
+  else body.prepend(el('div', { class: 'tool-interruption-note' }, label))
+}
+
+function statusIcon(status: ToolCardStatus): SVGSVGElement {
   if (status === 'done') return checkIcon('ui-icon ui-icon-sm')
   if (status === 'error') return closeIcon('ui-icon ui-icon-sm')
   return moreHorizontalIcon('ui-icon ui-icon-sm')
@@ -190,7 +250,7 @@ function createToolLocationsSection(locations: ToolCall['locations']): HTMLEleme
 
 function createToolHeader(
   label: string,
-  status: ToolCall['status'],
+  status: ToolCardStatus,
   summaryClass: string,
   count?: number,
   editStats?: ToolCall['editStats'],
@@ -291,7 +351,7 @@ function appendStandardToolSections(
 ): void {
   const header = createToolHeader(
     label,
-    tc.status,
+    cardStatus([tc]),
     summaryClass,
     count,
     tc.editStats,
@@ -302,6 +362,9 @@ function appendStandardToolSections(
     const argsSection = createToolArgsSection(tc.args)
     card.append(
       ...appendIfPresent(argsSection),
+      ...(userInterruptedCalls.has(tc)
+        ? [el('div', { class: 'tool-interruption-note' }, interruptionLabel(tc))]
+        : []),
       createToolResultSection(
         tc.result,
         tc.resultFormat,
@@ -491,7 +554,7 @@ function createIndividualToolCard(
   const card = el('details', {
     class: 'tool-card',
     'data-tool-id': tc.id,
-    'data-status': tc.status,
+    'data-status': cardStatus([tc]),
   })
   appendStandardToolSections(card, tc, label, 'tool-card-header')
   onToolCardBodyBuilt(card, () => {
@@ -520,7 +583,7 @@ function createInnerToolCard(tc: ToolCall, api: ApiClient): HTMLDetailsElement {
   const entry = el('details', {
     class: 'tool-group-item subagent-inner-tool',
     'data-tool-id': tc.id,
-    'data-status': tc.status,
+    'data-status': cardStatus([tc]),
   })
   appendStandardToolSections(entry, tc, getToolCallLabel(tc), 'tool-group-item-header')
   // File paths in the result become clickable links, but that pass needs the
@@ -961,7 +1024,7 @@ function createSubagentToolCard(tc: ToolCall, label: string, api: ApiClient): HT
 function createGroupToolCard(
   item: Extract<ToolCallDisplayItem, { type: 'group' }>,
 ): HTMLDetailsElement {
-  const status = aggregateToolStatus(item.toolCalls)
+  const status = cardStatus(item.toolCalls)
   const card = el('details', {
     class: 'tool-card tool-card-group',
     'data-group-key': item.key,
@@ -976,10 +1039,10 @@ function createGroupToolCard(
     const entry = el('details', {
       class: 'tool-group-item',
       'data-tool-id': tc.id,
-      'data-status': tc.status,
+      'data-status': cardStatus([tc]),
     })
     appendStandardToolSections(entry, tc, getToolCallLabel(tc), 'tool-group-item-header')
-    toolGroupItemSignatures.set(entry, renderSignature(tc))
+    toolGroupItemSignatures.set(entry, toolCallSignature(tc))
     groupItems.append(entry)
   }
 
@@ -996,7 +1059,7 @@ function createRollupToolCard(
   threadId: string,
   store?: AppStore,
 ): HTMLDetailsElement {
-  const status = aggregateToolStatus(item.toolCalls)
+  const status = cardStatus(item.toolCalls)
   const card = el('details', {
     class: 'tool-card tool-card-rollup',
     'data-rollup-key': item.key,
@@ -1014,6 +1077,7 @@ function createRollupToolCard(
     toolCardSignatures.set(childCard, toolCardSignature(child))
     body.append(childCard)
   }
+  syncRollupInterruptionNote(body, item.toolCalls)
   card.append(createToolHeader(item.label, status, 'tool-card-header', count), body)
   return card
 }
@@ -1029,7 +1093,7 @@ function createStepToolCard(
   api: ApiClient,
   threadId: string,
 ): HTMLDetailsElement {
-  const status = aggregateToolStatus(item.toolCalls)
+  const status = cardStatus(item.toolCalls)
   const card = el('details', {
     class: 'tool-card tool-card-step',
     'data-step-key': item.key,
@@ -1083,8 +1147,16 @@ function toolCardKey(item: ToolCallDisplayItem): string {
 // calls are plain JSON, so a stringify captures args/result/status/subagent —
 // digested rather than kept, or the cache would pin a second copy of every tool
 // result for as long as its card is on screen (see {@link renderSignature}).
+function toolCallSignature(call: ToolCall): string {
+  return renderSignature({ call, interruption: userInterruptedCalls.get(call) ?? null })
+}
+
 function toolCardSignature(item: ToolCallDisplayItem, extra?: string): string {
-  const base = renderSignature(item)
+  const calls = item.type === 'individual' ? [item.toolCall] : item.toolCalls
+  const base = renderSignature({
+    item,
+    interruptions: calls.map((call) => userInterruptedCalls.get(call) ?? null),
+  })
   return extra === undefined ? base : `${base}|${extra}`
 }
 
@@ -1104,7 +1176,7 @@ function populateRegularToolCard(
 ): void {
   const wasOpen = card.open
   lazyToolCardBodies.delete(card)
-  card.dataset['status'] = tc.status
+  card.dataset['status'] = cardStatus([tc])
   card.replaceChildren()
   card.open = wasOpen
   appendStandardToolSections(card, tc, label, 'tool-card-header')
@@ -1118,19 +1190,19 @@ function populateRegularToolCard(
 function populateGroupItem(entry: HTMLDetailsElement, tc: ToolCall): void {
   const wasOpen = entry.open
   lazyToolCardBodies.delete(entry)
-  entry.dataset['status'] = tc.status
+  entry.dataset['status'] = cardStatus([tc])
   entry.replaceChildren()
   entry.open = wasOpen
   appendStandardToolSections(entry, tc, getToolCallLabel(tc), 'tool-group-item-header')
   if (wasOpen) ensureToolCardBodyRendered(entry)
-  toolGroupItemSignatures.set(entry, renderSignature(tc))
+  toolGroupItemSignatures.set(entry, toolCallSignature(tc))
 }
 
 function reconcileGroupCard(
   card: HTMLDetailsElement,
   item: Extract<ToolCallDisplayItem, { type: 'group' }>,
 ): void {
-  const status = aggregateToolStatus(item.toolCalls)
+  const status = cardStatus(item.toolCalls)
   card.dataset['status'] = status
   replaceDirectToolHeader(
     card,
@@ -1159,10 +1231,10 @@ function reconcileGroupCard(
       entry = el('details', {
         class: 'tool-group-item',
         'data-tool-id': tc.id,
-        'data-status': tc.status,
+        'data-status': cardStatus([tc]),
       })
       populateGroupItem(entry, tc)
-    } else if (toolGroupItemSignatures.get(entry) !== renderSignature(tc)) {
+    } else if (toolGroupItemSignatures.get(entry) !== toolCallSignature(tc)) {
       populateGroupItem(entry, tc)
     }
     desired.push(entry)
@@ -1219,7 +1291,7 @@ function reconcileToolCard(
   store?: AppStore,
 ): void {
   if (item.type === 'rollup' || item.type === 'step') {
-    const status = aggregateToolStatus(item.toolCalls)
+    const status = cardStatus(item.toolCalls)
     card.dataset['status'] = status
     card.dataset['toolCount'] = String(item.toolCalls.length)
     if (item.type === 'step') {
@@ -1238,6 +1310,7 @@ function reconcileToolCard(
       body = el('div', { class: 'tool-rollup-body' })
       card.append(body)
     }
+    if (item.type === 'rollup') syncRollupInterruptionNote(body, item.toolCalls)
     reconcileNestedToolCards(body, item.children, api, threadId, store)
   } else if (item.type === 'group') {
     reconcileGroupCard(card, item)
@@ -2816,6 +2889,20 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     }
   }
 
+  function labelUserInterruptions(item: ToolCallDisplayItem): void {
+    const calls = item.type === 'individual' ? [item.toolCall] : item.toolCalls
+    if (calls.some((call) => userInterruptedCalls.has(call))) {
+      const failed = calls.filter(
+        (call) => call.status === 'error' && !userInterruptedCalls.has(call),
+      ).length
+      const base = item.label.replace(/ · \d+ failed$/, '')
+      item.label = `${base}${failed ? ` · ${String(failed)} failed` : ''} · Interrupted`
+    }
+    if (item.type === 'rollup' || item.type === 'step') {
+      for (const child of item.children) labelUserInterruptions(child)
+    }
+  }
+
   function applyToolCardOpenState(
     card: HTMLDetailsElement,
     item: ToolCallDisplayItem,
@@ -2830,7 +2917,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // Keep dataset.status aligned with the live tool status so compaction can
     // leave failed cards open (it only inspects this attribute).
     const itemStatus =
-      item.type === 'individual' ? item.toolCall.status : aggregateToolStatus(item.toolCalls)
+      item.type === 'individual' ? cardStatus([item.toolCall]) : cardStatus(item.toolCalls)
     card.dataset['status'] = itemStatus
     disclosureElements.set(key, card)
     wireDisclosurePreference(card, key)
@@ -2840,6 +2927,10 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         ? item.toolCall.status === 'running' || item.toolCall.subagent?.status === 'running'
         : itemStatus === 'running'
     const failed = itemStatus === 'error'
+    if (itemStatus === 'interrupted') {
+      autoOpenedDisclosures.delete(key)
+      autoOpenedAt.delete(key)
+    }
 
     if (running) runningDisclosures.add(key)
     else {
@@ -2925,6 +3016,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const msgId = msgEl.dataset['messageId'] ?? ''
     const messageKey = threadId && msgId ? `${threadId}:${msgId}` : null
     const activeThread = getActiveThread(store)
+    markUserInterruptedCalls(activeThread)
     if (
       messageKey &&
       activeThread?.status === 'running' &&
@@ -2965,6 +3057,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // Run rollups carry their own composed label (polish + counts + steps), so
     // the per-message summary only applies on the single-message path.
     if (!run) for (const item of items) applyRollupSummaries(item, opts)
+    for (const item of items) labelUserInterruptions(item)
 
     // Index the cards already in the DOM by their stable key so unchanged ones
     // are reused wholesale instead of torn down and rebuilt on every tick — the

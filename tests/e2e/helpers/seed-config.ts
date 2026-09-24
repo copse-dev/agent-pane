@@ -2767,6 +2767,97 @@ export function seedAcpUnfinishedTurnFixture(workspaceRoot: string): void {
   })
 }
 
+/** A user prompt interrupted an ACP tool burst; the agent must still read the uncertain result. */
+export function seedAcpPromptInterruptedFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-acp-prompt-interrupted-project'
+  const threadId = 'e2e-acp-prompt-interrupted-thread'
+  const now = Date.now()
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'ACP prompt interruption',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-user-acp-original',
+            role: 'user',
+            content: 'Check the documentation references.',
+            toolCalls: [],
+            createdAt: now,
+          },
+          {
+            id: 'msg-assistant-acp-first-step',
+            role: 'assistant',
+            content: 'Checking the references.',
+            toolCalls: [
+              {
+                id: 'tc-acp-first-read',
+                name: 'mcp.copse.read_file',
+                args: { path: 'docs/first.md' },
+                status: 'done',
+                result: 'First reference found.',
+              },
+              {
+                id: 'tc-acp-second-read',
+                name: 'mcp.copse.read_file',
+                args: { path: 'docs/second.md' },
+                status: 'done',
+                result: 'Second reference found.',
+              },
+            ],
+            createdAt: now + 1,
+          },
+          {
+            id: 'msg-assistant-acp-interrupted-step',
+            role: 'assistant',
+            content: '',
+            toolCalls: [
+              {
+                id: 'tc-acp-interrupted-read',
+                name: 'mcp.copse.read_file',
+                args: { path: 'docs/third.md' },
+                status: 'error',
+                result: ACP_CANCELLED_TOOL_CALL_RESULT,
+              },
+              {
+                id: 'tc-acp-completed-audit',
+                name: 'Sandbox Network Audit',
+                args: {},
+                status: 'done',
+                result: 'No network access.',
+              },
+            ],
+            turnOutcome: {
+              status: 'cancelled',
+              stopReason: 'cancelled',
+              source: 'user',
+              executor: 'acp',
+              provider: 'codex-acp',
+              model: 'acp:codex-acp#gpt-5.6-sol',
+              endedAt: now + 2,
+            },
+            createdAt: now + 2,
+          },
+          {
+            id: 'msg-user-acp-followup',
+            role: 'user',
+            content: 'Change the markdown reference instead.',
+            toolCalls: [],
+            createdAt: now + 3,
+          },
+        ],
+        usage: { inputTokens: 800, outputTokens: 120 },
+        createdAt: now,
+        updatedAt: now + 3,
+      },
+    ],
+  })
+}
+
 export function seedPortraitRightPanelFixture(
   workspaceRoot: string,
   autoPortraitRightPanel: boolean,
