@@ -1198,6 +1198,16 @@ copse-ui-field input[type=password],
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+.chat-thread-owner {
+  flex-shrink: 0;
+  margin-left: var(--spacing-xs);
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+}
+.automation-schedule-toggle .chat-thread-owner {
+  margin-left: 0;
+}
 .automation-schedule-runs .chat-row {
   padding-left: calc(42px + var(--spacing-md));
   color: var(--text-muted);
@@ -1254,6 +1264,9 @@ copse-ui-field input[type=password],
   padding: 0;
 }
 .chat-row:hover .chat-delete {
+  opacity: 1;
+}
+.chat-row:hover .automation-setup-btn {
   opacity: 1;
 }
 .chat-running-status {
@@ -3781,13 +3794,31 @@ label {
   border-radius: var(--radius);
 }
 .message-reasoning[open] {
+  --reasoning-glass-fill: color-mix(in srgb, var(--bg-elevated) 96%, var(--accent) 4%);
   padding: var(--spacing-md) var(--spacing-lg);
+  border: 1px solid color-mix(in srgb, var(--text-secondary) 18%, transparent);
   background:
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--text-primary) 5%, transparent),
+      transparent 62%),
+    radial-gradient(
+      ellipse 75% 95% at center,
+      var(--reasoning-glass-fill) 18%,
+      transparent 100%),
     repeating-linear-gradient(
       135deg,
-      color-mix(in srgb, var(--sev) var(--callout-hatch-line), transparent) 0 1px,
-      transparent 1px var(--callout-hatch-pitch)),
-    color-mix(in srgb, var(--sev) var(--callout-hatch-fill), transparent);
+      color-mix(in srgb, var(--sev) 6%, transparent) 0 1px,
+      transparent 1px 12px),
+    var(--reasoning-glass-fill);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-primary) 8%, transparent);
+}
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  .message-reasoning[open] {
+    border-color: var(--border-strong);
+    background: var(--bg-elevated);
+    box-shadow: none;
+  }
 }
 .message-reasoning:not([open]) {
   margin-bottom: var(--spacing-xs);
@@ -3845,7 +3876,7 @@ label {
   white-space: normal;
   word-break: break-word;
   font-size: var(--font-size-sm);
-  color: var(--text-muted);
+  color: var(--text-secondary);
   line-height: var(--line-height-base);
 }
 .message-reasoning-text p {
