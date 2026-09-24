@@ -608,12 +608,38 @@
 .msg-assistant {
   background: transparent;
 }
+.agent-avatar {
+  display: block;
+  width: calc(var(--spacing-xl) + var(--spacing-xs));
+  height: calc(var(--spacing-xl) + var(--spacing-xs));
+  flex-shrink: 0;
+  border-radius: var(--radius);
+}
+.message-agent {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+.message-agent-name {
+  font-weight: 500;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 /* Primary-chat model chrome — only present when the thread used more than one
    picker model. Mirrors the subagent card's muted model line. */
 .message-model {
   font-size: var(--font-size-xs);
   color: var(--text-tertiary, var(--text-secondary));
   margin-bottom: var(--spacing-xs);
+}
+.message-agent .message-model {
+  margin-bottom: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 /* A text-only response is the readable outcome of a run. Give it more breathing
    room than the execution trace without inventing a new completion state. */
