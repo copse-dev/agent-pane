@@ -2523,6 +2523,27 @@ export function seedAcpAuthErrorFixture(workspaceRoot: string): void {
     'ACP error -32603 (Internal error): Cursor session was rejected (expired WorkosCursorSessionToken). Re-sign in to Cursor or refresh CURSOR_SESSION_TOKEN from cursor.com cookies.',
     '```',
   ].join('\n')
+  const codexContent = [
+    '> [!WARNING]',
+    '> **Codex sign-in expired**',
+    '>',
+    '> This turn couldn’t run because Codex’s saved credentials are no longer valid.',
+    '',
+    '**To continue**',
+    '',
+    '1. Run `codex login` in a terminal.',
+    '2. Finish signing in, then re-send your message.',
+    '',
+    'Alternatively, set `CODEX_API_KEY` or `OPENAI_API_KEY` for Codex in Settings → General → Providers.',
+    '',
+    '> Copse’s built-in provider credentials are not automatically shared with external agents. Configure credentials for the agent itself.',
+    '',
+    '**Technical details**',
+    '',
+    '```text',
+    'ACP error -32603 (Internal error): account/read failed: workspace routing discovery unauthorized (401)',
+    '```',
+  ].join('\n')
   mkdirSync(USER_DATA, { recursive: true })
   writeSeedConfig({
     projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
@@ -2562,10 +2583,24 @@ export function seedAcpAuthErrorFixture(workspaceRoot: string): void {
             toolCalls: [],
             createdAt: now + 3,
           },
+          {
+            id: 'msg-user-codex-auth',
+            role: 'user',
+            content: 'Try the request with Codex.',
+            toolCalls: [],
+            createdAt: now + 4,
+          },
+          {
+            id: 'msg-assistant-codex-auth',
+            role: 'assistant',
+            content: codexContent,
+            toolCalls: [],
+            createdAt: now + 5,
+          },
         ],
         usage: { inputTokens: 0, outputTokens: 0 },
         createdAt: now,
-        updatedAt: now + 3,
+        updatedAt: now + 5,
       },
     ],
   })
