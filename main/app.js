@@ -61277,6 +61277,15 @@ var init_developer_mode = __esm({
   }
 });
 
+// src/shared/terminal/terminal-history.ts
+var SHARE_TERMINAL_HISTORY_ENABLED_SETTING, SHARE_TERMINAL_HISTORY_ENABLED_DEFAULT;
+var init_terminal_history = __esm({
+  "src/shared/terminal/terminal-history.ts"() {
+    SHARE_TERMINAL_HISTORY_ENABLED_SETTING = "shareTerminalHistoryEnabled";
+    SHARE_TERMINAL_HISTORY_ENABLED_DEFAULT = true;
+  }
+});
+
 // src/shared/appearance.ts
 function sameHex(value, expected) {
   return typeof value === "string" && value.toLowerCase() === expected.toLowerCase();
@@ -61895,6 +61904,15 @@ function mountSettingsDialog(store2, api2) {
                 When on (the default), the agent can read a Shells tab open in this chat, and you
                 can add one to a message with <code>@shell</code>. Turn off to keep your terminals
                 private.
+              </p>
+              <label class="checkbox-label">
+                <input type="checkbox" name="shareTerminalHistoryEnabled" />
+                Share command history across the project
+              </label>
+              <p class="field-hint">
+                When on (the default), Bash and Zsh terminals in this project use the same history
+                file, so a command from one thread can be recalled in another. Fish keeps its normal
+                shell-managed history. Turn off to keep each terminal's history separate.
               </p>
               <label class="checkbox-label">
                 <input type="checkbox" name="webAllowUserApproval" />
@@ -64946,6 +64964,7 @@ var init_settings_dialog = __esm({
     init_command_routing();
     init_unknown_value3();
     init_developer_mode();
+    init_terminal_history();
     init_appearance();
     init_projects();
     init_commit_attribution();
@@ -65001,6 +65020,14 @@ var init_settings_dialog = __esm({
       { name: "vncEnabled", kind: "checkbox", default: false, save: true },
       // On by default: agent may read open Shells tabs via read_terminal / @shell.
       { name: "readTerminalEnabled", kind: "checkbox", default: true, save: true },
+      // On by default: every terminal opened for a project shares one HISTFILE, so
+      // up-arrow history from one thread's Shells tab is recallable in another's.
+      {
+        name: SHARE_TERMINAL_HISTORY_ENABLED_SETTING,
+        kind: "checkbox",
+        default: SHARE_TERMINAL_HISTORY_ENABLED_DEFAULT,
+        save: true
+      },
       // On by default: clicked links open in the in-app browser pane. Off routes
       // external links to the system browser and marks them with an external icon.
       { name: "openLinksInBuiltInBrowser", kind: "checkbox", default: true, save: true },
