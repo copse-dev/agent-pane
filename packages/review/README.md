@@ -223,6 +223,13 @@ run started with `GITHUB_TOKEN`. The secret-bearing findings job verifies the su
 run and resolves the current contributor commit and base from GitHub's Pull Request API, rather
 than trusting the artefact or a dynamic run association. Remove and re-add the label to review a
 newer head.
+Repeated PR reviews first look for clean grounding from the previous 24 hours. Reuse
+requires the same PR head and merge-base, all four checks completed successfully, and
+unchanged trusted runner code and dependencies. Producer identity comes from GitHub's
+API, and the report remains untrusted data subject to validation. The lookup runs in a
+separate read-only job that never executes PR code. Any miss runs the usual secret-free
+grounding job; dispatch with `fresh=true` to force that path. Normal PR CI's merge-commit
+checks are not substituted for checks of the reviewed head.
 Job B, on the base ref with the model key, imports that report (`--stage0-json` is read-only
 by default and refuses a report for another commit). Before any model or App credential is
 put in a step, the workflow builds `Dockerfile.cell`, fetches the exact head's dependency

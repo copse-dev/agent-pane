@@ -380,6 +380,13 @@ scope.
   no secrets; it fetches the exact resolved head, runs Stage 0, and uploads
   results as an artefact. A fresh handoff job, which checks out and consumes nothing, gets
   only Actions-dispatch permission after Job A succeeds and explicitly dispatches **Job B**.
+  Repeated reviews may reuse a clean Job A report less than 24 hours old for the identical
+  head and merge-base. A separate trusted read-only lookup verifies GitHub producer identity,
+  successful completion, complete check coverage, and unchanged trusted runner/dependency
+  inputs. The source checkout is pinned to the producer's workflow SHA. Lookup failures or
+  uncertain reports fall back to a fresh Job A; `fresh=true` forces it. The handoff names the
+  original producer run, and Job B still validates its metadata and the current PR. Ordinary
+  merge-commit CI results are not treated as exact-head grounding.
   Job B runs on the base ref. Before receiving model or App credentials it builds a trusted
   validation image and primes a read-only dependency store from the exact head lockfile. Its
   trusted model process holds the credentials; brokered focused commands and reproducers run

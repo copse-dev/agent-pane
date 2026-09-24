@@ -831,7 +831,7 @@ describe('Copse Reviewer workflow invariants', () => {
     for (const job of groundJobs) {
       assert.match(job, /permissions: \{\}/)
       assert.doesNotMatch(job, /\$\{\{\s*secrets\./)
-      assert.match(job, /ref: \$\{\{ github\.event\.repository\.default_branch \}\}/)
+      assert.match(job, /ref: \$\{\{ github\.(?:sha|event\.repository\.default_branch) \}\}/)
       assert.match(job, /persist-credentials: false/)
       assert.match(job, /refs\/pull\/\$\{PR_NUMBER\}\/head/)
       assert.match(job, /--backend ephemeral-runner/)
@@ -839,7 +839,17 @@ describe('Copse Reviewer workflow invariants', () => {
     }
 
     const handoff = workflowJobBlock(groundWorkflow, 'handoff')
-    assert.match(handoff, /needs: ground/)
+    assert.match(handoff, /needs: \[reuse, ground\]/)
+    assert.match(handoff, /needs\.reuse\.outputs\.run_id \|\| github\.run_id/)
+    const reuse = workflowJobBlock(groundWorkflow, 'reuse')
+    assert.match(reuse, /actions: read/)
+    assert.match(reuse, /continue-on-error: true/)
+    assert.match(
+      groundWorkflow,
+      /if: always\(\) && !cancelled\(\) && needs\.reuse\.outputs\.run_id == ''/,
+    )
+    assert.doesNotMatch(reuse, /--backend|secrets\./)
+    assert.match(reuse, /node packages\/review\/ci\/reuse-ground\.mts/)
     assert.match(handoff, /actions: write/)
     assert.doesNotMatch(handoff, /actions\/checkout/)
     assert.doesNotMatch(handoff, /actions\/download-artifact/)
