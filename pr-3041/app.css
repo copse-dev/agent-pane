@@ -1198,6 +1198,16 @@ copse-ui-field input[type=password],
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+.chat-thread-owner {
+  flex-shrink: 0;
+  margin-left: var(--spacing-xs);
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+}
+.automation-schedule-toggle .chat-thread-owner {
+  margin-left: 0;
+}
 .automation-schedule-runs .chat-row {
   padding-left: calc(42px + var(--spacing-md));
   color: var(--text-muted);
@@ -1254,6 +1264,9 @@ copse-ui-field input[type=password],
   padding: 0;
 }
 .chat-row:hover .chat-delete {
+  opacity: 1;
+}
+.chat-row:hover .automation-setup-btn {
   opacity: 1;
 }
 .chat-running-status {
@@ -2438,7 +2451,7 @@ copse-ui-field input[type=password],
 }
 .supervised-task-summary::before {
   content: "\25b8";
-  grid-row: 1 / span 2;
+  grid-row: 1;
   align-self: center;
   color: var(--text-muted);
 }
@@ -3776,13 +3789,31 @@ label {
   border-radius: var(--radius);
 }
 .message-reasoning[open] {
+  --reasoning-glass-fill: color-mix(in srgb, var(--bg-elevated) 96%, var(--accent) 4%);
   padding: var(--spacing-md) var(--spacing-lg);
+  border: 1px solid color-mix(in srgb, var(--text-secondary) 18%, transparent);
   background:
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--text-primary) 5%, transparent),
+      transparent 62%),
+    radial-gradient(
+      ellipse 75% 95% at center,
+      var(--reasoning-glass-fill) 18%,
+      transparent 100%),
     repeating-linear-gradient(
       135deg,
-      color-mix(in srgb, var(--sev) var(--callout-hatch-line), transparent) 0 1px,
-      transparent 1px var(--callout-hatch-pitch)),
-    color-mix(in srgb, var(--sev) var(--callout-hatch-fill), transparent);
+      color-mix(in srgb, var(--sev) 6%, transparent) 0 1px,
+      transparent 1px 12px),
+    var(--reasoning-glass-fill);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-primary) 8%, transparent);
+}
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  .message-reasoning[open] {
+    border-color: var(--border-strong);
+    background: var(--bg-elevated);
+    box-shadow: none;
+  }
 }
 .message-reasoning:not([open]) {
   margin-bottom: var(--spacing-xs);
@@ -3840,7 +3871,7 @@ label {
   white-space: normal;
   word-break: break-word;
   font-size: var(--font-size-sm);
-  color: var(--text-muted);
+  color: var(--text-secondary);
   line-height: var(--line-height-base);
 }
 .message-reasoning-text p {
@@ -4030,14 +4061,14 @@ label {
   margin-left: auto;
   margin-right: max(0px, calc((100% - var(--chat-content-max)) / 2));
 }
-.messages-list > .msg-user:not(:has(~ .msg-user)) {
+.messages-list > .msg-user:not(.msg-machine-origin):not(.msg-hook-origin):not(:has(~ .msg-user:not(.msg-machine-origin):not(.msg-hook-origin))) {
   position: sticky;
   top: calc(-1 * var(--spacing-lg));
   z-index: 3;
   box-shadow: var(--shadow-sm);
 }
 @container chat-pane (max-width: 360px) {
-  .messages-list > .msg-user:not(:has(~ .msg-user)) {
+  .messages-list > .msg-user:not(.msg-machine-origin):not(.msg-hook-origin):not(:has(~ .msg-user:not(.msg-machine-origin):not(.msg-hook-origin))) {
     position: relative;
     top: auto;
     z-index: auto;
@@ -4384,10 +4415,17 @@ span.acp-resource-title {
 .message-text .code-block-shell {
   position: relative;
 }
-.code-block-copy {
+.code-block-actions {
   position: absolute;
   top: var(--spacing-xs);
   right: var(--spacing-xs);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  z-index: 1;
+}
+.code-block-copy,
+.code-block-run {
   opacity: 0;
   font-size: 11px;
   color: var(--text-muted);
@@ -4396,15 +4434,29 @@ span.acp-resource-title {
   border-radius: var(--radius);
   padding: 2px 8px;
   transition: opacity 0.1s;
-  z-index: 1;
 }
-.message-text .code-block-shell:hover .code-block-copy,
-.message-text .code-block-shell:focus-within .code-block-copy {
+.code-block-run {
+  display: inline-grid;
+  min-width: 24px;
+  min-height: 22px;
+  place-items: center;
+  padding: 2px 5px;
+}
+.code-block-run.is-running .ui-icon {
+  animation: ui-inline-status-spin 0.9s linear infinite;
+}
+.message-text .code-block-shell:hover .code-block-actions > button,
+.message-text .code-block-shell:focus-within .code-block-actions > button {
   opacity: 1;
 }
-.message-text:has(.code-block-shell:hover) .code-block-shell:not(:hover):not(:focus-within) .code-block-copy,
-.message-text:has(.code-block-shell:focus-within) .code-block-shell:not(:focus-within):not(:hover) .code-block-copy {
+.message-text:has(.code-block-shell:hover) .code-block-shell:not(:hover):not(:focus-within) .code-block-actions > button,
+.message-text:has(.code-block-shell:focus-within) .code-block-shell:not(:focus-within):not(:hover) .code-block-actions > button {
   opacity: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .code-block-run.is-running .ui-icon {
+    animation: none;
+  }
 }
 .message-text .table-copy-shell {
   position: relative;
@@ -7352,7 +7404,14 @@ dialog.settings-overlay::backdrop {
   width: 100%;
   max-width: 480px;
   min-height: var(--action-min-height);
+}
+.settings-content label input[type=text],
+.settings-content label input[type=password],
+.settings-content label input[type=number] {
   padding-inline: var(--spacing-md);
+}
+.settings-content label select {
+  padding-left: var(--spacing-md);
 }
 .settings-content .checkbox-label {
   min-height: calc(28px * var(--ui-scale));
