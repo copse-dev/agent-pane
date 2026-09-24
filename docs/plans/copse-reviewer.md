@@ -892,6 +892,13 @@ CI shell needs (`stage0-report.ts`, `forge-review.ts`) and the workflows
   rollout; making the reviewer required needs a separate decision backed by that record.
   Dogfood acceptance is operational evidence, not the Martian offline measurement B8
   requires for the public 85% precision claim.
+- **Streamed rate limits need time to clear.** _Added 2026-09-24 after the Luna rollout._
+  Two live attempts exhausted HTTP-200 SSE 429 retries in roughly ten seconds. Recognized
+  statusless SDK 429 errors now use 10/20/40-second fallback delays plus up to 10% jitter,
+  capped at 60 seconds per delay. Server retry hints retain precedence; the four-attempt
+  budget, cancellation, and refusal to replay committed text/tool calls are unchanged.
+  Ordinary HTTP and transport errors retain their existing timing. This gives temporary
+  throttling a longer recovery window; it does not guarantee upstream availability.
 - **The paid PR key excludes external contributors.** _Added 2026-09-24._ Both model jobs
   use `COPSE_REVIEW_OPENROUTER_API_KEY` only from the `copse-review-models` environment;
   there is no fallback to an organization-wide OpenRouter secret. Its exact-main branch
