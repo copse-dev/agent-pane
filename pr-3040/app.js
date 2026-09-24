@@ -26052,9 +26052,20 @@ function ensureDialog3() {
   dialog.addEventListener("click", (event) => {
     if (event.target === dialog) dialog?.close();
   });
+  dialog.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") event.stopPropagation();
+  });
   dialog.addEventListener("close", () => {
+    const resolveFocusTarget = returnFocus;
+    returnFocus = null;
     activeToken += 1;
+    const closedToken = activeToken;
     releaseCurrent();
+    queueMicrotask(() => {
+      if (activeToken !== closedToken || dialog?.open) return;
+      const focusTarget = resolveFocusTarget?.();
+      if (focusTarget?.isConnected) focusTarget.focus({ preventScroll: true });
+    });
   });
   return dialog;
 }
@@ -26078,7 +26089,12 @@ function openAttachmentPreview(options) {
   previewTitle.textContent = options.title;
   if (options.content) previewBody.replaceChildren(options.content);
   else previewBody.replaceChildren(statusNode(options.status ?? `Loading ${options.title}\u2026`));
-  if (!previewDialog.open) previewDialog.showModal();
+  if (!previewDialog.open) {
+    const activeElement = document.activeElement;
+    const defaultReturnFocus = () => activeElement instanceof HTMLElement && activeElement.isConnected ? activeElement : null;
+    returnFocus = options.returnFocus ?? defaultReturnFocus;
+    previewDialog.showModal();
+  }
   const isActive = () => token === activeToken && previewDialog.open;
   return {
     isActive,
@@ -26097,7 +26113,7 @@ function openAttachmentPreview(options) {
     }
   };
 }
-var dialog, titleEl, bodyEl, currentCleanup, activeToken;
+var dialog, titleEl, bodyEl, currentCleanup, returnFocus, activeToken;
 var init_attachment_preview = __esm({
   "src/renderer/attachments/attachment-preview.ts"() {
     init_helpers();
@@ -26105,6 +26121,7 @@ var init_attachment_preview = __esm({
     titleEl = null;
     bodyEl = null;
     currentCleanup = null;
+    returnFocus = null;
     activeToken = 0;
   }
 });
@@ -26245,7 +26262,7 @@ function attachImageCopyMenu(image) {
     );
   });
 }
-function openImageExpand(src, alt = "Expanded attachment") {
+function openImageExpand(src, alt = "Expanded attachment", returnFocus2) {
   if (!src) return;
   const imageEl = el("img", { class: "image-expand-image", alt });
   imageEl.src = src;
@@ -26255,6 +26272,7 @@ function openImageExpand(src, alt = "Expanded attachment") {
     title: alt,
     ariaLabel: `Image preview: ${alt}`,
     content: imageEl,
+    ...returnFocus2 ? { returnFocus: returnFocus2 } : {},
     onClose: () => {
       imageEl.removeAttribute("src");
       imageEl.alt = "Expanded attachment";
@@ -26271,7 +26289,16 @@ function attachImageExpand(img, alt) {
   img.setAttribute("aria-label", alt ? `Expand ${alt}` : "Expand image");
   const open2 = () => {
     const label = alt ?? (img.alt || "Expanded attachment");
-    openImageExpand(img.currentSrc || img.src, label);
+    const src = img.currentSrc || img.src;
+    openImageExpand(src, label, () => {
+      if (img.isConnected) return img;
+      for (const candidate of document.querySelectorAll("img.image-expandable")) {
+        if (candidate.getAttribute("aria-label") === `Expand ${label}` && (candidate.currentSrc || candidate.src) === src) {
+          return candidate;
+        }
+      }
+      return null;
+    });
   };
   img.addEventListener("click", (event) => {
     event.preventDefault();
@@ -104362,29 +104389,29 @@ function renderImageDiff(container, diff) {
   clear(container);
   const grid = el("div", { class: "git-image-diff" });
   if (diff.beforeImage) {
+    const alt = `${diff.path} (before)`;
+    const img = el("img", {
+      class: "git-image-diff-img",
+      src: diff.beforeImage,
+      alt,
+      loading: "lazy"
+    });
+    attachImageExpand(img, alt);
     const pane = el("div", { class: "git-image-diff-pane" });
-    pane.append(
-      el("div", { class: "git-image-diff-label" }, "Before"),
-      el("img", {
-        class: "git-image-diff-img",
-        src: diff.beforeImage,
-        alt: `${diff.path} (before)`,
-        loading: "lazy"
-      })
-    );
+    pane.append(el("div", { class: "git-image-diff-label" }, "Before"), img);
     grid.append(pane);
   }
   if (diff.afterImage) {
+    const alt = `${diff.path} (after)`;
+    const img = el("img", {
+      class: "git-image-diff-img",
+      src: diff.afterImage,
+      alt,
+      loading: "lazy"
+    });
+    attachImageExpand(img, alt);
     const pane = el("div", { class: "git-image-diff-pane" });
-    pane.append(
-      el("div", { class: "git-image-diff-label" }, "After"),
-      el("img", {
-        class: "git-image-diff-img",
-        src: diff.afterImage,
-        alt: `${diff.path} (after)`,
-        loading: "lazy"
-      })
-    );
+    pane.append(el("div", { class: "git-image-diff-label" }, "After"), img);
     grid.append(pane);
   }
   if (!diff.beforeImage && !diff.afterImage) {
@@ -104394,6 +104421,7 @@ function renderImageDiff(container, diff) {
 }
 var init_git_image_diff = __esm({
   "src/renderer/views/git-image-diff.ts"() {
+    init_image_expand();
     init_helpers();
   }
 });
@@ -109110,11 +109138,12 @@ Notes: ${notes}` : prompt;
       reviewStatus.textContent = `Nothing left to ${label}.`;
       return;
     }
-    if (!confirm(
-      `${status === "done" ? "Mark" : "Archive"} ${String(targets.length)} item(s) judged resolved or likely?`
-    )) {
-      return;
-    }
+    const confirmed = await showConfirmDialog({
+      message: `${status === "done" ? "Mark" : "Archive"} ${String(targets.length)} item(s) judged resolved or likely?`,
+      detail: status === "done" ? "Marks each one done; you can reopen any of them later." : "Archives each one; you can restore any of them later.",
+      confirmLabel: status === "done" ? "Mark done" : "Archive"
+    });
+    if (!confirmed) return;
     reviewMarkResolvedBtn.disabled = true;
     reviewArchiveResolvedBtn.disabled = true;
     let applied = 0;

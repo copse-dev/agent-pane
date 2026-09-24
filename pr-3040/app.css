@@ -4629,6 +4629,12 @@ span.acp-resource-title {
 }
 
 /* src/renderer/styles/global/markdown.css */
+.streaming-markdown {
+  text-wrap: pretty;
+}
+.streaming-markdown :is(pre, code, table) {
+  text-wrap-style: auto;
+}
 .message-text:has(th:nth-child(3)) th:first-child,
 .message-text:has(th:nth-child(3)) td:first-child {
   width: 1%;
