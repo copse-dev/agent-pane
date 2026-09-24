@@ -1083,7 +1083,7 @@
                 title: 'Post-turn',
                 sub: 'review + next action',
                 summary:
-                  'Changed turns can run review/remediation, CI investigation, model comparison, todo closeout, stop hooks, and continuation accounting; the renderer can then offer supported follow-up bubbles such as continuing an open plan.',
+                  'Changed turns can run review/remediation, CI investigation, todo closeout, stop hooks, and continuation accounting; the renderer can then offer supported follow-up bubbles such as continuing an open plan.',
                 files: [
                   'src/main/services/post-turn-orchestration.ts',
                   'src/main/services/follow-up-service.ts',
@@ -2422,11 +2422,11 @@
                 title: 'Reviewers',
                 sub: 'diff + CI verification',
                 summary:
-                  'Post-turn reviewers inspect the owned working diff; optional remediation, CI investigation, roadmap resolution checks, and a two-model comparison plus judge add specialized verification.',
+                  'Post-turn reviewers inspect the owned working diff; optional remediation, CI investigation, roadmap resolution checks, and Copse Reviewer (build-and-test delta, reviewer lenses, challenger verification) add specialized verification.',
                 files: [
                   'src/main/services/review-subagent-runner.ts',
                   'src/main/services/ci-investigator-runner.ts',
-                  'src/main/services/model-comparison-runner.ts',
+                  'src/main/services/review/review-service.ts',
                 ],
               },
               {

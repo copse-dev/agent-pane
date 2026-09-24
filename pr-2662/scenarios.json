@@ -8,6 +8,10 @@
     "label": "Agent-proposed edits open the Changes panel"
   },
   {
+    "id": "chat-reading-layout",
+    "label": "Readable assistant responses"
+  },
+  {
     "id": "markdown-list-indent",
     "label": "Markdown list indentation"
   },
@@ -46,6 +50,10 @@
   {
     "id": "vnc-discovered-ports",
     "label": "Remote desktop discovered-port list with one selected"
+  },
+  {
+    "id": "inline-thread-reference",
+    "label": "Inline thread reference chip geometry"
   },
   {
     "id": "settings-footer",
