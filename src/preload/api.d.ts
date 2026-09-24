@@ -727,7 +727,12 @@ export interface ApiClient {
      */
     autoSetup: () => Promise<AcpAutoSetupResult>
   }
+  processManager: {
+    snapshot: () => Promise<import('@shared/types/process-manager.ts').ProcessManagerSnapshot>
+    stopBackground: (id: string, projectId: string, threadId: string) => Promise<boolean>
+  }
   menu: {
+    onProcessManager: (handler: () => void) => () => void
     onSettings: (handler: () => void) => () => void
     onNewThread: (handler: () => void) => () => void
     onTogglePanel: (handler: () => void) => () => void

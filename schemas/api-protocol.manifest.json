@@ -1123,6 +1123,20 @@
           0
         ]
       },
+      "process-manager:snapshot": {
+        "api": "processManager.snapshot",
+        "args": [
+          0,
+          0
+        ]
+      },
+      "process-manager:stop-background": {
+        "api": "processManager.stopBackground",
+        "args": [
+          3,
+          3
+        ]
+      },
       "remote-agent:artifact-image-data-url": {
         "api": "remoteAgent.artifactImageDataUrl",
         "args": [
@@ -2221,6 +2235,13 @@
       },
       "menu:new-thread": {
         "api": "menu.onNewThread",
+        "args": [
+          0,
+          0
+        ]
+      },
+      "menu:process-manager": {
+        "api": "menu.onProcessManager",
         "args": [
           0,
           0

@@ -15,6 +15,9 @@ import {
 } from '../services/classifiers/classifier-service.ts'
 import { SPINE_SCHEMA_VERSION } from '@shared/threads/spine-schema.ts'
 import { runCommand } from '../services/exec/command-runner.ts'
+import { createProcessManagerSampler } from '../services/process-manager.ts'
+import { readOwnedProcessRows } from '../services/process-manager-owned.ts'
+import { stopSupervisedBackgroundProcess } from '../services/exec/supervised-background-process.ts'
 import { parseMessageValue, parseThreadValue } from '@shared/threads/thread-boundary.ts'
 import micromatch from 'micromatch'
 import { nonEmptyStringOr, recordArrayOrEmpty } from '@shared/unknown-value.ts'
@@ -465,12 +468,46 @@ you want the coding agent to follow on every turn.
   intent is ambiguous.
 `
 
+function processManagerLabels(): Map<number, string> {
+  const labels = new Map<number, string>()
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (window.isDestroyed()) continue
+    const pid = window.webContents.getOSProcessId()
+    if (pid > 0) labels.set(pid, 'Copse window')
+  }
+
+  const pages = new Map<number, string[]>()
+  for (const contents of webContents.getAllWebContents()) {
+    if (contents.isDestroyed() || contents.getType() !== 'webview') continue
+    const pid = contents.getOSProcessId()
+    if (pid <= 0) continue
+    const titles = pages.get(pid) ?? []
+    const title = contents.getTitle().trim()
+    titles.push(title.length > 0 ? title : 'Untitled page')
+    pages.set(pid, titles)
+  }
+  for (const [pid, titles] of pages) {
+    labels.set(
+      pid,
+      titles.length === 1
+        ? `Browser: ${titles[0] ?? 'Untitled page'}`
+        : `Browser pages (${String(titles.length)})`,
+    )
+  }
+  return labels
+}
+
 export function registerAllHandlers(
   win: BrowserWindow,
   registry: ToolRegistry,
   isDispatcherThreadActive: (projectId: string, threadId: string) => boolean,
   threadDeletionRuntime: ThreadDeletionRuntime,
 ): void {
+  const processManagerSnapshot = createProcessManagerSampler(
+    () => app.getAppMetrics(),
+    processManagerLabels,
+    () => readOwnedProcessRows(win.webContents.id),
+  )
   const reloadMcpForWorkspace = (): void => {
     void reloadMcpServers(registry)
       .then((statuses) => {
@@ -526,6 +563,23 @@ export function registerAllHandlers(
         // Stale workspaceRoot in config — ignore until user picks a folder.
       }
     }
+  })
+
+  ipcMain.handle('process-manager:snapshot', (event) => {
+    assertMainFrameSender(event, win)
+    return processManagerSnapshot()
+  })
+
+  ipcMain.handle('process-manager:stop-background', (event, ...rawArgs) => {
+    assertMainFrameSender(event, win)
+    if (event.sender !== win.webContents) {
+      throw new IpcValidationError('Only the main window can stop a background task')
+    }
+    const [id, projectId, threadId] = parseIpcArgs(
+      z.tuple([z.string().min(1).max(128), zProjectId, zThreadId]),
+      rawArgs,
+    )
+    return stopSupervisedBackgroundProcess(id, { projectId, threadId })
   })
 
   ipcMain.handle('main-window:get-navigation', (event) => {

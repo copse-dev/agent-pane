@@ -20,6 +20,7 @@ interface PtyListeners {
 export interface TerminalSessionMeta {
   label?: string
   threadId?: string | null
+  projectId?: string
 }
 
 export interface TerminalSessionInfo {
@@ -34,6 +35,9 @@ export interface TerminalProcessInfo {
   id: string
   label: string
   pid: number
+  threadId: string | null
+  projectId: string | null
+  ownerId: number
 }
 
 export interface TerminalSession {
@@ -46,6 +50,7 @@ export interface TerminalSession {
   output: CappedOutputAccumulator
   label: string
   threadId: string | null
+  projectId: string | null
 }
 
 const sessions = new Map<string, TerminalSession>()
@@ -129,7 +134,10 @@ function disposeSession(session: TerminalSession, sessionId: string, notify = tr
     // PTY may already be dead during shutdown.
   }
   sessions.delete(sessionId)
-  if (notify) notifyThreadResourceFinished(session.threadId)
+  if (notify) {
+    sendTerminalEvent(session.owner, 'terminal:exit', sessionId, -1)
+    notifyThreadResourceFinished(session.threadId)
+  }
 }
 
 function attachPtyHandlers(
@@ -179,6 +187,7 @@ async function spawnShell(
     output: new CappedOutputAccumulator(COMMAND_OUTPUT_MAX_BYTES),
     label: nonEmptyStringOr(meta?.label?.trim(), 'Terminal'),
     threadId: meta?.threadId ?? null,
+    projectId: meta?.projectId ?? null,
   }
   sessions.set(session.id, session)
   attachPtyHandlers(owner, session.id, ptyProcess, session)
@@ -300,7 +309,14 @@ export function listTerminalProcesses(): TerminalProcessInfo[] {
   for (const session of sessions.values()) {
     const { pid } = session.pty
     if (!Number.isInteger(pid) || pid <= 0) continue
-    out.push({ id: session.id, label: session.label, pid })
+    out.push({
+      id: session.id,
+      label: session.label,
+      pid,
+      threadId: session.threadId,
+      projectId: session.projectId,
+      ownerId: session.owner.id,
+    })
   }
   return out
 }
@@ -348,6 +364,7 @@ export function __testInjectTerminalSession(opts: {
     output,
     label: opts.label,
     threadId: opts.threadId,
+    projectId: null,
   }
   sessions.set(id, session)
   return id

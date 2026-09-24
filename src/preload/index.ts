@@ -813,7 +813,21 @@ const api: ApiClient = {
     bestValueDefault: () => ipcRenderer.invoke('models:best-value-default'),
     resolveDynamic: (value: string) => ipcRenderer.invoke('models:resolve-dynamic', value),
   },
+  processManager: {
+    snapshot: () => ipcRenderer.invoke('process-manager:snapshot'),
+    stopBackground: (id: string, projectId: string, threadId: string) =>
+      ipcRenderer.invoke('process-manager:stop-background', id, projectId, threadId),
+  },
   menu: {
+    onProcessManager: (handler: () => void) => {
+      const listener = (): void => {
+        handler()
+      }
+      ipcRenderer.on('menu:process-manager', listener)
+      return (): void => {
+        ipcRenderer.off('menu:process-manager', listener)
+      }
+    },
     onSettings: (handler: () => void) => {
       const listener = (): void => {
         handler()

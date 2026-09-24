@@ -156,6 +156,13 @@ export function buildAppMenu(windows: AppMenuWindowProvider, developerMode = fal
             sendToFocused('menu:focus-browser-url-bar')
           },
         },
+        {
+          label: 'Process Manager',
+          accelerator: 'CmdOrCtrl+Shift+P',
+          click: (): void => {
+            sendToFocused('menu:process-manager')
+          },
+        },
         { type: 'separator' as const },
         // Deliberately not the `reload` role: that binds Cmd+R to reloading the
         // whole renderer, which users hit expecting to refresh content (browser,
