@@ -393,6 +393,8 @@ export function getSkill(name: string): SkillMetadata | null {
 
 /** How many available skill names `unknownSkillError` lists before summarizing the rest. */
 const MAX_LISTED_SKILLS = 30
+/** Keep the complete unknown-skill diagnostic below the existing 500-character contract. */
+const MAX_LISTED_SKILLS_CHARS = 360
 
 /**
  * Cheap Levenshtein distance for short skill names. Skill catalogs are small
@@ -453,7 +455,14 @@ function closestSkillName(name: string, available: readonly string[]): string | 
 function formatAvailableSkills(available: readonly string[]): string {
   if (available.length === 0) return 'No skills are currently available.'
   const names = [...new Set(available)].sort((a, b) => a.localeCompare(b))
-  const shown = names.slice(0, MAX_LISTED_SKILLS)
+  const shown: string[] = []
+  let listedChars = 0
+  for (const name of names.slice(0, MAX_LISTED_SKILLS)) {
+    const addedChars = name.length + (shown.length === 0 ? 0 : 2)
+    if (shown.length > 0 && listedChars + addedChars > MAX_LISTED_SKILLS_CHARS) break
+    shown.push(name)
+    listedChars += addedChars
+  }
   const remaining = names.length - shown.length
   const more = remaining > 0 ? ` (+${String(remaining)} more; see the Skills catalog)` : ''
   return `Available skills: ${shown.join(', ')}${more}.`
@@ -541,9 +550,4 @@ export async function readSkill(name: string, relativePath = 'SKILL.md'): Promis
 export function setSkillsForTest(skills: SkillMetadata[]): void {
   cachedSkills = skills
   cachedSkillLoadFailures = []
-}
-
-/** Test helper — inject discovery failures (bad frontmatter, name/folder mismatch) without touching disk. */
-export function setSkillLoadFailuresForTest(failures: SkillLoadFailure[]): void {
-  cachedSkillLoadFailures = failures
 }

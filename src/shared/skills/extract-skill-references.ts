@@ -20,6 +20,11 @@ function trimTrailingPunctuation(path: string): string {
   return path.replace(/[.,;:!?)]+$/, '')
 }
 
+/** Globs and angle-bracket alternatives document a family of files, not one bundle member. */
+function isTemplateReference(path: string): boolean {
+  return /[*?{}<>|]/.test(path)
+}
+
 /** Unique bundle-relative file paths referenced in the text, sorted. */
 export function extractSkillFileReferences(text: string): string[] {
   const paths = new Set<string>()
@@ -28,6 +33,7 @@ export function extractSkillFileReferences(text: string): string[] {
     if (!raw) continue
     const trimmed = trimTrailingPunctuation(raw)
     if (!/\.[A-Za-z0-9]+$/.test(trimmed)) continue
+    if (isTemplateReference(trimmed)) continue
     paths.add(trimmed)
   }
   return [...paths].sort()

@@ -32,6 +32,12 @@ describe('extractSkillFileReferences', () => {
     assert.deepEqual(extractSkillFileReferences('Files live under references/ in this bundle.'), [])
   })
 
+  it('ignores glob and placeholder examples that do not name one concrete file', () => {
+    const text =
+      'Choose from `references/*.md`, references/<case-id>/<target-key>.txt, or scripts/train_<type|fallback>.py.'
+    assert.deepEqual(extractSkillFileReferences(text), [])
+  })
+
   it('ignores external links and unrelated slash-separated text', () => {
     const text = 'https://example.com/references/x.md and a/b/c.md are not bundle references.'
     assert.deepEqual(extractSkillFileReferences(text), [])

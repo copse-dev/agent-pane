@@ -504,11 +504,28 @@ description: Bundled skill for tests
         const shown = error.message.match(/Available skills: (.+?)(?: \(\+|\.$)/)?.[1]
         assert.ok(shown, 'expected an "Available skills:" list in the message')
         const shownCount = shown.split(', ').length
-        assert.equal(shownCount, 30, 'lists at most 30 names')
+        assert.ok(shownCount <= 30, 'lists at most 30 names')
         assert.match(
           error.message,
-          new RegExp(`\\(\\+${String(total - 30)} more; see the Skills catalog\\)`),
+          new RegExp(`\\(\\+${String(total - shownCount)} more; see the Skills catalog\\)`),
         )
+        return true
+      },
+    )
+  })
+
+  it('keeps the available-skills diagnostic bounded when names are long', async () => {
+    for (let i = 0; i < 20; i++) {
+      await seedSkillAt(tempRoot, `skill-with-a-deliberately-long-name-${String(i).padStart(2, '0')}`)
+    }
+    await refreshSkillsRegistry()
+
+    await assert.rejects(
+      () => readSkill('totally-unknown-skill'),
+      (error) => {
+        assert.ok(error instanceof Error)
+        assert.ok(error.message.length < 500, 'available-name guidance stays bounded')
+        assert.match(error.message, /\(\+\d+ more; see the Skills catalog\)/)
         return true
       },
     )
