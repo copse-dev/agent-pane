@@ -401,7 +401,7 @@ import {
   invalidateCursorCloudModelsCache,
   listCursorCloudModels,
 } from '../services/remote/cursor-cloud-models.ts'
-import { discoverExternalCursorAgents } from '../services/remote/cursor-agent-discovery.ts'
+import { createBestEffortExternalCursorAgentDiscovery } from '../services/remote/cursor-agent-discovery.ts'
 import { listActiveProjectAgentPrLinks } from '../services/remote/remote-agent-link-store.ts'
 
 import {
@@ -420,6 +420,8 @@ import {
 } from '../services/security/guarded-yolo.ts'
 import { getContainerRunService } from '../services/container-runtime/container-run-service.ts'
 import { explainContainerModel } from '../services/providers/container-provider.ts'
+
+const discoverExternalCursorAgentsFromIpc = createBestEffortExternalCursorAgentDiscovery()
 
 const zAutomationScheduleInput = z.object({
   id: z.string().min(1).max(256).optional(),
@@ -2841,10 +2843,10 @@ export function registerAllHandlers(
   ipcMain.handle('remote-agent:discover-external', (event, projectId: unknown) => {
     assertMainFrameSender(event, win)
     if (projectId === undefined || projectId === null) {
-      return discoverExternalCursorAgents()
+      return discoverExternalCursorAgentsFromIpc()
     }
     const id = parseIpcArgs(zProjectId, [projectId])
-    return discoverExternalCursorAgents({ projectId: id })
+    return discoverExternalCursorAgentsFromIpc({ projectId: id })
   })
   ipcMain.handle(
     'remote-agent:refresh-imported-thread',
