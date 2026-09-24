@@ -9,8 +9,8 @@
 // ("this row is current") and nesting ("these rows are children of that one").
 // One device serving three meanings is what made it read as repetition rather
 // than as signal. `prototypes/side-highlight` took the first two away —
-// containment became a plate (flat for the agent's own prose, hatched for
-// Copse's commentary on a turn) and selection became the fill alone — and left
+// containment became a plate (flat for agent prose, hatched for short status
+// commentary, etched for long reasoning) and selection became the fill alone — and left
 // the third, where a line down the edge is literally what a nesting guide is.
 //
 // A selection/status rail is a slim bar on one inline edge of a row — either a

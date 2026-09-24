@@ -1747,8 +1747,8 @@ export function seedConversationVisualHierarchyFixture(workspaceRoot: string): v
 
 /**
  * Every surface that used to carry an accent rail, on one screen: the five
- * GitHub alert kinds and a plain quote (flat plate), a thinking disclosure plus
- * a review and a failed comparison (hatched plate), and a two-thread sidebar so
+ * GitHub alert kinds and a plain quote (flat plate), a thinking disclosure
+ * (etched plate), a review and a failed comparison (hatched plate), and a two-thread sidebar so
  * one row is selected and one is not.
  */
 export function seedCalloutSurfacesFixture(workspaceRoot: string): void {
