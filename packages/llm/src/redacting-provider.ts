@@ -5,7 +5,7 @@ import type {
   LLMTool,
   ProviderStreamChunk,
 } from './wire-types.ts'
-import { redactMessages } from './redact-secrets.ts'
+import { redactMessages, redactSecrets } from './redact-secrets.ts'
 import { hasLastUsage } from './provider-usage.ts'
 
 /**
@@ -22,13 +22,22 @@ export function withSecretRedaction(
   literalSecrets: readonly string[] = [],
 ): LLMProvider {
   const wrapped: LLMProvider & { lastUsage?: unknown } = {
-    stream(
+    async *stream(
       messages: LLMMessage[],
       tools: LLMTool[],
       signal?: AbortSignal,
       options?: LLMStreamOptions,
     ): AsyncIterable<ProviderStreamChunk> {
-      return inner.stream(redactMessages(messages, literalSecrets), tools, signal, options)
+      for await (const chunk of inner.stream(
+        redactMessages(messages, literalSecrets),
+        tools,
+        signal,
+        options,
+      )) {
+        yield chunk.type === 'usage' && chunk.hostingProvider !== undefined
+          ? { ...chunk, hostingProvider: redactSecrets(chunk.hostingProvider, literalSecrets) }
+          : chunk
+      }
     },
   }
   Object.defineProperty(wrapped, 'lastUsage', {

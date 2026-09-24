@@ -54,6 +54,7 @@ export interface Stage2Result {
   readonly completion: ReviewCompletion | null
   readonly usage: TurnUsage
   readonly toolCalls: number
+  readonly hostingProviders?: readonly string[]
   readonly timing?: TurnTiming
   readonly error?: string
 }
@@ -136,6 +137,7 @@ export async function runStage2(options: Stage2Options): Promise<Stage2Result> {
     usage: turn.usage,
     toolCalls: turn.toolCalls,
     timing: turn.timing,
+    ...(turn.hostingProviders.length ? { hostingProviders: turn.hostingProviders } : {}),
     ...(turn.error !== undefined ? { error: turn.error } : {}),
   }
 }

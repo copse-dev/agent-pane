@@ -362,3 +362,24 @@ describe('forge review', () => {
     )
   })
 })
+
+it('keeps reported hosting providers inside review details and does not infer missing hosts', () => {
+  const base = report()
+  const withHosts = buildForgeReview(
+    {
+      ...base,
+      reviews: base.reviews.map((review) => ({ ...review, hostingProviders: ['Azure', 'OpenAI'] })),
+    },
+    { headCommit: target.headCommit, toolVersion: 'test' },
+  )
+  assert.match(withHosts.body, /Hosting providers reported by responses: Azure, OpenAI/)
+  assert.ok(
+    withHosts.body.indexOf('Hosting providers') >
+      withHosts.body.indexOf('<summary>Review details</summary>'),
+  )
+  const withoutHosts = buildForgeReview(base, {
+    headCommit: target.headCommit,
+    toolVersion: 'test',
+  })
+  assert.match(withoutHosts.body, /Hosting provider: not reported by the service/)
+})
