@@ -286,10 +286,7 @@
         "provider": "mock",
         "endpoint": null
       },
-      "lenses": [
-        "correctness",
-        "contracts"
-      ],
+      "lenses": ["correctness", "contracts"],
       "reviewerMaxSteps": null,
       "maxVerifiedFindings": 10,
       "verify": true,
