@@ -2354,8 +2354,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       !selection.isCollapsed &&
       list.contains(selection.anchorNode) &&
       list.contains(selection.focusNode)
-    const selectedText =
-      selectionIsInsideTranscript ? selection.toString().trim() : ''
+    const selectedText = selectionIsInsideTranscript ? selection.toString().trim() : ''
 
     if (!selectedText && !msgEl) return
 
