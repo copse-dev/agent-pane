@@ -3,6 +3,8 @@ import assert from 'node:assert/strict'
 import { access, chmod, mkdir, mkdtemp, readFile, realpath, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
+import { TEST_FAILURE_REPORT_PREFIX } from './test-failures.ts'
+import { decodeStage0Report } from './stage0-report.ts'
 import { decodeFindings } from './finding.ts'
 import { createHostProcessBackend } from './host-process-backend.ts'
 import type { IsolationBackend } from './isolation.ts'
@@ -266,6 +268,54 @@ describe('runStage0', () => {
     assert.match(renderStage0Report(report), /1 finding\(s\):\n1\. \[test\] package\.json:\d+ —/)
   })
 
+  it('compares individual failures when both aggregate test commands fail', async () => {
+    const failure = (name: string): { path: string; name: string } => ({
+      path: 'src/example.test.ts',
+      name,
+    })
+    const output = (names: string[]): string =>
+      TEST_FAILURE_REPORT_PREFIX +
+      JSON.stringify({
+        tier: 'unit-component',
+        complete: true,
+        failed: names.length,
+        failures: names.map(failure),
+      }) +
+      '\n'
+    const repo = await scenario(
+      { test: { exit: 1, stdout: output(['old failure']) } },
+      { test: { exit: 1, stdout: output(['old failure', 'new regression']) } },
+      { kinds: ['test'] },
+    )
+    const report = await run(repo)
+    assert.equal(report.checks[0]?.verdict, 'regressed')
+    assert.equal(report.findings.length, 1)
+    assert.match(report.findings[0]?.claim ?? '', /new regression/)
+    assert.doesNotMatch(report.findings[0]?.claim ?? '', /passes on base/)
+    assert.equal(report.findings[0]?.anchor.path, 'src/example.test.ts')
+    assert.deepEqual(decodeStage0Report(JSON.parse(JSON.stringify(report))), report)
+    const unchanged = await scenario(
+      { test: { exit: 1, stdout: output(['old failure']) } },
+      { test: { exit: 1, stdout: output(['old failure']) } },
+      { kinds: ['test'] },
+    )
+    const same = await run(unchanged)
+    assert.equal(same.checks[0]?.verdict, 'failing-on-base')
+    assert.deepEqual(same.findings, [])
+    const unavailable = await scenario(
+      { test: { exit: 1, stdout: 'incomplete output' } },
+      { test: { exit: 1, stdout: output(['new regression']) } },
+      { kinds: ['test'] },
+    )
+    const unknown = await run(unavailable)
+    assert.equal(unknown.checks[0]?.verdict, 'undetermined')
+    assert.match(
+      unknown.coverage.notChecked[0]?.reason ?? '',
+      /individual failure comparison is unavailable/,
+    )
+    assert.deepEqual(unknown.findings, [])
+  })
+
   it('anchors a new type diagnostic at its line and ignores one that only moved', async () => {
     const repo = await scenario(
       { typecheck: { exit: 2, stdout: "src/a.ts(9,1): error TS2304: Cannot find name 'x'.\n" } },
@@ -276,13 +326,10 @@ describe('runStage0', () => {
         },
       },
     )
-    // Base fails typecheck too, so the check is failing-on-base and nothing is claimed.
+    // Both typechecks fail; without a complete inventory the delta stays unknown.
     const report = await run(repo)
     assert.deepEqual(report.findings, [])
-    assert.equal(
-      report.checks.find((check) => check.kind === 'typecheck')?.verdict,
-      'failing-on-base',
-    )
+    assert.equal(report.checks.find((check) => check.kind === 'typecheck')?.verdict, 'undetermined')
   })
 
   it('mints one finding per new type diagnostic, anchored at its line', async () => {

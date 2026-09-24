@@ -188,6 +188,37 @@ describe('runStage2', () => {
     assert.doesNotMatch(rendered, /repository-controlled output/)
   })
 
+  it('never turns an aggregate unit result into Electron or screenshot coverage', () => {
+    const rendered = renderReviewerValidation({
+      ...validation,
+      checks: [
+        {
+          kind: 'test',
+          verdict: 'clean',
+          base: null,
+          head: {
+            kind: 'test',
+            target: 'head',
+            argv: ['node', 'tests'],
+            status: 'passed',
+            exitCode: 0,
+            durationMs: 10,
+            output: '',
+            outputTruncated: false,
+            testFailures: { tier: 'unit-component', complete: true, failed: 0, failures: [] },
+          },
+        },
+      ],
+    })
+    assert.match(rendered, /unit\/component/)
+    assert.match(rendered, /Electron e2e, screenshots.*not established/)
+    assert.match(rendered, /scenario and visual coverage are not attested/)
+    assert.doesNotMatch(rendered, /coverage gaps: none/)
+    const unspecified = renderReviewerValidation(validation)
+    assert.match(unspecified, /test tiers and individual scenarios are unspecified/)
+    assert.match(unspecified, /Two failing aggregate exit codes do not prove/)
+  })
+
   it('rejects stale validation evidence from another checkout', async () => {
     await assert.rejects(
       runStage2({

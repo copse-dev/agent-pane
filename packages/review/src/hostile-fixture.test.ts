@@ -220,7 +220,7 @@ describe('hostile fixture conformance', () => {
       assert.equal(report.execution.strength, 'container')
       assert.equal(report.preparation.head?.status, 'passed')
       assert.match(report.preparation.head.output, /Stage 0 offline dependency install/)
-      assert.equal(report.checks.find((check) => check.kind === 'test')?.verdict, 'failing-on-base')
+      assert.equal(report.checks.find((check) => check.kind === 'test')?.verdict, 'undetermined')
       assert.doesNotMatch(JSON.stringify(report), /CANARY/)
     })
 
@@ -313,10 +313,7 @@ describe('hostile fixture conformance', () => {
         )
         // The hostile test exits 1 on both checkouts, so it is failing-on-base, not a
         // finding — and the prepare step is a run, never a check.
-        assert.equal(
-          report.checks.find((check) => check.kind === 'test')?.verdict,
-          'failing-on-base',
-        )
+        assert.equal(report.checks.find((check) => check.kind === 'test')?.verdict, 'undetermined')
         assert.equal(
           report.checks.find((check) => check.kind === 'prepare'),
           undefined,
