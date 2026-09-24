@@ -33,6 +33,7 @@
 @import './global/file-search.css';
 @import './global/command-palette.css';
 @import './global/keyboard-shortcuts.css';
+@import './global/process-manager.css';
 @import './global/conversation-search.css';
 @import './global/todo.css';
 @import './global/apple-development.css';
