@@ -28793,7 +28793,12 @@ function createDemoApi(scenario, options = {}) {
         failed: []
       })
     },
+    processManager: {
+      snapshot: () => resolved({ sampledAt: Date.now(), processes: [], activeRunThreadIds: [] }),
+      stopBackground: () => resolved(false)
+    },
     menu: {
+      onProcessManager: subscribe,
       onSettings: subscribe,
       onNewThread: subscribe,
       onTogglePanel: subscribe,
@@ -103579,10 +103584,13 @@ function mountTerminalsPane(listRoot, viewerRoot, store2, api2) {
     const tab = [...tabs.values()].find((t2) => t2.sessionId === id);
     if (!tab) return;
     tab.sessionId = null;
-    tab.term.writeln(`\r
-\x1B[90m[Process exited with code ${String(code)}]\x1B[0m`, () => {
-      finishCodeBlockRun(tab, code);
-    });
+    tab.term.writeln(
+      code === -1 ? "\r\n\x1B[90m[Terminal stopped]\x1B[0m" : `\r
+\x1B[90m[Process exited with code ${String(code)}]\x1B[0m`,
+      () => {
+        finishCodeBlockRun(tab, code);
+      }
+    );
   });
   function createXterm() {
     const term = new Dl({
@@ -129951,6 +129959,330 @@ var init_command_palette = __esm({
   }
 });
 
+// src/renderer/views/process-manager-dialog.ts
+function sortedRows(rows, column, ascending) {
+  const direction = ascending ? 1 : -1;
+  return [...rows].sort((left, right) => {
+    const a3 = column === "cpu" ? left.cpuPercent : left.memoryMiB;
+    const b4 = column === "cpu" ? right.cpuPercent : right.memoryMiB;
+    if (a3 === null) return b4 === null ? left.pid - right.pid : 1;
+    if (b4 === null) return -1;
+    return (a3 - b4) * direction || left.pid - right.pid;
+  });
+}
+function mountProcessManagerDialog(api2, store2) {
+  const { dialog: dialog2, open: open2, close } = createOverlayDialog({
+    id: "process-manager-dialog",
+    className: "process-manager-overlay"
+  });
+  dialog2.setAttribute("aria-labelledby", "process-manager-title");
+  const closeButton = el(
+    "button",
+    {
+      type: "button",
+      class: "ui-btn ui-btn-ghost process-manager-close",
+      "aria-label": "Close process manager"
+    },
+    closeIcon()
+  );
+  closeButton.addEventListener("click", close);
+  const cpuHeading = el("th", { scope: "col", "aria-sort": "descending" });
+  const memoryHeading = el("th", { scope: "col", "aria-sort": "none" });
+  const cpuButton = el("button", { type: "button", class: "process-manager-sort" }, "CPU %");
+  const memoryButton = el("button", { type: "button", class: "process-manager-sort" }, "Memory");
+  cpuHeading.append(cpuButton);
+  memoryHeading.append(memoryButton);
+  const body = el("tbody", { class: "process-manager-rows" });
+  const table = el(
+    "table",
+    { class: "process-manager-table" },
+    el(
+      "thead",
+      {},
+      el(
+        "tr",
+        {},
+        el("th", { scope: "col" }, "Process"),
+        el("th", { scope: "col" }, "Kind"),
+        el("th", { scope: "col" }, "Thread"),
+        cpuHeading,
+        memoryHeading,
+        el("th", { scope: "col" }, "PID"),
+        el("th", { scope: "col", "aria-label": "Actions" })
+      )
+    ),
+    body
+  );
+  const activityCount = el("span", { class: "process-manager-activity-count" });
+  const activityList = el("div", { class: "process-manager-activity-list" });
+  const activity = el(
+    "section",
+    { class: "process-manager-activity", "aria-label": "Agent activity" },
+    el(
+      "div",
+      { class: "process-manager-activity-heading" },
+      el("strong", {}, "Agent activity"),
+      activityCount
+    ),
+    activityList
+  );
+  activity.hidden = true;
+  const status = el("p", { class: "process-manager-status", role: "status" }, "Loading processes\u2026");
+  const updated = el("span", { class: "process-manager-updated", "aria-hidden": "true" });
+  dialog2.append(
+    el(
+      "div",
+      { class: "process-manager-shell" },
+      el(
+        "header",
+        { class: "process-manager-header" },
+        el(
+          "div",
+          {},
+          el("h2", { id: "process-manager-title" }, "Process Manager"),
+          el("p", { class: "process-manager-subtitle" }, "Live Copse and thread processes")
+        ),
+        closeButton
+      ),
+      activity,
+      el("div", { class: "process-manager-scroll" }, table),
+      el(
+        "footer",
+        { class: "process-manager-footer" },
+        el("span", {}, "CPU is approximate; memory is physical RAM in MiB."),
+        updated
+      ),
+      status
+    )
+  );
+  let current = null;
+  let column = "cpu";
+  let ascending = false;
+  let timer = null;
+  let generation = 0;
+  let refreshing = false;
+  function projectFor(row2) {
+    if (!row2.threadId) return null;
+    const state = store2.getState();
+    return row2.projectId ?? state.backgroundThreads.find((item) => item.thread.id === row2.threadId)?.projectId ?? (state.threads.some((thread) => thread.id === row2.threadId) ? state.activeProjectId : null);
+  }
+  async function stopManaged(row2) {
+    const handle = row2.managed;
+    if (!handle) return;
+    const label = handle.kind === "terminal" ? "terminal" : "background task";
+    const confirmed = await showConfirmDialog({
+      message: `Stop this ${label}?`,
+      detail: handle.kind === "terminal" ? "This closes the terminal session and stops its shell." : "This stops the background task and its managed subprocesses.",
+      confirmLabel: "Stop",
+      danger: true
+    });
+    if (!confirmed) return;
+    try {
+      if (handle.kind === "terminal") {
+        await api2.terminal.destroy(handle.id);
+      } else {
+        const stopped = await api2.processManager.stopBackground(
+          handle.id,
+          handle.projectId,
+          handle.threadId
+        );
+        if (!stopped) {
+          showErrorToast("Could not stop that task", "It is no longer running.");
+          return;
+        }
+      }
+      status.textContent = `Stopped ${label}.`;
+      void refresh();
+    } catch (error62) {
+      showErrorToast(`Could not stop the ${label}`, error62);
+    }
+  }
+  function menuEntries(row2) {
+    const entries2 = [];
+    const projectId = projectFor(row2);
+    if (row2.threadId && projectId && store2.getState().projects.some((p2) => p2.id === projectId)) {
+      const threadId = row2.threadId;
+      entries2.push({
+        label: "Jump to thread",
+        onSelect: () => {
+          close();
+          switchProjectThread(store2, api2, projectId, threadId);
+        }
+      });
+    }
+    if (row2.threadId && getThreadById(store2, row2.threadId)?.status === "running") {
+      const threadId = row2.threadId;
+      entries2.push({
+        label: "Stop agent run",
+        onSelect: () => {
+          void api2.agent.abort(threadId).catch((error62) => {
+            showErrorToast("Could not stop the agent run", error62);
+          });
+        }
+      });
+    }
+    if (row2.managed) {
+      entries2.push({
+        label: row2.managed.kind === "terminal" ? "Stop terminal" : "Stop background task",
+        onSelect: () => {
+          void stopManaged(row2);
+        }
+      });
+    }
+    return entries2;
+  }
+  function render(snapshot) {
+    cpuHeading.setAttribute(
+      "aria-sort",
+      column === "cpu" ? ascending ? "ascending" : "descending" : "none"
+    );
+    memoryHeading.setAttribute(
+      "aria-sort",
+      column === "memory" ? ascending ? "ascending" : "descending" : "none"
+    );
+    clear(body);
+    clear(activityList);
+    activity.hidden = snapshot.activeRunThreadIds.length === 0;
+    activityCount.textContent = `${String(snapshot.activeRunThreadIds.length)} working`;
+    for (const threadId of snapshot.activeRunThreadIds) {
+      const title = getThreadById(store2, threadId)?.title.trim();
+      const label = title && title.length > 0 ? title : `Thread ${threadId.slice(0, 8)}`;
+      activityList.append(
+        el(
+          "span",
+          { class: "process-manager-activity-item", "data-thread-id": threadId },
+          el("span", { class: "process-manager-activity-dot", "aria-hidden": "true" }),
+          el("span", { class: "process-manager-activity-state" }, "Working"),
+          el("span", { class: "process-manager-activity-thread", title: label }, label)
+        )
+      );
+    }
+    const state = store2.getState();
+    for (const row2 of sortedRows(snapshot.processes, column, ascending)) {
+      const thread = getThreadById(store2, row2.threadId);
+      const title = thread?.title.trim();
+      const threadLabel2 = row2.threadId ? title && title.length > 0 ? title : `Thread ${row2.threadId.slice(0, 8)}` : "Shared";
+      const entries2 = menuEntries(row2);
+      const actionsCell = el("td", { class: "process-manager-actions" });
+      if (entries2.length > 0) {
+        const actionsButton = el(
+          "button",
+          {
+            type: "button",
+            class: "ui-btn ui-btn-ghost process-manager-actions-button",
+            "aria-label": `Actions for ${row2.label} (${String(row2.pid)})`
+          },
+          moreHorizontalIcon("ui-icon ui-icon-sm")
+        );
+        actionsButton.addEventListener("click", () => {
+          const rect = actionsButton.getBoundingClientRect();
+          showContextMenu(rect.right, rect.bottom, menuEntries(row2), dialog2);
+        });
+        actionsCell.append(actionsButton);
+      }
+      const tableRow = el(
+        "tr",
+        {
+          "data-pid": String(row2.pid),
+          "data-kind": row2.type,
+          "data-thread-id": row2.threadId ?? "",
+          "data-active-thread": String(
+            row2.threadId !== null && row2.threadId === state.activeThreadId
+          )
+        },
+        el("td", { class: "process-manager-name", title: row2.label }, row2.label),
+        el("td", { class: "process-manager-type" }, row2.type),
+        el("td", { class: "process-manager-thread", title: threadLabel2 }, threadLabel2),
+        el(
+          "td",
+          { class: "process-manager-number" },
+          row2.cpuPercent === null ? "\u2014" : `${row2.cpuPercent.toFixed(1)}%`
+        ),
+        el(
+          "td",
+          { class: "process-manager-number" },
+          row2.memoryMiB === null ? "\u2014" : `${row2.memoryMiB.toFixed(1)} MiB`
+        ),
+        el("td", { class: "process-manager-number process-manager-pid" }, String(row2.pid)),
+        actionsCell
+      );
+      if (entries2.length > 0) {
+        tableRow.addEventListener("contextmenu", (event) => {
+          event.preventDefault();
+          showContextMenu(event.clientX, event.clientY, menuEntries(row2), dialog2);
+        });
+      }
+      body.append(tableRow);
+    }
+    updated.textContent = `Updated ${new Date(snapshot.sampledAt).toLocaleTimeString()}`;
+    dialog2.dataset["sampledAt"] = String(snapshot.sampledAt);
+    status.textContent = snapshot.processes.length === 0 ? "No processes found." : "";
+  }
+  function isRequestCurrent(requestGeneration) {
+    return dialog2.open && requestGeneration === generation;
+  }
+  async function refresh() {
+    if (!dialog2.open || refreshing || document.visibilityState === "hidden") return;
+    refreshing = true;
+    const requestGeneration = generation;
+    try {
+      const snapshot = await api2.processManager.snapshot();
+      if (isRequestCurrent(requestGeneration)) {
+        current = snapshot;
+        render(snapshot);
+      }
+    } catch {
+      if (isRequestCurrent(requestGeneration))
+        status.textContent = "Process metrics are unavailable.";
+    } finally {
+      refreshing = false;
+    }
+  }
+  function setSort(next) {
+    ascending = column === next ? !ascending : false;
+    column = next;
+    if (current) render(current);
+  }
+  cpuButton.addEventListener("click", () => {
+    setSort("cpu");
+  });
+  memoryButton.addEventListener("click", () => {
+    setSort("memory");
+  });
+  function onVisibilityChange() {
+    if (document.visibilityState === "visible") void refresh();
+  }
+  document.addEventListener("visibilitychange", onVisibilityChange);
+  dialog2.addEventListener("close", () => {
+    generation++;
+    if (timer !== null) clearInterval(timer);
+    timer = null;
+    refreshing = false;
+  });
+  return () => {
+    if (dialog2.open) return;
+    current = null;
+    clear(body);
+    status.textContent = "Loading processes\u2026";
+    updated.textContent = "";
+    open2();
+    void refresh();
+    timer = setInterval(() => void refresh(), 1e3);
+  };
+}
+var init_process_manager_dialog = __esm({
+  "src/renderer/views/process-manager-dialog.ts"() {
+    init_helpers();
+    init_icons();
+    init_context_menu();
+    init_projects();
+    init_thread_helpers();
+    init_confirm_dialog();
+    init_toast();
+    init_dialog_shell();
+  }
+});
+
 // src/renderer/controller/sync-thread-branch-after-shell.ts
 async function syncThreadGitBranchAfterShell(store2, api2, threadId) {
   const projectId = store2.getState().activeProjectId;
@@ -140784,6 +141116,7 @@ async function boot() {
   mountFileSearchDialog(store, api);
   mountCommandPalette(store, api);
   mountKeyboardShortcutsDialog();
+  openProcessManager = mountProcessManagerDialog(api, store);
   mountSshStatusBanner(store, api);
   mark("renderer:dialogs-mounted");
   const startupSettings = await loadStartupSettings(api.settings);
@@ -140852,6 +141185,7 @@ async function boot() {
   attachThreadHydration(store, api);
   if (!popoutMode) attachImportedCursorAgentRefresh(store, api);
   mountTitlebar(requireElement("titlebar"), store, api);
+  api.menu.onProcessManager(() => openProcessManager?.());
   api.menu.onSettings(() => {
     if (!isSettingsDialogOpen()) openSettingsDialog();
   });
@@ -141058,7 +141392,11 @@ function registerKeyboardShortcuts() {
       e3.preventDefault();
       openNewThread(store);
     }
-    if (meta3 && e3.key === "p") {
+    if (meta3 && e3.shiftKey && e3.key.toLowerCase() === "p") {
+      e3.preventDefault();
+      openProcessManager?.();
+    }
+    if (meta3 && !e3.shiftKey && e3.key.toLowerCase() === "p") {
       e3.preventDefault();
       if (store.getState().workspaceRoot) openFileSearchDialog();
     }
@@ -141154,7 +141492,7 @@ function switchToNextThread() {
   const next = nextThreadId(store);
   if (next) switchThread(store, next);
 }
-var sanitizerReady, highlighterReady, store, api, POPOUT_MODES, isPopoutMode, popoutMode, layoutMounted, unmountPopoutTitlebar, handleStopShortcut;
+var sanitizerReady, highlighterReady, store, api, POPOUT_MODES, isPopoutMode, popoutMode, layoutMounted, unmountPopoutTitlebar, handleStopShortcut, openProcessManager;
 var init_main = __esm({
   async "src/renderer/main.ts"() {
     init_tokens();
@@ -141201,6 +141539,7 @@ var init_main = __esm({
     init_command_palette();
     init_conversation_search();
     init_keyboard_shortcuts_dialog();
+    init_process_manager_dialog();
     init_agent();
     init_diff_state();
     init_automations2();
@@ -141266,6 +141605,7 @@ var init_main = __esm({
     layoutMounted = false;
     unmountPopoutTitlebar = null;
     handleStopShortcut = null;
+    openProcessManager = null;
     if (popoutMode) {
       api.panes.onSwitchMode((mode) => {
         if (!isPopoutMode(mode)) return;
