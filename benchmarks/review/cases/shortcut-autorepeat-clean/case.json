@@ -1,0 +1,5 @@
+{
+  "id": "shortcut-autorepeat-clean",
+  "description": "Matched clean control: the transition remains correct after a harmless export refactor. Reduced from copse-dev/agent-pane PR #2833; this synthetic fixture is not a replay of the full app.",
+  "truth": []
+}

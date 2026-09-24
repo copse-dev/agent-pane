@@ -1,0 +1,5 @@
+{
+  "id": "dispose-inflight-clean",
+  "description": "Matched clean control: the transition remains correct after a harmless export refactor.",
+  "truth": []
+}

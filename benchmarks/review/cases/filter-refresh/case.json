@@ -1,0 +1,36 @@
+{
+  "id": "filter-refresh",
+  "description": "refresh replaces the title with #42; render filters that placeholder out before restoring the cached title. Reduced from copse-dev/agent-pane PR #3008; this synthetic fixture is not a replay of the full app.",
+  "truth": [
+    {
+      "id": "filter-refresh",
+      "class": "contract",
+      "anchors": [
+        {
+          "path": "src/state.cjs",
+          "startLine": 7,
+          "endLine": 7
+        }
+      ],
+      "claimSignals": [
+        [
+          "filter"
+        ],
+        [
+          "refresh"
+        ],
+        [
+          "title"
+        ],
+        [
+          "disappear",
+          "loses",
+          "hidden",
+          "drops",
+          "missing"
+        ]
+      ],
+      "note": "refresh replaces the title with #42; render filters that placeholder out before restoring the cached title."
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "id": "shortcut-autorepeat",
+  "description": "Every repeated keydown now reaches share because the repeat guard was removed. Reduced from copse-dev/agent-pane PR #2833; this synthetic fixture is not a replay of the full app.",
+  "truth": [
+    {
+      "id": "shortcut-autorepeat",
+      "class": "contract",
+      "anchors": [
+        {
+          "path": "src/state.cjs",
+          "startLine": 3,
+          "endLine": 3
+        }
+      ],
+      "claimSignals": [
+        [
+          "repeat",
+          "autorepeat"
+        ],
+        [
+          "share"
+        ],
+        [
+          "duplicate",
+          "multiple",
+          "repeated"
+        ]
+      ],
+      "note": "Every repeated keydown now reaches share because the repeat guard was removed."
+    }
+  ]
+}

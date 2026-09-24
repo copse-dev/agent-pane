@@ -222,5 +222,53 @@
     "truePositives": 6,
     "duplicates": 0,
     "outputTokensPerConfirmed": 387
+  },
+  "mock:c59481cf47c9": {
+    "configuration": {
+      "evaluationVersion": 5,
+      "reviewers": [
+        {
+          "model": "mock",
+          "provider": "mock",
+          "endpoint": null
+        }
+      ],
+      "challenger": {
+        "model": "mock",
+        "provider": "mock",
+        "endpoint": null
+      },
+      "lenses": ["correctness", "contracts"],
+      "reviewerMaxSteps": null,
+      "maxVerifiedFindings": 10,
+      "verify": true,
+      "corpus": {
+        "cases": [
+          "clean-rename",
+          "dispose-inflight",
+          "dispose-inflight-clean",
+          "external-image-provenance",
+          "false-alarm",
+          "filter-refresh",
+          "filter-refresh-clean",
+          "null-check-dropped",
+          "paginate-off-by-one",
+          "resize-without-scroll",
+          "resize-without-scroll-clean",
+          "semantic-image-kind",
+          "shortcut-autorepeat",
+          "shortcut-autorepeat-clean",
+          "timer-leak",
+          "workspace-switch-inflight",
+          "workspace-switch-inflight-clean"
+        ],
+        "fingerprint": "54a457272f8a431a2cdcee1041e2a03467929ec5da7601c0b996b9af8cb9e8d8"
+      }
+    },
+    "cases": 17,
+    "precision": 0.917,
+    "truePositives": 11,
+    "duplicates": 0,
+    "outputTokensPerConfirmed": 308
   }
 }

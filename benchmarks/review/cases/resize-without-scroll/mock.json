@@ -1,0 +1,118 @@
+{
+  "roles": {
+    "review:correctness": [
+      {
+        "type": "tool_call",
+        "name": "read_file",
+        "args": {
+          "path": "src/state.cjs"
+        }
+      },
+      {
+        "type": "tool_call",
+        "name": "report_finding",
+        "args": {
+          "path": "src/state.cjs",
+          "startLine": 6,
+          "class": "contract",
+          "severity": "medium",
+          "confidence": "high",
+          "claim": "Resizing without scrolling leaves the annotation viewBox stale indefinitely.",
+          "reason": "kick deduplicates solely by scroll offset, so repeated resize notifications at the same offset never update viewport dimensions."
+        }
+      },
+      {
+        "type": "tool_call",
+        "name": "finish_review",
+        "args": {
+          "checked": "The changed state handler and its lifecycle transitions.",
+          "couldNotVerify": "Nothing"
+        }
+      },
+      {
+        "type": "text",
+        "text": "Done."
+      }
+    ],
+    "review:contracts": [
+      {
+        "type": "tool_call",
+        "name": "finish_review",
+        "args": {
+          "checked": "The changed state handler and its lifecycle transitions.",
+          "couldNotVerify": "Nothing"
+        }
+      },
+      {
+        "type": "text",
+        "text": "Done."
+      }
+    ],
+    "review:transitions": [
+      {
+        "type": "tool_call",
+        "name": "read_file",
+        "args": {
+          "path": "src/state.cjs"
+        }
+      },
+      {
+        "type": "tool_call",
+        "name": "report_finding",
+        "args": {
+          "path": "src/state.cjs",
+          "startLine": 6,
+          "class": "contract",
+          "severity": "medium",
+          "confidence": "high",
+          "claim": "Resizing without scrolling leaves the annotation viewBox stale indefinitely.",
+          "reason": "kick deduplicates solely by scroll offset, so repeated resize notifications at the same offset never update viewport dimensions."
+        }
+      },
+      {
+        "type": "tool_call",
+        "name": "finish_review",
+        "args": {
+          "checked": "The changed state handler and its lifecycle transitions.",
+          "couldNotVerify": "Nothing"
+        }
+      },
+      {
+        "type": "text",
+        "text": "Done."
+      }
+    ],
+    "reproduce": [
+      {
+        "type": "tool_call",
+        "name": "write_reproducer",
+        "args": {
+          "path": ".copse-review/transition.repro.cjs",
+          "content": "const assert = require('node:assert/strict')\nconst { create } = require('../src/state.cjs')\n;(async () => { const host = { width: 400, height: 300 }; const layer = create(host); host.width = 800; layer.kick(0, 0); layer.kick(0, 0); assert.deepEqual(layer.viewBox(), [0, 0, 800, 300]) })().catch(error => { console.error(error); process.exitCode = 1 })\n",
+          "argv": [
+            "node",
+            ".copse-review/transition.repro.cjs"
+          ]
+        }
+      },
+      {
+        "type": "text",
+        "text": "Done."
+      }
+    ],
+    "challenge": [
+      {
+        "type": "tool_call",
+        "name": "verdict",
+        "args": {
+          "status": "stands",
+          "reason": "kick deduplicates solely by scroll offset, so repeated resize notifications at the same offset never update viewport dimensions."
+        }
+      },
+      {
+        "type": "text",
+        "text": "Done."
+      }
+    ]
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "name": "shortcut-autorepeat-clean",
+  "private": true,
+  "scripts": {
+    "test": "node test.cjs"
+  }
+}

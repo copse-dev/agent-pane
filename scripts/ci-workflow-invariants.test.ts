@@ -1008,8 +1008,108 @@ describe('Copse Reviewer workflow invariants', () => {
     assert.match(modelBenchWorkflow, /--challenger "\$REVIEW_MODEL"/)
     assert.match(modelBenchWorkflow, /bench_args\+=\(--case "\$REVIEW_CASE"\)/)
     assert.match(modelBenchWorkflow, /pnpm exec node "\$\{bench_args\[@\]\}"/)
-    assert.match(modelBenchWorkflow, /--out bench-results\/review-scaleway/)
+    assert.match(modelBenchWorkflow, /--out bench-results\/review-model/)
     assert.match(modelBenchWorkflow, /retention-days: 30/)
+  })
+
+  it('keeps OpenRouter experiments manual, bounded, and on their own credential', () => {
+    assert.match(modelBenchWorkflow, /default: timer-leak/)
+    assert.match(modelBenchWorkflow, /^ {2}group: copse-review-model-bench$/m)
+    assert.match(modelBenchWorkflow, /timeout-minutes: 60/)
+    assert.match(
+      modelBenchWorkflow,
+      /OPENROUTER_API_KEY: \$\{\{ secrets\.COPSE_REVIEW_OPENROUTER_API_KEY \}\}/,
+    )
+    assert.match(modelBenchWorkflow, /openrouter-luna\|openrouter-sol\)/)
+    assert.match(modelBenchWorkflow, /unset COPSE_REVIEW_API_KEY SCW_DEFAULT_PROJECT_ID/)
+    assert.match(modelBenchWorkflow, /if test -z "\$OPENROUTER_API_KEY"; then/)
+    assert.match(modelBenchWorkflow, /REVIEW_PROVIDER=openrouter/)
+    assert.match(
+      modelBenchWorkflow,
+      /REVIEW_MODEL="openai\/gpt-6-\$\{REVIEW_PROFILE#openrouter-\}"/,
+    )
+    assert.match(modelBenchWorkflow, /REVIEW_MAX_STEPS=12/)
+    assert.match(modelBenchWorkflow, /REVIEW_MAX_VERIFY=3/)
+    for (const workflow of [findingsWorkflow, nightlyWorkflow]) {
+      assert.doesNotMatch(workflow, /OPENROUTER_API_KEY|openrouter-luna|openrouter-sol/)
+    }
+  })
+
+  it('permits only the owner to dispatch or rerun the trusted main-branch benchmark', () => {
+    const job = workflowJobBlock(modelBenchWorkflow, 'benchmark')
+    const guard = job.match(/^ {4}if: >-\n((?: {6}.+\n)+)/m)?.[1]?.trim()
+    assert.ok(guard)
+    assert.ok(guard.startsWith('${{ ') && guard.endsWith(' }}'))
+    // Evaluate the actual workflow's deliberately small equality/conjunction
+    // grammar. Unknown syntax fails the test instead of silently approximating
+    // an Actions expression or executing it as JavaScript.
+    const clauses = guard
+      .slice(4, -3)
+      .split('&&')
+      .map((clause) => {
+        const match = /^github\.([a-z_]+)\s*==\s*'([^']+)'$/.exec(clause.trim())
+        assert.ok(match, `unsupported access expression: ${clause}`)
+        const [, key, value] = match
+        assert.ok(key && value)
+        return { key, value }
+      })
+    const allowed = (context: Readonly<Record<string, string>>): boolean =>
+      clauses.every(({ key, value }) => context[key]?.toLowerCase() === value.toLowerCase())
+    const owner = {
+      repository_id: '1274237362',
+      event_name: 'workflow_dispatch',
+      ref: 'refs/heads/main',
+      workflow_ref: 'copse-dev/agent-pane/.github/workflows/review-model-bench.yml@refs/heads/main',
+      actor_id: '338988',
+      triggering_actor: 'jonathanKingston',
+    }
+    assert.equal(allowed(owner), true)
+    for (const event of [
+      'pull_request',
+      'pull_request_target',
+      'workflow_run',
+      'push',
+      'schedule',
+    ]) {
+      assert.equal(allowed({ ...owner, event_name: event }), false, event)
+    }
+    assert.equal(allowed({ ...owner, repository_id: '999' }), false, 'fork repository')
+    assert.equal(allowed({ ...owner, actor_id: '999' }), false, 'outside original actor')
+    assert.equal(allowed({ ...owner, triggering_actor: 'contributor' }), false, 'outside rerun')
+    assert.equal(allowed({ ...owner, ref: 'refs/heads/contributor' }), false, 'branch dispatch')
+    assert.equal(allowed({ ...owner, ref: 'refs/tags/main' }), false, 'same-name tag')
+    assert.equal(
+      allowed({
+        ...owner,
+        workflow_ref: owner.workflow_ref.replace('/heads/main', '/heads/contributor'),
+      }),
+      false,
+      'untrusted workflow ref',
+    )
+    assert.equal(allowed({}), false, 'missing context')
+    assert.match(job, /^ {4}environment: copse-review-models$/m)
+  })
+
+  it('references the environment key only in the benchmark model step and never the org key', () => {
+    const secret = 'secrets.COPSE_REVIEW_OPENROUTER_API_KEY'
+    const workflows = readdirSync(resolve('.github/workflows')).filter((name) =>
+      /\.ya?ml$/.test(name),
+    )
+    for (const name of workflows) {
+      const workflow = readFileSync(resolve('.github/workflows', name), 'utf8')
+      assert.doesNotMatch(
+        workflow,
+        /secrets(?:\.OPENROUTER_API_KEY|\[['"]OPENROUTER_API_KEY['"]\])/,
+        name,
+      )
+      if (name !== 'review-model-bench.yml') assert.ok(!workflow.includes(secret), name)
+    }
+    assert.equal(modelBenchWorkflow.split(secret).length - 1, 1)
+    const install = modelBenchWorkflow.indexOf('- name: Install the reviewer')
+    const model = modelBenchWorkflow.indexOf('- name: Run the advisory real-model benchmark')
+    const credential = modelBenchWorkflow.indexOf(secret)
+    const upload = modelBenchWorkflow.indexOf('- uses: actions/upload-artifact')
+    assert.ok(install < model && model < credential && credential < upload)
   })
 
   it('samples at most one recent same-repository PR, including drafts, and has an explicit opt-out', () => {

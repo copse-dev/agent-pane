@@ -108,6 +108,24 @@ export const CONCURRENCY_LENS: Lens = {
   maxSteps: 20,
 }
 
+export const TRANSITIONS_LENS: Lens = {
+  id: 'transitions',
+  title: 'State transitions and stale work',
+  brief: [
+    'Review sequences of user and asynchronous events, not only the initial state.',
+    'Trace changed state owners through refresh with an active filter, resize with unchanged',
+    'scroll offsets, workspace switches while requests are in flight, disposal before callbacks',
+    'complete, and repeated keyboard events. Choose only sequences reachable in this change.',
+    'For each suspected regression, name the invariant and drive the smallest deterministic',
+    'sequence that could violate it; use a focused probe when execution is available.',
+    'Inspect the guard, invalidation, or ownership check that should preserve the invariant.',
+    'A missing test is not a separate finding for the same product defect. A preserved guard',
+    `or intentional cancellation can refute the suspicion. ${NOT_STYLE}`,
+  ].join(' '),
+  classes: ['contract', 'concurrency', 'resource'],
+  maxSteps: 20,
+}
+
 export const LENSES: readonly Lens[] = [
   CORRECTNESS_LENS,
   CONTRACTS_LENS,
@@ -115,6 +133,7 @@ export const LENSES: readonly Lens[] = [
   TESTS_LENS,
   SECURITY_LENS,
   CONCURRENCY_LENS,
+  TRANSITIONS_LENS,
 ]
 
 export const DEFAULT_LENS_IDS: readonly string[] = [CORRECTNESS_LENS.id]

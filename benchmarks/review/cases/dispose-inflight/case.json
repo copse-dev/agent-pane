@@ -1,0 +1,34 @@
+{
+  "id": "dispose-inflight",
+  "description": "Clearing rows during dispose does not prevent the pending refresh assignment from running afterwards.",
+  "truth": [
+    {
+      "id": "dispose-inflight",
+      "class": "concurrency",
+      "anchors": [
+        {
+          "path": "src/state.cjs",
+          "startLine": 4,
+          "endLine": 4
+        }
+      ],
+      "claimSignals": [
+        [
+          "dispose",
+          "disposed"
+        ],
+        [
+          "pending",
+          "request",
+          "refresh"
+        ],
+        [
+          "repopulate",
+          "late",
+          "after"
+        ]
+      ],
+      "note": "Clearing rows during dispose does not prevent the pending refresh assignment from running afterwards."
+    }
+  ]
+}

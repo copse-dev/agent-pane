@@ -1,0 +1,118 @@
+{
+  "roles": {
+    "review:correctness": [
+      {
+        "type": "tool_call",
+        "name": "read_file",
+        "args": {
+          "path": "src/state.cjs"
+        }
+      },
+      {
+        "type": "tool_call",
+        "name": "report_finding",
+        "args": {
+          "path": "src/state.cjs",
+          "startLine": 4,
+          "class": "concurrency",
+          "severity": "medium",
+          "confidence": "high",
+          "claim": "A request completing after dispose repopulates the disposed view with stale rows.",
+          "reason": "Clearing rows during dispose does not prevent the pending refresh assignment from running afterwards."
+        }
+      },
+      {
+        "type": "tool_call",
+        "name": "finish_review",
+        "args": {
+          "checked": "The changed state handler and its lifecycle transitions.",
+          "couldNotVerify": "Nothing"
+        }
+      },
+      {
+        "type": "text",
+        "text": "Done."
+      }
+    ],
+    "review:contracts": [
+      {
+        "type": "tool_call",
+        "name": "finish_review",
+        "args": {
+          "checked": "The changed state handler and its lifecycle transitions.",
+          "couldNotVerify": "Nothing"
+        }
+      },
+      {
+        "type": "text",
+        "text": "Done."
+      }
+    ],
+    "review:transitions": [
+      {
+        "type": "tool_call",
+        "name": "read_file",
+        "args": {
+          "path": "src/state.cjs"
+        }
+      },
+      {
+        "type": "tool_call",
+        "name": "report_finding",
+        "args": {
+          "path": "src/state.cjs",
+          "startLine": 4,
+          "class": "concurrency",
+          "severity": "medium",
+          "confidence": "high",
+          "claim": "A request completing after dispose repopulates the disposed view with stale rows.",
+          "reason": "Clearing rows during dispose does not prevent the pending refresh assignment from running afterwards."
+        }
+      },
+      {
+        "type": "tool_call",
+        "name": "finish_review",
+        "args": {
+          "checked": "The changed state handler and its lifecycle transitions.",
+          "couldNotVerify": "Nothing"
+        }
+      },
+      {
+        "type": "text",
+        "text": "Done."
+      }
+    ],
+    "reproduce": [
+      {
+        "type": "tool_call",
+        "name": "write_reproducer",
+        "args": {
+          "path": ".copse-review/transition.repro.cjs",
+          "content": "const assert = require('node:assert/strict')\nconst { create } = require('../src/state.cjs')\n;(async () => { const view=create(); let finish; const pending=view.refresh(()=>new Promise(resolve=>{finish=resolve})); view.dispose(); finish(['late result']); await pending; assert.deepEqual(view.rows(), []) })().catch(error => { console.error(error); process.exitCode = 1 })\n",
+          "argv": [
+            "node",
+            ".copse-review/transition.repro.cjs"
+          ]
+        }
+      },
+      {
+        "type": "text",
+        "text": "Done."
+      }
+    ],
+    "challenge": [
+      {
+        "type": "tool_call",
+        "name": "verdict",
+        "args": {
+          "status": "stands",
+          "reason": "Clearing rows during dispose does not prevent the pending refresh assignment from running afterwards."
+        }
+      },
+      {
+        "type": "text",
+        "text": "Done."
+      }
+    ]
+  }
+}
