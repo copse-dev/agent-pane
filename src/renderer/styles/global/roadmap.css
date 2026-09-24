@@ -114,6 +114,17 @@
   display: flex;
   flex-direction: column;
 }
+/* A row's title should line up with the group header's *label*, not with the
+   header's chevron — mirroring .project-group-children's indent in
+   layout.css. The header's label sits at padding (--spacing-sm, 8px) +
+   chevron (10px) + header gap (4px) = 22px from the row edge; a row's own
+   base padding is --spacing-sm alone, so the extra indent needed is
+   10px + --spacing-md (12px), which lands on the same 22px total. Without
+   this, every row's text starts flush with the chevron above it while the
+   header's own text sits well to the right of it (#2518). */
+.roadmap-category-items .roadmap-row {
+  padding-left: calc(10px + var(--spacing-md));
+}
 /* Right-align the action buttons group. */
 .roadmap-action-buttons {
   display: flex;

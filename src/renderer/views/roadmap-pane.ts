@@ -1091,6 +1091,16 @@ export function mountRoadmapPane(
   }
 
   function renderList(): void {
+    // `clear()` empties the scroll container, which zeroes its scrollTop; a
+    // rebuild triggered by something small (an accordion toggle, a status
+    // flip) must not otherwise be a scroll-to-top. Restore it once the new
+    // content is in, before the "keep the selection visible" check below
+    // runs, so a deliberate off-screen selection can still nudge from there.
+    // happy-dom never clamps scrollTop when its children are removed (real
+    // Chromium does), so this can't be pinned by a component test — the
+    // regression guard is tests/e2e/roadmap-accordion.e2e.ts, which runs in a
+    // real renderer (#2518).
+    const previousScrollTop = listBody.scrollTop
     clear(listBody)
     const visible = items.filter(isListVisible)
     if (visible.length === 0) {
@@ -1342,6 +1352,7 @@ export function mountRoadmapPane(
       group.append(groupItems)
       listBody.append(group)
     }
+    listBody.scrollTop = previousScrollTop
     // A partly clipped row stays put. Only selections wholly above or below
     // the viewport are brought back, which avoids fighting deliberate scroll.
     const selectedRow = listBody.querySelector('.is-selected')
