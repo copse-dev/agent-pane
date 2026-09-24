@@ -148,7 +148,13 @@ function markUserInterruptedCalls(thread: Thread | undefined): void {
     else turnCalls.push(...message.toolCalls)
     if (!message.turnOutcome) continue
     const next = thread.messages[index + 1]
-    const humanPrompt = next?.role === 'user' && next.origin === undefined
+    // Send-now queues the human bubble before the abort settles. A prompt sent
+    // after an explicit Stop is also adjacent in the saved transcript, but its
+    // timestamp is later and must not be blamed for the earlier interruption.
+    const humanPrompt =
+      next?.role === 'user' &&
+      next.origin === undefined &&
+      next.createdAt <= message.turnOutcome.endedAt
     for (const call of turnCalls) {
       if (!isHostInterruptedToolCall(call)) continue
       if (

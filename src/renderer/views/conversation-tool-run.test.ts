@@ -318,7 +318,8 @@ describe('cross-message tool runs (component)', () => {
       executor: 'acp',
       provider: 'codex-acp',
       model: 'acp:codex-acp#gpt-5.6-sol',
-      endedAt: Date.now(),
+      // Send-now creates the queued human bubble before cancellation settles.
+      endedAt: Date.now() + 1_000,
     })
     addMessage(store, threadId, 'user', 'Change the markdown reference instead.')
     const host = mount(store)
@@ -349,6 +350,34 @@ describe('cross-message tool runs (component)', () => {
       'Interrupted when you sent a new message.',
     )
     assert.match(interrupted.textContent, /may have partially run or produced effects/)
+  })
+
+  it('does not blame a later prompt for an earlier explicit stop', () => {
+    const { store, threadId, ids } = seedRun()
+    const last = ids.at(-1)
+    assert.ok(last)
+    updateToolCall(store, last, `${last}-0`, {
+      status: 'error',
+      result: ACP_CANCELLED_TOOL_CALL_RESULT,
+    })
+    setMessageTurnOutcome(store, threadId, last, {
+      status: 'cancelled',
+      stopReason: 'cancelled',
+      source: 'user',
+      executor: 'acp',
+      provider: 'codex-acp',
+      model: 'acp:codex-acp#gpt-5.6-sol',
+      endedAt: Date.now() - 1_000,
+    })
+    addMessage(store, threadId, 'user', 'A later, unrelated follow-up.')
+    const host = mount(store)
+
+    const run = qsRequired<HTMLDetailsElement>(host, '.tool-card-rollup')
+    run.open = true
+    assert.equal(
+      run.querySelector(':scope > .tool-rollup-body > .tool-interruption-note')?.textContent,
+      'Interrupted by you.',
+    )
   })
 
   it('keeps a genuine tool failure visible beside a user interruption', () => {
