@@ -40,12 +40,6 @@ describe('tool activity icon', () => {
     await card.waitForExist({ timeout: 15_000 })
     await expect(card).toHaveAttribute('data-status', 'running')
 
-    // Without an OS sandbox (Linux CI) the agent's shell command prompts before
-    // it runs, so the command never starts and the card never leaves `running`
-    // — which is exactly how this spec failed on every CI shard-8 run. Answer
-    // the prompt; macOS seatbelt auto-runs the command and shows no dialog.
-    await approveShellCommandIfPrompted()
-
     const runningGeometry = await browser.execute(() => {
       const runningCard = document.querySelector('.tool-card[data-status="running"]')
       const runningName = runningCard?.querySelector('.tool-name')
@@ -97,6 +91,11 @@ describe('tool activity icon', () => {
 
     await browser.pause(900)
     await saveAppScreenshot('tool-activity-icon-alignment.png')
+
+    // Inspect the running state before waiting for an optional approval dialog.
+    // On sandboxed runners the command auto-runs, and the dialog wait can take
+    // as long as the command itself.
+    await approveShellCommandIfPrompted()
 
     await expect(card).toHaveAttribute('data-status', 'done', { wait: 40_000 })
     const settledGeometry = await browser.execute(() => {
