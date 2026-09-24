@@ -161,7 +161,9 @@ export function mountTerminalsPane(
       code === -1
         ? '\r\n\x1b[90m[Terminal stopped]\x1b[0m'
         : `\r\n\x1b[90m[Process exited with code ${String(code)}]\x1b[0m`,
-      () => finishCodeBlockRun(tab, code),
+      () => {
+        finishCodeBlockRun(tab, code)
+      },
     )
   })
 
