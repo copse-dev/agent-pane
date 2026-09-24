@@ -6,7 +6,7 @@
 // the PR that makes it, not a quarter later (P6).
 import { after, before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -22,11 +22,21 @@ import {
   modelProfile,
   readBaselines,
   runBench,
+  runCase,
   sanitiseEndpoint,
   targetGateFailures,
   type BenchSummary,
 } from './bench-review-lib.mts'
 import { wilsonLowerBound95 } from '@copse/review/eval.ts'
+import type { LLMProvider } from '@copse/llm/wire-types.ts'
+
+const unavailableProvider: LLMProvider = {
+  stream: () => ({
+    [Symbol.asyncIterator]: () => ({
+      next: () => Promise.reject(new Error('offline provider unavailable')),
+    }),
+  }),
+}
 
 describe('bench:review over the committed corpus', () => {
   let outDir = ''
@@ -143,6 +153,91 @@ describe('bench:review over the committed corpus', () => {
     assert.match(events, /"type":"turn_start"/)
     assert.match(events, /"type":"tool_call"/)
     assert.match(events, /"type":"turn_end"/)
+  })
+
+  it('marks failed reviewer turns while preserving their report and events', async () => {
+    const [reviewCase] = loadCases(DEFAULT_CASES_DIR, 'clean-rename')
+    assert.ok(reviewCase)
+    const result = await runCase(reviewCase, {
+      profile: { ...mockProfile(), providerFor: () => unavailableProvider },
+      lenses: 'correctness',
+      outDir: join(outDir, 'failed-review'),
+    })
+    assert.match(result.error ?? '', /reviewer.*failed/)
+    assert.match(await readFile(result.reportPath, 'utf8'), /offline provider unavailable/)
+    assert.match(
+      await readFile(join(outDir, 'failed-review', 'clean-rename.events.jsonl'), 'utf8'),
+      /"type":"turn_end"/,
+    )
+  })
+
+  it('marks failed attempted verification even when the reviewer completed', async () => {
+    const [reviewCase] = loadCases(DEFAULT_CASES_DIR, 'timer-leak')
+    assert.ok(reviewCase)
+    const profile = mockProfile()
+    const result = await runCase(reviewCase, {
+      profile: {
+        ...profile,
+        providerFor: (role, reviewCase, model) =>
+          role.startsWith('review:')
+            ? profile.providerFor(role, reviewCase, model)
+            : unavailableProvider,
+      },
+      lenses: 'correctness',
+      outDir: join(outDir, 'failed-verification'),
+    })
+    assert.match(result.error ?? '', /challenge.*failed/)
+    assert.ok(result.score.surfaced > 0, 'partial findings remain available')
+    assert.ok(result.usage.outputTokens > 0, 'completed reviewer usage is retained')
+  })
+
+  it('returns failure for incomplete model turns, but succeeds for completed clean reviews', async () => {
+    const casesDir = join(outDir, 'incomplete-corpus')
+    await cp(join(DEFAULT_CASES_DIR, 'clean-rename'), join(casesDir, 'clean-rename'), {
+      recursive: true,
+    })
+    await writeFile(join(casesDir, 'clean-rename', 'mock.json'), '[]\n')
+    let err = ''
+    const io = {
+      stdout: (): void => undefined,
+      stderr: (text: string): void => {
+        err += text
+      },
+    }
+    const failed = await main(
+      [
+        '--mock',
+        '--cases',
+        casesDir,
+        '--case',
+        'clean-rename',
+        '--lenses',
+        'correctness',
+        '--max-steps',
+        '1',
+        '--out',
+        join(outDir, 'incomplete-cli'),
+      ],
+      io,
+    )
+    assert.equal(failed, 1)
+    assert.match(err, /1 case\(s\) did not complete: clean-rename/)
+    assert.match(await readFile(join(outDir, 'incomplete-cli', 'summary.json'), 'utf8'), /reviewer/)
+
+    const clean = await main(
+      [
+        '--mock',
+        '--case',
+        'filter-refresh-clean',
+        '--lenses',
+        'correctness',
+        '--no-verify',
+        '--out',
+        join(outDir, 'clean-cli'),
+      ],
+      io,
+    )
+    assert.equal(clean, 0)
   })
 
   it('holds to the committed baseline, and says what moved when it does not', () => {

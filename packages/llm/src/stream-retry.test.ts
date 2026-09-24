@@ -67,6 +67,45 @@ describe('isRetryableStreamError', () => {
     assert.equal(isRetryableStreamError({ status: 529 }), true)
   })
 
+  it('recognizes statusless OpenAI SDK errors from HTTP 200 SSE error frames', () => {
+    for (const code of [429, '429', 503, '503']) {
+      const error = new OpenAI.APIError(
+        undefined,
+        { code, message: 'temporary' },
+        undefined,
+        undefined,
+      )
+      assert.equal(error.status, undefined)
+      assert.equal(isRetryableStreamError(error), true, String(code))
+    }
+  })
+
+  it('does not reinterpret arbitrary codes or override an explicit HTTP status', () => {
+    for (const code of [400, 401, 402, 404, 'insufficient_quota', '429oops', '', null]) {
+      assert.equal(
+        isRetryableStreamError(new OpenAI.APIError(undefined, { code }, undefined, undefined)),
+        false,
+        String(code),
+      )
+    }
+    assert.equal(isRetryableStreamError({ code: 429 }), false)
+    assert.equal(
+      isRetryableStreamError(new OpenAI.APIError(401, { code: 429 }, undefined, undefined)),
+      false,
+    )
+    assert.equal(
+      isRetryableStreamError(
+        new OpenAI.APIError(
+          undefined,
+          { code: 429 },
+          undefined,
+          new Headers({ 'x-should-retry': 'false' }),
+        ),
+      ),
+      false,
+    )
+  })
+
   it('retains the SDK retry policy for request timeout and conflict statuses', () => {
     assert.equal(isRetryableStreamError({ status: 408 }), true)
     assert.equal(isRetryableStreamError({ status: 409 }), true)
