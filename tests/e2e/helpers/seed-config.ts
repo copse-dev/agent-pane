@@ -2753,7 +2753,8 @@ export function seedAcpUnfinishedTurnFixture(workspaceRoot: string): void {
                 attempted: true,
                 recovered: false,
               },
-              endedAt: now + 2,
+              // Send-now queues the human bubble before cancellation settles.
+              endedAt: now + 4,
             },
             toolCalls: [],
             createdAt: now + 2,
@@ -2852,7 +2853,7 @@ export function seedAcpPromptInterruptedFixture(workspaceRoot: string): void {
         ],
         usage: { inputTokens: 800, outputTokens: 120 },
         createdAt: now,
-        updatedAt: now + 3,
+        updatedAt: now + 4,
       },
     ],
   })
