@@ -2451,7 +2451,7 @@ copse-ui-field input[type=password],
 }
 .supervised-task-summary::before {
   content: "\25b8";
-  grid-row: 1 / span 2;
+  grid-row: 1;
   align-self: center;
   color: var(--text-muted);
 }
@@ -4043,14 +4043,14 @@ label {
   margin-left: auto;
   margin-right: max(0px, calc((100% - var(--chat-content-max)) / 2));
 }
-.messages-list > .msg-user:not(:has(~ .msg-user)) {
+.messages-list > .msg-user:not(.msg-machine-origin):not(.msg-hook-origin):not(:has(~ .msg-user:not(.msg-machine-origin):not(.msg-hook-origin))) {
   position: sticky;
   top: calc(-1 * var(--spacing-lg));
   z-index: 3;
   box-shadow: var(--shadow-sm);
 }
 @container chat-pane (max-width: 360px) {
-  .messages-list > .msg-user:not(:has(~ .msg-user)) {
+  .messages-list > .msg-user:not(.msg-machine-origin):not(.msg-hook-origin):not(:has(~ .msg-user:not(.msg-machine-origin):not(.msg-hook-origin))) {
     position: relative;
     top: auto;
     z-index: auto;
