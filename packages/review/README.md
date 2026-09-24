@@ -99,16 +99,27 @@ shell's hand-offs (Phase 4).
   for diagnosis.
 - **`turn.ts`** / **`stage2.ts`** — one model turn over `@copse/agent`'s loop, projected live
   onto the headless contract's `turn_start … turn_end` event envelope; `runReviewers` fans
-  out every model over every lens, a few at a time, over one serialised cell.
+  out every model over every lens, a few at a time, over one serialised cell. Each role's
+  report includes wall time in tools and outside tools. The latter includes model calls,
+  API retries and orchestration; it is not a pure inference measurement.
 - **`cluster.ts`** — Stage 3: two candidates are one finding when their anchors overlap
   (with a few lines of slack) and their claims share enough content words. The first keeps
   its identity; the rest corroborate it. Thresholds are exported for `bench:review` to tune.
 - **`verifier-tools.ts`** / **`stage4.ts`** — Stage 4: for the classes a test can demonstrate,
   a reproducer model writes one test under `.copse-review/` and names how to run it; it is
-  run on head and on base, and confirms the finding only when it fails on head and passes on
-  base. Everything still open goes to the challenger, whose brief is to refute the finding
+  run on head and on base. Opposite exit codes require a completed challenger audit of
+  the test and both outputs before confirming a finding. Everything still open goes to the challenger, whose brief is to refute the finding
   with the burden of proof on the claim; `refuted` drops it, `stands` records the survived
   challenge. Most promising findings first, up to `--max-verify`.
+- **`reproducer-runner.ts`** — `write_reproducer` accepts `argv: ["copse-test"]` for
+  JS/TS `node:test` cases in projects that already depend on esbuild. The trusted runner
+  executes only inside the existing cell, bundles local imports with each checkout's
+  tsconfig, leaves package imports external, and runs the test with Node. Output stays
+  inside a fresh checkout-local directory so dependencies resolve, then is removed.
+  It needs no test-discovery changes on old base/head revisions and installs nothing.
+  Import project DOM helpers explicitly. Custom argv remains available for other runners;
+  project-specific test plugins/mocks are not installed automatically. Setup failures are
+  labelled as such and cannot by themselves establish a defect.
 - **`stage5.ts`** — rank and cap: confirmed findings, survivors and unverified candidates in
   one list, refuted reported separately, executable evidence, confirmation and a survived
   challenge rewarded, a lone unverified claim penalised, seven surfaced and the rest in the
@@ -126,7 +137,10 @@ shell's hand-offs (Phase 4).
 - **`forge-review.ts`** — the pull-request projection: one review (`COMMENT`, never a
   request for changes), each surfaced finding with a line an inline comment on the head
   commit, the rest in the body. GitHub and Forgejo; a line the forge refuses is folded
-  into the body rather than lost.
+  into the body rather than lost. The claim and confirmation status stay visible;
+  supporting reasoning and evidence use a collapsed `details` section. Run metadata and
+  per-role timing live under `Review details`. Incomplete reviews and missing checks keep
+  a visible warning even when the details are collapsed.
 - **`eval.ts`** — the measurement (P6, B8): a case's known defects as anchors, a finding
   matched to a defect the way Stage 3 clusters (same path, overlapping lines within the
   slack) or by the Stage 0 regression it declares, and the metrics — precision on surfaced

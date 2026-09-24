@@ -15,7 +15,7 @@ import type { ReviewContext } from './context.ts'
 import type { Finding, FindingClass } from './finding.ts'
 import type { ReviewerToolHost } from './reviewer-tools.ts'
 import { findingScore } from './stage5.ts'
-import { runTurn, sumUsage, type TurnResult, type TurnUsage } from './turn.ts'
+import { runTurn, sumUsage, type TurnResult, type TurnTiming, type TurnUsage } from './turn.ts'
 import {
   challengerClosureTools,
   challengerTools,
@@ -60,6 +60,7 @@ export interface VerificationRecord {
   readonly result: 'confirmed' | 'refuted' | 'survived' | 'undetermined'
   readonly reason: string
   readonly usage: TurnUsage
+  readonly timing?: TurnTiming
 }
 
 export interface Stage4Result {
@@ -114,6 +115,7 @@ const REPRODUCER_SYSTEM = [
   'You are the reproducer for Copse Reviewer. A reviewer reported one defect in a change; your job is to write a small test that fails BECAUSE of that defect on the change and passes on the base the change was made against.',
   '',
   'Read the code first (read_file, search_code, git_diff, list_dir). Then call write_reproducer with a test file and the argv that runs it from the repository root — use the repository’s own test runner if the file can be run in isolation, otherwise plain `node`. The tool runs it on both checkouts and tells you the result. Revise until it fails on the change and passes on the base, or stop and say the defect cannot be reproduced this way.',
+  'For JavaScript/TypeScript tests, use write_reproducer with argv: ["copse-test"] when the project has esbuild. This bundles and runs your test on both revisions without relying on project test discovery. Import helpers explicitly; relative imports start in .copse-review/. Try the smallest behavioral test after reading the relevant implementation and a nearby test. Spend the remaining budget on running and correcting it, rather than surveying unrelated code. If the scenario cannot be tested within this runner, stop and state the specific obstacle; never invent a test just to finish.',
   '',
   'Rules: execute the claimed behavior and assert its observable result on BOTH revisions. Do not assert source text or skip/return early on base because an API or source pattern is absent. Missing imports, setup errors and unrelated failures are not evidence. Follow alternative event/caller paths that could prevent the defect. Do not touch any other file. Finish with one plain-text line.',
   EXTERNAL_CONTENT_BLOCK,
@@ -228,6 +230,7 @@ export async function verifyFindings(options: Stage4Options): Promise<Stage4Resu
               ? `reproducer ${run.path} separates head from base; behavioral proof awaits challenge`
               : `reproducer ${run.path} did not separate head from base (head exit ${String(run.head.exitCode)}, base exit ${String(run.base.exitCode)})`,
         usage: turn.usage,
+        timing: turn.timing,
       })
     }
 
@@ -294,6 +297,7 @@ export async function verifyFindings(options: Stage4Options): Promise<Stage4Resu
           result: 'refuted',
           reason: verdict.reason,
           usage: turn.usage,
+          timing: turn.timing,
         })
       } else if (
         verdict?.status === 'stands' &&
@@ -332,6 +336,7 @@ export async function verifyFindings(options: Stage4Options): Promise<Stage4Resu
           result: 'confirmed',
           reason: current.verdict.reason,
           usage: turn.usage,
+          timing: turn.timing,
         })
       } else if (verdict?.status === 'stands') {
         current = withVerdict(current, {
@@ -355,6 +360,7 @@ export async function verifyFindings(options: Stage4Options): Promise<Stage4Resu
           result: 'survived',
           reason: verdict.reason,
           usage: turn.usage,
+          timing: turn.timing,
         })
       } else {
         counts.undetermined++
@@ -367,6 +373,7 @@ export async function verifyFindings(options: Stage4Options): Promise<Stage4Resu
           result: 'undetermined',
           reason: verdict?.reason ?? turn.error ?? 'the challenger gave no verdict',
           usage: turn.usage,
+          timing: turn.timing,
         })
       }
     } else {

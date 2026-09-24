@@ -17,6 +17,7 @@ import { decodeWithSchema } from '@copse/std/safe-json.ts'
 import { errorMessage } from '@copse/std/errors.ts'
 import { jailPath, readCheckoutFile, writeCheckoutFile } from './checkout-fs.ts'
 import type { CellCommandResult } from './isolation.ts'
+import { reproducerTestArgv } from './reproducer-runner.ts'
 import {
   MAX_TOOL_OUTPUT_CHARS,
   createReviewerToolExecutor,
@@ -124,7 +125,7 @@ export function reproducerTools(): LLMTool[] {
     ),
     {
       name: 'write_reproducer',
-      description: `Write a test file under ${REPRODUCER_DIR}/ that fails because of the defect and passes without it, and say how to run it (argv from the repository root, no shell). It is run on the change and on the base it was made against; both results come back. Call again to revise.`,
+      description: `Write a test file under ${REPRODUCER_DIR}/ that fails because of the defect and passes without it. For JavaScript/TypeScript node:test tests in projects with esbuild installed, use argv: ["copse-test"]. This supported runner bundles the test with the checkout's tsconfig, resolves external packages from that checkout, and runs node --test on BOTH revisions. Import any project test helpers explicitly using relative paths. No new project test script is needed; do not send .copse-review tests to a project runner that only discovers other directories. Otherwise supply custom argv from the repository root, no shell. Both results come back; call again to revise.`,
       parameters: {
         type: 'object',
         properties: {
@@ -164,6 +165,10 @@ export function createVerifierToolExecutor(host: VerifierToolHost): VerifierTool
     }
     const [file, ...rest] = request.argv
     if (file === undefined) return 'Error: argv is empty'
+    if (file === 'copse-test' && rest.length > 0)
+      return 'Error: use argv: ["copse-test"]; the test path comes from path'
+    const argv: readonly [string, ...string[]] =
+      file === 'copse-test' ? reproducerTestArgv(normalised) : [file, ...rest]
     signal.throwIfAborted()
     await host.prepareBase(signal)
     signal.throwIfAborted()
@@ -172,14 +177,14 @@ export function createVerifierToolExecutor(host: VerifierToolHost): VerifierTool
     try {
       const head = await host.cell.run({
         target: 'head',
-        argv: [file, ...rest],
+        argv,
         timeoutMs: REPRODUCER_TIMEOUT_MS,
         maxOutputBytes: MAX_TOOL_OUTPUT_CHARS * 4,
         signal,
       })
       const baseRun = await host.cell.run({
         target: 'base',
-        argv: [file, ...rest],
+        argv,
         timeoutMs: REPRODUCER_TIMEOUT_MS,
         maxOutputBytes: MAX_TOOL_OUTPUT_CHARS * 4,
         signal,
@@ -197,7 +202,7 @@ export function createVerifierToolExecutor(host: VerifierToolHost): VerifierTool
       reproducer = {
         path: normalised,
         content: request.content,
-        argv: [file, ...rest],
+        argv,
         head: scrubbed.head,
         base: scrubbed.base,
         separates,

@@ -52,6 +52,14 @@ export interface TurnUsage {
   readonly estimated: boolean
 }
 
+export interface TurnTiming {
+  readonly durationMs: number
+  /** Wall time with at least one tool running (overlapping tools count once). */
+  readonly toolMs: number
+  /** Model calls, retries and orchestration; not a pure inference measurement. */
+  readonly modelAndOverheadMs: number
+}
+
 export interface TurnOptions {
   readonly provider: LLMProvider
   /** Model id, for usage attribution. */
@@ -101,10 +109,15 @@ export interface TurnResult {
   readonly summary: string
   readonly usage: TurnUsage
   readonly toolCalls: number
+  readonly timing: TurnTiming
   readonly error?: string
 }
 
 export async function runTurn(options: TurnOptions): Promise<TurnResult> {
+  const startedAt = performance.now()
+  let activeTools = 0
+  let toolsStartedAt = 0
+  let toolMs = 0
   const messages: LLMMessage[] = [
     { role: 'system', content: options.systemPrompt },
     { role: 'user', content: options.userPrompt },
@@ -149,8 +162,14 @@ export async function runTurn(options: TurnOptions): Promise<TurnResult> {
       provider: options.provider,
       messages,
       tools: [...tools],
-      executeTool: (name, args, signal, toolCallId) =>
-        options.execute(name, args, signal, toolCallId),
+      executeTool: async (name, args, signal, toolCallId) => {
+        if (activeTools++ === 0) toolsStartedAt = performance.now()
+        try {
+          return await options.execute(name, args, signal, toolCallId)
+        } finally {
+          if (--activeTools === 0) toolMs += performance.now() - toolsStartedAt
+        }
+      },
       ...(options.signal ? { signal: options.signal } : {}),
       maxSteps,
       ...(settings.maxLlmCalls !== undefined ? { maxLlmCalls: settings.maxLlmCalls } : {}),
@@ -292,6 +311,8 @@ export async function runTurn(options: TurnOptions): Promise<TurnResult> {
       }
     : { inputTokens, outputTokens, estimated }
 
+  const durationMs = Math.round(performance.now() - startedAt)
+  const roundedToolMs = Math.min(durationMs, Math.round(toolMs))
   return {
     turnId: options.turnId,
     events,
@@ -300,6 +321,11 @@ export async function runTurn(options: TurnOptions): Promise<TurnResult> {
     summary: summary.trim(),
     usage,
     toolCalls,
+    timing: {
+      durationMs,
+      toolMs: roundedToolMs,
+      modelAndOverheadMs: durationMs - roundedToolMs,
+    },
     ...(error !== undefined ? { error } : {}),
   }
 }

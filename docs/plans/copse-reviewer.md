@@ -1282,3 +1282,23 @@ complete disposition coverage and explicit unresolved uncertainty remain mandato
 Counterevidence must contradict the recorded claim rather than a stronger paraphrase.
 This preserves the evidence checks while avoiding repeated model calls to remove a
 field that cannot affect the disposition's meaning.
+
+### September 24: readable comments and supported test execution
+
+PR comments lead with the concrete problem and a plain confirmation status. Evidence,
+model metadata and supporting reasoning move into collapsed details; the review body
+keeps incomplete-review and missing-check warnings visible. Reviewer claims should name
+the trigger and effect in plain language, leaving implementation detail in the explanation.
+
+The last completed Luna run spent 86 seconds preparing the job, then 493 seconds reviewing.
+Checkout was only 10 seconds of setup. It made three serial model passes and 82 tool calls;
+the reproducer used 30 read/search calls without writing a test. `write_reproducer` now
+offers `argv: ["copse-test"]`: a trusted esbuild/Node test adapter passed as literal argv
+to the existing cell on both revisions. It bundles local TS imports using each checkout's
+tsconfig and keeps compiled output under that checkout for dependency resolution. It does
+not install dependencies or execute reviewed code on the host. Custom argv, shell policy,
+offline/credential-free boundaries, and mandatory differential-proof audits are unchanged.
+The prompt directs an early small test rather than open-ended setup research; role budgets
+remain unchanged. This removes an observed source of wasted work, not a guaranteed latency
+reduction. Each role now records total wall time, tool wall time (overlap counted once), and
+the remainder for model calls/retries/orchestration so the next live run can measure it.
