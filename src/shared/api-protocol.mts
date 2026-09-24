@@ -41,4 +41,5 @@
 // `agent:retry-comparison`), drops the comparison models from `approval:respond`,
 // and replaces the `model_comparison` chunk with `review_report` (copse.review).
 // v14 versions ACP rich-content blocks on streamed agent chunks.
-export const API_PROTOCOL_VERSION = 14 as const
+// v15 conservatively versions the optional macOS trustd grant in ACP agent discovery.
+export const API_PROTOCOL_VERSION = 15 as const
