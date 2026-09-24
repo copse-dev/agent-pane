@@ -26052,9 +26052,20 @@ function ensureDialog3() {
   dialog.addEventListener("click", (event) => {
     if (event.target === dialog) dialog?.close();
   });
+  dialog.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") event.stopPropagation();
+  });
   dialog.addEventListener("close", () => {
+    const resolveFocusTarget = returnFocus;
+    returnFocus = null;
     activeToken += 1;
+    const closedToken = activeToken;
     releaseCurrent();
+    queueMicrotask(() => {
+      if (activeToken !== closedToken || dialog?.open) return;
+      const focusTarget = resolveFocusTarget?.();
+      if (focusTarget?.isConnected) focusTarget.focus({ preventScroll: true });
+    });
   });
   return dialog;
 }
@@ -26078,7 +26089,12 @@ function openAttachmentPreview(options) {
   previewTitle.textContent = options.title;
   if (options.content) previewBody.replaceChildren(options.content);
   else previewBody.replaceChildren(statusNode(options.status ?? `Loading ${options.title}\u2026`));
-  if (!previewDialog.open) previewDialog.showModal();
+  if (!previewDialog.open) {
+    const activeElement = document.activeElement;
+    const defaultReturnFocus = () => activeElement instanceof HTMLElement && activeElement.isConnected ? activeElement : null;
+    returnFocus = options.returnFocus ?? defaultReturnFocus;
+    previewDialog.showModal();
+  }
   const isActive = () => token === activeToken && previewDialog.open;
   return {
     isActive,
@@ -26097,7 +26113,7 @@ function openAttachmentPreview(options) {
     }
   };
 }
-var dialog, titleEl, bodyEl, currentCleanup, activeToken;
+var dialog, titleEl, bodyEl, currentCleanup, returnFocus, activeToken;
 var init_attachment_preview = __esm({
   "src/renderer/attachments/attachment-preview.ts"() {
     init_helpers();
@@ -26105,6 +26121,7 @@ var init_attachment_preview = __esm({
     titleEl = null;
     bodyEl = null;
     currentCleanup = null;
+    returnFocus = null;
     activeToken = 0;
   }
 });
@@ -26245,7 +26262,7 @@ function attachImageCopyMenu(image) {
     );
   });
 }
-function openImageExpand(src, alt = "Expanded attachment") {
+function openImageExpand(src, alt = "Expanded attachment", returnFocus2) {
   if (!src) return;
   const imageEl = el("img", { class: "image-expand-image", alt });
   imageEl.src = src;
@@ -26255,6 +26272,7 @@ function openImageExpand(src, alt = "Expanded attachment") {
     title: alt,
     ariaLabel: `Image preview: ${alt}`,
     content: imageEl,
+    ...returnFocus2 ? { returnFocus: returnFocus2 } : {},
     onClose: () => {
       imageEl.removeAttribute("src");
       imageEl.alt = "Expanded attachment";
@@ -26271,7 +26289,16 @@ function attachImageExpand(img, alt) {
   img.setAttribute("aria-label", alt ? `Expand ${alt}` : "Expand image");
   const open2 = () => {
     const label = alt ?? (img.alt || "Expanded attachment");
-    openImageExpand(img.currentSrc || img.src, label);
+    const src = img.currentSrc || img.src;
+    openImageExpand(src, label, () => {
+      if (img.isConnected) return img;
+      for (const candidate of document.querySelectorAll("img.image-expandable")) {
+        if (candidate.getAttribute("aria-label") === `Expand ${label}` && (candidate.currentSrc || candidate.src) === src) {
+          return candidate;
+        }
+      }
+      return null;
+    });
   };
   img.addEventListener("click", (event) => {
     event.preventDefault();
@@ -61284,6 +61311,15 @@ var init_appearance = __esm({
   }
 });
 
+// src/shared/git/commit-attribution.ts
+var GIT_ATTRIBUTION_SETTING, DEFAULT_GIT_ATTRIBUTION_ENABLED;
+var init_commit_attribution = __esm({
+  "src/shared/git/commit-attribution.ts"() {
+    GIT_ATTRIBUTION_SETTING = "gitAttributionEnabled";
+    DEFAULT_GIT_ATTRIBUTION_ENABLED = true;
+  }
+});
+
 // src/renderer/views/settings-dialog.ts
 function pluginDisplayName(plugin) {
   const raw = plugin.name || plugin.id;
@@ -61704,6 +61740,18 @@ function mountSettingsDialog(store2, api2) {
                 Reminds the agent that a skill's commands stay inside the project folder, or need
                 approval where that cannot be enforced, rather than quietly reaching the network or
                 the rest of your machine.
+              </p>
+            </fieldset>
+
+            <fieldset data-testid="git-attribution-settings">
+              <legend>Git attribution</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="${GIT_ATTRIBUTION_SETTING}" />
+                Credit Copse on commits and pull requests
+              </label>
+              <p class="field-hint">
+                Adds Copse as a co-author and lists the models used when Copse creates a commit or
+                pull request. On by default. Turn off to keep your message and description as written.
               </p>
             </fieldset>
 
@@ -64900,6 +64948,7 @@ var init_settings_dialog = __esm({
     init_developer_mode();
     init_appearance();
     init_projects();
+    init_commit_attribution();
     init_appearance();
     init_nullish2();
     isSettingsSection = (value) => value === "general" || value === "classifiers" || value === "usage" || value === "agent" || value === "permissions" || value === "mcp" || value === "customise" || value === "storage" || value === "appearance" || value === "ssh" || value === "experimental";
@@ -64925,6 +64974,12 @@ var init_settings_dialog = __esm({
       { name: "remoteAgentAutoCreatePR", kind: "checkbox", default: true, save: true },
       { name: "remoteAgentWorkOnCurrentBranch", kind: "checkbox", default: false, save: true },
       { name: "preferAcpOverCloudAgent", kind: "checkbox", default: true, save: true },
+      {
+        name: GIT_ATTRIBUTION_SETTING,
+        kind: "checkbox",
+        default: DEFAULT_GIT_ATTRIBUTION_ENABLED,
+        save: true
+      },
       { name: "gitCommitSshAgentSocketAccess", kind: "checkbox", default: false, save: true },
       { name: "localSubagentsEnabled", kind: "checkbox", default: true, save: true },
       {
@@ -88229,6 +88284,7 @@ function isTrunkBranch(branch, defaultBranch) {
   return defaultBranch != null && branch != null && branch === defaultBranch;
 }
 function mountFooterBranchStatus(host, store2, api2) {
+  const listId = `branch-picker-list-${String(++nextPickerId)}`;
   const wrap = el("div", { class: "branch-picker", hidden: "" });
   const trigger = el("button", {
     type: "button",
@@ -88242,7 +88298,25 @@ function mountFooterBranchStatus(host, store2, api2) {
     chevronDownIcon("ui-icon ui-icon-sm")
   );
   trigger.append(label, chevron);
-  const menu = el("div", { class: "branch-picker-menu", role: "listbox", hidden: "" });
+  const menu = el("div", { class: "branch-picker-menu", hidden: "" });
+  const filterInput = el("input", {
+    type: "search",
+    class: "branch-picker-filter",
+    placeholder: "Filter branches...",
+    "aria-label": "Filter branches",
+    role: "combobox",
+    "aria-autocomplete": "list",
+    "aria-controls": listId,
+    "aria-expanded": "false",
+    autocomplete: "off"
+  });
+  const list = el("div", {
+    id: listId,
+    class: "branch-picker-list",
+    role: "listbox",
+    "aria-label": "Branches"
+  });
+  menu.append(filterInput, list);
   wrap.append(trigger, menu);
   host.append(wrap);
   let status = null;
@@ -88252,6 +88326,7 @@ function mountFooterBranchStatus(host, store2, api2) {
   let defaultBranch = null;
   let open2 = false;
   let refreshToken = 0;
+  let activeIndex = 0;
   const baseBranchByThread = /* @__PURE__ */ new Map();
   function getActiveThread2() {
     return getThreadById(store2, store2.getState().activeThreadId);
@@ -88281,8 +88356,15 @@ function mountFooterBranchStatus(host, store2, api2) {
   function setOpen(next) {
     open2 = next;
     trigger.setAttribute("aria-expanded", String(next));
-    if (next) menu.removeAttribute("hidden");
-    else menu.setAttribute("hidden", "");
+    filterInput.setAttribute("aria-expanded", String(next));
+    if (next) {
+      menu.removeAttribute("hidden");
+    } else {
+      menu.setAttribute("hidden", "");
+      filterInput.value = "";
+      activeIndex = 0;
+      filterInput.removeAttribute("aria-activedescendant");
+    }
   }
   function renderTrigger() {
     const threadBranch = getActiveThreadBranch();
@@ -88343,33 +88425,102 @@ function mountFooterBranchStatus(host, store2, api2) {
       }
     }
   }
+  function filteredRows() {
+    const pr2 = getVisiblePr();
+    const ordered = orderBranchesWithDefaultFirst(branches, defaultBranch);
+    const query = filterInput.value.trim().toLocaleLowerCase();
+    const matches2 = query ? ordered.filter((branch) => branch.name.toLocaleLowerCase().includes(query)) : ordered;
+    return { pr: pr2, matches: matches2 };
+  }
+  function rowCount() {
+    const { pr: pr2, matches: matches2 } = filteredRows();
+    return (pr2 ? 1 : 0) + matches2.length;
+  }
+  function clampActiveIndex() {
+    const count = rowCount();
+    activeIndex = count === 0 ? 0 : Math.max(0, Math.min(count - 1, activeIndex));
+  }
+  function scrollActiveRowIntoView() {
+    const active2 = list.querySelector(".branch-picker-option.is-active");
+    if (!active2) return;
+    const activeBounds = active2.getBoundingClientRect();
+    const listBounds = list.getBoundingClientRect();
+    if (activeBounds.top < listBounds.top) {
+      list.scrollTop += activeBounds.top - listBounds.top;
+    } else if (activeBounds.bottom > listBounds.bottom) {
+      list.scrollTop += activeBounds.bottom - listBounds.bottom;
+    }
+  }
+  function selectBranch(name) {
+    setOpen(false);
+    trigger.focus();
+    const thread = getActiveThread2();
+    if (!thread) return;
+    baseBranchByThread.set(thread.id, name);
+    renderTrigger();
+    renderMenu();
+  }
+  function activateRow(index) {
+    const { pr: pr2, matches: matches2 } = filteredRows();
+    if (pr2 && index === 0) {
+      setOpen(false);
+      trigger.focus();
+      openBrowserUrl(store2, pr2.url);
+      return;
+    }
+    const branch = matches2[pr2 ? index - 1 : index];
+    if (branch) selectBranch(branch.name);
+  }
+  function moveActive(direction) {
+    const count = rowCount();
+    if (count === 0) return;
+    activeIndex = Math.max(0, Math.min(count - 1, activeIndex + direction));
+    renderMenu();
+  }
   function renderMenu() {
-    clear(menu);
+    clear(list);
+    filterInput.removeAttribute("aria-activedescendant");
     if (!isPickerMode()) return;
     const selected = activeBaseBranch() ?? status?.currentBranch ?? null;
-    const pr2 = getVisiblePr();
+    const { pr: pr2, matches: matches2 } = filteredRows();
+    clampActiveIndex();
+    let rowIndex = 0;
     if (pr2) {
       const prItem = el(
         "button",
-        { type: "button", class: "branch-picker-option branch-picker-action" },
+        {
+          type: "button",
+          class: "branch-picker-option branch-picker-action",
+          id: `${listId}-option-${String(rowIndex)}`,
+          role: "option",
+          tabindex: "-1",
+          "aria-selected": rowIndex === activeIndex ? "true" : "false"
+        },
         `Open PR #${String(pr2.number)}`
       );
+      if (rowIndex === activeIndex) prItem.classList.add("is-active");
       prItem.addEventListener("click", () => {
         setOpen(false);
+        trigger.focus();
         openBrowserUrl(store2, pr2.url);
       });
-      menu.append(prItem);
+      list.append(prItem);
+      rowIndex++;
     }
-    const ordered = orderBranchesWithDefaultFirst(branches, defaultBranch);
-    for (const branch of ordered) {
+    for (const branch of matches2) {
       const nameEl = el("span", { class: "branch-picker-option-label" }, branch.name);
       const item = el(
         "button",
         {
           type: "button",
           class: "branch-picker-option",
+          id: `${listId}-option-${String(rowIndex)}`,
+          tabindex: "-1",
           role: "option",
-          "aria-selected": branch.name === selected ? "true" : "false"
+          // The listbox selection follows the keyboard highlight. Keep the
+          // committed branch separately marked with `is-selected` below so a
+          // pending choice remains visible while the user explores options.
+          "aria-selected": rowIndex === activeIndex ? "true" : "false"
         },
         nameEl
       );
@@ -88377,19 +88528,24 @@ function mountFooterBranchStatus(host, store2, api2) {
         item.append(el("span", { class: "branch-picker-default-badge" }, "default"));
       }
       if (branch.name === selected) item.classList.add("is-selected");
+      if (rowIndex === activeIndex) item.classList.add("is-active");
       item.addEventListener("click", () => {
-        setOpen(false);
-        const thread = getActiveThread2();
-        if (!thread) return;
-        baseBranchByThread.set(thread.id, branch.name);
-        renderTrigger();
-        renderMenu();
+        selectBranch(branch.name);
       });
-      menu.append(item);
+      list.append(item);
+      rowIndex++;
     }
-    if (ordered.length === 0 && !pr2) {
-      menu.append(el("div", { class: "branch-picker-empty" }, "No branches found."));
+    if (matches2.length === 0) {
+      const query = filterInput.value.trim();
+      if (query) {
+        list.append(el("div", { class: "branch-picker-empty" }, `No branches match "${query}".`));
+      } else if (!pr2) {
+        list.append(el("div", { class: "branch-picker-empty" }, "No branches found."));
+      }
     }
+    const active2 = list.querySelector(".branch-picker-option.is-active");
+    if (open2 && active2) filterInput.setAttribute("aria-activedescendant", active2.id);
+    scrollActiveRowIntoView();
   }
   async function loadBranches(token) {
     const owner = getActiveThreadOwner(store2);
@@ -88497,6 +88653,8 @@ function mountFooterBranchStatus(host, store2, api2) {
     const next = !open2;
     setOpen(next);
     if (next) {
+      renderMenu();
+      filterInput.focus();
       void (async () => {
         const token = refreshToken;
         try {
@@ -88507,6 +88665,28 @@ function mountFooterBranchStatus(host, store2, api2) {
         if (token !== refreshToken) return;
         renderMenu();
       })();
+    }
+  });
+  filterInput.addEventListener("input", () => {
+    activeIndex = 0;
+    renderMenu();
+  });
+  menu.addEventListener("keydown", (e3) => {
+    if (e3.isComposing) return;
+    if (e3.key === "ArrowDown") {
+      e3.preventDefault();
+      moveActive(1);
+    } else if (e3.key === "ArrowUp") {
+      e3.preventDefault();
+      moveActive(-1);
+    } else if (e3.key === "Enter" && e3.target === filterInput) {
+      e3.preventDefault();
+      activateRow(activeIndex);
+    } else if (e3.key === "Escape") {
+      e3.preventDefault();
+      e3.stopPropagation();
+      setOpen(false);
+      trigger.focus();
     }
   });
   const unsubs = [
@@ -88555,7 +88735,7 @@ function mountFooterBranchStatus(host, store2, api2) {
     }
   };
 }
-var COPIED_BRANCH_TOAST, COPY_FEEDBACK_MS;
+var COPIED_BRANCH_TOAST, COPY_FEEDBACK_MS, nextPickerId;
 var init_footer_branch_status = __esm({
   "src/renderer/views/footer-branch-status.ts"() {
     init_helpers();
@@ -88567,6 +88747,7 @@ var init_footer_branch_status = __esm({
     init_active_thread_owner();
     COPIED_BRANCH_TOAST = "Copied branch name";
     COPY_FEEDBACK_MS = 1600;
+    nextPickerId = 0;
   }
 });
 
@@ -104287,29 +104468,29 @@ function renderImageDiff(container, diff) {
   clear(container);
   const grid = el("div", { class: "git-image-diff" });
   if (diff.beforeImage) {
+    const alt = `${diff.path} (before)`;
+    const img = el("img", {
+      class: "git-image-diff-img",
+      src: diff.beforeImage,
+      alt,
+      loading: "lazy"
+    });
+    attachImageExpand(img, alt);
     const pane = el("div", { class: "git-image-diff-pane" });
-    pane.append(
-      el("div", { class: "git-image-diff-label" }, "Before"),
-      el("img", {
-        class: "git-image-diff-img",
-        src: diff.beforeImage,
-        alt: `${diff.path} (before)`,
-        loading: "lazy"
-      })
-    );
+    pane.append(el("div", { class: "git-image-diff-label" }, "Before"), img);
     grid.append(pane);
   }
   if (diff.afterImage) {
+    const alt = `${diff.path} (after)`;
+    const img = el("img", {
+      class: "git-image-diff-img",
+      src: diff.afterImage,
+      alt,
+      loading: "lazy"
+    });
+    attachImageExpand(img, alt);
     const pane = el("div", { class: "git-image-diff-pane" });
-    pane.append(
-      el("div", { class: "git-image-diff-label" }, "After"),
-      el("img", {
-        class: "git-image-diff-img",
-        src: diff.afterImage,
-        alt: `${diff.path} (after)`,
-        loading: "lazy"
-      })
-    );
+    pane.append(el("div", { class: "git-image-diff-label" }, "After"), img);
     grid.append(pane);
   }
   if (!diff.beforeImage && !diff.afterImage) {
@@ -104319,6 +104500,7 @@ function renderImageDiff(container, diff) {
 }
 var init_git_image_diff = __esm({
   "src/renderer/views/git-image-diff.ts"() {
+    init_image_expand();
     init_helpers();
   }
 });
@@ -109035,11 +109217,12 @@ Notes: ${notes}` : prompt;
       reviewStatus.textContent = `Nothing left to ${label}.`;
       return;
     }
-    if (!confirm(
-      `${status === "done" ? "Mark" : "Archive"} ${String(targets.length)} item(s) judged resolved or likely?`
-    )) {
-      return;
-    }
+    const confirmed = await showConfirmDialog({
+      message: `${status === "done" ? "Mark" : "Archive"} ${String(targets.length)} item(s) judged resolved or likely?`,
+      detail: status === "done" ? "Marks each one done; you can reopen any of them later." : "Archives each one; you can restore any of them later.",
+      confirmLabel: status === "done" ? "Mark done" : "Archive"
+    });
+    if (!confirmed) return;
     reviewMarkResolvedBtn.disabled = true;
     reviewArchiveResolvedBtn.disabled = true;
     let applied = 0;
