@@ -230,6 +230,8 @@ jobs:
       pull-requests: read
     env:
       REVIEW_PROFILE: ${{ vars.COPSE_REVIEW_PR_PROFILE || 'openrouter-luna' }}
+      # Keep scheduled reviews on the same filtered route as PR reviews.
+      COPSE_REVIEW_OPENROUTER_PROVIDER: ${{ vars.COPSE_REVIEW_OPENROUTER_PROVIDER || 'openai' }}
       REVIEW_PROVIDER: ${{ vars.COPSE_REVIEW_PROVIDER || 'openai-compatible' }}
       REVIEW_MODEL: ${{ vars.COPSE_REVIEW_MODEL || 'qwen3.8-27b' }}
       REVIEW_BASE_URL: ${{ vars.COPSE_REVIEW_BASE_URL || vars.SCW_GENERATIVE_API_URL || 'https://api.scaleway.ai/v1' }}

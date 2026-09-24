@@ -244,8 +244,19 @@ App with only `pull-requests: write` and pass it as `COPSE_REVIEW_FORGE_TOKEN`; 
 Provider-specific keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
 `OPENROUTER_API_KEY`) take precedence over that shared model key when set.
 
-This repository dogfoods the GitHub path with `qwen3.8-27b` through Scaleway's
-OpenAI-compatible endpoint. `SCW_GENERATIVE_API_KEY` is the fallback for a dedicated
+The PR and nightly workflows default to Luna through OpenRouter, using only the
+protected environment's `COPSE_REVIEW_OPENROUTER_API_KEY`. They prefer standard
+OpenAI hosting while retaining zero-data-retention, no-training and supported-parameter
+filters, with fallback to other eligible providers. Set the repository variable
+`COPSE_REVIEW_OPENROUTER_PROVIDER=auto` to restore automatic routing, or to a base
+provider slug such as `azure` to change the preference. The CLI reads the same name
+from its environment; an unset value keeps automatic routing. This applies to discovery,
+reproduction and challenge, including an explicitly selected challenger. Service-tier
+slugs such as `openai/fast` are rejected. A preference does not guarantee which provider
+answers; the review's usage details record the actual host.
+
+Set `COPSE_REVIEW_PR_PROFILE=configured` to restore the retained `qwen3.8-27b` route
+through Scaleway. `SCW_GENERATIVE_API_KEY` is the fallback for a dedicated
 `COPSE_REVIEW_API_KEY`; `COPSE_REVIEW_PROVIDER`, `COPSE_REVIEW_MODEL`,
 `COPSE_REVIEW_BASE_URL`, `COPSE_REVIEW_LENSES`, `COPSE_REVIEW_MAX_STEPS` and
 `COPSE_REVIEW_MAX_VERIFY` repository variables override the pinned profile. The default is
