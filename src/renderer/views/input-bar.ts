@@ -1238,6 +1238,17 @@ export function mountInputBar(
     draftAttachmentsByThread.set(threadId, snapshot)
   }
 
+  function placeStoredShell(threadId: string, ref: AttachedShellRef): void {
+    if (activeComposerThreadId === threadId) {
+      addShellChip(ref)
+      return
+    }
+    const snapshot = draftAttachmentsByThread.get(threadId) ?? emptyDraftAttachments()
+    if (snapshot.shells.some((shell) => shell.tabId === ref.tabId)) return
+    snapshot.shells.push({ ...ref })
+    draftAttachmentsByThread.set(threadId, snapshot)
+  }
+
   function syncComposerThread(): void {
     const id = getActiveThreadId()
     if (id === activeComposerThreadId) return
@@ -2480,6 +2491,18 @@ export function mountInputBar(
       skillPicker.refresh()
       refreshSkillsCache()
       scheduleContextEstimate(0)
+    }),
+    store.on('code_block_run_finished', (result) => {
+      const active = result.threadId === activeComposerThreadId
+      placeStoredShell(result.threadId, result.shell)
+      if (!active) return
+      targetSelect.value = 'thread'
+      showToast(
+        result.exitCode === 0
+          ? 'Command finished — result attached.'
+          : `Command ${result.exitCode === null ? 'could not start' : `exited with code ${String(result.exitCode)}`} — result attached.`,
+        result.exitCode === 0 ? undefined : { variant: 'error' },
+      )
     }),
     store.on('new_thread_opened', () => {
       // Refresh provider-reported context windows for the new chat, then re-estimate

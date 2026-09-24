@@ -1,7 +1,11 @@
 import '../../../tests/setup-dom.ts'
 import { describe, it, beforeEach, afterEach, mock } from 'node:test'
 import assert from 'node:assert/strict'
-import { attachCodeBlockCopyButtons } from './code-block-copy.ts'
+import {
+  attachCodeBlockCopyButtons,
+  bindCodeBlockRunRequests,
+  setCodeBlockRunOutcome,
+} from './code-block-copy.ts'
 import { qs, qsRequired } from '../dom/helpers.ts'
 
 function installClipboard(): string[] {
@@ -59,6 +63,42 @@ describe('attachCodeBlockCopyButtons', () => {
       mock.timers.tick(1300)
       assert.equal(button.textContent, 'Copy')
     })
+  })
+
+  it('offers run only for shell fences and conservative unlabelled commands', () => {
+    const root = document.createElement('div')
+    root.innerHTML =
+      '<pre><code class="hljs lang-typescript">export const x = 1</code></pre>' +
+      '<pre><code class="hljs lang-bash">pnpm test</code></pre>' +
+      '<pre><code>node scripts/check.mts</code></pre>'
+
+    attachCodeBlockCopyButtons(root, { runCommands: true })
+
+    assert.equal(root.querySelectorAll('.code-block-copy').length, 3)
+    assert.equal(root.querySelectorAll('.code-block-run').length, 2)
+  })
+
+  it('emits the exact command and reflects its completion outcome', () => {
+    const root = preWithCode('node scripts/check.mts --focused')
+    const requests: Array<{ id: string; command: string }> = []
+    const unbind = bindCodeBlockRunRequests(root, (request) => requests.push(request))
+    attachCodeBlockCopyButtons(root, { runCommands: true })
+    const button = qsRequired<HTMLButtonElement>(root, '.code-block-run')
+
+    button.click()
+
+    assert.equal(requests.length, 1)
+    const request = requests[0]
+    assert.ok(request)
+    assert.equal(request.command, 'node scripts/check.mts --focused')
+    assert.equal(button.dataset['runState'], 'running')
+    assert.equal(button.disabled, true)
+    const requestId = request.id
+    setCodeBlockRunOutcome(root, requestId, 0)
+    assert.equal(button.dataset['runState'], 'succeeded')
+    assert.equal(button.disabled, false)
+    assert.equal(button.querySelector('svg')?.dataset['icon'], 'check')
+    unbind()
   })
 
   it('is idempotent and skips mermaid pre blocks', () => {
