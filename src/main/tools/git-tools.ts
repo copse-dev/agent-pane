@@ -26,6 +26,7 @@ import {
 import { runCommand } from '../services/exec/command-runner.ts'
 import { leaseGitSigningBroker } from '../services/security/git-signing-broker.ts'
 import { getSetting } from '../services/storage/settings.ts'
+import { scopedSshCommitSigningAdvice } from './git-commit-signing-advice.ts'
 
 /** Reject paths that escape the workspace (absolute, `..`, symlink-out) before handing them to git. */
 async function validateGitPath(
@@ -132,11 +133,19 @@ export const gitCommitTool = defineTool({
           ...(signing ? { gitSigning: signing.signing, sandboxConfig: signing.sandboxConfig } : {}),
         })
         if (result.code !== 0) {
-          throw new Error(
+          const failure =
             result.stderr.trim() ||
-              result.stdout.trim() ||
-              `Git exited with code ${String(result.code)}`,
-          )
+            result.stdout.trim() ||
+            `Git exited with code ${String(result.code)}`
+          const advice =
+            args[0] === 'commit'
+              ? scopedSshCommitSigningAdvice(failure, {
+                  macOS: process.platform === 'darwin',
+                  sandboxed: sandboxEnabled,
+                  permissionEnabled: getSetting<boolean>('gitCommitSshAgentSocketAccess', false),
+                })
+              : null
+          throw new Error(advice ? `${failure}\n\n${advice}` : failure)
         }
         output = result.stdout.trim()
       }
