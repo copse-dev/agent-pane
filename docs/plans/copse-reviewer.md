@@ -1270,3 +1270,15 @@ the container). A local filtered clone plus both exact worktrees took 20.7 secon
 and 131 MiB of packed Git data; the full-clone comparison exhausted the local disk,
 so this is a feasibility measurement, not a controlled CI speedup claim. Full Stage 0
 checks, queue/approval time and model time are separate costs.
+
+### September 24: tolerate irrelevant closure metadata
+
+The same-head Luna retest (35996064428) reduced findings-job setup from 100 to
+65 seconds and posted the resize defect, but failed its final attestation: four
+closure attempts included `findingIndex: 1` on a refuted suspicion. The local
+provider normalizer did not make this field required. Refuted/unresolved dispositions now strip
+irrelevant finding-index metadata before validation; reported/duplicate links,
+complete disposition coverage and explicit unresolved uncertainty remain mandatory.
+Counterevidence must contradict the recorded claim rather than a stronger paraphrase.
+This preserves the evidence checks while avoiding repeated model calls to remove a
+field that cannot affect the disposition's meaning.

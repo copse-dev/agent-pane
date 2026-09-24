@@ -70,12 +70,21 @@ const suspicionSchema = z.object({
   claim: z.string().trim().min(8).max(400),
 })
 
-const dispositionSchema = z.object({
+const dispositionEvidenceSchema = z.object({
   id: z.string().min(1),
-  status: z.enum(['reported', 'duplicate', 'refuted', 'unresolved']),
   evidence: z.string().trim().min(8).max(400),
-  findingIndex: z.number().int().positive().optional(),
 })
+
+const dispositionSchema = z.discriminatedUnion('status', [
+  dispositionEvidenceSchema.extend({
+    status: z.enum(['reported', 'duplicate']),
+    findingIndex: z.number().int().positive().optional(),
+  }),
+  // Models sometimes populate optional fields on every array item. An index
+  // has no meaning for these statuses: strip it like other unknown metadata,
+  // rather than failing the entire review or treating it as a finding link.
+  dispositionEvidenceSchema.extend({ status: z.enum(['refuted', 'unresolved']) }),
+])
 
 type Suspicion = z.infer<typeof suspicionSchema> & { readonly id: string }
 
@@ -149,7 +158,7 @@ function finishReviewTool(requireFindings: boolean): LLMTool {
           type: 'array',
           maxItems: 20,
           description:
-            'Resolve every record_suspicion id exactly once. For reported, give the 1-based findingIndex across earlier report_finding calls followed by findings in this closure. Each reported suspicion must reference a different findingIndex. For duplicate, explain the duplication and give the findingIndex used by its reported suspicion. For refuted, cite the concrete counterevidence. For unresolved, include its id in couldNotVerify.',
+            'Resolve every record_suspicion id exactly once. For reported, give the 1-based findingIndex across earlier report_finding calls followed by findings in this closure. Each reported suspicion must reference a different findingIndex. For duplicate, explain the duplication and give the findingIndex used by its reported suspicion. For refuted, cite counterevidence that contradicts the recorded claim, not a stronger paraphrase or a mitigation it already acknowledges. For unresolved, include its id in couldNotVerify. findingIndex is ignored for refuted and unresolved.',
           items: {
             type: 'object',
             properties: {
@@ -701,10 +710,6 @@ export function createReviewerToolExecutor(host: ReviewerToolHost): ReviewerTool
                   )
                 linkedFindings.set(disposition.findingIndex, disposition.id)
               }
-            } else if (disposition.findingIndex !== undefined) {
-              throw new ToolInputError(
-                `${disposition.id} is neither reported nor duplicate; omit findingIndex`,
-              )
             }
             if (
               disposition.status === 'unresolved' &&
