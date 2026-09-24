@@ -29,6 +29,11 @@ describe('tool argument error guidance', () => {
     await submitComposer()
     await waitForAgentIdle(30_000)
 
+    const rollup = $('.tool-card-rollup[data-status="done"]')
+    await rollup.waitForDisplayed({ timeout: 10_000 })
+    if (!(await rollup.getProperty('open'))) {
+      await rollup.$('summary.tool-card-header').click()
+    }
     const card = $('.tool-card[data-tool-id][data-status="done"]')
     await card.waitForDisplayed({ timeout: 10_000 })
     if (!(await card.getProperty('open'))) {
