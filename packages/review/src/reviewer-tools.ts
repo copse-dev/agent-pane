@@ -72,7 +72,7 @@ const suspicionSchema = z.object({
 
 const dispositionSchema = z.object({
   id: z.string().min(1),
-  status: z.enum(['reported', 'refuted', 'unresolved']),
+  status: z.enum(['reported', 'duplicate', 'refuted', 'unresolved']),
   evidence: z.string().trim().min(8).max(400),
   findingIndex: z.number().int().positive().optional(),
 })
@@ -149,12 +149,12 @@ function finishReviewTool(requireFindings: boolean): LLMTool {
           type: 'array',
           maxItems: 20,
           description:
-            'Resolve every record_suspicion id exactly once. For reported, give the 1-based findingIndex across earlier report_finding calls followed by findings in this closure. For refuted, cite the concrete counterevidence. For unresolved, include its id in couldNotVerify.',
+            'Resolve every record_suspicion id exactly once. For reported, give the 1-based findingIndex across earlier report_finding calls followed by findings in this closure. Each reported suspicion must reference a different findingIndex. For duplicate, explain the duplication and give the findingIndex used by its reported suspicion. For refuted, cite the concrete counterevidence. For unresolved, include its id in couldNotVerify.',
           items: {
             type: 'object',
             properties: {
               id: { type: 'string' },
-              status: { type: 'string', enum: ['reported', 'refuted', 'unresolved'] },
+              status: { type: 'string', enum: ['reported', 'duplicate', 'refuted', 'unresolved'] },
               evidence: { type: 'string', minLength: 8, maxLength: 400 },
               findingIndex: { type: 'integer', minimum: 1 },
             },
@@ -288,7 +288,7 @@ export function reviewerTools(): LLMTool[] {
     {
       name: 'record_suspicion',
       description:
-        'Preserve a concrete suspected defect before investigating it. Returns an immutable id that finish_review must resolve as reported, refuted with counterevidence, or unresolved. This is not a finding.',
+        'Preserve a concrete suspected defect before investigating it. Returns an immutable id that finish_review must resolve as reported, duplicate of a reported finding, refuted with counterevidence, or unresolved. This is not a finding.',
       parameters: {
         type: 'object',
         properties: {
@@ -674,6 +674,7 @@ export function createReviewerToolExecutor(host: ReviewerToolHost): ReviewerTool
         }
         const allFindings = [...reported, ...closureFindings]
         const seen = new Set<string>()
+        const linkedFindings = new Map<number, string>()
         try {
           for (const disposition of input.dispositions) {
             if (
@@ -683,7 +684,7 @@ export function createReviewerToolExecutor(host: ReviewerToolHost): ReviewerTool
               throw new ToolInputError(`Unknown or duplicate suspicion ${disposition.id}`)
             }
             seen.add(disposition.id)
-            if (disposition.status === 'reported') {
+            if (disposition.status === 'reported' || disposition.status === 'duplicate') {
               if (
                 disposition.findingIndex === undefined ||
                 allFindings[disposition.findingIndex - 1] === undefined
@@ -692,8 +693,18 @@ export function createReviewerToolExecutor(host: ReviewerToolHost): ReviewerTool
                   `${disposition.id} must reference an existing findingIndex`,
                 )
               }
+              if (disposition.status === 'reported') {
+                const previous = linkedFindings.get(disposition.findingIndex)
+                if (previous !== undefined)
+                  throw new ToolInputError(
+                    `findingIndex ${String(disposition.findingIndex)} already resolves ${previous}; map ${disposition.id} to its own finding or explicitly mark it duplicate`,
+                  )
+                linkedFindings.set(disposition.findingIndex, disposition.id)
+              }
             } else if (disposition.findingIndex !== undefined) {
-              throw new ToolInputError(`${disposition.id} is not reported; omit findingIndex`)
+              throw new ToolInputError(
+                `${disposition.id} is neither reported nor duplicate; omit findingIndex`,
+              )
             }
             if (
               disposition.status === 'unresolved' &&
@@ -703,6 +714,16 @@ export function createReviewerToolExecutor(host: ReviewerToolHost): ReviewerTool
                 `Include unresolved ${disposition.id} and its uncertainty in couldNotVerify`,
               )
             }
+          }
+          for (const disposition of input.dispositions) {
+            if (
+              disposition.status === 'duplicate' &&
+              (disposition.findingIndex === undefined ||
+                !linkedFindings.has(disposition.findingIndex))
+            )
+              throw new ToolInputError(
+                `Duplicate ${disposition.id} must reference a findingIndex resolved by a reported suspicion`,
+              )
           }
           const missing = suspicions.filter((entry) => !seen.has(entry.id))
           if (missing.length > 0)

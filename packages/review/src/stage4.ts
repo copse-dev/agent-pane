@@ -2,14 +2,14 @@
 //
 // For each canonical finding that execution has not already settled, pick a
 // strategy by class and try to settle it: a REPRODUCER for the classes a test
-// can demonstrate (confirmed only if it fails on head and passes on base),
-// then an ADVERSARIAL CHALLENGE for everything still open — a second model
-// whose brief is to refute the finding, with the burden of proof on the
+// can demonstrate (opposite exit codes are only provisional evidence),
+// then an ADVERSARIAL CHALLENGE, including an audit of differential
+// proofs — a second model whose brief is to refute the finding, with the burden of proof on the
 // finding. Refuted findings never reach the human; that is what the budget
 // here buys. Verification is spent only on survivors of Stage 3, most
 // promising first, up to a cap.
 import type { HeadlessEvent } from '@copse/agent/headless-contract.ts'
-import { EXTERNAL_CONTENT_BLOCK } from '@copse/agent/external-content.ts'
+import { EXTERNAL_CONTENT_BLOCK, wrapExternalContent } from '@copse/agent/external-content.ts'
 import type { LLMProvider } from '@copse/llm/wire-types.ts'
 import type { ReviewContext } from './context.ts'
 import type { Finding, FindingClass } from './finding.ts'
@@ -115,7 +115,7 @@ const REPRODUCER_SYSTEM = [
   '',
   'Read the code first (read_file, search_code, git_diff, list_dir). Then call write_reproducer with a test file and the argv that runs it from the repository root — use the repository’s own test runner if the file can be run in isolation, otherwise plain `node`. The tool runs it on both checkouts and tells you the result. Revise until it fails on the change and passes on the base, or stop and say the defect cannot be reproduced this way.',
   '',
-  'Rules: the test must exercise the claimed defect and nothing else; do not weaken it to make it pass on base; do not touch any other file. Finish with one plain-text line.',
+  'Rules: execute the claimed behavior and assert its observable result on BOTH revisions. Do not assert source text or skip/return early on base because an API or source pattern is absent. Missing imports, setup errors and unrelated failures are not evidence. Follow alternative event/caller paths that could prevent the defect. Do not touch any other file. Finish with one plain-text line.',
   EXTERNAL_CONTENT_BLOCK,
 ].join('\n')
 
@@ -124,9 +124,23 @@ const CHALLENGER_SYSTEM = [
   '',
   'The burden of proof is on the finding. Call verdict with refuted when you can show, from specific lines or from a command’s output, that the claim is wrong (the case is handled elsewhere, the caller cannot pass that input, the behaviour is intended and tested, the lines are not reached). Call verdict with stands only when you actively confirmed the defect yourself. Call verdict with undetermined when you could neither refute nor confirm. Never agree by default.',
   '',
+  'If a differential reproducer is supplied, audit its content and both outputs. Set reproducerAssessment to valid only if both revisions execute the same claimed scenario, head fails at the relevant behavioral assertion or claimed runtime error, and setup, missing APIs, source-text checks or an early return cannot explain the difference. Reject bad proof even when the underlying finding still appears plausible. Check alternative event/caller paths that could invalidate or narrow the claim.',
   'Finish with one plain-text line after the verdict.',
   EXTERNAL_CONTENT_BLOCK,
 ].join('\n')
+
+function describeReproducer(run: ReproducerRun): string {
+  return [
+    'Provisional differential evidence. Opposite exit codes alone do not confirm this claim.',
+    `Test ${run.path}, argv ${JSON.stringify(run.argv)}:`,
+    wrapExternalContent('reproducer_source', run.content),
+    `Head exit ${String(run.head.exitCode)}:`,
+    wrapExternalContent('reproducer_head', run.head.output.slice(-8_000)),
+    `Base exit ${String(run.base.exitCode)}:`,
+    wrapExternalContent('reproducer_base', run.base.output.slice(-8_000)),
+    'Your verdict must include reproducerAssessment and explain whether this is behavioral proof.',
+  ].join('\n')
+}
 
 function challengeCompletionRepairPrompt(error: string): string {
   return [
@@ -176,6 +190,7 @@ export async function verifyFindings(options: Stage4Options): Promise<Stage4Resu
     if (options.signal?.aborted) break
     let current = finding
     counts.attempted++
+    let differential: ReproducerRun | null = null
 
     if (options.reproducer !== null && canRun && REPRODUCIBLE_CLASSES.includes(current.class)) {
       const executor = createVerifierToolExecutor({
@@ -198,32 +213,7 @@ export async function verifyFindings(options: Stage4Options): Promise<Stage4Resu
       })
       usages.push(turn.usage)
       const run = executor.reproducer()
-      if (run !== null && run.confirms) {
-        current = withVerdict(current, {
-          evidence: [
-            ...current.evidence,
-            { kind: 'reproducer', testPath: run.path, failsOnHead: true, passesOnBase: true },
-          ],
-          verdict: {
-            status: 'confirmed',
-            reason: `reproducer ${run.path} fails on head (exit ${String(run.head.exitCode)}) and passes on base`,
-          },
-        })
-        reproducers.push({ findingId: current.id, run })
-        records.push({
-          findingId: current.id,
-          strategy: 'reproducer',
-          model: options.reproducer.model,
-          turnId,
-          outcome: turn.outcome,
-          result: 'confirmed',
-          reason: current.verdict.reason,
-          usage: turn.usage,
-        })
-        counts.confirmed++
-        settled.set(finding.id, current)
-        continue
-      }
+      if (run?.separates) differential = run
       records.push({
         findingId: current.id,
         strategy: 'reproducer',
@@ -234,7 +224,9 @@ export async function verifyFindings(options: Stage4Options): Promise<Stage4Resu
         reason:
           run === null
             ? (turn.error ?? 'no reproducer was written')
-            : `reproducer ${run.path} did not separate head from base (head exit ${String(run.head.exitCode)}, base exit ${String(run.base.exitCode)})`,
+            : run.separates
+              ? `reproducer ${run.path} separates head from base; behavioral proof awaits challenge`
+              : `reproducer ${run.path} did not separate head from base (head exit ${String(run.head.exitCode)}, base exit ${String(run.base.exitCode)})`,
         usage: turn.usage,
       })
     }
@@ -243,14 +235,18 @@ export async function verifyFindings(options: Stage4Options): Promise<Stage4Resu
       const executor = createVerifierToolExecutor({
         ...options,
         baseCheckout: options.baseCheckout,
+        requireReproducerAssessment: differential !== null,
       })
       const turnId = `${options.turnPrefix}:challenge:${String(++sequence)}`
       const turn = await runTurn({
         provider: options.challenger.provider,
         model: options.challenger.model,
         systemPrompt: CHALLENGER_SYSTEM,
-        userPrompt: describeFinding(current, options.context),
-        tools: challengerTools(),
+        userPrompt: [
+          describeFinding(current, options.context),
+          ...(differential ? [describeReproducer(differential)] : []),
+        ].join('\n\n'),
+        tools: challengerTools(differential !== null),
         execute: (name, args, signal, id) => executor.execute(name, args, signal, id),
         threadId: options.threadId,
         turnId,
@@ -260,7 +256,7 @@ export async function verifyFindings(options: Stage4Options): Promise<Stage4Resu
             ? 'challenger stopped without calling the required verdict tool'
             : undefined,
         completionRepair: {
-          tools: challengerClosureTools(),
+          tools: challengerClosureTools(differential !== null),
           toolChoice: { name: 'verdict' },
           // One invalid call may be corrected; a third step lets the provider emit
           // its normal post-tool terminal response without reopening investigation.
@@ -299,6 +295,44 @@ export async function verifyFindings(options: Stage4Options): Promise<Stage4Resu
           reason: verdict.reason,
           usage: turn.usage,
         })
+      } else if (
+        verdict?.status === 'stands' &&
+        verdict.reproducerAssessment === 'valid' &&
+        differential !== null &&
+        turn.outcome === 'completed'
+      ) {
+        current = withVerdict(current, {
+          evidence: [
+            ...current.evidence,
+            ...commandEvidence,
+            {
+              kind: 'reproducer',
+              testPath: differential.path,
+              failsOnHead: true,
+              passesOnBase: true,
+            },
+          ],
+          provenance: {
+            ...current.provenance,
+            challengedBy: [...current.provenance.challengedBy, challenger],
+          },
+          verdict: {
+            status: 'confirmed',
+            reason: `reproducer ${differential.path} fails on head and passes on base; proof audited by ${challenger.id}: ${verdict.reason}`,
+          },
+        })
+        reproducers.push({ findingId: current.id, run: differential })
+        counts.confirmed++
+        records.push({
+          findingId: current.id,
+          strategy: 'challenge',
+          model: challenger.id,
+          turnId,
+          outcome: turn.outcome,
+          result: 'confirmed',
+          reason: current.verdict.reason,
+          usage: turn.usage,
+        })
       } else if (verdict?.status === 'stands') {
         current = withVerdict(current, {
           provenance: {
@@ -335,7 +369,7 @@ export async function verifyFindings(options: Stage4Options): Promise<Stage4Resu
           usage: turn.usage,
         })
       }
-    } else if (!records.some((record) => record.findingId === current.id)) {
+    } else {
       counts.undetermined++
     }
     settled.set(finding.id, current)

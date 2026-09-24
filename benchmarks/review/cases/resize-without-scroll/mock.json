@@ -106,7 +106,7 @@
         "name": "verdict",
         "args": {
           "status": "stands",
-          "reason": "kick deduplicates solely by scroll offset, so repeated resize notifications at the same offset never update viewport dimensions."
+          "reproducerAssessment": "valid", "reason": "Both revisions create a 400x300 host, change width to 800, and kick at unchanged offsets. Base viewBox is 800x300; head remains 400x300 and fails the dimensions assertion."
         }
       },
       {

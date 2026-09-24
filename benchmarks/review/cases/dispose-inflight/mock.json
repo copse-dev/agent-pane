@@ -106,7 +106,7 @@
         "name": "verdict",
         "args": {
           "status": "stands",
-          "reason": "Clearing rows during dispose does not prevent the pending refresh assignment from running afterwards."
+          "reproducerAssessment": "valid", "reason": "Both revisions start refresh, dispose, then resolve the pending request. Base rows stay empty; head repopulates rows and fails the final assertion."
         }
       },
       {

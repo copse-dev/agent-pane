@@ -100,7 +100,7 @@ describe('verifyFindings', () => {
     }
   }
 
-  it('confirms a finding whose reproducer fails on head and passes on base, keeping the artefact', async () => {
+  it('confirms an audited behavioral differential and keeps the artefact', async () => {
     const finding = candidate('1111111111111111', 'contract', 1)
     const result = await verifyFindings(
       options([finding], {
@@ -112,8 +112,14 @@ describe('verifyFindings', () => {
           {
             type: 'tool_call',
             name: 'verdict',
-            args: { status: 'refuted', reason: 'should never run' },
+            args: {
+              status: 'stands',
+              reproducerAssessment: 'valid',
+              reason:
+                'The same test invokes value() on both revisions: base returns 1; head returns 2 and fails the behavioral assertion.',
+            },
           },
+          { type: 'text', text: 'Behavioral proof audited.' },
         ],
       }),
     )
@@ -127,7 +133,7 @@ describe('verifyFindings', () => {
       failsOnHead: true,
       passesOnBase: true,
     })
-    assert.equal(result.reproducers[0]?.run.confirms, true)
+    assert.equal(result.reproducers[0]?.run.separates, true)
     assert.deepEqual(result.counts, {
       attempted: 1,
       confirmed: 1,
@@ -136,15 +142,94 @@ describe('verifyFindings', () => {
       undetermined: 0,
       skipped: 0,
     })
-    // The challenger was not consulted once execution settled it.
+    // A different exit code must survive the proof audit.
     assert.deepEqual(
       result.records.map((record) => record.strategy),
-      ['reproducer'],
+      ['reproducer', 'challenge'],
     )
     assert.equal(await readFile(join(checkouts.head, REPRO.path), 'utf8'), REPRO.content)
     await assert.rejects(access(join(checkouts.base, REPRO.path)), 'base must stay pristine')
     assert.equal(result.events[0]?.type, 'turn_start')
     assert.equal(result.usage.estimated, false)
+  })
+
+  it('does not confirm source-shape evidence that skips the base scenario', async () => {
+    // Same failure mode as the live PR #3003 proof: a textual guard makes
+    // base pass without executing the claimed behavior.
+    const weak = {
+      ...REPRO,
+      content:
+        "const s=require('fs').readFileSync('lib.cjs','utf8'); if (!s.includes('=> 2')) process.exit(0); require('assert').match(s,/=> 1/)",
+    }
+    const result = await verifyFindings(
+      options([candidate('7777777777777777', 'contract', 1)], {
+        reproduce: [
+          { type: 'tool_call', name: 'write_reproducer', args: weak },
+          { type: 'text', text: 'The exit codes differ.' },
+        ],
+        challenge: [
+          {
+            type: 'tool_call',
+            name: 'verdict',
+            args: {
+              status: 'stands',
+              reason:
+                'The runtime value still appears wrong, but this test reads source and skips base.',
+              reproducerAssessment: 'invalid',
+            },
+          },
+          { type: 'text', text: 'Unverified.' },
+        ],
+      }),
+    )
+    assert.equal(result.findings[0]?.verdict.status, 'unverified')
+    assert.equal(result.counts.confirmed, 0)
+    assert.equal(result.counts.survived, 1)
+    assert.equal(result.reproducers.length, 0)
+  })
+
+  it('requires a proof assessment even when the challenger agrees with a differential', async () => {
+    const result = await verifyFindings(
+      options([candidate('9999999999999999', 'contract', 1)], {
+        reproduce: [
+          { type: 'tool_call', name: 'write_reproducer', args: REPRO },
+          { type: 'text', text: 'Reproduced.' },
+        ],
+        challenge: [
+          {
+            type: 'tool_call',
+            name: 'verdict',
+            args: {
+              status: 'stands',
+              reason: 'I agree with the reviewer without checking the test.',
+            },
+          },
+          { type: 'text', text: 'Stands.' },
+        ],
+      }),
+    )
+    assert.equal(result.findings[0]?.verdict.status, 'unverified')
+    assert.equal(result.counts.confirmed, 0)
+    assert.equal(result.counts.undetermined, 1)
+    assert.ok(
+      result.events.some(
+        (event) => event.type === 'tool_result' && event.result.includes('reproducerAssessment'),
+      ),
+    )
+  })
+
+  it('leaves an unaudited differential unverified when no challenger is configured', async () => {
+    const result = await verifyFindings(
+      options([candidate('8888888888888888', 'contract', 1)], {
+        reproduce: [
+          { type: 'tool_call', name: 'write_reproducer', args: REPRO },
+          { type: 'text', text: 'Reproduced.' },
+        ],
+      }),
+    )
+    assert.equal(result.findings[0]?.verdict.status, 'unverified')
+    assert.equal(result.counts.undetermined, 1)
+    assert.equal(result.counts.confirmed, 0)
   })
 
   it('falls through to the challenger when the reproducer does not separate head from base', async () => {
@@ -379,7 +464,7 @@ describe('verifyFindings', () => {
         new AbortController().signal,
         'repro',
       )
-      assert.equal(executor.reproducer()?.confirms, true)
+      assert.equal(executor.reproducer()?.separates, true)
     } finally {
       await ground.close()
       await project.remove()
