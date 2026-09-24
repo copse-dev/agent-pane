@@ -52,14 +52,67 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  authorize:
+    name: Authorize the paid review without model credentials
+    if: >-
+      ${{ github.repository_id == '1274237362' &&
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main' &&
+      github.workflow_ref == 'copse-dev/agent-pane/.github/workflows/review-findings.yml@refs/heads/main' &&
+      contains(fromJSON('["338988","41898282"]'), github.actor_id) &&
+      contains(fromJSON('["jonathanKingston","github-actions[bot]"]'), github.triggering_actor) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: read
+    outputs:
+      authorized: ${{ steps.pr.outputs.authorized }}
+    steps:
+      - uses: actions/github-script@v9
+        id: pr
+        env:
+          PR_NUMBER: ${{ inputs.pr }}
+          EXPECTED_HEAD: ${{ inputs.head }}
+          EXPECTED_BASE: ${{ inputs.base }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const number = process.env.PR_NUMBER;
+            if (!/^[1-9][0-9]*$/.test(number)) {
+              core.setFailed('pr must be a positive pull request number');
+              return;
+            }
+            const { data: pull } = await github.rest.pulls.get({
+              owner, repo, pull_number: Number(number),
+            });
+            if (pull.state !== 'open' || pull.user?.id !== 338988 ||
+                pull.head.repo?.id !== 1274237362 || pull.base.repo?.id !== 1274237362 ||
+                pull.head.sha !== process.env.EXPECTED_HEAD ||
+                pull.base.ref !== process.env.EXPECTED_BASE ||
+                !pull.labels.some(label => label.name === 'copse-review')) {
+              core.notice('Paid reviews require a current, labelled owner PR from this repository.');
+              return;
+            }
+            core.setOutput('authorized', 'true');
+
   findings:
     name: Review the pull request and post the findings
+    needs: authorize
+    # Recheck on this job too: a failed-job rerun may reuse authorize's outputs.
+    if: >-
+      ${{ needs.authorize.outputs.authorized == 'true' &&
+      github.repository_id == '1274237362' &&
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main' &&
+      github.workflow_ref == 'copse-dev/agent-pane/.github/workflows/review-findings.yml@refs/heads/main' &&
+      contains(fromJSON('["338988","41898282"]'), github.actor_id) &&
+      contains(fromJSON('["jonathanKingston","github-actions[bot]"]'), github.triggering_actor) }}
+    environment: copse-review-models
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
-      # Copse dogfoods the existing Scaleway OpenAI-compatible route. Repository
-      # variables can move the reviewer without editing the workflow; a
-      # dedicated key takes precedence when another deployment supplies one.
+      # Luna is the PR default; `configured` restores the retained Qwen route.
+      REVIEW_PROFILE: ${{ vars.COPSE_REVIEW_PR_PROFILE || 'openrouter-luna' }}
       REVIEW_PROVIDER: ${{ vars.COPSE_REVIEW_PROVIDER || 'openai-compatible' }}
       REVIEW_MODEL: ${{ vars.COPSE_REVIEW_MODEL || 'qwen3.8-27b' }}
       REVIEW_BASE_URL: ${{ vars.COPSE_REVIEW_BASE_URL || vars.SCW_GENERATIVE_API_URL || 'https://api.scaleway.ai/v1' }}
@@ -70,6 +123,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
         with:
+          ref: ${{ github.event.repository.default_branch }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -129,14 +183,16 @@ jobs:
           test "$path" = ".github/workflows/review-ground.yml"
 
           number="$EXPECTED_PR"
-          IFS=$'\t' read -r head base state < <(
+          IFS=$'\t' read -r head base state author_id head_repo_id base_repo_id labelled < <(
             gh api "repos/${GITHUB_REPOSITORY}/pulls/${number}" \
-              --jq '[.head.sha, .base.ref, .state] | @tsv'
+              --jq '[.head.sha, .base.ref, .state, .user.id, .head.repo.id, .base.repo.id, ([.labels[].name] | index("copse-review") != null)] | @tsv'
           )
           test -n "$number" && test -n "$head" && test -n "$base"
           test "$state" = "open"
           test "$head" = "$EXPECTED_HEAD"
           test "$base" = "$EXPECTED_BASE"
+          test "$author_id" = 338988 && test "$head_repo_id" = 1274237362 && test "$base_repo_id" = 1274237362
+          test "$labelled" = true
           echo "number=${number}" >> "$GITHUB_OUTPUT"
           echo "head=${head}" >> "$GITHUB_OUTPUT"
           echo "base=${base}" >> "$GITHUB_OUTPUT"
@@ -194,6 +250,7 @@ jobs:
       - name: Review with focused validation and post the findings
         shell: bash
         env:
+          OPENROUTER_API_KEY: ${{ secrets.COPSE_REVIEW_OPENROUTER_API_KEY }}
           COPSE_REVIEW_API_KEY: ${{ secrets.COPSE_REVIEW_API_KEY || secrets.SCW_GENERATIVE_API_KEY }}
           COPSE_REVIEW_FORGE_TOKEN: ${{ steps.review-app-token.outputs.token }}
           SCW_DEFAULT_PROJECT_ID: ${{ secrets.SCW_DEFAULT_PROJECT_ID }}
@@ -202,6 +259,20 @@ jobs:
           BASE_REF: ${{ steps.pr.outputs.base }}
         run: |
           set -euo pipefail
+          case "$REVIEW_PROFILE" in
+            configured) unset OPENROUTER_API_KEY ;;
+            openrouter-luna)
+              unset COPSE_REVIEW_API_KEY SCW_DEFAULT_PROJECT_ID
+              if test -z "$OPENROUTER_API_KEY"; then
+                echo "::error::Set COPSE_REVIEW_OPENROUTER_API_KEY in the protected copse-review-models environment"
+                exit 1
+              fi
+              REVIEW_PROVIDER=openrouter
+              REVIEW_MODEL=openai/gpt-6-luna
+              REVIEW_BASE_URL=https://openrouter.ai/api/v1
+              ;;
+            *) echo "::error::Unknown PR reviewer profile"; exit 1 ;;
+          esac
           review_base_url="${REVIEW_BASE_URL%/}"
           if test "$review_base_url" = "https://api.scaleway.ai/v1"; then
             if test -z "$SCW_DEFAULT_PROJECT_ID"; then
