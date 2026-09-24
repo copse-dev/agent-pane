@@ -516,7 +516,10 @@ description: Bundled skill for tests
 
   it('keeps the available-skills diagnostic bounded when names are long', async () => {
     for (let i = 0; i < 20; i++) {
-      await seedSkillAt(tempRoot, `skill-with-a-deliberately-long-name-${String(i).padStart(2, '0')}`)
+      await seedSkillAt(
+        tempRoot,
+        `skill-with-a-deliberately-long-name-${String(i).padStart(2, '0')}`,
+      )
     }
     await refreshSkillsRegistry()
 
