@@ -65816,29 +65816,39 @@ function mountProjectsPane(root, store2, api2) {
     archiveThread(store2, threadId);
   }
   function cachedPrLifecycle(key) {
+    return prLifecycleCache.get(key)?.state;
+  }
+  function hasFreshPrLifecycle(key) {
     const entry = prLifecycleCache.get(key);
-    if (!entry) return void 0;
-    if (Date.now() - entry.fetchedAt > PR_STATUS_CACHE_TTL_MS) return void 0;
-    return entry.state;
+    return entry !== void 0 && Date.now() - entry.fetchedAt <= PR_STATUS_CACHE_TTL_MS;
   }
   function ensurePrLifecycles(refs) {
-    const missing = refs.filter((ref) => {
+    const stale = refs.filter((ref) => {
       const key = githubPrKey(ref);
-      return cachedPrLifecycle(key) === void 0 && !prFetchInFlight.has(key);
+      return !hasFreshPrLifecycle(key) && !prFetchInFlight.has(key);
     });
-    if (missing.length === 0) return;
+    if (stale.length === 0) return;
     const generation = prStatusGeneration;
-    for (const ref of missing) {
+    for (const ref of stale) {
       const key = githubPrKey(ref);
+      let lifecycleChanged = false;
       prFetchInFlight.add(key);
       void api2.gh.prDetails(ref.owner, ref.repo, ref.number).then((details) => {
+        if (generation !== prStatusGeneration) return;
         const state = details ? normalizePrLifecycleState(details.state) : "unknown";
+        lifecycleChanged = prLifecycleCache.get(key)?.state !== state;
         prLifecycleCache.set(key, { state, fetchedAt: Date.now() });
       }).catch(() => {
-        prLifecycleCache.set(key, { state: "unknown", fetchedAt: Date.now() });
+        if (generation !== prStatusGeneration) return;
+        const cached2 = prLifecycleCache.get(key);
+        prLifecycleCache.set(key, {
+          state: cached2?.state ?? "unknown",
+          fetchedAt: Date.now()
+        });
       }).finally(() => {
+        if (generation !== prStatusGeneration) return;
         prFetchInFlight.delete(key);
-        if (generation === prStatusGeneration) render();
+        if (lifecycleChanged) render();
       });
     }
   }
