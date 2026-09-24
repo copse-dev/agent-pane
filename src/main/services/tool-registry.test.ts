@@ -338,12 +338,7 @@ describe('ToolRegistry', () => {
       })
 
       await assert.rejects(
-        () =>
-          reg.execute(
-            'third_party_transfer',
-            { amount: 10_000 },
-            new AbortController().signal,
-          ),
+        () => reg.execute('third_party_transfer', { amount: 10_000 }, new AbortController().signal),
         /amount — .*<=1000/,
       )
       assert.equal(executed, false)
