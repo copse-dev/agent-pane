@@ -32352,7 +32352,10 @@ var init_acp_known_agents = __esm({
             "oaiusercontent.com",
             "*.oaiusercontent.com"
           ],
-          homeDirs: [".codex", ".config/codex"]
+          homeDirs: [".codex", ".config/codex"],
+          // Codex's TLS certificate verification needs macOS trustd. Without it,
+          // even allowlisted ChatGPT workspace-routing requests fail before a turn.
+          allowMacOsTrustd: true
         },
         setup: "codex login",
         // ChatGPT sign-in; set NO_BROWSER=1 for headless, or use CODEX_API_KEY
@@ -32460,6 +32463,9 @@ function parseAcpAgentConfigs(value) {
       }
       if (Array.isArray(sandbox["scratchPaths"]) && sandbox["scratchPaths"].every((path) => typeof path === "string")) {
         agent.sandbox.scratchPaths = sandbox["scratchPaths"];
+      }
+      if (typeof sandbox["allowMacOsTrustd"] === "boolean") {
+        agent.sandbox.allowMacOsTrustd = sandbox["allowMacOsTrustd"];
       }
     }
     return [agent];
