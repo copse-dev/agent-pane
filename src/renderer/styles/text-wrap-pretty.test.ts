@@ -5,8 +5,8 @@
 // stranding an orphan word — that is exactly what `text-wrap: pretty` decides
 // at paint time. This pins the *declarations* instead: the rule applies at the
 // shared `.streaming-markdown` host boundary (every render sink adds this
-// class), and `pre`/`code`/`table` are explicitly reset to the initial `wrap`
-// value so they cannot silently inherit `pretty` from the host.
+// class), and `pre`/`code`/`table` explicitly reset only `text-wrap-style` so
+// they cannot silently inherit `pretty` without overriding their wrap mode.
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -39,27 +39,22 @@ describe('markdown prose wraps with text-wrap: pretty (issue #2461)', () => {
     )
   })
 
-  it('resets code and table surfaces so they cannot inherit pretty wrapping', () => {
-    // Find the reset rule by its declaration rather than assuming the exact
-    // selector text, so a future refactor (e.g. splitting the :is() group)
-    // still passes as long as pre/code/table are all covered.
-    const resetSelector = [
-      ...css.matchAll(/([^{}]+)\{[^{}]*text-wrap:\s*(?:initial|wrap)[^{}]*\}/g),
-    ].map((match) => match[1]?.trim() ?? '')
-    assert.ok(resetSelector.length > 0, 'expected a rule resetting text-wrap back to initial/wrap')
-    const combined = resetSelector.join(' , ')
+  it('resets only the wrap style on code and table surfaces', () => {
+    const selector = '.streaming-markdown :is(pre, code, table)'
+    const body = ruleBody(selector)
+    assert.ok(body, `${selector} must have a reset rule`)
     for (const tag of ['pre', 'code', 'table']) {
       assert.match(
-        combined,
+        selector,
         new RegExp(`\\b${tag}\\b`),
         `the text-wrap reset must cover ${tag} so it cannot inherit pretty from .streaming-markdown`,
       )
     }
-    // And the reset must live under the shared host, not some unrelated scope.
-    assert.match(
-      combined,
-      /\.streaming-markdown/,
-      'the reset must be scoped under .streaming-markdown',
+    assert.match(body, /text-wrap-style:\s*(?:auto|initial)/)
+    assert.doesNotMatch(
+      body,
+      /text-wrap:\s*(?:initial|wrap)/,
+      'the reset must not override text-wrap-mode or existing white-space contracts',
     )
   })
 })

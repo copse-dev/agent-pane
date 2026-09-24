@@ -3,16 +3,16 @@
    the shared `.streaming-markdown` host boundary — the class every render sink
    (chat, subagent timeline, file preview) adds — reaches every prose block:
    paragraphs, list items, headings, and blockquotes.
-   Code and tables are reset back to the initial `wrap` value: `pretty`'s
-   look-ahead relaxes which break opportunity it picks, which is wrong for
+   Code and tables reset only the wrapping *style*: `pretty`'s look-ahead
+   relaxes which break opportunity it picks, which is wrong for
    monospace/tabular content where a wrap point (or the lack of one) needs to
-   stay literal. Without the reset, `pre`/`code`/`table` would silently inherit
-   `pretty` from the host. */
+   stay literal. Do not reset the `text-wrap` shorthand here: that also changes
+   `text-wrap-mode` and overrides existing `white-space: nowrap` contracts. */
 .streaming-markdown {
   text-wrap: pretty;
 }
 .streaming-markdown :is(pre, code, table) {
-  text-wrap: initial;
+  text-wrap-style: auto;
 }
 
 /* Base table styling (borders, padding, header, zebra stripe, cell wrapping)
