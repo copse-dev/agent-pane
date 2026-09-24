@@ -2769,6 +2769,21 @@ copse-ui-field input[type=password],
 .browser-url-input.has-error {
   border-color: var(--danger, #f14c4c);
 }
+.browser-url-input.has-blocked {
+  border-color: var(--warning);
+}
+.browser-status {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.browser-status-danger {
+  color: var(--danger, #f14c4c);
+}
+.browser-status-warning {
+  color: var(--warning);
+}
 .file-viewer {
   flex: 1;
   display: flex;
