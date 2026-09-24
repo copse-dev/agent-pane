@@ -7373,7 +7373,14 @@ dialog.settings-overlay::backdrop {
   width: 100%;
   max-width: 480px;
   min-height: var(--action-min-height);
+}
+.settings-content label input[type=text],
+.settings-content label input[type=password],
+.settings-content label input[type=number] {
   padding-inline: var(--spacing-md);
+}
+.settings-content label select {
+  padding-left: var(--spacing-md);
 }
 .settings-content .checkbox-label {
   min-height: calc(28px * var(--ui-scale));

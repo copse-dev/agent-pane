@@ -21735,6 +21735,30 @@ var init_model_usage = __esm({
   }
 });
 
+// src/shared/store/pending-submissions.ts
+function beginThreadSubmission(store2, threadId) {
+  let pending = pendingByStore.get(store2);
+  if (!pending) {
+    pending = /* @__PURE__ */ new Set();
+    pendingByStore.set(store2, pending);
+  }
+  if (pending.has(threadId)) return false;
+  pending.add(threadId);
+  return true;
+}
+function endThreadSubmission(store2, threadId) {
+  pendingByStore.get(store2)?.delete(threadId);
+}
+function isThreadSubmitting(store2, threadId) {
+  return pendingByStore.get(store2)?.has(threadId) ?? false;
+}
+var pendingByStore;
+var init_pending_submissions = __esm({
+  "src/shared/store/pending-submissions.ts"() {
+    pendingByStore = /* @__PURE__ */ new WeakMap();
+  }
+});
+
 // packages/std/src/array-utils.ts
 function at(array2, index) {
   const value = array2[index];
@@ -21883,12 +21907,12 @@ function hasUnsubmittedPrompt(thread) {
 function isThreadArchived(thread) {
   return thread.archivedAt != null;
 }
-function isPrunableBlankThread(thread) {
-  return isBlankThread(thread) && !hasUnsubmittedPrompt(thread) && !isThreadArchived(thread);
+function isPrunableBlankThread(store2, thread) {
+  return isBlankThread(thread) && !hasUnsubmittedPrompt(thread) && !isThreadArchived(thread) && !isThreadSubmitting(store2, thread.id);
 }
 function pruneBlankThreads(store2, keepIds) {
   const { threads, activeThreadId } = store2.getState();
-  const remaining = threads.filter((t2) => !isPrunableBlankThread(t2) || keepIds.has(t2.id));
+  const remaining = threads.filter((t2) => !isPrunableBlankThread(store2, t2) || keepIds.has(t2.id));
   if (remaining.length === 0 || remaining.length === threads.length) return;
   const newActive = activeThreadId && remaining.some((t2) => t2.id === activeThreadId) ? activeThreadId : remaining[0]?.id ?? null;
   store2.setState({ threads: remaining, activeThreadId: newActive });
@@ -21896,7 +21920,9 @@ function pruneBlankThreads(store2, keepIds) {
 }
 function normalizeBlankThreads(store2) {
   const { threads, activeThreadId } = store2.getState();
-  const blanks = threads.filter((t2) => isBlankThread(t2) && !isThreadArchived(t2));
+  const blanks = threads.filter(
+    (t2) => isBlankThread(t2) && !isThreadArchived(t2) && !isThreadSubmitting(store2, t2.id)
+  );
   const emptyBlanks = blanks.filter((t2) => !hasUnsubmittedPrompt(t2));
   if (emptyBlanks.length <= 1) return;
   const keepEmptyId = emptyBlanks.find((t2) => t2.id === activeThreadId)?.id ?? at(
@@ -21942,9 +21968,7 @@ function createThread(store2, draftPrompt) {
 }
 function openNewThread(store2) {
   const { threads, activeThreadId } = store2.getState();
-  const existing = threads.find(
-    (t2) => isBlankThread(t2) && !hasUnsubmittedPrompt(t2) && !isThreadArchived(t2)
-  );
+  const existing = threads.find((t2) => isPrunableBlankThread(store2, t2));
   if (existing) {
     const defaultModel = store2.getState().settings?.model;
     const reseed = (list) => list.map((t2) => {
@@ -21980,7 +22004,7 @@ function switchThread(store2, id) {
   }
   store2.emit("composer_draft_flush");
   const state = store2.getState();
-  const pruned = state.threads.filter((t2) => !isPrunableBlankThread(t2) || t2.id === id);
+  const pruned = state.threads.filter((t2) => !isPrunableBlankThread(store2, t2) || t2.id === id);
   const threads = (pruned.length > 0 ? pruned : state.threads).map((thread) => {
     if (thread.id !== id || thread.unreadAt === void 0) return thread;
     const { unreadAt: _read, ...readThread } = thread;
@@ -22126,26 +22150,18 @@ function addMessage(store2, threadId, role, content = "", images, attachments, o
   return id;
 }
 function setThreadDraftPrompt(store2, threadId, draftPrompt) {
-  const trimmed2 = draftPrompt.trim();
-  const { threads } = store2.getState();
-  const thread = threads.find((t2) => t2.id === threadId);
+  const thread = getThreadById(store2, threadId);
   if (!thread) return;
-  if (trimmed2.length > 0) {
+  if (draftPrompt.trim()) {
     if (thread.draftPrompt === draftPrompt) return;
-    const updated2 = threads.map(
-      (t2) => t2.id !== threadId ? t2 : { ...t2, draftPrompt, updatedAt: Date.now() }
-    );
-    store2.setState({ threads: updated2 });
-    store2.emit("thread_draft_changed", threadId);
-    return;
+    patchThreadAnywhere(store2, threadId, (t2) => ({ ...t2, draftPrompt, updatedAt: Date.now() }));
+  } else {
+    if (thread.draftPrompt === void 0) return;
+    patchThreadAnywhere(store2, threadId, (t2) => {
+      const { draftPrompt: _removed, ...rest } = t2;
+      return { ...rest, updatedAt: Date.now() };
+    });
   }
-  if (thread.draftPrompt === void 0) return;
-  const updated = threads.map((t2) => {
-    if (t2.id !== threadId) return t2;
-    const { draftPrompt: _removed, ...rest } = t2;
-    return { ...rest, updatedAt: Date.now() };
-  });
-  store2.setState({ threads: updated });
   store2.emit("thread_draft_changed", threadId);
 }
 function messageLocations(store2) {
@@ -22419,19 +22435,11 @@ function setThreadTitle(store2, threadId, title, options) {
   store2.emit("threads_changed");
 }
 function setThreadWorkingBrief(store2, threadId, workingBrief) {
-  const { threads } = store2.getState();
-  const updated = threads.map(
-    (t2) => t2.id !== threadId ? t2 : { ...t2, workingBrief, updatedAt: Date.now() }
-  );
-  store2.setState({ threads: updated });
+  patchThreadAnywhere(store2, threadId, (t2) => ({ ...t2, workingBrief, updatedAt: Date.now() }));
   store2.emit("threads_changed");
 }
 function setThreadGitBranch(store2, threadId, branch) {
-  const { threads } = store2.getState();
-  const updated = threads.map(
-    (t2) => t2.id !== threadId ? t2 : { ...t2, gitBranch: branch, updatedAt: Date.now() }
-  );
-  store2.setState({ threads: updated });
+  patchThreadAnywhere(store2, threadId, (t2) => ({ ...t2, gitBranch: branch, updatedAt: Date.now() }));
   store2.emit("threads_changed");
 }
 function applyRenamedThreadWorktree(store2, threadId, worktree) {
@@ -22447,30 +22455,24 @@ function applyRenamedThreadWorktree(store2, threadId, worktree) {
 }
 function recordThreadVideos(store2, threadId, videos) {
   if (videos.length === 0) return;
-  const { threads } = store2.getState();
-  const updated = threads.map((t2) => {
-    if (t2.id !== threadId) return t2;
+  patchThreadAnywhere(store2, threadId, (t2) => {
     const existing = t2.videos ?? [];
     const known = new Set(existing.map((v3) => v3.path));
     const added = videos.filter((v3) => !known.has(v3.path));
     if (added.length === 0) return t2;
     return { ...t2, videos: [...existing, ...added], updatedAt: Date.now() };
   });
-  store2.setState({ threads: updated });
   store2.emit("threads_changed");
 }
 function recordThreadArchives(store2, threadId, archives) {
   if (archives.length === 0) return;
-  const { threads } = store2.getState();
-  const updated = threads.map((t2) => {
-    if (t2.id !== threadId) return t2;
+  patchThreadAnywhere(store2, threadId, (t2) => {
     const existing = t2.archives ?? [];
     const known = new Set(existing.map((a3) => a3.path));
     const added = archives.filter((a3) => !known.has(a3.path));
     if (added.length === 0) return t2;
     return { ...t2, archives: [...existing, ...added], updatedAt: Date.now() };
   });
-  store2.setState({ threads: updated });
   store2.emit("threads_changed");
 }
 function setThreadProposalDecision(store2, threadId, decision) {
@@ -22496,19 +22498,15 @@ function bindThreadGitBranchIfUnset(store2, threadId, branch) {
   setThreadGitBranch(store2, threadId, branch);
 }
 function applyPreparedThreadCheckout(store2, threadId, prepared) {
-  const { threads } = store2.getState();
-  const previousWorktreePath = threads.find((thread) => thread.id === threadId)?.worktree?.path;
-  const updated = threads.map((thread) => {
-    if (thread.id !== threadId) return thread;
-    return {
-      ...thread,
-      worktreeChoice: prepared.choice,
-      ...prepared.branch ? { gitBranch: prepared.branch } : {},
-      ...prepared.worktree ? { worktree: prepared.worktree } : {},
-      updatedAt: Date.now()
-    };
-  });
-  store2.setState({ threads: updated });
+  const previousWorktreePath = getThreadById(store2, threadId)?.worktree?.path;
+  const applied = patchThreadAnywhere(store2, threadId, (thread) => ({
+    ...thread,
+    worktreeChoice: prepared.choice,
+    ...prepared.branch ? { gitBranch: prepared.branch } : {},
+    ...prepared.worktree ? { worktree: prepared.worktree } : {},
+    updatedAt: Date.now()
+  }));
+  if (!applied) return;
   store2.emit("threads_changed");
   if (prepared.worktree && prepared.worktree.path !== previousWorktreePath) {
     store2.emit("thread_checkout_changed", threadId);
@@ -22520,6 +22518,7 @@ var init_thread_helpers = __esm({
   "src/shared/store/thread-helpers.ts"() {
     init_model_usage();
     init_service_tier();
+    init_pending_submissions();
     init_array_utils2();
     init_thread_proposal2();
     init_thread_sort();
@@ -22531,7 +22530,9 @@ var init_thread_helpers = __esm({
 
 // src/renderer/controller/background-threads.ts
 function carryRunningThreads(store2, outgoingProjectId, outgoingThreads) {
-  const running = outgoingThreads.filter((t2) => t2.status === "running");
+  const running = outgoingThreads.filter(
+    (t2) => t2.status === "running" || isThreadSubmitting(store2, t2.id)
+  );
   if (running.length === 0) return;
   const existing = store2.getState().backgroundThreads;
   const carriedIds = new Set(existing.map((b4) => b4.thread.id));
@@ -22577,6 +22578,7 @@ function dropProjectBackgroundThreads(store2, projectId) {
 }
 var init_background_threads = __esm({
   "src/renderer/controller/background-threads.ts"() {
+    init_pending_submissions();
   }
 });
 
@@ -23744,10 +23746,11 @@ function startAutomationTurnTree(store2, threadId) {
 }
 function startRootTurnTree(store2, threadId) {
   const epoch = newEpoch();
-  const threads = store2.getState().threads.map(
-    (t2) => t2.id !== threadId ? t2 : { ...t2, currentEpoch: epoch, continuationUsed: 0 }
-  );
-  store2.setState({ threads });
+  patchThreadAnywhere(store2, threadId, (t2) => ({
+    ...t2,
+    currentEpoch: epoch,
+    continuationUsed: 0
+  }));
   return epoch;
 }
 function foldBackContinuationUsed(store2, threadId, turnTreeId, used) {
@@ -23767,7 +23770,7 @@ function setMessageHookOrigin(store2, messageId, origin) {
   store2.setState({ threads });
 }
 function refreshPayload(store2, threadId, payload) {
-  const thread = store2.getState().threads.find((t2) => t2.id === threadId);
+  const thread = getThreadById(store2, threadId);
   return {
     ...payload,
     priorTodos: thread?.todos ?? payload.priorTodos ?? [],
@@ -23788,8 +23791,9 @@ function refreshPayload(store2, threadId, payload) {
   };
 }
 function dispatchAgentRun(store2, api2, threadId, payload) {
-  const projectId = store2.getState().activeProjectId;
-  if (!projectId) throw new Error("Cannot run thread without an active project");
+  const { activeProjectId, backgroundThreads } = store2.getState();
+  const projectId = backgroundThreads.find((entry) => entry.thread.id === threadId)?.projectId ?? activeProjectId;
+  if (!projectId) throw new Error("Cannot run thread without an owning project");
   clearContextSnapshot(store2, threadId);
   setThreadStatus(store2, threadId, "running");
   syncAgentActivity(store2, threadId, false);
@@ -23797,14 +23801,11 @@ function dispatchAgentRun(store2, api2, threadId, payload) {
   void api2.agent.run(projectId, threadId, JSON.stringify(refreshPayload(store2, threadId, payload)));
 }
 function enqueueUserMessage(store2, threadId, item) {
-  const threads = store2.getState().threads.map(
-    (t2) => t2.id !== threadId ? t2 : {
-      ...t2,
-      pendingMessages: [...t2.pendingMessages ?? [], item],
-      updatedAt: Date.now()
-    }
-  );
-  store2.setState({ threads });
+  patchThreadAnywhere(store2, threadId, (t2) => ({
+    ...t2,
+    pendingMessages: [...t2.pendingMessages ?? [], item],
+    updatedAt: Date.now()
+  }));
   store2.emit("message_queued", threadId, item.messageId);
   store2.emit("threads_changed");
 }
@@ -91370,7 +91371,8 @@ function mountInputBar(root, store2, api2, opts = {}) {
   let descriptionPicker = null;
   const checkoutChoices = /* @__PURE__ */ new Map();
   const dirtyWarningAcknowledged = /* @__PURE__ */ new Set();
-  let checkoutPreparationInProgress = false;
+  const checkoutPreparations = /* @__PURE__ */ new Set();
+  const checkoutErrors = /* @__PURE__ */ new Map();
   let automaticCheckoutMode = "shared";
   let automaticCheckoutPreviewSeq = 0;
   function shortModelLabel(option) {
@@ -91582,6 +91584,10 @@ ${description}
   }
   function updateCheckoutControl() {
     const thread = getActiveThread(store2);
+    const error62 = thread ? checkoutErrors.get(thread.id) : void 0;
+    checkoutErrorText.textContent = error62 ?? "";
+    checkoutError.hidden = error62 === void 0;
+    const checkoutPreparationInProgress = thread ? checkoutPreparations.has(thread.id) : false;
     if (!thread) {
       checkoutHost.hidden = true;
       checkoutMenu.hidden = true;
@@ -91599,6 +91605,8 @@ ${description}
     checkoutBtn.textContent = checkoutPreparationInProgress ? "Preparing checkout\u2026" : checkoutLabel(checkoutChoice(thread.id));
   }
   function hideCheckoutError() {
+    const id = getActiveThreadId();
+    if (id) checkoutErrors.delete(id);
     checkoutError.hidden = true;
     checkoutErrorText.textContent = "";
   }
@@ -91698,6 +91706,17 @@ ${description}
       threadDraftValue: threads.length > 0 ? composer.draftValue() : null
     };
   }
+  function draftFingerprint(text2, attachments) {
+    return JSON.stringify([
+      text2,
+      attachments.files,
+      attachments.images.map((image) => [image.dataUrl, image.mimeType, image.detail ?? "auto"]),
+      attachments.videos,
+      attachments.archives,
+      attachments.threads,
+      attachments.shells
+    ]);
+  }
   function stashDraftAttachments(threadId) {
     const snapshot = snapshotDraftAttachments();
     const empty = snapshot.files.length === 0 && snapshot.images.length === 0 && snapshot.videos.length === 0 && snapshot.archives.length === 0 && snapshot.threads.length === 0 && snapshot.shells.length === 0;
@@ -91765,8 +91784,8 @@ ${description}
     composer.value = thread?.draftPrompt ?? "";
     activeComposerThreadId = id;
     if (id) restoreDraftAttachments(id);
-    hideCheckoutError();
     hideDirtyWarning();
+    updateCheckoutControl();
     lastBreakdown = null;
     breakdownModel = null;
     scheduleContextEstimate(0);
@@ -91807,6 +91826,8 @@ ${description}
   }
   function updateState() {
     const running = isRunning();
+    const id = getActiveThreadId();
+    submitBtn.disabled = imageDescriptionInProgress || id !== null && isThreadSubmitting(store2, id);
     stopBtn.hidden = !running;
     updateTargetPicker();
     submitBtn.textContent = running ? "Queue" : "Send";
@@ -92021,7 +92042,7 @@ ${description}
     void submit();
   });
   checkoutBtn.addEventListener("click", () => {
-    if (checkoutPreparationInProgress) return;
+    if (checkoutPreparations.has(getActiveThreadId() ?? "")) return;
     checkoutMenu.hidden = !checkoutMenu.hidden;
     checkoutBtn.setAttribute("aria-expanded", String(!checkoutMenu.hidden));
   });
@@ -92127,44 +92148,71 @@ ${description}
     e3.preventDefault();
     void submit();
   });
-  let submitInProgress = false;
   async function submit() {
-    if (submitInProgress || imageDescriptionInProgress) return;
-    submitInProgress = true;
+    const id = getActiveThreadId();
+    if (!id || imageDescriptionInProgress || !beginThreadSubmission(store2, id)) return;
+    updateState();
     try {
-      await performSubmit();
+      await performSubmit(id);
+    } catch (error62) {
+      console.error("Could not send prompt", { threadId: id, error: error62 });
+      checkoutErrors.set(id, error62 instanceof Error ? error62.message : "Could not send message");
     } finally {
-      submitInProgress = false;
+      endThreadSubmission(store2, id);
+      updateState();
+      updateCheckoutControl();
     }
   }
-  async function performSubmit() {
+  async function performSubmit(id) {
     mark("ttft:composer-submit");
     followUps.clearSuggestions();
     nextStepHint.clear();
     updateComposerPlaceholder();
     const visibleText2 = composer.value.trim();
-    const rawText = composer.expandedValue().trim();
-    if (!rawText && attachedFiles.length === 0 && attachedImages.length === 0 && attachedVideos.length === 0 && attachedArchives.length === 0 && attachedThreads.length === 0 && attachedShells.length === 0)
+    const draftText = composer.expandedValue();
+    const rawText = draftText.trim();
+    const draftAttachments = snapshotDraftAttachments();
+    const draftKey = draftFingerprint(draftText, draftAttachments);
+    const {
+      files: attachedFiles2,
+      images: attachedImages2,
+      videos: attachedVideos2,
+      archives: attachedArchives2,
+      threads: attachedThreads2,
+      shells: attachedShells2
+    } = draftAttachments;
+    const inlineChips = composer.getInlineChips().map(
+      (chip2) => chip2.kind === "paste" ? { kind: "paste", block: { ...chip2.block } } : { kind: "thread", thread: { ...chip2.thread } }
+    );
+    const shellBlocks = currentShellBlocks();
+    const textAttachments = {
+      threadRefs: currentThreadRefs(),
+      videoRefs: currentVideoRefs(),
+      archiveRefs: currentArchiveRefs()
+    };
+    if (!rawText && attachedFiles2.length === 0 && attachedImages2.length === 0 && attachedVideos2.length === 0 && attachedArchives2.length === 0 && attachedThreads2.length === 0 && attachedShells2.length === 0)
       return;
-    const id = getActiveThreadId();
-    if (!id) return;
     const projectId = store2.getState().activeProjectId;
-    if (!projectId) return;
+    const thread = getThreadById(store2, id);
+    if (!projectId || !thread) return;
+    const choice = checkoutChoice(id);
+    const model = thread.model ?? store2.getState().settings?.model;
+    const baseBranch = branchControl.pendingBaseBranch(id);
     if (!targetSelect.hidden && targetSelect.value === "container") {
       if (!rawText) return;
       const started = await containerRun.followUp(rawText);
       if (started) updateState();
       return;
     }
-    if (attachedImages.length > 0) {
+    const invocationSources = Promise.allSettled([api2.skills.list(), api2.agents.list()]);
+    if (attachedImages2.length > 0) {
       const incompatibility = await incompatibleImageModel();
       if (incompatibility) {
-        await refreshImageCompatibilityWarning();
+        if (getActiveThreadId() === id) await refreshImageCompatibilityWarning();
         return;
       }
     }
-    const thread = getThreadById(store2, id);
-    const requiresCheckoutPreparation = thread !== void 0 && thread.messages.length === 0 && !thread.worktreeChoice;
+    const requiresCheckoutPreparation = thread.messages.length === 0 && !thread.worktreeChoice;
     const prefetchedGitState = requiresCheckoutPreparation ? null : await Promise.allSettled([
       api2.git.currentBranch(projectId, id),
       api2.git.promptState(projectId, id)
@@ -92174,32 +92222,44 @@ ${description}
     const currentBranch = requiresCheckoutPreparation && !thread.gitBranch ? null : branchResult?.status === "fulfilled" ? branchResult.value : await api2.git.currentBranch(projectId, id);
     const prefetchedPromptState = prefetchedGitState?.[1];
     let preparedPromptState;
-    const threadBranch = thread?.gitBranch;
-    const isolatedWorktree = thread !== void 0 && thread.worktree !== void 0;
+    const threadBranch = thread.gitBranch;
+    const isolatedWorktree = thread.worktree !== void 0;
     if (threadBranch && threadGitBranchMismatch(threadBranch, currentBranch, { isolatedWorktree })) {
-      showBranchMismatch(threadBranch);
+      if (getActiveThreadId() === id) showBranchMismatch(threadBranch);
       return;
     }
-    hideBranchMismatch();
-    const isBlankSharedCandidate = thread !== void 0 && thread.messages.length === 0 && !thread.worktreeChoice;
+    if (getActiveThreadId() === id) hideBranchMismatch();
+    const isBlankSharedCandidate = thread.messages.length === 0 && !thread.worktreeChoice;
     if (isBlankSharedCandidate && !dirtyWarningAcknowledged.has(id)) {
-      const choice = checkoutChoice(id);
-      const effectiveCheckoutMode = choice === "worktree" ? "worktree" : choice === "shared" ? "shared" : automaticCheckoutMode;
+      const choice2 = checkoutChoice(id);
+      const effectiveCheckoutMode = choice2 === "worktree" ? "worktree" : choice2 === "shared" ? "shared" : automaticCheckoutMode;
       if (effectiveCheckoutMode === "shared") {
         const state = await api2.git.promptState(projectId, id);
-        if (getActiveThreadId() !== id || activeComposerThreadId !== id || store2.getState().activeProjectId !== projectId)
-          return;
         if (state.dirty) {
+          if (getActiveThreadId() !== id || activeComposerThreadId !== id || store2.getState().activeProjectId !== projectId)
+            return;
           showDirtyWarning(id);
           return;
         }
       }
     }
     hideDirtyWarning();
-    const [skills, agentsResult] = await Promise.all([api2.skills.list(), api2.agents.list()]);
-    skillsCache = skills;
-    agentsCache = agentsResult.agents;
-    const invocation = resolveInvocation(rawText, currentInvocables());
+    const [skillsResult, agentsResult] = await invocationSources;
+    if (skillsResult.status === "rejected") throw skillsResult.reason;
+    if (agentsResult.status === "rejected") throw agentsResult.reason;
+    const skills = skillsResult.value;
+    const agents = agentsResult.value.agents;
+    if (store2.getState().activeProjectId === projectId) {
+      skillsCache = skills;
+      agentsCache = agents;
+    }
+    const invocation = resolveInvocation(
+      rawText,
+      mergeInvocables(
+        skills.map((skill) => skill.name),
+        agents.map((agent) => agent.name)
+      )
+    );
     const invokedSkills = invocation?.kind === "skill" ? [invocation.name] : [];
     const invokedAgent = invocation?.kind === "agent" ? invocation.name : void 0;
     const invokedSkill = invocation?.kind === "skill" ? skills.find((skill) => skill.name === invocation.name) : void 0;
@@ -92224,12 +92284,12 @@ ${description}
     ) : invocation ? buildSkillUserText(
       invocation.name,
       invocation.remainder,
-      attachedFiles.length > 0 || attachedImages.length > 0 || attachedVideos.length > 0 || attachedArchives.length > 0
+      attachedFiles2.length > 0 || attachedImages2.length > 0 || attachedVideos2.length > 0 || attachedArchives2.length > 0
     ) : rawText;
     let fullContent;
-    if (attachedImages.length > 0) {
+    if (attachedImages2.length > 0) {
       fullContent = [
-        ...attachedImages.map((img) => ({
+        ...attachedImages2.map((img) => ({
           type: "image",
           dataUrl: img.dataUrl,
           // Omitted at 'auto' so an untouched attachment sends the same content
@@ -92238,55 +92298,45 @@ ${description}
         })),
         {
           type: "text",
-          text: buildTextWithAttachments(text2, attachedFiles, currentShellBlocks(), {
-            threadRefs: currentThreadRefs(),
-            videoRefs: currentVideoRefs(),
-            archiveRefs: currentArchiveRefs()
-          })
+          text: buildTextWithAttachments(text2, attachedFiles2, shellBlocks, textAttachments)
         }
       ];
     } else {
-      fullContent = buildTextWithAttachments(text2, attachedFiles, currentShellBlocks(), {
-        threadRefs: currentThreadRefs(),
-        videoRefs: currentVideoRefs(),
-        archiveRefs: currentArchiveRefs()
-      });
+      fullContent = buildTextWithAttachments(text2, attachedFiles2, shellBlocks, textAttachments);
     }
     if (requiresCheckoutPreparation) {
-      const projectId2 = store2.getState().activeProjectId;
-      if (!projectId2) return;
-      hideCheckoutError();
-      checkoutPreparationInProgress = true;
+      checkoutErrors.delete(id);
+      checkoutPreparations.add(id);
       updateCheckoutControl();
       try {
         const prepared = await api2.agent.prepareCheckout(
-          projectId2,
+          projectId,
           id,
           rawText,
-          checkoutChoice(id),
-          thread.model ?? store2.getState().settings?.model,
+          choice,
+          model,
           // The footer picker only names a branch; this is where that selection
           // becomes the worktree's base, or the shared checkout's branch.
-          branchControl.pendingBaseBranch(id)
+          baseBranch
         );
+        if (!getThreadById(store2, id)) return;
         preparedPromptState = prepared.promptState;
         applyPreparedThreadCheckout(store2, id, prepared);
-        if (getActiveThreadId() !== id) return;
       } catch (error62) {
         await api2.agent.resetDefaultBranchCache().catch(() => void 0);
-        checkoutErrorText.textContent = checkoutErrorMessage(error62);
-        checkoutError.hidden = false;
+        checkoutErrors.set(id, checkoutErrorMessage(error62));
         return;
       } finally {
-        checkoutPreparationInProgress = false;
+        checkoutPreparations.delete(id);
         updateCheckoutControl();
       }
     }
     if (prefetchedPromptState?.status === "rejected") throw prefetchedPromptState.reason;
     const promptState = preparedPromptState ?? (prefetchedPromptState?.status === "fulfilled" ? prefetchedPromptState.value : await api2.git.promptState(projectId, id));
-    const priorTodos = thread?.todos ?? [];
-    const workingBrief = nextWorkingBrief(thread?.workingBrief, fullContent);
-    if (workingBrief && workingBrief !== thread?.workingBrief) {
+    if (!getThreadById(store2, id)) return;
+    const priorTodos = thread.todos ?? [];
+    const workingBrief = nextWorkingBrief(thread.workingBrief, fullContent);
+    if (workingBrief && workingBrief !== thread.workingBrief) {
       setThreadWorkingBrief(store2, id, workingBrief);
     }
     const payload = {
@@ -92296,7 +92346,6 @@ ${description}
       priorTodos,
       ...workingBrief !== void 0 ? { workingBrief } : {}
     };
-    const inlineChips = composer.getInlineChips();
     const inlineThreadIds = new Set(
       inlineChips.flatMap((chip2) => chip2.kind === "thread" ? [chip2.thread.threadId] : [])
     );
@@ -92307,36 +92356,36 @@ ${description}
         }
         return [{ kind: "thread", label: chip2.thread.label }];
       }),
-      ...attachedFiles.map((file2) => ({
+      ...attachedFiles2.map((file2) => ({
         kind: "file",
         label: file2.path.split("/").pop() ?? file2.path,
         content: file2.content
       })),
       // Defensive fallback: a thread reference should always have an inline chip,
       // but retaining an unmatched attachment preserves its agent context.
-      ...attachedThreads.filter((thread2) => !inlineThreadIds.has(thread2.threadId)).map((thread2) => ({
+      ...attachedThreads2.filter((thread2) => !inlineThreadIds.has(thread2.threadId)).map((thread2) => ({
         kind: "thread",
         label: thread2.title || "Untitled thread"
       })),
-      ...attachedShells.map((s16) => ({
+      ...attachedShells2.map((s16) => ({
         kind: "shell",
         label: s16.label,
         content: s16.content
       })),
-      ...attachedVideos.map((v3) => ({
+      ...attachedVideos2.map((v3) => ({
         kind: "video",
         label: v3.name,
         // Carried so the sent chip can still play the recording after a reload,
         // when the composer's own state is long gone.
         path: v3.path
       })),
-      ...attachedArchives.map((a3) => ({
+      ...attachedArchives2.map((a3) => ({
         kind: "archive",
         label: a3.name,
         path: a3.path
       }))
     ];
-    const imageUrls = attachedImages.map((img) => img.dataUrl);
+    const imageUrls = attachedImages2.map((img) => img.dataUrl);
     const messageId = addMessage(
       store2,
       id,
@@ -92350,9 +92399,9 @@ ${description}
       }
     );
     if (currentBranch) bindThreadGitBranchIfUnset(store2, id, currentBranch);
-    recordThreadVideos(store2, id, attachedVideos);
-    recordThreadArchives(store2, id, attachedArchives);
-    if (isRunning()) {
+    recordThreadVideos(store2, id, attachedVideos2);
+    recordThreadArchives(store2, id, attachedArchives2);
+    if (getThreadById(store2, id)?.status === "running") {
       enqueueUserMessage(store2, id, {
         messageId,
         payload,
@@ -92362,11 +92411,18 @@ ${description}
       startHumanTurnTree(store2, id);
       dispatchAgentRun(store2, api2, id, payload);
     }
-    composer.clear();
-    setThreadDraftPrompt(store2, id, "");
-    draftAttachmentsByThread.delete(id);
-    clearAttachments();
-    scheduleContextEstimate(0);
+    const visible = activeComposerThreadId === id;
+    const currentDraft = visible ? composer.expandedValue() : getThreadById(store2, id)?.draftPrompt ?? "";
+    const currentAttachments = visible ? snapshotDraftAttachments() : draftAttachmentsByThread.get(id) ?? emptyDraftAttachments();
+    if (draftFingerprint(currentDraft, currentAttachments) === draftKey) {
+      if (visible) {
+        composer.clear();
+        clearAttachments();
+        scheduleContextEstimate(0);
+      }
+      draftAttachmentsByThread.delete(id);
+      setThreadDraftPrompt(store2, id, "");
+    }
   }
   function addChip(file2) {
     attachedFiles.push(file2);
@@ -92848,6 +92904,7 @@ var init_input_bar = __esm({
     init_text_expand();
     init_video_expand();
     init_wire_types2();
+    init_pending_submissions();
     init_thread_helpers();
     init_message_queue();
     init_working_brief();
