@@ -14,6 +14,7 @@ import type { ReviewFindingRecord, Thread, ThreadReviewReport } from '@shared/ty
 import type { ApiClient } from '../../preload/api.d.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { takeQuietRun } from './quiet-runs.ts'
+import { getReviewReportTarget } from './review-report-target.ts'
 
 function thread(id: string, overrides: Partial<Thread> = {}): Thread {
   return {
@@ -193,6 +194,7 @@ test('a rejected startup restores idle state and permits retry', async () => {
   assert.equal(threadState(store).reviewReport?.status, 'error')
   assert.equal(threadState(store).reviewReport?.error, 'Model resolution failed')
   assert.equal(takeQuietRun('t1'), false)
+  assert.equal(getReviewReportTarget(store, 't1'), undefined)
   startReview(store, api, 't1')
   await new Promise((resolve) => setTimeout(resolve, 0))
   assert.equal(calls.runs.length, 2)
@@ -235,4 +237,51 @@ test('restoring a finding shows it again and drops the persisted note', () => {
   restoreReviewFinding(store, api, 't1', finding.id)
   assert.equal(threadState(store).reviewReport?.findings[0]?.dismissed, false)
   assert.deepEqual(calls.restored, [finding.id])
+})
+
+test('finding dismissal and restoration update the report on its message', () => {
+  const { store, api, calls } = setup('project-1', {
+    messages: [
+      {
+        id: 'm1',
+        role: 'assistant',
+        content: 'Reviewed turn',
+        toolCalls: [],
+        createdAt: 1,
+        reviewReport: report(),
+      },
+    ],
+  })
+
+  dismissReviewFinding(store, api, 't1', finding, 'm1')
+  assert.equal(threadState(store).messages[0]?.reviewReport?.findings[0]?.dismissed, true)
+  assert.equal(threadState(store).reviewReport, undefined)
+
+  restoreReviewFinding(store, api, 't1', finding.id, 'm1')
+  assert.equal(threadState(store).messages[0]?.reviewReport?.findings[0]?.dismissed, false)
+  assert.deepEqual(calls.restored, [finding.id])
+})
+
+test('a failed message finding dismissal is reverted on that message', async () => {
+  const { store, api } = setup(
+    'project-1',
+    {
+      messages: [
+        {
+          id: 'm1',
+          role: 'assistant',
+          content: 'Reviewed turn',
+          toolCalls: [],
+          createdAt: 1,
+          reviewReport: report(),
+        },
+      ],
+    },
+    { dismissFails: true },
+  )
+
+  dismissReviewFinding(store, api, 't1', finding, 'm1')
+  assert.equal(threadState(store).messages[0]?.reviewReport?.findings[0]?.dismissed, true)
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(threadState(store).messages[0]?.reviewReport?.findings[0]?.dismissed, false)
 })

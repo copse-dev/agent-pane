@@ -9,6 +9,7 @@ import { getThreadById, setMessageReviewReport } from '@shared/store/thread-help
 import type { Message, Thread, StreamChunk, ThreadReviewReport } from '@shared/types'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { markQuietRun } from './quiet-runs.ts'
+import { getReviewReportTarget, setReviewReportTarget } from './review-report-target.ts'
 import { sessionUpdateToStreamChunks } from '../../main/services/acp/session-update-adapter.ts'
 
 function at<T>(arr: readonly T[], i: number): T {
@@ -1011,6 +1012,7 @@ test('review report chunks stay on the assistant message of each turn', () => {
     status: 'running',
     startedAt: 3,
   })
+  setReviewReportTarget(store, 't1', assistants[0].id)
   send({ type: 'review_report', report: { ...report, startedAt: 3 } })
   const retried = requireThread(store, 't1').messages
   assert.equal(
@@ -1021,4 +1023,52 @@ test('review report chunks stay on the assistant message of each turn', () => {
     retried.find((message) => message.id === assistants[1]?.id)?.reviewReport?.startedAt,
     2,
   )
+})
+
+test('a standalone review uses its registered message instead of a stale running card', () => {
+  const stale = thread('t1', [
+    {
+      id: 'old',
+      role: 'assistant',
+      content: 'Old turn',
+      toolCalls: [],
+      createdAt: 1,
+      reviewReport: {
+        status: 'running',
+        startedAt: 1,
+        models: { reviewer: 'gpt-5', challenger: null },
+        lenses: [],
+        baseRef: '',
+        headCommit: null,
+        dirtyWorkingTree: false,
+        execution: { backend: '', strength: 'none', executed: false, reason: '' },
+        checks: [],
+        notChecked: [],
+        findings: [],
+        appendix: 0,
+        refuted: 0,
+        reviewers: [],
+        verification: null,
+        durationMs: 0,
+      },
+    },
+    {
+      id: 'target',
+      role: 'assistant',
+      content: 'Review this turn',
+      toolCalls: [],
+      createdAt: 2,
+    },
+  ])
+  const { send, store } = setup([stale])
+  const staleReport = stale.messages[0]?.reviewReport
+  assert.ok(staleReport)
+  const completed: ThreadReviewReport = { ...staleReport, status: 'done', startedAt: 2 }
+  setReviewReportTarget(store, 't1', 'target')
+  send({ type: 'review_report', report: completed })
+
+  const current = requireThread(store, 't1')
+  assert.equal(current.messages[0]?.reviewReport?.status, 'running')
+  assert.equal(current.messages[1]?.reviewReport?.startedAt, 2)
+  assert.equal(getReviewReportTarget(store, 't1'), undefined)
 })
