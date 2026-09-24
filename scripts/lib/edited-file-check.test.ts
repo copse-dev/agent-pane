@@ -140,7 +140,8 @@ describe('renderReport', () => {
   it('states that the check is a subset, so it is never read as a full green', () => {
     const out = report('src/a.ts', findings, [])
     assert.match(out, /fast subset/)
-    assert.match(out, /npm run check/)
+    assert.match(out, /npm run check:local.*minimum gate/)
+    assert.match(out, /npm run check.*complete suite/)
   })
 
   it('names the covering test only when there is one', () => {
