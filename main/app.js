@@ -105262,9 +105262,25 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
   let otherLoading = false;
   const checksCache = /* @__PURE__ */ new Map();
   const checksInFlight = /* @__PURE__ */ new Set();
+  const titlesCache = /* @__PURE__ */ new Map();
+  const titleInFlight = /* @__PURE__ */ new Set();
+  const titleAttempted = /* @__PURE__ */ new Set();
   let ciEls = /* @__PURE__ */ new Map();
   let ciGen = 0;
   let refreshInFlight = false;
+  let disposed = false;
+  let titleGen = 0;
+  let titleRepaintQueued = false;
+  let titleRepaintTimer = null;
+  function scheduleTitleRepaint() {
+    if (titleRepaintQueued || disposed) return;
+    titleRepaintQueued = true;
+    titleRepaintTimer = setTimeout(() => {
+      titleRepaintTimer = null;
+      titleRepaintQueued = false;
+      if (!disposed) renderList();
+    }, 0);
+  }
   const CI_LABEL = {
     loading: "Checking CI\u2026",
     pending: "CI running",
@@ -105369,6 +105385,38 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     if (!state) ensureCheck(pr2);
     return row2;
   }
+  function ensureTitles(prs) {
+    if (!ghStatus?.authenticated) return;
+    for (const pr2 of prs) {
+      const key = githubPrKey(pr2);
+      const cached2 = titlesCache.get(key);
+      if (cached2) {
+        if (pr2.title !== cached2) pr2.title = cached2;
+        continue;
+      }
+      if (!isPlaceholderPr(pr2)) {
+        if (pr2.title && pr2.title !== placeholderPrTitle(pr2.number)) {
+          titlesCache.set(key, pr2.title);
+        }
+        continue;
+      }
+      if (titleAttempted.has(key) || titleInFlight.has(key)) continue;
+      titleAttempted.add(key);
+      titleInFlight.add(key);
+      const gen = titleGen;
+      void api2.gh.prDetails(pr2.owner, pr2.repo, pr2.number).then((details) => {
+        if (disposed || gen !== titleGen) return;
+        const title = details?.title.trim();
+        if (!title || title === placeholderPrTitle(pr2.number)) return;
+        titlesCache.set(key, title);
+        pr2.title = title;
+        scheduleTitleRepaint();
+      }).catch(() => {
+      }).finally(() => {
+        titleInFlight.delete(key);
+      });
+    }
+  }
   function renderList() {
     clear(listBody);
     ciEls = /* @__PURE__ */ new Map();
@@ -105405,6 +105453,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     const repoPrs = query ? repoPrsAll.filter((pr2) => prMatchesFilter(pr2, query)) : repoPrsAll;
     const otherPrs = query ? otherPrsAll.filter((pr2) => prMatchesFilter(pr2, query)) : otherPrsAll;
     if (linkedPrs.length > 0) {
+      ensureTitles(linkedPrs);
       const section = el("div", { class: "git-changes-section" });
       section.append(
         el(
@@ -105891,6 +105940,15 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       const details = await api2.gh.prDetails(ref.owner, ref.repo, ref.number);
       if (requestId !== detailsRequestId) return;
       prDetails = details;
+      if (details?.title && details.title !== placeholderPrTitle(details.number)) {
+        const key = githubPrKey(details);
+        titlesCache.set(key, details.title);
+        const row2 = prList.find((pr2) => githubPrKey(pr2) === key);
+        if (row2 && row2.title !== details.title) {
+          row2.title = details.title;
+          scheduleTitleRepaint();
+        }
+      }
     } catch (err2) {
       if (requestId !== detailsRequestId) return;
       emptyState.hidden = false;
@@ -105936,6 +105994,9 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       ciGen++;
       checksCache.clear();
       checksInFlight.clear();
+      titleAttempted.clear();
+      titleInFlight.clear();
+      titleGen++;
     } else if (reason === "poll") {
       for (const [key, state] of checksCache) {
         if (state === "pending") checksCache.delete(key);
@@ -106049,6 +106110,8 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       prList = [];
       agentLinks = /* @__PURE__ */ new Map();
       agentLinksGen++;
+      titleGen++;
+      titleInFlight.clear();
       resetOther();
       filterQuery = "";
       filterInput.value = "";
@@ -106098,6 +106161,13 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     }
   });
   return () => {
+    disposed = true;
+    titleGen++;
+    if (titleRepaintTimer != null) {
+      clearTimeout(titleRepaintTimer);
+      titleRepaintTimer = null;
+    }
+    titleRepaintQueued = false;
     void api2.gh.setListWatch(false, false);
     unregisterPopoutSeed();
     detailsRequestId++;
