@@ -1,4 +1,5 @@
 import type { ApiClient } from '../../preload/api.d.ts'
+import { attachImageCopyMenu } from '../attachments/image-expand.ts'
 
 const CURSOR_AGENT_URL_RE = /cursor\.com\/agents\/(bc-[\w-]+)/
 
@@ -37,6 +38,7 @@ export function hydrateRemoteArtifactImages(
       .artifactImageDataUrl(agentId, path)
       .then((dataUrl) => {
         img.src = dataUrl
+        attachImageCopyMenu(img)
         img.dataset['remoteArtifactState'] = 'loaded'
       })
       .catch((err: unknown) => {
