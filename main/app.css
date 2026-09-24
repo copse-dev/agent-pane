@@ -13516,6 +13516,9 @@ dialog.settings-overlay::backdrop {
   display: flex;
   flex-direction: column;
 }
+.roadmap-category-items .roadmap-row {
+  padding-left: calc(10px + var(--spacing-md));
+}
 .roadmap-action-buttons {
   display: flex;
   gap: var(--spacing-xs);

@@ -108449,6 +108449,7 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
     return enabledCategories.has(itemCategory(item)) && enabledComplexities.has(itemComplexity(item)) && enabledStatuses.has(status) && matchesSearch(item);
   }
   function renderList() {
+    const previousScrollTop = listBody.scrollTop;
     clear(listBody);
     const visible = items.filter(isListVisible);
     if (visible.length === 0) {
@@ -108667,6 +108668,7 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
       group.append(groupItems);
       listBody.append(group);
     }
+    listBody.scrollTop = previousScrollTop;
     const selectedRow = listBody.querySelector(".is-selected");
     if (selectedRow) {
       const rowRect = selectedRow.getBoundingClientRect();
