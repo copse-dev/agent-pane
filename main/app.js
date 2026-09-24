@@ -109054,11 +109054,12 @@ Notes: ${notes}` : prompt;
       reviewStatus.textContent = `Nothing left to ${label}.`;
       return;
     }
-    if (!confirm(
-      `${status === "done" ? "Mark" : "Archive"} ${String(targets.length)} item(s) judged resolved or likely?`
-    )) {
-      return;
-    }
+    const confirmed = await showConfirmDialog({
+      message: `${status === "done" ? "Mark" : "Archive"} ${String(targets.length)} item(s) judged resolved or likely?`,
+      detail: status === "done" ? "Marks each one done; you can reopen any of them later." : "Archives each one; you can restore any of them later.",
+      confirmLabel: status === "done" ? "Mark done" : "Archive"
+    });
+    if (!confirmed) return;
     reviewMarkResolvedBtn.disabled = true;
     reviewArchiveResolvedBtn.disabled = true;
     let applied = 0;
