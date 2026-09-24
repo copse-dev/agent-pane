@@ -305,6 +305,8 @@ import { importIssuesAsRoadmapItems } from '../services/roadmap-issue-import.ts'
 import { matchOpenIssuesToRoadmapItems } from '../services/roadmap-issue-coverage.ts'
 import { stampRoadmapComplexity } from '../services/roadmap-complexity.ts'
 import { stampRoadmapCategory } from '../services/roadmap-category.ts'
+import { stampRoadmapTitle } from '../services/roadmap-title.ts'
+import { notifyRoadmapChanged } from '../services/roadmap-events.ts'
 import { checkRoadmapFit } from '../services/roadmap-fit-check.ts'
 import { buildRoadmapExport } from '../services/roadmap-export.ts'
 import { ROADMAP_EXPORT_FORMATS } from '@shared/roadmap/export.ts'
@@ -971,16 +973,6 @@ export function registerAllHandlers(
     }
   }
 
-  // Complexity stamps land after the save returns (stampRoadmapComplexity), so
-  // tell the panes when one arrives rather than making them poll. Broadcast to
-  // every window: the roadmap pane may live in a detached pop-out with its own
-  // renderer, not just the main window.
-  const notifyRoadmapChanged = (): void => {
-    for (const w of BrowserWindow.getAllWindows()) {
-      if (!w.isDestroyed()) w.webContents.send('roadmap:changed')
-    }
-  }
-
   // Empty string unpins; anything else must canonicalize or the save is
   // rejected, so a typo never silently stores an unlinkable ref.
   function parseRoadmapIssue(raw: unknown): string {
@@ -1016,11 +1008,12 @@ export function registerAllHandlers(
         status: 'ready',
         fields: roadmapFields({}, notes, issue),
       })
-      // Saving is immediate; the complexity and category classification (model
-      // round-trips) stamp the note in the background and the pane refreshes on
-      // the events.
+      // Saving is immediate; the complexity/category classification and the
+      // AI-generated short title (issue #2472) — all model round-trips — stamp
+      // the note in the background and the pane refreshes on the events.
       void stampRoadmapComplexity(note.id, prompt, notifyRoadmapChanged)
       void stampRoadmapCategory(note.id, prompt, notifyRoadmapChanged)
+      void stampRoadmapTitle(note.id, prompt, note.title, notifyRoadmapChanged)
       if (attachments.length === 0) return note
       // Attachment files are keyed by the note id, so they land in a second
       // step once addKnowledgeNote has minted it. If that metadata write fails
@@ -1121,6 +1114,10 @@ export function registerAllHandlers(
       if (updated && promptChanged) {
         void stampRoadmapComplexity(id, prompt, notifyRoadmapChanged)
         void stampRoadmapCategory(id, prompt, notifyRoadmapChanged)
+        // The title just written above is the fresh truncation for the new
+        // prompt; an AI-generated name (issue #2472) replaces it in the
+        // background, same as on create.
+        void stampRoadmapTitle(id, prompt, updated.title, notifyRoadmapChanged)
       }
       return updated
     },
