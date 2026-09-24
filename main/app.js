@@ -72422,7 +72422,10 @@ function createReviewCardEl(review, api2, onRetry) {
   appendReviewHeader(panel, review, onRetry);
   if (review.status === "running") return panel;
   const body = el("div", { class: "review-panel-body message-text streaming-markdown" });
-  body.innerHTML = renderMarkdown(review.summary || "(no review output)");
+  const bodyMarkdown = review.followUpNote ? `${review.summary || "(no review output)"}
+
+*${review.followUpNote}*` : review.summary || "(no review output)";
+  body.innerHTML = renderMarkdown(bodyMarkdown);
   void annotateFileReferences(body, api2);
   panel.append(body);
   return panel;
@@ -130238,7 +130241,8 @@ function startAgentController(store2, api2) {
           setMessageReview(store2, threadId, anchorId, {
             status: chunk.status,
             summary: chunk.summary,
-            ...chunk.issuesFound !== void 0 ? { issuesFound: chunk.issuesFound } : {}
+            ...chunk.issuesFound !== void 0 ? { issuesFound: chunk.issuesFound } : {},
+            ...chunk.followUpNote !== void 0 ? { followUpNote: chunk.followUpNote } : {}
           });
         }
         if (chunk.status === "running") emitActivity(threadId, "Reviewing changes\u2026");
