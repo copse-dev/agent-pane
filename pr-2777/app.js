@@ -21735,6 +21735,30 @@ var init_model_usage = __esm({
   }
 });
 
+// src/shared/store/pending-submissions.ts
+function beginThreadSubmission(store2, threadId) {
+  let pending = pendingByStore.get(store2);
+  if (!pending) {
+    pending = /* @__PURE__ */ new Set();
+    pendingByStore.set(store2, pending);
+  }
+  if (pending.has(threadId)) return false;
+  pending.add(threadId);
+  return true;
+}
+function endThreadSubmission(store2, threadId) {
+  pendingByStore.get(store2)?.delete(threadId);
+}
+function isThreadSubmitting(store2, threadId) {
+  return pendingByStore.get(store2)?.has(threadId) ?? false;
+}
+var pendingByStore;
+var init_pending_submissions = __esm({
+  "src/shared/store/pending-submissions.ts"() {
+    pendingByStore = /* @__PURE__ */ new WeakMap();
+  }
+});
+
 // packages/std/src/array-utils.ts
 function at(array2, index) {
   const value = array2[index];
@@ -21883,12 +21907,12 @@ function hasUnsubmittedPrompt(thread) {
 function isThreadArchived(thread) {
   return thread.archivedAt != null;
 }
-function isPrunableBlankThread(thread) {
-  return isBlankThread(thread) && !hasUnsubmittedPrompt(thread) && !isThreadArchived(thread);
+function isPrunableBlankThread(store2, thread) {
+  return isBlankThread(thread) && !hasUnsubmittedPrompt(thread) && !isThreadArchived(thread) && !isThreadSubmitting(store2, thread.id);
 }
 function pruneBlankThreads(store2, keepIds) {
   const { threads, activeThreadId } = store2.getState();
-  const remaining = threads.filter((t2) => !isPrunableBlankThread(t2) || keepIds.has(t2.id));
+  const remaining = threads.filter((t2) => !isPrunableBlankThread(store2, t2) || keepIds.has(t2.id));
   if (remaining.length === 0 || remaining.length === threads.length) return;
   const newActive = activeThreadId && remaining.some((t2) => t2.id === activeThreadId) ? activeThreadId : remaining[0]?.id ?? null;
   store2.setState({ threads: remaining, activeThreadId: newActive });
@@ -21896,7 +21920,9 @@ function pruneBlankThreads(store2, keepIds) {
 }
 function normalizeBlankThreads(store2) {
   const { threads, activeThreadId } = store2.getState();
-  const blanks = threads.filter((t2) => isBlankThread(t2) && !isThreadArchived(t2));
+  const blanks = threads.filter(
+    (t2) => isBlankThread(t2) && !isThreadArchived(t2) && !isThreadSubmitting(store2, t2.id)
+  );
   const emptyBlanks = blanks.filter((t2) => !hasUnsubmittedPrompt(t2));
   if (emptyBlanks.length <= 1) return;
   const keepEmptyId = emptyBlanks.find((t2) => t2.id === activeThreadId)?.id ?? at(
@@ -21942,9 +21968,7 @@ function createThread(store2, draftPrompt) {
 }
 function openNewThread(store2) {
   const { threads, activeThreadId } = store2.getState();
-  const existing = threads.find(
-    (t2) => isBlankThread(t2) && !hasUnsubmittedPrompt(t2) && !isThreadArchived(t2)
-  );
+  const existing = threads.find((t2) => isPrunableBlankThread(store2, t2));
   if (existing) {
     const defaultModel = store2.getState().settings?.model;
     const reseed = (list) => list.map((t2) => {
@@ -21980,7 +22004,7 @@ function switchThread(store2, id) {
   }
   store2.emit("composer_draft_flush");
   const state = store2.getState();
-  const pruned = state.threads.filter((t2) => !isPrunableBlankThread(t2) || t2.id === id);
+  const pruned = state.threads.filter((t2) => !isPrunableBlankThread(store2, t2) || t2.id === id);
   const threads = (pruned.length > 0 ? pruned : state.threads).map((thread) => {
     if (thread.id !== id || thread.unreadAt === void 0) return thread;
     const { unreadAt: _read, ...readThread } = thread;
@@ -22126,26 +22150,18 @@ function addMessage(store2, threadId, role, content = "", images, attachments, o
   return id;
 }
 function setThreadDraftPrompt(store2, threadId, draftPrompt) {
-  const trimmed2 = draftPrompt.trim();
-  const { threads } = store2.getState();
-  const thread = threads.find((t2) => t2.id === threadId);
+  const thread = getThreadById(store2, threadId);
   if (!thread) return;
-  if (trimmed2.length > 0) {
+  if (draftPrompt.trim()) {
     if (thread.draftPrompt === draftPrompt) return;
-    const updated2 = threads.map(
-      (t2) => t2.id !== threadId ? t2 : { ...t2, draftPrompt, updatedAt: Date.now() }
-    );
-    store2.setState({ threads: updated2 });
-    store2.emit("thread_draft_changed", threadId);
-    return;
+    patchThreadAnywhere(store2, threadId, (t2) => ({ ...t2, draftPrompt, updatedAt: Date.now() }));
+  } else {
+    if (thread.draftPrompt === void 0) return;
+    patchThreadAnywhere(store2, threadId, (t2) => {
+      const { draftPrompt: _removed, ...rest } = t2;
+      return { ...rest, updatedAt: Date.now() };
+    });
   }
-  if (thread.draftPrompt === void 0) return;
-  const updated = threads.map((t2) => {
-    if (t2.id !== threadId) return t2;
-    const { draftPrompt: _removed, ...rest } = t2;
-    return { ...rest, updatedAt: Date.now() };
-  });
-  store2.setState({ threads: updated });
   store2.emit("thread_draft_changed", threadId);
 }
 function messageLocations(store2) {
@@ -22419,19 +22435,11 @@ function setThreadTitle(store2, threadId, title, options) {
   store2.emit("threads_changed");
 }
 function setThreadWorkingBrief(store2, threadId, workingBrief) {
-  const { threads } = store2.getState();
-  const updated = threads.map(
-    (t2) => t2.id !== threadId ? t2 : { ...t2, workingBrief, updatedAt: Date.now() }
-  );
-  store2.setState({ threads: updated });
+  patchThreadAnywhere(store2, threadId, (t2) => ({ ...t2, workingBrief, updatedAt: Date.now() }));
   store2.emit("threads_changed");
 }
 function setThreadGitBranch(store2, threadId, branch) {
-  const { threads } = store2.getState();
-  const updated = threads.map(
-    (t2) => t2.id !== threadId ? t2 : { ...t2, gitBranch: branch, updatedAt: Date.now() }
-  );
-  store2.setState({ threads: updated });
+  patchThreadAnywhere(store2, threadId, (t2) => ({ ...t2, gitBranch: branch, updatedAt: Date.now() }));
   store2.emit("threads_changed");
 }
 function applyRenamedThreadWorktree(store2, threadId, worktree) {
@@ -22447,30 +22455,24 @@ function applyRenamedThreadWorktree(store2, threadId, worktree) {
 }
 function recordThreadVideos(store2, threadId, videos) {
   if (videos.length === 0) return;
-  const { threads } = store2.getState();
-  const updated = threads.map((t2) => {
-    if (t2.id !== threadId) return t2;
+  patchThreadAnywhere(store2, threadId, (t2) => {
     const existing = t2.videos ?? [];
     const known = new Set(existing.map((v3) => v3.path));
     const added = videos.filter((v3) => !known.has(v3.path));
     if (added.length === 0) return t2;
     return { ...t2, videos: [...existing, ...added], updatedAt: Date.now() };
   });
-  store2.setState({ threads: updated });
   store2.emit("threads_changed");
 }
 function recordThreadArchives(store2, threadId, archives) {
   if (archives.length === 0) return;
-  const { threads } = store2.getState();
-  const updated = threads.map((t2) => {
-    if (t2.id !== threadId) return t2;
+  patchThreadAnywhere(store2, threadId, (t2) => {
     const existing = t2.archives ?? [];
     const known = new Set(existing.map((a3) => a3.path));
     const added = archives.filter((a3) => !known.has(a3.path));
     if (added.length === 0) return t2;
     return { ...t2, archives: [...existing, ...added], updatedAt: Date.now() };
   });
-  store2.setState({ threads: updated });
   store2.emit("threads_changed");
 }
 function setThreadProposalDecision(store2, threadId, decision) {
@@ -22496,19 +22498,15 @@ function bindThreadGitBranchIfUnset(store2, threadId, branch) {
   setThreadGitBranch(store2, threadId, branch);
 }
 function applyPreparedThreadCheckout(store2, threadId, prepared) {
-  const { threads } = store2.getState();
-  const previousWorktreePath = threads.find((thread) => thread.id === threadId)?.worktree?.path;
-  const updated = threads.map((thread) => {
-    if (thread.id !== threadId) return thread;
-    return {
-      ...thread,
-      worktreeChoice: prepared.choice,
-      ...prepared.branch ? { gitBranch: prepared.branch } : {},
-      ...prepared.worktree ? { worktree: prepared.worktree } : {},
-      updatedAt: Date.now()
-    };
-  });
-  store2.setState({ threads: updated });
+  const previousWorktreePath = getThreadById(store2, threadId)?.worktree?.path;
+  const applied = patchThreadAnywhere(store2, threadId, (thread) => ({
+    ...thread,
+    worktreeChoice: prepared.choice,
+    ...prepared.branch ? { gitBranch: prepared.branch } : {},
+    ...prepared.worktree ? { worktree: prepared.worktree } : {},
+    updatedAt: Date.now()
+  }));
+  if (!applied) return;
   store2.emit("threads_changed");
   if (prepared.worktree && prepared.worktree.path !== previousWorktreePath) {
     store2.emit("thread_checkout_changed", threadId);
@@ -22520,6 +22518,7 @@ var init_thread_helpers = __esm({
   "src/shared/store/thread-helpers.ts"() {
     init_model_usage();
     init_service_tier();
+    init_pending_submissions();
     init_array_utils2();
     init_thread_proposal2();
     init_thread_sort();
@@ -22531,7 +22530,9 @@ var init_thread_helpers = __esm({
 
 // src/renderer/controller/background-threads.ts
 function carryRunningThreads(store2, outgoingProjectId, outgoingThreads) {
-  const running = outgoingThreads.filter((t2) => t2.status === "running");
+  const running = outgoingThreads.filter(
+    (t2) => t2.status === "running" || isThreadSubmitting(store2, t2.id)
+  );
   if (running.length === 0) return;
   const existing = store2.getState().backgroundThreads;
   const carriedIds = new Set(existing.map((b4) => b4.thread.id));
@@ -22577,6 +22578,7 @@ function dropProjectBackgroundThreads(store2, projectId) {
 }
 var init_background_threads = __esm({
   "src/renderer/controller/background-threads.ts"() {
+    init_pending_submissions();
   }
 });
 
@@ -23744,10 +23746,11 @@ function startAutomationTurnTree(store2, threadId) {
 }
 function startRootTurnTree(store2, threadId) {
   const epoch = newEpoch();
-  const threads = store2.getState().threads.map(
-    (t2) => t2.id !== threadId ? t2 : { ...t2, currentEpoch: epoch, continuationUsed: 0 }
-  );
-  store2.setState({ threads });
+  patchThreadAnywhere(store2, threadId, (t2) => ({
+    ...t2,
+    currentEpoch: epoch,
+    continuationUsed: 0
+  }));
   return epoch;
 }
 function foldBackContinuationUsed(store2, threadId, turnTreeId, used) {
@@ -23767,7 +23770,7 @@ function setMessageHookOrigin(store2, messageId, origin) {
   store2.setState({ threads });
 }
 function refreshPayload(store2, threadId, payload) {
-  const thread = store2.getState().threads.find((t2) => t2.id === threadId);
+  const thread = getThreadById(store2, threadId);
   return {
     ...payload,
     priorTodos: thread?.todos ?? payload.priorTodos ?? [],
@@ -23788,8 +23791,9 @@ function refreshPayload(store2, threadId, payload) {
   };
 }
 function dispatchAgentRun(store2, api2, threadId, payload) {
-  const projectId = store2.getState().activeProjectId;
-  if (!projectId) throw new Error("Cannot run thread without an active project");
+  const { activeProjectId, backgroundThreads } = store2.getState();
+  const projectId = backgroundThreads.find((entry) => entry.thread.id === threadId)?.projectId ?? activeProjectId;
+  if (!projectId) throw new Error("Cannot run thread without an owning project");
   clearContextSnapshot(store2, threadId);
   setThreadStatus(store2, threadId, "running");
   syncAgentActivity(store2, threadId, false);
@@ -23797,14 +23801,11 @@ function dispatchAgentRun(store2, api2, threadId, payload) {
   void api2.agent.run(projectId, threadId, JSON.stringify(refreshPayload(store2, threadId, payload)));
 }
 function enqueueUserMessage(store2, threadId, item) {
-  const threads = store2.getState().threads.map(
-    (t2) => t2.id !== threadId ? t2 : {
-      ...t2,
-      pendingMessages: [...t2.pendingMessages ?? [], item],
-      updatedAt: Date.now()
-    }
-  );
-  store2.setState({ threads });
+  patchThreadAnywhere(store2, threadId, (t2) => ({
+    ...t2,
+    pendingMessages: [...t2.pendingMessages ?? [], item],
+    updatedAt: Date.now()
+  }));
   store2.emit("message_queued", threadId, item.messageId);
   store2.emit("threads_changed");
 }
@@ -26108,6 +26109,191 @@ var init_attachment_preview = __esm({
   }
 });
 
+// src/renderer/dom/context-menu.ts
+function showContextMenu(clientX, clientY, items, withinDialog) {
+  dismissOpenContextMenu?.();
+  if (items.every(isHeading)) return;
+  const buttons = items.map((entry) => {
+    if (isHeading(entry)) {
+      return el("div", { class: "context-menu-heading", role: "presentation" }, entry.heading);
+    }
+    const item = entry;
+    const btn = el(
+      "button",
+      {
+        type: "button",
+        class: "context-menu-item",
+        role: item.checked === void 0 ? "menuitem" : "menuitemradio",
+        ...item.checked === void 0 ? {} : { "aria-checked": String(item.checked) }
+      },
+      el("span", { class: "context-menu-item-label" }, item.label),
+      ...item.checked === true ? [checkIcon("ui-icon ui-icon-sm context-menu-item-check")] : []
+    );
+    if (item.checked === true) btn.classList.add("is-checked");
+    if (item.disabled) btn.disabled = true;
+    let selected = false;
+    const select = () => {
+      if (selected || item.disabled) return;
+      selected = true;
+      dismiss();
+      item.onSelect();
+    };
+    btn.addEventListener("mousedown", (e3) => {
+      if (item.disabled) return;
+      e3.preventDefault();
+      e3.stopPropagation();
+      select();
+    });
+    btn.addEventListener("click", (e3) => {
+      e3.stopPropagation();
+      select();
+    });
+    return btn;
+  });
+  const menu = el("div", { class: "context-menu", role: "menu" }, ...buttons);
+  menu.style.left = `${String(clientX)}px`;
+  menu.style.top = `${String(clientY)}px`;
+  const dismiss = () => {
+    menu.remove();
+    document.removeEventListener("pointerdown", onPointerDown, true);
+    document.removeEventListener("keydown", onKeyDown, true);
+    window.removeEventListener("blur", dismiss);
+    if (dismissOpenContextMenu === dismiss) dismissOpenContextMenu = null;
+  };
+  const onPointerDown = (e3) => {
+    if (menu.contains(e3.target instanceof Node ? e3.target : null)) return;
+    dismiss();
+  };
+  const onKeyDown = (e3) => {
+    if (e3.key === "Escape") dismiss();
+  };
+  const dialog2 = withinDialog?.closest("dialog");
+  (dialog2 ?? document.body).append(menu);
+  dismissOpenContextMenu = dismiss;
+  document.addEventListener("pointerdown", onPointerDown, true);
+  document.addEventListener("keydown", onKeyDown, true);
+  window.addEventListener("blur", dismiss);
+  const rect = menu.getBoundingClientRect();
+  const pad = 4;
+  let left = clientX;
+  let top = clientY;
+  if (left + rect.width > window.innerWidth - pad) left = window.innerWidth - rect.width - pad;
+  if (top + rect.height > window.innerHeight - pad) top = window.innerHeight - rect.height - pad;
+  if (left < pad) left = pad;
+  if (top < pad) top = pad;
+  menu.style.left = `${String(left)}px`;
+  menu.style.top = `${String(top)}px`;
+}
+function dismissContextMenu() {
+  dismissOpenContextMenu?.();
+}
+var isHeading, dismissOpenContextMenu;
+var init_context_menu = __esm({
+  "src/renderer/dom/context-menu.ts"() {
+    init_helpers();
+    init_icons();
+    isHeading = (entry) => "heading" in entry;
+    dismissOpenContextMenu = null;
+  }
+});
+
+// src/renderer/attachments/image-expand.ts
+function pngDataUrlToBlob(dataUrl) {
+  if (!/^data:image\/png;base64,/i.test(dataUrl)) throw new Error("Not a PNG data URL");
+  const comma = dataUrl.indexOf(",");
+  const binary = atob(dataUrl.slice(comma + 1));
+  const bytes = Uint8Array.from(binary, (c3) => c3.charCodeAt(0));
+  return new Blob([bytes], { type: "image/png" });
+}
+function renderedImageToPng(image) {
+  if (!image.complete || image.naturalWidth === 0 || image.naturalHeight === 0) {
+    throw new Error("Image has not loaded");
+  }
+  const canvas = document.createElement("canvas");
+  canvas.width = image.naturalWidth;
+  canvas.height = image.naturalHeight;
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("Could not create image canvas");
+  context.drawImage(image, 0, 0);
+  return pngDataUrlToBlob(canvas.toDataURL("image/png"));
+}
+async function copyImageToClipboard(image) {
+  const src = image.currentSrc || image.src;
+  const png = /^data:image\/png;base64,/i.test(src) ? pngDataUrlToBlob(src) : renderedImageToPng(image);
+  await navigator.clipboard.write([new ClipboardItem({ "image/png": png })]);
+}
+function attachImageCopyMenu(image) {
+  if (image.dataset["imageCopyMenu"] === "true") return;
+  image.dataset["imageCopyMenu"] = "true";
+  image.addEventListener("contextmenu", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    showContextMenu(
+      event.clientX,
+      event.clientY,
+      [
+        {
+          label: "Copy image",
+          onSelect: () => {
+            void copyImageToClipboard(image).then(() => showToast("Copied image", { durationMs: 1500 })).catch((error62) => {
+              showErrorToast("Failed to copy image", error62);
+            });
+          }
+        }
+      ],
+      image
+    );
+  });
+}
+function openImageExpand(src, alt = "Expanded attachment") {
+  if (!src) return;
+  const imageEl = el("img", { class: "image-expand-image", alt });
+  imageEl.src = src;
+  attachImageCopyMenu(imageEl);
+  openAttachmentPreview({
+    kind: "image",
+    title: alt,
+    ariaLabel: `Image preview: ${alt}`,
+    content: imageEl,
+    onClose: () => {
+      imageEl.removeAttribute("src");
+      imageEl.alt = "Expanded attachment";
+    }
+  });
+}
+function attachImageExpand(img, alt) {
+  if (img.dataset["imageExpand"] === "true") return;
+  img.dataset["imageExpand"] = "true";
+  attachImageCopyMenu(img);
+  img.classList.add("image-expandable");
+  img.setAttribute("role", "button");
+  img.setAttribute("tabindex", "0");
+  img.setAttribute("aria-label", alt ? `Expand ${alt}` : "Expand image");
+  const open2 = () => {
+    const label = alt ?? (img.alt || "Expanded attachment");
+    openImageExpand(img.currentSrc || img.src, label);
+  };
+  img.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    open2();
+  });
+  img.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    event.stopPropagation();
+    open2();
+  });
+}
+var init_image_expand = __esm({
+  "src/renderer/attachments/image-expand.ts"() {
+    init_context_menu();
+    init_helpers();
+    init_toast();
+    init_attachment_preview();
+  }
+});
+
 // packages/std/src/errors.ts
 function errorMessage(err2) {
   return err2 instanceof Error ? err2.message : String(err2);
@@ -26164,7 +26350,9 @@ async function openWorkspaceFile(store2, api2, path, reveal) {
         preview.close();
         return;
       }
-      preview.setContent(el("img", { class: "image-expand-image", src, alt: path }));
+      const image = el("img", { class: "image-expand-image", src, alt: path });
+      attachImageCopyMenu(image);
+      preview.setContent(image);
     } catch (error62) {
       if (!isOwner()) {
         preview.close();
@@ -26227,6 +26415,7 @@ var init_files = __esm({
     init_panels();
     init_image_path();
     init_attachment_preview();
+    init_image_expand();
     init_helpers();
     init_errors4();
     LANG = {
@@ -31551,94 +31740,6 @@ var init_titlebar = __esm({
     init_panel_mode_controls();
     init_active_thread_owner();
     init_titlebar_compact();
-  }
-});
-
-// src/renderer/dom/context-menu.ts
-function showContextMenu(clientX, clientY, items, withinDialog) {
-  dismissOpenContextMenu?.();
-  if (items.every(isHeading)) return;
-  const buttons = items.map((entry) => {
-    if (isHeading(entry)) {
-      return el("div", { class: "context-menu-heading", role: "presentation" }, entry.heading);
-    }
-    const item = entry;
-    const btn = el(
-      "button",
-      {
-        type: "button",
-        class: "context-menu-item",
-        role: item.checked === void 0 ? "menuitem" : "menuitemradio",
-        ...item.checked === void 0 ? {} : { "aria-checked": String(item.checked) }
-      },
-      el("span", { class: "context-menu-item-label" }, item.label),
-      ...item.checked === true ? [checkIcon("ui-icon ui-icon-sm context-menu-item-check")] : []
-    );
-    if (item.checked === true) btn.classList.add("is-checked");
-    if (item.disabled) btn.disabled = true;
-    let selected = false;
-    const select = () => {
-      if (selected || item.disabled) return;
-      selected = true;
-      dismiss();
-      item.onSelect();
-    };
-    btn.addEventListener("mousedown", (e3) => {
-      if (item.disabled) return;
-      e3.preventDefault();
-      e3.stopPropagation();
-      select();
-    });
-    btn.addEventListener("click", (e3) => {
-      e3.stopPropagation();
-      select();
-    });
-    return btn;
-  });
-  const menu = el("div", { class: "context-menu", role: "menu" }, ...buttons);
-  menu.style.left = `${String(clientX)}px`;
-  menu.style.top = `${String(clientY)}px`;
-  const dismiss = () => {
-    menu.remove();
-    document.removeEventListener("pointerdown", onPointerDown, true);
-    document.removeEventListener("keydown", onKeyDown, true);
-    window.removeEventListener("blur", dismiss);
-    if (dismissOpenContextMenu === dismiss) dismissOpenContextMenu = null;
-  };
-  const onPointerDown = (e3) => {
-    if (menu.contains(e3.target instanceof Node ? e3.target : null)) return;
-    dismiss();
-  };
-  const onKeyDown = (e3) => {
-    if (e3.key === "Escape") dismiss();
-  };
-  const dialog2 = withinDialog?.closest("dialog");
-  (dialog2 ?? document.body).append(menu);
-  dismissOpenContextMenu = dismiss;
-  document.addEventListener("pointerdown", onPointerDown, true);
-  document.addEventListener("keydown", onKeyDown, true);
-  window.addEventListener("blur", dismiss);
-  const rect = menu.getBoundingClientRect();
-  const pad = 4;
-  let left = clientX;
-  let top = clientY;
-  if (left + rect.width > window.innerWidth - pad) left = window.innerWidth - rect.width - pad;
-  if (top + rect.height > window.innerHeight - pad) top = window.innerHeight - rect.height - pad;
-  if (left < pad) left = pad;
-  if (top < pad) top = pad;
-  menu.style.left = `${String(left)}px`;
-  menu.style.top = `${String(top)}px`;
-}
-function dismissContextMenu() {
-  dismissOpenContextMenu?.();
-}
-var isHeading, dismissOpenContextMenu;
-var init_context_menu = __esm({
-  "src/renderer/dom/context-menu.ts"() {
-    init_helpers();
-    init_icons();
-    isHeading = (entry) => "heading" in entry;
-    dismissOpenContextMenu = null;
   }
 });
 
@@ -65643,11 +65744,11 @@ function settingsIcon(className = "titlebar-btn-icon") {
   svg2.append(path);
   return svg2;
 }
-function automationSetupBtn(label, open2) {
+function automationSetupBtn(label, open2, icon = settingsIcon) {
   const btn = el(
     "button",
     { type: "button", class: "automation-setup-btn", "aria-label": label, title: label },
-    settingsIcon("ui-icon ui-icon-sm")
+    icon("ui-icon ui-icon-sm")
   );
   btn.addEventListener("click", (e3) => {
     e3.stopPropagation();
@@ -65776,7 +65877,7 @@ function mountProjectsPane(root, store2, api2) {
   syncRemoteOpenAvailability();
   store2.on("settings_changed", syncRemoteOpenAvailability);
   const visibleThreadCounts = /* @__PURE__ */ new Map();
-  const expandedAutomationProjects = /* @__PURE__ */ new Set();
+  let automationsSectionExpanded = false;
   const expandedAutomationSchedules = /* @__PURE__ */ new Set();
   let orphans = [];
   let renaming = null;
@@ -66153,6 +66254,309 @@ function mountProjectsPane(root, store2, api2) {
       list.append(el("div", { class: "sidebar-empty" }, 'No projects yet. Click "+".'));
       return;
     }
+    function renderThreadRow(project2, thread, options = {}) {
+      const activeId = project2.id === activeProjectId ? activeThreadId : null;
+      const displayTitle = (options.displayTitle ?? thread.title) || "New Thread";
+      const canMutate = project2.id === activeProjectId;
+      const allowRename = (options.allowRename ?? true) && canMutate;
+      const scheduleId = thread.automation?.scheduleId;
+      const renameState = allowRename && renaming !== null && renaming.threadId === thread.id ? renaming : null;
+      let title2;
+      if (renameState) {
+        const input2 = el("input", {
+          type: "text",
+          class: "chat-title-rename",
+          "aria-label": "Rename thread"
+        });
+        input2.value = renameState.draft;
+        input2.addEventListener("input", () => {
+          if (renaming?.threadId === thread.id) renaming.draft = input2.value;
+        });
+        input2.addEventListener("keydown", (e3) => {
+          e3.stopPropagation();
+          if (e3.key === "Enter") {
+            e3.preventDefault();
+            finishThreadRename(true);
+          } else if (e3.key === "Escape") {
+            e3.preventDefault();
+            finishThreadRename(false);
+          }
+        });
+        bindRenameBlur(input2, () => {
+          if (renaming?.threadId !== thread.id) return;
+          finishThreadRename(true);
+        });
+        for (const evt of ["click", "dblclick", "mousedown"]) {
+          input2.addEventListener(evt, (e3) => {
+            e3.stopPropagation();
+          });
+        }
+        title2 = input2;
+      } else {
+        title2 = el("span", { class: "chat-title" }, displayTitle);
+        if (allowRename) {
+          title2.addEventListener("dblclick", (e3) => {
+            e3.stopPropagation();
+            beginThreadRename(thread.id, displayTitle);
+          });
+        }
+      }
+      const chatRow = el(
+        "div",
+        {
+          class: `chat-row${thread.automation ? " is-automation" : ""}${thread.id === activeThreadId && project2.id === activeProjectId ? " selected" : ""}`,
+          "data-thread-id": thread.id
+        },
+        title2
+      );
+      chatRow.addEventListener("click", () => {
+        if (renaming?.threadId === thread.id) return;
+        switchProjectThread(store2, api2, project2.id, thread.id);
+      });
+      chatRow.addEventListener("contextmenu", (e3) => {
+        e3.preventDefault();
+        e3.stopPropagation();
+        showContextMenu(e3.clientX, e3.clientY, [
+          ...canMutate ? [
+            ...allowRename ? [
+              {
+                label: "Rename",
+                onSelect: () => {
+                  beginThreadRename(thread.id, displayTitle);
+                }
+              }
+            ] : [],
+            {
+              label: "Fork",
+              onSelect: () => {
+                forkProjectThread(project2.id, thread.id);
+              }
+            },
+            {
+              label: "Archive",
+              onSelect: () => {
+                archiveProjectThread(project2.id, thread.id);
+              }
+            }
+          ] : [],
+          // A schedule with a single run has no heading of its own, and a
+          // historical run is several rows below the one that does, so every
+          // automation row carries the way out to its setup. Opens directly
+          // against this run's own project — same as the project menu's
+          // "Automations" entry — rather than switching the active project
+          // just to reach the editor.
+          ...scheduleId ? [
+            {
+              label: "Automation setup\u2026",
+              onSelect: () => {
+                openAutomationDialog(store2, api2, { projectId: project2.id, scheduleId });
+              }
+            }
+          ] : []
+        ]);
+      });
+      if (thread.status === "running") {
+        chatRow.classList.add("is-running");
+        chatRow.insertBefore(runningStatus("Agent is working"), title2);
+      } else if (thread.unreadAt !== void 0 && thread.id !== activeId) {
+        chatRow.classList.add("is-unread");
+        chatRow.insertBefore(
+          el("span", {
+            class: "chat-unread-dot",
+            role: "img",
+            "aria-label": "Unread agent completion"
+          }),
+          title2
+        );
+      }
+      if (isThreadAwaitingAttention(thread.id)) {
+        chatRow.classList.add("needs-attention");
+        chatRow.append(attentionBell("This thread needs your attention"));
+      }
+      const prRollup = rollupForThread(thread);
+      if (prRollup) {
+        chatRow.classList.add("has-pr-status");
+        chatRow.append(chatPrStatus(prRollup));
+      }
+      if (canMutate) {
+        const del = el(
+          "button",
+          { class: "chat-delete", "aria-label": "Delete thread", "data-tooltip": "Delete thread" },
+          closeIcon("ui-icon ui-icon-sm")
+        );
+        del.addEventListener("click", (e3) => {
+          e3.stopPropagation();
+          if (getSidebarThreads(store2, project2.id).length > 1) {
+            void api2.agent.clearHistory(project2.id, thread.id);
+            deleteThread(store2, thread.id);
+          }
+        });
+        chatRow.append(del);
+      }
+      return chatRow;
+    }
+    function renderAutomationsSection() {
+      const scheduleOwners = /* @__PURE__ */ new Map();
+      for (const project2 of projects) {
+        for (const thread of getSidebarThreads(store2, project2.id)) {
+          const scheduleId = thread.automation?.scheduleId;
+          if (!scheduleId) continue;
+          const scheduleKey = `${project2.id}\0${scheduleId}`;
+          const owner = scheduleOwners.get(scheduleKey);
+          if (owner) owner.runs.push(thread);
+          else scheduleOwners.set(scheduleKey, { project: project2, scheduleId, runs: [thread] });
+        }
+      }
+      if (scheduleOwners.size === 0) return null;
+      const allRuns = Array.from(scheduleOwners.values()).flatMap((owner) => owner.runs);
+      const hasActiveAutomation = allRuns.some((thread) => thread.id === activeThreadId);
+      const attentionRuns = allRuns.filter((thread) => isThreadAwaitingAttention(thread.id));
+      const sectionExpanded = automationsSectionExpanded || hasActiveAutomation || attentionRuns.length > 0;
+      const section = el("div", { class: "automation-threads-group" });
+      const toggle = el(
+        "button",
+        {
+          type: "button",
+          class: "automation-threads-toggle",
+          "aria-expanded": sectionExpanded ? "true" : "false"
+        },
+        el(
+          "span",
+          { class: `automation-threads-twisty${sectionExpanded ? " expanded" : ""}` },
+          chevronRightIcon("ui-icon ui-icon-sm")
+        ),
+        el("span", { class: "automation-threads-title" }, "Automations"),
+        el("span", { class: "automation-threads-count" }, String(scheduleOwners.size))
+      );
+      if (allRuns.some((thread) => thread.status === "running")) {
+        const status = runningStatusIcon("ui-icon ui-icon-sm automation-threads-running");
+        status.setAttribute("role", "img");
+        status.setAttribute("aria-label", "An automation is running");
+        status.removeAttribute("aria-hidden");
+        toggle.append(status);
+      }
+      toggle.addEventListener("click", () => {
+        automationsSectionExpanded = !automationsSectionExpanded;
+        render();
+      });
+      section.append(
+        el(
+          "div",
+          { class: "automation-threads-header" },
+          toggle,
+          // Creates against the active project, same default the plugin editor
+          // itself falls back to when no project is named — there is no single
+          // project this workspace-level heading could otherwise imply.
+          automationSetupBtn(
+            "New automation\u2026",
+            () => {
+              openAutomationDialog(store2, api2, { createNew: true });
+            },
+            plusIcon
+          )
+        )
+      );
+      if (sectionExpanded) {
+        const rows = el("div", { class: "automation-thread-rows" });
+        for (const { project: project2, scheduleId, runs } of scheduleOwners.values()) {
+          const firstRun = runs[0];
+          if (!firstRun) continue;
+          const projectSuffix = el(
+            "span",
+            { class: "chat-thread-owner" },
+            `\xB7 ${projectDisplayName(project2)}`
+          );
+          if (runs.length === 1) {
+            const row2 = renderThreadRow(project2, firstRun);
+            row2.querySelector(".chat-title")?.after(projectSuffix);
+            const scheduleName2 = firstRun.automation?.scheduleName ?? firstRun.title;
+            const setupBtn = automationSetupBtn(`${scheduleName2} setup`, () => {
+              openAutomationDialog(store2, api2, { projectId: project2.id, scheduleId });
+            });
+            const del = row2.querySelector(".chat-delete");
+            if (del) del.before(setupBtn);
+            else row2.append(setupBtn);
+            rows.append(row2);
+            continue;
+          }
+          const scheduleKey = `${project2.id}\0${scheduleId}`;
+          const hasActiveRun = runs.some((thread) => thread.id === activeThreadId);
+          const attentionScheduleRuns = runs.filter(
+            (thread) => isThreadAwaitingAttention(thread.id)
+          );
+          const showingAllRuns = expandedAutomationSchedules.has(scheduleKey) || hasActiveRun;
+          const scheduleRevealed = showingAllRuns || attentionScheduleRuns.length > 0;
+          const scheduleName = firstRun.automation?.scheduleName ?? firstRun.title;
+          const scheduleGroup = el("div", {
+            class: "automation-schedule-group",
+            "data-schedule-id": scheduleId
+          });
+          const scheduleToggle = el(
+            "button",
+            {
+              type: "button",
+              class: "automation-schedule-toggle",
+              "aria-expanded": showingAllRuns ? "true" : "false"
+            },
+            el(
+              "span",
+              { class: `automation-threads-twisty${showingAllRuns ? " expanded" : ""}` },
+              chevronRightIcon("ui-icon ui-icon-sm")
+            ),
+            el("span", { class: "automation-schedule-title" }, scheduleName),
+            projectSuffix,
+            el("span", { class: "automation-schedule-count" }, `${String(runs.length)} runs`)
+          );
+          if (runs.some((thread) => thread.status === "running")) {
+            const status = runningStatusIcon("ui-icon ui-icon-sm automation-threads-running");
+            status.setAttribute("role", "img");
+            status.setAttribute("aria-label", "This automation is running");
+            status.removeAttribute("aria-hidden");
+            scheduleToggle.append(status);
+          }
+          scheduleToggle.addEventListener("click", () => {
+            if (expandedAutomationSchedules.has(scheduleKey)) {
+              expandedAutomationSchedules.delete(scheduleKey);
+            } else {
+              expandedAutomationSchedules.add(scheduleKey);
+            }
+            render();
+          });
+          scheduleGroup.append(
+            el(
+              "div",
+              { class: "automation-schedule-header" },
+              scheduleToggle,
+              automationSetupBtn(`${scheduleName} setup`, () => {
+                openAutomationDialog(store2, api2, { projectId: project2.id, scheduleId });
+              })
+            )
+          );
+          if (scheduleRevealed) {
+            const runRows = el("div", { class: "automation-schedule-runs" });
+            const visibleRuns = showingAllRuns ? runs : attentionScheduleRuns;
+            for (const thread of visibleRuns) {
+              const index = runs.indexOf(thread);
+              const timestamp = thread.automation?.triggeredAt;
+              const when = timestamp ? new Date(timestamp).toLocaleString([], {
+                dateStyle: "medium",
+                timeStyle: "short"
+              }) : "Unknown time";
+              runRows.append(
+                renderThreadRow(project2, thread, {
+                  displayTitle: index === 0 ? `Latest \xB7 ${when}` : when,
+                  allowRename: false
+                })
+              );
+            }
+            scheduleGroup.append(runRows);
+          }
+          rows.append(scheduleGroup);
+        }
+        section.append(rows);
+      }
+      return section;
+    }
     function renderProjectEntry(project2) {
       const entry = el("div", { class: "project-entry", "data-project-id": project2.id });
       const isExpanded = project2.id === expandedId;
@@ -66313,7 +66717,6 @@ function mountProjectsPane(root, store2, api2) {
       const matchingThreads = isFiltering ? sidebarThreads.filter(
         (t2) => (t2.title || "New Thread").toLowerCase().includes(threadFilter)
       ) : sidebarThreads;
-      const automationThreads = matchingThreads.filter((thread) => thread.automation !== void 0);
       const conversationThreads = matchingThreads.filter(
         (thread) => thread.automation === void 0
       );
@@ -66346,148 +66749,8 @@ function mountProjectsPane(root, store2, api2) {
       } else if (isFiltering && matchingThreads.length === 0) {
         chats.append(el("div", { class: "sidebar-empty" }, "No matching threads"));
       }
-      function openAutomationSetup(scheduleId) {
-        if (project2.id !== store2.getState().activeProjectId) {
-          switchProject(store2, api2, project2.id);
-          return;
-        }
-        openAutomationDialog(store2, api2, scheduleId ? { scheduleId } : {});
-      }
-      function renderThreadRow(thread, options = {}) {
-        const displayTitle = (options.displayTitle ?? thread.title) || "New Thread";
-        const allowRename = options.allowRename ?? true;
-        const scheduleId = thread.automation?.scheduleId;
-        const renameState = renaming !== null && renaming.threadId === thread.id ? renaming : null;
-        let title2;
-        if (renameState) {
-          const input2 = el("input", {
-            type: "text",
-            class: "chat-title-rename",
-            "aria-label": "Rename thread"
-          });
-          input2.value = renameState.draft;
-          input2.addEventListener("input", () => {
-            if (renaming?.threadId === thread.id) renaming.draft = input2.value;
-          });
-          input2.addEventListener("keydown", (e3) => {
-            e3.stopPropagation();
-            if (e3.key === "Enter") {
-              e3.preventDefault();
-              finishThreadRename(true);
-            } else if (e3.key === "Escape") {
-              e3.preventDefault();
-              finishThreadRename(false);
-            }
-          });
-          bindRenameBlur(input2, () => {
-            if (renaming?.threadId !== thread.id) return;
-            finishThreadRename(true);
-          });
-          for (const evt of ["click", "dblclick", "mousedown"]) {
-            input2.addEventListener(evt, (e3) => {
-              e3.stopPropagation();
-            });
-          }
-          title2 = input2;
-        } else {
-          title2 = el("span", { class: "chat-title" }, displayTitle);
-          if (allowRename) {
-            title2.addEventListener("dblclick", (e3) => {
-              e3.stopPropagation();
-              beginThreadRename(thread.id, displayTitle);
-            });
-          }
-        }
-        const chatRow = el(
-          "div",
-          {
-            class: `chat-row${thread.automation ? " is-automation" : ""}${thread.id === activeThreadId && project2.id === activeProjectId ? " selected" : ""}`,
-            "data-thread-id": thread.id
-          },
-          title2
-        );
-        chatRow.addEventListener("click", () => {
-          if (renaming?.threadId === thread.id) return;
-          switchProjectThread(store2, api2, project2.id, thread.id);
-        });
-        chatRow.addEventListener("contextmenu", (e3) => {
-          e3.preventDefault();
-          e3.stopPropagation();
-          showContextMenu(e3.clientX, e3.clientY, [
-            ...allowRename ? [
-              {
-                label: "Rename",
-                onSelect: () => {
-                  beginThreadRename(thread.id, displayTitle);
-                }
-              }
-            ] : [],
-            {
-              label: "Fork",
-              onSelect: () => {
-                forkProjectThread(project2.id, thread.id);
-              }
-            },
-            {
-              label: "Archive",
-              onSelect: () => {
-                archiveProjectThread(project2.id, thread.id);
-              }
-            },
-            // A schedule with a single run has no heading of its own, and a
-            // historical run is several rows below the one that does, so every
-            // automation row carries the way out to its setup.
-            ...scheduleId ? [
-              {
-                label: "Automation setup\u2026",
-                onSelect: () => {
-                  openAutomationSetup(scheduleId);
-                }
-              }
-            ] : []
-          ]);
-        });
-        if (thread.status === "running") {
-          chatRow.classList.add("is-running");
-          chatRow.insertBefore(runningStatus("Agent is working"), title2);
-        } else if (thread.unreadAt !== void 0 && thread.id !== activeId) {
-          chatRow.classList.add("is-unread");
-          chatRow.insertBefore(
-            el("span", {
-              class: "chat-unread-dot",
-              role: "img",
-              "aria-label": "Unread agent completion"
-            }),
-            title2
-          );
-        }
-        if (isThreadAwaitingAttention(thread.id)) {
-          chatRow.classList.add("needs-attention");
-          chatRow.append(attentionBell("This thread needs your attention"));
-        }
-        const prRollup = rollupForThread(thread);
-        if (prRollup) {
-          chatRow.classList.add("has-pr-status");
-          chatRow.append(chatPrStatus(prRollup));
-        }
-        const del = el(
-          "button",
-          { class: "chat-delete", "aria-label": "Delete thread", "data-tooltip": "Delete thread" },
-          closeIcon("ui-icon ui-icon-sm")
-        );
-        del.addEventListener("click", (e3) => {
-          e3.stopPropagation();
-          if (project2.id !== activeProjectId) return;
-          if (sidebarThreads.length > 1) {
-            void api2.agent.clearHistory(project2.id, thread.id);
-            deleteThread(store2, thread.id);
-          }
-        });
-        chatRow.append(del);
-        return chatRow;
-      }
       for (const thread of visibleThreads) {
-        chats.append(renderThreadRow(thread));
+        chats.append(renderThreadRow(project2, thread));
       }
       if (hasMore) {
         const showMoreBtn = el("button", { type: "button", class: "chats-show-more" }, "Show more");
@@ -66496,147 +66759,6 @@ function mountProjectsPane(root, store2, api2) {
           render();
         });
         chats.append(showMoreBtn);
-      }
-      if (automationThreads.length > 0) {
-        const scheduleGroups = /* @__PURE__ */ new Map();
-        for (const thread of automationThreads) {
-          const scheduleId = thread.automation?.scheduleId;
-          if (!scheduleId) continue;
-          const runs = scheduleGroups.get(scheduleId);
-          if (runs) runs.push(thread);
-          else scheduleGroups.set(scheduleId, [thread]);
-        }
-        const hasActiveAutomation = automationThreads.some((thread) => thread.id === activeId);
-        const attentionAutomationThreads = automationThreads.filter(
-          (thread) => isThreadAwaitingAttention(thread.id)
-        );
-        const automationExpanded = isFiltering || expandedAutomationProjects.has(project2.id) || hasActiveAutomation || attentionAutomationThreads.length > 0;
-        const group = el("div", { class: "automation-threads-group" });
-        const toggle = el(
-          "button",
-          {
-            type: "button",
-            class: "automation-threads-toggle",
-            "aria-expanded": automationExpanded ? "true" : "false"
-          },
-          el(
-            "span",
-            { class: `automation-threads-twisty${automationExpanded ? " expanded" : ""}` },
-            chevronRightIcon("ui-icon ui-icon-sm")
-          ),
-          el("span", { class: "automation-threads-title" }, "Automations"),
-          el("span", { class: "automation-threads-count" }, String(scheduleGroups.size))
-        );
-        if (automationThreads.some((thread) => thread.status === "running")) {
-          const status = runningStatusIcon("ui-icon ui-icon-sm automation-threads-running");
-          status.setAttribute("role", "img");
-          status.setAttribute("aria-label", "An automation is running");
-          status.removeAttribute("aria-hidden");
-          toggle.append(status);
-        }
-        toggle.addEventListener("click", () => {
-          if (expandedAutomationProjects.has(project2.id)) {
-            expandedAutomationProjects.delete(project2.id);
-          } else {
-            expandedAutomationProjects.add(project2.id);
-          }
-          render();
-        });
-        group.append(
-          el(
-            "div",
-            { class: "automation-threads-header" },
-            toggle,
-            automationSetupBtn("Automation settings", () => {
-              openAutomationSetup();
-            })
-          )
-        );
-        if (automationExpanded) {
-          const automationRows = el("div", { class: "automation-thread-rows" });
-          for (const [scheduleId, runs] of scheduleGroups) {
-            const firstRun = runs[0];
-            if (!firstRun) continue;
-            if (runs.length === 1) {
-              automationRows.append(renderThreadRow(firstRun));
-              continue;
-            }
-            const scheduleKey = `${project2.id}\0${scheduleId}`;
-            const hasActiveRun = runs.some((thread) => thread.id === activeId);
-            const attentionRuns = runs.filter((thread) => isThreadAwaitingAttention(thread.id));
-            const showingAllRuns = isFiltering || expandedAutomationSchedules.has(scheduleKey) || hasActiveRun;
-            const scheduleRevealed = showingAllRuns || attentionRuns.length > 0;
-            const scheduleName = firstRun.automation?.scheduleName ?? firstRun.title;
-            const scheduleGroup = el("div", {
-              class: "automation-schedule-group",
-              "data-schedule-id": scheduleId
-            });
-            const scheduleToggle = el(
-              "button",
-              {
-                type: "button",
-                class: "automation-schedule-toggle",
-                "aria-expanded": showingAllRuns ? "true" : "false"
-              },
-              el(
-                "span",
-                {
-                  class: `automation-threads-twisty${showingAllRuns ? " expanded" : ""}`
-                },
-                chevronRightIcon("ui-icon ui-icon-sm")
-              ),
-              el("span", { class: "automation-schedule-title" }, scheduleName),
-              el("span", { class: "automation-schedule-count" }, `${String(runs.length)} runs`)
-            );
-            if (runs.some((thread) => thread.status === "running")) {
-              const status = runningStatusIcon("ui-icon ui-icon-sm automation-threads-running");
-              status.setAttribute("role", "img");
-              status.setAttribute("aria-label", "This automation is running");
-              status.removeAttribute("aria-hidden");
-              scheduleToggle.append(status);
-            }
-            scheduleToggle.addEventListener("click", () => {
-              if (expandedAutomationSchedules.has(scheduleKey)) {
-                expandedAutomationSchedules.delete(scheduleKey);
-              } else {
-                expandedAutomationSchedules.add(scheduleKey);
-              }
-              render();
-            });
-            scheduleGroup.append(
-              el(
-                "div",
-                { class: "automation-schedule-header" },
-                scheduleToggle,
-                automationSetupBtn(`${scheduleName} setup`, () => {
-                  openAutomationSetup(scheduleId);
-                })
-              )
-            );
-            if (scheduleRevealed) {
-              const runRows = el("div", { class: "automation-schedule-runs" });
-              const visibleRuns = showingAllRuns ? runs : attentionRuns;
-              for (const thread of visibleRuns) {
-                const index = runs.indexOf(thread);
-                const timestamp = thread.automation?.triggeredAt;
-                const when = timestamp ? new Date(timestamp).toLocaleString([], {
-                  dateStyle: "medium",
-                  timeStyle: "short"
-                }) : "Unknown time";
-                runRows.append(
-                  renderThreadRow(thread, {
-                    displayTitle: index === 0 ? `Latest \xB7 ${when}` : when,
-                    allowRename: false
-                  })
-                );
-              }
-              scheduleGroup.append(runRows);
-            }
-            automationRows.append(scheduleGroup);
-          }
-          group.append(automationRows);
-        }
-        chats.append(group);
       }
       entry.append(chats);
       return entry;
@@ -66657,6 +66779,8 @@ function mountProjectsPane(root, store2, api2) {
       block.append(children);
       return block;
     }
+    const automationsSection = renderAutomationsSection();
+    if (automationsSection) list.append(automationsSection);
     for (const node2 of buildProjectTree(projects, projectGroups)) {
       if (node2.kind === "group") list.append(renderGroupEntry(node2.group, node2.projects));
       else list.append(renderProjectEntry(node2.project));
@@ -70888,6 +71012,7 @@ function hydrateRemoteArtifactImages(container, api2) {
     img.dataset["remoteArtifactState"] = "loading";
     void api2.remoteAgent.artifactImageDataUrl(agentId, path).then((dataUrl) => {
       img.src = dataUrl;
+      attachImageCopyMenu(img);
       img.dataset["remoteArtifactState"] = "loaded";
     }).catch((err2) => {
       img.dataset["remoteArtifactState"] = "error";
@@ -70898,6 +71023,7 @@ function hydrateRemoteArtifactImages(container, api2) {
 var CURSOR_AGENT_URL_RE;
 var init_remote_artifact_images = __esm({
   "src/renderer/markdown/remote-artifact-images.ts"() {
+    init_image_expand();
     CURSOR_AGENT_URL_RE = /cursor\.com\/agents\/(bc-[\w-]+)/;
   }
 });
@@ -71231,87 +71357,6 @@ var init_attachment_icons = __esm({
         "M10 18h2"
       ]
     };
-  }
-});
-
-// src/renderer/attachments/image-expand.ts
-function dataUrlToBlob(dataUrl) {
-  const comma = dataUrl.indexOf(",");
-  if (comma < 0) throw new Error("Not a data URL");
-  const header = dataUrl.slice(5, comma);
-  const mime = header.split(";")[0] ?? "";
-  const mimeType = mime === "" ? "application/octet-stream" : mime;
-  const binary = atob(dataUrl.slice(comma + 1));
-  const bytes = Uint8Array.from(binary, (c3) => c3.charCodeAt(0));
-  return new Blob([bytes], { type: mimeType });
-}
-async function copyImageToClipboard(src) {
-  const blob = dataUrlToBlob(src);
-  await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
-}
-function openImageExpand(src, alt = "Expanded attachment") {
-  if (!src) return;
-  const imageEl = el("img", { class: "image-expand-image", alt });
-  imageEl.src = src;
-  imageEl.addEventListener("contextmenu", (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    showContextMenu(
-      event.clientX,
-      event.clientY,
-      [
-        {
-          label: "Copy image",
-          onSelect: () => {
-            void copyImageToClipboard(src).then(() => showToast("Copied image", { durationMs: 1500 })).catch((error62) => {
-              showErrorToast("Failed to copy image", error62);
-            });
-          }
-        }
-      ],
-      imageEl
-    );
-  });
-  openAttachmentPreview({
-    kind: "image",
-    title: alt,
-    ariaLabel: `Image preview: ${alt}`,
-    content: imageEl,
-    onClose: () => {
-      imageEl.removeAttribute("src");
-      imageEl.alt = "Expanded attachment";
-    }
-  });
-}
-function attachImageExpand(img, alt) {
-  if (img.dataset["imageExpand"] === "true") return;
-  img.dataset["imageExpand"] = "true";
-  img.classList.add("image-expandable");
-  img.setAttribute("role", "button");
-  img.setAttribute("tabindex", "0");
-  img.setAttribute("aria-label", alt ? `Expand ${alt}` : "Expand image");
-  const open2 = () => {
-    const label = alt ?? (img.alt || "Expanded attachment");
-    openImageExpand(img.currentSrc || img.src, label);
-  };
-  img.addEventListener("click", (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    open2();
-  });
-  img.addEventListener("keydown", (event) => {
-    if (event.key !== "Enter" && event.key !== " ") return;
-    event.preventDefault();
-    event.stopPropagation();
-    open2();
-  });
-}
-var init_image_expand = __esm({
-  "src/renderer/attachments/image-expand.ts"() {
-    init_context_menu();
-    init_helpers();
-    init_toast();
-    init_attachment_preview();
   }
 });
 
@@ -72535,6 +72580,7 @@ function thumbnail(asset, caption) {
     alt: `${asset.label}: ${caption}`,
     loading: "lazy"
   });
+  attachImageCopyMenu(image);
   return image;
 }
 function evidenceFigure(asset, caption) {
@@ -73887,10 +73933,16 @@ function createCanvasPreviewCard(threadId, title) {
   open2.addEventListener("click", () => {
     requestArtefactShow(threadId, title);
   });
+  const image = el("img", {
+    class: "canvas-preview-image",
+    src: preview,
+    alt: `Preview of ${title}`
+  });
+  attachImageCopyMenu(image);
   return el(
     "div",
     { class: "canvas-preview-card" },
-    el("img", { class: "canvas-preview-image", src: preview, alt: `Preview of ${title}` }),
+    image,
     el(
       "div",
       { class: "canvas-preview-footer" },
@@ -91442,7 +91494,8 @@ function mountInputBar(root, store2, api2, opts = {}) {
   let descriptionPicker = null;
   const checkoutChoices = /* @__PURE__ */ new Map();
   const dirtyWarningAcknowledged = /* @__PURE__ */ new Set();
-  let checkoutPreparationInProgress = false;
+  const checkoutPreparations = /* @__PURE__ */ new Set();
+  const checkoutErrors = /* @__PURE__ */ new Map();
   let automaticCheckoutMode = "shared";
   let automaticCheckoutPreviewSeq = 0;
   function shortModelLabel(option) {
@@ -91654,6 +91707,10 @@ ${description}
   }
   function updateCheckoutControl() {
     const thread = getActiveThread(store2);
+    const error62 = thread ? checkoutErrors.get(thread.id) : void 0;
+    checkoutErrorText.textContent = error62 ?? "";
+    checkoutError.hidden = error62 === void 0;
+    const checkoutPreparationInProgress = thread ? checkoutPreparations.has(thread.id) : false;
     if (!thread) {
       checkoutHost.hidden = true;
       checkoutMenu.hidden = true;
@@ -91671,6 +91728,8 @@ ${description}
     checkoutBtn.textContent = checkoutPreparationInProgress ? "Preparing checkout\u2026" : checkoutLabel(checkoutChoice(thread.id));
   }
   function hideCheckoutError() {
+    const id = getActiveThreadId();
+    if (id) checkoutErrors.delete(id);
     checkoutError.hidden = true;
     checkoutErrorText.textContent = "";
   }
@@ -91770,6 +91829,17 @@ ${description}
       threadDraftValue: threads.length > 0 ? composer.draftValue() : null
     };
   }
+  function draftFingerprint(text2, attachments) {
+    return JSON.stringify([
+      text2,
+      attachments.files,
+      attachments.images.map((image) => [image.dataUrl, image.mimeType, image.detail ?? "auto"]),
+      attachments.videos,
+      attachments.archives,
+      attachments.threads,
+      attachments.shells
+    ]);
+  }
   function stashDraftAttachments(threadId) {
     const snapshot = snapshotDraftAttachments();
     const empty = snapshot.files.length === 0 && snapshot.images.length === 0 && snapshot.videos.length === 0 && snapshot.archives.length === 0 && snapshot.threads.length === 0 && snapshot.shells.length === 0;
@@ -91837,8 +91907,8 @@ ${description}
     composer.value = thread?.draftPrompt ?? "";
     activeComposerThreadId = id;
     if (id) restoreDraftAttachments(id);
-    hideCheckoutError();
     hideDirtyWarning();
+    updateCheckoutControl();
     lastBreakdown = null;
     breakdownModel = null;
     scheduleContextEstimate(0);
@@ -91879,6 +91949,8 @@ ${description}
   }
   function updateState() {
     const running = isRunning();
+    const id = getActiveThreadId();
+    submitBtn.disabled = imageDescriptionInProgress || id !== null && isThreadSubmitting(store2, id);
     stopBtn.hidden = !running;
     updateTargetPicker();
     submitBtn.textContent = running ? "Queue" : "Send";
@@ -92093,7 +92165,7 @@ ${description}
     void submit();
   });
   checkoutBtn.addEventListener("click", () => {
-    if (checkoutPreparationInProgress) return;
+    if (checkoutPreparations.has(getActiveThreadId() ?? "")) return;
     checkoutMenu.hidden = !checkoutMenu.hidden;
     checkoutBtn.setAttribute("aria-expanded", String(!checkoutMenu.hidden));
   });
@@ -92199,44 +92271,71 @@ ${description}
     e3.preventDefault();
     void submit();
   });
-  let submitInProgress = false;
   async function submit() {
-    if (submitInProgress || imageDescriptionInProgress) return;
-    submitInProgress = true;
+    const id = getActiveThreadId();
+    if (!id || imageDescriptionInProgress || !beginThreadSubmission(store2, id)) return;
+    updateState();
     try {
-      await performSubmit();
+      await performSubmit(id);
+    } catch (error62) {
+      console.error("Could not send prompt", { threadId: id, error: error62 });
+      checkoutErrors.set(id, error62 instanceof Error ? error62.message : "Could not send message");
     } finally {
-      submitInProgress = false;
+      endThreadSubmission(store2, id);
+      updateState();
+      updateCheckoutControl();
     }
   }
-  async function performSubmit() {
+  async function performSubmit(id) {
     mark("ttft:composer-submit");
     followUps.clearSuggestions();
     nextStepHint.clear();
     updateComposerPlaceholder();
     const visibleText2 = composer.value.trim();
-    const rawText = composer.expandedValue().trim();
-    if (!rawText && attachedFiles.length === 0 && attachedImages.length === 0 && attachedVideos.length === 0 && attachedArchives.length === 0 && attachedThreads.length === 0 && attachedShells.length === 0)
+    const draftText = composer.expandedValue();
+    const rawText = draftText.trim();
+    const draftAttachments = snapshotDraftAttachments();
+    const draftKey = draftFingerprint(draftText, draftAttachments);
+    const {
+      files: attachedFiles2,
+      images: attachedImages2,
+      videos: attachedVideos2,
+      archives: attachedArchives2,
+      threads: attachedThreads2,
+      shells: attachedShells2
+    } = draftAttachments;
+    const inlineChips = composer.getInlineChips().map(
+      (chip2) => chip2.kind === "paste" ? { kind: "paste", block: { ...chip2.block } } : { kind: "thread", thread: { ...chip2.thread } }
+    );
+    const shellBlocks = currentShellBlocks();
+    const textAttachments = {
+      threadRefs: currentThreadRefs(),
+      videoRefs: currentVideoRefs(),
+      archiveRefs: currentArchiveRefs()
+    };
+    if (!rawText && attachedFiles2.length === 0 && attachedImages2.length === 0 && attachedVideos2.length === 0 && attachedArchives2.length === 0 && attachedThreads2.length === 0 && attachedShells2.length === 0)
       return;
-    const id = getActiveThreadId();
-    if (!id) return;
     const projectId = store2.getState().activeProjectId;
-    if (!projectId) return;
+    const thread = getThreadById(store2, id);
+    if (!projectId || !thread) return;
+    const choice = checkoutChoice(id);
+    const model = thread.model ?? store2.getState().settings?.model;
+    const baseBranch = branchControl.pendingBaseBranch(id);
     if (!targetSelect.hidden && targetSelect.value === "container") {
       if (!rawText) return;
       const started = await containerRun.followUp(rawText);
       if (started) updateState();
       return;
     }
-    if (attachedImages.length > 0) {
+    const invocationSources = Promise.allSettled([api2.skills.list(), api2.agents.list()]);
+    if (attachedImages2.length > 0) {
       const incompatibility = await incompatibleImageModel();
       if (incompatibility) {
-        await refreshImageCompatibilityWarning();
+        if (getActiveThreadId() === id) await refreshImageCompatibilityWarning();
         return;
       }
     }
-    const thread = getThreadById(store2, id);
-    const requiresCheckoutPreparation = thread !== void 0 && thread.messages.length === 0 && !thread.worktreeChoice;
+    const requiresCheckoutPreparation = thread.messages.length === 0 && !thread.worktreeChoice;
     const prefetchedGitState = requiresCheckoutPreparation ? null : await Promise.allSettled([
       api2.git.currentBranch(projectId, id),
       api2.git.promptState(projectId, id)
@@ -92246,32 +92345,44 @@ ${description}
     const currentBranch = requiresCheckoutPreparation && !thread.gitBranch ? null : branchResult?.status === "fulfilled" ? branchResult.value : await api2.git.currentBranch(projectId, id);
     const prefetchedPromptState = prefetchedGitState?.[1];
     let preparedPromptState;
-    const threadBranch = thread?.gitBranch;
-    const isolatedWorktree = thread !== void 0 && thread.worktree !== void 0;
+    const threadBranch = thread.gitBranch;
+    const isolatedWorktree = thread.worktree !== void 0;
     if (threadBranch && threadGitBranchMismatch(threadBranch, currentBranch, { isolatedWorktree })) {
-      showBranchMismatch(threadBranch);
+      if (getActiveThreadId() === id) showBranchMismatch(threadBranch);
       return;
     }
-    hideBranchMismatch();
-    const isBlankSharedCandidate = thread !== void 0 && thread.messages.length === 0 && !thread.worktreeChoice;
+    if (getActiveThreadId() === id) hideBranchMismatch();
+    const isBlankSharedCandidate = thread.messages.length === 0 && !thread.worktreeChoice;
     if (isBlankSharedCandidate && !dirtyWarningAcknowledged.has(id)) {
-      const choice = checkoutChoice(id);
-      const effectiveCheckoutMode = choice === "worktree" ? "worktree" : choice === "shared" ? "shared" : automaticCheckoutMode;
+      const choice2 = checkoutChoice(id);
+      const effectiveCheckoutMode = choice2 === "worktree" ? "worktree" : choice2 === "shared" ? "shared" : automaticCheckoutMode;
       if (effectiveCheckoutMode === "shared") {
         const state = await api2.git.promptState(projectId, id);
-        if (getActiveThreadId() !== id || activeComposerThreadId !== id || store2.getState().activeProjectId !== projectId)
-          return;
         if (state.dirty) {
+          if (getActiveThreadId() !== id || activeComposerThreadId !== id || store2.getState().activeProjectId !== projectId)
+            return;
           showDirtyWarning(id);
           return;
         }
       }
     }
     hideDirtyWarning();
-    const [skills, agentsResult] = await Promise.all([api2.skills.list(), api2.agents.list()]);
-    skillsCache = skills;
-    agentsCache = agentsResult.agents;
-    const invocation = resolveInvocation(rawText, currentInvocables());
+    const [skillsResult, agentsResult] = await invocationSources;
+    if (skillsResult.status === "rejected") throw skillsResult.reason;
+    if (agentsResult.status === "rejected") throw agentsResult.reason;
+    const skills = skillsResult.value;
+    const agents = agentsResult.value.agents;
+    if (store2.getState().activeProjectId === projectId) {
+      skillsCache = skills;
+      agentsCache = agents;
+    }
+    const invocation = resolveInvocation(
+      rawText,
+      mergeInvocables(
+        skills.map((skill) => skill.name),
+        agents.map((agent) => agent.name)
+      )
+    );
     const invokedSkills = invocation?.kind === "skill" ? [invocation.name] : [];
     const invokedAgent = invocation?.kind === "agent" ? invocation.name : void 0;
     const invokedSkill = invocation?.kind === "skill" ? skills.find((skill) => skill.name === invocation.name) : void 0;
@@ -92296,12 +92407,12 @@ ${description}
     ) : invocation ? buildSkillUserText(
       invocation.name,
       invocation.remainder,
-      attachedFiles.length > 0 || attachedImages.length > 0 || attachedVideos.length > 0 || attachedArchives.length > 0
+      attachedFiles2.length > 0 || attachedImages2.length > 0 || attachedVideos2.length > 0 || attachedArchives2.length > 0
     ) : rawText;
     let fullContent;
-    if (attachedImages.length > 0) {
+    if (attachedImages2.length > 0) {
       fullContent = [
-        ...attachedImages.map((img) => ({
+        ...attachedImages2.map((img) => ({
           type: "image",
           dataUrl: img.dataUrl,
           // Omitted at 'auto' so an untouched attachment sends the same content
@@ -92310,55 +92421,45 @@ ${description}
         })),
         {
           type: "text",
-          text: buildTextWithAttachments(text2, attachedFiles, currentShellBlocks(), {
-            threadRefs: currentThreadRefs(),
-            videoRefs: currentVideoRefs(),
-            archiveRefs: currentArchiveRefs()
-          })
+          text: buildTextWithAttachments(text2, attachedFiles2, shellBlocks, textAttachments)
         }
       ];
     } else {
-      fullContent = buildTextWithAttachments(text2, attachedFiles, currentShellBlocks(), {
-        threadRefs: currentThreadRefs(),
-        videoRefs: currentVideoRefs(),
-        archiveRefs: currentArchiveRefs()
-      });
+      fullContent = buildTextWithAttachments(text2, attachedFiles2, shellBlocks, textAttachments);
     }
     if (requiresCheckoutPreparation) {
-      const projectId2 = store2.getState().activeProjectId;
-      if (!projectId2) return;
-      hideCheckoutError();
-      checkoutPreparationInProgress = true;
+      checkoutErrors.delete(id);
+      checkoutPreparations.add(id);
       updateCheckoutControl();
       try {
         const prepared = await api2.agent.prepareCheckout(
-          projectId2,
+          projectId,
           id,
           rawText,
-          checkoutChoice(id),
-          thread.model ?? store2.getState().settings?.model,
+          choice,
+          model,
           // The footer picker only names a branch; this is where that selection
           // becomes the worktree's base, or the shared checkout's branch.
-          branchControl.pendingBaseBranch(id)
+          baseBranch
         );
+        if (!getThreadById(store2, id)) return;
         preparedPromptState = prepared.promptState;
         applyPreparedThreadCheckout(store2, id, prepared);
-        if (getActiveThreadId() !== id) return;
       } catch (error62) {
         await api2.agent.resetDefaultBranchCache().catch(() => void 0);
-        checkoutErrorText.textContent = checkoutErrorMessage(error62);
-        checkoutError.hidden = false;
+        checkoutErrors.set(id, checkoutErrorMessage(error62));
         return;
       } finally {
-        checkoutPreparationInProgress = false;
+        checkoutPreparations.delete(id);
         updateCheckoutControl();
       }
     }
     if (prefetchedPromptState?.status === "rejected") throw prefetchedPromptState.reason;
     const promptState = preparedPromptState ?? (prefetchedPromptState?.status === "fulfilled" ? prefetchedPromptState.value : await api2.git.promptState(projectId, id));
-    const priorTodos = thread?.todos ?? [];
-    const workingBrief = nextWorkingBrief(thread?.workingBrief, fullContent);
-    if (workingBrief && workingBrief !== thread?.workingBrief) {
+    if (!getThreadById(store2, id)) return;
+    const priorTodos = thread.todos ?? [];
+    const workingBrief = nextWorkingBrief(thread.workingBrief, fullContent);
+    if (workingBrief && workingBrief !== thread.workingBrief) {
       setThreadWorkingBrief(store2, id, workingBrief);
     }
     const payload = {
@@ -92368,7 +92469,6 @@ ${description}
       priorTodos,
       ...workingBrief !== void 0 ? { workingBrief } : {}
     };
-    const inlineChips = composer.getInlineChips();
     const inlineThreadIds = new Set(
       inlineChips.flatMap((chip2) => chip2.kind === "thread" ? [chip2.thread.threadId] : [])
     );
@@ -92379,36 +92479,36 @@ ${description}
         }
         return [{ kind: "thread", label: chip2.thread.label }];
       }),
-      ...attachedFiles.map((file2) => ({
+      ...attachedFiles2.map((file2) => ({
         kind: "file",
         label: file2.path.split("/").pop() ?? file2.path,
         content: file2.content
       })),
       // Defensive fallback: a thread reference should always have an inline chip,
       // but retaining an unmatched attachment preserves its agent context.
-      ...attachedThreads.filter((thread2) => !inlineThreadIds.has(thread2.threadId)).map((thread2) => ({
+      ...attachedThreads2.filter((thread2) => !inlineThreadIds.has(thread2.threadId)).map((thread2) => ({
         kind: "thread",
         label: thread2.title || "Untitled thread"
       })),
-      ...attachedShells.map((s16) => ({
+      ...attachedShells2.map((s16) => ({
         kind: "shell",
         label: s16.label,
         content: s16.content
       })),
-      ...attachedVideos.map((v3) => ({
+      ...attachedVideos2.map((v3) => ({
         kind: "video",
         label: v3.name,
         // Carried so the sent chip can still play the recording after a reload,
         // when the composer's own state is long gone.
         path: v3.path
       })),
-      ...attachedArchives.map((a3) => ({
+      ...attachedArchives2.map((a3) => ({
         kind: "archive",
         label: a3.name,
         path: a3.path
       }))
     ];
-    const imageUrls = attachedImages.map((img) => img.dataUrl);
+    const imageUrls = attachedImages2.map((img) => img.dataUrl);
     const messageId = addMessage(
       store2,
       id,
@@ -92422,9 +92522,9 @@ ${description}
       }
     );
     if (currentBranch) bindThreadGitBranchIfUnset(store2, id, currentBranch);
-    recordThreadVideos(store2, id, attachedVideos);
-    recordThreadArchives(store2, id, attachedArchives);
-    if (isRunning()) {
+    recordThreadVideos(store2, id, attachedVideos2);
+    recordThreadArchives(store2, id, attachedArchives2);
+    if (getThreadById(store2, id)?.status === "running") {
       enqueueUserMessage(store2, id, {
         messageId,
         payload,
@@ -92434,11 +92534,18 @@ ${description}
       startHumanTurnTree(store2, id);
       dispatchAgentRun(store2, api2, id, payload);
     }
-    composer.clear();
-    setThreadDraftPrompt(store2, id, "");
-    draftAttachmentsByThread.delete(id);
-    clearAttachments();
-    scheduleContextEstimate(0);
+    const visible = activeComposerThreadId === id;
+    const currentDraft = visible ? composer.expandedValue() : getThreadById(store2, id)?.draftPrompt ?? "";
+    const currentAttachments = visible ? snapshotDraftAttachments() : draftAttachmentsByThread.get(id) ?? emptyDraftAttachments();
+    if (draftFingerprint(currentDraft, currentAttachments) === draftKey) {
+      if (visible) {
+        composer.clear();
+        clearAttachments();
+        scheduleContextEstimate(0);
+      }
+      draftAttachmentsByThread.delete(id);
+      setThreadDraftPrompt(store2, id, "");
+    }
   }
   function addChip(file2) {
     attachedFiles.push(file2);
@@ -92920,6 +93027,7 @@ var init_input_bar = __esm({
     init_text_expand();
     init_video_expand();
     init_wire_types2();
+    init_pending_submissions();
     init_thread_helpers();
     init_message_queue();
     init_working_brief();
