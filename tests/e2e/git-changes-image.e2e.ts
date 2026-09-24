@@ -13,7 +13,7 @@ import {
   seedEmptyProject,
   seedGitImageChangesFixture,
 } from './helpers/seed-config.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
 
@@ -161,7 +161,7 @@ describe('git changes image preview', function () {
       ],
     })
     await setComposerValue(user)
-    await $('.submit-btn').click()
+    await submitComposer()
     await scenario.waitForHold('preview-open')
     const stopButton = await $('.stop-btn')
     await stopButton.waitForDisplayed({ timeout: 15_000 })
