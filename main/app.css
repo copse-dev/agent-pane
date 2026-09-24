@@ -5020,6 +5020,12 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
 .subagent-timeline .tool-activity-icon-slot:empty {
   display: none;
 }
+.tool-rollup-body .tool-card[data-status=running] > .tool-card-header > .tool-status-icon,
+.tool-rollup-body .tool-group-item[data-status=running] > .tool-group-item-header > .tool-status-icon,
+.subagent-timeline .tool-card[data-status=running] > .tool-card-header > .tool-status-icon,
+.subagent-timeline .tool-group-item[data-status=running] > .tool-group-item-header > .tool-status-icon {
+  display: none;
+}
 .tool-card[open] .tool-card-header {
   margin-bottom: var(--spacing-xs);
 }
