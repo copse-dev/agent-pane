@@ -6,7 +6,11 @@ import type { Thread } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { registerPromptAttachments } from '../attachments/prompt-attachments.ts'
 import { mountRoadmapPane } from './roadmap-pane.ts'
-import { clickActiveConfirmDialogConfirm, mountConfirmDialog } from './confirm-dialog.ts'
+import {
+  clickActiveConfirmDialogCancel,
+  clickActiveConfirmDialogConfirm,
+  mountConfirmDialog,
+} from './confirm-dialog.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import type { KnowledgeNote } from '../../main/services/storage/knowledge-store.ts'
 import type { RoadmapStatus } from '../../main/tools/roadmap-tools.ts'
@@ -1941,6 +1945,65 @@ describe('roadmap pane', () => {
     }
   })
 
+  it('confirms before applying a bulk review status, and cancel leaves items untouched', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api, calls } = makeApi([
+      makeItem('a', 'Fix startup flash', 'ready', undefined, '#41'),
+      makeItem('b', 'Port e2e specs', 'ready', undefined, '#42'),
+    ])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.roadmap-review-btn')?.click()
+      await flush()
+      // Opening a review row and returning re-renders the review results with the
+      // review no longer "in flight" — the same round trip a person makes to read
+      // an item before bulk-applying, and the render pass that reveals the bulk
+      // affordances (they start hidden while the review is still running).
+      viewer.querySelector<HTMLButtonElement>('.roadmap-review-open')?.click()
+      await flush()
+      viewer.querySelector<HTMLButtonElement>('.roadmap-review-back')?.click()
+      await flush()
+      const markResolvedBtn = viewer.querySelector<HTMLButtonElement>(
+        '.roadmap-review-mark-resolved',
+      )
+      assert.ok(markResolvedBtn, 'bulk mark-done affordance renders once results suggest it')
+      assert.equal(markResolvedBtn.hidden, false)
+      assert.equal(markResolvedBtn.disabled, false)
+
+      // Cancelling the in-app dialog must not touch any item.
+      markResolvedBtn.click()
+      await flush()
+      const dialog = document.querySelector<HTMLDialogElement>('#confirm-dialog')
+      assert.ok(dialog?.open, 'an in-app dialog opens — no native confirm()')
+      assert.equal(
+        dialog.querySelector('.confirm-dialog-message')?.textContent,
+        'Mark 2 item(s) judged resolved or likely?',
+      )
+      clickActiveConfirmDialogCancel()
+      await flush()
+      assert.equal(calls.setStatus.length, 0, 'cancel leaves both items unchanged')
+      assert.equal(dialog.hasAttribute('open'), false)
+
+      // Confirming applies the bulk status to every eligible result.
+      markResolvedBtn.click()
+      await flush()
+      clickActiveConfirmDialogConfirm()
+      await flush()
+      assert.deepEqual(calls.setStatus, [
+        { id: 'a', status: 'done' },
+        { id: 'b', status: 'done' },
+      ])
+      assert.match(
+        viewer.querySelector('.roadmap-review-status')?.textContent ?? '',
+        /Updated 2 item\(s\)\./,
+      )
+    } finally {
+      unmount()
+    }
+  })
+
   it('auto deep-checks a stale item on open', async () => {
     const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
     const stale = makeItem('a', 'Fix startup flash', 'ready', undefined, '#41')
@@ -2219,6 +2282,135 @@ describe('roadmap pane', () => {
 
       viewer.querySelector<HTMLButtonElement>('.roadmap-review-close')?.click()
       await flush()
+      assert.equal(calls.completeReview.length, 0)
+    } finally {
+      unmount()
+    }
+  })
+
+  it('keeps a running review reachable behind Import and reattaches with live progress (#2438)', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api } = makeApi([
+      makeItem('a', 'Fix startup flash', 'ready', undefined, '#41'),
+      makeItem('b', 'Terminal shortcut', 'ready', undefined, '#42'),
+    ])
+    let releaseSecond!: () => void
+    const secondGate = new Promise<void>((resolve) => {
+      releaseSecond = resolve
+    })
+    const reviewProgress = { secondStarted: false }
+    const baseReviewItem = api.roadmap.reviewItem
+    api.roadmap.reviewItem = async (
+      id: string,
+      commits: string,
+      runId?: string,
+    ): Promise<Awaited<ReturnType<typeof baseReviewItem>>> => {
+      if (id === 'b') {
+        reviewProgress.secondStarted = true
+        await secondGate
+      }
+      return baseReviewItem(id, commits, runId)
+    }
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      const reviewBtn = list.querySelector<HTMLButtonElement>('.roadmap-review-btn')
+      assert.ok(reviewBtn)
+      reviewBtn.click()
+      for (let i = 0; i < 20 && !reviewProgress.secondStarted; i++) await flush()
+      assert.ok(reviewProgress.secondStarted, 'second item review should have started')
+
+      // Navigate away without closing the review — Import from GitHub issues.
+      list.querySelector<HTMLButtonElement>('.roadmap-import-btn')?.click()
+      await flush()
+      const reviewView = viewer.querySelector<HTMLElement>('.roadmap-review')
+      const importView = viewer.querySelector<HTMLElement>('.roadmap-import')
+      assert.ok(reviewView)
+      assert.ok(importView)
+      assert.equal(reviewView.hidden, true, 'review panel is tucked away, not discarded')
+      assert.equal(importView.hidden, false)
+      assert.ok(reviewBtn.classList.contains('roadmap-review-btn-live'))
+      assert.match(reviewBtn.getAttribute('aria-label') ?? '', /running.*1 of 2/i)
+      assert.equal(
+        reviewBtn.disabled,
+        false,
+        'still clickable while hidden — it is now the way back',
+      )
+
+      // The still-running loop keeps judging in the background; the header
+      // affordance keeps up with progress events even while tucked away.
+      releaseSecond()
+      await flush()
+      assert.match(reviewBtn.getAttribute('aria-label') ?? '', /finished.*2 item/i)
+      assert.equal(reviewBtn.disabled, false)
+
+      // Clicking the header button brings the panel back with everything judged
+      // so far — it reattaches rather than starting a fresh review.
+      reviewBtn.click()
+      await flush()
+      assert.equal(importView.hidden, true)
+      assert.equal(reviewView.hidden, false)
+      assert.equal(viewer.querySelectorAll('.roadmap-review-row').length, 2)
+      assert.ok(!reviewBtn.classList.contains('roadmap-review-btn-live'))
+    } finally {
+      unmount()
+    }
+  })
+
+  it('rediscovers an unfinished review checkpoint on mount (#2438)', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const itemA = makeItem('a', 'Fix startup flash', 'ready', undefined, '#41')
+    itemA.fields = {
+      ...itemA.fields,
+      reviewVerdict: 'likely',
+      reviewDetail: 'Commit matches · Issue still open',
+      reviewBulkRun: 'orphan-run-7',
+    }
+    const { api, calls } = makeApi([
+      itemA,
+      makeItem('b', 'Terminal shortcut', 'ready', undefined, '#42'),
+    ])
+    api.roadmap.lastReviewAt = async (): Promise<{
+      lastReviewAt: string | null
+      lastAcknowledgedBulkRun: string | null
+      pendingBulkRun: string | null
+    }> => ({
+      lastReviewAt: '2026-07-10T00:00:00.000Z',
+      lastAcknowledgedBulkRun: null,
+      pendingBulkRun: 'orphan-run-7',
+    })
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      const reviewBtn = list.querySelector<HTMLButtonElement>('.roadmap-review-btn')
+      assert.ok(reviewBtn)
+      assert.ok(
+        reviewBtn.classList.contains('roadmap-review-btn-live'),
+        'surfaces a run nobody closed',
+      )
+      assert.match(reviewBtn.getAttribute('aria-label') ?? '', /finished.*1 item/i)
+
+      // A rediscovered session doesn't own the viewer — ordinary rows still work.
+      list.querySelector<HTMLButtonElement>('.roadmap-row')?.click()
+      await flush()
+      assert.ok(viewer.querySelector<HTMLElement>('.roadmap-form:not([hidden])'))
+
+      reviewBtn.click()
+      await flush()
+      const reviewView = viewer.querySelector<HTMLElement>('.roadmap-review')
+      assert.ok(reviewView)
+      assert.equal(reviewView.hidden, false)
+      assert.equal(viewer.querySelectorAll('.roadmap-review-row').length, 1)
+      assert.match(
+        viewer.querySelector('.roadmap-review-row-title')?.textContent ?? '',
+        /Fix startup flash/,
+      )
+
+      viewer.querySelector<HTMLButtonElement>('.roadmap-review-close')?.click()
+      await flush()
+      assert.deepEqual(calls.abortReview, ['orphan-run-7'])
       assert.equal(calls.completeReview.length, 0)
     } finally {
       unmount()

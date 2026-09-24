@@ -566,6 +566,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
             status: chunk.status,
             summary: chunk.summary,
             ...(chunk.issuesFound !== undefined ? { issuesFound: chunk.issuesFound } : {}),
+            ...(chunk.followUpNote !== undefined ? { followUpNote: chunk.followUpNote } : {}),
           })
         }
         if (chunk.status === 'running') emitActivity(threadId, 'Reviewing changes…')

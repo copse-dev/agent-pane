@@ -8,7 +8,7 @@
 
 ## Validation
 
-<!-- Record exact commands/results or immutable CI links. For visible changes, link the focused visual evidence. Distinguish completed checks from planned or blocked validation. -->
+<!-- Record exact commands/results or immutable CI links. For visible changes, link the focused visual evidence. Distinguish completed checks from planned or blocked validation. If the full local check was deferred under the low-risk fast path, say so explicitly and name the required CI gate that will run it. -->
 
 ## Remaining work
 

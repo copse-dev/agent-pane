@@ -111,6 +111,13 @@ shell's hand-offs (Phase 4).
   the test and both outputs before confirming a finding. Everything still open goes to the challenger, whose brief is to refute the finding
   with the burden of proof on the claim; `refuted` drops it, `stands` records the survived
   challenge. Most promising findings first, up to `--max-verify`.
+  `--verify-concurrency 2` overlaps two findings' model passes; its default is 1
+  for compatibility, and the protected PR workflow defaults to 2 (set repository
+  variable `COPSE_REVIEW_VERIFY_CONCURRENCY=1` to restore sequential verification). Each
+  finding's test precedes its own challenge. Tools still share one execution
+  lane, including reproducer writes and cleanup; tests use distinct root-level
+  filename prefixes so relative imports keep the same depth. Output ordering
+  stays deterministic even when findings finish out of order.
 - **`reproducer-runner.ts`** — `write_reproducer` accepts `argv: ["copse-test"]` for
   JS/TS `node:test` cases in projects that already depend on esbuild. The trusted runner
   executes only inside the existing cell, bundles local imports with each checkout's
@@ -129,6 +136,11 @@ shell's hand-offs (Phase 4).
 - **`provider-selection.ts`** / **`cli.ts`** / **`bin/copse-review.mjs`** — the shell.
   Keys come from the environment only; remote providers get the diff with secrets
   redacted; `--provider mock` plays a scripted reviewer for harness self-tests.
+  OpenRouter's reported hosting provider travels with each response's usage;
+  per-turn JSON summaries and collapsed review details list the observed hosts.
+  Missing metadata stays unknown rather than being inferred from a model ID.
+  Parallel pass durations overlap and must not be summed; tool time includes
+  waiting for the shared execution lane.
 - **`report-text.ts`** — the terminal projection. "Clean." is a complete answer only when
   every configured reviewer completed its attestation.
 - **`stage0-report.ts`** — the Stage 0 report as a decoder, for the file the CI shell's
@@ -211,6 +223,13 @@ run started with `GITHUB_TOKEN`. The secret-bearing findings job verifies the su
 run and resolves the current contributor commit and base from GitHub's Pull Request API, rather
 than trusting the artefact or a dynamic run association. Remove and re-add the label to review a
 newer head.
+Repeated PR reviews first look for clean grounding from the previous 24 hours. Reuse
+requires the same PR head and merge-base, all four checks completed successfully, and
+unchanged trusted runner code and dependencies. Producer identity comes from GitHub's
+API, and the report remains untrusted data subject to validation. The lookup runs in a
+separate read-only job that never executes PR code. Any miss runs the usual secret-free
+grounding job; dispatch with `fresh=true` to force that path. Normal PR CI's merge-commit
+checks are not substituted for checks of the reviewed head.
 Job B, on the base ref with the model key, imports that report (`--stage0-json` is read-only
 by default and refuses a report for another commit). Before any model or App credential is
 put in a step, the workflow builds `Dockerfile.cell`, fetches the exact head's dependency
@@ -232,8 +251,19 @@ App with only `pull-requests: write` and pass it as `COPSE_REVIEW_FORGE_TOKEN`; 
 Provider-specific keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
 `OPENROUTER_API_KEY`) take precedence over that shared model key when set.
 
-This repository dogfoods the GitHub path with `qwen3.8-27b` through Scaleway's
-OpenAI-compatible endpoint. `SCW_GENERATIVE_API_KEY` is the fallback for a dedicated
+The PR and nightly workflows default to Luna through OpenRouter, using only the
+protected environment's `COPSE_REVIEW_OPENROUTER_API_KEY`. They prefer standard
+OpenAI hosting while retaining zero-data-retention, no-training and supported-parameter
+filters, with fallback to other eligible providers. Set the repository variable
+`COPSE_REVIEW_OPENROUTER_PROVIDER=auto` to restore automatic routing, or to a base
+provider slug such as `azure` to change the preference. The CLI reads the same name
+from its environment; an unset value keeps automatic routing. This applies to discovery,
+reproduction and challenge, including an explicitly selected challenger. Service-tier
+slugs such as `openai/fast` are rejected. A preference does not guarantee which provider
+answers; the review's usage details record the actual host.
+
+Set `COPSE_REVIEW_PR_PROFILE=configured` to restore the retained `qwen3.8-27b` route
+through Scaleway. `SCW_GENERATIVE_API_KEY` is the fallback for a dedicated
 `COPSE_REVIEW_API_KEY`; `COPSE_REVIEW_PROVIDER`, `COPSE_REVIEW_MODEL`,
 `COPSE_REVIEW_BASE_URL`, `COPSE_REVIEW_LENSES`, `COPSE_REVIEW_MAX_STEPS` and
 `COPSE_REVIEW_MAX_VERIFY` repository variables override the pinned profile. The default is

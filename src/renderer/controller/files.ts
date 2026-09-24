@@ -4,6 +4,7 @@ import { getActiveThreadOwner, requireActiveThreadOwner } from './active-thread-
 import { openBrowserUrl } from './panels.ts'
 import { isImagePath, isRasterImagePath } from '@shared/fs/image-path.ts'
 import { openAttachmentPreview } from '../attachments/attachment-preview.ts'
+import { attachImageCopyMenu } from '../attachments/image-expand.ts'
 import { el } from '../dom/helpers.ts'
 import { errorMessage } from '@shared/errors.ts'
 
@@ -94,7 +95,9 @@ export async function openWorkspaceFile(
         preview.close()
         return
       }
-      preview.setContent(el('img', { class: 'image-expand-image', src, alt: path }))
+      const image = el('img', { class: 'image-expand-image', src, alt: path })
+      attachImageCopyMenu(image)
+      preview.setContent(image)
     } catch (error) {
       if (!isOwner()) {
         preview.close()

@@ -13,6 +13,13 @@ export interface SkillMetadata extends SkillSummary {
   skillRoot: string
   disableModelInvocation: boolean
   paths: string[]
+  /**
+   * Bundle-relative paths (`references/…`, `scripts/…`, `assets/…`) the
+   * skill's SKILL.md mentions but that do not exist under `skillRoot`.
+   * Computed once at discovery time so a broken bundle is flagged before the
+   * model hits the missing file mid-run.
+   */
+  missingReferences: string[]
 }
 
 export interface SkillReadResult {
@@ -22,6 +29,8 @@ export interface SkillReadResult {
   skillPath: string
   body: string
   relativePath: string
+  /** See {@link SkillMetadata.missingReferences}. */
+  missingReferences: string[]
 }
 
 // The run payload is owned by the agent module (`parseAgentRunPayload` parses

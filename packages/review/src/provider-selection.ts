@@ -104,7 +104,19 @@ export function selectProvider(
       const model = selection.model
       if (model === undefined)
         throw new Error('--model is required for openrouter (e.g. anthropic/claude-sonnet-5)')
-      return remote(model, createOpenRouterProvider(model, required(env, 'OPENROUTER_API_KEY')))
+      const preference = env['COPSE_REVIEW_OPENROUTER_PROVIDER']?.trim()
+      const preferredProvider = preference && preference !== 'auto' ? preference : undefined
+      // Base provider slugs only: priced service tiers require a separate,
+      // explicit billing decision rather than a routing configuration change.
+      if (preferredProvider && !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(preferredProvider)) {
+        throw new Error('COPSE_REVIEW_OPENROUTER_PROVIDER must be a base provider slug or auto')
+      }
+      return remote(
+        model,
+        createOpenRouterProvider(model, required(env, 'OPENROUTER_API_KEY'), undefined, {
+          ...(preferredProvider ? { preferredProvider } : {}),
+        }),
+      )
     }
     case 'lmstudio': {
       const model = selection.model ?? env['LM_STUDIO_MODEL']?.trim()

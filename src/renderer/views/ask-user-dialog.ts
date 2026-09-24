@@ -119,7 +119,15 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): void {
         'div',
         { class: 'ask-user-buttons' },
         cancelBtn,
-        el('button', { type: 'submit', class: 'ask-user-submit' }, 'Send answer'),
+        el(
+          'button',
+          {
+            type: 'submit',
+            class: 'ask-user-submit',
+            title: 'Send answer (⌘Enter or Ctrl+Enter)',
+          },
+          'Send answer',
+        ),
       ),
     )
     dialog.showModal()
@@ -175,6 +183,39 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): void {
   form.addEventListener('submit', (event) => {
     event.preventDefault()
     submit()
+  })
+
+  // Cmd/Ctrl+Enter submits from any answer textarea, matching the shortcut
+  // the roadmap editor uses to save from an input field. Plain Enter keeps
+  // its native <textarea> behaviour (a newline), since an answer can be
+  // multi-line.
+  dialog.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      // Keep the app-level stop shortcut from preventing the native dialog
+      // cancel event. The cancel listener below owns the response and close.
+      event.stopPropagation()
+      return
+    }
+    if (!(event.metaKey || event.ctrlKey) || event.key !== 'Enter') return
+
+    // A held chord must not answer the next queued question, and composition
+    // commit events must remain available to the IME. Stop both from reaching
+    // the app-level Enter shortcut while the ask dialog owns the key.
+    event.stopPropagation()
+    if (event.isComposing || event.repeat) return
+    event.preventDefault()
+    submit()
+  })
+
+  // Escape fires the native <dialog> `cancel` event before it closes the top
+  // layer. Without this, that native close left `active` set and never called
+  // `api.ask.respond` — the agent loop stayed blocked forever on a question
+  // the user had already dismissed. `preventDefault` stops the native close so
+  // `cancel()` (via `respond()`) stays the single path that closes the dialog
+  // and advances the queue.
+  dialog.addEventListener('cancel', (event) => {
+    event.preventDefault()
+    cancel()
   })
 
   api.agent.onAskUserRequest((req) => {

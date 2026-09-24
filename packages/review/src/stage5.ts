@@ -35,6 +35,7 @@ export interface ReviewerSummary {
   readonly stopReason: HeadlessStopReason
   readonly candidates: number
   readonly toolCalls: number
+  readonly hostingProviders?: readonly string[]
   readonly timing?: TurnTiming
   readonly usage: TurnUsage
   readonly summary: string
@@ -248,6 +249,7 @@ export function summarizeReview(review: Stage2Result): ReviewerSummary {
     candidates: review.candidates.length,
     toolCalls: review.toolCalls,
     ...(review.timing !== undefined ? { timing: review.timing } : {}),
+    ...(review.hostingProviders?.length ? { hostingProviders: review.hostingProviders } : {}),
     usage: review.usage,
     summary: review.summary,
     completion: review.completion,

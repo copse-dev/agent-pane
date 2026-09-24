@@ -251,8 +251,18 @@ export class OpenAIProvider implements LLMProvider {
         let finishReason: string | undefined
         let streamUsage: ModelUsage | null = null
         let responseServiceTier: ServiceTier | undefined
+        let hostingProvider: string | undefined
 
         for await (const event of stream) {
+          // OpenRouter adds `provider` outside the OpenAI SDK's declared shape.
+          // Accept only a bounded label, never arbitrary response/error bodies.
+          const reportedHost: unknown = Reflect.get(event, 'provider')
+          if (
+            typeof reportedHost === 'string' &&
+            /^[A-Za-z0-9][A-Za-z0-9 ._/-]{0,79}$/.test(reportedHost)
+          ) {
+            hostingProvider = reportedHost.trim()
+          }
           if (typeof event.service_tier === 'string' && isServiceTier(event.service_tier)) {
             responseServiceTier = event.service_tier
           }
@@ -323,6 +333,7 @@ export class OpenAIProvider implements LLMProvider {
           yield {
             type: 'usage',
             model,
+            ...(hostingProvider === undefined ? {} : { hostingProvider }),
             inputTokens: streamUsage.inputTokens,
             outputTokens: streamUsage.outputTokens,
             ...(streamUsage.cacheReadTokens !== undefined

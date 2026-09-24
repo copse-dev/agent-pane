@@ -627,7 +627,18 @@ dialog.settings-overlay::backdrop {
      the action buttons so nothing in the form is fiddlier than the chrome
      around it. */
   min-height: var(--action-min-height);
+}
+.settings-content label input[type='text'],
+.settings-content label input[type='password'],
+.settings-content label input[type='number'] {
   padding-inline: var(--spacing-md);
+}
+/* select only gets the roomier left inset: a `padding-inline` shorthand here
+   would win over forms.css's `select { padding-right: … }` (this selector is
+   more specific) and shrink the chevron's clearance right back down — the
+   flush-chevron regression #2437 warns about, just moved one selector over. */
+.settings-content label select {
+  padding-left: var(--spacing-md);
 }
 /* The whole checkbox line — box and its wording — is one target. Padding does
    that without moving the row's text, and the negative inline start keeps the

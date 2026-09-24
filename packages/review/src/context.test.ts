@@ -8,6 +8,7 @@ import {
   budgetFileDiffs,
   buildReviewContext,
   lowSignalReason,
+  readFileDiff,
   renderReviewContext,
   splitDiff,
 } from './context.ts'
@@ -182,5 +183,15 @@ describe('buildReviewContext', () => {
     assert.match(rendered, /Repository instructions from AGENTS\.md/)
     assert.match(rendered, /\+export const fresh = true/)
     assert.doesNotMatch(rendered, /lockfileVersion: 10/)
+  })
+
+  it('pins forge diffs to committed head and keeps literal paths outside the prompt budget', async () => {
+    const diff = (path: string): Promise<string> =>
+      readFileDiff(checkouts.head, checkouts.mergeBase, path, checkouts.headCommit)
+    assert.match(await diff('src/math.ts'), /\+export const add.*a - b/)
+    assert.match(await diff('pnpm-lock.yaml'), /\+lockfileVersion: 10/)
+    assert.equal(await diff('src/math.test.ts'), '', 'uncommitted edits are excluded')
+    assert.equal(await diff('src/new.ts'), '', 'untracked files are excluded')
+    assert.equal(await diff('src/*.ts'), '', 'pathspec characters are literal')
   })
 })

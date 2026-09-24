@@ -250,7 +250,13 @@ export function createOpenRouterProvider(
   model: string,
   apiKey: string,
   promptCacheKey?: string,
-  opts: { zdrOnly?: boolean; allowTraining?: boolean; params?: ModelParameters } = {},
+  opts: {
+    zdrOnly?: boolean
+    allowTraining?: boolean
+    params?: ModelParameters
+    /** Try this OpenRouter provider first, retaining filtered fallback routing. */
+    preferredProvider?: string
+  } = {},
 ): LLMProvider {
   const zdrOnly = opts.zdrOnly ?? true
   const allowTraining = opts.allowTraining ?? false
@@ -277,6 +283,9 @@ export function createOpenRouterProvider(
     extraBody: {
       provider: {
         require_parameters: true,
+        ...(opts.preferredProvider
+          ? { order: [opts.preferredProvider], allow_fallbacks: true }
+          : {}),
         ...(zdrOnly ? { zdr: true } : {}),
         ...(allowTraining ? {} : { data_collection: 'deny' }),
       },
