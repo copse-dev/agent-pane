@@ -109608,6 +109608,24 @@ function webviewUrl(tab) {
     return "";
   }
 }
+function clearUrlLoadStatus(tab) {
+  tab.loadError = null;
+  tab.urlInput.classList.remove("has-error", "has-blocked");
+  setTooltip(tab.urlInput, null);
+  tab.statusLine.textContent = "";
+  tab.statusLine.classList.remove("browser-status-danger", "browser-status-warning");
+  tab.statusLine.hidden = true;
+}
+function setUrlLoadStatus(tab, kind, message2) {
+  tab.loadError = message2;
+  tab.urlInput.classList.toggle("has-error", kind === "error");
+  tab.urlInput.classList.toggle("has-blocked", kind === "blocked");
+  setTooltip(tab.urlInput, message2);
+  tab.statusLine.textContent = message2;
+  tab.statusLine.classList.toggle("browser-status-danger", kind === "error");
+  tab.statusLine.classList.toggle("browser-status-warning", kind === "blocked");
+  tab.statusLine.hidden = false;
+}
 function webviewTitle(tab) {
   if (!tab.webview || !tab.webviewReady || typeof tab.webview.getTitle !== "function")
     return void 0;
@@ -109939,8 +109957,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     );
   }
   function navigateWebview(tab, url2) {
-    tab.loadError = null;
-    tab.urlInput.classList.remove("has-error");
+    clearUrlLoadStatus(tab);
     if (!tab.webviewReady && tab.pendingUrl === url2) return;
     whenWebviewReady(tab, (webview) => {
       const current = webview.getURL();
@@ -109959,12 +109976,16 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       if (activeTabId === tab.id) syncAddressBar(tab);
       scheduleSessionSave();
     };
-    webview.addEventListener("did-navigate", onNavigate);
+    const onNavigateSuccess = () => {
+      clearUrlLoadStatus(tab);
+      onNavigate();
+    };
+    webview.addEventListener("did-navigate", onNavigateSuccess);
     webview.addEventListener("did-navigate", () => {
       tab.annotation?.deactivate();
       tab.annotation?.clear();
     });
-    webview.addEventListener("did-navigate-in-page", onNavigate);
+    webview.addEventListener("did-navigate-in-page", onNavigateSuccess);
     webview.addEventListener("page-title-updated", onNavigate);
     webview.addEventListener("focus", closeAllMenus);
     webview.addEventListener("dom-ready", () => {
@@ -109979,11 +110000,31 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     });
     webview.addEventListener("did-fail-load", (event) => {
       const detail = event;
-      tab.loadError = detail.errorDescription ?? "Failed to load page";
-      tab.urlInput.classList.add("has-error");
-      tab.urlInput.title = tab.loadError;
+      if (detail.isMainFrame === false) return;
+      if (detail.errorCode === NET_ERROR_ABORTED) return;
+      if (detail.errorCode === NET_ERROR_BLOCKED_BY_CLIENT) {
+        setUrlLoadStatus(tab, "blocked", "Blocked by the browser network policy");
+        return;
+      }
+      const description = nonEmptyStringOr(detail.errorDescription, "Failed to load page");
+      setUrlLoadStatus(tab, "error", `Couldn't load this page: ${description}`);
     });
     return webview;
+  }
+  function handleNavigationBlocked(webContentsId, url2) {
+    for (const tab of tabs.values()) {
+      if (!tab.webview) continue;
+      let id;
+      try {
+        id = tab.webview.getWebContentsId();
+      } catch {
+        continue;
+      }
+      if (id !== webContentsId) continue;
+      if (tab.urlInput.value !== url2) continue;
+      setUrlLoadStatus(tab, "blocked", "Blocked by the browser network policy");
+      return;
+    }
   }
   function navigateTab(tab, rawUrl) {
     const url2 = normalizeBrowserUrl(rawUrl);
@@ -110316,8 +110357,15 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       annotateBtn,
       menuWrap
     );
+    const statusLine = el("div", { class: "browser-status", role: "status", hidden: "" });
     const webviewHost = el("div", { class: "browser-webview-host" });
-    const panel = el("div", { class: "browser-tab-panel", "data-tab-id": id }, toolbar, webviewHost);
+    const panel = el(
+      "div",
+      { class: "browser-tab-panel", "data-tab-id": id },
+      toolbar,
+      statusLine,
+      webviewHost
+    );
     const tab = {
       id,
       partition: options?.partition ?? browserSessionPartition(
@@ -110335,6 +110383,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       backBtn,
       forwardBtn,
       reloadBtn,
+      statusLine,
       pendingUrl: null,
       loadError: null,
       artefactTitle: null,
@@ -110734,6 +110783,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     api2?.browser.onOpenTab((url2, partition) => addTab({ url: url2, partition, activate: false })),
     api2?.browser.onShowTab?.(showTabForUrl),
     api2?.browser.onPreviewStale?.(refreshStalePreviews),
+    api2?.browser.onNavigationBlocked?.(handleNavigationBlocked),
     api2?.browser.onShareText(attachSharedText),
     api2?.browser.onShareImage(attachSharedImage),
     api2?.browser.onPluginTabRequest(ensurePluginBrowserTab),
@@ -110762,7 +110812,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     tabs.clear();
   };
 }
-var WEBVIEW_PREFS2;
+var NET_ERROR_ABORTED, NET_ERROR_BLOCKED_BY_CLIENT, WEBVIEW_PREFS2;
 var init_browser_pane = __esm({
   "src/renderer/views/browser-pane.ts"() {
     init_helpers();
@@ -110780,6 +110830,9 @@ var init_browser_pane = __esm({
     init_annotation_layer();
     init_attach_annotation();
     init_toast();
+    init_tooltip();
+    NET_ERROR_ABORTED = -3;
+    NET_ERROR_BLOCKED_BY_CLIENT = -20;
     WEBVIEW_PREFS2 = "contextIsolation=true";
   }
 });
@@ -128365,7 +128418,15 @@ function mountAskUserDialog(api2, store2) {
         "div",
         { class: "ask-user-buttons" },
         cancelBtn,
-        el("button", { type: "submit", class: "ask-user-submit" }, "Send answer")
+        el(
+          "button",
+          {
+            type: "submit",
+            class: "ask-user-submit",
+            title: "Send answer (\u2318Enter or Ctrl+Enter)"
+          },
+          "Send answer"
+        )
       )
     );
     dialog2.showModal();
@@ -128407,6 +128468,21 @@ function mountAskUserDialog(api2, store2) {
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     submit();
+  });
+  dialog2.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.stopPropagation();
+      return;
+    }
+    if (!(event.metaKey || event.ctrlKey) || event.key !== "Enter") return;
+    event.stopPropagation();
+    if (event.isComposing || event.repeat) return;
+    event.preventDefault();
+    submit();
+  });
+  dialog2.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    cancel();
   });
   api2.agent.onAskUserRequest((req) => {
     queue.push({ id: req.id, threadId: req.threadId, questions: req.questions });
