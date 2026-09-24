@@ -79,6 +79,14 @@ export interface TurnOptions {
         prompt(summary: string, completionError: string): string
       }
     | undefined
+  /** Final investigation steps reserved inside maxSteps, before protocol-only closure. */
+  readonly investigationReserve?:
+    | {
+        readonly maxSteps: number
+        needed(): boolean
+        prompt(): string
+      }
+    | undefined
   readonly signal?: AbortSignal | undefined
   /** Receives each contract event as it happens. */
   readonly onEvent?: ((event: HeadlessEvent) => void) | undefined
@@ -193,19 +201,42 @@ export async function runTurn(options: TurnOptions): Promise<TurnResult> {
     turnId: options.turnId,
     protocolVersion: HEADLESS_PROTOCOL_VERSION,
   })
+  const reserve = Math.min(
+    Math.max(0, options.investigationReserve?.maxSteps ?? 0),
+    Math.max(0, options.maxSteps - 1),
+  )
+  const explorationSteps = options.maxSteps - reserve
   try {
     await runLoop(
       options.tools,
-      options.maxSteps,
+      explorationSteps,
       // The shared loop normally reserves three calls for a generic prose
       // finalizer. A role with a structured completion invariant must spend
       // those calls on its forced closure continuation instead.
-      options.completionRepair === undefined ? {} : { maxLlmCalls: options.maxSteps },
+      options.completionRepair === undefined ? {} : { maxLlmCalls: explorationSteps },
     )
   } catch (err) {
     error = errorMessage(err)
   }
   flushPending()
+
+  if (
+    !(options.signal?.aborted ?? false) &&
+    error === undefined &&
+    reserve > 0 &&
+    readCompletionError() !== undefined &&
+    options.investigationReserve?.needed()
+  ) {
+    messages.push({ role: 'user', content: options.investigationReserve.prompt() })
+    summary = ''
+    doneStopReason = undefined
+    try {
+      await runLoop(options.tools, reserve, { maxLlmCalls: reserve })
+    } catch (err) {
+      error = errorMessage(err)
+    }
+    flushPending()
+  }
 
   if (!(options.signal?.aborted ?? false) && error === undefined && options.completionRepair) {
     const incomplete = readCompletionError()

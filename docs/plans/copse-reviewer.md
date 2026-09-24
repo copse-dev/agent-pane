@@ -1188,3 +1188,20 @@ Sources: [Martian Code Review Bench](https://codereview.withmartian.com/) ·
    regression, given Problem 1.
 4. **D4 — Does the reviewer get its own repository?** Deferred by request. The `@copse/review`
    boundary is what keeps the option open at low cost.
+
+### Candidate preservation and bounded investigation (2026-09-24)
+
+A reviewer records a concrete suspected defect with `record_suspicion` before investigating it.
+The immutable ledger is review data, not published findings. `finish_review` must resolve every id
+exactly once: link to a structured finding, refute with specific counterevidence, or leave unresolved
+and name the id in `couldNotVerify`. Missing evidence or exhausted budget cannot refute a suspicion.
+Closure validation is atomic; a rejected disposition cannot partially publish findings. Dispositions
+remain auditable in the tool events. This makes omissions detectable; it does not independently prove
+that a model's counterevidence is correct or capture suspicions it never records.
+
+For review budgets of at least six steps, up to three steps (at most one third) are reserved inside
+the existing `maxSteps` for focused investigation of recorded suspicions. They run before the existing
+three-call protocol repair, with the same tools, execution cell and permission policy. The reserve
+only runs while completion is missing and the ledger is nonempty. Cancellation and provider errors
+remain terminal. Protocol repair receives the ledger and cannot silently discard it. This is a bounded
+phase of the same review turn, not product auto-continuation or a change to hook budgets.

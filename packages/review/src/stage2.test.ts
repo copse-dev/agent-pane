@@ -18,6 +18,8 @@ import {
 import { ScriptedProvider, type ScriptedStep } from './scripted-provider.ts'
 import { renderReviewerValidation, type ReviewerValidation } from './reviewer-validation.ts'
 import { runReviewers, runStage2 } from './stage2.ts'
+import { createHostProcessBackend } from './host-process-backend.ts'
+import { cellEnvironment } from './isolation.ts'
 import { createTestRepo, type TestRepo } from './test-repo.ts'
 
 function textOf(message: LLMMessage): string {
@@ -459,6 +461,130 @@ describe('runStage2', () => {
     assert.equal(provider.streamOptions[0], undefined)
     assert.deepEqual(provider.streamOptions[1], { toolChoice: { name: 'finish_review' } })
     assert.equal(provider.streamOptions[2], undefined)
+  })
+
+  it('uses reserved investigation steps to probe a suspicion before closure without increasing the review budget', async () => {
+    const cell = await createHostProcessBackend().createCell({
+      checkouts,
+      scratchDir: scratch,
+      readOnlyPaths: [],
+      env: cellEnvironment(process.env),
+    })
+    try {
+      const provider = new ScriptedProvider([
+        {
+          type: 'tool_call',
+          name: 'record_suspicion',
+          args: { path: finding.path, startLine: 1, claim: finding.claim },
+        },
+        ...Array.from({ length: 3 }, (): ScriptedStep => ({
+          type: 'tool_call',
+          name: 'read_file',
+          args: { path: finding.path },
+        })),
+        {
+          type: 'tool_call',
+          name: 'run_command',
+          args: { argv: [process.execPath, '-e', 'console.log(2 - 1); process.exit(1)'] },
+        },
+        {
+          type: 'tool_call',
+          name: 'finish_review',
+          args: {
+            checked: 'The implementation and a focused arithmetic probe.',
+            couldNotVerify: 'Nothing',
+            findings: [{ ...finding, commandCallIds: ['call-5'] }],
+            dispositions: [
+              {
+                id: 'suspicion-1',
+                status: 'reported',
+                findingIndex: 1,
+                evidence: 'call-5 demonstrates subtraction rather than addition.',
+              },
+            ],
+          },
+        },
+      ])
+      const result = await runStage2({
+        provider,
+        model: 'scripted',
+        lens: CORRECTNESS_LENS,
+        context,
+        validation,
+        headCheckout: checkouts.head,
+        cell,
+        shellDecision: 'allow',
+        scrub: (text) => text,
+        threadId: 'reserve',
+        turnId: 'reserve',
+        maxSteps: 6,
+      })
+      assert.equal(result.outcome, 'completed')
+      assert.equal(result.candidates.length, 1)
+      assert.equal(result.commandRuns.get('call-5')?.exitCode, 1)
+      assert.equal(provider.calls.length, 6)
+      assert.match(provider.calls[4]?.map(textOf).join('\n') ?? '', /Exploration is over/)
+      assert.equal(result.events.filter((event) => event.type === 'turn_end').length, 1)
+    } finally {
+      await cell.destroy()
+    }
+  })
+
+  it('keeps an omitted suspicion visible in closure repair instead of accepting a clean review', async () => {
+    const provider = new ScriptedProvider([
+      {
+        type: 'tool_call',
+        name: 'record_suspicion',
+        args: { path: finding.path, startLine: 1, claim: finding.claim },
+      },
+      {
+        type: 'tool_call',
+        name: 'finish_review',
+        args: {
+          checked: 'The changed arithmetic implementation.',
+          couldNotVerify: 'Nothing',
+          findings: [],
+        },
+      },
+      { type: 'text', text: 'No findings.' },
+      {
+        type: 'tool_call',
+        name: 'finish_review',
+        args: {
+          checked: 'The changed arithmetic implementation.',
+          couldNotVerify: 'suspicion-1: caller contract not verified.',
+          dispositions: [
+            {
+              id: 'suspicion-1',
+              status: 'unresolved',
+              evidence: 'The caller contract has not been inspected.',
+            },
+          ],
+        },
+      },
+      { type: 'text', text: 'Done.' },
+    ])
+    const result = await runStage2({
+      provider,
+      model: 'scripted',
+      lens: CORRECTNESS_LENS,
+      context,
+      validation,
+      headCheckout: checkouts.head,
+      cell: null,
+      shellDecision: 'deny',
+      scrub: (text) => text,
+      threadId: 'ledger-repair',
+      turnId: 'ledger-repair',
+      maxSteps: 3,
+    })
+    assert.equal(result.outcome, 'completed')
+    assert.match(result.completion?.couldNotVerify ?? '', /suspicion-1/)
+    assert.match(
+      provider.calls[3]?.map(textOf).join('\n') ?? '',
+      /Missing dispositions: suspicion-1/,
+    )
+    assert.match(provider.calls[3]?.map(textOf).join('\n') ?? '', /add subtracts/)
   })
 
   it('reports a provider failure as a failed turn, never as findings', async () => {
