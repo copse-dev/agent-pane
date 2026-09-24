@@ -27,7 +27,7 @@ import { errorMessage } from '@copse/std/errors.ts'
 import { memberOf } from '@copse/std/member-of.ts'
 import type { LLMProvider } from '@copse/llm/wire-types.ts'
 import { detectContainerBackend } from './container-backend.ts'
-import { buildReviewContext } from './context.ts'
+import { buildReviewContext, readFileDiff } from './context.ts'
 import {
   isForge,
   postForgeReview,
@@ -595,10 +595,21 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
     let postError: string | null = null
     if (forgeTarget !== null && !io.signal?.aborted) {
       try {
+        const { checkouts } = ground
+        const { mergeBase, headCommit, dirtyWorkingTree } = stage0
         const posted = await postForgeReview(
           { ...forgeTarget, headCommit: stage0.headCommit },
           report,
-          { toolVersion: CLI_VERSION, ...(io.fetch ? { fetch: io.fetch } : {}) },
+          {
+            toolVersion: CLI_VERSION,
+            ...(io.fetch ? { fetch: io.fetch } : {}),
+            // Use the committed diff, independent of prompt truncation and any
+            // files touched by verification. Working-tree findings stay in the body.
+            diffForPath: async (path) =>
+              checkouts !== null && mergeBase !== null && headCommit !== null && !dirtyWorkingTree
+                ? readFileDiff(checkouts.head, mergeBase, path, headCommit)
+                : '',
+          },
         )
         io.stderr(
           `copse-review: posted the review on ${forgeTarget.owner}/${forgeTarget.repo}#${String(forgeTarget.number)} (${String(posted.inline)} inline comment(s)${posted.folded > 0 ? `, ${String(posted.folded)} folded into the body` : ''})\n`,

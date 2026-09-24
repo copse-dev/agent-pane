@@ -395,11 +395,12 @@ export function renderReviewContext(context: ReviewContext): string {
   return lines.join('\n')
 }
 
-/** Retrieve the original diff independently of the prompt budget. */
+/** Retrieve the full diff; pin `headCommit` when placing comments on a forge. */
 export async function readFileDiff(
   headCheckout: string,
   mergeBase: string,
   path: string,
+  headCommit?: string,
 ): Promise<string> {
   const result = await runGit(headCheckout, [
     'diff',
@@ -408,6 +409,7 @@ export async function readFileDiff(
     '--no-textconv',
     '--find-renames',
     mergeBase,
+    ...(headCommit === undefined ? [] : [headCommit]),
     '--',
     `:(literal)${path}`,
   ])
