@@ -25,6 +25,7 @@ export const REVIEWER_TOOL_NAMES = [
   'search_code',
   'git_diff',
   'run_command',
+  'record_suspicion',
   'report_finding',
   'finish_review',
 ] as const
@@ -63,7 +64,23 @@ export const reviewCompletionSchema = z.object({
 })
 export type ReviewCompletion = z.infer<typeof reviewCompletionSchema>
 
+const suspicionSchema = z.object({
+  path: z.string().min(1),
+  startLine: z.number().int().positive(),
+  claim: z.string().trim().min(8).max(400),
+})
+
+const dispositionSchema = z.object({
+  id: z.string().min(1),
+  status: z.enum(['reported', 'refuted', 'unresolved']),
+  evidence: z.string().trim().min(8).max(400),
+  findingIndex: z.number().int().positive().optional(),
+})
+
+type Suspicion = z.infer<typeof suspicionSchema> & { readonly id: string }
+
 const reviewClosureSchema = reviewCompletionSchema.extend({
+  dispositions: z.array(dispositionSchema).max(20).optional().default([]),
   /** Findings not already emitted through report_finding, carried by the final attestation. */
   findings: z.array(candidateFindingSchema).max(20).optional().default([]),
 })
@@ -127,6 +144,22 @@ function finishReviewTool(requireFindings: boolean): LLMTool {
     parameters: {
       type: 'object',
       properties: {
+        dispositions: {
+          type: 'array',
+          maxItems: 20,
+          description:
+            'Resolve every record_suspicion id exactly once. For reported, give the 1-based findingIndex across earlier report_finding calls followed by findings in this closure. For refuted, cite the concrete counterevidence. For unresolved, include its id in couldNotVerify.',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string' },
+              status: { type: 'string', enum: ['reported', 'refuted', 'unresolved'] },
+              evidence: { type: 'string', minLength: 8, maxLength: 400 },
+              findingIndex: { type: 'integer', minimum: 1 },
+            },
+            required: ['id', 'status', 'evidence'],
+          },
+        },
         checked: {
           type: 'string',
           minLength: 8,
@@ -249,6 +282,20 @@ export function reviewerTools(): LLMTool[] {
           },
         },
         required: ['argv'],
+      },
+    },
+    {
+      name: 'record_suspicion',
+      description:
+        'Preserve a concrete suspected defect before investigating it. Returns an immutable id that finish_review must resolve as reported, refuted with counterevidence, or unresolved. This is not a finding.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', minLength: 1 },
+          startLine: { type: 'integer', minimum: 1 },
+          claim: { type: 'string', minLength: 8, maxLength: 400 },
+        },
+        required: ['path', 'startLine', 'claim'],
       },
     },
     {
@@ -397,12 +444,15 @@ export interface ReviewerToolExecutor {
   completion(): ReviewCompletion | null
   /** Why the last finish_review call was rejected. */
   completionError(): string | null
+  /** Immutable hypotheses, retained through budget exhaustion and closure repair. */
+  suspicions(): readonly Suspicion[]
   /** Every `run_command` result, by tool-call id, for evidence. */
   commandRuns(): ReadonlyMap<string, CellCommandResult>
 }
 
 export function createReviewerToolExecutor(host: ReviewerToolHost): ReviewerToolExecutor {
   const reported: ReportedCandidate[] = []
+  const suspicions: Suspicion[] = []
   const commandRuns = new Map<string, CellCommandResult>()
   let completion: ReviewCompletion | null = null
   let completionError: string | null = null
@@ -576,6 +626,17 @@ export function createReviewerToolExecutor(host: ReviewerToolHost): ReviewerTool
         const status = scrubbed.timedOut ? 'timed out' : `exit ${String(scrubbed.exitCode)}`
         return `${status} (${String(scrubbed.durationMs)} ms)\n${wrapExternalContent('run_command', cap(scrubbed.output))}`
       }
+      case 'record_suspicion': {
+        const input = suspicionSchema.parse(args)
+        if (suspicions.length >= 20)
+          throw new ToolInputError('At most 20 suspicions; settle the existing ones')
+        const lines = (await readSource(input.path)).split(/\r?\n/)
+        if (input.startLine > lines.length)
+          throw new ToolInputError('Suspicion anchor is out of range')
+        const id = `suspicion-${String(suspicions.length + 1)}`
+        suspicions.push({ ...input, id })
+        return `Recorded ${id}. Resolve it in finish_review.dispositions; it cannot be silently omitted.`
+      }
       case 'report_finding': {
         const candidate = decodeCandidate(args)
         if (candidate === null) {
@@ -608,6 +669,47 @@ export function createReviewerToolExecutor(host: ReviewerToolHost): ReviewerTool
           completionError = errorMessage(err)
           throw err
         }
+        const allFindings = [...reported, ...closureFindings]
+        const seen = new Set<string>()
+        try {
+          for (const disposition of input.dispositions) {
+            if (
+              !suspicions.some((entry) => entry.id === disposition.id) ||
+              seen.has(disposition.id)
+            ) {
+              throw new ToolInputError(`Unknown or duplicate suspicion ${disposition.id}`)
+            }
+            seen.add(disposition.id)
+            if (disposition.status === 'reported') {
+              if (
+                disposition.findingIndex === undefined ||
+                allFindings[disposition.findingIndex - 1] === undefined
+              ) {
+                throw new ToolInputError(
+                  `${disposition.id} must reference an existing findingIndex`,
+                )
+              }
+            } else if (disposition.findingIndex !== undefined) {
+              throw new ToolInputError(`${disposition.id} is not reported; omit findingIndex`)
+            }
+            if (
+              disposition.status === 'unresolved' &&
+              !input.couldNotVerify.includes(disposition.id)
+            ) {
+              throw new ToolInputError(
+                `Include unresolved ${disposition.id} and its uncertainty in couldNotVerify`,
+              )
+            }
+          }
+          const missing = suspicions.filter((entry) => !seen.has(entry.id))
+          if (missing.length > 0)
+            throw new ToolInputError(
+              `Missing dispositions: ${missing.map((entry) => entry.id).join(', ')}`,
+            )
+        } catch (err) {
+          completionError = errorMessage(err)
+          throw err
+        }
         reported.push(...closureFindings)
         completion = { checked: input.checked, couldNotVerify: input.couldNotVerify }
         completionError = null
@@ -629,6 +731,7 @@ export function createReviewerToolExecutor(host: ReviewerToolHost): ReviewerTool
       }
     },
     reported: () => reported,
+    suspicions: () => suspicions,
     completion: () => completion,
     completionError: () => completionError,
     commandRuns: () => commandRuns,

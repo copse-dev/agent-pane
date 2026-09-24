@@ -369,6 +369,125 @@ describe('reviewer tools', () => {
     assert.equal(executor.reported().length, 1)
   })
 
+  it('retains suspicions and rejects missing, duplicate, dangling and false-clean dispositions atomically', async () => {
+    const executor = createReviewerToolExecutor(host)
+    const suspicion = {
+      path: 'src/a.ts',
+      startLine: 2,
+      claim: 'The new literal may disclose a secret.',
+    }
+    assert.match(await executor.execute('record_suspicion', suspicion, signal, 's1'), /suspicion-1/)
+    const closure = {
+      checked: 'The changed source and its direct callers.',
+      couldNotVerify: 'Nothing',
+    }
+    const finding = {
+      ...suspicion,
+      class: 'security',
+      severity: 'high',
+      confidence: 'high',
+      reason: 'The literal credential is returned to callers.',
+    }
+    assert.match(
+      await executor.execute('finish_review', { ...closure, findings: [finding] }, signal, 'c1'),
+      /Missing dispositions/,
+    )
+    assert.equal(executor.reported().length, 0)
+    assert.equal(executor.completion(), null)
+    const reported = {
+      id: 'suspicion-1',
+      status: 'reported',
+      evidence: 'The literal reaches callers.',
+      findingIndex: 1,
+    }
+    assert.match(
+      await executor.execute(
+        'finish_review',
+        { ...closure, dispositions: [reported] },
+        signal,
+        'c2',
+      ),
+      /existing findingIndex/,
+    )
+    assert.match(
+      await executor.execute(
+        'finish_review',
+        { ...closure, findings: [finding], dispositions: [reported, reported] },
+        signal,
+        'c3',
+      ),
+      /duplicate suspicion/,
+    )
+    assert.equal(executor.reported().length, 0)
+    assert.match(
+      await executor.execute(
+        'finish_review',
+        {
+          ...closure,
+          dispositions: [
+            {
+              id: 'suspicion-1',
+              status: 'unresolved',
+              evidence: 'No executable probe was available.',
+            },
+          ],
+        },
+        signal,
+        'c4',
+      ),
+      /Include unresolved suspicion-1/,
+    )
+    assert.match(
+      await executor.execute(
+        'finish_review',
+        { ...closure, findings: [finding], dispositions: [reported] },
+        signal,
+        'c5',
+      ),
+      /completion recorded/,
+    )
+    assert.equal(executor.reported().length, 1)
+    assert.deepEqual(executor.suspicions(), [{ ...suspicion, id: 'suspicion-1' }])
+  })
+
+  it('allows evidence-backed refutation and explicitly unresolved suspicions without publishing findings', async () => {
+    for (const status of ['refuted', 'unresolved']) {
+      const executor = createReviewerToolExecutor(host)
+      await executor.execute(
+        'record_suspicion',
+        { path: 'src/a.ts', startLine: 2, claim: 'The literal may disclose a secret.' },
+        signal,
+        's1',
+      )
+      const couldNotVerify =
+        status === 'unresolved' ? 'suspicion-1: the downstream caller is unavailable.' : 'Nothing'
+      assert.match(
+        await executor.execute(
+          'finish_review',
+          {
+            checked: 'The changed source and its direct callers.',
+            couldNotVerify,
+            dispositions: [
+              {
+                id: 'suspicion-1',
+                status,
+                evidence:
+                  status === 'refuted'
+                    ? 'src/a.ts:2 is a numeric fixture, never a credential.'
+                    : 'The downstream caller could not be inspected.',
+              },
+            ],
+          },
+          signal,
+          'done',
+        ),
+        /completion recorded/,
+      )
+      assert.equal(executor.reported().length, 0)
+      assert.equal(executor.completion()?.couldNotVerify, couldNotVerify)
+    }
+  })
+
   it('requires a structured completion and refuses tool calls after it', async () => {
     const executor = createReviewerToolExecutor(host)
     assert.equal(executor.completion(), null)
