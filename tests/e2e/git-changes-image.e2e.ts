@@ -66,11 +66,7 @@ async function proposeImage(path: string, bytes: Buffer): Promise<void> {
   const args = { path, content: bytes.toString('latin1') }
   const prompt = `Propose an update to ${path}.`
   const reply = 'The proposed file change is ready for review.'
-  const scenario = await prepareMockToolTurn(
-    prompt,
-    { name: 'write_file', args },
-    reply,
-  )
+  const scenario = await prepareMockToolTurn(prompt, { name: 'write_file', args }, reply)
   await $('.submit-btn').click()
   await waitForAgentIdle(60_000)
   await expectAssistantReply(reply)
