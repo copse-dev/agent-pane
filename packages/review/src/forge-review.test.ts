@@ -97,6 +97,10 @@ function report(overrides: Partial<ReviewReport> = {}): ReviewReport {
         toolCalls: 2,
         usage: { inputTokens: 1, outputTokens: 1, estimated: false },
         summary: '',
+        completion: {
+          checked: 'The changed implementation and its direct callers.',
+          couldNotVerify: 'Nothing',
+        },
       },
     ],
     verification: null,
@@ -202,6 +206,7 @@ describe('forge review', () => {
             toolCalls: 24,
             usage: { inputTokens: 479_515, outputTokens: 60_340, estimated: false },
             summary: 'The agent stopped before producing a final answer.',
+            completion: null,
             error: 'reviewer stopped without calling the required finish_review tool',
           },
         ],
@@ -211,6 +216,40 @@ describe('forge review', () => {
     assert.match(review.body, /Review incomplete: 1 of 1 reviewer run\(s\)/)
     assert.match(review.body, /without calling the required finish_review tool/)
     assert.match(review.body, /No findings were produced before the incomplete review stopped\./)
+    assert.doesNotMatch(review.body, /\nNo findings\.\n/)
+  })
+
+  it('surfaces material uncertainty instead of presenting a false-clean review', () => {
+    const review = buildForgeReview(
+      report({
+        findings: [],
+        reviews: [
+          {
+            model: 'qwen3.8-27b',
+            lens: 'correctness',
+            turnId: 't-limited',
+            outcome: 'completed',
+            stopReason: 'end_turn',
+            candidates: 0,
+            toolCalls: 19,
+            usage: { inputTokens: 267_258, outputTokens: 35_960, estimated: false },
+            summary:
+              'Checked: the changed bundle configuration.\nCould not verify: jsdom source was absent from the review workspace.',
+            completion: {
+              checked: 'The changed bundle configuration and its consumers.',
+              couldNotVerify: 'jsdom source was absent from the review workspace.',
+            },
+          },
+        ],
+      }),
+      { headCommit: target.headCommit, toolVersion: '0.1.0' },
+    )
+    assert.match(review.body, /Review limits: 1 completed reviewer run\(s\)/)
+    assert.match(
+      review.body,
+      /Could not verify \(qwen3\.8-27b, correctness\): jsdom source was absent/,
+    )
+    assert.match(review.body, /No findings were reported; review limits remain\./)
     assert.doesNotMatch(review.body, /\nNo findings\.\n/)
   })
 

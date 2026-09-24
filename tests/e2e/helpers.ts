@@ -72,7 +72,7 @@ export function getCopseUserDataDir(): string {
 
 export async function seedProjectConfig(
   workspaceRoot: string,
-  options?: { projectId?: string; threadId?: string },
+  options?: { projectId?: string; threadId?: string; title?: string },
 ): Promise<void> {
   const configDir = getCopseUserDataDir()
   await mkdir(configDir, { recursive: true })
@@ -89,7 +89,7 @@ export async function seedProjectConfig(
     [`threads:${projectId}`]: [
       {
         id: threadId,
-        title: 'E2E thread',
+        title: options?.title ?? 'E2E thread',
         status: 'idle',
         messages: [],
         usage: { inputTokens: 0, outputTokens: 0 },

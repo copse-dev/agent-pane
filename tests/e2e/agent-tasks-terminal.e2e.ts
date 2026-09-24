@@ -1,13 +1,10 @@
-import { mkdirSync } from 'node:fs'
-import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { approveUnsandboxedTerminalIfPrompted } from './helpers/terminal-approval.ts'
+import { installMockScenario } from './helpers/mock-scenario.ts'
 import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
-
-const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
 // Drives a real run_shell tool call through the mock LLM and asserts it surfaces
 // as an "Agent tasks" entry in the Terminal tab's left rail; selecting it shows
@@ -17,7 +14,6 @@ const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 // dialog fails on every platform instead of silently skipping that assertion.
 describe('agent tasks in terminal tab', () => {
   before(async () => {
-    mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     seedEmptyProject(process.cwd(), 'e2e-agent-tasks-project', {
       subagentsEnabled: false,
@@ -43,8 +39,23 @@ describe('agent tasks in terminal tab', () => {
     await approveUnsandboxedTerminalIfPrompted()
     await $('#pane-files').waitForDisplayed({ timeout: 10_000 })
 
-    await setComposerValue('[[mcp:run_shell {"command":"echo agent-task-hello"}]]')
-    await $('.submit-btn').click()
+    const scenario = await installMockScenario({
+      title: 'Check terminal command output',
+      turns: [
+        {
+          user: 'Run echo agent-task-hello and show me the output.',
+          responses: [
+            { toolCalls: [{ name: 'run_shell', args: { command: 'echo agent-task-hello' } }] },
+            {
+              text: 'The command completed and printed agent-task-hello.',
+              expectToolResults: [{ name: 'run_shell', includes: 'agent-task-hello' }],
+            },
+          ],
+        },
+      ],
+    })
+    await setComposerValue('Run echo agent-task-hello and show me the output.')
+    await submitComposer()
 
     // The seeded setting requires approval even when an OS sandbox is active.
     const dialog = await $('#approval-dialog')
@@ -83,7 +94,9 @@ describe('agent tasks in terminal tab', () => {
       },
     )
 
-    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'agent-tasks-terminal.png'))
+    await saveAppScreenshot('agent-tasks-terminal.png')
+    await waitForAgentIdle(30_000)
+    await scenario.assertComplete()
   })
 
   it('shows arguments and responses delivered by later ACP tool updates', async () => {

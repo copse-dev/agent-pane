@@ -27,6 +27,7 @@ import { tmpdir } from 'node:os'
 import { join, relative, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { z } from 'zod'
+import type { HeadlessEvent } from '@copse/agent/headless-contract.ts'
 import type { LLMProvider } from '@copse/llm/wire-types.ts'
 import { safeJsonParse } from '@copse/std/safe-json.ts'
 import { errorMessage } from '@copse/std/errors.ts'
@@ -62,7 +63,7 @@ import {
 } from '@copse/review/scripted-provider.ts'
 import { openReviewGround, prepareVerificationBase, runStage0Checks } from '@copse/review/stage0.ts'
 import { runReviewers, type Stage2Result } from '@copse/review/stage2.ts'
-import { verifyFindings, type Stage4Result } from '@copse/review/stage4.ts'
+import { DEFAULT_MAX_VERIFIED, verifyFindings, type Stage4Result } from '@copse/review/stage4.ts'
 import { assembleReviewReport, canonicalFindings, type ReviewReport } from '@copse/review/stage5.ts'
 import {
   capabilityDecision,
@@ -92,6 +93,8 @@ export const USAGE = `usage: node scripts/bench-review.mts [options]
   --challenger <id>      challenger / reproducer model (default: the first --model)
   --base-url <url>       endpoint for lmstudio / openai-compatible
   --lenses <ids|all>     lenses to run (default ${DEFAULT_LENSES})
+  --max-steps <n>        tool-using steps per reviewer (default: each lens's budget)
+  --max-verify <n>       findings to verify, most promising first (default ${String(DEFAULT_MAX_VERIFIED)})
   --no-verify            skip Stage 4 (an ablation)
   --cases <dir>          corpus directory (default ${DEFAULT_CASES_DIR})
   --case <id>            run one case
@@ -131,6 +134,8 @@ export interface BenchModelIdentity {
 export interface RunOptions {
   readonly profile: BenchProfile
   readonly lenses?: string | undefined
+  readonly maxSteps?: number | undefined
+  readonly maxVerify?: number | undefined
   readonly verify?: boolean | undefined
   readonly outDir: string
   readonly log?: ((line: string) => void) | undefined
@@ -166,6 +171,8 @@ const benchConfigurationSchema = z.object({
   reviewers: z.array(benchModelIdentitySchema),
   challenger: benchModelIdentitySchema,
   lenses: z.array(z.string()),
+  reviewerMaxSteps: z.number().int().positive().nullable(),
+  maxVerifiedFindings: z.number().int().positive(),
   verify: z.boolean(),
   corpus: z.object({
     cases: z.array(z.string()),
@@ -302,6 +309,15 @@ export function sanitiseEndpoint(endpoint: string): string {
   return url.toString()
 }
 
+function positiveInteger(value: string | undefined, name: string): number | undefined {
+  if (value === undefined) return undefined
+  const parsed = Number(value)
+  if (!/^[1-9][0-9]*$/.test(value) || !Number.isSafeInteger(parsed)) {
+    throw new Error(`${name} must be a positive integer`)
+  }
+  return parsed
+}
+
 /** The deterministic profile: each role of each case plays its script from `mock.json`. */
 export function mockProfile(): BenchProfile {
   const identity: BenchModelIdentity = { model: MOCK_PROFILE, provider: 'mock', endpoint: null }
@@ -375,6 +391,8 @@ export async function runCase(reviewCase: ReviewCase, options: RunOptions): Prom
   const verify = options.verify ?? true
   const materialised = await materialiseCase(reviewCase)
   const reportPath = join(options.outDir, `${reviewCase.spec.id}.json`)
+  const eventsPath = join(options.outDir, `${reviewCase.spec.id}.events.jsonl`)
+  const events: HeadlessEvent[] = []
   let report: ReviewReport | null = null
   let error: string | null = null
   try {
@@ -409,6 +427,7 @@ export async function runCase(reviewCase: ReviewCase, options: RunOptions): Prom
       const threadId = `bench-review:${reviewCase.spec.id}`
       const reviews: Stage2Result[] = await runReviewers({
         ...host,
+        validation: stage0,
         reviewers: options.profile.reviewerModels.map((model) => ({
           model,
           providerFor: (lens): LLMProvider =>
@@ -417,6 +436,8 @@ export async function runCase(reviewCase: ReviewCase, options: RunOptions): Prom
         lenses,
         threadId,
         turnPrefix: reviewCase.spec.id,
+        onEvent: (event) => events.push(event),
+        ...(options.maxSteps !== undefined ? { maxSteps: options.maxSteps } : {}),
       })
       let findings: Finding[] = canonicalFindings(stage0, reviews)
       let verification: Stage4Result | null = null
@@ -437,6 +458,8 @@ export async function runCase(reviewCase: ReviewCase, options: RunOptions): Prom
           },
           threadId,
           turnPrefix: reviewCase.spec.id,
+          onEvent: (event) => events.push(event),
+          ...(options.maxVerify !== undefined ? { maxVerified: options.maxVerify } : {}),
         })
         findings = [...verification.findings]
       }
@@ -489,6 +512,11 @@ export async function runCase(reviewCase: ReviewCase, options: RunOptions): Prom
   })
   const scored = report ?? emptyReport()
   writeFileSync(reportPath, `${JSON.stringify(scored, null, 2)}\n`, 'utf8')
+  writeFileSync(
+    eventsPath,
+    events.length === 0 ? '' : `${events.map((event) => JSON.stringify(event)).join('\n')}\n`,
+    'utf8',
+  )
   const score = scoreCase(reviewCase.spec.id, scored, reviewCase.spec.truth)
   const usage = reportUsage(scored)
   log(
@@ -525,6 +553,8 @@ export async function runBench(
       reviewers: options.profile.reviewerIdentities.map((identity) => ({ ...identity })),
       challenger: { ...options.profile.challengerIdentity },
       lenses,
+      reviewerMaxSteps: options.maxSteps ?? null,
+      maxVerifiedFindings: options.maxVerify ?? DEFAULT_MAX_VERIFIED,
       verify,
       corpus: {
         cases: cases.map((reviewCase) => reviewCase.spec.id),
@@ -581,6 +611,8 @@ function serialiseConfiguration(configuration: BenchConfiguration): string {
       endpoint: configuration.challenger.endpoint,
     },
     lenses: [...configuration.lenses],
+    reviewerMaxSteps: configuration.reviewerMaxSteps,
+    maxVerifiedFindings: configuration.maxVerifiedFindings,
     verify: configuration.verify,
     corpus: {
       cases: [...configuration.corpus.cases],
@@ -777,6 +809,8 @@ export async function main(
         challenger: { type: 'string' },
         'base-url': { type: 'string' },
         lenses: { type: 'string' },
+        'max-steps': { type: 'string' },
+        'max-verify': { type: 'string' },
         'no-verify': { type: 'boolean', default: false },
         cases: { type: 'string' },
         case: { type: 'string' },
@@ -808,7 +842,11 @@ export async function main(
     return 0
   }
   let profile: BenchProfile
+  let maxSteps: number | undefined
+  let maxVerify: number | undefined
   try {
+    maxSteps = positiveInteger(values['max-steps'], '--max-steps')
+    maxVerify = positiveInteger(values['max-verify'], '--max-verify')
     if (values.mock) profile = mockProfile()
     else {
       if (values.provider !== undefined && !isProviderKind(values.provider)) {
@@ -849,6 +887,8 @@ export async function main(
   const summary = await runBench(cases, {
     profile,
     lenses: values.lenses,
+    ...(maxSteps !== undefined ? { maxSteps } : {}),
+    ...(maxVerify !== undefined ? { maxVerify } : {}),
     verify: !values['no-verify'],
     outDir,
     log: (line) => {

@@ -48,6 +48,7 @@ export function createStore(initial?: Partial<AppState>): AppStore {
     message_reasoning: new Set(),
     message_acp_content: new Set(),
     message_canvas_artefacts_changed: new Set(),
+    message_visual_evidence_changed: new Set(),
     message_done: new Set(),
     tool_call_started: new Set(),
     tool_call_updated: new Set(),

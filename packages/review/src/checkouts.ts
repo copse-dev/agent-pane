@@ -108,6 +108,12 @@ export interface MaterialisedCheckouts {
    * the commit, a test shelling out to `git rev-parse`) needs it readable.
    */
   readonly gitCommonDir: string
+  /**
+   * Untracked files copied from the author's working tree. Context generation
+   * marks only these intent-to-add, so infrastructure created later inside a
+   * checkout cannot become part of the change shown to the reviewer.
+   */
+  readonly untrackedPaths: readonly string[]
   /** Whether the head checkout carries uncommitted changes beyond `headCommit`. */
   readonly dirty: boolean
   /** Remove both worktrees and prune their registration. Idempotent. */
@@ -183,6 +189,7 @@ export async function materialiseCheckouts(
     worktrees.push(head)
 
     let dirty = false
+    let copiedUntrackedPaths: string[] = []
     if (includeWorkingTree) {
       // Tracked changes, staged or not, as one binary patch applied to the head
       // worktree. `git diff HEAD` covers both the index and the working tree.
@@ -200,7 +207,8 @@ export async function materialiseCheckouts(
         )
         await rm(patchPath, { force: true })
       }
-      for (const relative of await untrackedFiles(git, repositoryRoot)) {
+      copiedUntrackedPaths = await untrackedFiles(git, repositoryRoot)
+      for (const relative of copiedUntrackedPaths) {
         dirty = true
         const target = join(head, relative)
         await mkdir(dirname(target), { recursive: true })
@@ -208,7 +216,17 @@ export async function materialiseCheckouts(
       }
     }
 
-    return { repositoryRoot, base, head, mergeBase, headCommit, gitCommonDir, dirty, cleanup }
+    return {
+      repositoryRoot,
+      base,
+      head,
+      mergeBase,
+      headCommit,
+      gitCommonDir,
+      untrackedPaths: copiedUntrackedPaths,
+      dirty,
+      cleanup,
+    }
   } catch (err) {
     await cleanup()
     throw err

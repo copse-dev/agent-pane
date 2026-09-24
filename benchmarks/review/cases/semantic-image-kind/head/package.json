@@ -1,0 +1,7 @@
+{
+  "name": "semantic-image-kind",
+  "private": true,
+  "scripts": {
+    "test": "node test.cjs"
+  }
+}

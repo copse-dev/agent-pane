@@ -1,10 +1,11 @@
+import { expectAssistantReply, prepareMockToolTurn } from './helpers/mock-scenario.ts'
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
-import { setComposerValue } from './helpers/composer.ts'
 import { resetUserData, seedCanvasArtefactThreadFixture } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
+import { waitForAgentIdle } from './helpers.ts'
 
 const PROJECT_ID = 'e2e-canvas-artefact-project'
 const ACTIVE_THREAD_ID = 'e2e-canvas-active-thread'
@@ -12,28 +13,22 @@ const HISTORY_THREAD_ID = 'e2e-canvas-history-thread'
 const CANVAS_TOOL = 'mcp__copse-canvas__render_html_artefact'
 let projectRoot = ''
 
-/**
- * Render one version of the "Sales Dashboard" prototype through the bundled
- * canvas server. The `[[mcp:…]]` directive drives the mock model to call the real
- * tool, so this exercises the production path end to end: MCP result → UI
- * resource extraction → canvas dispatch → Browser pane.
- *
- * The markup deliberately carries no `{`/`}` — the directive's JSON argument is
- * matched only as far as its first closing brace.
- */
+/** Render a dashboard through the real bundled canvas server and Browser pane. */
 async function renderVersion(heading: string): Promise<void> {
   const html = `<!doctype html><title>Sales Dashboard</title><h1 id="version">${heading}</h1>`
-  await setComposerValue(
-    `[[mcp:${CANVAS_TOOL} ${JSON.stringify({ title: 'Sales Dashboard', html })}]]`,
+  const reply = `The sales dashboard is rendered as ${heading} in the Browser pane.`
+  const scenario = await prepareMockToolTurn(
+    'Render the sales dashboard.',
+    { name: CANVAS_TOOL, args: { title: 'Sales Dashboard', html } },
+    reply,
   )
   await $('.submit-btn').click()
-  await browser.waitUntil(
-    () =>
-      browser.execute(
-        () => !document.querySelector('.submit-btn')?.classList.contains('with-stop'),
-      ),
-    { timeout: 25_000, timeoutMsg: `expected the ${heading} render turn to finish` },
-  )
+  // A missing legacy submit-button class can look idle before the turn starts.
+  // Wait for this version's reply and the real idle state before replacing its
+  // scenario with the next render or browser_show request.
+  await expectAssistantReply(reply)
+  await waitForAgentIdle(25_000)
+  await scenario.assertComplete()
 }
 
 /** The heading the active artefact webview is currently showing. */
@@ -51,15 +46,16 @@ async function activeArtefactHeading(): Promise<string | null> {
 
 /** Drive a built-in tool through the mock model, the same way renderVersion does. */
 async function runTool(name: string, args: Record<string, unknown>): Promise<void> {
-  await setComposerValue(`[[mcp:${name} ${JSON.stringify(args)}]]`)
-  await $('.submit-btn').click()
-  await browser.waitUntil(
-    () =>
-      browser.execute(
-        () => !document.querySelector('.submit-btn')?.classList.contains('with-stop'),
-      ),
-    { timeout: 25_000, timeoutMsg: `expected the ${name} turn to finish` },
+  const reply = 'The browser tool result is available above.'
+  const scenario = await prepareMockToolTurn(
+    'Update the sales dashboard in the browser.',
+    { name, args },
+    reply,
   )
+  await $('.submit-btn').click()
+  await expectAssistantReply(reply)
+  await waitForAgentIdle(25_000)
+  await scenario.assertComplete()
 }
 
 /** The label of the Browser pane's active tab. */

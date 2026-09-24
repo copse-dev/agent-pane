@@ -1,7 +1,8 @@
+import { submitComposer } from './helpers/composer.ts'
+import { prepareMockTurn } from './helpers/mock-scenario.ts'
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
-import { setComposerValue } from './helpers/composer.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 
 // Visual eval for the close guard: quitting disposes every live agent session
@@ -13,7 +14,6 @@ interface CloseConfirmBridge {
 }
 
 /** Long enough that the thread stays `running` across all three cases. */
-const RUN_HOLD_MS = 90_000
 
 /**
  * Waiting for the confirm dialog to come back from main.
@@ -60,8 +60,12 @@ async function isRunning(): Promise<boolean> {
 /** Hold a turn open so the thread reports `status === 'running'`. */
 async function ensureRunning(): Promise<void> {
   if (await isRunning()) return
-  await setComposerValue(`Summarise this repo. [[mock:delay_ms ${String(RUN_HOLD_MS)}]]`)
-  await $('.submit-btn').click()
+  await prepareMockTurn(
+    'Summarise this repository.',
+    [{ waitFor: 'close-inspection', text: 'The repository review is complete.' }],
+    true,
+  )
+  await submitComposer()
   await browser.waitUntil(isRunning, {
     timeout: 30_000,
     timeoutMsg: 'expected the run to start',
@@ -89,6 +93,13 @@ describe('close confirmation while a thread is working', function () {
     })
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
+  })
+
+  afterEach(async () => {
+    await browser.execute(async () => {
+      for (const id of await window.api.agent.runningThreadIds()) await window.api.agent.abort(id)
+    })
+    await $('.stop-btn').waitForDisplayed({ reverse: true, timeout: 10_000 })
   })
 
   after(() => {

@@ -24,13 +24,15 @@ Equivalent surfaced comments are reported as duplicates and excluded from both p
 counts, so repeating a true claim cannot inflate the score; the absolute target requires
 zero duplicates.
 
-| case                  | head                                           | truth                                   | what it exercises                                                                |
-| --------------------- | ---------------------------------------------- | --------------------------------------- | -------------------------------------------------------------------------------- |
-| `paginate-off-by-one` | every page one item short; the test catches it | one `contract` defect, regresses `test` | Stage 0's delta minting a finding, plus a reviewer's anchored one; a reproducer  |
-| `timer-leak`          | the abort path stops clearing the timer        | one `resource` defect                   | a defect no test covers; anchor slack; the challenger as the only verdict        |
-| `clean-rename`        | a local variable renamed                       | none                                    | a wrong candidate refuted by the challenger and dropped: precision kept          |
-| `null-check-dropped`  | the null guard removed; tests never pass null  | one `contract` defect                   | two lenses, one defect, one finding (Stage 3), confirmed by a reproducer         |
-| `false-alarm`         | a harmless early return                        | none                                    | a wrong claim the challenger cannot settle reaches the human: the false positive |
+| case                        | head                                               | truth                                   | what it exercises                                                                |
+| --------------------------- | -------------------------------------------------- | --------------------------------------- | -------------------------------------------------------------------------------- |
+| `paginate-off-by-one`       | every page one item short; the test catches it     | one `contract` defect, regresses `test` | Stage 0's delta minting a finding, plus a reviewer's anchored one; a reproducer  |
+| `timer-leak`                | the abort path stops clearing the timer            | one `resource` defect                   | a defect no test covers; anchor slack; the challenger as the only verdict        |
+| `clean-rename`              | a local variable renamed                           | none                                    | a wrong candidate refuted by the challenger and dropped: precision kept          |
+| `null-check-dropped`        | the null guard removed; tests never pass null      | one `contract` defect                   | two lenses, one defect, one finding (Stage 3), confirmed by a reproducer         |
+| `false-alarm`               | a harmless early return                            | none                                    | a wrong claim the challenger cannot settle reaches the human: the false positive |
+| `semantic-image-kind`       | a new image producer omits its semantic kind       | one `contract` defect                   | tracing an omitted field through an unchanged renderer fallback                  |
+| `external-image-provenance` | a page-image producer inherits internal provenance | one `security` defect                   | comparing the closest analogue and tracing trust metadata through its wrapper    |
 
 Add a case by adding a directory with those four things and running
 `pnpm run bench:review --mock --update-baseline`; any corpus-content change creates a new
@@ -44,6 +46,8 @@ pnpm run bench:review --mock --gate                 # the self-test CI runs per 
 pnpm run bench:review --provider lmstudio --model qwen3-coder
 pnpm run bench:review --model claude-sonnet-5 --model gpt-5 --out bench-results/review-ensemble
 pnpm run bench:review --model claude-sonnet-5 --no-verify --out bench-results/review-noverify
+pnpm run bench:review --model qwen3.8-27b --max-steps 12 --max-verify 3
+pnpm run bench:review --model qwen3.8-27b --lenses boundaries --case semantic-image-kind
 pnpm run bench:review --compare bench-results/review/summary.json bench-results/review-noverify/summary.json
 pnpm run bench:review --model claude-sonnet-5 --update-baseline
 pnpm run bench:review --model claude-sonnet-5 --cases /path/to/large-corpus --target-gate
@@ -52,7 +56,7 @@ pnpm run bench:review --model claude-sonnet-5 --cases /path/to/large-corpus --ta
 Keys come from the environment the way the CLI takes them (`ANTHROPIC_API_KEY`,
 `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `LM_STUDIO_URL` / `LM_STUDIO_MODEL`,
 `COPSE_REVIEW_API_KEY`). Reports land under `bench-results/review/` (one JSON per case and
-a `summary.json`); `--compare` prints the delta between two summaries, which is how an
+a matching event-stream JSONL plus `summary.json`); `--compare` prints the delta between two summaries, which is how an
 ablation is read (Q6: cross-model ensembling against one model; verification on against
 off; lenses).
 
@@ -61,7 +65,7 @@ off; lenses).
 `baseline.json` is a regression ratchet, not evidence for an absolute quality claim. Each
 entry is keyed by a digest of the complete run identity: evaluator version, provider,
 reviewer and challenger models, credential-free custom endpoint, lenses, verification
-mode, selected case IDs and corpus-content fingerprint. `--gate` fails on a missing exact
+mode, reviewer/verification budgets, selected case IDs and corpus-content fingerprint. `--gate` fails on a missing exact
 baseline, when precision drops (a model profile gets five points of tolerance, the mock
 none), when true positives fall, when duplicates rise, or when output tokens per confirmed
 finding exceed 1.25× the baseline. `--update-baseline` moves it deliberately.
@@ -72,10 +76,113 @@ least 50% recall, and zero duplicate comments. The confidence requirement means 
 perfect sample is not enough (5/5 fails; 22/22 is the first all-correct sample that passes).
 
 **What the mock number is, and is not.** The mock profile plays each case's script, so the
-80% it scores is a property of the corpus and the pipeline's non-model parts — Stage 0's
-delta, clustering across lenses, the verdicts, the ranking — and of nothing else. It is the
-harness's self-test and the per-PR regression gate for those parts. It is not a precision
-claim for Copse Reviewer. Nor can this five-case synthetic corpus establish B8's 85% claim:
-it is a smoke/trend suite and is too small to pass the confidence gate. A public B8 claim
-requires an appropriately mapped run over Martian's offline track (or a comparably sized,
-independently labelled corpus); numbers from Martian's online track are not interchangeable.
+91.7% it scores is a property of the corpus and the pipeline's non-model parts — Stage 0's
+delta, clustering across lenses, the verdicts, the ranking — and of nothing else. It clears
+the point target by construction; it is the harness's self-test and the per-PR regression
+gate for those parts, not a precision claim for Copse Reviewer. Nor can this 17-case
+synthetic corpus establish B8's 85% claim: its Wilson lower bound is only 64.6%, and it is a
+smoke/trend suite. A public B8 claim requires an appropriately mapped run over Martian's
+offline track (or a comparably sized, independently labelled corpus); numbers from
+Martian's online track are not interchangeable.
+
+## State transitions and model experiments
+
+The audit-derived additions each have a matched `-clean` case. Ordinary fixture tests pass on
+both revisions; an independent `probe.cjs` outside the model checkout proves the transition:
+
+| Bug case                    | Transition and invariant                                                          | Source    |
+| --------------------------- | --------------------------------------------------------------------------------- | --------- |
+| `filter-refresh`            | A title filter retains its row after a refresh replaces records with placeholders | PR #3008  |
+| `resize-without-scroll`     | Resizing updates the viewBox even when scroll offsets remain unchanged            | PR #3003  |
+| `workspace-switch-inflight` | An old request cannot overwrite the newly selected workspace                      | Synthetic |
+| `dispose-inflight`          | A late response cannot repopulate a disposed view                                 | Synthetic |
+| `shortcut-autorepeat`       | Holding the shortcut performs one share action                                    | PR #2833  |
+
+These are reduced state-machine fixtures, not full Electron replays. The clean controls preserve
+the relevant guards across an export refactor. `scripts/review-transition-corpus.test.ts` executes
+all base/head smoke tests and all independent probes, checking expected failure on each buggy head
+and success on every base and clean head. The scripted reproducer separately confirms each bug
+through the normal pipeline. Probes and truth labels are never included in the model checkout.
+
+The opt-in `transitions` lens targets these event sequences. Keep the default reviewer unchanged
+until measured. First compare one model under `correctness`, `correctness,boundaries`, and
+`correctness,transitions`; add `concurrency` only as a separate controlled ablation. Keep the corpus,
+step limits, verification settings, provider route and prompt revision fixed and compare precision,
+recall, duplicates, unresolved reviews, command use and billed cost per confirmed defect. Repeat
+runs: the small synthetic corpus is a smoke suite, not an estimate of production precision.
+
+As of 2026-09-24, the first model experiment should be **GPT-6 Luna**, with **GPT-6 Sol** as the
+quality comparison, before spending on Astra. Artificial Analysis v4.3.2 currently reports
+Intelligence Index scores of [37 for Luna (max)](https://artificialanalysis.ai/models/gpt-6-luna),
+[48 for Sol (max)](https://artificialanalysis.ai/models/gpt-6-sol) and
+[34 for Qwen3.8 27B (xhigh)](https://artificialanalysis.ai/models/qwen3-8-27b).
+Its [coding-agent comparison](https://artificialanalysis.ai/articles/gpt-6-sol-and-luna-push-the-cost-efficiency-frontier)
+gives Sol 57 and Luna 41. This is a reason to test Luna's value, not evidence that it reviews better.
+
+OpenRouter lists [Luna](https://openrouter.ai/openai/gpt-6-luna) at $0.10/$0.50 and
+[Sol](https://openrouter.ai/openai/gpt-6-sol) at $2/$10 per million input/output tokens;
+[Scaleway Qwen](https://www.scaleway.com/en/generative-apis/) is EUR 0.60/3.30. Sol's token rates
+are higher; token use, caching and route determine actual cost per review. These rates exclude
+credit-purchase fees and taxes. AA's task costs use its own workload/provider pricing.
+
+The existing OpenRouter provider can select either model:
+
+```bash
+pnpm run bench:review --provider openrouter --model openai/gpt-6-luna --lenses correctness --max-steps 12 --max-verify 3 --out bench-results/review-luna
+pnpm run bench:review --provider openrouter --model openai/gpt-6-sol --lenses correctness --max-steps 12 --max-verify 3 --out bench-results/review-sol
+pnpm run bench:review --compare bench-results/review-luna/summary.json bench-results/review-sol/summary.json
+```
+
+These commands use the current provider defaults, not AA's max-effort harness. Verify reasoning and
+tool-call compatibility with one case before a full paid run, and record the effective effort and
+route; the benchmark CLI does not yet expose an effort override. No production model change or
+real-model quality claim is part of the corpus change.
+
+The manual **Copse Reviewer model benchmark** workflow accepts `profile: openrouter-luna` or
+`openrouter-sol`. OpenRouter profiles use the environment-only secret
+`COPSE_REVIEW_OPENROUTER_API_KEY`, passed to the provider as `OPENROUTER_API_KEY`. They fail when
+that key is missing and never fall back to org-wide OpenRouter or Scaleway credentials.
+`configured` retains the repository's existing dogfood profile.
+
+### Access boundary
+
+The job runs only in `copse-dev/agent-pane` (repository ID `1274237362`) for a manual dispatch from
+`main`, using that same main-branch workflow definition. Both the original actor (user ID `338988`)
+and the rerunning actor must be Jonathan Kingston (`jonathanKingston`). Fork events, PR events,
+other actors, branch/tag dispatches, and outside reruns are denied before any step runs. The
+workflow checks out only default-branch fixtures, never PR code or artifacts, and grants only
+`contents: read`. The key is injected only into the model step, after dependency installation.
+
+The GitHub environment `copse-review-models` must have a **branch** rule for exactly `main` (no
+tags or wildcard rules), with `jonathanKingston` as its required reviewer and administrator
+bypass disabled. That approval is an
+additional boundary around the secret even if another workflow references the environment.
+Administrators can change these controls; they remain trusted. Tests pin the workflow gate and
+scan all workflows to prevent new references to either key outside the authorized step. GitHub
+environment settings must be verified separately because they are not stored in this repository.
+
+To complete the secret migration:
+
+1. Add `COPSE_REVIEW_OPENROUTER_API_KEY` only to the `copse-review-models` environment, using the
+   existing budget-limited OpenRouter key.
+2. Remove this repository's access to the organization `OPENROUTER_API_KEY` (or delete the org
+   secret if it has no other consumers). Do not create a repository/org copy of the new secret.
+3. Merge this workflow change, then dispatch from `main` and approve the protected environment.
+
+An org/repository secret is available to other eligible workflows; an environment declaration
+does not protect a key that is still broadly shared. The migration is incomplete until that
+access is removed. See GitHub's [environment-secret access rules](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments#environment-secrets).
+
+Start with the default `timer-leak` smoke case and `lenses: correctness`; clear `case` deliberately
+to run the full corpus. Runs share a single concurrency group and stop after 60 minutes.
+OpenRouter profiles set `--max-steps 12` and `--max-verify 3`. These limits bound
+work, not dollar spend: the OpenRouter key's configured **$25 monthly limit** is the spending cap,
+shared with any other use of that key. No scheduled workflow uses the new key.
+
+```bash
+gh workflow run review-model-bench.yml --ref main -f profile=openrouter-luna -f case=timer-leak -f lenses=correctness
+```
+
+Experiment-branch dispatches are skipped; new corpus cases become available after merging.
+Results are uploaded as `copse-review-model-bench`
+from `bench-results/review-model/`.

@@ -1,5 +1,9 @@
 import type { ModelParameters } from '@copse/llm/model-parameters.ts'
 import type { ToolResultImage } from '@copse/llm/wire-types.ts'
+import type {
+  VisualEvidenceAssetMetadata,
+  VisualEvidenceKind,
+} from '@copse/agent/visual-evidence.ts'
 import type { CanvasArtefactReference } from './canvas-types.ts'
 import type {
   ModelUsage,
@@ -52,6 +56,22 @@ export interface ImageRef {
 
 /** Tool-image metadata stays inline while its data URL lives in a blob. */
 export type SpineToolResultImage = Omit<ToolResultImage, 'dataUrl'> & { dataUrl: ImageRef }
+
+/** Evidence metadata stays inline while each immutable image lives in a blob. */
+export type SpineVisualEvidenceAsset = VisualEvidenceAssetMetadata &
+  (
+    | { dataUrl: ImageRef; unavailableReason?: never }
+    | { dataUrl?: never; unavailableReason: string }
+  )
+
+export interface SpineVisualEvidenceRef {
+  id: string
+  kind: VisualEvidenceKind
+  caption: string
+  createdAt: number
+  toolCallId: string
+  assets: SpineVisualEvidenceAsset[]
+}
 
 /** Transcript metadata stays inline; potentially large text snapshots do not. */
 export type SpineTranscriptAttachment = Omit<TranscriptAttachment, 'content'> & {
@@ -115,6 +135,8 @@ export interface SpineMessageLine {
   images?: ImageRef[]
   /** Canvas artefacts presented inline with this assistant message. */
   canvasArtefacts?: CanvasArtefactReference[]
+  /** Assistant-selected proof with image bytes referenced out of line. */
+  visualEvidence?: SpineVisualEvidenceRef[]
   commandSummary?: string
   /** Small-model polish for the turn tool rollup; optional, display-only. */
   toolSummary?: string
@@ -480,6 +502,51 @@ const CONTENT_REF_FIELDS: RequiredFieldChecks<ContentRef> = {
 export const isContentRef: (value: unknown) => value is ContentRef = (value) =>
   matchesLine(value, CONTENT_REF_FIELDS)
 
+function isBrowserEvidenceSource(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    value['kind'] === 'browser' &&
+    typeof value['viewId'] === 'string' &&
+    typeof value['title'] === 'string' &&
+    typeof value['url'] === 'string'
+  )
+}
+
+function isSpineVisualEvidenceAsset(value: unknown): boolean {
+  if (
+    !isRecord(value) ||
+    typeof value['id'] !== 'string' ||
+    typeof value['label'] !== 'string' ||
+    value['mimeType'] !== 'image/png' ||
+    typeof value['width'] !== 'number' ||
+    typeof value['height'] !== 'number' ||
+    typeof value['capturedAt'] !== 'number' ||
+    !isBrowserEvidenceSource(value['source'])
+  ) {
+    return false
+  }
+  const dataUrl = value['dataUrl']
+  const unavailableReason = value['unavailableReason']
+  return (
+    (isContentRef(dataUrl) && unavailableReason === undefined) ||
+    (dataUrl === undefined && typeof unavailableReason === 'string')
+  )
+}
+
+function isSpineVisualEvidence(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value['id'] === 'string' &&
+    (value['kind'] === 'screenshot' || value['kind'] === 'comparison') &&
+    typeof value['caption'] === 'string' &&
+    typeof value['createdAt'] === 'number' &&
+    typeof value['toolCallId'] === 'string' &&
+    Array.isArray(value['assets']) &&
+    value['assets'].length > 0 &&
+    value['assets'].every(isSpineVisualEvidenceAsset)
+  )
+}
+
 const MESSAGE_LINE_FIELDS: RequiredFieldChecks<SpineMessageLine, 'toolCalls'> = {
   v: (value) => typeof value === 'number',
   type: (value) => value === 'message',
@@ -493,7 +560,10 @@ const MESSAGE_LINE_FIELDS: RequiredFieldChecks<SpineMessageLine, 'toolCalls'> = 
   toolCalls: (value) => value === undefined || Array.isArray(value),
 }
 
-const MESSAGE_LINE_OPTIONAL: OptionalFieldChecks<SpineMessageLine, 'canvasArtefacts'> = {
+const MESSAGE_LINE_OPTIONAL: OptionalFieldChecks<
+  SpineMessageLine,
+  'canvasArtefacts' | 'visualEvidence'
+> = {
   contentBlocks: isContentRef,
   reasoningBlocks: isContentRef,
   // Only `title` is inspected; the rest of an artefact is passed through as the
@@ -501,6 +571,10 @@ const MESSAGE_LINE_OPTIONAL: OptionalFieldChecks<SpineMessageLine, 'canvasArtefa
   canvasArtefacts: (value) =>
     Array.isArray(value) &&
     value.every((artefact) => isRecord(artefact) && typeof artefact['title'] === 'string'),
+  // Evidence is a nested tagged shape. The explicit checks above validate every
+  // field; this stays a boolean rather than adding another handwritten type
+  // predicate to the shrink-only predicate inventory.
+  visualEvidence: (value) => Array.isArray(value) && value.every(isSpineVisualEvidence),
 }
 
 const isSpineMessageLine: (value: unknown) => value is SpineMessageLine = (value) =>

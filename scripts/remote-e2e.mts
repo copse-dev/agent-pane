@@ -39,7 +39,7 @@ import {
 } from 'node:fs'
 import { join } from 'node:path'
 import { z } from 'zod'
-import { snapshotWorkingTree } from '../src/main/services/git-snapshot.ts'
+import { snapshotWorkingTree } from '../src/main/services/git-snapshot.mts'
 import {
   AWS_REGION_ENV,
   capture,

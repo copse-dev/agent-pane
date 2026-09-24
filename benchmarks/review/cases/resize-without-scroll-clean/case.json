@@ -1,0 +1,5 @@
+{
+  "id": "resize-without-scroll-clean",
+  "description": "Matched clean control: the transition remains correct after a harmless export refactor. Reduced from copse-dev/agent-pane PR #3003; this synthetic fixture is not a replay of the full app.",
+  "truth": []
+}

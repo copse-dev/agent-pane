@@ -21,6 +21,40 @@ describe('ci.yml workflow invariants', () => {
     )
   })
 
+  it('does not let a cosmetic pull request edit cancel an in-flight run', () => {
+    // Subscribing to `edited` for retargets also subscribes to title and body
+    // edits, which arrive in the PR's own concurrency group mid-run. Cancelling
+    // there is not a wasted run but a red one: since #2722 `ci-passed` turns a
+    // cancelled run into an explicit failure rather than a skip, so a
+    // description edit left a red `CI Passed` on a SHA that had been green.
+    //
+    // Truth table the expression has to hold, under GitHub's documented casting
+    // (Null -> 0, Object -> NaN, and NaN equals nothing):
+    //
+    //   schedule                      -> false, the nightly never cancels
+    //   push / synchronize / opened   -> true,  `action` is null or not 'edited'
+    //   edited WITH    changes.base   -> true,  a retarget invalidates the run
+    //   edited WITHOUT changes.base   -> false, cosmetic, leave the run alone
+    const concurrency = workflow.slice(
+      workflow.indexOf('\nconcurrency:'),
+      workflow.indexOf('\njobs:'),
+    )
+    assert.ok(concurrency, 'expected a top-level `concurrency:` block in ci.yml')
+    const clause = concurrency.match(/cancel-in-progress: (>-\n(?: {4}.+\n)+|.+\n)/)?.[1]
+    assert.ok(clause, 'expected `cancel-in-progress` on the concurrency block')
+    const expression = clause.replace(/^>-\n/, '').replace(/\s+/g, ' ').trim()
+    assert.match(
+      expression,
+      /github\.event_name != 'schedule'/,
+      'a late nightly must still not cancel an in-flight tip push or PR',
+    )
+    assert.match(
+      expression,
+      /github\.event\.action != 'edited' \|\| github\.event\.changes\.base != null/,
+      'a title or body edit must not cancel a run; only a base retarget may',
+    )
+  })
+
   /**
    * A whole job block, header through to the next top-level job. The
    * `(?: {4}.*\n)+` shape used by the older pins above stops at the first line
@@ -282,9 +316,31 @@ describe('ci.yml workflow invariants', () => {
     const aggregate = jobBlock('ci-passed')
     assert.match(
       aggregate,
-      /needs: \[precheck, check, bench, build, e2e, screenshot-artifacts\]/,
+      /needs: \[precheck, check, review-cell, bench, build, e2e, screenshot-artifacts\]/,
       'the aggregate must wait until immutable screenshot evidence is published',
     )
+  })
+
+  it('boots the real reviewer cell when its trust boundary changes', () => {
+    const precheck = jobBlock('precheck')
+    assert.match(
+      precheck,
+      /review_cell_required: \$\{\{ steps\.review-cell-plan\.outputs\.required \}\}/,
+    )
+    assert.match(precheck, /git diff --quiet "\$\{BASE_SHA\}"\.\.\.HEAD --/)
+    assert.match(precheck, /packages\/review/)
+    assert.match(precheck, /scripts\/prepare-review-stage0\.mts/)
+
+    const cell = jobBlock('review-cell')
+    assert.match(cell, /runs-on: ubuntu-latest/)
+    assert.match(cell, /persist-credentials: false/)
+    assert.match(cell, /docker build --pull/)
+    assert.match(cell, /COPSE_REVIEW_CONTAINER_E2E: '1'/)
+    assert.match(cell, /COPSE_REVIEW_DEPENDENCY_STORE: \$\{\{ runner\.temp \}\}\/pnpm-store/)
+    assert.match(cell, /npm test -- packages\/review\/src\/hostile-fixture\.test\.ts/)
+
+    const aggregate = jobBlock('ci-passed')
+    assert.match(aggregate, /needs: \[[^\]]*review-cell[^\]]*\]/)
   })
 
   it('decides autofix has work to do before paying for the dependency install', () => {
@@ -733,6 +789,11 @@ describe('Copse Reviewer workflow invariants', () => {
   const groundWorkflow = readFileSync(resolve('.github/workflows/review-ground.yml'), 'utf8')
   const findingsWorkflow = readFileSync(resolve('.github/workflows/review-findings.yml'), 'utf8')
   const nightlyWorkflow = readFileSync(resolve('.github/workflows/review-nightly.yml'), 'utf8')
+  const modelBenchWorkflow = readFileSync(
+    resolve('.github/workflows/review-model-bench.yml'),
+    'utf8',
+  )
+  const reviewCellDockerfile = readFileSync(resolve('packages/review/Dockerfile.cell'), 'utf8')
   const forgeReview = readFileSync(resolve('packages/review/src/forge-review.ts'), 'utf8')
 
   function workflowJobBlock(workflow: string, name: string): string {
@@ -744,7 +805,7 @@ describe('Copse Reviewer workflow invariants', () => {
     return next >= 0 ? workflow.slice(start, start + header.length + next) : workflow.slice(start)
   }
 
-  it('executes pull-request code only in secret-free ephemeral-runner jobs', () => {
+  it('executes pull-request code only in credential-free execution cells', () => {
     assert.match(triggerWorkflow, /^ {2}pull_request_target:\n {4}types: \[labeled\]$/m)
     assert.doesNotMatch(triggerWorkflow, /actions\/checkout/)
     assert.doesNotMatch(triggerWorkflow, /git fetch/)
@@ -771,6 +832,7 @@ describe('Copse Reviewer workflow invariants', () => {
       assert.match(job, /persist-credentials: false/)
       assert.match(job, /refs\/pull\/\$\{PR_NUMBER\}\/head/)
       assert.match(job, /--backend ephemeral-runner/)
+      assert.match(job, /--scratch-parent "\$RUNNER_TEMP"/)
     }
 
     const handoff = workflowJobBlock(groundWorkflow, 'handoff')
@@ -787,6 +849,20 @@ describe('Copse Reviewer workflow invariants', () => {
     ]) {
       assert.match(job, /--stage0-json ground\/report\.json/)
       assert.doesNotMatch(job, /--backend ephemeral-runner/)
+      assert.match(job, /--backend container/)
+      assert.match(job, /--image "\$REVIEW_CELL_IMAGE"/)
+      assert.match(job, /--scratch-parent "\$RUNNER_TEMP"/)
+      assert.match(
+        job,
+        /--trusted-prepare "\$GITHUB_WORKSPACE\/scripts\/prepare-review-stage0\.mts"/,
+      )
+
+      const prepare = job.indexOf('- name: Prepare the focused-validation cell')
+      const mint = job.indexOf('- name: Mint the Copse GitHub App review token')
+      const model = job.indexOf('COPSE_REVIEW_API_KEY:')
+      assert.ok(prepare >= 0 && prepare < mint && mint < model)
+      const prepareStep = job.slice(prepare, mint)
+      assert.doesNotMatch(prepareStep, /\$\{\{\s*secrets\./)
     }
   })
 
@@ -805,6 +881,43 @@ describe('Copse Reviewer workflow invariants', () => {
     assert.match(findingsWorkflow, /run-id: \$\{\{ inputs\.ground_run_id \}\}/)
   })
 
+  it('posts GitHub reviews as the least-privilege Copse App identity', () => {
+    assert.match(
+      findingsWorkflow,
+      /^permissions:\n {2}contents: read\n {2}pull-requests: read\n {2}actions: read$/m,
+      'the default workflow token must not retain review-write permission',
+    )
+    const nightlyFindings = workflowJobBlock(nightlyWorkflow, 'findings')
+    assert.match(
+      nightlyFindings,
+      /^ {4}permissions:\n {6}contents: read\n {6}pull-requests: read$/m,
+    )
+
+    for (const job of [workflowJobBlock(findingsWorkflow, 'findings'), nightlyFindings]) {
+      assert.match(
+        job,
+        /- name: Mint the Copse GitHub App review token\n {8}id: review-app-token\n {8}uses: actions\/create-github-app-token@v3/,
+      )
+      assert.match(job, /app-id: \$\{\{ secrets\.RELEASE_APP_ID \}\}/)
+      assert.match(job, /private-key: \$\{\{ secrets\.RELEASE_APP_PRIVATE_KEY \}\}/)
+      assert.match(job, /permission-pull-requests: write/)
+
+      const postingStep = job.match(
+        / {6}- name: Review with focused validation and post the findings\n[\s\S]*?(?=\n {6}- uses: actions\/upload-artifact)/,
+      )?.[0]
+      assert.ok(postingStep, 'expected the review generation and posting step')
+      assert.match(
+        postingStep,
+        /COPSE_REVIEW_FORGE_TOKEN: \$\{\{ steps\.review-app-token\.outputs\.token \}\}/,
+      )
+      assert.doesNotMatch(
+        postingStep,
+        /^\s+GITHUB_TOKEN:/m,
+        'the posting step must not silently fall back to the workflow identity',
+      )
+    }
+  })
+
   it('primes the isolated checks from data-only files at the exact pull-request head', () => {
     for (const workflow of [groundWorkflow, nightlyWorkflow]) {
       const job = workflowJobBlock(workflow, 'ground')
@@ -814,7 +927,30 @@ describe('Copse Reviewer workflow invariants', () => {
       assert.doesNotMatch(job, /pnpm fetch[^\n]*--dir [^"$]/)
       assert.ok(job.indexOf('test "$(git rev-parse') < job.indexOf('pnpm fetch'))
       assert.ok(job.indexOf('pnpm fetch') < job.indexOf('--backend ephemeral-runner'))
+      assert.match(
+        job,
+        /--trusted-prepare "\$GITHUB_WORKSPACE\/scripts\/prepare-review-stage0\.mts"/,
+      )
     }
+
+    for (const workflow of [findingsWorkflow, nightlyWorkflow]) {
+      const job = workflowJobBlock(workflow, 'findings')
+      assert.match(job, /git show "\$\{HEAD_SHA\}:pnpm-lock\.yaml"/)
+      assert.match(job, /git archive --format=tar "\$HEAD_SHA" patches/)
+      assert.match(job, /pnpm fetch --frozen-lockfile --dir "\$dependency_seed"/)
+      assert.ok(job.indexOf('docker build --pull') < job.indexOf('refs/pull/'))
+      assert.ok(job.indexOf('pnpm fetch') < job.indexOf('COPSE_REVIEW_API_KEY:'))
+    }
+  })
+
+  it('builds the focused-validation image with only a test toolchain', () => {
+    assert.match(reviewCellDockerfile, /^ARG NODE_VERSION=/m)
+    assert.match(reviewCellDockerfile, /^FROM node:\$\{NODE_VERSION\}-trixie-slim$/m)
+    assert.match(reviewCellDockerfile, /"pnpm@\$\{PNPM_VERSION\}"/)
+    for (const tool of ['cargo', 'g++', 'git', 'make', 'python3', 'ripgrep', 'socat']) {
+      assert.match(reviewCellDockerfile, new RegExp(`^ {6}${tool.replace('+', '\\+')} \\\\$`, 'm'))
+    }
+    assert.doesNotMatch(reviewCellDockerfile, /COPY|ADD|ENTRYPOINT/)
   })
 
   it('provisions the scrubbed Stage 0 cell with the full Linux test toolchain', () => {
@@ -831,20 +967,149 @@ describe('Copse Reviewer workflow invariants', () => {
     }
   })
 
-  it('pins the bounded Scaleway dogfood profile in both GitHub findings paths', () => {
-    for (const workflow of [findingsWorkflow, nightlyWorkflow]) {
+  it('pins the bounded Scaleway profile in every model-backed reviewer workflow', () => {
+    for (const workflow of [findingsWorkflow, nightlyWorkflow, modelBenchWorkflow]) {
       assert.ok(workflow.includes("COPSE_REVIEW_PROVIDER || 'openai-compatible'"))
       assert.ok(workflow.includes("COPSE_REVIEW_MODEL || 'qwen3.8-27b'"))
       assert.ok(workflow.includes("'https://api.scaleway.ai/v1'"))
       assert.ok(workflow.includes('secrets.COPSE_REVIEW_API_KEY || secrets.SCW_GENERATIVE_API_KEY'))
-      assert.ok(workflow.includes("COPSE_REVIEW_LENSES || 'correctness'"))
+      assert.ok(workflow.includes('SCW_DEFAULT_PROJECT_ID: ${{ secrets.SCW_DEFAULT_PROJECT_ID }}'))
       assert.ok(workflow.includes("COPSE_REVIEW_MAX_STEPS || '12'"))
       assert.ok(workflow.includes("COPSE_REVIEW_MAX_VERIFY || '3'"))
+      assert.match(workflow, /review_base_url="\$\{REVIEW_BASE_URL%\/\}"/)
+      assert.ok(
+        workflow.includes(
+          'SCW_DEFAULT_PROJECT_ID is required for explicit Scaleway billing attribution',
+        ),
+      )
+      assert.match(
+        workflow,
+        /review_base_url="https:\/\/api\.scaleway\.ai\/\$\{SCW_DEFAULT_PROJECT_ID\}\/v1"/,
+      )
+      assert.ok(workflow.includes('using an explicit Scaleway project endpoint'))
       assert.match(workflow, /--provider "\$REVIEW_PROVIDER"/)
-      assert.match(workflow, /--base-url "\$REVIEW_BASE_URL"/)
+      assert.match(workflow, /--base-url "\$review_base_url"/)
       assert.match(workflow, /--max-steps "\$REVIEW_MAX_STEPS"/)
       assert.match(workflow, /--max-verify "\$REVIEW_MAX_VERIFY"/)
     }
+    for (const workflow of [findingsWorkflow, nightlyWorkflow]) {
+      assert.ok(workflow.includes("COPSE_REVIEW_LENSES || 'correctness'"))
+    }
+    assert.ok(modelBenchWorkflow.includes("inputs.lenses || 'correctness,boundaries'"))
+  })
+
+  it('runs the real-model corpus manually over trusted default-branch fixtures', () => {
+    assert.match(modelBenchWorkflow, /^ {2}workflow_dispatch:$/m)
+    assert.doesNotMatch(modelBenchWorkflow, /^ {2}(?:pull_request|pull_request_target|schedule):/m)
+    assert.match(modelBenchWorkflow, /ref: \$\{\{ github\.event\.repository\.default_branch \}\}/)
+    assert.match(modelBenchWorkflow, /persist-credentials: false/)
+    assert.doesNotMatch(modelBenchWorkflow, /git fetch|refs\/pull|--stage0-json|GITHUB_TOKEN/)
+    assert.match(modelBenchWorkflow, /scripts\/bench-review\.mts/)
+    assert.match(modelBenchWorkflow, /--challenger "\$REVIEW_MODEL"/)
+    assert.match(modelBenchWorkflow, /bench_args\+=\(--case "\$REVIEW_CASE"\)/)
+    assert.match(modelBenchWorkflow, /pnpm exec node "\$\{bench_args\[@\]\}"/)
+    assert.match(modelBenchWorkflow, /--out bench-results\/review-model/)
+    assert.match(modelBenchWorkflow, /retention-days: 30/)
+  })
+
+  it('keeps OpenRouter experiments manual, bounded, and on their own credential', () => {
+    assert.match(modelBenchWorkflow, /default: timer-leak/)
+    assert.match(modelBenchWorkflow, /^ {2}group: copse-review-model-bench$/m)
+    assert.match(modelBenchWorkflow, /timeout-minutes: 60/)
+    assert.match(
+      modelBenchWorkflow,
+      /OPENROUTER_API_KEY: \$\{\{ secrets\.COPSE_REVIEW_OPENROUTER_API_KEY \}\}/,
+    )
+    assert.match(modelBenchWorkflow, /openrouter-luna\|openrouter-sol\)/)
+    assert.match(modelBenchWorkflow, /unset COPSE_REVIEW_API_KEY SCW_DEFAULT_PROJECT_ID/)
+    assert.match(modelBenchWorkflow, /if test -z "\$OPENROUTER_API_KEY"; then/)
+    assert.match(modelBenchWorkflow, /REVIEW_PROVIDER=openrouter/)
+    assert.match(
+      modelBenchWorkflow,
+      /REVIEW_MODEL="openai\/gpt-6-\$\{REVIEW_PROFILE#openrouter-\}"/,
+    )
+    assert.match(modelBenchWorkflow, /REVIEW_MAX_STEPS=12/)
+    assert.match(modelBenchWorkflow, /REVIEW_MAX_VERIFY=3/)
+    for (const workflow of [findingsWorkflow, nightlyWorkflow]) {
+      assert.doesNotMatch(workflow, /OPENROUTER_API_KEY|openrouter-luna|openrouter-sol/)
+    }
+  })
+
+  it('permits only the owner to dispatch or rerun the trusted main-branch benchmark', () => {
+    const job = workflowJobBlock(modelBenchWorkflow, 'benchmark')
+    const guard = job.match(/^ {4}if: >-\n((?: {6}.+\n)+)/m)?.[1]?.trim()
+    assert.ok(guard)
+    assert.ok(guard.startsWith('${{ ') && guard.endsWith(' }}'))
+    // Evaluate the actual workflow's deliberately small equality/conjunction
+    // grammar. Unknown syntax fails the test instead of silently approximating
+    // an Actions expression or executing it as JavaScript.
+    const clauses = guard
+      .slice(4, -3)
+      .split('&&')
+      .map((clause) => {
+        const match = /^github\.([a-z_]+)\s*==\s*'([^']+)'$/.exec(clause.trim())
+        assert.ok(match, `unsupported access expression: ${clause}`)
+        const [, key, value] = match
+        assert.ok(key && value)
+        return { key, value }
+      })
+    const allowed = (context: Readonly<Record<string, string>>): boolean =>
+      clauses.every(({ key, value }) => context[key]?.toLowerCase() === value.toLowerCase())
+    const owner = {
+      repository_id: '1274237362',
+      event_name: 'workflow_dispatch',
+      ref: 'refs/heads/main',
+      workflow_ref: 'copse-dev/agent-pane/.github/workflows/review-model-bench.yml@refs/heads/main',
+      actor_id: '338988',
+      triggering_actor: 'jonathanKingston',
+    }
+    assert.equal(allowed(owner), true)
+    for (const event of [
+      'pull_request',
+      'pull_request_target',
+      'workflow_run',
+      'push',
+      'schedule',
+    ]) {
+      assert.equal(allowed({ ...owner, event_name: event }), false, event)
+    }
+    assert.equal(allowed({ ...owner, repository_id: '999' }), false, 'fork repository')
+    assert.equal(allowed({ ...owner, actor_id: '999' }), false, 'outside original actor')
+    assert.equal(allowed({ ...owner, triggering_actor: 'contributor' }), false, 'outside rerun')
+    assert.equal(allowed({ ...owner, ref: 'refs/heads/contributor' }), false, 'branch dispatch')
+    assert.equal(allowed({ ...owner, ref: 'refs/tags/main' }), false, 'same-name tag')
+    assert.equal(
+      allowed({
+        ...owner,
+        workflow_ref: owner.workflow_ref.replace('/heads/main', '/heads/contributor'),
+      }),
+      false,
+      'untrusted workflow ref',
+    )
+    assert.equal(allowed({}), false, 'missing context')
+    assert.match(job, /^ {4}environment: copse-review-models$/m)
+  })
+
+  it('references the environment key only in the benchmark model step and never the org key', () => {
+    const secret = 'secrets.COPSE_REVIEW_OPENROUTER_API_KEY'
+    const workflows = readdirSync(resolve('.github/workflows')).filter((name) =>
+      /\.ya?ml$/.test(name),
+    )
+    for (const name of workflows) {
+      const workflow = readFileSync(resolve('.github/workflows', name), 'utf8')
+      assert.doesNotMatch(
+        workflow,
+        /secrets(?:\.OPENROUTER_API_KEY|\[['"]OPENROUTER_API_KEY['"]\])/,
+        name,
+      )
+      if (name !== 'review-model-bench.yml') assert.ok(!workflow.includes(secret), name)
+    }
+    assert.equal(modelBenchWorkflow.split(secret).length - 1, 1)
+    const install = modelBenchWorkflow.indexOf('- name: Install the reviewer')
+    const model = modelBenchWorkflow.indexOf('- name: Run the advisory real-model benchmark')
+    const credential = modelBenchWorkflow.indexOf(secret)
+    const upload = modelBenchWorkflow.indexOf('- uses: actions/upload-artifact')
+    assert.ok(install < model && model < credential && credential < upload)
   })
 
   it('samples at most one recent same-repository PR, including drafts, and has an explicit opt-out', () => {

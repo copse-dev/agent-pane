@@ -9,20 +9,23 @@ import { z } from 'zod'
 import { wrapExternalContent } from '@copse/agent/external-content.ts'
 import type { LLMTool } from '@copse/llm/wire-types.ts'
 import type { HeadlessPermissionDecision } from '@copse/agent/headless-contract.ts'
-import { decodeWithSchema } from '@copse/std/safe-json.ts'
+import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
 import { errorMessage } from '@copse/std/errors.ts'
 import { readFileDiff, type ReviewContext } from './context.ts'
 import { jailPath, readCheckoutFile } from './checkout-fs.ts'
 export { jailPath } from './checkout-fs.ts'
+import { readDependencyFileInCell } from './dependency-reader.ts'
 import { FINDING_CLASSES, FINDING_CONFIDENCES, FINDING_SEVERITIES } from './finding.ts'
 import type { CellCommandResult, ExecutionCell } from './isolation.ts'
 
 export const REVIEWER_TOOL_NAMES = [
   'read_file',
+  'read_dependency_file',
   'list_dir',
   'search_code',
   'git_diff',
   'run_command',
+  'record_suspicion',
   'report_finding',
   'finish_review',
 ] as const
@@ -61,7 +64,23 @@ export const reviewCompletionSchema = z.object({
 })
 export type ReviewCompletion = z.infer<typeof reviewCompletionSchema>
 
+const suspicionSchema = z.object({
+  path: z.string().min(1),
+  startLine: z.number().int().positive(),
+  claim: z.string().trim().min(8).max(400),
+})
+
+const dispositionSchema = z.object({
+  id: z.string().min(1),
+  status: z.enum(['reported', 'refuted', 'unresolved']),
+  evidence: z.string().trim().min(8).max(400),
+  findingIndex: z.number().int().positive().optional(),
+})
+
+type Suspicion = z.infer<typeof suspicionSchema> & { readonly id: string }
+
 const reviewClosureSchema = reviewCompletionSchema.extend({
+  dispositions: z.array(dispositionSchema).max(20).optional().default([]),
   /** Findings not already emitted through report_finding, carried by the final attestation. */
   findings: z.array(candidateFindingSchema).max(20).optional().default([]),
 })
@@ -125,6 +144,22 @@ function finishReviewTool(requireFindings: boolean): LLMTool {
     parameters: {
       type: 'object',
       properties: {
+        dispositions: {
+          type: 'array',
+          maxItems: 20,
+          description:
+            'Resolve every record_suspicion id exactly once. For reported, give the 1-based findingIndex across earlier report_finding calls followed by findings in this closure. For refuted, cite the concrete counterevidence. For unresolved, include its id in couldNotVerify.',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string' },
+              status: { type: 'string', enum: ['reported', 'refuted', 'unresolved'] },
+              evidence: { type: 'string', minLength: 8, maxLength: 400 },
+              findingIndex: { type: 'integer', minimum: 1 },
+            },
+            required: ['id', 'status', 'evidence'],
+          },
+        },
         checked: {
           type: 'string',
           minLength: 8,
@@ -162,6 +197,24 @@ export function reviewerTools(): LLMTool[] {
         type: 'object',
         properties: {
           path: { type: 'string', description: 'Repo-relative path' },
+          startLine: { type: 'integer', description: 'First line to return (1-based)' },
+          endLine: { type: 'integer', description: 'Last line to return (inclusive)' },
+        },
+        required: ['path'],
+      },
+    },
+    {
+      name: 'read_dependency_file',
+      description:
+        'Read an installed package source file through the isolated execution cell. Use this instead of read_file when pnpm package symlinks are refused. Pass a package-relative path such as jsdom/lib/api.js; a leading node_modules/ is also accepted. This reads data only and never executes package code.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: {
+            type: 'string',
+            description:
+              'Package-relative path, e.g. jsdom/lib/api.js (optional node_modules/ prefix)',
+          },
           startLine: { type: 'integer', description: 'First line to return (1-based)' },
           endLine: { type: 'integer', description: 'Last line to return (inclusive)' },
         },
@@ -214,7 +267,7 @@ export function reviewerTools(): LLMTool[] {
     {
       name: 'run_command',
       description:
-        'Run a program in an isolated copy of the change (no shell: pass argv). Use it to run a test or a script that settles a question. Output is capped.',
+        'Run a program in an isolated copy of the change (no shell: pass argv as an actual array, not a quoted JSON string). Prefer a focused test selector or small probe that settles one question; Stage 0 already ran the aggregate project checks. Output is capped.',
       parameters: {
         type: 'object',
         properties: {
@@ -229,6 +282,20 @@ export function reviewerTools(): LLMTool[] {
           },
         },
         required: ['argv'],
+      },
+    },
+    {
+      name: 'record_suspicion',
+      description:
+        'Preserve a concrete suspected defect before investigating it. Returns an immutable id that finish_review must resolve as reported, refuted with counterevidence, or unresolved. This is not a finding.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', minLength: 1 },
+          startLine: { type: 'integer', minimum: 1 },
+          claim: { type: 'string', minLength: 8, maxLength: 400 },
+        },
+        required: ['path', 'startLine', 'claim'],
       },
     },
     {
@@ -260,12 +327,71 @@ const searchArgs = decodeWithSchema(
 const gitDiffArgs = decodeWithSchema(
   z.object({ path: z.string().min(1), offset: z.number().int().nonnegative().optional() }),
 )
-const runCommandArgs = decodeWithSchema(
+const commandArgvSchema = z.array(z.string().min(1)).min(1)
+const runCommandArgsSchema = z.object({
+  argv: commandArgvSchema,
+  timeoutMs: z.number().int().positive().max(RUN_COMMAND_MAX_TIMEOUT_MS).optional(),
+})
+const decodeRunCommandArgs = decodeWithSchema(runCommandArgsSchema)
+const decodeEncodedRunCommandArgs = decodeWithSchema(
   z.object({
-    argv: z.array(z.string().min(1)).min(1),
+    argv: z.string().min(1),
     timeoutMs: z.number().int().positive().max(RUN_COMMAND_MAX_TIMEOUT_MS).optional(),
   }),
 )
+const decodeCommandArgv = decodeWithSchema(commandArgvSchema)
+
+/**
+ * Some OpenAI-compatible models double-encode argv but leave literal newlines
+ * inside the nested JSON string. Repair only JSON-forbidden control characters
+ * inside quoted strings; the result still has to decode as `string[]` below.
+ */
+function escapeJsonStringControlCharacters(text: string): string {
+  let result = ''
+  let inString = false
+  let escaped = false
+  for (const character of text) {
+    if (!inString) {
+      result += character
+      if (character === '"') inString = true
+      continue
+    }
+    if (escaped) {
+      result += character
+      escaped = false
+      continue
+    }
+    if (character === '\\') {
+      result += character
+      escaped = true
+      continue
+    }
+    if (character === '"') {
+      result += character
+      inString = false
+      continue
+    }
+    const codePoint = character.codePointAt(0)
+    result +=
+      codePoint !== undefined && codePoint <= 0x1f
+        ? `\\u${codePoint.toString(16).padStart(4, '0')}`
+        : character
+  }
+  return result
+}
+
+/** Tolerate the JSON-encoded argv some OpenAI-compatible models emit. */
+function runCommandArgs(args: unknown): z.infer<typeof runCommandArgsSchema> | null {
+  const direct = decodeRunCommandArgs(args)
+  if (direct !== null) return direct
+  const encoded = decodeEncodedRunCommandArgs(args)
+  if (encoded === null) return null
+  const argv =
+    safeJsonParse(encoded.argv, decodeCommandArgv) ??
+    safeJsonParse(escapeJsonStringControlCharacters(encoded.argv), decodeCommandArgv)
+  if (argv === null) return null
+  return encoded.timeoutMs === undefined ? { argv } : { argv, timeoutMs: encoded.timeoutMs }
+}
 const decodeCandidate = decodeWithSchema(candidateFindingSchema)
 class ToolInputError extends Error {}
 
@@ -318,12 +444,15 @@ export interface ReviewerToolExecutor {
   completion(): ReviewCompletion | null
   /** Why the last finish_review call was rejected. */
   completionError(): string | null
+  /** Immutable hypotheses, retained through budget exhaustion and closure repair. */
+  suspicions(): readonly Suspicion[]
   /** Every `run_command` result, by tool-call id, for evidence. */
   commandRuns(): ReadonlyMap<string, CellCommandResult>
 }
 
 export function createReviewerToolExecutor(host: ReviewerToolHost): ReviewerToolExecutor {
   const reported: ReportedCandidate[] = []
+  const suspicions: Suspicion[] = []
   const commandRuns = new Map<string, CellCommandResult>()
   let completion: ReviewCompletion | null = null
   let completionError: string | null = null
@@ -333,7 +462,12 @@ export function createReviewerToolExecutor(host: ReviewerToolHost): ReviewerTool
     try {
       return Promise.resolve(readCheckoutFile(root, path))
     } catch (err) {
-      return Promise.reject(new ToolInputError(`Cannot read ${path}: ${errorMessage(err)}`))
+      const dependencyHint = path.replaceAll('\\', '/').startsWith('node_modules/')
+        ? '; use read_dependency_file for installed package source'
+        : ''
+      return Promise.reject(
+        new ToolInputError(`Cannot read ${path}: ${errorMessage(err)}${dependencyHint}`),
+      )
     }
   }
 
@@ -385,6 +519,33 @@ export function createReviewerToolExecutor(host: ReviewerToolHost): ReviewerTool
             .map((line, index) => `${String(start + index).padStart(width)}: ${line}`)
             .join('\n'),
         )
+      }
+      case 'read_dependency_file': {
+        const input = readFileArgs(args)
+        if (input === null) {
+          throw new ToolInputError('read_dependency_file needs { path, startLine?, endLine? }')
+        }
+        if (host.cell === null) {
+          throw new ToolInputError('read_dependency_file is unavailable without an execution cell')
+        }
+        let result: CellCommandResult
+        try {
+          result = await readDependencyFileInCell(host.cell, input, MAX_TOOL_OUTPUT_CHARS, signal)
+        } catch (err) {
+          throw new ToolInputError(errorMessage(err))
+        }
+        const output = host.scrub(result.output).trimEnd()
+        if (result.timedOut) {
+          throw new ToolInputError(
+            `dependency read timed out after ${String(result.durationMs)} ms`,
+          )
+        }
+        if (result.exitCode !== 0) {
+          throw new ToolInputError(
+            `Cannot read dependency ${input.path}: ${output || `exit ${String(result.exitCode)}`}`,
+          )
+        }
+        return cap(output)
       }
       case 'list_dir': {
         const input = listDirArgs(args) ?? { path: '.' }
@@ -465,6 +626,17 @@ export function createReviewerToolExecutor(host: ReviewerToolHost): ReviewerTool
         const status = scrubbed.timedOut ? 'timed out' : `exit ${String(scrubbed.exitCode)}`
         return `${status} (${String(scrubbed.durationMs)} ms)\n${wrapExternalContent('run_command', cap(scrubbed.output))}`
       }
+      case 'record_suspicion': {
+        const input = suspicionSchema.parse(args)
+        if (suspicions.length >= 20)
+          throw new ToolInputError('At most 20 suspicions; settle the existing ones')
+        const lines = (await readSource(input.path)).split(/\r?\n/)
+        if (input.startLine > lines.length)
+          throw new ToolInputError('Suspicion anchor is out of range')
+        const id = `suspicion-${String(suspicions.length + 1)}`
+        suspicions.push({ ...input, id })
+        return `Recorded ${id}. Resolve it in finish_review.dispositions; it cannot be silently omitted.`
+      }
       case 'report_finding': {
         const candidate = decodeCandidate(args)
         if (candidate === null) {
@@ -497,6 +669,47 @@ export function createReviewerToolExecutor(host: ReviewerToolHost): ReviewerTool
           completionError = errorMessage(err)
           throw err
         }
+        const allFindings = [...reported, ...closureFindings]
+        const seen = new Set<string>()
+        try {
+          for (const disposition of input.dispositions) {
+            if (
+              !suspicions.some((entry) => entry.id === disposition.id) ||
+              seen.has(disposition.id)
+            ) {
+              throw new ToolInputError(`Unknown or duplicate suspicion ${disposition.id}`)
+            }
+            seen.add(disposition.id)
+            if (disposition.status === 'reported') {
+              if (
+                disposition.findingIndex === undefined ||
+                allFindings[disposition.findingIndex - 1] === undefined
+              ) {
+                throw new ToolInputError(
+                  `${disposition.id} must reference an existing findingIndex`,
+                )
+              }
+            } else if (disposition.findingIndex !== undefined) {
+              throw new ToolInputError(`${disposition.id} is not reported; omit findingIndex`)
+            }
+            if (
+              disposition.status === 'unresolved' &&
+              !input.couldNotVerify.includes(disposition.id)
+            ) {
+              throw new ToolInputError(
+                `Include unresolved ${disposition.id} and its uncertainty in couldNotVerify`,
+              )
+            }
+          }
+          const missing = suspicions.filter((entry) => !seen.has(entry.id))
+          if (missing.length > 0)
+            throw new ToolInputError(
+              `Missing dispositions: ${missing.map((entry) => entry.id).join(', ')}`,
+            )
+        } catch (err) {
+          completionError = errorMessage(err)
+          throw err
+        }
         reported.push(...closureFindings)
         completion = { checked: input.checked, couldNotVerify: input.couldNotVerify }
         completionError = null
@@ -518,6 +731,7 @@ export function createReviewerToolExecutor(host: ReviewerToolHost): ReviewerTool
       }
     },
     reported: () => reported,
+    suspicions: () => suspicions,
     completion: () => completion,
     completionError: () => completionError,
     commandRuns: () => commandRuns,

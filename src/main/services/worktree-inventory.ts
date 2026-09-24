@@ -473,14 +473,18 @@ async function findPackageDirectories(root: string): Promise<string[]> {
 async function describePackageDirectories(
   root: string,
   paths: string[],
+  remove: boolean,
 ): Promise<WorktreePackageDirectory[]> {
   const directories: WorktreePackageDirectory[] = []
   // Like the row-size queue in the renderer, walk one tree at a time. A large
   // monorepo can have dozens of workspace-level node_modules directories;
-  // parallel walks would turn a cleanup preview into an I/O spike.
+  // parallel walks would turn a cleanup into an I/O spike. When removal was
+  // confirmed, reclaim each directory as soon as its size is known rather than
+  // measuring the entire checkout before deleting the first byte.
   for (const path of paths) {
     const measured = await measureTree(join(root, path))
     directories.push({ path, bytes: measured.bytes, truncated: measured.truncated })
+    if (remove) await rm(join(root, path), { recursive: true, force: true })
   }
   return directories
 }
@@ -497,12 +501,9 @@ export async function cleanupWorktreePackages(
 
   return runSerialized(`worktree-manager:${repositoryRoot}`, async () => {
     const paths = await findPackageDirectories(record.path)
-    const directories = await describePackageDirectories(record.path, paths)
+    const directories = await describePackageDirectories(record.path, paths, input.remove)
     const bytes = directories.reduce((total, directory) => total + directory.bytes, 0)
     const truncated = directories.some((directory) => directory.truncated)
-    if (input.remove) {
-      for (const path of paths) await rm(join(record.path, path), { recursive: true, force: true })
-    }
     return {
       status: input.remove ? 'cleaned' : 'ready',
       ...(input.remove

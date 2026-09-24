@@ -6,6 +6,8 @@ import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { setComposerValue } from './helpers/composer.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
+import { installMockScenario } from './helpers/mock-scenario.ts'
+import { waitForAgentIdle } from './helpers.ts'
 
 describe('shared UI polish', () => {
   let workspaceRoot: string
@@ -29,12 +31,29 @@ describe('shared UI polish', () => {
   it('integrates status, selections, pane rules, and roadmap field spacing', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
-    // Keep the mock turn alive long enough to inspect both the initial waiting
-    // row and the reasoning-token state that replaces it.
-    await setComposerValue(
-      'Check the current layout. [[mock:delay_ms 1500]] [[mock:reasoning Inspecting the conversation layout and the placement of its live reasoning indicator in the transcript. This sentence intentionally streams long enough for the visual assertion to capture the active state.]]',
-    )
+    const scenario = await installMockScenario({
+      title: 'Review layout spacing',
+      turns: [
+        {
+          user: 'Review the current layout for spacing and alignment issues.',
+          responses: [
+            {
+              waitFor: 'layout-review',
+              reasoning:
+                'Inspecting the conversation layout and the placement of its live reasoning indicator in the transcript. This sentence streams while the visual assertion captures the active state.',
+              chunkDelayMs: 60,
+              text: 'I am checking the layout spacing and alignment now.',
+            },
+          ],
+          allowAbort: true,
+        },
+      ],
+    })
+
+    // Hold a normal request while the live activity strip is inspected.
+    await setComposerValue('Review the current layout for spacing and alignment issues.')
     await $('.submit-btn').click()
+    await scenario.waitForHold('layout-review')
     const activity = $('.agent-activity')
     await activity.waitForDisplayed({ timeout: 10_000 })
     // Clicking parks the pointer on the button, so it stays `:hover` for the
@@ -95,6 +114,7 @@ describe('shared UI polish', () => {
     assert.equal(composerGeometry.labelIndent, composerGeometry.rowPaddingLeft)
     assert.equal(composerGeometry.iconInsideGutter, true)
 
+    await scenario.release('layout-review')
     const reasoning = $('.message-reasoning-live')
     await reasoning.waitForDisplayed({ timeout: 10_000 })
     await expect(reasoning.$('.message-reasoning-title')).toHaveText('Reasoning…')
@@ -189,6 +209,8 @@ describe('shared UI polish', () => {
 
     await $('.stop-btn').click()
     await activity.waitForDisplayed({ reverse: true, timeout: 10_000 })
+    await waitForAgentIdle()
+    await scenario.assertComplete()
 
     const roadmapButton = $('.titlebar-text-btn[aria-label="Open roadmap"]')
     await roadmapButton.waitForDisplayed({ timeout: 10_000 })

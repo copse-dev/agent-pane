@@ -65,6 +65,7 @@ function report(findings: Finding[], overrides: Partial<ReviewReport> = {}): Rev
         toolCalls: 1,
         usage: { inputTokens: 100, outputTokens: 20, estimated: false },
         summary: '',
+        completion: { checked: 'The changed implementation.', couldNotVerify: 'Nothing' },
       },
     ],
     verification: null,
@@ -138,6 +139,55 @@ describe('review eval scoring', () => {
       true,
     )
     assert.equal(claimMatchesSignals('displayName returns null', defect.claimSignals), false)
+  })
+
+  it('matches semantic signal words inside code identifiers', () => {
+    const signals = [
+      ['generatedImage', 'generated image'],
+      ['kind'],
+      ['screenshot'],
+      ['thumbnail', 'reading-size', 'reading size', 'layout'],
+    ]
+    assert.equal(
+      claimMatchesSignals(
+        'generatedImage omits the kind field that screenshotImage supplies, so it takes the thumbnail branch',
+        signals,
+      ),
+      true,
+    )
+    assert.equal(
+      claimMatchesSignals(
+        'generated_image omits kind supplied by screenshot_image and takes the thumbnail branch',
+        signals,
+      ),
+      true,
+    )
+    assert.equal(
+      claimMatchesSignals('generatedImage omits kind and takes the thumbnail branch', signals),
+      false,
+    )
+  })
+
+  it('matches inflected claim words whose roots end in doubled consonants', () => {
+    assert.equal(
+      claimMatchesSignals('paginate is silently dropping the last item from every page', [
+        ['paginate'],
+        ['fewer', 'short', 'minus', 'drop'],
+      ]),
+      true,
+    )
+  })
+
+  it('preserves subtraction operators as semantic claim words', () => {
+    const signals = [['paginate'], ['fewer', 'short', 'minus', 'drop'], ['item', 'size', 'page']]
+    assert.equal(
+      claimMatchesSignals(
+        'paginate now returns only size-1 items per page, breaking the page-size contract',
+        signals,
+      ),
+      true,
+    )
+    assert.equal(claimMatchesSignals('paginate now returns size - 1 items per page', signals), true)
   })
 
   it('scores surfaced findings only and cannot inflate hits with duplicates', () => {

@@ -55,31 +55,46 @@ shell's hand-offs (Phase 4).
   TypeScript + pnpm repository (B5), overridable per repo by a `review.config.json`
   (argv per command, `null` to disable, timeouts). The default `prepare` is
   `pnpm install --frozen-lockfile --offline --ignore-scripts`, resolved from the host's
-  pnpm store and corepack cache, both mounted read-only; corepack is pinned offline.
+  pnpm store and corepack cache, both mounted read-only; corepack is pinned offline. Each
+  disposable checkout gets a local symlink to the store mount so pnpm keeps its mutable
+  project registration out of the immutable shared store, including for later focused tests. A
+  trusted caller can override only preparation with `--trusted-prepare`, so default-branch
+  CI policy can repair native dependencies even when the pull-request head predates that
+  repository profile; only that trusted script file is added to the cell's read-only mounts.
 - **`stage0.ts`** — runs the checks on head, then on base for whatever failed on head,
   and turns the delta into findings: a `tsc` regression becomes one finding per new
   diagnostic anchored at its line; a build or test regression becomes one finding
   anchored at the script in `package.json`. A lint regression is a failed check, never a
   finding (B4). Every output is size-capped and secret-scrubbed before it is kept, and
-  the report always says what was not checked and why.
+  the report always says what was not checked and why. An imported Stage 0 attached to a
+  fresh execution cell re-prepares head (and its build output) before model tools, and
+  independently prepares base before a reproducer; artifacts from another job are never
+  assumed to exist locally.
 - **`context.ts`** — Stage 1: the diff against the merge-base (committed plus the overlaid
   working tree), budgeted per file so a large change drops lockfiles and generated files
   first and then cuts retained files at a line boundary within a strict total cap; the
   repository's `AGENTS.md` / `CLAUDE.md` / `CONTRIBUTING.md`; and a test map for the
   touched files.
 - **`lenses.ts`** — a lens is a scoped brief with a step budget: `correctness` (the default),
-  `contracts`, `tests`, `security`, `concurrency`; `--lenses all` runs every one. All stay
-  inside B4. The system prompt restates the quality bar as rules.
+  `contracts`, `boundaries` (semantic fields, defaults and downstream fallbacks), `tests`,
+  `security`, `concurrency`; `--lenses all` runs every one. All stay inside B4. The system
+  prompt restates the quality bar as rules.
 - **`reviewer-tools.ts`** — the reviewer's tools, jailed to the head checkout:
-  `read_file`, `list_dir`, `search_code` (without following checkout symlinks), and
+  `read_file`, `list_dir`, `search_code` (without following checkout symlinks),
+  `read_dependency_file` (a fixed data-only helper in the serialised secret-free cell that follows
+  pnpm package links only when their canonical file remains inside the disposable `node_modules`), and
   `git_diff` (complete per-file diffs paged by character offset); `run_command`, brokered into the
   cell and gated by the run's permission profile, with its output wrapped as external
-  content and secret-scrubbed; and `report_finding`, through which every candidate
+  content and secret-scrubbed. Its prompt directs reviewers to the smallest
+  project-supported focused selector rather than repeating Stage 0's aggregate suite;
+  and `report_finding`, through which every candidate
   arrives as a structured, anchored object rather than prose. Every reviewer must close
   with `finish_review`, a structured attestation of what it checked and could not verify;
   that closure can also carry findings the model held until its final response. If a
-  provider ends in prose, one bounded continuation keeps the same transcript but exposes
-  only the closure tool, converting that draft into anchored data. A still-missing
+  provider ends in prose or consumes its investigation budget, the runner reserves the
+  shared loop's generic-finalizer headroom for one bounded continuation over the same
+  transcript with only the closure tool. The continuation has a short reasoning ceiling
+  and converts the already-reached conclusion into anchored data. A still-missing
   attestation fails the run instead of being reported as clean, and preserves the draft
   for diagnosis.
 - **`turn.ts`** / **`stage2.ts`** — one model turn over `@copse/agent`'s loop, projected live
@@ -123,7 +138,10 @@ shell's hand-offs (Phase 4).
   output or finding, and each capability a backend declares is checked against what the
   fixture managed to do. The container backend joins it with
   `COPSE_REVIEW_CONTAINER_E2E=1` (a daemon and the image, `COPSE_REVIEW_IMAGE` to name
-  another, required); the unit tier covers its plumbing over a fake engine.
+  another, required); CI's gated `review-cell` job builds `Dockerfile.cell` and runs that
+  real-engine arm, including the exact read-only trusted-preparation-file mount and a real
+  offline preparation against the read-only dependency store. The unit tier covers its plumbing
+  over a fake engine.
 
 ## Running it on this repository
 
@@ -179,11 +197,25 @@ run started with `GITHUB_TOKEN`. The secret-bearing findings job verifies the su
 run and resolves the current contributor commit and base from GitHub's Pull Request API, rather
 than trusting the artefact or a dynamic run association. Remove and re-add the label to review a
 newer head.
-Job B, on the base ref with the model key, imports that report (`--stage0-json`, which makes
-the run read-only and refuses a report for another commit), reviews the head without
-executing it, and posts one advisory review (`--post-review github --repo owner/name --pr n`).
-The token is `COPSE_REVIEW_FORGE_TOKEN`, else `GITHUB_TOKEN`; the model key
-`COPSE_REVIEW_API_KEY`. Provider-specific keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
+Job B, on the base ref with the model key, imports that report (`--stage0-json` is read-only
+by default and refuses a report for another commit). Before any model or App credential is
+put in a step, the workflow builds `Dockerfile.cell`, fetches the exact head's dependency
+store from lockfile data with scripts disabled, and fetches the reviewed refs. The model
+process then attaches that image explicitly with `--backend container`: read/search/diff
+ordinary source tools remain host-side while `read_dependency_file`, `run_command` and Stage 4 reproducers are brokered into the
+read-only-root, capability-free, network-disabled cell. The cell receives only the
+allowlisted environment, never provider, Scaleway, workflow, or GitHub App credentials.
+`--backend ephemeral-runner` is rejected with imported Stage 0, so the secret-bearing host
+cannot be mislabeled as the cell. The run posts one advisory review
+(`--post-review github --repo owner/name --pr n`).
+The posted review carries material `finish_review.couldNotVerify` limits from every completed
+reviewer. It says plain “No findings” only when those structured attestations declare nothing
+material unverified; a bounded read-only review is never presented as broader assurance than it was.
+The GitHub dogfood jobs mint a repository-scoped token for the existing Copse release/deploy
+App with only `pull-requests: write` and pass it as `COPSE_REVIEW_FORGE_TOKEN`; their
+`GITHUB_TOKEN` remains read-only. For other callers the token is
+`COPSE_REVIEW_FORGE_TOKEN`, else `GITHUB_TOKEN`; the model key `COPSE_REVIEW_API_KEY`.
+Provider-specific keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
 `OPENROUTER_API_KEY`) take precedence over that shared model key when set.
 
 This repository dogfoods the GitHub path with `qwen3.8-27b` through Scaleway's
@@ -198,7 +230,7 @@ the configured model endpoint.
 `.github/workflows/review-nightly.yml` samples at most one recent branch from this repository
 each night, including drafts because that is where most active Copse work lives
 (already-labelled PRs, generated screenshot-review PRs and `copse-review-skip` are excluded),
-using the same secret-free Stage 0 / read-only findings split. It can also be dispatched for a
+using the same secret-free Stage 0 / container-backed focused-validation split. It can also be dispatched for a
 specific same-repository PR, draft or otherwise. Both paths remain advisory and retain the full
 findings JSON and SARIF for 30 days so latency, token use and human adjudication can be collected
 before any proposal to make the reviewer required.
@@ -232,6 +264,6 @@ bound, a recall floor and no duplicates on a sufficiently large labelled corpus.
 
 ## Not yet here
 
-Reproducers in CI (job B has no cell, so Stage 4 there is the challenger only), a
-model-profile regression baseline, and a mapped corpus of real pull requests large enough
-to test B8. See the plan's §Phases, §What Phase 4 delivered and §What Phase 5 delivered.
+Forgejo focused-validation-cell parity, a model-profile regression baseline, and a mapped
+corpus of real pull requests large enough to test B8. See the plan's §Phases, §What Phase 4
+delivered and §What Phase 5 delivered.

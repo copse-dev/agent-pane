@@ -13,7 +13,7 @@
 import { errorMessage } from '@copse/std/errors.ts'
 import { memberOf } from '@copse/std/member-of.ts'
 import type { Finding } from './finding.ts'
-import type { ReviewReport } from './stage5.ts'
+import { reviewerLimitations, type ReviewReport } from './stage5.ts'
 
 export const FORGES = ['github', 'forgejo'] as const
 export type Forge = (typeof FORGES)[number]
@@ -133,6 +133,15 @@ function bodyHeader(report: ReviewReport, options: ForgeReviewOptions): string[]
       lines.push(`Incomplete reviewer: ${review.model} (${review.lens}) — ${reason}.`)
     }
   }
+  const limitations = reviewerLimitations(report.reviews)
+  if (limitations.length > 0) {
+    lines.push(
+      `Review limits: ${String(limitations.length)} completed reviewer run(s) left material uncertainty.`,
+    )
+    for (const limitation of limitations) {
+      lines.push(`Could not verify (${limitation.model}, ${limitation.lens}): ${limitation.detail}`)
+    }
+  }
   if (options.headCommit !== null) lines.push(`Head: \`${options.headCommit.slice(0, 12)}\`.`)
   return lines
 }
@@ -161,6 +170,7 @@ export function buildForgeReview(
     })
   })
   const lines = bodyHeader(report, options)
+  const limitations = reviewerLimitations(report.reviews)
   lines.push('')
   if (report.findings.length === 0) {
     const incomplete = report.reviews.some((review) => review.outcome !== 'completed')
@@ -169,7 +179,9 @@ export function buildForgeReview(
         ? 'No findings from Stage 0.'
         : incomplete
           ? 'No findings were produced before the incomplete review stopped.'
-          : 'No findings.',
+          : limitations.length > 0
+            ? 'No findings were reported; review limits remain.'
+            : 'No findings.',
     )
   } else {
     lines.push(

@@ -1,6 +1,7 @@
+import { waitForAgentIdle } from './helpers.ts'
+import { prepareMockTurn } from './helpers/mock-scenario.ts'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { resetUserData, seedContextWheelFixture } from './helpers/seed-config.ts'
-import { setComposerValue } from './helpers/composer.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 
 // While a run is in flight the caller passes `breakdown: null` on purpose — the
@@ -29,7 +30,11 @@ describe('context wheel hover while running', () => {
     await expect(wheel).toBeDisplayed()
 
     // Hold the run open long enough to hover while `status === 'running'`.
-    await setComposerValue('Summarise this repo. [[mock:delay_ms 15000]]')
+    const scenario = await prepareMockTurn(
+      'Summarise this repo.',
+      [{ waitFor: 'inspection', text: 'I am reviewing the workspace.' }],
+      true,
+    )
     await $('.submit-btn').click()
     // Displayed, not present. input-bar.ts creates the stop button once at mount
     // with `hidden` and toggles `stopBtn.hidden = !running`, so an existence
@@ -52,5 +57,7 @@ describe('context wheel hover while running', () => {
     await expect(popover.$$('.context-wheel-popover-row')).toBeElementsArrayOfSize(0)
 
     await saveAppScreenshot('context-wheel-running-hover.png')
+    await scenario.release('inspection')
+    await waitForAgentIdle(15_000)
   })
 })

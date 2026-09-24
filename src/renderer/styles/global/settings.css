@@ -1752,6 +1752,25 @@ dialog.settings-overlay::backdrop {
   opacity: 0.6;
   cursor: default;
 }
+.sources-row[data-cleanup-state] .sources-worktree-cleanup-btn:disabled,
+#sources-worktrees-cleanup[aria-busy='true']:disabled {
+  /* A disabled action normally recedes. Pending work is status, though, and
+     must stay legible after the click that disabled the batch controls. */
+  opacity: 1;
+}
+.sources-row[data-cleanup-state='cleaning'] .sources-worktree-cleanup-btn,
+#sources-worktrees-cleanup[aria-busy='true'] {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+}
+.sources-row[data-cleanup-state='cleaned'] .sources-worktree-cleanup-btn {
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 55%, var(--border));
+}
+.sources-row[data-cleanup-state='failed'] .sources-worktree-cleanup-btn {
+  color: var(--error);
+  border-color: color-mix(in srgb, var(--error) 55%, var(--border));
+}
 
 /* G2 dry-run hook tester: a per-hook "Test" button in the row header and the
    result panel it toggles (summary chips + labeled stdin/stdout/stderr). */

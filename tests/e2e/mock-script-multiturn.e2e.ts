@@ -1,43 +1,12 @@
-import { mkdirSync } from 'node:fs'
-import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
-import type { MockScriptStep } from '../../src/shared/llm/mock-script.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { waitForAgentIdle, waitForPromptReady } from './helpers.ts'
-import { setComposerValue } from './helpers/composer.ts'
-
-const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
-
-// Script lives in the spec — matchers stay next to the prompts they drive.
-const SCRIPT = [
-  {
-    when: 'list.*src',
-    tool: { name: 'list_dir', args: { path: 'src' } },
-  },
-  {
-    when: 'summarize',
-    text: 'The src directory holds the main application sources.',
-  },
-] satisfies MockScriptStep[]
-
-async function installMockScript(): Promise<void> {
-  const status = await browser.execute(async (script) => {
-    const bridge = (
-      window as unknown as {
-        __copseE2e?: { setMockScript: (s: unknown) => Promise<{ steps: number; cursor: number }> }
-      }
-    ).__copseE2e
-    if (!bridge?.setMockScript) throw new Error('__copseE2e.setMockScript unavailable')
-    return bridge.setMockScript(script)
-  }, SCRIPT)
-  if (status.steps !== SCRIPT.length) {
-    throw new Error(`mock script registration failed: ${JSON.stringify(status)}`)
-  }
-}
+import { setComposerValue, submitComposer } from './helpers/composer.ts'
+import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
+import { saveAppScreenshot } from './helpers/screenshot.ts'
 
 describe('mock script multi-turn', () => {
   before(async () => {
-    mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     seedEmptyProject(process.cwd(), 'e2e-mock-script-project', {
       subagentsEnabled: false,
@@ -46,51 +15,72 @@ describe('mock script multi-turn', () => {
     await browser.reloadSession()
   })
 
-  after(async () => {
-    await browser.execute(async () => {
-      await (
-        window as unknown as { __copseE2e?: { clearMockScript: () => Promise<void> } }
-      ).__copseE2e?.clearMockScript?.()
-    })
+  after(() => {
     resetUserData()
   })
 
   it('drives tool + text turns from natural prompts', async function () {
     this.timeout(60_000)
     await $('.prompt-input').waitForExist({ timeout: 15_000 })
-    await installMockScript()
+    const scenario = await installMockScenario({
+      title: 'Inspect the source directory',
+      turns: [
+        {
+          user: 'Please list the src directory for me.',
+          responses: [
+            { toolCalls: [{ name: 'list_dir', args: { path: 'src' } }] },
+            {
+              text: 'I found the main application source files in src.',
+              expectToolResults: [{ name: 'list_dir', includes: 'renderer' }],
+            },
+          ],
+        },
+        {
+          user: 'Can you summarize what you found?',
+          responses: [{ text: 'The src directory contains the main application sources.' }],
+        },
+      ],
+    })
 
-    await setComposerValue('Please list the src directory for me')
-    await $('.submit-btn').click()
+    await setComposerValue('Please list the src directory for me.')
+    await submitComposer()
 
     const listCard = await $('.tool-card[data-status="done"]')
     await listCard.waitForDisplayed({ timeout: 30_000 })
     await expect(listCard.$('.tool-name')).toHaveText('Listed directory')
     await waitForAgentIdle()
+    await expectAssistantReply('I found the main application source files in src.')
 
     await waitForPromptReady()
     await setComposerValue('Can you summarize what you found?')
-    await $('.submit-btn').click()
+    await submitComposer()
     await waitForAgentIdle(30_000)
 
     await browser.waitUntil(
       async () => {
         const texts = await $$('.msg-assistant .message-text').map((el) => el.getText())
         return texts.some((t) =>
-          t.includes('The src directory holds the main application sources.'),
+          t.includes('The src directory contains the main application sources.'),
         )
       },
       {
         timeout: 15_000,
-        timeoutMsg: 'expected scripted summary reply',
+        timeoutMsg: 'expected the scripted summary reply',
       },
     )
 
     const userTexts = await $$('.msg-user .message-text').map((el) => el.getText())
-    for (const text of userTexts) {
-      expect(text).not.toContain('[[mcp:')
-    }
+    expect(userTexts).toEqual([
+      'Please list the src directory for me.',
+      'Can you summarize what you found?',
+    ])
+    const assistantTexts = await $$('.msg-assistant .message-text').map((el) => el.getText())
+    expect(assistantTexts.filter(Boolean)).toEqual([
+      'I found the main application source files in src.',
+      'The src directory contains the main application sources.',
+    ])
 
-    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'mock-script-multiturn.png'))
+    await saveAppScreenshot('mock-script-multiturn.png')
+    await scenario.assertComplete()
   })
 })

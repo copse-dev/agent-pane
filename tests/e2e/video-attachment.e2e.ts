@@ -5,6 +5,7 @@ import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedE2eViewport, seedEmptyProject } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { setComposerValue } from './helpers/composer.ts'
+import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
 
 /**
  * A video dropped into the chat must NOT become model content. It is stored
@@ -20,6 +21,7 @@ const TRANSCRIPT_SCREENSHOT = 'video-attachment-transcript.png'
 const VIDEO_NAME = 'Screen Recording.mov'
 /** Only the extension and byte length matter to the attachment path. */
 const VIDEO_BYTE_LENGTH = 2048
+const REPLY = 'I’ll need the final frames or a description of the failure to diagnose the ending.'
 
 async function waitForWorkspace(): Promise<void> {
   await browser.waitUntil(
@@ -60,7 +62,10 @@ describe('Attaching a video to the chat', () => {
     mkdirSync(join(process.cwd(), 'tests/e2e/screenshots'), { recursive: true })
     resetUserData()
     seedE2eViewport()
-    seedEmptyProject(workspaceRoot, PROJECT_ID)
+    seedEmptyProject(workspaceRoot, PROJECT_ID, {
+      model: 'claude-sonnet-4-6',
+      subagentsEnabled: false,
+    })
     await browser.reloadSession()
     await waitForWorkspace()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
@@ -89,6 +94,15 @@ describe('Attaching a video to the chat', () => {
   })
 
   it('sends the video as a path reference and renders a transcript chip', async () => {
+    await installMockScenario({
+      title: 'Review the screen recording',
+      turns: [
+        {
+          user: { includes: 'what goes wrong at the end of this?' },
+          responses: [{ text: REPLY }],
+        },
+      ],
+    })
     await $('.submit-btn').click()
 
     const sentChip = await $(
@@ -106,6 +120,7 @@ describe('Attaching a video to the chat', () => {
     // The composer clears its chips once the message is sent.
     await expect(await $('.attachment-chips .video-chip').isExisting()).toBe(false)
 
+    await expectAssistantReply(REPLY)
     await saveAppScreenshot(TRANSCRIPT_SCREENSHOT)
   })
 })

@@ -32,7 +32,7 @@ if (!existsSync('dist/renderer/index.html')) {
 }
 
 const define = {
-  __COPSE_TEST_DIRECTIVES__: 'true',
+  __COPSE_TEST_SCENARIOS__: 'true',
   __COPSE_BUILD_COMMIT__: JSON.stringify(null),
   __COPSE_BUILD_DIRTY__: JSON.stringify(null),
 }

@@ -1,7 +1,8 @@
+import { submitComposer } from './helpers/composer.ts'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { waitForAgentIdle } from './helpers.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { prepareMockTurn } from './helpers/mock-scenario.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { assertNoErrorToasts } from './helpers/assert-no-error-toasts.ts'
@@ -24,8 +25,10 @@ const CREATE_BUTTON = `${DIALOG} .create-pr-dialog-create`
 
 async function completeMockTurn(): Promise<void> {
   await $('.prompt-input').waitForExist({ timeout: 30_000 })
-  await setComposerValue('roll up tool activity')
-  await $('.submit-btn').click()
+  await prepareMockTurn('roll up tool activity', [
+    { text: 'The tool activity rollup is ready for review.' },
+  ])
+  await submitComposer()
 
   await waitForAgentIdle(20_000)
 

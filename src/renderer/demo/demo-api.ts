@@ -467,6 +467,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       onOpenTab: subscribe,
       sharePageText: unsupported,
       shareScreenshot: unsupported,
+      captureScreenshot: unsupported,
       exportPdf: unsupported,
       onShareText: subscribe,
       onShareImage: subscribe,
@@ -564,7 +565,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         }
         emitChunk(threadId, {
           type: 'text',
-          text: `Demo response to: ${prompt}\n\nThis response is streamed through the real renderer event path.`,
+          text: 'The renderer receives each response chunk, appends it to the conversation, and marks the turn complete when streaming ends.',
         })
         emitChunk(threadId, {
           type: 'usage',
@@ -803,7 +804,19 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       // The demo has no provider history sidecar to inherit; the forked thread's
       // transcript copy (which the renderer owns) is the whole demo story.
       fork: () => resolved({ source: 'empty' as const, messageCount: 0 }),
-      catalog: emptyArray,
+      catalog: () =>
+        resolved(
+          threads.map((thread) => ({
+            id: thread.id,
+            title: thread.title,
+            createdAt: thread.createdAt,
+            updatedAt: thread.updatedAt,
+            digest: thread.messages.at(-1)?.content ?? '',
+            path: thread.id,
+            spinePath: `/demo/${scenario.project.id}/${thread.id}/events.jsonl`,
+            prRefs: [],
+          })),
+        ),
       listOrphans: emptyArray,
     },
     openRouter: { models: emptyArray },
@@ -882,6 +895,12 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       onUiScaleZoomIn: subscribe,
       onUiScaleZoomOut: subscribe,
       onUiScaleReset: subscribe,
+    },
+    classifiers: {
+      list: emptyArray,
+      save: unsupported,
+      remove: unsupported,
+      test: unsupported,
     },
     settings: {
       get: (key: string) => resolved(settings.get(key)),

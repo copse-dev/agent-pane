@@ -8,6 +8,7 @@ import {
   fileTextIcon,
   imageIcon,
   moreHorizontalIcon,
+  penLineIcon,
   plusIcon,
   refreshIcon,
   searchIcon,
@@ -36,6 +37,8 @@ import {
 } from '../controller/browser-pane-session.ts'
 import type { BrowserPaneSession, BrowserPaneSessionTab } from '@shared/types/main-window.ts'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
+import { mountAnnotationLayer, type AnnotationLayer } from '../drawing/annotation-layer.ts'
+import { attachAnnotation } from '../drawing/attach-annotation.ts'
 import { showErrorToast, showToast } from './toast.ts'
 import type { BrowserImageShare, BrowserTextShare } from '@shared/types/browser-share.ts'
 
@@ -82,6 +85,8 @@ interface BrowserTab {
   artefactContentReady: boolean
   /** Collapse this tab's overflow ("…") menu, if open. */
   closeMenu: () => void
+  /** Drawing overlay, mounted on first use; null until the user annotates. */
+  annotation: AnnotationLayer | null
 }
 
 /** The current page URL when it is a real http(s) address (not about:blank or a
@@ -597,6 +602,11 @@ export function mountBrowserPane(
     }
 
     webview.addEventListener('did-navigate', onNavigate)
+    // Marks are anchored to the viewport of the page they were drawn on.
+    webview.addEventListener('did-navigate', () => {
+      tab.annotation?.deactivate()
+      tab.annotation?.clear()
+    })
     webview.addEventListener('did-navigate-in-page', onNavigate)
     webview.addEventListener('page-title-updated', onNavigate)
     // Guest-page pointer events do not bubble into the embedder document. The
@@ -1060,6 +1070,17 @@ export function mountBrowserPane(
       inspectorItem,
     )
     const menuWrap = el('div', { class: 'browser-menu-wrap' }, menuBtn, menu)
+    const annotateBtn = el(
+      'button',
+      {
+        type: 'button',
+        class: 'browser-nav-btn browser-annotate-btn',
+        'aria-label': 'Annotate page',
+        'data-tooltip': 'Annotate page',
+        'aria-pressed': 'false',
+      },
+      penLineIcon('ui-icon ui-icon-sm'),
+    )
 
     const toolbar = el(
       'div',
@@ -1069,6 +1090,7 @@ export function mountBrowserPane(
       reloadBtn,
       urlInput,
       goBtn,
+      annotateBtn,
       menuWrap,
     )
     const webviewHost = el('div', { class: 'browser-webview-host' })
@@ -1099,10 +1121,41 @@ export function mountBrowserPane(
       artefactThreadId: null,
       artefactProjectId: null,
       artefactContentReady: false,
+      annotation: null,
       closeMenu: () => {
         setMenuOpen(false)
       },
     }
+
+    // The overlay is built on the first click so tabs that never annotate
+    // carry no SVG surface or window listeners.
+    const annotationLayer = (): AnnotationLayer => {
+      tab.annotation ??= mountAnnotationLayer(webviewHost, {
+        label: webviewTitle(tab) ?? 'browser page',
+        captureBase: async (): Promise<string | null> => {
+          const contentsId = shareableWebContentsId(tab)
+          const capture = api?.browser.captureScreenshot
+          if (contentsId === null || !capture) return null
+          return (await capture(contentsId)).dataUrl
+        },
+        onSend: (payload): boolean => {
+          return attachAnnotation(
+            payload,
+            firstNonEmptyString(tab.artefactTitle, webviewTitle(tab), webviewUrl(tab)) ??
+              'browser page',
+          )
+        },
+        onDeactivate: (): void => {
+          annotateBtn.setAttribute('aria-pressed', 'false')
+        },
+      })
+      return tab.annotation
+    }
+    annotateBtn.addEventListener('click', () => {
+      setMenuOpen(false)
+      const on = annotationLayer().toggle()
+      annotateBtn.setAttribute('aria-pressed', String(on))
+    })
 
     let menuOpen = false
     function setMenuOpen(next: boolean): void {
@@ -1206,6 +1259,7 @@ export function mountBrowserPane(
     if (!tab) return
     tab.webview?.remove()
     tab.tabBtn.remove()
+    tab.annotation?.dispose()
     tab.panel.remove()
     tabs.delete(tabId)
     scheduleSessionSave()
@@ -1279,6 +1333,7 @@ export function mountBrowserPane(
     for (const tab of tabs.values()) {
       tab.webview?.remove()
       tab.tabBtn.remove()
+      tab.annotation?.dispose()
       tab.panel.remove()
     }
     tabs.clear()
@@ -1586,6 +1641,7 @@ export function mountBrowserPane(
     for (const tab of tabs.values()) {
       tab.webview?.remove()
       tab.tabBtn.remove()
+      tab.annotation?.dispose()
       tab.panel.remove()
     }
     tabs.clear()

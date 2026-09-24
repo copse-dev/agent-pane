@@ -89,6 +89,49 @@ describe('buildForkedThread', () => {
     assert.notEqual(forked.messages[0].toolCalls[0], source.messages[0]?.toolCalls[0])
   })
 
+  it('deep-copies published visual evidence into the fork', () => {
+    const source = thread([
+      assistantMessage('m1', 'The layout is fixed.', {
+        visualEvidence: [
+          {
+            id: 'evidence-1',
+            toolCallId: 'tc-1',
+            kind: 'screenshot',
+            caption: 'Settings after the fix',
+            createdAt: 3,
+            assets: [
+              {
+                id: 'asset-1',
+                label: 'After',
+                mimeType: 'image/png',
+                width: 64,
+                height: 64,
+                capturedAt: 2,
+                dataUrl: 'data:image/png;base64,cGl4ZWxz',
+                source: {
+                  kind: 'browser',
+                  viewId: 'view-1',
+                  title: 'Settings',
+                  url: 'https://example.test/settings',
+                },
+              },
+            ],
+          },
+        ],
+      }),
+    ])
+
+    const forked = buildForkedThread(source)
+    const copied = forked?.messages[0]?.visualEvidence?.[0]
+    const original = source.messages[0]?.visualEvidence?.[0]
+
+    assert.deepEqual(copied, original)
+    assert.notEqual(copied, original)
+    assert.notEqual(copied?.assets, original?.assets)
+    assert.notEqual(copied?.assets[0], original?.assets[0])
+    assert.notEqual(copied?.assets[0]?.source, original?.assets[0]?.source)
+  })
+
   it('forks through a chosen message, dropping everything after it', () => {
     const source = thread([
       userMessage('m1', 'First'),

@@ -995,6 +995,45 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     vncDiscoveredPorts: [5900, 5901, 5902],
   },
   {
+    id: 'inline-thread-reference',
+    label: 'Inline thread reference chip geometry',
+    project: project('demo-inline-thread-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+    },
+    threads: [
+      {
+        id: 'demo-inline-thread-active',
+        title: 'Compare thread context',
+        status: 'idle',
+        messages: [
+          {
+            id: 'demo-inline-thread-user',
+            role: 'user',
+            content: 'Earlier: \uFFFC confirmed the current outline.',
+            attachments: [{ kind: 'thread', label: 'Existing thread reference' }],
+            toolCalls: [],
+            createdAt: FIXED_TIME,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+      {
+        id: 'demo-inline-thread-reference',
+        title: 'TypeSafe inference',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME - 60_000,
+        updatedAt: FIXED_TIME - 60_000,
+      },
+    ],
+  },
+  {
     id: 'settings-footer',
     label: 'Settings scroll + sticky footer geometry',
     project: project('demo-settings-footer-project'),

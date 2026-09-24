@@ -1,3 +1,4 @@
+import { mockScenarioTitle } from '@copse/llm/mock-script.ts'
 import {
   resolveSmallTasksProvider,
   resolveSmallTasksModelId,
@@ -49,6 +50,9 @@ export function threadTitlePrompt(text: string): string {
 // small-tasks model; returns null on failure so the caller can fall back to a
 // heuristic.
 export async function suggestThreadTitle(text: string): Promise<string | null> {
+  if (__COPSE_TEST_SCENARIOS__ && process.env['COPSE_PANEL_MOCK_LLM'] === '1') {
+    return mockScenarioTitle(text)
+  }
   const provider = await resolveSmallTasksProvider()
   if (!provider) return null
   const model = resolveSmallTasksModelId()

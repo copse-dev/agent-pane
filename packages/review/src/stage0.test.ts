@@ -1,11 +1,23 @@
 import { after, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { access, chmod, mkdir, mkdtemp, readFile, realpath, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { basename, join, resolve } from 'node:path'
+import { TEST_FAILURE_REPORT_PREFIX } from './test-failures.ts'
+import { decodeStage0Report } from './stage0-report.ts'
 import { decodeFindings } from './finding.ts'
 import { createHostProcessBackend } from './host-process-backend.ts'
 import type { IsolationBackend } from './isolation.ts'
 import { REVIEW_CONFIG_FILENAME } from './project-commands.ts'
 import { renderStage0Report } from './report-text.ts'
-import { openReviewGround, runStage0, runStage0Checks, type Stage0Report } from './stage0.ts'
+import {
+  openReviewGround,
+  prepareVerificationBase,
+  runStage0,
+  runStage0Checks,
+  type Stage0Report,
+  type TrustedPreparation,
+} from './stage0.ts'
 import { createTestRepo, worktreeCount, type TestRepo } from './test-repo.ts'
 
 /**
@@ -89,6 +101,144 @@ describe('runStage0', () => {
     assert.match(renderStage0Report(report), /\nClean\.$/)
   })
 
+  it('uses a caller-trusted preparation command even when the old checkout disables prepare', async () => {
+    const repo = await scenario({}, {})
+    const report = await runStage0({
+      repoRoot: repo.root,
+      baseRef: 'main',
+      backend: createHostProcessBackend(),
+      diffOrigin: 'own',
+      unisolatedConsent: true,
+      trustedPreparation: {
+        argv: [process.execPath, '-e', 'console.log("trusted preparation ran")'],
+        timeoutMs: 30_000,
+        readOnlyPaths: [],
+      },
+    })
+    assert.equal(report.preparation.head?.status, 'passed')
+    assert.deepEqual(report.preparation.head.argv, [
+      process.execPath,
+      '-e',
+      'console.log("trusted preparation ran")',
+    ])
+    assert.match(report.preparation.head.output, /trusted preparation ran/)
+    assert.deepEqual(report.coverage.notChecked, [])
+  })
+
+  it('keeps pnpm bookkeeping in each checkout while the shared store stays external', async () => {
+    const repo = await scenario({}, {})
+    const dependencyStore = await realpath(
+      await mkdtemp(join(tmpdir(), 'review-read-only-pnpm-store-')),
+    )
+    const ground = await openReviewGround({
+      repoRoot: repo.root,
+      baseRef: 'main',
+      backend: createHostProcessBackend(),
+      diffOrigin: 'own',
+      unisolatedConsent: true,
+      dependencyStore,
+    })
+    try {
+      assert.ok(ground.checkouts)
+      assert.ok(ground.cell)
+      const relativeAlias = ground.cell.spec.env['npm_config_store_dir']
+      assert.ok(relativeAlias)
+      assert.match(
+        relativeAlias,
+        new RegExp(`^\\.copse-review-pnpm-store-[0-9a-f]{16}/${basename(dependencyStore)}$`),
+      )
+      for (const checkout of [ground.checkouts.base, ground.checkouts.head]) {
+        assert.equal(await realpath(join(checkout, relativeAlias)), dependencyStore)
+      }
+      await assert.rejects(access(join(dependencyStore, 'projects')), { code: 'ENOENT' })
+    } finally {
+      await ground.close()
+      await rm(dependencyStore, { recursive: true, force: true })
+    }
+  })
+
+  it('runs trusted pnpm preparation against a read-only content store', async () => {
+    const repo = await createTestRepo({
+      'package.json': JSON.stringify({
+        name: 'read-only-store-fixture',
+        private: true,
+      }),
+      'pnpm-lock.yaml': "lockfileVersion: '9.0'\n\nimporters:\n\n  .: {}\n",
+      'check.cjs': CHECK_SCRIPT,
+      [REVIEW_CONFIG_FILENAME]: config(['test']),
+    })
+    repos.push(repo)
+    const dependencyStore = await realpath(
+      await mkdtemp(join(tmpdir(), 'review-read-only-pnpm-content-')),
+    )
+    const versionedStore = join(dependencyStore, 'v10')
+    await mkdir(versionedStore)
+    await chmod(versionedStore, 0o555)
+    await chmod(dependencyStore, 0o555)
+    try {
+      const report = await runStage0({
+        repoRoot: repo.root,
+        baseRef: 'main',
+        backend: createHostProcessBackend(),
+        diffOrigin: 'own',
+        unisolatedConsent: true,
+        dependencyStore,
+        trustedPreparation: {
+          argv: [process.execPath, resolve('scripts/prepare-review-stage0.mts')],
+          timeoutMs: 30_000,
+          readOnlyPaths: [],
+        },
+      })
+      assert.equal(report.preparation.head?.status, 'passed')
+      assert.match(report.preparation.head.output, /Stage 0 offline dependency install/)
+      await assert.rejects(access(join(versionedStore, 'projects')), { code: 'ENOENT' })
+    } finally {
+      await chmod(versionedStore, 0o755)
+      await chmod(dependencyStore, 0o755)
+      await rm(dependencyStore, { recursive: true, force: true })
+    }
+  })
+
+  it('re-prepares base when imported Stage 0 artifacts came from another cell', async () => {
+    const repo = await scenario({}, { test: { exit: 1 } })
+    const trustedPreparation: TrustedPreparation = {
+      argv: [
+        process.execPath,
+        '-e',
+        'require("node:fs").writeFileSync("fresh-cell-ready", "ready")',
+      ],
+      timeoutMs: 30_000,
+      readOnlyPaths: [],
+    }
+    const report = await runStage0({
+      repoRoot: repo.root,
+      baseRef: 'main',
+      backend: createHostProcessBackend(),
+      diffOrigin: 'own',
+      unisolatedConsent: true,
+      trustedPreparation,
+    })
+    assert.equal(report.preparation.base?.status, 'passed')
+
+    const ground = await openReviewGround({
+      repoRoot: repo.root,
+      baseRef: 'main',
+      backend: createHostProcessBackend(),
+      diffOrigin: 'own',
+      unisolatedConsent: true,
+      trustedPreparation,
+    })
+    try {
+      await prepareVerificationBase(ground, report, new AbortController().signal, {
+        reuseStage0Artifacts: false,
+      })
+      assert.ok(ground.checkouts)
+      assert.equal(await readFile(join(ground.checkouts.base, 'fresh-cell-ready'), 'utf8'), 'ready')
+    } finally {
+      await ground.close()
+    }
+  })
+
   it('mints a confirmed finding for a test that passes on base and fails on head', async () => {
     const repo = await scenario({}, { test: { exit: 1, stdout: 'not ok 1 - adds\n' } })
     const report = await run(repo)
@@ -118,6 +268,54 @@ describe('runStage0', () => {
     assert.match(renderStage0Report(report), /1 finding\(s\):\n1\. \[test\] package\.json:\d+ —/)
   })
 
+  it('compares individual failures when both aggregate test commands fail', async () => {
+    const failure = (name: string): { path: string; name: string } => ({
+      path: 'src/example.test.ts',
+      name,
+    })
+    const output = (names: string[]): string =>
+      TEST_FAILURE_REPORT_PREFIX +
+      JSON.stringify({
+        tier: 'unit-component',
+        complete: true,
+        failed: names.length,
+        failures: names.map(failure),
+      }) +
+      '\n'
+    const repo = await scenario(
+      { test: { exit: 1, stdout: output(['old failure']) } },
+      { test: { exit: 1, stdout: output(['old failure', 'new regression']) } },
+      { kinds: ['test'] },
+    )
+    const report = await run(repo)
+    assert.equal(report.checks[0]?.verdict, 'regressed')
+    assert.equal(report.findings.length, 1)
+    assert.match(report.findings[0]?.claim ?? '', /new regression/)
+    assert.doesNotMatch(report.findings[0]?.claim ?? '', /passes on base/)
+    assert.equal(report.findings[0]?.anchor.path, 'src/example.test.ts')
+    assert.deepEqual(decodeStage0Report(JSON.parse(JSON.stringify(report))), report)
+    const unchanged = await scenario(
+      { test: { exit: 1, stdout: output(['old failure']) } },
+      { test: { exit: 1, stdout: output(['old failure']) } },
+      { kinds: ['test'] },
+    )
+    const same = await run(unchanged)
+    assert.equal(same.checks[0]?.verdict, 'failing-on-base')
+    assert.deepEqual(same.findings, [])
+    const unavailable = await scenario(
+      { test: { exit: 1, stdout: 'incomplete output' } },
+      { test: { exit: 1, stdout: output(['new regression']) } },
+      { kinds: ['test'] },
+    )
+    const unknown = await run(unavailable)
+    assert.equal(unknown.checks[0]?.verdict, 'undetermined')
+    assert.match(
+      unknown.coverage.notChecked[0]?.reason ?? '',
+      /individual failure comparison is unavailable/,
+    )
+    assert.deepEqual(unknown.findings, [])
+  })
+
   it('anchors a new type diagnostic at its line and ignores one that only moved', async () => {
     const repo = await scenario(
       { typecheck: { exit: 2, stdout: "src/a.ts(9,1): error TS2304: Cannot find name 'x'.\n" } },
@@ -128,13 +326,10 @@ describe('runStage0', () => {
         },
       },
     )
-    // Base fails typecheck too, so the check is failing-on-base and nothing is claimed.
+    // Both typechecks fail; without a complete inventory the delta stays unknown.
     const report = await run(repo)
     assert.deepEqual(report.findings, [])
-    assert.equal(
-      report.checks.find((check) => check.kind === 'typecheck')?.verdict,
-      'failing-on-base',
-    )
+    assert.equal(report.checks.find((check) => check.kind === 'typecheck')?.verdict, 'undetermined')
   })
 
   it('mints one finding per new type diagnostic, anchored at its line', async () => {

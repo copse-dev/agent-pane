@@ -1,164 +1,159 @@
-import type { LLMProvider, LLMMessage, LLMTool, ProviderStreamChunk } from './wire-types.ts'
-import { takeMockScriptStep } from './mock-script.ts'
+import type {
+  LLMMessage,
+  LLMProvider,
+  LLMTool,
+  ProviderStreamChunk,
+  ToolResult,
+} from './wire-types.ts'
+import { claimMockScenarioResponse } from './mock-script.ts'
 import { at } from '@copse/std/array-utils.ts'
-const randomUUID = (): string => globalThis.crypto.randomUUID()
-const MAX_MOCK_DELAY_MS = 5_000
 
-async function sleep(ms: number, signal?: AbortSignal): Promise<void> {
-  await new Promise<void>((resolve) => {
-    const timeout = setTimeout(resolve, ms)
-    signal?.addEventListener(
-      'abort',
-      () => {
-        clearTimeout(timeout)
-        resolve()
-      },
-      { once: true },
-    )
+const randomUUID = (): string => globalThis.crypto.randomUUID()
+
+async function pause(ms: number, signal?: AbortSignal): Promise<boolean> {
+  if (ms === 0) return !signal?.aborted
+  return new Promise<boolean>((resolve) => {
+    const timeout = setTimeout(() => {
+      finish(true)
+    }, ms)
+    const onAbort = (): void => {
+      finish(false)
+    }
+    const finish = (completed: boolean): void => {
+      clearTimeout(timeout)
+      signal?.removeEventListener('abort', onAbort)
+      resolve(completed && !signal?.aborted)
+    }
+    signal?.addEventListener('abort', onAbort, { once: true })
+    if (signal?.aborted) onAbort()
   })
+}
+
+function userText(message: LLMMessage | undefined): string {
+  if (message?.role !== 'user') return ''
+  if (typeof message.content === 'string') return message.content
+  return message.content
+    .filter((part) => part.type === 'text')
+    .map((part) => part.text)
+    .join('')
+}
+
+function latestUserText(messages: readonly LLMMessage[]): string {
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const message = messages[index]
+    if (message?.role === 'user') return userText(message)
+  }
+  return ''
+}
+
+function latestUserTurnIdentity(messages: readonly LLMMessage[]): string {
+  let userCount = 0
+  for (const message of messages) if (message.role === 'user') userCount++
+  return String(userCount)
+}
+
+function toolResults(messages: readonly LLMMessage[]): ToolResult[] {
+  return messages.flatMap((message) => (message.role === 'tool' ? message.toolResults : []))
+}
+
+async function* streamScenarioResponse(
+  scope: string | undefined,
+  messages: LLMMessage[],
+  tools: LLMTool[],
+  signal?: AbortSignal,
+): AsyncGenerator<ProviderStreamChunk, boolean> {
+  const lease = claimMockScenarioResponse(
+    scope,
+    latestUserText(messages),
+    latestUserTurnIdentity(messages),
+    tools,
+    toolResults(messages),
+  )
+  if (!lease) return false
+  if (lease.response.promptProgress !== undefined)
+    yield { type: 'prompt_progress', fraction: lease.response.promptProgress }
+  const released = await lease.waitForRelease(signal)
+  if (!released || !(await pause(lease.response.delayMs ?? 0, signal)) || signal?.aborted) {
+    lease.abort()
+    return true
+  }
+  const delay = lease.response.chunkDelayMs ?? 0
+  const toolCallIds: string[] = []
+  for (const character of lease.response.reasoning ?? '') {
+    if (signal?.aborted || !(await pause(delay, signal))) {
+      lease.abort()
+      return true
+    }
+    yield { type: 'reasoning', text: character }
+  }
+  for (const character of lease.response.text ?? '') {
+    if (signal?.aborted || !(await pause(delay, signal))) {
+      lease.abort()
+      return true
+    }
+    yield { type: 'text', text: character }
+  }
+  for (const toolCall of lease.response.toolCalls ?? []) {
+    if (signal?.aborted) {
+      lease.abort()
+      return true
+    }
+    const id = randomUUID()
+    toolCallIds.push(id)
+    yield { type: 'tool_call', toolCall: { id, name: toolCall.name, args: toolCall.args } }
+  }
+  lease.complete(toolCallIds)
+  yield { type: 'done' }
+  return true
 }
 
 export class MockLLMProvider implements LLMProvider {
   lastUsage = { inputTokens: 120, outputTokens: 80 }
+  private readonly scope: string | undefined
+
+  constructor(scope?: string) {
+    this.scope = scope
+  }
 
   async *stream(
     messages: LLMMessage[],
     tools: LLMTool[],
     signal?: AbortSignal,
   ): AsyncIterable<ProviderStreamChunk> {
+    if (__COPSE_TEST_SCENARIOS__) {
+      const scenario = streamScenarioResponse(this.scope, messages, tools, signal)
+      const first = await scenario.next()
+      if (!first.done) {
+        yield first.value
+        for await (const chunk of scenario) yield chunk
+        return
+      }
+      if (first.value) return
+    }
+
     const systemText = messages
-      .filter((m) => m.role === 'system' || m.role === 'developer')
-      .map((m) => (typeof m.content === 'string' ? m.content : ''))
+      .filter((message) => message.role === 'system' || message.role === 'developer')
+      .map((message) => (typeof message.content === 'string' ? message.content : ''))
       .join('\n')
-    // Skill prompts emit `<skill_content name="…" trust="…">` (see skill-prompt.ts).
-    // Match on the name attribute prefix so the trust attribute does not break detection.
     const demoSkillLoaded = systemText.includes('<skill_content name="demo-skill"')
     const checkupSkillLoaded = systemText.includes('<skill_content name="checkup"')
+    const isFirstTurn = messages.filter((message) => message.role === 'assistant').length === 0
 
-    const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user')
-    const fullUserText = typeof lastUserMsg?.content === 'string' ? lastUserMsg.content : ''
-    const userText = fullUserText ? fullUserText.slice(0, 40) : '(complex input)'
-    const text = demoSkillLoaded
-      ? 'Demo skill active — Copse skills support is working.'
-      : checkupSkillLoaded
-        ? 'Ran a checkup — mock health check complete.'
-        : `Mock response to: ${userText}`
-
-    const isFirstTurn = messages.filter((m) => m.role === 'assistant').length === 0
-    let lastUserIdx = -1
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i]?.role === 'user') {
-        lastUserIdx = i
-        break
-      }
-    }
-    const awaitingAssistantReply =
-      lastUserIdx !== -1 && !messages.slice(lastUserIdx + 1).some((m) => m.role === 'assistant')
-
-    // Test directives (`[[mock:…]]`, `[[mcp:…]]`) are a test-only steering hook.
-    // `__COPSE_TEST_DIRECTIVES__` is `false` in release builds, so esbuild
-    // dead-code-eliminates this whole block and the parser never ships (#DSL).
-    if (__COPSE_TEST_DIRECTIVES__) {
-      const promptProgressDirective = fullUserText.match(
-        /\[\[mock:prompt_progress\s+([^\]\s]+)\]\]/,
-      )
-      if (promptProgressDirective?.[1] && awaitingAssistantReply) {
-        const fraction = Number.parseFloat(promptProgressDirective[1])
-        if (Number.isFinite(fraction)) {
-          yield { type: 'prompt_progress', fraction: Math.min(1, Math.max(0, fraction)) }
-        }
-      }
-
-      const delayDirective = fullUserText.match(/\[\[mock:delay_ms\s+(\d+)\]\]/)
-      if (delayDirective?.[1]) {
-        const requestedDelay = Number.parseInt(delayDirective[1], 10)
-        const delayMs = Math.min(requestedDelay, MAX_MOCK_DELAY_MS)
-        await sleep(delayMs, signal)
-        if (signal?.aborted) return
-      }
-
-      // `[[mock:reasoning <text>]]` streams reasoning tokens before the answer so
-      // e2e/evals can exercise the live Reasoning disclosure without a real model.
-      const reasoningDirective = fullUserText.match(/\[\[mock:reasoning\s+([^\]]+)\]\]/)
-      const reasoningText = reasoningDirective?.[1]
-      if (reasoningText && awaitingAssistantReply) {
-        for (const char of reasoningText) {
-          if (signal?.aborted) return
-          yield { type: 'reasoning', text: char }
-          await new Promise((r) => setTimeout(r, 10))
-        }
-      }
-
-      // `[[mcp:<toolName> {json args}]]` drives a specific tool call (used by e2e
-      // to exercise the MCP path). Real prompts never contain it. Only honor it
-      // for the current user turn — not on later agent-loop passes that still see
-      // the same user message in history.
-      if (awaitingAssistantReply && !demoSkillLoaded && !checkupSkillLoaded) {
-        const step = takeMockScriptStep(fullUserText, tools)
-        if (step) {
-          if (signal?.aborted) return
-          if (step.tool) {
-            yield {
-              type: 'tool_call',
-              toolCall: { id: randomUUID(), name: step.tool.name, args: step.tool.args },
-            }
-            yield { type: 'done' }
-            return
-          }
-          if (step.text) {
-            for (const char of step.text) {
-              if (signal?.aborted) return
-              yield { type: 'text', text: char }
-              await new Promise((r) => setTimeout(r, 10))
-            }
-            yield { type: 'done' }
-            return
-          }
-        }
-
-        const directive = fullUserText.match(/\[\[mcp:([^\s\]]+)(\s+\{[^]*?\})?\]\]/)
-        const directiveToolName = directive?.[1]
-        if (directiveToolName && tools.some((t) => t.name === directiveToolName)) {
-          if (signal?.aborted) return
-          let args: Record<string, unknown> = {}
-          if (directive[2]) {
-            try {
-              const parsed: unknown = JSON.parse(directive[2].trim())
-              args =
-                typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
-                  ? { ...parsed }
-                  : {}
-            } catch {
-              args = {}
-            }
-          }
-          yield { type: 'tool_call', toolCall: { id: randomUUID(), name: directiveToolName, args } }
-          yield { type: 'done' }
-          return
-        }
-      }
-    }
-
-    // If tools are available, simulate a tool call on the first turn. Prefer a
-    // tool we can call with valid args (list_dir on the workspace root) so the
-    // mock doesn't trip the tool's argument validation.
+    // Keep the small no-key smoke fallback used by older runtime tests. Scoped
+    // scenarios always take precedence; background/unscoped providers cannot
+    // consume them and receive only this deterministic behavior.
     if (tools.length > 0 && isFirstTurn && !demoSkillLoaded) {
       if (signal?.aborted) return
-      // Prefer the checkup tool when that skill was invoked so /checkup e2e
-      // exercises the real doctor path instead of a generic list_dir call.
       const runCheckup = checkupSkillLoaded
-        ? tools.find((t) => t.name === 'run_checkup')
+        ? tools.find((tool) => tool.name === 'run_checkup')
         : undefined
       if (runCheckup) {
-        yield {
-          type: 'tool_call',
-          toolCall: { id: randomUUID(), name: 'run_checkup', args: {} },
-        }
+        yield { type: 'tool_call', toolCall: { id: randomUUID(), name: 'run_checkup', args: {} } }
         yield { type: 'done' }
         return
       }
-      const explore = tools.find((t) => t.name === 'explore')
-      const listDir = tools.find((t) => t.name === 'list_dir')
+      const explore = tools.find((tool) => tool.name === 'explore')
+      const listDir = tools.find((tool) => tool.name === 'list_dir')
       const toolCall = explore
         ? { id: randomUUID(), name: 'explore', args: { query: 'List the workspace root' } }
         : listDir
@@ -169,10 +164,14 @@ export class MockLLMProvider implements LLMProvider {
       return
     }
 
-    for (const char of text) {
+    const text = demoSkillLoaded
+      ? 'Demo skill active — Copse skills support is working.'
+      : checkupSkillLoaded
+        ? 'The checkup finished.'
+        : 'No conversation scenario is configured for this request.'
+    for (const character of text) {
       if (signal?.aborted) return
-      yield { type: 'text', text: char }
-      await new Promise((r) => setTimeout(r, 10))
+      yield { type: 'text', text: character }
     }
     yield { type: 'done' }
   }

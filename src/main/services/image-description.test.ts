@@ -1,5 +1,10 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import {
+  setMockScenario,
+  assertMockScenarioComplete,
+  clearMockScenarios,
+} from '@copse/llm/mock-script.ts'
 import type { LLMMessage, LLMProvider } from '@shared/types'
 import { parseUsageEvents } from '@shared/usage/aggregate-usage.ts'
 import { USAGE_EVENTS_STORAGE_KEY } from '@shared/usage/usage-event.ts'
@@ -65,6 +70,19 @@ describe('describeImagesWithProvider', () => {
     const previousUsageEvents = storageGet(USAGE_EVENTS_STORAGE_KEY)
     process.env['COPSE_PANEL_MOCK_LLM'] = '1'
     storageSet(USAGE_EVENTS_STORAGE_KEY, [])
+    setMockScenario(
+      'image-handoff',
+      {
+        title: 'Describe an attached image',
+        turns: [
+          {
+            user: { includes: 'Describe the attached image' },
+            responses: [{ text: 'A settings panel with a dark theme.' }],
+          },
+        ],
+      },
+      'image-description:blank-thread-before-first-message',
+    )
 
     try {
       const result = await describeImagesForHandoff({
@@ -75,7 +93,8 @@ describe('describeImagesWithProvider', () => {
         images: ['data:image/png;base64,AAAA'],
       })
 
-      assert.match(result.text, /Mock response/)
+      assert.equal(result.text, 'A settings panel with a dark theme.')
+      assertMockScenarioComplete('image-handoff')
       const events = parseUsageEvents(storageGet(USAGE_EVENTS_STORAGE_KEY))
       assert.equal(events.length, 1)
       const event = events[0]
@@ -94,6 +113,7 @@ describe('describeImagesWithProvider', () => {
         },
       )
     } finally {
+      clearMockScenarios()
       if (previousMock === undefined) delete process.env['COPSE_PANEL_MOCK_LLM']
       else process.env['COPSE_PANEL_MOCK_LLM'] = previousMock
       storageSet(USAGE_EVENTS_STORAGE_KEY, previousUsageEvents)

@@ -11,6 +11,7 @@ import {
   createReviewerToolExecutor,
   jailPath,
   reviewerClosureTools,
+  reviewerTools,
   type ReviewerToolHost,
 } from './reviewer-tools.ts'
 
@@ -122,6 +123,132 @@ describe('reviewer tools', () => {
     )
   })
 
+  it('reads pnpm-linked dependency source inside the cell without relaxing host reads', async () => {
+    const packageRoot = join(
+      root,
+      'node_modules',
+      '.pnpm',
+      'linked-dep@1.0.0',
+      'node_modules',
+      'linked-dep',
+    )
+    const packageLink = join(root, 'node_modules', 'linked-dep')
+    const outside = await mkdtemp(join(tmpdir(), 'review-dependency-outside-'))
+    const outsideLink = join(root, 'node_modules', 'escaped-dep')
+    await mkdir(packageRoot, { recursive: true })
+    await writeFile(join(packageRoot, 'index.js'), 'first line\nconst linked = true\nlast line\n')
+    await writeFile(join(outside, 'canary.js'), 'OUTSIDE_CANARY\n')
+    await symlink(
+      '.pnpm/linked-dep@1.0.0/node_modules/linked-dep',
+      packageLink,
+      process.platform === 'win32' ? 'junction' : 'dir',
+    )
+    await symlink(outside, outsideLink, process.platform === 'win32' ? 'junction' : 'dir')
+    try {
+      const executor = createReviewerToolExecutor(host)
+      assert.match(
+        await executor.execute(
+          'read_file',
+          { path: 'node_modules/linked-dep/index.js' },
+          signal,
+          'dependency-host-read',
+        ),
+        /use read_dependency_file/,
+      )
+      assert.equal(
+        await executor.execute(
+          'read_dependency_file',
+          { path: 'linked-dep/index.js', startLine: 2, endLine: 3 },
+          signal,
+          'dependency-cell-read',
+        ),
+        '2: const linked = true\n3: last line',
+      )
+      assert.match(
+        await executor.execute(
+          'read_dependency_file',
+          { path: 'node_modules/escaped-dep/canary.js' },
+          signal,
+          'dependency-escape',
+        ),
+        /resolves outside the disposable node_modules tree/,
+      )
+      assert.match(
+        await executor.execute(
+          'read_dependency_file',
+          { path: 'node_modules/../src/a.ts' },
+          signal,
+          'dependency-traversal',
+        ),
+        /must name a package file/,
+      )
+      const unavailable = createReviewerToolExecutor({ ...host, cell: null })
+      assert.match(
+        await unavailable.execute(
+          'read_dependency_file',
+          { path: 'node_modules/linked-dep/index.js' },
+          signal,
+          'dependency-no-cell',
+        ),
+        /unavailable without an execution cell/,
+      )
+    } finally {
+      await rm(packageLink, { force: true })
+      await rm(outsideLink, { force: true })
+      await rm(outside, { recursive: true, force: true })
+    }
+  })
+
+  it('describes dependency reads as data-only cell access', () => {
+    const tool = reviewerTools().find((candidate) => candidate.name === 'read_dependency_file')
+    assert.ok(tool)
+    assert.match(tool.description, /never executes package code/)
+    assert.match(tool.description, /jsdom\/lib\/api\.js/)
+    assert.deepEqual(tool.parameters['required'], ['path'])
+  })
+
+  it('rejects a node_modules root redirected outside the disposable checkout', async () => {
+    const checkout = await mkdtemp(join(tmpdir(), 'review-dependency-checkout-'))
+    const outside = await mkdtemp(join(tmpdir(), 'review-dependency-root-outside-'))
+    const scratch = await mkdtemp(join(tmpdir(), 'review-dependency-root-cell-'))
+    await writeFile(join(outside, 'canary.js'), 'OUTSIDE_CANARY\n')
+    await symlink(
+      outside,
+      join(checkout, 'node_modules'),
+      process.platform === 'win32' ? 'junction' : 'dir',
+    )
+    const redirectedCell = await createHostProcessBackend().createCell({
+      checkouts: { base: checkout, head: checkout },
+      scratchDir: scratch,
+      readOnlyPaths: [],
+      env: cellEnvironment(process.env),
+    })
+    try {
+      const executor = createReviewerToolExecutor({
+        headCheckout: checkout,
+        context: contextFor([]),
+        cell: redirectedCell,
+        shellDecision: 'allow',
+        scrub: (text: string): string => text,
+      })
+      assert.match(
+        await executor.execute(
+          'read_dependency_file',
+          { path: 'node_modules/canary.js' },
+          signal,
+          'dependency-root-escape',
+        ),
+        /node_modules resolves outside the disposable checkout/,
+      )
+    } finally {
+      await redirectedCell.destroy()
+      await rm(join(checkout, 'node_modules'), { force: true })
+      await rm(checkout, { recursive: true, force: true })
+      await rm(outside, { recursive: true, force: true })
+      await rm(scratch, { recursive: true, force: true })
+    }
+  })
+
   it('searches with a regex, skipping node_modules, and treats a bad pattern literally', async () => {
     const executor = createReviewerToolExecutor(host)
     assert.equal(
@@ -168,6 +295,38 @@ describe('reviewer tools', () => {
     )
     assert.equal(executor.commandRuns().get('call-9')?.exitCode, 3)
     assert.equal(executor.commandRuns().get('call-9')?.output.trim(), '[SCRUBBED] hello')
+
+    const encoded = await executor.execute(
+      'run_command',
+      { argv: JSON.stringify([process.execPath, 'probe.cjs', 'encoded']) },
+      signal,
+      'call-encoded',
+    )
+    assert.match(encoded, /\[SCRUBBED\] encoded/)
+    assert.equal(executor.commandRuns().get('call-encoded')?.exitCode, 3)
+
+    const multilineArgv = JSON.stringify([
+      process.execPath,
+      'probe.cjs',
+      'encoded line one\nencoded line two',
+    ]).replace('\\n', '\n')
+    const multiline = await executor.execute(
+      'run_command',
+      { argv: multilineArgv },
+      signal,
+      'call-encoded-multiline',
+    )
+    assert.match(multiline, /\[SCRUBBED\] encoded line one\nencoded line two/)
+    assert.equal(executor.commandRuns().get('call-encoded-multiline')?.exitCode, 3)
+
+    const malformed = await executor.execute(
+      'run_command',
+      { argv: '["node", {"not": "an argument"}]' },
+      signal,
+      'call-encoded-malformed',
+    )
+    assert.match(malformed, /^Error: run_command needs/)
+    assert.equal(executor.commandRuns().has('call-encoded-malformed'), false)
   })
 
   it('refuses run_command when the profile denies shell or there is no cell', async () => {
@@ -208,6 +367,125 @@ describe('reviewer tools', () => {
       /No run_command call/,
     )
     assert.equal(executor.reported().length, 1)
+  })
+
+  it('retains suspicions and rejects missing, duplicate, dangling and false-clean dispositions atomically', async () => {
+    const executor = createReviewerToolExecutor(host)
+    const suspicion = {
+      path: 'src/a.ts',
+      startLine: 2,
+      claim: 'The new literal may disclose a secret.',
+    }
+    assert.match(await executor.execute('record_suspicion', suspicion, signal, 's1'), /suspicion-1/)
+    const closure = {
+      checked: 'The changed source and its direct callers.',
+      couldNotVerify: 'Nothing',
+    }
+    const finding = {
+      ...suspicion,
+      class: 'security',
+      severity: 'high',
+      confidence: 'high',
+      reason: 'The literal credential is returned to callers.',
+    }
+    assert.match(
+      await executor.execute('finish_review', { ...closure, findings: [finding] }, signal, 'c1'),
+      /Missing dispositions/,
+    )
+    assert.equal(executor.reported().length, 0)
+    assert.equal(executor.completion(), null)
+    const reported = {
+      id: 'suspicion-1',
+      status: 'reported',
+      evidence: 'The literal reaches callers.',
+      findingIndex: 1,
+    }
+    assert.match(
+      await executor.execute(
+        'finish_review',
+        { ...closure, dispositions: [reported] },
+        signal,
+        'c2',
+      ),
+      /existing findingIndex/,
+    )
+    assert.match(
+      await executor.execute(
+        'finish_review',
+        { ...closure, findings: [finding], dispositions: [reported, reported] },
+        signal,
+        'c3',
+      ),
+      /duplicate suspicion/,
+    )
+    assert.equal(executor.reported().length, 0)
+    assert.match(
+      await executor.execute(
+        'finish_review',
+        {
+          ...closure,
+          dispositions: [
+            {
+              id: 'suspicion-1',
+              status: 'unresolved',
+              evidence: 'No executable probe was available.',
+            },
+          ],
+        },
+        signal,
+        'c4',
+      ),
+      /Include unresolved suspicion-1/,
+    )
+    assert.match(
+      await executor.execute(
+        'finish_review',
+        { ...closure, findings: [finding], dispositions: [reported] },
+        signal,
+        'c5',
+      ),
+      /completion recorded/,
+    )
+    assert.equal(executor.reported().length, 1)
+    assert.deepEqual(executor.suspicions(), [{ ...suspicion, id: 'suspicion-1' }])
+  })
+
+  it('allows evidence-backed refutation and explicitly unresolved suspicions without publishing findings', async () => {
+    for (const status of ['refuted', 'unresolved']) {
+      const executor = createReviewerToolExecutor(host)
+      await executor.execute(
+        'record_suspicion',
+        { path: 'src/a.ts', startLine: 2, claim: 'The literal may disclose a secret.' },
+        signal,
+        's1',
+      )
+      const couldNotVerify =
+        status === 'unresolved' ? 'suspicion-1: the downstream caller is unavailable.' : 'Nothing'
+      assert.match(
+        await executor.execute(
+          'finish_review',
+          {
+            checked: 'The changed source and its direct callers.',
+            couldNotVerify,
+            dispositions: [
+              {
+                id: 'suspicion-1',
+                status,
+                evidence:
+                  status === 'refuted'
+                    ? 'src/a.ts:2 is a numeric fixture, never a credential.'
+                    : 'The downstream caller could not be inspected.',
+              },
+            ],
+          },
+          signal,
+          'done',
+        ),
+        /completion recorded/,
+      )
+      assert.equal(executor.reported().length, 0)
+      assert.equal(executor.completion()?.couldNotVerify, couldNotVerify)
+    }
   })
 
   it('requires a structured completion and refuses tool calls after it', async () => {

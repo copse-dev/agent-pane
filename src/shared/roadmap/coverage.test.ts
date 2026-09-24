@@ -36,6 +36,9 @@ describe('parseCoverageMatches', () => {
   })
 
   it('returns empty when nothing parses', () => {
-    assert.deepEqual(parseCoverageMatches('Mock response to: coverage', known), [])
+    assert.deepEqual(
+      parseCoverageMatches('I could not determine which issues are covered.', known),
+      [],
+    )
   })
 })

@@ -17,8 +17,9 @@ run-name: copse-review-ground pr=${{ inputs.pr }}
 # A separate, fresh handoff job gets only Actions-dispatch permission after
 # grounding succeeds. It explicitly dispatches "Copse review findings" on the
 # base ref with this run id; that job gets the model key and review token but
-# never executes the pull request's code. The artefact is the only untrusted
-# thing that crosses between them, and it is validated there before use.
+# its trusted host never executes pull-request code. Brokered focused commands
+# run in that job's separate network-disabled container with a scrubbed
+# environment. The ground artefact is validated there before use.
 
 on:
   workflow_dispatch:
@@ -139,6 +140,8 @@ jobs:
             --head "refs/remotes/pr/${PR_NUMBER}" \
             --base "origin/${BASE_REF}" \
             --backend ephemeral-runner \
+            --scratch-parent "$RUNNER_TEMP" \
+            --trusted-prepare "$GITHUB_WORKSPACE/scripts/prepare-review-stage0.mts" \
             --no-model \
             --json ground/report.json
 
@@ -159,7 +162,7 @@ jobs:
     permissions:
       actions: write
     steps:
-      - name: Dispatch the read-only findings workflow
+      - name: Dispatch the container-backed findings workflow
         shell: bash
         env:
           BASE_REF: ${{ inputs.base }}

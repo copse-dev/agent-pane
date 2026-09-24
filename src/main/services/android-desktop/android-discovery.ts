@@ -93,5 +93,3 @@ export async function discoverAndroidEndpoints(
   }
   return endpoints
 }
-
-export const androidDiscoveryInternals = { parseAdvertisement }

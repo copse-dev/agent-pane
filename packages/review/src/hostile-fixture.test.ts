@@ -17,7 +17,7 @@ import { after, before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { z } from 'zod'
 import { detectContainerBackend } from './container-backend.ts'
 import { createEphemeralRunnerBackend, createHostProcessBackend } from './host-process-backend.ts'
@@ -36,6 +36,7 @@ const CANARY_PLAIN = 'plain-canary-value-that-is-long-enough'
  */
 const CONTAINER_E2E = process.env['COPSE_REVIEW_CONTAINER_E2E'] === '1'
 const CONTAINER_IMAGE = process.env['COPSE_REVIEW_IMAGE'] ?? 'copse-worker:local'
+const CONTAINER_DEPENDENCY_STORE = process.env['COPSE_REVIEW_DEPENDENCY_STORE']
 
 const README = `# widget
 
@@ -104,13 +105,19 @@ describe('hostile fixture conformance', () => {
   let orchestratorDir = ''
   let secretsFile = ''
   let outsideDir = ''
+  let trustedPrepare = ''
   let hostEnv: Record<string, string>
 
   before(async () => {
     orchestratorDir = await mkdtemp(join(tmpdir(), 'review-orchestrator-'))
     secretsFile = join(orchestratorDir, 'secrets.env')
     outsideDir = join(orchestratorDir, 'outside')
+    trustedPrepare = join(orchestratorDir, 'trusted-prepare.cjs')
     await writeFile(secretsFile, `STRIPE_KEY=${CANARY_PLAIN}\n`)
+    await writeFile(
+      trustedPrepare,
+      "require('node:fs').writeFileSync('.trusted-prepared', 'ready'); console.log('trusted preparation ran')\n",
+    )
     hostEnv = {
       PATH: process.env['PATH'] ?? '',
       HOME: homedir(),
@@ -125,6 +132,7 @@ describe('hostile fixture conformance', () => {
         name: 'hostile',
         scripts: { test: 'node hostile.cjs test' },
       }),
+      'pnpm-lock.yaml': "lockfileVersion: '9.0'\n\nimporters:\n\n  .: {}\n",
       'hostile.cjs': HOSTILE_SCRIPT,
       [REVIEW_CONFIG_FILENAME]: JSON.stringify({
         commands: {
@@ -190,18 +198,67 @@ describe('hostile fixture conformance', () => {
       }
     })
     it('is what a foreign diff executes in', async () => {
+      assert.ok(
+        CONTAINER_DEPENDENCY_STORE,
+        'COPSE_REVIEW_DEPENDENCY_STORE must name the store prepared by CI',
+      )
+      const trustedStage0Prepare = resolve('scripts/prepare-review-stage0.mts')
       const report = await runStage0({
         repoRoot: repo.root,
         baseRef: 'main',
         backend,
         diffOrigin: 'foreign',
         hostEnv,
+        dependencyStore: CONTAINER_DEPENDENCY_STORE,
+        trustedPreparation: {
+          argv: ['node', trustedStage0Prepare],
+          timeoutMs: 5 * 60_000,
+          readOnlyPaths: [trustedStage0Prepare],
+        },
       })
       assert.equal(report.execution.decision.execute, true)
       assert.equal(report.execution.strength, 'container')
       assert.equal(report.preparation.head?.status, 'passed')
-      assert.equal(report.checks.find((check) => check.kind === 'test')?.verdict, 'failing-on-base')
+      assert.match(report.preparation.head.output, /Stage 0 offline dependency install/)
+      assert.equal(report.checks.find((check) => check.kind === 'test')?.verdict, 'undetermined')
       assert.doesNotMatch(JSON.stringify(report), /CANARY/)
+    })
+
+    it('mounts only the caller-trusted preparation file read-only', async () => {
+      const scratch = await mkdtemp(join(tmpdir(), 'review-trusted-prepare-'))
+      const cell = await backend.createCell({
+        checkouts: { base: repo.root, head: repo.root },
+        scratchDir: scratch,
+        readOnlyPaths: [trustedPrepare],
+        env: cellEnvironment(hostEnv),
+      })
+      try {
+        const result = await cell.run({
+          target: 'head',
+          argv: ['node', trustedPrepare],
+          timeoutMs: 30_000,
+          maxOutputBytes: 4096,
+        })
+        assert.equal(result.exitCode, 0, result.output)
+        assert.match(result.output, /trusted preparation ran/)
+        assert.equal(await readFile(join(repo.root, '.trusted-prepared'), 'utf8'), 'ready')
+        const write = await cell.run({
+          target: 'head',
+          argv: [
+            'node',
+            '-e',
+            `require('node:fs').writeFileSync(${JSON.stringify(trustedPrepare)}, 'changed')`,
+          ],
+          timeoutMs: 30_000,
+          maxOutputBytes: 4096,
+        })
+        assert.notEqual(write.exitCode, 0, write.output)
+        assert.match(await readFile(trustedPrepare, 'utf8'), /trusted preparation ran/)
+      } finally {
+        await cell.destroy()
+        await rm(join(repo.root, '.trusted-prepared'), { force: true })
+        await rm(scratch, { recursive: true, force: true })
+      }
     })
   })
 
@@ -256,10 +313,7 @@ describe('hostile fixture conformance', () => {
         )
         // The hostile test exits 1 on both checkouts, so it is failing-on-base, not a
         // finding — and the prepare step is a run, never a check.
-        assert.equal(
-          report.checks.find((check) => check.kind === 'test')?.verdict,
-          'failing-on-base',
-        )
+        assert.equal(report.checks.find((check) => check.kind === 'test')?.verdict, 'undetermined')
         assert.equal(
           report.checks.find((check) => check.kind === 'prepare'),
           undefined,

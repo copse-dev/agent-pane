@@ -1,3 +1,10 @@
+import {
+  setMockScenario,
+  parseMockScenario,
+  assertMockScenarioComplete,
+  clearMockScenarios,
+  type MockScenario,
+} from '@copse/llm/mock-script.ts'
 // Model-backed A/B harness for prompt steers.
 //
 // Every steer in the app ships with a unit test that asserts the string is
@@ -191,6 +198,7 @@ export interface SteerEvalTask {
   id: string
   description?: string | undefined
   prompt: string
+  mockScenario?: MockScenario | undefined
   /** Directory copied into the throwaway workspace before the run. */
   fixture?: string | undefined
   /**
@@ -373,6 +381,7 @@ const steerTaskSchema: z.ZodType<SteerEvalTask> = z.object({
   id: z.string(),
   description: z.string().optional(),
   prompt: z.string(),
+  mockScenario: z.unknown().transform(parseMockScenario).optional(),
   fixture: z.string().optional(),
   gitInit: z
     .object({
@@ -923,6 +932,12 @@ async function runAttempt(
   outDir: string,
   keepWorkspace: boolean,
 ): Promise<SteerEvalAttempt> {
+  const mock = provider instanceof MockLLMProvider
+  if (mock) {
+    if (!task.mockScenario) throw new Error(`No conversation scenario for ${task.id}`)
+    setMockScenario(task.id, task.mockScenario, task.id)
+    provider = new MockLLMProvider(task.id)
+  }
   const workspace = prepareWorkspace(task)
   const tracePath = join(outDir, `${pack.id}--${task.id}--${armId}--${String(attempt)}.jsonl`)
   const traceLines: string[] = []
@@ -1023,9 +1038,11 @@ async function runAttempt(
         onChunk,
       })
     }
+    if (mock) assertMockScenarioComplete(task.id)
   } catch (caught) {
     error = caught instanceof Error ? caught.message : String(caught)
   } finally {
+    if (mock) clearMockScenarios()
     clearTimeout(timer)
   }
 

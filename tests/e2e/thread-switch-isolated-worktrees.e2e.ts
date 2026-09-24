@@ -1,18 +1,16 @@
+import { prepareMockTurn } from './helpers/mock-scenario.ts'
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
-import { setComposerValue } from './helpers/composer.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 
 const PROJECT_ID = 'e2e-thread-switch-isolated-project'
 const THREAD_A = 'e2e-thread-switch-isolated-a'
 const THREAD_B = 'e2e-thread-switch-isolated-b'
-// The mock provider caps one delay directive at 5s. Its existing reasoning
-// directive adds another ~5s before A's first tool call, leaving enough overlap
-// for a loaded runner to allocate B's checkout.
+// Hold both providers until their isolated checkouts and marker files exist.
 const HOLDING_REASONING =
   'Holding the first checkout open while the second isolated thread starts. '.repeat(8)
 
@@ -150,12 +148,16 @@ describe('switching between isolated running threads', () => {
     await aRow.waitForDisplayed({ timeout: 15_000 })
     await bRow.waitForDisplayed({ timeout: 15_000 })
 
-    // The delay keeps A in its real provider turn while the second checkout is
-    // selected. The directive also makes the first turn leave a real tool result
-    // in A's history, rather than proving this only with a canned text reply.
-    await setComposerValue(
-      `A checkout probe [[mcp:list_dir {"path":"."}]] [[mock:delay_ms 5000]] [[mock:reasoning ${HOLDING_REASONING}]]`,
-    )
+    // Keep A in its real provider turn while selecting the second checkout.
+    // Both turns leave an actual directory listing in their persisted history.
+    const scenarioA = await prepareMockTurn('Inspect checkout A.', [
+      {
+        waitFor: 'checkout-ready',
+        reasoning: HOLDING_REASONING,
+        toolCalls: [{ name: 'list_dir', args: { path: '.' } }],
+      },
+      { text: 'The checkout files are listed above.' },
+    ])
     await $('.submit-btn').click()
     await browser.waitUntil(
       async () => aRow.getAttribute('class').then((value) => value.includes('is-running')),
@@ -180,9 +182,14 @@ describe('switching between isolated running threads', () => {
     // Switching the active thread must leave A in the main-process run registry.
     await expect(await runningThreadIds()).toContain(THREAD_A)
 
-    await setComposerValue(
-      `B checkout probe [[mcp:list_dir {"path":"."}]] [[mock:delay_ms 5000]] [[mock:reasoning ${HOLDING_REASONING}]]`,
-    )
+    const scenarioB = await prepareMockTurn('Inspect checkout B.', [
+      {
+        waitFor: 'checkout-ready',
+        reasoning: HOLDING_REASONING,
+        toolCalls: [{ name: 'list_dir', args: { path: '.' } }],
+      },
+      { text: 'The checkout files are listed above.' },
+    ])
     await $('.submit-btn').click()
     await browser.waitUntil(async () => (await runningThreadIds()).includes(THREAD_B), {
       timeout: 15_000,
@@ -195,6 +202,8 @@ describe('switching between isolated running threads', () => {
     writeFileSync(join(threadBWorktree, 'thread-b-marker.txt'), 'B checkout marker\n', 'utf8')
     await expect(await runningThreadIds()).toEqual(expect.arrayContaining([THREAD_A, THREAD_B]))
 
+    await scenarioA.release('checkout-ready')
+    await scenarioB.release('checkout-ready')
     await browser.waitUntil(async () => (await runningThreadIds()).length === 0, {
       timeout: 45_000,
       timeoutMsg: 'both isolated runs did not settle',
@@ -214,9 +223,7 @@ describe('switching between isolated running threads', () => {
             thread?.messages.some(
               (message) =>
                 message.role === 'assistant' &&
-                message.content.includes(
-                  `Mock response to: ${threadId === THREAD_A ? 'A' : 'B'} checkout probe`,
-                ),
+                message.content.includes('The checkout files are listed above.'),
             ) === true
           )
         })
@@ -249,21 +256,23 @@ describe('switching between isolated running threads', () => {
     await expect(bListResults.some((result) => result.includes('thread-b-marker.txt'))).toBe(true)
     await expect(bListResults.some((result) => result.includes('thread-a-marker.txt'))).toBe(false)
     await expect(savedA.messages.map((message) => message.content).join('\n')).toContain(
-      'Mock response to: A checkout probe',
+      'The checkout files are listed above.',
     )
     await expect(savedB.messages.map((message) => message.content).join('\n')).toContain(
-      'Mock response to: B checkout probe',
+      'The checkout files are listed above.',
     )
 
     // Reload from the filesystem-native thread store and select A again. This
     // proves the completion was persisted to A, not only retained in memory
     // while B was active.
+    await scenarioA.assertComplete()
+    await scenarioB.assertComplete()
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await $(`.chat-row[data-thread-id="${THREAD_A}"]`).click()
     await expect($('.chat-row.selected')).toHaveAttribute('data-thread-id', THREAD_A)
     await expect($('.messages-list')).toHaveText(
-      expect.stringContaining('Mock response to: A checkout probe'),
+      expect.stringContaining('The checkout files are listed above.'),
     )
     await saveElementScreenshot('.messages-list', 'thread-switch-isolated-worktrees.png')
   })

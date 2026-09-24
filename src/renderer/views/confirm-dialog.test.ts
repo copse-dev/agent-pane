@@ -38,4 +38,36 @@ describe('confirm-dialog', () => {
     clickActiveConfirmDialogCancel()
     assert.equal(await pending, false)
   })
+
+  it('keeps async confirmed work visible and reports progress until it settles', async () => {
+    mountConfirmDialog()
+    let finish: () => void = () => {
+      throw new Error('confirmation did not start')
+    }
+    const pending = showConfirmDialog({
+      message: 'Clean selected worktrees?',
+      confirmLabel: 'Clean up',
+      confirmPendingLabel: 'Cleanup pending…',
+      onConfirm: async (setProgressLabel) => {
+        setProgressLabel('Cleaning 1 of 2…')
+        await new Promise<void>((resolve) => {
+          finish = resolve
+        })
+      },
+    })
+    const dialog = qsRequired<HTMLDialogElement>(document, '#confirm-dialog')
+    clickActiveConfirmDialogConfirm()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const confirm = qsRequired<HTMLButtonElement>(dialog, '.confirm-dialog-confirm')
+    const cancel = qsRequired<HTMLButtonElement>(dialog, '.confirm-dialog-cancel')
+    assert.equal(dialog.open, true)
+    assert.equal(confirm.textContent, 'Cleaning 1 of 2…')
+    assert.equal(confirm.disabled, true)
+    assert.equal(confirm.getAttribute('aria-busy'), 'true')
+    assert.equal(cancel.disabled, true)
+
+    finish()
+    assert.equal(await pending, true)
+    assert.equal(dialog.open, false)
+  })
 })

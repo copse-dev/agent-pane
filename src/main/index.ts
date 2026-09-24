@@ -26,7 +26,10 @@ import {
   getBrowserSessionForPartition,
   isBrowserWebContents,
 } from './windows/browser-web-contents.ts'
-import { attachBrowserGuestContextMenu } from './windows/browser-context-menu.ts'
+import {
+  attachBrowserGuestContextMenu,
+  attachBrowserGuestShareShortcut,
+} from './windows/browser-context-menu.ts'
 import { applyAppIcon } from './app-icon.ts'
 import type { LLMMessage, StreamChunk } from '@shared/types'
 import { THEME_BACKGROUND } from '@shared/theme.ts'
@@ -368,10 +371,12 @@ app.on('child-process-gone', (_event, details) => {
 app.on('web-contents-created', (_event, contents) => {
   if (isBrowserWebContents(contents)) {
     attachBrowserGuestWindowOpen(contents)
-    // Native right-click menu only on the visible in-app browser pane — not on
-    // headless agent automation windows (same session lockdown, no UI surface).
+    // Native right-click menu and Cmd/Ctrl+L share shortcut only on the visible
+    // in-app browser pane — not on headless agent automation windows (same
+    // session lockdown, no UI surface).
     if (contents.getType() === 'webview') {
       attachBrowserGuestContextMenu(contents)
+      attachBrowserGuestShareShortcut(contents)
     }
     return
   }
@@ -562,8 +567,23 @@ app
     recordStartupPhase('register-handlers')
     perfMark('main:register-handlers')
     const agentDispatcher = new AgentDispatcher(agentHost, registry)
-    registerAllHandlers(win, registry, (projectId, threadId) =>
-      agentDispatcher.isActive(projectId, threadId),
+    registerAllHandlers(
+      win,
+      registry,
+      (projectId, threadId) => agentDispatcher.isActive(projectId, threadId),
+      {
+        stopAndWaitForAgent: async (projectId, threadId) => {
+          agentDispatcher.beginThreadDeletion(projectId, threadId)
+          abortAgent(threadId)
+          await agentDispatcher.waitForIdle(projectId, threadId)
+        },
+        resumeAfterFailedDeletion: (projectId, threadId) => {
+          agentDispatcher.cancelThreadDeletion(projectId, threadId)
+        },
+        forgetAgentHistory: (projectId, threadId) => {
+          agentDispatcher.forgetHistory(projectId, threadId)
+        },
+      },
     )
     getAutomationService().start((event) => {
       if (!win.isDestroyed()) win.webContents.send('automations:triggered', event)

@@ -299,6 +299,17 @@ While active:
 - Other network / outside-workspace commands may still auto-run unsandboxed when the harm gate
   allows them.
 
+Host shutdown/reboot hard denials require a parsed command invocation, including wrappers and
+nested shell payloads. Filenames, ordinary arguments, quoted text, and shell comments are not
+invocations. A shutdown-related text match in arbitrary interpreter source is uncertain and uses
+the existing one-time harm confirmation; literal child-process shell payloads are still inspected
+and can be hard-denied. The confirmation shows the exact command, the uncertainty, and whether it
+will run inside or outside the project sandbox. Approval applies only to that invocation and cannot
+be remembered; declining prevents execution. It does not override a confirmed hard denial.
+
+Interpreter inspection recognizes Node's `.mts` and `.cts` launchers as well as `.mjs`, so a later
+configuration-file argument cannot accidentally be inspected in place of the launcher.
+
 Update this document and the Guarded YOLO / harm / read-outside tests with any intentional change.
 
 ## Implementation map

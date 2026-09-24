@@ -1214,6 +1214,26 @@
   align-items: center;
   gap: var(--spacing-xs);
 }
+/* Free-text filter over the PR list (issue #2482), matching the model picker's
+   `.model-picker-filter` input so search boxes read as one control across the
+   app. Sits between the pane header and the scrollable list. */
+.pr-pane-filter {
+  flex-shrink: 0;
+  margin: var(--spacing-sm);
+  width: calc(100% - var(--spacing-sm) * 2);
+  color: var(--text-primary);
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font: inherit;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  outline: 2px solid transparent;
+  outline-offset: 1px;
+}
+.pr-pane-filter:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 1px;
+}
 .pr-list-host {
   flex: 1;
   display: flex;

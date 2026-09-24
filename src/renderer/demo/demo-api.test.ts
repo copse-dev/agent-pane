@@ -264,7 +264,10 @@ describe('createDemoApi trace replay', () => {
       .filter((chunk) => chunk.type === 'text')
       .map((chunk) => chunk.text)
       .join('')
-    assert.match(text, /^Demo response to:/)
+    assert.equal(
+      text,
+      'The renderer receives each response chunk, appends it to the conversation, and marks the turn complete when streaming ends.',
+    )
     assert.doesNotMatch(text, /build output/)
   })
 

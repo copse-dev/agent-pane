@@ -838,6 +838,45 @@ describe('thread-store', () => {
       )
     })
 
+    it('the spine line keeps the message occurrence time across a re-finalize, not the write time (#1411)', async () => {
+      // Reported symptom: many consecutive assistant messages, each with its
+      // own real tool calls, all carried near-identical `createdAt` values in
+      // an exported archive — suggesting the spine stamps writes rather than
+      // occurrences. It does not: `createdAt` travels on the `Message` object
+      // (set once, at creation, in the renderer) straight through
+      // `explodeMessage` to the spine line, unrelated to when the queued disk
+      // write actually runs. This pins that end to end through a real write +
+      // reload, with a write that happens long after the message occurred.
+      await createThread('proj-1', thread('t1'))
+      const occurredAt = Date.now() - 5 * 60_000
+      const first: Message = {
+        id: 'a1',
+        role: 'assistant',
+        content: 'looking into it',
+        createdAt: occurredAt,
+        toolCalls: [
+          { id: 'tc1', name: 'read_file', args: { path: 'x' }, status: 'running', result: null },
+        ],
+      }
+      await appendMessage('proj-1', 't1', first)
+      const firstTool = first.toolCalls[0]
+      assert.ok(firstTool)
+
+      // Simulate a late re-finalize (e.g. a delayed ACP tool update) landing
+      // well after the original write, still carrying the original createdAt.
+      const settled: Message = {
+        ...first,
+        toolCalls: [{ ...firstTool, status: 'done', result: 'contents' }],
+      }
+      await appendMessage('proj-1', 't1', settled)
+
+      const [loaded] = await loadProjectThreads('proj-1')
+      const storedMessage = loaded?.messages[0]
+      assert.ok(storedMessage)
+      assert.equal(storedMessage.createdAt, occurredAt)
+      assert.notEqual(storedMessage.createdAt, Date.now())
+    })
+
     it('appendMessage preserves earlier messages (true append, not rewrite)', async () => {
       await createThread('proj-1', thread('t1'))
       await appendMessage('proj-1', 't1', userMsg('u1', 'one'))

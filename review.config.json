@@ -1,5 +1,6 @@
 {
   "commands": {
-    "prepare": ["node", "scripts/prepare-review-stage0.mts"]
+    "prepare": ["node", "scripts/prepare-review-stage0.mts"],
+    "test": ["node", "scripts/run-tests.mts", "--review-report"]
   }
 }

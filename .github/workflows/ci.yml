@@ -52,7 +52,25 @@ concurrency:
   # hours late, and schedule+push share `ci-refs/heads/main`. They also use
   # different e2e runners (hosted vs self-hosted), so running in parallel is
   # fine. A new push/PR sync still cancels older runs in the group.
-  cancel-in-progress: ${{ github.event_name != 'schedule' }}
+  #
+  # A cosmetic `edited` must not cancel either. #2970 subscribed to `edited` so
+  # a base retarget re-runs (#2520), but GitHub fires the same action for a
+  # title or body edit, and those land in this group mid-run. Cancelling there
+  # is not a wasted run, it is a RED one: since #2722 `ci-passed` turns a
+  # cancelled run into an explicit failure rather than a skip, so editing a
+  # description while CI was running left a red `CI Passed` on a SHA that had
+  # been green. `changes.base` is present only on a retarget, which is the case
+  # that genuinely invalidates the in-flight run and must still cancel it.
+  #
+  # Deliberately not solved with a job-level `if:`. `ci-passed` is `always()`
+  # over `needs: [precheck, …]`, so skipping the upstream jobs either fails it
+  # (a green PR goes red on a title edit) or skips it — and GitHub accepts a
+  # skipped required check, which would let a RED PR be flipped to mergeable by
+  # editing its title. The cost of this shape is a duplicate run on a cosmetic
+  # edit; it never produces a false red or a false pass.
+  cancel-in-progress: >-
+    ${{ github.event_name != 'schedule' &&
+    (github.event.action != 'edited' || github.event.changes.base != null) }}
 
 jobs:
   # Job timeouts: every job below sets `timeout-minutes`, and
@@ -141,6 +159,8 @@ jobs:
       # safe rather than silently thinning the suite.
       unit_mode: ${{ steps.plan.outputs.unit_mode }}
       unit_specs: ${{ steps.plan.outputs.unit_specs }}
+      # Whether the real Docker reviewer cell needs its focused conformance job.
+      review_cell_required: ${{ steps.review-cell-plan.outputs.required }}
     steps:
       # fetch-depth: 0 so the e2e oracle (plan step) can diff against the PR base
       # / previous main tip.
@@ -150,6 +170,33 @@ jobs:
           # Do not leave even the read-only GITHUB_TOKEN in a fork checkout.
           # Same-repo runs keep credentials for the oracle's base ref fetches.
           persist-credentials: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+      - name: Plan reviewer-cell conformance
+        id: review-cell-plan
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = "schedule" ] ||
+             [ -z "${BASE_SHA:-}" ] ||
+             [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            echo "required=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            git fetch --no-tags --quiet origin "$BASE_SHA"
+          fi
+          if git diff --quiet "${BASE_SHA}"...HEAD -- \
+            .nvmrc \
+            packages/review \
+            scripts/prepare-review-stage0.mts \
+            .github/workflows/review-findings.yml \
+            .github/workflows/review-ground.yml \
+            .github/workflows/review-nightly.yml; then
+            echo "required=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "required=true" >> "$GITHUB_OUTPUT"
+          fi
       # Same-repository PRs already execute inside this job's check-fleet trust
       # boundary. Scan them here so secret detection blocks the required
       # `CI Passed` gate without dispatching a second GitHub-hosted job. Forks
@@ -617,11 +664,11 @@ jobs:
           #
           # The peak is c8's post-run remap in a single process, after every
           # test worker has already exited -- not the workers themselves, so
-          # TEST_FILE_CONCURRENCY does not bound it. 3072 aborted there with
-          # "Ineffective mark-compacts near heap limit" once the whole suite had
-          # passed; 6144 completes the remap and the ratchet. ubuntu-latest has
-          # 16 GB, and only this one process is live at that point.
-          NODE_OPTIONS: --max-old-space-size=6144
+          # TEST_FILE_CONCURRENCY does not bound it. 3072 and 6144 have both
+          # aborted there with "Ineffective mark-compacts near heap limit" once
+          # the whole suite had passed. ubuntu-latest has 16 GB, and only this
+          # one process is live at that point.
+          NODE_OPTIONS: --max-old-space-size=8192
           UNIT_MODE: ${{ needs.precheck.outputs.unit_mode }}
           UNIT_SPECS: ${{ needs.precheck.outputs.unit_specs }}
           # True only for a PR stacked on another PR's branch. `push`, tags and
@@ -680,6 +727,42 @@ jobs:
       # @copse/streaming-markdown repo's CI (copse-dev/streaming-markdown).
       # The build is validated once in the dedicated `build` job below (whose
       # dist artifact the e2e shards reuse), so it no longer runs here.
+
+  # Boot the actual no-network reviewer cell whenever its implementation or CI
+  # wiring changes. Unit tests cover the broker with a fake engine; this is the
+  # small hosted proof that the built image enforces the declared boundary and
+  # can read the exact caller-trusted preparation-file mount used in Job B.
+  review-cell:
+    needs: precheck
+    if: >-
+      needs.precheck.outputs.review_cell_required == 'true' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: Build the focused-validation image
+        shell: bash
+        run: |
+          set -euo pipefail
+          node_version="$(tr -d '[:space:]' < .nvmrc)"
+          docker build --pull \
+            --build-arg "NODE_VERSION=${node_version}" \
+            --tag copse-review-cell:ci \
+            --file packages/review/Dockerfile.cell \
+            packages/review
+      - name: Prove the real container boundary
+        env:
+          COPSE_REVIEW_CONTAINER_E2E: '1'
+          COPSE_REVIEW_IMAGE: copse-review-cell:ci
+          COPSE_REVIEW_DEPENDENCY_STORE: ${{ runner.temp }}/pnpm-store
+        run: npm test -- packages/review/src/hostile-fixture.test.ts
 
   # Retrieval-quality gate for the semantic-search backend. This job indexes the
   # repo and runs the fixture query set, asserting recall@k and search latency
@@ -1842,7 +1925,7 @@ jobs:
     # Evaluate even after cancellation, including cancellation while upstream
     # jobs are queued. The first step turns that state into an explicit failure.
     if: ${{ always() }}
-    needs: [precheck, check, bench, build, e2e, screenshot-artifacts]
+    needs: [precheck, check, review-cell, bench, build, e2e, screenshot-artifacts]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}

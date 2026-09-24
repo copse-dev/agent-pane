@@ -35,3 +35,6 @@ export * from './stream-retry.ts'
 export * from './redacting-provider.ts'
 export * from './mock-provider.ts'
 export * from './mock-script.ts'
+
+// Node-side classifier profiles and execution helpers.
+export * from './classifiers/index.ts'

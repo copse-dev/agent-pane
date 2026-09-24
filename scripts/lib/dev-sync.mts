@@ -35,6 +35,7 @@ export const NATIVE_PREPARATION_INPUTS = [
   'scripts/prepare-native-artifacts.mts',
   'scripts/lib/native-artifacts.mts',
   'scripts/check-node-version.cjs',
+  'scripts/check-macos-native-toolchain.mts',
   'scripts/patch-dev-name.mts',
   'scripts/postinstall-native.mts',
   'scripts/fetch-gortex.mts',

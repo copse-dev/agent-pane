@@ -6,7 +6,7 @@
 // the PR that makes it, not a quarter later (P6).
 import { after, before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -101,17 +101,48 @@ describe('bench:review over the committed corpus', () => {
       [byId.get('false-alarm')?.surfaced, byId.get('false-alarm')?.falsePositives],
       [1, 1],
     )
-    assert.equal(summary.metrics.cases, 5)
-    assert.equal(summary.metrics.surfaced, 5)
-    assert.equal(summary.metrics.truePositives, 4)
+    // The two boundary cases pin omitted semantic metadata across unchanged consumers.
+    assert.deepEqual(
+      [byId.get('semantic-image-kind')?.surfaced, byId.get('semantic-image-kind')?.truePositives],
+      [1, 1],
+    )
+    assert.deepEqual(
+      [
+        byId.get('external-image-provenance')?.surfaced,
+        byId.get('external-image-provenance')?.truePositives,
+      ],
+      [1, 1],
+    )
+    for (const id of [
+      'filter-refresh',
+      'resize-without-scroll',
+      'workspace-switch-inflight',
+      'dispose-inflight',
+      'shortcut-autorepeat',
+    ]) {
+      assert.equal(byId.get(id)?.confirmedByReproducer, 1, id)
+      assert.equal(byId.get(`${id}-clean`)?.surfaced, 0, `${id}-clean`)
+    }
+    assert.equal(summary.metrics.cases, 17)
+    assert.equal(summary.metrics.surfaced, 12)
+    assert.equal(summary.metrics.truePositives, 11)
     assert.equal(summary.metrics.duplicates, 0)
-    assert.equal(summary.metrics.precision, 0.8)
+    assert.equal(summary.metrics.precision, 0.917)
     assert.ok((summary.metrics.precisionLowerBound95 ?? 1) < 0.85)
     assert.equal(summary.metrics.recall, 1)
-    assert.equal(summary.metrics.confirmed, 3)
-    assert.equal(summary.metrics.confirmedByReproducer, 2)
-    assert.equal(summary.metrics.reproducerRate, 0.4)
+    assert.equal(summary.metrics.confirmed, 8)
+    assert.equal(summary.metrics.confirmedByReproducer, 7)
+    assert.equal(summary.metrics.reproducerRate, 0.583)
     assert.ok(summary.metrics.outputTokens > 0)
+    assert.equal(summary.configuration.reviewerMaxSteps, null)
+    assert.equal(summary.configuration.maxVerifiedFindings, 10)
+  })
+
+  it('retains the model event stream for diagnosing misses', async () => {
+    const events = await readFile(join(outDir, 'semantic-image-kind.events.jsonl'), 'utf8')
+    assert.match(events, /"type":"turn_start"/)
+    assert.match(events, /"type":"tool_call"/)
+    assert.match(events, /"type":"turn_end"/)
   })
 
   it('holds to the committed baseline, and says what moved when it does not', () => {
@@ -129,7 +160,7 @@ describe('bench:review over the committed corpus', () => {
     }
     const failures = gateFailures(worse, baselines)
     assert.equal(failures.length, 3, failures.join('; '))
-    assert.match(failures[0] ?? '', /precision 60% < baseline 80%/)
+    assert.match(failures[0] ?? '', /precision 60% < baseline 91\.7%/)
     assert.match(gateFailures(summary, {})[0] ?? '', /no baseline for configuration/)
   })
 
@@ -157,6 +188,14 @@ describe('bench:review over the committed corpus', () => {
       {
         ...summary,
         configuration: { ...summary.configuration, verify: false },
+      },
+      {
+        ...summary,
+        configuration: { ...summary.configuration, reviewerMaxSteps: 12 },
+      },
+      {
+        ...summary,
+        configuration: { ...summary.configuration, maxVerifiedFindings: 3 },
       },
       {
         ...summary,
@@ -257,7 +296,7 @@ describe('bench:review over the committed corpus', () => {
       }),
     )
     const table = compareSummaries(a, b)
-    assert.match(table, /precision\s+80%\s+50%/)
+    assert.match(table, /precision\s+91\.7%\s+50%/)
     assert.match(table, /verify\s+true\s+false/)
   })
 
@@ -287,5 +326,21 @@ describe('bench:review over the committed corpus', () => {
     })
     assert.equal(mockTarget, 2)
     assert.match(err, /target-gate requires a real-model profile/)
+    const invalidBudget = await main(['--mock', '--max-steps', '12oops'], {
+      stdout: () => undefined,
+      stderr: (text) => {
+        err += text
+      },
+    })
+    assert.equal(invalidBudget, 2)
+    assert.match(err, /--max-steps must be a positive integer/)
+    const unsafeBudget = await main(['--mock', '--max-verify', '9007199254740992'], {
+      stdout: () => undefined,
+      stderr: (text) => {
+        err += text
+      },
+    })
+    assert.equal(unsafeBudget, 2)
+    assert.match(err, /--max-verify must be a positive integer/)
   })
 })

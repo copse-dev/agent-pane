@@ -17,7 +17,7 @@ import {
 } from '@copse/llm/provider-stop-reason.ts'
 import type { LLMMessage, LLMProvider, ProviderStreamChunk } from '@copse/llm/wire-types.ts'
 import type { AgentStreamChunk, TodoItem } from './wire-types.ts'
-import { STUCK_FINALIZE_NUDGE } from './agent-loop-guards.ts'
+import { EXPLORE_WITHOUT_READ_NUDGE, STUCK_FINALIZE_NUDGE } from './agent-loop-guards.ts'
 
 /** A visible answer comfortably past the trailing-reasoning text tolerance. */
 const ANSWER_PAST_TOLERANCE =
@@ -119,6 +119,89 @@ describe('runAgentLoop', () => {
     })
     assert.ok(executed)
     assert.ok(chunks.some((c) => c.type === 'tool_result'))
+  })
+
+  it('streams explicit visual evidence before settling its tool call', async () => {
+    const chunks: AgentStreamChunk[] = []
+    await runAgentLoop({
+      provider: mockProvider([
+        [
+          {
+            type: 'tool_call',
+            toolCall: { id: 'present-1', name: 'present_visual_evidence', args: {} },
+          },
+          { type: 'done' },
+        ],
+        [{ type: 'text', text: 'The fix is shown above.' }, { type: 'done' }],
+      ]),
+      messages: [{ role: 'user', content: 'show me' }],
+      tools: [],
+      onChunk: (chunk) => chunks.push(chunk),
+      executeTool: async () => ({
+        result: 'Published visual evidence.',
+        visualEvidence: [
+          {
+            id: 'evidence-1',
+            kind: 'screenshot',
+            caption: 'The fixed state.',
+            createdAt: 2,
+            assets: [
+              {
+                id: 'asset-1',
+                label: 'Screenshot',
+                mimeType: 'image/png',
+                width: 1280,
+                height: 800,
+                capturedAt: 1,
+                source: {
+                  kind: 'browser',
+                  viewId: 'tab-1',
+                  title: 'Preview',
+                  url: 'http://localhost:3000/',
+                },
+                dataUrl: 'data:image/png;base64,cGl4ZWxz',
+              },
+            ],
+          },
+        ],
+      }),
+    })
+
+    const evidenceIndex = chunks.findIndex((chunk) => chunk.type === 'visual_evidence')
+    const resultIndex = chunks.findIndex(
+      (chunk) => chunk.type === 'tool_result' && chunk.toolCallId === 'present-1',
+    )
+    assert.ok(evidenceIndex >= 0)
+    assert.ok(resultIndex > evidenceIndex)
+    const evidence = chunks[evidenceIndex]
+    assert.ok(evidence?.type === 'visual_evidence')
+    assert.equal(evidence.toolCallId, 'present-1')
+    assert.equal(evidence.evidence[0]?.id, 'evidence-1')
+  })
+
+  it('streams tool-result images to the transcript as well as provider history', async () => {
+    const chunks: AgentStreamChunk[] = []
+    const dataUrl = 'data:image/png;base64,cGl4ZWxz'
+    await runAgentLoop({
+      provider: mockProvider([
+        [
+          { type: 'tool_call', toolCall: { id: 'image-1', name: 'image_gen', args: {} } },
+          { type: 'done' },
+        ],
+        [{ type: 'text', text: 'done' }, { type: 'done' }],
+      ]),
+      messages: [{ role: 'user', content: 'draw a cat' }],
+      tools: [],
+      onChunk: (chunk) => chunks.push(chunk),
+      executeTool: async () => ({
+        result: 'Generated image.',
+        images: [{ dataUrl, name: 'cat.png' }],
+      }),
+    })
+
+    const result = chunks.find((chunk) => chunk.type === 'tool_result')
+    assert.ok(result?.type === 'tool_result')
+    assert.deepEqual(result.images, [{ dataUrl, name: 'cat.png' }])
   })
 
   it('does not execute tools with unparseable args; returns an error result (#114)', async () => {
@@ -1918,6 +2001,52 @@ src/renderer/views/projects-pane.ts
     const resumes = events.filter((e) => e === 'resume').length
     assert.equal(pauses, resumes, 'every pause must be matched by a resume')
     assert.ok(chunks.some((c) => c.type === 'text' && c.text === 'finished'))
+  })
+
+  it('nudges repeated explore calls on hosts without a context estimate', async () => {
+    const messages: LLMMessage[] = [{ role: 'user', content: 'fix the URL input' }]
+    const applied: import('./run-agent-loop.ts').AppliedNudgeRecord[] = []
+    let calls = 0
+    const provider: LLMProvider = {
+      async *stream(currentMessages): AsyncGenerator<ProviderStreamChunk> {
+        calls++
+        if (calls <= 3) {
+          yield {
+            type: 'tool_call',
+            toolCall: {
+              id: `explore-${String(calls)}`,
+              name: 'explore',
+              args: { query: `inspect URL input concern ${String(calls)}` },
+            },
+          }
+          yield { type: 'done' }
+          return
+        }
+        assert.ok(
+          currentMessages.some(
+            (message) => message.role === 'user' && message.content === EXPLORE_WITHOUT_READ_NUDGE,
+          ),
+          'the fourth stream must receive the read_file nudge',
+        )
+        yield { type: 'text', text: 'I will read the exact file before editing.' }
+        yield { type: 'done' }
+      },
+    }
+
+    await runAgentLoop({
+      provider,
+      messages,
+      tools: [{ name: 'explore', description: 'explore', parameters: {} }],
+      recordAppliedNudge: (record) => applied.push(record),
+      onChunk: () => {},
+      executeTool: async () => 'summary',
+    })
+
+    assert.equal(calls, 4)
+    assert.deepEqual(
+      applied.filter((record) => record.hookId === 'loop-nudge').map((record) => record.text),
+      [EXPLORE_WITHOUT_READ_NUDGE],
+    )
   })
 
   it('applies the delayed artifact checkpoint once after the fake clock crosses its threshold', async () => {

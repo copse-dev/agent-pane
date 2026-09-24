@@ -1,12 +1,12 @@
+import { submitComposer } from './helpers/composer.ts'
+import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
 import assert from 'node:assert/strict'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { $, $$, browser } from '@wdio/globals'
-import type { MockScriptStep } from '@copse/llm/mock-script'
 import { PNG } from 'pngjs'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
-import { waitForPromptReady } from './helpers.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { waitForAgentIdle, waitForPromptReady } from './helpers.ts'
 import {
   E2E_SCREENSHOT_DIR,
   prepareE2eScreenshot,
@@ -62,29 +62,6 @@ const OVERRIDDEN_ARTEFACT = `<div id="canvas-background-probe">
 
 // The local mock provider renders through MCP; inline visualization control
 // frames are handled by the ACP executor only.
-const SCRIPT = [
-  {
-    when: 'render the transparent canvas',
-    tool: { name: CANVAS_TOOL, args: { title: TITLE, html: TRANSPARENT_ARTEFACT } },
-  },
-  {
-    when: 'render the explicit canvas background',
-    tool: { name: CANVAS_TOOL, args: { title: OVERRIDE_TITLE, html: OVERRIDDEN_ARTEFACT } },
-  },
-] satisfies MockScriptStep[]
-
-async function installMockScript(): Promise<void> {
-  const status = await browser.execute(async (script) => {
-    const bridge = (
-      window as unknown as {
-        __copseE2e?: { setMockScript: (value: unknown) => Promise<{ steps: number }> }
-      }
-    ).__copseE2e
-    if (!bridge?.setMockScript) throw new Error('__copseE2e.setMockScript unavailable')
-    return bridge.setMockScript(script)
-  }, SCRIPT)
-  assert.equal(status.steps, SCRIPT.length)
-}
 
 async function resolvedBodyBackgroundPixel(): Promise<number[]> {
   return browser.execute(() => {
@@ -145,23 +122,34 @@ async function pinPreviewRollupOpen(expectedTitle: string): Promise<void> {
 }
 
 async function renderCanvas(prompt: string, expectedToolCount: number): Promise<void> {
-  await setComposerValue(prompt)
-  await $('.submit-btn').click()
+  const explicit = prompt.includes('explicit')
+  const scenario = await prepareMockToolTurn(
+    prompt,
+    {
+      name: CANVAS_TOOL,
+      args: {
+        title: explicit ? OVERRIDE_TITLE : TITLE,
+        html: explicit ? OVERRIDDEN_ARTEFACT : TRANSPARENT_ARTEFACT,
+      },
+    },
+    'The canvas preview is ready.',
+  )
+  await submitComposer()
   await browser.waitUntil(
     async () =>
       browser.execute((count) => {
         const completedReplies = Array.from(
           document.querySelectorAll('.msg-assistant > .message-body > .message-text'),
-        ).filter((message) => message.textContent?.includes('Mock response to:')).length
+        ).filter((message) => message.textContent?.includes('The canvas preview is ready.')).length
         return (
-          !document.querySelector('.submit-btn')?.classList.contains('with-stop') &&
           document.querySelectorAll('.tool-card[data-tool-id][data-status="done"]').length ===
-            count &&
-          completedReplies >= count
+            count && completedReplies >= count
         )
       }, expectedToolCount),
     { timeout: 30_000, timeoutMsg: 'expected the canvas render turn to finish' },
   )
+  await waitForAgentIdle(30_000)
+  await scenario.assertComplete()
   // The final reply replaces the running transcript and restores the rollup's
   // collapsed state. Wait for that repaint above, then open the completed tool;
   // otherwise the preview can disappear between its pixel check and capture.
@@ -254,18 +242,12 @@ describe('canvas background parity', () => {
   })
 
   after(async () => {
-    await browser.execute(async () => {
-      await (
-        window as unknown as { __copseE2e?: { clearMockScript: () => Promise<void> } }
-      ).__copseE2e?.clearMockScript?.()
-    })
     resetUserData()
   })
 
   it('matches a transparent preview to the live dark canvas', async function () {
     this.timeout(90_000)
     await waitForPromptReady()
-    await installMockScript()
 
     await renderCanvas('Please render the transparent canvas.', 1)
 

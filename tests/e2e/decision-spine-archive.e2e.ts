@@ -1,6 +1,7 @@
+import { submitComposer } from './helpers/composer.ts'
+import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
 import { inflateRawSync } from 'node:zlib'
 import { $, browser, expect } from '@wdio/globals'
-import { setComposerValue } from './helpers/composer.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 
 function readZipEntries(archive: Uint8Array): Map<string, string> {
@@ -48,8 +49,12 @@ describe('decision spine archive', () => {
     this.timeout(90_000)
     const payload = 'spine-blob-proof-'.repeat(180)
     const command = `printf '%s' '${payload}' >/dev/null`
-    await setComposerValue(`[[mcp:run_shell ${JSON.stringify({ command })}]]`)
-    await $('.submit-btn').click()
+    await prepareMockToolTurn(
+      'Run the workspace verification command.',
+      { name: 'run_shell', args: { command } },
+      'The verification command result is available above.',
+    )
+    await submitComposer()
 
     const dialog = $('#approval-dialog')
     await dialog.waitForDisplayed({ timeout: 30_000 })

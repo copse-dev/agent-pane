@@ -2,6 +2,7 @@ import type { SimulatorDesktopPresentation } from '@shared/types/simulator-deskt
 import { contextBridge, ipcRenderer } from 'electron'
 import type { AutoApprovalLevel } from '@shared/auto-approval.ts'
 import type { ApiClient } from './api.d.ts'
+import type { ClassifierProfile } from '@copse/llm/classifiers/types.ts'
 import type { PrComposerCreateRequest } from '@shared/types/git.ts'
 import { exposePerfBridge, installPreloadPerfTracing } from './perf-bridge.ts'
 
@@ -50,6 +51,8 @@ const api: ApiClient = {
       ipcRenderer.invoke('browser:share-page-text', webContentsId),
     shareScreenshot: (webContentsId: number) =>
       ipcRenderer.invoke('browser:share-screenshot', webContentsId),
+    captureScreenshot: (webContentsId: number) =>
+      ipcRenderer.invoke('browser:capture-screenshot', webContentsId),
     exportPdf: (webContentsId: number) => ipcRenderer.invoke('browser:export-pdf', webContentsId),
     onOpenTab: (handler: (url: string, partition?: string) => void) => {
       const listener = (_e: Electron.IpcRendererEvent, url: string, partition?: string): void => {
@@ -937,6 +940,12 @@ const api: ApiClient = {
     probeAgent: (agentId: string) => ipcRenderer.invoke('acp:probe-agent', agentId),
     autoSetup: () => ipcRenderer.invoke('acp:auto-setup'),
   },
+  classifiers: {
+    list: () => ipcRenderer.invoke('classifiers:list'),
+    save: (profile: ClassifierProfile) => ipcRenderer.invoke('classifiers:save', profile),
+    remove: (id: string) => ipcRenderer.invoke('classifiers:remove', id),
+    test: (id: string) => ipcRenderer.invoke('classifiers:test', id),
+  },
   settings: {
     get: (key: string) => ipcRenderer.invoke('settings:get', key),
     set: (key: string, value: unknown) => ipcRenderer.invoke('settings:set', key, value),
@@ -1472,7 +1481,7 @@ const api: ApiClient = {
 }
 contextBridge.exposeInMainWorld('api', api)
 
-if (process.env['COPSE_E2E'] === '1') {
+if (__COPSE_TEST_SCENARIOS__ && process.env['COPSE_E2E'] === '1') {
   const errorToasts: string[] = []
   contextBridge.exposeInMainWorld('__copseE2e', {
     pushErrorToast(message: string) {
@@ -1481,11 +1490,20 @@ if (process.env['COPSE_E2E'] === '1') {
     getErrorToasts() {
       return [...errorToasts]
     },
-    setMockScript(script: unknown) {
-      return ipcRenderer.invoke('test:setMockScript', script)
+    setMockScenario(id: string, scenario: unknown, scope?: string) {
+      return ipcRenderer.invoke('test:setMockScenario', id, scenario, scope)
     },
-    clearMockScript() {
-      return ipcRenderer.invoke('test:clearMockScript')
+    mockScenarioStatus(id: string) {
+      return ipcRenderer.invoke('test:mockScenarioStatus', id)
+    },
+    releaseMockScenario(id: string, hold: string) {
+      return ipcRenderer.invoke('test:releaseMockScenario', id, hold)
+    },
+    assertMockScenarioComplete(id: string) {
+      return ipcRenderer.invoke('test:assertMockScenarioComplete', id)
+    },
+    clearMockScenarios() {
+      return ipcRenderer.invoke('test:clearMockScenarios')
     },
     requestSshPrompt(prompt: string, kind: 'confirm' | 'secret') {
       return ipcRenderer.invoke('test:requestSshPrompt', prompt, kind)

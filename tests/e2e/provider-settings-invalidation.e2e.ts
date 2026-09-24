@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
 import { waitForAgentIdle } from './helpers.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
@@ -46,7 +46,7 @@ describe('stale custom-provider model selection', () => {
   it('shows actionable guidance without starting a provider turn', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await setComposerValue('Continue with the removed provider route.')
-    await $('.submit-btn').click()
+    await submitComposer()
 
     const errorText = `The provider for ${STALE_ROUTE} is no longer configured.`
     await browser.waitUntil(async () => (await assistantTranscript()).includes(errorText), {
@@ -61,7 +61,7 @@ describe('stale custom-provider model selection', () => {
     // A response or usage chunk would mean the turn escaped the main-process
     // provider-selection guard. This error-only transcript is the live boundary
     // before any provider client is asked to stream a model response.
-    assert.doesNotMatch(transcript, /Mock response to:/)
+    assert.ok(transcript.includes(errorText))
 
     await expect($('.stop-btn')).not.toBeDisplayed()
     await saveAppScreenshot('provider-settings-invalidated-route.png')

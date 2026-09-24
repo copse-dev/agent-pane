@@ -6,6 +6,13 @@ import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import { z } from 'zod'
+import { classifierProfileSchema } from '@copse/llm/classifiers/schemas.ts'
+import {
+  listClassifierProfiles,
+  saveClassifierProfile,
+  removeClassifierProfile,
+  testClassifierProfile,
+} from '../services/classifiers/classifier-service.ts'
 import { SPINE_SCHEMA_VERSION } from '@shared/threads/spine-schema.ts'
 import { runCommand } from '../services/exec/command-runner.ts'
 import { parseMessageValue, parseThreadValue } from '@shared/threads/thread-boundary.ts'
@@ -133,10 +140,13 @@ import {
   appendMessage,
   updateMeta,
   recordModelSelection,
-  deleteProjectThread,
   loadProjectCatalog,
   listOrphanProjectStores,
 } from '../services/thread-store.ts'
+import {
+  deleteThreadResourcesAndStore,
+  type ThreadDeletionRuntime,
+} from '../services/thread-deletion.ts'
 import { buildThreadArchive } from '../services/thread-archive.ts'
 import {
   getElectronAppVersion,
@@ -215,6 +225,7 @@ import {
   syncCiInvestigatorTools,
   syncLongHorizonTasksTools,
   syncReviewTools,
+  syncImageGenerationTools,
   syncBackgroundTasksTools,
   syncOkfMemoryTools,
   syncParallelSearchTools,
@@ -344,10 +355,12 @@ import {
 } from '../services/security/tool-permissions.ts'
 import { isWorkspaceTrusted } from '../services/security/workspace-trust.ts'
 import {
-  setMockScript,
-  clearMockScript,
-  mockScriptCursorForTests,
-  type MockScriptStep,
+  setMockScenario,
+  clearMockScenarios,
+  releaseMockScenario,
+  assertMockScenarioComplete,
+  mockScenarioStatus,
+  parseMockScenario,
 } from '@copse/llm/mock-script.ts'
 import { applyAppIcon } from '../app-icon.ts'
 import {
@@ -455,7 +468,8 @@ you want the coding agent to follow on every turn.
 export function registerAllHandlers(
   win: BrowserWindow,
   registry: ToolRegistry,
-  isDispatcherThreadActive: (projectId: string, threadId: string) => boolean = () => false,
+  isDispatcherThreadActive: (projectId: string, threadId: string) => boolean,
+  threadDeletionRuntime: ThreadDeletionRuntime,
 ): void {
   const reloadMcpForWorkspace = (): void => {
     void reloadMcpServers(registry)
@@ -673,6 +687,10 @@ export function registerAllHandlers(
   ipcMain.handle('browser:share-screenshot', async (event, rawId: unknown) => {
     const share = await captureBrowserScreenshot(interactiveBrowserContents(event, rawId))
     if (!win.isDestroyed()) win.webContents.send('browser:share-image', share)
+  })
+
+  ipcMain.handle('browser:capture-screenshot', async (event, rawId: unknown) => {
+    return await captureBrowserScreenshot(interactiveBrowserContents(event, rawId))
   })
 
   ipcMain.handle('browser:export-pdf', async (event, rawId: unknown) => {
@@ -1330,6 +1348,23 @@ export function registerAllHandlers(
     }
   })
 
+  ipcMain.handle('classifiers:list', (event) => {
+    assertMainFrameSender(event, win)
+    return listClassifierProfiles()
+  })
+  ipcMain.handle('classifiers:save', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return saveClassifierProfile(parseIpcArgs(classifierProfileSchema, [raw]))
+  })
+  ipcMain.handle('classifiers:remove', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return removeClassifierProfile(parseIpcArgs(keyProviderSchema.max(53), [raw]))
+  })
+  ipcMain.handle('classifiers:test', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return testClassifierProfile(parseIpcArgs(keyProviderSchema.max(53), [raw]))
+  })
+
   ipcMain.handle('settings:get', (event, key: unknown) => {
     assertMainFrameSender(event, win)
     const k = parseIpcArgs(zNonEmptyString.max(128), [key])
@@ -1449,7 +1484,10 @@ export function registerAllHandlers(
     // renderer never offers a retry the process is not allowed to perform.
     if (!result.ok) return result
     invalidateProviderKeyStatus(p)
-    if (p === 'openai') invalidateOpenAiModelAvailability()
+    if (p === 'openai') {
+      invalidateOpenAiModelAvailability()
+      syncImageGenerationTools(registry)
+    }
     if (p === 'cursor') invalidateCursorCloudModelsCache()
     // The live Intelligence Index feed caches its result (successes AND failures)
     // for hours, so a stored 403/empty would otherwise survive the user fixing
@@ -1851,7 +1889,7 @@ export function registerAllHandlers(
   ipcMain.handle('threads:delete', (event, projectId: unknown, threadId: unknown) => {
     assertMainFrameSender(event, win)
     const [pid, tid] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
-    return deleteProjectThread(pid, tid)
+    return deleteThreadResourcesAndStore(pid, tid, threadDeletionRuntime)
   })
   // Seed a freshly created fork's provider-format history from the thread it was
   // branched off. The renderer owns the visible transcript copy; this is the
@@ -2972,9 +3010,8 @@ export function registerAllHandlers(
     return statuses
   })
 
-  // E2e-only: register an ordered mock script so specs can drive multi-turn flows
-  // with natural-language prompts (see mock-script.ts). Not exposed in release UX.
-  if (process.env['COPSE_E2E'] === '1') {
+  // Scripted model controls are compiled out of release builds, even if COPSE_E2E is set.
+  if (__COPSE_TEST_SCENARIOS__ && process.env['COPSE_E2E'] === '1') {
     const testAgentChunkSchema = z.discriminatedUnion('type', [
       z.object({
         type: z.literal('tool_call'),
@@ -2995,20 +3032,6 @@ export function registerAllHandlers(
         resultFormat: z.literal('markdown').optional(),
       }),
     ])
-    const mockScriptStepSchema = z
-      .object({
-        when: z.string().min(1).max(500),
-        tool: z
-          .object({
-            name: z.string().min(1).max(128),
-            args: z.record(z.string(), z.unknown()),
-          })
-          .optional(),
-        text: z.string().max(10_000).optional(),
-      })
-      .refine((step) => step.tool !== undefined || step.text !== undefined, {
-        message: 'mock script step needs tool or text',
-      })
     const testApprovalRequestSchema = z.object({
       id: z.string().min(1).max(256),
       title: z.string().min(1).max(2_000),
@@ -3020,20 +3043,36 @@ export function registerAllHandlers(
       approveOnceLabel: z.string().max(500).optional(),
     })
 
-    ipcMain.handle('test:setMockScript', (event, raw: unknown) => {
+    ipcMain.handle('test:setMockScenario', (event, id: unknown, raw: unknown, scope: unknown) => {
       assertMainFrameSender(event, win)
-      const steps = parseIpcArgs(z.array(mockScriptStepSchema).max(32), [raw])
-      const script: MockScriptStep[] = steps.map((step) => ({
-        when: step.when,
-        ...(step.tool ? { tool: step.tool } : {}),
-        ...(step.text === undefined ? {} : { text: step.text }),
-      }))
-      setMockScript(script)
-      return { steps: steps.length, cursor: mockScriptCursorForTests() }
+      const [scenarioId, threadId] = parseIpcArgs(
+        z.tuple([z.string().min(1).max(200), z.string().min(1).max(200).optional()]),
+        [id, scope],
+      )
+      setMockScenario(scenarioId, parseMockScenario(raw), threadId)
+      return mockScenarioStatus(scenarioId)
     })
-    ipcMain.handle('test:clearMockScript', (event) => {
+    ipcMain.handle('test:mockScenarioStatus', (event, id: unknown) => {
       assertMainFrameSender(event, win)
-      clearMockScript()
+      const scenarioId = parseIpcArgs(z.string().min(1).max(200), [id])
+      return mockScenarioStatus(scenarioId)
+    })
+    ipcMain.handle('test:releaseMockScenario', (event, id: unknown, hold: unknown) => {
+      assertMainFrameSender(event, win)
+      const [scenarioId, holdName] = parseIpcArgs(
+        z.tuple([z.string().min(1).max(200), z.string().min(1).max(200)]),
+        [id, hold],
+      )
+      releaseMockScenario(scenarioId, holdName)
+    })
+    ipcMain.handle('test:assertMockScenarioComplete', (event, id: unknown) => {
+      assertMainFrameSender(event, win)
+      const scenarioId = parseIpcArgs(z.string().min(1).max(200), [id])
+      assertMockScenarioComplete(scenarioId)
+    })
+    ipcMain.handle('test:clearMockScenarios', (event) => {
+      assertMainFrameSender(event, win)
+      clearMockScenarios()
     })
     ipcMain.handle('test:emitAgentChunks', (event, rawThreadId: unknown, rawChunks: unknown) => {
       assertMainFrameSender(event, win)

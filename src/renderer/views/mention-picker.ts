@@ -179,13 +179,17 @@ export function initMentionPicker(opts: MentionPickerOptions): () => void {
       return
     }
     if (item.kind === 'thread') {
+      // Remove the typed token first, then restore its caret position so the
+      // composer's atomic thread chip lands exactly where the @mention was.
+      const insertionPoint = mentionStart
+      removeMentionText()
+      input.setSelectionRange(insertionPoint, insertionPoint)
       onAttachThread({
         threadId: item.hit.id,
         title: item.hit.title,
         updatedAt: item.hit.updatedAt,
         spinePath: item.hit.spinePath,
       })
-      removeMentionText()
       hidePicker()
       return
     }

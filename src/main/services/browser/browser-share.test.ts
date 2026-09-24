@@ -5,8 +5,26 @@ import {
   captureBrowserPageText,
   captureBrowserScreenshot,
   exportBrowserPagePdf,
+  shareBrowserGuestContent,
   suggestedPdfFilename,
 } from './browser-share.ts'
+
+interface FakeGuestContents {
+  getTitle: () => string
+  getURL: () => string
+  capturePage: () => Promise<{ toDataURL(): string }>
+  executeJavaScript: (code: string, userGesture?: boolean) => Promise<unknown>
+}
+
+function guestContents(overrides: Partial<FakeGuestContents> = {}): FakeGuestContents {
+  return {
+    getTitle: () => 'Guest page',
+    getURL: () => 'https://example.com/guest',
+    capturePage: () => Promise.resolve({ toDataURL: () => 'data:image/png;base64,SCREEN' }),
+    executeJavaScript: () => Promise.resolve(''),
+    ...overrides,
+  }
+}
 
 describe('browser thread sharing', () => {
   it('labels page text with its source and records clipped content', async () => {
@@ -58,6 +76,58 @@ describe('browser thread sharing', () => {
       label: 'Browser selection — Multi line title',
       content: 'Source: https://example.com/current\n\nthe current selection',
     })
+  })
+})
+
+describe('shareBrowserGuestContent (Cmd/Ctrl+L)', () => {
+  it('shares the live selection as text when the guest has one', async () => {
+    let script = ''
+    const result = await shareBrowserGuestContent(
+      guestContents({
+        executeJavaScript: (code) => {
+          script = code
+          return Promise.resolve('the highlighted sentence')
+        },
+      }),
+    )
+
+    assert.match(script, /window\.getSelection/)
+    assert.deepEqual(result, {
+      channel: 'browser:share-text',
+      share: {
+        label: 'Browser selection — Guest page',
+        content: 'Source: https://example.com/guest\n\nthe highlighted sentence',
+      },
+    })
+  })
+
+  it('falls back to a screenshot when the guest has no selection', async () => {
+    const result = await shareBrowserGuestContent(
+      guestContents({ executeJavaScript: () => Promise.resolve('') }),
+    )
+
+    assert.deepEqual(result, {
+      channel: 'browser:share-image',
+      share: { dataUrl: 'data:image/png;base64,SCREEN', mimeType: 'image/png' },
+    })
+  })
+
+  it('treats a whitespace-only selection as no selection', async () => {
+    const result = await shareBrowserGuestContent(
+      guestContents({ executeJavaScript: () => Promise.resolve('   \n  ') }),
+    )
+
+    assert.equal(result.channel, 'browser:share-image')
+  })
+
+  it('falls back to a screenshot when reading the selection throws', async () => {
+    const result = await shareBrowserGuestContent(
+      guestContents({
+        executeJavaScript: () => Promise.reject(new Error('guest navigated away')),
+      }),
+    )
+
+    assert.equal(result.channel, 'browser:share-image')
   })
 })
 

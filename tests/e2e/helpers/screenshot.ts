@@ -1,6 +1,7 @@
 import { join } from 'node:path'
 import { browser } from '@wdio/globals'
 import { recentreClippedCapture, restoreScrollAfterCapture } from './capture-framing.ts'
+import { mockConversationLeaks } from './mock-content.ts'
 
 /** Fixed viewport for committed e2e reference screenshots (see tests/e2e/screenshots/). */
 export const E2E_VIEWPORT = { width: 1280, height: 800 } as const
@@ -24,10 +25,26 @@ export async function assertE2eDeviceScaleFactor(): Promise<void> {
 
 export const E2E_SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
+/** Catch leaked fixture syntax even when it is behind an open dialog or cropped. */
+async function assertNaturalConversation(): Promise<void> {
+  const texts = await browser.execute(() =>
+    [
+      ...document.querySelectorAll(
+        '.msg-user .message-text, .msg-assistant .message-text, .chat-title',
+      ),
+    ].map((element) => element.textContent ?? ''),
+  )
+  const leaks = mockConversationLeaks(texts)
+  if (leaks.length > 0) {
+    throw new Error(`Screenshot contains model fixture plumbing: ${leaks.join('\n')}`)
+  }
+}
+
 /** Pin the app shell to a fixed size and settle layout before capturing. */
 export async function prepareE2eScreenshot(
   size: { width: number; height: number } = E2E_VIEWPORT,
 ): Promise<void> {
+  await assertNaturalConversation()
   await browser.execute((viewport) => {
     const app = document.getElementById('app')
     if (!app) return
@@ -46,6 +63,7 @@ export async function prepareE2eScreenshot(
 export const E2E_THREE_PANE_VIEWPORT = { width: 1600, height: 800 } as const
 
 export async function prepareThreePaneScreenshot(): Promise<void> {
+  await assertNaturalConversation()
   await browser.execute((viewport) => {
     const app = document.getElementById('app')
     const body = document.getElementById('body')

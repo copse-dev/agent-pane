@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { prepareMockTurn } from './helpers/mock-scenario.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
 
@@ -45,7 +45,9 @@ describe('Changes chip includes committed branch work', () => {
 
   it('keeps accurate totals as edits move from the working tree into commits', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    await setComposerValue('Review the committed change.')
+    await prepareMockTurn('Review the committed change.', [
+      { text: 'The committed change replaces one line with two in example.txt.' },
+    ])
     await $('.submit-btn').click()
     await waitForAgentIdle(20_000)
 
@@ -56,6 +58,13 @@ describe('Changes chip includes committed branch work', () => {
     writeFileSync(join(root, 'example.txt'), 'one\ntwo\nthree\n')
     await expect($('.follow-up-bubble-changes .follow-up-stat-add')).toHaveText('+3')
     git('commit', '-qam', 'Commit remaining edit')
+    // Linux sandbox workers briefly materialize protected paths as mount
+    // points. Keep the clean-checkout assertion, but allow their cleanup to
+    // finish before inspecting the app's committed-change view.
+    await browser.waitUntil(() => git('status', '--porcelain') === '', {
+      timeout: 15_000,
+      timeoutMsg: 'expected the checkout to be clean after commit and sandbox worker cleanup',
+    })
     assert.equal(git('status', '--porcelain'), '')
 
     // The commit's watcher notification replaces this live follow-up row. A

@@ -2,12 +2,9 @@ import { BROWSER_SESSION_PARTITION, browserSessionPartition } from '@shared/brow
 import { currentBrowserScope } from './browser-network-grants.ts'
 import { errorMessage } from '@shared/errors.ts'
 import type { BrowserWindow, BrowserWindowConstructorOptions, Session } from 'electron'
-import { mkdir, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
 import { DOM_SNAPSHOT_SCRIPT, parsePageSnapshot, renderSnapshot } from './snapshot-format.ts'
 import { expectBoolean } from '@shared/unknown-value.ts'
 import type { CanvasArtefactIdentity } from '@shared/types/canvas.ts'
-import { getElectronUserDataPath } from '../electron-app-runtime.ts'
 
 const MAX_TABS = 8
 const DEFAULT_WIDTH = 1280
@@ -59,6 +56,16 @@ export interface TabInfo {
   title: string
   url: string
   active: boolean
+}
+
+export interface BrowserScreenshot {
+  png: Buffer
+  viewId: string
+  title: string
+  url: string
+  width: number
+  height: number
+  capturedAt: number
 }
 
 /**
@@ -160,14 +167,20 @@ export class BrowserSessionManager {
     return renderSnapshot(parsePageSnapshot(raw))
   }
 
-  async screenshot(viewId?: string): Promise<{ path: string; viewId: string }> {
+  async screenshot(viewId?: string): Promise<BrowserScreenshot> {
     const tab = this.resolveTab(viewId)
     const image = await tab.window.webContents.capturePage()
-    const dir = join(getElectronUserDataPath(), 'browser-screenshots')
-    await mkdir(dir, { recursive: true })
-    const path = join(dir, `${tab.id}-${String(Date.now())}.png`)
-    await writeFile(path, image.toPNG())
-    return { path, viewId: tab.id }
+    if (image.isEmpty()) throw new Error(`browser screenshot of ${tab.id} was empty`)
+    const { width, height } = image.getSize()
+    return {
+      png: image.toPNG(),
+      viewId: tab.id,
+      title: tab.window.webContents.getTitle(),
+      url: tab.window.webContents.getURL(),
+      width,
+      height,
+      capturedAt: Date.now(),
+    }
   }
 
   /**

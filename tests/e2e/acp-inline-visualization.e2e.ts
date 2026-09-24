@@ -2,7 +2,13 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
-import { savePreparedElementScreenshot } from './helpers/screenshot.ts'
+import {
+  E2E_SCREENSHOT_DIR,
+  prepareChatMessageScreenshot,
+  saveAppScreenshot,
+  savePreparedElementScreenshot,
+} from './helpers/screenshot.ts'
+import { assertNoErrorToasts } from './helpers/assert-no-error-toasts.ts'
 import { rememberCanvasArtefact } from '../../src/main/services/canvas-store.ts'
 
 const PROJECT_ID = 'e2e-inline-visualization-project'
@@ -92,6 +98,29 @@ const INLINE_PROTOTYPE_HTML = `<!doctype html>
 </body>
 </html>`
 
+async function drawAnnotation(selector: string): Promise<void> {
+  await browser.execute((surfaceSelector) => {
+    const surface = document.querySelector(surfaceSelector)
+    if (!surface) throw new Error(`missing annotation surface: ${surfaceSelector}`)
+    const pointer = (type: string, x: number, y: number): PointerEvent =>
+      new PointerEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        clientX: x,
+        clientY: y,
+        pointerId: 1,
+        pointerType: 'mouse',
+        pressure: 0.5,
+      })
+    const bounds = surface.getBoundingClientRect()
+    const x = (fraction: number): number => bounds.left + bounds.width * fraction
+    const y = (fraction: number): number => bounds.top + bounds.height * fraction
+    surface.dispatchEvent(pointer('pointerdown', x(0.15), y(0.35)))
+    window.dispatchEvent(pointer('pointermove', x(0.5), y(0.55)))
+    window.dispatchEvent(pointer('pointerup', x(0.75), y(0.7)))
+  }, selector)
+}
+
 describe('ACP inline visualization reference', () => {
   before(async () => {
     const now = Date.now()
@@ -151,7 +180,8 @@ describe('ACP inline visualization reference', () => {
     resetUserData()
   })
 
-  it('hides the provider control frame and keeps the answer readable', async () => {
+  it('hides the provider control frame and keeps the answer readable', async function () {
+    this.timeout(90_000)
     const answer = $('[data-message-id="inline-vis-assistant"] .message-text')
     await expect(answer).toHaveText(
       "Approach C best balances compression with the conversation's chronology.",
@@ -197,6 +227,32 @@ describe('ACP inline visualization reference', () => {
       await webview?.executeJavaScript?.(`document.querySelector('[data-choice="C"]')?.click()`)
     })
 
+    await prepareChatMessageScreenshot()
+    const annotate = $('.message-canvas-previews .canvas-preview-annotate')
+    await expect(annotate).toHaveText('Annotate')
+    await annotate.click()
+    await expect(annotate).toHaveAttribute('aria-pressed', 'true')
+    await $('.message-canvas-previews [data-tool="rect"]').click()
+    await drawAnnotation('.message-canvas-previews .annotation-layer-svg')
+    await browser.waitUntil(
+      async () =>
+        (await browser.execute(
+          () =>
+            document.querySelector('.message-canvas-previews .annotation-layer-svg')
+              ?.childElementCount ?? 0,
+        )) === 1,
+      { timeout: 5_000, timeoutMsg: 'expected an inline annotation mark' },
+    )
+    await expect($('.message-canvas-previews .annotation-send')).toBeEnabled()
+    const previews = $('.message-canvas-previews')
+    await previews.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'inline-canvas-annotation.png'))
+    await $('.message-canvas-previews [aria-label="Clear"]').click()
+    await $('.message-canvas-previews [aria-label="Done"]').click()
+    await expect($('.message-canvas-previews .canvas-preview-annotate')).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    )
+
     // ChromeDriver screenshots omit the out-of-process guest surface on macOS.
     // Reveal the matching captured frame underneath for the visual reference;
     // the live guest and its interaction were asserted immediately above.
@@ -211,7 +267,9 @@ describe('ACP inline visualization reference', () => {
 
     await savePreparedElementScreenshot('.messages-list', 'acp-inline-visualization-reference.png')
 
-    await card.$('.canvas-preview-open').click()
+    await browser.execute(() => {
+      document.querySelector<HTMLButtonElement>('.canvas-preview-open')?.click()
+    })
     await browser.waitUntil(
       async () =>
         (await browser.execute(
@@ -221,5 +279,86 @@ describe('ACP inline visualization reference', () => {
         )) === 'Tool rollup approaches',
       { timeout: 20_000, timeoutMsg: 'expected Open to restore the saved canvas artefact' },
     )
+    await $('.browser-tab-panel.is-active webview').waitForExist({ timeout: 20_000 })
+    await browser.waitUntil(
+      async () =>
+        (await browser.execute(async () => {
+          const webview = document.querySelector('.browser-tab-panel.is-active webview') as {
+            executeJavaScript?: (source: string) => Promise<unknown>
+          } | null
+          return await webview?.executeJavaScript?.(
+            `document.querySelector('h1')?.textContent ?? null`,
+          )
+        })) === 'Choose how work folds into the thread',
+      { timeout: 20_000, timeoutMsg: 'expected the Browser canvas guest to finish loading' },
+    )
+
+    await browser.waitUntil(
+      async () =>
+        await browser.execute(() => {
+          const button = document.querySelector<HTMLElement>(
+            '.browser-tab-panel.is-active .browser-annotate-btn',
+          )
+          return button !== null && button.offsetParent !== null
+        }),
+      { timeout: 10_000, timeoutMsg: 'expected the Browser annotation control to become visible' },
+    )
+    await browser.execute(() => {
+      document
+        .querySelector<HTMLButtonElement>('.browser-tab-panel.is-active .browser-annotate-btn')
+        ?.click()
+    })
+    await browser.waitUntil(
+      async () =>
+        (await browser.execute(
+          () =>
+            document
+              .querySelector('.browser-tab-panel.is-active .browser-annotate-btn')
+              ?.getAttribute('aria-pressed') ?? null,
+        )) === 'true',
+      { timeout: 5_000, timeoutMsg: 'expected Browser annotation mode to activate' },
+    )
+    await $('.browser-tab-panel.is-active [data-tool="arrow"]').click()
+    await drawAnnotation('.browser-tab-panel.is-active .annotation-layer-svg')
+    await browser.waitUntil(
+      async () =>
+        (await browser.execute(
+          () =>
+            document.querySelector('.browser-tab-panel.is-active .annotation-layer-svg')
+              ?.childElementCount ?? 0,
+        )) === 1,
+      { timeout: 5_000, timeoutMsg: 'expected a Browser pane annotation mark' },
+    )
+    await saveAppScreenshot('browser-canvas-annotation.png')
+
+    await browser.execute(() => {
+      document
+        .querySelector<HTMLButtonElement>('.browser-tab-panel.is-active .annotation-send')
+        ?.click()
+    })
+    await $('.attachment-chips .image-chip').waitForDisplayed({ timeout: 20_000 })
+    await browser.waitUntil(
+      async () =>
+        (await browser.execute(
+          () =>
+            document
+              .querySelector('.browser-tab-panel.is-active .browser-annotate-btn')
+              ?.getAttribute('aria-pressed') ?? null,
+        )) === 'false',
+      { timeout: 5_000, timeoutMsg: 'expected Browser annotation mode to deactivate after Send' },
+    )
+    const sentState = await browser.execute(() => {
+      const root = document.querySelector<HTMLElement>(
+        '.browser-tab-panel.is-active .annotation-layer',
+      )
+      const surface = root?.querySelector('.annotation-layer-svg')
+      return { hidden: root?.hidden ?? false, marks: surface?.childElementCount ?? -1 }
+    })
+    expect(sentState).toEqual({ hidden: true, marks: 0 })
+    await expect($('.attachment-chips .image-chip img')).toHaveAttribute(
+      'src',
+      expect.stringContaining('data:image/png;base64,'),
+    )
+    await assertNoErrorToasts('canvas annotation')
   })
 })

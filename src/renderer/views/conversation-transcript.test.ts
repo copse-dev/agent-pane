@@ -14,10 +14,10 @@ import {
   setArtefactShowHandler,
 } from '../canvas/artefact-previews.ts'
 
-// Renders a sent user message carrying transcript attachments (input-bar.ts
-// builds these on send) and asserts the composer's paste chip appears inline at
-// its U+FFFC placeholder while file/thread refs follow in a trailing row — each
-// an SVG-icon chip, no emoji.
+// Renders sent user messages carrying transcript attachments (input-bar.ts
+// builds these on send). Positional paste/thread chips replace U+FFFC placeholders;
+// remaining and legacy attachments follow in a trailing row — each with the shared
+// outline SVG icon, never an emoji.
 
 function fakeApi(): ApiClient {
   return ((): ApiClient => {
@@ -31,6 +31,24 @@ function fakeApi(): ApiClient {
       },
     } satisfies ApiClient
   })()
+}
+
+function pointer(type: string, x: number, y: number): PointerEvent {
+  return new PointerEvent(type, {
+    bubbles: true,
+    cancelable: true,
+    clientX: x,
+    clientY: y,
+    pointerId: 1,
+    pointerType: 'mouse',
+    pressure: 0.5,
+  })
+}
+
+function drag(surface: Element): void {
+  surface.dispatchEvent(pointer('pointerdown', 10, 10))
+  window.dispatchEvent(pointer('pointermove', 40, 40))
+  window.dispatchEvent(pointer('pointerup', 80, 60))
 }
 
 function mountWithUserMessage(
@@ -111,6 +129,45 @@ describe('user transcript attachment chips', () => {
 
     // No object-replacement placeholder leaks into the visible text.
     assert.doesNotMatch(textEl.textContent, new RegExp(CHIP_CHAR))
+  })
+
+  it('renders thread and paste chips inline in placeholder order', () => {
+    mountWithUserMessage(`From ${CHIP_CHAR}, apply ${CHIP_CHAR} here`, [
+      { kind: 'thread', label: 'Auth refactor' },
+      { kind: 'paste', label: 'Editor feedback', content: 'Make the heading shorter.' },
+      { kind: 'file', label: 'notes.txt', content: 'release checklist' },
+    ])
+
+    const textEl = document.querySelector('.msg-user .message-text')
+    assert.ok(textEl)
+    const chips = textEl.querySelectorAll('.transcript-attachment-chip')
+    assert.equal(chips.length, 3)
+    assert.ok(chips[0]?.classList.contains('transcript-attachment-thread'))
+    assert.ok(chips[1]?.classList.contains('transcript-attachment-paste'))
+    assert.ok(chips[2]?.classList.contains('transcript-attachment-file'))
+    assert.ok(chips[0]?.querySelector('svg[data-icon="thread"]'))
+    assert.match(textEl.textContent, /From Auth refactor, apply Editor feedback here/)
+    assert.equal(
+      textEl.querySelectorAll('.transcript-attachment-row .transcript-attachment-chip').length,
+      1,
+      'only the non-positional file stays in the trailing row',
+    )
+  })
+
+  it('never consumes a trailing file to satisfy an unmatched placeholder', () => {
+    mountWithUserMessage(`From ${CHIP_CHAR} and ${CHIP_CHAR}`, [
+      { kind: 'thread', label: 'Auth refactor' },
+      { kind: 'file', label: 'notes.txt', content: 'release checklist' },
+    ])
+
+    const textEl = document.querySelector('.msg-user .message-text')
+    assert.ok(textEl)
+    assert.equal(textEl.querySelectorAll(':scope > .transcript-attachment-thread').length, 1)
+    assert.equal(textEl.querySelectorAll(':scope > .transcript-attachment-file').length, 0)
+    assert.equal(
+      textEl.querySelectorAll('.transcript-attachment-row .transcript-attachment-file').length,
+      1,
+    )
   })
 
   /**
@@ -310,7 +367,28 @@ describe('assistant inline visualization references', () => {
     assert.equal(card.querySelector('.canvas-preview-open')?.textContent, 'Open canvas')
     assert.equal(document.querySelector('.tool-card'), null)
 
-    card.querySelector<HTMLButtonElement>('button')?.click()
+    card.querySelector<HTMLButtonElement>('.canvas-preview-open')?.click()
     assert.deepEqual(opened, { threadId, title: 'Chart' })
+  })
+
+  it('disposes a removed inline annotation surface during transcript reconciliation', () => {
+    const store = createStore({ activeProjectId: 'project-1' })
+    const threadId = createThread(store)
+    const messageId = addMessage(store, threadId, 'assistant', 'Here is the chart.')
+    addMessageCanvasArtefact(store, messageId, { title: 'Chart' })
+    setArtefactPreview(threadId, 'Chart', 'data:image/png;base64,AAAA')
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+
+    document.querySelector<HTMLButtonElement>('.canvas-preview-annotate')?.click()
+    const oldSurface = document.querySelector<SVGSVGElement>('.annotation-layer-svg')
+    assert.ok(oldSurface)
+    assert.equal(oldSurface.childElementCount, 0)
+
+    store.emit('threads_changed')
+    assert.equal(oldSurface.isConnected, false)
+    drag(oldSurface)
+    assert.equal(oldSurface.childElementCount, 0, 'the removed surface no longer handles input')
   })
 })

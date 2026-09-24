@@ -1,0 +1,13 @@
+{
+  "id": "typesafe-eval",
+  "label": "TypeSafe Jev eval",
+  "model": "jev-latest",
+  "timeoutMs": 30000,
+  "connection": {
+    "type": "http",
+    "protocol": "systemone",
+    "baseUrl": "https://api.typesafe.ai/v1",
+    "auth": "bearer",
+    "apiKeyEnv": "TYPESAFE_API_KEY"
+  }
+}

@@ -9,7 +9,7 @@
 // turn_end` event envelope (`--events`), the run resolves its tool permissions
 // from a declared profile that fails closed, and exit codes are the contract's.
 import { execFileSync } from 'node:child_process'
-import { access, readFile, writeFile } from 'node:fs/promises'
+import { access, readFile, realpath, stat, writeFile } from 'node:fs/promises'
 import { parseArgs } from 'node:util'
 import { homedir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
@@ -50,11 +50,14 @@ import { toSarif } from './sarif.ts'
 import { decodeMockScript, type MockScript } from './scripted-provider.ts'
 import {
   openReviewGround,
+  prepareReviewHead,
   prepareVerificationBase,
   runStage0Checks,
   type Stage0Report,
+  type TrustedPreparation,
 } from './stage0.ts'
 import { decodeStage0Report } from './stage0-report.ts'
+import { DEFAULT_PREPARE_TIMEOUT_MS } from './project-commands.ts'
 import { runReviewers, type Stage2Result } from './stage2.ts'
 import { verifyFindings, type Stage4Result } from './stage4.ts'
 import { assembleReviewReport, canonicalFindings } from './stage5.ts'
@@ -87,8 +90,10 @@ never the exit code.
   --image <name>          the container image (default ${DEFAULT_CONTAINER_IMAGE}); never pulled
   --allow-unisolated      consent to run your own tree with no isolation backend
   --no-model              Stage 0 only; no model is called
-  --stage0-json <path>    a Stage 0 report another run wrote (or its --json report): this
-                          run executes nothing and reviews read-only over it
+  --stage0-json <path>    a Stage 0 report another run wrote (or its --json report): read-only
+                          unless an explicit container backend supplies focused validation
+  --trusted-prepare <path> caller-owned Node script that overrides checkout preparation;
+                          mounted read-only in the cell (for trusted CI workflow policy)
   --provider <kind>       ${PROVIDER_KINDS.join(' | ')} (default: inferred from --model)
   --model <id>            model id for the reviewer (repeat, or comma-separate, to fan out)
   --lenses <ids|all>      lenses to run: correctness (default), contracts, tests, security, concurrency
@@ -110,6 +115,8 @@ never the exit code.
   --budget-chars <n>      diff budget handed to the model (default 60000)
   --max-steps <n>         tool-using steps the reviewer may take
   --store <dir>           pnpm store to mount read-only (default: host standard store)
+  --scratch-parent <dir>  parent for disposable checkouts and cell HOME/TMPDIR
+                          (default: the operating-system temp directory)
   --quiet                 no text report on stdout
   --help
 
@@ -253,6 +260,7 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
         'allow-unisolated': { type: 'boolean', default: false },
         'no-model': { type: 'boolean', default: false },
         'stage0-json': { type: 'string' },
+        'trusted-prepare': { type: 'string' },
         provider: { type: 'string' },
         model: { type: 'string', multiple: true },
         lenses: { type: 'string' },
@@ -272,6 +280,7 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
         'budget-chars': { type: 'string' },
         'max-steps': { type: 'string' },
         store: { type: 'string' },
+        'scratch-parent': { type: 'string' },
         quiet: { type: 'boolean', default: false },
         help: { type: 'boolean', default: false },
       },
@@ -307,18 +316,35 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
   let maxSteps: number | undefined
   let maxVerify: number | undefined
   let concurrency: number | undefined
+  let scratchParent: string | undefined
   let lenses
   let forgeTarget: Omit<ForgeTarget, 'headCommit'> | null
   let importedStage0: Stage0Report | null = null
+  let trustedPreparation: TrustedPreparation | undefined
   try {
     budgetChars = integer(values['budget-chars'], '--budget-chars')
     maxSteps = integer(values['max-steps'], '--max-steps')
     maxVerify = integer(values['max-verify'], '--max-verify')
     concurrency = integer(values.concurrency, '--concurrency')
+    if (values['scratch-parent'] !== undefined) {
+      scratchParent = await realpath(values['scratch-parent'])
+      if (!(await stat(scratchParent)).isDirectory()) {
+        throw new Error('--scratch-parent must name a directory')
+      }
+    }
     lenses = resolveLenses(values.lenses)
     forgeTarget = resolveForgeTarget(values, io.env)
     if (values['stage0-json'] !== undefined)
       importedStage0 = await importStage0(values['stage0-json'])
+    if (values['trusted-prepare'] !== undefined) {
+      const script = await realpath(values['trusted-prepare'])
+      if (!(await stat(script)).isFile()) throw new Error('--trusted-prepare must name a file')
+      trustedPreparation = {
+        argv: ['node', script],
+        timeoutMs: DEFAULT_PREPARE_TIMEOUT_MS,
+        readOnlyPaths: [script],
+      }
+    }
   } catch (err) {
     io.stderr(`copse-review: ${errorMessage(err)}\n`)
     return HEADLESS_EXIT.USAGE
@@ -329,14 +355,32 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
   const diffOrigin: DiffOrigin = values.foreign ? 'foreign' : 'own'
   const image = values.image ?? DEFAULT_CONTAINER_IMAGE
 
-  // The backend. An imported Stage 0 is the execution: this run never builds a
-  // cell, whatever else was asked. Otherwise the flag decides, then the
-  // caller's backend, then `auto`: a container for a contributor's diff (the
-  // only strength that may run it, B3), the host process for one's own.
+  // The backend. Imported Stage 0 stays read-only unless the caller explicitly
+  // supplies a real container. It may never reuse the secret-bearing runner as
+  // an asserted ephemeral cell. Otherwise the flag decides, then the caller's
+  // backend, then `auto`: a container for a contributor's diff (the only
+  // strength that may run it, B3), the host process for one's own.
   let backend: IsolationBackend
   let backendNote: string | null = null
   if (importedStage0 !== null) {
-    backend = createHostProcessBackend()
+    if (values.backend === 'ephemeral-runner') {
+      io.stderr(
+        'copse-review: --stage0-json cannot use --backend ephemeral-runner; the model job holds secrets, so focused validation needs --backend container\n',
+      )
+      return HEADLESS_EXIT.USAGE
+    }
+    if (values.backend === 'container') {
+      const detection = await detectContainerBackend({ image })
+      if (detection.backend === null) {
+        io.stderr(`copse-review: no container backend for ${image}: ${detection.reason}\n`)
+        return HEADLESS_EXIT.APPROVAL_REQUIRED
+      }
+      backend = detection.backend
+    } else if (values.backend === undefined && io.backend?.strength === 'container') {
+      backend = io.backend
+    } else {
+      backend = createHostProcessBackend()
+    }
   } else if (values.backend === undefined && io.backend !== undefined) {
     backend = io.backend
   } else {
@@ -369,6 +413,8 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
     readOnlyCheckouts: importedStage0 !== null || diffOrigin === 'foreign',
     hostEnv: io.env,
     dependencyStore: values.store ?? (await discoverPnpmStore(io.env)),
+    ...(scratchParent === undefined ? {} : { scratchParent }),
+    ...(trustedPreparation === undefined ? {} : { trustedPreparation }),
   })
   try {
     if (backendNote !== null) io.stderr(`copse-review: ${backendNote}\n`)
@@ -398,6 +444,9 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
     let modelError: string | null = null
     if (!values['no-model'] && ground.checkouts !== null) {
       try {
+        if (importedStage0 !== null && ground.cell !== null) {
+          await prepareReviewHead(ground, io.signal)
+        }
         let script: MockScript | undefined
         if (values['mock-script'] !== undefined) {
           const parsedScript = safeJsonParse(
@@ -455,6 +504,7 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
         }
         reviews = await runReviewers({
           ...host,
+          validation: stage0,
           reviewers: selections.map((selection) => ({
             model: selection.model,
             providerFor: (lens): LLMProvider => selection.providerFor(`review:${lens.id}`),
@@ -478,7 +528,9 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
             ...host,
             baseCheckout: ground.checkouts.base,
             prepareBase: (signal) =>
-              (baseReady ??= prepareVerificationBase(ground, stage0, signal)),
+              (baseReady ??= prepareVerificationBase(ground, stage0, signal, {
+                reuseStage0Artifacts: importedStage0 === null,
+              })),
             findings,
             reproducer: role('reproduce'),
             challenger: role('challenge'),

@@ -1,11 +1,9 @@
-import { mkdirSync } from 'node:fs'
-import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { waitForAgentIdle } from './helpers.ts'
-import { setComposerValue } from './helpers/composer.ts'
-
-const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
+import { setComposerValue, submitComposer } from './helpers/composer.ts'
+import { installMockScenario } from './helpers/mock-scenario.ts'
+import { saveAppScreenshot } from './helpers/screenshot.ts'
 
 describe('double submit guard', function () {
   this.timeout(90_000)
@@ -24,25 +22,43 @@ describe('double submit guard', function () {
 
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
-    // Start a slow turn so the thread stays running, mirroring the laggy state
-    // where the user manages to press Send/Enter more than once.
-    const firstPrompt = 'first prompt [[mock:delay_ms 2000]]'
-    await setComposerValue(firstPrompt)
-    await $('.submit-btn').click()
+    const firstPrompt = 'Suggest one safe refactor for the parser module.'
+    const queuedPrompt = 'Which unit tests should cover that refactor?'
+    const scenario = await installMockScenario({
+      title: 'Review parser refactor',
+      turns: [
+        {
+          user: firstPrompt,
+          responses: [
+            {
+              waitFor: 'parser-review',
+              text: 'Extract the repeated parser error handling into one small helper so each branch can return a consistent error.',
+            },
+          ],
+        },
+        {
+          user: queuedPrompt,
+          responses: [
+            {
+              text: 'Cover malformed input, an empty payload, and valid input that still parses successfully.',
+            },
+          ],
+        },
+      ],
+    })
 
-    const becameRunning = await browser
-      .waitUntil(async () => (await $('.stop-btn').getProperty('hidden')) !== true, {
-        timeout: 10_000,
-      })
-      .catch(() => false)
-    await expect(becameRunning).toBe(true)
+    // Hold the first normal request while the renderer receives duplicate send
+    // events for a genuine follow-up.
+    await setComposerValue(firstPrompt)
+    await submitComposer()
+    await scenario.waitForHold('parser-review')
 
     // Fire two synchronous clicks back-to-back, exactly as a frozen renderer
     // would replay buffered input events once the main thread unblocks.
     await browser.execute(() => {
       const input = document.querySelector('.prompt-input') as HTMLElement | null
       const btn = document.querySelector('.submit-btn') as HTMLButtonElement | null
-      if (input) input.textContent = 'queued follow up'
+      if (input) input.textContent = 'Which unit tests should cover that refactor?'
       btn?.click()
       btn?.click()
     })
@@ -52,17 +68,25 @@ describe('double submit guard', function () {
     const queuedBadges = await $$('.message-queued-badge')
     await expect(queuedBadges).toHaveLength(1)
 
-    mkdirSync(SCREENSHOT_DIR, { recursive: true })
-    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'double-submit-single-queued.png'))
+    await saveAppScreenshot('double-submit-single-queued.png')
 
+    await scenario.release('parser-review')
     await waitForAgentIdle(60_000)
+    await scenario.assertComplete()
 
     // After draining, the thread holds exactly the two distinct user messages —
     // not three (which is what a duplicate send would have produced).
     const userMessages = await $$('.msg-user .message-text')
     await expect(userMessages).toHaveLength(2)
     await expect(userMessages[0]).toHaveText(firstPrompt)
-    await expect(userMessages[1]).toHaveText('queued follow up')
-    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'double-submit-drained.png'))
+    await expect(userMessages[1]).toHaveText(queuedPrompt)
+    const assistantMessages = await $$('.msg-assistant .message-text')
+    const finalReply = assistantMessages.at(-1)
+    if (!finalReply) throw new Error('expected a final assistant reply')
+    await expect(finalReply).toHaveText(
+      'Cover malformed input, an empty payload, and valid input that still parses successfully.',
+      { containing: true },
+    )
+    await saveAppScreenshot('double-submit-drained.png')
   })
 })

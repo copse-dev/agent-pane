@@ -106,6 +106,12 @@ the runtime's [host-only network issue](https://github.com/apple/container/issue
 remains open. These development/eval workloads retain the same network access their
 Docker versions had.
 
+Unattended **thread-in-container** runs from the app (`containerRunsEnabled`) still require
+a reachable Docker daemon. They preflight with the same style of engine probe and name a
+ready Apple container when Docker is down, but they do not switch engines: the guest
+attestation and stdio egress link are Docker-shaped today
+(`docs/plans/thread-in-container.md`).
+
 The shared CI runner image can also run on Apple container without Compose. See
 [`ci-runners/README.md`](../ci-runners/README.md#apple-container--apple-silicon-macs)
 and `pnpm run runners:apple -- --help`. Linux/cloud fleets, remote e2e hosts, and
@@ -133,24 +139,21 @@ Known environment behavior:
 
 ## Model-free agent runs
 
-No provider key is needed to exercise the core loop. When neither `ANTHROPIC_API_KEY` nor
-`OPENAI_API_KEY` is set and `COPSE_PANEL_MOCK_LLM` is unset, Copse falls back to
-`MockLLMProvider` (`src/shared/llm/mock-provider.ts`). It echoes the user message and issues one
-`list_dir` call on its first turn. Set `COPSE_PANEL_MOCK_LLM=1` to force it when credentials exist.
+No provider key is needed to exercise the core loop. With no credentials Copse falls back to
+`MockLLMProvider` (`packages/llm/src/mock-provider.ts`). Set `COPSE_PANEL_MOCK_LLM=1` to force it.
+The unscripted smoke fallback can call a directory tool, but visual fixtures must register a
+conversation with intentional prompts and replies.
 
-Development and test builds support two one-shot mock directives in a user message:
+Use `installMockScenario`, `prepareMockTurn`, or `prepareMockToolTurn` from
+`tests/e2e/helpers/mock-scenario.ts`. Fixtures declare ordered responses, real tool calls and
+expected results separately from the text entered in the composer. Holds support explicit release
+and cancellation; prompt progress and streaming cadence are typed response fields. Exact user text
+is the default. Machine-generated continuations may use a bounded `user: { includes: ... }` matcher.
+See [natural conversation scenarios](testing-strategy.md#natural-conversation-scenarios).
 
-- `[[mcp:<tool> {json}]]` selects a tool call.
-- `[[mock:delay_ms <n>]]` delays the response.
-
-They are gated behind `__COPSE_TEST_DIRECTIVES__`. `npm run build:release` sets `COPSE_RELEASE=1`,
-dead-code eliminates the parser, and fails if a directive marker survives, so packaged apps do not
-ship this test language.
-
-For a multi-turn e2e, register an ordered regex-to-tool/text script through
-`window.__copseE2e.setMockScript([…])`. Keep the script next to the natural-language prompts in the
-spec; `tests/e2e/mock-script-multiturn.e2e.ts` is the reference. Reserve inline directives for
-one-shot steering.
+`__COPSE_TEST_SCENARIOS__` gates the scenario runner and IPC bridge. `pnpm run build:release`
+removes both and checks the main/preload bundles for leaked controls. Inline mock directives and
+the regex script bridge are retired; the fixture source guard rejects them in executable scenarios.
 
 ## App data and seeded state
 

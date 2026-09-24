@@ -1,13 +1,17 @@
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { setComposerValue, submitComposer } from './helpers/composer.ts'
+import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { waitForAgentIdle } from './helpers.ts'
 
 describe('npx package command approval', () => {
   before(async () => {
     resetUserData()
     seedEmptyProject(process.cwd(), 'e2e-npx-approval-project', {
       subagentsEnabled: false,
+      // Exercise the package-command approval before the optional firewall setup.
+      autoRunSandboxCommands: false,
       model: 'claude-sonnet-4-6',
       // `npx` is an *ambiguous* external matcher (shell-scope.ts, #500 option 1):
       // when an OS sandbox is the real boundary it deliberately auto-runs inside
@@ -33,8 +37,20 @@ describe('npx package command approval', () => {
   })
 
   it('shows fetch-and-run wording for npx commands', async () => {
-    await setComposerValue('[[mcp:run_shell {"command":"npx tsc --noEmit"}]]')
-    await $('.submit-btn').click()
+    const scenario = await installMockScenario({
+      title: 'Run TypeScript checks',
+      turns: [
+        {
+          user: 'Run the TypeScript checks.',
+          responses: [
+            { toolCalls: [{ name: 'run_shell', args: { command: 'npx tsc --noEmit' } }] },
+            { text: "Okay, I won't run the TypeScript checks." },
+          ],
+        },
+      ],
+    })
+    await setComposerValue('Run the TypeScript checks.')
+    await submitComposer()
 
     const dialog = await $('#approval-dialog')
     await dialog.waitForDisplayed({ timeout: 30_000 })
@@ -52,5 +68,8 @@ describe('npx package command approval', () => {
 
     await saveAppScreenshot('npx-approval-dialog.png')
     await dialog.$('.approval-reject').click()
+    await waitForAgentIdle(30_000)
+    await expectAssistantReply("Okay, I won't run the TypeScript checks.")
+    await scenario.assertComplete()
   })
 })

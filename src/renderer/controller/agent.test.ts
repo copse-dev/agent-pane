@@ -359,10 +359,77 @@ test('tool_call then tool_result transitions the tool card running -> done', () 
   assert.equal(tc.status, 'running')
   assert.equal(tc.name, 'read_file')
 
-  send({ type: 'tool_result', toolCallId: 'tc1', result: 'file body', isError: false })
+  const images = [{ dataUrl: 'data:image/png;base64,cGl4ZWxz', name: 'capture.png' }]
+  send({
+    type: 'tool_result',
+    toolCallId: 'tc1',
+    result: 'file body',
+    isError: false,
+    images,
+  })
   tc = at(at(messages(), 0).toolCalls, 0)
   assert.equal(tc.status, 'done')
   assert.equal(tc.result, 'file body')
+  assert.deepEqual(tc.images, images)
+})
+
+test('visual evidence attaches once to the assistant turn that owns its tool call', () => {
+  const { send, messages } = setup()
+  send({ type: 'text', text: 'The toolbar now clears the editor.' })
+  send({
+    type: 'tool_call',
+    toolCall: { id: 'tc1', name: 'present_visual_evidence', args: {} },
+  })
+  const evidence = [
+    {
+      id: 'evidence-1',
+      kind: 'screenshot' as const,
+      caption: 'Fixed toolbar at the narrow breakpoint',
+      createdAt: 3,
+      assets: [
+        {
+          id: 'asset-1',
+          label: 'After',
+          mimeType: 'image/png' as const,
+          width: 390,
+          height: 844,
+          capturedAt: 2,
+          dataUrl: 'data:image/png;base64,cGl4ZWxz',
+          source: {
+            kind: 'browser' as const,
+            viewId: 'view-1',
+            title: 'Copse',
+            url: 'https://example.test/settings',
+          },
+        },
+      ],
+    },
+  ]
+
+  send({ type: 'visual_evidence', toolCallId: 'tc1', evidence })
+  send({ type: 'visual_evidence', toolCallId: 'tc1', evidence })
+
+  assert.deepEqual(at(messages(), 0).visualEvidence, [{ ...evidence[0], toolCallId: 'tc1' }])
+})
+
+test('visual evidence with no owning tool call is ignored instead of attaching to the live turn', () => {
+  const { send, messages } = setup()
+  send({ type: 'text', text: 'Still working.' })
+  send({
+    type: 'visual_evidence',
+    toolCallId: 'missing-call',
+    evidence: [
+      {
+        id: 'orphan-evidence',
+        kind: 'screenshot',
+        caption: 'Should not move between turns',
+        createdAt: 3,
+        assets: [],
+      },
+    ],
+  })
+
+  assert.equal(at(messages(), 0).visualEvidence, undefined)
 })
 
 test('tool_call_update patches ACP arguments, output, and status in place', () => {

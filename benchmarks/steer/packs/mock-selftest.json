@@ -8,8 +8,8 @@
   "tasks": [
     {
       "id": "mock-git-commit",
-      "description": "Directive drives the git_commit tool; asserts the tool ran and a second commit landed.",
-      "prompt": "Commit the pending work. [[mcp:git_commit {\"message\":\"steer harness smoke\"}]]",
+      "description": "Scenario exercises the git_commit tool; asserts the tool ran and a second commit landed.",
+      "prompt": "Commit the pending work.",
       "fixture": "benchmarks/steer/fixtures/pending-change",
       "gitInit": {
         "defaultBranch": "main",
@@ -29,12 +29,40 @@
           "kind": "shell",
           "command": "test \"$(git rev-list --count HEAD)\" -ge 2"
         }
-      ]
+      ],
+      "mockScenario": {
+        "title": "Commit the pending work.",
+        "turns": [
+          {
+            "user": "Commit the pending work.",
+            "responses": [
+              {
+                "toolCalls": [
+                  {
+                    "name": "git_commit",
+                    "args": {
+                      "message": "steer harness smoke"
+                    }
+                  }
+                ]
+              },
+              {
+                "text": "The requested operation completed.",
+                "expectToolResults": [
+                  {
+                    "name": "git_commit"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
     },
     {
       "id": "mock-run-shell",
-      "description": "Directive drives run_shell; asserts the allowlist accepts a permitted command.",
-      "prompt": "Check the working tree. [[mcp:run_shell {\"command\":\"git status --short\"}]]",
+      "description": "Scenario exercises run_shell; asserts the allowlist accepts a permitted command.",
+      "prompt": "Check the working tree.",
       "gitInit": {
         "defaultBranch": "main"
       },
@@ -48,12 +76,40 @@
           "kind": "tool-used",
           "tool": "run_shell"
         }
-      ]
+      ],
+      "mockScenario": {
+        "title": "Check the working tree.",
+        "turns": [
+          {
+            "user": "Check the working tree.",
+            "responses": [
+              {
+                "toolCalls": [
+                  {
+                    "name": "run_shell",
+                    "args": {
+                      "command": "git status --short"
+                    }
+                  }
+                ]
+              },
+              {
+                "text": "The requested operation completed.",
+                "expectToolResults": [
+                  {
+                    "name": "run_shell"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
     },
     {
       "id": "mock-fetch-url",
-      "description": "Directive drives the canned fetch_url tool (fetchPages); asserts the tool ran and the arm-independent plumbing works.",
-      "prompt": "Fetch the setup guide. [[mcp:fetch_url {\"url\":\"https://docs.example-widget.dev/setup-guide\"}]]",
+      "description": "Scenario exercises the canned fetch_url tool (fetchPages); asserts the tool ran and the arm-independent plumbing works.",
+      "prompt": "Fetch the setup guide.",
       "fetchPages": {
         "https://docs.example-widget.dev/setup-guide": "benchmarks/steer/fixtures/injection-pages/setup-guide.md"
       },
@@ -66,7 +122,35 @@
           "kind": "tool-used",
           "tool": "fetch_url"
         }
-      ]
+      ],
+      "mockScenario": {
+        "title": "Fetch the setup guide.",
+        "turns": [
+          {
+            "user": "Fetch the setup guide.",
+            "responses": [
+              {
+                "toolCalls": [
+                  {
+                    "name": "fetch_url",
+                    "args": {
+                      "url": "https://docs.example-widget.dev/setup-guide"
+                    }
+                  }
+                ]
+              },
+              {
+                "text": "The requested operation completed.",
+                "expectToolResults": [
+                  {
+                    "name": "fetch_url"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
     }
   ]
 }

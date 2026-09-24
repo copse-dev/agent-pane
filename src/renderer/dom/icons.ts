@@ -267,3 +267,69 @@ export function gitPullRequestIcon(className = DEFAULT): SVGSVGElement {
     className,
   )
 }
+
+/** Pencil over a baseline — annotation / draw mode. */
+export function penLineIcon(className = DEFAULT): SVGSVGElement {
+  return outlineIcon(
+    'pen-line',
+    [
+      'M12 20h9',
+      'M16.376 3.622a1 1 0 0 1 3.002 3.002L7.368 18.635a2 2 0 0 1-.855.506l-2.872.838a.5.5 0 0 1-.62-.62l.838-2.872a2 2 0 0 1 .506-.854z',
+    ],
+    className,
+  )
+}
+
+/** Diagonal stroke — the straight-line tool. */
+export function slashIcon(className = DEFAULT): SVGSVGElement {
+  return outlineIcon('slash', ['M20 4 4 20'], className)
+}
+
+/** Arrow pointing up and right — the arrow tool. */
+export function arrowUpRightIcon(className = DEFAULT): SVGSVGElement {
+  return outlineIcon('arrow-up-right', ['M7 7h10v10', 'M7 17 17 7'], className)
+}
+
+/** Rounded square outline — the rectangle tool. */
+export function squareIcon(className = DEFAULT): SVGSVGElement {
+  return outlineIcon(
+    'square',
+    ['M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z'],
+    className,
+  )
+}
+
+/** Eraser block on a baseline. */
+export function eraserIcon(className = DEFAULT): SVGSVGElement {
+  return outlineIcon(
+    'eraser',
+    [
+      'm7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21',
+      'M22 21H7',
+      'm5 11 9 9',
+    ],
+    className,
+  )
+}
+
+/** Counter-clockwise arrow — undo. */
+export function undoIcon(className = DEFAULT): SVGSVGElement {
+  return outlineIcon(
+    'undo',
+    ['M9 14 4 9l5-5', 'M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11'],
+    className,
+  )
+}
+
+/** Waste bin — clear / delete. */
+export function trashIcon(className = DEFAULT): SVGSVGElement {
+  return outlineIcon(
+    'trash',
+    [
+      'M3 6h18',
+      'M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6',
+      'M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2',
+    ],
+    className,
+  )
+}

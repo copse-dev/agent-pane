@@ -1,7 +1,5 @@
-// Bundle + run the headless bench harness (same launcher pattern as
-// run-validate-local-agent.mts). `__COPSE_TEST_DIRECTIVES__` is defined true so
-// mock-provider `[[mcp:…]]` directives work for the deterministic smoke tasks —
-// this is a dev/CI harness, never a shipped bundle.
+// Bundle and run the headless benchmark with test-only conversation scenarios.
+// This launcher is used for development and CI, never a shipped bundle.
 import * as esbuild from 'esbuild'
 import { spawnSync } from 'node:child_process'
 import { resolve } from 'node:path'
@@ -17,7 +15,7 @@ await esbuild.build({
   alias: {
     '@shared': resolve('./src/shared'),
   },
-  define: { __COPSE_TEST_DIRECTIVES__: 'true' },
+  define: { __COPSE_TEST_SCENARIOS__: 'true' },
 })
 
 const result = spawnSync('node', [out, ...process.argv.slice(2)], {

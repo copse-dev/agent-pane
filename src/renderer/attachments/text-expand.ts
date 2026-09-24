@@ -1,10 +1,50 @@
+import { showContextMenu } from '../dom/context-menu.ts'
 import { el } from '../dom/helpers.ts'
+import { showErrorToast, showToast } from '../views/toast.ts'
 import { openAttachmentPreview } from './attachment-preview.ts'
+
+function copyText(text: string): void {
+  void navigator.clipboard
+    .writeText(text)
+    .then(() => showToast('Copied', { durationMs: 1500 }))
+    .catch((error: unknown) => {
+      showErrorToast('Failed to copy', error)
+    })
+}
+
+function selectedTextWithin(root: Node): string | null {
+  const selection = window.getSelection()
+  if (!selection || selection.isCollapsed || selection.rangeCount === 0) return null
+  for (let index = 0; index < selection.rangeCount; index += 1) {
+    const range = selection.getRangeAt(index)
+    if (!root.contains(range.startContainer) || !root.contains(range.endContainer)) return null
+  }
+  const selected = selection.toString()
+  return selected.length > 0 ? selected : null
+}
 
 /** Open a plain-text snapshot without interpreting its contents as markup. */
 export function openTextExpand(content: string, name: string): void {
   const text = el('pre', { class: 'attachment-preview-text' })
   text.textContent = content
+  text.addEventListener('contextmenu', (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    const selected = selectedTextWithin(text)
+    showContextMenu(
+      event.clientX,
+      event.clientY,
+      [
+        {
+          label: selected ? 'Copy selection' : 'Copy',
+          onSelect: (): void => {
+            copyText(selected ?? content)
+          },
+        },
+      ],
+      text,
+    )
+  })
   openAttachmentPreview({
     kind: 'text',
     title: name,

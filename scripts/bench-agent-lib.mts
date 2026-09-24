@@ -10,9 +10,8 @@
 // no src/main — so it doubles as the external-consumer proof of the
 // @copse/agent / @copse/llm package boundary.
 //
-// Providers: `--mock` uses the deterministic mock LLM (tasks steer it with
-// `[[mcp:…]]` directives — harness self-test, CI-viable); otherwise an LM
-// Studio endpoint from LM_STUDIO_URL / LM_STUDIO_MODEL / LM_STUDIO_API_KEY,
+// Providers: `--mock` uses a task's explicit conversation scenario for a
+// deterministic harness self-test; otherwise an LM Studio endpoint from LM_STUDIO_URL / LM_STUDIO_MODEL / LM_STUDIO_API_KEY,
 // mirroring validate:local-agent.
 import {
   cpSync,
@@ -42,6 +41,13 @@ import {
 } from '@copse/agent/headless-contract.ts'
 import type { LLMProvider, LLMTool } from '@copse/llm/wire-types.ts'
 import { MockLLMProvider } from '@copse/llm/mock-provider.ts'
+import {
+  setMockScenario,
+  clearMockScenarios,
+  assertMockScenarioComplete,
+  parseMockScenario,
+  type MockScenario,
+} from '@copse/llm/mock-script.ts'
 import { createLMStudioProvider } from '@copse/llm/create-provider.ts'
 import {
   expectRecord,
@@ -55,6 +61,8 @@ export interface BenchTask {
   id: string
   description?: string | undefined
   prompt: string
+  /** Out-of-band model behavior used only by the deterministic harness self-test. */
+  mockScenario?: MockScenario | undefined
   /** Directory (repo-relative) copied into a fresh temp workspace; omitted → empty workspace. */
   fixture?: string | undefined
   /** Git checkout into the temp workspace (SWE-bench-style tasks). Mutually exclusive with fixture. */
@@ -116,6 +124,7 @@ const benchTaskSchema: z.ZodType<BenchTask> = z.object({
   id: z.string(),
   description: z.string().optional(),
   prompt: z.string(),
+  mockScenario: z.unknown().transform(parseMockScenario).optional(),
   fixture: z.string().optional(),
   repo: z.object({ url: z.string(), commit: z.string() }).optional(),
   setup: z.string().optional(),
@@ -448,9 +457,15 @@ async function runTask(
     controller.abort()
   }, task.timeoutMs ?? DEFAULT_TASK_TIMEOUT_MS)
 
+  const mock = provider instanceof MockLLMProvider
+  const taskProvider = mock ? new MockLLMProvider(task.id) : provider
   try {
+    if (mock) {
+      if (!task.mockScenario) throw new Error(`No conversation scenario for benchmark ${task.id}`)
+      setMockScenario(task.id, parseMockScenario(task.mockScenario), task.id)
+    }
     await runAgentLoop({
-      provider,
+      provider: taskProvider,
       messages,
       tools: TOOLS,
       executeTool: (name, args) => executeTool(workspace, name, args),
@@ -476,10 +491,12 @@ async function runTask(
         }
       },
     })
+    if (mock) assertMockScenarioComplete(task.id)
   } catch (err) {
     error = String(err)
   } finally {
     clearTimeout(timer)
+    if (mock) clearMockScenarios()
   }
   flushText()
 

@@ -30,11 +30,6 @@ export function sfwInstallArgs(): string[] {
   return ['install', '-g', '--ignore-scripts', `${SFW_BIN}@${SFW_VERSION}`]
 }
 
-/** Test/refresh hook — forget the cached availability probe. */
-export function resetSocketFirewallCache(): void {
-  cachedAvailable = null
-}
-
 /** Whether the `sfw` binary is on PATH. Result is cached after the first probe. */
 export function isSocketFirewallAvailable(): boolean {
   if (cachedAvailable !== null) return cachedAvailable

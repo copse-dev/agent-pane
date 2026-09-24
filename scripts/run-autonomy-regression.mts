@@ -37,7 +37,7 @@ await esbuild.build({
   alias: {
     '@shared': resolve('./src/shared'),
   },
-  define: { __COPSE_TEST_DIRECTIVES__: 'true' },
+  define: { __COPSE_TEST_SCENARIOS__: 'true' },
 })
 
 const parsedScenario = autonomyScenarioSchema.parse(

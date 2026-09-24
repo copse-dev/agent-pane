@@ -792,7 +792,3 @@ export function getAppleDevelopmentService(): AppleDevelopmentService {
   singleton ??= new AppleDevelopmentService()
   return singleton
 }
-
-export function resetAppleDevelopmentServiceForTests(): void {
-  singleton = null
-}

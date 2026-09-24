@@ -1,5 +1,11 @@
 import { z } from 'zod'
-import type { ToolDefinition, LLMTool, ToolExecuteResult, ToolProvenance } from '@shared/types'
+import type {
+  ToolDefinition,
+  LLMTool,
+  ToolExecuteResult,
+  ToolProvenance,
+  VisualEvidenceDraft,
+} from '@shared/types'
 import { normalizeToolExecuteResult, type ToolResultImage } from '@shared/types'
 import { wrapExternalContent } from '@copse/agent/external-content.ts'
 import { markTurnExternalIngestion } from './security/turn-taint.ts'
@@ -228,11 +234,12 @@ export class ToolRegistry {
     editStats?: { additions: number; deletions: number }
     resultFormat?: 'markdown'
     /**
-     * Images a tool produced alongside its text (video_frames). Always returned
+     * Images a tool produced alongside its text (screenshots, generations, frames). Always returned
      * by `normalizeToolExecuteResult`; declared here so callers that can render
      * them — the ACP native-tool bridge — are not silently handed text only.
      */
     images?: ToolResultImage[]
+    visualEvidence?: VisualEvidenceDraft[]
   }> {
     return normalizeToolExecuteResult(await this.execute(name, rawArgs, signal))
   }

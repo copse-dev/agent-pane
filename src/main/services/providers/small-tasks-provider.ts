@@ -27,6 +27,9 @@ export function resolveSmallTasksModelId(): string {
 
 /** Provider for thread titles, follow-ups, and other lightweight prompts. */
 export async function resolveSmallTasksProvider(): Promise<LLMProvider | null> {
+  // Scenario fixtures own their chat replies. Auxiliary labels use the callers'
+  // normal heuristic fallbacks instead of consuming a conversation response.
+  if (process.env['COPSE_PANEL_MOCK_LLM'] === '1') return null
   const modelId = resolveSmallTasksModelId()
   try {
     return await buildProvider(modelId, undefined, SMALL_TASK_OPTIONS)

@@ -47,6 +47,27 @@ describe('Stage 0 report decoder', () => {
     assert.deepEqual(decodeStage0Report(wrapped), report)
   })
 
+  it('does not promote a legacy double-red report into proof that failures are pre-existing', () => {
+    const check = report.checks[0]
+    assert.ok(check?.head && check.base)
+    const legacy = {
+      ...report,
+      findings: [],
+      checks: [
+        {
+          ...check,
+          verdict: 'failing-on-base',
+          base: { ...check.base, status: 'failed', exitCode: 1 },
+        },
+      ],
+    }
+    for (const value of [legacy, { stage0: legacy }]) {
+      const decoded = decodeStage0Report(value)
+      assert.equal(decoded?.checks[0]?.verdict, 'undetermined')
+      assert.match(decoded.coverage.notChecked.at(-1)?.reason ?? '', /legacy double-failure/)
+    }
+  })
+
   it('rejects a report that is not one', () => {
     assert.equal(decodeStage0Report(null), null)
     assert.equal(decodeStage0Report({ stage0: {} }), null)

@@ -47,6 +47,25 @@ export const CONTRACTS_LENS: Lens = {
   maxSteps: 24,
 }
 
+export const BOUNDARIES_LENS: Lens = {
+  id: 'boundaries',
+  title: 'Semantic boundaries and defaults',
+  brief: [
+    'Look only at new or changed producers, adapters, tools, serializers and result builders.',
+    'For each one, name its closest existing analogue, inventory semantic fields the analogue',
+    'supplies that the change omits, and trace every omission through transforms and consumers.',
+    'A passing producer-level test does not settle downstream behaviour. Neither the existence',
+    'of a fallback nor the fact that it predates the change proves that taking it is intended.',
+    'When an omission selects different rendering, trust, permission, persistence or default',
+    'behaviour, require concrete repository evidence that the difference is intentional; without',
+    'that evidence, report the causal defect at the changed producer. A test that merely fails',
+    'to catch that same producer defect is evidence for the producer finding, not a second defect;',
+    `cite it there and do not file a separate missing-coverage finding. ${NOT_STYLE}`,
+  ].join(' '),
+  classes: ['contract', 'security', 'api-compat'],
+  maxSteps: 20,
+}
+
 export const TESTS_LENS: Lens = {
   id: 'tests',
   title: 'Tests that no longer prove what they claim',
@@ -89,12 +108,32 @@ export const CONCURRENCY_LENS: Lens = {
   maxSteps: 20,
 }
 
+export const TRANSITIONS_LENS: Lens = {
+  id: 'transitions',
+  title: 'State transitions and stale work',
+  brief: [
+    'Review sequences of user and asynchronous events, not only the initial state.',
+    'Trace changed state owners through refresh with an active filter, resize with unchanged',
+    'scroll offsets, workspace switches while requests are in flight, disposal before callbacks',
+    'complete, and repeated keyboard events. Choose only sequences reachable in this change.',
+    'For each suspected regression, name the invariant and drive the smallest deterministic',
+    'sequence that could violate it; use a focused probe when execution is available.',
+    'Inspect the guard, invalidation, or ownership check that should preserve the invariant.',
+    'A missing test is not a separate finding for the same product defect. A preserved guard',
+    `or intentional cancellation can refute the suspicion. ${NOT_STYLE}`,
+  ].join(' '),
+  classes: ['contract', 'concurrency', 'resource'],
+  maxSteps: 20,
+}
+
 export const LENSES: readonly Lens[] = [
   CORRECTNESS_LENS,
   CONTRACTS_LENS,
+  BOUNDARIES_LENS,
   TESTS_LENS,
   SECURITY_LENS,
   CONCURRENCY_LENS,
+  TRANSITIONS_LENS,
 ]
 
 export const DEFAULT_LENS_IDS: readonly string[] = [CORRECTNESS_LENS.id]
@@ -135,14 +174,14 @@ export interface LensPromptOptions {
  */
 export function lensSystemPrompt(lens: Lens, options: LensPromptOptions): string {
   const running = options.canRun
-    ? 'You may run commands with run_command; they execute in an isolated copy of the change, so run the tests that cover what you are unsure about.'
+    ? 'You may run commands with run_command; they execute in an isolated copy of the change. Prefer the smallest project-supported focused test or probe that settles your question (read package.json and the repository testing instructions for selectors). Do not repeat the aggregate suite merely to look busy.'
     : 'run_command is not available in this run, so settle what you can by reading and say what you could not verify.'
   return [
     'You are Copse Reviewer, reviewing one change to a repository.',
     '',
     `Lens: ${lens.title}. ${lens.brief}`,
     '',
-    'Tools: read_file, list_dir, search_code and git_diff read the change and the code around it. Read every changed file that matters before judging it; the diff alone is not enough.',
+    'Tools: read_file, list_dir, search_code and git_diff read the change and the code around it. read_dependency_file reads an installed package path such as jsdom/lib/api.js through the isolated cell when pnpm symlinks make read_file refuse it. Read every changed file that matters before judging it; the diff alone is not enough.',
     running,
     '',
     'Report each defect with the report_finding tool, one call per defect, anchored at the exact file and lines where the bug is. Every finding needs a falsifiable one-sentence claim and the specific reason it is wrong. If a command you ran demonstrates it, pass that call id as evidence.',
@@ -150,7 +189,17 @@ export function lensSystemPrompt(lens: Lens, options: LensPromptOptions): string
     'Rules:',
     `- Allowed classes: ${FINDING_CLASSES.join(', ')}. Nothing else is a finding.`,
     '- No evidence, no finding. If you cannot point at the lines and say why they are wrong, do not report it.',
+    ...(options.canRun
+      ? [
+          '- When executable code changed, run at least one smallest relevant existing test or focused probe before finish_review. Do not substitute the aggregate suite. A host-side symlink refusal does not make run_command unavailable; use read_dependency_file for installed source. If no bounded command can add evidence, say why in couldNotVerify.',
+        ]
+      : []),
+    '- Review causal impact, not just edited lines. An unchanged line can become newly wrong or reachable because of this change; do not dismiss a defect merely because its best anchor is unchanged.',
+    '- When a value, result shape, or capability crosses a boundary, find the closest existing analogue and trace producer → transforms → consumers. Compare semantic tags, defaults, provenance, permissions, persistence, rendering, and tests where they matter; matching TypeScript shapes alone is not enough.',
+    '- Before declaring a new producer clean, list fields its closest analogue supplies that it omits. Follow each omission through the consumer fallback: undefined, internal, compact, empty, or a default branch is observable behaviour, not evidence that the field does not matter.',
     '- Do not invent concerns, do not pad. A short list a human reads in full beats a long one they skim.',
+    '- As soon as you identify a concrete suspected defect, call record_suspicion before investigating further. Preserve it through completion: report it with evidence, refute it with specific counterevidence, or mark it unresolved and include its id in couldNotVerify. Missing test execution or exhausted budget is uncertainty, never counterevidence. Do not downgrade a causal defect to a theoretical caveat without evidence that breaks the causal chain.',
+    '- Work economically. Once the relevant code and focused validation settle the question, stop exploring and call finish_review; do not repeatedly restate the whole analysis between tool calls.',
     '- A clean change is a complete answer: report nothing, but still attest what you checked.',
     '- Your final tool call must be finish_review, exactly once and after every report_finding call. State what you checked and what you could not verify; use "Nothing" only when there is no material uncertainty. Put any defect you did not already send through report_finding in finish_review.findings, or [] when there are none. Then stop.',
     '- Do not end with plain text instead of finish_review. Without that structured completion, the review is incomplete and fails closed.',

@@ -280,6 +280,96 @@ test('round-trips tool-result images through referenced blobs', () => {
   deepStrictEqual(foldThread(meta(), spine, resolverFor(files), { hash }).messages, messages)
 })
 
+test('round-trips visual evidence through content-addressed blobs', () => {
+  const dataUrl = 'data:image/png;base64,ZXZpZGVuY2UtcGl4ZWxz'
+  const messages: Message[] = [
+    {
+      id: 'a-evidence',
+      role: 'assistant',
+      content: 'The focus treatment now remains visible.',
+      toolCalls: [],
+      visualEvidence: [
+        {
+          id: 'evidence-1',
+          kind: 'screenshot',
+          caption: 'The repaired control retains its focus ring.',
+          createdAt: 2,
+          toolCallId: 'present-1',
+          assets: [
+            {
+              id: 'asset-1',
+              label: 'Screenshot',
+              mimeType: 'image/png',
+              width: 1280,
+              height: 800,
+              capturedAt: 1,
+              source: {
+                kind: 'browser',
+                viewId: 'tab-1',
+                title: 'Preview',
+                url: 'http://localhost:3000/',
+              },
+              dataUrl,
+            },
+          ],
+        },
+      ],
+      createdAt: 3,
+    },
+  ]
+
+  const { spine, files } = explodeThread(messages, hash)
+  const imageRef = spine[0]?.visualEvidence?.[0]?.assets[0]?.dataUrl
+  ok(imageRef)
+  strictEqual(imageRef.ref, `blobs/evidence/${hash(dataUrl)}.dataurl`)
+  strictEqual(files.find((file) => file.ref === imageRef.ref)?.contents, dataUrl)
+  strictEqual(JSON.stringify(spine).includes(dataUrl), false)
+  deepStrictEqual(foldThread(meta(), spine, resolverFor(files), { hash }).messages, messages)
+})
+
+test('keeps a thread readable when a visual evidence blob is unavailable', () => {
+  const message: Message = {
+    id: 'a-evidence',
+    role: 'assistant',
+    content: 'The comparison was captured.',
+    toolCalls: [],
+    visualEvidence: [
+      {
+        id: 'evidence-1',
+        kind: 'screenshot',
+        caption: 'Saved proof.',
+        createdAt: 2,
+        toolCallId: 'present-1',
+        assets: [
+          {
+            id: 'asset-1',
+            label: 'Screenshot',
+            mimeType: 'image/png',
+            width: 1280,
+            height: 800,
+            capturedAt: 1,
+            source: {
+              kind: 'browser',
+              viewId: 'tab-1',
+              title: 'Preview',
+              url: 'http://localhost:3000/',
+            },
+            dataUrl: 'data:image/png;base64,bWlzc2luZw==',
+          },
+        ],
+      },
+    ],
+    createdAt: 3,
+  }
+  const { spine, files } = explodeThread([message], hash)
+  const withoutEvidence = files.filter((file) => !file.ref.startsWith('blobs/evidence/'))
+  const folded = foldThread(meta(), spine, resolverFor(withoutEvidence), { hash })
+  const asset = folded.messages[0]?.visualEvidence?.[0]?.assets[0]
+  ok(asset)
+  strictEqual(asset.dataUrl, undefined)
+  strictEqual(asset.unavailableReason, 'Evidence image is unavailable.')
+})
+
 test('round-trips ACP rich content through blob refs without leaking base64 into spine or Markdown', () => {
   const image = 'data:image/png;base64,YWNwLWltYWdl'
   const audio = 'data:audio/ogg;base64,YWNwLWF1ZGlv'
@@ -686,6 +776,32 @@ test('refsOfLine enumerates exactly the refs the fold resolves', () => {
       role: 'assistant',
       content: 'exploring',
       reasoning: 'thinking about it',
+      visualEvidence: [
+        {
+          id: 'evidence-ref-check',
+          kind: 'screenshot',
+          caption: 'Reference accounting.',
+          createdAt: 2,
+          toolCallId: 'tc0',
+          assets: [
+            {
+              id: 'asset-ref-check',
+              label: 'Screenshot',
+              mimeType: 'image/png',
+              width: 64,
+              height: 64,
+              capturedAt: 1,
+              source: {
+                kind: 'browser',
+                viewId: 'tab-1',
+                title: 'Preview',
+                url: 'http://localhost/',
+              },
+              dataUrl: 'data:image/png;base64,ZXZpZGVuY2U=',
+            },
+          ],
+        },
+      ],
       toolCalls: [
         { id: 'tc0', name: 'read_file', args: { path: 'a' }, status: 'done', result: 'contents' },
         { id: 'tc1', name: 'noop', args: {}, status: 'done', result: null },

@@ -11,12 +11,39 @@ import {
   type HeadlessOutcome,
   type HeadlessStopReason,
 } from '@copse/agent/headless-contract.ts'
+import { PRODUCT_REASONING_CHECKPOINT_POLICY } from '@copse/agent/reasoning-checkpoint-policy.ts'
+import type { ReasoningCheckpointPolicy } from '@copse/agent/reasoning-circle-detector.ts'
 import { runAgentLoop } from '@copse/agent/run-agent-loop.ts'
 import { CHARS_PER_TOKEN } from '@copse/agent/token-estimate.ts'
 import type { AgentStreamChunk } from '@copse/agent/wire-types.ts'
 import { hasLastUsage } from '@copse/llm/provider-usage.ts'
 import type { LLMMessage, LLMProvider, LLMStreamOptions, LLMTool } from '@copse/llm/wire-types.ts'
 import { errorMessage } from '@copse/std/errors.ts'
+
+/**
+ * Review turns should spend their budget on evidence and tools, not narrated
+ * plans. The shared loop's repeat detector cuts a verbatim prose circle at its
+ * first 2K-token checkpoint while still allowing a clean response up to 8K.
+ */
+export const REVIEW_TURN_REASONING_POLICY: Readonly<ReasoningCheckpointPolicy> = {
+  ...PRODUCT_REASONING_CHECKPOINT_POLICY,
+  maxNonReasoningTokens: 8_192,
+  maxInitialTokens: 8_192,
+}
+
+/**
+ * A protocol repair only has to encode conclusions the reviewer already
+ * reached. Give it one checkpoint of reasoning, rather than letting a model
+ * spend another full review budget re-deriving the same answer before it calls
+ * the required closure tool.
+ */
+const REVIEW_CLOSURE_REASONING_POLICY: Readonly<ReasoningCheckpointPolicy> = {
+  ...PRODUCT_REASONING_CHECKPOINT_POLICY,
+  maxNonReasoningTokens: PRODUCT_REASONING_CHECKPOINT_POLICY.intervalTokens,
+  maxInitialTokens: PRODUCT_REASONING_CHECKPOINT_POLICY.intervalTokens,
+  maxRecoveryTokens: PRODUCT_REASONING_CHECKPOINT_POLICY.intervalTokens,
+  maxTrailingReasoningTokens: PRODUCT_REASONING_CHECKPOINT_POLICY.intervalTokens,
+}
 
 export interface TurnUsage {
   readonly inputTokens: number
@@ -50,6 +77,14 @@ export interface TurnOptions {
         readonly maxSteps: number
         readonly toolChoice?: LLMStreamOptions['toolChoice']
         prompt(summary: string, completionError: string): string
+      }
+    | undefined
+  /** Final investigation steps reserved inside maxSteps, before protocol-only closure. */
+  readonly investigationReserve?:
+    | {
+        readonly maxSteps: number
+        needed(): boolean
+        prompt(): string
       }
     | undefined
   readonly signal?: AbortSignal | undefined
@@ -104,7 +139,11 @@ export async function runTurn(options: TurnOptions): Promise<TurnResult> {
   const runLoop = async (
     tools: readonly LLMTool[],
     maxSteps: number,
-    initialToolChoice?: LLMStreamOptions['toolChoice'],
+    settings: {
+      readonly initialToolChoice?: LLMStreamOptions['toolChoice']
+      readonly maxLlmCalls?: number
+      readonly reasoningCheckpointPolicy?: Readonly<ReasoningCheckpointPolicy>
+    } = {},
   ): Promise<void> => {
     await runAgentLoop({
       provider: options.provider,
@@ -114,8 +153,10 @@ export async function runTurn(options: TurnOptions): Promise<TurnResult> {
         options.execute(name, args, signal, toolCallId),
       ...(options.signal ? { signal: options.signal } : {}),
       maxSteps,
-      ...(initialToolChoice ? { initialToolChoice } : {}),
+      ...(settings.maxLlmCalls !== undefined ? { maxLlmCalls: settings.maxLlmCalls } : {}),
+      ...(settings.initialToolChoice ? { initialToolChoice: settings.initialToolChoice } : {}),
       adaptiveExtensions: false,
+      reasoningCheckpointPolicy: settings.reasoningCheckpointPolicy ?? REVIEW_TURN_REASONING_POLICY,
       usageModel: options.model,
       getLastUsage: () => (hasLastUsage(options.provider) ? options.provider.lastUsage : null),
       onChunk: (chunk: AgentStreamChunk) => {
@@ -160,12 +201,42 @@ export async function runTurn(options: TurnOptions): Promise<TurnResult> {
     turnId: options.turnId,
     protocolVersion: HEADLESS_PROTOCOL_VERSION,
   })
+  const reserve = Math.min(
+    Math.max(0, options.investigationReserve?.maxSteps ?? 0),
+    Math.max(0, options.maxSteps - 1),
+  )
+  const explorationSteps = options.maxSteps - reserve
   try {
-    await runLoop(options.tools, options.maxSteps)
+    await runLoop(
+      options.tools,
+      explorationSteps,
+      // The shared loop normally reserves three calls for a generic prose
+      // finalizer. A role with a structured completion invariant must spend
+      // those calls on its forced closure continuation instead.
+      options.completionRepair === undefined ? {} : { maxLlmCalls: explorationSteps },
+    )
   } catch (err) {
     error = errorMessage(err)
   }
   flushPending()
+
+  if (
+    !(options.signal?.aborted ?? false) &&
+    error === undefined &&
+    reserve > 0 &&
+    readCompletionError() !== undefined &&
+    options.investigationReserve?.needed()
+  ) {
+    messages.push({ role: 'user', content: options.investigationReserve.prompt() })
+    summary = ''
+    doneStopReason = undefined
+    try {
+      await runLoop(options.tools, reserve, { maxLlmCalls: reserve })
+    } catch (err) {
+      error = errorMessage(err)
+    }
+    flushPending()
+  }
 
   if (!(options.signal?.aborted ?? false) && error === undefined && options.completionRepair) {
     const incomplete = readCompletionError()
@@ -178,11 +249,11 @@ export async function runTurn(options: TurnOptions): Promise<TurnResult> {
       summary = ''
       doneStopReason = undefined
       try {
-        await runLoop(
-          options.completionRepair.tools,
-          options.completionRepair.maxSteps,
-          options.completionRepair.toolChoice,
-        )
+        await runLoop(options.completionRepair.tools, options.completionRepair.maxSteps, {
+          initialToolChoice: options.completionRepair.toolChoice,
+          maxLlmCalls: options.completionRepair.maxSteps,
+          reasoningCheckpointPolicy: REVIEW_CLOSURE_REASONING_POLICY,
+        })
       } catch (err) {
         error = errorMessage(err)
       }

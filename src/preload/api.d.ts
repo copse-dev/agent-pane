@@ -10,6 +10,7 @@ import type {
   AppRunSetupOptions,
 } from '@shared/types/app-run.ts'
 import type { SimulatorDesktopPresentation } from '@shared/types/simulator-desktop.ts'
+import type { ClassifierClient } from '@copse/llm/classifiers/types.ts'
 import type { StreamChunk, ContextBreakdown } from '@shared/types'
 import type { AutoApprovalLevel } from '@shared/auto-approval.ts'
 import type { RightPanelMode, ActiveDiff } from '@shared/types/state.ts'
@@ -180,6 +181,11 @@ export interface ApiClient {
     onPreviewStale?: (handler: (origin: string) => void) => () => void
     sharePageText: (webContentsId: number) => Promise<void>
     shareScreenshot: (webContentsId: number) => Promise<void>
+    /**
+     * Screenshot the tab and hand the PNG back to the caller instead of
+     * attaching it; the annotation layer composes its marks on top first.
+     */
+    captureScreenshot: (webContentsId: number) => Promise<BrowserImageShare>
     /** Print the tab to a PDF the user picks; resolves null when cancelled. */
     exportPdf: (webContentsId: number) => Promise<string | null>
     onShareText: (handler: (share: BrowserTextShare) => void) => () => void
@@ -735,6 +741,7 @@ export interface ApiClient {
     onUiScaleZoomOut: (handler: () => void) => () => void
     onUiScaleReset: (handler: () => void) => () => void
   }
+  classifiers: ClassifierClient
   settings: {
     get: (key: string) => Promise<unknown>
     set: (key: string, value: unknown) => Promise<void>

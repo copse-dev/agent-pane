@@ -1,7 +1,8 @@
+import { submitComposer } from './helpers/composer.ts'
+import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData } from './helpers/seed-config.ts'
 import { seedProjectConfig, waitForAgentIdle } from './helpers.ts'
-import { setComposerValue } from './helpers/composer.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 
 describe('read_skill error guidance', () => {
@@ -23,8 +24,12 @@ describe('read_skill error guidance', () => {
 
   it('gives an agent valid alternatives after an unknown skill call', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    await setComposerValue('[[mcp:read_skill {"name":"pstack"}]]')
-    await $('.submit-btn').click()
+    await prepareMockToolTurn(
+      'Read the pstack skill and explain how to use it.',
+      { name: 'read_skill', args: { name: 'pstack' } },
+      'The requested skill could not be loaded; the tool result lists the available alternatives.',
+    )
+    await submitComposer()
     await waitForAgentIdle(30_000)
 
     // Live tools retain their turn wrapper even when only one tool ran.
@@ -43,7 +48,7 @@ describe('read_skill error guidance', () => {
       wait: 10_000,
     })
     await expect(failedTool).toHaveText('Available skills:', { containing: true })
-    await expect(failedTool).toHaveText('checkup', { containing: true })
+    await expect(failedTool).toHaveText('agent-run-eval', { containing: true })
     await saveElementScreenshot(
       '.tool-card[data-tool-id][data-status="error"]',
       'read-skill-unknown-guidance.png',

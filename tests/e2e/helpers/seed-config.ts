@@ -3184,7 +3184,7 @@ export function seedGitChangesFixture(options?: { reviewEnabled?: boolean }): st
     [`threads:${projectId}`]: [
       {
         id: threadId,
-        title: 'Git changes test',
+        title: 'Review uncommitted changes',
         status: 'idle',
         messages: [],
         usage: { inputTokens: 0, outputTokens: 0 },
@@ -3205,6 +3205,80 @@ export function cleanupGitChangesFixture(repoRoot: string): void {
     return
   }
   rmSync(repoRoot, { recursive: true, force: true })
+}
+
+const COMPOSER_DIRTY_WARNING_FIXTURE_ROOT = join(
+  process.cwd(),
+  'tests/fixtures/composer-dirty-warning-repo',
+)
+
+function initComposerDirtyWarningFixtureRepo(): void {
+  const repoRoot = COMPOSER_DIRTY_WARNING_FIXTURE_ROOT
+  mkdirSync(repoRoot, { recursive: true })
+  writeFileSync(join(repoRoot, 'README.md'), '# fixture\n', 'utf8')
+  const git = (...args: string[]) => execFileSync('git', args, { cwd: repoRoot, stdio: 'pipe' })
+  git('init', '-q')
+  git('config', 'user.email', 'e2e@example.com')
+  git('config', 'user.name', 'E2E')
+  git('config', 'commit.gpgsign', 'false')
+  // With no remote, the default branch is read from init.defaultBranch, which
+  // otherwise varies by host git config.
+  git('config', 'init.defaultBranch', 'main')
+  git('add', '.')
+  git('commit', '-q', '-m', 'baseline')
+  git('branch', '-M', 'main')
+}
+
+/**
+ * Seeds a blank thread against a real repo that has an uncommitted (unstaged)
+ * edit, for the composer's dirty-shared-checkout advisory (#2503). The thread
+ * has no messages and no `worktreeChoice` yet — the state the composer's
+ * first-message checkout gate looks for.
+ */
+export function seedComposerDirtyWarningFixture(): {
+  projectId: string
+  threadId: string
+  repoRoot: string
+} {
+  const repoRoot = COMPOSER_DIRTY_WARNING_FIXTURE_ROOT
+  if (!existsSync(join(repoRoot, '.git'))) {
+    initComposerDirtyWarningFixtureRepo()
+  } else {
+    execFileSync('git', ['checkout', '-f', 'HEAD'], { cwd: repoRoot, stdio: 'pipe' })
+    execFileSync('git', ['clean', '-fd'], { cwd: repoRoot, stdio: 'pipe' })
+  }
+  // Leave an uncommitted edit so the shared checkout is dirty.
+  writeFileSync(join(repoRoot, 'README.md'), '# fixture\n\nuncommitted edit\n', 'utf8')
+
+  const projectId = 'e2e-composer-dirty-warning-project'
+  const threadId = 'e2e-composer-dirty-warning-thread'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: repoRoot, name: 'dirty-workspace' }],
+    activeProjectId: projectId,
+    workspaceRoot: repoRoot,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'New Thread',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+    activeThreadId: threadId,
+  })
+
+  return { projectId, threadId, repoRoot }
+}
+
+export function cleanupComposerDirtyWarningFixture(): void {
+  const repoRoot = COMPOSER_DIRTY_WARNING_FIXTURE_ROOT
+  execFileSync('git', ['checkout', '-f', 'HEAD'], { cwd: repoRoot, stdio: 'pipe' })
+  execFileSync('git', ['clean', '-fd'], { cwd: repoRoot, stdio: 'pipe' })
 }
 
 const GIT_IMAGE_FIXTURES = join(process.cwd(), 'tests/e2e/fixtures')
@@ -3263,19 +3337,72 @@ export function seedGitImageChangesFixture(): string {
 export function seedScrollToBottomFixture(workspaceRoot: string): void {
   const projectId = 'e2e-scroll-bottom-project'
   const threadId = 'e2e-scroll-bottom-thread'
-  const messages = Array.from({ length: 24 }, (_, i) => {
-    const isUser = i % 2 === 0
-    const turn = Math.floor(i / 2) + 1
-    return {
-      id: `msg-scroll-${i}`,
-      role: isUser ? 'user' : 'assistant',
-      content: isUser
-        ? `Question ${turn}: Can you explain part ${turn} of this feature in detail?`
-        : `Answer ${turn}: Here is a detailed explanation for turn ${turn}. `.repeat(8),
+  const exchanges = [
+    [
+      'Where do module errors first become visible to callers?',
+      'They become visible at the public entry point, where parsing and dependency failures are translated into the module response shape.',
+    ],
+    [
+      'Which branches currently create duplicate error messages?',
+      'The invalid-input, missing-record, and dependency-failure branches each build similar messages with slightly different fields.',
+    ],
+    [
+      'What is the smallest safe refactor for those branches?',
+      'Extract a small error-normalization helper and keep each branch responsible only for choosing its error code and context.',
+    ],
+    [
+      'Should the helper change the public error format?',
+      'No. It should preserve the current public fields so callers keep receiving the same status, message, and retry guidance.',
+    ],
+    [
+      'How should validation errors differ from dependency failures?',
+      'Validation errors should identify the invalid field, while dependency failures should state whether retrying later may succeed.',
+    ],
+    [
+      'Which tests prove malformed input still has a useful message?',
+      'Add cases for missing required fields, invalid enum values, and malformed JSON, each asserting the normalized message and code.',
+    ],
+    [
+      'What should the happy-path test cover after the refactor?',
+      'Use a valid request with a stubbed dependency result and assert the successful response is unchanged by the new helper.',
+    ],
+    [
+      'Do we need a regression test for retryable failures?',
+      'Yes. Simulate a temporary dependency timeout and assert the response marks it retryable without exposing implementation details.',
+    ],
+    [
+      'Where should the helper live?',
+      'Keep it beside the module entry point until another consumer needs it; moving it early would widen the change without benefit.',
+    ],
+    [
+      'How can the test names explain the contract?',
+      'Name them after observable behavior, such as “returns a retryable error when the lookup times out,” instead of helper internals.',
+    ],
+    [
+      'What documentation needs updating?',
+      'Add a short README note describing the stable error fields and when callers should retry a request.',
+    ],
+    [
+      'What should we review before merging this work?',
+      'Review the diff for public-message changes, run the focused module tests, then run the broader check if the shared helper changed.',
+    ],
+  ] as const
+  const messages = exchanges.flatMap(([user, assistant], turn) => [
+    {
+      id: `msg-scroll-${String(turn * 2)}`,
+      role: 'user' as const,
+      content: user,
       toolCalls: [],
-      createdAt: Date.now() + i,
-    }
-  })
+      createdAt: Date.now() + turn * 2,
+    },
+    {
+      id: `msg-scroll-${String(turn * 2 + 1)}`,
+      role: 'assistant' as const,
+      content: assistant,
+      toolCalls: [],
+      createdAt: Date.now() + turn * 2 + 1,
+    },
+  ])
 
   mkdirSync(USER_DATA, { recursive: true })
   writeSeedConfig({
@@ -3284,7 +3411,7 @@ export function seedScrollToBottomFixture(workspaceRoot: string): void {
     [`threads:${projectId}`]: [
       {
         id: threadId,
-        title: 'Scroll to bottom test',
+        title: 'Review module error handling',
         status: 'idle',
         messages,
         usage: { inputTokens: 0, outputTokens: 0 },
@@ -3299,17 +3426,64 @@ export function seedScrollToBottomFixture(workspaceRoot: string): void {
 export function seedScrollStreamingFixture(workspaceRoot: string): void {
   const projectId = 'e2e-scroll-stream-project'
   const threadId = 'e2e-scroll-stream-thread'
-  const history = Array.from({ length: 20 }, (_, i) => {
-    const isUser = i % 2 === 0
-    const turn = Math.floor(i / 2) + 1
-    return {
-      id: `msg-history-${i}`,
-      role: isUser ? 'user' : 'assistant',
-      content: isUser ? `Earlier question ${turn}` : `Earlier answer ${turn}: `.repeat(10),
+  const exchanges = [
+    [
+      'Can we map the current error paths before touching the module?',
+      'Yes. Start with the request parser, then trace validation, lookup, and dependency errors through the public response builder.',
+    ],
+    [
+      'Which response fields must stay stable for callers?',
+      'Keep the status, machine-readable code, message, and retry guidance stable so existing clients do not need coordinated changes.',
+    ],
+    [
+      'What makes the error branches difficult to test today?',
+      'Each branch assembles its own message, so tests repeat setup and can miss small differences in the final response shape.',
+    ],
+    [
+      'Would one normalization helper hide useful context?',
+      'Not if callers pass the error code and a small context object; the helper can format common fields while branches retain their specifics.',
+    ],
+    [
+      'How should we test a missing record?',
+      'Stub the lookup to return no record and assert the response is non-retryable, identifies the requested resource, and omits internal paths.',
+    ],
+    [
+      'What is the best test for a transient dependency error?',
+      'Simulate a timeout and assert the returned guidance says the request can be retried while preserving the dependency error code.',
+    ],
+    [
+      'Can the parser tests share fixtures after the refactor?',
+      'They can share request builders, but keep each assertion focused on one observable error contract so failures remain easy to diagnose.',
+    ],
+    [
+      'Should the README list every error code?',
+      'Document the stable fields and retry behavior, then link to the API reference for the complete code list.',
+    ],
+    [
+      'What checks should run before we merge?',
+      'Run the focused module tests first, review the normalized error snapshots, then run the repository check before merging.',
+    ],
+    [
+      'What follow-up would improve this area after the refactor?',
+      'Consider structured error telemetry separately once the response contract is stable and the existing tests cover the main failure modes.',
+    ],
+  ] as const
+  const history = exchanges.flatMap(([user, assistant], turn) => [
+    {
+      id: `msg-history-${String(turn * 2)}`,
+      role: 'user' as const,
+      content: user,
       toolCalls: [],
-      createdAt: Date.now() + i,
-    }
-  })
+      createdAt: Date.now() + turn * 2,
+    },
+    {
+      id: `msg-history-${String(turn * 2 + 1)}`,
+      role: 'assistant' as const,
+      content: assistant,
+      toolCalls: [],
+      createdAt: Date.now() + turn * 2 + 1,
+    },
+  ])
   mkdirSync(USER_DATA, { recursive: true })
   writeSeedConfig({
     projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
@@ -3317,7 +3491,7 @@ export function seedScrollStreamingFixture(workspaceRoot: string): void {
     [`threads:${projectId}`]: [
       {
         id: threadId,
-        title: 'Scroll while streaming',
+        title: 'Plan error-handling tests',
         status: 'idle',
         messages: history,
         usage: { inputTokens: 0, outputTokens: 0 },
@@ -3960,6 +4134,9 @@ export function seedEmptyMcpToolFixture(workspaceRoot: string): void {
 export function seedBrowserToolsFixture(workspaceRoot: string): void {
   const projectId = 'e2e-browser-tools-project'
   const threadId = 'e2e-browser-tools-thread'
+  const screenshot = readFileSync(
+    join(workspaceRoot, 'tests/e2e/fixtures/inline-rollup-prototype.png'),
+  )
   mkdirSync(USER_DATA, { recursive: true })
   writeSeedConfig({
     projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
@@ -4002,7 +4179,18 @@ export function seedBrowserToolsFixture(workspaceRoot: string): void {
                 name: 'browser_screenshot',
                 args: {},
                 status: 'done',
-                result: 'Saved screenshot of tab-1 to /tmp/browser-screenshots/tab-1.png',
+                result:
+                  'Captured a 1280×800 PNG of tab-1 — "Computer Use Demo".\n' +
+                  'Source: http://localhost:3000/\n' +
+                  'Capture handle (thread-scoped and short-lived): capture_11111111-1111-4111-8111-111111111111\n' +
+                  'The screenshot is attached to this tool result.',
+                images: [
+                  {
+                    dataUrl: `data:image/png;base64,${screenshot.toString('base64')}`,
+                    name: 'browser-tab-1.png',
+                    kind: 'screenshot',
+                  },
+                ],
               },
             ],
             createdAt: Date.now(),
@@ -4885,6 +5073,106 @@ export function seedThreadProposalFixture(workspaceRoot: string): {
     ],
   })
   return { projectId, threadId }
+}
+
+/**
+ * Assistant turn with an explicitly published before/after capture. The image
+ * bytes travel through the real thread explode path so the spec exercises the
+ * same content-addressed evidence blobs as a live `present_visual_evidence`
+ * call, rather than a renderer-only test flag.
+ */
+export function seedVisualEvidenceFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-visual-evidence-project'
+  const threadId = 'e2e-visual-evidence-thread'
+  const createdAt = Date.UTC(2026, 8, 22, 11, 30)
+  const screenshotDataUrl = (name: string): string =>
+    `data:image/png;base64,${readFileSync(join(workspaceRoot, 'tests/e2e/screenshots', name)).toString('base64')}`
+  const source = {
+    kind: 'browser' as const,
+    viewId: 'projects-ordering-demo',
+    title: 'Project ordering regression',
+    url: 'https://copse.local/projects',
+  }
+
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Project reorder visual proof',
+        status: 'idle',
+        messages: [
+          {
+            id: 'visual-evidence-user',
+            role: 'user',
+            content: 'Dragging a project leaves it in the old position. Can you fix and verify it?',
+            toolCalls: [],
+            createdAt,
+          },
+          {
+            id: 'visual-evidence-assistant',
+            role: 'assistant',
+            content:
+              'Fixed the reorder path. The capture below shows Gamma moving above Alpha while the active thread remains selected.',
+            toolCalls: [
+              {
+                id: 'visual-evidence-tool-call',
+                name: 'present_visual_evidence',
+                args: {
+                  caption: 'Project order updates immediately after the drag',
+                  captures: [
+                    { handle: 'expired-before', label: 'Before' },
+                    { handle: 'expired-after', label: 'After' },
+                  ],
+                },
+                status: 'done',
+                result: 'Published a before/after visual evidence card.',
+              },
+            ],
+            visualEvidence: [
+              {
+                id: 'visual-evidence-comparison',
+                toolCallId: 'visual-evidence-tool-call',
+                kind: 'comparison',
+                caption: 'Project order updates immediately after the drag',
+                createdAt: createdAt + 4_000,
+                assets: [
+                  {
+                    id: 'visual-evidence-before',
+                    label: 'Before',
+                    mimeType: 'image/png',
+                    width: 480,
+                    height: 1520,
+                    capturedAt: createdAt + 1_000,
+                    dataUrl: screenshotDataUrl('projects-drag-before.png'),
+                    source,
+                  },
+                  {
+                    id: 'visual-evidence-after',
+                    label: 'After',
+                    mimeType: 'image/png',
+                    width: 480,
+                    height: 1520,
+                    capturedAt: createdAt + 3_000,
+                    dataUrl: screenshotDataUrl('projects-drag-after.png'),
+                    source,
+                  },
+                ],
+              },
+            ],
+            createdAt: createdAt + 5_000,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt,
+        updatedAt: createdAt + 5_000,
+      },
+    ],
+  })
+  seedE2eViewport({ width: 1280, height: 800 }, { theme: 'dark' })
 }
 
 /** Isolated Apple Development profile with retained operation history for visual evaluation. */

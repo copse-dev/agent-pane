@@ -1,3 +1,4 @@
+import { installMockScenario } from './helpers/mock-scenario.ts'
 import { $, browser, expect } from '@wdio/globals'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -163,19 +164,48 @@ describe('starting a proposed thread in an isolated checkout', () => {
 
   it('starts the mock agent only after creating the worktree', async () => {
     await $('.thread-proposal-start').waitForDisplayed({ timeout: 10_000 })
+    await installMockScenario(
+      {
+        title: 'Config loader guard',
+        turns: [
+          {
+            user: { includes: 'config' },
+            responses: [{ text: 'The config loader guard is ready for review.' }],
+          },
+        ],
+      },
+      null,
+    )
     await $('.thread-proposal-start').click()
     await $('.messages-list .msg-user').waitForDisplayed({ timeout: 30_000 })
     await browser.waitUntil(
       async () =>
         browser.execute(() =>
           [...document.querySelectorAll('.msg-assistant .message-text')].some((message) =>
-            message.textContent?.includes('Mock response to:'),
+            message.textContent?.includes('The config loader guard is ready for review.'),
           ),
         ),
       { timeout: 30_000, timeoutMsg: 'the isolated proposal did not reach the mock agent' },
     )
     await waitForAgentIdle()
-    await $('.chat-row*=Config loader guard').click()
+    // Progress refreshes can replace the source thread's sidebar row between
+    // WebDriver's lookup and click. Retry only that stale-node race, always
+    // resolving a fresh row; any other click failure remains a real failure.
+    await browser.waitUntil(
+      async () => {
+        try {
+          await $('.chat-row*=Config loader guard').click()
+          return true
+        } catch (error) {
+          if (error instanceof Error && /stale element/i.test(error.message)) return false
+          throw error
+        }
+      },
+      {
+        timeout: 10_000,
+        timeoutMsg: 'the proposal source thread did not stay clickable after the agent stopped',
+      },
+    )
     await expect($('.thread-proposal')).toHaveAttribute('data-proposal-status', 'started')
     await expect($('.thread-proposal-state')).toHaveText(expect.stringContaining('Thread started'))
     // Returning to the source can rehydrate and replace its card. Capture the

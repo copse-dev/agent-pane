@@ -282,8 +282,8 @@ write into chat store rejected); `file-tools.test.ts` read/list on a fake
 chat-store root; permission tests confirming write tools reject it.
 
 Exit: with a seeded thread dir, `read_file`/`list_dir`/`search_code` work on
-it end-to-end (drive via mock-LLM `[[mcp:read_file {…}]]` directive in an e2e
-spec); `write_file` to the same path is refused.
+it end-to-end (register a conversation scenario that calls `read_file`, then
+submit an ordinary request in an e2e spec); `write_file` to the same path is refused.
 
 ---
 

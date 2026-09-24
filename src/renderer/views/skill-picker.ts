@@ -6,7 +6,7 @@ import { clear } from '../dom/helpers.ts'
  * Index of the `/` that opens the slash-command query for `cursor`, or -1.
  *
  * The slash must start the whitespace-delimited token the cursor sits in — the
- * same `(?:^|\s)/name` boundary `resolveSkillInvocation` accepts. A bare
+ * same `(?:^|\s)/name` boundary `resolveInvocation` accepts. A bare
  * "nearest slash behind the cursor" scan fires mid-word, so `grep ~/.blah`
  * popped the picker on the path separator, and `/x/y/z` restarted the query at
  * every segment. Anchoring on the token start leaves `/x/y/z` querying
@@ -34,7 +34,13 @@ export interface SkillPickerOptions {
   listInvocables: () => Promise<InvocableEntry[]>
 }
 
-export function initSkillPicker(opts: SkillPickerOptions): () => void {
+export interface SkillPickerController {
+  /** Invalidate discovery results and refresh the active slash query, if any. */
+  refresh(): void
+  destroy(): void
+}
+
+export function initSkillPicker(opts: SkillPickerOptions): SkillPickerController {
   const { input, inputBar, listInvocables } = opts
 
   const picker = document.createElement('div')
@@ -47,16 +53,24 @@ export function initSkillPicker(opts: SkillPickerOptions): () => void {
   let selectedIdx = 0
   let currentSkills: InvocableEntry[] = []
   let allSkills: InvocableEntry[] | null = null
+  let skillsRevision = 0
+  let pickerRequest = 0
 
   async function ensureSkills(): Promise<InvocableEntry[]> {
-    allSkills ??= await listInvocables()
-    return allSkills
+    if (allSkills) return allSkills
+    const revision = skillsRevision
+    const skills = await listInvocables()
+    // Discovery can finish while an earlier list request is in flight. Never
+    // repopulate the cache with that stale snapshot; join the fresh generation
+    // instead.
+    if (revision !== skillsRevision) return ensureSkills()
+    allSkills = skills
+    return skills
   }
 
-  function filterSkills(query: string): InvocableEntry[] {
-    const skills = allSkills ?? []
+  function filterSkills(query: string, skills: readonly InvocableEntry[]): InvocableEntry[] {
     const q = query.toLowerCase()
-    if (!q) return skills
+    if (!q) return [...skills]
     const matched = skills.filter(
       (skill) =>
         skill.name.toLowerCase().includes(q) || skill.description.toLowerCase().includes(q),
@@ -108,8 +122,11 @@ export function initSkillPicker(opts: SkillPickerOptions): () => void {
   }
 
   async function updatePicker(query: string): Promise<void> {
-    await ensureSkills()
-    currentSkills = filterSkills(query)
+    const request = ++pickerRequest
+    const skills = await ensureSkills()
+    // A later keystroke, dismissal, or discovery event owns the picker now.
+    if (request !== pickerRequest) return
+    currentSkills = filterSkills(query, skills)
     renderPicker()
   }
 
@@ -130,8 +147,21 @@ export function initSkillPicker(opts: SkillPickerOptions): () => void {
   }
 
   function hidePicker(): void {
+    pickerRequest++
     picker.hidden = true
     slashStart = -1
+  }
+
+  function refreshOpenPicker(): void {
+    const val = input.value
+    const cursor = input.selectionStart
+    const slashIdx = findSkillTriggerIndex(val, cursor)
+    if (slashIdx === -1) {
+      hidePicker()
+      return
+    }
+    slashStart = slashIdx
+    void updatePicker(val.slice(slashIdx + 1, cursor))
   }
 
   function updateSelection(): void {
@@ -193,12 +223,23 @@ export function initSkillPicker(opts: SkillPickerOptions): () => void {
     if (!picker.contains(e.target instanceof Node ? e.target : null)) hidePicker()
   })
 
-  window.addEventListener('copse:skills-changed', () => {
+  function handleSkillsChanged(): void {
+    skillsRevision++
     allSkills = null
-  })
+    // The event can arrive after the user has already typed a slash query. A
+    // cache clear alone leaves the open picker empty until they type again;
+    // immediately re-run the current query against the discovered registry.
+    if (slashStart !== -1) refreshOpenPicker()
+  }
 
-  return () => {
-    hidePicker()
-    allSkills = null
+  window.addEventListener('copse:skills-changed', handleSkillsChanged)
+
+  return {
+    refresh: handleSkillsChanged,
+    destroy(): void {
+      window.removeEventListener('copse:skills-changed', handleSkillsChanged)
+      hidePicker()
+      allSkills = null
+    },
   }
 }

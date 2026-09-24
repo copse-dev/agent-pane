@@ -2,12 +2,15 @@ import { z } from 'zod'
 import { getActiveRunThread } from '../services/thread-models.ts'
 import { defineTool } from '@shared/types'
 import { getBrowserSession } from '../services/browser/session-manager.ts'
+import { requireThreadExecutionOwner } from '../services/thread-execution-context.ts'
+import { createBrowserCaptureHandle } from '../services/visual-evidence/capture-handle-store.ts'
 import {
   getStaticPreviewServer,
   staticPreviewUrl,
 } from '../services/browser/static-preview-server.ts'
 import { getAgentExecutionRoot } from '../services/execution-root.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
+import { presentVisualEvidenceTool } from './visual-evidence-tools.ts'
 
 export const browserNavigateTool = defineTool({
   name: 'browser_navigate',
@@ -62,14 +65,42 @@ export const browserSnapshotTool = defineTool({
 
 export const browserScreenshotTool = defineTool({
   name: 'browser_screenshot',
+  provenance: 'external',
   description:
-    'Capture a PNG screenshot of the current page. Returns the saved file path (useful for visual/layout checks).',
+    'Capture a PNG screenshot of the current page and inspect the pixels directly. Returns the image plus an opaque, short-lived handle scoped to this thread; the handle is not a filesystem path.',
   parameters: z.object({
     viewId: z.string().optional().describe('Target tab id (defaults to the last used tab)'),
   }),
   async execute({ viewId }) {
-    const { path, viewId: id } = await getBrowserSession().screenshot(viewId)
-    return `Saved screenshot of ${id} to ${path}`
+    const screenshot = await getBrowserSession().screenshot(viewId)
+    const handle = createBrowserCaptureHandle(requireThreadExecutionOwner(), {
+      source: {
+        kind: 'browser',
+        viewId: screenshot.viewId,
+        title: screenshot.title,
+        url: screenshot.url,
+      },
+      capturedAt: screenshot.capturedAt,
+      width: screenshot.width,
+      height: screenshot.height,
+      bytes: screenshot.png,
+    })
+    const title = screenshot.title.trim() ? ` — ${JSON.stringify(screenshot.title)}` : ''
+    return {
+      result: [
+        `Captured a ${String(screenshot.width)}×${String(screenshot.height)} PNG of ${screenshot.viewId}${title}.`,
+        `Source: ${screenshot.url || '(blank page)'}`,
+        `Capture handle (thread-scoped and short-lived): ${handle.id}`,
+        'The screenshot is attached to this tool result.',
+      ].join('\n'),
+      images: [
+        {
+          dataUrl: `data:image/png;base64,${screenshot.png.toString('base64')}`,
+          name: `browser-${screenshot.viewId}.png`,
+          kind: 'screenshot',
+        },
+      ],
+    }
   },
 })
 
@@ -185,6 +216,7 @@ export const browserTools = [
   browserTypeTool,
   browserTabsTool,
   browserShowTool,
+  presentVisualEvidenceTool,
 ]
 
 export function registerBrowserTools(registry: ToolRegistry): void {
@@ -196,4 +228,5 @@ export function registerBrowserTools(registry: ToolRegistry): void {
   registry.register(browserTypeTool)
   registry.register(browserTabsTool)
   registry.register(browserShowTool)
+  registry.register(presentVisualEvidenceTool)
 }

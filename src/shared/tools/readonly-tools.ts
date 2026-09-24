@@ -41,6 +41,9 @@ export const READONLY_AGENT_TOOLS = new Set<string>([
   'read_terminal',
   // Reading stills out of a video decodes in a hidden window and writes nothing.
   'video_frames',
+  // Publishing a capture already scoped to this thread changes no workspace or
+  // external state; it only adds explicit proof to the assistant response.
+  'present_visual_evidence',
 ])
 
 export const READONLY_MODE_BLOCK_MESSAGE =

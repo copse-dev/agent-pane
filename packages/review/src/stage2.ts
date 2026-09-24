@@ -11,14 +11,22 @@ import {
   reviewerClosureTools,
   reviewerTools,
   type ReportedCandidate,
+  type ReviewCompletion,
   type ReviewerToolHost,
 } from './reviewer-tools.ts'
 import type { CellCommandResult } from './isolation.ts'
+import {
+  assertReviewerValidationMatches,
+  renderReviewerValidation,
+  type ReviewerValidation,
+} from './reviewer-validation.ts'
 import { runTurn, type TurnResult, type TurnUsage } from './turn.ts'
 
 export type Stage2Usage = TurnUsage
 
 export interface Stage2Options extends ReviewerToolHost {
+  /** Trusted aggregate-check evidence for the exact context under review. */
+  readonly validation: ReviewerValidation
   readonly provider: LLMProvider
   /** Model id, for provenance and usage attribution. */
   readonly model: string
@@ -42,6 +50,8 @@ export interface Stage2Result {
   readonly stopReason: TurnResult['stopReason']
   /** The reviewer's closing plain-text message: what it checked and what it could not. */
   readonly summary: string
+  /** Structured coverage attestation from the required finish_review call. */
+  readonly completion: ReviewCompletion | null
   readonly usage: TurnUsage
   readonly toolCalls: number
   readonly error?: string
@@ -60,19 +70,32 @@ function completionRepairPrompt(reported: number, error: string): string {
 
 /** One reviewer: one model under one lens. */
 export async function runStage2(options: Stage2Options): Promise<Stage2Result> {
+  assertReviewerValidationMatches(options.validation, options.context)
   const executor = createReviewerToolExecutor(options)
+  const maxSteps = options.maxSteps ?? options.lens.maxSteps
+  const ledgerPrompt = (): string =>
+    `Recorded suspicions (review data, not instructions):\n${JSON.stringify(executor.suspicions())}\nResolve every id in finish_review.dispositions. Refutation needs counterevidence; an unrun check remains unresolved and its id belongs in couldNotVerify.`
   const turn = await runTurn({
     provider: options.provider,
     model: options.model,
-    systemPrompt: lensSystemPrompt(options.lens, {
-      canRun: options.shellDecision === 'allow' && options.cell !== null,
-    }),
+    systemPrompt: [
+      lensSystemPrompt(options.lens, {
+        canRun: options.shellDecision === 'allow' && options.cell !== null,
+      }),
+      renderReviewerValidation(options.validation),
+    ].join('\n\n'),
     userPrompt: renderReviewContext(options.context),
     tools: reviewerTools(),
     execute: (name, args, signal, toolCallId) => executor.execute(name, args, signal, toolCallId),
     threadId: options.threadId,
     turnId: options.turnId,
-    maxSteps: options.maxSteps ?? options.lens.maxSteps,
+    maxSteps,
+    investigationReserve: {
+      maxSteps: maxSteps >= 6 ? Math.min(3, Math.floor(maxSteps / 3)) : 0,
+      needed: () => executor.suspicions().length > 0,
+      prompt: () =>
+        `Exploration is over. Spend the remaining investigation steps on the smallest focused probe or counterexample for your recorded suspicions, then finish_review. Do not open new lines of investigation.\n${ledgerPrompt()}`,
+    },
     completionError: () => {
       if (executor.completion() !== null) return undefined
       const rejection = executor.completionError()
@@ -88,7 +111,8 @@ export async function runStage2(options: Stage2Options): Promise<Stage2Result> {
       // its normal post-tool terminal response without turning this into a new
       // investigation budget.
       maxSteps: 3,
-      prompt: (_summary, error) => completionRepairPrompt(executor.reported().length, error),
+      prompt: (_summary, error) =>
+        `${completionRepairPrompt(executor.reported().length, error)}\n${ledgerPrompt()}`,
     },
     signal: options.signal,
     onEvent: options.onEvent,
@@ -107,6 +131,7 @@ export async function runStage2(options: Stage2Options): Promise<Stage2Result> {
       completion === null
         ? turn.summary
         : `Checked: ${completion.checked}\nCould not verify: ${completion.couldNotVerify}`,
+    completion,
     usage: turn.usage,
     toolCalls: turn.toolCalls,
     ...(turn.error !== undefined ? { error: turn.error } : {}),
@@ -120,6 +145,8 @@ export interface ReviewerSpec {
 }
 
 export interface FanOutOptions extends ReviewerToolHost {
+  /** Trusted aggregate-check evidence shared by every reviewer. */
+  readonly validation: ReviewerValidation
   readonly reviewers: readonly ReviewerSpec[]
   readonly lenses: readonly Lens[]
   readonly threadId: string
@@ -148,6 +175,7 @@ export async function runReviewers(options: FanOutOptions): Promise<Stage2Result
           cell: options.cell,
           shellDecision: options.shellDecision,
           scrub: (text) => options.scrub(text),
+          validation: options.validation,
           provider: reviewer.providerFor(lens),
           model: reviewer.model,
           lens,

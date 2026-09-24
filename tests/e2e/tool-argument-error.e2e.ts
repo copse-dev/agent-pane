@@ -1,7 +1,8 @@
+import { submitComposer } from './helpers/composer.ts'
+import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { waitForAgentIdle } from './helpers.ts'
-import { setComposerValue } from './helpers/composer.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 
 describe('tool argument error guidance', () => {
@@ -22,8 +23,12 @@ describe('tool argument error guidance', () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     // Exercise the real registry and agent-loop error path with the reported
     // smaller-model mistake: a todo missing its required content field.
-    await setComposerValue('[[mcp:update_todos {"todos":[{"status":"pending"}]}]]')
-    await $('.submit-btn').click()
+    await prepareMockToolTurn(
+      'Add a pending task to the plan.',
+      { name: 'update_todos', args: { todos: [{ status: 'pending' }] } },
+      'The task needs a description before it can be added.',
+    )
+    await submitComposer()
     await waitForAgentIdle(30_000)
 
     const rollup = $('.tool-card-rollup[data-status="error"]')

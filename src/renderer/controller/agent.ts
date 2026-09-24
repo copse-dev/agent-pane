@@ -6,6 +6,7 @@ import {
   appendReasoning,
   appendAcpContentBlock,
   addMessageCanvasArtefact,
+  addMessageVisualEvidence,
   addToolCall,
   updateToolCall,
   findToolCall,
@@ -349,6 +350,17 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         activity(threadId)
         break
       }
+      case 'visual_evidence': {
+        // Evidence is durable assistant-owned output: never guess its owner.
+        // The loop emits this only after the publishing tool_call, so a missing
+        // call means the event is stale or malformed and must not migrate onto
+        // whichever message happens to be live.
+        const ownerId = findToolCallOwner(store, threadId, chunk.toolCallId)
+        if (ownerId) {
+          addMessageVisualEvidence(store, ownerId, chunk.toolCallId, chunk.evidence)
+        }
+        break
+      }
       case 'tool_result': {
         // Same ownership rule as `tool_call_update`: the result belongs to the
         // message that holds the call, which is not always the one streaming.
@@ -359,6 +371,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
             result: chunk.result,
             ...(chunk.editStats ? { editStats: chunk.editStats } : {}),
             ...(chunk.resultFormat ? { resultFormat: chunk.resultFormat } : {}),
+            ...(chunk.images ? { images: chunk.images } : {}),
           })
           if (chunk.toolCallId && !chunk.isError) {
             const toolCall = findToolCall(store, ownerId, chunk.toolCallId)
@@ -497,6 +510,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
             status: chunk.isError ? 'error' : 'done',
             result: chunk.result,
             ...(chunk.editStats ? { editStats: chunk.editStats } : {}),
+            ...(chunk.images ? { images: chunk.images } : {}),
           })
         }
         activity(threadId)

@@ -39,8 +39,13 @@ function makeFixtureWritable(path: string): void {
 it(
   'does not grant a fake home-style go wrapper access to its grandparent',
   { skip: process.platform === 'win32' },
-  async () => {
+  async (t) => {
     const parent = realpathSync(mkdtempSync(join(tmpdir(), 'fake-go-home-test-')))
+    // Same reason as the locked-module fixture below: setup runs before the
+    // try, so only a hook tied to the directory itself always removes it.
+    t.after(() => {
+      rmSync(parent, { recursive: true, force: true })
+    })
     const root = join(parent, 'project')
     const fakeHome = join(parent, 'fake-home')
     const outside = join(parent, 'outside')
@@ -93,7 +98,6 @@ it(
     } finally {
       setProjectSandboxEnabled(false)
       await SandboxManager.reset()
-      rmSync(parent, { recursive: true, force: true })
     }
   },
 )
@@ -110,6 +114,15 @@ it(
       return
     }
     const parent = realpathSync(mkdtempSync(join(tmpdir(), 'go-preparation-test-')))
+    // Registered against the temporary directory itself, not the try/finally
+    // below: `go mod tidy` populates a read-only module cache under `parent`
+    // during setup, so a failure before the body is reached would otherwise
+    // strand it. When this fixture runs inside a review cell's own tmp, that
+    // stranded tree is what later fails the cell's cleanup with EACCES (#2945).
+    t.after(() => {
+      makeFixtureWritable(parent)
+      rmSync(parent, { recursive: true, force: true })
+    })
     const root = join(parent, 'project')
     const proxy = join(root, 'proxy', 'example.test', 'dep', '@v')
     mkdirSync(proxy, { recursive: true })
@@ -279,10 +292,6 @@ try{fs.writeFileSync('project-write','bad');console.log('project:writable')}catc
     } finally {
       setProjectSandboxEnabled(false)
       await SandboxManager.reset()
-      // Go deliberately makes extracted module-cache inputs read-only. Restore
-      // fixture ownership bits before removing the disposable profile.
-      makeFixtureWritable(parent)
-      rmSync(parent, { recursive: true, force: true })
     }
   },
 )

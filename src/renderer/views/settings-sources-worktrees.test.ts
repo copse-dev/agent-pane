@@ -436,7 +436,7 @@ describe('settings sources → worktrees list', () => {
     assert.equal(all.checked, false)
   })
 
-  it('cleans selected worktrees with one preview and only remeasures affected rows', async () => {
+  it('cleans selected worktrees without a preview pass and only remeasures affected rows', async () => {
     const entries = [entry(), entry({ path: '/w/second' }), entry({ path: '/w/untouched' })]
     const projectCalls: string[] = []
     const sizeCalls: string[] = []
@@ -462,11 +462,10 @@ describe('settings sources → worktrees list', () => {
     checkboxes[1]?.click()
     document.querySelector<HTMLButtonElement>('#sources-worktrees-cleanup')?.click()
     await flush()
-    assert.equal(cleanupCalls.length, 2)
-    assert.ok(cleanupCalls.every((call) => !call.remove))
-    assert.match(
-      document.querySelector('.confirm-dialog-message')?.textContent ?? '',
-      /2 package directories from 2 worktrees/,
+    assert.equal(cleanupCalls.length, 0, 'bulk confirmation does not wait for a preview scan')
+    assert.equal(
+      document.querySelector('.confirm-dialog-message')?.textContent,
+      'Clean up package directories in 2 worktrees?',
     )
     assert.equal(
       document.querySelector<HTMLSelectElement>('#storage-project-select')?.disabled,
@@ -478,6 +477,7 @@ describe('settings sources → worktrees list', () => {
       cleanupCalls.filter((call) => call.remove).map((call) => call.path),
       entries.slice(0, 2).map((item) => item.path),
     )
+    assert.ok(cleanupCalls.every((call) => call.remove))
     assert.deepEqual(projectCalls, ['project-1'])
     assert.deepEqual(sizeCalls, [
       ...entries.map((item) => item.path),
@@ -574,12 +574,10 @@ describe('settings sources → worktrees list', () => {
     document.querySelector<HTMLInputElement>('#sources-worktrees-select-all')?.click()
     document.querySelector<HTMLButtonElement>('#sources-worktrees-cleanup')?.click()
     await flush()
+    assert.equal(calls.length, 0, 'cancelling the immediate confirmation starts no scans')
     clickActiveConfirmDialogCancel()
     await flush()
-    assert.ok(
-      calls.every((call) => !call.remove),
-      'cancel removes no packages',
-    )
+    assert.equal(calls.length, 0, 'cancel removes no packages')
     document.querySelector<HTMLButtonElement>('#sources-worktrees-cleanup')?.click()
     await flush()
     clickActiveConfirmDialogConfirm()
@@ -600,7 +598,71 @@ describe('settings sources → worktrees list', () => {
     )
   })
 
-  it('does not overwrite the cleaned size with an older in-flight measurement', async () => {
+  it('shows queued and active cleanup states while the first selected checkout is still running', async () => {
+    const entries = [entry(), entry({ path: '/w/second' })]
+    let finishFirst: (result: WorktreePackageCleanupResult) => void = () => {
+      throw new Error('cleanup not started')
+    }
+    const base = stubApi(entries)
+    const api: ApiClient = {
+      ...base,
+      worktrees: {
+        ...base.worktrees,
+        cleanupPackages: (_projectId, path, remove) => {
+          assert.equal(remove, true, 'bulk cleanup skips the all-worktree preview pass')
+          if (path === entries[0]?.path) {
+            return new Promise((resolve) => {
+              finishFirst = resolve
+            })
+          }
+          return Promise.resolve({
+            status: 'cleaned',
+            path,
+            directories: [{ path: 'node_modules', bytes: 1024, truncated: false }],
+            bytes: 1024,
+            truncated: false,
+          })
+        },
+      },
+    }
+    const list = await openWorktrees(api)
+    document.querySelector<HTMLInputElement>('#sources-worktrees-select-all')?.click()
+    document.querySelector<HTMLButtonElement>('#sources-worktrees-cleanup')?.click()
+    await flush()
+    clickActiveConfirmDialogConfirm()
+    await flush()
+
+    const rows = [...list.querySelectorAll<HTMLElement>('.sources-row')]
+    assert.equal(rows[0]?.dataset['cleanupState'], 'cleaning')
+    assert.equal(rows[1]?.dataset['cleanupState'], 'pending')
+    assert.equal(rows[0].querySelector('.sources-worktree-cleanup-btn')?.textContent, 'Cleaning…')
+    assert.equal(rows[1].querySelector('.sources-worktree-cleanup-btn')?.textContent, 'Pending…')
+    assert.equal(
+      document.querySelector('#sources-worktrees-cleanup')?.textContent,
+      'Cleaning 1 of 2…',
+    )
+    assert.match(
+      document.getElementById('sources-worktrees-status')?.textContent ?? '',
+      /Cleaning 1 of 2/,
+    )
+
+    finishFirst({
+      status: 'cleaned',
+      path: entries[0]?.path ?? '',
+      directories: [{ path: 'node_modules', bytes: 1024, truncated: false }],
+      bytes: 1024,
+      truncated: false,
+    })
+    await flush()
+    assert.equal(rows[0].dataset['cleanupState'], undefined)
+    assert.equal(rows[1].dataset['cleanupState'], undefined)
+    assert.match(
+      document.getElementById('sources-worktrees-status')?.textContent ?? '',
+      /Cleaned up 2 directories/,
+    )
+  })
+
+  it('starts cleanup during an in-flight size walk, then ignores that stale measurement', async () => {
     const base = stubApi([entry()])
     let resolveOld: (result: WorktreeSizeResult) => void = () => {
       throw new Error('measurement not started')
@@ -632,10 +694,15 @@ describe('settings sources → worktrees list', () => {
     await flush()
     clickActiveConfirmDialogConfirm()
     await flush()
-    const cleanedSize = list.querySelector('.sources-worktree-size')?.textContent
+    assert.equal(sizeCalls, 1, 'cleanup does not wait for or duplicate the active size walk')
+    assert.equal(
+      list.querySelector('.sources-worktree-size')?.textContent,
+      'sizing…',
+      'the cleaned footprint remains visibly pending',
+    )
     resolveOld({ path: entry().path, bytes: 1024 * 1024, fileCount: 2, truncated: false })
     await flush()
-    assert.equal(list.querySelector('.sources-worktree-size')?.textContent, cleanedSize)
+    assert.equal(list.querySelector('.sources-worktree-size')?.textContent, '1.0 KB')
     assert.equal(sizeCalls, 2)
   })
 })

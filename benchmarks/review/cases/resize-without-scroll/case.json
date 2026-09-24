@@ -1,0 +1,37 @@
+{
+  "id": "resize-without-scroll",
+  "description": "kick deduplicates solely by scroll offset, so repeated resize notifications at the same offset never update viewport dimensions. Reduced from copse-dev/agent-pane PR #3003; this synthetic fixture is not a replay of the full app.",
+  "truth": [
+    {
+      "id": "resize-without-scroll",
+      "class": "contract",
+      "anchors": [
+        {
+          "path": "src/state.cjs",
+          "startLine": 6,
+          "endLine": 6
+        }
+      ],
+      "claimSignals": [
+        [
+          "resize",
+          "resizing"
+        ],
+        [
+          "scroll",
+          "offset"
+        ],
+        [
+          "viewBox",
+          "viewport"
+        ],
+        [
+          "stale",
+          "unchanged",
+          "update"
+        ]
+      ],
+      "note": "kick deduplicates solely by scroll offset, so repeated resize notifications at the same offset never update viewport dimensions."
+    }
+  ]
+}

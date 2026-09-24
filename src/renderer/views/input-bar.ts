@@ -46,7 +46,6 @@ import {
   initMentionPicker,
   relativeDate,
   shellIcon,
-  threadIcon,
   type AttachedShellRef,
   type AttachedThreadRef,
 } from './mention-picker.ts'
@@ -230,6 +229,34 @@ export function mountInputBar(
     branchWarningText,
     checkoutBranchBtn,
     continueBranchBtn,
+  )
+  const dirtyWarningText = el(
+    'span',
+    { class: 'composer-dirty-warning-text' },
+    'This checkout has uncommitted changes. Work will run on top of them.',
+  )
+  const useWorktreeBtn = el(
+    'button',
+    { type: 'button', class: 'composer-dirty-worktree-btn' },
+    'Use an isolated worktree',
+  )
+  const sendDirtyAnywayBtn = el(
+    'button',
+    { type: 'button', class: 'composer-dirty-send-btn' },
+    'Send anyway',
+  )
+  // Shown once, before the first message of a thread that is about to commit
+  // to the shared checkout while it is dirty (#2503). The shared checkout is
+  // the user's own working copy, so a turn starting on top of uncommitted
+  // changes can tangle with or clobber them; an isolated worktree starts
+  // clean from the same commit instead.
+  const dirtyWarning = el(
+    'div',
+    { class: 'composer-dirty-warning', role: 'status', 'aria-live': 'polite', hidden: '' },
+    el('span', { class: 'composer-dirty-warning-icon', 'aria-hidden': 'true' }, '!'),
+    dirtyWarningText,
+    useWorktreeBtn,
+    sendDirtyAnywayBtn,
   )
   const imageCompatibilityText = el('span', { class: 'composer-image-warning-text' })
   const useImageModelBtn = el(
@@ -635,6 +662,7 @@ export function mountInputBar(
     guardedYolo.element,
     containerRun.element,
     branchWarning,
+    dirtyWarning,
     checkoutError,
     imageCompatibilityWarning,
     contextFitWarning,
@@ -700,6 +728,10 @@ export function mountInputBar(
   let descriptionModels: ModelOption[] = []
   let descriptionPicker: ModelPicker | null = null
   const checkoutChoices = new Map<string, ThreadWorktreeChoice>()
+  // Threads whose dirty-checkout advisory (#2503) the user has already acted
+  // on — either action counts as "acted on" so a retried first send (e.g.
+  // after a failed checkout) does not re-ask.
+  const dirtyWarningAcknowledged = new Set<string>()
   let checkoutPreparationInProgress = false
   let automaticCheckoutMode: 'shared' | 'worktree' = 'shared'
   let automaticCheckoutPreviewSeq = 0
@@ -1036,6 +1068,7 @@ export function mountInputBar(
     }))
   let mismatchBranch: string | null = null
   let checkoutInProgress = false
+  let dirtyWarningThreadId: string | null = null
   let lastBreakdown: ContextBreakdown | null = null
   // Model the last estimate was computed for. The context-fit warning quotes a
   // window and a model name together, so it must not pair a fresh selection with
@@ -1114,22 +1147,34 @@ export function mountInputBar(
     archives: ArchiveAttachmentRef[]
     threads: AttachedThreadRef[]
     shells: AttachedShellRef[]
+    /** Expanded draft text with U+FFFC slots retained only for thread chips. */
+    threadDraftValue: string | null
   }
 
   const draftAttachmentsByThread = new Map<string, DraftAttachments>()
 
   function emptyDraftAttachments(): DraftAttachments {
-    return { files: [], images: [], videos: [], archives: [], threads: [], shells: [] }
+    return {
+      files: [],
+      images: [],
+      videos: [],
+      archives: [],
+      threads: [],
+      shells: [],
+      threadDraftValue: null,
+    }
   }
 
   function snapshotDraftAttachments(): DraftAttachments {
+    const threads = attachedThreads.map((thread) => ({ ...thread }))
     return {
       files: attachedFiles.map((file) => ({ ...file })),
       images: attachedImages.map((image) => ({ ...image })),
       videos: attachedVideos.map((video) => ({ ...video })),
       archives: attachedArchives.map((archive) => ({ ...archive })),
-      threads: attachedThreads.map((thread) => ({ ...thread })),
+      threads,
       shells: attachedShells.map((shell) => ({ ...shell })),
+      threadDraftValue: threads.length > 0 ? composer.draftValue() : null,
     }
   }
 
@@ -1160,6 +1205,9 @@ export function mountInputBar(
     for (const archive of snapshot.archives) renderArchiveChip(archive)
     for (const thread of snapshot.threads) addThreadChip(thread)
     for (const shell of snapshot.shells) addShellChip(shell)
+    // `draftPrompt` expands paste blocks and omits thread references. Once the
+    // thread chips exist again, rebind them to their remembered sentence slots.
+    if (snapshot.threadDraftValue !== null) composer.value = snapshot.threadDraftValue
   }
 
   /**
@@ -1207,6 +1255,7 @@ export function mountInputBar(
     activeComposerThreadId = id
     if (id) restoreDraftAttachments(id)
     hideCheckoutError()
+    hideDirtyWarning()
     // New thread → drop the prior thread's estimate and recompute for this one.
     lastBreakdown = null
     breakdownModel = null
@@ -1310,6 +1359,16 @@ export function mountInputBar(
     checkoutBranchBtn.disabled = false
     checkoutBranchBtn.textContent = 'Check out'
     continueBranchBtn.disabled = false
+  }
+
+  function showDirtyWarning(threadId: string): void {
+    dirtyWarningThreadId = threadId
+    dirtyWarning.hidden = false
+  }
+
+  function hideDirtyWarning(): void {
+    dirtyWarningThreadId = null
+    dirtyWarning.hidden = true
   }
 
   function updateQueueIndicator(): void {
@@ -1607,6 +1666,26 @@ export function mountInputBar(
       })
   })
 
+  // Switch this (still-blank) thread to an isolated worktree and send: the
+  // worktree starts clean from the current commit, so the dirty shared
+  // checkout is no longer in the loop.
+  useWorktreeBtn.addEventListener('click', () => {
+    const id = dirtyWarningThreadId
+    if (!id) return
+    dirtyWarningAcknowledged.add(id)
+    hideDirtyWarning()
+    selectCheckout('worktree')
+    void submit()
+  })
+
+  sendDirtyAnywayBtn.addEventListener('click', () => {
+    const id = dirtyWarningThreadId
+    if (!id) return
+    dirtyWarningAcknowledged.add(id)
+    hideDirtyWarning()
+    void submit()
+  })
+
   function isAutocompletePickerOpen(): boolean {
     return root.querySelector('.mention-picker:not([hidden])') !== null
   }
@@ -1673,9 +1752,9 @@ export function mountInputBar(
     followUps.clearSuggestions()
     nextStepHint.clear()
     updateComposerPlaceholder()
-    // Visible text keeps chips as single placeholder chars (for the transcript
-    // display); the expanded text inlines each chip's fenced block in place and
-    // is what actually gets sent.
+    // Visible text keeps chips as single placeholder chars for the transcript.
+    // The agent-facing text expands pasted blocks and restores each referenced
+    // thread's label at its sentence position; structured refs still carry IDs.
     const visibleText = composer.value.trim()
     const rawText = composer.expandedValue().trim()
     if (
@@ -1745,6 +1824,42 @@ export function mountInputBar(
       return
     }
     hideBranchMismatch()
+
+    // Before the first message commits a blank thread's checkout (#2503): warn
+    // when that commitment would land on the shared checkout while it has
+    // uncommitted changes. The shared checkout is the developer's own working
+    // copy, so a turn starting on top of it can tangle with or clobber
+    // whatever is uncommitted there; an isolated worktree starts clean from
+    // the same commit instead, so it never needs this warning. Any later
+    // message in the thread — and any thread that already committed a
+    // checkout — skips this entirely, and `dirtyWarningAcknowledged` remembers
+    // an action for the rest of this thread's first send so a retry (e.g.
+    // after a failed checkout) does not re-ask.
+    const isBlankSharedCandidate =
+      thread !== undefined && thread.messages.length === 0 && !thread.worktreeChoice
+    if (isBlankSharedCandidate && !dirtyWarningAcknowledged.has(id)) {
+      const choice = checkoutChoice(id)
+      const effectiveCheckoutMode: 'shared' | 'worktree' =
+        choice === 'worktree' ? 'worktree' : choice === 'shared' ? 'shared' : automaticCheckoutMode
+      if (effectiveCheckoutMode === 'shared') {
+        const state = await api.git.promptState(projectId, id)
+        // The prompt-state read can outlive a thread switch. Keep its result
+        // with the composer that started the submit; otherwise a dirty result
+        // from the old thread can raise this warning over the new thread and
+        // make either action resume the stale prompt against the wrong UI.
+        if (
+          getActiveThreadId() !== id ||
+          activeComposerThreadId !== id ||
+          store.getState().activeProjectId !== projectId
+        )
+          return
+        if (state.dirty) {
+          showDirtyWarning(id)
+          return
+        }
+      }
+    }
+    hideDirtyWarning()
 
     // Always re-fetch on submit. The slash picker calls `api.skills.list()` on
     // its own and can show a skill (e.g. built-in `/checkup`) while
@@ -1895,26 +2010,36 @@ export function mountInputBar(
     // Record the user's message in the conversation and mark the thread running
     // before dispatching to the agent — the controller only adds assistant
     // messages, so without this the user's own prompt never appears.
-    // The transcript keeps the typed text verbatim — each inline paste stays as
-    // its U+FFFC placeholder (composer-editor.ts) — while the chip labels and
-    // file/thread refs travel as structured attachments. This keeps the stored/
-    // exported content free of glyphs or markers, and lets the renderer draw each
-    // as an SVG-icon chip: pastes inline at their placeholder, files/threads in a
-    // trailing row. Order matters — pastes first, in composer order, so the Nth
-    // placeholder maps to the Nth paste attachment.
+    // The transcript keeps the typed text verbatim — each positional composer
+    // chip stays as a U+FFFC placeholder — while its label/content travels as a
+    // structured attachment. Positional attachments lead the array in document
+    // order so the renderer can bind each placeholder without putting markers in
+    // stored/exported content. Remaining file and media attachments follow in the
+    // trailing row.
+    const inlineChips = composer.getInlineChips()
+    const inlineThreadIds = new Set(
+      inlineChips.flatMap((chip) => (chip.kind === 'thread' ? [chip.thread.threadId] : [])),
+    )
     const attachments: TranscriptAttachment[] = [
-      ...composer
-        .getBlocks()
-        .map((b) => ({ kind: 'paste' as const, label: b.label, content: b.content })),
-      ...attachedFiles.map((f) => ({
+      ...inlineChips.flatMap((chip): TranscriptAttachment[] => {
+        if (chip.kind === 'paste') {
+          return [{ kind: 'paste', label: chip.block.label, content: chip.block.content }]
+        }
+        return [{ kind: 'thread', label: chip.thread.label }]
+      }),
+      ...attachedFiles.map((file) => ({
         kind: 'file' as const,
-        label: f.path.split('/').pop() ?? f.path,
-        content: f.content,
+        label: file.path.split('/').pop() ?? file.path,
+        content: file.content,
       })),
-      ...attachedThreads.map((t) => ({
-        kind: 'thread' as const,
-        label: t.title || 'Untitled thread',
-      })),
+      // Defensive fallback: a thread reference should always have an inline chip,
+      // but retaining an unmatched attachment preserves its agent context.
+      ...attachedThreads
+        .filter((thread) => !inlineThreadIds.has(thread.threadId))
+        .map((thread) => ({
+          kind: 'thread' as const,
+          label: thread.title || 'Untitled thread',
+        })),
       ...attachedShells.map((s) => ({
         kind: 'shell' as const,
         label: s.label,
@@ -2000,23 +2125,18 @@ export function mountInputBar(
   }
 
   function addThreadChip(ref: AttachedThreadRef): void {
-    if (attachedThreads.some((t) => t.threadId === ref.threadId)) return
+    if (attachedThreads.some((thread) => thread.threadId === ref.threadId)) return
     attachedThreads.push(ref)
-    const chip = document.createElement('span')
-    chip.className = 'attachment-chip thread-chip'
-    const title = document.createElement('span')
-    title.className = 'attachment-chip-label'
-    title.textContent = ref.title || 'Untitled thread'
-    chip.append(threadIcon('thread-chip-icon'), title)
-    const remove = document.createElement('button')
-    remove.append(closeIcon('ui-icon ui-icon-sm'))
-    remove.addEventListener('click', () => {
-      attachedThreads = attachedThreads.filter((t) => t.threadId !== ref.threadId)
-      chip.remove()
-      scheduleContextEstimate()
-    })
-    chip.append(remove)
-    chips.append(chip)
+    composer.insertThreadChip(
+      {
+        threadId: ref.threadId,
+        label: ref.title || 'Untitled thread',
+      },
+      () => {
+        attachedThreads = attachedThreads.filter((thread) => thread.threadId !== ref.threadId)
+        scheduleContextEstimate()
+      },
+    )
     scheduleContextEstimate()
   }
 
@@ -2354,8 +2474,10 @@ export function mountInputBar(
   const unsubs = [
     // Main fires this after `initSkillsRegistry` (including the background
     // rescan on `workspace:set`). Refresh the cache so `/checkup` and friends
-    // are visible to context estimates before the next picker open/submit.
+    // are visible to context estimates and to a slash picker that is already
+    // open while discovery finishes (#2948).
     api.agent.onRefreshContextEstimate(() => {
+      skillPicker.refresh()
       refreshSkillsCache()
       scheduleContextEstimate(0)
     }),
@@ -2398,6 +2520,7 @@ export function mountInputBar(
       guardedYolo.refresh()
       containerRun.refresh()
       hideBranchMismatch()
+      hideDirtyWarning()
       updateState()
       updateFooter()
       updateQueueIndicator()
@@ -2438,6 +2561,7 @@ export function mountInputBar(
   const advisoryStrips = [
     guardedYolo.element,
     branchWarning,
+    dirtyWarning,
     checkoutError,
     imageCompatibilityWarning,
     contextFitWarning,
@@ -2500,7 +2624,7 @@ export function mountInputBar(
       portraitPanelControls.destroy()
       branchControl.destroy()
       indexStatusChip.destroy()
-      skillPicker()
+      skillPicker.destroy()
     },
   }
 }

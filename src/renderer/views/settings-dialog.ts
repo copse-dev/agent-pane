@@ -47,6 +47,7 @@ import {
 import { mountModelSelectPicker } from './model-picker.ts'
 import { createApiKeysSection } from './setup/api-keys-section.ts'
 import { createProvidersPanel } from './setup/providers-section.ts'
+import { createClassifiersSection } from './setup/classifiers-section.ts'
 import { createEnvKeyDetectSection } from './setup/env-key-detect-section.ts'
 import { createLmStudioSection } from './setup/lm-studio-section.ts'
 import { createGhCliSection } from './setup/gh-cli-section.ts'
@@ -99,6 +100,7 @@ import { isNonEmptyString } from '@shared/nullish.ts'
 
 export type SettingsSection =
   | 'general'
+  | 'classifiers'
   | 'usage'
   | 'agent'
   | 'permissions'
@@ -111,6 +113,7 @@ export type SettingsSection =
 
 const isSettingsSection: (value: unknown) => value is SettingsSection = (value) =>
   value === 'general' ||
+  value === 'classifiers' ||
   value === 'usage' ||
   value === 'agent' ||
   value === 'permissions' ||
@@ -538,6 +541,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             />
           </div>
           <button type="button" class="settings-nav-btn active" data-section="general">General</button>
+          <button type="button" class="settings-nav-btn" data-section="classifiers">Classifiers</button>
           <button type="button" class="settings-nav-btn" data-section="usage">Usage</button>
           <button type="button" class="settings-nav-btn" data-section="agent">Agent</button>
           <button type="button" class="settings-nav-btn" data-section="permissions">Permissions</button>
@@ -638,6 +642,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 </label>
               </div>
             </div>
+          </section>
+
+          <section class="settings-section" data-section="classifiers">
+            <h3>Classifiers</h3>
+            <p class="settings-section-desc">
+              Connections for classification evals and explicit calls. Copse's built-in classifiers
+              and chat model choices are configured separately.
+            </p>
+            <div id="settings-classifiers-host" class="settings-mount"></div>
           </section>
 
           <section class="settings-section" data-section="usage">
@@ -1175,7 +1188,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               <div id="sources-worktrees-list" class="sources-group">
                 <span class="sources-empty">Loading…</span>
               </div>
-              <span class="lmstudio-test-status" id="sources-worktrees-status"></span>
+              <span class="lmstudio-test-status" id="sources-worktrees-status" role="status" aria-live="polite"></span>
             </fieldset>
           </section>
 
@@ -1471,6 +1484,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   // Every `qsRequired(overlay, …)` below targets an element baked into the static
   // template above; a miss throws a loud error (template/code drift) rather than a
   // silent non-null assertion.
+  const classifiersSection = createClassifiersSection(api)
+  qsRequired(overlay, '#settings-classifiers-host').append(classifiersSection.root)
+
   const sshWorkspaceSection = createSshWorkspaceSection(api, {
     // Live-persist toggles must wake listeners (e.g. the projects add menu)
     // without requiring the dialog Save button.
@@ -1832,6 +1848,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     if (!searchContentLoaded) {
       searchContentLoaded = true
       void providersPanel.refresh()
+      void classifiersSection.refresh()
       void sshWorkspaceSection.refresh()
       void refreshSources()
     }
@@ -1879,6 +1896,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           applySearch('')
         }
         showSection(id)
+        if (id === 'classifiers') void classifiersSection.refresh()
         if (id === 'usage') void usageSection.refresh()
         if (id === 'permissions') void toolPermissionsPanel.refresh()
         // Defer disk scans until each tab is opened, so users who never visit them
@@ -2352,6 +2370,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     const size = document.createElement('span')
     size.className = 'sources-worktree-size'
     size.textContent = 'sizing…'
+    size.dataset['sizeState'] = 'pending'
     row.querySelector('.sources-row-detail')?.append(' · ', size)
 
     const terminalBtn = document.createElement('button')
@@ -2417,114 +2436,219 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     entries: WorktreeInventoryEntry[],
   ): Promise<void> {
     const statusEl = qsRequired(overlay, '#sources-worktrees-status')
-    const previews = []
     const problems: string[] = []
-    statusEl.textContent = 'Looking for package directories…'
-    // Walk sequentially: several full directory scans at once swamp disk I/O.
-    for (const entry of entries) {
-      try {
-        const preview = await api.worktrees.cleanupPackages(projectId, entry.path, false)
-        if (preview.status === 'blocked-running') {
-          problems.push(`${entry.branch ?? entry.path}: an agent turn is running.`)
-        } else if (preview.directories.length > 0) {
-          previews.push({ entry, preview })
-        }
-      } catch (error) {
-        problems.push(`${entry.branch ?? entry.path}: ${errorMessage(error)}`)
+    const bulkButton = qsRequired<HTMLButtonElement>(overlay, '#sources-worktrees-cleanup')
+
+    function setEntryPhase(
+      entry: WorktreeInventoryEntry,
+      phase: 'checking' | 'pending' | 'cleaning' | 'cleaned' | 'failed' | null,
+    ): void {
+      const target = worktreeRows.get(entry.path)
+      if (!target) return
+      const button = qsRequired<HTMLButtonElement>(target.row, '.sources-worktree-cleanup-btn')
+      if (phase === null) {
+        delete target.row.dataset['cleanupState']
+        target.row.removeAttribute('aria-busy')
+        button.textContent = 'Clean up…'
+        button.removeAttribute('aria-busy')
+        return
       }
+      target.row.dataset['cleanupState'] = phase
+      const busy = phase === 'checking' || phase === 'pending' || phase === 'cleaning'
+      if (busy) target.row.setAttribute('aria-busy', 'true')
+      else target.row.removeAttribute('aria-busy')
+      button.textContent =
+        phase === 'checking'
+          ? 'Checking…'
+          : phase === 'pending'
+            ? 'Pending…'
+            : phase === 'cleaning'
+              ? 'Cleaning…'
+              : phase === 'cleaned'
+                ? 'Cleaned'
+                : 'Failed'
+      if (busy) button.setAttribute('aria-busy', 'true')
+      else button.removeAttribute('aria-busy')
     }
-    if (previews.length === 0) {
-      statusEl.textContent = problems.join('\n') || 'No ignored package-manager directories found.'
-      return
+
+    function setBulkLabel(text: string, busy: boolean): void {
+      bulkButton.textContent = text
+      if (busy) bulkButton.setAttribute('aria-busy', 'true')
+      else bulkButton.removeAttribute('aria-busy')
     }
-    const directories = previews.flatMap(({ entry, preview }) =>
-      preview.directories.map((directory) =>
-        entries.length === 1 ? directory.path : `${entry.branch ?? entry.path}: ${directory.path}`,
-      ),
-    )
-    const bytes = previews.reduce((total, { preview }) => total + preview.bytes, 0)
-    const size = `${previews.some(({ preview }) => preview.truncated) ? 'at least ' : ''}${formatByteSize(bytes)}`
-    const shown = directories.slice(0, 12)
-    const confirmed = await showConfirmDialog({
-      message: `Remove ${String(directories.length)} package director${directories.length === 1 ? 'y' : 'ies'}${entries.length > 1 ? ` from ${String(previews.length)} worktree${previews.length === 1 ? '' : 's'}` : ''}?`,
-      detail: [
-        ...shown,
-        ...(directories.length > shown.length
-          ? [`…and ${String(directories.length - shown.length)} more`]
-          : []),
-        '',
-        `This will reclaim ${size}. Your package manager can recreate these directories.`,
-        ...problems,
-      ].join('\n'),
-      confirmLabel: 'Clean up',
-      danger: true,
-    })
-    if (!confirmed) {
-      statusEl.textContent = 'Kept.'
-      return
-    }
-    let cleaned = 0
-    let reclaimed = 0
-    let truncated = false
-    for (const { entry } of previews) {
-      statusEl.textContent = `Cleaning up ${entry.branch ?? entry.path}…`
-      try {
-        const result = await api.worktrees.cleanupPackages(projectId, entry.path, true)
-        if (result.status === 'blocked-running') {
-          problems.push(`${entry.branch ?? entry.path}: an agent turn is running.`)
-          continue
-        }
-        cleaned += result.directories.length
-        reclaimed += result.bytes
-        truncated ||= result.truncated
-        selectedWorktrees.delete(entry.path)
-        // Refresh only this checkout's changed-file badge and measured size.
-        const target = worktreeRows.get(entry.path)
-        if (target) {
-          if (result.changedCount !== undefined) {
-            entry.changedCount = result.changedCount
-            target.row.querySelector('.sources-worktree-changes')?.remove()
-            if (result.changedCount !== null && result.changedCount > 0) {
-              const badge = document.createElement('span')
-              badge.className = 'sources-badge sources-badge-warning sources-worktree-changes'
-              badge.textContent = `${String(result.changedCount)} uncommitted`
-              target.row.querySelector('.sources-worktree-terminal-btn')?.before(badge)
+
+    for (const entry of entries) setEntryPhase(entry, 'checking')
+    setBulkLabel(entries.length === 1 ? 'Checking…' : 'Preparing…', true)
+    statusEl.textContent =
+      entries.length === 1
+        ? 'Looking for package directories…'
+        : `Preparing cleanup for ${String(entries.length)} worktrees…`
+
+    const performCleanup = async (setConfirmProgress: (label: string) => void): Promise<void> => {
+      for (const entry of entries) setEntryPhase(entry, 'pending')
+      let cleaned = 0
+      let reclaimed = 0
+      let truncated = false
+      for (const [index, entry] of entries.entries()) {
+        setEntryPhase(entry, 'cleaning')
+        const progress = `Cleaning ${String(index + 1)} of ${String(entries.length)}…`
+        setBulkLabel(progress, true)
+        setConfirmProgress(progress)
+        statusEl.textContent = `Cleaning ${String(index + 1)} of ${String(entries.length)}: ${entry.branch ?? entry.path}…`
+        try {
+          const result = await api.worktrees.cleanupPackages(projectId, entry.path, true)
+          if (result.status === 'blocked-running') {
+            problems.push(`${entry.branch ?? entry.path}: an agent turn is running.`)
+            setEntryPhase(entry, 'failed')
+            continue
+          }
+          cleaned += result.directories.length
+          reclaimed += result.bytes
+          truncated ||= result.truncated
+          if (result.directories.length > 0) selectedWorktrees.delete(entry.path)
+          setEntryPhase(entry, 'cleaned')
+
+          // Update cheap metadata now, but leave the full checkout measurement
+          // pending until the batch is done. A cleaned checkout must never make
+          // the next queued cleanup wait for another whole-tree walk.
+          const target = worktreeRows.get(entry.path)
+          if (target) {
+            if (result.changedCount !== undefined) {
+              entry.changedCount = result.changedCount
+              target.row.querySelector('.sources-worktree-changes')?.remove()
+              if (result.changedCount !== null && result.changedCount > 0) {
+                const badge = document.createElement('span')
+                badge.className = 'sources-badge sources-badge-warning sources-worktree-changes'
+                badge.textContent = `${String(result.changedCount)} uncommitted`
+                target.row.querySelector('.sources-worktree-terminal-btn')?.before(badge)
+              }
+            }
+            if (result.directories.length > 0) {
+              target.size.textContent = 'sizing…'
+              target.size.dataset['sizeState'] = 'pending'
             }
           }
-          await fillWorktreeSizes(projectId, [target])
+        } catch (error) {
+          problems.push(`${entry.branch ?? entry.path}: ${errorMessage(error)}`)
+          setEntryPhase(entry, 'failed')
         }
-      } catch (error) {
-        problems.push(`${entry.branch ?? entry.path}: ${errorMessage(error)}`)
       }
+      const summary =
+        cleaned > 0
+          ? `Cleaned up ${String(cleaned)} directories (${truncated ? 'at least ' : ''}${formatByteSize(reclaimed)}).`
+          : 'No ignored package-manager directories found.'
+      statusEl.textContent = [summary, ...problems].join('\n')
     }
-    statusEl.textContent = [
-      `Cleaned up ${String(cleaned)} directories (${truncated ? 'at least ' : ''}${formatByteSize(reclaimed)}).`,
-      ...problems,
-    ].join('\n')
+
+    try {
+      // A single-row action keeps its detailed directory-and-size preview. For
+      // a bulk action that preview was the expensive part: every checkout was
+      // completely scanned before the user even saw a confirmation. Confirm
+      // the selected scope immediately, then discover, measure, and remove one
+      // checkout at a time so useful work begins straight away.
+      if (entries.length === 1) {
+        const entry = entries[0]
+        if (!entry) return
+        let preview
+        try {
+          preview = await api.worktrees.cleanupPackages(projectId, entry.path, false)
+        } catch (error) {
+          statusEl.textContent = errorMessage(error)
+          setEntryPhase(entry, 'failed')
+          return
+        }
+        if (preview.status === 'blocked-running') {
+          statusEl.textContent = 'That worktree has an agent turn running in it.'
+          setEntryPhase(entry, 'failed')
+          return
+        }
+        if (preview.directories.length === 0) {
+          statusEl.textContent = 'No ignored package-manager directories found.'
+          setEntryPhase(entry, 'cleaned')
+          return
+        }
+        const size = `${preview.truncated ? 'at least ' : ''}${formatByteSize(preview.bytes)}`
+        const shown = preview.directories.slice(0, 12)
+        const confirmed = await showConfirmDialog({
+          message: `Remove ${String(preview.directories.length)} package director${preview.directories.length === 1 ? 'y' : 'ies'}?`,
+          detail: [
+            ...shown.map((directory) => directory.path),
+            ...(preview.directories.length > shown.length
+              ? [`…and ${String(preview.directories.length - shown.length)} more`]
+              : []),
+            '',
+            `This will reclaim ${size}. Your package manager can recreate these directories.`,
+          ].join('\n'),
+          confirmLabel: 'Clean up',
+          confirmPendingLabel: 'Cleanup pending…',
+          onConfirm: performCleanup,
+          danger: true,
+        })
+        if (!confirmed) {
+          statusEl.textContent = 'Kept.'
+          return
+        }
+      } else {
+        const confirmed = await showConfirmDialog({
+          message: `Clean up package directories in ${String(entries.length)} worktrees?`,
+          detail: [
+            'Copse will find and remove ignored package-manager directories such as node_modules and .venv.',
+            'Cleanup starts immediately; reclaimed size is measured as each worktree completes.',
+            'Your package manager can recreate these directories.',
+          ].join('\n\n'),
+          confirmLabel: 'Clean up',
+          confirmPendingLabel: 'Cleanup pending…',
+          onConfirm: performCleanup,
+          danger: true,
+        })
+        if (!confirmed) {
+          statusEl.textContent = 'Kept.'
+          return
+        }
+      }
+    } finally {
+      for (const entry of entries) setEntryPhase(entry, null)
+      setBulkLabel('Clean up…', false)
+    }
   }
 
   const worktreeSizeRequests = new WeakMap<HTMLElement, number>()
+  let worktreeSizeGeneration = 0
+  let worktreeSizeFill: Promise<void> = Promise.resolve()
 
   /** Fill in each row's on-disk size, one checkout at a time so the walks don't pile up. */
   async function fillWorktreeSizes(
     projectId: string,
     targets: Array<{ entry: WorktreeInventoryEntry; size: HTMLElement }>,
+    generation = worktreeSizeGeneration,
   ): Promise<void> {
     for (const target of targets) {
+      if (generation !== worktreeSizeGeneration) return
       // A refresh mid-walk detaches the row it was measuring; dropping the
       // answer is right, and cheaper than cancelling the call.
       if (!target.size.isConnected) continue
       const request = (worktreeSizeRequests.get(target.size) ?? 0) + 1
       worktreeSizeRequests.set(target.size, request)
+      target.size.dataset['sizeState'] = 'measuring'
       try {
         const size = await api.worktrees.size(projectId, target.entry.path)
-        if (worktreeSizeRequests.get(target.size) !== request) continue
+        if (
+          generation !== worktreeSizeGeneration ||
+          worktreeSizeRequests.get(target.size) !== request
+        )
+          continue
         target.size.textContent = size.truncated
           ? `over ${formatByteSize(size.bytes)}`
           : formatByteSize(size.bytes)
+        target.size.dataset['sizeState'] = 'ready'
       } catch {
-        if (worktreeSizeRequests.get(target.size) !== request) continue
+        if (
+          generation !== worktreeSizeGeneration ||
+          worktreeSizeRequests.get(target.size) !== request
+        )
+          continue
         target.size.textContent = 'size unavailable'
+        target.size.dataset['sizeState'] = 'unavailable'
       }
     }
   }
@@ -2642,12 +2766,29 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   async function runWorktreeAction(action: () => Promise<void>): Promise<void> {
     if (worktreeActionRunning) return
     worktreeActionRunning = true
+    const interruptedSizeFill = worktreeSizeFill
+    worktreeSizeGeneration += 1
     syncWorktreeSelection()
     try {
       await action()
     } finally {
       worktreeActionRunning = false
       syncWorktreeSelection()
+      const projectId = storageProjectId
+      const resumeSizes = async (): Promise<void> => {
+        // IPC size walks cannot be cancelled once started. Let the one already
+        // on disk settle, but its generation prevents it from launching the
+        // rest of the queue or overwriting post-cleanup state.
+        await interruptedSizeFill
+        if (!projectId || projectId !== storageProjectId || worktreeActionRunning) return
+        const pending = [...worktreeRows.values()].filter(
+          ({ size }) =>
+            size.dataset['sizeState'] !== 'ready' && size.dataset['sizeState'] !== 'unavailable',
+        )
+        if (pending.length > 0) await fillWorktreeSizes(projectId, pending)
+      }
+      worktreeSizeFill = resumeSizes()
+      void worktreeSizeFill
     }
   }
 
@@ -2741,6 +2882,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   /** Load inventory when opening Storage or choosing another project. */
   async function refreshWorktrees(status = '', preferActiveProject = false): Promise<void> {
     if (worktreeActionRunning) return
+    worktreeSizeGeneration += 1
     const statusEl = qsRequired(overlay, '#sources-worktrees-status')
     const projectId = syncStorageProjectSelect(preferActiveProject)
     worktreeRows.clear()
@@ -2765,7 +2907,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       for (const target of rendered) worktreeRows.set(target.entry.path, target)
       syncWorktreeSelection()
       statusEl.textContent = status
-      await fillWorktreeSizes(projectId, rendered)
+      const sizeFill = fillWorktreeSizes(projectId, rendered)
+      worktreeSizeFill = sizeFill
+      await sizeFill
     } catch (error) {
       if (generation !== worktreeRefreshGeneration || projectId !== storageProjectId) return
       fillSourceList('#sources-worktrees-list', [], 'Could not list worktrees.')
@@ -4265,6 +4409,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     pendingPluginDetail = null
     // Deep-links (e.g. status banner → SSH, an automation heading → Plugins) skip
     // the nav click path, so refresh lazy section content here too.
+    if (openedSection === 'classifiers') void classifiersSection.refresh()
     if (openedSection === 'ssh') void sshWorkspaceSection.refresh()
     if (openedSection === 'usage') void usageSection.refresh()
     if (openedSection === 'permissions') void toolPermissionsPanel.refresh()

@@ -6,6 +6,7 @@ import {
   mergePrLists,
   placeholderPrTitle,
   prListDisplayTitle,
+  prMatchesFilter,
   type PrRef,
 } from './pr-pane-list.ts'
 
@@ -69,6 +70,44 @@ test('mergePrLists enriches linked refs from pools and placeholders the rest', (
   )
   // #42 appears once despite being both linked and pooled.
   assert.equal(merged.filter((pr) => pr.number === 42).length, 1)
+})
+
+test('prMatchesFilter: empty/whitespace query matches everything', () => {
+  const pr = summary({ owner: 'o', repo: 'r', number: 42, title: 'Add a real feature' })
+  assert.equal(prMatchesFilter(pr, ''), true)
+  assert.equal(prMatchesFilter(pr, '   '), true)
+})
+
+test('prMatchesFilter: matches PR number with or without a leading #', () => {
+  const pr = summary({ owner: 'o', repo: 'r', number: 123, title: 'Unrelated title' })
+  assert.equal(prMatchesFilter(pr, '123'), true)
+  assert.equal(prMatchesFilter(pr, '#123'), true)
+  assert.equal(prMatchesFilter(pr, '12'), true) // substring match
+  assert.equal(prMatchesFilter(pr, '#124'), false)
+  assert.equal(prMatchesFilter(pr, '456'), false)
+})
+
+test('prMatchesFilter: matches title, head branch, and author login case-insensitively', () => {
+  const pr = summary({
+    owner: 'o',
+    repo: 'r',
+    number: 7,
+    title: 'Fix the Filter Bug',
+    headRefName: 'jonathan/pr-filter',
+    authorLogin: 'JooperCo',
+  })
+  assert.equal(prMatchesFilter(pr, 'filter bug'), true)
+  assert.equal(prMatchesFilter(pr, 'FILTER'), true)
+  assert.equal(prMatchesFilter(pr, 'pr-filter'), true)
+  assert.equal(prMatchesFilter(pr, 'jonathan'), true)
+  assert.equal(prMatchesFilter(pr, 'jooperco'), true)
+  assert.equal(prMatchesFilter(pr, 'nonexistent'), false)
+})
+
+test('prMatchesFilter: a PR missing headRefName/authorLogin never matches on them', () => {
+  const pr = summary({ owner: 'o', repo: 'r', number: 9, title: 'No branch info' })
+  assert.equal(prMatchesFilter(pr, 'undefined'), false)
+  assert.equal(prMatchesFilter(pr, 'no branch'), true)
 })
 
 test('mergePrLists enriches a linked ref whose repository casing differs from the pool', () => {

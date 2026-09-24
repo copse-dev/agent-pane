@@ -1,6 +1,6 @@
 import { after, before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { materialiseCheckouts, type MaterialisedCheckouts } from './checkouts.ts'
@@ -133,6 +133,13 @@ describe('buildReviewContext', () => {
       scratchDir: scratch,
       includeWorkingTree: true,
     })
+    // Stage 0 creates this checkout-local alias after materialisation. It is
+    // reviewer infrastructure, not another untracked file from the author.
+    const store = join(scratch, 'read-only-store')
+    const aliasRoot = join(checkouts.head, '.copse-review-pnpm-store-0123456789abcdef')
+    await mkdir(store)
+    await mkdir(aliasRoot)
+    await symlink(store, join(aliasRoot, 'store'), 'dir')
   })
 
   after(async () => {
@@ -150,6 +157,10 @@ describe('buildReviewContext', () => {
       'modified src/math.test.ts',
       'modified src/math.ts',
     ])
+    assert.equal(
+      context.files.some((file) => file.path.startsWith('.copse-review-pnpm-store-')),
+      false,
+    )
     assert.equal(context.files.find((file) => file.path === 'pnpm-lock.yaml')?.dropped, 'lockfile')
     const math = context.testMap.find((entry) => entry.source === 'src/math.ts')
     assert.deepEqual(math?.tests.map((test) => [test.path, test.changed]).sort(), [

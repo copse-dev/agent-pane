@@ -50,4 +50,29 @@ describe('showContextMenu', () => {
     item.click()
     assert.equal(selected, 1)
   })
+
+  it('appends into an open dialog when withinDialog is inside one, not document.body', () => {
+    const dialog = document.createElement('dialog')
+    const content = document.createElement('div')
+    dialog.append(content)
+    document.body.append(dialog)
+    dialog.open = true // happy-dom does not implement showModal(); flip the reflected attribute.
+
+    showContextMenu(10, 20, [{ label: 'Copy', onSelect: (): void => {} }], content)
+
+    const menu = document.querySelector('.context-menu')
+    assert.ok(menu)
+    assert.equal(menu.parentElement, dialog, 'menu must render inside the dialog top layer')
+    assert.equal(document.body.querySelector(':scope > .context-menu'), null)
+  })
+
+  it('falls back to document.body when withinDialog is outside any dialog', () => {
+    const host = document.createElement('div')
+    document.body.append(host)
+
+    showContextMenu(10, 20, [{ label: 'Copy', onSelect: (): void => {} }], host)
+
+    const menu = document.querySelector('.context-menu')
+    assert.equal(menu?.parentElement, document.body)
+  })
 })

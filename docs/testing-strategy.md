@@ -288,7 +288,7 @@ Three shapes, cheapest first:
    over a real `ToolRegistry` and the real approval plumbing. The only fake is the
    model: a `MockLLMProvider` passed through `runAgent`'s `provider` option (the
    same seam the headless host and the bench harness use), steered into a named
-   tool call with the `[[mcp:<tool> {args}]]` directive. This is the tier that
+   tool call with a typed, scoped conversation scenario. This is the tier that
    proves an ACP client gets _Copse's agent_ rather than a protocol echo — a turn
    crosses client → ndjson → agent role → agent loop → tool → `requestApproval` →
    back out as `session/request_permission` → client answer → tool result →
@@ -512,3 +512,66 @@ spurious conflict.
 | Monaco / terminal / webview / main IPC | e2e               |
 | Either end of ACP, incl. the real loop | unit (mock model) |
 | Does a real local model drive the loop | local-model eval  |
+
+## Natural conversation scenarios
+
+Live agent tests register fixtures with `installMockScenario` from
+`tests/e2e/helpers/mock-scenario.ts`. The composer contains the same kind of request
+that a user would send. Model control data stays in typed test setup:
+
+```ts
+const scenario = await installMockScenario({
+  title: 'Inspect Project Sources',
+  turns: [
+    {
+      user: 'List the src directory.',
+      responses: [
+        { toolCalls: [{ name: 'list_dir', args: { path: 'src' } }] },
+        {
+          expectToolResults: [{ name: 'list_dir', includes: 'main' }],
+          text: 'The src directory contains the main process and renderer sources.',
+        },
+      ],
+    },
+  ],
+})
+await setComposerValue('List the src directory.')
+await $('.submit-btn').click()
+await waitForAgentIdle()
+await scenario.assertComplete()
+```
+
+Each response corresponds to one provider call; a tool response runs through the
+real agent loop before the next response is emitted. Include the final assistant
+reply in the same turn. Match the exact submitted text and assert relevant tool
+results so a successful-looking answer cannot hide a failed action.
+
+For queue, stop, or running-state tests, give a response `waitFor: 'working'`.
+Wait for `scenario.waitForHold('working')`, make the user interactions/assertions,
+then call `scenario.release('working')`. Set `allowAbort: true` on a turn whose
+expected outcome is cancellation, and stop it through the UI. Avoid wall-clock
+sleeps to keep a model turn open. `chunkDelayMs` can pace a fixture when the test
+specifically checks streaming. After capturing a running state, release or cancel
+it and wait for the expected outcome; leaving a held response behind is a failed
+scenario.
+
+Scenarios bind to a thread, survive its consecutive provider instances, and do
+not advance on background label-generation requests. Before restarting Electron,
+call `scenario.assertComplete()` to verify consumption while the registrations
+still exist. The helper records that successful assertion across the restart.
+The helper checks that
+registered steps were consumed and clears registrations after each test. A wrong
+request, unavailable tool, mismatched result, or unexpected extra turn must fail;
+there is no fallback from a registered scenario to a generic answer.
+
+Machine-generated wakeups and prompts that append attachment references may use
+`user: { includes: 'a stable prompt fragment' }`. Ordinary composer prompts should
+use exact strings. `continueTurn: true` represents a provider recovery response
+that causes another model call without a tool; it is only for testing those real
+loop recovery paths, and the turn must still end with a final response.
+
+Screenshot helpers reject control tokens and generic mock replies in conversation
+text and titles. The fixture guard in `scripts/check-mock-fixtures.test.ts` also
+checks executable specs and benchmark tasks. Use seeded realistic transcripts for
+static presentation checks, retaining live scenarios where tool execution, IPC,
+approvals, queue draining, or cancellation are the behavior under test.

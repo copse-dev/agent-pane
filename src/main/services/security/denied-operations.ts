@@ -43,7 +43,7 @@ class DeniedOperationRegistry {
     return this.get(threadId, operation) !== undefined
   }
 
-  /** Test/teardown hook — never called from production code. */
+  /** Drop denial evidence when a thread is deleted or a test resets it. */
   clearThread(threadId: string | null): void {
     this.byThread.delete(threadId ?? NO_THREAD_KEY)
   }

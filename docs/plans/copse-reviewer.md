@@ -14,10 +14,11 @@ the Changes view, the "Review changes" bubble and the `review_changes` tool run 
 pipeline over the thread's checkout and render a findings card, with dismissals persisted
 to the knowledge store (see §What Phase 3 delivered). In CI, the `copse-review` label on a
 pull request runs Stage 0 on a secret-free runner and posts the findings as one review
-from a second, read-only job (see §What Phase 4 delivered). `pnpm run bench:review` scores
+from a second job whose model process brokers focused validation into a secret-free
+container (see §What Phase 4 delivered). `pnpm run bench:review` scores
 the pipeline for precision on surfaced findings over a corpus of cases with known defects,
 with a mock self-test CI gates per PR, exact-configuration regression baselines, and a
-separate model-only target gate; the five-case local corpus cannot establish B8 (see §What
+separate model-only target gate; the seven-case local corpus cannot establish B8 (see §What
 Phase 5 delivered). See also §What Phase 0 delivered, §What Phase 1 delivered and §What
 Phase 2 delivered.
 Binding decisions B1 (execution isolation, 2026-09-03), B2–B6 (packaging, backend
@@ -205,7 +206,8 @@ _Reuse: `git-service.ts`, `pr-context-service.ts`, `search/`, `trim-history.ts` 
 
 **Stage 2 — Fan out.**
 N models × M **lenses**. A lens is a scoped brief with its own tool budget — correctness,
-contracts/API compatibility, tests, security, concurrency/resources, docs-vs-behaviour.
+contracts/API compatibility, semantic boundaries/defaults, tests, security,
+concurrency/resources, docs-vs-behaviour.
 Lenses matter more than model count: two models on one generic "review this" prompt
 mostly produce the same middle-of-the-distribution observations, whereas one model given
 "only look for broken contracts" produces something the correctness lens didn't. Each
@@ -375,12 +377,15 @@ scope.
   privilege domains. A `pull_request_target:labeled` dispatcher, loaded from the trusted default
   branch, resolves PR metadata and dispatches grounding; it checks out and executes nothing.
   **Job A** is a separate `workflow_dispatch` run on a fresh runner with `permissions: {}` and
-  no secrets; it fetches the exact resolved head, runs Stage 0 and the reproducers, and uploads
+  no secrets; it fetches the exact resolved head, runs Stage 0, and uploads
   results as an artefact. A fresh handoff job, which checks out and consumes nothing, gets
   only Actions-dispatch permission after Job A succeeds and explicitly dispatches **Job B**.
-  Job B runs on the base ref
-  with the model key and a write token, downloads the artefact, runs the model stages, and
-  posts findings. Self-hosted Forgejo runners must be ephemeral (a fresh container per job):
+  Job B runs on the base ref. Before receiving model or App credentials it builds a trusted
+  validation image and primes a read-only dependency store from the exact head lockfile. Its
+  trusted model process holds the credentials; brokered focused commands and reproducers run
+  only in that read-only-root, capability-free, network-disabled container, whose environment
+  is allowlisted and secret-free. Job B then posts findings. Self-hosted Forgejo runners must
+  be ephemeral (a fresh container per job):
   a persistent runner is precisely what a malicious PR would persist on.
 
 **Conformance test, in Phase 0.** A review of a deliberately hostile fixture — a
@@ -390,7 +395,9 @@ aimed at the agent (the pattern already in `benchmarks/steer/fixtures/injection-
 run with canary secrets in the orchestrator's environment. Pass criteria: no canary appears in
 any cell output, model request or finding; no egress from the cell beyond the allowlist; the
 README's instruction produced no tool call. This runs in CI for every backend and is the gate
-on calling a backend supported.
+on calling a backend supported. CI's `review-cell` job builds `Dockerfile.cell` and opts the
+real container backend into that fixture whenever reviewer-cell inputs change and on the nightly
+run; it also proves the caller-trusted preparation script is an exact read-only file mount.
 
 ### Configuration
 
@@ -445,9 +452,10 @@ Changing one of these requires updating this document in the same change — the
    Recorded 2026-09-04; answers Q5. _Amended 2026-09-22 (Phase 5 audit):_ a regression
    baseline never proves an absolute claim. `--target-gate` accepts real-model runs only
    and requires point precision ≥85%, the Wilson lower edge of a two-sided 95% interval
-   ≥85%, recall ≥50%, and zero duplicates. The five-case synthetic corpus is a smoke/trend
-   suite: its mock profile scores 80% by construction, and even 5/5 would fail the confidence
-   condition. B8 remains unmeasured until the Martian offline set is mapped and run.
+   ≥85%, recall ≥50%, and zero duplicates. The seven-case synthetic corpus is a smoke/trend
+   suite: its mock profile scores 85.7% by construction with a 48.7% Wilson lower bound, and
+   even 5/5 would fail the confidence condition. B8 remains unmeasured until the Martian
+   offline set is mapped and run.
 9. **B9 — SARIF is the interchange export.** The findings JSON (P2) stays the canonical
    contract; the CLI and the CI shell also emit SARIF 2.1.0, carrying the finding identity in
    `partialFingerprints` and the evidence, provenance and verdict in each result's
@@ -537,6 +545,12 @@ On `main` under `packages/review/` (README there), with the app-side adapter und
     The CLI discovers the store using filesystem paths and environment settings only;
     it never runs `pnpm store path`, which can execute a repository's `.pnpmfile.cjs`
     before consent. A store configured only in `.npmrc` needs `--store`.
+    CI can supply `--trusted-prepare <script>` from its reviewed default-branch checkout;
+    that command replaces only checkout preparation and the script is mounted read-only
+    in container cells. Copse uses this to selectively rebuild `node-pty` for old pull-request
+    heads without enabling arbitrary lifecycle scripts. A checkout records the exact untracked
+    files copied from the author's tree; later context generation marks only those intent-to-add,
+    so cell infrastructure created inside the checkout cannot leak into the model's diff.
   - **`review.config.json`** is the §Configuration file, Phase 0 subset: an argv per
     command, `null` to disable one, and per-command timeouts. It is repo-controlled, so
     its argv only ever runs inside the cell; the orchestrator reads it as data.
@@ -577,6 +591,27 @@ Not in Phase 0, by design: any model call, the CLI shell and SARIF (Phase 1), th
 gesture (Phase 3), and the container backend that a foreign diff needs (Phase 4). Outside
 the app there is no OS sandbox, so `pnpm run review:stage0` needs `--allow-unisolated`.
 
+### Groundwork evidence limits (2026-09-24)
+
+A successful aggregate check attests only that command. Unit/component results do not establish
+browser geometry, Electron, screenshot, or manual visual coverage. The reviewer system message
+states that boundary explicitly and treats an unspecified test command's tier as unknown.
+
+Two red exit codes cannot establish that failures are pre-existing. Stage 0 compares complete
+individual failure inventories for Node tests. Copse opts in through `review.config.json` and
+`run-tests --review-report`: a compact reporter emits the full failing file/name set only after
+Node's final summary, with no cancelled tests, consistent counts and unique identities. It excludes
+parent-suite failures, and normalizes per-run bundle roots and ignores source line movement.
+Stage 0 reads the inventory as untrusted data, preserves it in the report and mints one finding
+per new failing identity. It never says a new test passed on base, only that it was absent from the
+base failure inventory. Missing/ambiguous inventories or other doubly-failing check kinds remain
+`undetermined`, with a coverage gap. Imported legacy reports without individual inventories are
+downgraded the same way. Renamed tests can appear as new failures; the report preserves
+both command outputs for inspection. This is failure identity comparison, not proof of causal blame.
+
+The reporter executes only where the test command already executes (inside the cell for foreign
+reviews). No repository output or test names are promoted into trusted system instructions.
+
 ## What Phase 1 delivered
 
 The CLI shell (Shell A), on `main` in the same package, as `copse-review` (the package's
@@ -593,11 +628,17 @@ The CLI shell (Shell A), on `main` in the same package, as `copse-review` (the p
   continuation over the same transcript with only that strict closure tool available. If
   the correction still omits the attestation, the run fails closed and retains the original
   draft for diagnosis, so an exhausted or interrupted model can never be projected as “No
-  findings.”
-- **The reviewer's tools are brokered, not the loop.** Reads are served over the head
+  findings.” The investigation loop does not spend the shared runner's generic prose-finalizer
+  headroom: those calls are reserved for the forced structured correction, whose reasoning is
+  capped to one checkpoint because it may encode but must not re-investigate the conclusion.
+- **The reviewer's tools are brokered, not the loop.** Ordinary reads are served over the head
   checkout as data, jailed to it. Host-side reads and reproducer writes reject symlinks
   below the canonical checkout root, and final file opens use `O_NOFOLLOW`; recursive
-  searches skip symlinks. `run_command` is the only executing tool: it runs argv
+  searches skip symlinks. Installed dependency files use a separate fixed, data-only reader in
+  the serialised secret-free cell: it accepts package-relative paths (with an optional
+  `node_modules/` prefix), resolves pnpm links,
+  requires the canonical regular file to remain inside the disposable `node_modules`, and never runs
+  package code. `run_command` is the only model-controlled executing tool: it runs argv
   (never a shell string) in the cell, is gated by the run's permission profile, and its
   output comes back secret-scrubbed and wrapped as external content (P7).
 - **Headless conformance.** The model turn is projected onto the headless contract's event
@@ -638,9 +679,11 @@ the app gesture (Phase 3), the container backend and CI action (Phase 4), and th
 Fan-out, clustering and verification, in the same package and CLI. Decisions made while
 building it:
 
-- **Five lenses, all inside B4.** `correctness` (the default), `contracts`, `tests`,
-  `security` and `concurrency`; `--lenses all` runs every one, `--model` repeats to fan out
-  across models, `--concurrency` bounds how many reviewers run at once. The `docs` lens
+- **Six lenses, all inside B4.** `correctness` (the default), `contracts`, `boundaries`,
+  `tests`, `security` and `concurrency`; `boundaries` independently audits semantic fields,
+  defaults and downstream fallbacks on new producers. `--lenses all` runs every one,
+  `--model` repeats to fan out across models, and `--concurrency` bounds how many reviewers
+  run at once. The `docs` lens
   waits with the `docs` class.
 - **One serialised cell, not per-reviewer worktrees.** Reviewers fan out over one head
   checkout and one cell whose commands run one at a time, so two test runs never trample
@@ -800,13 +843,25 @@ CI shell needs (`stage0-report.ts`, `forge-review.ts`) and the workflows
   because GitHub suppresses the implicit `workflow_run` event after a run that another
   workflow started with `GITHUB_TOKEN`; `workflow_dispatch` is the documented exception that
   always creates a run. The findings workflow runs in the base repository's context with the
-  model key and a token that can write a review. It verifies that the named run is the
+  model key. Its ordinary workflow token can only read pull-request metadata and artefacts.
+  Before a step receives model or App credentials it builds the reviewed
+  `packages/review/Dockerfile.cell`, fetches the resolved refs, and primes pnpm's store from
+  the exact head lockfile with lifecycle scripts disabled. After that preparation it mints a
+  repository-scoped installation token for the existing Copse release/deploy App with only
+  `pull-requests: write`, and passes that token only as the forge posting credential. It
+  verifies that the named run is the
   successful default-branch `Copse review ground` run, resolves the current contributor commit
   and base from GitHub's Pull Request API, and never trusts the artefact or a dynamic run
   association. It fetches the head
-  to read it, imports the Stage 0 report through `--stage0-json` — which makes the run
-  read-only whatever else is asked, and refuses a report for another commit — runs the
-  reviewers and the challenger over the checkouts, and posts one review. The Forgejo
+  to read it and imports the Stage 0 report through `--stage0-json`, which is read-only by
+  default and refuses a report for another commit. The workflow explicitly supplies
+  `--backend container`: the model loop remains in the trusted host process while
+  `run_command` and Stage 4 reproducers execute through the container backend with no network,
+  no capabilities, a read-only root, bounded resources and an allowlisted environment that
+  excludes every provider, cloud, workflow and forge credential. Imported Stage 0 re-prepares
+  the fresh head checkout and build output before reviewers run; base is prepared independently
+  before the first reproducer. `--backend ephemeral-runner` is rejected for an imported report,
+  so the secret-bearing model host cannot be mislabeled as a cell. The Forgejo
   workflow is the same split as two jobs of one workflow (Forgejo Actions has no
   `workflow_run`), with the secret-holding job gated to same-repository pull requests and
   a note that its runners must be ephemeral.
@@ -828,17 +883,52 @@ CI shell needs (`stage0-report.ts`, `forge-review.ts`) and the workflows
   challenged findings. A separate
   schedule samples no more than one recent, non-draft, unlabelled same-repository pull
   request per night; `copse-review-skip` is the opt-out. Both paths run the trusted default-branch CLI,
-  preserve the secret-free Stage 0 / read-only model-job boundary, post `COMMENT` reviews
+  preserve the secret-free Stage 0 / container-backed focused-validation boundary, post `COMMENT` reviews
   only, and retain JSON plus SARIF for 30 days. This is explicit remote processing: the
   secret-redacted diff and file context leave the GitHub runner for Scaleway. Human
   accepted/rejected judgements, report latency and token usage are gathered during the
   rollout; making the reviewer required needs a separate decision backed by that record.
   Dogfood acceptance is operational evidence, not the Martian offline measurement B8
   requires for the public 85% precision claim.
-- **Known limit: reproducers in CI.** The findings job has no cell, so Stage 4 there is
-  the challenger only; a reproducer needs execution, which belongs to the secret-free job,
-  and a job-crossing loop for it is a follow-up. The reports say "unverified" or "survived
-  challenge" accordingly, never "confirmed" without execution.
+- **A bounded clean review names its limits.** _Added 2026-09-23 after live review #2737._
+  The required `finish_review` coverage attestation stays structured through Stage 5. Forge
+  projections surface every material `couldNotVerify` value and reserve plain “No findings” for
+  completed turns that attest `Nothing`; unavailable dependency source or command execution is
+  therefore visible instead of being collapsed into a false-clean result.
+- **Focused validation in GitHub CI.** _Added 2026-09-23 after live review #2737._ Imported
+  Stage 0 remains read-only unless a real container is explicitly requested. Copse's findings
+  workflows build that cell before credentials enter a step, then let reviewers run the
+  smallest project-supported focused test or probe and let Stage 4 execute head/base
+  reproducers. The existing read/search/diff tools remain host-side and jailed to the checkout;
+  only argv execution crosses into the cell. The ordinary CI workflow builds the same image and
+  runs the hostile-fixture conformance test when this surface changes (and nightly), so a broken
+  image, network wall, secret wall or trusted-script mount blocks the aggregate gate. The Forgejo
+  example remains read-only until its ephemeral runner contract also guarantees Docker isolation.
+- **Dependency source inspection stays inside the cell.** _Added 2026-09-23 after the first
+  post-merge validation-evidence run._ pnpm's top-level package entries are checkout symlinks, so
+  host-side `read_file` must continue to reject them. `read_dependency_file` instead runs fixed
+  trusted reader code in the same serialised, secret-free cell as focused commands, rejects paths
+  outside `node_modules/` and canonical targets outside the disposable dependency tree, and does not count
+  as executable validation. Reviewers are still instructed to run the smallest relevant focused
+  test or probe when executable code changed.
+- **Structured closure owns the final call budget.** _Added 2026-09-23 after the first
+  dependency-enabled dogfood run._ That run reached the right clean conclusion and read the
+  installed dependency, but the generic prose finalizer consumed three more calls and its
+  forced repair then terminated before `finish_review`. A review role now spends no LLM calls
+  on that generic finalizer: it proceeds directly to the bounded closure-only continuation,
+  with a one-checkpoint reasoning ceiling. JSON-encoded argv is decoded back to a validated
+  string array, including literal control characters that an OpenAI-compatible model can leave
+  inside that nested JSON string, and dependency reads accept the package-relative spelling
+  models naturally use; neither tolerance introduces a shell or expands the canonical dependency
+  boundary. The first post-merge proof on PR #2737 completed through that reserved closure call,
+  read jsdom's installed source, ran the focused 4-test selector plus positive/negative esbuild
+  probes, used the explicit Scaleway project endpoint, and posted as the Copse GitHub App.
+- **Hosted scratch is semantically ordinary workspace storage.** _Added 2026-09-23 after the
+  first focused-validation proof._ GitHub jobs pass `$RUNNER_TEMP` as `--scratch-parent`, keeping
+  the disposable checkout, `HOME` and `TMPDIR` away from the literal `/tmp` namespace. Product
+  tests that intentionally classify machine-global `/tmp` paths therefore see the same path
+  semantics in a review cell as they do in normal CI, instead of producing baseline-only false
+  failures.
 - **Known limit: the dependency store across platforms.** The cell resolves the offline
   install from the host's pnpm store, which holds the host platform's packages. The GitHub
   ground jobs prime that store from the exact contributor lockfile and patch data with
@@ -849,7 +939,7 @@ CI shell needs (`stage0-report.ts`, `forge-review.ts`) and the workflows
   Pointing the cell at the runtime's shared store volume, populated by an installing
   container run, is the follow-up there.
 
-Not in Phase 4: reproducers in CI (above), `bench:review` (Phase 5), and a foreign-diff
+Not in Phase 4: Forgejo focused-validation parity, `bench:review` (Phase 5), and a foreign-diff
 gesture in the app (the app reviews the thread's own tree; a "review this pull request"
 gesture is a product question for later).
 
@@ -871,15 +961,17 @@ On `main`: the scorer (`packages/review/src/eval.ts`), the harness
   reproducer counts. Reported beside precision: its Wilson 95% lower bound, recall
   (secondary), duplicate count, reproducer rate, and output tokens per unique confirmed
   finding.
-- **The corpus is small and deliberate.** Five cases, each a two-tree project with a
+- **The corpus is small and deliberate.** Seven cases, each a two-tree project with a
   `review.config.json` that runs its own test with `node` so Stage 0 needs no install: a
   defect the project's test catches (Stage 0 mints it, a reviewer anchors it, a reproducer
   confirms it); a resource leak no test covers (the challenger is the verdict); a clean
   rename where the mock reviewer's wrong candidate is refuted and dropped; a dropped null
   guard reported by two lenses in different words (one finding after Stage 3, confirmed by
   a reproducer); and a harmless change where a wrong claim the challenger cannot settle
-  reaches the human. That last one is the point: the corpus scores 80%, not 100%, so the
-  metric visibly bites, and a change that lets one more wrong claim through moves it.
+  reaches the human; and two semantic-boundary defects model new image producers that omit
+  metadata used by unchanged rendering and trust consumers. The false alarm is deliberate:
+  the corpus scores 85.7%, not 100%, so the metric visibly bites, and a change that lets one
+  more wrong claim through moves it.
 - **Two profiles, one harness.** `--mock` plays each case's `mock.json` through the same
   `ScriptedProvider` the CLI's `--provider mock` uses — deterministic, no model, a few
   seconds — and is the self-test CI runs per PR with `--gate`. A model profile goes through
@@ -887,10 +979,13 @@ On `main`: the scorer (`packages/review/src/eval.ts`), the harness
   `--challenger`, keys from the environment). `--no-verify`, `--lenses` and the model list
   are the ablation knobs; `--compare` prints the delta between two summaries, which is how
   Q6 (cross-model ensembling against one model) and "how much does verification buy" are
-  read.
+  read. The manual trusted-default-branch workflow can target one case and a lens set for a
+  controlled real-model rerun; every case retains its headless event JSONL beside the report
+  so a miss can be diagnosed rather than inferred from its final summary.
 - **The ratchet.** `benchmarks/review/baseline.json` is coverage-baseline style. Each entry
   is keyed by evaluator version, provider, reviewer and challenger models, credential-free
-  endpoint identity, lenses, verification mode, selected cases and corpus fingerprint.
+  endpoint identity, lenses, verification mode, reviewer and verification budgets, selected
+  cases and corpus fingerprint.
   `--gate` fails closed when that exact baseline is absent, when precision drops (the mock
   gets no tolerance, a model profile five points), when true positives fall, when
   duplicates rise, or when tokens per confirmed finding grow past 1.25×;
@@ -901,10 +996,10 @@ On `main`: the scorer (`packages/review/src/eval.ts`), the harness
   point precision ≥85%, a two-sided 95% Wilson lower bound ≥85%, recall ≥50%, and no
   duplicates. This is the gate for evidence behind B8; a historical baseline only detects
   regressions and can never substantiate the claim by itself.
-- **What is and is not measured.** The mock's 80% is a property of the corpus and of the
+- **What is and is not measured.** The mock's 85.7% is a property of the corpus and of the
   pipeline's non-model parts; it says nothing about any reviewer. The corpus is also small
   enough that any model number over it is a smoke figure, not a claim: its five surfaced
-  observations give the 80% mock score a 37.6% Wilson lower bound, and even a perfect 5/5
+  observations give the 85.7% mock score a 48.7% Wilson lower bound, and even a perfect 5/5
   would not pass. Mapping Martian's offline set — or a comparably sized, independently
   labelled real-PR corpus — is the work that makes B8 measurable and is not faked here.
 
@@ -934,8 +1029,8 @@ Not in Phase 5: a mapped Martian-offline or equivalent real-PR corpus, and the o
   log bound here: decision 15 for the typed chunk the findings card consumes, decision 5 for
   any machine turn a review starts (none does: every review is a human gesture or an agent
   tool call inside an existing turn).
-- **Phase 4 — Container backend + foreign diffs + CI shell.** ✅ Landed, except
-  reproducers in CI; see above. The container `IsolationBackend`, consuming the
+- **Phase 4 — Container backend + foreign diffs + CI shell.** ✅ Landed for GitHub;
+  Forgejo focused-validation parity remains. The container `IsolationBackend`, consuming the
   thread-in-container runtime's image and naming in the app (the local-docker provider
   [`copse-cloud-workspaces.md`](copse-cloud-workspaces.md) C1 proposed), which unlocks
   foreign-diff review (B3); then the GitHub workflows with inline comments, opt-in by label,
@@ -1016,7 +1111,7 @@ comparable leaderboard):
 
 Martian's offline track instead fixes 50 real pull requests and 173 golden comments and
 uses a semantic judge. Results from the live online track cannot establish the offline B8
-claim, and neither can this repository's five synthetic cases.
+claim, and neither can this repository's seven synthetic cases.
 
 Greptile's online point estimate implies roughly one wrong or ignored comment in four in
 that setting; it does not transfer to the offline track. Price floor for context: Gemini
@@ -1114,3 +1209,20 @@ Sources: [Martian Code Review Bench](https://codereview.withmartian.com/) ·
    regression, given Problem 1.
 4. **D4 — Does the reviewer get its own repository?** Deferred by request. The `@copse/review`
    boundary is what keeps the option open at low cost.
+
+### Candidate preservation and bounded investigation (2026-09-24)
+
+A reviewer records a concrete suspected defect with `record_suspicion` before investigating it.
+The immutable ledger is review data, not published findings. `finish_review` must resolve every id
+exactly once: link to a structured finding, refute with specific counterevidence, or leave unresolved
+and name the id in `couldNotVerify`. Missing evidence or exhausted budget cannot refute a suspicion.
+Closure validation is atomic; a rejected disposition cannot partially publish findings. Dispositions
+remain auditable in the tool events. This makes omissions detectable; it does not independently prove
+that a model's counterevidence is correct or capture suspicions it never records.
+
+For review budgets of at least six steps, up to three steps (at most one third) are reserved inside
+the existing `maxSteps` for focused investigation of recorded suspicions. They run before the existing
+three-call protocol repair, with the same tools, execution cell and permission policy. The reserve
+only runs while completion is missing and the ledger is nonempty. Cancellation and provider errors
+remain terminal. Protocol repair receives the ledger and cannot silently discard it. This is a bounded
+phase of the same review turn, not product auto-continuation or a change to hook budgets.

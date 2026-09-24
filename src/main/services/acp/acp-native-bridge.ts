@@ -336,11 +336,11 @@ function mergeBridgeExecuteSignal(
 /**
  * A tool result as MCP content blocks.
  *
- * Text-only for almost every bridged tool; `video_frames` also returns images,
- * and dropping those would hand the agent a manifest that says "frames follow"
- * with nothing after it. Data URLs are split into the base64 payload and MIME
- * type MCP wants; anything not shaped like a data URL is skipped rather than
- * forwarded as a broken block.
+ * Text-only for most bridged tools; visual tools such as `video_frames` and
+ * `browser_screenshot` also return images. Dropping those would hand the agent
+ * a manifest that describes pixels it never received. Data URLs are split into
+ * the base64 payload and MIME type MCP wants; anything not shaped like a data
+ * URL is skipped rather than forwarded as a broken block.
  */
 function toMcpContent(
   result: string,

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { expectAssistantReply, prepareMockTurn } from './helpers/mock-scenario.ts'
 import {
   approvalDialogShowing,
   approveUnsandboxedTerminalIfPrompted,
@@ -122,7 +122,15 @@ describe('terminal checkout transition', () => {
     await isolated.click()
     await expect(checkout).toHaveText('Isolated worktree')
 
-    await setComposerValue('Create an isolated checkout')
+    const reply =
+      'The isolated checkout is ready, and its README contains the terminal transition fixture.'
+    await prepareMockTurn('Create an isolated checkout', [
+      { toolCalls: [{ name: 'read_file', args: { path: 'README.md' } }] },
+      {
+        text: reply,
+        expectToolResults: [{ name: 'read_file', includes: 'terminal transition fixture' }],
+      },
+    ])
     await $('.submit-btn').click()
 
     // Approve *inside* the wait. The worktree shell can be gated on "Open
@@ -177,6 +185,7 @@ describe('terminal checkout transition', () => {
       timeout: 30_000,
       timeoutMsg: 'expected the replacement terminal to use the thread worktree',
     })
+    await expectAssistantReply(reply)
     await browser.execute(() => {
       const list = document.querySelector<HTMLElement>('.terminals-list')
       if (list) list.style.flex = 'none'

@@ -1,13 +1,15 @@
 import { after, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { access, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { setTimeout as delay } from 'node:timers/promises'
 import { HEADLESS_EXIT, headlessEventSchema } from '@copse/agent/headless-contract.ts'
 import { main, reviewPermissionProfile } from './cli.ts'
 import { decodeFindings } from './finding.ts'
+import { createEphemeralRunnerBackend } from './host-process-backend.ts'
+import type { IsolationBackend } from './isolation.ts'
 import { REVIEW_CONFIG_FILENAME } from './project-commands.ts'
 import { createTestRepo, worktreeCount, type TestRepo } from './test-repo.ts'
 
@@ -132,6 +134,37 @@ describe('copse-review CLI', () => {
     const sarif: unknown = JSON.parse(await readFile(join(dir, 'report.sarif'), 'utf8'))
     assert.ok(typeof sarif === 'object' && sarif !== null)
     assert.equal(Reflect.get(sarif, 'version'), '2.1.0')
+  })
+
+  it('places disposable checkouts under an explicit scratch parent', async () => {
+    const repo = await fixture({})
+    const parent = await realpath(await mkdtemp(join(tmpdir(), 'review-cli-scratch-parent-')))
+    scratch.push(parent)
+    let cellScratch = ''
+    const delegate = createEphemeralRunnerBackend()
+    const backend: IsolationBackend = {
+      ...delegate,
+      createCell: (spec) => {
+        cellScratch = spec.scratchDir
+        return delegate.createCell(spec)
+      },
+    }
+    let out = ''
+    let err = ''
+    const code = await main(['--base', 'main', '--no-model', '--scratch-parent', parent], {
+      stdout: (text) => {
+        out += text
+      },
+      stderr: (text) => {
+        err += text
+      },
+      env: { PATH: process.env['PATH'] },
+      cwd: repo.root,
+      backend,
+    })
+    assert.equal(code, HEADLESS_EXIT.SUCCESS, `${err}\n${out}`)
+    assert.equal(dirname(cellScratch), parent)
+    await assert.rejects(access(cellScratch), { code: 'ENOENT' })
   })
 
   it('runs the scripted reviewer end to end, emitting a conformant event stream', async () => {
@@ -322,6 +355,40 @@ describe('copse-review CLI', () => {
     assert.doesNotMatch(result.out, /\nNo findings\.\n/)
   })
 
+  it('does not call a completed but materially limited review clean', async () => {
+    const repo = await fixture({})
+    const dir = await mkdtemp(join(tmpdir(), 'review-cli-'))
+    scratch.push(dir)
+    const script = join(dir, 'script.json')
+    await writeFile(
+      script,
+      JSON.stringify([
+        finishReviewStep(
+          'The changed implementation and its direct callers.',
+          'Dependency source was unavailable in the read-only workspace.',
+        ),
+        { type: 'text', text: 'Done.' },
+      ]),
+    )
+    const result = await run(repo, [
+      '--base',
+      'main',
+      '--allow-unisolated',
+      '--provider',
+      'mock',
+      '--mock-script',
+      script,
+      '--no-verify',
+    ])
+    assert.equal(result.code, HEADLESS_EXIT.SUCCESS, result.err)
+    assert.match(
+      result.out,
+      /Could not verify \(mock \/ correctness\): Dependency source was unavailable/,
+    )
+    assert.match(result.out, /No findings were reported; review limits remain\./)
+    assert.doesNotMatch(result.out, /\nNo findings\.\n/)
+  })
+
   it('derives the permission profile from the execution decision, failing closed', () => {
     assert.equal(reviewPermissionProfile(true).shell, 'allow')
     assert.equal(reviewPermissionProfile(false).shell, 'deny')
@@ -445,10 +512,15 @@ describe('copse-review CLI', () => {
     await writeFile(
       script,
       JSON.stringify([
-        finishReviewStep('The imported Stage 0 report and changed source.'),
+        { type: 'tool_call', name: 'run_command', args: { argv: ['node', '-e', '1'] } },
+        finishReviewStep(
+          'The imported Stage 0 report and changed source.',
+          'Focused commands were unavailable in the default read-only import.',
+        ),
         { type: 'text', text: 'Done.' },
       ]),
     )
+    const importedEvents = join(dir, 'imported.events.jsonl')
     const posts: { url: string; body: string }[] = []
     let out = ''
     let err = ''
@@ -465,6 +537,8 @@ describe('copse-review CLI', () => {
         'mock',
         '--mock-script',
         script,
+        '--events',
+        importedEvents,
         '--no-verify',
         '--post-review',
         'github',
@@ -498,6 +572,121 @@ describe('copse-review CLI', () => {
     assert.equal(post.url, 'https://api.github.com/repos/copse-dev/fixture/pulls/7/reviews')
     assert.match(post.body, /Executed in the `ephemeral-runner` backend/)
     assert.match(post.body, /pnpm run test|check\.cjs/)
+    assert.match(await readFile(importedEvents, 'utf8'), /run_command is denied/)
+
+    const unsafe = await run(repo, [
+      '--base',
+      'main',
+      '--head',
+      'refs/pull/7/head',
+      '--foreign',
+      '--stage0-json',
+      ground,
+      '--backend',
+      'ephemeral-runner',
+      '--no-model',
+    ])
+    assert.equal(unsafe.code, HEADLESS_EXIT.USAGE)
+    assert.match(unsafe.err, /model job holds secrets.*needs --backend container/)
+
+    // A programmatic container-strength backend stands in for Job B's real
+    // Docker cell. Its fresh checkout is prepared from a caller-trusted script
+    // before the reviewer runs one focused command and cites that evidence.
+    const trustedPrepare = join(dir, 'trusted-prepare.mts')
+    await writeFile(
+      trustedPrepare,
+      "import { mkdirSync, symlinkSync, writeFileSync } from 'node:fs'; mkdirSync('node_modules/.pnpm/fixture@1.0.0/node_modules/fixture', { recursive: true }); writeFileSync('node_modules/.pnpm/fixture@1.0.0/node_modules/fixture/index.js', 'dependency source ready\\n'); symlinkSync('.pnpm/fixture@1.0.0/node_modules/fixture', 'node_modules/fixture', process.platform === 'win32' ? 'junction' : 'dir'); writeFileSync('.focused-ready', 'ready')\n",
+    )
+    const focusedScript = join(dir, 'focused-script.json')
+    await writeFile(
+      focusedScript,
+      JSON.stringify([
+        {
+          type: 'tool_call',
+          name: 'read_dependency_file',
+          args: { path: 'node_modules/fixture/index.js' },
+        },
+        {
+          type: 'tool_call',
+          name: 'run_command',
+          args: {
+            argv: [
+              'node',
+              '-e',
+              "const fs=require('node:fs');if(fs.readFileSync('.focused-ready','utf8')!=='ready')process.exit(2);console.log('focused test passed')",
+            ],
+          },
+        },
+        {
+          type: 'tool_call',
+          name: 'report_finding',
+          args: {
+            path: 'src/math.ts',
+            startLine: 1,
+            class: 'contract',
+            severity: 'high',
+            confidence: 'high',
+            claim: 'add subtracts its second argument.',
+            reason: 'The focused runtime probe exercised the changed implementation.',
+            commandCallIds: ['call-2'],
+          },
+        },
+        finishReviewStep('The changed implementation and a focused runtime probe.'),
+        { type: 'text', text: 'Done.' },
+      ]),
+    )
+    let focusedOut = ''
+    let focusedErr = ''
+    const focusedEvents = join(dir, 'focused.events.jsonl')
+    let focusedReadOnlyPaths: readonly string[] = []
+    const delegate = createEphemeralRunnerBackend()
+    const focusedBackend: IsolationBackend = {
+      ...delegate,
+      createCell: (spec) => {
+        focusedReadOnlyPaths = spec.readOnlyPaths
+        return delegate.createCell(spec)
+      },
+    }
+    const focusedCode = await main(
+      [
+        '--base',
+        'main',
+        '--head',
+        'refs/pull/7/head',
+        '--foreign',
+        '--stage0-json',
+        ground,
+        '--trusted-prepare',
+        trustedPrepare,
+        '--provider',
+        'mock',
+        '--mock-script',
+        focusedScript,
+        '--events',
+        focusedEvents,
+        '--no-verify',
+      ],
+      {
+        stdout: (text) => {
+          focusedOut += text
+        },
+        stderr: (text) => {
+          focusedErr += text
+        },
+        env: { PATH: process.env['PATH'] },
+        cwd: repo.root,
+        backend: focusedBackend,
+      },
+    )
+    assert.equal(focusedCode, HEADLESS_EXIT.SUCCESS, focusedErr)
+    assert.match(focusedOut, /reviewer mock under correctness — completed/)
+    assert.match(focusedOut, /1 command\(s\) as evidence/)
+    assert.doesNotMatch(focusedOut, /run_command is denied/)
+    const focusedEventText = await readFile(focusedEvents, 'utf8')
+    assert.match(focusedEventText, /read_dependency_file/)
+    assert.match(focusedEventText, /dependency source ready/)
+    assert.ok(focusedReadOnlyPaths.includes(await realpath(trustedPrepare)))
+    assert.equal(focusedReadOnlyPaths.includes(await realpath(dir)), false)
 
     // A report for another commit is refused before any model is called.
     const mismatch = await run(repo, [

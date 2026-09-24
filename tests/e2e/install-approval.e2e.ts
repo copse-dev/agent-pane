@@ -1,12 +1,14 @@
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { setComposerValue } from './helpers/composer.ts'
+import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { waitForAgentIdle } from './helpers.ts'
 
 describe('package install approval', () => {
   before(async () => {
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-install-approval-project', {
+    seedEmptyProject(seedStableWorkspace(), 'e2e-install-approval-project', {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
       theme: 'light',
@@ -24,7 +26,19 @@ describe('package install approval', () => {
   it('shows a clean, install-specific approval dialog', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
-    await setComposerValue('[[mcp:run_shell {"command":"npm install"}]]')
+    const scenario = await installMockScenario({
+      title: 'Install project dependencies',
+      turns: [
+        {
+          user: 'Install the project dependencies.',
+          responses: [
+            { toolCalls: [{ name: 'run_shell', args: { command: 'npm install' } }] },
+            { text: "Okay, I won't install the dependencies." },
+          ],
+        },
+      ],
+    })
+    await setComposerValue('Install the project dependencies.')
     await $('.submit-btn').click()
 
     const dialog = await $('#approval-dialog')
@@ -76,5 +90,8 @@ describe('package install approval', () => {
     await saveAppScreenshot('install-approval-dialog.png')
 
     await dialog.$('.approval-reject').click()
+    await waitForAgentIdle(30_000)
+    await expectAssistantReply("Okay, I won't install the dependencies.")
+    await scenario.assertComplete()
   })
 })

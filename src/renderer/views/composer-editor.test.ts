@@ -50,13 +50,70 @@ describe('composer editor value serialization', () => {
     assert.equal(editor.getBlocks().length, 0)
   })
 
-  it('clears text and blocks together', () => {
+  it('keeps an inline thread atomic and removes its attachment state with the chip', () => {
+    const editor = mountComposerEditor()
+    let removals = 0
+    editor.value = 'From '
+    editor.insertThreadChip({ threadId: 'thread-auth', label: 'Auth refactor' }, () => removals++)
+    editor.value = `From ${CHIP_CHAR} please compare this`
+
+    assert.equal(editor.value, `From ${CHIP_CHAR} please compare this`)
+    const inline = editor.getInlineChips()
+    assert.equal(inline.length, 1)
+    const threadChip = inline[0]
+    assert.ok(threadChip)
+    assert.equal(threadChip.kind, 'thread')
+    assert.equal(threadChip.thread.threadId, 'thread-auth')
+    assert.equal(threadChip.thread.label, 'Auth refactor')
+
+    const chip = editor.el.querySelector<HTMLElement>('.inline-thread-chip')
+    assert.ok(chip)
+    assert.ok(chip.querySelector('svg[data-icon="thread"]'))
+    const remove = chip.querySelector<HTMLButtonElement>('.inline-thread-chip-remove')
+    assert.ok(remove)
+    assert.ok(remove.querySelector('svg[data-icon="close"]'))
+    remove.click()
+
+    assert.equal(editor.value, 'From  please compare this')
+    assert.equal(editor.getInlineChips().length, 0)
+    assert.equal(removals, 1)
+  })
+
+  it('reports mixed chips in DOM order rather than insertion order', () => {
+    const editor = mountComposerEditor()
+    editor.insertPasteChip('review notes', 'Notes')
+    editor.insertThreadChip({ threadId: 'thread-auth', label: 'Auth refactor' }, () => {})
+    const threadChip = editor.el.querySelector('.inline-thread-chip')
+    assert.ok(threadChip)
+    editor.el.prepend(threadChip)
+
+    assert.deepEqual(
+      editor.getInlineChips().map((chip) => chip.kind),
+      ['thread', 'paste'],
+    )
+  })
+
+  it('prunes thread state after an atomic browser deletion', () => {
+    const editor = mountComposerEditor()
+    let removals = 0
+    editor.insertThreadChip({ threadId: 'thread-auth', label: 'Auth refactor' }, () => removals++)
+    editor.el.querySelector('.inline-thread-chip')?.remove()
+    editor.el.dispatchEvent(new Event('input', { bubbles: true }))
+
+    assert.equal(editor.value, '')
+    assert.equal(editor.getInlineChips().length, 0)
+    assert.equal(removals, 1)
+  })
+
+  it('clears text and every chip kind together', () => {
     const editor = mountComposerEditor()
     editor.value = 'text'
     editor.insertPasteChip('block')
+    editor.insertThreadChip({ threadId: 'thread-auth', label: 'Auth refactor' }, () => {})
     editor.clear()
     assert.equal(editor.value, '')
     assert.equal(editor.getBlocks().length, 0)
+    assert.equal(editor.getInlineChips().length, 0)
   })
 })
 
@@ -82,6 +139,26 @@ describe('composer editor expandedValue', () => {
     const editor = mountComposerEditor()
     editor.insertPasteChip('const x = 1', 'main.ts:1')
     assert.match(editor.expandedValue(), /```\n\/\/ main\.ts:1\nconst x = 1\n```/)
+  })
+
+  it('restores a thread label while preserving paste expansion', () => {
+    const editor = mountComposerEditor()
+    editor.insertThreadChip({ threadId: 'thread-auth', label: 'Auth refactor' }, () => {})
+    editor.insertPasteChip('review notes', 'Notes')
+    editor.value = `From ${CHIP_CHAR}, apply ${CHIP_CHAR} here`
+
+    assert.deepEqual(
+      editor.getInlineChips().map((chip) => chip.kind),
+      ['thread', 'paste'],
+    )
+    assert.equal(
+      editor.expandedValue(),
+      'From @Auth refactor, apply \n\n```\n// Notes\nreview notes\n```\n\n here',
+    )
+    assert.equal(
+      editor.draftValue(),
+      `From ${CHIP_CHAR}, apply \n\n\`\`\`\n// Notes\nreview notes\n\`\`\`\n\n here`,
+    )
   })
 
   it('returns plain text unchanged when there are no chips', () => {

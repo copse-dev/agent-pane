@@ -273,7 +273,7 @@ export async function buildProvider(
   promptCacheKey?: string,
   opts: BuildProviderOptions = {},
 ): Promise<LLMProvider> {
-  if (process.env['COPSE_PANEL_MOCK_LLM'] === '1') return createProvider(model)
+  if (process.env['COPSE_PANEL_MOCK_LLM'] === '1') return createProvider(model, {}, promptCacheKey)
   const description = await describeProvider(model, opts)
   const provider = buildProviderFromDescription(description, {
     apiKey: apiKeyForDescription(description),

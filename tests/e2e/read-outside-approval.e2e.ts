@@ -1,6 +1,7 @@
+import { submitComposer } from './helpers/composer.ts'
+import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
-import { setComposerValue } from './helpers/composer.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 
 // A command that only reads outside the project asks the read-access question
@@ -23,8 +24,12 @@ describe('read access outside the project approval', () => {
   })
 
   it('collapses the command and offers a per-command answer on expand', async () => {
-    await setComposerValue('[[mcp:run_shell {"command":"ls -la ~/.copse"}]]')
-    await $('.submit-btn').click()
+    await prepareMockToolTurn(
+      'List the files in my Copse profile.',
+      { name: 'run_shell', args: { command: 'ls -la ~/.copse' } },
+      'The profile directory listing was declined.',
+    )
+    await submitComposer()
 
     const dialog = await $('#approval-dialog')
     await dialog.waitForDisplayed({ timeout: 30_000 })

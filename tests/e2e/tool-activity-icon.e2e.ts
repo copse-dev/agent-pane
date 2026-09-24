@@ -1,36 +1,10 @@
+import { submitComposer } from './helpers/composer.ts'
+import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
-import type { MockScriptStep } from '@copse/llm/mock-script'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
-import { setComposerValue } from './helpers/composer.ts'
 import { approveShellCommandIfPrompted } from './helpers/shell-approval.ts'
-
-const SCRIPT = [
-  {
-    when: 'run a short shell command',
-    // Long enough that the running-state assertions (geometry probe, settle
-    // pause, screenshot) all land while the card is still `running`, including
-    // the approval round-trip on platforms without an OS sandbox.
-    tool: { name: 'run_shell', args: { command: 'sleep 15' } },
-  },
-  {
-    when: 'run a short shell command',
-    text: 'The command finished.',
-  },
-] satisfies MockScriptStep[]
-
-async function installMockScript(): Promise<void> {
-  await browser.execute(async (script) => {
-    const bridge = (
-      window as unknown as {
-        __copseE2e?: { setMockScript: (s: unknown) => Promise<{ steps: number; cursor: number }> }
-      }
-    ).__copseE2e
-    if (!bridge?.setMockScript) throw new Error('__copseE2e.setMockScript unavailable')
-    return bridge.setMockScript(script)
-  }, SCRIPT)
-}
 
 describe('tool activity icon', () => {
   before(async () => {
@@ -44,15 +18,9 @@ describe('tool activity icon', () => {
       model: 'claude-sonnet-4-6',
     })
     await browser.reloadSession()
-    await installMockScript()
   })
 
   after(async () => {
-    await browser.execute(async () => {
-      await (
-        window as unknown as { __copseE2e?: { clearMockScript: () => Promise<void> } }
-      ).__copseE2e?.clearMockScript?.()
-    })
     resetUserData()
   })
 
@@ -62,8 +30,12 @@ describe('tool activity icon', () => {
     // specs (terminal-display, double-submit; see wdio.ci.conf.ts).
     this.timeout(90_000)
     await $('.prompt-input').waitForExist({ timeout: 15_000 })
-    await setComposerValue('Run a short shell command')
-    await $('.submit-btn').click()
+    await prepareMockToolTurn(
+      'Run a short shell command',
+      { name: 'run_shell', args: { command: 'sleep 15' } },
+      'The command finished.',
+    )
+    await submitComposer()
     const card = $('.tool-card')
     await card.waitForExist({ timeout: 15_000 })
     await expect(card).toHaveAttribute('data-status', 'running')

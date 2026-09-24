@@ -10,7 +10,6 @@ import {
   APPROVED_PROVIDER_HOSTS_SETTING,
   PROVIDER_ALLOW_USER_APPROVAL_SETTING,
 } from '../../../shared/provider-hosts.ts'
-import { requestApproval } from '../approval.ts'
 import { getSetting, setSetting } from '../storage/settings.ts'
 import { runSerialized } from '../storage/write-queue.ts'
 
@@ -85,6 +84,9 @@ export async function ensureProviderHostApproved(baseUrl: string): Promise<void>
     )
   }
 
+  // Read-only consumers (including saved-profile evals) must not initialize the
+  // app's approval and agent runtime merely to check an already-approved host.
+  const { requestApproval } = await import('../approval.ts')
   const { approved: ok } = await requestApproval({
     title: 'Allow model provider host?',
     body: [

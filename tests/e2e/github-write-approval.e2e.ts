@@ -1,6 +1,6 @@
+import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
 
@@ -9,7 +9,7 @@ import { waitForAgentIdle } from './helpers.ts'
 describe('GitHub write approval', () => {
   before(async () => {
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-github-write-approval-project', {
+    seedEmptyProject(seedStableWorkspace(), 'e2e-github-write-approval-project', {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
     })
@@ -23,7 +23,11 @@ describe('GitHub write approval', () => {
   it('shows a human question and PR target instead of snake_case + JSON', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
-    await setComposerValue('[[mcp:gh_pr_mark_ready {"number":1478}]]')
+    await prepareMockToolTurn(
+      'Mark pull request 1478 ready for review.',
+      { name: 'gh_pr_mark_ready', args: { number: 1478 } },
+      'The readiness request was declined; the pull request remains unchanged.',
+    )
     await $('.submit-btn').click()
 
     const dialog = await $('#approval-dialog')
@@ -50,7 +54,11 @@ describe('GitHub write approval', () => {
   it('prompts before gh_pr_create opens a pull request, showing the PR title', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
-    await setComposerValue('[[mcp:gh_pr_create {"title":"Fix the parser"}]]')
+    await prepareMockToolTurn(
+      'Create a pull request titled Fix the parser.',
+      { name: 'gh_pr_create', args: { title: 'Fix the parser' } },
+      'The pull request request was declined; no pull request was created.',
+    )
     await $('.submit-btn').click()
 
     const dialog = await $('#approval-dialog')

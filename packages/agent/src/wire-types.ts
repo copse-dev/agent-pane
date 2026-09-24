@@ -18,6 +18,16 @@ import type {
 export type { ToolResultImage } from '@copse/llm/wire-types.ts'
 import type { ReasoningLevel } from '@copse/llm/model-parameters.ts'
 import type { PanelData } from './plugins/plugin-panel.ts'
+import type { VisualEvidenceDraft } from './visual-evidence.ts'
+export type {
+  BrowserVisualEvidenceSource,
+  VisualEvidenceAsset,
+  VisualEvidenceAssetMetadata,
+  VisualEvidenceDraft,
+  VisualEvidenceKind,
+  VisualEvidenceRef,
+  VisualEvidenceSource,
+} from './visual-evidence.ts'
 
 export type TodoStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled'
 
@@ -141,12 +151,19 @@ export type ToolExecuteResult =
        */
       resultFormat?: 'markdown'
       /**
-       * Images to put in front of the model alongside `result` — currently the
-       * stills `video_frames` pulls out of a screen recording. Provider support
+       * Images to put in front of the model alongside `result` — screenshots,
+       * generated images, or stills from `video_frames`. Provider support
        * differs (see `@copse/llm/tool-result-images.ts`) and a trimmed history
        * drops them first, so `result` must stand on its own as text.
        */
       images?: ToolResultImage[]
+      /**
+       * Visuals the assistant explicitly chose to publish into its response.
+       * Unlike `images`, these are presentation output rather than model input:
+       * the loop streams them to the owning assistant message and the thread
+       * store replaces each data URL with an immutable blob reference.
+       */
+      visualEvidence?: VisualEvidenceDraft[]
     }
 
 export function normalizeToolExecuteResult(value: ToolExecuteResult): {
@@ -154,6 +171,7 @@ export function normalizeToolExecuteResult(value: ToolExecuteResult): {
   editStats?: ToolEditStats
   resultFormat?: 'markdown'
   images?: ToolResultImage[]
+  visualEvidence?: VisualEvidenceDraft[]
 } {
   if (typeof value === 'string') return { result: value }
   return value
@@ -271,6 +289,12 @@ export interface ContextBreakdown {
  */
 export type AgentStreamChunk =
   | ProviderStreamChunk
+  /** Explicit assistant-owned visual proof produced by a tool call. */
+  | {
+      type: 'visual_evidence'
+      toolCallId: string
+      evidence: VisualEvidenceDraft[]
+    }
   /** Replace accumulated assistant text (e.g. after stripping embedded pseudo tool XML). */
   | { type: 'text_replace'; text: string }
   | {
@@ -300,6 +324,7 @@ export type AgentStreamChunk =
       result: string
       isError: boolean
       editStats?: { additions: number; deletions: number }
+      images?: ToolResultImage[]
     }
   | { type: 'subagent_done'; parentToolCallId: string; summary: string; usage?: ModelUsage }
   | { type: 'subagent_error'; parentToolCallId: string; error: string }

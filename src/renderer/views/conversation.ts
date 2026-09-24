@@ -35,7 +35,7 @@ import {
   getArtefactPreview,
   requestArtefactShow,
 } from '../canvas/artefact-previews.ts'
-import { createInlineArtefact } from '../canvas/inline-artefact.ts'
+import { createInlineArtefact, disposeInlineArtefacts } from '../canvas/inline-artefact.ts'
 import { artefactTitleFromUri } from '@shared/canvas/artefact.ts'
 import { getThreadById, getActiveThread, setQueuePaused } from '@shared/store/thread-helpers.ts'
 import { CONTAINER_RUN_ADOPT_EVENT } from '@shared/store/container-run-card.ts'
@@ -93,6 +93,7 @@ import { TODOS_PLUGIN_ID, TODOS_PANEL_CONTRIBUTION_ID } from '@copse/agent/plugi
 import { createAppleDevelopmentPanel } from './apple-development-panel.ts'
 import { createReviewCardEl } from './review-panel.ts'
 import { createComparisonCardEl } from './comparison-panel.ts'
+import { createVisualEvidenceSection } from './visual-evidence-card.ts'
 import { createReviewFindingsCardEl } from './review-findings-card.ts'
 import {
   dismissComparison,
@@ -434,7 +435,11 @@ function syncMessageCanvasPreviews(
 ): void {
   const body = msgEl.querySelector<HTMLElement>(':scope > .message-body')
   if (!body) return
-  body.querySelector(':scope > .message-canvas-previews')?.remove()
+  const current = body.querySelector<HTMLElement>(':scope > .message-canvas-previews')
+  if (current) {
+    disposeInlineArtefacts(current)
+    current.remove()
+  }
 
   const cards = (msg.canvasArtefacts ?? []).flatMap((artefact) => {
     const card = projectId
@@ -445,6 +450,15 @@ function syncMessageCanvasPreviews(
   if (cards.length > 0) {
     body.append(el('div', { class: 'message-canvas-previews' }, ...cards))
   }
+  syncToolRunMemberVisibility(msgEl)
+}
+
+function syncMessageVisualEvidence(msgEl: HTMLElement, msg: Message): void {
+  const body = msgEl.querySelector<HTMLElement>(':scope > .message-body')
+  if (!body) return
+  body.querySelector(':scope > .message-visual-evidence')?.remove()
+  const section = createVisualEvidenceSection(msg.visualEvidence ?? [])
+  if (section) body.append(section)
   syncToolRunMemberVisibility(msgEl)
 }
 
@@ -1828,9 +1842,9 @@ function transcriptChip(
 }
 
 /**
- * Render a sent user message with its attachment chips: each pasted block sits
- * inline at its U+FFFC placeholder (in `content`), and file/thread references
- * follow in a trailing row. Pastes are matched to placeholders by order.
+ * Render a sent user message with its attachment chips: positional paste/thread
+ * references sit inline at U+FFFC placeholders in `content`; remaining
+ * attachments follow in a trailing row. Chips are matched by document order.
  */
 function renderUserTranscript(
   host: HTMLElement,
@@ -1838,23 +1852,31 @@ function renderUserTranscript(
   attachments: TranscriptAttachment[],
   api: ApiClient,
 ): void {
-  const pastes = attachments.filter((a) => a.kind === 'paste')
-  const trailing = attachments.filter((a) => a.kind !== 'paste')
+  // Positional composer attachments lead the array in the same order as the
+  // placeholders. Anything after the final placeholder belongs in the trailing
+  // row. This also keeps older messages compatible: their paste attachments
+  // already led the array, while legacy thread refs followed them.
+  const inlineCount = countChipPlaceholders(content)
+  const firstNonPositional = attachments.findIndex(
+    (attachment) => attachment.kind !== 'paste' && attachment.kind !== 'thread',
+  )
+  const positionalPrefixLength = firstNonPositional === -1 ? attachments.length : firstNonPositional
+  const boundInlineCount = Math.min(inlineCount, positionalPrefixLength)
+  const inline = attachments.slice(0, boundInlineCount)
+  const trailing = attachments.slice(boundInlineCount)
 
-  // Text with its inline paste chips restored at each placeholder. `firstChip`
-  // is where this run of placeholders starts in the message's paste list, so a
-  // region painted on its own — one bookend of a fold — still binds its chips to
-  // the right snapshots instead of restarting from the first paste.
+  // Restore each positional paste/thread chip at its placeholder. `firstChip`
+  // is where this fold region starts in the message's attachment list.
   const paintRegion = (sink: HTMLElement, text: string, firstChip: number): void => {
     const parts = text.split(CHIP_CHAR)
     parts.forEach((part, i) => {
       if (part) sink.append(document.createTextNode(part))
       if (i < parts.length - 1) {
-        // Pass the whole attachment, not just its label: the snapshot behind a
-        // paste is what makes its chip openable in the preview modal. A
-        // placeholder with no attachment left to match stays display-only.
+        // Pass the whole attachment, not just its label: paste snapshots remain
+        // openable in the preview modal. An unmatched placeholder stays
+        // display-only for legacy/truncated messages.
         sink.append(
-          transcriptChip(pastes[firstChip + i] ?? { kind: 'paste', label: 'Pasted text' }, api),
+          transcriptChip(inline[firstChip + i] ?? { kind: 'paste', label: 'Pasted text' }, api),
         )
       }
     })
@@ -1863,7 +1885,7 @@ function renderUserTranscript(
   // A prompt carrying attachments is still a prompt: fold its middle when it is
   // long, exactly as the plain-text path does. The head/middle/tail are
   // contiguous slices of `content`, so counting placeholders in the earlier
-  // regions gives each one its offset into `pastes`.
+  // regions gives each one its offset into the positional attachments.
   const fold = splitUserPromptForFold(content)
   if (fold) {
     const headChips = countChipPlaceholders(fold.head)
@@ -1879,8 +1901,8 @@ function renderUserTranscript(
     paintRegion(host, content, 0)
   }
 
-  // Outside the fold: file/thread chips stay visible while the middle is
-  // collapsed, so a folded prompt still shows what was attached to it.
+  // Outside the fold: non-positional and legacy attachments stay visible while
+  // the middle is collapsed, so a folded prompt still shows what was attached.
   if (trailing.length) {
     const row = el('div', { class: 'transcript-attachment-row' })
     for (const a of trailing) row.append(transcriptChip(a, api))
@@ -3157,6 +3179,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       ...(run ? { run, liveStepId: liveStepMessageId(thread) } : {}),
     })
     syncMessageCanvasPreviews(msgEl, msg, store.getState().activeProjectId, threadId, api)
+    syncMessageVisualEvidence(msgEl, msg)
     // A run's rollup lives on its anchor, so inserting one message changes what
     // a *different* message renders: a member joining gives the anchor a new
     // step, and an anchor arriving during the newest-first backfill takes back
@@ -3583,6 +3606,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       lastScrollTop = 0
     }
     disclosureElements.clear()
+    disposeInlineArtefacts(list)
     clear(list)
     backfillGeneration++
     renderedThreadId = thread?.id ?? null
@@ -3731,6 +3755,15 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       const msgEl = list.querySelector<HTMLElement>(`[data-message-id="${mid}"]`)
       if (thread && msg?.role === 'assistant' && msgEl) {
         syncMessageCanvasPreviews(msgEl, msg, store.getState().activeProjectId, thread.id, api)
+        scrollToBottom()
+      }
+    }),
+    store.on('message_visual_evidence_changed', (mid) => {
+      const thread = getActiveThread(store)
+      const msg = thread?.messages.find((message) => message.id === mid)
+      const msgEl = list.querySelector<HTMLElement>(`[data-message-id="${mid}"]`)
+      if (msg?.role === 'assistant' && msgEl) {
+        syncMessageVisualEvidence(msgEl, msg)
         scrollToBottom()
       }
     }),
@@ -3889,6 +3922,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     })
     revealTimers.clear()
     compactTimers.clear()
+    disposeInlineArtefacts(list)
     unbindFileLinks()
     unbindWorkspaceLinks()
     unbindBrowserLinks()

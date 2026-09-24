@@ -71,9 +71,11 @@ describe('browser-hosted markdown geometry', () => {
         const text = await browser.execute(
           () => document.querySelector('.messages-list')?.textContent ?? '',
         )
-        return text.includes(`Demo response to: ${prompt}`)
+        return text.includes(
+          'The renderer receives each response chunk, appends it to the conversation, and marks the turn complete when streaming ends.',
+        )
       },
-      { timeoutMsg: 'expected the demo ApiClient to emit a rendered response' },
+      { timeoutMsg: 'expected the demo API client to emit a rendered response' },
     )
   })
 })

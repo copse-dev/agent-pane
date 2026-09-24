@@ -535,6 +535,7 @@ export async function runThreadReview(options: ReviewRunOptions): Promise<Review
       const reviewerProvider = await providerFor(models.reviewer)
       reviews = await runReviewers({
         ...host,
+        validation: stage0,
         reviewers: [{ model: models.reviewer, providerFor: (): LLMProvider => reviewerProvider }],
         lenses,
         threadId: threadKey,

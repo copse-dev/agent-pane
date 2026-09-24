@@ -1,7 +1,8 @@
 # Running a thread inside a container
 
 **Status: Active (experimental implementation on `main`, reviewed at `a2880354f`).** A thread can be run unattended inside a
-disposable, hardened local Docker container with no user prompts: the product's own headless
+disposable, hardened local Docker container with no user prompts (Apple container is not yet
+a supported engine for this path; see below): the product's own headless
 agent loop runs in the guest, contained effects run without asking, outward effects are queued
 for review, and the result comes back to the host as commits under `refs/copse/runs/<id>`.
 The prototype is exercised end to end by
@@ -237,6 +238,14 @@ dispatch, gate, deferral queue and carry-out):
 - **U0's measurement.** Whether a container actually removes most prompts on real long runs
   is still the empirical question `unattended-runs.md` asks first. This prototype makes the
   experiment runnable; it does not answer it.
+- **Apple container as the host engine.** Development and eval scripts already choose
+  Docker or Apple container via `COPSE_CONTAINER_ENGINE` (`scripts/lib/container-engine.mts`,
+  `docs/agent-development.md`). Unattended thread runs do **not**: the guest attestation
+  claims `--network none`, pids limits, and default seccomp/AppArmor, and the host drives
+  `create` then `start --attach` for the stdio egress link. Apple container does not expose
+  those the same way (including the open host-only network issue). When Docker is down and
+  Apple container is ready, the app fails **before** `docker build` with an explicit message
+  rather than a missing `docker.sock` error; it does not silently run under Apple container.
 
 ## Known implementation traps
 
@@ -638,7 +647,7 @@ guarantee, and the record must say so.
   proxy carries HTTP only. The description's schema is its type, as the supervisor's task
   schema is. Two smaller consolidations from the same review: the working-tree snapshot
   (throwaway index → tree → commit) that the carry-in, the worktree backup and the remote
-  e2e push had each written out lives once in `git-snapshot.ts` over an injected git, and
+  e2e push had each written out lives once in `git-snapshot.mts` over an injected git, and
   the follow-up's cherry-pick is serialized per checkout through the thread store's
   `runSerialized` rather than a mutex of its own; and `runHeadlessAgent` returns the
   turn's own `turnOutcome`, so the worker reports a failed turn from the loop's verdict

@@ -11,9 +11,10 @@
 // that passes on head can produce no finding, so the base run would only be
 // spent on the "fixed" note, and the common case — a clean head — costs one
 // pass instead of two.
-import { access, mkdtemp, realpath } from 'node:fs/promises'
+import { randomBytes } from 'node:crypto'
+import { access, mkdir, mkdtemp, realpath, symlink } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { redactSecrets } from '@copse/llm/redact-secrets.ts'
 import { materialiseCheckouts, type GitRunner, type MaterialisedCheckouts } from './checkouts.ts'
 import { readCheckoutFile } from './checkout-fs.ts'
@@ -43,6 +44,7 @@ import {
   type UnsupportedProject,
 } from './project-commands.ts'
 import { removeTree } from './remove-tree.ts'
+import { newTestFailures, parseTestFailureReport, type TestFailureReport } from './test-failures.ts'
 import { newDiagnostics, parseTscDiagnostics, type TscDiagnostic } from './tsc-diagnostics.ts'
 
 export const STAGE0_REPORT_VERSION = 1
@@ -80,10 +82,23 @@ export interface Stage0Options {
    * host's `COREPACK_HOME`, else `~/.cache/node/corepack` when it exists.
    */
   readonly corepackHome?: string | undefined
+  /**
+   * A preparation command supplied by the trusted caller rather than by the
+   * checkout. CI uses this to keep one reviewed preparation policy across old
+   * pull-request heads. Any paths the command needs inside a container must be
+   * listed in `readOnlyPaths`; they are never made writable in the cell.
+   */
+  readonly trustedPreparation?: TrustedPreparation | undefined
   /** Parent of the per-run scratch directory. Default: the OS temp dir. */
   readonly scratchParent?: string
   readonly git?: GitRunner
   readonly now?: () => number
+}
+
+export interface TrustedPreparation {
+  readonly argv: readonly [string, ...string[]]
+  readonly timeoutMs: number
+  readonly readOnlyPaths: readonly string[]
 }
 
 export type CheckStatus = 'passed' | 'failed' | 'timed-out'
@@ -98,6 +113,7 @@ export interface CheckRun {
   /** Capped, secret-scrubbed tail of the output. */
   readonly output: string
   readonly outputTruncated: boolean
+  readonly testFailures?: TestFailureReport
 }
 
 export type CheckVerdict =
@@ -105,7 +121,7 @@ export type CheckVerdict =
   | 'clean'
   /** Failed on head, passed on base — a finding. */
   | 'regressed'
-  /** Failed on both — not this change's doing, and not a finding. */
+  /** Complete failure inventories establish that head has no new failures. */
   | 'failing-on-base'
   /** Passed on head, failed on base. Only observed when base ran for another reason. */
   | 'fixed'
@@ -328,7 +344,8 @@ async function runTarget(
       output: scrub(result.output),
       outputTruncated: result.outputTruncated,
     }
-    runs.set(command.kind, run)
+    const testFailures = command.kind === 'test' ? parseTestFailureReport(run.output) : null
+    runs.set(command.kind, testFailures === null ? run : { ...run, testFailures })
     if (command.kind === 'prepare' && run.status !== 'passed') {
       prepareFailure = `dependencies could not be prepared on ${target} (${run.status}, \`${quoteArgv(run.argv)}\`)`
     }
@@ -352,6 +369,50 @@ async function resolveCorepackHome(
 function checkKinds(project: ProjectCommands | UnsupportedProject): CheckKind[] {
   if (project.ecosystem === 'unsupported') return []
   return project.commands.map((command) => command.kind).filter((kind) => kind !== 'prepare')
+}
+
+function commandsFor(
+  project: ProjectCommands,
+  trustedPreparation: TrustedPreparation | undefined,
+): readonly CheckCommand[] {
+  if (trustedPreparation === undefined) return project.commands
+  const prepare: CheckCommand = {
+    kind: 'prepare',
+    argv: trustedPreparation.argv,
+    timeoutMs: trustedPreparation.timeoutMs,
+  }
+  return [prepare, ...project.commands.filter((command) => command.kind !== 'prepare')]
+}
+
+/**
+ * pnpm maintains a mutable `projects/` registry beside its immutable package
+ * content. Pointing it directly at a read-only store therefore fails before an
+ * offline install can use the content. A symlink whose configured path is
+ * lexically inside each disposable checkout makes pnpm skip that registry,
+ * while the target remains the same read-only mount enforced by the backend.
+ */
+async function preparePnpmStoreAliases(
+  checkouts: Pick<MaterialisedCheckouts, 'base' | 'head'>,
+  dependencyStore: string,
+): Promise<string> {
+  const storeName = basename(dependencyStore)
+  if (storeName === '') throw new Error('The pnpm dependency store cannot be a filesystem root')
+  // A random root cannot collide with a contributor-controlled tracked path;
+  // never delete or replace repository content to make room for infrastructure.
+  const aliasRootName = `.copse-review-pnpm-store-${randomBytes(8).toString('hex')}`
+  const relativeAlias = `${aliasRootName}/${storeName}`
+  await Promise.all(
+    [checkouts.base, checkouts.head].map(async (checkout) => {
+      const aliasRoot = join(checkout, aliasRootName)
+      await mkdir(aliasRoot)
+      await symlink(
+        dependencyStore,
+        join(checkout, relativeAlias),
+        process.platform === 'win32' ? 'junction' : 'dir',
+      )
+    }),
+  )
+  return relativeAlias
 }
 
 /**
@@ -439,15 +500,22 @@ export async function openReviewGround(options: Stage0Options): Promise<ReviewGr
     if (project.head.ecosystem === 'unsupported') return ground(project)
 
     const corepackHome = await resolveCorepackHome(options.corepackHome, hostEnv)
+    const dependencyStore =
+      options.dependencyStore === undefined ? undefined : await realpath(options.dependencyStore)
+    const pnpmStoreDir =
+      dependencyStore === undefined
+        ? undefined
+        : await preparePnpmStoreAliases(checkouts, dependencyStore)
     cell = await options.backend.createCell({
       checkouts: { base: checkouts.base, head: checkouts.head },
       scratchDir,
       readOnlyPaths: [
-        ...(options.dependencyStore === undefined ? [] : [options.dependencyStore]),
+        ...(dependencyStore === undefined ? [] : [dependencyStore]),
         ...(corepackHome === undefined ? [] : [corepackHome]),
+        ...(options.trustedPreparation?.readOnlyPaths ?? []),
         checkouts.gitCommonDir,
       ],
-      env: cellEnvironment(hostEnv, { dependencyStore: options.dependencyStore, corepackHome }),
+      env: cellEnvironment(hostEnv, { pnpmStoreDir, corepackHome }),
     })
     return ground(project)
   } catch (err) {
@@ -509,7 +577,14 @@ export async function runStage0Checks(
   const scrub = (text: string): string => ground.scrub(text)
 
   const headKinds = new Set(checkKinds(headProject))
-  const headRuns = await runTarget(cell, 'head', headProject.commands, headKinds, scrub, signal)
+  const headRuns = await runTarget(
+    cell,
+    'head',
+    commandsFor(headProject, options.trustedPreparation),
+    headKinds,
+    scrub,
+    signal,
+  )
 
   const failedOnHead = new Set<CheckKind>()
   for (const [kind, run] of headRuns.runs) {
@@ -518,7 +593,14 @@ export async function runStage0Checks(
   const baseKinds = new Set(checkKinds(baseProject).filter((kind) => failedOnHead.has(kind)))
   const baseRuns =
     baseKinds.size > 0 && baseProject.ecosystem !== 'unsupported'
-      ? await runTarget(cell, 'base', baseProject.commands, baseKinds, scrub, signal)
+      ? await runTarget(
+          cell,
+          'base',
+          commandsFor(baseProject, options.trustedPreparation),
+          baseKinds,
+          scrub,
+          signal,
+        )
       : { runs: new Map<CheckKind, CheckRun>(), prepareFailure: null }
 
   const checks: CheckOutcome[] = []
@@ -569,8 +651,45 @@ export async function runStage0Checks(
       continue
     }
     if (base.status === 'failed') {
-      const reason = `already failing on base (exit ${String(base.exitCode)})`
-      checks.push({ kind, verdict: 'failing-on-base', head, base, reason })
+      if (
+        kind === 'test' &&
+        base.testFailures &&
+        head.testFailures &&
+        base.testFailures.failed > 0 &&
+        head.testFailures.failed > 0
+      ) {
+        const fresh = newTestFailures(base.testFailures, head.testFailures)
+        const outcome: CheckOutcome = {
+          kind,
+          verdict: fresh.length > 0 ? 'regressed' : 'failing-on-base',
+          head,
+          base,
+          reason: `${String(fresh.length)} new individual test failures; both aggregate checks failed`,
+        }
+        checks.push(outcome)
+        for (const failure of fresh) {
+          const claim = `Test ${failure.name} fails on head and is absent from the complete base failure inventory`
+          findings.push({
+            id: findingId({ class: 'test', path: failure.path, anchoredText: failure.name, claim }),
+            anchor: { path: failure.path },
+            class: 'test',
+            severity: 'high',
+            confidence: 'high',
+            claim,
+            provenance: { raisedBy: [STAGE0_REVIEWER], corroboratedBy: [], challengedBy: [] },
+            evidence: [commandEvidence(head), commandEvidence(base)],
+            verdict: {
+              status: 'confirmed',
+              reason: 'Compared complete individual failure inventories, not just exit codes',
+            },
+          })
+        }
+        continue
+      }
+      const reason =
+        'both aggregate checks failed; individual failure comparison is unavailable, so new regressions remain unverified'
+      checks.push({ kind, verdict: 'undetermined', head, base, reason })
+      notChecked.push({ kind, reason })
       continue
     }
     const reason = `failed on head, but timed out on base after ${String(base.durationMs)} ms`
@@ -601,22 +720,63 @@ export async function runStage0(options: Stage0Options): Promise<Stage0Report> {
   }
 }
 
+function throwForFailedPreparation(target: CheckoutTarget, runs: TargetRuns): void {
+  for (const run of runs.runs.values()) {
+    if (run.status !== 'passed') {
+      throw new Error(
+        `${target === 'head' ? 'Head' : 'Base'} ${run.kind} ${run.status}; focused validation is unavailable: ${run.output}`,
+      )
+    }
+  }
+}
+
+/** Prepare a fresh head cell imported Stage 0 did not populate, including build output. */
+export async function prepareReviewHead(ground: ReviewGround, signal?: AbortSignal): Promise<void> {
+  signal?.throwIfAborted()
+  const project = ground.project.head
+  if (ground.cell === null || project === null || project.ecosystem === 'unsupported') {
+    throw new Error('The head checkout cannot be prepared for focused validation')
+  }
+  const commands = commandsFor(project, ground.options.trustedPreparation).filter(
+    (command) => command.kind === 'prepare' || command.kind === 'build',
+  )
+  const result = await runTarget(
+    ground.cell,
+    'head',
+    commands,
+    new Set(['build']),
+    (text) => ground.scrub(text),
+    signal,
+  )
+  throwForFailedPreparation('head', result)
+}
+
+export interface PrepareVerificationBaseOptions {
+  /** False when Stage 0 ran in another cell and none of its files exist here. */
+  readonly reuseStage0Artifacts?: boolean
+}
+
 /** Prepare base lazily for verification, including build artifacts when needed. */
 export async function prepareVerificationBase(
   ground: ReviewGround,
   stage0: Stage0Report,
   signal: AbortSignal,
+  options: PrepareVerificationBaseOptions = {},
 ): Promise<void> {
   signal.throwIfAborted()
   const project = ground.project.base
   if (ground.cell === null || project === null || project.ecosystem === 'unsupported') {
     throw new Error('The base checkout cannot be prepared for verification')
   }
-  const commands = project.commands.filter((command) =>
+  const reuseStage0Artifacts = options.reuseStage0Artifacts ?? true
+  const commands = commandsFor(project, ground.options.trustedPreparation).filter((command) =>
     command.kind === 'prepare'
-      ? stage0.preparation.base?.status !== 'passed'
+      ? !reuseStage0Artifacts || stage0.preparation.base?.status !== 'passed'
       : command.kind === 'build' &&
-        !stage0.checks.some((check) => check.kind === 'build' && check.base?.status === 'passed'),
+        (!reuseStage0Artifacts ||
+          !stage0.checks.some(
+            (check) => check.kind === 'build' && check.base?.status === 'passed',
+          )),
   )
   const result = await runTarget(
     ground.cell,
@@ -626,11 +786,5 @@ export async function prepareVerificationBase(
     (text) => ground.scrub(text),
     signal,
   )
-  for (const run of result.runs.values()) {
-    if (run.status !== 'passed') {
-      throw new Error(
-        `Base ${run.kind} ${run.status}; reproducer comparison is unavailable: ${run.output}`,
-      )
-    }
-  }
+  throwForFailedPreparation('base', result)
 }

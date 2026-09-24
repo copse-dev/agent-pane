@@ -6,6 +6,7 @@ import '../../../tests/setup-dom.ts'
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
+import { addMessage } from '@shared/store/thread-helpers.ts'
 import type { Thread } from '@shared/types'
 import { mountProjectsPane } from './projects-pane.ts'
 import { resetProjectSwitchStateForTest } from '../controller/projects.ts'
@@ -63,6 +64,45 @@ describe('projects pane thread window (component)', () => {
 
     assert.deepEqual(chatTitles(), ['Only chat (fork)', 'Only chat'])
     assert.equal(document.querySelector('.chats-show-more'), null)
+  })
+
+  it('moves a prompted older thread to the first visible row immediately', () => {
+    const older = thread('older', 'Older thread')
+    older.createdAt = 1
+    older.updatedAt = 100
+    older.lastPromptAt = 100
+    older.messages = [
+      {
+        id: 'older-message',
+        role: 'user',
+        content: 'Earlier prompt',
+        toolCalls: [],
+        createdAt: 100,
+      },
+    ]
+    const newer = thread('newer', 'Newer thread')
+    newer.createdAt = 2
+    newer.updatedAt = 200
+    newer.lastPromptAt = 200
+    newer.messages = [
+      {
+        id: 'newer-message',
+        role: 'user',
+        content: 'Recent prompt',
+        toolCalls: [],
+        createdAt: 200,
+      },
+    ]
+    const store = mountWith([newer, older])
+    store.setState({ activeThreadId: older.id })
+
+    addMessage(store, older.id, 'user', 'Continue this thread')
+
+    assert.deepEqual(chatTitles(), ['Older thread', 'Newer thread'])
+    assert.equal(
+      document.querySelector('.chat-row.selected .chat-title')?.textContent,
+      'Older thread',
+    )
   })
 
   it('still pages a project with more threads than one window', () => {
