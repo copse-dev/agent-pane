@@ -1,5 +1,5 @@
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { setComposerValue } from './helpers/composer.ts'
 import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
@@ -8,7 +8,7 @@ import { waitForAgentIdle } from './helpers.ts'
 describe('package install approval', () => {
   before(async () => {
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-install-approval-project', {
+    seedEmptyProject(seedStableWorkspace(), 'e2e-install-approval-project', {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
       theme: 'light',
