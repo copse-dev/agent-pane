@@ -957,8 +957,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 through ssh-agent. You can remember the signer, key and socket for this project
                 until Copse restarts. Changed configuration requires approval again. Git hooks
                 keep their project sandbox; they receive no ssh-agent access. Turning this off
-                prevents further brokered signing. Private keys remain unreadable. Custom signing
-                programs run with ordinary project access. Scoped socket access is macOS only.
+                prevents further ssh-agent signing. With this off, a configured private key file
+                can be read and used only after a separate approval for each commit. Key contents
+                are never sent to the agent. Custom signing programs run with ordinary project
+                access. Scoped signing is macOS only.
               </p>
             </fieldset>
           </section>
