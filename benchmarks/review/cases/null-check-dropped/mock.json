@@ -59,7 +59,7 @@
       {
         "type": "tool_call",
         "name": "verdict",
-        "args": { "status": "stands", "reason": "user.nickname on null throws" }
+        "args": { "status": "stands", "reproducerAssessment": "valid", "reason": "Both revisions call displayName(null). Base returns null; head throws at user.nickname inside the product because the null guard was removed, before returning the expected value." }
       },
       { "type": "text", "text": "Stands." }
     ]

@@ -702,13 +702,21 @@ building it:
 - **Verification (Stage 4) by class.** `test`, `contract` and `concurrency` go to a
   reproducer model first: it writes one test under `.copse-review/` and names the argv;
   the orchestrator runs it on head, copies it to base, runs it there, removes it from base,
-  and confirms only when it fails on head and passes on base. The artefact stays in the
-  head checkout and in the report. Everything still open — including a reproducer that
-  could not separate the two — goes to the challenger, whose brief is to refute the
-  finding with the burden of proof on the claim: `refuted` drops it (kept in the report's
-  `refuted` list with the reason), `stands` records a survived challenge in
-  `challengedBy` and in the verdict reason, `undetermined` leaves it as it was. A
-  challenge never upgrades a finding to `confirmed`: only execution does that.
+  and records whether the exit codes differ. Every finding then goes to the challenger,
+  including successful differentials: opposite exits alone are not behavioral proof.
+  A differential requires an explicit `reproducerAssessment` (`valid`, `invalid`, or
+  `undetermined`) explaining the behavior exercised on **both** revisions and why head's
+  assertion failure proves the claim. Source-text checks, skipped base scenarios, absent
+  APIs, setup errors and unrelated failures do not qualify. Only a completed `stands`
+  verdict with a `valid` audit of a differential upgrades to `confirmed` and retains its
+  artefact in the report. A plausible claim with invalid or missing proof stays unverified;
+  without a challenger a differential also stays unverified. `refuted` drops the finding
+  (retained in the report's `refuted` list); other `stands` verdicts record a survived
+  challenge; `undetermined` leaves the finding as it was. The audit is model judgment,
+  not a guarantee, and can add one bounded challenger turn per successful differential.
+  Review closure also rejects mapping multiple reported suspicions to the same finding
+  index; duplicate suspicions must use an explicit `duplicate` disposition, explain the duplication,
+  and reference the finding index resolved by a `reported` suspicion.
 - **Budget (P3's staged escalation, first rung).** Verification is spent only on
   unverified survivors of Stage 3, most promising first by rank score, up to
   `--max-verify` (default 10); the rest are reported as skipped. `--no-verify` skips the
@@ -1248,3 +1256,17 @@ three-call protocol repair, with the same tools, execution cell and permission p
 only runs while completion is missing and the ledger is nonempty. Cancellation and provider errors
 remain terminal. Protocol repair receives the ledger and cannot silently discard it. This is a bounded
 phase of the same review turn, not product auto-continuation or a change to hook budgets.
+
+### September 24: reviewer startup
+
+PR and nightly ground/findings checkouts retain full Git ancestry (`fetch-depth: 0`)
+but use `filter: blob:none` to omit historical file contents. Trusted code is checked
+out normally; materializing the exact head and merge-base worktrees hydrates their
+contents on the host before commands run in the network-disabled cell. No shared
+writable cache, broader credentials or change to the protected environment is involved.
+The original Luna PR #3003 findings job spent 41 seconds in checkout, 11 seconds
+installing the reviewer and 35 seconds preparing validation (about 28 seconds building
+the container). A local filtered clone plus both exact worktrees took 20.7 seconds
+and 131 MiB of packed Git data; the full-clone comparison exhausted the local disk,
+so this is a feasibility measurement, not a controlled CI speedup claim. Full Stage 0
+checks, queue/approval time and model time are separate costs.

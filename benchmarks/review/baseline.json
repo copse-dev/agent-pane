@@ -270,5 +270,56 @@
     "truePositives": 11,
     "duplicates": 0,
     "outputTokensPerConfirmed": 308
+  },
+  "mock:7c42a43e13ed": {
+    "configuration": {
+      "evaluationVersion": 5,
+      "reviewers": [
+        {
+          "model": "mock",
+          "provider": "mock",
+          "endpoint": null
+        }
+      ],
+      "challenger": {
+        "model": "mock",
+        "provider": "mock",
+        "endpoint": null
+      },
+      "lenses": [
+        "correctness",
+        "contracts"
+      ],
+      "reviewerMaxSteps": null,
+      "maxVerifiedFindings": 10,
+      "verify": true,
+      "corpus": {
+        "cases": [
+          "clean-rename",
+          "dispose-inflight",
+          "dispose-inflight-clean",
+          "external-image-provenance",
+          "false-alarm",
+          "filter-refresh",
+          "filter-refresh-clean",
+          "null-check-dropped",
+          "paginate-off-by-one",
+          "resize-without-scroll",
+          "resize-without-scroll-clean",
+          "semantic-image-kind",
+          "shortcut-autorepeat",
+          "shortcut-autorepeat-clean",
+          "timer-leak",
+          "workspace-switch-inflight",
+          "workspace-switch-inflight-clean"
+        ],
+        "fingerprint": "c3ea0050130604d736917e04da0f3684a34f449d87b50dcebb8f9673e28fb33d"
+      }
+    },
+    "cases": 17,
+    "precision": 0.917,
+    "truePositives": 11,
+    "duplicates": 0,
+    "outputTokensPerConfirmed": 343
   }
 }

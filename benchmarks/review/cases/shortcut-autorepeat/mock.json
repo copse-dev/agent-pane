@@ -106,7 +106,7 @@
         "name": "verdict",
         "args": {
           "status": "stands",
-          "reason": "Every repeated keydown now reaches share because the repeat guard was removed."
+          "reproducerAssessment": "valid", "reason": "Both revisions receive the initial shortcut and one repeated keydown. Base calls share once; head calls it twice and fails the count assertion."
         }
       },
       {

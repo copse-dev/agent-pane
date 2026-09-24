@@ -106,7 +106,7 @@
         "name": "verdict",
         "args": {
           "status": "stands",
-          "reason": "refresh replaces the title with #42; render filters that placeholder out before restoring the cached title."
+          "reproducerAssessment": "valid", "reason": "Both revisions render Anchor, refresh, then render Anchor again. Base preserves one row; head returns zero at the final assertion because filtering uses the replacement placeholder before restoring the title."
         }
       },
       {

@@ -488,6 +488,107 @@ describe('reviewer tools', () => {
     assert.deepEqual(executor.suspicions(), [{ ...suspicion, id: 'suspicion-1' }])
   })
 
+  it('rejects two reported suspicions mapped to one finding and accepts corrected indices', async () => {
+    const executor = createReviewerToolExecutor(host)
+    const first = {
+      path: 'src/a.ts',
+      startLine: 2,
+      claim: 'The new literal may disclose a secret.',
+    }
+    const second = { ...first, claim: 'The caller now receives an incorrect result.' }
+    await executor.execute('record_suspicion', first, signal, 's1')
+    await executor.execute('record_suspicion', second, signal, 's2')
+    const closure = {
+      checked: 'The source and both affected callers.',
+      couldNotVerify: 'Nothing',
+      findings: [first, second].map((entry) => ({
+        ...entry,
+        class: 'contract',
+        severity: 'high',
+        confidence: 'high',
+        reason: 'The changed value violates the caller contract.',
+      })),
+      dispositions: [1, 2].map((n) => ({
+        id: `suspicion-${String(n)}`,
+        status: 'reported',
+        evidence: 'The corresponding defect is included.',
+        findingIndex: 1,
+      })),
+    }
+    assert.match(
+      await executor.execute('finish_review', closure, signal, 'bad'),
+      /already resolves/,
+    )
+    assert.equal(executor.reported().length, 0)
+    assert.equal(executor.completion(), null)
+    assert.match(
+      await executor.execute(
+        'finish_review',
+        {
+          ...closure,
+          dispositions: closure.dispositions.map((entry, i) => ({ ...entry, findingIndex: i + 1 })),
+        },
+        signal,
+        'fixed',
+      ),
+      /completion recorded/,
+    )
+    assert.equal(executor.reported().length, 2)
+  })
+
+  it('accepts explicitly explained duplicates only when linked to a reported suspicion', async () => {
+    const executor = createReviewerToolExecutor(host)
+    const finding = {
+      path: 'src/a.ts',
+      startLine: 2,
+      claim: 'The new literal may disclose a secret.',
+      class: 'security',
+      severity: 'high',
+      confidence: 'high',
+      reason: 'The literal credential is returned to callers.',
+    }
+    await executor.execute('record_suspicion', finding, signal, 's1')
+    await executor.execute('record_suspicion', finding, signal, 's2')
+    const duplicate = {
+      id: 'suspicion-2',
+      status: 'duplicate',
+      findingIndex: 1,
+      evidence: 'The same literal and caller as suspicion-1.',
+    }
+    const closure = {
+      checked: 'The literal and downstream caller.',
+      couldNotVerify: 'Nothing',
+      findings: [finding],
+      dispositions: [duplicate, { ...duplicate, id: 'suspicion-1' }],
+    }
+    assert.match(
+      await executor.execute('finish_review', closure, signal, 'bad'),
+      /resolved by a reported suspicion/,
+    )
+    assert.equal(executor.reported().length, 0)
+    assert.match(
+      await executor.execute(
+        'finish_review',
+        {
+          ...closure,
+          dispositions: [
+            duplicate,
+            {
+              ...duplicate,
+              id: 'suspicion-1',
+              status: 'reported',
+              evidence: 'The literal reaches the caller.',
+            },
+          ],
+        },
+        signal,
+        'fixed',
+      ),
+      /completion recorded/,
+    )
+    assert.equal(executor.reported().length, 1)
+  })
+
   it('allows evidence-backed refutation and explicitly unresolved suspicions without publishing findings', async () => {
     for (const status of ['refuted', 'unresolved']) {
       const executor = createReviewerToolExecutor(host)

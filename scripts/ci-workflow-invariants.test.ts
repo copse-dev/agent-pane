@@ -869,6 +869,20 @@ describe('Copse Reviewer workflow invariants', () => {
     }
   })
 
+  it('keeps complete ancestry while omitting historical blobs from review checkouts', () => {
+    for (const workflow of [groundWorkflow, findingsWorkflow, nightlyWorkflow]) {
+      const checkouts = workflow.matchAll(/uses: actions\/checkout[^\n]*\n([\s\S]*?)(?=\n {6}-|$)/g)
+      let count = 0
+      for (const [, step] of checkouts) {
+        assert.match(step ?? '', /filter: blob:none/)
+        assert.match(step ?? '', /fetch-depth: 0/)
+        assert.match(step ?? '', /persist-credentials: false/)
+        count++
+      }
+      assert.ok(count > 0)
+    }
+  })
+
   it('binds the findings dispatch to trusted successful ground-run metadata', () => {
     assert.ok(groundWorkflow.includes('run-name: copse-review-ground pr=${{ inputs.pr }}'))
     assert.match(findingsWorkflow, /^ {2}workflow_dispatch:$/m)
