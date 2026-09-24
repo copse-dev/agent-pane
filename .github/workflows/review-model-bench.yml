@@ -17,7 +17,7 @@ on:
           - openrouter-luna
           - openrouter-sol
       case:
-        description: One smoke case by default; explicitly clear for the full corpus
+        description: One case (timer-leak by default), or all for the full corpus
         required: false
         type: string
         default: timer-leak
@@ -133,7 +133,7 @@ jobs:
             --max-verify "$REVIEW_MAX_VERIFY"
             --out bench-results/review-model
           )
-          if test -n "$REVIEW_CASE"; then
+          if test -n "$REVIEW_CASE" && test "$REVIEW_CASE" != all; then
             bench_args+=(--case "$REVIEW_CASE")
           fi
           pnpm exec node "${bench_args[@]}"
