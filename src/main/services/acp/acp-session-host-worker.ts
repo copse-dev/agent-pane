@@ -56,6 +56,7 @@ function readSandbox(value: unknown): AcpAgentSandboxConfig | undefined {
     allowedDomains,
     ...(homeDirs ? { homeDirs } : {}),
     ...(scratchPaths ? { scratchPaths } : {}),
+    ...(value['allowMacOsTrustd'] === true ? { allowMacOsTrustd: true } : {}),
   }
 }
 

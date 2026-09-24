@@ -52,12 +52,13 @@ about the same three assertions.
 
 The loop, cheapest first:
 
-| When                              | Run                                          | Cost           |
-| --------------------------------- | -------------------------------------------- | -------------- |
-| After each edit                   | _nothing_ — the hook formatted and linted it | ~2s, automatic |
-| While iterating on one module     | `npm test -- <filter>`                       | seconds        |
-| Before you believe a change works | `npm run oracle -- --run unit`               | seconds–1 min  |
-| Before commit / PR                | `npm run check`                              | minutes        |
+| When                                   | Run                                          | Cost            |
+| -------------------------------------- | -------------------------------------------- | --------------- |
+| After each edit                        | _nothing_ — the hook formatted and linted it | ~2s, automatic  |
+| While iterating on one module          | `npm test -- <filter>`                       | seconds         |
+| Before you believe a change works      | `npm run oracle -- --run unit`               | seconds–1 min   |
+| Eligible low-risk, CI-backed PR        | `npm run check:local` plus focused tests     | tens of sec–min |
+| Broad, high-risk, or non-CI-bound work | `npm run check`                              | minutes         |
 
 ### After an edit: the hook already ran
 
@@ -82,7 +83,7 @@ text would fail against content you never saw. Re-read the file when you see it.
 Coverage is a fast subset by construction: oxfmt plus the **type-unaware**
 ESLint rules (`eslint.hook.config.mjs`). Type-aware rules and `tsc` need the whole
 TypeScript program — ~10s for a single file — which is too slow to run per edit,
-so they stay in `npm run check`. The hook says so in its own output; treat a
+so they stay in `npm run check:local` (and therefore `npm run check`). The hook says so in its own output; treat a
 silent hook as "no cheap problems", never as "verified".
 
 ### While iterating: `npm test -- <filter>`
@@ -141,13 +142,25 @@ Read the **confidence line** before trusting the subset:
 The oracle deliberately refuses to shrink below what it can back up: an empty
 selection runs the **full** suite rather than reporting a green on zero tests.
 
-### When a subset is not enough
+### Choose the local gate by risk
 
-A subset is a fast filter, never the gate. Run the full `npm run check` before
-committing, and don't substitute a green subset for it — the oracle only knows
-imports and selectors, so a change reached through dynamic dispatch, a string
-key, or an IPC channel name is invisible to it. On a **LOW** or **broad**
-verdict, run the full tier the oracle names rather than the subset it offers.
+A focused subset is evidence for behavior, not a static/type-safety gate. Every change therefore
+runs at least `npm run check:local`, which covers typecheck, lint, formatting, generated-site
+consistency, dead-code detection, oracle liveness, and e2e syntax/exclusion checks. The full
+`npm run check` composes that gate with the complete unit/component suite.
+
+The local fast path is deliberately conjunctive: use `check:local` plus focused tests instead of a
+full local `check` only for a PR-bound change whose oracle result is **HIGH**, whose diff is localized
+and directly covered, whose required PR CI will run the complete gates, and which avoids every
+mandatory full-check surface listed in [`AGENTS.md`](../AGENTS.md#before-committing). Record the
+deferral explicitly in the PR's Validation section; CI is evidence only after it passes.
+
+Run the full `npm run check` for **LOW** or **broad** oracle results and for security/permissions,
+persisted data/migrations, auth/secrets/billing, native runtime/IPC, agent-loop/hook control flow,
+dependency/lockfile, release/update/packaging, CI/test/oracle, cross-cutting, or non-CI-bound changes.
+Those categories are mandatory because the oracle only knows imports and selectors: behavior
+reached through dynamic dispatch, string keys, generated artifacts, or external workflow wiring can
+be invisible to it. When classification is unclear, take the full path.
 
 ## What stays e2e
 
@@ -413,7 +426,7 @@ Rules for anything that lands in a captured frame:
   unrelated docs edit moves every wheel from 10% to 11%. The stable workspace is
   a fixed temp path with a few plain files and one commit at a fixed date.
 - **The runner.** Shells tabs spawn `$SHELL`; under e2e that is
-  `tests/e2e/fixtures/e2e-shell.sh` (bash, no rc files, prompt `$ `), so the
+  `tests/e2e/fixtures/e2e-bash-shell.sh` (bash, no rc files, prompt `$ `), so the
   runner's `user@host:~/path` never renders. The Ports rail reports nothing
   listening unless a spec seeds rows through `test:setPortRows`, so chromedriver
   and the Electron debug port stay out of frame. Fixture HTTP servers listen on

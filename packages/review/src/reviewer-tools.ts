@@ -70,12 +70,21 @@ const suspicionSchema = z.object({
   claim: z.string().trim().min(8).max(400),
 })
 
-const dispositionSchema = z.object({
+const dispositionEvidenceSchema = z.object({
   id: z.string().min(1),
-  status: z.enum(['reported', 'refuted', 'unresolved']),
   evidence: z.string().trim().min(8).max(400),
-  findingIndex: z.number().int().positive().optional(),
 })
+
+const dispositionSchema = z.discriminatedUnion('status', [
+  dispositionEvidenceSchema.extend({
+    status: z.enum(['reported', 'duplicate']),
+    findingIndex: z.number().int().positive().optional(),
+  }),
+  // Models sometimes populate optional fields on every array item. An index
+  // has no meaning for these statuses: strip it like other unknown metadata,
+  // rather than failing the entire review or treating it as a finding link.
+  dispositionEvidenceSchema.extend({ status: z.enum(['refuted', 'unresolved']) }),
+])
 
 type Suspicion = z.infer<typeof suspicionSchema> & { readonly id: string }
 
@@ -129,7 +138,8 @@ function candidateFindingParameters(): Record<string, unknown> {
         type: 'array',
         items: { type: 'string' },
         maxItems: 4,
-        description: 'Ids of run_command calls whose output demonstrates the defect',
+        description:
+          'Copy commandCallId from each run_command result whose output demonstrates the defect; do not use the tool name',
       },
     },
     required: ['path', 'startLine', 'class', 'severity', 'confidence', 'claim', 'reason'],
@@ -148,12 +158,12 @@ function finishReviewTool(requireFindings: boolean): LLMTool {
           type: 'array',
           maxItems: 20,
           description:
-            'Resolve every record_suspicion id exactly once. For reported, give the 1-based findingIndex across earlier report_finding calls followed by findings in this closure. For refuted, cite the concrete counterevidence. For unresolved, include its id in couldNotVerify.',
+            'Resolve every record_suspicion id exactly once. For reported, give the 1-based findingIndex across earlier report_finding calls followed by findings in this closure. Each reported suspicion must reference a different findingIndex. For duplicate, explain the duplication and give the findingIndex used by its reported suspicion. For refuted, cite counterevidence that contradicts the recorded claim, not a stronger paraphrase or a mitigation it already acknowledges. For unresolved, include its id in couldNotVerify. findingIndex is ignored for refuted and unresolved.',
           items: {
             type: 'object',
             properties: {
               id: { type: 'string' },
-              status: { type: 'string', enum: ['reported', 'refuted', 'unresolved'] },
+              status: { type: 'string', enum: ['reported', 'duplicate', 'refuted', 'unresolved'] },
               evidence: { type: 'string', minLength: 8, maxLength: 400 },
               findingIndex: { type: 'integer', minimum: 1 },
             },
@@ -267,7 +277,7 @@ export function reviewerTools(): LLMTool[] {
     {
       name: 'run_command',
       description:
-        'Run a program in an isolated copy of the change (no shell: pass argv as an actual array, not a quoted JSON string). Prefer a focused test selector or small probe that settles one question; Stage 0 already ran the aggregate project checks. Output is capped.',
+        'Run a program in an isolated copy of the change (no shell: pass argv as an actual array, not a quoted JSON string). Prefer a focused test selector or small probe that settles one question; Stage 0 already ran the aggregate project checks. Output is capped. The result includes commandCallId to copy into a finding’s commandCallIds evidence references.',
       parameters: {
         type: 'object',
         properties: {
@@ -287,7 +297,7 @@ export function reviewerTools(): LLMTool[] {
     {
       name: 'record_suspicion',
       description:
-        'Preserve a concrete suspected defect before investigating it. Returns an immutable id that finish_review must resolve as reported, refuted with counterevidence, or unresolved. This is not a finding.',
+        'Preserve a concrete suspected defect before investigating it. Returns an immutable id that finish_review must resolve as reported, duplicate of a reported finding, refuted with counterevidence, or unresolved. This is not a finding.',
       parameters: {
         type: 'object',
         properties: {
@@ -624,7 +634,9 @@ export function createReviewerToolExecutor(host: ReviewerToolHost): ReviewerTool
         const scrubbed = { ...result, output: host.scrub(result.output) }
         commandRuns.set(toolCallId, scrubbed)
         const status = scrubbed.timedOut ? 'timed out' : `exit ${String(scrubbed.exitCode)}`
-        return `${status} (${String(scrubbed.durationMs)} ms)\n${wrapExternalContent('run_command', cap(scrubbed.output))}`
+        // API-generated call ids may only exist in transport metadata. Expose
+        // the recorded id explicitly so the model can cite this evidence.
+        return `${status} (${String(scrubbed.durationMs)} ms)\ncommandCallId: ${JSON.stringify(toolCallId)}\n${wrapExternalContent('run_command', cap(scrubbed.output))}`
       }
       case 'record_suspicion': {
         const input = suspicionSchema.parse(args)
@@ -671,6 +683,7 @@ export function createReviewerToolExecutor(host: ReviewerToolHost): ReviewerTool
         }
         const allFindings = [...reported, ...closureFindings]
         const seen = new Set<string>()
+        const linkedFindings = new Map<number, string>()
         try {
           for (const disposition of input.dispositions) {
             if (
@@ -680,7 +693,7 @@ export function createReviewerToolExecutor(host: ReviewerToolHost): ReviewerTool
               throw new ToolInputError(`Unknown or duplicate suspicion ${disposition.id}`)
             }
             seen.add(disposition.id)
-            if (disposition.status === 'reported') {
+            if (disposition.status === 'reported' || disposition.status === 'duplicate') {
               if (
                 disposition.findingIndex === undefined ||
                 allFindings[disposition.findingIndex - 1] === undefined
@@ -689,8 +702,14 @@ export function createReviewerToolExecutor(host: ReviewerToolHost): ReviewerTool
                   `${disposition.id} must reference an existing findingIndex`,
                 )
               }
-            } else if (disposition.findingIndex !== undefined) {
-              throw new ToolInputError(`${disposition.id} is not reported; omit findingIndex`)
+              if (disposition.status === 'reported') {
+                const previous = linkedFindings.get(disposition.findingIndex)
+                if (previous !== undefined)
+                  throw new ToolInputError(
+                    `findingIndex ${String(disposition.findingIndex)} already resolves ${previous}; map ${disposition.id} to its own finding or explicitly mark it duplicate`,
+                  )
+                linkedFindings.set(disposition.findingIndex, disposition.id)
+              }
             }
             if (
               disposition.status === 'unresolved' &&
@@ -700,6 +719,16 @@ export function createReviewerToolExecutor(host: ReviewerToolHost): ReviewerTool
                 `Include unresolved ${disposition.id} and its uncertainty in couldNotVerify`,
               )
             }
+          }
+          for (const disposition of input.dispositions) {
+            if (
+              disposition.status === 'duplicate' &&
+              (disposition.findingIndex === undefined ||
+                !linkedFindings.has(disposition.findingIndex))
+            )
+              throw new ToolInputError(
+                `Duplicate ${disposition.id} must reference a findingIndex resolved by a reported suspicion`,
+              )
           }
           const missing = suspicions.filter((entry) => !seen.has(entry.id))
           if (missing.length > 0)

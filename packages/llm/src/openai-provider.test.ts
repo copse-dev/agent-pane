@@ -1,6 +1,7 @@
 import { createServer, type ServerResponse } from 'node:http'
 import { describe, it, mock } from 'node:test'
 import assert from 'node:assert/strict'
+import OpenAI from 'openai'
 import { at } from '@copse/std/array-utils.ts'
 import type { ImageDetail, LLMStreamOptions, LLMTool, ProviderStreamChunk } from './wire-types.ts'
 import { OpenAIProvider } from './openai-provider.ts'
@@ -21,6 +22,7 @@ interface CapturedChatCompletionRequest {
 }
 
 interface ChatCompletionChunk {
+  provider?: unknown
   service_tier?: string
   choices: Array<{
     delta?: {
@@ -105,9 +107,8 @@ function sendChatCompletion(res: ServerResponse): void {
   )
 }
 
-async function withRoutingPolicyServer<T>(
-  status: 404 | 503,
-  failures: number,
+async function withCompletionServer<T>(
+  respond: (res: ServerResponse, request: number) => void,
   run: (provider: OpenAIProvider, requestBodies: readonly string[]) => Promise<T>,
 ): Promise<T> {
   const requestBodies: string[] = []
@@ -119,19 +120,7 @@ async function withRoutingPolicyServer<T>(
     })
     req.on('end', () => {
       requestBodies.push(body)
-      if (requestBodies.length <= failures) {
-        const message =
-          status === 404
-            ? 'No endpoints found matching your data policy (Zero data retention).'
-            : 'There is no available model provider that meets your routing requirements.'
-        res.writeHead(status, {
-          'content-type': 'application/json',
-          'retry-after': '0',
-        })
-        res.end(JSON.stringify({ error: { message, code: status } }))
-        return
-      }
-      sendChatCompletion(res)
+      respond(res, requestBodies.length)
     })
   })
   await new Promise<void>((resolve, reject) => {
@@ -147,7 +136,7 @@ async function withRoutingPolicyServer<T>(
   const address = server.address()
   if (address === null || typeof address === 'string') {
     server.close()
-    throw new Error('Routing-policy test server did not bind a TCP port')
+    throw new Error('Completion test server did not bind a TCP port')
   }
   const provider = new OpenAIProvider('openrouter/test-model', {
     baseURL: `http://127.0.0.1:${String(address.port)}/v1`,
@@ -167,6 +156,115 @@ async function withRoutingPolicyServer<T>(
     })
   }
 }
+
+async function withRoutingPolicyServer<T>(
+  status: 404 | 503,
+  failures: number,
+  run: (provider: OpenAIProvider, requestBodies: readonly string[]) => Promise<T>,
+): Promise<T> {
+  return withCompletionServer((res, request) => {
+    if (request > failures) {
+      sendChatCompletion(res)
+      return
+    }
+    const message =
+      status === 404
+        ? 'No endpoints found matching your data policy (Zero data retention).'
+        : 'There is no available model provider that meets your routing requirements.'
+    res.writeHead(status, { 'content-type': 'application/json', 'retry-after': '0' })
+    res.end(JSON.stringify({ error: { message, code: status } }))
+  }, run)
+}
+
+function sendStreamError(res: ServerResponse, code: number, prefix = ''): void {
+  res.writeHead(200, { 'content-type': 'text/event-stream' })
+  res.end(
+    `${prefix}data: ${JSON.stringify({ error: { code, message: 'upstream test error' } })}\n\n`,
+  )
+}
+
+describe('OpenAIProvider streamed API errors', () => {
+  it('retries an HTTP 200 SSE rate limit through the real SDK with the same request', async () => {
+    await withCompletionServer(
+      (res, request) => {
+        if (request === 1) sendStreamError(res, 429)
+        else sendChatCompletion(res)
+      },
+      async (provider, bodies) => {
+        const chunks = await collect(provider)
+        assert.equal(bodies.length, 2)
+        assert.equal(bodies[1], bodies[0])
+        assert.deepEqual(
+          chunks.filter((chunk) => chunk.type === 'text'),
+          [{ type: 'text', text: 'ok' }],
+        )
+      },
+    )
+  })
+
+  it('exhausts persistent streamed rate limits after four total requests', async () => {
+    await withCompletionServer(
+      (res) => {
+        sendStreamError(res, 429)
+      },
+      async (provider, bodies) => {
+        await assert.rejects(collect(provider), (error: unknown) => {
+          assert.ok(error instanceof OpenAI.APIError)
+          assert.equal(error.status, undefined)
+          assert.equal(error.code, 429)
+          return true
+        })
+        assert.equal(bodies.length, 4)
+      },
+    )
+  })
+
+  it('does not retry a streamed authentication failure', async () => {
+    await withCompletionServer(
+      (res) => {
+        sendStreamError(res, 401)
+      },
+      async (provider, bodies) => {
+        await assert.rejects(collect(provider), /upstream test error/)
+        assert.equal(bodies.length, 1)
+      },
+    )
+  })
+
+  it('does not replay a streamed rate limit after text or a complete tool call', async () => {
+    for (const event of [
+      { choices: [{ delta: { content: 'partial' }, finish_reason: null }] },
+      {
+        choices: [
+          {
+            delta: {
+              tool_calls: [
+                { index: 0, id: 'call1', function: { name: 'read_file', arguments: '{}' } },
+              ],
+            },
+            finish_reason: 'tool_calls',
+          },
+        ],
+      },
+    ]) {
+      await withCompletionServer(
+        (res) => {
+          sendStreamError(res, 429, `data: ${JSON.stringify(event)}\n\n`)
+        },
+        async (provider, bodies) => {
+          const chunks: ProviderStreamChunk[] = []
+          await assert.rejects(async () => {
+            for await (const chunk of provider.stream([{ role: 'user', content: 'hi' }], []))
+              chunks.push(chunk)
+          }, /upstream test error/)
+          assert.equal(chunks.length, 1)
+          assert.ok(chunks[0]?.type === 'text' || chunks[0]?.type === 'tool_call')
+          assert.equal(bodies.length, 1)
+        },
+      )
+    }
+  })
+})
 
 describe('OpenAIProvider routing-policy retry budget', () => {
   it('replays legacy 404 and current 503 policy failures once with the same privacy body', async () => {
@@ -878,4 +976,43 @@ describe('OpenAIProvider stream parsing', () => {
     )
     assert.equal(provider.lastUsage, null)
   })
+})
+
+it('keeps reported hosting providers local to concurrent response streams', async () => {
+  const provider = new OpenAIProvider('openai/gpt-6-luna', { apiKey: 'test' })
+  const firstStarted = Promise.withResolvers<undefined>()
+  const releaseFirst = Promise.withResolvers<undefined>()
+  let call = 0
+  withFakeCreate(provider, () => {
+    const index = call++
+    return (async function* (): AsyncGenerator<ChatCompletionChunk> {
+      yield {
+        provider: index === 0 ? 'OpenAI' : 'Azure',
+        choices: [{ delta: { content: 'answer' } }],
+      }
+      if (index === 0) {
+        firstStarted.resolve(undefined)
+        await releaseFirst.promise
+      }
+      yield { choices: [], usage: { prompt_tokens: index + 1, completion_tokens: 1 } }
+    })()
+  })
+  const first = collect(provider)
+  await firstStarted.promise
+  try {
+    const second = await collect(provider)
+    assert.equal(second.find((chunk) => chunk.type === 'usage')?.hostingProvider, 'Azure')
+  } finally {
+    releaseFirst.resolve(undefined)
+  }
+  assert.equal((await first).find((chunk) => chunk.type === 'usage')?.hostingProvider, 'OpenAI')
+  for (const label of [undefined, '<details>bad', 'x'.repeat(81), { name: 'OpenAI' }]) {
+    withFakeStream(provider, [
+      { provider: label, choices: [], usage: { prompt_tokens: 1, completion_tokens: 1 } },
+    ])
+    assert.equal(
+      (await collect(provider)).find((chunk) => chunk.type === 'usage')?.hostingProvider,
+      undefined,
+    )
+  }
 })

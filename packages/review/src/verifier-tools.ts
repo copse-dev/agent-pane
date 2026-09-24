@@ -3,8 +3,8 @@
 // The REPRODUCER writes one test file into the head checkout and names the
 // argv that runs it; the orchestrator runs that argv on head, copies the same
 // file into base and runs it there, and hands both results back. The finding
-// is confirmed only when the reproducer fails on head and passes on base — the
-// strongest signal the system can produce, and an artefact a human can keep.
+// has differential execution evidence when it fails on head and passes on base.
+// Stage 4 must also audit whether that difference actually proves the claim.
 //
 // The CHALLENGER reads and runs like a reviewer and closes with `verdict`:
 // refuted, with the lines that show the claim wrong; stands, when it actively
@@ -17,6 +17,7 @@ import { decodeWithSchema } from '@copse/std/safe-json.ts'
 import { errorMessage } from '@copse/std/errors.ts'
 import { jailPath, readCheckoutFile, writeCheckoutFile } from './checkout-fs.ts'
 import type { CellCommandResult } from './isolation.ts'
+import { reproducerTestArgv } from './reproducer-runner.ts'
 import {
   MAX_TOOL_OUTPUT_CHARS,
   createReviewerToolExecutor,
@@ -37,6 +38,7 @@ const verdictArgs = decodeWithSchema(
     status: z.enum(VERDICT_OUTCOMES),
     /** For `refuted`: the lines that show the claim wrong. For `stands`: what confirmed it. */
     reason: z.string().min(8).max(1_200),
+    reproducerAssessment: z.enum(['valid', 'invalid', 'undetermined']).optional(),
   }),
 )
 export type ChallengeVerdict = NonNullable<ReturnType<typeof verdictArgs>>
@@ -58,16 +60,19 @@ export interface ReproducerRun {
   readonly argv: readonly string[]
   readonly head: CellCommandResult
   readonly base: CellCommandResult
-  /** Failed on head and passed on base: the finding is confirmed by execution. */
-  readonly confirms: boolean
+  /** Opposite exit codes are a differential, not yet proof of the finding. */
+  readonly separates: boolean
 }
 
 export interface VerifierToolHost extends ReviewerToolHost {
+  /** Trusted per-finding root-level filename prefix for concurrent verification. */
+  readonly reproducerPrefix?: string | undefined
+  readonly requireReproducerAssessment?: boolean
   readonly baseCheckout: string
   prepareBase(signal: AbortSignal): Promise<void>
 }
 
-function verdictTool(): LLMTool {
+function verdictTool(requireReproducerAssessment: boolean): LLMTool {
   return {
     name: 'verdict',
     description:
@@ -76,25 +81,43 @@ function verdictTool(): LLMTool {
       type: 'object',
       properties: {
         status: { type: 'string', enum: [...VERDICT_OUTCOMES] },
-        reason: { type: 'string', description: 'The lines or output that decide it' },
+        reason: {
+          type: 'string',
+          description:
+            'The lines or output that decide it. When auditing a reproducer, explain the exercised behavior on BOTH revisions, the assertion failure or claimed runtime error and its link to this claim.',
+        },
+        ...(requireReproducerAssessment
+          ? {
+              reproducerAssessment: {
+                type: 'string',
+                enum: ['valid', 'invalid', 'undetermined'],
+                description:
+                  'valid only if this test executes the claimed behavior on both revisions and head fails for that defect. Source-text assertions, skipped base paths, absent APIs, setup failures, and unrelated failures are not proof. A plausible finding can stand with invalid proof.',
+              },
+            }
+          : {}),
       },
-      required: ['status', 'reason'],
+      required: [
+        'status',
+        'reason',
+        ...(requireReproducerAssessment ? ['reproducerAssessment'] : []),
+      ],
     },
   }
 }
 
-export function challengerTools(): LLMTool[] {
+export function challengerTools(requireReproducerAssessment = false): LLMTool[] {
   return [
     ...reviewerTools().filter(
       (tool) => tool.name !== 'report_finding' && tool.name !== 'finish_review',
     ),
-    verdictTool(),
+    verdictTool(requireReproducerAssessment),
   ]
 }
 
 /** A one-tool protocol-repair surface for a challenger that ended in prose. */
-export function challengerClosureTools(): LLMTool[] {
-  return [verdictTool()]
+export function challengerClosureTools(requireReproducerAssessment = false): LLMTool[] {
+  return [verdictTool(requireReproducerAssessment)]
 }
 
 export function reproducerTools(): LLMTool[] {
@@ -104,7 +127,7 @@ export function reproducerTools(): LLMTool[] {
     ),
     {
       name: 'write_reproducer',
-      description: `Write a test file under ${REPRODUCER_DIR}/ that fails because of the defect and passes without it, and say how to run it (argv from the repository root, no shell). It is run on the change and on the base it was made against; both results come back. Call again to revise.`,
+      description: `Write a test file under ${REPRODUCER_DIR}/ that fails because of the defect and passes without it. For JavaScript/TypeScript node:test tests in projects with esbuild installed, use argv: ["copse-test"]. This supported runner bundles the test with the checkout's tsconfig, resolves external packages from that checkout, and runs node --test on BOTH revisions. Import any project test helpers explicitly using relative paths. No new project test script is needed; do not send .copse-review tests to a project runner that only discovers other directories. Otherwise supply custom argv from the repository root, no shell. Both results come back; call again to revise.`,
       parameters: {
         type: 'object',
         properties: {
@@ -142,8 +165,19 @@ export function createVerifierToolExecutor(host: VerifierToolHost): VerifierTool
     if (!normalised.startsWith(`${REPRODUCER_DIR}/`) || normalised.includes('..')) {
       return `Error: the reproducer must live under ${REPRODUCER_DIR}/`
     }
+    if (
+      host.reproducerPrefix !== undefined &&
+      (!normalised.startsWith(host.reproducerPrefix) ||
+        normalised.slice(REPRODUCER_DIR.length + 1).includes('/'))
+    ) {
+      return `Error: this finding's test filename must start with ${host.reproducerPrefix} and remain directly in ${REPRODUCER_DIR}/`
+    }
     const [file, ...rest] = request.argv
     if (file === undefined) return 'Error: argv is empty'
+    if (file === 'copse-test' && rest.length > 0)
+      return 'Error: use argv: ["copse-test"]; the test path comes from path'
+    const argv: readonly [string, ...string[]] =
+      file === 'copse-test' ? reproducerTestArgv(normalised) : [file, ...rest]
     signal.throwIfAborted()
     await host.prepareBase(signal)
     signal.throwIfAborted()
@@ -152,14 +186,14 @@ export function createVerifierToolExecutor(host: VerifierToolHost): VerifierTool
     try {
       const head = await host.cell.run({
         target: 'head',
-        argv: [file, ...rest],
+        argv,
         timeoutMs: REPRODUCER_TIMEOUT_MS,
         maxOutputBytes: MAX_TOOL_OUTPUT_CHARS * 4,
         signal,
       })
       const baseRun = await host.cell.run({
         target: 'base',
-        argv: [file, ...rest],
+        argv,
         timeoutMs: REPRODUCER_TIMEOUT_MS,
         maxOutputBytes: MAX_TOOL_OUTPUT_CHARS * 4,
         signal,
@@ -168,7 +202,7 @@ export function createVerifierToolExecutor(host: VerifierToolHost): VerifierTool
         head: { ...head, output: host.scrub(head.output) },
         base: { ...baseRun, output: host.scrub(baseRun.output) },
       }
-      const confirms =
+      const separates =
         !scrubbed.head.timedOut &&
         !scrubbed.base.timedOut &&
         scrubbed.head.exitCode !== null &&
@@ -177,10 +211,10 @@ export function createVerifierToolExecutor(host: VerifierToolHost): VerifierTool
       reproducer = {
         path: normalised,
         content: request.content,
-        argv: [file, ...rest],
+        argv,
         head: scrubbed.head,
         base: scrubbed.base,
-        confirms,
+        separates,
       }
       const clip = (text: string): string =>
         text.length > MAX_TOOL_OUTPUT_CHARS / 2 ? text.slice(-MAX_TOOL_OUTPUT_CHARS / 2) : text
@@ -189,8 +223,8 @@ export function createVerifierToolExecutor(host: VerifierToolHost): VerifierTool
         wrapExternalContent('reproducer_head', clip(scrubbed.head.output)),
         `on the base: ${status(scrubbed.base)}`,
         wrapExternalContent('reproducer_base', clip(scrubbed.base.output)),
-        confirms
-          ? 'This reproducer confirms the finding: it fails on the change and passes on the base. You are done.'
+        separates
+          ? 'The exit codes separate head from base. This is not confirmation: a challenger must audit whether the test proves the claimed behavior on both revisions. Stop writing tests now.'
           : 'This reproducer does not confirm the finding (it must fail on the change and pass on the base). Revise it, or stop if the defect cannot be reproduced.',
       ].join('\n')
     } finally {
@@ -207,6 +241,10 @@ export function createVerifierToolExecutor(host: VerifierToolHost): VerifierTool
           const input = verdictArgs(args)
           if (input === null)
             return 'Error: verdict needs { status: refuted|stands|undetermined, reason }'
+          if (host.requireReproducerAssessment && input.reproducerAssessment === undefined)
+            return 'Error: verdict requires reproducerAssessment: valid|invalid|undetermined and a reason auditing the test on both revisions'
+          if (input.reproducerAssessment === 'valid' && input.status !== 'stands')
+            return 'Error: valid reproducer proof requires the finding to stand'
           verdict = input
           return 'Verdict recorded. Reply with one line and stop.'
         }

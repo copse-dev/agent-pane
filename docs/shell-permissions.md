@@ -87,6 +87,16 @@ so a recovered task cannot launch a second Xcode process whose predecessor may s
 
 ## ACP MCP mediation
 
+The Codex ACP preset allows the macOS `com.apple.trustd.agent` service for TLS
+certificate verification. Without it, allowlisted ChatGPT requests fail during
+workspace-routing discovery. This is a per-process seatbelt permission, carried
+through both model probes and session hosts; ordinary shell commands and other
+agents do not inherit it. Filesystem restrictions and the destination allowlist
+remain in place. The trust service can make its own network requests outside the
+domain proxy, so this is an explicit, narrow exception to network isolation, not
+a general default. Custom ACP sandbox overrides can select `allowMacOsTrustd`;
+the flag has no effect on other operating systems.
+
 Configured MCP servers are never handed directly to an external ACP agent. Direct forwarding lets
 the agent call a server without a host callback, which would bypass Copse's hooks, read-only mode,
 and per-tool permission policy. Copse instead advertises the connected server's registered
@@ -190,15 +200,30 @@ permission denial, Copse asks to use the system SSH signer, one configured publi
 and the exact agent socket. Remembering covers that project and identity until app
 restart. Changes to the config, key, signer binary or socket require new approval.
 Always ask suppresses remembering; turning off the setting blocks further brokered
-signing. Config supplied by the repository never grants authority on its own.
+ssh-agent signing. Config supplied by the repository never grants authority on its own.
 
 The socket is available only to a separately sandboxed `/usr/bin/ssh-keygen`, with
 fixed arguments selecting that public key and the `git` signing namespace. Git and
 its hooks receive a single-use commit-signing endpoint; they cannot talk to ssh-agent
-directly. The configured private key remains unreadable. The helper and key are
+directly. On this ssh-agent path, the configured private key remains unreadable. The helper and key are
 pinned through command-line config, so changing Git config during approval cannot
 replace the approved executable. The broker accepts bounded commit objects, not
 commands or arbitrary SSH authentication requests.
+
+With the ssh-agent setting off, a configured SSH key file has a separate one-commit
+consent path on macOS. Before staging or running hooks, the approval names the commit,
+resolved private-key path, system signer and project. Copse reads no private-key
+contents until approval. This approval is never remembered: only the isolated system
+signer gains read access to the exact file. Git, hooks and the agent receive no key
+access. File identity is checked across approval and before and after each signer
+invocation. No private-key copy is written. A missing `.pub` file does not prevent signing. Passphrase-protected
+keys require the existing ssh-agent path; Copse does not collect their passphrases.
+Rejecting or failing never triggers an unsigned or unsandboxed retry.
+
+This is the commit step of a PR workflow. The Create PR dialog pushes already committed
+changes; it does not commit, read signing keys or grant future signing access. PR
+publication retains its own approval. Turning off the ssh-agent setting revokes socket
+grants and still permits a fresh, explicit one-commit private-key approval.
 
 The setting supports the default/system SSH signer. Custom signing programs and
 other configured helpers keep ordinary project sandbox access. Linux does not get a

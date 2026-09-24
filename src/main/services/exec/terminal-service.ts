@@ -1,14 +1,23 @@
 import { randomUUID } from 'node:crypto'
+import { mkdirSync } from 'node:fs'
+import { basename, join } from 'node:path'
 import type { IDisposable, IPty } from 'node-pty'
 import { spawnPtyInProjectSandbox } from '../../project-sandbox/index.ts'
 import { envForRendererChildProcess } from './child-process-env.ts'
 import { getWorkspaceRoot } from '../workspace.ts'
+import { projectStoreDir } from '../storage/copse-paths.ts'
+import { getSetting } from '../storage/settings.ts'
 import {
   CappedOutputAccumulator,
   COMMAND_OUTPUT_MAX_BYTES,
   stripTerminalControlSequences,
 } from './subprocess-output-cap.ts'
 import { READ_TERMINAL_DEFAULT_LINES, takeLastLines } from '@shared/terminal/read-terminal.ts'
+import {
+  SHARE_TERMINAL_HISTORY_ENABLED_DEFAULT,
+  SHARE_TERMINAL_HISTORY_ENABLED_SETTING,
+  TERMINAL_HISTORY_FILENAME,
+} from '@shared/terminal/terminal-history.ts'
 import { nonEmptyStringOr } from '@shared/unknown-value.ts'
 import { notifyThreadResourceFinished } from '../worktree-parking-events.ts'
 
@@ -20,6 +29,11 @@ interface PtyListeners {
 export interface TerminalSessionMeta {
   label?: string
   threadId?: string | null
+  /**
+   * Project the terminal belongs to — used only at spawn time to pick a
+   * shared history file (#2433); not persisted or updatable afterwards.
+   */
+  projectId?: string
 }
 
 export interface TerminalSessionInfo {
@@ -34,6 +48,9 @@ export interface TerminalProcessInfo {
   id: string
   label: string
   pid: number
+  threadId: string | null
+  projectId: string | null
+  ownerId: number
 }
 
 export interface TerminalSession {
@@ -46,6 +63,7 @@ export interface TerminalSession {
   output: CappedOutputAccumulator
   label: string
   threadId: string | null
+  projectId: string | null
 }
 
 const sessions = new Map<string, TerminalSession>()
@@ -100,6 +118,110 @@ function sessionCwd(executionRoot?: string): string {
   return executionRoot ?? getWorkspaceRoot() ?? process.cwd()
 }
 
+/** bash-only history knobs, applied only where the base env leaves them unset. */
+function bashHistoryDefaults(baseEnv: NodeJS.ProcessEnv): Record<string, string> {
+  const out: Record<string, string> = {}
+  if (!baseEnv['HISTCONTROL']) out['HISTCONTROL'] = 'ignoredups:erasedups'
+  if (!baseEnv['HISTSIZE']) out['HISTSIZE'] = '10000'
+  if (!baseEnv['HISTFILESIZE']) out['HISTFILESIZE'] = '20000'
+  return out
+}
+
+/**
+ * bash-only: the `PROMPT_COMMAND` that makes a *running* shell converge with
+ * the shared HISTFILE on its own, one prompt at a time. `shopt -s histappend`
+ * prevents a stale shell from overwriting another shell's newer entries when
+ * it exits; `history -n` reads whatever other shells landed since the last
+ * prompt, then `history -w` writes the merged in-memory list including the
+ * command that just finished. The rewrite is intentional: Bash 3.2 reports
+ * success for `history -a` inside PROMPT_COMMAND but does not include that
+ * just-finished command, so a second shell cannot recall it yet. Prepended
+ * onto whatever `PROMPT_COMMAND` the base env already carries (bash runs the
+ * whole string as one command list, left to right), so a user's own hook still
+ * runs; never replaces it.
+ */
+function bashPromptCommand(baseEnv: NodeJS.ProcessEnv): string {
+  const flush = 'shopt -s histappend; history -n; history -w'
+  const existing = baseEnv['PROMPT_COMMAND']
+  return existing ? `${flush}; ${existing}` : flush
+}
+
+/**
+ * Env additions that make an interactive terminal PTY share command history
+ * with every other terminal opened for the same project (#2433: up-arrow
+ * history was scoped to a single thread's own PTY).
+ *
+ * Up-arrow history is the shell's own feature — bash/zsh read and write a
+ * `HISTFILE`, so the smallest faithful fix is giving every supported PTY
+ * opened for a project the same history identity. Fish is deliberately left
+ * untouched: it accepts only a session name and persists that session under
+ * its global XDG data directory, outside `COPSE_DIR`, violating Copse's
+ * single-root state and profile-isolation contract. This is done through the
+ * PTY's environment only, never a shell rc file, and it unconditionally wins
+ * over any `HISTFILE` the main process's own environment happens to carry: an
+ * Electron GUI launch essentially never has one, and nothing in this repo
+ * forwards a user's interactive shell env into PTYs for history to defer to
+ * (`envForRendererChildProcess` forwards ordinary vars but has no such
+ * convention).
+ *
+ * A shared `HISTFILE` alone only helps a *new* shell: bash and zsh both load
+ * history once, at startup, and otherwise only write it back at exit — so a
+ * command typed into thread A's still-open shell would not reach thread B
+ * until A's shell exited (or something ran `history -a` by hand). For bash,
+ * `bashPromptCommand` closes that gap through `PROMPT_COMMAND`, so a command
+ * run in one thread's open shell is recallable from another thread's open
+ * shell within one prompt cycle, with no explicit flush and no shell exit
+ * required. Two limits this cannot close: a user's own `~/.bashrc` can
+ * reassign `PROMPT_COMMAND` after this env var seeds it (rc files run after
+ * the shell starts and an assignment, not an append, silently drops the
+ * hook), and zsh has no environment-settable equivalent —
+ * `INC_APPEND_HISTORY` / `SHARE_HISTORY` are shell options `setopt` turns on,
+ * not variables the environment can supply — so zsh still only shares history
+ * at shell exit.
+ *
+ * Non-interactive tool shells (`run_shell` / `run_background`) never call
+ * this — only the interactive Shells-tab PTY does.
+ */
+export function terminalHistoryEnv(
+  shell: string,
+  projectId: string | null | undefined,
+  baseEnv: NodeJS.ProcessEnv = process.env,
+): Record<string, string> {
+  if (!projectId) return {}
+  if (
+    !getSetting<boolean>(
+      SHARE_TERMINAL_HISTORY_ENABLED_SETTING,
+      SHARE_TERMINAL_HISTORY_ENABLED_DEFAULT,
+    )
+  ) {
+    return {}
+  }
+  const shellName = basename(shell).toLowerCase()
+  if (shellName === 'fish') return {}
+  let dir: string
+  try {
+    dir = projectStoreDir(projectId)
+    mkdirSync(dir, { recursive: true })
+  } catch {
+    // Bad project id, read-only store, etc. — fall back to the shell's own
+    // default history rather than failing to open a terminal over this.
+    return {}
+  }
+  const out: Record<string, string> = { HISTFILE: join(dir, TERMINAL_HISTORY_FILENAME) }
+  // `.includes`, not an exact `=== 'bash'` — `$SHELL` is not always a bare
+  // `bash` basename (versioned binaries like `bash5`, or a wrapper script that
+  // execs real bash, as this repo's own e2e `$SHELL` fixture does for
+  // deterministic terminal screenshots).
+  const isBash = shellName.includes('bash')
+  if (isBash || shellName === 'sh') {
+    Object.assign(out, bashHistoryDefaults(baseEnv))
+  }
+  if (isBash) {
+    out['PROMPT_COMMAND'] = bashPromptCommand(baseEnv)
+  }
+  return out
+}
+
 function sendTerminalEvent(
   owner: TerminalOwner,
   channel: 'terminal:output' | 'terminal:exit',
@@ -129,7 +251,10 @@ function disposeSession(session: TerminalSession, sessionId: string, notify = tr
     // PTY may already be dead during shutdown.
   }
   sessions.delete(sessionId)
-  if (notify) notifyThreadResourceFinished(session.threadId)
+  if (notify) {
+    sendTerminalEvent(session.owner, 'terminal:exit', sessionId, -1)
+    notifyThreadResourceFinished(session.threadId)
+  }
 }
 
 function attachPtyHandlers(
@@ -166,7 +291,7 @@ async function spawnShell(
     cols,
     rows,
     cwd: sessionCwd(executionRoot),
-    env: envForRendererChildProcess(),
+    env: { ...envForRendererChildProcess(), ...terminalHistoryEnv(shell, meta?.projectId) },
     // User-initiated Shells tabs run outside the project seatbelt; agent shell
     // confinement stays on run_shell / run_background (#662, #812).
     unsandboxed: true,
@@ -179,6 +304,7 @@ async function spawnShell(
     output: new CappedOutputAccumulator(COMMAND_OUTPUT_MAX_BYTES),
     label: nonEmptyStringOr(meta?.label?.trim(), 'Terminal'),
     threadId: meta?.threadId ?? null,
+    projectId: meta?.projectId ?? null,
   }
   sessions.set(session.id, session)
   attachPtyHandlers(owner, session.id, ptyProcess, session)
@@ -300,7 +426,14 @@ export function listTerminalProcesses(): TerminalProcessInfo[] {
   for (const session of sessions.values()) {
     const { pid } = session.pty
     if (!Number.isInteger(pid) || pid <= 0) continue
-    out.push({ id: session.id, label: session.label, pid })
+    out.push({
+      id: session.id,
+      label: session.label,
+      pid,
+      threadId: session.threadId,
+      projectId: session.projectId,
+      ownerId: session.owner.id,
+    })
   }
   return out
 }
@@ -348,6 +481,7 @@ export function __testInjectTerminalSession(opts: {
     output,
     label: opts.label,
     threadId: opts.threadId,
+    projectId: null,
   }
   sessions.set(id, session)
   return id

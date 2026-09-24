@@ -5,6 +5,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'nod
 import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
 import { getApplySeccompBinaryPath } from '@anthropic-ai/sandbox-runtime/dist/sandbox/generate-seccomp-filter.js'
 import { expandScratchPath } from '@shared/acp-scratch-paths.ts'
+import type { AcpAgentSandboxConfig } from '@shared/types/acp.ts'
 import { getSetting } from '../services/storage/settings.ts'
 import {
   copseManagedPreparationCacheDirs,
@@ -696,7 +697,7 @@ export { expandScratchPath } from '@shared/acp-scratch-paths.ts'
 
 export function acpAgentSandboxOverlay(
   workspaceRoot: string,
-  sandbox: { allowedDomains: string[]; homeDirs?: string[]; scratchPaths?: string[] },
+  sandbox: AcpAgentSandboxConfig,
   opts?: {
     /**
      * Also allow loopback traffic — required when the turn runs the native-tool
@@ -725,6 +726,9 @@ export function acpAgentSandboxOverlay(
   const localDomains = opts?.allowLocalhost ? ['localhost', '127.0.0.1', '::1'] : []
   return {
     ...base,
+    // The pinned ASRT patch honors this per-spawn flag. Never set it on the
+    // global manager: other agents and ordinary shell commands stay confined.
+    ...(sandbox.allowMacOsTrustd === true ? { enableWeakerNetworkIsolation: true } : {}),
     network: {
       allowedDomains: [...sandbox.allowedDomains, ...localDomains],
       deniedDomains: [],

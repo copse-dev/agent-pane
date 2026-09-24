@@ -291,7 +291,7 @@ describe('reviewer tools', () => {
     )
     assert.match(
       result,
-      /^exit 3 \(\d+ ms\)\n<external_content source="run_command">\n\[SCRUBBED\] hello/,
+      /^exit 3 \(\d+ ms\)\ncommandCallId: "call-9"\n<external_content source="run_command">\n\[SCRUBBED\] hello/,
     )
     assert.equal(executor.commandRuns().get('call-9')?.exitCode, 3)
     assert.equal(executor.commandRuns().get('call-9')?.output.trim(), '[SCRUBBED] hello')
@@ -335,6 +335,44 @@ describe('reviewer tools', () => {
     const noCell = createReviewerToolExecutor({ ...host, cell: null })
     assert.match(await noCell.execute('run_command', { argv: ['true'] }, signal, 't2'), /denied/)
     assert.equal(denied.commandRuns().size, 0)
+  })
+
+  it('lets the reviewer copy a command evidence id from the result into a finding', async () => {
+    const executor = createReviewerToolExecutor(host)
+    const output = await executor.execute(
+      'run_command',
+      { argv: [process.execPath, 'probe.cjs', 'evidence'] },
+      signal,
+      'call_provider_generated_47',
+    )
+    const evidenceId = /^commandCallId: "([^"]+)"$/m.exec(output)?.[1]
+    assert.ok(evidenceId, 'opaque transport ids must be available in the model-visible result')
+    const finding = {
+      path: 'src/a.ts',
+      startLine: 2,
+      class: 'security',
+      severity: 'high',
+      confidence: 'medium',
+      claim: 'A secret is hard-coded in the module.',
+      reason: 'The focused probe demonstrates the changed behavior.',
+      commandCallIds: [evidenceId],
+    }
+    assert.equal(
+      await executor.execute('report_finding', finding, signal, 'finding-1'),
+      'Recorded finding 1 at src/a.ts:2.',
+    )
+    assert.equal(executor.reported()[0]?.candidate.commandCallIds?.[0], evidenceId)
+    assert.equal(executor.commandRuns().get(evidenceId)?.output.trim(), '[SCRUBBED] evidence')
+    assert.match(
+      await executor.execute(
+        'report_finding',
+        { ...finding, commandCallIds: ['run_command'] },
+        signal,
+        'finding-2',
+      ),
+      /^Error: No run_command call with id run_command/,
+    )
+    assert.equal(executor.reported().length, 1)
   })
 
   it('records a well-formed finding with its anchored source and rejects a bad one', async () => {
@@ -448,6 +486,177 @@ describe('reviewer tools', () => {
     )
     assert.equal(executor.reported().length, 1)
     assert.deepEqual(executor.suspicions(), [{ ...suspicion, id: 'suspicion-1' }])
+  })
+
+  it('rejects two reported suspicions mapped to one finding and accepts corrected indices', async () => {
+    const executor = createReviewerToolExecutor(host)
+    const first = {
+      path: 'src/a.ts',
+      startLine: 2,
+      claim: 'The new literal may disclose a secret.',
+    }
+    const second = { ...first, claim: 'The caller now receives an incorrect result.' }
+    await executor.execute('record_suspicion', first, signal, 's1')
+    await executor.execute('record_suspicion', second, signal, 's2')
+    const closure = {
+      checked: 'The source and both affected callers.',
+      couldNotVerify: 'Nothing',
+      findings: [first, second].map((entry) => ({
+        ...entry,
+        class: 'contract',
+        severity: 'high',
+        confidence: 'high',
+        reason: 'The changed value violates the caller contract.',
+      })),
+      dispositions: [1, 2].map((n) => ({
+        id: `suspicion-${String(n)}`,
+        status: 'reported',
+        evidence: 'The corresponding defect is included.',
+        findingIndex: 1,
+      })),
+    }
+    assert.match(
+      await executor.execute('finish_review', closure, signal, 'bad'),
+      /already resolves/,
+    )
+    assert.equal(executor.reported().length, 0)
+    assert.equal(executor.completion(), null)
+    assert.match(
+      await executor.execute(
+        'finish_review',
+        {
+          ...closure,
+          dispositions: closure.dispositions.map((entry, i) => ({ ...entry, findingIndex: i + 1 })),
+        },
+        signal,
+        'fixed',
+      ),
+      /completion recorded/,
+    )
+    assert.equal(executor.reported().length, 2)
+  })
+
+  it('accepts explicitly explained duplicates only when linked to a reported suspicion', async () => {
+    const executor = createReviewerToolExecutor(host)
+    const finding = {
+      path: 'src/a.ts',
+      startLine: 2,
+      claim: 'The new literal may disclose a secret.',
+      class: 'security',
+      severity: 'high',
+      confidence: 'high',
+      reason: 'The literal credential is returned to callers.',
+    }
+    await executor.execute('record_suspicion', finding, signal, 's1')
+    await executor.execute('record_suspicion', finding, signal, 's2')
+    const duplicate = {
+      id: 'suspicion-2',
+      status: 'duplicate',
+      findingIndex: 1,
+      evidence: 'The same literal and caller as suspicion-1.',
+    }
+    const closure = {
+      checked: 'The literal and downstream caller.',
+      couldNotVerify: 'Nothing',
+      findings: [finding],
+      dispositions: [duplicate, { ...duplicate, id: 'suspicion-1' }],
+    }
+    assert.match(
+      await executor.execute('finish_review', closure, signal, 'bad'),
+      /resolved by a reported suspicion/,
+    )
+    assert.equal(executor.reported().length, 0)
+    assert.match(
+      await executor.execute(
+        'finish_review',
+        {
+          ...closure,
+          dispositions: [
+            duplicate,
+            {
+              ...duplicate,
+              id: 'suspicion-1',
+              status: 'reported',
+              evidence: 'The literal reaches the caller.',
+            },
+          ],
+        },
+        signal,
+        'fixed',
+      ),
+      /completion recorded/,
+    )
+    assert.equal(executor.reported().length, 1)
+  })
+
+  it('ignores irrelevant finding indices on refuted and unresolved dispositions without accepting false-clean closure', async () => {
+    const executor = createReviewerToolExecutor(host)
+    const finding = {
+      path: 'src/a.ts',
+      startLine: 2,
+      claim: 'The literal reaches an unintended caller.',
+      class: 'contract',
+      severity: 'medium',
+      confidence: 'high',
+      reason: 'The changed value violates the downstream caller contract.',
+    }
+    for (let i = 0; i < 4; i++)
+      await executor.execute('record_suspicion', finding, signal, `s${String(i)}`)
+    await executor.execute('report_finding', finding, signal, 'f1')
+    const closure = {
+      checked: 'The changed source and all downstream callers.',
+      couldNotVerify: 'Nothing',
+      findings: [],
+      dispositions: [
+        {
+          id: 'suspicion-1',
+          status: 'refuted',
+          evidence: 'The caller validates the value before using it.',
+          findingIndex: 1,
+        },
+        {
+          id: 'suspicion-2',
+          status: 'reported',
+          evidence: 'The separate affected caller remains unguarded.',
+          findingIndex: 1,
+        },
+        {
+          id: 'suspicion-3',
+          status: 'duplicate',
+          evidence: 'Same caller and defect as suspicion-2.',
+          findingIndex: 1,
+        },
+        {
+          id: 'suspicion-4',
+          status: 'unresolved',
+          evidence: 'The timing behavior could not be exercised.',
+          findingIndex: 1,
+        },
+      ],
+    }
+    assert.match(
+      await executor.execute('finish_review', closure, signal, 'unclear'),
+      /Include unresolved suspicion-4/,
+    )
+    assert.equal(executor.completion(), null)
+    assert.equal(executor.reported().length, 1)
+    assert.match(
+      await executor.execute(
+        'finish_review',
+        {
+          ...closure,
+          dispositions: closure.dispositions.map((entry) =>
+            entry.status === 'unresolved' ? { ...entry, findingIndex: null } : entry,
+          ),
+          couldNotVerify: 'suspicion-4: the timing behavior was not exercised.',
+        },
+        signal,
+        'done',
+      ),
+      /completion recorded/,
+    )
+    assert.equal(executor.reported().length, 1)
+    assert.match(executor.completion()?.couldNotVerify ?? '', /suspicion-4/)
   })
 
   it('allows evidence-backed refutation and explicitly unresolved suspicions without publishing findings', async () => {

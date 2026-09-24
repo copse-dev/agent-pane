@@ -186,6 +186,9 @@ export function parseAcpAgentConfigs(value: unknown): AcpAgentConfig[] {
       ) {
         agent.sandbox.scratchPaths = sandbox['scratchPaths']
       }
+      if (typeof sandbox['allowMacOsTrustd'] === 'boolean') {
+        agent.sandbox.allowMacOsTrustd = sandbox['allowMacOsTrustd']
+      }
     }
     return [agent]
   })

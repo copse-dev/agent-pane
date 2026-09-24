@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  acpAgentConfigSchema,
   isRendererWritableSettingKey,
   isSecretSettingKey,
   parseRendererWritableSetting,
@@ -8,6 +9,21 @@ import {
 } from './settings-writable.ts'
 
 describe('settings-writable', () => {
+  it('round-trips ACP trustd opt-in and opt-out without coercing other values', () => {
+    const agent = { id: 'codex', title: 'Codex', command: 'codex-acp', enabled: true }
+    for (const allowMacOsTrustd of [true, false]) {
+      const sandbox = { allowedDomains: ['chatgpt.com'], allowMacOsTrustd }
+      assert.deepEqual(acpAgentConfigSchema.parse({ ...agent, sandbox }).sandbox, sandbox)
+    }
+    assert.equal(
+      acpAgentConfigSchema.safeParse({
+        ...agent,
+        sandbox: { allowedDomains: [], allowMacOsTrustd: 'true' },
+      }).success,
+      false,
+    )
+  })
+
   it('rejects security keys on the renderer allowlist', () => {
     assert.equal(isRendererWritableSettingKey('autoRunSandboxCommands'), false)
     assert.equal(isRendererWritableSettingKey('localServerUrl'), false)

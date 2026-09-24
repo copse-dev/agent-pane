@@ -127,6 +127,8 @@ describe('runStage2', () => {
     })
     assert.equal(result.outcome, 'completed')
     assert.equal(result.stopReason, 'end_turn')
+    assert.ok(result.timing)
+    assert.equal(result.timing.durationMs, result.timing.toolMs + result.timing.modelAndOverheadMs)
     const [reported] = result.candidates
     assert.ok(reported)
     assert.equal(result.candidates.length, 1)

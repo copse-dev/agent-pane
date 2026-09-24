@@ -97,6 +97,33 @@ describe('review panel (subagent file links)', () => {
     assert.equal(card.querySelector('.card-retry-button'), null)
   })
 
+  // #2506: a verdict that asked for follow-up but got none must say so, or a
+  // "not done" review reads as silently ignored. Folded into the existing
+  // markdown body (as an italic closing line) rather than a new styled
+  // element, so the fix needs no global CSS change.
+  it('renders the follow-up note as an italic line inside the review body', () => {
+    const review: ThreadReview = {
+      status: 'done',
+      summary: 'Still missing the unregister call.',
+      issuesFound: true,
+      followUpNote: 'Follow-up turn not started: the run was cancelled.',
+    }
+    const card = createReviewCardEl(review, fakeApi())
+    const body = card.querySelector('.review-panel-body')
+    assert.ok(body, 'expected a review body element')
+    assert.match(body.textContent, /Still missing the unregister call\./)
+    const note = [...body.querySelectorAll('em')].find(
+      (em) => em.textContent === 'Follow-up turn not started: the run was cancelled.',
+    )
+    assert.ok(note, 'expected the follow-up note rendered as an italic line')
+  })
+
+  it('renders no follow-up line when the verdict needed no follow-up', () => {
+    const review: ThreadReview = { status: 'done', summary: 'Looks good.', issuesFound: false }
+    const card = createReviewCardEl(review, fakeApi())
+    assert.equal(card.querySelector('.review-panel-body em'), null)
+  })
+
   it('linkifies printed file paths in the review summary so they open in the explorer', async () => {
     const review: ThreadReview = {
       status: 'done',

@@ -70,4 +70,66 @@ describe('provider selection', () => {
     assert.ok(selected.provider instanceof ScriptedProvider)
     assert.equal(selected.model, 'mock')
   })
+
+  it('accepts base OpenRouter hosts or automatic routing, rejecting paid tier slugs', () => {
+    for (const preference of ['', 'auto', 'openai', 'azure']) {
+      assert.equal(
+        selectProvider(
+          { kind: 'openrouter', model: 'openai/gpt-6-luna' },
+          { OPENROUTER_API_KEY: 'fixture-key', COPSE_REVIEW_OPENROUTER_PROVIDER: preference },
+        ).remote,
+        true,
+      )
+    }
+    for (const preference of ['openai/fast', 'openai/flex', 'openai,azure', 'OpenAI']) {
+      assert.throws(
+        () =>
+          selectProvider(
+            { kind: 'openrouter', model: 'openai/gpt-6-luna' },
+            { OPENROUTER_API_KEY: 'fixture-key', COPSE_REVIEW_OPENROUTER_PROVIDER: preference },
+          ),
+        /must be a base provider slug or auto/,
+      )
+    }
+    assert.equal(
+      selectProvider({ kind: 'mock' }, { COPSE_REVIEW_OPENROUTER_PROVIDER: 'ignored/value' }).kind,
+      'mock',
+    )
+  })
+
+  it('carries the host preference through redaction to every review role', async (t) => {
+    const requests: unknown[] = []
+    t.mock.method(globalThis, 'fetch', async (_input: unknown, init?: RequestInit) => {
+      assert.equal(typeof init?.body, 'string')
+      if (typeof init?.body !== 'string') throw new Error('expected a JSON request body')
+      const body: unknown = JSON.parse(init.body)
+      requests.push(body)
+      return new Response(
+        'data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n',
+        { headers: { 'Content-Type': 'text/event-stream' } },
+      )
+    })
+    const selected = selectProvider(
+      { model: 'openai/gpt-6-luna' },
+      { OPENROUTER_API_KEY: 'fixture-key', COPSE_REVIEW_OPENROUTER_PROVIDER: 'openai' },
+    )
+    for (const role of ['review:correctness', 'reproduce', 'challenge']) {
+      for await (const _ of selected
+        .providerFor(role)
+        .stream([{ role: 'user', content: 'hi' }], [])) {
+        // Drain the actual adapter request through the redacting wrapper.
+      }
+    }
+    assert.equal(requests.length, 3)
+    for (const request of requests) {
+      assert.ok(request !== null && typeof request === 'object')
+      assert.deepEqual(Reflect.get(request, 'provider'), {
+        require_parameters: true,
+        order: ['openai'],
+        allow_fallbacks: true,
+        zdr: true,
+        data_collection: 'deny',
+      })
+    }
+  })
 })

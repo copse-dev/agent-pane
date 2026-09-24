@@ -100,6 +100,11 @@ describe('copse-review CLI', () => {
     assert.match(bad.err, /copse-review: /)
     const badProvider = await run(repo, ['--provider', 'carrier-pigeon'])
     assert.equal(badProvider.code, HEADLESS_EXIT.USAGE)
+    for (const value of ['0', '3', '1.5']) {
+      const parallel = await run(repo, ['--verify-concurrency', value])
+      assert.equal(parallel.code, HEADLESS_EXIT.USAGE)
+      assert.match(parallel.err, /verify-concurrency/)
+    }
   })
 
   it('refuses to execute without consent and says so with the approval exit code', async () => {
@@ -513,6 +518,19 @@ describe('copse-review CLI', () => {
       script,
       JSON.stringify([
         { type: 'tool_call', name: 'run_command', args: { argv: ['node', '-e', '1'] } },
+        {
+          type: 'tool_call',
+          name: 'report_finding',
+          args: {
+            path: 'src/math.ts',
+            startLine: 1,
+            class: 'contract',
+            severity: 'high',
+            confidence: 'high',
+            claim: 'add subtracts its second argument.',
+            reason: 'The body is a - b.',
+          },
+        },
         finishReviewStep(
           'The imported Stage 0 report and changed source.',
           'Focused commands were unavailable in the default read-only import.',
@@ -565,13 +583,21 @@ describe('copse-review CLI', () => {
     assert.equal(code, HEADLESS_EXIT.SUCCESS, err)
     assert.match(out, /Copse Reviewer · Stage 0 · ephemeral-runner \(container\)/)
     assert.match(out, /test ✗ regressed/)
-    assert.match(out, /1 finding\(s\):\n1\. \[test/)
+    assert.match(out, /2 finding\(s\):\n1\. \[test/)
     assert.match(err, /posted the review on copse-dev\/fixture#7/)
     const [post] = posts
     assert.ok(post)
     assert.equal(post.url, 'https://api.github.com/repos/copse-dev/fixture/pulls/7/reviews')
     assert.match(post.body, /Executed in the `ephemeral-runner` backend/)
     assert.match(post.body, /pnpm run test|check\.cjs/)
+    assert.equal(posts.length, 1)
+    assert.match(err, /1 inline comment\(s\), 1 folded into the body/)
+    const payload: unknown = JSON.parse(post.body)
+    assert.ok(typeof payload === 'object' && payload !== null)
+    const comments: unknown = Reflect.get(payload, 'comments')
+    assert.ok(Array.isArray(comments))
+    assert.equal(comments.length, 1)
+    assert.partialDeepStrictEqual(comments[0], { path: 'src/math.ts', line: 1, side: 'RIGHT' })
     assert.match(await readFile(importedEvents, 'utf8'), /run_command is denied/)
 
     const unsafe = await run(repo, [

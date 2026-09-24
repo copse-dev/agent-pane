@@ -91,6 +91,20 @@ describe('acpAgentSandboxOverlay', () => {
     }
   })
 
+  it('adds trustd only on opt-in without changing network or filesystem policy', () => {
+    const strict = acpAgentSandboxOverlay(workspace, sandbox)
+    const trusted = acpAgentSandboxOverlay(workspace, { ...sandbox, allowMacOsTrustd: true })
+    assert.equal(strict.enableWeakerNetworkIsolation, undefined)
+    assert.equal(trusted.enableWeakerNetworkIsolation, true)
+    assert.deepEqual(trusted.network, strict.network)
+    assert.deepEqual(trusted.filesystem, strict.filesystem)
+    assert.equal(
+      acpAgentSandboxOverlay(workspace, { ...sandbox, allowMacOsTrustd: false })
+        .enableWeakerNetworkIsolation,
+      undefined,
+    )
+  })
+
   it('keeps the mandatory write-deny list (git hooks, rc files)', () => {
     const overlay = acpAgentSandboxOverlay(workspace, sandbox)
     const base = workspaceSandboxOverlay(workspace)

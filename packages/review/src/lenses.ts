@@ -185,6 +185,7 @@ export function lensSystemPrompt(lens: Lens, options: LensPromptOptions): string
     running,
     '',
     'Report each defect with the report_finding tool, one call per defect, anchored at the exact file and lines where the bug is. Every finding needs a falsifiable one-sentence claim and the specific reason it is wrong. If a command you ran demonstrates it, pass that call id as evidence.',
+    'Write the claim for the PR author: say what triggers the bug and what goes wrong in plain language. Use code names only when they make the problem clearer. Put supporting implementation details in reason, not the headline.',
     '',
     'Rules:',
     `- Allowed classes: ${FINDING_CLASSES.join(', ')}. Nothing else is a finding.`,

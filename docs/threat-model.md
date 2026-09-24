@@ -136,7 +136,7 @@ before Copse offers additional access. Git stderr and model hints are not eviden
 Approval identifies the project, helper, public-key fingerprint and socket. Optional
 remembering lasts until app restart and is bound to the project path, signing config,
 public key, executable hash and socket inode. A changed identity requires approval;
-Always ask bypasses remembered grants. Disabling the setting prevents further signing.
+Always ask bypasses remembered grants. Disabling the setting prevents further ssh-agent signing.
 
 Only the separately sandboxed system signer gets the agent socket. Its fixed argv
 forces agent use, selects the approved public key and signs in the `git` namespace.
@@ -146,6 +146,18 @@ broker accepts commit objects, never paths, executables, permission requests or 
 ssh-agent messages. The configured private key is explicitly unreadable even if it
 is stored outside the home directory. Execution-time overrides pin the approved
 signer and key against later config edits. Failure never downgrades the signature.
+
+With the socket setting off, a configured SSH key file can instead receive explicit
+one-commit consent. The prompt names the resolved file, project, system signer and
+commit before any private bytes are read. Consent is never remembered. Copse checks
+file identity and bounded size across approval, then gives only the isolated signer
+read access to the exact canonical file with a clean environment and no agent socket.
+The identity is rechecked before and after signer invocations; changed files fail
+closed. Git and hooks remain denied access to the key. Copse writes no private-key
+copy, and key bytes never appear in approval text, command arguments, logs or tool
+output. Passphrase-protected keys require ssh-agent. The existing
+one-use commit endpoint and execution-time signer pinning apply to both paths. This
+authority does not grant PR publication or general credential reads.
 
 Hooks can influence a commit or consume its one signing request, just as they can
 change a commit message or fail a commit. This grant permits Git commit signatures

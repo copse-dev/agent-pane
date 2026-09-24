@@ -62,6 +62,13 @@ describe('right panel toggle and shortcuts', () => {
     seedEmptyProject(process.cwd(), PROJECT_ID)
     await browser.reloadSession()
     await waitForComposer()
+    // A prior spec can leave the first-run overlay visible across the app
+    // relaunch. Its header covers the titlebar controls this spec exercises.
+    const onboarding = $('#onboarding-dialog')
+    if (await onboarding.isDisplayed()) {
+      await $('#onboarding-skip').click()
+      await onboarding.waitForDisplayed({ reverse: true, timeout: 10_000 })
+    }
   })
 
   after(() => {

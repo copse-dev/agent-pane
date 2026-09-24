@@ -702,13 +702,21 @@ building it:
 - **Verification (Stage 4) by class.** `test`, `contract` and `concurrency` go to a
   reproducer model first: it writes one test under `.copse-review/` and names the argv;
   the orchestrator runs it on head, copies it to base, runs it there, removes it from base,
-  and confirms only when it fails on head and passes on base. The artefact stays in the
-  head checkout and in the report. Everything still open — including a reproducer that
-  could not separate the two — goes to the challenger, whose brief is to refute the
-  finding with the burden of proof on the claim: `refuted` drops it (kept in the report's
-  `refuted` list with the reason), `stands` records a survived challenge in
-  `challengedBy` and in the verdict reason, `undetermined` leaves it as it was. A
-  challenge never upgrades a finding to `confirmed`: only execution does that.
+  and records whether the exit codes differ. Every finding then goes to the challenger,
+  including successful differentials: opposite exits alone are not behavioral proof.
+  A differential requires an explicit `reproducerAssessment` (`valid`, `invalid`, or
+  `undetermined`) explaining the behavior exercised on **both** revisions and why head's
+  assertion failure proves the claim. Source-text checks, skipped base scenarios, absent
+  APIs, setup errors and unrelated failures do not qualify. Only a completed `stands`
+  verdict with a `valid` audit of a differential upgrades to `confirmed` and retains its
+  artefact in the report. A plausible claim with invalid or missing proof stays unverified;
+  without a challenger a differential also stays unverified. `refuted` drops the finding
+  (retained in the report's `refuted` list); other `stands` verdicts record a survived
+  challenge; `undetermined` leaves the finding as it was. The audit is model judgment,
+  not a guarantee, and can add one bounded challenger turn per successful differential.
+  Review closure also rejects mapping multiple reported suspicions to the same finding
+  index; duplicate suspicions must use an explicit `duplicate` disposition, explain the duplication,
+  and reference the finding index resolved by a `reported` suspicion.
 - **Budget (P3's staged escalation, first rung).** Verification is spent only on
   unverified survivors of Stage 3, most promising first by rank score, up to
   `--max-verify` (default 10); the rest are reported as skipped. `--no-verify` skips the
@@ -877,19 +885,41 @@ CI shell needs (`stage0-report.ts`, `forge-review.ts`) and the workflows
   every inline comment folded into the body rather than lost. `--post-review github|forgejo`
   with `--repo` and `--pr`; the token from `COPSE_REVIEW_FORGE_TOKEN`, else `GITHUB_TOKEN`
   (Forgejo: `FORGEJO_TOKEN` too); a review that could not be posted is exit 1.
-- **Copse dogfoods the shell, still as an adviser.** _Added 2026-09-22._ The label-triggered
-  GitHub path uses the existing Scaleway OpenAI-compatible account, pinned by default to
-  `qwen3.8-27b`, the correctness lens, at most 12 tool-using steps and at most three
-  challenged findings. A separate
-  schedule samples no more than one recent, non-draft, unlabelled same-repository pull
-  request per night; `copse-review-skip` is the opt-out. Both paths run the trusted default-branch CLI,
+- **Copse dogfoods the shell, still as an adviser.** _Added 2026-09-22; Luna rollout 2026-09-24._
+  Label-triggered reviews and nightly samples default to `openai/gpt-6-luna` through OpenRouter,
+  the correctness lens, at most 12 tool-using steps and at most three challenged findings.
+  `COPSE_REVIEW_PR_PROFILE=configured` rolls both paths back to the retained
+  `COPSE_REVIEW_PROVIDER`, `COPSE_REVIEW_MODEL`, and `COPSE_REVIEW_BASE_URL` variables
+  (the Scaleway `qwen3.8-27b` route). The benchmark profile remains separately selectable.
+  A separate schedule samples no more than one recent, unlabelled same-repository pull
+  request per night, including drafts; `copse-review-skip` is the opt-out. Both paths run the trusted default-branch CLI,
   preserve the secret-free Stage 0 / container-backed focused-validation boundary, post `COMMENT` reviews
   only, and retain JSON plus SARIF for 30 days. This is explicit remote processing: the
-  secret-redacted diff and file context leave the GitHub runner for Scaleway. Human
+  secret-redacted diff and file context leave the GitHub runner for the selected provider. Human
   accepted/rejected judgements, report latency and token usage are gathered during the
   rollout; making the reviewer required needs a separate decision backed by that record.
   Dogfood acceptance is operational evidence, not the Martian offline measurement B8
   requires for the public 85% precision claim.
+- **Streamed rate limits need time to clear.** _Added 2026-09-24 after the Luna rollout._
+  Two live attempts exhausted HTTP-200 SSE 429 retries in roughly ten seconds. Recognized
+  statusless SDK 429 errors now use 10/20/40-second fallback delays plus up to 10% jitter,
+  capped at 60 seconds per delay. Server retry hints retain precedence; the four-attempt
+  budget, cancellation, and refusal to replay committed text/tool calls are unchanged.
+  Ordinary HTTP and transport errors retain their existing timing. This gives temporary
+  throttling a longer recovery window; it does not guarantee upstream availability.
+- **The paid PR key excludes external contributors.** _Added 2026-09-24._ Both model jobs
+  use `COPSE_REVIEW_OPENROUTER_API_KEY` only from the `copse-review-models` environment;
+  there is no fallback to an organization-wide OpenRouter secret. Its exact-main branch
+  policy and required reviewer approval remain in place: after grounding, a maintainer
+  approves the pending environment deployment before the model runs. Trusted main workflow
+  refs and the owner/Actions-bot dispatch identities are checked before a credential-free
+  API preflight and again on each model job, including partial reruns. The preflight
+  accepts only owner-authored PRs (user ID `338988`) whose head and base both
+  belong to this repository (ID `1274237362`). External authors and forks do not enter
+  the protected model job, even if a trusted actor dispatches them. The label trigger also
+  requires the owner actor; a later live PR check verifies head/base identity again before
+  model/App credentials enter a step. Luna drops Scaleway credentials, and rollback drops
+  the OpenRouter credential. The key's $25/month cap remains an account-side limit.
 - **A bounded clean review names its limits.** _Added 2026-09-23 after live review #2737._
   The required `finish_review` coverage attestation stays structured through Stage 5. Forge
   projections surface every material `couldNotVerify` value and reserve plain “No findings” for
@@ -1226,3 +1256,82 @@ three-call protocol repair, with the same tools, execution cell and permission p
 only runs while completion is missing and the ledger is nonempty. Cancellation and provider errors
 remain terminal. Protocol repair receives the ledger and cannot silently discard it. This is a bounded
 phase of the same review turn, not product auto-continuation or a change to hook budgets.
+
+### September 24: reviewer startup
+
+PR and nightly ground/findings checkouts retain full Git ancestry (`fetch-depth: 0`)
+but use `filter: blob:none` to omit historical file contents. Trusted code is checked
+out normally; materializing the exact head and merge-base worktrees hydrates their
+contents on the host before commands run in the network-disabled cell. No shared
+writable cache, broader credentials or change to the protected environment is involved.
+The original Luna PR #3003 findings job spent 41 seconds in checkout, 11 seconds
+installing the reviewer and 35 seconds preparing validation (about 28 seconds building
+the container). A local filtered clone plus both exact worktrees took 20.7 seconds
+and 131 MiB of packed Git data; the full-clone comparison exhausted the local disk,
+so this is a feasibility measurement, not a controlled CI speedup claim. Full Stage 0
+checks, queue/approval time and model time are separate costs.
+
+### September 24: tolerate irrelevant closure metadata
+
+The same-head Luna retest (35996064428) reduced findings-job setup from 100 to
+65 seconds and posted the resize defect, but failed its final attestation: four
+closure attempts included `findingIndex: 1` on a refuted suspicion. The local
+provider normalizer did not make this field required. Refuted/unresolved dispositions now strip
+irrelevant finding-index metadata before validation; reported/duplicate links,
+complete disposition coverage and explicit unresolved uncertainty remain mandatory.
+Counterevidence must contradict the recorded claim rather than a stronger paraphrase.
+This preserves the evidence checks while avoiding repeated model calls to remove a
+field that cannot affect the disposition's meaning.
+
+### September 24: readable comments and supported test execution
+
+PR comments lead with the concrete problem and a plain confirmation status. Evidence,
+model metadata and supporting reasoning move into collapsed details; the review body
+keeps incomplete-review and missing-check warnings visible. Reviewer claims should name
+the trigger and effect in plain language, leaving implementation detail in the explanation.
+
+The last completed Luna run spent 86 seconds preparing the job, then 493 seconds reviewing.
+Checkout was only 10 seconds of setup. It made three serial model passes and 82 tool calls;
+the reproducer used 30 read/search calls without writing a test. `write_reproducer` now
+offers `argv: ["copse-test"]`: a trusted esbuild/Node test adapter passed as literal argv
+to the existing cell on both revisions. It bundles local TS imports using each checkout's
+tsconfig and keeps compiled output under that checkout for dependency resolution. It does
+not install dependencies or execute reviewed code on the host. Custom argv, shell policy,
+offline/credential-free boundaries, and mandatory differential-proof audits are unchanged.
+The prompt directs an early small test rather than open-ended setup research; role budgets
+remain unchanged. This removes an observed source of wasted work, not a guaranteed latency
+reduction. Each role now records total wall time, tool wall time (overlap counted once), and
+the remainder for model calls/retries/orchestration so the next live run can measure it.
+
+### September 24: two concurrent verifications and actual hosting providers
+
+The protected PR workflow now opts into `--verify-concurrency 2` (the CLI keeps
+1 as its compatibility default). Repository variable `COPSE_REVIEW_VERIFY_CONCURRENCY`
+can restore 1 without a workflow edit; invalid values are refused. A bounded worker pool processes findings in
+priority order. Each finding still runs its reproducer before its own challenger
+and keeps the mandatory behavioral-proof audit. Stable turn IDs and result order
+are allocated before workers start. Cancellation stops queued findings; all active
+workers settle before the shared cell can be destroyed.
+
+This overlaps model investigation and model waiting. It does not parallelize
+commands in a shared checkout: one tool queue covers every verification tool,
+including each reproducer's prepare/write/head-run/base-run/base-cleanup sequence.
+Each concurrent finding must use its own root-level `.copse-review/finding-N-`
+filename prefix; a mismatched path is refused before writing or executing. Relative
+imports keep their prior depth. The existing credential-free, offline cell and
+all owner/key/environment checks are unchanged. This is collision prevention in
+the existing shared cell, not separate OS isolation for each finding's code.
+
+Hosting provider names are read from successful response metadata, bounded to a
+short plain label and passed with per-stream usage through secret redaction. The
+review report retains the observed names for each role and puts their union in
+collapsed details. Absent metadata remains unknown; the `openai/` model prefix is
+never used as hosting evidence. This is additive accounting only: no changes to
+agent-loop budgets, hooks, continuations, routing, model choice or retry delays.
+
+The sequential baseline (run 36015789351) took 697.7s for two findings: 618.2s in
+model calls/waiting, including 135.4s of scheduled waits after ten streamed 429s,
+44.4s in tools and 35.2s elsewhere. The second finding's two passes used 148.3s,
+which is an overlap opportunity, not a promised saving under increased load.
+Compare the subsequent protected live run's elapsed time, per-turn overlap,
+provider metadata, retry count and proof quality before claiming a speedup.

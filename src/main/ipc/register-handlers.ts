@@ -15,6 +15,9 @@ import {
 } from '../services/classifiers/classifier-service.ts'
 import { SPINE_SCHEMA_VERSION } from '@shared/threads/spine-schema.ts'
 import { runCommand } from '../services/exec/command-runner.ts'
+import { createProcessManagerSampler } from '../services/process-manager.ts'
+import { readOwnedProcessRows } from '../services/process-manager-owned.ts'
+import { stopSupervisedBackgroundProcess } from '../services/exec/supervised-background-process.ts'
 import { parseMessageValue, parseThreadValue } from '@shared/threads/thread-boundary.ts'
 import micromatch from 'micromatch'
 import { nonEmptyStringOr, recordArrayOrEmpty } from '@shared/unknown-value.ts'
@@ -305,6 +308,8 @@ import { importIssuesAsRoadmapItems } from '../services/roadmap-issue-import.ts'
 import { matchOpenIssuesToRoadmapItems } from '../services/roadmap-issue-coverage.ts'
 import { stampRoadmapComplexity } from '../services/roadmap-complexity.ts'
 import { stampRoadmapCategory } from '../services/roadmap-category.ts'
+import { stampRoadmapTitle } from '../services/roadmap-title.ts'
+import { notifyRoadmapChanged } from '../services/roadmap-events.ts'
 import { checkRoadmapFit } from '../services/roadmap-fit-check.ts'
 import { buildRoadmapExport } from '../services/roadmap-export.ts'
 import { ROADMAP_EXPORT_FORMATS } from '@shared/roadmap/export.ts'
@@ -401,7 +406,7 @@ import {
   invalidateCursorCloudModelsCache,
   listCursorCloudModels,
 } from '../services/remote/cursor-cloud-models.ts'
-import { discoverExternalCursorAgents } from '../services/remote/cursor-agent-discovery.ts'
+import { createBestEffortExternalCursorAgentDiscovery } from '../services/remote/cursor-agent-discovery.ts'
 import { listActiveProjectAgentPrLinks } from '../services/remote/remote-agent-link-store.ts'
 
 import {
@@ -420,6 +425,8 @@ import {
 } from '../services/security/guarded-yolo.ts'
 import { getContainerRunService } from '../services/container-runtime/container-run-service.ts'
 import { explainContainerModel } from '../services/providers/container-provider.ts'
+
+const discoverExternalCursorAgentsFromIpc = createBestEffortExternalCursorAgentDiscovery()
 
 const zAutomationScheduleInput = z.object({
   id: z.string().min(1).max(256).optional(),
@@ -465,12 +472,47 @@ you want the coding agent to follow on every turn.
   intent is ambiguous.
 `
 
+function processManagerLabels(): Map<number, string> {
+  const labels = new Map<number, string>()
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (window.isDestroyed()) continue
+    const pid = window.webContents.getOSProcessId()
+    if (pid > 0) labels.set(pid, 'Copse window')
+  }
+
+  const pages = new Map<number, string[]>()
+  for (const contents of webContents.getAllWebContents()) {
+    if (contents.isDestroyed() || contents.getType() !== 'webview') continue
+    const pid = contents.getOSProcessId()
+    if (pid <= 0) continue
+    const titles = pages.get(pid) ?? []
+    const title = contents.getTitle().trim()
+    titles.push(title.length > 0 ? title : 'Untitled page')
+    pages.set(pid, titles)
+  }
+  for (const [pid, titles] of pages) {
+    labels.set(
+      pid,
+      titles.length === 1
+        ? `Browser: ${titles[0] ?? 'Untitled page'}`
+        : `Browser pages (${String(titles.length)})`,
+    )
+  }
+  return labels
+}
+
 export function registerAllHandlers(
   win: BrowserWindow,
   registry: ToolRegistry,
   isDispatcherThreadActive: (projectId: string, threadId: string) => boolean,
   threadDeletionRuntime: ThreadDeletionRuntime,
 ): void {
+  const processManagerSnapshot = createProcessManagerSampler(
+    () => app.getAppMetrics(),
+    processManagerLabels,
+    () => readOwnedProcessRows(win.webContents.id),
+    listRunningThreadIds,
+  )
   const reloadMcpForWorkspace = (): void => {
     void reloadMcpServers(registry)
       .then((statuses) => {
@@ -526,6 +568,23 @@ export function registerAllHandlers(
         // Stale workspaceRoot in config — ignore until user picks a folder.
       }
     }
+  })
+
+  ipcMain.handle('process-manager:snapshot', (event) => {
+    assertMainFrameSender(event, win)
+    return processManagerSnapshot()
+  })
+
+  ipcMain.handle('process-manager:stop-background', (event, ...rawArgs) => {
+    assertMainFrameSender(event, win)
+    if (event.sender !== win.webContents) {
+      throw new IpcValidationError('Only the main window can stop a background task')
+    }
+    const [id, projectId, threadId] = parseIpcArgs(
+      z.tuple([z.string().min(1).max(128), zProjectId, zThreadId]),
+      rawArgs,
+    )
+    return stopSupervisedBackgroundProcess(id, { projectId, threadId })
   })
 
   ipcMain.handle('main-window:get-navigation', (event) => {
@@ -969,16 +1028,6 @@ export function registerAllHandlers(
     }
   }
 
-  // Complexity stamps land after the save returns (stampRoadmapComplexity), so
-  // tell the panes when one arrives rather than making them poll. Broadcast to
-  // every window: the roadmap pane may live in a detached pop-out with its own
-  // renderer, not just the main window.
-  const notifyRoadmapChanged = (): void => {
-    for (const w of BrowserWindow.getAllWindows()) {
-      if (!w.isDestroyed()) w.webContents.send('roadmap:changed')
-    }
-  }
-
   // Empty string unpins; anything else must canonicalize or the save is
   // rejected, so a typo never silently stores an unlinkable ref.
   function parseRoadmapIssue(raw: unknown): string {
@@ -1014,11 +1063,12 @@ export function registerAllHandlers(
         status: 'ready',
         fields: roadmapFields({}, notes, issue),
       })
-      // Saving is immediate; the complexity and category classification (model
-      // round-trips) stamp the note in the background and the pane refreshes on
-      // the events.
+      // Saving is immediate; the complexity/category classification and the
+      // AI-generated short title (issue #2472) — all model round-trips — stamp
+      // the note in the background and the pane refreshes on the events.
       void stampRoadmapComplexity(note.id, prompt, notifyRoadmapChanged)
       void stampRoadmapCategory(note.id, prompt, notifyRoadmapChanged)
+      void stampRoadmapTitle(note.id, prompt, note.title, notifyRoadmapChanged)
       if (attachments.length === 0) return note
       // Attachment files are keyed by the note id, so they land in a second
       // step once addKnowledgeNote has minted it. If that metadata write fails
@@ -1119,6 +1169,10 @@ export function registerAllHandlers(
       if (updated && promptChanged) {
         void stampRoadmapComplexity(id, prompt, notifyRoadmapChanged)
         void stampRoadmapCategory(id, prompt, notifyRoadmapChanged)
+        // The title just written above is the fresh truncation for the new
+        // prompt; an AI-generated name (issue #2472) replaces it in the
+        // background, same as on create.
+        void stampRoadmapTitle(id, prompt, updated.title, notifyRoadmapChanged)
       }
       return updated
     },
@@ -2841,10 +2895,10 @@ export function registerAllHandlers(
   ipcMain.handle('remote-agent:discover-external', (event, projectId: unknown) => {
     assertMainFrameSender(event, win)
     if (projectId === undefined || projectId === null) {
-      return discoverExternalCursorAgents()
+      return discoverExternalCursorAgentsFromIpc()
     }
     const id = parseIpcArgs(zProjectId, [projectId])
-    return discoverExternalCursorAgents({ projectId: id })
+    return discoverExternalCursorAgentsFromIpc({ projectId: id })
   })
   ipcMain.handle(
     'remote-agent:refresh-imported-thread',

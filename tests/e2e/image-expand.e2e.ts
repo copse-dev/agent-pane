@@ -13,6 +13,7 @@ const TEXT_SHOT = 'attachment-preview-text.png'
 const ROADMAP_SHOT = 'image-expand-roadmap.png'
 const COMPOSER_SHOT = 'image-expand-composer-new-thread.png'
 const IMAGE_COPY_MENU_SHOT = 'image-expand-copy-menu.png'
+const THREAD_COPY_MENU_SHOT = 'image-expand-thread-copy-menu.png'
 const TEXT_COPY_MENU_SHOT = 'attachment-preview-text-copy-menu.png'
 
 const DIFF_TEXT =
@@ -62,6 +63,24 @@ describe('Screenshot click-to-expand', () => {
     await thumb.waitForDisplayed({ timeout: 15_000 })
     assert.equal(await thumb.getAttribute('role'), 'button')
     assert.equal(await thumb.getAttribute('aria-label'), 'Expand Attached image')
+
+    await thumb.click({ button: 'right' })
+    const threadCopyMenu = $('.context-menu')
+    await threadCopyMenu.waitForDisplayed({ timeout: 5_000 })
+    await expect($('.context-menu-item')).toHaveText('Copy image')
+    await expect($('dialog.attachment-preview-dialog[open]')).not.toExist()
+    await saveAppScreenshot(THREAD_COPY_MENU_SHOT)
+    await $('.context-menu-item').click()
+    await expect(threadCopyMenu).not.toExist()
+
+    const thumbnailClipboardImage = await browser.execute(async () => {
+      const item = (await navigator.clipboard.read())[0]
+      if (!item || !item.types.includes('image/png')) return null
+      const blob = await item.getType('image/png')
+      return { type: blob.type, size: blob.size }
+    })
+    assert.equal(thumbnailClipboardImage?.type, 'image/png')
+    assert.ok((thumbnailClipboardImage?.size ?? 0) > 0)
 
     await thumb.click()
     const dialog = $('dialog.attachment-preview-dialog[open]')

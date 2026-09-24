@@ -48,6 +48,7 @@ describe('git_commit configured helpers', () => {
     clearWorkspaceTrustForTest()
     await setSetting('trustedShellCommands', [])
     await setSetting('safetyClassifierEnabled', true)
+    await setSetting('gitAttributionEnabled', true)
     for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
   })
 
@@ -121,6 +122,15 @@ describe('git_commit configured helpers', () => {
     assert.match(committedMessage, /Co-Authored-By: Copse/)
   })
 
+  it('preserves the message when Git attribution is disabled', async () => {
+    const { repo, git } = await fixture()
+    await setSetting('gitAttributionEnabled', false)
+    setApprovalHandler(async () => ({ approved: true, remember: false }))
+
+    await commit(repo, 'User message', true)
+    assert.equal(git('log', '-1', '--format=%B').trim(), 'User message')
+  })
+
   it('surfaces signing failure instead of producing an unsigned commit', async () => {
     const { repo, git } = await fixture()
     const signer = join(repo, 'failing-signer')
@@ -136,7 +146,7 @@ describe('git_commit configured helpers', () => {
     assert.equal(git('rev-list', '--count', 'HEAD').trim(), '1')
   })
 
-  it('runs hooks and signs with a workspace key inside the real macOS sandbox', async (t) => {
+  it('asks before using a workspace key and keeps hooks inside the real macOS sandbox', async (t) => {
     if (process.platform !== 'darwin') {
       t.skip('macOS seatbelt integration')
       return
@@ -159,12 +169,13 @@ describe('git_commit configured helpers', () => {
       return
     }
     let prompts = 0
-    setApprovalHandler(async () => {
+    setApprovalHandler(async (request) => {
       prompts++
-      return { approved: false, remember: false }
+      assert.equal(request.scope, 'git-signing-key')
+      return { approved: true, remember: false }
     })
     await commit(repo, 'Signed inside sandbox', false)
-    assert.equal(prompts, 0, 'must succeed without an unsandboxed retry')
+    assert.equal(prompts, 1, 'one key approval, without an unsandboxed retry')
     assert.equal(await readFile(join(repo, 'hook-ran'), 'utf8'), 'ran')
     assert.match(git('cat-file', 'commit', 'HEAD'), /gpgsig -----BEGIN SSH SIGNATURE-----/)
   })

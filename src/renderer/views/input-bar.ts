@@ -8,6 +8,11 @@ import { attachTextExpand } from '../attachments/text-expand.ts'
 import { attachVideoExpand } from '../attachments/video-expand.ts'
 import { IMAGE_DETAILS, type ImageDetail } from '@copse/llm/wire-types.ts'
 import type { AppStore } from '@shared/store/store.ts'
+import {
+  beginThreadSubmission,
+  endThreadSubmission,
+  isThreadSubmitting,
+} from '@shared/store/pending-submissions.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import {
   addMessage,
@@ -732,7 +737,8 @@ export function mountInputBar(
   // on — either action counts as "acted on" so a retried first send (e.g.
   // after a failed checkout) does not re-ask.
   const dirtyWarningAcknowledged = new Set<string>()
-  let checkoutPreparationInProgress = false
+  const checkoutPreparations = new Set<string>()
+  const checkoutErrors = new Map<string, string>()
   let automaticCheckoutMode: 'shared' | 'worktree' = 'shared'
   let automaticCheckoutPreviewSeq = 0
 
@@ -1000,6 +1006,10 @@ export function mountInputBar(
 
   function updateCheckoutControl(): void {
     const thread = getActiveThread(store)
+    const error = thread ? checkoutErrors.get(thread.id) : undefined
+    checkoutErrorText.textContent = error ?? ''
+    checkoutError.hidden = error === undefined
+    const checkoutPreparationInProgress = thread ? checkoutPreparations.has(thread.id) : false
     if (!thread) {
       checkoutHost.hidden = true
       checkoutMenu.hidden = true
@@ -1020,6 +1030,8 @@ export function mountInputBar(
   }
 
   function hideCheckoutError(): void {
+    const id = getActiveThreadId()
+    if (id) checkoutErrors.delete(id)
     checkoutError.hidden = true
     checkoutErrorText.textContent = ''
   }
@@ -1178,6 +1190,18 @@ export function mountInputBar(
     }
   }
 
+  function draftFingerprint(text: string, attachments: DraftAttachments): string {
+    return JSON.stringify([
+      text,
+      attachments.files,
+      attachments.images.map((image) => [image.dataUrl, image.mimeType, image.detail ?? 'auto']),
+      attachments.videos,
+      attachments.archives,
+      attachments.threads,
+      attachments.shells,
+    ])
+  }
+
   function stashDraftAttachments(threadId: string): void {
     const snapshot = snapshotDraftAttachments()
     const empty =
@@ -1238,6 +1262,17 @@ export function mountInputBar(
     draftAttachmentsByThread.set(threadId, snapshot)
   }
 
+  function placeStoredShell(threadId: string, ref: AttachedShellRef): void {
+    if (activeComposerThreadId === threadId) {
+      addShellChip(ref)
+      return
+    }
+    const snapshot = draftAttachmentsByThread.get(threadId) ?? emptyDraftAttachments()
+    if (snapshot.shells.some((shell) => shell.tabId === ref.tabId)) return
+    snapshot.shells.push({ ...ref })
+    draftAttachmentsByThread.set(threadId, snapshot)
+  }
+
   function syncComposerThread(): void {
     const id = getActiveThreadId()
     if (id === activeComposerThreadId) return
@@ -1254,8 +1289,8 @@ export function mountInputBar(
     composer.value = thread?.draftPrompt ?? ''
     activeComposerThreadId = id
     if (id) restoreDraftAttachments(id)
-    hideCheckoutError()
     hideDirtyWarning()
+    updateCheckoutControl()
     // New thread → drop the prior thread's estimate and recompute for this one.
     lastBreakdown = null
     breakdownModel = null
@@ -1307,6 +1342,9 @@ export function mountInputBar(
 
   function updateState(): void {
     const running = isRunning()
+    const id = getActiveThreadId()
+    submitBtn.disabled =
+      imageDescriptionInProgress || (id !== null && isThreadSubmitting(store, id))
     stopBtn.hidden = !running
     updateTargetPicker()
     submitBtn.textContent = running ? 'Queue' : 'Send'
@@ -1592,7 +1630,7 @@ export function mountInputBar(
   })
 
   checkoutBtn.addEventListener('click', () => {
-    if (checkoutPreparationInProgress) return
+    if (checkoutPreparations.has(getActiveThreadId() ?? '')) return
     checkoutMenu.hidden = !checkoutMenu.hidden
     checkoutBtn.setAttribute('aria-expanded', String(!checkoutMenu.hidden))
   })
@@ -1730,24 +1768,23 @@ export function mountInputBar(
     void submit()
   })
 
-  // Guards against re-entrant submits. The agent dispatch path has async gaps
-  // (`api.git.branchStatus()`, `api.skills.list()`) between reading the
-  // textarea and clearing it, so without this a laggy renderer that queues up
-  // several keydown/click events could fire multiple `void submit()` calls that
-  // each read the same un-cleared text and send the message more than once.
-  let submitInProgress = false
-
   async function submit(): Promise<void> {
-    if (submitInProgress || imageDescriptionInProgress) return
-    submitInProgress = true
+    const id = getActiveThreadId()
+    if (!id || imageDescriptionInProgress || !beginThreadSubmission(store, id)) return
+    updateState()
     try {
-      await performSubmit()
+      await performSubmit(id)
+    } catch (error) {
+      console.error('Could not send prompt', { threadId: id, error })
+      checkoutErrors.set(id, error instanceof Error ? error.message : 'Could not send message')
     } finally {
-      submitInProgress = false
+      endThreadSubmission(store, id)
+      updateState()
+      updateCheckoutControl()
     }
   }
 
-  async function performSubmit(): Promise<void> {
+  async function performSubmit(id: string): Promise<void> {
     perfMark('ttft:composer-submit')
     followUps.clearSuggestions()
     nextStepHint.clear()
@@ -1756,7 +1793,31 @@ export function mountInputBar(
     // The agent-facing text expands pasted blocks and restores each referenced
     // thread's label at its sentence position; structured refs still carry IDs.
     const visibleText = composer.value.trim()
-    const rawText = composer.expandedValue().trim()
+    const draftText = composer.expandedValue()
+    const rawText = draftText.trim()
+    const draftAttachments = snapshotDraftAttachments()
+    const draftKey = draftFingerprint(draftText, draftAttachments)
+    const {
+      files: attachedFiles,
+      images: attachedImages,
+      videos: attachedVideos,
+      archives: attachedArchives,
+      threads: attachedThreads,
+      shells: attachedShells,
+    } = draftAttachments
+    const inlineChips = composer
+      .getInlineChips()
+      .map((chip) =>
+        chip.kind === 'paste'
+          ? { kind: 'paste' as const, block: { ...chip.block } }
+          : { kind: 'thread' as const, thread: { ...chip.thread } },
+      )
+    const shellBlocks = currentShellBlocks()
+    const textAttachments = {
+      threadRefs: currentThreadRefs(),
+      videoRefs: currentVideoRefs(),
+      archiveRefs: currentArchiveRefs(),
+    }
     if (
       !rawText &&
       attachedFiles.length === 0 &&
@@ -1767,11 +1828,12 @@ export function mountInputBar(
       attachedShells.length === 0
     )
       return
-    const id = getActiveThreadId()
-    if (!id) return
-
     const projectId = store.getState().activeProjectId
-    if (!projectId) return
+    const thread = getThreadById(store, id)
+    if (!projectId || !thread) return
+    const choice = checkoutChoice(id)
+    const model = thread.model ?? store.getState().settings?.model
+    const baseBranch = branchControl.pendingBaseBranch(id)
     // A follow-up to the container (A14): a continuation run, not a turn of
     // the thread's own agent. Prose only — the guest gets no attachments.
     if (!targetSelect.hidden && targetSelect.value === 'container') {
@@ -1780,22 +1842,23 @@ export function mountInputBar(
       if (started) updateState()
       return
     }
+    // Start workspace-scoped lookups while this submission still owns the
+    // visible project. allSettled also observes failures on early-return paths.
+    const invocationSources = Promise.allSettled([api.skills.list(), api.agents.list()])
     if (attachedImages.length > 0) {
       const incompatibility = await incompatibleImageModel()
       if (incompatibility) {
-        await refreshImageCompatibilityWarning()
+        if (getActiveThreadId() === id) await refreshImageCompatibilityWarning()
         return
       }
     }
-    const thread = getThreadById(store, id)
     // A genuinely new thread has no branch contract to validate yet. Its
     // checkout transaction is authoritative and returns the branch it binds, so
     // skip both pre-transaction Git reads. A legacy blank thread may already
     // carry gitBranch: validate that contract, but still read prompt state after
     // checkout because the transaction can move HEAD. Established threads cannot
     // move checkout here, so start their two independent Git reads together.
-    const requiresCheckoutPreparation =
-      thread !== undefined && thread.messages.length === 0 && !thread.worktreeChoice
+    const requiresCheckoutPreparation = thread.messages.length === 0 && !thread.worktreeChoice
     const prefetchedGitState = requiresCheckoutPreparation
       ? null
       : await Promise.allSettled([
@@ -1812,18 +1875,18 @@ export function mountInputBar(
           : await api.git.currentBranch(projectId, id)
     const prefetchedPromptState = prefetchedGitState?.[1]
     let preparedPromptState: GitPromptState | undefined
-    const threadBranch = thread?.gitBranch
-    const isolatedWorktree = thread !== undefined && thread.worktree !== undefined
+    const threadBranch = thread.gitBranch
+    const isolatedWorktree = thread.worktree !== undefined
     // Worktree threads keep the project checkout on its original branch; the
     // bound `gitBranch` names the isolated checkout, not a required HEAD move.
     if (
       threadBranch &&
       threadGitBranchMismatch(threadBranch, currentBranch, { isolatedWorktree })
     ) {
-      showBranchMismatch(threadBranch)
+      if (getActiveThreadId() === id) showBranchMismatch(threadBranch)
       return
     }
-    hideBranchMismatch()
+    if (getActiveThreadId() === id) hideBranchMismatch()
 
     // Before the first message commits a blank thread's checkout (#2503): warn
     // when that commitment would land on the shared checkout while it has
@@ -1835,25 +1898,25 @@ export function mountInputBar(
     // checkout — skips this entirely, and `dirtyWarningAcknowledged` remembers
     // an action for the rest of this thread's first send so a retry (e.g.
     // after a failed checkout) does not re-ask.
-    const isBlankSharedCandidate =
-      thread !== undefined && thread.messages.length === 0 && !thread.worktreeChoice
+    const isBlankSharedCandidate = thread.messages.length === 0 && !thread.worktreeChoice
     if (isBlankSharedCandidate && !dirtyWarningAcknowledged.has(id)) {
       const choice = checkoutChoice(id)
       const effectiveCheckoutMode: 'shared' | 'worktree' =
         choice === 'worktree' ? 'worktree' : choice === 'shared' ? 'shared' : automaticCheckoutMode
       if (effectiveCheckoutMode === 'shared') {
         const state = await api.git.promptState(projectId, id)
-        // The prompt-state read can outlive a thread switch. Keep its result
-        // with the composer that started the submit; otherwise a dirty result
-        // from the old thread can raise this warning over the new thread and
-        // make either action resume the stale prompt against the wrong UI.
-        if (
-          getActiveThreadId() !== id ||
-          activeComposerThreadId !== id ||
-          store.getState().activeProjectId !== projectId
-        )
-          return
         if (state.dirty) {
+          // The prompt-state read can outlive a thread switch. Keep a dirty
+          // result with the composer that started the submit; otherwise its
+          // warning can appear over the new thread and either action can resume
+          // the stale prompt against the wrong UI. A clean result needs no UI,
+          // so navigation may let that pending send continue.
+          if (
+            getActiveThreadId() !== id ||
+            activeComposerThreadId !== id ||
+            store.getState().activeProjectId !== projectId
+          )
+            return
           showDirtyWarning(id)
           return
         }
@@ -1866,10 +1929,22 @@ export function mountInputBar(
     // `skillsCache` is still stale — including `[]` from an earlier empty/failed
     // load, which is truthy and would skip the `??` refetch. Authorizing an
     // invocation against a lagging cache surfaces a false "Unknown skill" toast.
-    const [skills, agentsResult] = await Promise.all([api.skills.list(), api.agents.list()])
-    skillsCache = skills
-    agentsCache = agentsResult.agents
-    const invocation = resolveInvocation(rawText, currentInvocables())
+    const [skillsResult, agentsResult] = await invocationSources
+    if (skillsResult.status === 'rejected') throw skillsResult.reason
+    if (agentsResult.status === 'rejected') throw agentsResult.reason
+    const skills = skillsResult.value
+    const agents = agentsResult.value.agents
+    if (store.getState().activeProjectId === projectId) {
+      skillsCache = skills
+      agentsCache = agents
+    }
+    const invocation = resolveInvocation(
+      rawText,
+      mergeInvocables(
+        skills.map((skill) => skill.name),
+        agents.map((agent) => agent.name),
+      ),
+    )
     const invokedSkills = invocation?.kind === 'skill' ? [invocation.name] : []
     // The agent the turn delegates to. Its presence is what offers the `task`
     // tool for this turn — nothing else can make the parent delegate, because
@@ -1930,55 +2005,42 @@ export function mountInputBar(
         })),
         {
           type: 'text' as const,
-          text: buildTextWithAttachments(text, attachedFiles, currentShellBlocks(), {
-            threadRefs: currentThreadRefs(),
-            videoRefs: currentVideoRefs(),
-            archiveRefs: currentArchiveRefs(),
-          }),
+          text: buildTextWithAttachments(text, attachedFiles, shellBlocks, textAttachments),
         },
       ]
     } else {
-      fullContent = buildTextWithAttachments(text, attachedFiles, currentShellBlocks(), {
-        threadRefs: currentThreadRefs(),
-        videoRefs: currentVideoRefs(),
-        archiveRefs: currentArchiveRefs(),
-      })
+      fullContent = buildTextWithAttachments(text, attachedFiles, shellBlocks, textAttachments)
     }
 
     // Blank threads commit their checkout decision in main before the renderer
     // records or clears the first message. Allocation/persistence failures are
     // therefore retryable without losing or accidentally dispatching the prompt.
     if (requiresCheckoutPreparation) {
-      const projectId = store.getState().activeProjectId
-      if (!projectId) return
-      hideCheckoutError()
-      checkoutPreparationInProgress = true
+      checkoutErrors.delete(id)
+      checkoutPreparations.add(id)
       updateCheckoutControl()
       try {
         const prepared = await api.agent.prepareCheckout(
           projectId,
           id,
           rawText,
-          checkoutChoice(id),
-          thread.model ?? store.getState().settings?.model,
+          choice,
+          model,
           // The footer picker only names a branch; this is where that selection
           // becomes the worktree's base, or the shared checkout's branch.
-          branchControl.pendingBaseBranch(id),
+          baseBranch,
         )
+        if (!getThreadById(store, id)) return
         preparedPromptState = prepared.promptState
         applyPreparedThreadCheckout(store, id, prepared)
-        // The user may switch threads while Git is preparing the checkout. The
-        // decision remains durable, but their prompt must stay with its composer.
-        if (getActiveThreadId() !== id) return
       } catch (error) {
         // The failure may be a stale cached default branch (fixed git config,
         // renamed branch); drop the cache so Retry re-reads it.
         await api.agent.resetDefaultBranchCache().catch(() => undefined)
-        checkoutErrorText.textContent = checkoutErrorMessage(error)
-        checkoutError.hidden = false
+        checkoutErrors.set(id, checkoutErrorMessage(error))
         return
       } finally {
-        checkoutPreparationInProgress = false
+        checkoutPreparations.delete(id)
         updateCheckoutControl()
       }
     }
@@ -1994,9 +2056,11 @@ export function mountInputBar(
         ? prefetchedPromptState.value
         : await api.git.promptState(projectId, id))
 
-    const priorTodos = thread?.todos ?? []
-    const workingBrief = nextWorkingBrief(thread?.workingBrief, fullContent)
-    if (workingBrief && workingBrief !== thread?.workingBrief) {
+    // Deletion cancels a pending send; navigation does not.
+    if (!getThreadById(store, id)) return
+    const priorTodos = thread.todos ?? []
+    const workingBrief = nextWorkingBrief(thread.workingBrief, fullContent)
+    if (workingBrief && workingBrief !== thread.workingBrief) {
       setThreadWorkingBrief(store, id, workingBrief)
     }
     const payload: AgentRunPayload = {
@@ -2016,7 +2080,6 @@ export function mountInputBar(
     // order so the renderer can bind each placeholder without putting markers in
     // stored/exported content. Remaining file and media attachments follow in the
     // trailing row.
-    const inlineChips = composer.getInlineChips()
     const inlineThreadIds = new Set(
       inlineChips.flatMap((chip) => (chip.kind === 'thread' ? [chip.thread.threadId] : [])),
     )
@@ -2080,7 +2143,7 @@ export function mountInputBar(
     recordThreadVideos(store, id, attachedVideos)
     recordThreadArchives(store, id, attachedArchives)
 
-    if (isRunning()) {
+    if (getThreadById(store, id)?.status === 'running') {
       enqueueUserMessage(store, id, {
         messageId,
         payload,
@@ -2093,11 +2156,24 @@ export function mountInputBar(
       startHumanTurnTree(store, id)
       dispatchAgentRun(store, api, id, payload)
     }
-    composer.clear()
-    setThreadDraftPrompt(store, id, '')
-    draftAttachmentsByThread.delete(id)
-    clearAttachments()
-    scheduleContextEstimate(0)
+    // Consume only the submitted draft. A different thread's composer, or a
+    // newer edit made while checkout was pending, must survive completion.
+    const visible = activeComposerThreadId === id
+    const currentDraft = visible
+      ? composer.expandedValue()
+      : (getThreadById(store, id)?.draftPrompt ?? '')
+    const currentAttachments = visible
+      ? snapshotDraftAttachments()
+      : (draftAttachmentsByThread.get(id) ?? emptyDraftAttachments())
+    if (draftFingerprint(currentDraft, currentAttachments) === draftKey) {
+      if (visible) {
+        composer.clear()
+        clearAttachments()
+        scheduleContextEstimate(0)
+      }
+      draftAttachmentsByThread.delete(id)
+      setThreadDraftPrompt(store, id, '')
+    }
   }
 
   function addChip(file: { path: string; content: string }): void {
@@ -2480,6 +2556,18 @@ export function mountInputBar(
       skillPicker.refresh()
       refreshSkillsCache()
       scheduleContextEstimate(0)
+    }),
+    store.on('code_block_run_finished', (result) => {
+      const active = result.threadId === activeComposerThreadId
+      placeStoredShell(result.threadId, result.shell)
+      if (!active) return
+      targetSelect.value = 'thread'
+      showToast(
+        result.exitCode === 0
+          ? 'Command finished — result attached.'
+          : `Command ${result.exitCode === null ? 'could not start' : `exited with code ${String(result.exitCode)}`} — result attached.`,
+        result.exitCode === 0 ? undefined : { variant: 'error' },
+      )
     }),
     store.on('new_thread_opened', () => {
       // Refresh provider-reported context windows for the new chat, then re-estimate

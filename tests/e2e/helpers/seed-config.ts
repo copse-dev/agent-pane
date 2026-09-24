@@ -1645,6 +1645,94 @@ export function seedUserPromptFoldFixture(workspaceRoot: string): void {
   })
 }
 
+/**
+ * Enough short back-and-forth to make the transcript taller than the app
+ * window before the spec submits anything live through the composer — the
+ * repro shape for #2457 (scroll the composer to the prompt on submit).
+ */
+export function seedLongPromptScrollFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-long-prompt-scroll-project'
+  const threadId = 'e2e-long-prompt-scroll-thread'
+  const now = Date.now()
+  const history = [
+    {
+      user: 'Which changes are candidates for Friday’s release?',
+      assistant:
+        'The desktop sync fix, the account-recovery copy update, and the queue monitoring dashboard are ready for release review; the search experiment remains behind its feature flag.',
+    },
+    {
+      user: 'Has the migration been rehearsed on staging?',
+      assistant:
+        'Yes. The migration completed against the staging snapshot, and the team recorded a backup identifier plus the query that verifies the new index after deployment.',
+    },
+    {
+      user: 'Who still needs to sign off on the user-facing changes?',
+      assistant:
+        'Design needs to verify the recovery screen at narrow widths, accessibility is checking the new error announcement, and Support is reviewing the revised escalation wording.',
+    },
+    {
+      user: 'What should on-call monitor after the rollout begins?',
+      assistant:
+        'Keep the error-rate, login completion, queue latency, and payment reconciliation dashboards open, with the incident lead paged if error rate or queue lag crosses the agreed threshold.',
+    },
+    {
+      user: 'Are older clients safe while the new service version is rolling out?',
+      assistant:
+        'The API remains backward compatible for one release cycle, and the server accepts both payload shapes until the mobile adoption metric clears the retirement threshold.',
+    },
+    {
+      user: 'What is the rollback path if the queue begins to fall behind?',
+      assistant:
+        'Pause the feature flag first, return the service to the prior version, preserve the queue samples for diagnosis, and reverse the migration only if the compatibility check fails.',
+    },
+    {
+      user: 'Do we need any customer communication before the release window?',
+      assistant:
+        'Publish the maintenance note, prepare the status-page update, and give Support the incident reference and expected recovery language before the release captain starts the deployment.',
+    },
+    {
+      user: 'What should we cover in the post-release review?',
+      assistant:
+        'Compare the observed metrics with the launch thresholds, record any manual steps that surprised on-call, and assign follow-up owners for gaps in the checklist or dashboards.',
+    },
+  ]
+  const messages: Record<string, unknown>[] = []
+  for (const [i, entry] of history.entries()) {
+    messages.push({
+      id: `msg-scroll-user-${String(i)}`,
+      role: 'user',
+      content: entry.user,
+      toolCalls: [],
+      createdAt: now + i * 2,
+    })
+    messages.push({
+      id: `msg-scroll-assistant-${String(i)}`,
+      role: 'assistant',
+      content: entry.assistant,
+      toolCalls: [],
+      createdAt: now + i * 2 + 1,
+    })
+  }
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    expandedProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Long prompt scroll on submit',
+        status: 'idle',
+        messages,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+  })
+}
+
 /** A representative completed coding turn for conversation hierarchy visual evaluation. */
 export function seedConversationVisualHierarchyFixture(workspaceRoot: string): void {
   const projectId = 'e2e-conversation-hierarchy-project'
@@ -1747,8 +1835,8 @@ export function seedConversationVisualHierarchyFixture(workspaceRoot: string): v
 
 /**
  * Every surface that used to carry an accent rail, on one screen: the five
- * GitHub alert kinds and a plain quote (flat plate), a thinking disclosure plus
- * a review and a failed comparison (hatched plate), and a two-thread sidebar so
+ * GitHub alert kinds and a plain quote (flat plate), a thinking disclosure
+ * (etched plate), a review and a failed comparison (hatched plate), and a two-thread sidebar so
  * one row is selected and one is not.
  */
 export function seedCalloutSurfacesFixture(workspaceRoot: string): void {
@@ -1900,6 +1988,14 @@ export function seedStickyUserPromptFixture(workspaceRoot: string): void {
         `- Validation detail ${String(index + 1)} remains visible beneath the active request.`,
     ),
   ].join('\n')
+  const machineResult = [
+    'The background continuation finished on its own.',
+    '',
+    ...Array.from(
+      { length: 8 },
+      (_, index) => `- Continuation detail ${String(index + 1)} scrolled past while it ran.`,
+    ),
+  ].join('\n')
 
   mkdirSync(USER_DATA, { recursive: true })
   writeSeedConfig({
@@ -1941,6 +2037,21 @@ export function seedStickyUserPromptFixture(workspaceRoot: string): void {
             toolCalls: [],
             createdAt: now + 3,
           },
+          {
+            id: 'msg-user-sticky-machine',
+            role: 'user',
+            content: 'Summarize the background continuation results.',
+            toolCalls: [],
+            origin: { kind: 'machine', operationId: 'background-checks-17' },
+            createdAt: now + 4,
+          },
+          {
+            id: 'msg-assistant-sticky-machine',
+            role: 'assistant',
+            content: machineResult,
+            toolCalls: [],
+            createdAt: now + 5,
+          },
         ],
         usage: { inputTokens: 2400, outputTokens: 1600 },
         contextSnapshot: {
@@ -1948,10 +2059,10 @@ export function seedStickyUserPromptFixture(workspaceRoot: string): void {
           conversationBudget: 180_000,
           conversationTokens: 36_000,
           fillRatio: 0.2,
-          updatedAt: now + 3,
+          updatedAt: now + 5,
         },
         createdAt: now,
-        updatedAt: now + 3,
+        updatedAt: now + 5,
       },
     ],
   })
@@ -2159,7 +2270,7 @@ export function seedCodeBlockCopyFixture(workspaceRoot: string): void {
     'Then run:',
     '',
     '```bash',
-    'npm run check',
+    'node -e "console.log(424242)"',
     '```',
   ].join('\n')
   mkdirSync(USER_DATA, { recursive: true })
@@ -2500,6 +2611,27 @@ export function seedAcpAuthErrorFixture(workspaceRoot: string): void {
     'ACP error -32603 (Internal error): Cursor session was rejected (expired WorkosCursorSessionToken). Re-sign in to Cursor or refresh CURSOR_SESSION_TOKEN from cursor.com cookies.',
     '```',
   ].join('\n')
+  const codexContent = [
+    '> [!WARNING]',
+    '> **Codex sign-in expired**',
+    '>',
+    '> This turn couldn’t run because Codex’s saved credentials are no longer valid.',
+    '',
+    '**To continue**',
+    '',
+    '1. Run `codex login` in a terminal.',
+    '2. Finish signing in, then re-send your message.',
+    '',
+    'Alternatively, set `CODEX_API_KEY` or `OPENAI_API_KEY` for Codex in Settings → General → Providers.',
+    '',
+    '> Copse’s built-in provider credentials are not automatically shared with external agents. Configure credentials for the agent itself.',
+    '',
+    '**Technical details**',
+    '',
+    '```text',
+    'ACP error -32603 (Internal error): account/read failed: workspace routing discovery unauthorized (401)',
+    '```',
+  ].join('\n')
   mkdirSync(USER_DATA, { recursive: true })
   writeSeedConfig({
     projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
@@ -2539,10 +2671,24 @@ export function seedAcpAuthErrorFixture(workspaceRoot: string): void {
             toolCalls: [],
             createdAt: now + 3,
           },
+          {
+            id: 'msg-user-codex-auth',
+            role: 'user',
+            content: 'Try the request with Codex.',
+            toolCalls: [],
+            createdAt: now + 4,
+          },
+          {
+            id: 'msg-assistant-codex-auth',
+            role: 'assistant',
+            content: codexContent,
+            toolCalls: [],
+            createdAt: now + 5,
+          },
         ],
         usage: { inputTokens: 0, outputTokens: 0 },
         createdAt: now,
-        updatedAt: now + 3,
+        updatedAt: now + 5,
       },
     ],
   })

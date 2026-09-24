@@ -67,6 +67,45 @@ describe('isRetryableStreamError', () => {
     assert.equal(isRetryableStreamError({ status: 529 }), true)
   })
 
+  it('recognizes statusless OpenAI SDK errors from HTTP 200 SSE error frames', () => {
+    for (const code of [429, '429', 503, '503']) {
+      const error = new OpenAI.APIError(
+        undefined,
+        { code, message: 'temporary' },
+        undefined,
+        undefined,
+      )
+      assert.equal(error.status, undefined)
+      assert.equal(isRetryableStreamError(error), true, String(code))
+    }
+  })
+
+  it('does not reinterpret arbitrary codes or override an explicit HTTP status', () => {
+    for (const code of [400, 401, 402, 404, 'insufficient_quota', '429oops', '', null]) {
+      assert.equal(
+        isRetryableStreamError(new OpenAI.APIError(undefined, { code }, undefined, undefined)),
+        false,
+        String(code),
+      )
+    }
+    assert.equal(isRetryableStreamError({ code: 429 }), false)
+    assert.equal(
+      isRetryableStreamError(new OpenAI.APIError(401, { code: 429 }, undefined, undefined)),
+      false,
+    )
+    assert.equal(
+      isRetryableStreamError(
+        new OpenAI.APIError(
+          undefined,
+          { code: 429 },
+          undefined,
+          new Headers({ 'x-should-retry': 'false' }),
+        ),
+      ),
+      false,
+    )
+  })
+
   it('retains the SDK retry policy for request timeout and conflict statuses', () => {
     assert.equal(isRetryableStreamError({ status: 408 }), true)
     assert.equal(isRetryableStreamError({ status: 409 }), true)
@@ -175,6 +214,37 @@ describe('streamRetryDelayMs', () => {
     assert.equal(streamRetryDelayMs({}, 20), 60_000)
   })
 
+  it('gives streamed rate limits a bounded cooldown with jitter', (t) => {
+    const random = t.mock.method(Math, 'random', () => 0)
+    for (const code of [429, '429']) {
+      const error = new OpenAI.APIError(undefined, { code }, undefined, undefined)
+      assert.deepEqual(
+        [0, 1, 2].map((attempt) => streamRetryDelayMs(error, attempt)),
+        [10_000, 20_000, 40_000],
+      )
+    }
+    random.mock.mockImplementation(() => 0.999)
+    const error = new OpenAI.APIError(undefined, { code: 429 }, undefined, undefined)
+    assert.ok(streamRetryDelayMs(error, 0) > 10_000)
+    assert.ok(streamRetryDelayMs(error, 0) < 11_000)
+    assert.equal(streamRetryDelayMs(error, 20), 60_000)
+    assert.equal(streamRetryDelayMs({ code: 429 }, 0), 1000)
+    assert.equal(
+      streamRetryDelayMs(new OpenAI.APIError(503, { code: 429 }, '', undefined), 0),
+      1000,
+    )
+  })
+
+  it('honors a server delay before the streamed rate-limit cooldown', () => {
+    const error = new OpenAI.APIError(
+      undefined,
+      { code: 429 },
+      undefined,
+      new Headers({ 'retry-after': '3' }),
+    )
+    assert.equal(streamRetryDelayMs(error, 0), 3000)
+  })
+
   it('ignores a Retry-After-like property on a non-SDK error', () => {
     // A bare object with a headers map is NOT an SDK APIError, so the header
     // is ignored and backoff still applies.
@@ -231,6 +301,36 @@ describe('sleepMs', () => {
 })
 
 describe('yieldStreamWithRetry', () => {
+  it('recovers after a minute of streamed throttling without increasing the attempt budget', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 0 })
+    t.mock.method(Math, 'random', () => 0)
+    t.mock.method(console, 'warn', () => {})
+    const attempts: number[] = []
+    async function* run(): AsyncGenerator<string> {
+      attempts.push(Date.now())
+      if (Date.now() < 60_000) {
+        throw new OpenAI.APIError(undefined, { code: 429 }, undefined, undefined)
+      }
+      yield 'ok'
+    }
+    const result = (async (): Promise<string[]> => {
+      const output: string[] = []
+      for await (const item of yieldStreamWithRetry(run)) output.push(item)
+      return output
+    })().then(
+      (output) => ({ output, error: undefined }),
+      (error: unknown) => ({ output: [], error }),
+    )
+    // Let async iteration reach each timer; no wall-clock minute or network call.
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    for (let second = 0; second < 75; second++) {
+      t.mock.timers.tick(1000)
+      await new Promise<void>((resolve) => setImmediate(resolve))
+    }
+    assert.deepEqual(await result, { output: ['ok'], error: undefined })
+    assert.deepEqual(attempts, [0, 10_000, 30_000, 70_000])
+  })
+
   it('passes through items from a successful stream', async () => {
     async function* run(): AsyncGenerator<number> {
       yield 1

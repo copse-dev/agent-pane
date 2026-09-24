@@ -109,6 +109,26 @@ describe('supervised task list', function () {
     await expect(row.$('.supervised-task-state')).toHaveText('Waiting')
     await $('.ports-row').waitForDisplayed({ timeout: 15_000 })
 
+    // Disclosure chevron is a grid item on row 1 (the label), not a span across
+    // label+state. getComputedStyle(::before).top is `auto` for grid items, so
+    // assert the resolved grid placement instead of painted box geometry.
+    const disclosurePlacement = await browser.execute(() => {
+      const summary = document.querySelector<HTMLElement>('.supervised-task-summary')
+      if (!summary) throw new Error('supervised task summary missing')
+      const before = getComputedStyle(summary, '::before')
+      return {
+        gridRowStart: before.gridRowStart,
+        gridRowEnd: before.gridRowEnd,
+        alignSelf: before.alignSelf,
+      }
+    })
+    assert.equal(disclosurePlacement.gridRowStart, '1')
+    assert.equal(disclosurePlacement.gridRowEnd, 'auto')
+    assert.ok(
+      disclosurePlacement.alignSelf === 'center' || disclosurePlacement.alignSelf === 'normal',
+      `expected align-self center/normal, got ${disclosurePlacement.alignSelf}`,
+    )
+
     const initial = await readSectionHeights()
     assert.ok(initial.shells >= initial.root / 3 - 1, 'Shells should start at least one third high')
     assert.ok(initial.background >= initial.backgroundMin - 1)

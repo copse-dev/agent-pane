@@ -811,7 +811,10 @@ describe('Copse Reviewer workflow invariants', () => {
     assert.doesNotMatch(triggerWorkflow, /git fetch/)
     assert.doesNotMatch(triggerWorkflow, /--backend ephemeral-runner/)
     const dispatcher = workflowJobBlock(triggerWorkflow, 'dispatch')
-    assert.match(dispatcher, /if: github\.event\.label\.name == 'copse-review'/)
+    assert.match(dispatcher, /github\.event\.label\.name == 'copse-review'/)
+    assert.match(dispatcher, /github\.actor_id == '338988'/)
+    assert.match(dispatcher, /github\.event\.pull_request\.user\.id == 338988/)
+    assert.match(dispatcher, /github\.event\.pull_request\.head\.repo\.id == 1274237362/)
     assert.match(dispatcher, /actions: write/)
     assert.match(dispatcher, /pull-requests: read/)
     assert.match(dispatcher, /gh workflow run review-ground\.yml/)
@@ -863,6 +866,20 @@ describe('Copse Reviewer workflow invariants', () => {
       assert.ok(prepare >= 0 && prepare < mint && mint < model)
       const prepareStep = job.slice(prepare, mint)
       assert.doesNotMatch(prepareStep, /\$\{\{\s*secrets\./)
+    }
+  })
+
+  it('keeps complete ancestry while omitting historical blobs from review checkouts', () => {
+    for (const workflow of [groundWorkflow, findingsWorkflow, nightlyWorkflow]) {
+      const checkouts = workflow.matchAll(/uses: actions\/checkout[^\n]*\n([\s\S]*?)(?=\n {6}-|$)/g)
+      let count = 0
+      for (const [, step] of checkouts) {
+        assert.match(step ?? '', /filter: blob:none/)
+        assert.match(step ?? '', /fetch-depth: 0/)
+        assert.match(step ?? '', /persist-credentials: false/)
+        count++
+      }
+      assert.ok(count > 0)
     }
   })
 
@@ -967,7 +984,7 @@ describe('Copse Reviewer workflow invariants', () => {
     }
   })
 
-  it('pins the bounded Scaleway profile in every model-backed reviewer workflow', () => {
+  it('retains the bounded configured Scaleway profile in model-backed reviewer workflows', () => {
     for (const workflow of [findingsWorkflow, nightlyWorkflow, modelBenchWorkflow]) {
       assert.ok(workflow.includes("COPSE_REVIEW_PROVIDER || 'openai-compatible'"))
       assert.ok(workflow.includes("COPSE_REVIEW_MODEL || 'qwen3.8-27b'"))
@@ -1031,7 +1048,7 @@ describe('Copse Reviewer workflow invariants', () => {
     assert.match(modelBenchWorkflow, /REVIEW_MAX_STEPS=12/)
     assert.match(modelBenchWorkflow, /REVIEW_MAX_VERIFY=3/)
     for (const workflow of [findingsWorkflow, nightlyWorkflow]) {
-      assert.doesNotMatch(workflow, /OPENROUTER_API_KEY|openrouter-luna|openrouter-sol/)
+      assert.doesNotMatch(workflow, /openrouter-sol/)
     }
   })
 
@@ -1090,7 +1107,7 @@ describe('Copse Reviewer workflow invariants', () => {
     assert.match(job, /^ {4}environment: copse-review-models$/m)
   })
 
-  it('references the environment key only in the benchmark model step and never the org key', () => {
+  it('references the environment key only in protected reviewer model steps and never the org key', () => {
     const secret = 'secrets.COPSE_REVIEW_OPENROUTER_API_KEY'
     const workflows = readdirSync(resolve('.github/workflows')).filter((name) =>
       /\.ya?ml$/.test(name),
@@ -1102,7 +1119,9 @@ describe('Copse Reviewer workflow invariants', () => {
         /secrets(?:\.OPENROUTER_API_KEY|\[['"]OPENROUTER_API_KEY['"]\])/,
         name,
       )
-      if (name !== 'review-model-bench.yml') assert.ok(!workflow.includes(secret), name)
+      if (!['review-model-bench.yml', 'review-findings.yml', 'review-nightly.yml'].includes(name)) {
+        assert.ok(!workflow.includes(secret), name)
+      }
     }
     assert.equal(modelBenchWorkflow.split(secret).length - 1, 1)
     const install = modelBenchWorkflow.indexOf('- name: Install the reviewer')
@@ -1110,6 +1129,22 @@ describe('Copse Reviewer workflow invariants', () => {
     const credential = modelBenchWorkflow.indexOf(secret)
     const upload = modelBenchWorkflow.indexOf('- uses: actions/upload-artifact')
     assert.ok(install < model && model < credential && credential < upload)
+    for (const workflow of [findingsWorkflow, nightlyWorkflow]) {
+      const findings = workflowJobBlock(workflow, 'findings')
+      assert.equal(workflow.split(secret).length - 1, 1)
+      assert.match(findings, /^ {4}environment: copse-review-models$/m)
+      const prepare = findings.indexOf('- name: Prepare the focused-validation cell')
+      const review = findings.indexOf(
+        '- name: Review with focused validation and post the findings',
+      )
+      const key = findings.indexOf(secret)
+      assert.ok(prepare >= 0 && prepare < review && review < key)
+      assert.match(findings, /unset COPSE_REVIEW_API_KEY SCW_DEFAULT_PROJECT_ID/)
+      assert.match(findings, /configured\) unset OPENROUTER_API_KEY/)
+      assert.match(findings, /test "\$author_id" = 338988/)
+      assert.match(findings, /test "\$head_repo_id" = 1274237362/)
+      assert.match(findings, /test "\$base_repo_id" = 1274237362/)
+    }
   })
 
   it('samples at most one recent same-repository PR, including drafts, and has an explicit opt-out', () => {

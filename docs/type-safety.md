@@ -5,8 +5,9 @@ inlining all of it; this is the full reference.
 
 ## The three gates
 
-The checks that keep the codebase honest run together under **`npm run check`** (and again in CI's
-`precheck` job):
+The static checks that keep the codebase honest run together under **`npm run check:local`**;
+**`npm run check`** composes that gate with the complete unit/component suite. CI runs the same
+checks in its required jobs:
 
 - **`tsc`** (`npm run typecheck`) — both tsconfig projects (`tsconfig.node.json`,
   `tsconfig.web.json`), on `strict` plus the extra flags (`noUncheckedIndexedAccess`,
@@ -16,9 +17,11 @@ The checks that keep the codebase honest run together under **`npm run check`** 
   [The suppression baseline is empty](#the-suppression-baseline-is-empty--keep-it-that-way).
 - **oxfmt** (`npm run format:check`).
 
-Run `npm run check` before every commit — never hand-format or eyeball types in place of it. For a
-fast inner loop on a few files, `npx tsc --noEmit -p tsconfig.web.json`, `npx eslint <files>`, and
-`npx oxfmt --write <files>` are the same tools `check` invokes.
+Run at least `npm run check:local` before every commit — never hand-format or eyeball types in place
+of it. The risk policy in [`AGENTS.md`](../AGENTS.md#before-committing) decides whether focused tests
+or the complete `npm run check` are also required locally. For a fast inner loop on a few files,
+`npx tsc --noEmit -p tsconfig.web.json`, `npx eslint <files>`, and `npx oxfmt --write <files>` are the
+same tools the gates invoke.
 
 ## Write code the linter never has to flag
 

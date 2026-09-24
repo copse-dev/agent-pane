@@ -21,6 +21,7 @@ import { showConfirmDialog } from './confirm-dialog.ts'
 import { extractGithubPrUrls, githubPrKey } from '@shared/git/github-pr-url.ts'
 import { remoteAgentPrIndexKey, type RemoteAgentPrIndexEntry } from '@shared/remote-agent-link.ts'
 import {
+  isPlaceholderPr,
   mergePrLists,
   placeholderPrTitle,
   prListDisplayTitle,
@@ -31,6 +32,7 @@ import { startPrDiscussThread } from './pr-pane-thread.ts'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 import { renderMarkdown } from '@copse/streaming-markdown'
 import { bindBrowserLinkClicks } from '../markdown/browser-links.ts'
+import { cachedPrTitle, loadPrTitle, rememberPrTitle } from '../markdown/pr-title-cache.ts'
 import { bindWorkspaceLinkClicks } from '../markdown/workspace-links.ts'
 import {
   createGitChangesDiffEditor,
@@ -195,9 +197,27 @@ export function mountPrPane(
   // `ciGen` invalidates in-flight fetches across workspace switches / manual refresh.
   const checksCache = new Map<string, GhPrChecksState>()
   const checksInFlight = new Set<string>()
+  // Titles are shared with chat-link previews. Failed lookups stay in
+  // titleAttempted so renderList cannot turn into a fetch loop.
+  const titleInFlight = new Set<string>()
+  const titleAttempted = new Set<string>()
   let ciEls = new Map<string, HTMLElement>()
   let ciGen = 0
   let refreshInFlight = false
+  let disposed = false
+  let titleGen = 0
+  // Debounce list repaints when several title lookups finish in the same turn.
+  let titleRepaintQueued = false
+  let titleRepaintTimer: ReturnType<typeof setTimeout> | null = null
+  function scheduleTitleRepaint(): void {
+    if (titleRepaintQueued || disposed) return
+    titleRepaintQueued = true
+    titleRepaintTimer = setTimeout(() => {
+      titleRepaintTimer = null
+      titleRepaintQueued = false
+      if (!disposed) renderList()
+    }, 0)
+  }
 
   const CI_LABEL: Record<GhPrChecksState | 'loading', string> = {
     loading: 'Checking CI…',
@@ -336,6 +356,45 @@ export function mountPrPane(
     return row
   }
 
+  /**
+   * Prefer a real PR title over the source-repo fallback for chat-linked rows.
+   * Listing pools already carry titles when the PR is open in-repo / "yours";
+   * everything else is filled from `prDetails` (TTL-cached in main). Cache hits
+   * re-stamp the merged placeholder so a poll cannot flash the repo slug again.
+   */
+  function ensureTitles(prs: readonly GhPrSummary[]): void {
+    if (!ghStatus?.authenticated) return
+    for (const pr of prs) {
+      const key = githubPrKey(pr)
+      const cached = cachedPrTitle(pr)
+      if (cached) {
+        if (pr.title !== cached.title) pr.title = cached.title
+        continue
+      }
+      if (!isPlaceholderPr(pr)) {
+        // A pool-enriched title is authoritative — remember it for later merges.
+        rememberPrTitle(pr, pr.title)
+        continue
+      }
+      if (titleAttempted.has(key) || titleInFlight.has(key)) continue
+      titleAttempted.add(key)
+      titleInFlight.add(key)
+      const gen = titleGen
+      void loadPrTitle(pr, api.gh)
+        .then((title) => {
+          if (disposed || gen !== titleGen || !title) return
+          pr.title = title.title
+          scheduleTitleRepaint()
+        })
+        .catch(() => {
+          // Leave the repo-slug fallback; titleAttempted blocks a retry storm.
+        })
+        .finally(() => {
+          titleInFlight.delete(key)
+        })
+    }
+  }
+
   function renderList(): void {
     clear(listBody)
     ciEls = new Map()
@@ -384,6 +443,7 @@ export function mountPrPane(
     const otherPrs = query ? otherPrsAll.filter((pr) => prMatchesFilter(pr, query)) : otherPrsAll
 
     if (linkedPrs.length > 0) {
+      ensureTitles(linkedPrs)
       const section = el('div', { class: 'git-changes-section' })
       section.append(
         el(
@@ -933,6 +993,17 @@ export function mountPrPane(
       const details = await api.gh.prDetails(ref.owner, ref.repo, ref.number)
       if (requestId !== detailsRequestId) return
       prDetails = details
+      // Keep the list row's title in sync: selecting a PR is also a title source
+      // for chat-linked placeholders that never appeared in a listing pool.
+      if (details?.title && details.title !== placeholderPrTitle(details.number)) {
+        const key = githubPrKey(details)
+        rememberPrTitle(details, details.title, details.isDraft)
+        const row = prList.find((pr) => githubPrKey(pr) === key)
+        if (row && row.title !== details.title) {
+          row.title = details.title
+          scheduleTitleRepaint()
+        }
+      }
     } catch (err) {
       if (requestId !== detailsRequestId) return
       emptyState.hidden = false
@@ -988,6 +1059,11 @@ export function mountPrPane(
       ciGen++
       checksCache.clear()
       checksInFlight.clear()
+      // Allow title lookups to retry after the user explicitly refreshed — a
+      // transient failure (rate limit, blip) should not stick for the session.
+      titleAttempted.clear()
+      titleInFlight.clear()
+      titleGen++
     } else if (reason === 'poll') {
       for (const [key, state] of checksCache) {
         if (state === 'pending') checksCache.delete(key)
@@ -1118,6 +1194,9 @@ export function mountPrPane(
       prList = []
       agentLinks = new Map()
       agentLinksGen++
+      titleGen++
+      titleInFlight.clear()
+      // Shared PR titles are keyed by owner/repo#n and stay valid across workspaces.
       resetOther()
       // A different workspace's list is a fresh context; carrying a stale filter
       // over risks silently hiding every PR in it.
@@ -1182,6 +1261,13 @@ export function mountPrPane(
   })
 
   return () => {
+    disposed = true
+    titleGen++
+    if (titleRepaintTimer != null) {
+      clearTimeout(titleRepaintTimer)
+      titleRepaintTimer = null
+    }
+    titleRepaintQueued = false
     void api.gh.setListWatch(false, false)
     unregisterPopoutSeed()
     detailsRequestId++
