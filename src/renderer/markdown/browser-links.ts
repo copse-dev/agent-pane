@@ -2,6 +2,7 @@ import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { openBrowserUrl, openPullRequest } from '../controller/panels.ts'
 import { parseGithubPrUrl } from '@shared/git/github-pr-url.ts'
+import { bindPrLinkPreviews } from './pr-link-preview.ts'
 
 function linkHttpHref(link: HTMLAnchorElement): string | null {
   const href = link.href
@@ -27,7 +28,7 @@ export function bindBrowserLinkClicks(
   store: AppStore,
   api?: {
     remoteAgent: Pick<ApiClient['remoteAgent'], 'downloadArtifact'>
-    gh?: Pick<ApiClient['gh'], 'status'>
+    gh?: Pick<ApiClient['gh'], 'status'> & Partial<Pick<ApiClient['gh'], 'prDetails'>>
     shell?: Pick<ApiClient['shell'], 'openExternal'>
   },
 ): () => void {
@@ -91,8 +92,13 @@ export function bindBrowserLinkClicks(
     openPlainLink(href)
   }
 
+  const unbindPreviews = bindPrLinkPreviews(
+    root,
+    api?.gh?.prDetails ? { prDetails: api.gh.prDetails } : undefined,
+  )
   root.addEventListener('click', onClick)
   return () => {
     root.removeEventListener('click', onClick)
+    unbindPreviews()
   }
 }
