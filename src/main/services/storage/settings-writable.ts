@@ -8,6 +8,7 @@ import {
   validateWebOriginPattern,
 } from '../security/web-origin-policy.ts'
 import { keyOf } from '@shared/member-of.ts'
+import { GIT_ATTRIBUTION_SETTING } from '@shared/git/commit-attribution.ts'
 
 // Empty string means "use the provider default"; any non-empty value must be a
 // safe base URL since it carries the Cursor API key as an Authorization header.
@@ -283,6 +284,7 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // the `gh` CLI and falls back to the REST/GraphQL API, or force one. See
   // services/github/backend/backend.ts.
   githubBackend: z.enum(['auto', 'cli', 'api']),
+  [GIT_ATTRIBUTION_SETTING]: z.boolean(),
   remoteAgentBaseUrl: remoteAgentBaseUrlSchema,
   remoteAgentAutoCreatePR: z.boolean(),
   remoteAgentWorkOnCurrentBranch: z.boolean(),

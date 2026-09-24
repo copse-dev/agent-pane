@@ -8,7 +8,12 @@ import {
 } from './git-service.ts'
 import { createPullRequest } from './gh-pr-actions-service.ts'
 import { resolveGitHubBackend } from './backend/backend.ts'
-import { appendPrBodyAttribution } from '@shared/git/commit-attribution.ts'
+import {
+  appendPrBodyAttribution,
+  DEFAULT_GIT_ATTRIBUTION_ENABLED,
+  GIT_ATTRIBUTION_SETTING,
+} from '@shared/git/commit-attribution.ts'
+import { getSetting } from '../storage/settings.ts'
 import { getThreadModels } from '../thread-models.ts'
 import { recordThreadPrRefs } from '../thread-store.ts'
 import { broadcastToAppWindows } from '../../windows/app-window-broadcast.ts'
@@ -34,6 +39,7 @@ export interface PrCreateDependencies {
   pushBranchToOrigin: (branch: string, root: string | null | undefined) => Promise<GitPushResult>
   createPullRequest: typeof createPullRequest
   getThreadModels: (threadId: string) => string[]
+  isAttributionEnabled: () => boolean
   backendKind: () => PrCreateResult['backend']
   /**
    * Push a renderer event. Injected alongside the lookups because the pushes a
@@ -54,19 +60,21 @@ const defaultDependencies: PrCreateDependencies = {
   pushBranchToOrigin: (branch, root) => pushBranchToOrigin(branch, root ?? undefined),
   createPullRequest,
   getThreadModels,
+  isAttributionEnabled: () =>
+    getSetting<boolean>(GIT_ATTRIBUTION_SETTING, DEFAULT_GIT_ATTRIBUTION_ENABLED),
   backendKind: () => resolveGitHubBackend().kind,
   broadcast: broadcastToAppWindows,
 }
 
 /**
- * Open a pull request for a thread's checkout: resolve the target, append the
- * attribution trailer, create the PR, link it back to the thread and announce
+ * Open a pull request for a thread's checkout: resolve the target, apply the
+ * attribution preference, create the PR, link it back to the thread and announce
  * it to the renderer.
  *
  * The single create path, shared by the `gh_pr_create` agent tool and the
  * "Create PR" composer chip's dialog. Both need the identical sequence — and in
  * particular both must do the two pieces of bookkeeping that are invisible
- * until they are missing: the `Co-Authored-By` trailer, and recording the PR
+ * until they are missing: the optional `Co-Authored-By` trailer, and recording the PR
  * against the thread so the sidebar chip appears. Keeping one function means a
  * user-driven create cannot quietly drift from what the agent does.
  *
@@ -163,7 +171,9 @@ export async function createPrForThread(
     head: headBranch,
     base: baseBranch,
     title: request.title,
-    body: appendPrBodyAttribution(request.body ?? '', models),
+    body: deps.isAttributionEnabled()
+      ? appendPrBodyAttribution(request.body ?? '', models)
+      : (request.body ?? ''),
     ...(draft === undefined ? {} : { draft }),
   }
   let result = await deps.createPullRequest(input)
