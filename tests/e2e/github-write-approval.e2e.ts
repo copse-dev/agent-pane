@@ -1,6 +1,6 @@
 import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
 
@@ -9,7 +9,7 @@ import { waitForAgentIdle } from './helpers.ts'
 describe('GitHub write approval', () => {
   before(async () => {
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-github-write-approval-project', {
+    seedEmptyProject(seedStableWorkspace(), 'e2e-github-write-approval-project', {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
     })

@@ -591,6 +591,27 @@ Not in Phase 0, by design: any model call, the CLI shell and SARIF (Phase 1), th
 gesture (Phase 3), and the container backend that a foreign diff needs (Phase 4). Outside
 the app there is no OS sandbox, so `pnpm run review:stage0` needs `--allow-unisolated`.
 
+### Groundwork evidence limits (2026-09-24)
+
+A successful aggregate check attests only that command. Unit/component results do not establish
+browser geometry, Electron, screenshot, or manual visual coverage. The reviewer system message
+states that boundary explicitly and treats an unspecified test command's tier as unknown.
+
+Two red exit codes cannot establish that failures are pre-existing. Stage 0 compares complete
+individual failure inventories for Node tests. Copse opts in through `review.config.json` and
+`run-tests --review-report`: a compact reporter emits the full failing file/name set only after
+Node's final summary, with no cancelled tests, consistent counts and unique identities. It excludes
+parent-suite failures, and normalizes per-run bundle roots and ignores source line movement.
+Stage 0 reads the inventory as untrusted data, preserves it in the report and mints one finding
+per new failing identity. It never says a new test passed on base, only that it was absent from the
+base failure inventory. Missing/ambiguous inventories or other doubly-failing check kinds remain
+`undetermined`, with a coverage gap. Imported legacy reports without individual inventories are
+downgraded the same way. Renamed tests can appear as new failures; the report preserves
+both command outputs for inspection. This is failure identity comparison, not proof of causal blame.
+
+The reporter executes only where the test command already executes (inside the cell for foreign
+reviews). No repository output or test names are promoted into trusted system instructions.
+
 ## What Phase 1 delivered
 
 The CLI shell (Shell A), on `main` in the same package, as `copse-review` (the package's

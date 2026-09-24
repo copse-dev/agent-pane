@@ -1,3 +1,4 @@
+import { submitComposer } from './helpers/composer.ts'
 import { prepareMockTurn } from './helpers/mock-scenario.ts'
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
@@ -64,7 +65,7 @@ async function ensureRunning(): Promise<void> {
     [{ waitFor: 'close-inspection', text: 'The repository review is complete.' }],
     true,
   )
-  await $('.submit-btn').click()
+  await submitComposer()
   await browser.waitUntil(isRunning, {
     timeout: 30_000,
     timeoutMsg: 'expected the run to start',

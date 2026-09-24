@@ -1,7 +1,7 @@
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { waitForAgentIdle } from './helpers.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 
@@ -50,7 +50,7 @@ describe('double submit guard', function () {
     // Hold the first normal request while the renderer receives duplicate send
     // events for a genuine follow-up.
     await setComposerValue(firstPrompt)
-    await $('.submit-btn').click()
+    await submitComposer()
     await scenario.waitForHold('parser-review')
 
     // Fire two synchronous clicks back-to-back, exactly as a frozen renderer

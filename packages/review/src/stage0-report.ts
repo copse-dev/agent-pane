@@ -6,6 +6,7 @@
 // shape, before a single field of it reaches a model or a comment.
 import { z } from 'zod'
 import { decodeWithSchema } from '@copse/std/safe-json.ts'
+import { testFailureReportSchema } from './test-failures.ts'
 import { findingSchema } from './finding.ts'
 import { CHECK_KINDS, REVIEW_CONFIG_FILENAME } from './project-commands.ts'
 import { STAGE0_REPORT_VERSION, type Stage0Report } from './stage0.ts'
@@ -14,16 +15,21 @@ const checkKindSchema = z.enum(CHECK_KINDS)
 const targetSchema = z.enum(['base', 'head'])
 const argvSchema = z.tuple([z.string().min(1)], z.string())
 
-const checkRunSchema = z.object({
-  kind: checkKindSchema,
-  target: targetSchema,
-  argv: z.array(z.string()),
-  status: z.enum(['passed', 'failed', 'timed-out']),
-  exitCode: z.number().int().nullable(),
-  durationMs: z.number(),
-  output: z.string(),
-  outputTruncated: z.boolean(),
-})
+const checkRunSchema = z
+  .object({
+    testFailures: testFailureReportSchema.optional(),
+    kind: checkKindSchema,
+    target: targetSchema,
+    argv: z.array(z.string()),
+    status: z.enum(['passed', 'failed', 'timed-out']),
+    exitCode: z.number().int().nullable(),
+    durationMs: z.number(),
+    output: z.string(),
+    outputTruncated: z.boolean(),
+  })
+  .transform(({ testFailures, ...run }) =>
+    testFailures === undefined ? run : { ...run, testFailures },
+  )
 
 const checkOutcomeSchema = z
   .object({
@@ -83,6 +89,30 @@ export const stage0ReportSchema = z.object({
 
 const decodeShape = decodeWithSchema(stage0ReportSchema)
 
+function normalizeLegacyFailures(report: Stage0Report): Stage0Report {
+  const reason =
+    'legacy double-failure result has no complete individual failure inventories; new regressions remain unverified'
+  const unknown = report.checks.filter(
+    (check) =>
+      check.verdict === 'failing-on-base' &&
+      (check.kind !== 'test' || !check.head?.testFailures || !check.base?.testFailures),
+  )
+  if (unknown.length === 0) return report
+  return {
+    ...report,
+    checks: report.checks.map((check) =>
+      unknown.includes(check) ? { ...check, verdict: 'undetermined', reason } : check,
+    ),
+    coverage: {
+      ...report.coverage,
+      notChecked: [
+        ...report.coverage.notChecked,
+        ...unknown.map((check) => ({ kind: check.kind, reason })),
+      ],
+    },
+  }
+}
+
 /**
  * A Stage 0 report from untrusted JSON, or `null`. Accepts the bare report and
  * the full review report that carries one under `stage0` (what `--json`
@@ -90,9 +120,10 @@ const decodeShape = decodeWithSchema(stage0ReportSchema)
  */
 export function decodeStage0Report(value: unknown): Stage0Report | null {
   const bare = decodeShape(value)
-  if (bare !== null) return bare
+  if (bare !== null) return normalizeLegacyFailures(bare)
   if (typeof value === 'object' && value !== null && Object.hasOwn(value, 'stage0')) {
-    return decodeShape(Reflect.get(value, 'stage0'))
+    const wrapped = decodeShape(Reflect.get(value, 'stage0'))
+    return wrapped === null ? null : normalizeLegacyFailures(wrapped)
   }
   return null
 }

@@ -1,3 +1,4 @@
+import { submitComposer } from './helpers/composer.ts'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { waitForAgentIdle } from './helpers.ts'
@@ -27,7 +28,7 @@ describe('next-step tab complete (experimental)', () => {
   it('offers the hint as placeholder after a turn and inserts it on Tab', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await prepareMockTurn('fix the bug', [{ text: 'The fix is ready for verification.' }])
-    await $('.submit-btn').click()
+    await submitComposer()
     await waitForAgentIdle(20_000)
 
     // The hint rides in the placeholder slot, marked for the Tab keycap CSS.

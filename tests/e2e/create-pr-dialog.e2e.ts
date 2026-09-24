@@ -1,3 +1,4 @@
+import { submitComposer } from './helpers/composer.ts'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { waitForAgentIdle } from './helpers.ts'
@@ -27,7 +28,7 @@ async function completeMockTurn(): Promise<void> {
   await prepareMockTurn('roll up tool activity', [
     { text: 'The tool activity rollup is ready for review.' },
   ])
-  await $('.submit-btn').click()
+  await submitComposer()
 
   await waitForAgentIdle(20_000)
 

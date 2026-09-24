@@ -2,7 +2,7 @@ import { installMockScenario } from './helpers/mock-scenario.ts'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, writeSeedConfig, writeSettings } from './helpers/seed-config.ts'
 import { waitForAgentIdle } from './helpers.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 
 const PROJECT_ID = 'e2e-continuation-summary-project'
@@ -70,7 +70,7 @@ describe('continuation budget exhaustion summary', () => {
       ],
     })
     await setComposerValue('Finish the parser task')
-    await $('.submit-btn').click()
+    await submitComposer()
     await $('.msg-user*=Finish the parser task').waitForExist({ timeout: 15_000 })
     await waitForAgentIdle(60_000)
 

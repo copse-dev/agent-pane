@@ -1,3 +1,4 @@
+import { submitComposer } from './helpers/composer.ts'
 import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
@@ -27,7 +28,7 @@ describe('tool argument error guidance', () => {
       { name: 'update_todos', args: { todos: [{ status: 'pending' }] } },
       'The task needs a description before it can be added.',
     )
-    await $('.submit-btn').click()
+    await submitComposer()
     await waitForAgentIdle(30_000)
 
     const rollup = $('.tool-card-rollup[data-status="error"]')

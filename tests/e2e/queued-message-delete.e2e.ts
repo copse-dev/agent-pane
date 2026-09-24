@@ -1,6 +1,6 @@
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
 import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
@@ -42,7 +42,7 @@ describe('queued message delete', function () {
     })
 
     await setComposerValue(FIRST_PROMPT)
-    await $('.submit-btn').click()
+    await submitComposer()
     await scenario.waitForHold('parser-refactor')
 
     await browser.execute((value: string) => {

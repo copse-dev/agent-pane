@@ -1,3 +1,4 @@
+import { submitComposer } from './helpers/composer.ts'
 import { prepareMockTurn } from './helpers/mock-scenario.ts'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
@@ -35,7 +36,7 @@ describe('DeepSeek DSML text tool-call recovery', () => {
       },
       { text: 'The workspace files are listed above.' },
     ])
-    await $('.submit-btn').click()
+    await submitComposer()
 
     const listCard = $('.tool-card[data-status="done"]')
     await listCard.waitForDisplayed({ timeout: 30_000 })

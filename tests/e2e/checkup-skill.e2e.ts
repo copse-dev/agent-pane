@@ -1,7 +1,7 @@
 import { $, browser, expect } from '@wdio/globals'
 import { seedProjectConfig } from './helpers.ts'
 import { assertNoErrorToasts, collectErrorToasts } from './helpers/assert-no-error-toasts.ts'
-import { composerText, setComposerValue } from './helpers/composer.ts'
+import { composerText, setComposerValue, submitComposer } from './helpers/composer.ts'
 import { resetUserData } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
@@ -84,7 +84,7 @@ describe('checkup skill', () => {
         },
       ],
     })
-    await $('.submit-btn').click()
+    await submitComposer()
 
     // The regression: stale skillsCache treated `/checkup` as unknown even
     // though the picker had just shown it.

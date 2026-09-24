@@ -1,7 +1,7 @@
 import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
 import { waitForAgentIdle } from './helpers.ts'
@@ -56,7 +56,7 @@ describe('ask_user dialog', () => {
       ],
     })
     await setComposerValue('Help me sign in to Claude.')
-    await $('.submit-btn').click()
+    await submitComposer()
 
     const dialog = await $('#ask-user-dialog')
     await dialog.waitForDisplayed({ timeout: 30_000 })
@@ -91,7 +91,7 @@ describe('ask_user dialog', () => {
       'The waiting decision is recorded above.',
       true,
     )
-    await $('.submit-btn').click()
+    await submitComposer()
 
     const dialog = await $('#ask-user-dialog')
     await dialog.waitForDisplayed({ timeout: 30_000 })

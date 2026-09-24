@@ -22,6 +22,7 @@ const repoRoot = resolve('.')
 
 const bundleOnly = process.argv.includes('--bundle-only')
 const testOnly = process.argv.includes('--test-only')
+const reviewReport = process.argv.includes('--review-report')
 if (bundleOnly && testOnly) {
   console.error('[run-tests] pass at most one of --bundle-only / --test-only')
   process.exit(2)
@@ -240,6 +241,16 @@ async function bundleTests(testFiles: string[], outputDir: string): Promise<void
  * the end) and keep the machine-readable TAP in a file the job uploads.
  */
 function reporterArgs(tapLog: string): string[] {
+  if (reviewReport)
+    return [
+      '--test-reporter=dot',
+      '--test-reporter-destination=stdout',
+      `--test-reporter=${resolve('scripts/lib/review-test-reporter.mts')}`,
+      '--test-reporter-destination=stdout',
+      ...(process.env['CI']
+        ? ['--test-reporter=tap', `--test-reporter-destination=${tapLog}`]
+        : []),
+    ]
   if (!process.env['CI']) return []
   return [
     '--test-reporter=dot',

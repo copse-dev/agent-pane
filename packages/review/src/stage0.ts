@@ -44,6 +44,7 @@ import {
   type UnsupportedProject,
 } from './project-commands.ts'
 import { removeTree } from './remove-tree.ts'
+import { newTestFailures, parseTestFailureReport, type TestFailureReport } from './test-failures.ts'
 import { newDiagnostics, parseTscDiagnostics, type TscDiagnostic } from './tsc-diagnostics.ts'
 
 export const STAGE0_REPORT_VERSION = 1
@@ -112,6 +113,7 @@ export interface CheckRun {
   /** Capped, secret-scrubbed tail of the output. */
   readonly output: string
   readonly outputTruncated: boolean
+  readonly testFailures?: TestFailureReport
 }
 
 export type CheckVerdict =
@@ -119,7 +121,7 @@ export type CheckVerdict =
   | 'clean'
   /** Failed on head, passed on base — a finding. */
   | 'regressed'
-  /** Failed on both — not this change's doing, and not a finding. */
+  /** Complete failure inventories establish that head has no new failures. */
   | 'failing-on-base'
   /** Passed on head, failed on base. Only observed when base ran for another reason. */
   | 'fixed'
@@ -342,7 +344,8 @@ async function runTarget(
       output: scrub(result.output),
       outputTruncated: result.outputTruncated,
     }
-    runs.set(command.kind, run)
+    const testFailures = command.kind === 'test' ? parseTestFailureReport(run.output) : null
+    runs.set(command.kind, testFailures === null ? run : { ...run, testFailures })
     if (command.kind === 'prepare' && run.status !== 'passed') {
       prepareFailure = `dependencies could not be prepared on ${target} (${run.status}, \`${quoteArgv(run.argv)}\`)`
     }
@@ -648,8 +651,45 @@ export async function runStage0Checks(
       continue
     }
     if (base.status === 'failed') {
-      const reason = `already failing on base (exit ${String(base.exitCode)})`
-      checks.push({ kind, verdict: 'failing-on-base', head, base, reason })
+      if (
+        kind === 'test' &&
+        base.testFailures &&
+        head.testFailures &&
+        base.testFailures.failed > 0 &&
+        head.testFailures.failed > 0
+      ) {
+        const fresh = newTestFailures(base.testFailures, head.testFailures)
+        const outcome: CheckOutcome = {
+          kind,
+          verdict: fresh.length > 0 ? 'regressed' : 'failing-on-base',
+          head,
+          base,
+          reason: `${String(fresh.length)} new individual test failures; both aggregate checks failed`,
+        }
+        checks.push(outcome)
+        for (const failure of fresh) {
+          const claim = `Test ${failure.name} fails on head and is absent from the complete base failure inventory`
+          findings.push({
+            id: findingId({ class: 'test', path: failure.path, anchoredText: failure.name, claim }),
+            anchor: { path: failure.path },
+            class: 'test',
+            severity: 'high',
+            confidence: 'high',
+            claim,
+            provenance: { raisedBy: [STAGE0_REVIEWER], corroboratedBy: [], challengedBy: [] },
+            evidence: [commandEvidence(head), commandEvidence(base)],
+            verdict: {
+              status: 'confirmed',
+              reason: 'Compared complete individual failure inventories, not just exit codes',
+            },
+          })
+        }
+        continue
+      }
+      const reason =
+        'both aggregate checks failed; individual failure comparison is unavailable, so new regressions remain unverified'
+      checks.push({ kind, verdict: 'undetermined', head, base, reason })
+      notChecked.push({ kind, reason })
       continue
     }
     const reason = `failed on head, but timed out on base after ${String(base.durationMs)} ms`

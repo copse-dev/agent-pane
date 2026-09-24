@@ -37,3 +37,20 @@ export async function composerText(): Promise<string> {
     return composer instanceof HTMLElement ? (composer.textContent ?? '') : ''
   })
 }
+
+/** Submit a fixture prompt, accepting the real dirty-checkout warning if needed. */
+export async function submitComposer(): Promise<void> {
+  await $('.submit-btn').click()
+  let confirmedDirtyCheckout = false
+  await browser.waitUntil(
+    async () => {
+      const sendAnyway = $('.composer-dirty-send-btn')
+      if (!confirmedDirtyCheckout && (await sendAnyway.isDisplayed())) {
+        confirmedDirtyCheckout = true
+        await sendAnyway.click()
+      }
+      return (await composerText()).trim() === ''
+    },
+    { timeout: 30_000, interval: 100, timeoutMsg: 'The composer prompt did not submit' },
+  )
+}
