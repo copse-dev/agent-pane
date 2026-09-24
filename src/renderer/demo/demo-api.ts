@@ -883,7 +883,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         }),
     },
     processManager: {
-      snapshot: () => resolved({ sampledAt: Date.now(), processes: [] }),
+      snapshot: () => resolved({ sampledAt: Date.now(), processes: [], activeRunThreadIds: [] }),
       stopBackground: () => resolved(false),
     },
     menu: {

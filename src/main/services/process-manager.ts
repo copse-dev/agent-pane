@@ -12,6 +12,7 @@ export function createProcessManagerSampler(
   readMetrics: () => readonly ProcessMetricSample[],
   readLabels: () => ReadonlyMap<number, string>,
   readOwnedRows: () => Promise<ProcessManagerRow[]>,
+  readActiveRunThreadIds: () => string[],
 ): () => Promise<ProcessManagerSnapshot> {
   let cached: ProcessManagerSnapshot | null = null
   let pending: Promise<ProcessManagerSnapshot> | null = null
@@ -28,6 +29,7 @@ export function createProcessManagerSampler(
         cached = {
           sampledAt: now,
           processes: [...result.snapshot.processes, ...owned],
+          activeRunThreadIds: readActiveRunThreadIds(),
         }
         return cached
       })

@@ -48,7 +48,10 @@ export function buildProcessSnapshot(
   labels: ReadonlyMap<number, string>,
   previous: ReadonlyMap<string, CpuSample>,
   sampledAt: number,
-): { snapshot: ProcessManagerSnapshot; samples: Map<string, CpuSample> } {
+): {
+  snapshot: Pick<ProcessManagerSnapshot, 'sampledAt' | 'processes'>
+  samples: Map<string, CpuSample>
+} {
   const samples = new Map<string, CpuSample>()
   const processes = metrics.map((metric) => {
     const key = processKey(metric)

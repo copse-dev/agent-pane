@@ -511,6 +511,7 @@ export function registerAllHandlers(
     () => app.getAppMetrics(),
     processManagerLabels,
     () => readOwnedProcessRows(win.webContents.id),
+    listRunningThreadIds,
   )
   const reloadMcpForWorkspace = (): void => {
     void reloadMcpServers(registry)

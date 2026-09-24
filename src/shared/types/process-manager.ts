@@ -21,4 +21,6 @@ export interface ProcessManagerRow {
 export interface ProcessManagerSnapshot {
   sampledAt: number
   processes: ProcessManagerRow[]
+  /** Live agent turns, independent of any operating-system process. */
+  activeRunThreadIds: string[]
 }

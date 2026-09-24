@@ -52,6 +52,7 @@ test('managed rows jump to their thread and stop by handle; shared rows stay rea
       ...base.processManager,
       snapshot: async () => ({
         sampledAt: Date.now(),
+        activeRunThreadIds: [],
         processes: [
           {
             pid: 1,
@@ -134,6 +135,7 @@ test('running-thread and background-task actions keep their thread scope', async
     processManager: {
       snapshot: async () => ({
         sampledAt: Date.now(),
+        activeRunThreadIds: ['thread-a'],
         processes: [
           {
             pid: 43,
@@ -163,6 +165,11 @@ test('running-thread and background-task actions keep their thread scope', async
   const open = mountProcessManagerDialog(api, store)
   open()
   await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(document.querySelector('.process-manager-activity')?.hasAttribute('hidden'), false)
+  assert.match(
+    document.querySelector('.process-manager-activity-item')?.textContent ?? '',
+    /Working.*thread-a/,
+  )
   const actions = document.querySelector<HTMLButtonElement>(
     'tr[data-pid="43"] .process-manager-actions-button',
   )

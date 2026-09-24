@@ -72,6 +72,20 @@ export function mountProcessManagerDialog(api: ApiClient, store: AppStore): () =
     ),
     body,
   )
+  const activityCount = el('span', { class: 'process-manager-activity-count' })
+  const activityList = el('div', { class: 'process-manager-activity-list' })
+  const activity = el(
+    'section',
+    { class: 'process-manager-activity', 'aria-label': 'Agent activity' },
+    el(
+      'div',
+      { class: 'process-manager-activity-heading' },
+      el('strong', {}, 'Agent activity'),
+      activityCount,
+    ),
+    activityList,
+  )
+  activity.hidden = true
   const status = el('p', { class: 'process-manager-status', role: 'status' }, 'Loading processes…')
   const updated = el('span', { class: 'process-manager-updated', 'aria-hidden': 'true' })
   dialog.append(
@@ -89,6 +103,7 @@ export function mountProcessManagerDialog(api: ApiClient, store: AppStore): () =
         ),
         closeButton,
       ),
+      activity,
       el('div', { class: 'process-manager-scroll' }, table),
       el(
         'footer',
@@ -197,6 +212,22 @@ export function mountProcessManagerDialog(api: ApiClient, store: AppStore): () =
       column === 'memory' ? (ascending ? 'ascending' : 'descending') : 'none',
     )
     clear(body)
+    clear(activityList)
+    activity.hidden = snapshot.activeRunThreadIds.length === 0
+    activityCount.textContent = `${String(snapshot.activeRunThreadIds.length)} working`
+    for (const threadId of snapshot.activeRunThreadIds) {
+      const title = getThreadById(store, threadId)?.title.trim()
+      const label = title && title.length > 0 ? title : `Thread ${threadId.slice(0, 8)}`
+      activityList.append(
+        el(
+          'span',
+          { class: 'process-manager-activity-item', 'data-thread-id': threadId },
+          el('span', { class: 'process-manager-activity-dot', 'aria-hidden': 'true' }),
+          el('span', { class: 'process-manager-activity-state' }, 'Working'),
+          el('span', { class: 'process-manager-activity-thread', title: label }, label),
+        ),
+      )
+    }
     const state = store.getState()
     for (const row of sortedRows(snapshot.processes, column, ascending)) {
       const thread = getThreadById(store, row.threadId)
