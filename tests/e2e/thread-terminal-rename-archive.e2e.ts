@@ -179,8 +179,14 @@ describe('thread + terminal rename / archive', () => {
       input.focus()
       input.select()
     })
-    await renameInput.setValue('Build shell')
-    await browser.keys('Enter')
+    // WDIO's per-key typing can blur the field while terminal output repaints
+    // the tab, saving a partial title. Set the field and commit in one DOM turn.
+    await browser.execute(() => {
+      const input = document.querySelector<HTMLInputElement>('.terminals-tab-rename')
+      if (!input) throw new Error('terminal rename input missing before commit')
+      input.value = 'Build shell'
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    })
 
     await browser.waitUntil(
       async () => {
