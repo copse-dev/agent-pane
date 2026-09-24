@@ -29751,6 +29751,8 @@ function createStore(initial) {
     agent_task_selected: /* @__PURE__ */ new Set(),
     shell_tab_activated: /* @__PURE__ */ new Set(),
     request_terminal_command: /* @__PURE__ */ new Set(),
+    code_block_run_requested: /* @__PURE__ */ new Set(),
+    code_block_run_finished: /* @__PURE__ */ new Set(),
     attention_changed: /* @__PURE__ */ new Set()
   };
   function on3(event, handler) {
@@ -61794,8 +61796,10 @@ function mountSettingsDialog(store2, api2) {
                 through ssh-agent. You can remember the signer, key and socket for this project
                 until Copse restarts. Changed configuration requires approval again. Git hooks
                 keep their project sandbox; they receive no ssh-agent access. Turning this off
-                prevents further brokered signing. Private keys remain unreadable. Custom signing
-                programs run with ordinary project access. Scoped socket access is macOS only.
+                prevents further ssh-agent signing. With this off, a configured private key file
+                can be read and used only after a separate approval for each commit. Key contents
+                are never sent to the agent. Custom signing programs run with ordinary project
+                access. Scoped signing is macOS only.
               </p>
             </fieldset>
           </section>
@@ -65816,29 +65820,39 @@ function mountProjectsPane(root, store2, api2) {
     archiveThread(store2, threadId);
   }
   function cachedPrLifecycle(key) {
+    return prLifecycleCache.get(key)?.state;
+  }
+  function hasFreshPrLifecycle(key) {
     const entry = prLifecycleCache.get(key);
-    if (!entry) return void 0;
-    if (Date.now() - entry.fetchedAt > PR_STATUS_CACHE_TTL_MS) return void 0;
-    return entry.state;
+    return entry !== void 0 && Date.now() - entry.fetchedAt <= PR_STATUS_CACHE_TTL_MS;
   }
   function ensurePrLifecycles(refs) {
-    const missing = refs.filter((ref) => {
+    const stale = refs.filter((ref) => {
       const key = githubPrKey(ref);
-      return cachedPrLifecycle(key) === void 0 && !prFetchInFlight.has(key);
+      return !hasFreshPrLifecycle(key) && !prFetchInFlight.has(key);
     });
-    if (missing.length === 0) return;
+    if (stale.length === 0) return;
     const generation = prStatusGeneration;
-    for (const ref of missing) {
+    for (const ref of stale) {
       const key = githubPrKey(ref);
+      let lifecycleChanged = false;
       prFetchInFlight.add(key);
       void api2.gh.prDetails(ref.owner, ref.repo, ref.number).then((details) => {
+        if (generation !== prStatusGeneration) return;
         const state = details ? normalizePrLifecycleState(details.state) : "unknown";
+        lifecycleChanged = prLifecycleCache.get(key)?.state !== state;
         prLifecycleCache.set(key, { state, fetchedAt: Date.now() });
       }).catch(() => {
-        prLifecycleCache.set(key, { state: "unknown", fetchedAt: Date.now() });
+        if (generation !== prStatusGeneration) return;
+        const cached2 = prLifecycleCache.get(key);
+        prLifecycleCache.set(key, {
+          state: cached2?.state ?? "unknown",
+          fetchedAt: Date.now()
+        });
       }).finally(() => {
+        if (generation !== prStatusGeneration) return;
         prFetchInFlight.delete(key);
-        if (generation === prStatusGeneration) render();
+        if (lifecycleChanged) render();
       });
     }
   }
@@ -69945,46 +69959,207 @@ var init_container_run_card = __esm({
 function copyButtonText(code) {
   return code.textContent.trimStart();
 }
-function attachCodeBlockCopyButtons(root) {
-  const blocks = root.querySelectorAll("pre:not(.mermaid):not([data-copy-attached])");
+function explicitCodeLanguage(code) {
+  for (const className of code.classList) {
+    if (className.startsWith("lang-")) return className.slice("lang-".length).toLowerCase();
+    if (className.startsWith("language-")) return className.slice("language-".length).toLowerCase();
+  }
+  return null;
+}
+function looksLikeUnlabelledCommand(source) {
+  const line = source.trim().replace(/^\$\s+/, "");
+  if (!line || line.includes("\n")) return false;
+  const words = line.split(/\s+/);
+  let index = 0;
+  while (/^[A-Za-z_][A-Za-z0-9_]*=/.test(words[index] ?? "")) index += 1;
+  const head = words[index];
+  if (!head) return false;
+  if (/^(?:\.\.?[\\/])/.test(head)) return true;
+  const slash = Math.max(head.lastIndexOf("/"), head.lastIndexOf("\\"));
+  const basename3 = (slash >= 0 ? head.slice(slash + 1) : head).toLowerCase();
+  return COMMON_SHELL_COMMANDS.has(basename3);
+}
+function isRunnableCodeBlock(code) {
+  const language = explicitCodeLanguage(code);
+  if (language !== null) return SHELL_LANGUAGES.has(language);
+  return looksLikeUnlabelledCommand(copyButtonText(code));
+}
+function setRunButtonState(button, state) {
+  button.dataset["runState"] = state;
+  button.disabled = state === "running";
+  button.classList.toggle("is-running", state === "running");
+  if (state === "running") {
+    button.setAttribute("aria-label", "Command running");
+    button.setAttribute("data-tooltip", "Command running");
+    button.replaceChildren(spinnerIcon("ui-icon ui-icon-sm"));
+  } else if (state === "succeeded") {
+    button.setAttribute("aria-label", "Run command again");
+    button.setAttribute("data-tooltip", "Result attached \xB7 Run again");
+    button.replaceChildren(checkIcon("ui-icon ui-icon-sm"));
+  } else if (state === "failed") {
+    button.setAttribute("aria-label", "Run command again");
+    button.setAttribute("data-tooltip", "Command failed \xB7 Result attached \xB7 Run again");
+    button.replaceChildren(warningIcon("ui-icon ui-icon-sm"));
+  } else {
+    button.setAttribute("aria-label", "Run command");
+    button.setAttribute("data-tooltip", "Run in background and attach result");
+    button.replaceChildren(playIcon("ui-icon ui-icon-sm"));
+  }
+}
+function bindCodeBlockRunRequests(root, handler) {
+  const listener = (event) => {
+    if (!(event instanceof CustomEvent) || !isRecord(event.detail)) return;
+    const id = event.detail["id"];
+    const command = event.detail["command"];
+    if (typeof id !== "string" || typeof command !== "string") return;
+    handler({ id, command });
+  };
+  root.addEventListener(CODE_BLOCK_RUN_REQUEST_EVENT, listener);
+  return () => {
+    root.removeEventListener(CODE_BLOCK_RUN_REQUEST_EVENT, listener);
+  };
+}
+function setCodeBlockRunOutcome(root, requestId, exitCode) {
+  const buttons = root.querySelectorAll(".code-block-run");
+  for (const button of buttons) {
+    if (button.dataset["runId"] !== requestId) continue;
+    setRunButtonState(button, exitCode === 0 ? "succeeded" : "failed");
+    return;
+  }
+}
+function attachCodeBlockCopyButtons(root, options = {}) {
+  const blocks = root.querySelectorAll("pre:not(.mermaid)");
   for (const node2 of blocks) {
     if (!(node2 instanceof HTMLElement)) continue;
     const pre = node2;
     if (pre.closest(".mermaid-diagram")) continue;
     const code = pre.querySelector("code");
     if (!code) continue;
-    const parent = pre.parentNode;
-    if (!parent) continue;
-    pre.dataset["copyAttached"] = "true";
-    pre.classList.add("code-block");
-    const shell3 = el("div", { class: "code-block-shell" });
-    parent.insertBefore(shell3, pre);
-    shell3.append(pre);
-    const copyBtn = el(
-      "button",
-      { class: "code-block-copy", "aria-label": "Copy code" },
-      COPY_LABEL
-    );
-    copyBtn.addEventListener("click", (event) => {
+    let shell3 = pre.parentElement?.classList.contains("code-block-shell") ? pre.parentElement : null;
+    if (!shell3) {
+      const parent = pre.parentNode;
+      if (!parent) continue;
+      pre.dataset["copyAttached"] = "true";
+      pre.classList.add("code-block");
+      shell3 = el("div", { class: "code-block-shell" });
+      parent.insertBefore(shell3, pre);
+      shell3.append(pre);
+      const actions2 = el("div", { class: "code-block-actions" });
+      const copyBtn = el(
+        "button",
+        { class: "code-block-copy", "aria-label": "Copy code" },
+        COPY_LABEL
+      );
+      copyBtn.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const currentCode = pre.querySelector("code");
+        if (!currentCode) return;
+        void navigator.clipboard.writeText(copyButtonText(currentCode)).then(() => {
+          copyBtn.textContent = COPIED_LABEL;
+          setTimeout(() => {
+            copyBtn.textContent = COPY_LABEL;
+          }, FEEDBACK_MS);
+        });
+      });
+      actions2.append(copyBtn);
+      shell3.prepend(actions2);
+    }
+    if (!options.runCommands || !isRunnableCodeBlock(code)) continue;
+    const actions = shell3.querySelector(".code-block-actions");
+    if (!actions || actions.querySelector(".code-block-run")) continue;
+    const runBtn = el("button", { class: "code-block-run", type: "button" });
+    setRunButtonState(runBtn, "idle");
+    runBtn.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
-      void navigator.clipboard.writeText(copyButtonText(code)).then(() => {
-        copyBtn.textContent = COPIED_LABEL;
-        setTimeout(() => {
-          copyBtn.textContent = COPY_LABEL;
-        }, FEEDBACK_MS);
-      });
+      const currentCode = pre.querySelector("code");
+      if (!currentCode) return;
+      const command = copyButtonText(currentCode).trim();
+      if (!command) return;
+      const id = crypto.randomUUID();
+      runBtn.dataset["runId"] = id;
+      setRunButtonState(runBtn, "running");
+      runBtn.dispatchEvent(
+        new CustomEvent(CODE_BLOCK_RUN_REQUEST_EVENT, {
+          bubbles: true,
+          detail: { id, command }
+        })
+      );
     });
-    shell3.prepend(copyBtn);
+    actions.prepend(runBtn);
   }
 }
-var COPY_LABEL, COPIED_LABEL, FEEDBACK_MS;
+var COPY_LABEL, COPIED_LABEL, FEEDBACK_MS, CODE_BLOCK_RUN_REQUEST_EVENT, SHELL_LANGUAGES, COMMON_SHELL_COMMANDS;
 var init_code_block_copy = __esm({
   "src/renderer/markdown/code-block-copy.ts"() {
+    init_unknown_value3();
     init_helpers();
+    init_icons();
     COPY_LABEL = "Copy";
     COPIED_LABEL = "Copied";
     FEEDBACK_MS = 1200;
+    CODE_BLOCK_RUN_REQUEST_EVENT = "copse:code-block-run-request";
+    SHELL_LANGUAGES = /* @__PURE__ */ new Set([
+      "bash",
+      "bat",
+      "cmd",
+      "console",
+      "fish",
+      "powershell",
+      "pwsh",
+      "sh",
+      "shell",
+      "terminal",
+      "zsh"
+    ]);
+    COMMON_SHELL_COMMANDS = /* @__PURE__ */ new Set([
+      "adb",
+      "bash",
+      "bun",
+      "bundle",
+      "cargo",
+      "cat",
+      "cd",
+      "cmake",
+      "corepack",
+      "curl",
+      "deno",
+      "docker",
+      "electron",
+      "eslint",
+      "gh",
+      "git",
+      "go",
+      "gradle",
+      "java",
+      "make",
+      "mvn",
+      "node",
+      "npm",
+      "npx",
+      "pnpm",
+      "podman",
+      "powershell",
+      "pwsh",
+      "pytest",
+      "python",
+      "python3",
+      "rg",
+      "ruby",
+      "sh",
+      "swift",
+      "terraform",
+      "tofu",
+      "tsc",
+      "uv",
+      "vite",
+      "vitest",
+      "wdio",
+      "xcodebuild",
+      "yarn",
+      "zsh"
+    ]);
   }
 });
 
@@ -73822,14 +73997,14 @@ function setAssistantMarkdown(el3, content, streaming, api2) {
       streamingRenderers.set(el3, renderer);
     }
     renderer.update(display);
-    attachCodeBlockCopyButtons(el3);
+    attachCodeBlockCopyButtons(el3, { runCommands: true });
     syncAcpTransportNoiseDisclosure(el3, transportNoise);
     return;
   }
   el3.classList.remove("is-streaming");
   streamingRenderers.delete(el3);
   el3.innerHTML = renderMarkdown(display);
-  attachCodeBlockCopyButtons(el3);
+  attachCodeBlockCopyButtons(el3, { runCommands: true });
   attachTableCopyButtons(el3);
   void annotateFileReferences(el3, api2);
   hydrateRemoteArtifactImages(el3, api2);
@@ -74915,6 +75090,14 @@ function mountConversation(root, store2, api2) {
   });
   const queuedHost = el("div", { class: "conversation-queued", hidden: true });
   root.append(scrollArea, queuedHost);
+  const unbindCodeBlockRuns = bindCodeBlockRunRequests(list, ({ id, command }) => {
+    const { activeProjectId: projectId, activeThreadId: threadId } = store2.getState();
+    if (!projectId || !threadId) {
+      setCodeBlockRunOutcome(list, id, null);
+      return;
+    }
+    store2.emit("code_block_run_requested", { id, command, projectId, threadId });
+  });
   list.addEventListener("click", (e3) => {
     const statsBtn = e3.target instanceof Element ? e3.target.closest(".tool-edit-stats") : null;
     const path = statsBtn?.dataset["editPath"];
@@ -75967,6 +76150,9 @@ function mountConversation(root, store2, api2) {
     } else restoreReadingAnchor(readingAnchor, prevScrollTop);
   }
   const unsubs = [
+    store2.on("code_block_run_finished", (result) => {
+      setCodeBlockRunOutcome(list, result.id, result.exitCode);
+    }),
     store2.on("message_added", (tid, mid) => {
       appendMessageEl(tid, mid);
     }),
@@ -76151,6 +76337,7 @@ function mountConversation(root, store2, api2) {
     unbindFileLinks();
     unbindWorkspaceLinks();
     unbindBrowserLinks();
+    unbindCodeBlockRuns();
     unsubs.forEach((u2) => {
       u2();
     });
@@ -91553,6 +91740,16 @@ ${description}
     snapshot.archives.push({ ...ref });
     draftAttachmentsByThread.set(threadId, snapshot);
   }
+  function placeStoredShell(threadId, ref) {
+    if (activeComposerThreadId === threadId) {
+      addShellChip(ref);
+      return;
+    }
+    const snapshot = draftAttachmentsByThread.get(threadId) ?? emptyDraftAttachments();
+    if (snapshot.shells.some((shell3) => shell3.tabId === ref.tabId)) return;
+    snapshot.shells.push({ ...ref });
+    draftAttachmentsByThread.set(threadId, snapshot);
+  }
   function syncComposerThread() {
     const id = getActiveThreadId();
     if (id === activeComposerThreadId) return;
@@ -92501,6 +92698,16 @@ ${description}
       skillPicker.refresh();
       refreshSkillsCache();
       scheduleContextEstimate(0);
+    }),
+    store2.on("code_block_run_finished", (result) => {
+      const active2 = result.threadId === activeComposerThreadId;
+      placeStoredShell(result.threadId, result.shell);
+      if (!active2) return;
+      targetSelect.value = "thread";
+      showToast(
+        result.exitCode === 0 ? "Command finished \u2014 result attached." : `Command ${result.exitCode === null ? "could not start" : `exited with code ${String(result.exitCode)}`} \u2014 result attached.`,
+        result.exitCode === 0 ? void 0 : { variant: "error" }
+      );
     }),
     store2.on("new_thread_opened", () => {
       void api2.agent.refreshModelContext().finally(() => {
@@ -102807,9 +103014,11 @@ function mountTerminalsPane(listRoot, viewerRoot, store2, api2) {
   const unsubExit = api2.terminal.onExit((id, code) => {
     const tab = [...tabs.values()].find((t2) => t2.sessionId === id);
     if (!tab) return;
-    tab.term.writeln(`\r
-\x1B[90m[Process exited with code ${String(code)}]\x1B[0m`);
     tab.sessionId = null;
+    tab.term.writeln(`\r
+\x1B[90m[Process exited with code ${String(code)}]\x1B[0m`, () => {
+      finishCodeBlockRun(tab, code);
+    });
   });
   function createXterm() {
     const term = new Dl({
@@ -102830,6 +103039,30 @@ function mountTerminalsPane(listRoot, viewerRoot, store2, api2) {
   }
   function readTerminalText(tab, maxLines = READ_TERMINAL_DEFAULT_LINES) {
     return readXtermScrollback(tab.term, maxLines);
+  }
+  function finishCodeBlockRun(tab, exitCode) {
+    const request = tab.codeBlockRun;
+    if (!request) return;
+    tab.codeBlockRun = null;
+    const output2 = readTerminalText(tab);
+    const exitLabel = exitCode === null ? "unavailable" : String(exitCode);
+    const content = [
+      `Command:
+${request.command}`,
+      `Exit code: ${exitLabel}`,
+      output2 ? `Terminal output:
+${output2}` : "Terminal output: (none)"
+    ].join("\n\n");
+    store2.emit("code_block_run_finished", {
+      id: request.id,
+      threadId: request.threadId,
+      exitCode,
+      shell: {
+        tabId: tab.id,
+        label: `${tab.label} \xB7 exit ${exitLabel}`,
+        content
+      }
+    });
   }
   function publishMeta(tab) {
     if (!tab.sessionId) return;
@@ -102926,13 +103159,17 @@ function mountTerminalsPane(listRoot, viewerRoot, store2, api2) {
   async function ensureSession(tab) {
     if (tab.sessionId || tab.creating) return;
     if (!store2.getState().workspaceRoot || !tab.scopeProjectId) {
-      tab.term.writeln("\x1B[90mOpen a folder to use the terminal.\x1B[0m");
+      tab.term.writeln("\x1B[90mOpen a folder to use the terminal.\x1B[0m", () => {
+        finishCodeBlockRun(tab, null);
+      });
       return;
     }
     tab.creating = true;
     try {
-      openTerminalSurface(tab);
-      fitTab(tab);
+      if (!tab.codeBlockRun) {
+        openTerminalSurface(tab);
+        fitTab(tab);
+      }
       const created = await createTerminalAfterPersist(
         api2.terminal.create.bind(api2.terminal),
         tab.term.cols,
@@ -102955,7 +103192,10 @@ function mountTerminalsPane(listRoot, viewerRoot, store2, api2) {
     } catch (err2) {
       console.error("[terminals] could not start a shell:", err2);
       tab.term.writeln(
-        `\x1B[31mFailed to start terminal: ${terminalStartFailureMessage(err2)}\x1B[0m`
+        `\x1B[31mFailed to start terminal: ${terminalStartFailureMessage(err2)}\x1B[0m`,
+        () => {
+          finishCodeBlockRun(tab, null);
+        }
       );
     } finally {
       tab.creating = false;
@@ -103036,7 +103276,7 @@ function mountTerminalsPane(listRoot, viewerRoot, store2, api2) {
   function addTab(options) {
     tabCounter += 1;
     const id = crypto.randomUUID();
-    const label = `Terminal ${String(tabCounter)}`;
+    const label = options?.label ?? `Terminal ${String(tabCounter)}`;
     const closeBtn = el(
       "span",
       {
@@ -103096,6 +103336,7 @@ function mountTerminalsPane(listRoot, viewerRoot, store2, api2) {
       // Seed the command so it runs as soon as the PTY spawns; `ensureSession`
       // flushes pending input right after create.
       pendingInput: options?.initialInput ? [options.initialInput] : [],
+      codeBlockRun: options?.codeBlockRun ?? null,
       termOpened: false,
       commandRan: false,
       autoNamed: false,
@@ -103157,6 +103398,7 @@ function mountTerminalsPane(listRoot, viewerRoot, store2, api2) {
     if (tab.nameTimer != null) clearTimeout(tab.nameTimer);
     tab.fileLinks.dispose();
     await destroySession(tab);
+    finishCodeBlockRun(tab, null);
     tab.term.dispose();
     tab.tabBtn.remove();
     tab.panel.remove();
@@ -103241,6 +103483,23 @@ function mountTerminalsPane(listRoot, viewerRoot, store2, api2) {
       store2.emit("right_panel_mode_changed");
     }
   }
+  function runCodeBlockInBackground(request) {
+    const command = request.command.trim();
+    if (!command) return;
+    const oneLine = command.split(/\s+/).join(" ");
+    const summary = oneLine.length > 48 ? `${oneLine.slice(0, 47)}\u2026` : oneLine;
+    const initialInput = `${command.replace(/\r\n?|\n/g, "\r")}\rexit\r`;
+    const tabId = addTab({
+      activate: false,
+      initialInput,
+      label: `Run \xB7 ${summary}`,
+      codeBlockRun: request,
+      scopeProjectId: request.projectId,
+      scopeId: request.threadId
+    });
+    const tab = tabs.get(tabId);
+    if (tab) void ensureSession(tab);
+  }
   onTerminalModeChange();
   function onAgentTaskSelected(taskId) {
     for (const tab of tabs.values()) {
@@ -103291,7 +103550,8 @@ function mountTerminalsPane(listRoot, viewerRoot, store2, api2) {
     store2.on("threads_changed", onThreadMaybeChanged),
     store2.on("thread_checkout_changed", onThreadCheckoutChanged),
     store2.on("workspace_changed", onThreadMaybeChanged),
-    store2.on("request_terminal_command", runCommandInNewShell)
+    store2.on("request_terminal_command", runCommandInNewShell),
+    store2.on("code_block_run_requested", runCodeBlockInBackground)
   ];
   const unregisterCatalog = registerShellCatalog(
     () => [...tabs.values()].map((tab) => ({
