@@ -14032,6 +14032,26 @@ dialog.process-manager-overlay {
 .roadmap-review-badge.is-open {
   color: var(--text-muted);
 }
+.roadmap-review-btn-live {
+  position: relative;
+  color: var(--accent-fill, var(--text-primary));
+}
+.roadmap-review-live-badge {
+  position: absolute;
+  top: -4px;
+  right: -6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 7px;
+  background: var(--accent-fill);
+  color: var(--text-on-accent);
+  font-size: 9px;
+  line-height: 1;
+}
 .roadmap-review-result {
   font-size: var(--font-size-sm);
   color: var(--text-secondary);

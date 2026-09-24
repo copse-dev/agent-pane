@@ -107966,11 +107966,13 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
   let importing = false;
   let reviewing = false;
   let reviewPeekId = null;
+  let reviewPanelHidden = false;
   let reviewResults = [];
   const reviewApplied = /* @__PURE__ */ new Map();
   let bulkReviewFinished = false;
   let reviewInFlight = false;
   let bulkRunId = null;
+  let reviewTotal = 0;
   let reviewRunToken = 0;
   let cachedCheckpoint;
   let openIssues = [];
@@ -108046,6 +108048,7 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
     },
     downloadIcon("ui-icon ui-icon-sm")
   );
+  const reviewLiveBadge = el("span", { class: "roadmap-review-live-badge", hidden: true });
   const reviewBtn = el(
     "button",
     {
@@ -108054,7 +108057,8 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
       "aria-label": "Review roadmap resolution",
       "data-tooltip": "Review whether roadmap items have been resolved"
     },
-    searchIcon("ui-icon ui-icon-sm")
+    searchIcon("ui-icon ui-icon-sm"),
+    reviewLiveBadge
   );
   const refreshBtn = el(
     "button",
@@ -108569,7 +108573,7 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
   }
   function syncViewerMode() {
     importView.hidden = !importing;
-    const reviewPanelActive = reviewing && !reviewPeekId;
+    const reviewPanelActive = reviewing && !reviewPeekId && !reviewPanelHidden;
     reviewView.hidden = !reviewPanelActive;
     if (importing || reviewPanelActive) {
       form.hidden = true;
@@ -108579,7 +108583,7 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
   function renderEditor(opts) {
     errorLine.hidden = true;
     syncViewerMode();
-    if (importing || reviewing && !reviewPeekId) {
+    if (importing || reviewing && !reviewPeekId && !reviewPanelHidden) {
       return;
     }
     const item = selectedId ? items.find((m2) => m2.id === selectedId) : null;
@@ -108901,7 +108905,7 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
         );
         row2.append(main);
         row2.addEventListener("click", () => {
-          if (reviewing || importing) return;
+          if (reviewing && !reviewPanelHidden || importing) return;
           if (item.id === selectedId) return;
           leaveCurrentEditor();
           cancelResolutionCheckUi();
@@ -108942,12 +108946,13 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
     if (token !== loadToken) return;
     loading = false;
     items = next;
-    if (!reviewing && !importing && selectedId && !items.some((m2) => m2.id === selectedId) && !creating) {
+    if (!(reviewing && !reviewPanelHidden) && !importing && selectedId && !items.some((m2) => m2.id === selectedId) && !creating) {
       selectedId = null;
     }
     renderList();
     if (reviewing) renderReviewResults();
     renderEditor(opts);
+    void rediscoverPendingReview();
   }
   function startNew() {
     leaveCurrentEditor();
@@ -109284,8 +109289,11 @@ Notes: ${notes}` : prompt;
   }
   function startImport() {
     cancelResolutionCheckUi();
+    if (reviewing) {
+      reviewPanelHidden = true;
+      reviewPeekId = null;
+    }
     importing = true;
-    reviewing = false;
     creating = false;
     selectedId = null;
     openIssues = [];
@@ -109300,6 +109308,7 @@ Notes: ${notes}` : prompt;
     importStatus.textContent = "Loading open issues\u2026";
     renderList();
     renderEditor();
+    syncReviewButtonAffordance();
     void loadMoreOpenIssues(matchToken);
   }
   async function confirmImport() {
@@ -109374,6 +109383,73 @@ Notes: ${notes}` : prompt;
       reviewMarkResolvedBtn.hidden = true;
       reviewArchiveResolvedBtn.hidden = true;
     }
+  }
+  function syncReviewButtonAffordance() {
+    const hiddenAway = reviewing && reviewPanelHidden;
+    reviewBtn.classList.toggle("roadmap-review-btn-live", hiddenAway);
+    reviewBtn.disabled = reviewInFlight && !hiddenAway;
+    if (hiddenAway) {
+      const label = reviewInFlight ? `Review running \u2014 ${String(reviewResults.length)} of ${String(reviewTotal)} judged` : `Review finished \u2014 ${String(reviewResults.length)} item(s) judged`;
+      const full = `${label}. Click to view.`;
+      reviewBtn.setAttribute("aria-label", full);
+      reviewBtn.setAttribute("data-tooltip", full);
+      reviewLiveBadge.hidden = false;
+      reviewLiveBadge.textContent = reviewInFlight ? `${String(reviewResults.length)}/${String(reviewTotal)}` : String(reviewResults.length);
+    } else {
+      reviewBtn.setAttribute("aria-label", "Review roadmap resolution");
+      reviewBtn.setAttribute("data-tooltip", "Review whether roadmap items have been resolved");
+      reviewLiveBadge.hidden = true;
+      reviewLiveBadge.textContent = "";
+    }
+  }
+  function resumeReviewPanel() {
+    importing = false;
+    reviewPanelHidden = false;
+    reviewPeekId = null;
+    selectedId = null;
+    creating = false;
+    renderList();
+    renderEditor();
+    renderReviewResults();
+    syncReviewActionVisibility();
+    syncReviewButtonAffordance();
+  }
+  function reconstructReviewResults(runId) {
+    const results = [];
+    for (const item of items) {
+      if (item.fields["reviewBulkRun"] !== runId) continue;
+      const verdict = item.fields["reviewVerdict"];
+      if (!isRoadmapReviewVerdict(verdict)) continue;
+      results.push({
+        id: item.id,
+        verdict,
+        detail: item.fields["reviewDetail"] ?? "",
+        depth: "bulk",
+        pinnedIssue: null,
+        linkedIssues: []
+      });
+    }
+    return results;
+  }
+  async function rediscoverPendingReview() {
+    if (reviewing || reviewInFlight || bulkRunId !== null) return;
+    const tokenBefore = reviewRunToken;
+    const checkpoint = await ensureCheckpoint();
+    const runId = checkpoint.pendingBulkRun;
+    if (!runId) return;
+    const results = reconstructReviewResults(runId);
+    if (results.length === 0) return;
+    if (reviewRunToken !== tokenBefore) return;
+    bulkRunId = runId;
+    reviewResults = results;
+    reviewApplied.clear();
+    bulkReviewFinished = false;
+    reviewInFlight = false;
+    reviewTotal = results.length;
+    reviewing = true;
+    reviewPanelHidden = true;
+    reviewStatus.textContent = `Recovered ${String(results.length)} item(s) judged in an unfinished review. View the results or close to discard.`;
+    syncReviewButtonAffordance();
   }
   function renderReviewResults() {
     clear(reviewList);
@@ -109478,6 +109554,7 @@ Notes: ${notes}` : prompt;
     renderList();
     renderEditor();
     if (reviewing) renderReviewResults();
+    syncReviewButtonAffordance();
   }
   async function applyReviewBulkStatus(status) {
     const label = status === "done" ? "mark done" : "archive";
@@ -109510,9 +109587,11 @@ Notes: ${notes}` : prompt;
     const runToken = ++reviewRunToken;
     reviewing = true;
     reviewPeekId = null;
+    reviewPanelHidden = false;
     bulkReviewFinished = false;
     reviewInFlight = false;
     bulkRunId = null;
+    reviewTotal = 0;
     importing = false;
     creating = false;
     selectedId = null;
@@ -109520,9 +109599,9 @@ Notes: ${notes}` : prompt;
     reviewApplied.clear();
     clear(reviewList);
     reviewStatus.textContent = "Preparing review\u2026";
-    reviewBtn.disabled = true;
     reviewInFlight = true;
     syncReviewActionVisibility();
+    syncReviewButtonAffordance();
     renderList();
     renderEditor();
     try {
@@ -109532,6 +109611,7 @@ Notes: ${notes}` : prompt;
         return;
       }
       bulkRunId = prepared.runId;
+      reviewTotal = prepared.items.length;
       if (prepared.items.length === 0) {
         reviewStatus.textContent = "No active roadmap items to review.";
         return;
@@ -109544,6 +109624,7 @@ Notes: ${notes}` : prompt;
         if (runToken !== reviewRunToken) return;
         reviewResults.push(result);
         renderReviewResults();
+        syncReviewButtonAffordance();
         await refresh({ preserveDirty: true });
       }
       bulkReviewFinished = true;
@@ -109555,8 +109636,9 @@ Notes: ${notes}` : prompt;
       reviewStatus.textContent = ipcErrorMessage(err2, "Roadmap review failed.");
     } finally {
       reviewInFlight = false;
-      reviewBtn.disabled = false;
       syncReviewActionVisibility();
+      renderReviewResults();
+      syncReviewButtonAffordance();
     }
   }
   function closeReview() {
@@ -109572,13 +109654,43 @@ Notes: ${notes}` : prompt;
       });
     }
     reviewing = false;
+    reviewPanelHidden = false;
     bulkReviewFinished = false;
     reviewInFlight = false;
     bulkRunId = null;
+    reviewTotal = 0;
     renderEditor();
+    syncReviewButtonAffordance();
+  }
+  function abandonReviewSession() {
+    if (!reviewing && !reviewInFlight && bulkRunId === null) return;
+    reviewRunToken++;
+    const runId = bulkRunId;
+    bulkRunId = null;
+    if (runId) {
+      void api2.roadmap.abortReview(runId).then(() => {
+        cachedCheckpoint = void 0;
+      });
+    }
+    reviewing = false;
+    reviewPanelHidden = false;
+    reviewInFlight = false;
+    bulkReviewFinished = false;
+    reviewPeekId = null;
+    reviewResults = [];
+    reviewApplied.clear();
+    reviewTotal = 0;
+    syncReviewActionVisibility();
+    syncReviewButtonAffordance();
   }
   importBtn.addEventListener("click", startImport);
-  reviewBtn.addEventListener("click", () => void startReview2());
+  reviewBtn.addEventListener("click", () => {
+    if (reviewing && reviewPanelHidden) {
+      resumeReviewPanel();
+      return;
+    }
+    void startReview2();
+  });
   reviewBackBtn.addEventListener("click", () => {
     returnToReview();
   });
@@ -109674,15 +109786,16 @@ Notes: ${notes}` : prompt;
       loadToken++;
       loading = false;
       cancelResolutionCheckUi();
+      abandonReviewSession();
       selectedId = null;
       creating = false;
       importing = false;
-      reviewing = false;
       items = [];
       editorDrafts.clear();
       autoSaveToken.clear();
       resetAttachmentEdits();
       attachmentDataCache.clear();
+      cachedCheckpoint = void 0;
       renderList();
       renderEditor();
       if (roadmapModeActive(store2)) void refresh();
