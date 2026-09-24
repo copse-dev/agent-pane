@@ -366,6 +366,10 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // boolean is retired — the plugin toggle is the master switch.
   /** When false, hide read_terminal and @shell (on by default). */
   readTerminalEnabled: z.boolean(),
+  // Interactive terminal PTYs opened for the same project share one HISTFILE
+  // (fish: one `fish_history` session name) so up-arrow history from one
+  // thread's Shells tab is recallable in another's (#2433). On by default.
+  shareTerminalHistoryEnabled: z.boolean(),
   developerMode: z.boolean(),
   // The DevTools shortcut moved to the `copse.devtools-shortcut` first-party
   // plugin's `devtools-shortcut` capability (Settings > Plugins), so the former

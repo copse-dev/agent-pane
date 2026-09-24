@@ -81,6 +81,10 @@ import {
 import { stringRecordOrEmpty } from '@shared/unknown-value.ts'
 import { DEVELOPER_MODE_SETTING } from '@shared/developer-mode.ts'
 import {
+  SHARE_TERMINAL_HISTORY_ENABLED_DEFAULT,
+  SHARE_TERMINAL_HISTORY_ENABLED_SETTING,
+} from '@shared/terminal/terminal-history.ts'
+import {
   DEFAULT_ACCENT_COLOR,
   DEFAULT_TINT_COLOR,
   DEFAULT_TINT_STRENGTH,
@@ -296,6 +300,14 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'vncEnabled', kind: 'checkbox', default: false, save: true },
   // On by default: agent may read open Shells tabs via read_terminal / @shell.
   { name: 'readTerminalEnabled', kind: 'checkbox', default: true, save: true },
+  // On by default: every terminal opened for a project shares one HISTFILE, so
+  // up-arrow history from one thread's Shells tab is recallable in another's.
+  {
+    name: SHARE_TERMINAL_HISTORY_ENABLED_SETTING,
+    kind: 'checkbox',
+    default: SHARE_TERMINAL_HISTORY_ENABLED_DEFAULT,
+    save: true,
+  },
   // On by default: clicked links open in the in-app browser pane. Off routes
   // external links to the system browser and marks them with an external icon.
   { name: 'openLinksInBuiltInBrowser', kind: 'checkbox', default: true, save: true },
@@ -929,6 +941,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 When on (the default), the agent can read a Shells tab open in this chat, and you
                 can add one to a message with <code>@shell</code>. Turn off to keep your terminals
                 private.
+              </p>
+              <label class="checkbox-label">
+                <input type="checkbox" name="shareTerminalHistoryEnabled" />
+                Share command history across the project
+              </label>
+              <p class="field-hint">
+                When on (the default), Bash and Zsh terminals in this project use the same history
+                file, so a command from one thread can be recalled in another. Fish keeps its normal
+                shell-managed history. Turn off to keep each terminal's history separate.
               </p>
               <label class="checkbox-label">
                 <input type="checkbox" name="webAllowUserApproval" />

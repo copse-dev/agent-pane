@@ -23,9 +23,13 @@ export function e2eGitBranch(): string {
 /**
  * Interactive shell the app spawns for Shells tabs under e2e. Runs bash with no
  * rc files and a fixed `$ ` prompt (see the script), so a terminal capture shows
- * the same prompt on every runner. Set in `wdio.conf.ts` `beforeSession`.
+ * the same prompt on every runner. Set in `wdio.conf.ts` `beforeSession`. Named
+ * with `bash` in it (not just `e2e-shell.sh`) because `terminalHistoryEnv`
+ * (terminal-service.ts, #2433) detects bash by `basename($SHELL).includes('bash')`
+ * — this wrapper execs real bash, so it needs to look like bash by that same
+ * name-based check, the same way a real `bash5` or `bash-static` binary would.
  */
-export const E2E_SHELL = join(process.cwd(), 'tests/e2e/fixtures/e2e-shell.sh')
+export const E2E_SHELL = join(process.cwd(), 'tests/e2e/fixtures/e2e-bash-shell.sh')
 
 /** Patch electron-shell env before `browser.reloadSession()` (see bootstrap.cjs). */
 export function writeE2eEnv(overrides: Record<string, string | undefined>): void {
