@@ -1,0 +1,33 @@
+{
+  "id": "workspace-switch-inflight",
+  "description": "The older load resolves last and assigns rows without checking whether its workspace is still current.",
+  "truth": [
+    {
+      "id": "workspace-switch-inflight",
+      "class": "concurrency",
+      "anchors": [
+        {
+          "path": "src/state.cjs",
+          "startLine": 5,
+          "endLine": 5
+        }
+      ],
+      "claimSignals": [
+        [
+          "workspace"
+        ],
+        [
+          "old",
+          "stale",
+          "previous"
+        ],
+        [
+          "overwrite",
+          "replace",
+          "assign"
+        ]
+      ],
+      "note": "The older load resolves last and assigns rows without checking whether its workspace is still current."
+    }
+  ]
+}

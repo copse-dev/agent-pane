@@ -1,0 +1,7 @@
+{
+  "name": "filter-refresh-clean",
+  "private": true,
+  "scripts": {
+    "test": "node test.cjs"
+  }
+}

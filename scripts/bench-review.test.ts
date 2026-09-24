@@ -113,16 +113,26 @@ describe('bench:review over the committed corpus', () => {
       ],
       [1, 1],
     )
-    assert.equal(summary.metrics.cases, 7)
-    assert.equal(summary.metrics.surfaced, 7)
-    assert.equal(summary.metrics.truePositives, 6)
+    for (const id of [
+      'filter-refresh',
+      'resize-without-scroll',
+      'workspace-switch-inflight',
+      'dispose-inflight',
+      'shortcut-autorepeat',
+    ]) {
+      assert.equal(byId.get(id)?.confirmedByReproducer, 1, id)
+      assert.equal(byId.get(`${id}-clean`)?.surfaced, 0, `${id}-clean`)
+    }
+    assert.equal(summary.metrics.cases, 17)
+    assert.equal(summary.metrics.surfaced, 12)
+    assert.equal(summary.metrics.truePositives, 11)
     assert.equal(summary.metrics.duplicates, 0)
-    assert.equal(summary.metrics.precision, 0.857)
+    assert.equal(summary.metrics.precision, 0.917)
     assert.ok((summary.metrics.precisionLowerBound95 ?? 1) < 0.85)
     assert.equal(summary.metrics.recall, 1)
-    assert.equal(summary.metrics.confirmed, 3)
-    assert.equal(summary.metrics.confirmedByReproducer, 2)
-    assert.equal(summary.metrics.reproducerRate, 0.286)
+    assert.equal(summary.metrics.confirmed, 8)
+    assert.equal(summary.metrics.confirmedByReproducer, 7)
+    assert.equal(summary.metrics.reproducerRate, 0.583)
     assert.ok(summary.metrics.outputTokens > 0)
     assert.equal(summary.configuration.reviewerMaxSteps, null)
     assert.equal(summary.configuration.maxVerifiedFindings, 10)
@@ -150,7 +160,7 @@ describe('bench:review over the committed corpus', () => {
     }
     const failures = gateFailures(worse, baselines)
     assert.equal(failures.length, 3, failures.join('; '))
-    assert.match(failures[0] ?? '', /precision 60% < baseline 85\.7%/)
+    assert.match(failures[0] ?? '', /precision 60% < baseline 91\.7%/)
     assert.match(gateFailures(summary, {})[0] ?? '', /no baseline for configuration/)
   })
 
@@ -286,7 +296,7 @@ describe('bench:review over the committed corpus', () => {
       }),
     )
     const table = compareSummaries(a, b)
-    assert.match(table, /precision\s+85\.7%\s+50%/)
+    assert.match(table, /precision\s+91\.7%\s+50%/)
     assert.match(table, /verify\s+true\s+false/)
   })
 

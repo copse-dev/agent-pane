@@ -1,0 +1,118 @@
+{
+  "roles": {
+    "review:correctness": [
+      {
+        "type": "tool_call",
+        "name": "read_file",
+        "args": {
+          "path": "src/state.cjs"
+        }
+      },
+      {
+        "type": "tool_call",
+        "name": "report_finding",
+        "args": {
+          "path": "src/state.cjs",
+          "startLine": 5,
+          "class": "concurrency",
+          "severity": "medium",
+          "confidence": "high",
+          "claim": "An old workspace request can overwrite rows after switching to a new workspace.",
+          "reason": "The older load resolves last and assigns rows without checking whether its workspace is still current."
+        }
+      },
+      {
+        "type": "tool_call",
+        "name": "finish_review",
+        "args": {
+          "checked": "The changed state handler and its lifecycle transitions.",
+          "couldNotVerify": "Nothing"
+        }
+      },
+      {
+        "type": "text",
+        "text": "Done."
+      }
+    ],
+    "review:contracts": [
+      {
+        "type": "tool_call",
+        "name": "finish_review",
+        "args": {
+          "checked": "The changed state handler and its lifecycle transitions.",
+          "couldNotVerify": "Nothing"
+        }
+      },
+      {
+        "type": "text",
+        "text": "Done."
+      }
+    ],
+    "review:transitions": [
+      {
+        "type": "tool_call",
+        "name": "read_file",
+        "args": {
+          "path": "src/state.cjs"
+        }
+      },
+      {
+        "type": "tool_call",
+        "name": "report_finding",
+        "args": {
+          "path": "src/state.cjs",
+          "startLine": 5,
+          "class": "concurrency",
+          "severity": "medium",
+          "confidence": "high",
+          "claim": "An old workspace request can overwrite rows after switching to a new workspace.",
+          "reason": "The older load resolves last and assigns rows without checking whether its workspace is still current."
+        }
+      },
+      {
+        "type": "tool_call",
+        "name": "finish_review",
+        "args": {
+          "checked": "The changed state handler and its lifecycle transitions.",
+          "couldNotVerify": "Nothing"
+        }
+      },
+      {
+        "type": "text",
+        "text": "Done."
+      }
+    ],
+    "reproduce": [
+      {
+        "type": "tool_call",
+        "name": "write_reproducer",
+        "args": {
+          "path": ".copse-review/transition.repro.cjs",
+          "content": "const assert = require('node:assert/strict')\nconst { create } = require('../src/state.cjs')\n;(async () => { const view=create(); let finish; const old=view.open(()=>new Promise(resolve=>{finish=resolve})); await view.open(async()=>['new workspace']); finish(['old workspace']); await old; assert.deepEqual(view.rows(), ['new workspace']) })().catch(error => { console.error(error); process.exitCode = 1 })\n",
+          "argv": [
+            "node",
+            ".copse-review/transition.repro.cjs"
+          ]
+        }
+      },
+      {
+        "type": "text",
+        "text": "Done."
+      }
+    ],
+    "challenge": [
+      {
+        "type": "tool_call",
+        "name": "verdict",
+        "args": {
+          "status": "stands",
+          "reason": "The older load resolves last and assigns rows without checking whether its workspace is still current."
+        }
+      },
+      {
+        "type": "text",
+        "text": "Done."
+      }
+    ]
+  }
+}

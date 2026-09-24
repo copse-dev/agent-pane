@@ -1,0 +1,7 @@
+{
+  "name": "workspace-switch-inflight-clean",
+  "private": true,
+  "scripts": {
+    "test": "node test.cjs"
+  }
+}

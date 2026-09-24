@@ -76,11 +76,64 @@ least 50% recall, and zero duplicate comments. The confidence requirement means 
 perfect sample is not enough (5/5 fails; 22/22 is the first all-correct sample that passes).
 
 **What the mock number is, and is not.** The mock profile plays each case's script, so the
-85.7% it scores is a property of the corpus and the pipeline's non-model parts — Stage 0's
+91.7% it scores is a property of the corpus and the pipeline's non-model parts — Stage 0's
 delta, clustering across lenses, the verdicts, the ranking — and of nothing else. It clears
 the point target by construction; it is the harness's self-test and the per-PR regression
-gate for those parts, not a precision claim for Copse Reviewer. Nor can this seven-case
-synthetic corpus establish B8's 85% claim: its Wilson lower bound is only 48.7%, and it is a
+gate for those parts, not a precision claim for Copse Reviewer. Nor can this 17-case
+synthetic corpus establish B8's 85% claim: its Wilson lower bound is only 64.6%, and it is a
 smoke/trend suite. A public B8 claim requires an appropriately mapped run over Martian's
 offline track (or a comparably sized, independently labelled corpus); numbers from
 Martian's online track are not interchangeable.
+
+## State transitions and model experiments
+
+The audit-derived additions each have a matched `-clean` case. Ordinary fixture tests pass on
+both revisions; an independent `probe.cjs` outside the model checkout proves the transition:
+
+| Bug case                    | Transition and invariant                                                          | Source    |
+| --------------------------- | --------------------------------------------------------------------------------- | --------- |
+| `filter-refresh`            | A title filter retains its row after a refresh replaces records with placeholders | PR #3008  |
+| `resize-without-scroll`     | Resizing updates the viewBox even when scroll offsets remain unchanged            | PR #3003  |
+| `workspace-switch-inflight` | An old request cannot overwrite the newly selected workspace                      | Synthetic |
+| `dispose-inflight`          | A late response cannot repopulate a disposed view                                 | Synthetic |
+| `shortcut-autorepeat`       | Holding the shortcut performs one share action                                    | PR #2833  |
+
+These are reduced state-machine fixtures, not full Electron replays. The clean controls preserve
+the relevant guards across an export refactor. `scripts/review-transition-corpus.test.ts` executes
+all base/head smoke tests and all independent probes, checking expected failure on each buggy head
+and success on every base and clean head. The scripted reproducer separately confirms each bug
+through the normal pipeline. Probes and truth labels are never included in the model checkout.
+
+The opt-in `transitions` lens targets these event sequences. Keep the default reviewer unchanged
+until measured. First compare one model under `correctness`, `correctness,boundaries`, and
+`correctness,transitions`; add `concurrency` only as a separate controlled ablation. Keep the corpus,
+step limits, verification settings, provider route and prompt revision fixed and compare precision,
+recall, duplicates, unresolved reviews, command use and billed cost per confirmed defect. Repeat
+runs: the small synthetic corpus is a smoke suite, not an estimate of production precision.
+
+As of 2026-09-24, the first model experiment should be **GPT-6 Luna**, with **GPT-6 Sol** as the
+quality comparison, before spending on Astra. Artificial Analysis v4.3.2 currently reports
+Intelligence Index scores of [37 for Luna (max)](https://artificialanalysis.ai/models/gpt-6-luna),
+[48 for Sol (max)](https://artificialanalysis.ai/models/gpt-6-sol) and
+[34 for Qwen3.8 27B (xhigh)](https://artificialanalysis.ai/models/qwen3-8-27b).
+Its [coding-agent comparison](https://artificialanalysis.ai/articles/gpt-6-sol-and-luna-push-the-cost-efficiency-frontier)
+gives Sol 57 and Luna 41. This is a reason to test Luna's value, not evidence that it reviews better.
+
+OpenRouter lists [Luna](https://openrouter.ai/openai/gpt-6-luna) at $0.10/$0.50 and
+[Sol](https://openrouter.ai/openai/gpt-6-sol) at $2/$10 per million input/output tokens;
+[Scaleway Qwen](https://www.scaleway.com/en/generative-apis/) is EUR 0.60/3.30. Sol's token rates
+are higher; token use, caching and route determine actual cost per review. These rates exclude
+credit-purchase fees and taxes. AA's task costs use its own workload/provider pricing.
+
+The existing OpenRouter provider can select either model:
+
+```bash
+pnpm run bench:review --provider openrouter --model openai/gpt-6-luna --lenses correctness --max-steps 12 --max-verify 3 --out bench-results/review-luna
+pnpm run bench:review --provider openrouter --model openai/gpt-6-sol --lenses correctness --max-steps 12 --max-verify 3 --out bench-results/review-sol
+pnpm run bench:review --compare bench-results/review-luna/summary.json bench-results/review-sol/summary.json
+```
+
+These commands use the current provider defaults, not AA's max-effort harness. Verify reasoning and
+tool-call compatibility with one case before a full paid run, and record the effective effort and
+route; the benchmark CLI does not yet expose an effort override. No production model change or
+real-model quality claim is part of the corpus change.
