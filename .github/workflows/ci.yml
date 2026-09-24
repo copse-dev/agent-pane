@@ -1346,7 +1346,17 @@ jobs:
       - uses: ./.github/actions/download-artifact-retry
         with:
           name: dist-tar
-      - run: tar -xf dist.tar
+      - name: Unpack build into a clean e2e checkout
+        run: |
+          tar -xf dist.tar
+          # The downloaded archive itself is untracked. Leaving it here makes
+          # every blank shared-checkout thread stop at the dirty-worktree prompt.
+          rm dist.tar
+          if [ -n "$(git status --porcelain=v1)" ]; then
+            git status --short
+            echo "::error title=e2e checkout is dirty before tests::Remove generated files from the checkout or ignore them before starting e2e."
+            exit 1
+          fi
       # The Electron/Chromedriver e2e session occasionally fails to start on the
       # runner ("DevToolsActivePort file doesn't exist" / "POST /session" timeout).
       # The hang wedges the whole wdio run, so in-process retries don't recover —
