@@ -30,11 +30,12 @@ describe('latest user prompt anchor', () => {
       const list = document.querySelector('.messages-list')
       const first = document.querySelector('[data-message-id="msg-user-sticky-first"]')
       const latest = document.querySelector('[data-message-id="msg-user-sticky-latest"]')
+      const machine = document.querySelector('[data-message-id="msg-user-sticky-machine"]')
       const answer = document.querySelector('[data-message-id="msg-assistant-sticky-result"]')
       const composer = document.getElementById('input-bar')
       const prompt = document.querySelector('.prompt-input')
       const footer = document.querySelector('.input-footer')
-      if (!list || !first || !latest || !answer || !composer || !prompt || !footer) {
+      if (!list || !first || !latest || !machine || !answer || !composer || !prompt || !footer) {
         return { error: 'missing sticky fixture element' }
       }
 
@@ -53,6 +54,8 @@ describe('latest user prompt anchor', () => {
         latestBottom: latestRect.bottom,
         rightEdgeDelta: Math.abs(latestRect.right - answerRect.right),
         latestPosition: getComputedStyle(latest).position,
+        machinePosition: getComputedStyle(machine).position,
+        machineClassList: machine.classList.contains('msg-machine-origin'),
         stickyUserCount: userMessages.filter(
           (message) => getComputedStyle(message).position === 'sticky',
         ).length,
@@ -68,6 +71,10 @@ describe('latest user prompt anchor', () => {
     expect(layout).not.toHaveProperty('error')
     expect(layout.scrollable).toBe(true)
     expect(layout.latestPosition).toBe('sticky')
+    // A machine-originated turn never claims the anchor: it renders with its
+    // marker but stays in transcript flow so the last human prompt stays pinned.
+    expect(layout.machineClassList).toBe(true)
+    expect(layout.machinePosition).toBe('relative')
     expect(layout.stickyUserCount).toBe(1)
     expect(layout.composerBackground).toBe('rgba(0, 0, 0, 0)')
     expect(layout.promptBackground).toBe('rgba(0, 0, 0, 0)')

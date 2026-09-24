@@ -1900,6 +1900,14 @@ export function seedStickyUserPromptFixture(workspaceRoot: string): void {
         `- Validation detail ${String(index + 1)} remains visible beneath the active request.`,
     ),
   ].join('\n')
+  const machineResult = [
+    'The background continuation finished on its own.',
+    '',
+    ...Array.from(
+      { length: 8 },
+      (_, index) => `- Continuation detail ${String(index + 1)} scrolled past while it ran.`,
+    ),
+  ].join('\n')
 
   mkdirSync(USER_DATA, { recursive: true })
   writeSeedConfig({
@@ -1941,6 +1949,21 @@ export function seedStickyUserPromptFixture(workspaceRoot: string): void {
             toolCalls: [],
             createdAt: now + 3,
           },
+          {
+            id: 'msg-user-sticky-machine',
+            role: 'user',
+            content: 'Summarize the background continuation results.',
+            toolCalls: [],
+            origin: { kind: 'machine', operationId: 'background-checks-17' },
+            createdAt: now + 4,
+          },
+          {
+            id: 'msg-assistant-sticky-machine',
+            role: 'assistant',
+            content: machineResult,
+            toolCalls: [],
+            createdAt: now + 5,
+          },
         ],
         usage: { inputTokens: 2400, outputTokens: 1600 },
         contextSnapshot: {
@@ -1948,10 +1971,10 @@ export function seedStickyUserPromptFixture(workspaceRoot: string): void {
           conversationBudget: 180_000,
           conversationTokens: 36_000,
           fillRatio: 0.2,
-          updatedAt: now + 3,
+          updatedAt: now + 5,
         },
         createdAt: now,
-        updatedAt: now + 3,
+        updatedAt: now + 5,
       },
     ],
   })
