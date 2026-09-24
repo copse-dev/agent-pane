@@ -22,6 +22,12 @@ export interface AcpAgentSandboxConfig {
    * `/tmp/claude-<uid>` and every Bash call EPERMs without it.
    */
   scratchPaths?: string[]
+  /**
+   * Allow macOS certificate verification through com.apple.trustd.agent.
+   * This permits trust-service traffic outside the domain proxy; enable only
+   * for agents whose TLS stack needs it. Ignored on other platforms.
+   */
+  allowMacOsTrustd?: boolean
 }
 
 /**

@@ -37,6 +37,15 @@ index 3a2d9c8abd01fefff36edea0cd76e9c31a3ed411..7e422b7a159da0ae00902cefcd5d38ac
                  allowAllUnixSockets: getAllowAllUnixSockets(),
                  allowLocalBinding: getAllowLocalBinding(),
                  allowMachLookup: getAllowMachLookup(),
+@@ -1301,7 +1301,7 @@ async function wrapWithSandbox(command, binShell, customConfig, abortSignal, opt
+                 allowPty,
+                 allowGitConfig: getAllowGitConfig(),
+                 gitSafeDirectories,
+-                enableWeakerNetworkIsolation: getEnableWeakerNetworkIsolation(),
++                enableWeakerNetworkIsolation: customConfig?.enableWeakerNetworkIsolation ?? getEnableWeakerNetworkIsolation(),
+                 allowAppleEvents: getAllowAppleEvents(),
+                 binShell,
+             });
 diff --git a/dist/sandbox/sandbox-schemas.d.ts b/dist/sandbox/sandbox-schemas.d.ts
 index d753a3a3a500be8c485f511ec5a94d5921094b91..d9f0b1b6207d802c3bfbc422ed9be82f03001994 100644
 --- a/dist/sandbox/sandbox-schemas.d.ts

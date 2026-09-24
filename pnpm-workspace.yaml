@@ -78,7 +78,7 @@ minimumReleaseAgeExclude:
 # regression test in scripts/adm-zip-symlink-patch.test.ts keeps that protection
 # pinned if a future release regresses it.
 
-# Four patches to @anthropic-ai/sandbox-runtime, all in one patch file. Drop
+# Five patches to @anthropic-ai/sandbox-runtime, all in one patch file. Drop
 # each once upstream does the same; the named test fails loudly if a version
 # bump silently drops the patch.
 #
@@ -109,5 +109,10 @@ minimumReleaseAgeExclude:
 #    inert .idea/.vscode metadata inside dependency tarballs can be extracted.
 #    Other sandbox callers retain the default recursive denies. Guarded by
 #    `project-sandbox/worktree-preparation.test.ts`.
+#
+# 5. macOS `enableWeakerNetworkIsolation` ignored per-spawn overrides. Codex
+#    needs trustd for TLS verification, but enabling it globally would also
+#    relax unrelated commands. Honor the overlay, retaining the global fallback.
+#    Guarded by `project-sandbox/acp-trustd.test.ts`.
 patchedDependencies:
   '@anthropic-ai/sandbox-runtime@0.0.74': patches/@anthropic-ai__sandbox-runtime@0.0.74.patch
