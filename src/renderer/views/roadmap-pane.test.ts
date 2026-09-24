@@ -6,7 +6,11 @@ import type { Thread } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { registerPromptAttachments } from '../attachments/prompt-attachments.ts'
 import { mountRoadmapPane } from './roadmap-pane.ts'
-import { clickActiveConfirmDialogConfirm, mountConfirmDialog } from './confirm-dialog.ts'
+import {
+  clickActiveConfirmDialogCancel,
+  clickActiveConfirmDialogConfirm,
+  mountConfirmDialog,
+} from './confirm-dialog.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import type { KnowledgeNote } from '../../main/services/storage/knowledge-store.ts'
 import type { RoadmapStatus } from '../../main/tools/roadmap-tools.ts'
@@ -1936,6 +1940,65 @@ describe('roadmap pane', () => {
       assert.deepEqual(calls.completeReview, ['bulk-run-1'])
       assert.ok(list.querySelector('.roadmap-review-badge.is-likely'))
       assert.ok(viewer.querySelector('.roadmap-review-row-detail ul'))
+    } finally {
+      unmount()
+    }
+  })
+
+  it('confirms before applying a bulk review status, and cancel leaves items untouched', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api, calls } = makeApi([
+      makeItem('a', 'Fix startup flash', 'ready', undefined, '#41'),
+      makeItem('b', 'Port e2e specs', 'ready', undefined, '#42'),
+    ])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.roadmap-review-btn')?.click()
+      await flush()
+      // Opening a review row and returning re-renders the review results with the
+      // review no longer "in flight" — the same round trip a person makes to read
+      // an item before bulk-applying, and the render pass that reveals the bulk
+      // affordances (they start hidden while the review is still running).
+      viewer.querySelector<HTMLButtonElement>('.roadmap-review-open')?.click()
+      await flush()
+      viewer.querySelector<HTMLButtonElement>('.roadmap-review-back')?.click()
+      await flush()
+      const markResolvedBtn = viewer.querySelector<HTMLButtonElement>(
+        '.roadmap-review-mark-resolved',
+      )
+      assert.ok(markResolvedBtn, 'bulk mark-done affordance renders once results suggest it')
+      assert.equal(markResolvedBtn.hidden, false)
+      assert.equal(markResolvedBtn.disabled, false)
+
+      // Cancelling the in-app dialog must not touch any item.
+      markResolvedBtn.click()
+      await flush()
+      const dialog = document.querySelector<HTMLDialogElement>('#confirm-dialog')
+      assert.ok(dialog?.open, 'an in-app dialog opens — no native confirm()')
+      assert.equal(
+        dialog.querySelector('.confirm-dialog-message')?.textContent,
+        'Mark 2 item(s) judged resolved or likely?',
+      )
+      clickActiveConfirmDialogCancel()
+      await flush()
+      assert.equal(calls.setStatus.length, 0, 'cancel leaves both items unchanged')
+      assert.equal(dialog.hasAttribute('open'), false)
+
+      // Confirming applies the bulk status to every eligible result.
+      markResolvedBtn.click()
+      await flush()
+      clickActiveConfirmDialogConfirm()
+      await flush()
+      assert.deepEqual(calls.setStatus, [
+        { id: 'a', status: 'done' },
+        { id: 'b', status: 'done' },
+      ])
+      assert.match(
+        viewer.querySelector('.roadmap-review-status')?.textContent ?? '',
+        /Updated 2 item\(s\)\./,
+      )
     } finally {
       unmount()
     }
