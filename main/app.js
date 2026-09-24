@@ -61311,6 +61311,15 @@ var init_appearance = __esm({
   }
 });
 
+// src/shared/git/commit-attribution.ts
+var GIT_ATTRIBUTION_SETTING, DEFAULT_GIT_ATTRIBUTION_ENABLED;
+var init_commit_attribution = __esm({
+  "src/shared/git/commit-attribution.ts"() {
+    GIT_ATTRIBUTION_SETTING = "gitAttributionEnabled";
+    DEFAULT_GIT_ATTRIBUTION_ENABLED = true;
+  }
+});
+
 // src/renderer/views/settings-dialog.ts
 function pluginDisplayName(plugin) {
   const raw = plugin.name || plugin.id;
@@ -61731,6 +61740,18 @@ function mountSettingsDialog(store2, api2) {
                 Reminds the agent that a skill's commands stay inside the project folder, or need
                 approval where that cannot be enforced, rather than quietly reaching the network or
                 the rest of your machine.
+              </p>
+            </fieldset>
+
+            <fieldset data-testid="git-attribution-settings">
+              <legend>Git attribution</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="${GIT_ATTRIBUTION_SETTING}" />
+                Credit Copse on commits and pull requests
+              </label>
+              <p class="field-hint">
+                Adds Copse as a co-author and lists the models used when Copse creates a commit or
+                pull request. On by default. Turn off to keep your message and description as written.
               </p>
             </fieldset>
 
@@ -64927,6 +64948,7 @@ var init_settings_dialog = __esm({
     init_developer_mode();
     init_appearance();
     init_projects();
+    init_commit_attribution();
     init_appearance();
     init_nullish2();
     isSettingsSection = (value) => value === "general" || value === "classifiers" || value === "usage" || value === "agent" || value === "permissions" || value === "mcp" || value === "customise" || value === "storage" || value === "appearance" || value === "ssh" || value === "experimental";
@@ -64952,6 +64974,12 @@ var init_settings_dialog = __esm({
       { name: "remoteAgentAutoCreatePR", kind: "checkbox", default: true, save: true },
       { name: "remoteAgentWorkOnCurrentBranch", kind: "checkbox", default: false, save: true },
       { name: "preferAcpOverCloudAgent", kind: "checkbox", default: true, save: true },
+      {
+        name: GIT_ATTRIBUTION_SETTING,
+        kind: "checkbox",
+        default: DEFAULT_GIT_ATTRIBUTION_ENABLED,
+        save: true
+      },
       { name: "gitCommitSshAgentSocketAccess", kind: "checkbox", default: false, save: true },
       { name: "localSubagentsEnabled", kind: "checkbox", default: true, save: true },
       {
