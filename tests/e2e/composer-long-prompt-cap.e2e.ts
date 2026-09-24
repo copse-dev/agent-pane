@@ -27,6 +27,7 @@ import { setComposerValue } from './helpers/composer.ts'
  * resize, so this height is exactly what distinguishes the two.
  */
 const SHORT_VIEWPORT = { width: 900, height: 300 }
+const HYDRATION_VIEWPORT = { width: 900, height: 420 }
 
 function longLines(count: number): string {
   return Array.from(
@@ -102,13 +103,11 @@ describe('composer long-prompt cap (#2489)', () => {
     seedComposerLongPromptFixture(workspaceRoot, longLines(200))
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    // Shrink *before* the draft hydrates (below), not after: the composer's
-    // `value` setter scrolls to `scrollHeight` at the box's *current* height,
-    // and a later resize can shrink `clientHeight` further without anything
-    // re-clamping `scrollTop` — a real product gap (nothing here re-scrolls
-    // on resize), but a different one from #2489, so the short window is set
-    // up first to test that instead of tripping over it.
-    await prepareE2eScreenshot(SHORT_VIEWPORT)
+    // Hydrate at a taller size first. The focused assertion below then shrinks
+    // the already-overflowing editor, exercising the ResizeObserver path that
+    // keeps a draft which was pinned at the bottom pinned after its own box
+    // gets shorter.
+    await prepareE2eScreenshot(HYDRATION_VIEWPORT)
     await browser.waitUntil(
       async () =>
         browser.execute(() => {
@@ -128,6 +127,17 @@ describe('composer long-prompt cap (#2489)', () => {
     // (composer-editor.ts's `value` setter) once the store hydrates after
     // launch — the same path a genuinely long saved draft takes on reopening
     // a thread, and the one place the scroll-to-bottom JS in this PR runs.
+    await waitForSettledLayout('#input-bar')
+    const beforeResize = await readComposerCapMetrics()
+    expect(beforeResize.scrollTop).toBeGreaterThanOrEqual(
+      beforeResize.scrollHeight - beforeResize.clientHeight - 2,
+    )
+
+    // Shrink only after the saved draft is hydrated and already pinned. This
+    // makes the visual case cover both the CSS card cap and the editor's
+    // ResizeObserver re-pin rather than relying solely on the initial value
+    // setter to land at the bottom.
+    await prepareE2eScreenshot(SHORT_VIEWPORT)
     await waitForSettledLayout('#input-bar')
 
     const m = await readComposerCapMetrics()
