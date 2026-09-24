@@ -1762,7 +1762,9 @@
 }
 .supervised-task-summary::before {
   content: '▸';
-  grid-row: 1 / span 2;
+  /* Align with the first row (the label), not the middle of the two-row
+     summary, so the handle sits beside the title it opens. */
+  grid-row: 1;
   align-self: center;
   color: var(--text-muted);
 }
