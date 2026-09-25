@@ -12,6 +12,7 @@ test('shell-scope research snapshot validates its evidence and text-only boundar
   // never model weights, provider credentials or fixture-command execution.
   const testFiles = [
     'acp-transport.test.mjs',
+    'classifier-fixtures.test.mjs',
     'local-boundary.test.mjs',
     'combine-recorded.test.mjs',
     'replay.test.mjs',
@@ -37,6 +38,6 @@ test('shell-scope research snapshot validates its evidence and text-only boundar
     maxBuffer: 1_048_576,
   })
   assert.equal(stderr, '')
-  assert.match(stdout, /(?:#|ℹ) pass 13\b/u)
+  assert.match(stdout, /(?:#|ℹ) pass 15\b/u)
   assert.match(stdout, /(?:#|ℹ) fail 0\b/u)
 })
