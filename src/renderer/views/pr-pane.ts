@@ -32,6 +32,7 @@ import { startPrDiscussThread } from './pr-pane-thread.ts'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 import { renderMarkdown } from '@copse/streaming-markdown'
 import { bindBrowserLinkClicks } from '../markdown/browser-links.ts'
+import { cachedPrTitle, loadPrTitle, rememberPrTitle } from '../markdown/pr-title-cache.ts'
 import { bindWorkspaceLinkClicks } from '../markdown/workspace-links.ts'
 import {
   createGitChangesDiffEditor,
@@ -196,11 +197,8 @@ export function mountPrPane(
   // `ciGen` invalidates in-flight fetches across workspace switches / manual refresh.
   const checksCache = new Map<string, GhPrChecksState>()
   const checksInFlight = new Set<string>()
-  // Real titles for chat-linked rows that never appear in a listing pool. Kept
-  // by PR key so a later mergePrLists() placeholder does not wipe a title we
-  // already paid for; failed lookups stay in `titleAttempted` so renderList
-  // cannot turn into a fetch loop.
-  const titlesCache = new Map<string, string>()
+  // Titles are shared with chat-link previews. Failed lookups stay in
+  // titleAttempted so renderList cannot turn into a fetch loop.
   const titleInFlight = new Set<string>()
   const titleAttempted = new Set<string>()
   let ciEls = new Map<string, HTMLElement>()
@@ -368,30 +366,24 @@ export function mountPrPane(
     if (!ghStatus?.authenticated) return
     for (const pr of prs) {
       const key = githubPrKey(pr)
-      const cached = titlesCache.get(key)
+      const cached = cachedPrTitle(pr)
       if (cached) {
-        if (pr.title !== cached) pr.title = cached
+        if (pr.title !== cached.title) pr.title = cached.title
         continue
       }
       if (!isPlaceholderPr(pr)) {
         // A pool-enriched title is authoritative — remember it for later merges.
-        if (pr.title && pr.title !== placeholderPrTitle(pr.number)) {
-          titlesCache.set(key, pr.title)
-        }
+        rememberPrTitle(pr, pr.title)
         continue
       }
       if (titleAttempted.has(key) || titleInFlight.has(key)) continue
       titleAttempted.add(key)
       titleInFlight.add(key)
       const gen = titleGen
-      void api.gh
-        .prDetails(pr.owner, pr.repo, pr.number)
-        .then((details) => {
-          if (disposed || gen !== titleGen) return
-          const title = details?.title.trim()
-          if (!title || title === placeholderPrTitle(pr.number)) return
-          titlesCache.set(key, title)
-          pr.title = title
+      void loadPrTitle(pr, api.gh)
+        .then((title) => {
+          if (disposed || gen !== titleGen || !title) return
+          pr.title = title.title
           scheduleTitleRepaint()
         })
         .catch(() => {
@@ -1005,7 +997,7 @@ export function mountPrPane(
       // for chat-linked placeholders that never appeared in a listing pool.
       if (details?.title && details.title !== placeholderPrTitle(details.number)) {
         const key = githubPrKey(details)
-        titlesCache.set(key, details.title)
+        rememberPrTitle(details, details.title, details.isDraft)
         const row = prList.find((pr) => githubPrKey(pr) === key)
         if (row && row.title !== details.title) {
           row.title = details.title
@@ -1204,7 +1196,7 @@ export function mountPrPane(
       agentLinksGen++
       titleGen++
       titleInFlight.clear()
-      // titlesCache is keyed by owner/repo#n and stays valid across workspaces.
+      // Shared PR titles are keyed by owner/repo#n and stay valid across workspaces.
       resetOther()
       // A different workspace's list is a fresh context; carrying a stale filter
       // over risks silently hiding every PR in it.

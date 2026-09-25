@@ -22,6 +22,7 @@ import type {
 } from '@shared/types/skills.ts'
 import { READ_FILE_LIMITS_CEILING } from '@copse/agent/read-file-limits.ts'
 import { extractExternalLinkHosts } from '@shared/skills/extract-skill-links.ts'
+import { extractSkillFileReferences } from '@shared/skills/extract-skill-references.ts'
 import { notifyRefreshContextEstimate } from '../context-estimate-notify.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { getPluginService } from '../plugins/plugin-service.ts'
@@ -52,12 +53,37 @@ export const SKILL_READ_MAX_BYTES = READ_FILE_LIMITS_CEILING.maxChars * 4
 export const SKILL_CONTAINER_DIRS: readonly string[] = ['.cursor', '.agents', '.claude', '.codex']
 const SKILL_CONTAINER_DIR_SET: ReadonlySet<string> = new Set(SKILL_CONTAINER_DIRS)
 
+/**
+ * A skill discovery found — a `SKILL.md` under a discovered container — but
+ * could not turn into a usable {@link SkillMetadata}: bad frontmatter, or a
+ * frontmatter `name` that does not match its folder. Tracked separately from
+ * silently-dropped discovery so {@link unknownSkillError} can tell the model
+ * "this name is a broken registry entry" instead of "no such skill", which
+ * would otherwise invite it to keep guessing names that were never going to
+ * exist (issue #1438).
+ */
+export interface SkillLoadFailure {
+  /** Names a caller might reasonably try — the frontmatter name and/or the folder name. */
+  readonly attemptedNames: readonly string[]
+  readonly skillPath: string
+  readonly reason: string
+}
+
 let cachedSkills: SkillMetadata[] = []
+let cachedSkillLoadFailures: SkillLoadFailure[] = []
 let refreshPromise: Promise<void> | null = null
-const scopedSkills = new AsyncLocalStorage<readonly SkillMetadata[]>()
+interface SkillRegistrySnapshot {
+  readonly skills: readonly SkillMetadata[]
+  readonly failures: readonly SkillLoadFailure[]
+}
+const scopedSkills = new AsyncLocalStorage<SkillRegistrySnapshot>()
 
 function activeSkills(): readonly SkillMetadata[] {
-  return scopedSkills.getStore() ?? cachedSkills
+  return scopedSkills.getStore()?.skills ?? cachedSkills
+}
+
+function activeSkillLoadFailures(): readonly SkillLoadFailure[] {
+  return scopedSkills.getStore()?.failures ?? cachedSkillLoadFailures
 }
 
 function skillsEnabled(): boolean {
@@ -100,10 +126,28 @@ function sortByContainerPrecedence(skillRoots: readonly string[]): string[] {
     .map(({ root }) => root)
 }
 
+/** Resolve bundle-relative references against the skill root; return the ones that don't exist. */
+async function findMissingReferences(
+  skillRoot: string,
+  references: readonly string[],
+): Promise<string[]> {
+  const missing: string[] = []
+  for (const reference of references) {
+    const target = resolve(skillRoot, reference)
+    const rel = relative(skillRoot, target)
+    // A reference that resolves outside the bundle isn't this check's concern
+    // (the sandboxing in `readSkill` handles path escapes at read time).
+    if (rel.startsWith('..')) continue
+    if (!(await pathExists(target))) missing.push(reference)
+  }
+  return missing
+}
+
 async function loadSkillFromFile(
   skillPath: string,
   source: SkillSource,
   skills: Map<string, SkillMetadata>,
+  failures: SkillLoadFailure[],
 ): Promise<void> {
   let raw: string
   try {
@@ -112,22 +156,39 @@ async function loadSkillFromFile(
     return
   }
 
+  const folderName = basename(dirname(skillPath))
+
   const split = splitSkillMarkdown(raw)
   if (!split) {
     console.warn(`[skills] Skipping ${skillPath}: missing frontmatter`)
+    failures.push({
+      attemptedNames: [folderName],
+      skillPath,
+      reason: 'SKILL.md has no YAML frontmatter block (a leading `---`-delimited header)',
+    })
     return
   }
 
   const parsed = parseSkillFrontmatter(split.frontmatter)
   if (!parsed) {
     console.warn(`[skills] Skipping ${skillPath}: invalid frontmatter`)
+    failures.push({
+      attemptedNames: [folderName],
+      skillPath,
+      reason: 'frontmatter is missing the required `name` or `description` field',
+    })
     return
   }
 
   if (!folderNameMatchesSkill(skillPath, parsed.name)) {
     console.warn(
-      `[skills] Skipping ${skillPath}: name "${parsed.name}" does not match folder "${basename(dirname(skillPath))}"`,
+      `[skills] Skipping ${skillPath}: name "${parsed.name}" does not match folder "${folderName}"`,
     )
+    failures.push({
+      attemptedNames: [...new Set([parsed.name, folderName])],
+      skillPath,
+      reason: `frontmatter name "${parsed.name}" does not match its folder "${folderName}"`,
+    })
     return
   }
 
@@ -142,7 +203,25 @@ async function loadSkillFromFile(
   // Scan the whole file (description + body) so a link hidden in either surface
   // is still flagged up front before the skill runs.
   const externalLinks = extractExternalLinkHosts(raw)
-  skills.set(parsed.name, toSkillMetadata(parsed, skillPath, source, externalLinks))
+
+  // Reference integrity: a SKILL.md that points at `references/x.md` (or
+  // scripts/, assets/) which isn't actually in the bundle fails read_skill
+  // mid-run with no warning beforehand. Flag it once, here, at discovery time
+  // (issue #1438) — logged now, and surfaced to the model in the tool result
+  // when the skill is read (see `readSkill`).
+  const skillRoot = dirname(skillPath)
+  const missingReferences = await findMissingReferences(skillRoot, extractSkillFileReferences(raw))
+  if (missingReferences.length > 0) {
+    console.warn(
+      `[skills] "${parsed.name}" references missing file(s) in its bundle: ` +
+        `${missingReferences.join(', ')} (${skillRoot})`,
+    )
+  }
+
+  skills.set(
+    parsed.name,
+    toSkillMetadata(parsed, skillPath, source, externalLinks, missingReferences),
+  )
 }
 
 type SkillDiscoveryTarget =
@@ -225,33 +304,39 @@ async function collectDiscoveryTargets(): Promise<SkillDiscoveryTarget[]> {
   return targets
 }
 
-async function discoverSkillsRegistry(): Promise<SkillMetadata[]> {
+async function discoverSkillsRegistry(): Promise<SkillRegistrySnapshot> {
   if (!skillsEnabled()) {
-    return []
+    return { skills: [], failures: [] }
   }
 
   const skills = new Map<string, SkillMetadata>()
+  const failures: SkillLoadFailure[] = []
   const discoveryTargets = await collectDiscoveryTargets()
 
   for (const target of discoveryTargets) {
     if (target.kind === 'file') {
-      await loadSkillFromFile(target.path, target.source, skills)
+      await loadSkillFromFile(target.path, target.source, skills, failures)
       continue
     }
     await walkForFiles(
       target.path,
       (fileName) => fileName === 'SKILL.md',
       async (skillPath) => {
-        await loadSkillFromFile(skillPath, target.source, skills)
+        await loadSkillFromFile(skillPath, target.source, skills, failures)
       },
     )
   }
 
-  return [...skills.values()].sort((a, b) => a.name.localeCompare(b.name))
+  return {
+    skills: [...skills.values()].sort((a, b) => a.name.localeCompare(b.name)),
+    failures,
+  }
 }
 
 export async function refreshSkillsRegistry(): Promise<void> {
-  cachedSkills = await discoverSkillsRegistry()
+  const snapshot = await discoverSkillsRegistry()
+  cachedSkills = [...snapshot.skills]
+  cachedSkillLoadFailures = [...snapshot.failures]
 }
 
 export async function initSkillsRegistry(): Promise<void> {
@@ -269,8 +354,8 @@ export async function waitForSkillsRegistryRefresh(): Promise<void> {
 
 /** Discover and scope the product skill catalog to one explicit headless run. */
 export async function runWithDiscoveredSkills<T>(fn: () => Promise<T>): Promise<T> {
-  const skills = await discoverSkillsRegistry()
-  return scopedSkills.run(skills, fn)
+  const snapshot = await discoverSkillsRegistry()
+  return scopedSkills.run(snapshot, fn)
 }
 
 export function listSkills(): SkillSummary[] {
@@ -306,15 +391,103 @@ export function getSkill(name: string): SkillMetadata | null {
   return activeSkills().find((skill) => skill.name === name) ?? null
 }
 
-function unknownSkillError(name: string): Error {
-  const available = activeSkills().map((skill) => skill.name)
-  if (available.length === 0) {
-    return new Error(`Unknown skill "${name}". No skills are currently available.`)
+/** How many available skill names `unknownSkillError` lists before summarizing the rest. */
+const MAX_LISTED_SKILLS = 30
+/** Keep the complete unknown-skill diagnostic below the existing 500-character contract. */
+const MAX_LISTED_SKILLS_CHARS = 360
+
+/**
+ * Cheap Levenshtein distance for short skill names. Skill catalogs are small
+ * and names are short, so the plain O(n·m) DP table is fine — no need for a
+ * bounded/banded variant.
+ */
+function levenshteinDistance(a: string, b: string): number {
+  const rows = a.length + 1
+  const cols = b.length + 1
+  const dist: number[][] = []
+  for (let i = 0; i < rows; i++) {
+    const row = new Array<number>(cols).fill(0)
+    row[0] = i
+    dist.push(row)
   }
-  const shown = available.slice(0, 10)
-  const remaining = available.length - shown.length
+  for (let j = 0; j < cols; j++) {
+    const row = dist[0]
+    if (row) row[j] = j
+  }
+  for (let i = 1; i < rows; i++) {
+    for (let j = 1; j < cols; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1
+      const current = dist[i]
+      const prev = dist[i - 1]
+      if (!current || !prev) continue
+      current[j] = Math.min(
+        (prev[j] ?? 0) + 1,
+        (current[j - 1] ?? 0) + 1,
+        (prev[j - 1] ?? 0) + cost,
+      )
+    }
+  }
+  return dist[rows - 1]?.[cols - 1] ?? Math.max(a.length, b.length)
+}
+
+/**
+ * The closest available skill name to an unknown request, for a "did you
+ * mean" hint — a case-insensitive substring relationship (covers a
+ * plural/prefix/suffix miss) or a small edit distance (covers a typo).
+ * `null` when nothing available is close enough to be worth suggesting.
+ */
+function closestSkillName(name: string, available: readonly string[]): string | null {
+  const lower = name.toLowerCase()
+  let best: { name: string; score: number } | null = null
+  for (const candidate of available) {
+    const candidateLower = candidate.toLowerCase()
+    const isSubstring = candidateLower.includes(lower) || lower.includes(candidateLower)
+    const score = isSubstring ? 0 : levenshteinDistance(lower, candidateLower)
+    const threshold = Math.max(2, Math.ceil(Math.max(lower.length, candidateLower.length) / 3))
+    if (score <= threshold && (!best || score < best.score)) {
+      best = { name: candidate, score }
+    }
+  }
+  return best?.name ?? null
+}
+
+/** Sorted, deduplicated, length-capped rendering of the available skill names. */
+function formatAvailableSkills(available: readonly string[]): string {
+  if (available.length === 0) return 'No skills are currently available.'
+  const names = [...new Set(available)].sort((a, b) => a.localeCompare(b))
+  const shown: string[] = []
+  let listedChars = 0
+  for (const name of names.slice(0, MAX_LISTED_SKILLS)) {
+    const addedChars = name.length + (shown.length === 0 ? 0 : 2)
+    if (shown.length > 0 && listedChars + addedChars > MAX_LISTED_SKILLS_CHARS) break
+    shown.push(name)
+    listedChars += addedChars
+  }
+  const remaining = names.length - shown.length
   const more = remaining > 0 ? ` (+${String(remaining)} more; see the Skills catalog)` : ''
-  return new Error(`Unknown skill "${name}". Available skills: ${shown.join(', ')}${more}.`)
+  return `Available skills: ${shown.join(', ')}${more}.`
+}
+
+function unknownSkillError(name: string): Error {
+  // A name that discovery found but could not load (bad frontmatter, or a
+  // frontmatter name/folder mismatch) is a registry bug, not a missing
+  // skill — say so distinctly rather than telling the model no such skill
+  // exists, which would just invite it to keep guessing (issue #1438).
+  const failure = activeSkillLoadFailures().find((candidate) =>
+    candidate.attemptedNames.includes(name),
+  )
+  if (failure) {
+    return new Error(
+      `Skill "${name}" is installed but failed to load: ${failure.reason} ` +
+        `(${failure.skillPath}). This is a registry bug, not a missing skill — it cannot be ` +
+        'read until the bundle is fixed; report the broken skill rather than retrying the name.',
+    )
+  }
+
+  const available = activeSkills().map((skill) => skill.name)
+  const hint = closestSkillName(name, available)
+  const didYouMean = hint ? ` Did you mean "${hint}"?` : ''
+  return new Error(`Unknown skill "${name}". ${formatAvailableSkills(available)}${didYouMean}`)
 }
 
 function isNotFoundError(error: unknown): boolean {
@@ -369,10 +542,12 @@ export async function readSkill(name: string, relativePath = 'SKILL.md'): Promis
     skillPath: realTarget,
     body,
     relativePath: normalized,
+    missingReferences: skill.missingReferences,
   }
 }
 
 /** Test helper — replace cached skills without touching disk. */
 export function setSkillsForTest(skills: SkillMetadata[]): void {
   cachedSkills = skills
+  cachedSkillLoadFailures = []
 }

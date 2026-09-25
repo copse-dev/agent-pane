@@ -26,6 +26,24 @@
   /* Cast the docked composer's shadow up onto the chat gradient so it reads
      as floating above the conversation, matching the centered variant. */
   box-shadow: var(--shadow-composer);
+  /* #2489: the card is anchored to the pane's bottom edge and grows upward
+     with its content (advisory strips, chips, the draft, the footer). Without
+     a cap on the *whole card* a long draft could push the top of the card —
+     branch warnings, the attach button — above the pane's top edge, where
+     `.pane-chat`'s `overflow: hidden` clips it out of reach entirely. Capping
+     here (not just on `.prompt-input`) keeps both the card's top edge and its
+     footer (model/branch pickers, Send) inside the pane no matter how tall the
+     draft wants to be; percentage height resolves against `.pane-chat`
+     (`position: relative`), so the cap tracks the pane's real size instead of
+     the viewport (`.prompt-input`'s own `max-height: 40vh` in input-bar.css
+     stays as the everyday soft cap; this is the hard outer one). */
+  max-height: calc(100% - 2 * var(--spacing-md));
+  /* A column flexbox so `.input-row` (the draft) can be told to *shrink*
+     toward the cap above while every other strip keeps its natural size — see
+     `#input-bar > *` and `.input-row` below. Plain block stacking has no way
+     to say "only this child gives up space first". */
+  display: flex;
+  flex-direction: column;
 }
 #input-bar::before {
   content: '';
@@ -41,6 +59,12 @@
 #input-bar > * {
   position: relative;
   z-index: 1;
+  /* Default every strip (banners, attachment chips, the footer) to its natural
+     size; `.input-row` overrides this to be the one flexible child that gives
+     up height first when the card hits its cap (input-bar.css). Flex items
+     shrink by default, so without this a tall draft would squeeze the footer
+     and banners too instead of just the draft. */
+  flex-shrink: 0;
 }
 .titlebar {
   -webkit-app-region: drag;
