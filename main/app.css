@@ -5200,6 +5200,13 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
 .tool-group-item[data-status=error] > .tool-group-item-header > .tool-status-icon {
   color: var(--error);
 }
+.tool-interruption-note {
+  margin: var(--spacing-xs) 0 0 var(--spacing-sm);
+  color: var(--text-secondary);
+}
+.tool-rollup-body > .tool-interruption-note {
+  margin: var(--spacing-xs) 0;
+}
 .tool-result {
   font-family: var(--font-mono);
   font-size: var(--font-size-sm);

@@ -72506,6 +72506,17 @@ var init_tool_runs = __esm({
   }
 });
 
+// src/shared/tools/tool-interruption.ts
+function isHostInterruptedToolCall(toolCall) {
+  return toolCall.status === "error" && toolCall.result === ACP_CANCELLED_TOOL_CALL_RESULT;
+}
+var ACP_CANCELLED_TOOL_CALL_RESULT;
+var init_tool_interruption = __esm({
+  "src/shared/tools/tool-interruption.ts"() {
+    ACP_CANCELLED_TOOL_CALL_RESULT = "Interrupted before completion \u2014 no final output was received. This tool may have partially run or produced effects; inspect the current state before retrying it.";
+  }
+});
+
 // src/renderer/views/plugin-panel.ts
 function capVisibleRows(list, maxVisible) {
   requestAnimationFrame(() => {
@@ -74315,6 +74326,48 @@ var init_image_input_support = __esm({
 });
 
 // src/renderer/views/conversation.ts
+function markUserInterruptedCalls(thread) {
+  if (!thread) return;
+  let turnCalls = [];
+  for (const [index, message2] of thread.messages.entries()) {
+    if (message2.role !== "assistant") turnCalls = [];
+    else turnCalls.push(...message2.toolCalls);
+    if (!message2.turnOutcome) continue;
+    const next = thread.messages[index + 1];
+    const humanPrompt = next?.role === "user" && next.origin === void 0 && next.createdAt <= message2.turnOutcome.endedAt;
+    for (const call of turnCalls) {
+      if (!isHostInterruptedToolCall(call)) continue;
+      if (message2.turnOutcome.status === "cancelled" && message2.turnOutcome.source === "user" && !(next?.role === "user" && next.origin !== void 0)) {
+        userInterruptedCalls.set(call, humanPrompt ? "message" : "user");
+      } else {
+        userInterruptedCalls.delete(call);
+      }
+    }
+    turnCalls = [];
+  }
+}
+function cardStatus2(toolCalls) {
+  if (toolCalls.some((call) => call.status === "running")) return "running";
+  if (toolCalls.some((call) => call.status === "error" && !userInterruptedCalls.has(call))) {
+    return "error";
+  }
+  if (toolCalls.some((call) => userInterruptedCalls.has(call))) return "interrupted";
+  return "done";
+}
+function interruptionLabel(call) {
+  return userInterruptedCalls.get(call) === "message" ? "Interrupted when you sent a new message." : "Interrupted by you.";
+}
+function syncRollupInterruptionNote(body, calls) {
+  const interrupted = calls.find((call) => userInterruptedCalls.has(call));
+  const current = body.querySelector(":scope > .tool-interruption-note");
+  if (!interrupted) {
+    current?.remove();
+    return;
+  }
+  const label = interruptionLabel(interrupted);
+  if (current) current.textContent = label;
+  else body.prepend(el("div", { class: "tool-interruption-note" }, label));
+}
 function statusIcon3(status) {
   if (status === "done") return checkIcon("ui-icon ui-icon-sm");
   if (status === "error") return closeIcon("ui-icon ui-icon-sm");
@@ -74413,7 +74466,7 @@ function onToolCardBodyBuilt(card, cb) {
 function appendStandardToolSections(card, tc2, label, summaryClass, count) {
   const header = createToolHeader(
     label,
-    tc2.status,
+    cardStatus2([tc2]),
     summaryClass,
     count,
     tc2.editStats,
@@ -74424,6 +74477,7 @@ function appendStandardToolSections(card, tc2, label, summaryClass, count) {
     const argsSection = createToolArgsSection(tc2.args);
     card.append(
       ...appendIfPresent(argsSection),
+      ...userInterruptedCalls.has(tc2) ? [el("div", { class: "tool-interruption-note" }, interruptionLabel(tc2))] : [],
       createToolResultSection(
         tc2.result,
         tc2.resultFormat,
@@ -74567,7 +74621,7 @@ function createIndividualToolCard(tc2, label, api2, threadId, store2) {
   const card = el("details", {
     class: "tool-card",
     "data-tool-id": tc2.id,
-    "data-status": tc2.status
+    "data-status": cardStatus2([tc2])
   });
   appendStandardToolSections(card, tc2, label, "tool-card-header");
   onToolCardBodyBuilt(card, () => {
@@ -74590,7 +74644,7 @@ function createInnerToolCard(tc2, api2) {
   const entry = el("details", {
     class: "tool-group-item subagent-inner-tool",
     "data-tool-id": tc2.id,
-    "data-status": tc2.status
+    "data-status": cardStatus2([tc2])
   });
   appendStandardToolSections(entry, tc2, getToolCallLabel(tc2), "tool-group-item-header");
   onToolCardBodyBuilt(entry, () => {
@@ -74870,7 +74924,7 @@ function createSubagentToolCard(tc2, label, api2) {
   return card;
 }
 function createGroupToolCard(item) {
-  const status = aggregateToolStatus(item.toolCalls);
+  const status = cardStatus2(item.toolCalls);
   const card = el("details", {
     class: "tool-card tool-card-group",
     "data-group-key": item.key,
@@ -74883,16 +74937,16 @@ function createGroupToolCard(item) {
     const entry = el("details", {
       class: "tool-group-item",
       "data-tool-id": tc2.id,
-      "data-status": tc2.status
+      "data-status": cardStatus2([tc2])
     });
     appendStandardToolSections(entry, tc2, getToolCallLabel(tc2), "tool-group-item-header");
-    toolGroupItemSignatures.set(entry, renderSignature(tc2));
+    toolGroupItemSignatures.set(entry, toolCallSignature(tc2));
     groupItems.append(entry);
   }
   return card;
 }
 function createRollupToolCard(item, api2, threadId, store2) {
-  const status = aggregateToolStatus(item.toolCalls);
+  const status = cardStatus2(item.toolCalls);
   const card = el("details", {
     class: "tool-card tool-card-rollup",
     "data-rollup-key": item.key,
@@ -74907,11 +74961,12 @@ function createRollupToolCard(item, api2, threadId, store2) {
     toolCardSignatures.set(childCard, toolCardSignature(child));
     body.append(childCard);
   }
+  syncRollupInterruptionNote(body, item.toolCalls);
   card.append(createToolHeader(item.label, status, "tool-card-header", count), body);
   return card;
 }
 function createStepToolCard(item, api2, threadId) {
-  const status = aggregateToolStatus(item.toolCalls);
+  const status = cardStatus2(item.toolCalls);
   const card = el("details", {
     class: "tool-card tool-card-step",
     "data-step-key": item.key,
@@ -74941,8 +74996,15 @@ function toolCardKey(item) {
   if (item.type === "group") return `g:${item.key}`;
   return `t:${item.toolCall.id}`;
 }
+function toolCallSignature(call) {
+  return renderSignature({ call, interruption: userInterruptedCalls.get(call) ?? null });
+}
 function toolCardSignature(item, extra) {
-  const base = renderSignature(item);
+  const calls = item.type === "individual" ? [item.toolCall] : item.toolCalls;
+  const base = renderSignature({
+    item,
+    interruptions: calls.map((call) => userInterruptedCalls.get(call) ?? null)
+  });
   return extra === void 0 ? base : `${base}|${extra}`;
 }
 function replaceDirectToolHeader(card, header) {
@@ -74955,7 +75017,7 @@ function replaceDirectToolHeader(card, header) {
 function populateRegularToolCard(card, tc2, label, threadId) {
   const wasOpen = card.open;
   lazyToolCardBodies.delete(card);
-  card.dataset["status"] = tc2.status;
+  card.dataset["status"] = cardStatus2([tc2]);
   card.replaceChildren();
   card.open = wasOpen;
   appendStandardToolSections(card, tc2, label, "tool-card-header");
@@ -74968,15 +75030,15 @@ function populateRegularToolCard(card, tc2, label, threadId) {
 function populateGroupItem(entry, tc2) {
   const wasOpen = entry.open;
   lazyToolCardBodies.delete(entry);
-  entry.dataset["status"] = tc2.status;
+  entry.dataset["status"] = cardStatus2([tc2]);
   entry.replaceChildren();
   entry.open = wasOpen;
   appendStandardToolSections(entry, tc2, getToolCallLabel(tc2), "tool-group-item-header");
   if (wasOpen) ensureToolCardBodyRendered(entry);
-  toolGroupItemSignatures.set(entry, renderSignature(tc2));
+  toolGroupItemSignatures.set(entry, toolCallSignature(tc2));
 }
 function reconcileGroupCard(card, item) {
-  const status = aggregateToolStatus(item.toolCalls);
+  const status = cardStatus2(item.toolCalls);
   card.dataset["status"] = status;
   replaceDirectToolHeader(
     card,
@@ -75002,10 +75064,10 @@ function reconcileGroupCard(card, item) {
       entry = el("details", {
         class: "tool-group-item",
         "data-tool-id": tc2.id,
-        "data-status": tc2.status
+        "data-status": cardStatus2([tc2])
       });
       populateGroupItem(entry, tc2);
-    } else if (toolGroupItemSignatures.get(entry) !== renderSignature(tc2)) {
+    } else if (toolGroupItemSignatures.get(entry) !== toolCallSignature(tc2)) {
       populateGroupItem(entry, tc2);
     }
     desired.push(entry);
@@ -75048,7 +75110,7 @@ function reconcileNestedToolCards(host, items, api2, threadId, store2) {
 }
 function reconcileToolCard(card, item, api2, threadId, store2) {
   if (item.type === "rollup" || item.type === "step") {
-    const status = aggregateToolStatus(item.toolCalls);
+    const status = cardStatus2(item.toolCalls);
     card.dataset["status"] = status;
     card.dataset["toolCount"] = String(item.toolCalls.length);
     if (item.type === "step") {
@@ -75063,6 +75125,7 @@ function reconcileToolCard(card, item, api2, threadId, store2) {
       body = el("div", { class: "tool-rollup-body" });
       card.append(body);
     }
+    if (item.type === "rollup") syncRollupInterruptionNote(body, item.toolCalls);
     reconcileNestedToolCards(body, item.children, api2, threadId, store2);
   } else if (item.type === "group") {
     reconcileGroupCard(card, item);
@@ -76203,17 +76266,34 @@ function mountConversation(root, store2, api2) {
       item.label = commandSummary;
     }
   }
+  function labelUserInterruptions(item) {
+    const calls = item.type === "individual" ? [item.toolCall] : item.toolCalls;
+    if (calls.some((call) => userInterruptedCalls.has(call))) {
+      const failed = calls.filter(
+        (call) => call.status === "error" && !userInterruptedCalls.has(call)
+      ).length;
+      const base = item.label.replace(/ · \d+ failed$/, "");
+      item.label = `${base}${failed ? ` \xB7 ${String(failed)} failed` : ""} \xB7 Interrupted`;
+    }
+    if (item.type === "rollup" || item.type === "step") {
+      for (const child of item.children) labelUserInterruptions(child);
+    }
+  }
   function applyToolCardOpenState(card, item, threadId, messageId, autoRevealEligible) {
     if (card.classList.contains("thread-proposal")) return;
     const key = `${threadId}:${messageId}:${toolCardKey(item)}`;
     card.dataset["disclosureKey"] = key;
-    const itemStatus2 = item.type === "individual" ? item.toolCall.status : aggregateToolStatus(item.toolCalls);
+    const itemStatus2 = item.type === "individual" ? cardStatus2([item.toolCall]) : cardStatus2(item.toolCalls);
     card.dataset["status"] = itemStatus2;
     disclosureElements.set(key, card);
     wireDisclosurePreference(card, key);
     const preference = disclosurePreferences.get(key);
     const running = item.type === "individual" ? item.toolCall.status === "running" || item.toolCall.subagent?.status === "running" : itemStatus2 === "running";
     const failed = itemStatus2 === "error";
+    if (itemStatus2 === "interrupted") {
+      autoOpenedDisclosures.delete(key);
+      autoOpenedAt.delete(key);
+    }
     if (running) runningDisclosures.add(key);
     else {
       runningDisclosures.delete(key);
@@ -76272,6 +76352,7 @@ function mountConversation(root, store2, api2) {
     const msgId = msgEl.dataset["messageId"] ?? "";
     const messageKey = threadId && msgId ? `${threadId}:${msgId}` : null;
     const activeThread = getActiveThread(store2);
+    markUserInterruptedCalls(activeThread);
     if (messageKey && activeThread?.status === "running" && toolCalls.some((tool) => !tool.subagent)) {
       liveRollupMessages.add(messageKey);
     }
@@ -76283,6 +76364,7 @@ function mountConversation(root, store2, api2) {
       ...nestReasoning || messageKey !== null && liveRollupMessages.has(messageKey) ? { forceRollup: true } : {}
     });
     if (!run2) for (const item of items) applyRollupSummaries(item, opts);
+    for (const item of items) labelUserInterruptions(item);
     const existing = /* @__PURE__ */ new Map();
     for (const node2 of msgEl.querySelectorAll(":scope > .tool-card")) {
       const key = toolCardKeys.get(node2);
@@ -77041,7 +77123,7 @@ function attachCopyButton(body, msgId, store2) {
   });
   body.append(copyBtn);
 }
-var lazyToolCardBodies, toolResultContentSignatures, streamingRenderers, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolCardKeys, toolCardSignatures, toolGroupItemSignatures, emptyReasoningBlocks, reasoningRenders, SCROLL_PIN_THRESHOLD_PX, USER_SCROLL_UP_DEBOUNCE_MS, TOOL_AUTO_REVEAL_DELAY_MS, TOOL_AUTO_REVEAL_MIN_DWELL_MS, TOOL_AUTO_COMPACT_DELAY_MS, INITIAL_RENDER_WINDOW, BACKFILL_CHUNK_SIZE;
+var userInterruptedCalls, lazyToolCardBodies, toolResultContentSignatures, streamingRenderers, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolCardKeys, toolCardSignatures, toolGroupItemSignatures, emptyReasoningBlocks, reasoningRenders, SCROLL_PIN_THRESHOLD_PX, USER_SCROLL_UP_DEBOUNCE_MS, TOOL_AUTO_REVEAL_DELAY_MS, TOOL_AUTO_REVEAL_MIN_DWELL_MS, TOOL_AUTO_COMPACT_DELAY_MS, INITIAL_RENDER_WINDOW, BACKFILL_CHUNK_SIZE;
 var init_conversation = __esm({
   "src/renderer/views/conversation.ts"() {
     init_helpers();
@@ -77078,6 +77160,7 @@ var init_conversation = __esm({
     init_agent_activity();
     init_tool_display();
     init_tool_runs();
+    init_tool_interruption();
     init_panels();
     init_thread_hydration();
     init_plugin_panel();
@@ -77099,6 +77182,7 @@ var init_conversation = __esm({
     init_turn_recovery_card();
     init_image_input_support();
     init_toast();
+    userInterruptedCalls = /* @__PURE__ */ new WeakMap();
     lazyToolCardBodies = /* @__PURE__ */ new WeakMap();
     toolResultContentSignatures = /* @__PURE__ */ new WeakMap();
     streamingRenderers = /* @__PURE__ */ new WeakMap();
