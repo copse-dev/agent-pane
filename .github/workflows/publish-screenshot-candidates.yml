@@ -172,7 +172,11 @@ jobs:
                 fi
                 count=$((count + 1))
                 total=$((total + size))
-                if [ "$count" -gt 512 ] || [ "$total" -gt 268435456 ]; then
+                # A labelled refresh renders every committed reference, so the
+                # budget must exceed the whole reference set with headroom
+                # (ci-workflow-invariants.test.ts pins it at twice the count
+                # and size of tests/e2e/screenshots).
+                if [ "$count" -gt 2048 ] || [ "$total" -gt 536870912 ]; then
                   echo '::error::Screenshot candidate artifact exceeds its count or size budget.'
                   exit 1
                 fi
