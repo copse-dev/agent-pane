@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { containerAcpAgentSpecs } from '@shared/container-acp-agents.ts'
@@ -22,6 +22,7 @@ import {
   loadRunForContinuation,
   providerOrigin,
   secretCanaryCheck,
+  teardownRuntime,
   WORKER_UID,
   writeCarryInBundle,
   type DockerRunInput,
@@ -466,6 +467,71 @@ describe('Docker command deadlines', () => {
       } finally {
         rmSync(bin, { recursive: true, force: true })
       }
+    },
+  )
+})
+
+describe('teardownRuntime', () => {
+  // A fake Docker client: `container inspect` fails with whatever stderr the
+  // case sets, `rm` succeeds unless told otherwise, and every call is logged.
+  async function teardownWith(
+    inspectStderr: string,
+    rmExit = 0,
+  ): Promise<{
+    outcome: Awaited<ReturnType<typeof teardownRuntime>>
+    calls: string[]
+  }> {
+    const bin = mkdtempSync(join(tmpdir(), 'copse-docker-teardown-'))
+    const log = join(bin, 'calls.log')
+    writeFileSync(
+      join(bin, 'docker'),
+      [
+        '#!/bin/sh',
+        `echo "$*" >> '${log}'`,
+        'case "$1 $2" in',
+        `  "container inspect") echo '${inspectStderr}' >&2; exit 1 ;;`,
+        `  "rm --force") exit ${String(rmExit)} ;;`,
+        'esac',
+        'exit 0',
+        '',
+      ].join('\n'),
+      { mode: 0o755 },
+    )
+    const previousPath = process.env['PATH']
+    process.env['PATH'] = bin + ':' + (previousPath ?? '')
+    try {
+      const outcome = await teardownRuntime('run-teardown')
+      const calls = existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n') : []
+      return { outcome, calls }
+    } finally {
+      if (previousPath === undefined) delete process.env['PATH']
+      else process.env['PATH'] = previousPath
+      rmSync(bin, { recursive: true, force: true })
+    }
+  }
+
+  it(
+    'reports already-gone only when the daemon says there is no such container',
+    { skip: process.platform === 'win32' },
+    async () => {
+      const { outcome, calls } = await teardownWith(
+        `Error response from daemon: No such container: ${containerName('run-teardown')}`,
+      )
+      assert.equal(outcome, 'already-gone')
+      assert.ok(!calls.some((call) => call.startsWith('rm ')), 'nothing to force-remove')
+    },
+  )
+
+  it(
+    'still force-removes when inspect fails for another reason, such as a hung daemon',
+    { skip: process.platform === 'win32' },
+    async () => {
+      const unreachable = 'error during connect: context deadline exceeded'
+      const removed = await teardownWith(unreachable)
+      assert.equal(removed.outcome, 'removed')
+      assert.ok(removed.calls.includes(`rm --force ${containerName('run-teardown')}`))
+      const stuck = await teardownWith(unreachable, 1)
+      assert.equal(stuck.outcome, 'failed', 'a container that may be live is never reported gone')
     },
   )
 })

@@ -357,6 +357,10 @@ export class ContainerRunService {
       error: null,
       continuedFrom: continuation?.runtimeId ?? null,
     }
+    // A follow-up replaces the finished run it continues; keep that entry so a
+    // follow-up that fails before it starts does not erase the run it built on.
+    const previous = this.runs.get(request.threadId)
+    const previousStop = this.stopSignals.get(request.threadId)
     // Claim the thread's slot before the first await, so two clicks cannot both
     // pass the live-run check and start two containers on one checkout.
     this.runs.set(request.threadId, progress)
@@ -392,8 +396,10 @@ export class ContainerRunService {
         checkout.checkoutMode === 'worktree' ? "The thread's worktree" : 'The project checkout',
       )
     } catch (error) {
-      this.runs.delete(request.threadId)
-      this.stopSignals.delete(request.threadId)
+      if (previous) this.runs.set(request.threadId, previous)
+      else this.runs.delete(request.threadId)
+      if (previousStop) this.stopSignals.set(request.threadId, previousStop)
+      else this.stopSignals.delete(request.threadId)
       throw error
     }
     this.update(progress, {

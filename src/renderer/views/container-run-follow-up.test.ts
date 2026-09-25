@@ -156,4 +156,76 @@ describe('container follow-up consent', () => {
       document.body.replaceChildren()
     }
   })
+
+  it('prefills a whole number of minutes from a budget that is not one', async () => {
+    const previous: ContainerRunProgress = {
+      threadId: 'thread',
+      runtimeId: 'run-previous',
+      phase: 'finished',
+      startedAt: 1,
+      finishedAt: 2,
+      prompt: 'Previous task',
+      model: 'claude-sonnet-4-6',
+      credential: 'key',
+      settings: {
+        budgets: { wallClockMs: 150_500, tokenCeiling: 20_000 },
+        installDependencies: false,
+      },
+      egressAllowlist: [],
+      log: [],
+      warnings: [],
+      checkout: null,
+      record: null,
+      error: null,
+      continuedFrom: null,
+    }
+    const store = createStore({
+      activeProjectId: 'project',
+      activeThreadId: 'thread',
+      threads: [
+        {
+          id: 'thread',
+          title: 'Container work',
+          status: 'idle',
+          messages: [
+            {
+              id: 'previous',
+              role: 'assistant',
+              content: '',
+              toolCalls: [containerRunToolCall(previous)],
+              createdAt: 1,
+            },
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+    })
+    const base = createFakeApi()
+    const api: ApiClient = {
+      ...base,
+      container: { ...base.container, getRun: () => Promise.resolve(previous) },
+    }
+    const control = mountContainerRunControl(
+      api,
+      {
+        store,
+        getActiveThreadId: () => store.getState().activeThreadId,
+        getActiveProjectId: () => store.getState().activeProjectId,
+        getModel: () => 'claude-sonnet-4-6',
+        getDraft: () => 'Follow-up task',
+        clearDraft: () => {},
+      },
+      () => {},
+    )
+    try {
+      await control.followUp('Follow-up task')
+      await waitFor(() => document.querySelector('.container-run-minutes') !== null)
+      assert.equal(document.querySelector<HTMLInputElement>('.container-run-minutes')?.value, '3')
+    } finally {
+      control.destroy()
+      document.body.replaceChildren()
+    }
+  })
 })

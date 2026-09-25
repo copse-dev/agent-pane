@@ -1136,6 +1136,50 @@ describe('ContainerRunService continuation (A14)', () => {
     )
     assert.equal(service.isActive(THREAD), false, 'a refused continuation claims no slot')
   })
+
+  it('keeps the finished run it continues when a follow-up fails before starting', async () => {
+    let engineUp = true
+    const service = new ContainerRunService({
+      sweep: noSweep,
+      adopt: adoptSpy().adopt,
+      loadCarryOut: noRecordOnDisk,
+      loadContinuation: noContinuationOnDisk,
+      resolveContext: checkoutAt(root),
+      ensureImage: (): Promise<void> => Promise.resolve(),
+      assertEngine: (): void => {
+        if (!engineUp) throw new Error('Docker is unavailable: daemon down')
+      },
+      stop: (): Promise<'removed'> => Promise.resolve('removed'),
+      run: (request): Promise<ThreadContainerRecord> => Promise.resolve(fakeRecord(request.prompt)),
+    })
+    const budgets = { wallClockMs: 60_000, tokenCeiling: 10_000 }
+    await service.start({
+      projectId: PROJECT,
+      threadId: THREAD,
+      prompt: 'First task',
+      model: 'claude-sonnet-4-6',
+      budgets,
+    })
+    const finished = await waitFor(service, THREAD, (p) => p.phase === 'finished')
+    engineUp = false
+    await assert.rejects(
+      service.start({
+        projectId: PROJECT,
+        threadId: THREAD,
+        prompt: 'Follow-up',
+        model: 'claude-sonnet-4-6',
+        budgets,
+        continueFrom: 'run-fake',
+      }),
+      /daemon down/,
+    )
+    assert.equal(service.isActive(THREAD), false)
+    const kept = service.get(THREAD)
+    assert.ok(kept)
+    assert.equal(kept.phase, 'finished', 'the earlier run is still what the thread shows')
+    assert.equal(kept.prompt, finished.prompt)
+    assert.equal(kept.record?.runtimeId, 'run-fake')
+  })
 })
 
 function waitFor(

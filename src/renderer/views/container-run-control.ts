@@ -479,8 +479,11 @@ export function mountContainerRunControl(
       max: '1440',
       step: '1',
     })
+    // The input steps in whole minutes; a budget recorded in milliseconds need not be one.
     minutes.value = String(
-      previousSettings ? previousSettings.budgets.wallClockMs / 60_000 : DEFAULT_WALL_CLOCK_MINUTES,
+      previousSettings
+        ? Math.max(1, Math.round(previousSettings.budgets.wallClockMs / 60_000))
+        : DEFAULT_WALL_CLOCK_MINUTES,
     )
     const tokens = el('input', {
       type: 'number',

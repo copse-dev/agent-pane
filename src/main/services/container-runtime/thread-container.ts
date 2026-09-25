@@ -822,6 +822,15 @@ async function imageDigest(image: string): Promise<string | undefined> {
   }
 }
 
+/** The daemon's answer for a container that does not exist, in any Docker CLI version. */
+function isNoSuchContainer(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false
+  const stderr: unknown = Reflect.get(error, 'stderr')
+  const message: unknown = Reflect.get(error, 'message')
+  const text = [stderr, message].filter((part) => typeof part === 'string').join('\n')
+  return /no such (?:container|object)/i.test(text)
+}
+
 /**
  * Idempotent: removing a container that is already gone is success, reported
  * distinctly so a reconciliation sweep can tell "I removed it" from "it was
@@ -835,8 +844,12 @@ export async function teardownRuntime(
   try {
     await runDocker(['container', 'inspect', '--format', '{{.Id}}', name])
     container = 'removed'
-  } catch {
-    container = 'already-gone'
+  } catch (error) {
+    // Only the daemon saying the container does not exist means it is gone. A
+    // timed-out or failed inspect (slow or hung daemon) says nothing about the
+    // container, so it still gets the forced removal below — which is what
+    // decides whether teardown succeeded.
+    container = isNoSuchContainer(error) ? 'already-gone' : 'removed'
   }
   if (container === 'removed') {
     try {
@@ -1130,10 +1143,13 @@ function readJsonFile<T>(path: string, decode: (value: unknown) => T | null): T 
 }
 
 /**
- * The secret canary (`unattended-runs.md` U3): a marker value present in the
- * host environment must be absent from everything the guest could see or wrote.
- * The guest's own environment is checked from inside by the worker (it reports
- * it in the result); the host checks the surfaces it owns.
+ * The secret canary (`unattended-runs.md` U3): a per-run marker value placed in
+ * the environment of the `docker create` client (not the Copse host process)
+ * must be absent from everything the guest could see or wrote. It therefore
+ * catches leaks through the container launch only; other host children (the
+ * egress broker, git carry-in, ACP) never see it. The guest's own environment
+ * is checked from inside by the worker (it reports it in the result); the host
+ * checks the surfaces it owns.
  */
 export function secretCanaryCheck(
   runDir: string,

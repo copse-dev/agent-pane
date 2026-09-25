@@ -108,9 +108,9 @@ git fetch carry-out → refs/copse/runs/<id>               + declareContainerRun
 - **No credentials in the guest except one.** The model loop needs a provider key, so the
   worker receives exactly that value in its environment, consumes it into the provider
   client, and blanks the variable before any tool can spawn a child. Git remotes, GitHub
-  tokens and the host's environment never enter. A secret canary exported on the host is
-  checked against every host-owned surface of the run and against the guest's reported
-  environment key names.
+  tokens and the host's environment never enter. A per-run secret canary, placed only in
+  the environment of the Docker client that creates the container, is checked against every
+  host-owned surface of the run and against the guest's reported environment key names.
 - **The thread's checkout, not the project's.** A thread with an isolated worktree has its
   own branch and its own uncommitted edits, so the service resolves the checkout through
   `resolveThreadExecutionContext` (the cold resolver the supervisor also uses) and refuses a
