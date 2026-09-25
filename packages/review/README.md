@@ -212,7 +212,10 @@ out and executes nothing; it resolves current PR metadata and dispatches the sep
 workflow. Job A has `permissions: {}` and no secrets, runs Stage 0 on the head with the runner as
 the cell (`--backend ephemeral-runner`), and uploads the report. It uses the reviewed CLI from the
 default branch, so an older PR need not contain `@copse/review`; pull-request code is fetched only
-after checkout credentials have been removed. Before entering the cell, the secret-free job copies
+after checkout credentials have been removed. Pull-request code runs as a dedicated user with no
+sudo and no access to the runner's home (`ci/ground-as-cell-user.sh`), so it cannot rewrite the
+actions and command files that later steps execute with the job's Actions runtime token, a token
+`permissions: {}` does not remove. Before entering the cell, the secret-free job copies
 only the exact head's `pnpm-lock.yaml` and patch data into runner scratch and runs `pnpm fetch`;
 that primes Stage 0's read-only offline store without loading a contributor manifest or lifecycle
 script on the host.
