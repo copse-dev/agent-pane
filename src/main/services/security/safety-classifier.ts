@@ -1,20 +1,8 @@
-import { getSetting } from '../storage/settings.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
 import { getWorkspaceRoot } from '../workspace.ts'
-import { buildProvider } from '../providers/provider-selection.ts'
-import { FETCH_TIMEOUTS } from '../fetch-timeouts.ts'
-import { recordUsageEvent } from '../storage/usage-ledger.ts'
 import { parseClassification, type ClassificationResult } from './safety-classification-parse.ts'
-import { completeMessagesWithUsage } from '../providers/llm-complete-text.ts'
-import { findSafetyModelProblem, reportSafetyModelProblem } from './safety-model-availability.ts'
-import {
-  isScreeningTimeout,
-  noteSafetyModelAnswered,
-  noteSafetyModelTimeout,
-} from './safety-model-cooldown.ts'
-import { resolveSafetyScreeningModel } from './safety-screening-model.ts'
 import { classifyShellScopeWithClassifier } from './safety-classifier-profile.ts'
-import { screeningClassifierId } from '../classifiers/classifier-service.ts'
+import { screenWithSafetyModel } from './safety-screening.ts'
 
 export type { ClassificationResult } from './safety-classification-parse.ts'
 export { parseClassification } from './safety-classification-parse.ts'
@@ -55,66 +43,12 @@ function shellScopePayload(command: string): {
 }
 
 export async function classifyShellScope(command: string): Promise<ClassificationResult | null> {
-  if (!getSetting<boolean>('safetyClassifierEnabled', true)) return null
-
-  // A classifier chosen in Settings → Classifiers screens instead of the safety model.
-  const classifierId = screeningClassifierId()
-  if (classifierId) {
-    const { verdict, problem } = await classifyShellScopeWithClassifier(
-      classifierId,
-      shellScopePayload(command),
-    )
-    if (problem) reportSafetyModelProblem(problem)
-    return verdict
-  }
-
-  // Which model screens — the stored rule expanded, minus anything currently
-  // being routed around for missing the budget (`safety-screening-model.ts`).
-  const { model, problem: routing } = await resolveSafetyScreeningModel()
-  if (routing) {
-    reportSafetyModelProblem(routing)
-    return null
-  }
-  if (!model) return null
-
-  // Establish up front whether the model can run. Without this a missing model
-  // costs a doomed request per command and lands in the same `catch` as a real
-  // screening failure, so the gate silently loses its classifier for good.
-  const problem = await findSafetyModelProblem(model)
-  if (problem) {
-    reportSafetyModelProblem(problem)
-    return null
-  }
-
   const payload = shellScopePayload(command)
-
-  try {
-    // A classification, not a reasoning task: cap the depth so a deeply-tuned
-    // chat model reused here doesn't bill like the work it was tuned for.
-    const provider = await buildProvider(model, undefined, { maxReasoning: 'low' })
-    const { text, usage } = await completeMessagesWithUsage(
-      provider,
-      [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: JSON.stringify(payload) },
-      ],
-      FETCH_TIMEOUTS.safetyClassification,
-    )
-    noteSafetyModelAnswered(model)
-    if (usage.inputTokens || usage.outputTokens) {
-      recordUsageEvent({
-        model,
-        source: 'safety-classifier',
-        ...usage,
-      })
-    }
-    return parseClassification(text)
-  } catch (err) {
-    // A model too slow to finish is worth remembering, so the next command does
-    // not buy the same budget of nothing. Other failures say nothing about speed.
-    if (isScreeningTimeout(err)) {
-      reportSafetyModelProblem(noteSafetyModelTimeout(model, FETCH_TIMEOUTS.safetyClassification))
-    }
-    return null
-  }
+  const { verdict } = await screenWithSafetyModel({
+    systemPrompt: SYSTEM_PROMPT,
+    content: JSON.stringify(payload),
+    parse: parseClassification,
+    withClassifier: (id) => classifyShellScopeWithClassifier(id, payload),
+  })
+  return verdict
 }

@@ -1,22 +1,6 @@
-import { getSetting } from '../storage/settings.ts'
-import { buildProvider } from '../providers/provider-selection.ts'
-import { FETCH_TIMEOUTS } from '../fetch-timeouts.ts'
-import { recordUsageEvent } from '../storage/usage-ledger.ts'
 import { requestApproval } from '../approval.ts'
-import { completeMessagesWithUsage } from '../providers/llm-complete-text.ts'
-import {
-  findSafetyModelProblem,
-  reportSafetyModelProblem,
-  type SafetyModelProblem,
-} from './safety-model-availability.ts'
-import {
-  isScreeningTimeout,
-  noteSafetyModelAnswered,
-  noteSafetyModelTimeout,
-} from './safety-model-cooldown.ts'
-import { resolveSafetyScreeningModel } from './safety-screening-model.ts'
 import { classifyTerminalSnapshotWithClassifier } from './safety-classifier-profile.ts'
-import { screeningClassifierId } from '../classifiers/classifier-service.ts'
+import { screenWithSafetyModel, type Screening } from './safety-screening.ts'
 import {
   parseTerminalReadVerdict,
   terminalReadNeedsApproval,
@@ -71,16 +55,8 @@ Mark "risky" if the output appears to contain: secrets or credentials (API keys,
 Mark "safe" only when you are confident it is ordinary command output with none of the above.
 When uncertain, use "risky" with lower confidence.`
 
-/**
- * Outcome of one screening attempt. `problem` separates "the configured model
- * cannot run" from "screening was attempted and produced nothing usable" —
- * both fall back to approval, but only one of them is worth telling the user
- * how to fix.
- */
-export interface TerminalReadScreening {
-  verdict: TerminalReadVerdict | null
-  problem: SafetyModelProblem | null
-}
+/** Outcome of one screening attempt; see {@link Screening}. */
+export type TerminalReadScreening = Screening<TerminalReadVerdict>
 
 /**
  * Screen a snapshot with the safety model. The model is sent the text as
@@ -88,61 +64,18 @@ export interface TerminalReadScreening {
  * and hands over a snapshot only when it fits {@link TERMINAL_READ_SCREEN_MAX_CHARS}
  * in full, because a verdict on a slice could never auto-allow what sits above it.
  */
-export async function classifyTerminalSnapshot(
+export function classifyTerminalSnapshot(
   text: string,
   signal?: AbortSignal,
 ): Promise<TerminalReadScreening> {
-  if (!getSetting<boolean>('safetyClassifierEnabled', true)) return { verdict: null, problem: null }
-
-  // A classifier chosen in Settings → Classifiers screens instead of the safety model.
-  const classifierId = screeningClassifierId()
-  if (classifierId) {
-    const screening = await classifyTerminalSnapshotWithClassifier(classifierId, text, signal)
-    if (screening.problem) reportSafetyModelProblem(screening.problem)
-    return screening
-  }
-
-  const { model, problem: routing } = await resolveSafetyScreeningModel()
-  if (routing) {
-    reportSafetyModelProblem(routing)
-    return { verdict: null, problem: routing }
-  }
-  if (!model) return { verdict: null, problem: null }
-
-  const problem = await findSafetyModelProblem(model)
-  if (problem) {
-    reportSafetyModelProblem(problem)
-    return { verdict: null, problem }
-  }
-
-  try {
-    // Screening a terminal read is a one-shot judgement — same cap as the
-    // shell-command classifier.
-    const provider = await buildProvider(model, undefined, { maxReasoning: 'low' })
-    const { text: content, usage } = await completeMessagesWithUsage(
-      provider,
-      [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: text },
-      ],
-      FETCH_TIMEOUTS.safetyClassification,
-      signal,
-    )
-    noteSafetyModelAnswered(model)
-    if (usage.inputTokens || usage.outputTokens) {
-      recordUsageEvent({
-        model,
-        source: 'safety-classifier',
-        ...usage,
-      })
-    }
-    return { verdict: parseTerminalReadVerdict(content), problem: null }
-  } catch (err) {
-    if (!isScreeningTimeout(err, signal)) return { verdict: null, problem: null }
-    const timedOut = noteSafetyModelTimeout(model, FETCH_TIMEOUTS.safetyClassification)
-    reportSafetyModelProblem(timedOut)
-    return { verdict: null, problem: timedOut }
-  }
+  return screenWithSafetyModel({
+    systemPrompt: SYSTEM_PROMPT,
+    content: text,
+    parse: parseTerminalReadVerdict,
+    withClassifier: (id, classifierSignal) =>
+      classifyTerminalSnapshotWithClassifier(id, text, classifierSignal),
+    ...(signal ? { signal } : {}),
+  })
 }
 
 export interface TerminalReadGateResult {

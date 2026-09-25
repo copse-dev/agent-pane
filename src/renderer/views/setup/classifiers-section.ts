@@ -149,7 +149,7 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
     }
     busy = true
     root.disabled = true
-    void (async () => {
+    void (async (): Promise<void> => {
       try {
         screeningId = await api.classifiers.setScreening(id)
         const chosen = profiles.find((item) => item.profile.id === screeningId)?.profile.label

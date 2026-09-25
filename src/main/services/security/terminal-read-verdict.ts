@@ -1,11 +1,4 @@
-import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
-import { z } from 'zod'
-
-const terminalReadPayloadSchema = z.object({
-  risk: z.string().optional(),
-  confidence: z.unknown().optional(),
-  reason: z.string().optional(),
-})
+import { parseScreeningReply } from './safety-classification-parse.ts'
 
 /**
  * Pure verdict logic for the `read_terminal` scrollback screen (see
@@ -89,25 +82,14 @@ export function terminalReadScreenWindow(text: string): TerminalReadScreenWindow
 }
 
 /**
- * Parse the safety model's raw reply into a trusted verdict, or `null` when
- * unusable. This is the trust boundary between LLM freeform text and the
- * permission gate: unknown risk values and reason-less verdicts are rejected
- * and confidence is clamped so a malformed or adversarial value can never
- * widen the auto-allow gate.
+ * Parse the terminal-read safety model's reply into a trusted verdict; see
+ * {@link parseScreeningReply}.
  */
 export function parseTerminalReadVerdict(text: string): TerminalReadVerdict | null {
-  const jsonMatch = text.match(/\{[\s\S]*\}/)
-  if (!jsonMatch) return null
-  const parsed = safeJsonParse(jsonMatch[0], decodeWithSchema(terminalReadPayloadSchema))
-  if (!parsed) return null
-  if (parsed.risk !== 'safe' && parsed.risk !== 'risky') return null
-  const confidence =
-    typeof parsed.confidence === 'number' && Number.isFinite(parsed.confidence)
-      ? Math.min(1, Math.max(0, parsed.confidence))
-      : 0
-  const reason = typeof parsed.reason === 'string' ? parsed.reason.trim() : ''
-  if (!reason) return null
-  return { risky: parsed.risk === 'risky', confidence, reason }
+  const reply = parseScreeningReply(text, 'risk', ['safe', 'risky'])
+  return (
+    reply && { risky: reply.value === 'risky', confidence: reply.confidence, reason: reply.reason }
+  )
 }
 
 /**

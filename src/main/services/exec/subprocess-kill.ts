@@ -14,20 +14,7 @@ export const SUBPROCESS_KILL_GRACE_MS = 2_000
  * sibling's group.
  */
 function signalPidTree(pid: number, signal: NodeJS.Signals): boolean {
-  if (process.platform !== 'win32') {
-    try {
-      process.kill(-pid, signal)
-      return true
-    } catch {
-      // Not a group leader — fall through to a direct kill.
-    }
-  }
-  try {
-    process.kill(pid, signal)
-    return true
-  } catch {
-    return false
-  }
+  return signalProcessTree({ pid, kill: (direct) => process.kill(pid, direct) }, signal)
 }
 
 /** True while the pid exists and this process may signal it. */

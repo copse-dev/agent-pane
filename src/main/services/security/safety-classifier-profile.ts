@@ -16,6 +16,7 @@ import {
   noteSafetyModelTimeout,
 } from './safety-model-cooldown.ts'
 import type { TerminalReadVerdict } from './terminal-read-verdict.ts'
+import type { Screening } from './safety-screening.ts'
 
 /**
  * Safety screening through a saved classifier connection (Settings →
@@ -60,11 +61,6 @@ const TERMINAL_READ_QUESTION = {
     safe: 'Ordinary command output with no secrets and no text addressed to an AI agent.',
   },
 } satisfies ClassifierQuestion
-
-interface ClassifierScreening<T> {
-  verdict: T | null
-  problem: SafetyModelProblem | null
-}
 
 interface Answer {
   result: ClassifierResult
@@ -179,7 +175,7 @@ async function screen(
 export async function classifyShellScopeWithClassifier(
   id: string,
   payload: { [key: string]: JsonValue },
-): Promise<ClassifierScreening<ClassificationResult>> {
+): Promise<Screening<ClassificationResult>> {
   const { answer, problem } = await screen(id, payload, SHELL_SCOPE_QUESTION)
   const external = answer && probabilityOf(answer, 'external')
   const sandbox = answer && probabilityOf(answer, 'sandbox')
@@ -205,7 +201,7 @@ export async function classifyTerminalSnapshotWithClassifier(
   id: string,
   text: string,
   signal?: AbortSignal,
-): Promise<ClassifierScreening<TerminalReadVerdict>> {
+): Promise<Screening<TerminalReadVerdict>> {
   const { answer, problem } = await screen(id, text, TERMINAL_READ_QUESTION, signal)
   const safe = answer && probabilityOf(answer, 'safe')
   if (!answer || safe === null) return { verdict: null, problem }

@@ -5,25 +5,26 @@ import type { ChildProcess } from 'node:child_process'
  * A child spawned with `detached: true` leads a new group whose id is its pid,
  * so negating the pid also reaches orphaned grandchildren (`npm` -> `node`,
  * `bash -c ...`). A child that leads no group, and every child on Windows,
- * falls back to a direct signal. A process that has already exited is ignored.
+ * falls back to a direct signal. Returns whether a signal was delivered; a
+ * process that has already exited is not an error.
  */
 export function signalProcessTree(
   child: Pick<ChildProcess, 'pid' | 'kill'>,
   signal: NodeJS.Signals,
-): void {
+): boolean {
   const pid = child.pid
-  if (pid === undefined) return
+  if (pid === undefined) return false
   if (process.platform !== 'win32') {
     try {
       process.kill(-pid, signal)
-      return
+      return true
     } catch {
       // Group gone or never detached — fall through to a direct kill.
     }
   }
   try {
-    child.kill(signal)
+    return child.kill(signal)
   } catch {
-    // Already exited.
+    return false // Already exited.
   }
 }

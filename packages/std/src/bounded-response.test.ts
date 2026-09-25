@@ -5,7 +5,7 @@ import { readResponseTextWithin } from './bounded-response.ts'
 function chunked(...parts: string[]): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder()
   return new ReadableStream({
-    start(controller) {
+    start(controller): void {
       for (const part of parts) controller.enqueue(encoder.encode(part))
       controller.close()
     },
