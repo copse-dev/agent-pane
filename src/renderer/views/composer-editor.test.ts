@@ -4,6 +4,22 @@ import assert from 'node:assert/strict'
 import { CHIP_CHAR, mountComposerEditor } from './composer-editor.ts'
 import { patchPreviewDialog } from '../attachments/preview-dialog.test-support.ts'
 
+// happy-dom does not expose `ResizeObserver` as a global on its own (only on
+// its `Window` instance), and `tests/setup-dom.ts` does not copy it over —
+// same stub `chat-layout.test.ts` / `input-bar.test.ts` install for the same
+// reason. The editor observes its own root to re-pin a scrolled-to-bottom
+// draft across a resize (#2489); it never fires in this environment, but the
+// constructor call must not throw.
+class TestResizeObserver {
+  observe(): void {}
+  disconnect(): void {}
+}
+
+Object.defineProperty(globalThis, 'ResizeObserver', {
+  configurable: true,
+  value: TestResizeObserver,
+})
+
 // Selection-dependent behavior (insert at caret, selectionStart mapping) needs
 // a real focused Chromium selection and is exercised by the paste e2e spec;
 // these tests cover the unfocused/document paths: serialization, chip↔slot
@@ -114,6 +130,32 @@ describe('composer editor value serialization', () => {
     assert.equal(editor.value, '')
     assert.equal(editor.getBlocks().length, 0)
     assert.equal(editor.getInlineChips().length, 0)
+  })
+
+  /**
+   * #2489: happy-dom has no layout, so `scrollHeight`/`scrollTop` are inert —
+   * shadow `scrollHeight` (same technique as
+   * `conversation-rebuild-batching.test.ts`) to prove the setter reads it and
+   * writes `scrollTop` from it, rather than asserting on real geometry the
+   * e2e/demo screenshots cover instead.
+   */
+  it('scrolls a wholesale value replacement to its own bottom', () => {
+    const editor = mountComposerEditor()
+    Object.defineProperty(editor.el, 'scrollHeight', {
+      configurable: true,
+      get: () => 5_000,
+    })
+    try {
+      editor.el.scrollTop = 0
+      editor.value = Array.from({ length: 200 }, (_, i) => `line ${String(i)}`).join('\n')
+      assert.equal(
+        editor.el.scrollTop,
+        5_000,
+        'a fresh long value must scroll to its bottom, like a typed one already does natively',
+      )
+    } finally {
+      Reflect.deleteProperty(editor.el, 'scrollHeight')
+    }
   })
 })
 
